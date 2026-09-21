@@ -39,7 +39,7 @@ Artifact `Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`, the one every B cell has used.
 | C `probe-c-batched` | probe, texts and prime receipts, the day-16 chain | `failed` (exit 1 = DIVERGENT by the probe's design) | 157.8 | 627 | 62..89 | 23,033 | 179.7 |
 | E `probe-e-restore-points` | probe, the 12,350 prompt restored from five entries | `failed` (exit 1, DIVERGENT) | 76.0 | 302 | 56..88 | 22,169 | 185.7 |
 | F `probe-f-gdn-sequential` | probe, the chain under `MEMRA_GDN_CHUNKED=0` | `executed-not-qualified` (exit 0, IDENTICAL) | 168.8 | 671 | 71..88 | 22,233 | 179.9 |
-| D `probe-d-tokenwise` | probe, every prompt token through `decode_step` | see the D section | | | | | |
+| D `probe-d-tokenwise` | probe, every prompt token through `decode_step`, cold turn 10 only | `executed-not-qualified` (exit 0, IDENTICAL) | 563.7 | 2,230 | 66..87 | 17,497 | 172.9 |
 
 ## Task 1: the request that diverged on day 16, and its reproduction
 
@@ -217,7 +217,25 @@ is never taken and every prompt token, cold or suffix, rides `decode_step`. `MEM
 per-tick budget (`memra-lanes`, `u("MEMRA_PREFILL_TICK", 1024)`, authoritative when set, no floor), so probe D
 runs the chain to turn 10 with `MEMRA_PREFILL_TICK=8` on both boots, cold turn 10 only, no cohort, request
 ceiling 900 s (the walk runs at roughly 28 prompt tokens per second on this card: about 7 minutes for the cold
-12,350 and for the chain's cold 11,000). Result: see the D result block at the end of this section.
+12,350 and for the chain's cold 11,000). Verbatim:
+
+```text
+RESTORE-VS-COLD: arm=tokenwise turns=10 compared=1 identical=1/1 first_divergent_turn=none -> IDENTICAL
+```
+
+Both boots walked every prompt token through `decode_step`: the cold log holds 12,350 `[primeseg] TOKENWISE
+prompt token at fed=... (bound_rem=None q=... budget=8)` receipts and zero `call start=` receipts, the chain log
+11,000 + 9 x 150 = 12,350 and zero. Turn 1's seed published from the walked state (`insert (seed): 11000 tokens,
+483.5MB`), every turn restored the previous one (`hit: 12200 of 12350` at turn 10, `source lease released after
+restore fence`), and the restored turn 10 IS the cold turn 10: `"_\n"`, 3 tokens, `stop`,
+`4415b7e361fc6f6b` on both sides. Nine restores deep, under a single numeric program the restore is exact at the
+very request that flips under the batched arm. The walk ran at about 45 prompt tokens per second (cold 12,350 in
+272.6 s, chain turn 1 in 239.2 s), no `[admit-oom]` line in either boot (peak `memory.used` 17,497 MiB: no
+prefill workspace), collector `executed-not-qualified`. The tokenwise program's own chain outputs differ from the
+batched program's at turn 2 (`10d20bd924836441` versus `66d394ced7203380`, another near-tie prompt), which is two
+programs disagreeing with each other as the W1 comments say they legally do, not a restore question. D's two
+server logs (one line per walked token) are kept gzipped; the probe's `summary.json` carries the collapsed
+receipts the replay reads.
 
 ### What this shape has that the #379 gate's cells do not
 
@@ -239,8 +257,8 @@ The gate that covers this class is the twin gate's identity column, which today 
 **A correctness defect, its two programs named.** On this card the restored render of a growing conversation
 (program B: restore at the prompt-end seed boundary, then one off-grid `prime_cache` call under the chunked GDN
 WY scan) is not the cold render (program A: on-grid prime calls), and two greedy near-ties in a twelve-turn
-chain flipped, deterministically, on two binaries. The restore is exact (probe F); the seed boundary is what
-sits off the grid the engine's own law requires (probes C and E). The class is card-independent (it is the
+chain flipped, deterministically, on two binaries. The restore is exact (probes F and D, two different single programs); the seed boundary is what sits off the
+grid the engine's own law requires (probes C and E). The class is card-independent (it is the
 fold grid, not a kernel); which request flips is card-dependent (the target card's 28/28 on day 15 and 8/8 on
 day 14 and today's cell A are near-ties that did not flip there, not identity), so the day-15 A/B's digest
 precondition held on the target card by chance and the decision record now says so. The fix is a lane day of
@@ -249,8 +267,9 @@ message-boundary captures already align down to the grid through `grid_align_bou
 not), and at the twin gate's identity column becoming a verdict. Day 16's slru request (11,750 = 11,600 + 150)
 is the same class: probe F shows 11,750 is the chain's other near-tie prompt.
 
-Reported to the tracker as a bug with the exact repro (shape, card, binary, both digests, both texts, the first
-differing token, the receipts): the issue number is in STATE.md and in the #523 comment.
+Reported as **memra#602** (labelled bug) with the exact repro (shape, card, binary, both digests, both texts, the
+first differing token, the receipts, the controls), and linked from the #523 thread by a comment (#523 stays
+open for its own items).
 
 ## Checks actually run
 
@@ -263,7 +282,7 @@ differing token, the receipts): the issue number is in STATE.md and in the #523 
 | Probe C, `day17-probe.py` batched arm, texts and receipts | `-> DIVERGENT` (turn 10, generated token 2), exit 1, collector `failed` by the probe's exit code |
 | Probe E, restore points 12,288 / 12,320 / 12,200 / 12,250 / 12,300 | `identical=3/5`: on-grid 2/2 identical, off-grid 1/3 identical, exit 1 |
 | Probe F, the chain under `MEMRA_GDN_CHUNKED=0` | `identical=12/12 -> IDENTICAL`, exit 0, `executed-not-qualified` |
-| Probe D, `MEMRA_PREFILL_TICK=8` (every prompt token through `decode_step`) | see the D result block |
+| Probe D, `MEMRA_PREFILL_TICK=8` (every prompt token through `decode_step`, both boots) | `compared=1 identical=1/1 -> IDENTICAL`, exit 0, `executed-not-qualified` |
 | `research/spill-b-20260919/verify-day17.py` (offline replay of every receipt above) | `DAY17 REPLAY OK` (`rtx5090-day17/verify-day17.log`) |
 | `cargo fmt --all -- --check` (CPU quota), `bash tools/docs-registry-census.sh`, `git diff --check` | PASS (`fmt-check.log`, `docs-registry-census.log`) |
 | `tools/spec-on-cache-hit-gate.sh qwen` | NOT RUN today: ALL GREEN on this card in the local battery; its cells do not ask restored-versus-cold on a suffix-fed hit (named above) |

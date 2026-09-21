@@ -103,6 +103,8 @@ def replay_probe(raw, name, binsha, expect_status):
     cold = {c["turn"]: c for c in s["cold"]}
     for c in s["cold"]:
         require(c["cached_tokens"] in (0, None) and hashlib.sha256(c["text"].encode()).hexdigest() == c["text_sha256"], f"{name}: cold turn {c['turn']} row inconsistent")
+        if any("TOKENWISE prompt token" in ln for ln in c["lines"]):
+            require(not segs(c["lines"]) and any("TOKENWISE prompt token at fed=0 " in ln for ln in c["lines"]), f"{name}: cold turn {c['turn']} tokenwise walk shows a prime-branch call")
         for start, take, off in segs(c["lines"]):
             require(off == start % GRID == 0, f"{name}: cold turn {c['turn']} prime call at {start} is off the {GRID}-token grid (grid_off {off})")
     compared = [t for t in s["turns"] if t["turn"] in cold]
@@ -111,9 +113,13 @@ def replay_probe(raw, name, binsha, expect_status):
         require(t["identical_to_cold"] == (t["text"] == c["text"]), f"{name}: turn {t['turn']} identity flag does not re-derive from the texts")
         if t["turn"] > 1:
             calls = segs(t["lines"])
-            require(len(calls) == 1 and calls[0][0] == t["cached_tokens"] == t["prev_prompt_tokens"] and calls[0][1] == t["prompt_tokens"] - t["cached_tokens"]
-                    and calls[0][2] == calls[0][0] % GRID,
-                    f"{name}: turn {t['turn']} suffix prime receipt {calls} is not one call at the restored end")
+            if any("TOKENWISE prompt token" in ln for ln in t["lines"]):
+                require(not calls and any(f"TOKENWISE prompt token at fed={t['cached_tokens']} " in ln for ln in t["lines"]),
+                        f"{name}: turn {t['turn']} walked tokenwise but shows a prime-branch call or does not start at the restored end")
+            else:
+                require(len(calls) == 1 and calls[0][0] == t["cached_tokens"] == t["prev_prompt_tokens"] and calls[0][1] == t["prompt_tokens"] - t["cached_tokens"]
+                        and calls[0][2] == calls[0][0] % GRID,
+                        f"{name}: turn {t['turn']} suffix prime receipt {calls} is not one call at the restored end")
     identical = [t for t in compared if t["identical_to_cold"]]
     divergent = [t for t in compared if not t["identical_to_cold"]]
     require(f"identical={len(identical)}/{len(compared)}" in s["verdict"], f"{name}: identical count does not re-derive: {s['verdict']}")
@@ -189,6 +195,14 @@ def main():
             for p in r["points"]:
                 lines.append(f"  point {p['point']} grid_off {p['grid_off']} suffix {p['suffix']}: {'identical' if p['identical_to_cold'] else 'DIVERGENT at char ' + str(p['first_diff_char'])} {json.dumps(p['hit']['text'])}")
         else:
+            if name == "probe-d-tokenwise":
+                require(len(r["compared"]) == 1 and not r["divergent"] and r["compared"][0]["turn"] == 10 == s_turns(r), f"{name}: expected one compared turn, turn 10, identical")
+                t10 = r["compared"][0]
+                require(t10["cached_tokens"] == 12200 and t10["text"] == r["cold"][10]["text"] == "_\n", f"{name}: turn 10 is not 12200 restored reproducing the cold bytes")
+                for side, row, n in (("cold", r["cold"][10], 12350), ("chain turn 1", [t for t in r["turns"] if t["turn"] == 1][0], 11000), ("chain turn 10", t10, 150)):
+                    require(not segs(row["lines"]) and any(f"TOKENWISE x{n} prompt tokens" in ln for ln in row["lines"]),
+                            f"{name}: {side} did not walk exactly {n} prompt tokens through decode_step with no prime-branch call")
+                lines.append(f"{name}: no prime-branch call in either boot; 12,350 tokenwise receipts cold, 11,000 + 9 x 150 chain; turn 10 restored 12200 == cold")
             if name == "probe-f-gdn-sequential":
                 require(not r["divergent"] and len(r["compared"]) == 12, f"{name}: expected 12/12 identical under the sequential scan")
                 t10 = [t for t in r["turns"] if t["turn"] == 10][0]

@@ -1,1 +1,222 @@
 cold turn 10: prompt=12350 completion=3 finish=stop sha=4415b7e361fc6f6b 272.626s
+turn 1: prompt=11000 cached=0 completion=8 finish=length sha=9745f43fe07640e1 239.231s
+turn 2: prompt=11150 cached=11000 completion=8 finish=length sha=10d20bd924836441 3.574s
+turn 3: prompt=11300 cached=11150 completion=8 finish=length sha=24a97a2867768b2d 3.54s
+turn 4: prompt=11450 cached=11300 completion=4 finish=stop sha=876c0bf0f375834e 3.386s
+turn 5: prompt=11600 cached=11450 completion=4 finish=stop sha=7abc2552932a6a15 3.387s
+turn 6: prompt=11750 cached=11600 completion=8 finish=length sha=24a97a2867768b2d 3.5s
+turn 7: prompt=11900 cached=11750 completion=8 finish=length sha=22f023976ebc22fd 3.508s
+turn 8: prompt=12050 cached=11900 completion=8 finish=length sha=01062972f3feb195 3.515s
+turn 9: prompt=12200 cached=12050 completion=8 finish=length sha=22f023976ebc22fd 3.516s
+turn 10: prompt=12350 cached=12200 completion=3 finish=stop sha=4415b7e361fc6f6b == cold 3.383s
+[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+turn 1: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11000 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+turn 1: [primeseg] TOKENWISE prompt token at fed=0 (bound_rem=None q=11000 budget=8) — W1 two-programs door, NOT the prime path
+turn 1: [primeseg] TOKENWISE x11000 prompt tokens (collapsed; first and last kept)
+turn 1: [primeseg] TOKENWISE prompt token at fed=10999 (bound_rem=None q=1 budget=8) — W1 two-programs door, NOT the prime path
+turn 1: [prefix-cache] insert (seed): 11000 tokens, 483.5MB (resident 483.5MB / 1074MB, model gate, ns "grow")
+turn 1: [ttft] id=cmpl-c8c882310f24a97cd6c2f01c1afc4b7d model="gate" path="/v1/completions" prompt_tokens=11000 outcome=ended_without_sse request_parse_ms=0.473 admission_ms=0.057 queue_wait_ms=0.134 tokenize_ms=0.006 prime_wait_ms=5.279 prime_ms=239038.647 decode_wait_ms=0.234 sse_handoff_ms=na request_parse_end_ms=0.473 admission_end_ms=0.530 tokenize_start_ms=0.664 tokenize_end_ms=0.670 prime_start_ms=5.949 prime_end_ms=239044.596 first_decode_ms=239044.830 first_sse_byte_ms=na total_ms=239044.830
+turn 2: [prefix-cache] hit: 11000 of 11150 prompt tokens from cache (model gate)
+turn 2: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11150 cached=11000 lcp=11000 active=1 wave=1 placement=single-or-non-pp2
+turn 2: [prefix-cache] source lease released after restore fence (entry 11000 tokens, model gate)
+turn 2: [primeseg] TOKENWISE prompt token at fed=11000 (bound_rem=None q=150 budget=8) — W1 two-programs door, NOT the prime path
+turn 2: [primeseg] TOKENWISE x150 prompt tokens (collapsed; first and last kept)
+turn 2: [primeseg] TOKENWISE prompt token at fed=11149 (bound_rem=None q=1 budget=8) — W1 two-programs door, NOT the prime path
+turn 2: [prefix-cache] insert (seed): 11150 tokens, 488.0MB (resident 971.6MB / 1074MB, model gate, ns "grow")
+turn 2: [ttft] id=cmpl-d3402b95a9a59a5843354c4b72f7e7c5 model="gate" path="/v1/completions" prompt_tokens=11150 outcome=ended_without_sse request_parse_ms=0.413 admission_ms=0.032 queue_wait_ms=0.116 tokenize_ms=0.005 prime_wait_ms=2.458 prime_ms=3383.640 decode_wait_ms=0.238 sse_handoff_ms=na request_parse_end_ms=0.413 admission_end_ms=0.445 tokenize_start_ms=0.561 tokenize_end_ms=0.566 prime_start_ms=3.024 prime_end_ms=3386.664 first_decode_ms=3386.902 first_sse_byte_ms=na total_ms=3386.902
+turn 3: [prefix-cache] hit: 11150 of 11300 prompt tokens from cache (model gate)
+turn 3: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11300 cached=11150 lcp=11150 active=1 wave=1 placement=single-or-non-pp2
+turn 3: [prefix-cache] source lease released after restore fence (entry 11150 tokens, model gate)
+turn 3: [primeseg] TOKENWISE prompt token at fed=11150 (bound_rem=None q=150 budget=8) — W1 two-programs door, NOT the prime path
+turn 3: [primeseg] TOKENWISE x150 prompt tokens (collapsed; first and last kept)
+turn 3: [primeseg] TOKENWISE prompt token at fed=11299 (bound_rem=None q=1 budget=8) — W1 two-programs door, NOT the prime path
+turn 3: [prefix-cache] evict (snapshot preflight, LRU): 11000 tokens, 483.5MB (model gate, ns "grow")
+turn 3: [prefix-cache] insert (seed): 11300 tokens, 492.5MB (resident 980.5MB / 1074MB, model gate, ns "grow")
+turn 3: [ttft] id=cmpl-5eb27ff7c60e2573dac3835af9a7b7e2 model="gate" path="/v1/completions" prompt_tokens=11300 outcome=ended_without_sse request_parse_ms=0.271 admission_ms=0.032 queue_wait_ms=0.096 tokenize_ms=0.007 prime_wait_ms=2.614 prime_ms=3352.601 decode_wait_ms=0.239 sse_handoff_ms=na request_parse_end_ms=0.271 admission_end_ms=0.303 tokenize_start_ms=0.399 tokenize_end_ms=0.406 prime_start_ms=3.020 prime_end_ms=3355.621 first_decode_ms=3355.860 first_sse_byte_ms=na total_ms=3355.860
+turn 4: [prefix-cache] hit: 11300 of 11450 prompt tokens from cache (model gate)
+turn 4: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11450 cached=11300 lcp=11300 active=1 wave=1 placement=single-or-non-pp2
+turn 4: [prefix-cache] source lease released after restore fence (entry 11300 tokens, model gate)
+turn 4: [primeseg] TOKENWISE prompt token at fed=11300 (bound_rem=None q=150 budget=8) — W1 two-programs door, NOT the prime path
+turn 4: [primeseg] TOKENWISE x150 prompt tokens (collapsed; first and last kept)
+turn 4: [primeseg] TOKENWISE prompt token at fed=11449 (bound_rem=None q=1 budget=8) — W1 two-programs door, NOT the prime path
+turn 4: [prefix-cache] evict (snapshot preflight, LRU): 11150 tokens, 488.0MB (model gate, ns "grow")
+turn 4: [prefix-cache] insert (seed): 11450 tokens, 496.9MB (resident 989.4MB / 1074MB, model gate, ns "grow")
+turn 4: [ttft] id=cmpl-a219965ad35dee8f27ad2859e797112b model="gate" path="/v1/completions" prompt_tokens=11450 outcome=ended_without_sse request_parse_ms=0.266 admission_ms=0.036 queue_wait_ms=0.143 tokenize_ms=0.006 prime_wait_ms=2.219 prime_ms=3315.184 decode_wait_ms=0.239 sse_handoff_ms=na request_parse_end_ms=0.266 admission_end_ms=0.302 tokenize_start_ms=0.445 tokenize_end_ms=0.451 prime_start_ms=2.670 prime_end_ms=3317.854 first_decode_ms=3318.093 first_sse_byte_ms=na total_ms=3318.093
+turn 5: [prefix-cache] hit: 11450 of 11600 prompt tokens from cache (model gate)
+turn 5: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11600 cached=11450 lcp=11450 active=1 wave=1 placement=single-or-non-pp2
+turn 5: [prefix-cache] source lease released after restore fence (entry 11450 tokens, model gate)
+turn 5: [primeseg] TOKENWISE prompt token at fed=11450 (bound_rem=None q=150 budget=8) — W1 two-programs door, NOT the prime path
+turn 5: [primeseg] TOKENWISE x150 prompt tokens (collapsed; first and last kept)
+turn 5: [primeseg] TOKENWISE prompt token at fed=11599 (bound_rem=None q=1 budget=8) — W1 two-programs door, NOT the prime path
+turn 5: [prefix-cache] evict (snapshot preflight, LRU): 11300 tokens, 492.5MB (model gate, ns "grow")
+turn 5: [prefix-cache] insert (seed): 11600 tokens, 501.4MB (resident 998.3MB / 1074MB, model gate, ns "grow")
+turn 5: [ttft] id=cmpl-45dddeb28b2aa5f805e15f46dee9929b model="gate" path="/v1/completions" prompt_tokens=11600 outcome=ended_without_sse request_parse_ms=0.263 admission_ms=0.037 queue_wait_ms=0.137 tokenize_ms=0.011 prime_wait_ms=2.243 prime_ms=3315.522 decode_wait_ms=0.228 sse_handoff_ms=na request_parse_end_ms=0.263 admission_end_ms=0.300 tokenize_start_ms=0.437 tokenize_end_ms=0.448 prime_start_ms=2.691 prime_end_ms=3318.213 first_decode_ms=3318.441 first_sse_byte_ms=na total_ms=3318.441
+turn 6: [prefix-cache] hit: 11600 of 11750 prompt tokens from cache (model gate)
+turn 6: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11750 cached=11600 lcp=11600 active=1 wave=1 placement=single-or-non-pp2
+turn 6: [prefix-cache] source lease released after restore fence (entry 11600 tokens, model gate)
+turn 6: [primeseg] TOKENWISE prompt token at fed=11600 (bound_rem=None q=150 budget=8) — W1 two-programs door, NOT the prime path
+turn 6: [primeseg] TOKENWISE x150 prompt tokens (collapsed; first and last kept)
+turn 6: [primeseg] TOKENWISE prompt token at fed=11749 (bound_rem=None q=1 budget=8) — W1 two-programs door, NOT the prime path
+turn 6: [prefix-cache] evict (snapshot preflight, LRU): 11450 tokens, 496.9MB (model gate, ns "grow")
+turn 6: [prefix-cache] insert (seed): 11750 tokens, 505.8MB (resident 1007.2MB / 1074MB, model gate, ns "grow")
+turn 6: [ttft] id=cmpl-ab4ecc04ae0b70ca2a8e50a73a9f659f model="gate" path="/v1/completions" prompt_tokens=11750 outcome=ended_without_sse request_parse_ms=0.235 admission_ms=0.033 queue_wait_ms=0.105 tokenize_ms=0.007 prime_wait_ms=2.238 prime_ms=3317.490 decode_wait_ms=0.229 sse_handoff_ms=na request_parse_end_ms=0.235 admission_end_ms=0.268 tokenize_start_ms=0.373 tokenize_end_ms=0.380 prime_start_ms=2.618 prime_end_ms=3320.108 first_decode_ms=3320.337 first_sse_byte_ms=na total_ms=3320.337
+turn 7: [prefix-cache] hit: 11750 of 11900 prompt tokens from cache (model gate)
+turn 7: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11900 cached=11750 lcp=11750 active=1 wave=1 placement=single-or-non-pp2
+turn 7: [prefix-cache] source lease released after restore fence (entry 11750 tokens, model gate)
+turn 7: [primeseg] TOKENWISE prompt token at fed=11750 (bound_rem=None q=150 budget=8) — W1 two-programs door, NOT the prime path
+turn 7: [primeseg] TOKENWISE x150 prompt tokens (collapsed; first and last kept)
+turn 7: [primeseg] TOKENWISE prompt token at fed=11899 (bound_rem=None q=1 budget=8) — W1 two-programs door, NOT the prime path
+turn 7: [prefix-cache] evict (snapshot preflight, LRU): 11600 tokens, 501.4MB (model gate, ns "grow")
+turn 7: [prefix-cache] insert (seed): 11900 tokens, 510.3MB (resident 1016.1MB / 1074MB, model gate, ns "grow")
+turn 7: [ttft] id=cmpl-e485284e0d94dcb87904f0b441011f35 model="gate" path="/v1/completions" prompt_tokens=11900 outcome=ended_without_sse request_parse_ms=0.246 admission_ms=0.033 queue_wait_ms=0.145 tokenize_ms=0.005 prime_wait_ms=2.258 prime_ms=3323.128 decode_wait_ms=0.233 sse_handoff_ms=na request_parse_end_ms=0.246 admission_end_ms=0.279 tokenize_start_ms=0.424 tokenize_end_ms=0.429 prime_start_ms=2.687 prime_end_ms=3325.815 first_decode_ms=3326.048 first_sse_byte_ms=na total_ms=3326.048
+turn 8: [prefix-cache] hit: 11900 of 12050 prompt tokens from cache (model gate)
+turn 8: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=12050 cached=11900 lcp=11900 active=1 wave=1 placement=single-or-non-pp2
+turn 8: [prefix-cache] source lease released after restore fence (entry 11900 tokens, model gate)
+turn 8: [primeseg] TOKENWISE prompt token at fed=11900 (bound_rem=None q=150 budget=8) — W1 two-programs door, NOT the prime path
+turn 8: [primeseg] TOKENWISE x150 prompt tokens (collapsed; first and last kept)
+turn 8: [primeseg] TOKENWISE prompt token at fed=12049 (bound_rem=None q=1 budget=8) — W1 two-programs door, NOT the prime path
+turn 8: [prefix-cache] evict (snapshot preflight, LRU): 11750 tokens, 505.8MB (model gate, ns "grow")
+turn 8: [prefix-cache] insert (seed): 12050 tokens, 514.7MB (resident 1025.0MB / 1074MB, model gate, ns "grow")
+turn 8: [ttft] id=cmpl-d1923b73d2adb7e08c2a9506bfc166b2 model="gate" path="/v1/completions" prompt_tokens=12050 outcome=ended_without_sse request_parse_ms=0.241 admission_ms=0.034 queue_wait_ms=0.148 tokenize_ms=0.005 prime_wait_ms=2.313 prime_ms=3330.572 decode_wait_ms=0.230 sse_handoff_ms=na request_parse_end_ms=0.241 admission_end_ms=0.275 tokenize_start_ms=0.423 tokenize_end_ms=0.428 prime_start_ms=2.741 prime_end_ms=3333.313 first_decode_ms=3333.543 first_sse_byte_ms=na total_ms=3333.543
+turn 9: [prefix-cache] hit: 12050 of 12200 prompt tokens from cache (model gate)
+turn 9: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=12200 cached=12050 lcp=12050 active=1 wave=1 placement=single-or-non-pp2
+turn 9: [prefix-cache] source lease released after restore fence (entry 12050 tokens, model gate)
+turn 9: [primeseg] TOKENWISE prompt token at fed=12050 (bound_rem=None q=150 budget=8) — W1 two-programs door, NOT the prime path
+turn 9: [primeseg] TOKENWISE x150 prompt tokens (collapsed; first and last kept)
+turn 9: [primeseg] TOKENWISE prompt token at fed=12199 (bound_rem=None q=1 budget=8) — W1 two-programs door, NOT the prime path
+turn 9: [prefix-cache] evict (snapshot preflight, LRU): 11900 tokens, 510.3MB (model gate, ns "grow")
+turn 9: [prefix-cache] insert (seed): 12200 tokens, 519.2MB (resident 1033.9MB / 1074MB, model gate, ns "grow")
+turn 9: [ttft] id=cmpl-88bdd2f19d27d38e6641fb0da0ca9c80 model="gate" path="/v1/completions" prompt_tokens=12200 outcome=ended_without_sse request_parse_ms=0.249 admission_ms=0.034 queue_wait_ms=0.116 tokenize_ms=0.004 prime_wait_ms=2.325 prime_ms=3331.354 decode_wait_ms=0.230 sse_handoff_ms=na request_parse_end_ms=0.249 admission_end_ms=0.283 tokenize_start_ms=0.399 tokenize_end_ms=0.403 prime_start_ms=2.728 prime_end_ms=3334.082 first_decode_ms=3334.312 first_sse_byte_ms=na total_ms=3334.312
+turn 10: [prefix-cache] hit: 12200 of 12350 prompt tokens from cache (model gate)
+turn 10: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=12350 cached=12200 lcp=12200 active=1 wave=1 placement=single-or-non-pp2
+turn 10: [prefix-cache] source lease released after restore fence (entry 12200 tokens, model gate)
+turn 10: [primeseg] TOKENWISE prompt token at fed=12200 (bound_rem=None q=150 budget=8) — W1 two-programs door, NOT the prime path
+turn 10: [primeseg] TOKENWISE x150 prompt tokens (collapsed; first and last kept)
+turn 10: [primeseg] TOKENWISE prompt token at fed=12349 (bound_rem=None q=1 budget=8) — W1 two-programs door, NOT the prime path
+turn 10: [prefix-cache] evict (snapshot preflight, LRU): 12050 tokens, 514.7MB (model gate, ns "grow")
+turn 10: [prefix-cache] insert (seed): 12350 tokens, 523.6MB (resident 1042.8MB / 1074MB, model gate, ns "grow")
+turn 10: [ttft] id=cmpl-3b16cfd68afa7c9cb57c12bcf9360d5d model="gate" path="/v1/completions" prompt_tokens=12350 outcome=ended_without_sse request_parse_ms=0.386 admission_ms=0.033 queue_wait_ms=0.130 tokenize_ms=0.006 prime_wait_ms=2.324 prime_ms=3332.759 decode_wait_ms=0.230 sse_handoff_ms=na request_parse_end_ms=0.386 admission_end_ms=0.419 tokenize_start_ms=0.549 tokenize_end_ms=0.555 prime_start_ms=2.879 prime_end_ms=3335.638 first_decode_ms=3335.868 first_sse_byte_ms=na total_ms=3335.868
+| turn | prompt | cached | suffix | completion | finish | sha[:16] | cold completion | cold finish | cold sha[:16] | == cold | first diff char | restored text | cold text |
+| ---: | ---: | ---: | ---: | ---: | --- | --- | ---: | --- | --- | --- | ---: | --- | --- |
+| 1 | 11000 | 0 | 11000 | 8 | length | 9745f43fe07640e1 | - | - | - | - | - | "ClickListenerWORD announced agreedrie earn_link.array" | - |
+| 2 | 11150 | 11000 | 150 | 8 | length | 10d20bd924836441 | - | - | - | - | - | "able_\t\t\"\t\t\"" | - |
+| 3 | 11300 | 11150 | 150 | 8 | length | 24a97a2867768b2d | - | - | - | - | - | "\t\t\"\t\t\"\t\t" | - |
+| 4 | 11450 | 11300 | 150 | 4 | stop | 876c0bf0f375834e | - | - | - | - | - | "ly.\n" | - |
+| 5 | 11600 | 11450 | 150 | 4 | stop | 7abc2552932a6a15 | - | - | - | - | - | " \r\n\n\n" | - |
+| 6 | 11750 | 11600 | 150 | 8 | length | 24a97a2867768b2d | - | - | - | - | - | "\t\t\"\t\t\"\t\t" | - |
+| 7 | 11900 | 11750 | 150 | 8 | length | 22f023976ebc22fd | - | - | - | - | - | "_\t\t\"\t\t\"\t" | - |
+| 8 | 12050 | 11900 | 150 | 8 | length | 01062972f3feb195 | - | - | - | - | - | "uate_\t\t\"\t\t\"" | - |
+| 9 | 12200 | 12050 | 150 | 8 | length | 22f023976ebc22fd | - | - | - | - | - | "_\t\t\"\t\t\"\t" | - |
+| 10 | 12350 | 12200 | 150 | 3 | stop | 4415b7e361fc6f6b | 3 | stop | 4415b7e361fc6f6b | yes | - | "_\n" | "_\n" |
+RESTORE-VS-COLD: arm=tokenwise turns=10 compared=1 identical=1/1 first_divergent_turn=none -> IDENTICAL
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "python3",
+    "research/spill-b-20260919/day17-probe.py",
+    "--external-lock",
+    "3",
+    "--model",
+    "/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "--bin",
+    "/home/avifenesh/projects/wt-spill-b/target/release/memra-server",
+    "--out",
+    "/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day17/probe-d-tokenwise/cell",
+    "--gpu-lock",
+    "/tmp/memra-5090.lock",
+    "--label",
+    "tokenwise",
+    "--turns",
+    "10",
+    "--start-tokens",
+    "11000",
+    "--grow-tokens",
+    "150",
+    "--cold-turns",
+    "10",
+    "--no-cohort",
+    "--request-timeout-s",
+    "900",
+    "--env",
+    "MEMRA_PREFILL_TICK=8",
+    "--env",
+    "MEMRA_DEBUG_PRIMESEG=1",
+    "--env",
+    "MEMRA_TTFT_TRACE=1"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "[N/A]",
+      "power.max_limit": "175.00 W"
+    }
+  ],
+  "started_monotonic_ns": 92637066815312,
+  "ended_monotonic_ns": 93200783776160,
+  "started_utc": "2026-09-21T11:00:17.117274+00:00",
+  "ended_utc": "2026-09-21T11:09:40.834235+00:00",
+  "elapsed_seconds": 563.716960848,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 16212,
+    "sha256": "3bb9412060cd9c3e2b86ada6a961d85cc88f534615631816c0fc255f159730bc"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 237776,
+      "sha256": "27847c26e782b3949dffe439bce3957cee3ad6aa176dc2a041eb3734db41bfbd"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 176,
+    "sha256": "dcb17b61c672c6c1abd4bc4e9c6a9c7ff69efc7ddf1d5cd8f9847e59430d9842"
+  }
+}
