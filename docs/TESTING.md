@@ -92,6 +92,14 @@ parallel threads race each other (measured flake, `research/local-ci-one-card-20
 Pair-only tests announce `SKIP-PAIR` on a rig with fewer than two CUDA devices and run
 unchanged on the pair box.
 
+The prime continuation gate (`qwen-a4-continuation-gate`, in tier 2 after prime-gate on the
+9B NVFP4 GDN hybrid) primes a 9,296-token repo-text prompt once and as head + tail at the
+grid-aligned tails 16, 48 and 80, and requires the tail call's logits to be bitwise the one-call
+prime's. The 16-row tail is the shape memra#427 found non-bitwise: `matmul`/`matmul_pre` sent
+`m = 16` through the batched decode/verify mmvq tier (`2..=16`) while every longer prime rode
+the generic path; the tier now ends at `PRIME_MIN_T - 1` outside the verify-exact scope.
+`MEMRA_CI_CONTGATE=0` skips, `MEMRA_CI_CONT_MODEL` retargets.
+
 The docs-fit owner call is closed: tier 2 now runs the full `run-spec` K=1..8 sweep and requires
 eight per-K PASS lines plus the final `SELF-CONSISTENCY PASS` marker. The raw run is logged before
 parsing; a red quotes the failing K and `FIRST DIVERGENCE` index.

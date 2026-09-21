@@ -4758,6 +4758,25 @@ impl Engine {
         self.verify_exact.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Upper bound of the batched small-`m` matvec tier in the general-purpose entries
+    /// (`matmul`, `matmul_pre`). That tier is the decode/verify class (the `_b2/_b4/_b8/_b16`
+    /// mmvq twins). Outside the verify-exact scope it stops one row short of `PRIME_MIN_T`: a
+    /// prime segment of exactly `PRIME_MIN_T` rows is a prefill call and must ride the same
+    /// program as every longer prime, or a restored suffix whose final segment is 16 rows is not
+    /// bitwise with the one-call prime (memra#427: on qwen35-9b NVFP4 the 16-row tail differed
+    /// while 48 and 80 matched; `MEMRA_MMVQ=0` and `MEMRA_FAST=0` made it match; the tensors
+    /// that reach the tier at m=16 are the small-`out_f` ones under the GEMM's `out_f >= 128`
+    /// floor). Inside the verify-exact scope the tier keeps its receipted `2..=16` width: the
+    /// t>=16 verify walk is the decode-exact batched class by law. `matmul_decode_exact*` keep
+    /// their own `2..=16` tiers: they ARE that class.
+    pub(crate) fn small_m_tier_max(&self) -> usize {
+        if self.verify_exact_on() {
+            16
+        } else {
+            crate::hybrid_forward::PRIME_MIN_T - 1
+        }
+    }
+
     /// RAII scope over `verify_exact`: sets the flag to `on` now and restores the
     /// PREVIOUS value on drop — unwind, early `return`, and every `?` exit included.
     /// This is the required form for any scope an error can leave (see
@@ -18040,7 +18059,7 @@ impl Engine {
         // a pure function of (dtype, env) equal to the m=1 class — batched iff MMVQ. Without MMVQ
         // the verify falls to the per-m grid.y=m dp4a path below (each column = the exact m=1
         // dp4a program). MEMRA_MMVQ=1 (the daily config) is dispatch-unchanged.
-        if (2..=16).contains(&m)
+        if (2..=self.small_m_tier_max()).contains(&m)
             && fast
             && std::env::var("MEMRA_NO_BATCHED").is_err()
             && (m <= 4 || Self::b8_enabled())
@@ -18429,7 +18448,9 @@ impl Engine {
         // DECODE-PARITY GATE (2026-07-07): batched iff mmvq_supports — see matmul's parity note.
         // Without MEMRA_MMVQ, m=1 decode rides dp4a (the arm below at m=1); the verify must ride
         // the SAME class per column (grid.y=m dp4a = the exact m=1 dp4a program per column).
-        if (2..=16).contains(&m) && self.batched_supports(qtype) && self.mmvq_supports(qtype)
+        if (2..=self.small_m_tier_max()).contains(&m)
+            && self.batched_supports(qtype)
+            && self.mmvq_supports(qtype)
             && std::env::var("MEMRA_NO_BATCHED").is_err()
             && (m <= 4 || Self::b8_enabled())
             // b16 tier: every class routed here now has base + _rp b16 kernels (Q4_0/Q6_K
