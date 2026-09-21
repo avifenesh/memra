@@ -223,6 +223,21 @@ refused on the merged tree while passing in the lane worktrees (day 11's had bee
 now tracked, and `.gitignore` gains `!research/**/build/` so a lane's build receipt is never build output. Lanes: no
 `git add -f`; the rule now says what the repo means.
 
+## integ11 (`lane/spill-integ11-20260921`): C day 13
+Batteries (`integration-day12/integ11-cpu-battery/`): fmt; tier+kv+gguf 619 tests; memra-server 740 tests; clippy
+`-D warnings`; check-flags; publish census; docs registry census; collector pytest 85; `verify-day13.py` `DAY13
+REPLAY: PASS` (after the build receipt was tracked); perf board; diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh`
+with the door unset (`integ11-serve-smoke-5090/`): `serve-smoke: 0 failed`. Full `tools/local-ci.sh --perf`
+(`integ11-local-ci-perf/`): correctness GREEN, serve-smoke 0 failed, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 3
+pair-only skips; then the perf stage hit a contended window: another session's Python process (1390 MiB) joined the
+card mid-cell, the battery waited its 600 s, latched the co-resident as persistent and recorded both cells with
+`window_clean=false`: `26b-plain-short: 189.60 tok/s [FAIL] (-9.15% vs median 208.70)`, `qwen9b-plain-short: 125.73
+tok/s [FAIL] (-9.47% vs median 138.88)`, `perf stage: 2 fail`, rc=1. Read per the battery's own tripwire text: a
+uniform drop across cells with correctness green in a contended window is machine state, not the diff; the cells run
+`run-gen`, which no file in this PR touches (server door, `memra-kv` helper, tier bank identity). Rows appended
+(`window_clean:false`), so the freshness gate is satisfied honestly; a clean-window rerun of the two cells is owed when
+the card is free and is noted, not claimed. The co-resident was not touched (another session's lane).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
