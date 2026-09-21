@@ -1,5 +1,5 @@
 // Compile engine .cu kernels to the selected CUDA fatbin (same pattern as memra-probe).
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// `nvcc --version`'s reported release, as `(major, minor)`. `None` when the binary cannot
@@ -196,6 +196,11 @@ fn main() {
     // sat in resolve_nvcc, which the docs branch never reaches.
     println!("cargo:rerun-if-env-changed=DOCS_RS");
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    // Boot-time MEMRA_* environment audit (memra #483): the legal name set and the retired-door
+    // set are generated from docs/FLAGS.md, the one registry the flags census already enforces,
+    // so a deleted door gets a real ending (a refusal that names its ledger) instead of parsing
+    // into nothing. Generated before the docs branch: the audit module is part of the rlib.
+    generate_env_registry(&out);
 
     // docs.rs builders have no nvcc and no CUDA libs: emit empty placeholder fatbins so
     // the include_bytes!/env! consts compile, skip every nvcc/ar/link step. The resulting
@@ -835,4 +840,123 @@ fn main() {
         // Let the smoke-test bin gate compile out cleanly when CUTLASS is not built.
         println!("cargo:rustc-cfg=memra_cutlass");
     }
+}
+
+/// Parse docs/FLAGS.md into the boot audit's registry (`env_audit.rs` includes the output).
+///
+/// Mirrors the flags census (`tools/check-flags.sh`): a `MEMRA_...` token ANYWHERE outside the
+/// `## Removed ...` ledgers documents a name (a trailing `*` documents a prefix family), because
+/// that is what the census accepts today and the audit must not refuse a name the census passed.
+/// Definitions are stricter: the first cell of a live table row (`| \`MEMRA_X\` | ...`).
+/// Retired names: the first `MEMRA_...` token of each definition line (`- ` bullet or `| ` row)
+/// under a `## Removed ...` heading, minus anything that still has a live DEFINITION (prose
+/// mentions in live rows do not un-retire a door; ledgers and rows both talk about neighbours).
+/// A retired name that a prose wildcard would also cover stays retired: the audit checks the
+/// retired set first.
+fn generate_env_registry(out: &Path) {
+    let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let flags = manifest.join("../../docs/FLAGS.md");
+    println!("cargo:rerun-if-changed={}", flags.display());
+    let text = std::fs::read_to_string(&flags)
+        .unwrap_or_else(|e| panic!("env audit registry: cannot read {}: {e}", flags.display()));
+    fn tokens(cell: &str) -> Vec<(String, bool)> {
+        let bytes = cell.as_bytes();
+        let mut out = Vec::new();
+        let mut i = 0;
+        while let Some(rel) = cell[i..].find("MEMRA_") {
+            let start = i + rel;
+            let mut end = start;
+            while end < bytes.len()
+                && (bytes[end].is_ascii_uppercase()
+                    || bytes[end].is_ascii_digit()
+                    || bytes[end] == b'_')
+            {
+                end += 1;
+            }
+            let prefix = end < bytes.len() && bytes[end] == b'*';
+            let stem = cell[start..end].trim_end_matches('_');
+            if stem.len() > "MEMRA".len() {
+                out.push((
+                    if prefix {
+                        format!("{stem}_")
+                    } else {
+                        stem.to_string()
+                    },
+                    prefix,
+                ));
+            }
+            i = end.max(start + 1);
+        }
+        out
+    }
+    let mut defs = std::collections::BTreeSet::new();
+    let mut legal = std::collections::BTreeSet::new();
+    let mut prefixes = std::collections::BTreeSet::new();
+    let mut ledger: std::collections::BTreeMap<String, String> = Default::default();
+    let mut heading = String::new();
+    let mut in_removed = false;
+    for line in text.lines() {
+        if let Some(h) = line.strip_prefix("## ") {
+            heading = h.trim().to_string();
+            in_removed = heading.starts_with("Removed");
+            continue;
+        }
+        if in_removed {
+            if line.starts_with("- ") || line.starts_with("| ") {
+                let body = line.trim_start_matches(['-', '|', ' ']);
+                if let Some((name, false)) = tokens(body).into_iter().next() {
+                    ledger.entry(name).or_insert_with(|| heading.clone());
+                }
+            }
+            continue;
+        }
+        for (name, prefix) in tokens(line) {
+            if prefix {
+                prefixes.insert(name);
+            } else {
+                legal.insert(name);
+            }
+        }
+        if let Some(rest) = line.strip_prefix("| ") {
+            let first_cell = rest.split('|').next().unwrap_or("");
+            for (name, prefix) in tokens(first_cell) {
+                if !prefix {
+                    defs.insert(name);
+                }
+            }
+        }
+    }
+    let retired: Vec<(String, String)> = ledger
+        .into_iter()
+        .filter(|(n, _)| !defs.contains(n))
+        .collect();
+    // a retired door is not a legal name, whatever prose still says about it
+    for (n, _) in &retired {
+        legal.remove(n);
+    }
+    assert!(
+        legal.len() > 200,
+        "env audit registry: only {} legal names parsed from FLAGS.md",
+        legal.len()
+    );
+    assert!(
+        !retired.is_empty(),
+        "env audit registry: no retired doors parsed from FLAGS.md"
+    );
+    let mut src = String::new();
+    src.push_str("// generated by build.rs from docs/FLAGS.md; do not edit\n");
+    src.push_str("pub const LEGAL_NAMES: &[&str] = &[\n");
+    for n in &legal {
+        src.push_str(&format!("    {n:?},\n"));
+    }
+    src.push_str("];\npub const LEGAL_PREFIXES: &[&str] = &[\n");
+    for p in &prefixes {
+        src.push_str(&format!("    {p:?},\n"));
+    }
+    src.push_str("];\npub const RETIRED: &[(&str, &str)] = &[\n");
+    for (n, h) in &retired {
+        src.push_str(&format!("    ({n:?}, {h:?}),\n"));
+    }
+    src.push_str("];\n");
+    std::fs::write(out.join("memra_env_registry.rs"), src).expect("write env registry");
 }
