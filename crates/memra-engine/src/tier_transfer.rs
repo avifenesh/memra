@@ -1421,7 +1421,15 @@ mod tests {
                     .result()
                     .unwrap()
             };
-            assert_eq!(flags, kind.host_alloc_flags(), "{kind:?}");
+            // The driver's record carries the arm's bit; on a UVA platform it also reports
+            // `CU_MEMHOSTALLOC_DEVICEMAP` (every pinned allocation is device-mapped), so the
+            // write-combined arm reads back 6 and the cached arm 2 (day 13, first sitting).
+            assert_eq!(
+                flags & sys::CU_MEMHOSTALLOC_WRITECOMBINED,
+                kind.host_alloc_flags(),
+                "{kind:?}: driver flags {flags}"
+            );
+            assert_eq!(flags & sys::CU_MEMHOSTALLOC_PORTABLE, 0, "{kind:?}");
             lease.write(&pattern).unwrap();
             assert_eq!(lease.bytes().unwrap(), pattern.as_slice());
             assert_eq!(checksum(lease.bytes().unwrap()), checksum(&pattern));

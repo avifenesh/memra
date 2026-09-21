@@ -977,9 +977,16 @@ fn pinned_ab(bytes: usize, pairs: usize) {
             .iter()
             .flatten()
             .all(|(x, y)| x.byte_exact && y.byte_exact);
-    let flags_ok = samples.iter().flatten().all(|(x, y)| {
-        x.driver_flags == x.arm.host_alloc_flags() && y.driver_flags == y.arm.host_alloc_flags()
-    });
+    // The driver's record carries the arm's bit and, on a UVA platform, `DEVICEMAP` for every
+    // pinned allocation (6 for write-combined, 2 for cached on the target card, first sitting);
+    // the raw value stays in every line, the check is the write-combined bit.
+    let honoured = |s: &PinnedSample| {
+        s.driver_flags & sys::CU_MEMHOSTALLOC_WRITECOMBINED == s.arm.host_alloc_flags()
+    };
+    let flags_ok = samples
+        .iter()
+        .flatten()
+        .all(|(x, y)| honoured(x) && honoured(y));
     let per_pair = |f: Phase, cmp: fn(f64, f64) -> bool| -> (usize, usize) {
         let mut hits = 0;
         let mut total = 0;
