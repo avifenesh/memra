@@ -1,0 +1,4 @@
+skip-census: running: cargo test -p memra-tier -p memra-kv -p memra-cli --offline --no-fail-fast -- --test-threads=1 --nocapture
+skip-census: output banked at /tmp/spill-d-day13/baseline-cargo-raw.log
+skip-census: 325 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 14 binaries
+rc=0 elapsed=22s

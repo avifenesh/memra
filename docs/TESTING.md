@@ -893,7 +893,8 @@ the publish census refuses internal dev-deps. These are **CPU execution gates, n
 qualification**. Run the whole pair:
 
 ```sh
-cargo test -p memra-tier -p memra-kv --offline --no-fail-fast
+tools/portable-suites.sh          # cargo test -p memra-tier -p memra-kv -p memra-cli --offline --no-fail-fast, through the skip census
+tools/test_portable_suites.sh     # its teeth: planted tier/KV/CLI failures and an undeclared SKIP must red the wrapper
 cargo check -p memra-tier -p memra-kv --offline --all-targets
 cargo check -p memra-tier -p memra-kv --offline --all-targets --target x86_64-unknown-linux-gnu
 cargo clippy -p memra-tier -p memra-kv --offline --all-targets --no-deps -- -D warnings
@@ -908,6 +909,25 @@ git diff --check
 The tier suite covers contracts, storage, banks/rows, directed peer capacity and
 placement; KV covers the hierarchy, materializers and single-governor scheduling; the
 pytest line is the collector's own suite (`tools/tier-battery.py`, `tier-envelope.py`).
+
+**Standing execution (memra #545, 2026-09-21).** Until that day no hosted or local gate ran
+these suites: `ci.yml` compiled them (build, clippy) and executed other crates; `local-ci.sh`
+ran server, engine and gguf. `tools/portable-suites.sh` is now the one wrapper both run
+(`ci.yml` job `portable-suites`, `local-ci.sh`'s CPU chain): the three crates, no `--lib`
+(memra-tier's six integration suites and its four compile-fail doctests are most of the tests),
+`--no-fail-fast` (every binary runs, so a red names every failing suite), `--offline` against
+the committed lockfile, through `tools/skip-census.py` (`verify` over the three crates, then
+`run` at budget 0 and floor 300; 325 passed across 14 binaries on 2026-09-21, 22 s warm). The
+raw cargo output is banked at `target/portable-suites.log`. Its teeth are
+`tools/test_portable_suites.sh`, run by the same CI job: a copy of the tree with a planted
+failing retirement/ownership test in `tests/contracts`, a planted KV test and a planted
+onboarding-receipt test must red the wrapper with all three targets named (arm 1); a planted
+`#[test]` that prints `SKIP` and returns must red the static census before cargo runs (arm 2);
+the wiring is asserted (arm 3). The copy builds into `target/portable-suites-teeth`, never the
+tree's own target dir: cargo's metadata hash for a workspace member excludes its path and
+`cp -a` keeps mtimes, so a shared target dir let the copy's planted `memra_cli` test binary be
+reused by the next real run (found on the fixture's first run; the fix is the separate dir).
+A green here is CPU execution of these suites, never GPU qualification.
 Conformance schedules drive explicit completion/cancellation/retirement, original
 item indices, namespace and epoch refusal, opaque bytes, accounting and borrowed
 release. v1.2 adds owner/fence identities, logical-vs-framed completion bytes,
@@ -1276,6 +1296,24 @@ python3 tools/tier-battery.py --rig rtx5090|pro-single|pro-pair|pro-four --timeo
   lane retries on a bounded cadence and keeps every refused attempt. The default `--rig` is
   `pro-pair`; always state the rig. `tools/tier-rig-bootstrap.sh --rig rtx5090|pro-single`
   records the same lock per rig, and `--dry-run` there is not a rig acceptance result.
+- Private lock path under test (lead ruling 12, 2026-09-21): the collector's own suite
+  (`crates/memra-tier/tests/battery/`) never takes a real rig lock, so a serving job on the rig
+  cannot redden a CPU suite (the integ10 battery's first attempt lost 20 tests to a serve-smoke
+  holding `/tmp/memra-5090.lock`; with both paths held, 24 of 85 tests failed before this
+  change and 0 of 86 after: `research/spill-d-20260919/day13/`). The seam is
+  `MEMRA_TIER_BATTERY_LOCK_DIR=<dir>`, honoured by `tools/tier-battery.py` (`lock_table`) and
+  `tools/tier-rig-bootstrap.sh`: the two canonical NAMES re-rooted under the directory
+  (`<dir>/memra-5090.lock`, `<dir>/memra-gpu.lock`); the rig->name table, the refusal on
+  contention and the receipt shape are unchanged, and a receipt written under the seam records
+  the private path, so it refuses to validate against the canonical table in a process without
+  the seam (`test_collector.py`, `test_private_lock_seam_receipts_never_validate_against_the_canonical_table`).
+  Every lock-taking test class mixes in `tests/battery/private_lock.py` (`PrivateLockMixin`:
+  a fresh directory per test, exported to children and patched into the loaded module's
+  `LOCKS`); tests that validate COMMITTED receipts run under `canonical_locks()`. Tools that pin
+  the two names by literal (`tools/tier-lock-proof.py`, the two legacy `kv-host-spill-*-gate.sh`)
+  have no seam: `test_external_lock.py` drives fixture copies with the literal substituted and
+  asserts the tracked literals. It is a test seam only: unset in every production launcher, and
+  the ci.yml `portable-suites` job runs the whole suite with both real paths held.
 - `--external-lock`: legacy shell gates run under the collector's inherited lock, never
   wrapped twice. The collector passes its lock FD to the child, replacing exactly one
   `@COLLECTOR_LOCK_FD@` argument, and writes `lock.json` with the device/inode proof; it is
