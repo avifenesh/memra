@@ -26,6 +26,11 @@
 #                                        skip. Twelve is therefore the count of model-backed
 #                                        assertions CI is blind to, stated rather than hidden.
 #                                        If it grows, CI reds and someone looks.
+#   tools/portable-suites.sh    budget 0 for memra-tier, memra-kv and memra-cli (ci.yml job
+#                                        portable-suites and tools/local-ci.sh, memra #545): none
+#                                        of the three crates has an artifact-gated test, and the
+#                                        wrapper's `verify` over them keeps it that way; a new one
+#                                        must be declared here and budgeted there, out loud.
 memra-gguf	config::minimax_tests::parse_minimax_m3_vl	crates/memra-gguf/src/config.rs:2570	SKIP parse_minimax_m3_vl: no model at {MINIMAX_DIR}
 memra-gguf	config::minimax_tests::minimax_name_mapping_against_index	crates/memra-gguf/src/config.rs:2609	SKIP minimax_name_mapping_against_index: no model at {MINIMAX_DIR}
 memra-gguf	dequant::tests::iq3s_vs_ggml_oracle	crates/memra-gguf/src/dequant.rs:711	SKIP: /tmp/iq3s_raw.bin missing
