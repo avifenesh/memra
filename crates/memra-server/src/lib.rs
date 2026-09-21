@@ -55,6 +55,7 @@
 ///
 /// `pub`: the key file format, lifecycle helpers, and single-key path are the API a
 /// deployment-owned binary provisions against (engine-billing-extraction-20260829).
+pub mod argv;
 pub mod auth;
 pub(crate) mod constrained;
 /// Dead-darklane background jobs (lane/darklane-training, 2026-08-07): valley detection over
@@ -5621,6 +5622,15 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
     // Key lifecycle CLI (lane/api-keys): `--gen-key <tenant>` / `--revoke-key <prefix>`
     // manage the keyring and exit — no engine, no GPU, no model load.
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // memra#617: argv is admitted FIRST, before the version print, before any environment
+    // read and before any device work. An unknown token used to be ignored, so a misspelled
+    // or retired flag on a launcher booted a server that said nothing about it; now it is a
+    // refusal that names the token (`argv::validate`). Exit 2 is the usage class
+    // `auth::run_cli` already uses.
+    if let Err(message) = argv::validate(&args) {
+        eprintln!("[server] FATAL: {message}");
+        std::process::exit(2);
+    }
     // `--version` prints the build identity and exits: no engine, no GPU, no model load. So
     // the fingerprint of a DEPLOYED artifact is checkable on any box, and in the release
     // container that produced it, without touching a serving stack. That check is the one
