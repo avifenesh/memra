@@ -35,13 +35,13 @@
 #                       empty:
 #                         base: `demote evaporated at the tenant share cap before the D2H copy`
 #                         fix:  `evict (tenant share)` of acme's oldest (E_A), then `demote:` E_C
-#   r7 beta  P_D + EXT  beta's E_D promotes in BOTH arms (cached_tokens == E_D's length, which is
-#                       the grid-aligned capture of r1's prompt_tokens since memra#602, day 18):
+#   r7 beta  P_D + EXT  beta's E_D promotes in BOTH arms (cached_tokens == r1 prompt_tokens: every
+#                       entry here is a SPEC publication at the prompt end, `insert (spec-boundary)`,
+#                       which memra#602's grid-aligned plain seed does not move; day 18 measured it):
 #                       acme's reclaim never touched beta's row. The promote insert evicts E_E and
 #                       the boundary insert evicts E_F: two more cap events (base evaporates both,
 #                       fix reclaims E_B then E_C and demotes both).
-#   r8 acme  P_F + EXT  fix: E_F promotes (cached_tokens == E_F's length, the grid-aligned capture
-#                       of r6's prompt_tokens), the reclaimed
+#   r8 acme  P_F + EXT  fix: E_F promotes (cached_tokens == r6 prompt_tokens), the reclaimed
 #                       admission is a real resident entry; base: cold (cached_tokens == 0), the
 #                       cost #384 exists to remove. Both arms 200.
 #   /metrics            base: prefix_host_tenant_rejects >= 1 and no reclaims; fix: rejects == 0,
@@ -262,27 +262,16 @@ chk "acme's first two demotes landed (r3, r4)" python3 -c "
 import re, sys
 n = sum(1 for l in open('$LOG') if l.startswith('[prefix-host] demote: ') and 't:acme' in l)
 sys.exit(0 if n >= 2 else 1)"
-# THE CAPTURE LAW (memra#602, fixed 2026-09-21): the prompt-end seed lands on the GDN prime grid,
-# so E_D has capture_len(r1 prompt_tokens) tokens (the largest multiple of 32 not exceeding the
-# prompt end that leaves at least PRIME_MIN_T=16 prompt tokens behind it, never under the 64-token
-# entry floor), and the promote at r7 restores exactly that many. Same helper as the twin gate's.
-capture_len() { # $1 prompt_tokens -> the published entry length, or 0 when the server refuses
-    python3 -c "
-p = int('$1'); grid, floor, minimum = 32, 16, 64
-if p % grid == 0:
-    print(p)
-else:
-    b = p // grid * grid
-    while b >= grid and p - b < floor:
-        b -= grid
-    print(b if b >= minimum else 0)"
-}
-chk "beta's entry promotes at r7 in this arm: acme's cap did not touch beta's row (cached_tokens == the grid-aligned capture of r1)" python3 -c "
+# ENTRY LENGTHS HERE ARE THE SPEC PATH'S (measured 2026-09-21, memra#602 day 18): the server boots
+# with spec at its default, every leader is a spec session, and its entry is the spec publication at
+# the prompt end (`insert (spec-boundary): 83 tokens` for an 83-token prompt), so a promote restores
+# the whole prompt_tokens of the leader. The grid-aligned PLAIN seed (`seed_capture_boundary`) does
+# not run here; when the spec capture moves onto the grid these two equalities move with it.
+chk "beta's entry promotes at r7 in this arm: acme's cap did not touch beta's row" python3 -c "
 import json, sys
 r1 = json.load(open('$EV/r1.json'))['usage']['prompt_tokens']
 r7 = json.load(open('$EV/r7.json'))['usage']['prompt_tokens_details']['cached_tokens']
-want = $(capture_len "$(python3 -c "import json; print(json.load(open('$EV/r1.json'))['usage']['prompt_tokens'])")")
-sys.exit(0 if r7 == want and want > 0 else 1)"
+sys.exit(0 if r7 == r1 and r1 > 0 else 1)"
 chk "the r7 promote line names beta" present "\[prefix-host\] promote: .*t:beta" "$LOG"
 chk "no tenant-share eviction ever names beta" absent "evict \(tenant share\): .*t:beta" "$LOG"
 chk "every tenant-share eviction names acme, in both the row and the namespace" python3 -c "
@@ -313,12 +302,11 @@ for i, l in enumerate(lines):
     landed = [t for t in tail if t.startswith('[prefix-host] demote: ') and 't:acme' in t]
     ok &= bool(landed)
 sys.exit(0 if ok else 1)"
-    chk "fix: r8 promotes the reclaimed admission (cached_tokens == the grid-aligned capture of r6)" python3 -c "
+    chk "fix: r8 promotes the reclaimed admission (cached_tokens == r6 prompt_tokens)" python3 -c "
 import json, sys
 r6 = json.load(open('$EV/r6.json'))['usage']['prompt_tokens']
 r8 = json.load(open('$EV/r8.json'))['usage']['prompt_tokens_details']['cached_tokens']
-want = $(capture_len "$(python3 -c "import json; print(json.load(open('$EV/r6.json'))['usage']['prompt_tokens'])")")
-sys.exit(0 if r8 == want and want > 0 else 1)"
+sys.exit(0 if r8 == r6 and r6 > 0 else 1)"
     chk "fix: the r8 promote line names acme" present "\[prefix-host\] promote: .*t:acme" "$LOG"
     chk "fix: /metrics counts the reclaims and no rejects" jqpy "$EV/metrics.json" "r.get('prefix_host_tenant_reclaims', 0) >= 1 and r.get('prefix_host_tenant_rejects', 0) == 0"
     chk "fix: /metrics has no wasted reclaim (every reclaim's demotion inserted)" jqpy "$EV/metrics.json" "r.get('prefix_host_tenant_reclaims_wasted', 0) == 0"

@@ -2626,22 +2626,55 @@ darklanes):
 
 What changed because of it: **serve rounds every boundary it CHOOSES down to the grid**
 (`grid_align_boundary`, worker.rs — the plain/spec checkpoint stop, the prefix-cache
-LCP-split capture, the message-boundary seed capture; `MEMRA_PRIME_GRID_ALIGN=0` is the
-rollback seam), so the boundary-stopped prime, the checkpoint resume and the whole-entry
+LCP-split capture, the message-boundary seed capture; the `MEMRA_PRIME_GRID_ALIGN` seam was
+stripped 2026-09-05), so the boundary-stopped prime, the checkpoint resume and the whole-entry
 restore reproduce the cold monolithic bytes, at a cost of at most `gdn_chunk_size()-1`
 re-primed suffix tokens per resume. Gated in both directions: `primegrid` / `primegridc`
 (tools/prime-grid-gate.sh — aligned splits must be EXACT, off-grid divergence must be
 CONFINED to the split row with near-tie-only flips; canary coarsens the grid with
-`MEMRA_GDN_CHUNK=64` and must break). What this deliberately does NOT promise:
-cross-prime-path byte-identity is **not a valid gate** where the paths are not
-grid-equivalent — prompt-END seed entries (exact-repeat class, position unroundable by
-design) still serve extension hits through an off-grid suffix prime, and
+`MEMRA_GDN_CHUNK=64` and must break).
+
+**The prompt-end seed obeys the same law since 2026-09-21 (memra#602).** Until then the
+prompt-end seed (`insert (seed)`, the entry a growing `prompt_ids` conversation restores on its
+next turn) was the one capture left where the prompt ended, "unroundable by design", and its
+extension hits primed the suffix from an off-grid start: on the local RTX 5090 a twelve-turn
+chain of 11,000 + 150-id turns flipped a greedy near-tie at turn 10 (restored 12,200 + 150,
+`[primeseg] call start=12200 take=150 grid_off=8`; restored `"_\t\t\"\t\t\"\t"` versus
+cold `"_\n"`, generated token 2), the same prompt restored from on-grid entries was identical
+and from off-grid entries flipped, and under the sequential scan the chain was identical 12/12
+(`research/spill-b-20260919/DAY17.md`). The fix is at the capture, not at the prime
+(`seed_capture_boundary`, worker.rs): the seed publishes at the largest grid-aligned length
+not exceeding the prompt end that leaves at least `PRIME_MIN_T` prompt tokens behind it,
+through the prefill tick's boundary stop, and the remainder primes as one call from a grid
+start. Operator-visible consequences, stated plainly:
+
+- A published entry's length is `capture_len(P)` for a prompt of `P` tokens: `P` when `P` is a
+  multiple of `gdn_chunk_size()` (32), otherwise the largest multiple of 32 below `P` whose
+  remainder is at least 16 (a 1..15 remainder steps one grid unit further down). A hit against
+  it reports `cached_tokens == capture_len(P_previous)`, never `P_previous`: the bill and the
+  `/metrics` hit mass count what was restored. An exact re-send of an off-grid prompt is a hit
+  of `capture_len(P)` plus a suffix prime of 16..47 tokens from a grid start, not a whole-entry
+  restore.
+- A prompt between the 64-token entry floor and the floor plus 16 has no grid-aligned entry
+  above the floor and publishes nothing, loudly: `[prefix-cache] seed REFUSED (grid): ...`,
+  counted in `/metrics` `prefix_cache_seed_grid_refusals` (operator-only). A prime path that
+  does not stop on the armed boundary refuses the off-grid prompt-end state with the same line
+  rather than publishing it.
+- A cold session whose seed boundary lies inside the prompt primes alone (the concat prime
+  cannot honor a per-session stop, the same rule the LCP split has); the in-batch fanout is
+  unchanged (its participants never seed). The spec session's `capture_at` publication keeps
+  its prompt-end position and is the named follow-up (`prefix_fanout_groups` likewise takes
+  the raw in-batch LCP; both are inspection findings, not measured flips).
+
+Gates: `tools/prefix-newest-turn-fits-gate.py` (V5 identity and V6 grid are verdict clauses)
+and `tools/prefix-restore-identity-gate.py` (the five restore points), red on the pre-fix
+binary and green on the fix on the local RTX 5090, green on the fix on one RTX PRO 6000
+Blackwell (`research/spill-b-20260919/DAY18.md`). What the grid law still does NOT promise:
 verbatim-extension continuation resumes keep decode-computed rows whose arithmetic a cold
-prefill never reproduces (`primepath --hist` measures that arm: bounded logit
-perturbation, flips only at near-ties). Those paths carry the documented
-cached-hit-vs-fresh-prime near-tie contract above; the valid assertions everywhere are
-per-program determinism, grid-aligned byte-identity, and confinement + near-tie-only
-flips across programs.
+prefill never reproduces (`primepath --hist` measures that arm: bounded logit perturbation,
+flips only at near-ties). That path carries the documented cached-hit-vs-fresh-prime near-tie
+contract above; the valid assertions everywhere are per-program determinism, grid-aligned
+byte-identity, and confinement + near-tie-only flips across programs.
 
 
 ## Serving-contract guarantees, and the receipt for each

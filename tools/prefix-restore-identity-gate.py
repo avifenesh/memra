@@ -15,7 +15,8 @@ start. Owner law: one numeric program per request; a restored suffix produces th
 
 Serving shape, one card, two boots of the real `memra-server`, plain path (`MEMRA_SERVE_SPEC=0`),
 greedy `prompt_ids` requests, `max_tokens` 8, the twin gate's own id generators (so the target prompt
-is the day-16 chain's last turn byte for byte: `twin_ids(11000, 150, 12)[-1]`, 12,350 ids):
+is turn `--turns` of the day-16 chain byte for byte: `twin_ids(11000, 150, 10)[-1]`, the 12,350-id turn
+10 that flipped; the chain's turn 12, 12,650 ids, is `--turns 12`):
   1. cache OFF (`MEMRA_PREFIX_CACHE_MB=0`): the cold completion of the target prompt, text kept.
   2. cache ON (`--budget-mib`): for every restore point p, under its own `cache_salt` so no point can
      hit another's entry, a SEED request of `target[:p]` (cold; publishes the entry) and then a HIT
@@ -37,7 +38,7 @@ Verdict line:
 Exit 0 = PASS; 1 = a clause failed; 2 = REFUSED (lock, port, shape, an unserved request).
 
 usage: prefix-restore-identity-gate.py [--external-lock FD] --model GGUF --bin memra-server --out NEW_DIR \
-           [--port N] [--budget-mib 1024] [--turns 12] [--start-tokens 11000] [--grow-tokens 150] \
+           [--port N] [--budget-mib 1024] [--turns 10] [--start-tokens 11000] [--grow-tokens 150] \
            [--points 12288,12320,12200,12250,12300] [--grid 32] [--max-tokens 8]
 Lock: the canonical rig lock only (`/tmp/memra-gpu.lock` or `/tmp/memra-5090.lock`), held for the
 whole cell; `--external-lock FD` inherits the collector's FD (lead ruling 5) and is verified with
@@ -143,7 +144,7 @@ def main() -> None:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--port", type=int, default=18117)
     ap.add_argument("--budget-mib", type=int, default=1024)
-    ap.add_argument("--turns", type=int, default=12)
+    ap.add_argument("--turns", type=int, default=10, help="the chain turn whose prompt is the target (10 = the day-17 12,350-id near-tie)")
     ap.add_argument("--start-tokens", type=int, default=11000)
     ap.add_argument("--grow-tokens", type=int, default=150)
     ap.add_argument("--points", default="12288,12320,12200,12250,12300", help="entry lengths p to seed and restore from (the day-17 five)")

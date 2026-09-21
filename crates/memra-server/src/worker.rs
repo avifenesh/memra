@@ -3580,7 +3580,7 @@ enum SeedCapture {
 
 fn seed_capture_boundary(prompt_len: usize, hit_len: usize) -> SeedCapture {
     let c = memra_engine::Engine::gdn_chunk_size();
-    if prompt_len % c == 0 {
+    if prompt_len.is_multiple_of(c) {
         return if prompt_len > hit_len {
             SeedCapture::AtPromptEnd
         } else {
@@ -35842,7 +35842,7 @@ mod tests {
         let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
         let min = super::PREFIX_CACHE_MIN_TOKENS;
         assert!(
-            c >= 2 * floor && min % c == 0,
+            c >= 2 * floor && min.is_multiple_of(c),
             "the shipped grain: c={c} floor={floor} min={min}"
         );
         // The day-17 lengths: 12,350 = 385*32 + 30 -> boundary 12,320 (remainder 30 >= floor);
