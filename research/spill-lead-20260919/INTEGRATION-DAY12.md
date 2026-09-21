@@ -1024,6 +1024,13 @@ argv-agnostic again, `argv::validate` stays public for a deployment binary that 
 and test claimed the eager arm's cost is draft-adjusted; the worker never subtracts the draft state on that arm (it
 books it, conservative, as the real book does); the comment, the module docs and the test's name and note now say that.
 Server clippy `-D warnings` and the memra-server suite (773 passed, 7 boot tests) green on the round-1 tree.
+While round 1 was up, main took #615 (`81d75c457`, the unknown or retired `MEMRA_*` boot refusal) and the PR turned
+`CONFLICTING` on INDEX.md, which is why GitHub created no `pull_request` run for two pushes (a conflicting PR gets no
+merge ref and no Actions run; nothing is reported). Merged main into the integ (INDEX.md both rows, census clean) and
+re-ran on the merged tree (`integ27-cpu-battery-merged615/`): fmt, memra-server suite (773 passed), server clippy
+`-D warnings`, engine CPU lib tests, flags census, marker census, portable suites: rc=0; `git diff --check` tripped
+only on the battery's own summary whitespace (stripped); local 5090 serve-smoke `serve-smoke: 0 failed`
+(`integ27-serve-smoke-5090-merged615/`).
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
