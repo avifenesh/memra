@@ -126,3 +126,20 @@ pressure in both arms, which the target card never did. By the pre-registered ru
 of the day, so the 5090 produced no verdict and the 20-run cell was not run. The decision above stands on the
 target card's receipts; the 5090 finding (restored versus cold identity on that card) is its own follow-up.
 Record: `research/spill-b-20260919/DAY16.md`, receipts `rtx5090-day16/`, replay `verify-day16.py`.
+
+## The digest precondition, classified (2026-09-21, day 17)
+
+The 5090 follow-up reproduced the day-16 mismatch with the twin gate on the day-16 lru shape (turn 10, 12,350 =
+12,200 restored + 150: restored `22f02397`, cold `4415b7e3`, the same digests on a second binary) and named the
+two programs from the server's own `[primeseg]` receipts and two same-binary controls: the cold prime's calls
+start on the 32-token GDN WY-chunk grid (`grid_off=0`), while the restored render restores at the prompt-end
+seed boundary, an arbitrary position, and primes the suffix from there off the grid (`start=12200 take=150
+grid_off=8`), which the engine's `align_prime_ranges_to_gdn` law says is not bit-identical. On-grid restores of
+the same prompt reproduced the cold bytes and off-grid restores flipped a greedy near-tie at generated token 2
+(`RESTORE-POINTS ... identical=3/5`); under the split-invariant sequential scan the whole chain was identical
+(`RESTORE-VS-COLD: arm=gdn-sequential ... identical=12/12 -> IDENTICAL`), so the restore itself is exact. The
+class is card-independent and which request flips is card-dependent: the 28/28 precondition above held on the
+target card because none of its 28 requests was a near-tie that flipped there, not because the restored and cold
+programs are identical. It does not move the primary (computed tokens, a bookkeeping quantity the policy decides
+identically under either program) and the decision stands; the defect is tracked as its own bug and fix lane.
+Record: `research/spill-b-20260919/DAY17.md`, receipts `rtx5090-day17/`, replay `verify-day17.py`.

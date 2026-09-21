@@ -1,0 +1,354 @@
+{
+  "verdict": "RESTORE-VS-COLD: arm=restore-points turns=0 compared=0 identical=0/0 first_divergent_turn=none -> IDENTICAL",
+  "points_verdict": "RESTORE-POINTS: arm=restore-points target=12350 points=5 identical=3/5 12288(off0,suffix62):yes 12320(off0,suffix30):yes 12200(off8,suffix150):yes 12250(off26,suffix100):NO 12300(off12,suffix50):NO -> DIVERGENT",
+  "divergent": true,
+  "plan": {
+    "label": "restore-points",
+    "env": {
+      "MEMRA_DEBUG_PRIMESEG": "1",
+      "MEMRA_TTFT_TRACE": "1"
+    },
+    "rig": "NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, [N/A], 175.00 W, 595.84, 56",
+    "binary_sha256": "5191591ba8b9f494d28b6dd0efcf9d859d0bc6fc6822917b4ac9e538d76bb6a6",
+    "binary": "/home/avifenesh/projects/wt-spill-b/target/release/memra-server",
+    "model": "/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "budget_mib": 1024,
+    "cohort_tokens": [],
+    "turns": 10,
+    "start_tokens": 11000,
+    "grow_tokens": 150,
+    "cold_turns": [
+      10
+    ],
+    "max_tokens": 8,
+    "request_timeout_s": 240,
+    "restore_points": [
+      12288,
+      12320,
+      12200,
+      12250,
+      12300
+    ],
+    "no_chain": true,
+    "gdn_grid": 32,
+    "prompt_ids_sha256": [
+      "da80f030466f0b7259cba165456e0efb52df4eacf2b7a000a86ff4a1292dfa9b",
+      "6f1205bfaebdb62b76cfd42bcf07eb2fc8e0c16dd6a76300947c53470c16c100",
+      "ebdae0dcdafd3b8ff7d7eecd04b203479dd655a09d4f9f46277dd3f9f84b6c88",
+      "aea3db3b5380c81fd6686e2b111dbad99568dee84aee74e060425983cec0a9ff",
+      "5cea2eb3f949b34c7978d23f2752bdd80f991c8e0058a8c6d6f1a80f2afc19d7",
+      "ec7a6dcf79acdc7d0238a936af8f330958212e3ba47b6317e9e4c80dfafdd1cb",
+      "4a9c16cea5842a863bcf05250a0d5d1ef97a896abb17079cdaf59dc7c815f43c",
+      "42b2b285e1431438476647f3a56741a5195255e5e6ee4d900964a41356f76c0f",
+      "7f5a13d573765e9f52d97077830ebb01d93a3d8868d778012d8e0f955814d819",
+      "41089cd3af59304ab7bbf7b811b03a4df16fa2704cbdba30078b1582b5495a9b"
+    ],
+    "prompt_lengths": [
+      11000,
+      11150,
+      11300,
+      11450,
+      11600,
+      11750,
+      11900,
+      12050,
+      12200,
+      12350
+    ]
+  },
+  "cold": [
+    {
+      "status": 200,
+      "elapsed_s": 8.806,
+      "prompt_tokens": 12350,
+      "completion_tokens": 3,
+      "cached_tokens": 0,
+      "finish_reason": "stop",
+      "text": "_\n",
+      "text_sha256": "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284",
+      "error": null,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12350 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+        "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12350 budget=8192",
+        "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4158 budget=1024",
+        "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=3134 budget=1024",
+        "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2110 budget=1024",
+        "[primeseg] call start=11264 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1086 budget=1024",
+        "[primeseg] call start=12288 take=62 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=62 budget=1024",
+        "[ttft] id=cmpl-334081352316c69b2a77705982277950 model=\"gate\" path=\"/v1/completions\" prompt_tokens=12350 outcome=ended_without_sse request_parse_ms=0.312 admission_ms=0.037 queue_wait_ms=0.149 tokenize_ms=0.008 prime_wait_ms=5.305 prime_ms=8754.589 decode_wait_ms=0.224 sse_handoff_ms=na request_parse_end_ms=0.312 admission_end_ms=0.349 tokenize_start_ms=0.498 tokenize_end_ms=0.506 prime_start_ms=5.811 prime_end_ms=8760.400 first_decode_ms=8760.624 first_sse_byte_ms=na total_ms=8760.624"
+      ],
+      "turn": 10,
+      "prompt_ids": 12350
+    }
+  ],
+  "cohort": [],
+  "turns": [],
+  "restore_points": [
+    {
+      "point": 12288,
+      "grid_off": 0,
+      "salt": "rp-12288",
+      "seed": {
+        "status": 200,
+        "elapsed_s": 8.912,
+        "prompt_tokens": 12288,
+        "completion_tokens": 8,
+        "cached_tokens": 0,
+        "finish_reason": "length",
+        "text": "_\t\t\"\t\t\"\t",
+        "text_sha256": "22f023976ebc22fd5bfc9a699ff63056fb08186f1faec8429537e154a5e07f85",
+        "error": null,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"rp-12288\" K=0 source=eligibility-fallback prompt=12288 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12288 budget=8192",
+          "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4096 budget=1024",
+          "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=3072 budget=1024",
+          "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2048 budget=1024",
+          "[primeseg] call start=11264 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1024 budget=1024",
+          "[prefix-cache] insert (seed): 12288 tokens, 521.8MB (resident 521.8MB / 1074MB, model gate, ns \"rp-12288\")",
+          "[ttft] id=cmpl-b459d9cf59b1df947d6251f3f818e8d5 model=\"gate\" path=\"/v1/completions\" prompt_tokens=12288 outcome=ended_without_sse request_parse_ms=0.311 admission_ms=0.035 queue_wait_ms=0.227 tokenize_ms=0.009 prime_wait_ms=5.469 prime_ms=8723.379 decode_wait_ms=0.282 sse_handoff_ms=na request_parse_end_ms=0.311 admission_end_ms=0.346 tokenize_start_ms=0.573 tokenize_end_ms=0.582 prime_start_ms=6.051 prime_end_ms=8729.430 first_decode_ms=8729.712 first_sse_byte_ms=na total_ms=8729.712"
+        ]
+      },
+      "hit": {
+        "status": 200,
+        "elapsed_s": 0.16,
+        "prompt_tokens": 12350,
+        "completion_tokens": 3,
+        "cached_tokens": 12288,
+        "finish_reason": "stop",
+        "text": "_\n",
+        "text_sha256": "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284",
+        "error": null,
+        "lines": [
+          "[prefix-cache] hit: 12288 of 12350 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"rp-12288\" K=0 source=eligibility-fallback prompt=12350 cached=12288 lcp=12288 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12288 tokens, model gate)",
+          "[primeseg] call start=12288 take=62 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=62 budget=1024",
+          "[ttft] id=cmpl-919f49a0c3e7c7a6b5f6503af7008a70 model=\"gate\" path=\"/v1/completions\" prompt_tokens=12350 outcome=ended_without_sse request_parse_ms=0.340 admission_ms=0.034 queue_wait_ms=0.120 tokenize_ms=0.012 prime_wait_ms=2.362 prime_ms=112.030 decode_wait_ms=0.278 sse_handoff_ms=na request_parse_end_ms=0.340 admission_end_ms=0.374 tokenize_start_ms=0.494 tokenize_end_ms=0.506 prime_start_ms=2.868 prime_end_ms=114.898 first_decode_ms=115.176 first_sse_byte_ms=na total_ms=115.176"
+        ]
+      },
+      "restored": 12288,
+      "suffix": 62,
+      "cold_text_sha256": "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284",
+      "identical_to_cold": true,
+      "first_diff_char": null
+    },
+    {
+      "point": 12320,
+      "grid_off": 0,
+      "salt": "rp-12320",
+      "seed": {
+        "status": 200,
+        "elapsed_s": 8.947,
+        "prompt_tokens": 12320,
+        "completion_tokens": 5,
+        "cached_tokens": 0,
+        "finish_reason": "stop",
+        "text": "sight_\n",
+        "text_sha256": "6d04a5476c0054bdd29c0c35282f1b8cab35b6f3e6650367964aec23b7dfd50f",
+        "error": null,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"rp-12320\" K=0 source=eligibility-fallback prompt=12320 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12320 budget=8192",
+          "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4128 budget=1024",
+          "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=3104 budget=1024",
+          "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2080 budget=1024",
+          "[primeseg] call start=11264 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1056 budget=1024",
+          "[primeseg] call start=12288 take=32 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=32 budget=1024",
+          "[prefix-cache] insert (seed): 12320 tokens, 522.7MB (resident 1044.5MB / 1074MB, model gate, ns \"rp-12320\")",
+          "[ttft] id=cmpl-08051850c62187cafea7ecbd540f47df model=\"gate\" path=\"/v1/completions\" prompt_tokens=12320 outcome=ended_without_sse request_parse_ms=0.294 admission_ms=0.032 queue_wait_ms=0.152 tokenize_ms=0.005 prime_wait_ms=4.632 prime_ms=8840.193 decode_wait_ms=0.252 sse_handoff_ms=na request_parse_end_ms=0.294 admission_end_ms=0.326 tokenize_start_ms=0.478 tokenize_end_ms=0.483 prime_start_ms=5.115 prime_end_ms=8845.308 first_decode_ms=8845.560 first_sse_byte_ms=na total_ms=8845.560"
+        ]
+      },
+      "hit": {
+        "status": 200,
+        "elapsed_s": 0.168,
+        "prompt_tokens": 12350,
+        "completion_tokens": 3,
+        "cached_tokens": 12320,
+        "finish_reason": "stop",
+        "text": "_\n",
+        "text_sha256": "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284",
+        "error": null,
+        "lines": [
+          "[admit-oom] reclaim spared the prompt's prefix entry (12320 tokens, model gate)",
+          "[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=521797632 pool_cached_gain_bytes=521797632 trim_released_bytes=503316480 driver_free_bytes 2608136192 -> 3111452672 pool_reserved_bytes 22246588416 -> 21743271936 pool_used_bytes 20449378876 -> 19927581244 pool_retained_bytes=18481152 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)",
+          "[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4405MB -> 4927MB",
+          "[prefix-cache] hit: 12320 of 12350 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"rp-12320\" K=0 source=eligibility-fallback prompt=12350 cached=12320 lcp=12320 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12320 tokens, model gate)",
+          "[primeseg] call start=12320 take=30 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=30 budget=1024",
+          "[ttft] id=cmpl-3f5f6a3afe5c60f5a7d0fc18f5f45924 model=\"gate\" path=\"/v1/completions\" prompt_tokens=12350 outcome=ended_without_sse request_parse_ms=0.275 admission_ms=0.047 queue_wait_ms=0.139 tokenize_ms=0.006 prime_wait_ms=4.296 prime_ms=116.603 decode_wait_ms=0.232 sse_handoff_ms=na request_parse_end_ms=0.275 admission_end_ms=0.322 tokenize_start_ms=0.461 tokenize_end_ms=0.467 prime_start_ms=4.763 prime_end_ms=121.366 first_decode_ms=121.598 first_sse_byte_ms=na total_ms=121.598"
+        ]
+      },
+      "restored": 12320,
+      "suffix": 30,
+      "cold_text_sha256": "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284",
+      "identical_to_cold": true,
+      "first_diff_char": null
+    },
+    {
+      "point": 12200,
+      "grid_off": 8,
+      "salt": "rp-12200",
+      "seed": {
+        "status": 200,
+        "elapsed_s": 9.012,
+        "prompt_tokens": 12200,
+        "completion_tokens": 8,
+        "cached_tokens": 0,
+        "finish_reason": "length",
+        "text": "_\t\t\"\t\t\"\t",
+        "text_sha256": "22f023976ebc22fd5bfc9a699ff63056fb08186f1faec8429537e154a5e07f85",
+        "error": null,
+        "lines": [
+          "[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=522747904 pool_cached_gain_bytes=522747904 trim_released_bytes=503316480 driver_free_bytes 3111452672 -> 3614769152 pool_reserved_bytes 21743271936 -> 21239955456 pool_used_bytes 20626635024 -> 20103887120 pool_retained_bytes=19431424 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)",
+          "[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4228MB -> 4751MB",
+          "[spec-k] model=\"gate\" tenant=\"rp-12200\" K=0 source=eligibility-fallback prompt=12200 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12200 budget=8192",
+          "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4008 budget=1024",
+          "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2984 budget=1024",
+          "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1960 budget=1024",
+          "[primeseg] call start=11264 take=936 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=936 budget=1024",
+          "[prefix-cache] insert (seed): 12200 tokens, 519.2MB (resident 519.2MB / 1074MB, model gate, ns \"rp-12200\")",
+          "[ttft] id=cmpl-7dea09be600c810b8ae501fc33242d73 model=\"gate\" path=\"/v1/completions\" prompt_tokens=12200 outcome=ended_without_sse request_parse_ms=0.272 admission_ms=0.033 queue_wait_ms=0.130 tokenize_ms=0.006 prime_wait_ms=6.504 prime_ms=8821.366 decode_wait_ms=0.222 sse_handoff_ms=na request_parse_end_ms=0.272 admission_end_ms=0.305 tokenize_start_ms=0.435 tokenize_end_ms=0.441 prime_start_ms=6.945 prime_end_ms=8828.311 first_decode_ms=8828.533 first_sse_byte_ms=na total_ms=8828.533"
+        ]
+      },
+      "hit": {
+        "status": 200,
+        "elapsed_s": 0.232,
+        "prompt_tokens": 12350,
+        "completion_tokens": 3,
+        "cached_tokens": 12200,
+        "finish_reason": "stop",
+        "text": "_\n",
+        "text_sha256": "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284",
+        "error": null,
+        "lines": [
+          "[admit-oom] reclaim spared the prompt's prefix entry (12200 tokens, model gate)",
+          "[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3537MB -> 4933MB",
+          "[admit-trim] dev0 driver_free_bytes=1970601984 floor_bytes=2147483648 reclaimed_bytes=167772160 still_owned_bytes=19921241148 pool_reserved_bytes=22716350464 driver_free_after=2138374144 before prime",
+          "[prefix-cache] hit: 12200 of 12350 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"rp-12200\" K=0 source=eligibility-fallback prompt=12350 cached=12200 lcp=12200 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12200 tokens, model gate)",
+          "[primeseg] call start=12200 take=150 grid_off=8 bound_rem=None ckpt_at=None snapshot_at=None q=150 budget=1024",
+          "[prefix-cache] insert (seed): 12350 tokens, 523.6MB (resident 1042.8MB / 1074MB, model gate, ns \"rp-12200\")",
+          "[ttft] id=cmpl-669e2f5b64a2d9d30ab5e7fdcc1fd0e9 model=\"gate\" path=\"/v1/completions\" prompt_tokens=12350 outcome=ended_without_sse request_parse_ms=0.242 admission_ms=0.036 queue_wait_ms=0.139 tokenize_ms=0.006 prime_wait_ms=3.190 prime_ms=181.893 decode_wait_ms=0.229 sse_handoff_ms=na request_parse_end_ms=0.242 admission_end_ms=0.278 tokenize_start_ms=0.417 tokenize_end_ms=0.423 prime_start_ms=3.613 prime_end_ms=185.506 first_decode_ms=185.735 first_sse_byte_ms=na total_ms=185.735"
+        ]
+      },
+      "restored": 12200,
+      "suffix": 150,
+      "cold_text_sha256": "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284",
+      "identical_to_cold": true,
+      "first_diff_char": null
+    },
+    {
+      "point": 12250,
+      "grid_off": 26,
+      "salt": "rp-12250",
+      "seed": {
+        "status": 200,
+        "elapsed_s": 9.339,
+        "prompt_tokens": 12250,
+        "completion_tokens": 8,
+        "cached_tokens": 0,
+        "finish_reason": "length",
+        "text": "_1000000",
+        "text_sha256": "3ca9a6e466c2dfb81b503a84c9ebd1055dbb1d148e56922d5ae3a4d8ef55b231",
+        "error": null,
+        "lines": [
+          "[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1042823168 pool_cached_gain_bytes=1042823168 trim_released_bytes=1040187392 driver_free_bytes 2138374144 -> 3178561536 pool_reserved_bytes 22716350464 -> 21676163072 pool_used_bytes 21143933712 -> 20101110544 pool_retained_bytes=2635776 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)",
+          "[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3711MB -> 4754MB",
+          "[spec-k] model=\"gate\" tenant=\"rp-12250\" K=0 source=eligibility-fallback prompt=12250 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12250 budget=8192",
+          "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4058 budget=1024",
+          "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=3034 budget=1024",
+          "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2010 budget=1024",
+          "[primeseg] call start=11264 take=986 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=986 budget=1024",
+          "[prefix-cache] insert (seed): 12250 tokens, 520.7MB (resident 520.7MB / 1074MB, model gate, ns \"rp-12250\")",
+          "[ttft] id=cmpl-92f59161c788fdcfc769190144a51642 model=\"gate\" path=\"/v1/completions\" prompt_tokens=12250 outcome=ended_without_sse request_parse_ms=0.480 admission_ms=0.043 queue_wait_ms=0.133 tokenize_ms=0.005 prime_wait_ms=8.455 prime_ms=9147.261 decode_wait_ms=0.257 sse_handoff_ms=na request_parse_end_ms=0.480 admission_end_ms=0.523 tokenize_start_ms=0.656 tokenize_end_ms=0.661 prime_start_ms=9.116 prime_end_ms=9156.377 first_decode_ms=9156.634 first_sse_byte_ms=na total_ms=9156.634"
+        ]
+      },
+      "hit": {
+        "status": 200,
+        "elapsed_s": 0.302,
+        "prompt_tokens": 12350,
+        "completion_tokens": 8,
+        "cached_tokens": 12250,
+        "finish_reason": "length",
+        "text": "_\t\t\"\t\t\"\t",
+        "text_sha256": "22f023976ebc22fd5bfc9a699ff63056fb08186f1faec8429537e154a5e07f85",
+        "error": null,
+        "lines": [
+          "[admit-oom] reclaim spared the prompt's prefix entry (12250 tokens, model gate)",
+          "[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3537MB -> 4934MB",
+          "[admit-trim] dev0 driver_free_bytes=1937047552 floor_bytes=2147483648 reclaimed_bytes=201326592 still_owned_bytes=19920517308 pool_reserved_bytes=22716350464 driver_free_after=2138374144 before prime",
+          "[prefix-cache] hit: 12250 of 12350 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"rp-12250\" K=0 source=eligibility-fallback prompt=12350 cached=12250 lcp=12250 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12250 tokens, model gate)",
+          "[primeseg] call start=12250 take=100 grid_off=26 bound_rem=None ckpt_at=None snapshot_at=None q=100 budget=1024",
+          "[prefix-cache] insert (seed): 12350 tokens, 523.6MB (resident 1044.3MB / 1074MB, model gate, ns \"rp-12250\")",
+          "[ttft] id=cmpl-e1caca03bc5bacb5f522d3fe6efe614c model=\"gate\" path=\"/v1/completions\" prompt_tokens=12350 outcome=ended_without_sse request_parse_ms=0.465 admission_ms=0.038 queue_wait_ms=0.101 tokenize_ms=0.005 prime_wait_ms=3.323 prime_ms=118.857 decode_wait_ms=0.241 sse_handoff_ms=na request_parse_end_ms=0.465 admission_end_ms=0.503 tokenize_start_ms=0.604 tokenize_end_ms=0.609 prime_start_ms=3.932 prime_end_ms=122.789 first_decode_ms=123.030 first_sse_byte_ms=na total_ms=123.030"
+        ]
+      },
+      "restored": 12250,
+      "suffix": 100,
+      "cold_text_sha256": "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284",
+      "identical_to_cold": false,
+      "first_diff_char": 1
+    },
+    {
+      "point": 12300,
+      "grid_off": 12,
+      "salt": "rp-12300",
+      "seed": {
+        "status": 200,
+        "elapsed_s": 9.429,
+        "prompt_tokens": 12300,
+        "completion_tokens": 8,
+        "cached_tokens": 0,
+        "finish_reason": "length",
+        "text": "_\t\t\"\t\t\"\t",
+        "text_sha256": "22f023976ebc22fd5bfc9a699ff63056fb08186f1faec8429537e154a5e07f85",
+        "error": null,
+        "lines": [
+          "[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1044307968 pool_cached_gain_bytes=1044307968 trim_released_bytes=1040187392 driver_free_bytes 2138374144 -> 3178561536 pool_reserved_bytes 22716350464 -> 21676163072 pool_used_bytes 21152770320 -> 20108462352 pool_retained_bytes=4120576 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)",
+          "[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3702MB -> 4746MB",
+          "[spec-k] model=\"gate\" tenant=\"rp-12300\" K=0 source=eligibility-fallback prompt=12300 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12300 budget=8192",
+          "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4108 budget=1024",
+          "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=3084 budget=1024",
+          "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2060 budget=1024",
+          "[primeseg] call start=11264 take=1036 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1036 budget=1024",
+          "[prefix-cache] insert (seed): 12300 tokens, 522.2MB (resident 522.2MB / 1074MB, model gate, ns \"rp-12300\")",
+          "[ttft] id=cmpl-6a037b7c515efbfa8ec84ed242a3f3c2 model=\"gate\" path=\"/v1/completions\" prompt_tokens=12300 outcome=ended_without_sse request_parse_ms=0.302 admission_ms=0.031 queue_wait_ms=0.116 tokenize_ms=0.006 prime_wait_ms=8.438 prime_ms=9232.222 decode_wait_ms=0.280 sse_handoff_ms=na request_parse_end_ms=0.302 admission_end_ms=0.333 tokenize_start_ms=0.449 tokenize_end_ms=0.455 prime_start_ms=8.893 prime_end_ms=9241.115 first_decode_ms=9241.395 first_sse_byte_ms=na total_ms=9241.395"
+        ]
+      },
+      "hit": {
+        "status": 200,
+        "elapsed_s": 0.318,
+        "prompt_tokens": 12350,
+        "completion_tokens": 8,
+        "cached_tokens": 12300,
+        "finish_reason": "length",
+        "text": "_\t\t\"\t\t\"\t",
+        "text_sha256": "22f023976ebc22fd5bfc9a699ff63056fb08186f1faec8429537e154a5e07f85",
+        "error": null,
+        "lines": [
+          "[admit-oom] reclaim spared the prompt's prefix entry (12300 tokens, model gate)",
+          "[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3527MB -> 4920MB",
+          "[admit-trim] dev0 driver_free_bytes=1903493120 floor_bytes=2147483648 reclaimed_bytes=234881024 still_owned_bytes=19934717756 pool_reserved_bytes=22716350464 driver_free_after=2138374144 before prime",
+          "[prefix-cache] hit: 12300 of 12350 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"rp-12300\" K=0 source=eligibility-fallback prompt=12350 cached=12300 lcp=12300 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12300 tokens, model gate)",
+          "[primeseg] call start=12300 take=50 grid_off=12 bound_rem=None ckpt_at=None snapshot_at=None q=50 budget=1024",
+          "[ttft] id=cmpl-de3ac45b8c57c7c4b1b4b2fe2903f4af model=\"gate\" path=\"/v1/completions\" prompt_tokens=12350 outcome=ended_without_sse request_parse_ms=0.295 admission_ms=0.052 queue_wait_ms=0.031 tokenize_ms=0.005 prime_wait_ms=3.921 prime_ms=121.536 decode_wait_ms=0.267 sse_handoff_ms=na request_parse_end_ms=0.295 admission_end_ms=0.347 tokenize_start_ms=0.378 tokenize_end_ms=0.383 prime_start_ms=4.304 prime_end_ms=125.840 first_decode_ms=126.107 first_sse_byte_ms=na total_ms=126.107"
+        ]
+      },
+      "restored": 12300,
+      "suffix": 50,
+      "cold_text_sha256": "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284",
+      "identical_to_cold": false,
+      "first_diff_char": 1
+    }
+  ]
+}

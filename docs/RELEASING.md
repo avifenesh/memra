@@ -1,5 +1,10 @@
 # Releasing
 
+Content-bound GPU evidence is now mandatory for main/tag publication; see
+[Release qualification](RELEASE-QUALIFICATION.md) for the native capture/seal flow,
+explicitly unqualified topic pushes, content-equivalent receipt publication and exact
+prebuilt-binary checks. Filesystem mtimes and missing model directories grant no proof.
+
 Every board-moving or user-facing change gets a tagged release — that's the public change record.
 
 ## Version scheme

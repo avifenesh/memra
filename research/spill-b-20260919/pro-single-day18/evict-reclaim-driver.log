@@ -1,0 +1,104 @@
+reclaim line: [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4932MB -> 6523MB
+settle line:  [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1590853632 pool_cached_gain_bytes=1590853632 trim_released_bytes=1442840576 driver_free_bytes 4882497536 -> 6325338112 pool_reserved_bytes 21575499776 -> 20132659200 pool_used_bytes 21525532136 -> 19934678504 pool_retained_bytes=148013056 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+PREFIX-EVICT-RECLAIM: entry_bytes=1590853632 reclaim_credit_bytes=1591000000 driver_free_delta_bytes=1442840576 trim_released_bytes=1442840576 pool_retained_bytes=148013056 p2=admit-same-tick busy_overlap_s=21.658 identity=aa6cc3291b981646 V1=ok V2=ok V3=FAIL V4=ok -> FAIL
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "python3",
+    "tools/prefix-evict-reclaim-gate.py",
+    "--external-lock",
+    "3",
+    "--model",
+    "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "--bin",
+    "/root/spill-receipts/b-day18/bins/fix/memra-server",
+    "--out",
+    "/root/spill-receipts/b-day18/evict-reclaim/cell",
+    "--gpu-lock",
+    "/tmp/memra-gpu.lock"
+  ],
+  "exit_code": 1,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "failed",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 75728328904168,
+  "ended_monotonic_ns": 75824871279803,
+  "started_utc": "2026-09-21T11:54:03.322761+00:00",
+  "ended_utc": "2026-09-21T11:55:39.865139+00:00",
+  "elapsed_seconds": 96.542375635,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 845,
+    "sha256": "bdaca009de2a875be4f3e06fb16fe16223b65713ba22360510b6370ff2d39582"
+  },
+  "failure_quote": "died, cause unknown \u2014 repro needed",
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 42591,
+      "sha256": "ceafc988a6fd631aed1acbeb9f759fdb0ce7075734e7baf23d87de0ab4766337"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "failure": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.failure.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

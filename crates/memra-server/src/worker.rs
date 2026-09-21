@@ -2043,6 +2043,10 @@ pub struct Metrics {
     /// because only the first means the configured/derived budget can never admit that shape.
     pub prefix_skips_budget: u64,
     pub prefix_skips_pinned: u64,
+    /// Prompt-end seeds refused by the prime-grid law (memra#602): typed `seed REFUSED (grid)`
+    /// lines, counted. A nonzero value names prompts whose aligned entry would sit under the
+    /// entry floor (or a prime path that skipped the armed boundary), never a silent cold turn.
+    pub prefix_seed_grid_refusals: u64,
     pub prefix_hit_tokens: u64,
     /// Pinned-host spill tier behind the prefix cache (lane/kv-host-spill-20260830;
     /// MEMRA_KV_HOST_MB, default 0 = off). Entries/bytes are current gauges; demotions/
@@ -3524,6 +3528,80 @@ fn hit_lcp_snapshot_boundary(lcp: usize, hit_len: usize, prompt_len: usize) -> O
         && la - hit_len >= memra_engine::hybrid_forward::PRIME_MIN_T
         && la < prompt_len)
         .then_some(la)
+}
+
+/// Where the PROMPT-END SEED publishes (memra#602; the day-17 receipts,
+/// `research/spill-b-20260919/DAY17.md`).
+///
+/// THE DEFECT THIS CLOSES. The LCP-split, first-message and stable-boundary captures land on the
+/// GDN prime grid (`grid_align_boundary_within`), but the prompt-end seed (`insert (seed)` at
+/// prefill-done) was captured wherever the prompt ended, and a growing `prompt_ids` conversation
+/// restores exactly that entry on its next turn: 11,000 % 32 = 24, 12,200 % 32 = 8. The restored
+/// suffix then primed as one `prime_cache` call starting OFF the grid (`[primeseg] call
+/// start=12200 take=150 grid_off=8`), which the engine's own law (`align_prime_ranges_to_gdn`)
+/// says is not bit-identical to the cold prime whose calls all start ON the grid (`start=12288
+/// take=62 grid_off=0`). Measured on the local RTX 5090 (day 17, Qwen3.8-27B, spec off, greedy):
+/// the twelve-turn chain flipped a greedy near-tie at turn 10 (restored `"_\t\t\"\t\t\"\t"` vs cold
+/// `"_\n"`, generated token 2); the same 12,350 prompt restored from five entries reproduced the
+/// cold bytes from both ON-grid entries (12,288 and 12,320) and flipped from two of three OFF-grid
+/// ones (`RESTORE-POINTS ... identical=3/5`); under the split-invariant sequential scan
+/// (`MEMRA_GDN_CHUNKED=0`) the chain was identical 12/12, so the restore itself is exact and the
+/// off-grid call start is the whole difference. Owner law: one numeric program per request; a
+/// restored suffix must produce the cold prime's bytes.
+///
+/// THE FIX IS AT THE CAPTURE, NOT AT THE PRIME. The seed publishes at the LARGEST grid-aligned
+/// fed-length not exceeding the prompt end, through the same boundary stop the prefill tick
+/// already honors for the LCP split (`bound_rem`): the prime stops on the grid, the entry is
+/// snapshotted there, and the remainder is primed as one more call from a grid start, which is
+/// the split the law calls bit-identical to the monolithic prime. A later hit restores an
+/// on-grid entry and primes its suffix from a grid start. No prime program changes, no new
+/// numeric program, and `cached_tokens` reports the aligned entry length because that is what
+/// was restored.
+///
+/// Cases:
+/// - `AtPromptEnd`: the prompt end is on the grid; the whole-prompt seed publishes at
+///   prefill-done exactly as before.
+/// - `AtBoundary(b)`: `b < prompt_len`, `b % gdn_chunk_size() == 0`, and `prompt_len - b >=
+///   PRIME_MIN_T` (the W1 floor: a shorter remainder would ride tokenwise `decode_step`, a
+///   different program; `grid_align_boundary_within` steps down one grid unit to clear it).
+/// - `Covered`: on a hit the aligned boundary does not lie at least `PRIME_MIN_T` past the
+///   restored entry, so the restored entry already is the deepest grid-aligned key of this
+///   prompt; nothing to publish (the same outcome `prefix_seed_deepens` gives an exact re-send).
+/// - `Refused { aligned }`: the aligned length is under `PREFIX_CACHE_MIN_TOKENS` (a prompt
+///   between the floor and the floor plus one grid step, minus the W1 remainder). Typed and
+///   counted at the arming site; the request serves, nothing is published.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SeedCapture {
+    AtPromptEnd,
+    AtBoundary(usize),
+    Covered,
+    Refused { aligned: usize },
+}
+
+fn seed_capture_boundary(prompt_len: usize, hit_len: usize) -> SeedCapture {
+    let c = memra_engine::Engine::gdn_chunk_size();
+    if prompt_len.is_multiple_of(c) {
+        return if prompt_len > hit_len {
+            SeedCapture::AtPromptEnd
+        } else {
+            SeedCapture::Covered
+        };
+    }
+    let b = grid_align_boundary_within(prompt_len, prompt_len);
+    if b < PREFIX_CACHE_MIN_TOKENS {
+        return SeedCapture::Refused { aligned: b };
+    }
+    if b <= hit_len || b - hit_len < memra_engine::hybrid_forward::PRIME_MIN_T {
+        return SeedCapture::Covered;
+    }
+    SeedCapture::AtBoundary(b)
+}
+
+/// Does an armed seed boundary stop the prime INSIDE the prompt? Such a session primes alone:
+/// the concat prime and the in-batch fanout cannot honor a per-session stop (the same reason
+/// `snapshot_at` and `ckpt_at` sessions prime alone). A seed at the prompt end is not a stop.
+fn seed_boundary_inside_prompt(seed_at: Option<usize>, prompt_len: usize) -> bool {
+    seed_at.is_some_and(|b| b < prompt_len)
 }
 
 /// Conservative guard window for the markerless (raw-completion) path of
@@ -6940,6 +7018,10 @@ struct PrefixCache {
     evictions: u64,
     skips_budget: u64,
     skips_pinned: u64,
+    /// Prompt-end seeds refused by the grid law (memra#602, `seed_capture_boundary`): the
+    /// aligned length fell under the entry floor, or the prime did not stop on the armed
+    /// boundary. Every refusal prints its typed `seed REFUSED (grid)` line and counts here.
+    seed_grid_refusals: u64,
     /// stderr throttle for the two typed refusal lines; the skip counters above count every
     /// refusal regardless.
     refusals: PrefixRefusalAnnouncer,
@@ -13431,6 +13513,26 @@ fn maybe_prefix_seed(
     if s.cache.is_none() || s.fed.len() < PREFIX_CACHE_MIN_TOKENS {
         return;
     }
+    // GRID LAW (memra#602, `seed_capture_boundary`): the seed publishes only at its armed
+    // grid-aligned boundary. `Some(b) == fed` is the boundary (or an on-grid prompt end);
+    // `Some(b) != fed` means the prime did not stop there (a prime path that ignores
+    // `bound_rem`), so the off-grid prompt-end state is NOT published: typed and counted, the
+    // request serves cold-published-nothing rather than seeding a second numeric program.
+    // `None` was decided at admit (refused, covered, cleared) and already announced there.
+    match s.seed_at.take() {
+        Some(b) if b == s.fed.len() => {}
+        Some(b) => {
+            px.seed_grid_refusals += 1;
+            eprintln!(
+                "[prefix-cache] seed REFUSED (grid): the prime did not stop at the aligned \
+                 boundary {b} (fed {}); off-grid prompt-end state not published (model {})",
+                s.fed.len(),
+                s.model
+            );
+            return;
+        }
+        None => return,
+    }
     let key = s.pool_key();
     if !prefix_seed_deepens(px.deepest_covering(&key, &s.fed), s.fed.len()) {
         return; // an entry of (near-)equal depth already serves this prefix class
@@ -14354,8 +14456,18 @@ struct Session {
     /// The LCP sample recorded for a cold prefix-cache miss at admission. Same-window
     /// fanout siblings rewrite this provisional miss into a hit after the leader primes.
     prefix_miss_lcp: Option<usize>,
-    /// PREFIX-CACHE SEED: park the full primed prompt at prefill-done (cold sessions only).
+    /// PREFIX-CACHE SEED: park the primed prompt for future same-prefix traffic (armed at admit
+    /// for a cold miss and, per H11, for a plain hit; consumed by the capture).
     seed_prefix: bool,
+    /// GRID-ALIGNED SEED BOUNDARY (memra#602, `seed_capture_boundary`): the fed-length the seed
+    /// publishes at. Equal to the prompt length when the prompt end is on the GDN prime grid
+    /// (the seed publishes at prefill-done as before); otherwise the largest grid-aligned
+    /// fed-length under the prompt end that leaves a `PRIME_MIN_T` remainder, which the prefill
+    /// tick stops on (`bound_rem`) and publishes at, then primes the remainder from that grid
+    /// start. `None` = no seed (not armed, refused at admit with a typed counted line, covered by
+    /// the restored entry, or cleared with `snapshot_at`). Like `ckpt_at`, a capture boundary
+    /// bounds the take and never vetoes the solo prefill widening (`solo_widen_fresh`).
+    seed_at: Option<usize>,
     /// Refcounted lease on the prefix entry this request resumed from (or helped create
     /// through in-batch fanout). Released by the centralized retire sweep on every exit.
     prefix_pin: Option<PrefixPin>,
@@ -14736,6 +14848,7 @@ fn service_runtime_peer_probe_for_worker(
             session.snapshot_at = None;
             session.prefix_miss_lcp = None;
             session.seed_prefix = false;
+            session.seed_at = None;
             session.ckpt_at = None;
             session.ckpt_snap = None;
         }
@@ -18921,6 +19034,13 @@ pub fn run(
                             // plain-affinity checkpoint capture needs the same per-session
                             // boundary stop the concat prime cannot honor — prime alone.
                             && s.ckpt_at.is_none()
+                            // the grid-aligned seed boundary (memra#602) is the same class
+                            // when it stops inside the prompt; a seed at the prompt end is not
+                            // a stop and keeps the concat prime.
+                            && !seed_boundary_inside_prompt(
+                                s.seed_at,
+                                s.fed.len() + s.prefill_queue.len(),
+                            )
                             && take >= min_t
                             && cand_model.as_ref().is_none_or(|m| *m == s.model)
                         {
@@ -19457,6 +19577,10 @@ pub fn run(
                         || s.capture.is_some()
                         || s.snapshot_at.is_some()
                         || s.ckpt_at.is_some()
+                        || seed_boundary_inside_prompt(
+                            s.seed_at,
+                            s.fed.len() + s.prefill_queue.len(),
+                        )
                         || !s.cache.as_ref().is_some_and(|c| c.pos == s.fed.len())
                     {
                         continue;
@@ -20231,6 +20355,7 @@ pub fn run(
             m.prefix_evictions = px.evictions;
             m.prefix_skips_budget = px.skips_budget;
             m.prefix_skips_pinned = px.skips_pinned;
+            m.prefix_seed_grid_refusals = px.seed_grid_refusals;
             m.prefix_hit_tokens = px.hit_tokens;
             m.prefix_host_entries = hpx.n_entries() as u64;
             m.prefix_host_bytes = hpx.total_bytes as u64;
@@ -22771,9 +22896,18 @@ fn admit(
                 // live generation header the client rewrites — the frozen-boundary defect,
                 // finding B4). Only a boundary AHEAD of the restored prefix is a legal feed
                 // stop.
+                // GRID LAW (memra#602, day 19): when no stable boundary lies ahead of the
+                // restored prefix, the republish lands on the seed's grid boundary instead of
+                // the prompt end (`seed_capture_boundary` with the restored length as the hit;
+                // `Covered` publishes nothing). The engine's prompt-end republish fires only
+                // when the prompt end itself is on the grid.
                 let republish_at =
                     plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
-                        .filter(|&b| b > fed_len);
+                        .filter(|&b| b > fed_len)
+                        .or_else(|| match seed_capture_boundary(prompt.len(), fed_len) {
+                            SeedCapture::AtBoundary(b) => Some(b),
+                            _ => None,
+                        });
                 match lm.model.spec_session_from_restored_deferred(
                     engine,
                     carrier_cache,
@@ -23734,10 +23868,39 @@ fn admit(
     if spec_resumed == 0
         && let Some(sp) = spec.as_mut()
     {
-        sp.capture_at = snapshot_at.or(if seed_prefix {
-            Some(prompt.len())
-        } else {
-            None
+        // GRID LAW ON THE SPEC CAPTURE (memra#602, day 19; the plain seed's law at
+        // `seed_capture_boundary`): the cold spec session's publication used to sit at the
+        // prompt end, an arbitrary position, so a later hit restored an off-grid entry and its
+        // suffix rode a different program than the cold prime (the #379 gate's r3/g2 read
+        // `cached_tokens` 106 of 119 on spec-on against 64 of 119 on spec-off once the plain
+        // seed was aligned). One capture law for every site the server captures at: the seed
+        // boundary is the largest grid-aligned length under the prompt end that leaves at least
+        // PRIME_MIN_T prompt tokens, it becomes the prime split below (the engine captures
+        // where a chunk ends on it), and an aligned length under the entry floor is a typed,
+        // counted refusal. A snapshot_at boundary (LCP, first message, stable) is already on
+        // the grid and keeps precedence.
+        sp.capture_at = snapshot_at.or_else(|| {
+            if !seed_prefix {
+                return None;
+            }
+            match seed_capture_boundary(prompt.len(), 0) {
+                SeedCapture::AtPromptEnd => Some(prompt.len()),
+                SeedCapture::AtBoundary(b) => Some(b),
+                SeedCapture::Covered => None,
+                SeedCapture::Refused { aligned } => {
+                    px.seed_grid_refusals += 1;
+                    eprintln!(
+                        "[prefix-cache] seed REFUSED (grid): spec prompt {} tokens is off the \
+                         {}-token prime grid and its aligned boundary {aligned} is under the {} \
+                         token entry floor; no entry published (model {})",
+                        prompt.len(),
+                        memra_engine::Engine::gdn_chunk_size(),
+                        PREFIX_CACHE_MIN_TOKENS,
+                        req.model
+                    );
+                    None
+                }
+            }
         });
     }
     // spec-resume: replay sampler penalty history over the resumed prefix; queue only the suffix.
@@ -24381,6 +24544,36 @@ fn admit(
     ) {
         seed_prefix = true;
     }
+    // GRID-ALIGNED SEED (memra#602; the law and the day-17 receipts at `seed_capture_boundary`).
+    // Plain sessions only: a spec session's `capture_at` publication (prompt end, the
+    // engine's post-prime seed capture) keeps its own boundary discipline and is not moved
+    // here. `n_cached` is the restored prefix length on a plain hit, 0 on a miss.
+    let seed_at = if seed_prefix && spec.is_none() {
+        match seed_capture_boundary(prompt.len(), n_cached) {
+            SeedCapture::AtPromptEnd => Some(prompt.len()),
+            SeedCapture::AtBoundary(b) => Some(b),
+            SeedCapture::Covered => {
+                seed_prefix = false;
+                None
+            }
+            SeedCapture::Refused { aligned } => {
+                seed_prefix = false;
+                px.seed_grid_refusals += 1;
+                eprintln!(
+                    "[prefix-cache] seed REFUSED (grid): prompt {} tokens is off the {}-token \
+                     prime grid and its aligned boundary {aligned} is under the {} token entry \
+                     floor; no entry published (model {})",
+                    prompt.len(),
+                    memra_engine::Engine::gdn_chunk_size(),
+                    PREFIX_CACHE_MIN_TOKENS,
+                    req.model
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
     // PLAIN-SESSION AFFINITY checkpoint arming (lane/plain-affinity, 2026-08-09). A plain-path
     // session captures a rewind checkpoint at a STABLE PRE-GENERATION boundary so its NEXT
     // rewritten-history turn resumes here. Armed only when:
@@ -24520,6 +24713,7 @@ fn admit(
         ckpt_snap: None,
         prefix_miss_lcp,
         seed_prefix,
+        seed_at,
         prefix_pin,
         tx: req.tx,
         ttft: req.ttft,
@@ -24589,6 +24783,7 @@ fn admit(
                 // Keep the source leased when completion is uncertain. Publication is optional.
                 s.snapshot_at = None;
                 s.seed_prefix = false;
+                s.seed_at = None;
                 eprintln!(
                     "[prefix-cache] restore fence failed ({err}); source stays leased, publication skipped"
                 );
@@ -25008,6 +25203,7 @@ fn dedup_interactive_prefixes(
         );
         for &i in &participants {
             active[i].seed_prefix = false;
+            active[i].seed_at = None;
             if let Some(pin) = &pin {
                 debug_assert!(active[i].prefix_pin.is_none());
                 active[i].prefix_pin = Some(pin.clone());
@@ -25135,6 +25331,7 @@ fn prefill_tick(
         // refused by the SWA flat-history layout (memra#151) and its plain-affinity resume has
         // no gate yet, so a boundary stop here would buy a capture nothing can consume.
         s.snapshot_at = None;
+        s.seed_at = None;
     }
     if eager_only {
         // eager-only models cannot (gemma4: not YET, see above) consume a plain-affinity
@@ -25160,7 +25357,9 @@ fn prefill_tick(
     // program) rather than degrade to tokenwise; it is not done here because clearing
     // snapshot_at/ckpt_at interacts with the post-prime capture below. Tracked separately.
     let fed_len = s.fed.len();
-    let bound_rem = [s.snapshot_at, s.ckpt_at]
+    // `seed_at` is the third boundary of the same class (memra#602): the grid-aligned
+    // prompt-end seed stops the prime on the grid exactly like the LCP split does.
+    let bound_rem = [s.snapshot_at, s.ckpt_at, s.seed_at]
         .into_iter()
         .flatten()
         .filter(|&b| b > fed_len)
@@ -25195,11 +25394,12 @@ fn prefill_tick(
             // numeric program entirely. Diagnostic only.
             eprintln!(
                 "[primeseg] call start={fed_len} take={take} grid_off={} bound_rem={:?} \
-                 ckpt_at={:?} snapshot_at={:?} q={q} budget={budget}",
+                 ckpt_at={:?} snapshot_at={:?} q={q} budget={budget} seed_at={:?}",
                 fed_len % memra_engine::Engine::gdn_chunk_size(),
                 bound_rem,
                 s.ckpt_at,
                 s.snapshot_at,
+                s.seed_at,
             );
         }
         // Text-only hyper segments use the same saved trunk on both arms.
@@ -25352,6 +25552,13 @@ fn prefill_tick(
                 loaded.get(&s.model).map(|l| &l.model),
             );
         }
+    }
+    // GRID-ALIGNED SEED (memra#602): the prompt-end seed publishes at its grid boundary the
+    // instant the prime reaches it (a no-op unless s.seed_at == s.fed.len()); the remainder of
+    // the prompt then primes from this grid start. `maybe_prefix_seed` owns the check, so an
+    // on-grid prompt end (seed_at == prompt length) publishes here or at prefill-done alike.
+    if s.seed_at == Some(s.fed.len()) {
+        maybe_prefix_seed(engine, px, hpx, s, loaded.get(&s.model).map(|l| &l.model));
     }
     // PLAIN-AFFINITY: capture the pre-generation checkpoint the instant the prime reaches its
     // boundary (no-op unless s.ckpt_at == s.fed.len()). Cheap — one GDN-state snapshot.
@@ -26301,11 +26508,14 @@ fn step_session(
         // the min here no longer forfeits it — the engine stops at BOTH, exactly like the
         // plain prefill tick's snapshot_at/ckpt_at pair.)
         let prime_split = if cold {
-            match (prime_split, spec.capture_at.filter(|&b| b < suffix.len())) {
-                (Some(a), Some(c)) => Some(a.min(c)),
-                (None, Some(c)) => Some(c),
-                (a, None) => a,
-            }
+            // GRID-ALIGNED CAPTURE (memra#602, day 19): `capture_at` is the seed's grid
+            // boundary and may sit ABOVE the affinity boundary, so it is a prime stop of its
+            // own. `trunk_schedule` takes both `prime_split` and the checkpoint stop (the
+            // affinity boundary rides through `ckpt_at` above), and the engine captures where
+            // a chunk ends on `capture_at`; the old min() dropped whichever stop came later.
+            spec.capture_at
+                .filter(|&b| b < suffix.len())
+                .or(prime_split)
         } else {
             prime_split
         };
@@ -35660,6 +35870,95 @@ mod tests {
         // lcp at the prompt end steps 200 -> 192 -> 160, and the fed gap is measured from
         // the stepped boundary.
         assert_eq!(bound(200, 120, 200), Some(160));
+    }
+
+    #[test]
+    fn seed_capture_boundary_lands_on_the_grid_or_refuses() {
+        // memra#602 (research/spill-b-20260919/DAY17.md): the prompt-end seed obeys the same
+        // grid law as the LCP and message-boundary captures. grid = gdn_chunk_size() (32
+        // shipped), W1 remainder floor = PRIME_MIN_T (16), entry floor = PREFIX_CACHE_MIN_TOKENS
+        // (64). Every case below is stated in grid units so the test holds under MEMRA_GDN_CHUNK.
+        use super::{SeedCapture, seed_capture_boundary};
+        let c = memra_engine::Engine::gdn_chunk_size();
+        let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+        let min = super::PREFIX_CACHE_MIN_TOKENS;
+        assert!(
+            c >= 2 * floor && min.is_multiple_of(c),
+            "the shipped grain: c={c} floor={floor} min={min}"
+        );
+        // The day-17 lengths: 12,350 = 385*32 + 30 -> boundary 12,320 (remainder 30 >= floor);
+        // 12,200 = 381*32 + 8 -> aligned 12,192 leaves 8 < floor, step down to 12,160.
+        assert_eq!(
+            seed_capture_boundary(12_350, 0),
+            SeedCapture::AtBoundary(12_320)
+        );
+        assert_eq!(
+            seed_capture_boundary(12_200, 0),
+            SeedCapture::AtBoundary(12_160)
+        );
+        // exactly the prompt-end boundary: on the grid, the whole prompt publishes at
+        // prefill-done (unchanged behaviour); 12,288 is the cold prime's own call start.
+        assert_eq!(seed_capture_boundary(12_288, 0), SeedCapture::AtPromptEnd);
+        assert_eq!(seed_capture_boundary(400 * c, 0), SeedCapture::AtPromptEnd);
+        // just above a grid boundary: a remainder under the W1 floor steps down one grid unit.
+        for tail in 1..floor {
+            assert_eq!(
+                seed_capture_boundary(400 * c + tail, 0),
+                SeedCapture::AtBoundary(399 * c),
+                "tail {tail}"
+            );
+        }
+        // a remainder at or above the floor keeps the nearest grid line.
+        for tail in floor..c {
+            assert_eq!(
+                seed_capture_boundary(400 * c + tail, 0),
+                SeedCapture::AtBoundary(400 * c),
+                "tail {tail}"
+            );
+        }
+        // just below a grid boundary: the previous grid line (remainder c-1 >= floor).
+        assert_eq!(
+            seed_capture_boundary(400 * c - 1, 0),
+            SeedCapture::AtBoundary(399 * c)
+        );
+        // an entry shorter than one grid step above the floor refuses, typed: prompts in
+        // (min, min + floor) align to min - c, under the entry floor.
+        for tail in 1..floor {
+            assert_eq!(
+                seed_capture_boundary(min + tail, 0),
+                SeedCapture::Refused { aligned: min - c },
+                "tail {tail}"
+            );
+        }
+        // the floor itself is on the grid and publishes whole; floor + W1 remainder aligns to it.
+        assert_eq!(seed_capture_boundary(min, 0), SeedCapture::AtPromptEnd);
+        assert_eq!(
+            seed_capture_boundary(min + floor, 0),
+            SeedCapture::AtBoundary(min)
+        );
+        // ON A HIT the boundary must lie at least PRIME_MIN_T past the restored entry: an exact
+        // re-send (entry == prompt) and a re-send extended by less than the step are covered.
+        assert_eq!(seed_capture_boundary(12_320, 12_320), SeedCapture::Covered);
+        assert_eq!(seed_capture_boundary(12_350, 12_320), SeedCapture::Covered);
+        assert_eq!(
+            seed_capture_boundary(12_320 + 8, 12_320),
+            SeedCapture::Covered
+        );
+        // the day-16 chain: turn k+1 = 150 more ids over a restored aligned entry deepens.
+        assert_eq!(
+            seed_capture_boundary(12_350, 12_160),
+            SeedCapture::AtBoundary(12_320)
+        );
+        // a legacy off-grid restored length never produces a sub-floor fed gap either.
+        assert_eq!(seed_capture_boundary(12_350, 12_310), SeedCapture::Covered);
+    }
+
+    #[test]
+    fn seed_boundary_inside_prompt_is_a_stop_only_below_the_prompt_end() {
+        use super::seed_boundary_inside_prompt;
+        assert!(!seed_boundary_inside_prompt(None, 1000));
+        assert!(!seed_boundary_inside_prompt(Some(1000), 1000));
+        assert!(seed_boundary_inside_prompt(Some(992), 1000));
     }
 
     #[test]

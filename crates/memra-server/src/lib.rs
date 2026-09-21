@@ -6501,6 +6501,7 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         body["prefix_cache_evictions"] = json!(m.prefix_evictions);
         body["prefix_cache_skips_budget"] = json!(m.prefix_skips_budget);
         body["prefix_cache_skips_pinned"] = json!(m.prefix_skips_pinned);
+        body["prefix_cache_seed_grid_refusals"] = json!(m.prefix_seed_grid_refusals);
         body["prefix_cache_hit_tokens"] = json!(m.prefix_hit_tokens);
         // Pinned-host spill tier behind the prefix cache (lane/kv-host-spill-20260830;
         // MEMRA_KV_HOST_MB, default 0 = off). *_ms are cumulative copy wall-time: the
@@ -20871,6 +20872,7 @@ temperature = 0.6
             metrics.prefix_evictions = 7;
             metrics.prefix_skips_budget = 9;
             metrics.prefix_skips_pinned = 10;
+            metrics.prefix_seed_grid_refusals = 12;
             metrics.prefix_hit_tokens = 11;
             metrics.lcp_hist[4] = 13;
             metrics.ns_tokens.insert("t:acme".into(), [100, 40]);
@@ -21027,6 +21029,7 @@ temperature = 0.6
             "prefix_cache_bytes",
             "prefix_cache_skips_budget",
             "prefix_cache_skips_pinned",
+            "prefix_cache_seed_grid_refusals",
             "active_sessions",
             "queued_requests",
             "admission_inflight",
@@ -21201,6 +21204,7 @@ temperature = 0.6
             "prefix_cache_evictions",
             "prefix_cache_skips_budget",
             "prefix_cache_skips_pinned",
+            "prefix_cache_seed_grid_refusals",
             "prefix_cache_hit_tokens",
         ] {
             assert!(
@@ -21227,6 +21231,7 @@ temperature = 0.6
         assert_eq!(operator_body["prefix_cache_evictions"], 7);
         assert_eq!(operator_body["prefix_cache_skips_budget"], 9);
         assert_eq!(operator_body["prefix_cache_skips_pinned"], 10);
+        assert_eq!(operator_body["prefix_cache_seed_grid_refusals"], 12);
         assert_eq!(operator_body["prefix_cache_hit_tokens"], 11);
         assert_eq!(operator_body["cache_hit_token_ratio"], 0.15);
         assert_eq!(operator_body["lcp_histogram"]["counts"][4], 13);
