@@ -14416,22 +14416,27 @@ pub fn run(
     // A worker reload creates a new map/cache/context. Tokens bind images to
     // these exact loaded instances, even if names and device ordinals repeat.
     hpx.model_generations = loaded.keys().map(|k| (k.clone(), Arc::new(()))).collect();
-    if kv_host_contracts {
+    if kv_host_contracts && hpx.budget == 0 {
+        // No host tier exists on this boot (MEMRA_KV_HOST_MB=0 or clamped to zero), so there
+        // is nothing to route: the door constructs nothing and says so under its own tag.
+        // Not `[prefix-host]`: with the tier off that tag stays silent, which the identity
+        // gate's OFF twin boot asserts.
+        eprintln!(
+            "[kv-host-contracts] MEMRA_KV_HOST_CONTRACTS=1 with no host tier on this boot \
+             (MEMRA_KV_HOST_MB=0): nothing to route, no program identity built"
+        );
+    }
+    if kv_host_contracts && hpx.budget > 0 {
         let vision_loaded = vision_tower.is_some() || gemma_tower.is_some() || glm5_tower.is_some();
         match host_tier_context(&engine, &hpx, &loaded, &models, vision_loaded) {
             Ok(tier) => {
                 eprintln!(
                     "[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): {} model \
                      program identities, tenant salt per pool namespace, server governor \
-                     ledger pinned/pageable {:.0}MB device {:.0}MB; host tier {}",
+                     ledger pinned/pageable {:.0}MB device {:.0}MB; host tier armed",
                     tier.programs.len(),
                     2.0 * hpx.budget as f64 / 1e6,
                     2.0 * prefix_cache_budget_bytes() as f64 / 1e6,
-                    if hpx.budget > 0 {
-                        "armed"
-                    } else {
-                        "has no budget (MEMRA_KV_HOST_MB=0): no image will be routed"
-                    },
                 );
                 hpx.tier = Some(tier);
             }
