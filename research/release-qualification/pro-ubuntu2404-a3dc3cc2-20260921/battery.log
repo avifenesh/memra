@@ -1,0 +1,31 @@
+kernel-check           PASS      ALL GREEN (110 cells, 103 executed, 10 required, 7 skipped; budget 11)
+SKIP dtype5-Q3_K (missing Q3_K tensor in model /data/models/kernel-oracles/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; pinned blk.40.ffn_gate_exps.weight absent)
+SKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)
+SKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)
+SKIP nvfp4-27b-shape (missing model Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)
+SKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)
+SKIP q4_0-sk-arm (missing model gemma-4-26B_q4_0-it.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)
+SKIP sigrouter-served-replay (MEMRA_SIG_ROUTER_REPLAY is not set to a run-gen capture) [Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf]
+ornith-ai/ornith-1.5-35b-a3b  card  free=97250MiB need=20788MiB
+ornith-ai/ornith-1.5-35b-a3b  argmax-margin  PASS  SUMMARY flips=1 bad=0
+ornith-ai/ornith-1.5-35b-a3b  run-spec  PASS      K=1..8 self-consistency, identical to plain target (8/8)
+qwen/qwen3.8-27b  card  free=97250MiB need=16514MiB
+qwen/qwen3.8-27b  argmax-margin  PASS  SUMMARY flips=0 bad=0
+qwen/qwen3.8-27b  run-spec  PASS      K=1..8 self-consistency, identical to plain target (8/8)
+
+=== RELEASE BATTERY PASS — paste into the tag message ===
+  roster: /home/memra-five/owners/issue-547/src-a3dc3cc25835917b45c4b03bf563afb15c1673dc/tools/release-roster.tsv (1 own)
+  kernel-check           PASS      ALL GREEN (110 cells, 103 executed, 10 required, 7 skipped; budget 11)
+  SKIP dtype5-Q3_K (missing Q3_K tensor in model /data/models/kernel-oracles/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; pinned blk.40.ffn_gate_exps.weight absent)
+  SKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)
+  SKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)
+  SKIP nvfp4-27b-shape (missing model Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)
+  SKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)
+  SKIP q4_0-sk-arm (missing model gemma-4-26B_q4_0-it.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)
+  SKIP sigrouter-served-replay (MEMRA_SIG_ROUTER_REPLAY is not set to a run-gen capture) [Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf]
+  ornith-ai/ornith-1.5-35b-a3b  card  free=97250MiB need=20788MiB
+  ornith-ai/ornith-1.5-35b-a3b  argmax-margin  PASS  SUMMARY flips=1 bad=0
+  ornith-ai/ornith-1.5-35b-a3b  run-spec  PASS      K=1..8 self-consistency, identical to plain target (8/8)
+  qwen/qwen3.8-27b  card  free=97250MiB need=16514MiB
+  qwen/qwen3.8-27b  argmax-margin  PASS  SUMMARY flips=0 bad=0
+  qwen/qwen3.8-27b  run-spec  PASS      K=1..8 self-consistency, identical to plain target (8/8)
