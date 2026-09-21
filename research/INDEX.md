@@ -539,4 +539,6 @@ lockstep-mixed-577-20260921 | "two row-count-dependent programs sat in moe_ffn_l
 
 - `release-qualification/pro-ubuntu2404-a3dc3cc2-20260921` | "All five canonical generic cells passed"; fresh v3 Ubuntu24 source/build/model/physical-card-bound proof, both-profile tag guard remains | [RESULTS](release-qualification/pro-ubuntu2404-a3dc3cc2-20260921/RESULTS.md)
 
+Historical qualification entry above: the superseded a3/8f capsule is preserved in [immutable results](https://github.com/avifenesh/memra/blob/8f19262ec7ce232160ac0d91ee904d2050221fc9/research/release-qualification/pro-ubuntu2404-a3dc3cc2-20260921/RESULTS.md) and the [complete capsule at 8f19262e](https://github.com/avifenesh/memra/tree/8f19262ec7ce232160ac0d91ee904d2050221fc9/research/release-qualification/pro-ubuntu2404-a3dc3cc2-20260921). Its duplicate files are no longer in the current tree; the original record and all sealed payloads remain in Git history and verified off-host archives.
+
 - `release-qualification/pro-ubuntu2404-25545777-20260921` | "All five canonical generic cells passed"; fresh v3 Ubuntu24 proof on accepted current main; both-profile tag guard remains | [RESULTS](release-qualification/pro-ubuntu2404-25545777-20260921/RESULTS.md)

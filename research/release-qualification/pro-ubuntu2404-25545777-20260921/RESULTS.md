@@ -2,7 +2,7 @@
 
 Tested source: `2554577794c0b57b0630c7cf7e0e7b15b8793735` on accepted main `b013885ba7d365516410efd0c013d90607a99bde`.
 Source inputs: `fd1b549a56413ae3b95d848c974ddbab047f079652233d4be60a4d60a8dbd41f` (56457 entries).
-All reviewed release-tooling paths are unchanged; runtime and Cargo bytes equal the accepted main. Historical a3/8f and PR566/7b records remain intact and are not reused to qualify this changed source.
+All reviewed release-tooling paths are unchanged; runtime and Cargo bytes equal the accepted main. The superseded a3/8f publication is preserved in [immutable results](https://github.com/avifenesh/memra/blob/8f19262ec7ce232160ac0d91ee904d2050221fc9/research/release-qualification/pro-ubuntu2404-a3dc3cc2-20260921/RESULTS.md) and its [complete sealed capsule](https://github.com/avifenesh/memra/tree/8f19262ec7ce232160ac0d91ee904d2050221fc9/research/release-qualification/pro-ubuntu2404-a3dc3cc2-20260921), with both off-host archives and their manifests verified before removing the duplicate from the current tree. Its record SHA256 remains `0142a120855efc26905aa2ca19d88aa3aeb38114352a1e5ffd093258737cb973`. Historical a3/8f and PR566/7b evidence is not reused to qualify this source.
 
 The fresh controlled v3 build used Rust 1.97.1, CUDA 13.1.115 and the fingerprinted source view inside bubblewrap. Source-view identities matched before/after compilation. `build.json` binds all six ELF outputs. The generic runtime cells execute kernel-check, argmax-margin-probe and run-spec; compiling memra-server, run-gen and tok-parity is not an HTTP-serving or tokenizer-parity run.
 
