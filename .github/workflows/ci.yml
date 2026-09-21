@@ -411,6 +411,8 @@ jobs:
           tools/unittest-floor.sh crates/memra-tier/tests/battery 'test_*.py' 80
       - name: unittest-floor teeth (empty discovery, a failing test and a floor above the count must all red)
         run: tools/test_unittest_floor.sh
+      - name: GPU CI orchestration failure controls (CPU only; from #590, unittest floor 9, 10 measured 2026-09-21)
+        run: tools/unittest-floor.sh tools test_gpu_ci.py 9
 
   # ── memra-engine: the CPU expert backend and the whole engine lib suite ────────────────────
   # memra#18 (2026-09-01): vision::tests and every other memra-engine lib test ran NOWHERE.
