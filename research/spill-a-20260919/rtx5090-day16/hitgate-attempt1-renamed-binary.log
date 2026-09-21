@@ -61,7 +61,7 @@
   ok: plane-less refusal names itself in the log
 == qwen arm: spec-off twin boot (identity reference) ==
 spec-on-cache-hit-gate: FAIL — port 18137 is already LISTENing before we start a server.
-    LISTEN 0      128                      127.0.0.1:18137      0.0.0.0:*    users:(("spill-a-day16-m",pid=2575243,fd=45)) 
+    LISTEN 0      128                      127.0.0.1:18137      0.0.0.0:*    users:(("spill-a-day16-m",pid=2575243,fd=45))
   Refusing to run rather than producing a confused result: a foreign responder on
   our port can answer /health, /readyz or /v1/models and be measured as if it were
   the model under test (accept-gate.sh:143 records exactly that incident).
