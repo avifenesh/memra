@@ -1,14 +1,11 @@
-# Session D day 10 handoff
-- Lane `lane/spill-d-20260919`; integ5 merged/pushed `9f849978bac72cf2a4b608873a49341eafb7ab56`.
-- **No D job running on BOX3**; tmux G2/smoke sessions closed; no D lock held.
-- G2 finished exit0; raw+summary pushed `7bcc27ba1`: 200 samples, N10/arm (5AB+5BA), all >=497ms, 37–41C/600W.
-- Smoke finished exit0; pushed `ac5a8badc`: loopback PASS both host-bounce flag positions; not cross-card staging.
-- Native receipts `/root/spill-receipts/d-day10/` copied under `rented-pro6000-20260920/` here; G2/smoke 140+21 hashes match.
-- Own remote clone `/root/wt-d` remains clean for integration; never modify reference `/root/memra-spill`.
-- Profile/schema fix+tests `527373c3a`; tool lock/match/memory/stub/wrapper were correct.
-- Bootstrap status successful, 31 steps: 30 exit0 + allowed initial pkg-config absence; not 31 all-green.
-- Final local checks: `day10/checks-final/`, all14 exit0, 85 tests PASS; first Darwin killpg failure retained (cause unknown).
-- D archive `--validate`: cells2, failed0, refused0; global BOX3 still refuses an incomplete peer journal.
-- Next lead step: rerun `python3 tools/tier-battery.py --validate /root/spill-receipts` after all peer collectors close.
-- Full report/table: DAY10-VERIFICATION.md / G2-RESULTS.md. No further D GPU work required.
-- About 0.9 agent-hours this session; active lane awaits integration, not main/release/serving qualification.
+# Session D day 11 handoff
+- Lane `lane/spill-d-20260919`, local only: merge `9872c1469` (origin lane + origin/main, tree == main), then `bda5d3c91` arms, `688b40468` clippy fix, `b2962bac0` TESTING/verifier, plus the day-11 data commit. Push refused by the perf-ci pre-push arm (19 inherited engine files); no override used. The lead pushes.
+- #552 criterion 2 delivered as `kv-tier-gate --fault <arm>` (7 arms, pooled, `--case active` only): 5 `FAULT-ARM PASS`, 2 typed refusals naming missing seams (cancel-restore recovery, require-resident contract). Table and verbatim lines: `DAY11.md`; rows: `docs/TESTING.md`.
+- **No D job running on the single-PRO clone**; tmux sessions closed; no D lock held; GPU idle after the run.
+- Native receipts `/root/spill-receipts/d-day11/` (build, build-2, seven arms, root `validate.json`: cells 7, failed 0, refused 2) mirrored under `pro-single-day11/`; `verify-day11.py` replay MATCH (`day11/verify-day11.log`); Rust replay in `crates/memra-tier/tests/reclaim/fault.rs`.
+- Continuing arms match the frozen 8k target-card bundle on all seven surfaces; every arm's suspended prefix equals the bundle's.
+- Clone branch `d-day11` = origin/main + the two lane patches (`git am`); tree id equals local `688b40468`. `/root/wt-d` may be reset to the pushed lane once the lead pushes.
+- Shared-roundtrip changes lane B should know: whole-state admission (`admit_whole_state`) and `StateBundle::verify` as the restore integrity check.
+- Findings for the lead: no H2D-source recovery after cancel; no governor capacity-shrink seam; no continuation-time required-resident contract (`ensure_usable` accepts a suspended cache, `decode_step_h` unwraps).
+- Checks: 30 Rust + 85 Python tests, fmt, diff-check, flags census, docs census, boundary scan, shellcheck, build-2 clippy 0. No engine/server battery, no timing, no 5090 cell.
+- About 3.5 agent-hours this session. Next: lead push, #552 comment posted with the arm table (issue stays open).
