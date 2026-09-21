@@ -1,0 +1,509 @@
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/root/spill-receipts/a-day13/pinned-cell.sh",
+    "3",
+    "167772160",
+    "5"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 81506374841402,
+  "ended_monotonic_ns": 81577019552822,
+  "started_utc": "2026-09-21T13:30:21.368699+00:00",
+  "ended_utc": "2026-09-21T13:31:32.013412+00:00",
+  "elapsed_seconds": 70.64471142,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 13639,
+    "sha256": "d68c67c5cc6423de8e74ded337ad41ddeb5df3516ae30621a44b35a289f87951"
+  },
+  "failure_quote": null,
+  "result": {
+    "cell": "pinned-ab",
+    "bytes": 167772160,
+    "pairs_per_order": 5,
+    "arms": {
+      "A": "write-combined",
+      "B": "cached"
+    },
+    "orders": [
+      "A B",
+      "B A"
+    ],
+    "warmup_per_arm": 1,
+    "byte_exact_all": true,
+    "driver_flags_honoured": true,
+    "per_pair": {
+      "bind_hash_cached_below_wc": [
+        10,
+        10
+      ],
+      "engine_hash_cached_below_wc": [
+        10,
+        10
+      ],
+      "d2h_cached_not_above_wc": [
+        10,
+        10
+      ],
+      "d2h_cached_strictly_below_wc": [
+        10,
+        10
+      ],
+      "h2d_cached_not_above_wc": [
+        9,
+        10
+      ]
+    },
+    "medians_both_orders": true,
+    "cached_arm": "wins-on-this-card",
+    "cached_arm_strict_d2h_reading": "wins-on-this-card",
+    "medians_ms": {
+      "alloc_ms.write-combined": {
+        "order1": 24.468,
+        "order2": 24.058,
+        "pooled": 24.331,
+        "n_per_order": 5,
+        "n_pooled": 10
+      },
+      "alloc_ms.cached": {
+        "order1": 29.145,
+        "order2": 29.334,
+        "pooled": 29.31,
+        "n_per_order": 5,
+        "n_pooled": 10
+      },
+      "d2h_ms.write-combined": {
+        "order1": 3.008,
+        "order2": 3.007,
+        "pooled": 3.008,
+        "n_per_order": 5,
+        "n_pooled": 10
+      },
+      "d2h_ms.cached": {
+        "order1": 2.999,
+        "order2": 3.001,
+        "pooled": 3.0,
+        "n_per_order": 5,
+        "n_pooled": 10
+      },
+      "engine_hash_ms.write-combined": {
+        "order1": 1710.801,
+        "order2": 1695.968,
+        "pooled": 1710.204,
+        "n_per_order": 5,
+        "n_pooled": 10
+      },
+      "engine_hash_ms.cached": {
+        "order1": 77.613,
+        "order2": 77.576,
+        "pooled": 77.606,
+        "n_per_order": 5,
+        "n_pooled": 10
+      },
+      "bind_hash_ms.write-combined": {
+        "order1": 1711.219,
+        "order2": 1692.425,
+        "pooled": 1711.117,
+        "n_per_order": 5,
+        "n_pooled": 10
+      },
+      "bind_hash_ms.cached": {
+        "order1": 77.575,
+        "order2": 77.584,
+        "pooled": 77.579,
+        "n_per_order": 5,
+        "n_pooled": 10
+      },
+      "compare_ms.write-combined": {
+        "order1": 650.653,
+        "order2": 646.318,
+        "pooled": 649.79,
+        "n_per_order": 5,
+        "n_pooled": 10
+      },
+      "compare_ms.cached": {
+        "order1": 6.475,
+        "order2": 6.449,
+        "pooled": 6.465,
+        "n_per_order": 5,
+        "n_pooled": 10
+      },
+      "h2d_ms.write-combined": {
+        "order1": 2.977,
+        "order2": 2.977,
+        "pooled": 2.977,
+        "n_per_order": 5,
+        "n_pooled": 10
+      },
+      "h2d_ms.cached": {
+        "order1": 2.974,
+        "order2": 2.977,
+        "pooled": 2.975,
+        "n_per_order": 5,
+        "n_pooled": 10
+      },
+      "source_hash_ms.write-combined": {
+        "order1": 1711.338,
+        "order2": 1691.966,
+        "pooled": 1710.496,
+        "n_per_order": 5,
+        "n_pooled": 10
+      },
+      "source_hash_ms.cached": {
+        "order1": 77.594,
+        "order2": 77.615,
+        "pooled": 77.604,
+        "n_per_order": 5,
+        "n_pooled": 10
+      }
+    },
+    "samples": [
+      {
+        "order": 1,
+        "pair": 1,
+        "arm": "write-combined",
+        "driver_flags": 6,
+        "alloc_ms": 24.151,
+        "d2h_ms": 3.008,
+        "engine_hash_ms": 1709.997,
+        "bind_hash_ms": 1711.219,
+        "compare_ms": 651.076,
+        "h2d_ms": 2.977,
+        "source_hash_ms": 1710.944,
+        "byte_exact": true
+      },
+      {
+        "order": 1,
+        "pair": 1,
+        "arm": "cached",
+        "driver_flags": 2,
+        "alloc_ms": 28.905,
+        "d2h_ms": 3.006,
+        "engine_hash_ms": 77.658,
+        "bind_hash_ms": 77.563,
+        "compare_ms": 6.476,
+        "h2d_ms": 2.975,
+        "source_hash_ms": 77.559,
+        "byte_exact": true
+      },
+      {
+        "order": 1,
+        "pair": 2,
+        "arm": "write-combined",
+        "driver_flags": 6,
+        "alloc_ms": 24.468,
+        "d2h_ms": 3.01,
+        "engine_hash_ms": 1711.464,
+        "bind_hash_ms": 1711.692,
+        "compare_ms": 650.653,
+        "h2d_ms": 2.978,
+        "source_hash_ms": 1712.608,
+        "byte_exact": true
+      },
+      {
+        "order": 1,
+        "pair": 2,
+        "arm": "cached",
+        "driver_flags": 2,
+        "alloc_ms": 29.387,
+        "d2h_ms": 2.996,
+        "engine_hash_ms": 77.558,
+        "bind_hash_ms": 77.59,
+        "compare_ms": 6.502,
+        "h2d_ms": 2.971,
+        "source_hash_ms": 77.594,
+        "byte_exact": true
+      },
+      {
+        "order": 1,
+        "pair": 3,
+        "arm": "write-combined",
+        "driver_flags": 6,
+        "alloc_ms": 24.764,
+        "d2h_ms": 3.007,
+        "engine_hash_ms": 1712.116,
+        "bind_hash_ms": 1711.027,
+        "compare_ms": 649.956,
+        "h2d_ms": 2.977,
+        "source_hash_ms": 1710.048,
+        "byte_exact": true
+      },
+      {
+        "order": 1,
+        "pair": 3,
+        "arm": "cached",
+        "driver_flags": 2,
+        "alloc_ms": 29.486,
+        "d2h_ms": 3.0,
+        "engine_hash_ms": 77.613,
+        "bind_hash_ms": 77.565,
+        "compare_ms": 6.475,
+        "h2d_ms": 2.969,
+        "source_hash_ms": 77.633,
+        "byte_exact": true
+      },
+      {
+        "order": 1,
+        "pair": 4,
+        "arm": "write-combined",
+        "driver_flags": 6,
+        "alloc_ms": 24.924,
+        "d2h_ms": 3.008,
+        "engine_hash_ms": 1710.801,
+        "bind_hash_ms": 1711.68,
+        "compare_ms": 649.097,
+        "h2d_ms": 2.977,
+        "source_hash_ms": 1713.833,
+        "byte_exact": true
+      },
+      {
+        "order": 1,
+        "pair": 4,
+        "arm": "cached",
+        "driver_flags": 2,
+        "alloc_ms": 29.023,
+        "d2h_ms": 2.999,
+        "engine_hash_ms": 77.605,
+        "bind_hash_ms": 77.575,
+        "compare_ms": 6.453,
+        "h2d_ms": 2.974,
+        "source_hash_ms": 77.594,
+        "byte_exact": true
+      },
+      {
+        "order": 1,
+        "pair": 5,
+        "arm": "write-combined",
+        "driver_flags": 6,
+        "alloc_ms": 24.228,
+        "d2h_ms": 3.007,
+        "engine_hash_ms": 1710.411,
+        "bind_hash_ms": 1711.207,
+        "compare_ms": 651.42,
+        "h2d_ms": 2.977,
+        "source_hash_ms": 1711.338,
+        "byte_exact": true
+      },
+      {
+        "order": 1,
+        "pair": 5,
+        "arm": "cached",
+        "driver_flags": 2,
+        "alloc_ms": 29.145,
+        "d2h_ms": 2.998,
+        "engine_hash_ms": 77.637,
+        "bind_hash_ms": 77.688,
+        "compare_ms": 6.456,
+        "h2d_ms": 2.975,
+        "source_hash_ms": 77.649,
+        "byte_exact": true
+      },
+      {
+        "order": 2,
+        "pair": 1,
+        "arm": "cached",
+        "driver_flags": 2,
+        "alloc_ms": 29.287,
+        "d2h_ms": 3.0,
+        "engine_hash_ms": 77.576,
+        "bind_hash_ms": 77.607,
+        "compare_ms": 6.449,
+        "h2d_ms": 2.974,
+        "source_hash_ms": 77.542,
+        "byte_exact": true
+      },
+      {
+        "order": 2,
+        "pair": 1,
+        "arm": "write-combined",
+        "driver_flags": 6,
+        "alloc_ms": 24.037,
+        "d2h_ms": 3.003,
+        "engine_hash_ms": 1709.851,
+        "bind_hash_ms": 1710.048,
+        "compare_ms": 650.293,
+        "h2d_ms": 2.977,
+        "source_hash_ms": 1709.849,
+        "byte_exact": true
+      },
+      {
+        "order": 2,
+        "pair": 2,
+        "arm": "cached",
+        "driver_flags": 2,
+        "alloc_ms": 29.393,
+        "d2h_ms": 3.002,
+        "engine_hash_ms": 77.558,
+        "bind_hash_ms": 77.507,
+        "compare_ms": 6.588,
+        "h2d_ms": 2.978,
+        "source_hash_ms": 77.937,
+        "byte_exact": true
+      },
+      {
+        "order": 2,
+        "pair": 2,
+        "arm": "write-combined",
+        "driver_flags": 6,
+        "alloc_ms": 24.435,
+        "d2h_ms": 3.007,
+        "engine_hash_ms": 1712.837,
+        "bind_hash_ms": 1712.775,
+        "compare_ms": 649.625,
+        "h2d_ms": 2.978,
+        "source_hash_ms": 1712.005,
+        "byte_exact": true
+      },
+      {
+        "order": 2,
+        "pair": 3,
+        "arm": "cached",
+        "driver_flags": 2,
+        "alloc_ms": 29.387,
+        "d2h_ms": 3.001,
+        "engine_hash_ms": 77.659,
+        "bind_hash_ms": 77.658,
+        "compare_ms": 6.445,
+        "h2d_ms": 2.988,
+        "source_hash_ms": 77.814,
+        "byte_exact": true
+      },
+      {
+        "order": 2,
+        "pair": 3,
+        "arm": "write-combined",
+        "driver_flags": 6,
+        "alloc_ms": 24.662,
+        "d2h_ms": 3.009,
+        "engine_hash_ms": 1692.832,
+        "bind_hash_ms": 1691.014,
+        "compare_ms": 644.746,
+        "h2d_ms": 2.978,
+        "source_hash_ms": 1690.302,
+        "byte_exact": true
+      },
+      {
+        "order": 2,
+        "pair": 4,
+        "arm": "cached",
+        "driver_flags": 2,
+        "alloc_ms": 28.962,
+        "d2h_ms": 3.002,
+        "engine_hash_ms": 77.548,
+        "bind_hash_ms": 77.511,
+        "compare_ms": 6.374,
+        "h2d_ms": 2.975,
+        "source_hash_ms": 77.523,
+        "byte_exact": true
+      },
+      {
+        "order": 2,
+        "pair": 4,
+        "arm": "write-combined",
+        "driver_flags": 6,
+        "alloc_ms": 24.058,
+        "d2h_ms": 3.005,
+        "engine_hash_ms": 1695.968,
+        "bind_hash_ms": 1692.425,
+        "compare_ms": 646.318,
+        "h2d_ms": 2.976,
+        "source_hash_ms": 1691.966,
+        "byte_exact": true
+      },
+      {
+        "order": 2,
+        "pair": 5,
+        "arm": "cached",
+        "driver_flags": 2,
+        "alloc_ms": 29.334,
+        "d2h_ms": 3.0,
+        "engine_hash_ms": 77.607,
+        "bind_hash_ms": 77.584,
+        "compare_ms": 6.477,
+        "h2d_ms": 2.977,
+        "source_hash_ms": 77.615,
+        "byte_exact": true
+      },
+      {
+        "order": 2,
+        "pair": 5,
+        "arm": "write-combined",
+        "driver_flags": 6,
+        "alloc_ms": 23.778,
+        "d2h_ms": 3.012,
+        "engine_hash_ms": 1691.924,
+        "bind_hash_ms": 1690.59,
+        "compare_ms": 645.224,
+        "h2d_ms": 2.977,
+        "source_hash_ms": 1691.504,
+        "byte_exact": true
+      }
+    ],
+    "qualification": false,
+    "scope": "one card, one window, executed-not-qualified; the target-card cell of the MEMRA_KV_HOST_CONTRACTS decide-by review, not a default change"
+  },
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 30128,
+      "sha256": "16c666402afd4094d1f315183adbdf19d2227077bdce49a8fc349acb764ac839"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

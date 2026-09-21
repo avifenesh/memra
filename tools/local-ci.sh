@@ -476,14 +476,18 @@ if [ -f "$G31" ]; then
     tools/argmax-margin-gate.sh "$G31" || { echo "argmax-margin-gate FAIL (31B)"; exit 1; }
     echo "argmax-margin-gate: PASS (31B, calibrated)"
     # shellcheck disable=SC2046
-    out=$(MEMRA_VERIFY_GATE=7 target/release/gemma-gate "$G31" $(cat "$DEPTH") 2>&1)
+    # `|| true` inside every gate capture below: under `set -e` a failing gate made the
+    # `out=$(...)` assignment exit the battery before its own verdict line printed (seen
+    # 2026-09-21: a decode-batch-gate red left only "LOCAL_CI_RC=1" after the 12B SKIP line).
+    # The grep that follows each capture is the verdict; the tail it prints is the evidence.
+    out=$(MEMRA_VERIFY_GATE=7 target/release/gemma-gate "$G31" $(cat "$DEPTH") 2>&1 || true)
     echo "$out" | grep -q "VERIFY-GATE K=7: PASS" || { echo "VERIFY-GATE FAIL (31B depth)"; exit 1; }
     echo "VERIFY-GATE K=7 depth: PASS (31B)"
     D31="$MODELS/gemma4-31b-tooluse-gguf/gemma-4-31B-it-Q4_0-MTP.gguf"
     if [ -f "$D31" ]; then
         # shellcheck disable=SC2046
         out=$(MEMRA_SPEC=6 MEMRA_DRAFT="$D31" MEMRA_NGEN=64 target/release/gemma-gate "$G31" \
-            $(cat research/gemma4-bringup/e4b-chat-watercycle-ids.txt) 2>&1)
+            $(cat research/gemma4-bringup/e4b-chat-watercycle-ids.txt) 2>&1 || true)
         echo "$out" | grep -qE "stream agreement 64/64" || { echo "spec self-consistency FAIL (31B)"; exit 1; }
         echo "spec self-consistency 64/64: PASS (31B)"
     fi
@@ -495,11 +499,11 @@ fi
 G12="${MEMRA_G12_MODEL:-/data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf}"
 if [ -f "$G12" ]; then
     # shellcheck disable=SC2046
-    out=$(MEMRA_NGEN=8 target/release/run-gen "$G12" $(cat "$DEPTH") 2>&1)
+    out=$(MEMRA_NGEN=8 target/release/run-gen "$G12" $(cat "$DEPTH") 2>&1 || true)
     echo "$out" | grep -q "MATCH" || { echo "run-gen argmax FAIL (12B depth)"; exit 1; }
     echo "run-gen argmax depth: MATCH (12B)"
     # shellcheck disable=SC2046
-    out=$(MEMRA_VERIFY_GATE=7 target/release/gemma-gate "$G12" $(cat "$DEPTH") 2>&1)
+    out=$(MEMRA_VERIFY_GATE=7 target/release/gemma-gate "$G12" $(cat "$DEPTH") 2>&1 || true)
     echo "$out" | grep -q "VERIFY-GATE K=7: PASS" || { echo "VERIFY-GATE FAIL (12B depth)"; exit 1; }
     echo "VERIFY-GATE K=7 depth: PASS (12B)"
 else
@@ -529,14 +533,14 @@ DBG_Q8="${MEMRA_CI_DBG_Q8:-$MODELS/ornith-1.0-9b-gguf/ornith-1.0-9b-Q8_0.gguf}"
 [ -x target/release/decode-batch-gate ] \
     || cargo build --release -p memra-engine --bin decode-batch-gate >/dev/null 2>&1
 if [ -f "$DBG_NVFP4" ]; then
-    out=$(target/release/decode-batch-gate "$DBG_NVFP4" --steps 32 --batch 8 --mode config 2>&1)
+    out=$(target/release/decode-batch-gate "$DBG_NVFP4" --steps 32 --batch 8 --mode config 2>&1 || true)
     echo "$out" | grep -q "ALL GREEN" \
         || { echo "$out" | tail -20; echo "decode-batch-gate FAIL (NVFP4 config B=8)"; exit 1; }
     echo "$out" | grep -Eq "global setting = OFF; effective .* = OFF" \
         || { echo "$out" | tail -20; echo "decode-batch-gate default B1 policy FAIL (NVFP4)"; exit 1; }
     echo "decode-batch-gate config B=8: ALL GREEN (9B NVFP4)"
     out=$(MEMRA_SERVE_B1FAST=1 MEMRA_MMVQ=0 MEMRA_NO_FUSE_NORMQ=1 target/release/decode-batch-gate \
-        "$DBG_NVFP4" --steps 32 --batch 4 --mode strict 2>&1)
+        "$DBG_NVFP4" --steps 32 --batch 4 --mode strict 2>&1 || true)
     echo "$out" | grep -q "ALL GREEN" \
         || { echo "$out" | tail -20; echo "decode-batch-gate FAIL (NVFP4 strict B=4)"; exit 1; }
     echo "decode-batch-gate strict B=4 equalized: ALL GREEN (9B NVFP4)"
@@ -548,14 +552,14 @@ else
 fi
 if [ -f "$DBG_Q8" ]; then
     out=$(MEMRA_Q8RP=1 target/release/decode-batch-gate "$DBG_Q8" \
-        --steps 32 --batch 8 --mode config 2>&1)
+        --steps 32 --batch 8 --mode config 2>&1 || true)
     echo "$out" | grep -q "ALL GREEN" \
         || { echo "$out" | tail -20; echo "decode-batch-gate FAIL (Q8_0 config B=8)"; exit 1; }
     echo "$out" | grep -Eq "global setting = OFF; effective .* = OFF" \
         || { echo "$out" | tail -20; echo "decode-batch-gate default B1 policy FAIL (Q8_0)"; exit 1; }
     echo "decode-batch-gate config B=8: ALL GREEN (9B Q8_0)"
     out=$(MEMRA_Q8RP=1 MEMRA_SERVE_B1FAST=1 MEMRA_MMVQ=0 MEMRA_NO_FUSE_NORMQ=1 target/release/decode-batch-gate \
-        "$DBG_Q8" --steps 32 --batch 4 --mode strict 2>&1)
+        "$DBG_Q8" --steps 32 --batch 4 --mode strict 2>&1 || true)
     echo "$out" | grep -q "ALL GREEN" \
         || { echo "$out" | tail -20; echo "decode-batch-gate FAIL (Q8_0 strict B=4)"; exit 1; }
     echo "decode-batch-gate strict B=4 equalized: ALL GREEN (9B Q8_0)"
@@ -588,15 +592,15 @@ if [ "${MEMRA_CI_GRAPH:-1}" = "1" ]; then
         cargo build --release -p memra-engine \
             --bin decode-dc-gate --bin graph-decode-gate --bin graph-session-gate \
             || { echo "graph-lane bins BUILD FAIL — refusing to gate on stale binaries"; exit 1; }
-        out=$(target/release/decode-dc-gate "$GRAPH_MODEL" 2>&1)
+        out=$(target/release/decode-dc-gate "$GRAPH_MODEL" 2>&1 || true)
         echo "$out" | tail -1 | grep -q "PASS" \
             || { echo "$out" | tail -5; echo "decode-dc-gate FAIL"; exit 1; }
         echo "decode-dc-gate: PASS"
-        out=$(target/release/graph-decode-gate "$GRAPH_MODEL" 2>&1)
+        out=$(target/release/graph-decode-gate "$GRAPH_MODEL" 2>&1 || true)
         echo "$out" | tail -1 | grep -q "PASS" \
             || { echo "$out" | tail -5; echo "graph-decode-gate FAIL"; exit 1; }
         echo "graph-decode-gate: PASS"
-        out=$(target/release/graph-session-gate "$GRAPH_MODEL" 2>&1)
+        out=$(target/release/graph-session-gate "$GRAPH_MODEL" 2>&1 || true)
         echo "$out" | tail -1 | grep -q "ALL GREEN" \
             || { echo "$out" | tail -5; echo "graph-session-gate FAIL"; exit 1; }
         echo "graph-session-gate: ALL GREEN"

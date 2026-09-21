@@ -1,0 +1,4 @@
+prompts: 4 distinct across m=4 streams (lens [20, 25, 23, 26]), n_new=64
+lockstep m=4: 256 tokens in 117.224s = 2.18 tok/s aggregate, 0.55 tok/s per stream
+CPU experts DECODE-WINDOW: calls=82791 experts=89597 backend_wall=104.752s RAM_hits=221322 RAM_misses=27051 RAM_fills=95.73 GB io=34.174s compute=69.303s
+stream-identity gate: SKIP (distinct prompts)

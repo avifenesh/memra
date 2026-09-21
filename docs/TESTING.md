@@ -1218,6 +1218,51 @@ allocation with the ticket until acknowledgement. The frozen schedules were not 
 PASS here is development correctness on one card class; it does not discharge the serving-shape
 cells the freeze lists as required.
 
+`tier-transfer-gate pinned-ab [--bytes N] [--pairs N]` (lane/spill-a-20260919 day 13) is the
+allocation-flag A/B of the contract's pinned host leases. The contract path allocated through
+cudarc's `alloc_pinned`, which hard-codes `cuMemHostAlloc(.., CU_MEMHOSTALLOC_WRITECOMBINED)`, so
+every CPU read of a demoted plane under `MEMRA_KV_HOST_CONTRACTS=1` (the engine's completion
+checksum, the bind checksum, and Option C's H2D-source checksum) ran uncached. The seam
+`memra_engine::tier_transfer::PinnedKind { WriteCombined, Cached }` (`alloc_host_kind`; `alloc_host`
+takes the per-device default below) is selected by the gate only, never by an environment variable.
+One process, one CUDA context, one collector lock hold: one untimed warm-up roundtrip per arm, then
+A B x N and B A x N, per roundtrip the allocation wall, the D2H wall (submit to owner-stream
+synchronize), the engine's completion-hash wall, the bind-hash wall, the byte compare, the H2D
+wall, the H2D-source hash wall, `cuMemHostGetFlags` (a UVA driver reports `DEVICEMAP` on every
+pinned allocation: 6 for write-combined, 2 for cached) and `byte_exact` on both legs; one
+`PINNED-AB rule` line and one `RESULT` JSON; `research/spill-a-20260919/wc-ab.py` replays the rule
+offline from the mirrored log and must agree. Pre-registered rule (`DAY13.md`): the cached arm wins
+on a card iff byte exact in every roundtrip, the driver's bit equals the arm's, cached bind hash
+below write-combined at every pair, cached D2H not above at every pair, and the per-order medians
+of both; otherwise inconclusive. Target card (one RTX PRO 6000 Blackwell at 600 W, `DAY13.md`,
+`pro-single-day13/pinned-ab-160m-s2`, N=5 per arm per order): bind hash 77.6 against 1711 ms
+(10/10 pairs), D2H 3.00 against 3.01, H2D 2.98 against 2.98, byte exact 22/22,
+`cached_arm=wins-on-this-card` (a first sitting `inconclusive` on the D2H clause by 1 and 4 us).
+Local RTX 5090 Laptop GPU (no power limit reported, `DAY14.md`, `rtx5090-day14/pinned-ab-160m`,
+N=5 per arm per order): bind hash 37.5 against 1449 ms (10/10 pairs), D2H 7.34 against 7.27 ms
+(cached not above at 5/10 pairs, above in both orders' medians), H2D 6.04 against 6.04, byte exact
+22/22, `cached_arm=inconclusive`; the 16 MiB context cell on the same card puts cached D2H at 0.74
+against 0.70 ms with non-overlapping ranges, 0/10.
+
+The per-device default (day 14, lead ruling 22, `docs/decisions/PINNED-DESTINATIONS.md`):
+`PinnedKind::for_device(name)` is `Cached` on the RTX PRO 6000 Blackwell class and `WriteCombined`
+on the RTX 5090 class and on every class without a receipt, keyed on the device name exactly as
+`parallel::HardwareTarget::from_device_name` keys the product shape; `CudaTransfers::new` resolves
+it once, `alloc_host` takes it, no `MEMRA_*` read. CPU cells
+`pinned_kind_per_device_default_resolves_by_card_class` (the receipted class resolves to `Cached`,
+the RTX 5090 class and unknown names to `WriteCombined`, which is the enum's `Default`),
+`pinned_kind_default_is_todays_write_combined_flag_bits` (the flag bits per kind, 4 and 0,
+unchanged) and `alloc_host_delegates_with_the_default_kind_and_no_other_pinned_allocation_remains`
+(source text: one `cuMemHostAlloc` site, one resolution site in the constructor, no environment
+read); GPU cell `pinned_kind_arm_is_honoured_by_the_driver` (ignored without a device: the default
+lease reads back the card's resolved arm from `cuMemHostGetFlags`). `conformance` and `roundtrip`
+run through the new default and print `PINNED-DEFAULT device=".." kind=.. flags=..` once per
+process and `PINNED-DEFAULT roundtrip bytes=.. kind=.. driver_flags=..` per size beside every
+`byte_exact=true` line: both cards green through the new default (`DAY14.md`, `rtx5090-day14/*-s2`
+and `pro-single-day14/*-s2`).
+`research/spill-a-20260919/PINNED-FLAGS.md` is the census of every pinned allocation and every host
+read on the path.
+
 ### `kv-tier-gate`: fitting-context KV tiering under one numeric program
 
 `crates/memra-engine/src/bin/kv_tier_gate.rs`; the argument contract is `kv_tier_gate/cli.rs`
@@ -1588,6 +1633,68 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   the drain-then-retire order with no discarded result in the abort. Evidence:
   `research/spill-c-20260919/DAY15.md` (review section), `pro-single-day15-review/`, replay
   `verify-day15-review.py`.
+- Option C (day 16, lead ruling 15 after B's receipts): under the door the promote H2D of an entry whose KV
+  planes are contract destinations goes through the same `TransferEngine`, one batch per promote: fresh
+  device planes from the OFF allocator (`alloc_u8`) registered at the destination generation and retained;
+  the sources are TWINS of the entry's own leases (`CudaTransfers::retain_host`, the host mirror of
+  `retain_device`: the contract's H2D consumes the lease it is handed, and the promote keeps its host twin
+  resident exactly as OFF does, so the entry's handles never move); a producer fence, `submit_batch`,
+  `synchronize`, `poll`, `Completion::require` against each plane's D2H receipt BEFORE publication (the copy
+  read exactly the bytes the demote wrote), `ready_view` per item, a consumer fence, `retire_source`,
+  `release_producer`, `retire`, `acknowledge`, `take_plane` into the `PrefixPlane`s the caller publishes
+  through `insert_pinned_demoting`; the verify digest stays the OFF-path check. Typed
+  `HostPromoteFailure`: `Failed` (the OFF line), `Refused` (entry intact, ledger clean), `ReceiptMismatch`
+  (`cancel`, `recover_source` per source twin per lane A's rule 1 with the recovered pointer checked against
+  the entry's lease, `retire`, `acknowledge`; the caller drops the host entry as `VERIFY FAILED` does),
+  `Latched` (one `TIER DISABLED` line). The ledger's device dimension holds three device prefix budgets.
+  Receipt per ON promote: `[prefix-host] contracts door H2D receipt: ticket issuer=.. seq=.. epochs=0/1/1
+  items=N (.. KV planes[, draft]) complete=N require=ok checksums_sha256=.. published retired acknowledged`,
+  whose digest equals the D2H line's digest of the same entry. CPU cells (`worker::tests`):
+  `option_c_contract_route_is_door_only_and_keeps_the_frozen_promote_order` (the restore sequence in order,
+  the receipt check before the first `ready_view`, destinations allocated before any registration, the
+  planes leave only after acknowledgement, no `htod_u8_into`/`memcpy_htod`/`clone_dtoh`/`alloc_host` in the
+  route, `plane_up` keeps both `htod_u8_into` calls, the abort cancels then recovers then retires and
+  discards nothing, the caller drops on a mismatch and latches on a leak, the demote route takes only its
+  side of the fault cell, the device dimension at three budgets),
+  `host_contract_fault_sides_are_taken_by_their_own_route_only`, and
+  `host_tier_governor_ledger_admits_what_the_lru_would_and_binds_at_twice_the_budget` (now also: a third
+  whole-budget device charge admitted, a fourth refused). GPU cells (`#[ignore]` without a device, a real
+  `CudaTransfers` on the engine's stream, a host image built by the Option B route):
+  `option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin` (every fresh plane holds the
+  demoted bytes, the source device entry untouched, the host twin's leases readable and SOLE-OWNED again
+  (`flip_first_byte` succeeds twice), a demote-side fault left armed, ledger back to the image's leases),
+  `option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin`,
+  `option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin`,
+  `option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source` (one flipped host byte:
+  `ReceiptMismatch`, the twin recovered and dropped, the flip reverts, then a clean promote). Gate:
+  `tools/kv-host-contract-fault-gate.sh` gains the cells `promote-presubmit` and `promote-postpublish`
+  (`MEMRA_KV_HOST_FAULT=contract-promote-presubmit|contract-promote-postpublish`, one-shot: r1 seeds, r2
+  evicts into a clean demote, r3 re-asks r1 so the promote takes the injected refusal and the cold path
+  serves, r4 re-asks r2 so the next promote must complete with an H2D receipt and a `promote:` line; no
+  `TIER DISABLED`, no drop, no `Capacity`, no leaked wording, no refusal beyond the injected one). Target
+  card, door OFF then ON on one binary: the day-15 battery (identity default and plain, failure default,
+  lane A's tenant fix arm, serve-smoke, lane B's two gates) plus the six GPU cells, the four-cell fault gate,
+  and the WC pair cell (`research/spill-c-20260919/WC-DESTINATIONS.md`: OFF versus ON demote and promote
+  wall times, N=5 per arm in both orders, one lock hold, 250 ms telemetry; the first cell of the decide-by
+  review, not a verdict). Evidence: `research/spill-c-20260919/DAY16.md`, `pro-single-day16/`, replay
+  `verify-day16.py`.
+- Option C unwind (day 16 review, PR #605 findings 1 and 2): the promote abort recovers only the ACCEPTED
+  items of a partially accepted batch (a rejected slot is `None` in the engine and `recover_source` answers
+  `Rejected`; recovering it pushed a leak that latched the tier over a clean state) and asks the engine
+  whether the ticket is published through `cancel` (`PublicationRevoked` recovers the sources per rule 1,
+  `AlreadyPublished` records the consumer fence, drains and retires the sources) instead of inferring it
+  from a loop index (which can disagree with `CudaTransfers::ready_view`, publish-after-check, and
+  `with_destination`, publish-before-check, and then leaves the ticket un-retired and every destination
+  refused). One-shot faults `MEMRA_KV_HOST_FAULT=contract-promote-reject` (the last op mis-sized by one
+  byte, rejected by the engine's own validation) and `contract-promote-readyview` (the first `ready_view`
+  published in the engine, the route told otherwise). GPU cells (`worker::tests`, `#[ignore]` without a
+  device): `option_c_partial_acceptance_unwinds_refused_with_every_destination_released`,
+  `option_c_first_ready_view_failure_unwinds_through_the_published_arm` (each: typed `Refused`, no leak
+  wording, host twins intact and sole-owned, ledger back to the image's leases, the next promote completes).
+  Gate: `tools/kv-host-contract-fault-gate.sh` cells `promote-reject` and `promote-readyview` (six cells in
+  all; the aborted ticket's sequence number is consumed, no `TIER DISABLED`, no drop, no `Capacity`, no
+  leaked wording). Evidence: `research/spill-c-20260919/DAY16.md` (review section), `pro-single-day16-review/`,
+  replay `verify-day16-review.py`.
 
 ### `h2d-probe --copies`
 

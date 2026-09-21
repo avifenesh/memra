@@ -16,15 +16,32 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 BIN=$ROOT/target/release
 ROSTER=$HERE/release-roster.tsv
+EVIDENCE_DIR=""
+EVIDENCE_SEQ=0
 ALLOW_MISSING_VENDOR=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --roster) ROSTER=${2:?}; shift 2 ;;
+    --evidence-dir) EVIDENCE_DIR=${2:?}; shift 2 ;;
     --allow-missing-vendor) ALLOW_MISSING_VENDOR=1; shift ;;
     -h|--help) sed -n '1,14p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 64 ;;
   esac
 done
+
+# Raw outputs are captured before parsing. A failed evidence write refuses the run.
+# The optional mode changes evidence storage only; it does not change any acceptance predicate.
+if [ -n "$EVIDENCE_DIR" ]; then
+  mkdir "$EVIDENCE_DIR" || exit 1
+  : > "$EVIDENCE_DIR/runs.tsv" || exit 1
+fi
+save_evidence() {
+  [ -n "$EVIDENCE_DIR" ] || return 0
+  EVIDENCE_SEQ=$((EVIDENCE_SEQ + 1))
+  evidence_name="$EVIDENCE_SEQ-$1.log"
+  printf '%s\n' "$OUT" > "$EVIDENCE_DIR/$evidence_name" || exit 1
+  printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$evidence_name" >> "$EVIDENCE_DIR/runs.tsv" || exit 1
+}
 
 # argmax-margin-gate.sh answers "SKIP (build target/release/argmax-margin-probe to enable)"
 # and exits 0 when its probe is absent — a gate that disables itself on a missing dependency.
@@ -143,8 +160,10 @@ if [ -z "$KC_MODEL" ]; then
   FAILED=1
 else
   COVERAGE=""
-  if OUT=$(unset MEMRA_KC_FAST MEMRA_KC_ONLY; "$BIN/kernel-check" "$KC_MODEL" "${KC_REQUIRED[@]}" 2>&1) \
-      && COVERAGE=$(printf '%s\n' "$OUT" | python3 "$HERE/release-coverage.py" kernel "${KC_REQUIRED[@]}" 2>&1); then
+  rc=0
+  OUT=$(unset MEMRA_KC_FAST MEMRA_KC_ONLY; "$BIN/kernel-check" "$KC_MODEL" "${KC_REQUIRED[@]}" 2>&1) || rc=$?
+  save_evidence kernel kernel "$rc"
+  if [ "$rc" -eq 0 ] && COVERAGE=$(printf '%s\n' "$OUT" | python3 "$HERE/release-coverage.py" kernel "${KC_REQUIRED[@]}" 2>&1); then
     note "kernel-check           PASS      $COVERAGE [$(basename "$KC_MODEL")]"
   else
     printf '%s\n' "$OUT"
@@ -184,7 +203,14 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
     continue
   fi
   note "$id  card  free=${CARD_FREE:-?}MiB need=${NEED}MiB"
-  if OUT=$("$HERE/argmax-margin-gate.sh" "$path" 2>&1) && printf '%s' "$OUT" | grep -q "^  PASS:"; then
+  argmax_evidence=()
+  if [ -n "$EVIDENCE_DIR" ]; then
+    argmax_evidence=(--logdir "$EVIDENCE_DIR/argmax-$EVIDENCE_SEQ")
+  fi
+  rc=0
+  OUT=$("$HERE/argmax-margin-gate.sh" "$path" "${argmax_evidence[@]}" 2>&1) || rc=$?
+  save_evidence argmax "$id" "$rc"
+  if [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:"; then
     note "$id  argmax-margin  PASS  $(printf '%s' "$OUT" | grep -m1 -o 'SUMMARY flips=[0-9]* bad=[0-9]*')"
   else
     if printf '%s' "$OUT" | grep -q "SKIP"; then
@@ -208,9 +234,11 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   # Match local-ci's greedy full-depth mode. Benchmark overrides must neither narrow
   # the K sweep nor replace it with prompt-directory, plain-only, or sampled execution.
   COVERAGE=""
-  if OUT=$(unset MEMRA_PROMPT_DIR MEMRA_SPEC_K MEMRA_GEN_ONLY
-      MEMRA_SPEC_TEMP=0 MEMRA_NGEN=32 "$BIN/run-spec" "$path" 2>&1) \
-      && COVERAGE=$(printf '%s\n' "$OUT" | python3 "$HERE/release-coverage.py" spec 2>&1); then
+  rc=0
+  OUT=$(unset MEMRA_PROMPT_DIR MEMRA_SPEC_K MEMRA_GEN_ONLY
+      MEMRA_SPEC_TEMP=0 MEMRA_NGEN=32 "$BIN/run-spec" "$path" 2>&1) || rc=$?
+  save_evidence spec "$id" "$rc"
+  if [ "$rc" -eq 0 ] && COVERAGE=$(printf '%s\n' "$OUT" | python3 "$HERE/release-coverage.py" spec 2>&1); then
     note "$id  run-spec  PASS      $COVERAGE"
   else
     printf '%s\n' "$OUT"
