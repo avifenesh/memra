@@ -138,7 +138,33 @@ class Server(gate.Server):
 
 
 def lines_of_interest(lines: list[str]) -> list[str]:
-    return [ln.strip() for ln in lines if any(k in ln for k in KEEP)]
+    """Kept server lines; a run of per-token `[primeseg] TOKENWISE prompt token` receipts (one per
+    prompt token under the W1 door) is collapsed to its first line, its last line and a count."""
+    out: list[str] = []
+    run: list[str] = []
+
+    def flush() -> None:
+        if not run:
+            return
+        if len(run) <= 2:
+            out.extend(run)
+        else:
+            out.append(run[0])
+            out.append(f"[primeseg] TOKENWISE x{len(run)} prompt tokens (collapsed; first and last kept)")
+            out.append(run[-1])
+        run.clear()
+
+    for ln in lines:
+        if not any(k in ln for k in KEEP):
+            continue
+        ln = ln.strip()
+        if "[primeseg] TOKENWISE prompt token" in ln:
+            run.append(ln)
+            continue
+        flush()
+        out.append(ln)
+    flush()
+    return out
 
 
 def first_diff(a: str, b: str) -> int | None:
@@ -171,6 +197,8 @@ def main() -> None:
     ap.add_argument("--start-tokens", type=int, default=11000)
     ap.add_argument("--grow-tokens", type=int, default=150)
     ap.add_argument("--cold-turns", default="all", help="comma list of turns to prime cold, or all")
+    ap.add_argument("--no-chain", action="store_true", help="skip the growing chain (restore points only)")
+    ap.add_argument("--restore-points", default="", help="comma list of entry lengths p: in the cache-on boot, per point and under its own cache_salt, prime the last turn's prompt[:p] cold (the seed entry at p) and then send the whole last-turn prompt (a restore of p plus a suffix); compared with the cold boot's last-turn completion")
     ap.add_argument("--env", action="append", default=[], help="KEY=VAL for both boots (existing documented reads only)")
     ap.add_argument("--label", default="default")
     ap.add_argument("--request-timeout-s", type=int, default=240)
@@ -215,6 +243,16 @@ def main() -> None:
     cold_turns = list(range(1, args.turns + 1)) if args.cold_turns == "all" else sorted({int(t) for t in args.cold_turns.split(",") if t})
     if any(t < 1 or t > args.turns for t in cold_turns):
         refuse(f"--cold-turns outside 1..{args.turns}")
+    restore_points = [int(p) for p in args.restore_points.split(",") if p]
+    target = prompts[-1]
+    if restore_points:
+        if args.turns not in cold_turns:
+            refuse(f"--restore-points compares with the cold completion of turn {args.turns}; include it in --cold-turns")
+        bad = [p for p in restore_points if p < 64 or p >= len(target)]
+        if bad:
+            refuse(f"--restore-points must lie in 64..{len(target) - 1}: {bad}")
+    if args.no_chain and not restore_points:
+        refuse("--no-chain without --restore-points measures nothing")
 
     args.out.mkdir(parents=True)
     (args.out / "LOCK.json").write_text(proof.stdout)
@@ -228,6 +266,8 @@ def main() -> None:
         "budget_mib": args.budget_mib, "cohort_tokens": cohort_tokens, "turns": args.turns, "start_tokens": args.start_tokens,
         "grow_tokens": args.grow_tokens, "cold_turns": cold_turns, "max_tokens": args.max_tokens,
         "request_timeout_s": args.request_timeout_s,
+        "restore_points": restore_points, "no_chain": args.no_chain,
+        "gdn_grid": 32,
         "prompt_ids_sha256": [hashlib.sha256(",".join(map(str, p)).encode()).hexdigest() for p in prompts],
         "prompt_lengths": [len(p) for p in prompts],
     }
@@ -266,6 +306,7 @@ def main() -> None:
     srv.boot()
     rows: list[dict] = []
     cohort_rows: list[dict] = []
+    point_rows: list[dict] = []
     try:
         boot = srv.new_log_lines()
         on = next((ln.strip() for ln in boot if gate.RE_ON.search(ln)), None)
@@ -282,6 +323,8 @@ def main() -> None:
                 cohort_rows.append(r)
         prev = None
         for k, ids in enumerate(prompts, start=1):
+            if args.no_chain:
+                break
             r = run_request(srv, ids, "grow")
             if r["status"] != 200:
                 refuse(f"turn {k} was not served (HTTP {r['status']}): {r['error']}")
@@ -295,9 +338,30 @@ def main() -> None:
             prev = r["prompt_tokens"]
             tag = "" if c is None else (" == cold" if r["identical_to_cold"] else f" != cold (first diff char {r['first_diff_char']})")
             print(f"turn {k}: prompt={r['prompt_tokens']} cached={r['cached_tokens']} completion={r['completion_tokens']} finish={r['finish_reason']} sha={r['text_sha256'][:16]}{tag} {r['elapsed_s']}s", flush=True)
+        # ---- 3. restore points: the same last-turn prompt restored from entries of chosen lengths ----
+        for p in restore_points:
+            salt = f"rp-{p}"
+            seed = run_request(srv, target[:p], salt)
+            if seed["status"] != 200:
+                refuse(f"restore point {p}: seed was not served: {seed['error']}")
+            hit = run_request(srv, target, salt)
+            if hit["status"] != 200:
+                refuse(f"restore point {p}: hit was not served: {hit['error']}")
+            c = cold[args.turns]
+            row = {
+                "point": p, "grid_off": p % 32, "salt": salt, "seed": seed, "hit": hit,
+                "restored": hit["cached_tokens"], "suffix": (hit["prompt_tokens"] or 0) - (hit["cached_tokens"] or 0),
+                "cold_text_sha256": c["text_sha256"], "identical_to_cold": hit["text"] == c["text"],
+                "first_diff_char": first_diff(hit["text"], c["text"]),
+            }
+            point_rows.append(row)
+            print(f"restore point {p} (grid_off {p % 32}): seed cached={seed['cached_tokens']} hit cached={hit['cached_tokens']} suffix={row['suffix']} "
+                  f"completion={hit['completion_tokens']} finish={hit['finish_reason']} sha={hit['text_sha256'][:16]} "
+                  f"{'== cold' if row['identical_to_cold'] else '!= cold (first diff char ' + str(row['first_diff_char']) + ')'}", flush=True)
     finally:
         srv.stop()
     (args.out / "chain" / "cohort.json").write_text(json.dumps(cohort_rows, indent=2) + "\n")
+    (args.out / "chain" / "restore-points.json").write_text(json.dumps(point_rows, indent=2) + "\n")
     (args.out / "chain" / "rows.json").write_text(json.dumps(rows, indent=2) + "\n")
 
     compared = [r for r in rows if "identical_to_cold" in r]
@@ -324,16 +388,35 @@ def main() -> None:
                 f"{c['completion_tokens']} | {c['finish_reason']} | {c['text_sha256'][:16]} | {'yes' if r['identical_to_cold'] else 'NO'} | "
                 f"{r['first_diff_char'] if r['first_diff_char'] is not None else '-'} | {json.dumps(r['text'])} | {json.dumps(c['text'])} |"
             )
-    summary = {"verdict": verdict, "divergent": bool(divergent), "plan": plan, "cold": [cold[k] for k in cold_turns], "cohort": cohort_rows, "turns": rows}
+    points_verdict = None
+    if point_rows:
+        cells = " ".join(f"{r['point']}(off{r['grid_off']},suffix{r['suffix']}):{'yes' if r['identical_to_cold'] else 'NO'}" for r in point_rows)
+        n_id = sum(1 for r in point_rows if r["identical_to_cold"])
+        points_verdict = (f"RESTORE-POINTS: arm={args.label} target={len(target)} points={len(point_rows)} identical={n_id}/{len(point_rows)} "
+                          f"{cells} -> {'IDENTICAL' if n_id == len(point_rows) else 'DIVERGENT'}")
+        divergent = divergent or [r for r in point_rows if not r["identical_to_cold"]]
+    summary = {"verdict": verdict, "points_verdict": points_verdict, "divergent": bool(divergent), "plan": plan,
+               "cold": [cold[k] for k in cold_turns], "cohort": cohort_rows, "turns": rows, "restore_points": point_rows}
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     (args.out / "TURNS.md").write_text("\n".join(table) + "\n")
-    (args.out / "VERDICT.txt").write_text(verdict + "\n")
+    (args.out / "VERDICT.txt").write_text(verdict + "\n" + (points_verdict + "\n" if points_verdict else ""))
     print(on)
     for r in rows:
         for ln in r["lines"]:
             print(f"turn {r['turn']}:", ln)
+    for r in point_rows:
+        for ln in r["seed"]["lines"] + r["hit"]["lines"]:
+            if "[primeseg]" in ln or "[prefix-cache]" in ln:
+                print(f"restore point {r['point']}:", ln)
+        table.append(f"| rp {r['point']} | {r['hit']['prompt_tokens']} | {r['hit']['cached_tokens']} | {r['suffix']} | {r['hit']['completion_tokens']} | {r['hit']['finish_reason']} | {r['hit']['text_sha256'][:16]} | "
+                     f"{cold[args.turns]['completion_tokens']} | {cold[args.turns]['finish_reason']} | {r['cold_text_sha256'][:16]} | {'yes' if r['identical_to_cold'] else 'NO'} | "
+                     f"{r['first_diff_char'] if r['first_diff_char'] is not None else '-'} | {json.dumps(r['hit']['text'])} | {json.dumps(cold[args.turns]['text'])} |")
+    (args.out / "TURNS.md").write_text("\n".join(table) + "\n")
     print("\n".join(table))
-    print(verdict, flush=True)
+    print(verdict)
+    if points_verdict:
+        print(points_verdict)
+    sys.stdout.flush()
     sys.exit(1 if divergent else 0)
 
 
