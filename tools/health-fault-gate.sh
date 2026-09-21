@@ -132,6 +132,7 @@ stop() {
   echo "$rc" > "$D/exit"
   echo "  [$label] exit $rc"
   gpu_apps "$D/compute-apps-after.csv"
+  rm -f "$D/.sample.$$"
   SPID=0
 }
 cleanup() { [ "$SPID" != 0 ] && kill -0 "$SPID" 2>/dev/null && [ "$(readlink /proc/$SPID/cwd 2>/dev/null)" = "$PWD" ] && kill -TERM "$SPID" 2>/dev/null; true; }
@@ -331,6 +332,7 @@ print(fr)')
     wait "$SPID" 2>/dev/null; rc=$?; echo "$rc" > "$D/exit"; SPID=0
     t_exit=$(now_ms)
     gpu_apps "$D/compute-apps-after.csv"
+    rm -f "$D/.sample.$$"
     drain_ln=$(lineno '[server] drain complete in' "$D/server.log"); drain_ln=${drain_ln:-0}
     deadline_ln=$(lineno 'drain deadline' "$D/server.log"); deadline_ln=${deadline_ln:-0}
     v=FAIL
