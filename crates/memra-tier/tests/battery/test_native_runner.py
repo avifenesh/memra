@@ -12,9 +12,12 @@ ROOT = Path(__file__).resolve().parents[4]
 spec = importlib.util.spec_from_file_location('battery', ROOT/'tools/tier-battery.py')
 B = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(B)
+import private_lock
 
 
-class NativeRunnerTests(unittest.TestCase):
+class NativeRunnerTests(private_lock.PrivateLockMixin, unittest.TestCase):
+    BATTERY = B
+
     def stub_smi(self, root, fail=False):
         path = root/'nvidia-smi'
         path.write_text('#!'+sys.executable+'\n'+(
@@ -109,7 +112,9 @@ class NativeRunnerTests(unittest.TestCase):
             self.assertEqual((root/'run.log').read_text(),'RESULT not-json\n')
 
 
-class BootstrapTests(unittest.TestCase):
+class BootstrapTests(private_lock.PrivateLockMixin, unittest.TestCase):
+    BATTERY = B
+
     def run_script(self, root, script=None, branch='lane/spill-integ-test'):
         source = ROOT/'tools/tier-rig-bootstrap.sh'
         if script is not None:

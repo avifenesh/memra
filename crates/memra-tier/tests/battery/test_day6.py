@@ -13,9 +13,11 @@ ROOT = Path(__file__).resolve().parents[4]
 spec = importlib.util.spec_from_file_location('battery_day6', ROOT/'tools/tier-battery.py')
 B = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(B)
+import private_lock
 
 
-class CollectorTests(unittest.TestCase):
+class CollectorTests(private_lock.PrivateLockMixin, unittest.TestCase):
+    BATTERY = B
     def test_execute_preserves_literal_separator_and_child_options(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); out = root/'out'
