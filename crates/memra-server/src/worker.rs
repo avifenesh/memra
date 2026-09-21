@@ -4235,6 +4235,65 @@ fn prefix_insert_refused_leased(
     )
 }
 
+/// The shape of a refused publication, for the stderr throttle: an identical shape repeating on
+/// a saturated cache is counted (`prefix_cache_skips_budget` / `prefix_cache_skips_pinned`) but
+/// not re-printed on every request. `leased` is `None` for the oversize refusal and the leased
+/// byte count for the leased refusal; the path that refused (`why`) is deliberately not part of
+/// the shape, so the same numbers refusing on the insert path and on the preflight are one shape.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PrefixRefusalShape {
+    leased: Option<usize>,
+    bytes: usize,
+    budget: usize,
+    key: PoolKey,
+}
+
+/// Every `PREFIX_REFUSAL_REANNOUNCE_EVERY`-th identical refusal is printed again, with the count
+/// of the repeats that were not.
+const PREFIX_REFUSAL_REANNOUNCE_EVERY: u64 = 64;
+
+/// The refusal-line throttle (memra#523 item 1, review on the newest-turn-fits fix): never a
+/// silent cold turn, never unbounded stderr either. The first refusal prints; identical repeats
+/// (same `PrefixRefusalShape`) are suppressed and counted; a changed shape prints at once and
+/// carries the previous shape's suppressed count; every N-th identical repeat prints with its
+/// count. Counting in the `/metrics` skip fields is the caller's and is never throttled.
+#[derive(Default)]
+struct PrefixRefusalAnnouncer {
+    last: Option<PrefixRefusalShape>,
+    /// Identical repeats not printed since the last printed line.
+    suppressed: u64,
+}
+
+impl PrefixRefusalAnnouncer {
+    /// The line to print for this refusal, or `None` when it is an identical repeat that is
+    /// counted but not printed.
+    fn announce(&mut self, shape: PrefixRefusalShape, line: String) -> Option<String> {
+        if self.last.as_ref() == Some(&shape) {
+            self.suppressed += 1;
+            if !self
+                .suppressed
+                .is_multiple_of(PREFIX_REFUSAL_REANNOUNCE_EVERY)
+            {
+                return None;
+            }
+            let repeats = std::mem::take(&mut self.suppressed);
+            return Some(format!(
+                "{line} (identical refusal repeated {repeats} times since the previous line; {} not printed)",
+                repeats - 1
+            ));
+        }
+        let previous = std::mem::take(&mut self.suppressed);
+        self.last = Some(shape);
+        if previous == 0 {
+            Some(line)
+        } else {
+            Some(format!(
+                "{line} (previous shape: {previous} identical refusals not printed)"
+            ))
+        }
+    }
+}
+
 /// MEMRA_KV_HOST_MB (lane/kv-host-spill-20260830): pinned-host spill tier for the prefix
 /// cache, in binary MiB. Default 0 = OFF BY DESIGN: the tier is unmeasured on serving
 /// hardware until its pod battery lands (tick-stall, identity, stress, 8-turn cache twin),
@@ -6833,9 +6892,14 @@ struct PrefixCache {
     entries: HashMap<PoolKey, Vec<PrefixEntry>>,
     /// Byte-budgeted SLRU indexes. New entries enter probation; a real reuse promotes to
     /// protected. Capacity pressure consumes probation LRU first, so one-hit scan traffic
-    /// cannot displace a protected entry while probation has an evictable victim. Protected
-    /// overflow demotes its own LRU until it fits its byte target. The targets are global across
-    /// namespaces because VRAM is global; visibility remains scoped by `entries` above.
+    /// cannot displace a protected entry while probation has an evictable victim other than the
+    /// newcomer. Under the newest-turn-fits rule (memra#523 item 1, `room_victim_with`) every
+    /// UNLEASED byte is reclaimable for a publication that fits the budget: once probation is
+    /// exhausted the protected LRU goes oldest first, with no floor at `protected_target_bytes`.
+    /// The protected target bounds demotion (`rebalance_protected`) and pinned admission only.
+    /// Protected overflow demotes its own LRU until it fits its byte target. The targets are
+    /// global across namespaces because VRAM is global; visibility remains scoped by `entries`
+    /// above.
     ///
     /// Each BTreeMap preserves the Q3 O(log E) victim lookup and deterministic `(last_use,id)`
     /// tie break. Emergency flush compares both heads to retain global oldest-first removal.
@@ -6857,6 +6921,9 @@ struct PrefixCache {
     evictions: u64,
     skips_budget: u64,
     skips_pinned: u64,
+    /// stderr throttle for the two typed refusal lines; the skip counters above count every
+    /// refusal regardless.
+    refusals: PrefixRefusalAnnouncer,
     hit_tokens: u64,
     /// LCP histogram (lane/cache-metering): one sample per probe — the served entry's
     /// token length on a hit, `best_lcp` on a miss (both already computed; no new scan).
@@ -6949,6 +7016,41 @@ impl PrefixCache {
     /// Record one probe outcome into the LCP histogram (hit: entry length; miss: best_lcp).
     fn record_lcp(&mut self, n: usize) {
         self.lcp_hist[Self::lcp_bucket(n)] += 1;
+    }
+
+    /// The oversize refusal: counted every time, printed through the throttle.
+    fn refuse_oversize(&mut self, bytes: usize, budget: usize, why: &str, key: &PoolKey) {
+        self.record_budget_skip(false);
+        let shape = PrefixRefusalShape {
+            leased: None,
+            bytes,
+            budget,
+            key: key.clone(),
+        };
+        if let Some(line) = self.refusals.announce(
+            shape,
+            prefix_insert_refused_oversize(bytes, budget, why, key),
+        ) {
+            eprintln!("{line}");
+        }
+    }
+
+    /// The leased refusal: counted every time, printed through the throttle.
+    fn refuse_leased(&mut self, bytes: usize, budget: usize, why: &str, key: &PoolKey) {
+        let leased = self.pinned_bytes();
+        self.record_budget_skip(true);
+        let shape = PrefixRefusalShape {
+            leased: Some(leased),
+            bytes,
+            budget,
+            key: key.clone(),
+        };
+        if let Some(line) = self.refusals.announce(
+            shape,
+            prefix_insert_refused_leased(bytes, leased, budget, why, key),
+        ) {
+            eprintln!("{line}");
+        }
     }
 
     fn record_budget_skip(&mut self, pinned: bool) {
@@ -7635,11 +7737,7 @@ impl PrefixCache {
             };
         }
         if e.bytes > budget {
-            self.record_budget_skip(false);
-            eprintln!(
-                "{}",
-                prefix_insert_refused_oversize(e.bytes, budget, why, key)
-            );
+            self.refuse_oversize(e.bytes, budget, why, key);
             return None;
         }
         // NEWEST-TURN-FITS preflight (memra#523 item 1): an unpinned entry that fits the
@@ -7647,11 +7745,7 @@ impl PrefixCache {
         // it, see `room_victim_with`) or is refused HERE, in bytes, without evicting anyone.
         // Before this check such an entry evicted every unleased neighbour and then itself.
         if initial_pins == 0 && e.bytes > budget.saturating_sub(self.pinned_bytes()) {
-            self.record_budget_skip(true);
-            eprintln!(
-                "{}",
-                prefix_insert_refused_leased(e.bytes, self.pinned_bytes(), budget, why, key)
-            );
+            self.refuse_leased(e.bytes, budget, why, key);
             return None;
         }
         if initial_pins > 0 && e.bytes > budget.saturating_sub(self.pinned_bytes()) {
@@ -7770,11 +7864,7 @@ impl PrefixCache {
     ) -> bool {
         const WHY: &str = "snapshot preflight";
         if bytes > budget {
-            self.record_budget_skip(false);
-            eprintln!(
-                "{}",
-                prefix_insert_refused_oversize(bytes, budget, WHY, key)
-            );
+            self.refuse_oversize(bytes, budget, WHY, key);
             return false;
         }
         let target = budget - bytes;
@@ -7784,11 +7874,7 @@ impl PrefixCache {
         }
         let reclaimable = usize::try_from(self.evictable_bytes()).unwrap_or(usize::MAX);
         if needed > reclaimable {
-            self.record_budget_skip(true);
-            eprintln!(
-                "{}",
-                prefix_insert_refused_leased(bytes, self.pinned_bytes(), budget, WHY, key)
-            );
+            self.refuse_leased(bytes, budget, WHY, key);
             return false;
         }
         while self.total_bytes > target {
@@ -27697,8 +27783,9 @@ mod tests {
     };
     use super::{
         DEFAULT_PREFIX_CACHE_PROTECTED_PCT, HostPrefixCache, HostPrefixEntry,
-        PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION, PartialPrefixDecision, PoolKey,
-        PrefixCache, PrefixEntry, PrefixFanoutCandidate, PrefixFanoutGroup, PrefixSegment,
+        PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION, PREFIX_REFUSAL_REANNOUNCE_EVERY,
+        PartialPrefixDecision, PoolKey, PrefixCache, PrefixEntry, PrefixFanoutCandidate,
+        PrefixFanoutGroup, PrefixRefusalAnnouncer, PrefixRefusalShape, PrefixSegment,
         host_promote_candidate, partial_prefix_decision, prefix_fanout_groups,
         prefix_insert_refused_leased, prefix_insert_refused_oversize, retire_prefix_pin,
         stable_boundary_arm, validate_prefix_plane_shape,
@@ -37081,6 +37168,149 @@ mod tests {
             "[prefix-cache] insert refused: entry 6 cannot fit beside 5 leased bytes \
              (budget 10, snapshot preflight, model m)"
         );
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, review: the refusal lines are throttled, the counters are not. First
+    /// refusal printed; identical repeats suppressed and counted; a changed shape prints again
+    /// and carries the previous shape's count; the N-th identical repeat prints with its count.
+    #[test]
+    fn prefix_refusal_announcer_prints_first_changed_and_every_nth_identical_refusal() {
+        let n = PREFIX_REFUSAL_REANNOUNCE_EVERY;
+        let mut a = PrefixRefusalAnnouncer::default();
+        let oversize = |bytes: usize| PrefixRefusalShape {
+            leased: None,
+            bytes,
+            budget: 10,
+            key: key(""),
+        };
+        let line = || {
+            "[prefix-cache] insert refused: entry 11 exceeds budget 10 (seed, model m)".to_string()
+        };
+        // First refusal: printed verbatim.
+        assert_eq!(a.announce(oversize(11), line()), Some(line()));
+        assert_eq!(a.suppressed, 0);
+        // Identical repeats: suppressed and counted, up to the N-th, which prints with the count.
+        for i in 1..n {
+            assert_eq!(
+                a.announce(oversize(11), line()),
+                None,
+                "repeat {i} must be suppressed"
+            );
+            assert_eq!(a.suppressed, i);
+        }
+        assert_eq!(
+            a.announce(oversize(11), line()),
+            Some(format!(
+                "{} (identical refusal repeated {n} times since the previous line; {} not printed)",
+                line(),
+                n - 1
+            ))
+        );
+        assert_eq!(a.suppressed, 0, "the N-th repeat resets the count");
+        // The same path or the other path with the same numbers is the same shape: suppressed.
+        assert_eq!(
+            a.announce(oversize(11), "different why, same shape".to_string()),
+            None
+        );
+        assert_eq!(a.suppressed, 1);
+        // A changed shape (bytes) prints at once and carries the previous shape's count.
+        let changed =
+            "[prefix-cache] insert refused: entry 12 exceeds budget 10 (seed, model m)".to_string();
+        assert_eq!(
+            a.announce(oversize(12), changed.clone()),
+            Some(format!(
+                "{changed} (previous shape: 1 identical refusals not printed)"
+            ))
+        );
+        assert_eq!(a.suppressed, 0);
+        // A changed key (model or salt) is a new shape too, with nothing suppressed before it.
+        let other_key = PrefixRefusalShape {
+            leased: None,
+            bytes: 12,
+            budget: 10,
+            key: key("t"),
+        };
+        assert_eq!(
+            a.announce(other_key, "other tenant".to_string()),
+            Some("other tenant".to_string())
+        );
+        // A leased refusal with the same bytes and budget is a different shape from the
+        // oversize one, and a different leased byte count is a different shape again.
+        let leased = |leased: usize| PrefixRefusalShape {
+            leased: Some(leased),
+            bytes: 12,
+            budget: 10,
+            key: key("t"),
+        };
+        assert_eq!(
+            a.announce(leased(5), "leased 5".to_string()),
+            Some("leased 5".to_string())
+        );
+        assert_eq!(a.announce(leased(5), "leased 5".to_string()), None);
+        assert_eq!(
+            a.announce(leased(6), "leased 6".to_string()),
+            Some("leased 6 (previous shape: 1 identical refusals not printed)".to_string())
+        );
+    }
+
+    /// memra#523 item 1, review: through the cache itself, a saturated shape refusing on every
+    /// request counts every refusal in the skip counters while the announcer suppresses the
+    /// identical lines; the pinned and budget counters stay separate.
+    #[test]
+    fn prefix_cache_repeated_refusals_count_every_time_and_print_once() {
+        const BUDGET: usize = 10;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, entry_b(&k, 0, 4), "test", BUDGET);
+        let mut victims: Vec<u32> = Vec::new();
+        for ident in 1..=5u32 {
+            let mut sink = |dead: PrefixEntry| victims.push(dead.toks[0]);
+            let inserted = px.insert_with_budget_pins_and_policy(
+                &k,
+                entry_b(&k, ident, BUDGET + 1),
+                "test",
+                BUDGET,
+                80,
+                0,
+                Some(&mut sink),
+                true,
+            );
+            assert!(inserted.is_none());
+            assert!(!px.prepare_snapshot(&k, BUDGET + 1, BUDGET, true, Some(&mut sink)));
+        }
+        assert!(victims.is_empty());
+        assert_eq!(px.skips_budget, 10, "every refusal counts");
+        assert_eq!(px.skips_pinned, 0);
+        assert_eq!(
+            px.refusals.suppressed, 9,
+            "one line printed, nine identical refusals suppressed and counted"
+        );
+        assert_eq!(
+            px.refusals.last,
+            Some(PrefixRefusalShape {
+                leased: None,
+                bytes: BUDGET + 1,
+                budget: BUDGET,
+                key: k.clone()
+            })
+        );
+        // A leased refusal is a new shape: it prints (carrying the count) and resets.
+        let i0 = px.entries[&k].iter().position(|e| e.toks[0] == 0).unwrap();
+        let pin = px.pin(&k, i0).unwrap();
+        assert!(!px.prepare_snapshot(&k, 7, BUDGET, true, None));
+        assert_eq!(px.skips_pinned, 1);
+        assert_eq!(px.refusals.suppressed, 0);
+        assert_eq!(
+            px.refusals.last,
+            Some(PrefixRefusalShape {
+                leased: Some(4),
+                bytes: 7,
+                budget: BUDGET,
+                key: k.clone()
+            })
+        );
+        assert!(px.unpin(&pin));
         assert_prefix_cache_accounting(&px);
     }
 

@@ -938,8 +938,16 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
   CPU arms: `worker::tests::prefix_cache_slru_newest_turn_fits_beside_a_protected_cohort` (the
   incident shape, 211 turns, never its own victim),
   `prefix_cache_oversized_insert_refuses_with_the_typed_line_and_evicts_nothing`,
-  `prefix_cache_slru_fitting_inserts_keep_the_same_victims_in_the_same_order` and
-  `prefix_cache_newest_turn_beside_a_leased_predecessor_fits_or_refuses_loudly`.
+  `prefix_cache_slru_fitting_inserts_keep_the_same_victims_in_the_same_order`,
+  `prefix_cache_newest_turn_beside_a_leased_predecessor_fits_or_refuses_loudly`, and for the
+  refusal-line throttle (first line printed, identical repeats suppressed and counted in the skip
+  counters, a changed shape printed again, every 64th identical repeat printed with its count)
+  `prefix_refusal_announcer_prints_first_changed_and_every_nth_identical_refusal` and
+  `prefix_cache_repeated_refusals_count_every_time_and_print_once`. The eviction contract the fix
+  changed is stated in `docs/SERVING.md` (SLRU paragraph) and the `MEMRA_PREFIX_CACHE_PROTECTED_PCT`
+  row of `docs/FLAGS.md`: every unleased byte is reclaimable for the newest turn, the protected share
+  bounds only demotion and pinned admission, scan resistance for entries larger than the free share
+  is gone under SLRU until #523 item 2 re-decides the default.
 
 ## Generic spill / tiered KV (memra-tier)
 

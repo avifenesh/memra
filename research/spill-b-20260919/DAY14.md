@@ -209,9 +209,30 @@ every turn, and `prefix_cache_bytes` equals exactly the resident entries the lin
   `[prefix-cache] insert refused: entry 6 cannot fit beside 5 leased bytes (budget 10, snapshot preflight, model m)`.
   The once-announced `snapshot skipped` line the base prints does not exist in the fix.
 - **What changed and what did not.** Changed: victim selection when probation is empty or holds only the
-  newcomer (protected LRU, oldest first), the preflight's reclaimable set (every unleased byte), the refusal
-  lines (typed, in bytes, on both paths, every time), the preflight evict line (names the segment). Not
-  changed: captured and restored bytes. Every completion digest is identical across the two binaries on all
+  newcomer (protected LRU, oldest first, no floor at `protected_target_bytes`), the preflight's reclaimable
+  set (every unleased byte), the refusal lines (typed, in bytes, on both paths), the preflight evict line
+  (names the segment). Not changed: captured and restored bytes.
+- **The trade-off, named (integ14 review finding 1, lead decision: keep the behaviour, document it).** The
+  operator-visible SLRU contract moved. The real rule is now: every unleased byte, protected or not, is
+  reclaimable for a publication that fits the budget; the protected share bounds only demotion and pinned
+  admission; only leases are untouchable. Scan resistance survives only for entries that fit the free or
+  probation share: a one-hit entry larger than the free share beside a promoted cohort evicts that cohort
+  oldest-first instead of running cold, so scan resistance for such entries is gone under SLRU. This gate
+  shows the extreme of it: one growing tenant with one hit per turn removed the other tenant's entire
+  737,943,552 B protected cohort by turn 2. That is what #523 item 1 asked for (the newest turn fits,
+  protected oldest first); whether SLRU stays the default is #523 item 2, the interleaved A/B on the
+  incident's shape, still open. `docs/SERVING.md` and the `MEMRA_PREFIX_CACHE_PROTECTED_PCT` row in
+  `docs/FLAGS.md` now state this rule instead of "probation LRU before protected LRU".
+- **The refusal lines are throttled (integ14 review finding 2).** Removing the one-shot `ANNOUNCED` guard
+  had made both typed refusals per-request stderr, unbounded on a saturated cache.
+  `PrefixRefusalAnnouncer` (worker.rs) prints the first refusal, suppresses and counts identical repeats
+  (same kind, bytes, budget, leased bytes, model and salt key), prints again on a changed shape carrying the
+  previous shape's count, and prints every 64th identical repeat with its count;
+  `prefix_cache_skips_budget` and `prefix_cache_skips_pinned` count every refusal regardless. Unit tests
+  `prefix_refusal_announcer_prints_first_changed_and_every_nth_identical_refusal` and
+  `prefix_cache_repeated_refusals_count_every_time_and_print_once`. A log throttle and documentation need no
+  GPU rerun; the target-card cells above stand (no refusal was printed in any of them, so the throttle did
+  not take part). Every completion digest is identical across the two binaries on all
   8 turns and all 6 cohort sends (`254a65a01730e58b`, `24a97a2867768b2d`, `65eeb1ef8f716af1`,
   `64a99158cb668b0c`, `c6b9d167a76a942e`, `8e4798b352770d9a`, `f34ee12b3db5cb9c`, `ee53848835a29d90`),
   and identical to the cache-off calibration boot's cold completion of the same prompt on all 8 turns in
@@ -236,6 +257,7 @@ every turn, and `prefix_cache_bytes` equals exactly the resident entries the lin
 | `cargo test -p memra-server --offline --no-fail-fast` (dev, local, `CPUQuota=1200% MemoryMax=28G`; `pro-single-day14/local-checks/test-server.log`) | 748 passed, 0 failed, 6 ignored; the five prefix-cache tests above ran and passed |
 | `cargo clippy -p memra-server --offline --all-targets -- -D warnings` (dev, local, CPU quota) | PASS (`local-checks/clippy-server.log`) |
 | `bash tools/check-flags.sh`; `python3 tools/check-public-boundary.py check`; `git diff --check` | PASS (no uncovered runtime `MEMRA_*` name; boundary 0 new matches) |
+| Post-review battery (throttle + docs, `local-checks/post-review/`): `cargo fmt --all -- --check`, `cargo test -p memra-server`, `cargo clippy -p memra-server --all-targets -- -D warnings`, `tools/check-flags.sh`, `tools/docs-registry-census.sh`, `git diff --check`, all under the CPU quota | fmt PASS; 750 passed, 0 failed, 6 ignored (the two throttle tests included); clippy PASS after one lint fix (`is_multiple_of`); flags PASS; docs-registry census PASS (58 tables, 903 rows); diff check PASS. No GPU rerun: a log throttle and documentation change no numeric program and no victim selection; no refusal line was printed in any target-card cell |
 | Native release builds, one RTX PRO 6000 Blackwell (`build-main/`, `build-fix/`) | exit 0 / exit 0, `dirty.txt` empty |
 | `tools/prefix-newest-turn-fits-gate.py` on `main` `be07f2d36`, rounds 1, 2, 3 | `-> FAIL` in every round (red, as the defect requires) |
 | `tools/prefix-newest-turn-fits-gate.py` on the fix, rounds 1, 2, 3 | round 1 `V1=ok V2=ok V3=FAIL V4=ok -> FAIL`; round 2 `V1=ok V2=ok V3=FAIL V4=ok -> FAIL` (turn 1 only); round 3 `V1=ok V2=ok V3=ok V4=ok -> PASS` |
