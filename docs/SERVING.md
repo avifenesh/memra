@@ -1781,8 +1781,21 @@ byte budget defaults to an 80% protected target and 20% probation target
 (`MEMRA_PREFIX_CACHE_PROTECTED_PCT`); probation can borrow unused protected bytes, so a cold cache
 uses the full budget and a large individually fitting entry is not refused merely because it is
 larger than the nominal probation share. Protected overflow demotes protected LRU back to
-probation, and capacity pressure evicts probation LRU before protected LRU. Thus one-hit scan
-traffic cycles through probation instead of displacing entries that have demonstrated reuse.
+probation. Capacity pressure evicts probation LRU first; when probation is exhausted, or holds
+only the entry being published, the protected LRU goes next, oldest first, with no floor at the
+protected share (the newest-turn-fits rule, memra#523 item 1, `room_victim_with`). The real
+contract is therefore: every UNLEASED byte, protected or not, is reclaimable for a publication
+that fits the budget; the protected share bounds only demotion and pinned admission; only leases
+are untouchable. A publication is refused in exactly two cases, both printed in bytes
+(`[prefix-cache] insert refused: entry N exceeds budget M (...)` and
+`[prefix-cache] insert refused: entry N cannot fit beside L leased bytes (budget M, ...)`), never
+silently. Trade-off, named: one-hit scan traffic still cycles through probation while probation
+holds an evictable victim other than the newcomer, but an entry larger than the free share beside
+a promoted cohort now evicts that cohort oldest-first instead of running cold on every turn, so
+scan resistance for entries larger than the free share is gone under SLRU. A single growing
+conversation whose turns exceed the free share removes another tenant's whole promoted cohort
+(the day-14 twin gate shows exactly this at a 1024 MiB budget). This is the shape #523 asked
+for; whether SLRU stays the default is #523 item 2, an interleaved A/B on the incident's shape.
 If a pinned fanout snapshot cannot fit from probation plus the protected bytes its own promotion
 would demote, that snapshot is not retained; participants continue from their private session
 copies instead of evicting below the protected byte share.
@@ -1889,13 +1902,26 @@ Raw-salt (no-keyring) namespaces carry no tenant and never match. Receipts:
 **Per-tenant host-pool share cap (`MEMRA_KV_HOST_TENANT_PCT`, default 50;
 lane/kv-tenancy-compaction-20260831):** one tenant's maximum share of the
 `MEMRA_KV_HOST_MB` budget, keyed on the same tenant row identity as the `tenants`
-receipt. A demotion that would push the tenant past its share evaporates (checked before
-the D2H copy, so it also skips the PCIe trip) instead of demoting, so one tenant can
-never squeeze the others out of the pool; `100` disarms the check for single-tenant
-deployments (the global byte-LRU then governs, exactly as before the flag). Receipt:
-`prefix_host_tenant_rejects`, the boot line's `tenant share cap` clause, and the
-per-evaporation `[prefix-host] demote evaporated at the tenant share cap` log line (the
-exact production text; a gate greps this line, not a paraphrase). Full trade discussion
+receipt. A demotion that would push the tenant past its share first reclaims that
+tenant's own unleased host entries, oldest first, until it fits (memra#384; another
+tenant's row is never read, a leased entry is skipped, the exact-key twin is spared), so
+a tenant at its cap turns over its own row and one tenant still can never squeeze the
+others out of the pool. Only when the image alone exceeds the share, or the row's
+unleased bytes cannot cover the shortfall, does the demotion evaporate (checked before
+the D2H copy, so it also skips the PCIe trip), with nothing evicted for it. On the
+pageable tier the reclaim runs once the image is built and ready to insert, so a copy,
+digest or charge failure costs the row nothing; on the fixed arena
+(`MEMRA_GLM5_TP_KV_HOST=1`) it runs at reservation, before the copy, because the planes'
+backing must exist first, and a copy failure there is booked as
+`prefix_host_tenant_reclaims_wasted`. `100` disarms the check for single-tenant deployments (the global
+byte-LRU then governs, exactly as before the flag). Receipts: `prefix_host_tenant_reclaims`
+(reclaims moving while `prefix_host_tenant_rejects` stays flat means the cap is being
+served, not refused), `prefix_host_tenant_reclaims_wasted` (a reclaim whose insert still
+failed; nonzero is a regression to read), `prefix_host_tenant_rejects`, the boot line's
+`tenant share cap` clause, the per-eviction `[prefix-host] evict (tenant share):` log line
+and the per-evaporation `[prefix-host] demote evaporated at the tenant share cap` log
+line with the reclaim's refusal appended (the exact production text; a gate greps these
+lines, not a paraphrase: `tools/kv-host-tenant-reclaim-gate.sh`). Full trade discussion
 in the [flag catalog](FLAGS.md) row.
 
 **Continuation-pool park compaction (`MEMRA_KV_PARK_COMPACT`, default 0 = off;
@@ -1941,6 +1967,8 @@ finding). Gates assert on the log lines; metrics deltas are recorded fields.
 | `prefix_host_entries/bytes/demotions/promotions/demote_ms/promote_ms/rejected_allocs` | pinned-host spill tier (`MEMRA_KV_HOST_MB`, lane/kv-host-spill-20260830): current gauges, tier round-trips, cumulative copy wall-time (the tick-stall receipt: ms per demotion = `demote_ms / demotions`), and alloc/copy failures; operator scope only |
 | `prefix_host_purges/purged_entries/purged_bytes` | tenant lifecycle purges (`PurgeHandle`, lane/kv-tenancy-compaction-20260831): cumulative invocation count and host-tier entries/bytes removed, the receipt that a revocation/deletion actually cleared resident state; operator scope only |
 | `prefix_host_tenant_rejects` | demotions evaporated at the per-tenant share cap (`MEMRA_KV_HOST_TENANT_PCT`, lane/kv-tenancy-compaction-20260831); a nonzero rate with low pool occupancy is the whale-tenant signature the cap bounds; operator scope only |
+| `prefix_host_tenant_reclaims` | host entries evicted from a tenant's OWN row to admit that tenant's demotion at its share cap (memra#384, lane/spill-a-20260919); a subset of the tier's evictions. Reclaims moving while `prefix_host_tenant_rejects` stays flat means the cap is being served by turnover, not refused; operator scope only |
+| `prefix_host_tenant_reclaims_wasted` | the subset of `prefix_host_tenant_reclaims` whose demotion then failed to insert (the reclaim runs once the image is built, so only `insert`'s own refusals, or a fixed-arena copy failure, can reach here); nonzero is a regression to read, not a rate to tune; operator scope only |
 | `lcp_histogram` | global `{edges, counts}`: one sample per prefix-cache probe — served entry length on a hit, best LCP on a miss. Lower-edge buckets `[0,1,16,32,64,128,256,512,1024,2048,4096]`, last unbounded; `[64,512)` (buckets 4..=6) is the tick-seg segmentation window; operator scope only |
 | `tenants` | per-tenant `{prompt_tokens_in, cached_tokens_in, cache_hit_token_ratio}` rows — absent until the first admit |
 | `adsd_suspect_total` | per-tenant detection-only acceptance-collapse incident counters; absent until the first incident |

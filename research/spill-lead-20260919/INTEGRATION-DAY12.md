@@ -238,7 +238,126 @@ uniform drop across cells with correctness green in a contended window is machin
 (`window_clean:false`), so the freshness gate is satisfied honestly; a clean-window rerun of the two cells is owed when
 the card is free and is noted, not claimed. The co-resident was not touched (another session's lane).
 
+## Lane D day 13 (`e78bf933b`, pushed by the lead with the logged override; #545 and ruling 12)
+#545: hosted CI job `portable-suites` (no CUDA install) runs `tools/portable-suites.sh`: `skip-census.py verify` over
+memra-tier, memra-kv and memra-cli, then `cargo test -p memra-tier -p memra-kv -p memra-cli --offline --no-fail-fast`
+under `MEMRA_PORTABLE_SKIP_BUDGET=0` with `--min-passed 300` (325 passed, 0 skipped, 14 binaries, 22 s warm), then
+`tools/test_portable_suites.sh` (teeth: planted tier retirement, kv hierarchy and CLI onboarding-receipt failures in a
+temp copy red the wrapper and are named; an undeclared SKIP reds it before cargo runs; 15 ok), then the collector
+suite with both rig lock paths held. `tools/local-ci.sh` `cpu_chain()` runs the wrapper fatally. Step names and the
+wrapper's last line say "NOT GPU qualification". `fault.rs` committed-receipt replays are strict (no silent `.exists()`
+skip). Teeth finding: a shared target dir let cargo reuse the copy's planted test binary on the real tree; the copy
+now builds in `target/portable-suites-teeth`.
+Ruling 12: `MEMRA_TIER_BATTERY_LOCK_DIR` seam in `tools/tier-battery.py` and `tools/tier-rig-bootstrap.sh` (FLAGS row);
+`tests/battery/private_lock.py` `PrivateLockMixin` in every lock-taking class; with both rig locks held for the whole
+suite inside a private `/tmp` (`bwrap`): before `24 failed, 64 passed`, after `86 passed, 32 subtests passed`, rc=0; a
+receipt written under the seam refuses to validate without it (`REFUSED: missing/noncanonical collector lock`).
+Boundary: two raw cargo logs matched `live_fingerprint` on cargo's own test-binary path (`memra-<hash>`); pinned as
+false positives. Revuto on integ12 found two gaps, both fixed on the lane (`0e9e30b31`): the static skip census scanned `src/` only
+(now `tests/` too; memra-tokenizer's four `llama_parity` skips declared) and the private lock seam was honoured from the
+environment alone (now refused without `--private-lock-dir-for-tests`, loud startup line, seam in `lock.json`, validate
+refuses foreign seams). D's note for the lead: `tools/ci-change-class.sh` classes `research/**` as docs-only while ten
+test-time `research/` reads now exist across lanes (list in D's DAY13.md); queued.
+
+## The integ11 tripwire settled (clean window, `main` `30e433c4c`)
+Rerun of `tools/local-ci.sh --perf` with no co-resident (`integration-day12/perfci-clean-window/`): correctness GREEN,
+serve-smoke 0 failed, hit gate ALL GREEN, `26b-plain-short: 208.52 tok/s [OK]`, `qwen9b-plain-short: 138.80 tok/s [OK]`,
+`perf stage: 0 fail, 0 warn`, rc=0, rows `window_clean:true`. The two `[FAIL]` rows of the integ11 run were the
+contended window (another session's process on the card), as the record said; the diff carried no tok/s change.
+
+## Lane C day 14 (`fc7375817`, pushed by the lane; ruling 16 exit criterion met)
+Census first (`HOSTPREFIX-DOOR.md` "Draft planes"): a spec-served entry carries the MTP draft-scratch K/V rows
+(`PrefixEntry.draft`, bytes owned by `memra_kv::KvLayer` in the trunk's own q8_0/q5_1 encodings, copied by the same
+`host_plane_from_device`/`plane_up` programs as the trunk), the boundary hidden `last_h` (already `Role::Hidden`), and
+under DSPARK the DFlash tail (no artifact identity derivable from a GGUF digest: stays refused by name). The
+`MEMRA_KV_HOST_VERIFY` digest is blind to the draft plane (a later slice). Code (`62f48ecec`, `worker.rs`):
+`host_tier_entry_class` (pure `Plain` / `MtpDraft`; refuses GLM TP/latent planes and the DFlash tail by name, same
+function at demote, bind, insert, promote); `host_tier_draft_program` folds the head's source, plan and draft encodings
+into `artifact`, `serialized_plan` and `numeric` (length-framed), so a spec entry and a plain entry of one prompt never
+share an identity; `bind_tier_image` binds `Role::Draft` K/V (`mtp-draft-q8_0`/`mtp-draft-q5_1`) with checksums, the
+trunk geometry rule and shape blob `host-prefix-shape-v2`; the pinned charge includes the draft plane. Packed bytes
+and copy programs untouched; every changed statement is inside a tier-Some block. Target card, DEFAULT spec env, OFF
+then ON, N=1, 600 W, `MEMRA_HOSTGATE_CACHE_MB=256`: identity gate `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`
+both, 13 verdict lines equal, demote bytes 160.7/160.6/161.1/161.1 MB equal, one promote and two `verify ok` equal,
+23-event prefix sequence and r1/r3 texts equal, ON refusal lines 0 (day 13: 5); failure gate the same pre-existing `1
+FAILURE(S)` and identical per-cell tier events (day 13 ON: 6); plain pairs and serve-smoke 33 lines identical.
+`verify-day14.py`: `DAY14 REPLAY: PASS` (76 ok). Findings: the draft plane adds about 0.2 MB per entry; the second
+promote is declined by the device protected-share rule identically OFF and ON (not a door effect); the verify digest
+attests the trunk only. Open for the lead: Option B next; the DFlash tail slice needs an export-dir manifest identity.
+
+## integ13 (`lane/spill-integ13-20260921`): C day 14
+Batteries (`integration-day12/integ13-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server suite; clippy
+`-D warnings`; check-flags; publish census; docs registry census; collector pytest; `verify-day14.py` PASS; perf board;
+diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` with the door unset (`integ13-serve-smoke-5090/`): `serve-smoke: 0 failed`.
+
+## Lane B day 14 (`25d252c6f`, pushed by the lane; #523 items 1 and 3)
+First sitting stopped by the lead after four hours without a receipt (driver refusals kept verbatim under
+`pro-single-day14/refused-sitting1/`: `REFUSED: [Errno 17] File exists: '.../gate-main'` and `REFUSED: --external-lock
+requires exactly one @COLLECTOR_LOCK_FD@ argument`; its binaries were also the wrong arms). Second sitting finished in
+0.8 agent-hours. Fix (`f42d921db`, `worker.rs`): the SLRU insert never selects itself as victim (`room_victim_with(slru,
+keep)`); when the newest turn does not fit it evicts from the protected segment oldest first; an entry larger than the
+budget refuses with the typed line `[prefix-cache] insert refused: entry <bytes> exceeds budget <bytes> (...)`; an
+entry that cannot fit beside leased bytes refuses with its own line. Victim selection, the preflight's reclaimable set
+and the refusal lines only; `prefix_snapshot` and restore untouched. Unit tests: the incident shape (211 turns beside a
+protected cohort, cohort evicted oldest first, never itself), the oversized refusal string, fitting inserts keep the
+same victims in the same order, the leased boundary. Gate `tools/prefix-newest-turn-fits-gate.py` (8-turn twin on a
+live `memra-server`, pre-seeded protected cohort from a second tenant, cache-off calibration boot, per-turn cold-versus-
+restored digest, V3 state identity after every turn). Target card, N=1, 600 W, base `be07f2d36` versus fix, verbatim:
+```text
+base: PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=737943552 turns=8 cold_turns_after_1=7 cached_ok=0/7 lines_ok=0/8 evictions=0 protected_evictions=0 refused_or_skipped=1 effective_free_ok=8/8 V1=FAIL V2=FAIL V3=ok V4=FAIL -> FAIL
+fix:  PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=737943552 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 protected_evictions=2 refused_or_skipped=0 effective_free_ok=8/8 V1=ok V2=ok V3=ok V4=ok -> PASS
+```
+Per turn cached_tokens, base then fix: 0/0, 0/9200, 0/9500, 0/9800, 0/10100, 0/10400, 0/10700, 0/11000. Completion digests
+identical across binaries on all 8 turns and 6 cohort sends, and identical to the cache-off boot's cold completions.
+`serve-smoke: 0 failed`, `cache-meter-gate: 0 failed` on the fix; `verify-day14.py` `DAY14 REPLAY OK`. Two earlier
+gate rounds are kept as failed cells (V3 first asserted consumed == grew without a footprint control, then a
+calibration that missed the cohort phase's retained growth); round 3 states V3 on states. Recorded observation, cause
+not inferred: the request path retains device memory growing with the longest prompt seen (67,200 B per token on turns
+3 to 8), identical across binaries and with the cache idle; not this gate's subject. #523 item 2 (policy re-decision,
+interleaved A/B N >= 5) stays open. Revuto on integ14 found two gaps, both fixed on the lane (`9655b9142`): SERVING.md
+and the protected-share FLAGS row still stated the old "probation before protected" guarantee (now the real rule with
+the scan-resistance trade-off named; lead ruling 18 below), and the refusal lines had lost their one-shot guard (now a
+shape-keyed throttle, counters unchanged).
+
+## integ14 (`lane/spill-integ14-20260921`): B day 14
+Batteries (`integration-day12/integ14-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server 748 tests; clippy `-D warnings`; check-flags; publish census; docs registry census; collector pytest; B's `verify-day14.py` OK; perf board; diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` (`integ14-serve-smoke-5090/`): `serve-smoke: 0 failed`.
+
+## Lead rulings, day 12 (continued)
+18. **The newest turn fits, and the docs say what that costs.** #523 item 1's rule stands (an insert never evicts
+    itself; protected oldest first when the free share is short; typed refusal only when the entry exceeds the budget
+    or cannot fit beside leases). The consequence that a growing one-hit tenant can remove another tenant's promoted
+    cohort is the documented trade-off, not a bug; the default policy is re-decided under #523 item 2 by interleaved
+    A/B on the incident shape, N >= 5, both orders, before any promotion or demotion of SLRU as the naked default.
+## Lane A day 12 (`f122468a5`, pushed by the lane; #384 fixed and gated, #385 harness)
+#384: `HostPrefixCache::reclaim_tenant_share` (`worker.rs`): at the tenant share cap the demoting tenant's own unleased
+host entries are evicted oldest first (the twin spared, leased entries skipped through the new `IdentitySlot::leased`
+in memra-kv) until the demotion fits, one retry, else today's bounded refusal with nothing evicted; hook order is
+reclaim-then-refuse; `/metrics` gains `prefix_host_tenant_reclaims`. Gate `tools/kv-host-tenant-reclaim-gate.sh` on the
+target card (600 W, N=1, `executed-not-qualified`), base `be07f2d36` versus fix `405466cf7`, verbatim:
+base: [prefix-host] demote evaporated at the tenant share cap before the D2H copy: 93 tokens, 160.8MB (38% of 1074MB, MEMRA_KV_HOST_TENANT_PCT; model gate, ns "t:acme\u{1f}s1")   (three cap events)
+fix:  [prefix-host] evict (tenant share): 89 tokens, 160.7MB of tenant "t:acme"'s own entries for its 160.8MB demotion (row now 160.6MB / 408MB share = 38% of 1074MB, model gate, ns "t:acme\u{1f}s1")
+      [prefix-host] demote: 93 tokens, 160.8MB in 6.3ms (host resident 482.0MB / 1074MB, model gate, ns "t:acme\u{1f}s1")   (four reclaims, each followed by its demote)
+Cross-arm (`verify-day12.py` `DAY12 PASS`): every image base evaporated, fix demoted at the same byte count; all eight
+texts byte-identical; the other tenant's demote, promote and `cached_tokens` equal; the reclaimed entry serves on the
+fix arm (`cached_tokens` 95 versus 0); `/metrics` rejects 3 versus 0, reclaims absent versus 4; collector `--validate`
+exit 0 on all three evidence cells; three failed attempts kept and named. CPU: memra-server 748, memra-kv 73 tests,
+clippy, fmt, flags, docs, diff-check clean. Open and stated: the handoff import (`insert` direct) still evaporates at
+the cap; #385's decision cell is the 2x B200 pair. Revuto on integ15 found two gaps, both fixed on the lane
+(`8b29b2aa3`): the reclaim evicted before the image existed (five later failure paths could waste the tenant's warm
+row; now a pure plan before the D2H, the reclaim after `bind_tier_image` and before `insert`, and a
+`prefix_host_tenant_reclaims_wasted` counter with one WASTED line), and FLAGS/SERVING still promised the old evaporation
+rule (now the reclaim rule and both counters). Fix arm rerun on the card: PASS, reclaims 4, wasted 0.
+#385 harness (`research/spill-a-20260919/HOST-ARENA-STARTUP.md`, `tools/pinned-host-reserve-bench.py`): BOX3 only, 21.87 GiB
+(75 percent of MemFree), single versus 8 chunks, N=5 pairs per order both orders, GPU idle 36 to 40 C at 600 W:
+single median 3598.8 ms, chunked median 3583.8 ms, 6.1 GiB/s both; per-chunk completions step by about 450 ms, so this
+driver serializes concurrent `cuMemHostAlloc`. A harness receipt for this box; not the decision.
+Push note: A's first push was refused by the perf-ci gate with the lane's upstream range (six engine files arriving
+through the merge of main); A unset the upstream so `tools/push-range.sh` took the merge-base with `origin/main`, and
+the hook found no engine file in range (the documented range correction after a merge of main; no skip variable).
+## integ15 (`lane/spill-integ15-20260921`): A day 12
+Batteries (`integration-day12/integ15-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server 748 tests; clippy `-D warnings`; check-flags; publish census; docs registry census; collector pytest; A's `verify-day12.py` `DAY12 PASS`; perf board; diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` (`integ15-serve-smoke-5090/`): `serve-smoke: 0 failed`.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
-- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 sealed and pushed (`31ba74550`); merged into integ11. B day 14 running (#523 items 1 and 3). E, F idle.
+- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 merged (#591); C day 14 sealed and pushed (`fc7375817`); merged into integ13. B day 14 sealed and pushed (`25d252c6f`); merged into integ14. A day 12 running (#384, #385 harness). E, F idle.

@@ -881,6 +881,80 @@ prefix-evict-reclaim-gate.py [--external-lock FD] --model <gguf> --bin <memra-se
   CPU arm: `worker::tests::reclaim_settle_returns_only_the_reclaims_gain` pins the keep
   arithmetic.
 
+### The newest turn fits the prefix cache (`tools/prefix-newest-turn-fits-gate.py`)
+
+memra#523 items 1 and 3: under the default policy (`MEMRA_PREFIX_CACHE_POLICY=slru`) a newly
+published entry could be its own capacity victim (probation held only the newcomer) or be refused
+by the snapshot preflight (only probation counted as reclaimable), so a growing long-context
+conversation ran `cold=1 restored=0` on every turn beside other tenants' promoted entries, and
+the only trace was one once-announced `snapshot skipped` line. The fix (`room_victim_with`,
+worker.rs) takes the probation LRU first as before and, when probation is exhausted or holds only
+the entry being inserted, the protected LRU oldest first; every unleased byte is reclaimable for
+the newest turn. The only refusals are typed and in bytes:
+`[prefix-cache] insert refused: entry N exceeds budget M (...)` and
+`[prefix-cache] insert refused: entry N cannot fit beside L leased bytes (budget M, ...)`.
+Victim selection and accounting only: captured and restored bytes are unchanged.
+
+```text
+prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra-server> --out <new-dir> \
+    [--budget-mib 1024] [--cohort-tokens 2800,3000,3200] [--turns 8] [--start-tokens 9200] [--grow-tokens 300]
+```
+
+- Serving shape, one card, two boots of the real `memra-server` per cell, plain path
+  (`MEMRA_SERVE_SPEC=0`), a small explicit prefix budget, the DEFAULT policy (the boot line must
+  report SLRU; the gate never sets the policy). A calibration boot with the cache OFF
+  (`MEMRA_PREFIX_CACHE_MB=0`) replays the identical request sequence first and records each turn's
+  own retained footprint (the bytes a request of that length keeps after it retires with no cache
+  activity; 1,111,666,004 B on the 9,200-token turn 1 of the day-14 shape, identical on both
+  binaries). In the measured boot a second tenant (`cache_salt=cohort`) seeds three
+  prompts twice each so the whole-entry hit promotes them: the cohort ends protected. The growing
+  tenant (`cache_salt=grow`) then replays an 8-turn conversation whose turn k+1 is turn k's
+  `prompt_ids` plus 300 new ids. The pressure arithmetic is read from the server's own
+  `insert probation` lines (a bytes(tokens) fit for the artifact) and the gate REFUSES unless the
+  cohort fits the protected share, cohort plus turn-1 entry exceed the budget, and every turn's
+  entry fits the budget: the incident's shape scaled to a small budget.
+- Assertions, bytes from the server's `[prefix-cache]` lines and `/metrics`: V1 every turn k >= 2
+  reports `usage.prompt_tokens_details.cached_tokens >= ` turn k-1's `prompt_tokens`; V2 turn 1
+  publishes and every later turn hits exactly once and publishes, with no `insert refused` or
+  `snapshot skipped` line for the growing tenant; V3 after every turn the calibration boot's
+  effective free (`cuda_driver_free_bytes + cuda_pool_cached_bytes`) equals the measured boot's
+  effective free plus the cache's resident bytes, within 64 MiB (the cache costs exactly what it
+  holds, so every evicted byte came back: #523 item 4 under the capacity shape, stated on states
+  because per-turn deltas need aligned starting states and the cohort phase does not give them);
+  V4 at least one `evict (... Protected LRU)` line (the room came from the cohort, never from the
+  entry itself). Per-turn `text_sha256`, the same prompt's cold
+  digest from the calibration boot, and the per-request server receipt (`[glm5-spec] route=`
+  with `cold=`/`restored=`, or `[spec-k] ... cached= lcp=`) are recorded for the runner; identity
+  across binaries and against the cold boot is the runner's comparison, not a verdict inside one
+  cell.
+- Verdict line: `PREFIX-NEWEST-TURN-FITS: budget_bytes=... cohort_bytes=... turns=8 cold_turns_after_1=...
+  cached_ok=N/7 lines_ok=N/8 ... V1=.. V2=.. V3=.. V4=.. -> PASS|FAIL`; exit 0 PASS, 1 FAIL, 2
+  `REFUSED: ...` (lock, port, shape, an unserved request). Red on `main` and green on the fix,
+  same card, same artifact, same prompts:
+  [`research/spill-b-20260919/DAY14.md`](../research/spill-b-20260919/DAY14.md).
+- Canonical rig lock only, held for the whole cell; under the collector,
+  `tools/tier-battery.py --rig pro-single --external-lock --execute python3
+  tools/prefix-newest-turn-fits-gate.py --external-lock @COLLECTOR_LOCK_FD@ ...` (lead ruling 5).
+  CPU arms: `worker::tests::prefix_cache_slru_newest_turn_fits_beside_a_protected_cohort` (the
+  incident shape, 211 turns, never its own victim),
+  `prefix_cache_oversized_insert_refuses_with_the_typed_line_and_evicts_nothing`,
+  `prefix_cache_slru_fitting_inserts_keep_the_same_victims_in_the_same_order`,
+  `prefix_cache_newest_turn_beside_a_leased_predecessor_fits_or_refuses_loudly`, and for the
+  refusal-line throttle (first line printed, identical repeats suppressed and counted in the skip
+  counters, a changed shape printed again, every 64th identical repeat printed with its count)
+  `prefix_refusal_announcer_prints_first_changed_and_every_nth_identical_refusal` and
+  `prefix_cache_repeated_refusals_count_every_time_and_print_once`; for pressure relief (the kv-flex
+  shed and the step-OOM reclaim select with the same `room_victim_with` as the insert loop: probation
+  first, then protected oldest first, leases untouchable)
+  `evict_to_bytes_takes_protected_oldest_first_once_probation_is_empty`,
+  `evict_to_bytes_never_takes_a_leased_entry_even_below_target` and
+  `kv_flex_shed_reaches_the_floor_through_protected_entries_and_warns_only_when_all_is_leased`. The
+  eviction contract the fix
+  changed is stated in `docs/SERVING.md` (SLRU paragraph) and the `MEMRA_PREFIX_CACHE_PROTECTED_PCT`
+  row of `docs/FLAGS.md`: every unleased byte is reclaimable for the newest turn, the protected share
+  bounds only demotion and pinned admission, scan resistance for entries larger than the free share
+  is gone under SLRU until #523 item 2 re-decides the default.
+
 ## Generic spill / tiered KV (memra-tier)
 
 The shared contract is `crates/memra-tier/src/contracts.rs`. The conformance schedules are
@@ -963,6 +1037,47 @@ while it is non-empty; `decode_step_h` is unchanged and never sees a suspended l
 `resident_bindings.rs` (register passes, the taint-only gate is the red arm) and on the real
 `Cache` in `memra-kv` (`continuation_gate_tests`). Write-up:
 `research/spill-a-20260919/DAY11.md`.
+Day 12 (memra#384, host tier tenant-share cap): at the configured `MEMRA_KV_HOST_TENANT_PCT` cap a
+demotion evaporated before the D2H copy even while the pool had free space. The demote hook now
+runs `HostPrefixCache::tenant_share_reclaim_plan` before the copy (pure: infeasible demotions
+skip the PCIe trip, nothing evicted) and `reclaim_tenant_share` once the image is built and
+bound, right before `insert`: the demoting tenant's OWN unleased host entries go oldest first
+until the demotion fits its share, then the predicate is retried once. Another tenant's row is
+never read, a leased entry (`IdentitySlot::leased`, a live identity lease) is skipped, the
+exact-key twin is spared, and a row with no eligible space keeps the bounded refusal: today's
+`demote evaporated at the tenant share cap before the D2H copy` line plus what the plan found,
+nothing evicted. On the pageable tier a charge, digest or copy failure therefore costs the row
+nothing; on the fixed arena (`MEMRA_GLM5_TP_KV_HOST=1`) the reclaim runs at reservation inside
+`reserve_image`, before the copy, and a copy failure there is booked like a refused insert
+(integ15 review of PR #597, both rounds): `prefix_host_tenant_reclaims_wasted` with a `tenant
+share reclaim WASTED` line. `host_cache_tenant_share_reservation_evicts_nothing_without_an_arena_and_books_a_copy_failure_wasted`
+pins the pageable no-op and the booking shape; the arena eviction itself needs a CUDA context
+and is receipt-only. `insert`'s
+authoritative gate, the cap and the D2H bytes are unchanged; `/metrics` gains
+`prefix_host_tenant_reclaims` and `prefix_host_tenant_reclaims_wasted`. CPU cells
+(`cargo test -p memra-server --offline tenant_share`):
+`host_cache_tenant_share_reclaim_evicts_the_tenants_own_oldest_entries_only`,
+`host_cache_tenant_share_reclaim_spares_the_twin_and_refuses_an_image_above_the_share`,
+`host_cache_tenant_share_reclaim_skips_leased_entries_and_refuses_when_only_leased_remain`
+(binds a real `IdentitySlot` and holds its lease),
+`host_cache_tenant_share_plan_is_pure_and_a_reclaim_is_consumed_by_insert_or_booked_wasted`,
+`tenant_share_reclaim_is_wired_into_the_demote_hook_and_the_metrics` (plan before the copy,
+reclaim after bind and before insert, waste booked at every later exit);
+the pre-existing `host_cache_tenant_share_cap_evaporates_one_tenant_and_still_demotes_the_other`
+still pins `insert`'s gate. Target-card gate `tools/kv-host-tenant-reclaim-gate.sh <base|fix>`:
+two keyring tenants, a 1024 MiB pool, a 38 percent share (two ~161 MB entries, not three) and a
+two-entry device budget (`MEMRA_METRICS_TOKEN` for the scrape), so one tenant's third demotion
+hits the cap with the pool two-thirds empty; the `base` arm (origin/main) asserts the evaporation
+line and nothing of the tenant's own evicted, the `fix` arm the `[prefix-host] evict (tenant
+share):` line naming that tenant followed by its `[prefix-host] demote:` and the promote of the
+reclaimed admission, both arms the other tenant's promote, no LRU eviction, no device-tier
+promote-insert skip and eight 200s; the replay `research/spill-a-20260919/verify-day12.py` adds
+equal demote bytes across arms,
+byte-identical texts and the other tenant's row equal. Evidence:
+`research/spill-a-20260919/DAY12.md`, `pro-single-day12/` (one RTX PRO 6000 Blackwell at 600 W,
+N=1, `executed-not-qualified`). The memra#385 arena-startup measurement plan and the BOX3 harness
+receipt (`tools/pinned-host-reserve-bench.py`) are in
+`research/spill-a-20260919/HOST-ARENA-STARTUP.md`; no default moves.
 Linux cross-target check is compilation only, not Linux syscall execution.
 
 ### Native conformance: `tier-transfer-gate` (v1 through canonical v1.3)
@@ -1313,10 +1428,24 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `MEMRA_KV_HOST_VERIFY=1` `verify ok` on every ON promote, equal `[prefix-host] demote:` byte
   counts. Evidence: `research/spill-c-20260919/DAY13.md` and `pro-single-day13/` (one RTX PRO
   6000 Blackwell at 600 W, N=1, `executed-not-qualified`; no support state or default moves).
-- ON-arm surface is lane B's first slice: plain KV plus recurrent continuation. Entries with
-  TP, latent or draft planes (spec-published boundary captures) are refused by name at demote
-  (`[prefix-host] demote refused (contracts door)`), handoff imports at insert; the receipts
-  record these as the arm difference they are.
+- ON-arm surface (day 14, lead ruling 16): lane B's first slice (plain KV plus recurrent
+  continuation) AND MTP draft-bearing entries (spec-published boundary captures), each bound to
+  its own program: the draft plane is its own `Role::Draft` K and V segments with checksums, and a
+  model with an MTP head carries a second `ProgramIdentity` (`host_tier_draft_program`) whose
+  artifact, plan and numeric fold in the draft head's source and the draft rows' encodings, so a
+  spec entry and a plain entry of one prompt never share an identity. GLM state (TP, latent) and
+  the DFlash draft tail are refused by name at demote (`[prefix-host] demote refused (contracts
+  door): entry carries ...`), handoff imports at insert. CPU tests (`worker.rs`):
+  `host_tier_entry_class_admits_plain_and_mtp_draft_and_refuses_glm_and_dflash_by_name`,
+  `host_tier_draft_program_differs_from_plain_in_exactly_artifact_plan_and_numeric`,
+  `host_tier_context_program_selects_the_class_and_refuses_a_draft_entry_without_a_head`,
+  `host_tier_shape_metadata_v2_frames_the_draft_plane_presence_unconditionally`. Exit criterion
+  on the target card: `tools/kv-host-spill-identity-gate.sh` and
+  `tools/kv-host-spill-failure-gate.sh` under the gates' DEFAULT spec environment (every insert
+  a draft-bearing spec-boundary capture), door OFF then ON on one binary and prompts: every verdict
+  line equal, `verify ok` on every ON promote, equal `[prefix-host] demote:` byte counts, no
+  refusal line in the ON arm; the `MEMRA_SERVE_SPEC=0` pairs and serve-smoke unchanged from day 13.
+  Evidence: `research/spill-c-20260919/DAY14.md`, `pro-single-day14/`, replay `verify-day14.py`.
 
 ### `h2d-probe --copies`
 

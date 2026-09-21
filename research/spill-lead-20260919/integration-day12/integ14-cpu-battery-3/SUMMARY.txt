@@ -1,0 +1,46 @@
+tree e35d85af787dd338de625b9ff18b8fb8bdc7d16b started 2026-09-21T08:03:05Z host avifenesh rustc rustc 1.97.1 (8bab26f4f 2026-07-14)
+== fmt: cargo fmt --all -- --check
+   rc=0 (3s)
+== portable-suites: bash tools/portable-suites.sh
+   rc=0 (15s)
+   | skip-census: output banked at /home/avifenesh/projects/wt-spill-integ14/target/portable-suites.log
+   | skip-census: 334 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 14 binaries
+   | portable-suites: PASS (tier, KV and onboarding CLI suites executed on CPU; skips 0 of budget 0; NOT GPU qualification)
+== test-server: cargo test -p memra-server --offline --no-fail-fast
+   rc=0 (13s)
+   | 
+   | test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   | 
+== clippy: env DOCS_RS=1 cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf -p memra-cli --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
+   rc=0 (5s)
+   |    Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-integ14/crates/memra-server)
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.16s
+== check-flags: bash tools/check-flags.sh
+   rc=0 (1s)
+   | check-flags: runtime literal reads=867
+   | check-flags: no uncovered runtime names
+   | check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+== publish-census: bash tools/workspace-publish-census.sh
+   rc=0 (0s)
+   | publish-census: OK — 12 publishable members, 12 listed, order topological, unpublishable: memra-probe
+== docs-registry: bash tools/docs-registry-census.sh
+   rc=0 (1s)
+   | docs-registry-census: ROUTER.md lines=44 (cap 60)
+   | docs-registry-census: check-flags --list answered with 867 runtime names (coverage enforced by check-flags.sh itself)
+   | docs-registry-census: flags-table-census: docs/FLAGS.md tables=58 rows=903, every row matches its header
+== pytest-battery: python3 -m pytest -q crates/memra-tier/tests/battery/
+   rc=0 (20s)
+   | .................................................. [ 57%]
+   | .....................................                          [100%]
+   | 87 passed, 32 subtests passed in 20.05s
+== verify-b14: python3 research/spill-b-20260919/verify-day14.py
+   rc=0 (0s)
+   | round 2 (V3 as per-turn delta minus calibration consumed) on disk: fix FAIL on turn 1 only, 149,094,400 B of cohort-phase misalignment; the state identity held exactly on every turn
+   | rig: NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887 MiB, 600.00 W, 600.00 W, 580.178.04
+   | N=1 per arm; executed-not-qualified; no timing compared.
+== perf-board: python3 tools/update-perf-board.py --check
+   rc=0 (0s)
+   | perf board is up to date
+== diff-check: git diff --check
+   rc=0 (0s)
+finished 2026-09-21T08:04:03Z

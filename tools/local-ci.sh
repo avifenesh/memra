@@ -137,6 +137,8 @@ cpu_chain() {
     if ! cargo test --release -p memra-server -j8; then
         echo "local-ci: memra-server unit suite FAILED"; return 1
     fi
+    # Match the standing hosted check, including tier integration tests and doctests.
+    CARGO_BUILD_JOBS=8 RUST_TEST_THREADS=8 bash tools/ci-portable.sh || return 1
     # ENGINE LIB SUITE (memra#18, ci-diet lane 2026-09-02). vision::tests and every other
     # memra-engine lib test ran NOWHERE: ci.yml ran `cargo test -p memra-engine cpu_experts
     # --lib`, a NAME FILTER. The CPU-safe part of the suite runs here (358 tests, measured with
