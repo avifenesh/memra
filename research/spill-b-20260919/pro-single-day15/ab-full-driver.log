@@ -1,0 +1,141 @@
+run 01 AB-0 slru: computed=132300 loop_cold_after_1=0 return_cached=0 evictions=21 digests==cold 28/28 ttft_loop p50=158.708 p95=266.009 ms wall=69.3s temp 50.0->47.0 C
+run 02 AB-0 lru: computed=122700 loop_cold_after_1=0 return_cached=8700 evictions=19 digests==cold 28/28 ttft_loop p50=157.908 p95=159.509 ms wall=66.6s temp 47.0->46.0 C
+run 03 BA-0 lru: computed=122700 loop_cold_after_1=0 return_cached=8700 evictions=19 digests==cold 28/28 ttft_loop p50=157.814 p95=159.509 ms wall=66.6s temp 46.0->46.0 C
+run 04 BA-0 slru: computed=132300 loop_cold_after_1=0 return_cached=0 evictions=21 digests==cold 28/28 ttft_loop p50=158.837 p95=266.359 ms wall=69.3s temp 46.0->47.0 C
+run 05 AB-1 slru: computed=132300 loop_cold_after_1=0 return_cached=0 evictions=21 digests==cold 28/28 ttft_loop p50=158.754 p95=265.961 ms wall=69.3s temp 47.0->47.0 C
+run 06 AB-1 lru: computed=122700 loop_cold_after_1=0 return_cached=8700 evictions=19 digests==cold 28/28 ttft_loop p50=157.882 p95=159.319 ms wall=66.6s temp 47.0->46.0 C
+run 07 BA-1 lru: computed=122700 loop_cold_after_1=0 return_cached=8700 evictions=19 digests==cold 28/28 ttft_loop p50=157.932 p95=159.555 ms wall=66.6s temp 46.0->46.0 C
+run 08 BA-1 slru: computed=132300 loop_cold_after_1=0 return_cached=0 evictions=21 digests==cold 28/28 ttft_loop p50=158.931 p95=266.187 ms wall=69.3s temp 46.0->47.0 C
+run 09 AB-2 slru: computed=132300 loop_cold_after_1=0 return_cached=0 evictions=21 digests==cold 28/28 ttft_loop p50=158.6 p95=265.986 ms wall=69.3s temp 47.0->47.0 C
+run 10 AB-2 lru: computed=122700 loop_cold_after_1=0 return_cached=8700 evictions=19 digests==cold 28/28 ttft_loop p50=157.845 p95=159.261 ms wall=66.6s temp 47.0->46.0 C
+run 11 BA-2 lru: computed=122700 loop_cold_after_1=0 return_cached=8700 evictions=19 digests==cold 28/28 ttft_loop p50=158.127 p95=160.452 ms wall=66.8s temp 46.0->46.0 C
+run 12 BA-2 slru: computed=132300 loop_cold_after_1=0 return_cached=0 evictions=21 digests==cold 28/28 ttft_loop p50=158.791 p95=266.218 ms wall=69.3s temp 46.0->47.0 C
+run 13 AB-3 slru: computed=132300 loop_cold_after_1=0 return_cached=0 evictions=21 digests==cold 28/28 ttft_loop p50=158.644 p95=266.041 ms wall=69.3s temp 47.0->47.0 C
+run 14 AB-3 lru: computed=122700 loop_cold_after_1=0 return_cached=8700 evictions=19 digests==cold 28/28 ttft_loop p50=157.918 p95=159.202 ms wall=66.6s temp 47.0->46.0 C
+run 15 BA-3 lru: computed=122700 loop_cold_after_1=0 return_cached=8700 evictions=19 digests==cold 28/28 ttft_loop p50=157.806 p95=159.276 ms wall=66.6s temp 46.0->46.0 C
+run 16 BA-3 slru: computed=132300 loop_cold_after_1=0 return_cached=0 evictions=21 digests==cold 28/28 ttft_loop p50=158.692 p95=266.031 ms wall=69.3s temp 46.0->47.0 C
+run 17 AB-4 slru: computed=132300 loop_cold_after_1=0 return_cached=0 evictions=21 digests==cold 28/28 ttft_loop p50=158.653 p95=266.059 ms wall=69.3s temp 47.0->47.0 C
+run 18 AB-4 lru: computed=122700 loop_cold_after_1=0 return_cached=8700 evictions=19 digests==cold 28/28 ttft_loop p50=157.906 p95=159.531 ms wall=66.6s temp 47.0->46.0 C
+run 19 BA-4 lru: computed=122700 loop_cold_after_1=0 return_cached=8700 evictions=19 digests==cold 28/28 ttft_loop p50=157.871 p95=159.424 ms wall=66.6s temp 46.0->46.0 C
+run 20 BA-4 slru: computed=132300 loop_cold_after_1=0 return_cached=0 evictions=21 digests==cold 28/28 ttft_loop p50=158.763 p95=266.115 ms wall=69.3s temp 46.0->47.0 C
+| pair | order | slru computed | lru computed | slru - lru | better | slru return cached | lru return cached | slru loop cold | lru loop cold | slru ttft loop p50/p95 ms | lru ttft loop p50/p95 ms | slru temp C | lru temp C |
+| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |
+| AB-0 | AB | 132300 | 122700 | 9600 | lru | 0 | 8700 | 0 | 0 | 158.708/266.009 | 157.908/159.509 | 50.0->47.0 | 47.0->46.0 |
+| BA-0 | BA | 132300 | 122700 | 9600 | lru | 0 | 8700 | 0 | 0 | 158.837/266.359 | 157.814/159.509 | 46.0->47.0 | 46.0->46.0 |
+| AB-1 | AB | 132300 | 122700 | 9600 | lru | 0 | 8700 | 0 | 0 | 158.754/265.961 | 157.882/159.319 | 47.0->47.0 | 47.0->46.0 |
+| BA-1 | BA | 132300 | 122700 | 9600 | lru | 0 | 8700 | 0 | 0 | 158.931/266.187 | 157.932/159.555 | 46.0->47.0 | 46.0->46.0 |
+| AB-2 | AB | 132300 | 122700 | 9600 | lru | 0 | 8700 | 0 | 0 | 158.6/265.986 | 157.845/159.261 | 47.0->47.0 | 47.0->46.0 |
+| BA-2 | BA | 132300 | 122700 | 9600 | lru | 0 | 8700 | 0 | 0 | 158.791/266.218 | 158.127/160.452 | 46.0->47.0 | 46.0->46.0 |
+| AB-3 | AB | 132300 | 122700 | 9600 | lru | 0 | 8700 | 0 | 0 | 158.644/266.041 | 157.918/159.202 | 47.0->47.0 | 47.0->46.0 |
+| BA-3 | BA | 132300 | 122700 | 9600 | lru | 0 | 8700 | 0 | 0 | 158.692/266.031 | 157.806/159.276 | 46.0->47.0 | 46.0->46.0 |
+| AB-4 | AB | 132300 | 122700 | 9600 | lru | 0 | 8700 | 0 | 0 | 158.653/266.059 | 157.906/159.531 | 47.0->47.0 | 47.0->46.0 |
+| BA-4 | BA | 132300 | 122700 | 9600 | lru | 0 | 8700 | 0 | 0 | 158.763/266.115 | 157.871/159.424 | 46.0->47.0 | 46.0->46.0 |
+PREFIX-POLICY-AB: budget_bytes=2147483648 cohort_tenants=4 cohort_bytes=1589723136 turns=12 start_tokens=27300 grow=300 return_every=3 pairs_per_order=5 runs=20 requests_per_run=28 digests_identical=28/28 computed_tokens slru_median=132300 lru_median=122700 (N=10 each) pairs_slru_better=0/10 pairs_lru_better=10/10 ties=0/10 return_cached slru_median=0 lru_median=8700 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=46.0..50.0 power_limit_w=600.0 -> WINNER=lru
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "python3",
+    "tools/prefix-policy-ab.py",
+    "--external-lock",
+    "3",
+    "--model",
+    "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "--bin",
+    "/root/spill-receipts/b-day15/bins/tip/memra-server",
+    "--out",
+    "/root/spill-receipts/b-day15/ab-full/cell",
+    "--budget-mib",
+    "2048",
+    "--cohort-tokens",
+    "7800,8000,8200,8400",
+    "--turns",
+    "12",
+    "--start-tokens",
+    "27300",
+    "--grow-tokens",
+    "300",
+    "--return-every",
+    "3",
+    "--pairs",
+    "5",
+    "--ctx",
+    "32768",
+    "--max-tokens",
+    "8"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 64990281546021,
+  "ended_monotonic_ns": 66524792669640,
+  "started_utc": "2026-09-21T08:55:05.275403+00:00",
+  "ended_utc": "2026-09-21T09:20:39.786528+00:00",
+  "elapsed_seconds": 1534.511123619,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 5458,
+    "sha256": "0d25e578f94ee229f93edf1f1b428e43bdc778e7fb37bd126a7f0e9c2386c18f"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 673613,
+      "sha256": "0a9c7f91c9fa9bcdb879736d9d62bb77c1a689e64289b5beb069ead2037b2f04"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}
