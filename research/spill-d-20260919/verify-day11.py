@@ -215,8 +215,10 @@ def main():
         folder = a.root / arm
         last, samples = collector(folder, arm, build)
         summary, rows, line = receipt(folder, arm, baseline, build)
+        # An incomplete arm stops at the committed prompt (context minus the 128 it never generates).
+        committed = "8192" if CONTINUES[arm] else baseline["identity"]["prompt_tokens"]
         generated = "128" if CONTINUES[arm] else "0"
-        expected_last = line if arm in REFUSAL else f"{line} committed=8192 generated={generated}"
+        expected_last = line if arm in REFUSAL else f"{line} committed={committed} generated={generated}"
         require(last == expected_last, f"{arm}: last console line {last!r}")
         require(last == (folder / "last-line.txt").read_text().rstrip("\n"), f"{arm}: last-line receipt")
         for s in samples:
