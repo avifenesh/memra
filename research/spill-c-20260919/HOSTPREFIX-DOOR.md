@@ -283,6 +283,19 @@ to weigh at decide-by: the contract's destinations are write-combined (`cudarc a
 speed (N=1: demote 149 vs 281 ms, promote 267 vs 398 ms OFF vs ON; not a claim). Option C (the promote
 H2D) is next.
 
+### Review fixes (PR #599, findings 1 and 2; `DAY15.md` review section)
+
+Two unwind defects, both real: before submission the ops' original `DeviceLease` handles held the
+registry `Rc` above the count `take_plane` accepts, so every pre-submit refusal escalated to
+`SourceQuarantined`, latched the tier and dropped a whole device entry over intact planes (fixed: the
+originals are dropped before any pre-submit unwind); and the abort recorded the consumer fence and
+retired against it without observing it, discarding the result, which leaked the ticket, its
+in-flight charge (the whole dimension) and its destinations, so every later demote would refuse
+`Capacity` (fixed: drain, then retire; nothing discarded; a refusal there is the typed `TicketLeaked`
+outcome and one `TIER DISABLED` line). Both paths are injectable one-shot faults,
+`MEMRA_KV_HOST_FAULT=contract-presubmit` and `contract-postpublish`, exercised by the GPU unit cells
+and `tools/kv-host-contract-fault-gate.sh`.
+
 ### What stays as it is
 
 OFF: every statement outside the door's `tier`-Some arms; the borrow becomes exclusive with no

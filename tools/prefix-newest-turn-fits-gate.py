@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """prefix-newest-turn-fits-gate.py: a growing conversation's newest turn fits the prefix cache.
 
-The defect (memra#523 items 1 and 3): under the default policy (`MEMRA_PREFIX_CACHE_POLICY=slru`)
-a newly published entry could be its own eviction victim, or the snapshot preflight could refuse
-it outright, whenever the free share beside a PROMOTED cohort was smaller than the entry. A
-growing long-context conversation then ran cold on every turn (`cached_tokens=0`, a full
+The defect (memra#523 items 1 and 3): under the segmented policy that was the default until
+2026-09-21 a newly published entry could be its own eviction victim, or the snapshot preflight
+could refuse it outright, whenever the free share beside a PROMOTED cohort was smaller than the
+entry. A growing long-context conversation then ran cold on every turn (`cached_tokens=0`, a full
 re-prefill, the incident's 90-130 s ticks and 408s) while other tenants' entries sat protected,
 and the only trace was one once-announced `snapshot skipped` line. `cached_tokens` decides the
 customer's bill and whether the cache engaged at all, so the gate reads it from the response.
+Since memra#523 item 2 (`docs/decisions/PREFIX-CACHE-POLICY.md`) the only policy is plain LRU:
+the gate's subject is the DEFAULT policy, whatever it is, and the boot line must report it.
 
 Serving shape, one card, two boots of the real `memra-server` per cell, plain path
 (`MEMRA_SERVE_SPEC=0`), a SMALL explicit prefix budget, default policy. The CALIBRATION boot
@@ -17,23 +19,22 @@ keeps after it retires, with no cache activity at all) is measured on the same b
 same card; the MEASURED boot then arms the cache with the small budget:
 
   1. cohort: a second tenant (`cache_salt=cohort`) sends three prompts of different lengths, each
-     twice; the second send is a whole-entry hit whose lease promotes the entry, so the cohort
-     ends PROTECTED (asserted: `cached_tokens == prompt_tokens` on the second send, protected
-     share not exceeded, so nothing is demoted).
+     twice; the second send is a whole-entry hit (asserted: `cached_tokens == prompt_tokens` on
+     the second send), so the cohort is a reused, recently touched set when the growth starts.
   2. twin: the growing tenant (`cache_salt=grow`) replays an 8-turn conversation, turn k+1 =
      turn k's prompt ids plus a fixed number of new ids (a real conversation appends the answer
      and the next message; the cache mechanics are the same, and exact ids make
      `cached_tokens` a closed-form expectation).
 
   The pressure arithmetic is checked from the server's own lines, not assumed: the cohort's
-  `insert probation` lines give a bytes(tokens) fit for this artifact, and the gate REFUSES
-  (exit 2) unless cohort <= protected share, cohort + turn-1 entry > budget, and every turn's
-  entry <= budget. That is exactly the incident's shape scaled to a small budget.
+  `insert` lines give a bytes(tokens) fit for this artifact, and the gate REFUSES (exit 2)
+  unless cohort <= 80 % of the budget, cohort + turn-1 entry > budget, and every turn's entry
+  <= budget. That is exactly the incident's shape scaled to a small budget.
 
 Assertions (bytes from the server's `[prefix-cache]` lines and `/metrics`):
   V1 cached:      every turn k >= 2 reports `usage.prompt_tokens_details.cached_tokens` >= turn
                   k-1's `prompt_tokens` (the previous turn's entry was restored).
-  V2 lines:       turn 1 publishes (`insert probation`, no `insert refused`, no
+  V2 lines:       turn 1 publishes (`insert`, no `insert refused`, no
                   `snapshot skipped`); every turn k >= 2 has exactly one `[prefix-cache] hit:`
                   line of at least turn k-1's tokens AND publishes its own entry; no turn of the
                   growing tenant is refused or skipped.
@@ -53,8 +54,9 @@ Assertions (bytes from the server's `[prefix-cache]` lines and `/metrics`):
   Identity is recorded per turn (sha256 of each completion text) for the runner to compare
   across binaries, and against the calibration boot's cold completion of the same prompt; it is
   not a verdict inside one cell (restored-vs-cold identity has its own gates).
-  V4 protected:   at least one `evict (... Protected LRU)` line in the growing tenant's turns:
-                  the room came from the protected cohort, never from the entry itself.
+  V4 cohort:      at least one eviction of a cohort entry (`ns "cohort"`) during the growing
+                  tenant's turns, and no turn evicts the entry it just published: the room came
+                  from the reused cohort, never from the entry itself.
 
 Exit 0 = every assertion held; 1 = a verdict failed (red on `main` today: `cached_tokens=0` on
 every turn after the once-announced `snapshot skipped` line); 2 = REFUSED (lock, port, shape).
@@ -87,12 +89,15 @@ MIB = 1 << 20
 V3_SLACK = 64 * MIB
 
 RE_ON = re.compile(r"\[prefix-cache\] on: budget \d+MB \((\d+) B,.*policy ([^,]+),")
-RE_INSERT = re.compile(r"\[prefix-cache\] insert probation \(([^)]+)\): (\d+) tokens, ([\d.]+)MB")
+# `insert (seed)` since memra#523 item 2; `insert probation (seed)` on the segmented binaries.
+RE_INSERT = re.compile(r"\[prefix-cache\] insert (?:probation )?\(([^)]+)\): (\d+) tokens, ([\d.]+)MB")
 RE_HIT = re.compile(r"\[prefix-cache\] hit: (\d+) of (\d+) prompt tokens from cache")
-# fix: `evict (Protected LRU)`, `evict (snapshot preflight, Protected LRU)`; main: `evict (snapshot preflight)`
+# `evict (LRU)`, `evict (snapshot preflight, LRU)`; segmented binaries: `evict (Protected LRU)`,
+# `evict (snapshot preflight, Probation LRU)`; the pre-fix main: `evict (snapshot preflight)`.
 RE_EVICT = re.compile(
     r"\[prefix-cache\] evict \((?:snapshot preflight(?:, )?)?(Probation|Protected)? ?(?:LRU)?\): (\d+) tokens, ([\d.]+)MB"
 )
+RE_NS = re.compile(r'ns "([^"]+)"')
 RE_REFUSED = re.compile(r"\[prefix-cache\] insert refused: (.*)$")
 RE_SKIPPED = re.compile(r"\[prefix-cache\] snapshot skipped: (.*)$")
 RE_DEMOTE = re.compile(r"\[prefix-cache\] demote \(protected bytes\): ([\d.]+)MB")
@@ -140,7 +145,8 @@ class Server:
                 "MEMRA_TIMEOUT_MS_MAX": "240000",
             }
         )
-        # The subject is the DEFAULT policy: never pre-set it, never inherit a launcher's value.
+        # The subject is the DEFAULT policy: never inherit a launcher's value for the doors that
+        # used to select one (removed 2026-09-21; a binary that still reads them must not see them).
         env.pop("MEMRA_PREFIX_CACHE_POLICY", None)
         env.pop("MEMRA_PREFIX_CACHE_PROTECTED_PCT", None)
         self.log.parent.mkdir(parents=True, exist_ok=True)
@@ -298,7 +304,8 @@ def parse_window(lines: list[str]) -> dict:
             continue
         m = RE_EVICT.search(ln)
         if m:
-            ev["evicts"].append({"segment": m.group(1) or "unstated", "tokens": int(m.group(2)), "mb": float(m.group(3))})
+            ns = RE_NS.search(ln)
+            ev["evicts"].append({"segment": m.group(1) or "unstated", "tokens": int(m.group(2)), "mb": float(m.group(3)), "ns": ns.group(1) if ns else ""})
             continue
         m = RE_REFUSED.search(ln)
         if m:
@@ -480,11 +487,11 @@ def main() -> None:
         budget = int(on.group(1))
         policy = on.group(2).strip()
         rec["boot"] = {"budget_bytes": budget, "policy": policy, "line": next(ln.strip() for ln in boot_lines if RE_ON.search(ln))}
-        if "SLRU" not in policy.upper():
-            refuse(f"the boot did not report the SLRU default (policy {policy!r}); the gate's subject is the default policy")
+        if "PLAIN-LRU" not in policy.upper():
+            refuse(f"the boot did not report the plain-LRU default (policy {policy!r}); the gate's subject is the default policy")
         if budget != args.budget_mib * MIB:
             refuse(f"budget {budget} B differs from the requested {args.budget_mib} MiB")
-        protected_share = budget * 80 // 100
+        cohort_cap = budget * 80 // 100  # the incident's cohort share of the budget
 
         # ---- 1. the protected cohort -----------------------------------------------------
         points: list[tuple[int, float]] = []
@@ -520,21 +527,21 @@ def main() -> None:
         e_last = est(last_tokens)
         shape = {
             "budget_bytes": budget,
-            "protected_share_bytes": protected_share,
+            "cohort_cap_bytes": cohort_cap,
             "cohort_bytes": cohort_bytes,
             "cohort_points": points,
             "fit_bytes_per_token": per_token,
             "fit_fixed_bytes": fixed,
             "turn1_entry_estimate_bytes": e1,
             "last_turn_entry_estimate_bytes": e_last,
-            "cohort_within_protected_share": cohort_bytes <= protected_share,
+            "cohort_within_80pct": cohort_bytes <= cohort_cap,
             "turn1_exceeds_free_share": cohort_bytes + e1 > budget,
             "every_turn_fits_budget": e_last <= budget,
             "two_turns_fit_budget": est(last_tokens - args.grow_tokens) + e_last <= budget,
         }
         (args.out / "shape.json").write_text(json.dumps(shape, indent=2) + "\n")
-        if not shape["cohort_within_protected_share"]:
-            refuse(f"cohort {cohort_bytes} B exceeds the protected share {protected_share} B: the cohort would be demoted, not the incident's shape")
+        if not shape["cohort_within_80pct"]:
+            refuse(f"cohort {cohort_bytes} B exceeds 80 % of the budget ({cohort_cap} B): not the incident's shape")
         if not shape["turn1_exceeds_free_share"]:
             refuse(f"no pressure at turn 1: cohort {cohort_bytes} + turn-1 entry {e1:.0f} <= budget {budget}; raise --start-tokens or lower --budget-mib")
         if not shape["every_turn_fits_budget"]:
@@ -609,15 +616,16 @@ def main() -> None:
     v2 = all(v2_rows)
     v3_rows = [abs(t["v3_state_error_bytes"]) <= V3_SLACK for t in turns]
     v3 = bool(v3_rows) and all(v3_rows)
-    protected_evictions = sum(1 for t in turns for e in t["window"]["evicts"] if e["segment"] == "Protected")
+    cohort_evictions = sum(1 for t in turns for e in t["window"]["evicts"] if e["ns"] == "cohort")
+    self_evictions = sum(1 for t in turns for e in t["window"]["evicts"] if e["ns"] == "grow" and e["tokens"] == t["prompt_tokens"])
     total_evictions = sum(len(t["window"]["evicts"]) for t in turns)
     refused_lines = [ln for t in turns for ln in t["window"]["refused"] + t["window"]["skipped"]]
-    v4 = protected_evictions >= 1
+    v4 = cohort_evictions >= 1 and self_evictions == 0
     ok = v1 and v2 and v3 and v4
     verdict = (
         f"PREFIX-NEWEST-TURN-FITS: budget_bytes={rec['boot']['budget_bytes']} cohort_bytes={shape['cohort_bytes']} "
         f"turns={len(turns)} cold_turns_after_1={cold_after_1} cached_ok={sum(v1_rows)}/{len(v1_rows)} "
-        f"lines_ok={sum(v2_rows)}/{len(v2_rows)} evictions={total_evictions} protected_evictions={protected_evictions} "
+        f"lines_ok={sum(v2_rows)}/{len(v2_rows)} evictions={total_evictions} cohort_evictions={cohort_evictions} self_evictions={self_evictions} "
         f"refused_or_skipped={len(refused_lines)} effective_free_ok={sum(v3_rows)}/{len(v3_rows)} "
         f"V1={'ok' if v1 else 'FAIL'} V2={'ok' if v2 else 'FAIL'} V3={'ok' if v3 else 'FAIL'} V4={'ok' if v4 else 'FAIL'} "
         f"-> {'PASS' if ok else 'FAIL'}"
@@ -628,7 +636,7 @@ def main() -> None:
         w = t["window"]
         hits = ", ".join("{hit} of {prompt}".format(**h) for h in w["hits"]) or "none"
         inserts = ", ".join("{tokens} tok {mb}MB ({why})".format(**i) for i in w["inserts"]) or "none"
-        evicts = ", ".join("{tokens} tok {mb}MB ({segment})".format(**e) for e in w["evicts"]) or "none"
+        evicts = ", ".join("{tokens} tok {mb}MB ({segment}, ns {ns})".format(**e) for e in w["evicts"]) or "none"
         prev = t["prev_prompt_tokens"] if t["prev_prompt_tokens"] is not None else "-"
         derr = t["delta_error_bytes"] if t["delta_error_bytes"] is not None else "-"
         route = ", ".join(
@@ -654,7 +662,7 @@ def main() -> None:
         "turns_identical_to_cold": sum(1 for t in turns if t["text_identical_to_cold"]),
         "final_metrics": rec.get("final_metrics"),
         "refused_or_skipped_lines": refused_lines,
-        "assertions": {"V1_cached": v1, "V2_lines": v2, "V3_effective_free": v3, "V4_protected_evicted": v4},
+        "assertions": {"V1_cached": v1, "V2_lines": v2, "V3_effective_free": v3, "V4_cohort_evicted_never_self": v4},
         "v3_slack_bytes": V3_SLACK,
         "v3_form": "state: calibration effective free after turn k == measured effective free after turn k + resident prefix bytes",
     }

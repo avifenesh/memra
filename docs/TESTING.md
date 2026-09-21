@@ -883,14 +883,15 @@ prefix-evict-reclaim-gate.py [--external-lock FD] --model <gguf> --bin <memra-se
 
 ### The newest turn fits the prefix cache (`tools/prefix-newest-turn-fits-gate.py`)
 
-memra#523 items 1 and 3: under the default policy (`MEMRA_PREFIX_CACHE_POLICY=slru`) a newly
+memra#523 items 1 and 3: under the segmented policy that was the default until 2026-09-21 a newly
 published entry could be its own capacity victim (probation held only the newcomer) or be refused
 by the snapshot preflight (only probation counted as reclaimable), so a growing long-context
 conversation ran `cold=1 restored=0` on every turn beside other tenants' promoted entries, and
-the only trace was one once-announced `snapshot skipped` line. The fix (`room_victim_with`,
-worker.rs) takes the probation LRU first as before and, when probation is exhausted or holds only
-the entry being inserted, the protected LRU oldest first; every unleased byte is reclaimable for
-the newest turn. The only refusals are typed and in bytes:
+the only trace was one once-announced `snapshot skipped` line. The day-14 fix made every unleased
+byte reclaimable for the newest turn (protected LRU oldest first once probation was exhausted);
+since #523 item 2 (day 15, below) the only policy is plain global LRU, the oldest unleased entry
+first, and the newest turn is never its own victim because it is the global newest. The only
+refusals are typed and in bytes:
 `[prefix-cache] insert refused: entry N exceeds budget M (...)` and
 `[prefix-cache] insert refused: entry N cannot fit beside L leased bytes (budget M, ...)`.
 Victim selection and accounting only: captured and restored bytes are unchanged.
@@ -902,17 +903,17 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
 
 - Serving shape, one card, two boots of the real `memra-server` per cell, plain path
   (`MEMRA_SERVE_SPEC=0`), a small explicit prefix budget, the DEFAULT policy (the boot line must
-  report SLRU; the gate never sets the policy). A calibration boot with the cache OFF
+  report `plain-LRU`; the gate never sets a policy). A calibration boot with the cache OFF
   (`MEMRA_PREFIX_CACHE_MB=0`) replays the identical request sequence first and records each turn's
   own retained footprint (the bytes a request of that length keeps after it retires with no cache
   activity; 1,111,666,004 B on the 9,200-token turn 1 of the day-14 shape, identical on both
   binaries). In the measured boot a second tenant (`cache_salt=cohort`) seeds three
-  prompts twice each so the whole-entry hit promotes them: the cohort ends protected. The growing
+  prompts twice each so the whole-entry hit makes them a reused, recently touched set. The growing
   tenant (`cache_salt=grow`) then replays an 8-turn conversation whose turn k+1 is turn k's
   `prompt_ids` plus 300 new ids. The pressure arithmetic is read from the server's own
-  `insert probation` lines (a bytes(tokens) fit for the artifact) and the gate REFUSES unless the
-  cohort fits the protected share, cohort plus turn-1 entry exceed the budget, and every turn's
-  entry fits the budget: the incident's shape scaled to a small budget.
+  `insert` lines (a bytes(tokens) fit for the artifact) and the gate REFUSES unless the
+  cohort is at most 80 % of the budget, cohort plus turn-1 entry exceed the budget, and every
+  turn's entry fits the budget: the incident's shape scaled to a small budget.
 - Assertions, bytes from the server's `[prefix-cache]` lines and `/metrics`: V1 every turn k >= 2
   reports `usage.prompt_tokens_details.cached_tokens >= ` turn k-1's `prompt_tokens`; V2 turn 1
   publishes and every later turn hits exactly once and publishes, with no `insert refused` or
@@ -921,8 +922,9 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
   effective free plus the cache's resident bytes, within 64 MiB (the cache costs exactly what it
   holds, so every evicted byte came back: #523 item 4 under the capacity shape, stated on states
   because per-turn deltas need aligned starting states and the cohort phase does not give them);
-  V4 at least one `evict (... Protected LRU)` line (the room came from the cohort, never from the
-  entry itself). Per-turn `text_sha256`, the same prompt's cold
+  V4 at least one eviction of a cohort entry (`ns "cohort"`) and no turn evicting the entry it
+  just published (the room came from the cohort, never from the entry itself). Per-turn
+  `text_sha256`, the same prompt's cold
   digest from the calibration boot, and the per-request server receipt (`[glm5-spec] route=`
   with `cold=`/`restored=`, or `[spec-k] ... cached= lcp=`) are recorded for the runner; identity
   across binaries and against the cold boot is the runner's comparison, not a verdict inside one
@@ -935,25 +937,36 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
 - Canonical rig lock only, held for the whole cell; under the collector,
   `tools/tier-battery.py --rig pro-single --external-lock --execute python3
   tools/prefix-newest-turn-fits-gate.py --external-lock @COLLECTOR_LOCK_FD@ ...` (lead ruling 5).
-  CPU arms: `worker::tests::prefix_cache_slru_newest_turn_fits_beside_a_protected_cohort` (the
-  incident shape, 211 turns, never its own victim),
+  CPU arms: `worker::tests::prefix_cache_newest_turn_fits_beside_a_reused_cohort` (the
+  incident shape, 211 turns, cohort oldest first, never its own victim),
   `prefix_cache_oversized_insert_refuses_with_the_typed_line_and_evicts_nothing`,
-  `prefix_cache_slru_fitting_inserts_keep_the_same_victims_in_the_same_order`,
+  `prefix_cache_evicts_the_global_oldest_including_reused_entries`,
   `prefix_cache_newest_turn_beside_a_leased_predecessor_fits_or_refuses_loudly`, and for the
   refusal-line throttle (first line printed, identical repeats suppressed and counted in the skip
   counters, a changed shape printed again, every 64th identical repeat printed with its count)
   `prefix_refusal_announcer_prints_first_changed_and_every_nth_identical_refusal` and
   `prefix_cache_repeated_refusals_count_every_time_and_print_once`; for pressure relief (the kv-flex
-  shed and the step-OOM reclaim select with the same `room_victim_with` as the insert loop: probation
-  first, then protected oldest first, leases untouchable)
-  `evict_to_bytes_takes_protected_oldest_first_once_probation_is_empty`,
+  shed and the step-OOM reclaim select with the same `oldest_evictable` as the insert loop and the
+  preflight: oldest unleased first, leases untouchable)
   `evict_to_bytes_never_takes_a_leased_entry_even_below_target` and
-  `kv_flex_shed_reaches_the_floor_through_protected_entries_and_warns_only_when_all_is_leased`. The
-  eviction contract the fix
-  changed is stated in `docs/SERVING.md` (SLRU paragraph) and the `MEMRA_PREFIX_CACHE_PROTECTED_PCT`
-  row of `docs/FLAGS.md`: every unleased byte is reclaimable for the newest turn, the protected share
-  bounds only demotion and pinned admission, scan resistance for entries larger than the free share
-  is gone under SLRU until #523 item 2 re-decides the default.
+  `kv_flex_shed_reaches_the_floor_through_reused_entries_and_warns_only_when_all_is_leased`. The
+  eviction contract is stated in `docs/SERVING.md` ("Eviction (plain global LRU ...)"): every
+  unleased byte is reclaimable for the newest turn, oldest first; only leases are untouchable.
+- **The policy decision (day 15, memra#523 item 2).** `tools/prefix-policy-ab.py` (source at
+  `9466b891`; deleted with the door) replayed the incident's shape at a 2048 MiB budget on one RTX
+  PRO 6000 Blackwell (600 W): four reused cohort tenants (74 % of the budget), one loop 27,300 to
+  30,600 ids over 12 turns, cohort returns after every third loop turn and after the loop, 28
+  requests per run, `AB-0, BA-0, ..., AB-4, BA-4` (A = `slru`, B = `lru`), 20 runs, one lock hold,
+  one thermal window, plus a cache-off boot for the cold digests. Pre-registered rule: primary =
+  total computed tokens, lower is better; secondary = the cohort tenants' `cached_tokens` on their
+  returns; a policy wins only if better on the primary at every pair in both orders; digest
+  identity is a precondition. Verdict, verbatim:
+  `PREFIX-POLICY-AB: budget_bytes=2147483648 cohort_tenants=4 cohort_bytes=1589723136 turns=12 start_tokens=27300 grow=300 return_every=3 pairs_per_order=5 runs=20 requests_per_run=28 digests_identical=28/28 computed_tokens slru_median=132300 lru_median=122700 (N=10 each) pairs_slru_better=0/10 pairs_lru_better=10/10 ties=0/10 return_cached slru_median=0 lru_median=8700 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=46.0..50.0 power_limit_w=600.0 -> WINNER=lru`
+  (10/10 pairs, 132,300 vs 122,700 computed tokens in every pair, digests 28/28 identical across
+  the 20 runs and the cold boot). Landed as the naked default with the segmented arm deleted;
+  receipts `research/spill-b-20260919/pro-single-day15/ab-full/`, replay `verify-day15.py`,
+  decision `docs/decisions/PREFIX-CACHE-POLICY.md`. Target-card verdict; the local RTX 5090 replay
+  is a follow-up.
 
 ## Generic spill / tiered KV (memra-tier)
 
@@ -1471,6 +1484,31 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   serve-smoke and lane B's `prefix-evict-reclaim-gate.py` / `prefix-newest-turn-fits-gate.py` lines
   identical, one receipt before every ON demote, N=1, executed-not-qualified. Evidence:
   `research/spill-c-20260919/DAY15.md`, `pro-single-day15/`, replay `verify-day15.py`.
+- Option B unwind (day 15 review, PR #599 findings 1 and 2): every pre-submit refusal drops the ops'
+  original `DeviceLease` handles before the unwind (an extra holder on the registry `Rc` makes
+  `take_plane` refuse `Busy`, which escalated a recoverable refusal to `SourceQuarantined`, latched the
+  tier and dropped a whole device entry over intact planes); the abort observes every fence before
+  retiring against it (owner-stream drain after `record_consumer`; an unpublished ticket retires
+  against `None`) and never discards a `retire`, `acknowledge` or `release_producer` result: a refusal
+  there is the typed `TicketLeaked` outcome and one `TIER DISABLED` line (a leaked batch is the
+  ledger's whole in-flight dimension). Injectable one-shot faults, `MEMRA_KV_HOST_FAULT=
+  contract-presubmit` (the producer fence refused before any op is submitted) and
+  `contract-postpublish` (the receipt check refused after every destination was taken), armed once at
+  boot into `HostTierContext::fault`. Cells: the GPU unit cells `option_b_presubmit_refusal_returns_
+  every_plane_and_keeps_the_tier_on` and `option_b_postpublish_refusal_retires_the_ticket_and_keeps_
+  the_tier_on` (`worker::tests`, `#[ignore]` without a device; a real `CudaTransfers` on the engine's
+  stream over a ledger whose in-flight dimension is exactly one batch: planes back with their bytes,
+  typed `Failed` never quarantine, tier on, ledger at zero, the next demote completes), and
+  `tools/kv-host-contract-fault-gate.sh [--external-lock FD] MODEL BIN EV` on a real server boot
+  (door ON, one cell per fault: r1 seeds, r2 evicts into the injected refusal, r3 evicts into a
+  clean demote; asserts exactly one typed `demote failed (tier D2H <producer fence, receipt> refused:
+  injected failure ...)`, then a D2H contract receipt whose ticket is `seq=1` (presubmit: no ticket was
+  issued) or `seq=2` (postpublish: the aborted ticket retired and was acknowledged) and a `demote:`,
+  no `TIER DISABLED`, no quarantine, no `Capacity`, no leaked wording; verdict `KV-HOST-CONTRACT-FAULT
+  GATE: ALL GREEN`). The source-text cell pins the `originals` drop before every pre-submit unwind and
+  the drain-then-retire order with no discarded result in the abort. Evidence:
+  `research/spill-c-20260919/DAY15.md` (review section), `pro-single-day15-review/`, replay
+  `verify-day15-review.py`.
 
 ### `h2d-probe --copies`
 

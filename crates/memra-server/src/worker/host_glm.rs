@@ -566,7 +566,6 @@ mod tests {
             bytes: 2636,
             last_use: Instant::now(),
             id: 0,
-            segment: PrefixSegment::Probation,
             pins: 0,
         }
     }
@@ -803,14 +802,14 @@ mod tests {
         let demotions = pool.demotions;
         {
             let mut sink = |dead| host_demote_prefix_entry(&root, &mut pool, dead);
-            assert!(!preflight.prepare_snapshot(&key, size, size, false, Some(&mut sink)));
+            assert!(!preflight.prepare_snapshot(&key, size, size, Some(&mut sink)));
         }
         assert_eq!(pool.demotions, demotions);
         let mut lease = Some(lease);
         retire_prefix_pin(&mut preflight, &mut lease);
         {
             let mut sink = |dead| host_demote_prefix_entry(&root, &mut pool, dead);
-            assert!(preflight.prepare_snapshot(&key, size, size, false, Some(&mut sink)));
+            assert!(preflight.prepare_snapshot(&key, size, size, Some(&mut sink)));
         }
         assert_eq!(preflight.total_bytes, 0);
         assert_eq!(pool.demotions, demotions + 1);

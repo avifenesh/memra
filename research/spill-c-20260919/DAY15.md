@@ -142,6 +142,67 @@ sloppiness (a `.clone()` guard that caught `error.clone()` and a comment, then a
 shorter than the hook) and once on a needle that also matched the register-failure arm; each fix is in
 the test, not the code. No `DOCS_RS=1` command ran.
 
+## Review fixes (PR #599, integ17: revuto findings 1 and 2 on the unwind; both held)
+
+Tree after the fixes: `30704905f` (the fix), `da52fa885` (the fault gate's own matcher bugs), `8f8f05a19`
+(docs), then the merge of main `0175e39d4` (lane B's SLRU removal in `worker.rs`; `worker.rs` auto-merged,
+my GPU builder dropped the removed `segment` field, `docs/FLAGS.md` resolved row by row against the base)
+at `aefb89d89`. Card cells on `aefb89d89` (binary `0e95bf16607f3b758e000041caf7794b8ecd4e584b7e8b6e0f76df70e102ee62`,
+`pro-single-day15-review/`, replay `verify-day15-review.py`: `DAY15 REVIEW REPLAY: PASS`, 46 checks). The
+first sitting (`sitting1/`) is kept: the GPU cell was refused by the collector because the driver had
+pre-created its `--out` (`[Errno 17] File exists`), and the fault gate printed `6 FAILURE(S)` on two shell
+bugs of mine (an order check that read the refusal line as a regex with unescaped parentheses, and
+`bash -c` subshells that could not see the script's functions) while its server logs already showed the
+unwind working; both fixed in `da52fa885`, no engine or server change.
+
+**Finding 1 (`worker.rs` pre-submit arms).** After registration the ops' original `DeviceLease` handles
+sat in `originals` while the retained twins sat in `registered`, so the registry `Rc` count was three;
+`DeviceOwner::release` (`contracts.rs:1264-1277`) accepts exactly two, so every `take_plane` in the unwind
+refused `Busy`, `host_contract_abort` escalated a recoverable refusal to `SourceQuarantined`,
+`host_entry_from_device` latched the tier off for the process and the live-entry callers dropped a whole
+device prefix entry with its planes intact and no DMA ever submitted. Fix: every pre-submit arm drops or
+clears `originals` before the unwind (the four in-loop arms `originals.clear()`, the `record_producer` arm
+`drop(originals)`); the success path was never affected because `retire_source` takes `item.device` first.
+
+**Finding 2 (`host_contract_abort`).** The abort recorded the consumer fence and called `retire` at once;
+`retire` reads the consumer event and a `CUDA_ERROR_NOT_READY` is `Busy`; the result was discarded (`let _
+= t.retire(..).and_then(acknowledge)`), which leaked the ticket forever: `retire` is the only release of the
+batch's in-flight charge, `acknowledge` the only drop of the entry and its host destinations, and the
+ledger's in-flight dimension is exactly one batch, so the next `submit_batch` would refuse `Capacity`,
+classified `Refused`, and every later demote would silently refuse for the life of the process; the same
+for a dropped `release_producer` error. Fix: the abort drains the owner stream before `release_producer`
+and again after `record_consumer` (an unpublished ticket refuses `NotReady` there and retires against
+`None`), and no result is discarded: a refusal is the new typed `TicketLeaked` outcome, which
+`host_entry_from_device` turns into one `TIER DISABLED` line (the latch exists for exactly this) with the
+entry whole; the success path's settle drains before `retire` and maps a failure to the same latch.
+
+**Injectable, one-shot.** `MEMRA_KV_HOST_FAULT=contract-presubmit` (the producer fence refused before any
+op is submitted) and `contract-postpublish` (the receipt check refused after every destination was taken),
+armed once at boot into `HostTierContext::fault` (a `Cell`, taken by the first demote that runs the route;
+the GPU unit cells set it directly). `docs/FLAGS.md` row updated.
+
+| Cell (target card, `aefb89d89`) | Verbatim |
+|---|---|
+| GPU unit cells (`cargo test --release -p memra-server -- --ignored`, under the collector lock) | `test worker::tests::option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on ... ok`, `test worker::tests::option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on ... ok`, `test result: ok. 2 passed; 0 failed`. Each: a real `CudaTransfers` on the engine's stream over a ledger whose in-flight dimension is exactly one batch (three planes, six ops); the injected refusal is `HostImageFailure::Failed` (never `SourceQuarantined`), `host.disabled == false`, every plane back in its slot with the bytes it was built with, the ledger at `(pinned, inflight, device) == (0, 0, 0)`, then a clean demote completes with receipts and holds `pinned == 1392` until the image drops. |
+| `tools/kv-host-contract-fault-gate.sh` presubmit | `demote failed (tier D2H producer fence refused: injected failure (MEMRA_KV_HOST_FAULT=contract-presubmit)); nothing demoted`, then `contracts door D2H receipt: ticket issuer=2 seq=1 epochs=0/1/1 items=34 (16 KV planes, draft) complete=34 require=ok ... retired acknowledged`, then `demote: 86 tokens, 160.6MB`; no `TIER DISABLED`, no quarantine, no `Capacity`; `seq=1`: no ticket had been issued before |
+| same, postpublish | `demote failed (tier D2H receipt refused: injected failure (MEMRA_KV_HOST_FAULT=contract-postpublish)); nothing demoted`, then the receipt with `seq=2` (the aborted ticket retired and was acknowledged; in-flight is one batch, a leak would have refused this demote with `Capacity`), then `demote: 86 tokens, 160.6MB`; `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` |
+| `kv-host-spill-identity-gate.sh` default, OFF vs ON | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` both arms, equal demote bytes, `verify ok`, one receipt per ON demote |
+| `kv-host-spill-failure-gate.sh` default, OFF vs ON | `KV-HOST-SPILL FAILURE GATE: 1 FAILURE(S)` both arms (the pre-existing pool-full line); digest cell ON: receipt, flip, named injected difference, `VERIFY FAILED` |
+
+Not observable from the server and stated as such: the transfer engine's `producers` map has no
+accessor, so its emptiness after an abort is evidenced by the clean second demote (a new producer fence
+is recorded and released) rather than read directly.
+
+Local battery on `aefb89d89` (`day15-local-merge/`, `systemd-run --user --scope -p CPUQuota=1200% -p
+MemoryMax=28G`, the test arm under `flock -n /tmp/memra-5090.lock` with a bounded wait: six 90 s waits
+while lane B's probe held the lock, then it ran): `cargo fmt --all -- --check` clean; `cargo test -p
+memra-server -p memra-kv -p memra-engine --offline` memra-server 756 passed, 0 failed, 8 ignored (the six
+GPU cells plus the two new ones), memra-kv 71 passed, memra-engine 515 passed, 24 ignored, 1560 `ok`;
+`cargo clippy` on the three crates `-D warnings` clean; `tools/check-flags.sh` every runtime name
+resolves; `tools/docs-registry-census.sh` clean (58 tables, 901 rows after lane B's two removed door
+rows); `git diff --check` clean. The earlier review-commit battery (`day15-local-review/`) has an empty
+test log: `flock -n` refused while the probe held the lock, so its test arm never ran; kept as the record.
+
 ## What remains
 
 - **Option C** (ruling 15, after these receipts): the promote H2D through `h2d`, `ready_view` and a
@@ -152,4 +213,4 @@ the test, not the code. No `DOCS_RS=1` command ran.
   cost, is the engine's decision.
 - **DFlash tail slice**, **verify digest v3**, **pool-full failure-gate line**: unchanged from day 14.
 
-Effort: approximately 4 agent-hours (budget 8).
+Effort: approximately 4 agent-hours for the day, plus approximately 2 for the review round (budget 8).
