@@ -357,7 +357,94 @@ the hook found no engine file in range (the documented range correction after a 
 ## integ15 (`lane/spill-integ15-20260921`): A day 12
 Batteries (`integration-day12/integ15-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server 748 tests; clippy `-D warnings`; check-flags; publish census; docs registry census; collector pytest; A's `verify-day12.py` `DAY12 PASS`; perf board; diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` (`integ15-serve-smoke-5090/`): `serve-smoke: 0 failed`.
 
+## Lane B day 15 (`bc16ae4c2`, pushed by the lane; #523 item 2 decided on the target card)
+Pre-registered before any run (`9466b8912`): primary metric total computed tokens over the replay (lower wins),
+secondary the cohort tenants' `cached_tokens` on their returns (stated either way), a policy wins only if better on the
+primary at every pair in both orders, digest identity across arms, runs and the cache-off boot as the precondition.
+Shape: the 2026-09-05 incident's ratios at a 2048 MiB budget on `Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`: four reused cohort
+tenants (74 percent of the budget), one loop growing 27,300 to 30,600 ids over 12 turns, cohort returns every third turn
+and after the loop, 28 requests per run, `AB-0, BA-0, ..., AB-4, BA-4`, 20 runs, one lock hold, one binary. Target card,
+600 W, 46 to 50 C at run boundaries, 6,124 telemetry samples, verbatim:
+```text
+PREFIX-POLICY-AB: ... digests_identical=28/28 computed_tokens slru_median=132300 lru_median=122700 (N=10 each) pairs_slru_better=0/10 pairs_lru_better=10/10 ties=0/10 return_cached slru_median=0 lru_median=8700 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=46.0..50.0 power_limit_w=600.0 -> WINNER=lru
+```
+Every pair, both orders: 132,300 versus 122,700 computed tokens (+9,600, 7.3 percent), deterministic; cohort return
+cached 0 versus 8,700; loop cold 0 in both; TTFT loop p50 158.6 versus 157.8 ms. Mechanism from the server's own lines:
+SLRU evicts the loop's newest entry after each cohort return and protects the loop's dead last entry over the last
+tenant's fresh one. Landed (`87d9e5963`): plain LRU is the only policy; `MEMRA_PREFIX_CACHE_POLICY`,
+`MEMRA_PREFIX_CACHE_PROTECTED_PCT`, the segments, promotion and demotion, the SLRU tests and the A/B harness deleted
+(harness source at `9466b891` in history); refusals, throttle, leased preflight and the pressure-relief order kept; the
+twin gate's V4 is now "cohort eviction, never self-eviction"; FLAGS "Removed doors, 2026-09-21", SERVING, TESTING,
+`docs/decisions/PREFIX-CACHE-POLICY.md`. Landed binary on the card: twin gate `-> PASS` with day-14 digests 8/8,
+`serve-smoke: 0 failed`, `cache-meter-gate: 0 failed`; `verify-day15.py` `DAY15 REPLAY OK`. Reconciled with #597
+(`a63739afb`): A's tenant-share code intact (40 references), 754 server tests. One lock-busy refusal kept
+(`refused-lockbusy/`, lane C's cell held the card).
+
+## Lead rulings, day 12 (continued)
+19. **Plain LRU is the prefix-cache policy; the SLRU door is gone.** The primary metric is a function of bytes and
+    policy, not of the card (a mechanism result: SLRU's protection displaces the growing tenant's newest entry), so
+    the one-card verdict lands the naked default and deletes the losing arm per door hygiene; the owner's one-rig rule
+    is stated in the decision record and the local 5090 replay of the same harness (from history) is owed as a
+    confirmation cell, not as a blocker. The scan-resistance property SLRU advertised is documented as removed with
+    the door; a future segmented policy comes back only with its own A/B on this shape.
+
+## Main moved under the integs (09:47Z): #590
+Another session merged codex PR #590 "ci: execute portable suites and dispatch pinned GPU qualification" (`34ed99dfc`):
+`tools/ci-portable.sh`, `tools/gpu-ci.py`, `.github/workflows/gpu-ci.yml`, `docs/CI.md`, ci.yml and local-ci.sh lines.
+It overlaps D's #592 (`tools/portable-suites.sh`, the `portable-suites` job, the skip census with teeth): main now
+carries two entry points for the same suites. Not untangled here; flagged for the owner and queued (one entry point,
+the teeth kept). integ16 and integ17 merged `34ed99dfc` after their batteries (ci, tools and docs only; the battery
+trees' crate content is unchanged).
+
+## integ16 (`lane/spill-integ16-20260921`): B day 15
+Batteries (`integration-day12/integ16-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server 754 tests; clippy
+`-D warnings`; check-flags; publish census; docs registry census; collector pytest; B's `verify-day15.py` OK; perf board;
+diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` (`integ16-serve-smoke-5090/`): `serve-smoke: 0 failed`.
+
+## Lane B day 16 (`0fae7e715`, pushed by the lane; the owed 5090 confirmation cell stopped on its precondition)
+Scaled shape (budget 1024 MiB, byte shares preserved, ctx 16384), pre-registered prediction matched the card's byte
+arithmetic to the token (slru 31,700 versus lru 29,550 computed tokens at both pairs, 56/56 rows per arm), but the
+precondition failed: `digests_identical=26/28`, one restored-suffix request per arm lineage differs from the cache-off
+boot, deterministic across runs; and the admission reclaim ladder (`[admit-oom] reclaim-on-defer`) evicted 12 prefix
+entries per run under VRAM pressure on this 24 GB card, which the target card never did. By the pre-registered rule the
+day produced no verdict (`-> DIGEST-FAIL`) and the 20-run cell was not run; `verify-day16.py` `DAY16 REPLAY OK: receipts
+consistent, precondition FAILED on this card, no verdict`; the decision record carries the contrary result as a
+paragraph, the decision text untouched (target-card receipts). Lead reading: the restored-versus-cold divergence on the
+5090 is a correctness question of its own (one numeric program per request), not a policy question; B day 17 probes it
+with the day-14 twin gate on that card. B also found two stale `|||||||` diff3 markers in `research/INDEX.md` on main
+(from another session's merge at #587); removed in integ18.
+## Main red since 09:47Z: the duplicate workflow key (fixed by #600)
+#590 (codex, merged by another session) and #592 (D day 13) each added a ci.yml job named `portable-suites`; a duplicate
+mapping key makes the workflow invalid, GitHub ran zero jobs (run 35585228365 on main, "workflow file issue"), and every
+push and PR since read as failure. PyYAML `safe_load` keeps the last key silently, so the day-13 YAML-load step could
+not have caught it; #590 was green because its merge ref predated #592 (the stale-merge-ref class is closed only by the
+branch-protection "require branch up to date" setting; owner decision). Lead hotfix #600 (`9ef2f04d6`): #590's
+duplicate block removed, its one unique step (the gpu-ci orchestration tests) kept in the surviving job under the
+unittest floor. CI green again on the first run after it.
+## Lane D day 14 (`2d2b70c55`, pushed by the lane; one entry point for the portable suites)
+Census (D's DAY14.md §1): `tools/portable-suites.sh` (#592: `--offline --no-fail-fast`, static and run-side skip census at
+budget 0, floor 300, banked raw log, teeth, `needs: changes`) versus `tools/ci-portable.sh` (#590: `cargo test --release
+--locked`, no census, no floor, no teeth, ungated); `gpu-ci.yml` runs no CPU suite, and its dispatch prerequisites are
+still in draft #566, so every dispatch refuses as unconfigured by design. Fold: `portable-suites.sh` is the one executor
+(`--locked` folded in), `ci-portable.sh` is a forward that nothing tracked calls, one ci.yml job, one `local-ci.sh`
+call (`CARGO_BUILD_JOBS=8 RUST_TEST_THREADS=8`), `gpu-ci.yml` untouched, `docs/CI.md` and TESTING name the one entry
+point. New guard: `tools/check-workflow-keys.py` (a strict loader that raises on duplicate mapping keys) in the `gates`
+job and as an unconditional pre-push arm with no skip switch (a ci.yml step cannot protect ci.yml from itself; the push
+can), teeth `tools/test_workflow_keys.sh`; proven on main's own broken file (`duplicate mapping key 'portable-suites' at
+line 401 column 3 (first at line 206)` while `safe_load` exits 0). Teeth verbatim: `test_portable_suites: 22 ok, 0 FAIL`
+(new arm 3: exactly one job, no live cargo test on the three crates outside the wrapper, the forward runs no cargo),
+`test_workflow_keys: 9 ok, 0 FAIL`, `check-workflow-keys: OK: 5 workflow files, no duplicate mapping keys`, wrapper
+`skip-census: 335 passed, 0 skipped (budget 0)`, `unittest-floor: OK: ran 11 tests (floor 9) for tools (test_gpu_ci.py)`,
+collector pytest 87 with both rig locks held. Post-hotfix merge clean (one job, one gpu-ci step). Findings kept:
+`research/**` read at test time versus the docs-only classifier (day 13); an untracked day-11 `build/` leftover in D's
+receipts (now un-ignored by the repo rule; left for D to add or remove).
+## integ18 (`lane/spill-integ18-20260921`): D day 14
+Batteries (`integration-day12/integ18-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server suite; clippy
+`-D warnings`; check-flags; publish census; docs registry census; collector pytest; `check-workflow-keys.py`;
+`test_portable_suites.sh`; `test_workflow_keys.sh`; the gpu-ci tests under the floor; perf board; diff-check: all rc=0.
+Also in integ18: two stale `|||||||` diff3 markers removed from `research/INDEX.md` (left by another session's merge).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
-- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 merged (#591); C day 14 sealed and pushed (`fc7375817`); merged into integ13. B day 14 sealed and pushed (`25d252c6f`); merged into integ14. A day 12 running (#384, #385 harness). E, F idle.
+- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 merged (#591); C day 14 merged (#594); C day 15 sealed and pushed (`8ed05bfc6`); merged into integ17. B day 14 sealed and pushed (`25d252c6f`); merged into integ14. A day 12 running (#384, #385 harness). E, F idle.

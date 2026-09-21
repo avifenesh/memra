@@ -1,11 +1,31 @@
 # CPU checks and native GPU qualification
 
 Standard public runners execute builds, static gates, and CPU tests in `ci.yml`.
-`portable-suites` also runs `memra-tier`, `memra-kv`, and `memra-cli`, including
-integration tests and doctests. `tools/ci-portable.sh` is shared with the native
-local-CI entrypoint; it does not run GPU tests or grant GPU qualification.
-The local caller caps compilation and test threads at eight while it overlaps
-the CPU chain with device checks; hosted execution retains its runner defaults.
+The `portable-suites` job runs the memra-tier, memra-kv and memra-cli suites, including
+integration tests and compile-fail doctests, through **one entry point**,
+`tools/portable-suites.sh`: `cargo test -p memra-tier -p memra-kv -p memra-cli --offline
+--locked --no-fail-fast` behind `tools/skip-census.py` (static census over `src/` and
+`tests/`, run-side budget 0, `--min-passed 300`), the raw cargo output banked at
+`target/portable-suites.log`. The same job runs the wrapper's teeth
+(`tools/test_portable_suites.sh`: planted failures must red it, an undeclared skip must red
+the census, the wiring holds), the collector suite with both rig lock paths held under a
+unittest floor, and the floor tool's own teeth. `tools/local-ci.sh`'s CPU chain runs the same
+wrapper with `CARGO_BUILD_JOBS=8 RUST_TEST_THREADS=8` while it overlaps the chain with device
+checks; hosted execution keeps its runner defaults. `tools/ci-portable.sh` (the name PR #590
+introduced for a second runner of the same suites) only forwards to the wrapper. Details and
+the measured counts: `docs/TESTING.md`, "Standing execution". Nothing in that job runs GPU
+tests or grants GPU qualification.
+
+The same job ends with the CPU failure controls of the GPU adapter below
+(`tools/unittest-floor.sh tools test_gpu_ci.py 9`; 10 measured 2026-09-21; a bare
+`unittest discover` is green over zero tests). The `gates` job runs
+`tools/check-workflow-keys.py`, a standard-library walker (no PyYAML, so the gate cannot fail
+for a missing dependency) that refuses a duplicate mapping key at any depth and reports a
+construct outside its documented scope as "cannot answer" (exit 2), never as green. GitHub refuses a workflow file with a duplicate
+key and runs zero jobs; main carried two `portable-suites` jobs on 2026-09-21 (#592 and #590)
+and every run was red at the workflow level until one was removed. The `gates` step protects
+the other workflow files; `ci.yml` itself is protected by the same census in
+`tools/hooks/pre-push` (no skip switch) and by a PR run on a current merge ref.
 
 ## Requesting GPU qualification
 
