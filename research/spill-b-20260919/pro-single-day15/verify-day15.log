@@ -1,0 +1,4 @@
+digests identical across 20 runs and the cache-off boot on all 28 requests
+rig: NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887 MiB, 600.00 W, 600.00 W, 580.178.04; temperature 46.0..50.0 C at run boundaries; power limit 600.0 W
+landed twin gate (gate-landed-retry2): PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=737943552 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 V1=ok V2=ok V3=ok V4=ok -> PASS; boot plain-LRU (global oldest unleased entry first; leases untouchable); digests identical to day 14's fix on all 8 turns
+replayed rule: WINNER=lru; executed-not-qualified; no cross-box timing compared.
