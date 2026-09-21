@@ -75,13 +75,15 @@ pub(crate) struct CpuExpertJob {
 
 /// Lane-3 M3: one EXPERT evaluated for several stream rows in a single companion call
 /// (memra_cpu_expert_rows_v2 — weight decode amortized across rows). Output layout:
-/// [m_r, n_embd] per-row contributions with route weights applied.
+/// [m_r, n_embd] per-row contributions with route weights applied, or (`raw`) the bare
+/// down-projection rows for [`accumulate_expert_exact`] (memra_cpu_expert_rows_raw_v2).
 pub(crate) struct CpuRowsJob {
     expert: OwnedExpert,
     inputs: Vec<f32>,
     route_weights: Vec<f32>,
     output_features: usize,
     threads: i32,
+    raw: bool,
 }
 
 pub(crate) enum CpuJob {
@@ -112,6 +114,15 @@ type RowsFn = unsafe extern "C" fn(
     *mut c_char,
     usize,
 ) -> i32;
+type RowsRawFn = unsafe extern "C" fn(
+    *const CpuExpertV2,
+    *const f32,
+    i32,
+    *mut f32,
+    i32,
+    *mut c_char,
+    usize,
+) -> i32;
 
 struct CpuBackend {
     // Kept open for process lifetime so the native memra function pointers remain valid.
@@ -122,6 +133,7 @@ struct CpuBackend {
     // Optional (added after ABI v2 shipped): absent in older companions, prefetch disabled.
     prefetch: Option<PrefetchFn>,
     rows: Option<RowsFn>,
+    rows_raw: Option<RowsRawFn>,
 }
 
 // The dlopen handle names process-global immutable code after initialization.
@@ -241,6 +253,9 @@ fn load_backend_from_path(path: &std::ffi::OsStr) -> Result<CpuBackend, String> 
             .ok()
             // SAFETY: when present the companion exports this exact rows ABI signature.
             .map(|symbol| unsafe { std::mem::transmute::<*mut c_void, RowsFn>(symbol) });
+        let rows_raw: Option<RowsRawFn> = load_symbol(handle, b"memra_cpu_expert_rows_raw_v2\0")
+            .ok()
+            .map(|symbol| unsafe { std::mem::transmute::<*mut c_void, RowsRawFn>(symbol) });
         Ok(CpuBackend {
             _handle: handle as usize,
             moe_token,
@@ -248,6 +263,7 @@ fn load_backend_from_path(path: &std::ffi::OsStr) -> Result<CpuBackend, String> 
             profile_stats,
             prefetch,
             rows,
+            rows_raw,
         })
     })();
     if result.is_err() {
@@ -437,27 +453,45 @@ fn execute(job: CpuJob) -> Result<Vec<f32>, String> {
 
 fn execute_rows(job: CpuRowsJob) -> Result<Vec<f32>, String> {
     let backend = backend()?;
-    let Some(rows_fn) = backend.rows else {
-        return Err("companion library lacks memra_cpu_expert_rows_v2".to_string());
-    };
     let expert = ffi_expert(&job.expert);
     let m_r = job.route_weights.len();
     let mut output = vec![0.0f32; m_r * job.output_features];
     let mut error = vec![0i8; 1024];
     let start = std::time::Instant::now();
     // SAFETY: descriptors point into immutable model-owned bytes retained until the caller
-    // joins this job; spans match the descriptor dimensions and the stable rows ABI.
-    let status = unsafe {
-        rows_fn(
-            &expert,
-            job.inputs.as_ptr(),
-            m_r as i32,
-            job.route_weights.as_ptr(),
-            output.as_mut_ptr(),
-            job.threads,
-            error.as_mut_ptr(),
-            error.len(),
-        )
+    // joins this job; spans match the descriptor dimensions and the stable rows ABI (the raw
+    // twin takes the same arguments minus the route weights).
+    let status = if job.raw {
+        let Some(rows_raw_fn) = backend.rows_raw else {
+            return Err("companion library lacks memra_cpu_expert_rows_raw_v2".to_string());
+        };
+        unsafe {
+            rows_raw_fn(
+                &expert,
+                job.inputs.as_ptr(),
+                m_r as i32,
+                output.as_mut_ptr(),
+                job.threads,
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        }
+    } else {
+        let Some(rows_fn) = backend.rows else {
+            return Err("companion library lacks memra_cpu_expert_rows_v2".to_string());
+        };
+        unsafe {
+            rows_fn(
+                &expert,
+                job.inputs.as_ptr(),
+                m_r as i32,
+                job.route_weights.as_ptr(),
+                output.as_mut_ptr(),
+                job.threads,
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        }
     };
     WALL_NS.fetch_add(
         start.elapsed().as_nanos().min(u64::MAX as u128) as u64,
@@ -688,10 +722,6 @@ fn submit_any(job: CpuJob) -> Result<CpuExpertTicket, String> {
     })
 }
 
-pub(crate) fn rows_supported() -> bool {
-    backend().is_ok_and(|b| b.rows.is_some())
-}
-
 /// Build a rows job: ONE expert, several (input-row, route-weight) pairs.
 pub(crate) fn prepare_rows_job(
     weights: &MoeWeights,
@@ -734,7 +764,55 @@ pub(crate) fn prepare_rows_job(
         route_weights,
         output_features: weights.down_exps.out_f,
         threads: threads_from_env()?,
+        raw: false,
     })
+}
+
+/// The raw twin of [`prepare_rows_job`]: bare down-projection rows, no route weight and no down
+/// scale applied, for [`accumulate_expert_exact`]. The job carries weight 1.0 per row only as a
+/// placeholder; the caller folds the real weight in the accumulate step.
+pub(crate) fn prepare_rows_raw_job(
+    weights: &MoeWeights,
+    expert: usize,
+    rows: &[&[f32]],
+) -> Result<CpuRowsJob, String> {
+    let weighted: Vec<(&[f32], f32)> = rows.iter().map(|row| (*row, 1.0f32)).collect();
+    let mut job = prepare_rows_job(weights, expert, &weighted)?;
+    job.raw = true;
+    Ok(job)
+}
+
+/// True when the companion exports the raw rows entry point the exact lockstep program needs.
+pub(crate) fn rows_raw_supported() -> bool {
+    backend().is_ok_and(|b| b.rows_raw.is_some())
+}
+
+/// The down-projection scale the companion applies for `expert`: the same field
+/// [`prepare_job`] hands to `memra_cpu_moe_token_v2`, so an exact re-accumulation reads the
+/// value the single-token program used, not a lookalike.
+pub(crate) fn down_scale(weights: &MoeWeights, expert: usize) -> Result<f32, String> {
+    Ok(projection(&weights.down_exps, expert)?.scale)
+}
+
+/// Fold one expert's raw down-projection row into a running sum EXACTLY as
+/// `memra_cpu_moe_token_v2` does: `sum = fma(y, route_weight * down_scale, sum)`, the scale a
+/// single f32 product, the fold a fused multiply-add, from a zero start, in job (selection)
+/// order. `f32::mul_add` is the correctly rounded FMA, `std::fma`'s twin. Given bit-identical
+/// per-expert rows (the multi-row kernel's per-row contract), a row accumulated this way over
+/// its CPU experts in selection order is bit-identical to the one-job program, which is what
+/// lets the lockstep multi-row arm share expert decodes across streams without changing a
+/// stream's bytes (memra#577).
+pub(crate) fn accumulate_expert_exact(
+    sum: &mut [f32],
+    y: &[f32],
+    route_weight: f32,
+    down_scale: f32,
+) {
+    debug_assert_eq!(sum.len(), y.len());
+    let scale = route_weight * down_scale;
+    for (acc, &v) in sum.iter_mut().zip(y) {
+        *acc = v.mul_add(scale, *acc);
+    }
 }
 
 pub(crate) fn record_incomplete_gpu_residency(resident_projections: usize) {

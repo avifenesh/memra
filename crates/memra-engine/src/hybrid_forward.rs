@@ -21792,17 +21792,15 @@ impl HybridModel {
         Ok(moe_out)
     }
 
-    /// `MEMRA_LOCKSTEP_CPU_ROWS=1` opts the lockstep CPU experts into the companion's
-    /// multi-row ABI (one call per expert shared by two or more streams). Default OFF
-    /// (memra#577): the M=1 run sums a row's CPU experts inside ONE companion job, and the
-    /// multi-row arm re-splits that sum across per-expert tickets, so from three streams up
-    /// a row's bytes depended on which experts its peers shared (M=4 mixed: every logit
-    /// differs from the first lockstep step; with this arm off and the shared expert per row,
-    /// bit-identical over 33 steps). The arm is the M3 amortization receipt
-    /// (research/moe/draft-head-and-concurrency-lanes.md, +4.8% at m=4); it comes back by
-    /// default only with an exactness proof against the M=1 sum order.
+    /// The lockstep CPU experts share expert decodes across streams (the companion's multi-row
+    /// ABI, one call per expert over every stream that routed to it) and re-accumulate each
+    /// row EXACTLY as the one-job program does (`cpu_experts::accumulate_expert_exact`: raw
+    /// down rows, `fma(y, w * down_scale, sum)` in selection order from zero). Bit-identical to
+    /// the M=1 run by construction (proof: `cpu-native-check`, "rows raw + exact accumulate"
+    /// arm; box receipt memra#577 follow-up). `MEMRA_LOCKSTEP_CPU_ROWS=0` is the rollback seam
+    /// to the one-job-per-row program, also exact, without the cross-stream amortization.
     fn lockstep_cpu_rows_on() -> bool {
-        std::env::var("MEMRA_LOCKSTEP_CPU_ROWS").as_deref() == Ok("1")
+        std::env::var("MEMRA_LOCKSTEP_CPU_ROWS").as_deref() != Ok("0")
     }
 
     /// Lane-3 M2: cross-stream MoE for lockstep decode. Routes all m stream rows in one
@@ -21897,60 +21895,54 @@ impl HybridModel {
             }
         }
 
-        // CPU tickets first: reads/compute overlap the GPU grouped work below. Experts routed
-        // by >=2 streams go through the multi-row ABI (weight decode amortized across rows);
-        // each row's remaining experts stay one ordinary per-row call. Contribution FP-sum
-        // order per row differs from the sequential single-call chunk — part of the
-        // documented lockstep numeric class.
+        // CPU tickets first: reads/compute overlap the GPU grouped work below. Default
+        // program: one raw rows job per CPU expert over every row that routed to it (weight
+        // decode amortized across streams), then each row re-accumulated in its own selection
+        // order with the one-job program's exact arithmetic (`accumulate_expert_exact`).
+        // Rollback (`MEMRA_LOCKSTEP_CPU_ROWS=0`): one companion job per row, the M=1 program
+        // itself. Either way a stream's bytes do not depend on its peers (memra#577).
         let host_rows = e.dtoh(zbatch)?;
-        let rows_ok = crate::cpu_experts::rows_supported() && Self::lockstep_cpu_rows_on();
+        let rows_exact = crate::cpu_experts::rows_raw_supported() && Self::lockstep_cpu_rows_on();
         enum CpuPart {
             Single { row: usize },
-            Rows { rows: Vec<usize> },
+            Raw { expert: usize, rows: Vec<usize> },
         }
         let mut tickets: Vec<(CpuPart, crate::cpu_experts::CpuExpertTicket)> = Vec::new();
-        let mut rows_served: std::collections::HashSet<(usize, usize)> = Default::default();
-        if rows_ok {
-            let mut shared: Vec<(usize, Vec<(usize, f32)>)> = cpu_by_expert
+        if rows_exact {
+            let mut by_expert: Vec<(usize, Vec<usize>)> = cpu_by_expert
                 .into_iter()
-                .filter(|(_, rows)| rows.len() >= 2)
+                .map(|(ex, rows)| {
+                    let mut rows: Vec<usize> = rows.into_iter().map(|(row, _)| row).collect();
+                    rows.sort_unstable();
+                    (ex, rows)
+                })
                 .collect();
-            shared.sort_by_key(|(ex, _)| *ex);
-            for (ex, mut row_weights) in shared {
-                row_weights.sort_by_key(|(row, _)| *row);
-                let inputs: Vec<(&[f32], f32)> = row_weights
+            by_expert.sort_by_key(|(ex, _)| *ex);
+            for (ex, rows) in by_expert {
+                let inputs: Vec<&[f32]> = rows
                     .iter()
-                    .map(|&(row, w)| (&host_rows[row * n_embd..(row + 1) * n_embd], w))
+                    .map(|&row| &host_rows[row * n_embd..(row + 1) * n_embd])
                     .collect();
-                let job = crate::cpu_experts::prepare_rows_job(m, ex, &inputs)
+                let job = crate::cpu_experts::prepare_rows_raw_job(m, ex, &inputs)
                     .map_err(std::io::Error::other)?;
-                for &(row, _) in &row_weights {
-                    rows_served.insert((row, ex));
-                }
                 tickets.push((
-                    CpuPart::Rows {
-                        rows: row_weights.iter().map(|&(row, _)| row).collect(),
-                    },
+                    CpuPart::Raw { expert: ex, rows },
                     crate::cpu_experts::submit_rows(job).map_err(std::io::Error::other)?,
                 ));
             }
-        }
-        for (row, selected) in cpu_rows.iter().enumerate() {
-            let leftover: Vec<(usize, f32)> = selected
-                .iter()
-                .copied()
-                .filter(|&(ex, _)| !rows_served.contains(&(row, ex)))
-                .collect();
-            if leftover.is_empty() {
-                continue;
+        } else {
+            for (row, selected) in cpu_rows.iter().enumerate() {
+                if selected.is_empty() {
+                    continue;
+                }
+                let host_row = &host_rows[row * n_embd..(row + 1) * n_embd];
+                let job = crate::cpu_experts::prepare_job(m, il, selected, host_row)
+                    .map_err(std::io::Error::other)?;
+                tickets.push((
+                    CpuPart::Single { row },
+                    crate::cpu_experts::submit(job).map_err(std::io::Error::other)?,
+                ));
             }
-            let host_row = &host_rows[row * n_embd..(row + 1) * n_embd];
-            let job = crate::cpu_experts::prepare_job(m, il, &leftover, host_row)
-                .map_err(std::io::Error::other)?;
-            tickets.push((
-                CpuPart::Single { row },
-                crate::cpu_experts::submit(job).map_err(std::io::Error::other)?,
-            ));
         }
 
         let mut slot_buf = e.zeros(mrows * n_used * n_embd)?;
@@ -22062,21 +22054,36 @@ impl HybridModel {
 
         // CPU contributions join BEFORE the shared expert (the sequential path's placement).
         let mut row_sums: Vec<Option<Vec<f32>>> = vec![None; mrows];
+        let mut raw_rows: std::collections::HashMap<(usize, usize), Vec<f32>> = Default::default();
         for (part, ticket) in tickets {
             let cpu_output = ticket.wait().map_err(std::io::Error::other)?;
-            let mut add_row = |row: usize, chunk: &[f32]| {
-                let sum = row_sums[row].get_or_insert_with(|| vec![0.0f32; n_embd]);
-                for (accumulator, value) in sum.iter_mut().zip(chunk) {
-                    *accumulator += value;
-                }
-            };
             match part {
-                CpuPart::Single { row } => add_row(row, &cpu_output),
-                CpuPart::Rows { rows } => {
+                CpuPart::Single { row } => row_sums[row] = Some(cpu_output),
+                CpuPart::Raw { expert, rows } => {
                     for (slot, row) in rows.into_iter().enumerate() {
-                        add_row(row, &cpu_output[slot * n_embd..(slot + 1) * n_embd]);
+                        raw_rows.insert(
+                            (row, expert),
+                            cpu_output[slot * n_embd..(slot + 1) * n_embd].to_vec(),
+                        );
                     }
                 }
+            }
+        }
+        if rows_exact {
+            for (row, selected) in cpu_rows.iter().enumerate() {
+                if selected.is_empty() {
+                    continue;
+                }
+                let mut sum = vec![0.0f32; n_embd];
+                for &(ex, w) in selected {
+                    let y = raw_rows
+                        .get(&(row, ex))
+                        .ok_or("lockstep raw CPU expert row missing after wait")?;
+                    let ds =
+                        crate::cpu_experts::down_scale(m, ex).map_err(std::io::Error::other)?;
+                    crate::cpu_experts::accumulate_expert_exact(&mut sum, y, w, ds);
+                }
+                row_sums[row] = Some(sum);
             }
         }
         for (row, sum) in row_sums.into_iter().enumerate() {
