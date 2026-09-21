@@ -418,6 +418,11 @@ mod native_tests {
     #[test]
     #[ignore = "native CUDA pair required; run under the provided two-card exclusive locks"]
     fn glm_peer_admission_materialization_trim_and_refill() {
+        if crate::test_support::skip_unless_native_pair(
+            "model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill",
+        ) {
+            return;
+        }
         let (primary, model, rt) = fixture(false);
         let capacity = 32;
         let mut cache = Cache::new_planned(&primary, &model.cfg, &model.plan, capacity).unwrap();
@@ -579,6 +584,11 @@ mod native_tests {
     #[test]
     #[ignore = "requires a native CUDA pair under the coordinator's exact two-card leases"]
     fn glm_indexed_mla_kda_state_materialization() {
+        if crate::test_support::skip_unless_native_pair(
+            "model_memory::native_tests::glm_indexed_mla_kda_state_materialization",
+        ) {
+            return;
+        }
         use crate::hybrid_forward::IndexerPlanes;
         use crate::model_memory_fixture::{CAPACITY, FixtureSource, KDA_LAYERS, MLA_LAYERS};
         use std::mem::size_of;
