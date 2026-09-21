@@ -83,7 +83,9 @@ WORDS = (
     "meadow north orbit prairie quarry ridge summit tundra upland valley wharf"
 ).split()
 
-RE_INSERT = re.compile(r"\[prefix-cache\] insert probation \((\w+)\): (\d+) tokens, ([\d.]+)MB")
+# The insert line lost its `probation` word when the segmented policy was removed (memra#523
+# item 2, 2026-09-21); both forms parse so the day-13 receipts still replay.
+RE_INSERT = re.compile(r"\[prefix-cache\] insert (?:probation )?\((\w+)\): (\d+) tokens, ([\d.]+)MB")
 RE_COST = re.compile(
     r"\[admission\] request cost: model=\"[^\"]+\" ctx=(\d+) path=(\w+) = .* = (\d+)MB$"
 )
