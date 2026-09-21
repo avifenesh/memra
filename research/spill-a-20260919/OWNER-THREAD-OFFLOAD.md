@@ -148,6 +148,43 @@ a FAIL of the ordering, never a tolerance.
   copy stream, the issue's item 4) and depends on Move 1's copy stream existing; not designed here.
 - **Decode**: the tick.
 
+## Move 1, first slice: what landed on day 17 (`DAY17.md`)
+
+The D2H side of Move 1 is in, under the door: `CudaTransfers::new_with_copy_stream` (the second stream,
+the D2H issued behind the producer fence's event with NO owner wait at submit), the route split into
+`host_kv_planes_submit_contract` and `host_kv_planes_settle_contract` (`Block` is the day-16 program,
+`Poll` hands the ticket back), the worker's one `Demoting` entry (`HostPrefixCache::demoting`), the
+tick-top poll as the run loop's first statement (idle wait capped at 2 ms while pending), settle-first at
+the hook, the promote hook and the tenant purge, publication through the shared `host_demote_publish`.
+Items 1, 2 and 3 of the Move 1 list above are done for the demote in this shape; item 3's ledger term
+("one entry in flight per direction") is not needed while every other route settles the pending demote
+first, so the ledger's in-flight dimension stays one batch. Item 5 holds: the copy program is the same
+driver call on a different stream and the receipts prove the bytes (the identity and fault gates).
+
+What Move 1 still owes, in order:
+
+1. **The promote (item 4).** `host_kv_planes_from_contract` keeps the owner stream and the blocking
+   `synchronize`. Its turn: an H2D on the copy stream needs the OWNER stream to wait on the copy's
+   event before the D2D restore reads the promoted planes (the one place the submit-time owner wait is
+   the correct ordering, so the engine keeps that install for an H2D and moves only the issue stream);
+   the request that hit stays in admission (`AdmissionRestoreRoute`) for the ticks the copy takes, a
+   `Promoting` state with the step-OOM park's shape (`requeue_oom` at the front of the queue); the
+   restore's first step must never start early, proven by the hit gate's identity clause and the
+   continuation gate with the copy stream forced slow (the Move 2 delay fault applies here first).
+2. **The receipt hashes.** Two checksums over the entry's pinned bytes stay on the owner thread inside
+   the tick: `progress`'s completion checksum (at the poll, on the items that completed since the last
+   poll) and `bind_tier_image`'s bundle checksum (at publication). Lane C's day-18 reading (77.9 ms per
+   160 MB of cacheable pinned memory on the target host) makes them the remaining demote cost of the ON
+   arm once the copy is off the tick. Decision cell: hash on a helper thread against the completion event
+   (the frozen contract's `Completion.checksum` is a value, not a place), or a GPU-side digest of the
+   source bytes recorded on the copy stream; either needs the tier crate's conformance to speak first.
+3. **The by-reference routes.** The admission reclaim flush (`evict_all_demoting`), the pause sweep and
+   the handoff keep the blocking program; the sink was the slice because its source is already evicted.
+   The pause sweep's park half holds live device state and needs the `Demoting` state to protect the
+   park until publication (the offload note's "source stays until the host copy publishes" rule).
+4. **The decision cell (i) as pre-registered above** with both classes on the second stream, once the
+   promote has moved; day 17 ran the demote arm alone against the day-16 receipt (`DAY17.md`).
+
 ## Order of work, priced
 
 Move 1 is the bounded one: the contract already has fences, tickets and typed unwinds, and the copy
