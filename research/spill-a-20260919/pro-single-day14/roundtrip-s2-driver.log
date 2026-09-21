@@ -1,0 +1,99 @@
+4488d83fe5784c0289644e3eb500af6206dceafe
+8cbeda3a0991c7d1c0092934c92c8580c58c6e5957695c3b3dbcf931a254c5a7  /root/spill-receipts/a-day14/bins/tier-transfer-gate
+PINNED-DEFAULT device="NVIDIA RTX PRO 6000 Blackwell Server Edition" kind=cached flags=0
+PINNED-DEFAULT roundtrip bytes=4096 kind=cached driver_flags=2
+PASS native D2H-H2D roundtrip bytes=4096 N=1 expected_sha256=6c46c24e2d97b8748d12fa91ef223a34552d2806f58ccb13878ef2eaa21eaee3 actual_sha256=6c46c24e2d97b8748d12fa91ef223a34552d2806f58ccb13878ef2eaa21eaee3 byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true
+PINNED-DEFAULT roundtrip bytes=65536 kind=cached driver_flags=2
+PASS native D2H-H2D roundtrip bytes=65536 N=1 expected_sha256=6edce3836c4209dbb8e0ed74a6175fd3af6e96a14249058b546517682a5b2918 actual_sha256=6edce3836c4209dbb8e0ed74a6175fd3af6e96a14249058b546517682a5b2918 byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true
+PINNED-DEFAULT roundtrip bytes=1048576 kind=cached driver_flags=2
+PASS native D2H-H2D roundtrip bytes=1048576 N=1 expected_sha256=00bd4a23ebc3345fea2d83fabb67b64fbeddb924cfd3db925b551dbfa26479cd actual_sha256=00bd4a23ebc3345fea2d83fabb67b64fbeddb924cfd3db925b551dbfa26479cd byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true
+PINNED-DEFAULT roundtrip bytes=16777216 kind=cached driver_flags=2
+PASS native D2H-H2D roundtrip bytes=16777216 N=1 expected_sha256=592ec7e492639c0ae83e07d13e9f28ca1c73baff241960eede80addde508fdae actual_sha256=592ec7e492639c0ae83e07d13e9f28ca1c73baff241960eede80addde508fdae byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true
+PINNED-DEFAULT roundtrip bytes=67108864 kind=cached driver_flags=2
+PASS native D2H-H2D roundtrip bytes=67108864 N=1 expected_sha256=2905c1974c20a50b9a21b2cb7e1faa4941dba3d1b130d01941a22d6cd3b44f7c actual_sha256=2905c1974c20a50b9a21b2cb7e1faa4941dba3d1b130d01941a22d6cd3b44f7c byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true
+PINNED-DEFAULT roundtrip bytes=268435456 kind=cached driver_flags=2
+PASS native D2H-H2D roundtrip bytes=268435456 N=1 expected_sha256=6020d865b68ed263bbee3a2556e6c064906410f5e220a584827034fdbc72191b actual_sha256=6020d865b68ed263bbee3a2556e6c064906410f5e220a584827034fdbc72191b byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/root/spill-receipts/a-day14/gate-cell.sh",
+    "3",
+    "roundtrip"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 86425187503170,
+  "ended_monotonic_ns": 86427241052507,
+  "started_utc": "2026-09-21T14:52:20.181360+00:00",
+  "ended_utc": "2026-09-21T14:52:22.234911+00:00",
+  "elapsed_seconds": 2.053549337,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 2401,
+    "sha256": "ed9eb656c197c35386f4cc491086d1f9ff7dab7111ebefa1942e070f990f14c1"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 1084,
+      "sha256": "c569794213bb55c4b49e57b9ce662fbc3099e0834769a047222c44f8ffbfa2ed"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

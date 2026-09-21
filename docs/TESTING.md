@@ -1224,24 +1224,42 @@ cudarc's `alloc_pinned`, which hard-codes `cuMemHostAlloc(.., CU_MEMHOSTALLOC_WR
 every CPU read of a demoted plane under `MEMRA_KV_HOST_CONTRACTS=1` (the engine's completion
 checksum, the bind checksum, and Option C's H2D-source checksum) ran uncached. The seam
 `memra_engine::tier_transfer::PinnedKind { WriteCombined, Cached }` (`alloc_host_kind`; `alloc_host`
-keeps today's write-combined default, flag bits 4) is selected by the gate only, never by an
-environment variable. One process, one CUDA context, one collector lock hold: one untimed warm-up
-roundtrip per arm, then A B x N and B A x N, per roundtrip the allocation wall, the D2H wall (submit
-to owner-stream synchronize), the engine's completion-hash wall, the bind-hash wall, the byte
-compare, the H2D wall, the H2D-source hash wall, `cuMemHostGetFlags` (a UVA driver reports
-`DEVICEMAP` on every pinned allocation: 6 for write-combined, 2 for cached) and `byte_exact` on both
-legs; one `PINNED-AB rule` line and one `RESULT` JSON. CPU cells
-`pinned_kind_default_is_todays_write_combined_flag_bits` and
-`alloc_host_delegates_with_the_default_kind_and_no_other_pinned_allocation_remains`; GPU cell
-`pinned_kind_arm_is_honoured_by_the_driver` (ignored without a device). Target card (one RTX PRO
-6000 Blackwell at 600 W, `research/spill-a-20260919/DAY13.md`, `pro-single-day13/`, replay
-`wc-ab.py`; pre-registered rule in `DAY13.md`): on the 160 MiB decision cell the cached arm reads
-the lease in 77.6 ms against 1711 ms write-combined (bind hash, pooled medians, N=10, cached below
-at 10/10 pairs), D2H 3.00 against 3.01 ms and H2D 2.98 against 2.98 ms (the DMA is
-flag-independent), byte exact 22/22, `cached_arm=wins-on-this-card`; a first sitting of the same
-cell was `inconclusive` on the per-pair D2H clause by 1 and 4 us. `conformance` and `roundtrip`
-print the same lines through the engine-owned backing as before. No default moved: the local RTX
-5090 cell is the follow-up and the lead rules at the door's decide-by review (2026-10-05).
+takes the per-device default below) is selected by the gate only, never by an environment variable.
+One process, one CUDA context, one collector lock hold: one untimed warm-up roundtrip per arm, then
+A B x N and B A x N, per roundtrip the allocation wall, the D2H wall (submit to owner-stream
+synchronize), the engine's completion-hash wall, the bind-hash wall, the byte compare, the H2D
+wall, the H2D-source hash wall, `cuMemHostGetFlags` (a UVA driver reports `DEVICEMAP` on every
+pinned allocation: 6 for write-combined, 2 for cached) and `byte_exact` on both legs; one
+`PINNED-AB rule` line and one `RESULT` JSON; `research/spill-a-20260919/wc-ab.py` replays the rule
+offline from the mirrored log and must agree. Pre-registered rule (`DAY13.md`): the cached arm wins
+on a card iff byte exact in every roundtrip, the driver's bit equals the arm's, cached bind hash
+below write-combined at every pair, cached D2H not above at every pair, and the per-order medians
+of both; otherwise inconclusive. Target card (one RTX PRO 6000 Blackwell at 600 W, `DAY13.md`,
+`pro-single-day13/pinned-ab-160m-s2`, N=5 per arm per order): bind hash 77.6 against 1711 ms
+(10/10 pairs), D2H 3.00 against 3.01, H2D 2.98 against 2.98, byte exact 22/22,
+`cached_arm=wins-on-this-card` (a first sitting `inconclusive` on the D2H clause by 1 and 4 us).
+Local RTX 5090 Laptop GPU (no power limit reported, `DAY14.md`, `rtx5090-day14/pinned-ab-160m`,
+N=5 per arm per order): bind hash 37.5 against 1449 ms (10/10 pairs), D2H 7.34 against 7.27 ms
+(cached not above at 5/10 pairs, above in both orders' medians), H2D 6.04 against 6.04, byte exact
+22/22, `cached_arm=inconclusive`; the 16 MiB context cell on the same card puts cached D2H at 0.74
+against 0.70 ms with non-overlapping ranges, 0/10.
+
+The per-device default (day 14, lead ruling 22, `docs/decisions/PINNED-DESTINATIONS.md`):
+`PinnedKind::for_device(name)` is `Cached` on the RTX PRO 6000 Blackwell class and `WriteCombined`
+on the RTX 5090 class and on every class without a receipt, keyed on the device name exactly as
+`parallel::HardwareTarget::from_device_name` keys the product shape; `CudaTransfers::new` resolves
+it once, `alloc_host` takes it, no `MEMRA_*` read. CPU cells
+`pinned_kind_per_device_default_resolves_by_card_class` (the receipted class resolves to `Cached`,
+the RTX 5090 class and unknown names to `WriteCombined`, which is the enum's `Default`),
+`pinned_kind_default_is_todays_write_combined_flag_bits` (the flag bits per kind, 4 and 0,
+unchanged) and `alloc_host_delegates_with_the_default_kind_and_no_other_pinned_allocation_remains`
+(source text: one `cuMemHostAlloc` site, one resolution site in the constructor, no environment
+read); GPU cell `pinned_kind_arm_is_honoured_by_the_driver` (ignored without a device: the default
+lease reads back the card's resolved arm from `cuMemHostGetFlags`). `conformance` and `roundtrip`
+run through the new default and print `PINNED-DEFAULT device=".." kind=.. flags=..` once per
+process and `PINNED-DEFAULT roundtrip bytes=.. kind=.. driver_flags=..` per size beside every
+`byte_exact=true` line: both cards green through the new default (`DAY14.md`, `rtx5090-day14/*-s2`
+and `pro-single-day14/*-s2`).
 `research/spill-a-20260919/PINNED-FLAGS.md` is the census of every pinned allocation and every host
 read on the path.
 

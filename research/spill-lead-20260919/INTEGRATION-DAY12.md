@@ -604,6 +604,39 @@ with the other cell fine and correctness green is machine state, not the diff (t
 the attempt-2 rows stay in the log as measured. Second CPU battery after the review round (`integ19-cpu-battery-2/`): all
 rc=0, 758 server tests, `DAY16 REVIEW REPLAY: PASS`; local 5090 serve-smoke with the door unset: `serve-smoke: 0 failed`.
 
+## Lane A day 14 (`9a4a3acef`, pushed by the lane in development mode; the 5090 pinned cell and the per-device default)
+5090 cell (`rtx5090-day14/pinned-ab-160m`, 160 MiB, N=5 per arm per order, both orders, 22 roundtrips, 55 to 57 C, 28 to
+29 W with no power limit reported, SM 1590 to 1627 MHz), verbatim: `PINNED-AB rule byte_exact_all=true
+driver_flags_honoured=true bind_hash_cached_below_wc=10/10 engine_hash_cached_below_wc=10/10 d2h_cached_not_above_wc=5/10
+d2h_cached_strictly_below_wc=5/10 h2d_cached_not_above_wc=6/10 medians_both_orders=false cached_arm=inconclusive
+cached_arm_strict_d2h_reading=inconclusive`. Bind hash cached 37.5 versus 1449 ms write-combined (10/10, 39x); D2H 7.34
+versus 7.27 ms with cached above in both orders' medians (the 16 MiB context cell 0/10 with disjoint ranges); byte exact
+22/22; driver flags honoured. Two card-class verdicts, no cross-box timing. Per-device default landed (`4488d83fe`):
+`PinnedKind::for_device(name)` returns `Cached` for the `HardwareTarget::RtxPro6000Blackwell` class (day 13 receipt) and
+`WriteCombined` for the `Rtx5090` class and every unrecognized name, keyed on the device name through the engine's
+existing per-device key (compute capability cannot separate the two classes, both 12.0); resolved once in
+`CudaTransfers::new`; `alloc_host` uses it; `alloc_host_kind` stays the gate's arm; no env read; flag bits unchanged;
+cells for the class resolution, the default bits and the single resolution site; the gate prints `PINNED-DEFAULT
+device=".." kind=.. flags=..`. Both cards through the new default: target card `kind=cached flags=0`, conformance 13
+PASS, roundtrip `byte_exact=true` at six sizes with `driver_flags=2`; 5090 `kind=write-combined flags=4`, conformance 13
+PASS, roundtrip byte exact at six sizes with `driver_flags=6`. `docs/decisions/PINNED-DESTINATIONS.md` (question, both
+cards' measurements with N and regime, the per-device rule, what would reverse it). Push note: a docs-only push without
+the development variable was refused `UNQUALIFIED: source inputs changed` (the hook compares tree inputs, not the
+range); rerun once with the variable.
+
+## Lead rulings, day 12 (continued)
+23. **Per-device pinned kind stands as landed.** The target card's rule was met 10/10; the 5090's was not (the D2H
+    clause lost by 70 us on a 7.3 ms DMA while the host read gained 39x), so the 5090 keeps write-combined until a
+    rule that weighs the door's actual byte mix is pre-registered and met there. The door's decide-by review reads its
+    cost again on the target card with cached destinations (C's WC pair is superseded on that card class).
+
+## integ21 (`lane/spill-integ21-20260921`): A day 14
+Batteries (`integration-day12/integ21-cpu-battery/`): fmt; portable suites; memra-server suite; memra-engine CPU lib
+tests; clippy `-D warnings`; censuses; collector pytest; A's 5090 replay (`WC AB REPLAY: FAIL (15 checks, 2 failed)`
+by design: the two rule clauses read inconclusive, all 13 integrity checks ok, `replay agrees with the binary's
+verdict: inconclusive`); perf board; diff-check. Local 5090 `tools/serve-smoke.sh` (`integ21-serve-smoke-5090/`):
+`serve-smoke: 0 failed`. Pushed in the announced development mode (engine source in range).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
