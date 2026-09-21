@@ -42,7 +42,7 @@ struct Entry {
 }
 pub struct Transfers {
     entries: HashMap<TransferTicket, Entry>,
-    owner: DeviceOwner,
+    pub(super) owner: DeviceOwner,
     next: u64,
     pub rejects: Vec<usize>,
     pub short: Option<usize>,
@@ -175,7 +175,7 @@ impl Transfers {
     fn entry(&mut self, t: &TransferTicket) -> Result<&mut Entry> {
         self.entries.get_mut(t).ok_or(Error::UnknownTicket)
     }
-    fn finish(&mut self, t: &TransferTicket) {
+    pub(super) fn finish(&mut self, t: &TransferTicket) {
         let e = self.entries.get_mut(t).unwrap();
         e.disk = true;
         e.dma = true;
@@ -839,7 +839,7 @@ fn revision_v13_source_retirement_preserves_taken_destination() {
 /// Rule 1 fixture: an H2D restore whose producer is pending with a live source consumer and
 /// source graph pin; the destination side is idle (an unpublished restore has no destination
 /// consumer). Returns the ticket, the host and device charges and a retained destination lease.
-fn pending_restore(
+pub(super) fn pending_restore(
     t: &mut Transfers,
     gov: &Shared,
 ) -> (TransferTicket, ChargedLease, ChargedLease, DeviceLease) {
