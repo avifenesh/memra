@@ -469,6 +469,30 @@ impl CudaTransfers {
     pub fn retain_device(&self, lease: &DeviceLease) -> Result<DeviceLease> {
         self.owner.retain(lease)
     }
+    /// A second owned handle on one pinned allocation: the host mirror of `retain_device`
+    /// (lane/spill-c-20260919 day 16, Option C). Both handles own the allocation and its governor
+    /// charge; the last one dropped releases both (`PinnedAllocation::drop`). What it is for: an
+    /// H2D whose caller keeps the host copy resident after the copy. The contract's H2D consumes
+    /// the source lease it is handed (`retire_source`), so a caller that must keep its copy hands
+    /// the op a twin and keeps its own handle. The engine already accepts a shared H2D source (a
+    /// taken D2H destination may be an H2D source before acknowledgement; `validate` counts owners
+    /// for a D2H destination only). While a twin lives, `write` on either handle refuses `Busy`
+    /// and a D2H into either refuses `Busy`: nothing mutates bytes another owner may be reading.
+    /// Owner thread and owner context only; a released allocation refuses `AlreadyReleased`.
+    pub fn retain_host(&self, lease: &CudaPinnedLease) -> Result<CudaPinnedLease> {
+        self.check_thread()?;
+        let backing = lease
+            .allocation
+            .backing
+            .as_ref()
+            .ok_or(Error::AlreadyReleased)?;
+        if !Arc::ptr_eq(backing.context(), self.stream.context()) {
+            return Err(Error::WrongOwner);
+        }
+        Ok(CudaPinnedLease {
+            allocation: lease.allocation.clone(),
+        })
+    }
     /// Refuse live ticket ownership without waiting on the CUDA stream. A
     /// synchronous wait here would consume the producer-pending refusal state
     /// (and deadlock callers whose producer needs an explicit owner advance).

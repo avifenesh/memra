@@ -553,8 +553,58 @@ decision-cell replay `WC AB REPLAY: PASS (15 checks, 0 failed)`; perf board; dif
 `tools/local-ci.sh --perf` on the combined tree (`integ20-local-ci-perf/`): correctness GREEN, serve-smoke 0 failed,
 `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (the corrected gate, on the fix), `26b-plain-short: 208.81 tok/s [OK]`,
 `qwen9b-plain-short: 138.91 tok/s [OK]`, `perf stage: 0 fail, 0 warn`, rc=0. #602 closes with this PR.
+## Lane C day 16 (`36fa5262b`, integrated from the lane worktree; Option C behind the door)
+Census before code (`HOSTPREFIX-DOOR.md` §"Option C"). Code (`25891baa9`): `host_kv_planes_from_contract` promotes an entry
+whose KV planes are `HostPlaneBytes::Contract` through the transfer contract's H2D (fresh destinations from the OFF
+allocator, `register_device` and `retain_device` twins, source twins through the one engine addition
+`CudaTransfers::retain_host` (a second owned handle on one pinned allocation, the host mirror of `retain_device`; while a
+twin lives, `write` and a D2H into either refuse `Busy`), `record_producer`, one `submit_batch`, `synchronize`, `poll`,
+`Completion::require` against the D2H receipts before publication, `ready_view`, consumer fence, drain, `retire_source`,
+`release_producer`, `retire`, `acknowledge`, `take_plane` into `PrefixPlane`s; publication stays
+`insert_pinned_demoting`; the verify digest stays the OFF check). Typed `HostPromoteFailure { Failed, Refused,
+ReceiptMismatch (cancel, `recover_source` per rule 1, caller drops the entry), Latched }`; fault sides per route (the
+day-15 review lessons applied: originals dropped before the unwind, no discarded retire, drain before retire); device
+ledger at 3x. OFF untouched (`plane_up` intact). Target card, N=1, `DAY16 REPLAY: PASS` (203 checks): GPU cells 6 passed;
+`tools/kv-host-contract-fault-gate.sh` `ALL GREEN` on four cells (a first sitting `2 FAILURE(S)` was a matcher, kept);
+identity default and plain `ALL GREEN` both arms with one H2D receipt per ON promote carrying the same digest as its
+D2H; failure `1 FAILURE(S)` both arms (pre-existing), the flip named at both ends; lane A's tenant fix arm `PASS` both
+arms (8 D2H and 2 H2D receipts); serve-smoke 34 lines equal; lane B's gates identical.
+WC pair (`WC-DESTINATIONS.md`, `wc-pair.py`, target card, N=5 per arm per order, orders agree within 0.5 ms, one lock hold,
+37 to 51 C, max 492 W under the 600 W limit): demote median 37.8 ms OFF versus 169.2 ms ON; promote line 12.2 versus 171.7
+ms; promote minus inline demote 4.5 versus 33.2; steady-state demote 6 to 8 versus 136 to 140 ms; a first-touch step of
+about 35 ms on the first three demotes in both arms. The day-15 promote delta was the inline demote inside the promote's
+window. Not a verdict: the first cell of the decide-by review. C's push was refused by the perf-ci gate (one engine file,
+`tier_transfer.rs`); the lead integrates from the lane worktree and runs the full `local-ci.sh --perf` on integ19. Revuto
+on integ19 found two more unwind bugs, both fixed on the lane (`4467131f6`): partial acceptance asked `recover_source`
+for rejected slots (now accepted items only; `Refused`, not `Latched`), and `published` was inferred from the item
+index (now the engine's answer through `cancel`); two new faults, six fault-gate cells `ALL GREEN` on the card.
+## Main moved again (14:00Z): #589, the release qualification gate
+Codex PR #589 (merged by another session, `435a57a75`) retires the perf-ci freshness arm and refuses any engine-source
+push as `UNQUALIFIED` unless a content-bound qualification receipt exists or the push is announced as development
+(`MEMRA_RELEASE_QUALIFICATION_MODE=development`, logged). integ19 and integ20 push in that mode and claim no
+qualification; every cell stays executed-not-qualified. Lanes' own pushes of engine changes now stop at that arm; the
+lead pushes the integ trees.
+20. **The host-contracts door cannot be promoted at write-combined cost.** A 4x demote and a 14x promote wall-time
+    penalty on the target card (N=5 both orders) is the door's dominant open item before its 2026-10-05 decide-by.
+    The allocation flag is engine territory: lane A day 13 adds a typed pinned-kind seam with today's default unchanged
+    and runs the cached-versus-write-combined A/B through the transfer gates on the target card (pre-registered rule,
+    byte exactness in every cell); the default moves only on that verdict and, per the one-rig rule, for that card
+    class first. Option C stays behind the door meanwhile.
+## integ19 (`lane/spill-integ19-20260921`): C day 16
+Batteries (`integration-day12/integ19-cpu-battery/`): fmt; portable suites; memra-server (one order-dependent flake on the
+first run, `same_effort_value_resolves_identically_on_every_surface` read 429 where 200 was expected; 758/758 on the
+rerun and 3/3 alone; earlier integ batteries green; unrelated to this diff); memra-engine CPU lib tests; clippy;
+censuses; collector pytest; `verify-day16.py` PASS; perf board; diff-check: all rc=0. Full `tools/local-ci.sh --perf`
+(`integ19-local-ci-perf/`): attempt 1 SIGTERMed by lane B at 13:06:50Z (`rc=143`, no rows; recorded by the lane with the
+rule); attempt 2 correctness GREEN, serve-smoke 0 failed, hit gate ALL GREEN, then `26b-plain-short: 23.15 tok/s [FAIL]
+(-88.90% vs median 208.65)` beside `qwen9b-plain-short: 138.58 tok/s [OK]`, no co-resident sampled at start or end;
+attempt 3 (the two cells, card idle at 56 C, the 26B model fully page-cached): `26b-plain-short: 208.71 tok/s [OK]`,
+`qwen9b-plain-short: 138.97 tok/s [OK]`, `perf stage: 0 fail, 0 warn`, rc=0. Read per the tripwire text: a one-cell drop
+with the other cell fine and correctness green is machine state, not the diff (the cells run `run-gen`, untouched here);
+the attempt-2 rows stay in the log as measured. Second CPU battery after the review round (`integ19-cpu-battery-2/`): all
+rc=0, 758 server tests, `DAY16 REVIEW REPLAY: PASS`; local 5090 serve-smoke with the door unset: `serve-smoke: 0 failed`.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
-- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 merged (#591); C day 14 merged (#594); C day 15 sealed and pushed (`8ed05bfc6`); merged into integ17. B day 14 sealed and pushed (`25d252c6f`); merged into integ14. A day 12 running (#384, #385 harness). E, F idle.
+- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 merged (#591); C day 14 merged (#594); C day 15 merged (#599); C day 16 sealed on the lane (`36fa5262b`, push refused by the perf-ci gate, integrated from the worktree); integ19. A day 13 running (pinned-kind A/B). B day 19 running (spec capture alignment, #379 gate must be green). B day 14 sealed and pushed (`25d252c6f`); merged into integ14. A day 12 running (#384, #385 harness). E, F idle.
