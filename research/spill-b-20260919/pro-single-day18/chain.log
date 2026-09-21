@@ -1,0 +1,22 @@
+gate-fix-day16-shape rc=0 attempt=0 out=gate-fix-day16-shape
+restore-fix rc=0 attempt=0 out=restore-fix
+serve-smoke rc=0 attempt=0 out=serve-smoke
+cache-meter rc=0 attempt=0 out=cache-meter
+evict-reclaim rc=1 attempt=0 out=evict-reclaim
+kv-host-fix rc=1 attempt=0 out=kv-host-fix
+validate-cache-meter rc=0
+validate-evict-reclaim rc=0
+validate-gate-fix-day16-shape rc=0
+validate-kv-host-fix rc=0
+validate-restore-fix rc=0
+validate-serve-smoke rc=0
+done 2026-09-21T11:55:53Z
+restore-fix-t10 rc=0 attempt=0 out=restore-fix-t10
+validate-restore-fix-t10 rc=0
+rest2 done 2026-09-21T11:56:35Z
+build-base rc=0 exit=0
+evict-reclaim-base rc=0 attempt=0 out=evict-reclaim-base
+validate-evict-reclaim-base rc=0
+kv-host-fix-2 rc=0 attempt=0 out=kv-host-fix-2
+validate-kv-host-fix-2 rc=0
+rest3 done 2026-09-21T12:08:45Z
