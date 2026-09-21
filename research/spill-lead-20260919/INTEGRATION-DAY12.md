@@ -1009,6 +1009,13 @@ probe-skipped paths (`MEMRA_ADMIT_CALIBRATE=0`, plain-only serving, `MEMRA_ADMIT
 the B=1 probe never walks, plus no `phase=warming`; a source-order CPU test lands; `tools/health-fault-gate.sh` arms (a)
 to (f) pre-registered as a two-day lane. Both issues stay open.
 
+Battery on the combined tree (`integration-day12/integ27-cpu-battery/`, tree `826386f28`, CPUQuota 1200 percent): fmt,
+portable suites, memra-server suite (773 passed, the 7 `argv_boot` real-binary tests among them), clippy, censuses,
+collector pytest, engine CPU lib tests, server clippy `-D warnings`, marker census, workflow keys, perf board: rc=0;
+`git diff --check` tripped on trailing whitespace in the archived C-only summary (stripped). Local 5090
+`tools/serve-smoke.sh`: `serve-smoke: 0 failed`. The C-only tree's earlier run is kept under `-ctree` (all rc=0,
+smoke `0 failed`).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
