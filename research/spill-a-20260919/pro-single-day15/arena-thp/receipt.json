@@ -1,0 +1,573 @@
+{
+ "kind": "pinned-host-reserve-bench",
+ "issue": "memra#385",
+ "cell": "arena-thp",
+ "arms": [
+  "single",
+  "thp"
+ ],
+ "bytes": 56969134080,
+ "basis": "admissible",
+ "fraction": null,
+ "margin_bytes": 34359738368,
+ "chunks": null,
+ "pairs_per_order": 5,
+ "floor": 1.1,
+ "hugepage_min_fraction": 0.9,
+ "mem_total": 94879371264,
+ "mem_available_at_start": 91329925120,
+ "mem_free_at_start": 62508118016,
+ "anon_huge_at_start": 0,
+ "hugepages_total": 0,
+ "thp_mode": "always [madvise] never",
+ "cpus": 30,
+ "gpu_at_start": "36, 91.39 W, 600.00 W, 2347 MHz",
+ "loadavg_at_start": [
+  "1.09",
+  "0.86",
+  "0.57"
+ ],
+ "rows": [
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8875.27093999961,
+   "free_ms": 3572.6402849977603,
+   "free_rc": [
+    0
+   ],
+   "order": "AB",
+   "pair": 0,
+   "arm": "single",
+   "mem_available_before": 91359080448,
+   "mem_free_before": 85915623424,
+   "utc": "2026-09-21T16:55:31Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 2875.9621170029277,
+   "mmap_ms": 0.0251400051638484,
+   "madvise_ms": 0.004870002157986164,
+   "madvise_rc": 0,
+   "madvise_errno": 0,
+   "register_ms": 2875.932106995606,
+   "anon_huge_bytes": 56969134080,
+   "anon_huge_fraction": 1.0,
+   "free_ms": 564.5794879965251,
+   "free_rc": [
+    0,
+    0
+   ],
+   "order": "AB",
+   "pair": 0,
+   "arm": "thp",
+   "mem_available_before": 91503734784,
+   "mem_free_before": 86059667456,
+   "utc": "2026-09-21T16:55:35Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 9012.341405003099,
+   "free_ms": 3577.872137990198,
+   "free_rc": [
+    0
+   ],
+   "order": "AB",
+   "pair": 1,
+   "arm": "single",
+   "mem_available_before": 91223695360,
+   "mem_free_before": 85780242432,
+   "utc": "2026-09-21T16:55:47Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 2877.1370430040406,
+   "mmap_ms": 0.02972000220324844,
+   "madvise_ms": 0.005230001988820732,
+   "madvise_rc": 0,
+   "madvise_errno": 0,
+   "register_ms": 2877.1020929998485,
+   "anon_huge_bytes": 56969134080,
+   "anon_huge_fraction": 1.0,
+   "free_ms": 562.2113160061417,
+   "free_rc": [
+    0,
+    0
+   ],
+   "order": "AB",
+   "pair": 1,
+   "arm": "thp",
+   "mem_available_before": 91499945984,
+   "mem_free_before": 86055899136,
+   "utc": "2026-09-21T16:55:51Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8909.944350991282,
+   "free_ms": 3543.1934440130135,
+   "free_rc": [
+    0
+   ],
+   "order": "AB",
+   "pair": 2,
+   "arm": "single",
+   "mem_available_before": 91272556544,
+   "mem_free_before": 85829132288,
+   "utc": "2026-09-21T16:56:03Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 2900.1927810022607,
+   "mmap_ms": 0.02444999699946493,
+   "madvise_ms": 0.004879999323748052,
+   "madvise_rc": 0,
+   "madvise_errno": 0,
+   "register_ms": 2900.1634510059375,
+   "anon_huge_bytes": 56969134080,
+   "anon_huge_fraction": 1.0,
+   "free_ms": 562.7937179961009,
+   "free_rc": [
+    0,
+    0
+   ],
+   "order": "AB",
+   "pair": 2,
+   "arm": "thp",
+   "mem_available_before": 91264106496,
+   "mem_free_before": 85819531264,
+   "utc": "2026-09-21T16:56:07Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8878.533768991474,
+   "free_ms": 3553.334003998316,
+   "free_rc": [
+    0
+   ],
+   "order": "AB",
+   "pair": 3,
+   "arm": "single",
+   "mem_available_before": 90989588480,
+   "mem_free_before": 85545857024,
+   "utc": "2026-09-21T16:56:19Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 2905.2744529908523,
+   "mmap_ms": 0.02378999488428235,
+   "madvise_ms": 0.004529996658675373,
+   "madvise_rc": 0,
+   "madvise_errno": 0,
+   "register_ms": 2905.2461329993093,
+   "anon_huge_bytes": 56969134080,
+   "anon_huge_fraction": 1.0,
+   "free_ms": 565.4833420121577,
+   "free_rc": [
+    0,
+    0
+   ],
+   "order": "AB",
+   "pair": 3,
+   "arm": "thp",
+   "mem_available_before": 91459256320,
+   "mem_free_before": 86014652416,
+   "utc": "2026-09-21T16:56:23Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8924.32155899587,
+   "free_ms": 3561.096091987565,
+   "free_rc": [
+    0
+   ],
+   "order": "AB",
+   "pair": 4,
+   "arm": "single",
+   "mem_available_before": 91173150720,
+   "mem_free_before": 85729366016,
+   "utc": "2026-09-21T16:56:35Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 2897.9293269949267,
+   "mmap_ms": 0.022880005417391658,
+   "madvise_ms": 0.004779998562298715,
+   "madvise_rc": 0,
+   "madvise_errno": 0,
+   "register_ms": 2897.901666990947,
+   "anon_huge_bytes": 56969134080,
+   "anon_huge_fraction": 1.0,
+   "free_ms": 558.4402340027736,
+   "free_rc": [
+    0,
+    0
+   ],
+   "order": "AB",
+   "pair": 4,
+   "arm": "thp",
+   "mem_available_before": 91466989568,
+   "mem_free_before": 86022320128,
+   "utc": "2026-09-21T16:56:39Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 2894.13789199898,
+   "mmap_ms": 0.02479999966453761,
+   "madvise_ms": 0.006040005246177316,
+   "madvise_rc": 0,
+   "madvise_errno": 0,
+   "register_ms": 2894.1070519940695,
+   "anon_huge_bytes": 56969134080,
+   "anon_huge_fraction": 1.0,
+   "free_ms": 561.1859570053639,
+   "free_rc": [
+    0,
+    0
+   ],
+   "order": "BA",
+   "pair": 0,
+   "arm": "thp",
+   "mem_available_before": 91178979328,
+   "mem_free_before": 85735178240,
+   "utc": "2026-09-21T16:56:42Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8887.340301997028,
+   "free_ms": 3571.7645030090353,
+   "free_rc": [
+    0
+   ],
+   "order": "BA",
+   "pair": 0,
+   "arm": "single",
+   "mem_available_before": 91197698048,
+   "mem_free_before": 85753896960,
+   "utc": "2026-09-21T16:56:54Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 2869.959571995423,
+   "mmap_ms": 0.02366000262554735,
+   "madvise_ms": 0.004939996870234609,
+   "madvise_rc": 0,
+   "madvise_errno": 0,
+   "register_ms": 2869.9309719959274,
+   "anon_huge_bytes": 56969134080,
+   "anon_huge_fraction": 1.0,
+   "free_ms": 565.7906540000113,
+   "free_rc": [
+    0,
+    0
+   ],
+   "order": "BA",
+   "pair": 1,
+   "arm": "thp",
+   "mem_available_before": 91467407360,
+   "mem_free_before": 86022524928,
+   "utc": "2026-09-21T16:56:58Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8824.352661991725,
+   "free_ms": 3582.8421439946396,
+   "free_rc": [
+    0
+   ],
+   "order": "BA",
+   "pair": 1,
+   "arm": "single",
+   "mem_available_before": 91189387264,
+   "mem_free_before": 85745451008,
+   "utc": "2026-09-21T16:57:10Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 2874.502182996366,
+   "mmap_ms": 0.025219997041858733,
+   "madvise_ms": 0.0052800023695454,
+   "madvise_rc": 0,
+   "madvise_errno": 0,
+   "register_ms": 2874.4716829969548,
+   "anon_huge_bytes": 56969134080,
+   "anon_huge_fraction": 1.0,
+   "free_ms": 559.4418859982397,
+   "free_rc": [
+    0,
+    0
+   ],
+   "order": "BA",
+   "pair": 2,
+   "arm": "thp",
+   "mem_available_before": 91335974912,
+   "mem_free_before": 85891219456,
+   "utc": "2026-09-21T16:57:14Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8866.669587005163,
+   "free_ms": 3555.9971900074743,
+   "free_rc": [
+    0
+   ],
+   "order": "BA",
+   "pair": 2,
+   "arm": "single",
+   "mem_available_before": 91072045056,
+   "mem_free_before": 85628026880,
+   "utc": "2026-09-21T16:57:26Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 6629.63524000952,
+   "mmap_ms": 0.023240005248226225,
+   "madvise_ms": 0.004829998943023384,
+   "madvise_rc": 0,
+   "madvise_errno": 0,
+   "register_ms": 6629.607170005329,
+   "anon_huge_bytes": 48054140928,
+   "anon_huge_fraction": 0.8435118718939812,
+   "free_ms": 811.5235239965841,
+   "free_rc": [
+    0,
+    0
+   ],
+   "order": "BA",
+   "pair": 3,
+   "arm": "thp",
+   "mem_available_before": 91196514304,
+   "mem_free_before": 85751701504,
+   "utc": "2026-09-21T16:57:34Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8811.929722010973,
+   "free_ms": 3452.6846849912545,
+   "free_rc": [
+    0
+   ],
+   "order": "BA",
+   "pair": 3,
+   "arm": "single",
+   "mem_available_before": 91216764928,
+   "mem_free_before": 89696227328,
+   "utc": "2026-09-21T16:57:46Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 2869.277484001941,
+   "mmap_ms": 0.023629996576346457,
+   "madvise_ms": 0.004770001396536827,
+   "madvise_rc": 0,
+   "madvise_errno": 0,
+   "register_ms": 2869.249084003968,
+   "anon_huge_bytes": 56969134080,
+   "anon_huge_fraction": 1.0,
+   "free_ms": 560.0409479957307,
+   "free_rc": [
+    0,
+    0
+   ],
+   "order": "BA",
+   "pair": 4,
+   "arm": "thp",
+   "mem_available_before": 91518894080,
+   "mem_free_before": 89997512704,
+   "utc": "2026-09-21T16:57:50Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8772.533554991242,
+   "free_ms": 3431.237377997604,
+   "free_rc": [
+    0
+   ],
+   "order": "BA",
+   "pair": 4,
+   "arm": "single",
+   "mem_available_before": 91230175232,
+   "mem_free_before": 89709629440,
+   "utc": "2026-09-21T16:58:02Z"
+  }
+ ],
+ "roundtrips": [
+  {
+   "arm": "single",
+   "reserve": {
+    "ok": true,
+    "rc": 0,
+    "alloc_ms": 8943.022853010916
+   },
+   "ok": true,
+   "driver_flags": [
+    {
+     "rc": 0,
+     "flags": 3
+    }
+   ],
+   "wc_bit_absent": true,
+   "flags_read_ok": true,
+   "portable_bit_set": true,
+   "blocks": 27165,
+   "mismatched_blocks": 0,
+   "byte_exact": true,
+   "h2d_rc": [
+    0
+   ],
+   "d2h_rc": [
+    0
+   ],
+   "device_free_rc": 0,
+   "release_rc": [
+    0
+   ],
+   "fill_ms": 1037.1874169941293,
+   "h2d_ms": 986.3443640060723,
+   "wipe_ms": 723.5049549926771,
+   "d2h_ms": 1009.9344780028332,
+   "compare_ms": 2322.6648029958596,
+   "h2d_gib_per_s": 53.791193584265635,
+   "d2h_gib_per_s": 52.53473545127465,
+   "mem_available_before": 91128008704,
+   "utc": "2026-09-21T16:54:53Z"
+  },
+  {
+   "arm": "thp",
+   "reserve": {
+    "ok": true,
+    "rc": 0,
+    "alloc_ms": 18335.279384002206,
+    "mmap_ms": 0.03213000309187919,
+    "madvise_ms": 0.0057199940783903,
+    "madvise_rc": 0,
+    "madvise_errno": 0,
+    "register_ms": 18335.241534005036,
+    "anon_huge_bytes": 36240883712,
+    "anon_huge_fraction": 0.6361494570219032
+   },
+   "ok": true,
+   "driver_flags": [
+    {
+     "rc": 0,
+     "flags": 3
+    }
+   ],
+   "wc_bit_absent": true,
+   "flags_read_ok": true,
+   "blocks": 27165,
+   "mismatched_blocks": 0,
+   "byte_exact": true,
+   "h2d_rc": [
+    0
+   ],
+   "d2h_rc": [
+    0
+   ],
+   "device_free_rc": 0,
+   "release_rc": [
+    0,
+    0
+   ],
+   "fill_ms": 1033.3350349974353,
+   "h2d_ms": 986.4087169989944,
+   "wipe_ms": 606.1874669976532,
+   "d2h_ms": 1009.4894110079622,
+   "compare_ms": 2301.3282989995787,
+   "h2d_gib_per_s": 53.78768426379802,
+   "d2h_gib_per_s": 52.55789713734949,
+   "mem_available_before": 91359080448,
+   "utc": "2026-09-21T16:55:19Z"
+  }
+ ],
+ "gpu_at_end": "36, 87.81 W, 600.00 W, 2347 MHz",
+ "loadavg_at_end": [
+  "1.21",
+  "1.01",
+  "0.68"
+ ],
+ "mem_available_at_end": 91493941248,
+ "mem_free_at_end": 89971900416,
+ "anon_huge_at_end": 0,
+ "summary": {
+  "single": {
+   "n": 10,
+   "alloc_ms_median": 8876.902354495542,
+   "alloc_ms_min": 8772.533554991242,
+   "alloc_ms_max": 9012.341405003099,
+   "free_ms_median": 3558.5466409975197,
+   "alloc_gib_per_s_median": 5.976932075879084,
+   "alloc_ms_median_AB": 8909.944350991282,
+   "alloc_ms_median_BA": 8824.352661991725
+  },
+  "thp": {
+   "n": 10,
+   "alloc_ms_median": 2885.6374675015104,
+   "alloc_ms_min": 2869.277484001941,
+   "alloc_ms_max": 6629.63524000952,
+   "free_ms_median": 562.5025170011213,
+   "alloc_gib_per_s_median": 18.386613574569033,
+   "register_ms_median": 2885.604572496959,
+   "anon_huge_fraction_min": 0.8435118718939812,
+   "alloc_ms_median_AB": 2897.9293269949267,
+   "alloc_ms_median_BA": 2874.502182996366
+  }
+ },
+ "status": "executed-not-qualified",
+ "rule": {
+  "cell": "arena-thp",
+  "candidate": "thp",
+  "bytes": 56969134080,
+  "n_per_order": 5,
+  "pooled": 10,
+  "alloc_ok": true,
+  "roundtrip_exact": {
+   "single": true,
+   "thp": true
+  },
+  "wc_bit_absent": true,
+  "flags_read_ok": true,
+  "portable_bit_set": true,
+  "hugepage_min_fraction_seen": 0.6361494570219032,
+  "hugepage_ok": false,
+  "cand_below_single_pairs": "10/10",
+  "medians_both_orders": true,
+  "median_AB": {
+   "single": 8909.944350991282,
+   "thp": 2897.9293269949267
+  },
+  "median_BA": {
+   "single": 8824.352661991725,
+   "thp": 2874.502182996366
+  },
+  "pooled_median_ms": {
+   "single": 8876.902354495542,
+   "thp": 2885.6374675015104
+  },
+  "ratio_single_over_candidate": 3.0762361711991097,
+  "floor": 1.1,
+  "materiality": true,
+  "integrity": false,
+  "speed": true,
+  "candidate_arm": "void (hugepage-requested-not-granted)"
+ },
+ "rule_line": "ARENA-RESERVE rule cell=arena-thp candidate=thp bytes=56969134080 n_per_order=5 pooled=10 alloc_ok=true roundtrip_exact_single=true roundtrip_exact_candidate=true wc_bit_absent=true flags_read_ok=true portable_bit_set=true hugepage_fraction=0.6361 hugepage_ok=false cand_below_single_pairs=10/10 medians_both_orders=true pooled_single_ms=8876.902 pooled_candidate_ms=2885.637 ratio=3.0762 floor=1.10 materiality=true candidate_arm=void (hugepage-requested-not-granted)"
+}
