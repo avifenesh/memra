@@ -984,13 +984,25 @@ fn generate_env_registry(out: &Path) {
         }
     }
     // Owned families come from the code, not from the catalog: a `MEMRA_<FAMILY>_` prefix that
-    // the engine or the server READS under three or more distinct names. The catalog also
-    // documents shell-side knobs (`MEMRA_CI_*`, `MEMRA_GATE_*`, ...) that no Rust reads, and a
-    // typo among those is the launcher's business, not a boot refusal. Sources are scanned once
-    // per engine build (no rerun-if-changed on them: a server edit must not recompile the CUDA
-    // crate; the families move rarely and the FLAGS.md rerun catches a catalog change).
+    // any crate in the workspace READS under three or more distinct names (every `crates/*/src`,
+    // the census's discovery rule; memra-kv, memra-gguf, memra-lanes and memra-tokenizer all read
+    // doors). The catalog also documents shell-side knobs (`MEMRA_CI_*`, `MEMRA_GATE_*`, ...) that
+    // no Rust reads, and a typo among those is the launcher's business, not a boot refusal.
+    // Sources are scanned once per engine build (no rerun-if-changed on them: a sibling-crate
+    // edit must not recompile the CUDA crate; the families move rarely and the FLAGS.md rerun
+    // catches a catalog change).
     let mut read_names = std::collections::BTreeSet::new();
-    for root in [manifest.join("src"), manifest.join("../memra-server/src")] {
+    let mut roots = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(manifest.join("..")) {
+        for entry in rd.flatten() {
+            let src = entry.path().join("src");
+            if src.is_dir() {
+                roots.push(src);
+            }
+        }
+    }
+    roots.sort();
+    for root in roots {
         let mut stack = vec![root];
         while let Some(dir) = stack.pop() {
             let Ok(rd) = std::fs::read_dir(&dir) else {

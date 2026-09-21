@@ -24,7 +24,8 @@ value that parses into nothing.
   and eight more appear in FLAGS.md prose) documents a whole family, so without this order the
   incident's own name, `MEMRA_DSV4_MOE_PROGRAM`, would have been "legal".
 - Owned family: a `MEMRA_<FAMILY>_` prefix under which the engine or server CODE reads three or
-  more distinct names (`OWNED_FAMILIES`, derived from the sources at build time; 40 families).
+  more distinct names (`OWNED_FAMILIES`, derived at build time from every `crates/*/src`, the
+  census's discovery rule; 66 families).
   Unknown inside it refuses; unknown outside is one summarized warning line. The catalog also
   documents shell-side knobs (`MEMRA_CI_*`, `MEMRA_GATE_*`, `MEMRA_HITGATE_*`, 128 names that no
   Rust reads), and the first battery on this lane proved why the family test must come from the
@@ -58,6 +59,20 @@ Server smoke, real `memra-server` binary on the local rig, one env var at a time
 | `MEMRA_ZZ_LAUNCHER_ONLY=1` | one warning, boot continues |
 | `MEMRA_ENV_AUDIT=warn` + retired name | warning, boot continues |
 | `--version` with a retired name set | answers; the audit runs after the CLI exits |
+
+## Round 2 (revuto) and the shell-side knobs
+
+`std::env::vars()` panics on a non-UTF-8 entry anywhere in the environment; the audit now walks
+`vars_os()` and drops keys that are not UTF-8 (they cannot be `MEMRA_*` names). The owned-family
+scan and the retired-read test cover every `crates/*/src`, not two crates (memra-kv, memra-gguf,
+memra-lanes and memra-tokenizer read doors too). With `MEMRA_GATE_` now an owned family, ten
+shell-side gate knobs that no Rust reads would have refused when a gate's environment reached a
+server boot (`MEMRA_GATE_PORT`, `MEMRA_GATE_LOGDIR`, `MEMRA_GATE_KEY`, `MEMRA_GATE_SRC_DIR`,
+`MEMRA_GPU_LOCK_WAIT`, `MEMRA_ST_PORT`, `MEMRA_CPU_PROC_AFFINITY`, `MEMRA_B200_HOST_ROLE`,
+`MEMRA_B200_EXPECTED_SHA`); they have FLAGS rows now, and `MEMRA_GATE_LOCK`, the reconciled alias
+of `MEMRA_GPU_LOCK`, has a REMOVED row so it refuses with the pointer
+(`raw/round2-tests-smoke-and-publish.log`). The battery on the lane after round 1: exit 0, 17
+stages green including serve-smoke, perf rows appended (`raw/local-ci-perf-stages.log`).
 
 ## Limit worth its own follow-up
 

@@ -154,7 +154,14 @@ pub fn audit_process_env() -> Result<(), String> {
         );
         return Ok(());
     }
-    let audit = audit_vars(std::env::vars());
+    // `vars_os`, not `vars`: `std::env::vars()` panics on any non-UTF-8 key or value anywhere in
+    // the environment, and this runs on the boot path. A key that is not UTF-8 cannot be a
+    // `MEMRA_*` name; values are never read here.
+    let audit = audit_vars(
+        std::env::vars_os()
+            .filter_map(|(k, _)| k.into_string().ok())
+            .map(|k| (k, String::new())),
+    );
     for w in &audit.warnings {
         eprintln!("[env-audit] warning: {w}");
     }
@@ -262,13 +269,25 @@ mod tests {
 
     /// The tree must not READ a retired name, except the deliberate refusal reads in the worker
     /// (they exist to refuse the name with its successors spelled out). Source-derived at test
-    /// time like `dsv4_doors::door_names_in_source`, so the allowlist cannot rot silently.
+    /// time over every `crates/*/src` like `dsv4_doors::door_names_in_source` and the census, so
+    /// the allowlist cannot rot silently and a future ledger edit cannot retire a live door of
+    /// memra-kv, memra-gguf, memra-lanes or memra-tokenizer unnoticed.
     #[test]
     #[cfg(memra_env_registry_present)]
     fn retired_names_are_not_read_at_runtime() {
         const DELIBERATE_REFUSAL_READS: &[&str] = &["MEMRA_NVFP4_BANK_V2", "MEMRA_SEL_DOWN8"];
+        // every crates/*/src, the census's own discovery rule (a hand-written list of dirs is
+        // how MEMRA_ALLOW_UNKNOWN_PRETOKENIZER in memra-tokenizer once went invisible)
         let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let roots = [manifest.join("src"), manifest.join("../memra-server/src")];
+        let crates = manifest.join("..");
+        let mut roots = Vec::new();
+        for entry in std::fs::read_dir(&crates).unwrap().flatten() {
+            let src = entry.path().join("src");
+            if src.is_dir() {
+                roots.push(src);
+            }
+        }
+        assert!(roots.len() >= 5, "crate roots: {roots:?}");
         let mut reads = std::collections::BTreeSet::new();
         fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
             if let Ok(rd) = std::fs::read_dir(dir) {
