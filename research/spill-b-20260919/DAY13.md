@@ -174,7 +174,38 @@ The 140,549,120 B the pool could not release (E0's chunk shares a live neighbour
 pool-cached headroom on the settle line, never pretended to be driver free. `KvAllocator::Vmm` stays
 behind its door; no VMM plane was needed.
 
-FINAL-PLACEHOLDER
+### The final pair, gate source `ec473770f`, back to back on the same card (`gate-main-final`, `gate-fix-final`)
+
+Same artifact, same prompts (48,332 / 71 / 48,266 tokens), same ballast (requested 74,262,450,904 B,
+footprint 74,850,500,608 B in both cells), same busy-peer overlap (21.655 s / 21.659 s), same identity
+digest. Verdict lines, verbatim:
+
+```text
+base ea08bc7f8: PREFIX-EVICT-RECLAIM: entry_bytes=1592160256 reclaim_credit_bytes=0 driver_free_delta_bytes=none trim_released_bytes=none pool_retained_bytes=none p2=admit-same-tick busy_overlap_s=21.655 identity=aa6cc3291b981646 V1=FAIL V2=ok V3=FAIL V4=ok -> FAIL
+fix  f4350c241: PREFIX-EVICT-RECLAIM: entry_bytes=1592160256 reclaim_credit_bytes=1751000000 driver_free_delta_bytes=1610612736 trim_released_bytes=1610612736 pool_retained_bytes=140549120 p2=admit-same-tick busy_overlap_s=21.659 identity=aa6cc3291b981646 V1=ok V2=ok V3=ok V4=ok -> PASS
+```
+
+The evicting tick's server lines, verbatim (base has no settle line by construction):
+
+```text
+base: [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 6603MB -> 6603MB
+fix:  [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1751161856 pool_cached_gain_bytes=1751161856 trim_released_bytes=1610612736 driver_free_bytes 4827971584 -> 6438584320 pool_reserved_bytes 21709717504 -> 20099104768 pool_used_bytes 21685840360 -> 19934678504 pool_retained_bytes=140549120 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+fix:  [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4852MB -> 6603MB
+```
+
+Byte identity across binaries: every one of the four boots (base calibration, base measured, fix
+calibration, fix measured) hashes the (P1, P0, P2) messages to
+`aa6cc3291b9816468b7cd1d5b03b08032f2e20aa873112eb15068d09231b79c9` (P2 alone:
+`3cb7a18daa43029f48e8e74f70238d4e20c787273bf57e6d0ec53b298780d989`); `finish_reason=length` on all
+three, 8 / 400 / 8 completion tokens, `cached_tokens=0` everywhere (no restore path was exercised, by
+design). The `/metrics` rows `after_p1`, `before_p2` and `final` are byte-for-byte equal between base and
+fix in the measured boots (the fix changes what happens inside the evicting tick; the pool re-grows from
+the driver for P2's prime and E2 and lands on the same steady state).
+
+Both final cells ran through the collector; the collector labels a gate exit 1 `failed` and exit 0
+`completed`, never qualification (`"qualification": false` in every capture). The gate is
+**red on `main` and green on the fix** on the target card. N=1 per arm; no timing compared.
+
 
 
 
