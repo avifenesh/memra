@@ -107,7 +107,95 @@ compare against.
 
 ## Task 2: the cancellation point in the prime loop
 
-(filled after the gates; see below)
+**What was there.** The tick-top disconnect sweep (`worker.rs` "DISCONNECT ABORT", gap-scan F8) retires a
+closed-channel session before any phase steps it, once per tick; `prefill_tick` primes one take per tick
+(1024 tokens; 8192 for a sole fresh request; the whole prompt for the monolithic class) as ONE engine call,
+and inside that call the sequential chunk walks stop at every internal chunk (`MEMRA_PRIME_CHUNK` or the
+dynamic schedule) to read the chunk's logits back and stamp the odometer (`progress::note_prime_rows`), with
+no check of the client. So a disconnected client's prompt ran to the end of the current take.
+
+**What landed (commit `dfbf71ee1`, compile fix `47b03b901`).** `crates/memra-engine/src/progress.rs`: a
+thread-local `PrimeCancelScope` guard installs a `Box<dyn Fn() -> bool>` "client gone?" predicate for the
+duration of one prime call and restores the previous one on drop (the `?` paths included); a typed
+`PrimeCancelled { chunk, rows_done, rows_total }` error; `prime_cancel_point(chunk, rows_done, rows_total)`,
+which answers `Ok` with no scope installed, `Ok` while the predicate says the client is there, `Ok` at the
+last chunk (a finished take is never cancelled; its logits return and the sweep retires the session), and
+`Err(PrimeCancelled)` otherwise. `hybrid_forward.rs`: the three sequential walks ask it right after their
+odometer stamp, once per completed chunk and before the next starts: the GEMM chunk loop
+(`step35_prime_cache_batch` per chunk), the serial chunk walk (`prime_chunk`, the Qwen3.8 path) and the
+single-engine hyper range walk. `worker.rs`: `prefill_tick` installs the scope around `prime_cache_overlaid`
+with `{ let tx = s.tx.clone(); move || tx.is_closed() }` (the same predicate the sweep reads); both call
+sites match the typed error through `prime_cancelled_abort`, which prints one receipt (`[prime] cancelled at
+chunk K (R of T rows of this take primed; fed F, queued Q, prompt P, model M): client gone, nothing
+published, cache released at retire`) and calls `abort_log` (now also printing `fed`): the session retires
+as an aborted client, `retire_may_park` refuses the park (and a park needs `prefill_done` anyway), the
+half-primed `Cache` returns to the pool at drop, no `Event::Error` goes to the closed channel, and the
+capture sites (LCP split, grid seed, checkpoint) are never reached because they run only after an `Ok`
+prime: nothing partial is published (the capture law). Unit tests: `prime_cancel_point_fires_only_under_an_
+installed_scope_and_never_at_the_end`, the wiring gate `the_sequential_prime_walks_ask_the_cancellation_
+point` (comment-stripped source, at least three live call sites), 4 passed. No new `MEMRA_*` read, no
+flag, no new numeric program: with no scope installed the check is one thread-local read, and with a scope
+the walk either continues exactly as before or stops between chunks.
+
+**Not covered, stated.** The pipelined walks (the PP-2 split primes with a `next_slot` in flight, the ppN
+wave walk) and `prime_cache_batch` (one call for several sessions) keep the tick-top sweep as their
+cancellation point: returning mid-wave leaves another stage's work in flight against a cache the caller is
+about to drop, a wider seam (a drain plus the tainted-cache contract) than one check per chunk; and one
+member's disconnect cannot stop a wave that is priming its peers. The hyper walker route (`prime_service`)
+already yields per chunk per tick under `MEMRA_PRIME_YIELD=1` and is otherwise the monolithic take.
+
+**Gate (`tools/prime-cancel-gate.sh`, serving shape).** Two boots of the same binary (`MEMRA_SERVE_SPEC=0
+MEMRA_PREFILL_TICK=8192 MEMRA_PRIME_CHUNK=256 MEMRA_PREFIX_CACHE_MB=2048`, so the whole prompt is one prime
+call and the sweep cannot be what stops it): control (cold then warm request of a 6000-word prompt), fault
+(a raw-socket streaming request for the same prompt closed after 300 ms, then the cold and warm requests).
+On the target card (BOX3, binary `b44cea34…` built from `47b03b901`, under the collector,
+`pro-single-day16/box/pcg/`, `--validate` rc=0), verbatim:
+
+```
+control: cold sha=f243df4517b99525 prompt_tokens=7508; warm sha=f243df4517b99525 cached_tokens=7488
+server: [prime] cancelled at chunk 2 (768 of 7488 rows of this take primed; fed 0, queued 20, prompt 7508, model "gate"): client gone, nothing published, cache released at retire
+server: [abort] client disconnected: model "gate", prompt 7508 (0 cached, 0 fed), 0 generated, billed to abort point, 0.34s
+ok: stopped at chunk 2 after 768 of 7488 rows (within one chunk of the disconnect, before the take ended)
+ok: session retired as a client abort (no park, cache released)
+ok: nothing published (no '[prefix-cache] insert' before the next request)
+ok: no 'prefill error' path taken
+fault: cold sha=f243df4517b99525 prompt_tokens=7508 cached=0; warm sha=f243df4517b99525 cached_tokens=7488
+ok: the next cold request restored nothing from the aborted prime (cached_tokens=0)
+ok: cold digest unchanged versus the control boot
+ok: warm digest unchanged versus the control boot
+PRIME-CANCEL GATE: PASS (disconnect_ms=300 words=6000 cold=f243df4517b99525 warm=f243df4517b99525)
+```
+
+(The take is 7488 of 7508 rows because the grid seed of memra#602 stops the prime at the aligned boundary;
+the cancel fired at the third completed 256-row chunk, 0.34 s after the request, against a prime that
+would have run about 2.2 s.) The server's `[abort]` line carries a dash between `generated` and `billed` (pre-existing log text); this quote writes a comma there.
+
+**One numeric program, proven on the changed binary on the target card (under `flock` on the canonical
+lock, the hit gate does not take an inherited FD):** `tools/spec-on-cache-hit-gate.sh qwen`:
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 `ok` clauses, spec-on boot with the sampled cells and the
+spec-off twin; `pro-single-day16/box/hitgate/`); `qwen-a4-continuation-gate` on a 9296-token prompt:
+`one call over 9296 tokens: logits_sha=5a28d463f1d8e148`, `9248 + 48 ok`, `9216 + 80 ok`, `9280 + 16 ok`
+(the three grid-aligned splits; three unaligned splits SKIPPED by the gate's grid law),
+`A4 CONTINUATION GATE: PASS` (`pro-single-day16/box/contgate/`). Two false starts are kept as the record:
+the hit gate refused under the collector (it has no `--external-lock` arm; `hitgate-attempt1-collector-
+refused/`) and refused its second boot because its stop matches the server by the name `memra-server`,
+which my renamed binary `memra-server-pcg` escaped, leaving my own spec-on server on the port
+(`hitgate-attempt2-renamed-binary/`; that server was mine and was stopped by pid; the rerun used the
+canonical name).
+
+**Local RTX 5090 Laptop GPU (`rtx5090-day16/`, the Qwen3.5-9B NVFP4 MTP artifact, the same tree's release
+binary `binary.sha256`, each gate behind `flock -w 1800 /tmp/memra-5090.lock`; other lanes held the card and
+the lock for part of the sitting, never signalled).** `tools/prime-cancel-gate.sh`: `PRIME-CANCEL GATE: PASS
+(disconnect_ms=300 words=6000 cold=f243df4517b99525 warm=f243df4517b99525)`, cancel line `[prime] cancelled
+at chunk 4 (1280 of 7488 rows of this take primed; fed 0, queued 20, prompt 7508, model "gate")`, abort at
+0.32 s, 11 `ok` clauses (`pcg.log`). The 9B and the 27B produce the same 24-token continuation of this
+word-list prompt at temperature 0 and the same 7508-token count (one tokenizer family), so the two gates'
+digests coincide; each gate compares its own control against its own fault boot, nothing across models.
+`qwen-a4-continuation-gate` on the same 9296-token prompt: `one call over 9296 tokens:
+logits_sha=fd4ab9787e0a3823`, `9248 + 48 ok`, `9216 + 80 ok`, `9280 + 16 ok`, `A4 CONTINUATION GATE:
+PASS` (`contgate.log`). The hit gate's first local attempt refused on the same renamed-binary port trap as
+on the box (`hitgate-attempt1-renamed-binary.log`; my own server, stopped by pid); its rerun with the
+canonical name is `hitgate.log`, quoted in the "Local hit gate" line of the scope section below.
 
 ## Task 3: `OWNER-THREAD-OFFLOAD.md`
 
@@ -122,3 +210,25 @@ the recurrent-state copies stay on the owner stream at the boundary (the capture
 `Capturing` entry must be a miss, and the delayed-copy-stream fault that proves the restore ordering under
 the one-program law. Prime, trim and decode stay on the tick, with the reasons. Priced at about two
 agent-days (Move 1) and four (Move 2, after Move 1); neither is started here.
+
+## Scope and effort
+
+Local hit gate (`rtx5090-day16/hitgate.log`, the 9B artifact, canonical binary name): `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 `ok`
+clauses, the spec-on boot with the sampled cells and the spec-off twin).
+
+Done: the memra#536 census as code reading with line numbers at `21307b636`; the pre-registered stall cell
+on the target card class in five arms (prime, demote OFF and ON, promote OFF and ON) against an idle
+control, N=5 per arm per order, both orders, validated and replayed, with the reading that the tenant's
+tick absorbs the whole of each class (five 290 ms ticks for a 5122-token prime; a 42 ms D2H inside a 131 ms
+tick OFF and a 118 ms D2H inside a 207 ms tick ON; a 98 ms promote tick OFF and 176 ms ON); the
+cancellation point at the engine's internal chunk boundary with its typed outcome, its worker receipt and
+its serving-shape gate, PASS on the target card and on the local 5090, with the hit gate and the
+continuation gate green on the changed binary on both cards; the offload design note; the records. Not
+done, stated: the pipelined walks and `prime_cache_batch` keep the tick-top sweep; no copy left the tick
+(design only, awaiting the lead's ruling on Move 1); the stall cell's second 88 ms demote tick is
+observed, not attributed; the issue's 3 GB GLM entry shape is not measured. Development pushes: `21307b636`,
+`1646d421b`, `0ea1fd6b1`, `bf248692d`, `dfbf71ee1` (did not compile the server lib; my chain committed
+before reading clippy), `47b03b901`, and the records tip, each announced `UNQUALIFIED DEVELOPMENT` by the
+hook and logged in `.git/memra-gate-skips.log`; no qualification claimed. About 2.5 agent-hours against the
+4-hour budget (the card was busy for two 120 s waits; the stall sitting itself took 11 minutes, the gates
+about 4).
