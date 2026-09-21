@@ -1,0 +1,14 @@
+perf board is up to date
+pre-push: flags census OK — runtime literal reads=865
+pre-push: releasability censuses OK — publish list, stub ABI, arch matrix
+pre-push: docs-registry census OK
+    KERNELS.md file references=122, all resolve
+    MODELS.md support-state tokens=5, all in the three-state vocabulary
+    ROUTER.md lines=46 (cap 60)
+    check-flags --list answered with 865 runtime names (coverage enforced by check-flags.sh itself)
+    flags-table-census: docs/FLAGS.md tables=58 rows=901, every row matches its header
+pre-push: workflow-file census OK
+    5 workflow files, no duplicate mapping keys (stdlib walker)
+public-boundary: 0 matches (0 grandfathered, 0 new).
+To github.com:avifenesh/memra.git
+   fa5d7a014..4e532cd57  lane/spill-b-20260919 -> lane/spill-b-20260919
