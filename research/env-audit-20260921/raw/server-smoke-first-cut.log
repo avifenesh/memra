@@ -1,0 +1,22 @@
+    Finished `release` profile [optimized] target(s) in 16.49s
+BUILD_DONE
+== retired
+[server] build: memra-0.138.0-4f2447d586cb (id: source-tree, git: 653c997f445e)
+Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_DSV4_MOE_PROGRAM: retired. See docs/FLAGS.md 'Removed doors, 2026-09-11 (the matrix expert program is the default; split-K goes with the flip)'. The value parses into nothing now; unset it, and if the arm it selected is the one you need, the ledger names what replaced it.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time."
+rc=0
+== unknown owned family
+[server] build: memra-0.138.0-4f2447d586cb (id: source-tree, git: 653c997f445e)
+Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_DSV4_NOPE_XYZ: unknown MEMRA_DSV4_* name (32 documented names in that family, none is this one). Not in docs/FLAGS.md and not in its Removed ledgers: a typo or a name from another tree. It would be read by nothing.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time."
+== foreign name (warning only, then normal boot failure w/o models)
+[server] build: memra-0.138.0-4f2447d586cb (id: source-tree, git: 653c997f445e)
+[env-audit] warning: MEMRA_ZZ_LAUNCHER_ONLY: not a documented memra name (docs/FLAGS.md); nothing in this process reads it. Left alone: launchers own names outside the engine's families.
+[server] starting; models config = [("main", "/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", None), ("judge", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+== warn mode
+[server] build: memra-0.138.0-4f2447d586cb (id: source-tree, git: 653c997f445e)
+[env-audit] warning (MEMRA_ENV_AUDIT=warn downgraded a refusal): MEMRA_DSV4_MOE_PROGRAM: retired. See docs/FLAGS.md 'Removed doors, 2026-09-11 (the matrix expert program is the default; split-K goes with the flip)'. The value parses into nothing now; unset it, and if the arm it selected is the one you need, the ledger names what replaced it.
+[server] starting; models config = [("main", "/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", None), ("judge", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+== version unaffected
+memra-server 0.138.0
+system_fingerprint memra-0.138.0-4f2447d586cb
+SMOKE_DONE

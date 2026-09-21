@@ -105,6 +105,13 @@ on the shared rows; the summary line `WIDTH WALK width 16 vs 17: 0 of N tensors 
 verdict, and a nonzero count names the tensors whose dispatch is keyed on the call width
 (`research/spill-b-20260919/DAY22.md` for the run that named `ssm_beta`/`ssm_alpha`).
 
+Boot-time environment audit (memra#483, `memra_engine::env_audit`): the server refuses a
+retired `MEMRA_*` door or an unknown name inside an owned family before any door is read,
+naming the FLAGS.md "Removed" ledger; the registry is generated from `docs/FLAGS.md` by the
+engine's `build.rs`. Its red arm (a retired name refuses) and its non-vacuity arm (every legal
+name at once refuses nothing) are unit tests in `env_audit.rs`; `MEMRA_ENV_AUDIT=warn` downgrades,
+`=0` disables, both announced. Receipts: `research/env-audit-20260921/`.
+
 The docs-fit owner call is closed: tier 2 now runs the full `run-spec` K=1..8 sweep and requires
 eight per-K PASS lines plus the final `SELF-CONSISTENCY PASS` marker. The raw run is logged before
 parsing; a red quotes the failing K and `FIRST DIVERGENCE` index.

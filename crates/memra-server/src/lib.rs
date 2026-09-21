@@ -5674,6 +5674,11 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
              is readable."
         );
     }
+    // memra#483: the MEMRA_* names present in the environment are audited before anything
+    // reads them (after the no-engine CLI exits above: `--version` must answer on any box). A retired door or an unknown name inside an owned family is a startup FATAL
+    // with the ledger named; a name outside every family is one warning. The reference-only
+    // claim check further down covers the deployment surface; this covers the engine's doors.
+    memra_engine::env_audit::audit_process_env()?;
     // Keyring (MEMRA_API_KEYS): parsed once here so a bad config is a startup FATAL,
     // not a per-request surprise. Absent = single-key/open behavior, unchanged.
     auth::init_from_env();
