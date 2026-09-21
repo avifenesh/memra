@@ -204,3 +204,99 @@ named in the contract, not introduced). The two receipt hashes (`progress`'s com
 at the poll on the items that completed since the last poll, and `bind_tier_image`'s bundle checksum at
 publication) stay on the owner thread inside the tick. The by-reference routes (admission reclaim flush,
 pause sweep, handoff) keep the blocking program. The handoff export does not see a `Demoting` entry.
+
+## Task 2: gates on both cards, then the stall cell (every cell `executed-not-qualified`)
+
+**Local RTX 5090 Laptop GPU** (`rtx5090-day17/`, the Qwen3.5-9B NVFP4 MTP artifact, `MEMRA_HOSTGATE_CACHE_MB=64`
+because the 9B's 64-token entry is 53.8 MB, each gate taking `/tmp/memra-5090.lock` itself with `flock -n`, the
+driver retrying a busy lock 15 x 120 s and never signalling the holder; other lanes held the card for part of the
+sitting). **Attempt 1** (`attempt1-line-collision/`, binary `520b88a5…`, tree `ba10a1252`): the four identity
+gates `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 `ok` each), the failure gate `KV-HOST-SPILL FAILURE
+GATE: 1 FAILURE(S)` in both arms (`FAIL: pool-full refusal is LOUD and named`, the pre-existing day-13 line, 13
+`ok`), the hit gate `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` in both arms, and the contract fault gate
+`KV-HOST-CONTRACT-FAULT GATE: 10 FAILURE(S)`: six cells `FAIL: <cell>: no host-tier refusal line beyond the
+injected one`, whose `no_extra_refusal` counts every `[prefix-host] .*\(contracts door\): ` line (the door's
+refusal shape) and my submission line read `demote submitted off the tick (contracts door): ..`. The line was
+reworded (`fc46e230d`), not the gate. Attempt 1's server logs are the first record of the mechanism on this card:
+`demote submitted off the tick (contracts door): 64 tokens, 54.8MB, ticket seq=1, 18 items on the copy stream`,
+`contracts door D2H receipt: .. items=18 (8 KV planes, draft) complete=18 require=ok .. retired acknowledged`,
+`demote published off the tick: ticket seq=1 complete after 1 poll(s), 121.2ms from submission to completion
+(tick-top poll)`, `demote: 64 tokens, 54.8MB in 145.6ms`. The attempt was stopped by me while its twin gate waited
+on a busy lock (my driver, my processes), so twin and unit cells have no attempt-1 receipt.
+
+**Attempt 2** (binary `3a92efab…`, tree `fc46e230d`), verbatim per arm:
+
+| gate | door OFF | door ON |
+|---|---|---|
+| `kv-host-spill-identity-gate.sh` default | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok) | the same line (12 ok); server: `demote published off the tick: ticket seq=1 complete after 1 poll(s), 101.8ms from submission to completion (tick-top poll)` |
+| `kv-host-spill-identity-gate.sh` plain (`MEMRA_SERVE_SPEC=0`) | `ALL GREEN (teeth=0)` (12 ok) | `ALL GREEN (teeth=0)` (12 ok) |
+| `kv-host-spill-failure-gate.sh` | `KV-HOST-SPILL FAILURE GATE: 1 FAILURE(S)` (`FAIL: pool-full refusal is LOUD and named`; `ok: the promote caught it: VERIFY FAILED, loud and named`; 13 ok) | the same line, 13 ok |
+| `kv-host-contract-fault-gate.sh` (ON by construction) | n/a | `KV-HOST-CONTRACT-FAULT GATE: 5 FAILURE(S)`, 57 ok: presubmit, postpublish, promote-presubmit, promote-postpublish, promote-readyview every clause `ok`; the five FAILs are the `promote-reject` cell alone, whose expected line is fixed as `tier H2D batch partially refused: 1 of 34 items` (the 27B's plane count) while the 9B's route prints `.. 1 of 18 items ..`, so its follow-on clauses (the next demote receipt, the next promote receipt, the publish) cannot anchor. A gate model-shape assumption on this card class, left as is (no gate changed after a result); the cell is decided on the target card below |
+| `spec-on-cache-hit-gate.sh qwen` | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok) | `ALL GREEN (qwen)` (61 ok) |
+| `prefix-newest-turn-fits-gate.py` | PENDING-LOCAL-TWIN-OFF | PENDING-LOCAL-TWIN-ON |
+| GPU unit cells `option_b_*`, `option_c_*` (copy-stream engine) | PENDING-LOCAL-UNIT | |
+
+**Target card, BOX3** (one RTX PRO 6000 Blackwell Server Edition at its 600 W limit; `pro-single-day17/box/`;
+binary built on the box from `fc46e230d`, `ceaf238f…`; the Qwen3.8-27B NVFP4-Q5K MTP artifact;
+`MEMRA_HOSTGATE_CACHE_MB=256`; one collector hold for the nine door gates (`gates/`, `--external-lock`, lock proof
+`gates/LOCK.json`, `--validate` rc=0, `CELL.jsonl` `status: executed-not-qualified`, sampler 1737 rows: 31 to 63 C,
+31.9 to 510.1 W under 600 W), the hit gate under its own `flock` on the canonical lock (no `--external-lock` arm),
+verbatim per arm:
+
+| gate | door OFF | door ON |
+|---|---|---|
+| identity default | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok) | the same (12 ok); server: `demote submitted off the tick: 64 tokens, 159.9MB, ticket seq=1, 34 items on the contracts door's copy stream`, `demote published off the tick: ticket seq=1 complete after 1 poll(s), 186.5ms from submission to completion (tick-top poll)` |
+| identity plain | `ALL GREEN (teeth=0)` (12 ok) | `ALL GREEN (teeth=0)` (12 ok) |
+| failure gate | `KV-HOST-SPILL FAILURE GATE: 1 FAILURE(S)` (`FAIL: pool-full refusal is LOUD and named`, 13 ok) | the same line, 13 ok |
+| contract fault gate | n/a | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 62 ok; one typed refusal each: `demote failed (tier D2H producer fence refused: injected failure (MEMRA_KV_HOST_FAULT=contract-presubmit)); nothing demoted`, `demote failed (tier D2H receipt refused: injected failure (MEMRA_KV_HOST_FAULT=contract-postpublish)); nothing demoted`, `promote refused (contracts door): tier H2D batch partially refused: 1 of 34 items (injected failure (MEMRA_KV_HOST_FAULT=contract-promote-reject))`, `.. tier H2D destination 0 not publishable: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-readyview)`, `.. tier H2D producer fence refused: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-presubmit)`, `.. tier H2D publication refused: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-postpublish)` |
+| hit gate | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok) | `ALL GREEN (qwen)` (61 ok) |
+| twin gate | `PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` | the identical line, `-> PASS` |
+
+Reading: the identity gate and the fault gate are green on the target card class with the door ON and the demote
+on the copy stream, so the slice stands on that card; on the 5090 class the identity gate is green in every arm
+and the fault gate's one red cell is the gate's 34-item hardcode, stated above.
+
+### The stall cell, demote arm (the pre-registered rule applied as written)
+
+Boot `on` of `pro-single-day17/stall-cell.sh` (the day-16 script with the receipts root moved: `MEMRA_CTX=8192
+MEMRA_MAX_SESSIONS=4 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=256 MEMRA_KV_HOST_MB=8192 MEMRA_KV_HOST_CONTRACTS=1`),
+one collector hold (`stall-on/lock.json`: `inherited-flock-same-open-description`, `--validate` rc=0,
+`executed-not-qualified`; sampler 443 rows: 40 to 52 C, 53.0 to 331.3 W under 600 W), harness `stall_cell.py`
+unchanged, N=5 per arm per order, both orders, `STALL REPLAY: PASS (replay agrees with the harness's rule line)`
+for both receipts (`box/replays.log`). Verbatim:
+
+`STALL rule cell=stall-demote-on arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7
+idle_p99=14.8 idle_max=14.9 arm_runs=10 arm_p50=13.4 arm_p95=14.8 arm_p99=130.9 arm_max=163.4 stall_median=149.6
+stall_min=75.9 stall_max=150.0 server_demote_ms=[127.9, 134.0, 133.4, 133.1, 132.3, 132.4, 132.7, 132.9, 132.8]
+server_promote_ms=[] intruder_prompt_tokens=[95, 99, 97, 98, 97, 99, 97, 97, 97, 97] tenant_text_identical=True
+errors=0`
+
+Rule: gap 76.0; `129.3 < 149.6 <= 174.5` -> **`toward_off`** (the day-16 receipts on this box: ON `193.5`, OFF
+`117.5`; a same-box cross-sitting reading, stated as such). What moved: the stretched tick is `arm_max=163.4`
+against day 16's ON `207.6` and OFF `132.0`: 44 ms less than day 16's ON arm, the copy time the census measured
+(42 ms of D2H in the OFF tick), and the two receipt hashes are what remains above the OFF arm. The server's
+lines per demote: `demote submitted off the tick: 64 tokens, 159.8MB, ticket seq=N, 32 items on the contracts
+door's copy stream` (no draft plane under `MEMRA_SERVE_SPEC=0`), `contracts door D2H receipt: .. items=32 (16 KV
+planes) complete=32 require=ok .. retired acknowledged`, `demote published off the tick: ticket seq=N complete
+after 1 poll(s), 52.8 to 58.8ms from submission to completion (tick-top poll)` (one poll: the copy completes
+inside the intruder's own prime tick, the next tick top publishes), then `demote: 64 tokens, 159.8MB in 127.9 to
+134.0ms` (submission to publication). Admissibility clauses: `errors=0`, `tenant_text_identical=True`, replay
+PASS; the server log of the boot carries 21 `demote submitted`, 21 `demote published`, 21 `demote:` and 21 `D2H
+receipt` lines and no `demote failed`, `TIER DISABLED` or `no longer whole` line: every submitted demote published.
+The harness attributes a `demote:` time to 9 of the 10 demote-arm runs: run 2, the first demote intruder,
+shows `demote_ms=[] stall=75.9`, and its window carries no `evict` line: the harness's demote mode seeds no entry
+before the timed runs (`setup: []` in the receipt), so the first intruder's seed insert finds nothing to evict and
+its stall is the 64-token prime alone; from run 4 on every intruder evicts the previous run's entry. The same shape
+as the day-16 receipt of this cell, read from the receipt rather than inferred. The promote arm ran too because
+the day-16 script runs both boots' arms; it is not the day's claim and is recorded verbatim in `box/stall-on/ev/promote.log`
+(`stall_median=86.4` against day 16's ON `162.8`; its intruder's insert demotes the other entry through the new
+route, `server_demote_ms=[207.6, 209.0, 172.6, ..]` spanning submission to publication, and the promote is
+`11.8 to 12.0ms` after the first pair: not pre-registered, not a verdict, a reading for the promote's turn).
+
+## Task 3: records
+
+`STATE.md` rewritten (day 17), `OWNER-THREAD-OFFLOAD.md` gains "Move 1, first slice: what landed on day 17"
+and the owed list (the promote's turn first, then the receipt hashes, the by-reference routes, the decision cell
+(i) with both classes), `research/INDEX.md` row `spill-a-20260919/day17`, `docs/FLAGS.md` door row (with the
+code). The box worktree `/root/wt-a` is at `fc46e230d` on `lane-a-day17`; `/root/spill-receipts/a-day17/`
+mirrored to `pro-single-day17/box/` (bins excluded).
