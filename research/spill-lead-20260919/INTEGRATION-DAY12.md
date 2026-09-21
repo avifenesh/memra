@@ -436,7 +436,12 @@ Finding for the decide-by review (N=1, no claim): the contract's destinations ar
 is `CU_MEMHOSTALLOC_WRITECOMBINED`), so the bind hash runs at WC speed; demote 149 versus 281 ms and promote 267 versus
 398 ms OFF versus ON on single observations; the promote delta is unexplained and is Option C's first cell; the
 allocation flag is engine territory (`tier_transfer.rs`), untouched. C merged lane A's day 12 from its lane branch
-before #597 landed; the same commits are now on `main`.
+before #597 landed; the same commits are now on `main`. Revuto on integ17 found two real bugs in the unwind, both fixed on
+the lane (`30704905f`): pre-submit refusals escalated to quarantine because `originals` still held a lease when the
+planes came back (now dropped first; typed `Refused`, tier on), and the abort retired straight after `record_consumer`
+with the result discarded (a leaked in-flight charge would have made every later demote refuse `Capacity`; now drained,
+never discarded, `TicketLeaked` latches the tier). One-shot faults `contract-presubmit`/`contract-postpublish` and
+`tools/kv-host-contract-fault-gate.sh` (`ALL GREEN` on the card) prove both. Reconciled with #598 by the lane.
 ## integ17 (`lane/spill-integ17-20260921`): C day 15
 Batteries (`integration-day12/integ17-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server 761 tests; clippy
 `-D warnings`; check-flags; publish census; docs registry census; collector pytest; C's `verify-day15.py` PASS; perf board;

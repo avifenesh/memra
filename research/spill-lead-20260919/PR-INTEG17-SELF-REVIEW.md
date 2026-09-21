@@ -23,7 +23,19 @@ spot-checked.
    `HostPlaneBytes::Contract` keeps a `CudaPinnedLease` alive per plane for the entry's host lifetime, which is the
    contract's charge model; the decide-by review should read the pinned budget under ON against OFF.
 
+7. **Revuto round, both fixed on the lane (`30704905f`, receipts `06d6dffa6`).** Pre-submit unwind: every pre-submit arm
+   drops or clears `originals` before `host_contract_abort`, so `take_plane` sees the registry plus one lease and the
+   planes return typed `Refused`, tier on, entry whole (GPU unit cell with a real `CudaTransfers`). Abort path: the
+   owner stream is drained before `release_producer` and after `record_consumer` (an unpublished ticket retires against
+   `None`), and no `retire`/`acknowledge`/`release_producer` result is discarded: a refusal is the typed `TicketLeaked`
+   outcome mapped to one `TIER DISABLED` line. Injectable one-shot faults `contract-presubmit` and `contract-postpublish`
+   (FLAGS row) drive `tools/kv-host-contract-fault-gate.sh`: `ALL GREEN` on the card, the next receipt after each fault
+   shows the ticket retired (`seq=1`, `seq=2`), no `Capacity`, no quarantine. Reconciled with #598 (`aefb89d89`):
+   worker.rs auto-merged, the GPU builder dropped the removed `segment` field, FLAGS rows taken side by side. Stated
+   limitation: the engine's `producers` map has no server accessor; its emptiness is evidenced by the clean second
+   demote.
+
 ## Verification this review relied on
-integ17 CPU battery (`integration-day12/integ17-cpu-battery/`): fmt, portable suites, memra-server suite, clippy,
+integ17 CPU batteries (`integration-day12/integ17-cpu-battery/` before the review round, `-2/` after, on the tree with #598): fmt, portable suites, memra-server suite, clippy,
 censuses, collector pytest, `verify-day15.py`, perf board, diff-check; local 5090 serve-smoke on this tree with the door
 unset (`integ17-serve-smoke-5090/`). C's target-card OFF/ON gates. This rig cannot run the model gates.
