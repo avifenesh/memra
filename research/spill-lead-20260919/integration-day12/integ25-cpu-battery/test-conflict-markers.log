@@ -1,0 +1,8 @@
+ok   arm1 clean tree passes
+ok   arm2 marker '<<<<<<< HEAD' refused
+ok   arm3 marker '=======' refused
+ok   arm4 marker '>>>>>>> theirs' refused
+ok   arm5 marker '||||||| parent of abc (msg)' refused
+ok   arm6 receipt log and raw dir excluded
+ok   arm7 marker in a source file refused
+test_conflict_markers: 7 arms PASS

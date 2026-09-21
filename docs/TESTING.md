@@ -98,7 +98,12 @@ grid-aligned tails 16, 48 and 80, and requires the tail call's logits to be bitw
 prime's. The 16-row tail is the shape memra#427 found non-bitwise: `matmul`/`matmul_pre` sent
 `m = 16` through the batched decode/verify mmvq tier (`2..=16`) while every longer prime rode
 the generic path; the tier now ends at `PRIME_MIN_T - 1` outside the verify-exact scope.
-`MEMRA_CI_CONTGATE=0` skips, `MEMRA_CI_CONT_MODEL` retargets.
+`MEMRA_CI_CONTGATE=0` skips, `MEMRA_CI_CONT_MODEL` retargets. The per-operation form of the same
+question is `qwen-a4-width-walk <model.gguf> [ref_width] [widths...]` (a `memra-engine` bin, not a
+`tools/` script): every projection the prime walk multiplies, at width 16 against 17 and 48, bitwise
+on the shared rows; the summary line `WIDTH WALK width 16 vs 17: 0 of N tensors differ` is the
+verdict, and a nonzero count names the tensors whose dispatch is keyed on the call width
+(`research/spill-b-20260919/DAY22.md` for the run that named `ssm_beta`/`ssm_alpha`).
 
 The docs-fit owner call is closed: tier 2 now runs the full `run-spec` K=1..8 sweep and requires
 eight per-K PASS lines plus the final `SELF-CONSISTENCY PASS` marker. The raw run is logged before
