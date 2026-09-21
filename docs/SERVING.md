@@ -1792,8 +1792,8 @@ one RTX PRO 6000 Blackwell (`research/spill-b-20260919/DAY15.md`,
 `docs/decisions/PREFIX-CACHE-POLICY.md`); the earlier hot-set receipt it rested on
 (`research/slrucache-20260813/`) is recorded there as the trade.
 Sessions always win over unpinned cache residency: a failed session-cache allocation evicts every
-unpinned entry across both segments and retries before erroring. Entries leased by live hit/fanout
-requests remain pinned until the last participant retires, then re-enter their current segment at
+unleased entry from the single LRU index and retries before erroring. Entries leased by live
+hit/fanout requests remain pinned until the last participant retires, then re-enter the LRU at
 current recency. The `(model, cache_salt)` visibility boundary, global byte ceiling, and refusal
 of an entry larger than the entire budget are unchanged.
 
