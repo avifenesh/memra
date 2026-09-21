@@ -9120,6 +9120,14 @@ enum HostContractFault {
     PostPublish,
     PromotePreSubmit,
     PromotePostPublish,
+    /// PR #605 review finding 1: the LAST op of the promote batch is mis-sized by one byte so the
+    /// engine's own validation rejects exactly that item (partial acceptance); the unwind must
+    /// recover only the accepted sources and end `Refused`, tier on.
+    PromoteReject,
+    /// PR #605 review finding 2: the first `ready_view` succeeds in the engine (the ticket IS
+    /// published) but the route is handed an injected error for it; the unwind must ask the
+    /// engine and take the published arm, nothing leaked, tier on.
+    PromoteReadyView,
 }
 impl HostContractFault {
     fn from_door(fault: &str) -> Option<Self> {
@@ -9128,6 +9136,8 @@ impl HostContractFault {
             "contract-postpublish" => Some(Self::PostPublish),
             "contract-promote-presubmit" => Some(Self::PromotePreSubmit),
             "contract-promote-postpublish" => Some(Self::PromotePostPublish),
+            "contract-promote-reject" => Some(Self::PromoteReject),
+            "contract-promote-readyview" => Some(Self::PromoteReadyView),
             _ => None,
         }
     }
@@ -9880,7 +9890,9 @@ fn host_kv_planes_from_contract(
         cv: Digest,
     }
     let mut planned = Vec::with_capacity(src.kv.len() + 1);
-    let mut sources: Vec<*const u8> = Vec::with_capacity(2 * (src.kv.len() + 1));
+    // (item index, the entry's own lease pointer) per op, in op order: the unwind recovers exactly
+    // the ACCEPTED items and checks each recovered twin against its pointer.
+    let mut sources: Vec<(u32, *const u8)> = Vec::with_capacity(2 * (src.kv.len() + 1));
     {
         let planes = src
             .kv
@@ -9924,16 +9936,15 @@ fn host_kv_planes_from_contract(
                 )));
             }
             for lease in [k, v] {
-                sources.push(
-                    lease
-                        .bytes()
-                        .map_err(|e| {
-                            Refused(format!(
-                                "tier H2D refused: {slot:?} plane host bytes unreadable ({e:?})"
-                            ))
-                        })?
-                        .as_ptr(),
-                );
+                let pointer = lease
+                    .bytes()
+                    .map_err(|e| {
+                        Refused(format!(
+                            "tier H2D refused: {slot:?} plane host bytes unreadable ({e:?})"
+                        ))
+                    })?
+                    .as_ptr();
+                sources.push((sources.len() as u32, pointer));
             }
             planned.push(Planned {
                 slot,
@@ -9986,8 +9997,7 @@ fn host_kv_planes_from_contract(
                     registered,
                     None,
                     None,
-                    false,
-                    &sources,
+                    &[],
                     &format!(
                         "tier H2D register_device refused for the K plane of {:?} ({e:?})",
                         p.slot
@@ -10010,8 +10020,7 @@ fn host_kv_planes_from_contract(
                     registered,
                     None,
                     None,
-                    false,
-                    &sources,
+                    &[],
                     leaks,
                     &format!(
                         "tier H2D register_device refused for the V plane of {:?} ({e:?})",
@@ -10037,8 +10046,7 @@ fn host_kv_planes_from_contract(
                     registered,
                     None,
                     None,
-                    false,
-                    &sources,
+                    &[],
                     leaks,
                     &format!(
                         "tier H2D retain_device refused for the K plane of {:?} ({e:?})",
@@ -10065,8 +10073,7 @@ fn host_kv_planes_from_contract(
                     registered,
                     None,
                     None,
-                    false,
-                    &sources,
+                    &[],
                     leaks,
                     &format!(
                         "tier H2D retain_device refused for the V plane of {:?} ({e:?})",
@@ -10102,8 +10109,7 @@ fn host_kv_planes_from_contract(
                         registered,
                         None,
                         None,
-                        false,
-                        &sources,
+                        &[],
                         &format!(
                             "tier H2D retain_host refused for the {what} plane of {:?} ({e:?})",
                             p.slot
@@ -10136,8 +10142,7 @@ fn host_kv_planes_from_contract(
                 registered,
                 None,
                 None,
-                false,
-                &sources,
+                &[],
                 &format!("tier H2D producer fence refused: {why}"),
             ));
         }
@@ -10146,11 +10151,21 @@ fn host_kv_planes_from_contract(
         .iter()
         .flat_map(|p| [p.kb as u64, p.vb as u64])
         .collect();
+    let last = sizes.len() - 1;
     let ops = originals
         .into_iter()
         .zip(hosts)
         .zip(&sizes)
-        .map(|((device, host), &bytes)| {
+        .enumerate()
+        .map(|(i, ((device, host), &bytes))| {
+            // `contract-promote-reject`: the last op asks for one byte more than its source holds,
+            // so the engine's own `CopyOp::validate` rejects exactly that item and the batch is
+            // accepted partially (PR #605 review finding 1).
+            let bytes = if fault == Some(HostContractFault::PromoteReject) && i == last {
+                bytes + 1
+            } else {
+                bytes
+            };
             TransferOp::H2d(CopyOp {
                 host,
                 device,
@@ -10172,23 +10187,33 @@ fn host_kv_planes_from_contract(
         Ok(batch) => {
             // Partial acceptance: the rejected ops came back (dropping them drops their twins
             // and the original device handles; the retained twins release the fresh planes once
-            // the accepted items settle).
-            let rejected = batch
+            // the accepted items settle). Only the ACCEPTED items hold a source the unwind can
+            // recover: a rejected slot is `None` in the engine and `recover_source` answers
+            // `Rejected` for it (PR #605 review finding 1).
+            let accepted: Vec<(u32, *const u8)> = batch
                 .items
                 .iter()
-                .filter(|a| matches!(a, ItemAcceptance::Rejected { .. }))
-                .count();
+                .filter_map(|a| match a {
+                    ItemAcceptance::Accepted { item } => sources.get(*item as usize).copied(),
+                    ItemAcceptance::Rejected { .. } => None,
+                })
+                .collect();
             let total = batch.items.len();
+            let rejected = total - accepted.len();
             let ticket = batch.ticket;
             drop(batch);
+            let injected = if fault == Some(HostContractFault::PromoteReject) {
+                " (injected failure (MEMRA_KV_HOST_FAULT=contract-promote-reject))"
+            } else {
+                ""
+            };
             return Err(host_promote_contract_abort(
                 &mut t,
                 registered,
                 Some(ticket),
                 Some(producer),
-                false,
-                &sources,
-                &format!("tier H2D batch partially refused: {rejected} of {total} items"),
+                &accepted,
+                &format!("tier H2D batch partially refused: {rejected} of {total} items{injected}"),
             ));
         }
         Err(rejected) => {
@@ -10199,8 +10224,7 @@ fn host_kv_planes_from_contract(
                 registered,
                 None,
                 Some(producer),
-                false,
-                &sources,
+                &[],
                 &format!("tier H2D submission refused: {error:?}"),
             ));
         }
@@ -10287,7 +10311,6 @@ fn host_kv_planes_from_contract(
                 registered,
                 Some(ticket),
                 Some(producer),
-                false,
                 &sources,
                 &why,
             ) {
@@ -10299,19 +10322,32 @@ fn host_kv_planes_from_contract(
     // 8. Publication in the contract's sense: a consumer-ready view per item (the engine's own
     //    `require` with the consumer fences installed). Nothing is copied or read through it; the
     //    planes leave the engine below and the caller publishes the live entry.
+    //    Whether the ticket is published after a refusal here is the ENGINE's state, not a loop
+    //    index: `ready_view` marks it after `owner.ready_view` succeeds, `with_destination` before
+    //    its fallible steps, and the abort asks through `cancel` (PR #605 review finding 2).
     for item in 0..sizes.len() {
-        let ready = t
+        let mut ready = t
             .ready_view(&ticket, item as u32, HOST_TIER_TRANSFER_EPOCHS)
             .map(drop);
+        if item == 0 && fault == Some(HostContractFault::PromoteReadyView) && ready.is_ok() {
+            // The engine published the first item; the route is told otherwise.
+            ready = Err(Error::Quarantined);
+        }
         if let Err(e) = ready {
+            let why = if item == 0 && fault == Some(HostContractFault::PromoteReadyView) {
+                "tier H2D destination 0 not publishable: injected failure \
+                 (MEMRA_KV_HOST_FAULT=contract-promote-readyview)"
+                    .to_string()
+            } else {
+                format!("tier H2D destination {item} not publishable: {e:?}")
+            };
             return Err(host_promote_contract_abort(
                 &mut t,
                 registered,
                 Some(ticket),
                 Some(producer),
-                item > 0,
                 &sources,
-                &format!("tier H2D destination {item} not publishable: {e:?}"),
+                &why,
             ));
         }
     }
@@ -10321,7 +10357,6 @@ fn host_kv_planes_from_contract(
             registered,
             Some(ticket),
             Some(producer),
-            true,
             &sources,
             "tier H2D publication refused: injected failure \
              (MEMRA_KV_HOST_FAULT=contract-promote-postpublish)",
@@ -10339,7 +10374,6 @@ fn host_kv_planes_from_contract(
                 registered,
                 Some(ticket),
                 Some(producer),
-                true,
                 &sources,
                 &format!("tier H2D consumer fence refused: {e:?}"),
             ));
@@ -10462,10 +10496,12 @@ fn host_promote_release_fresh(
 
 /// Abort one contract-routed promote with the host entry intact (its handles never moved) and
 /// every fresh destination released where the contract allows it. A submitted ticket settles
-/// (event sync) first. An UNPUBLISHED ticket is cancelled (`PublicationRevoked`) and each source
-/// twin recovered exactly once (lane A's rule 1): the recovered twin must be the entry's own
-/// allocation (its pointer), then it drops; a PUBLISHED ticket records its consumer fence, drains,
-/// retires its sources (the twins drop). Then the ticket retires (against the consumer fence if
+/// (event sync) first. Whether it is published is the ENGINE's answer, asked through `cancel`
+/// (PR #605 review finding 2): `PublicationRevoked` means unpublished, and each ACCEPTED source
+/// twin (`sources`: item index and the entry's own lease pointer; a rejected item holds none,
+/// finding 1) is recovered exactly once (lane A's rule 1), checked against its pointer, then
+/// dropped; `AlreadyPublished` means the consumer fence is recorded, the stream drained and the
+/// sources retired (the twins drop). Then the ticket retires (against the consumer fence if
 /// published) and is acknowledged, the producer fence releases after a drain, and the fresh
 /// planes come back through their retained twins. Every fence is observed before it is released
 /// or retired against and no result is discarded (review finding 2 on PR #599). `Refused` when
@@ -10475,30 +10511,18 @@ fn host_promote_contract_abort(
     registered: Vec<PromotePlane>,
     ticket: Option<memra_engine::cache::tiered::TransferTicket>,
     producer: Option<memra_engine::cache::tiered::FenceId>,
-    published: bool,
-    sources: &[*const u8],
+    sources: &[(u32, *const u8)],
     why: &str,
 ) -> HostPromoteFailure {
-    host_promote_contract_abort_with(
-        t,
-        registered,
-        ticket,
-        producer,
-        published,
-        sources,
-        Vec::new(),
-        why,
-    )
+    host_promote_contract_abort_with(t, registered, ticket, producer, sources, Vec::new(), why)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn host_promote_contract_abort_with(
     t: &mut memra_engine::tier_transfer::CudaTransfers,
     registered: Vec<PromotePlane>,
     ticket: Option<memra_engine::cache::tiered::TransferTicket>,
     producer: Option<memra_engine::cache::tiered::FenceId>,
-    published: bool,
-    sources: &[*const u8],
+    sources: &[(u32, *const u8)],
     mut leaks: Vec<String>,
     why: &str,
 ) -> HostPromoteFailure {
@@ -10512,52 +10536,54 @@ fn host_promote_contract_abort_with(
                  destinations and the source twins"
             ));
         }
-        let consumer = if published {
-            // A published ticket retires only against a consumer fence; its sources retire first.
-            let consumer = match t.record_consumer(ticket) {
-                Ok(fence) => Some(fence),
-                Err(e) => {
-                    leaks.push(format!("record_consumer: {e:?}"));
-                    None
-                }
-            };
-            if let Err(e) = t.owner_stream().synchronize() {
-                leaks.push(format!("owner stream drain after record_consumer: {e}"));
-            }
-            if let Err(e) = t.retire_source(ticket) {
-                leaks.push(format!("retire_source: {e:?}"));
-            }
-            consumer
-        } else {
-            // Rule 1: revoke publication, then recover every source twin exactly once.
-            match t.cancel(ticket) {
-                Ok(CancelState::PublicationRevoked) => {
-                    for (item, expected) in sources.iter().enumerate() {
-                        match t.recover_source(ticket, item as u32) {
-                            Ok(twin) => {
-                                match twin.bytes() {
-                                    Ok(bytes) if bytes.as_ptr() == *expected => {}
-                                    Ok(_) => leaks.push(format!(
-                                        "recovered source {item} is not the entry's own allocation"
-                                    )),
-                                    Err(e) => leaks
-                                        .push(format!("recovered source {item} unreadable: {e:?}")),
+        // The engine says whether publication happened; nothing here infers it.
+        let consumer = match t.cancel(ticket) {
+            Ok(CancelState::PublicationRevoked) => {
+                // Rule 1: publication revoked, now recover every ACCEPTED source twin exactly once.
+                for (item, expected) in sources {
+                    match t.recover_source(ticket, *item) {
+                        Ok(twin) => {
+                            match twin.bytes() {
+                                Ok(bytes) if bytes.as_ptr() == *expected => {}
+                                Ok(_) => leaks.push(format!(
+                                    "recovered source {item} is not the entry's own allocation"
+                                )),
+                                Err(e) => {
+                                    leaks.push(format!("recovered source {item} unreadable: {e:?}"))
                                 }
-                                drop(twin);
                             }
-                            Err(e) => leaks.push(format!("recover_source {item}: {e:?}")),
+                            drop(twin);
                         }
+                        Err(e) => leaks.push(format!("recover_source {item}: {e:?}")),
                     }
                 }
-                Ok(CancelState::AlreadyPublished) => {
-                    leaks.push("cancel: the ticket was already published".into());
+                if let Err(e) = t.owner_stream().synchronize() {
+                    leaks.push(format!("owner stream drain after cancel: {e}"));
                 }
-                Err(e) => leaks.push(format!("cancel: {e:?}")),
+                None
             }
-            if let Err(e) = t.owner_stream().synchronize() {
-                leaks.push(format!("owner stream drain after cancel: {e}"));
+            Ok(CancelState::AlreadyPublished) => {
+                // A published ticket retires only against a consumer fence; its sources retire
+                // first (the twins drop).
+                let consumer = match t.record_consumer(ticket) {
+                    Ok(fence) => Some(fence),
+                    Err(e) => {
+                        leaks.push(format!("record_consumer: {e:?}"));
+                        None
+                    }
+                };
+                if let Err(e) = t.owner_stream().synchronize() {
+                    leaks.push(format!("owner stream drain after record_consumer: {e}"));
+                }
+                if let Err(e) = t.retire_source(ticket) {
+                    leaks.push(format!("retire_source: {e:?}"));
+                }
+                consumer
             }
-            None
+            Err(e) => {
+                leaks.push(format!("cancel: {e:?}"));
+                None
+            }
         };
         if let Err(e) = t
             .retire(ticket, consumer)
@@ -37625,6 +37651,110 @@ mod tests {
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
 
+    /// PR #605 review finding 1: a batch the engine accepts PARTIALLY (the last op mis-sized by
+    /// one byte, `CopyOp::validate` rejects it) must unwind to a typed `Refused`: only the
+    /// accepted items are recovered (a rejected slot answers `Rejected`), the ticket retires and
+    /// is acknowledged, every fresh destination releases, the host twins stay intact and
+    /// sole-owned, the tier stays on, and the next promote completes.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_c_partial_acceptance_unwinds_refused_with_every_destination_released() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let mut image = gpu_contract_image(&engine, &mut host, &mut entry);
+        let tier = host.tier.as_ref().unwrap();
+        tier.fault
+            .set(Some(super::HostContractFault::PromoteReject));
+        let route = Some((tier, super::HostTierEntryClass::MtpDraft));
+        let why = match super::device_entry_from_host(&engine, &image, route) {
+            Err(super::HostPromoteFailure::Refused(why)) => why,
+            Err(other) => panic!("a partial acceptance was not a plain refusal: {other:?}"),
+            Ok(_) => panic!("the mis-sized op was accepted"),
+        };
+        assert!(
+            why.contains(
+                "tier H2D batch partially refused: 1 of 6 items (injected failure \
+                 (MEMRA_KV_HOST_FAULT=contract-promote-reject))"
+            ),
+            "{why}"
+        );
+        assert!(
+            !why.contains("leaked") && !why.contains("recover_source") && !why.contains("Rejected"),
+            "only the accepted items were recovered: {why}"
+        );
+        gpu_image_intact_and_sole_owner(&mut image, &want);
+        assert_eq!(
+            gpu_used(&host),
+            (3 * 8 * 58, 0, 0),
+            "the ticket retired, every fresh destination released, the twins dropped"
+        );
+        let promoted = super::device_entry_from_host(&engine, &image, route)
+            .expect("a clean promote after the partial acceptance");
+        assert!(gpu_entry_whole(&engine, &promoted, &want));
+        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        drop(promoted);
+        drop(image);
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// PR #605 review finding 2: a failure reported for the FIRST `ready_view` while the engine
+    /// has already published the ticket must unwind through the published arm (the engine's
+    /// `cancel` answers `AlreadyPublished`; consumer fence, drain, `retire_source`, retire against
+    /// the fence, acknowledge): no leak line, every fresh destination released, twins dropped,
+    /// tier on, and the next promote completes.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_c_first_ready_view_failure_unwinds_through_the_published_arm() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let mut image = gpu_contract_image(&engine, &mut host, &mut entry);
+        let tier = host.tier.as_ref().unwrap();
+        tier.fault
+            .set(Some(super::HostContractFault::PromoteReadyView));
+        let route = Some((tier, super::HostTierEntryClass::MtpDraft));
+        let why = match super::device_entry_from_host(&engine, &image, route) {
+            Err(super::HostPromoteFailure::Refused(why)) => why,
+            Err(other) => {
+                panic!("a first-item ready_view failure was not a plain refusal: {other:?}")
+            }
+            Ok(_) => panic!("the injected refusal did not fire"),
+        };
+        assert!(
+            why.contains(
+                "tier H2D destination 0 not publishable: injected failure \
+                 (MEMRA_KV_HOST_FAULT=contract-promote-readyview)"
+            ),
+            "{why}"
+        );
+        assert!(
+            !why.contains("leaked") && !why.contains("already published"),
+            "the published arm was taken from the engine's answer: {why}"
+        );
+        gpu_image_intact_and_sole_owner(&mut image, &want);
+        assert_eq!(
+            gpu_used(&host),
+            (3 * 8 * 58, 0, 0),
+            "in-flight released by retire against the consumer fence, destinations released"
+        );
+        let promoted = super::device_entry_from_host(&engine, &image, route)
+            .expect("a clean promote after the aborted published ticket");
+        assert!(gpu_entry_whole(&engine, &promoted, &want));
+        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        drop(promoted);
+        drop(image);
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
     /// The one-shot fault cell has two sides: the demote route takes only its own two faults and
     /// the promote route only its own, so one boot arms exactly one route.
     #[test]
@@ -37640,9 +37770,18 @@ mod tests {
             F::from_door("contract-promote-postpublish"),
             Some(F::PromotePostPublish)
         );
+        assert_eq!(
+            F::from_door("contract-promote-reject"),
+            Some(F::PromoteReject)
+        );
+        assert_eq!(
+            F::from_door("contract-promote-readyview"),
+            Some(F::PromoteReadyView)
+        );
         assert_eq!(F::from_door("flip-demote"), None);
         assert!(F::PreSubmit.is_demote() && F::PostPublish.is_demote());
         assert!(!F::PromotePreSubmit.is_demote() && !F::PromotePostPublish.is_demote());
+        assert!(!F::PromoteReject.is_demote() && !F::PromoteReadyView.is_demote());
         let tier = contracts_context("m", Arc::new(()), 1 << 20);
         tier.fault.set(Some(F::PromotePostPublish));
         assert_eq!(
@@ -37771,10 +37910,29 @@ mod tests {
                 .find(needle)
                 .unwrap_or_else(|| panic!("{needle} missing from the promote abort"))
         };
-        assert!(a("t.synchronize(ticket)") < a("record_consumer("));
+        assert!(a("t.synchronize(ticket)") < a("t.cancel(ticket)"));
+        assert!(a("t.cancel(ticket)") < a("recover_source(ticket, *item)"));
+        assert!(a("recover_source(ticket, *item)") < a("record_consumer("));
         assert!(a("record_consumer(") < a("retire_source(ticket)"));
-        assert!(a("t.cancel(ticket)") < a("recover_source(ticket, item as u32)"));
-        assert!(a("recover_source(ticket, item as u32)") < a(".retire(ticket, consumer)"));
+        assert!(a("retire_source(ticket)") < a(".retire(ticket, consumer)"));
+        // PR #605 review: publication is the engine's answer (cancel: PublicationRevoked or
+        // AlreadyPublished), never a caller-side flag; only the accepted items are recovered.
+        assert!(
+            !abort_body.contains("published: bool") && !body.contains("item > 0"),
+            "no inferred published flag"
+        );
+        assert!(
+            abort_body.contains("Ok(CancelState::PublicationRevoked) =>")
+                && abort_body.contains("Ok(CancelState::AlreadyPublished) =>")
+                && abort_body.contains("for (item, expected) in sources"),
+            "the abort branches on the engine's cancel answer and recovers the given items"
+        );
+        assert!(
+            body.contains(
+                "ItemAcceptance::Accepted { item } => sources.get(*item as usize).copied()"
+            ),
+            "a partial acceptance hands the abort the accepted items only"
+        );
         assert!(
             abort_body.contains("bytes.as_ptr() == *expected"),
             "a recovered source must be the entry's own allocation"
