@@ -177,13 +177,16 @@ struct Meta {
 /// At most 256 ordinary records, one overflow record and one final trace_end are
 /// emitted. Consumers must require the final record, complete bindings, no errors
 /// or suppression, and the actual scenario observations; no record qualifies a run.
+/// Actual prime evidence comes ONLY from explicit nonzero quantum calls. Legacy
+/// prime timing marks run on cached empty-suffix MTP paths too and are not phase
+/// evidence. Missing quantum events imply neither a cache hit nor absence of work:
+/// uninstrumented routes remain unqualified. `phase` is the last observed lifecycle
+/// state, not a claim of continuous coverage across uninstrumented caller code.
 pub struct Trace {
     started: Instant,
     trace_id: u64,
     path: String,
     lifecycle: Mutex<Lifecycle>,
-    actual_prime_started: AtomicBool,
-    actual_prime_ended: AtomicBool,
     meta: Mutex<Meta>,
     logged: AtomicBool,
     parsed: AtomicU64,
@@ -228,8 +231,6 @@ impl Trace {
             trace_id: NEXT_TRACE_ID.fetch_add(1, Ordering::Relaxed),
             path: path.to_string(),
             lifecycle: Mutex::new(Lifecycle::default()),
-            actual_prime_started: AtomicBool::new(false),
-            actual_prime_ended: AtomicBool::new(false),
             meta: Mutex::new(Meta {
                 path: path.to_string(),
                 ..Meta::default()
@@ -320,32 +321,15 @@ impl Trace {
         self.mark(&self.tokenize_end);
     }
 
+    /// Legacy first-stamp timing only. Cached empty-suffix MTP calls this without
+    /// doing any prime work, so it must never enter an actual lifecycle phase.
     pub fn mark_prime_start(&self) {
         self.mark(&self.prime_start);
-        // Legacy callers repeat these first-boundary marks across ticks/bursts.
-        // They must not add per-token lifecycle locks or duplicate phase events.
-        if !self.actual_prime_started.swap(true, Ordering::AcqRel) {
-            self.record("prime_start", None, |state, _| {
-                state.require_worker();
-                if !matches!(state.phase, "queued" | "bound") {
-                    state.invalidate("prime_start_out_of_order");
-                }
-                state.phase = "prime";
-            });
-        }
     }
 
+    /// Legacy first-stamp timing only; not proof that actual prime work completed.
     pub fn mark_prime_end(&self) {
         self.mark(&self.prime_end);
-        if !self.actual_prime_ended.swap(true, Ordering::AcqRel) {
-            self.record("prime_end", None, |state, _| {
-                state.require_worker();
-                if state.phase != "prime" || state.active_quantum.is_some() {
-                    state.invalidate("prime_end_out_of_order_or_quantum_open");
-                }
-                state.phase = "prime_finished";
-            });
-        }
     }
 
     pub fn mark_first_decode(&self) {
@@ -407,8 +391,10 @@ impl Trace {
         });
     }
 
-    /// #521 seam: call immediately before one actual prime quantum, not a prediction.
-    /// This method stamps its own start. Rows are the requested quantum's row count.
+    /// #521 seam: call immediately before one actual nonzero prime quantum, not a
+    /// prediction or a cache lookup that might skip work. This is the sole prime
+    /// phase entry; legacy mark_prime_start is not required. Rows are the actual
+    /// quantum's input row count. The producer stamps its own monotonic start.
     pub fn mark_prime_quantum_start(&self, route: &'static str, rows: usize) {
         self.record("prime_quantum_start", None, |state, at| {
             state.require_worker();
@@ -416,13 +402,14 @@ impl Trace {
                 state.invalidate("overlapping_prime_quantums");
                 return; // Preserve the original quantum, including a concurrent HTTP drop.
             }
-            if state.phase != "prime" || state.close_cause.is_some() {
-                state.invalidate("quantum_outside_prime_or_after_receiver_close");
-            }
             if route.is_empty() || route.len() > MAX_IDENTITY_BYTES || rows == 0 {
                 state.invalidate("invalid_quantum_route_or_rows");
                 return;
             }
+            if !matches!(state.phase, "bound" | "queued" | "prime") || state.close_cause.is_some() {
+                state.invalidate("quantum_after_prime_finished_decode_or_receiver_close");
+            }
+            state.phase = "prime";
             state.quantum_count = state.quantum_count.saturating_add(1);
             state.active_quantum = Some(Quantum {
                 id: state.quantum_count,
@@ -436,8 +423,11 @@ impl Trace {
         });
     }
 
-    /// #521 seam: successful quantum RETURN, not whole-prime completion. None is
-    /// unknown remaining work, never zero. Never pass a caller-measured duration.
+    /// #521 seam: completed means successful quantum RETURN. Only a successful
+    /// return with remaining_chunks=Some(0) proves whole-prime completion and moves
+    /// phase to prime_finished. None stays unknown (phase remains prime, with no
+    /// active quantum). Legacy mark_prime_end cannot fill that evidence gap.
+    /// Never pass a caller-measured duration.
     pub fn mark_prime_quantum_end(&self, completed: bool, remaining_chunks: Option<usize>) {
         self.record("prime_quantum_end", None, |state, at| {
             state.require_worker();
@@ -450,7 +440,9 @@ impl Trace {
             quantum.remaining_chunks = remaining_chunks;
             state.quantum_failed |= !completed;
             state.last_quantum = Some(quantum);
-            // Phase stays prime until the separate actual whole-prime end hook.
+            if completed && remaining_chunks == Some(0) {
+                state.phase = "prime_finished";
+            }
         });
     }
 
@@ -545,9 +537,10 @@ impl Trace {
                     if state.close_cause.is_some()
                         || ((state.http_dropped || state.http_pending_dropped)
                             && !state.http_eof)
-                        || state.quantum_failed =>
+                        || state.quantum_failed
+                        || state.phase == "prime" =>
                 {
-                    state.invalidate("completed_after_close_or_failed_quantum");
+                    state.invalidate("completed_after_close_failed_or_unfinished_prime");
                 }
                 RetirementOutcome::Failed => state.invalidate("failed_retirement"),
                 _ => {}
@@ -824,7 +817,6 @@ mod tests {
         let (release_tx, release_rx) = mpsc::channel();
         let worker = trace.clone();
         let thread = std::thread::spawn(move || {
-            worker.mark_prime_start();
             worker.mark_prime_quantum_start("chunked", 32);
             started_tx.send(()).unwrap();
             release_rx.recv().unwrap();
@@ -868,7 +860,6 @@ mod tests {
         let events = observe(&trace);
         let worker = trace.clone();
         std::thread::spawn(move || {
-            worker.mark_prime_start();
             worker.mark_prime_quantum_start("monolithic", 128);
             worker.mark_prime_quantum_end(true, None);
         })
@@ -931,14 +922,155 @@ mod tests {
     }
 
     #[test]
-    fn actual_prime_finishes_separately_and_repeated_legacy_marks_are_idempotent() {
+    fn cached_mtp_legacy_worker_call_replay_is_not_actual_prime_evidence() {
         let trace = trace();
         let events = observe(&trace);
+        // AD526-LIFECYCLE-1: step_session marks start before testing an empty
+        // suffix; an existing next_pred/pending_tok bypasses the prime walker.
+        // Its decode callback then marks end and first decode. Replay that exact
+        // existing caller sequence, including HTTP cancellation before callback.
         trace.mark_prime_start();
-        for _ in 0..3 {
+        let old_prime_start = Trace::value(&trace.prime_start);
+        trace.mark_http_body_drop();
+        trace.mark_prime_end();
+        trace.mark_first_decode();
+        let old_prime_end = Trace::value(&trace.prime_end);
+        trace.mark_prime_start();
+        trace.mark_prime_end();
+        assert!(old_prime_start.is_some() && old_prime_end.is_some());
+        assert_eq!(old_prime_start, Trace::value(&trace.prime_start));
+        assert_eq!(old_prime_end, Trace::value(&trace.prime_end));
+        trace.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+        trace.mark_retired(RetirementOutcome::Aborted);
+        drop(trace);
+        let events = events.lock().unwrap();
+        coherent(&events);
+        assert!(!events.iter().any(|e| e.event.starts_with("prime")));
+        assert!(
+            events
+                .iter()
+                .all(|e| e.phase != "prime" && e.quantum.is_none())
+        );
+        assert_eq!(event(&events, "decode_start").phase, "decode");
+        let body = event(&events, "http_body_drop");
+        assert!(!body.quantum_active && body.phase != "prime");
+        // This rules out prime-cancel evidence, not other unobserved work or a
+        // cache-hit claim. Only the fixture's source-established path was zero-prime.
+    }
+
+    #[test]
+    fn unknown_remaining_cannot_be_completed_by_legacy_end_or_inferred_from_decode() {
+        let trace = trace();
+        let events = observe(&trace);
+        trace.mark_prime_quantum_start("observed", 8);
+        trace.mark_prime_quantum_end(true, None);
+        trace.mark_prime_end();
+        trace.mark_first_decode(); // Real decode is still recorded, but gap is not repaired.
+        trace.mark_http_body_eof();
+        trace.mark_http_body_drop();
+        trace.mark_retired(RetirementOutcome::Completed);
+        drop(trace);
+        let events = events.lock().unwrap();
+        assert_eq!(event(&events, "prime_quantum_end").phase, "prime");
+        assert_eq!(
+            event(&events, "prime_quantum_end")
+                .quantum
+                .unwrap()
+                .remaining_chunks,
+            None
+        );
+        let decode = event(&events, "decode_start");
+        assert_eq!(decode.phase, "decode");
+        assert!(!decode.valid);
+        assert!(!events.iter().any(|e| e.phase == "prime_finished"));
+        assert!(!events.last().unwrap().valid);
+    }
+
+    #[test]
+    fn completed_retirement_is_not_a_substitute_for_unknown_prime_completion() {
+        let trace = trace();
+        let events = observe(&trace);
+        trace.mark_prime_quantum_start("observed", 8);
+        trace.mark_prime_quantum_end(true, None);
+        trace.mark_prime_end();
+        trace.mark_http_body_eof();
+        trace.mark_http_body_drop();
+        trace.mark_retired(RetirementOutcome::Completed);
+        drop(trace);
+        let events = events.lock().unwrap();
+        let retired = event(&events, "retired");
+        assert_eq!(retired.phase, "prime");
+        assert_eq!(retired.quantum.unwrap().remaining_chunks, None);
+        assert!(!retired.valid);
+        assert!(!events.iter().any(|e| e.phase == "prime_finished"));
+    }
+
+    #[test]
+    fn legacy_end_during_observed_quantum_cannot_close_it_or_move_cancel_phase() {
+        let trace = trace();
+        let events = observe(&trace);
+        trace.mark_prime_quantum_start("observed", 16);
+        trace.mark_prime_end();
+        trace.mark_http_body_drop();
+        trace.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+        trace.mark_prime_quantum_end(true, Some(0));
+        trace.mark_retired(RetirementOutcome::Aborted);
+        drop(trace);
+        let events = events.lock().unwrap();
+        coherent(&events);
+        let body = event(&events, "http_body_drop");
+        assert_eq!(body.phase, "prime");
+        assert!(body.quantum_active);
+        assert_eq!(body.quantum.unwrap().end_ns, None);
+        let end = event(&events, "prime_quantum_end");
+        assert_eq!(end.phase, "prime_finished");
+        assert!(body.at_ns <= end.at_ns && end.at_ns <= event(&events, "retired").at_ns);
+    }
+
+    #[test]
+    fn failed_zero_remaining_and_invalid_quantums_do_not_fabricate_completion() {
+        let trace = trace();
+        let events = observe(&trace);
+        trace.mark_prime_quantum_start("observed", 8);
+        trace.mark_prime_quantum_end(false, Some(0));
+        trace.mark_prime_end();
+        trace.mark_http_body_drop();
+        trace.mark_retired(RetirementOutcome::Failed);
+        drop(trace);
+        let events = events.lock().unwrap();
+        let end = event(&events, "prime_quantum_end");
+        assert_eq!(end.quantum.unwrap().completed, Some(false));
+        assert_eq!(end.quantum.unwrap().remaining_chunks, Some(0));
+        assert_eq!(end.phase, "prime");
+        assert!(!events.iter().any(|e| e.phase == "prime_finished"));
+        drop(events);
+        for rows in [0, 8] {
+            let trace = self::trace();
+            let events = observe(&trace);
+            if rows != 0 {
+                trace.mark_prime_quantum_start("first", 8);
+                trace.mark_prime_quantum_end(true, Some(0));
+            }
+            trace.mark_prime_quantum_start("invalid", rows); // Zero work or after actual completion.
+            let last = events.lock().unwrap().last().unwrap().clone();
+            assert!(!last.valid);
+            if rows == 0 {
+                assert_eq!(last.phase, "queued");
+                assert!(last.quantum.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn actual_quantums_enter_prime_and_only_known_successful_zero_finishes_it() {
+        let trace = trace();
+        let events = observe(&trace);
+        for remaining in [Some(2), None, Some(0)] {
+            // Timing stamps neither start nor finish actual prime evidence.
             trace.mark_prime_start();
             trace.mark_prime_quantum_start("chunked", 16);
-            trace.mark_prime_quantum_end(true, Some(0));
+            trace.mark_prime_end();
+            trace.mark_prime_quantum_end(true, remaining);
         }
         trace.mark_prime_end();
         trace.mark_first_decode();
@@ -955,9 +1087,9 @@ mod tests {
         coherent(&events);
         assert_eq!(
             events.iter().filter(|e| e.event == "prime_start").count(),
-            1
+            0
         );
-        assert_eq!(events.iter().filter(|e| e.event == "prime_end").count(), 1);
+        assert_eq!(events.iter().filter(|e| e.event == "prime_end").count(), 0);
         assert_eq!(
             events
                 .iter()
@@ -965,6 +1097,15 @@ mod tests {
                 .count(),
             3
         );
+        let ends: Vec<_> = events
+            .iter()
+            .filter(|e| e.event == "prime_quantum_end")
+            .collect();
+        assert_eq!(ends[0].phase, "prime");
+        assert_eq!(ends[1].phase, "prime");
+        assert_eq!(ends[1].quantum.unwrap().remaining_chunks, None);
+        assert_eq!(ends[2].phase, "prime_finished");
+        assert_eq!(ends[2].quantum.unwrap().remaining_chunks, Some(0));
     }
 
     #[test]
@@ -1028,7 +1169,7 @@ mod tests {
     fn unbound_and_rebound_epochs_never_become_clean_history() {
         let trace = Trace::new("/v1/completions");
         let events = observe(&trace);
-        trace.mark_prime_start();
+        trace.mark_prime_quantum_start("unbound-quantum", 8);
         trace.bind_request("first", "model");
         trace.bind_worker(2, "first-route");
         trace.bind_worker(3, "replacement-route");
@@ -1058,7 +1199,7 @@ mod tests {
     fn premature_or_duplicate_retirement_and_failed_quantum_are_not_clean() {
         let cases: [fn(&Trace); 6] = [
             |t| t.mark_prime_quantum_end(true, None),
-            |t| t.mark_prime_end(),
+            |t| t.mark_prime_quantum_start("q", 0),
             |t| {
                 t.mark_prime_start();
                 t.mark_prime_quantum_start("q", 8);
@@ -1095,7 +1236,6 @@ mod tests {
         let events = observe(&trace);
         let worker = trace.clone();
         let result = std::thread::spawn(move || {
-            worker.mark_prime_start();
             worker.mark_prime_quantum_start("q", 64);
             panic!("controlled worker panic");
         })
@@ -1210,7 +1350,6 @@ mod tests {
     fn event_cap_reports_loss_and_always_retains_final_end_record() {
         let trace = trace();
         let events = observe(&trace);
-        trace.mark_prime_start();
         for _ in 0..200 {
             trace.mark_prime_quantum_start("q", 1);
             trace.mark_prime_quantum_end(true, None);
