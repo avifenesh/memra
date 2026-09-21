@@ -16,11 +16,14 @@ Serving shape, one card, one boot of the real `memra-server` per arm:
     admission cost of P2 (`[admission] request cost ... = C MB`), effective free at idle (F0 =
     driver free + pool cached, from /metrics), E1 (`prefix_cache_bytes`), and the three greedy
     texts.
-  measured boot: MEMRA_ADMIT_RESERVE_MB = (F0 - C2 - margin) / MiB, the documented
-    teeth/diagnostics door, so that P2's admission requires F0 - margin: with E1 resident beside
-    the busy peer the box is short, and after a TRUE credit it fits. F0 is effective free after
-    P1 plus E1 (the /metrics publish trails the first retire, so the idle scrape reads 0), and
-    the margin is clamped into the window the calibration's own readings allow. Same P1, P0, P2. P2 arrives while
+  measured boot: a BALLAST process holds one plain cuMemAlloc (libcuda through ctypes, started
+    before the server boots, held until it stops) sized from the calibration so that at P2's
+    admission the naked server is short by less than E1 + E0: with the entries resident beside
+    the busy peer P2 does not fit, and after a TRUE credit it does. No admission door is touched:
+    with spec disabled the reserve is the static 1536 MiB floor (`[admit-cal] boot calibration
+    skipped: spec serving disabled (static floor ...)`, asserted), so required(P2) = cost(P2) +
+    1536 MiB is known from the calibration's own cost line. The ballast models the small card the
+    defect was filed on (#445: a 24 GB card) without changing what the server does. Same P1, P0, P2. P2 arrives while
     P0 is still decoding, so the idle-box drain arm (`admission-drain`) cannot mask the tick.
 
 Assertions (every number in bytes from the server's own lines and /metrics):
@@ -39,7 +42,7 @@ Exit 0 = every assertion held; 1 = a verdict failed (red on `main` today); 2 = R
 (precondition not met: lock, port, busy-peer window, prompt too long, card too small).
 
 usage: prefix-evict-reclaim-gate.py [--external-lock FD] --model GGUF --bin memra-server \
-           --out NEW_DIR [--port N] [--prompt-words N] [--busy-tokens N] [--margin-mib N]
+           --out NEW_DIR [--port N] [--prompt-words N] [--busy-tokens N]
 Lock: the canonical rig lock only (`/tmp/memra-gpu.lock` or `/tmp/memra-5090.lock`), held
 for the whole cell; `--external-lock FD` inherits the collector's FD (lead ruling 5) and is
 verified with tools/tier-lock-proof.py before anything binds a port or boots a server.
@@ -65,6 +68,11 @@ HERE = Path(__file__).resolve().parent
 LOCKS = ("/tmp/memra-gpu.lock", "/tmp/memra-5090.lock")
 MIB = 1 << 20
 GRANULE = 2 * MIB  # the driver's VMM allocation granularity on every card measured so far
+# SPEC_SHRINK_RESERVE (worker.rs): the plain path's transient reserve is min(cost, floor) and the
+# floor is this static constant whenever the boot calibration is skipped (spec disabled).
+STATIC_RESERVE = 1536 * MIB
+RE_STATIC_FLOOR = re.compile(r"\[admit-cal\] boot calibration skipped: spec serving disabled \(static floor")
+RE_DEFER_COST = re.compile(r"VRAM defer: .*< cost (\d+)MB \+ reserve (\d+)MB")
 WORDS = (
     "amber basalt cobalt delta ember falcon garnet harbor indigo jasper kestrel lumen "
     "marble nectar orchid pewter quartz raven saffron timber umber velvet willow yonder "
@@ -111,6 +119,77 @@ def prose(seed: int, words: int, header: str) -> str:
         n += k + 2
         item += 1
     return "\n".join(out)
+
+
+def gpu_used_bytes() -> int:
+    out = subprocess.run(
+        ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits", "-i", "0"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip().splitlines()[0]
+    return int(out) * MIB
+
+
+def ballast_hold(nbytes: int) -> None:
+    """Child mode: hold one plain driver allocation until terminated (no pool, no stream)."""
+    import ctypes
+    import signal
+
+    cuda = ctypes.CDLL("libcuda.so.1")
+    rc = cuda.cuInit(0)
+    if rc != 0:
+        refuse(f"ballast: cuInit failed rc={rc}")
+    dev = ctypes.c_int()
+    rc = cuda.cuDeviceGet(ctypes.byref(dev), 0)
+    if rc != 0:
+        refuse(f"ballast: cuDeviceGet failed rc={rc}")
+    ctx = ctypes.c_void_p()
+    rc = cuda.cuCtxCreate_v2(ctypes.byref(ctx), 0, dev)
+    if rc != 0:
+        refuse(f"ballast: cuCtxCreate failed rc={rc}")
+    ptr = ctypes.c_ulonglong()
+    rc = cuda.cuMemAlloc_v2(ctypes.byref(ptr), ctypes.c_size_t(nbytes))
+    if rc != 0:
+        refuse(f"ballast: cuMemAlloc({nbytes}) failed rc={rc}")
+    print(f"BALLAST READY bytes={nbytes}", flush=True)
+    signal.pause()
+
+
+class Ballast:
+    """A separate process holding `nbytes` of plain device memory for one server boot."""
+
+    def __init__(self, nbytes: int, log: Path):
+        self.nbytes, self.log = nbytes, log
+        self.proc: subprocess.Popen | None = None
+        self.used_before = self.used_after = None
+
+    def start(self) -> None:
+        self.used_before = gpu_used_bytes()
+        env = dict(os.environ, CUDA_VISIBLE_DEVICES=os.environ.get("CUDA_VISIBLE_DEVICES", "0"))
+        self.proc = subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "--ballast-hold", str(self.nbytes)],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
+        )
+        line = self.proc.stdout.readline().strip() if self.proc.stdout else ""
+        self.log.write_text(line + "\n")
+        if not line.startswith("BALLAST READY"):
+            self.stop()
+            refuse(f"ballast did not come up: {line!r}")
+        time.sleep(1.0)
+        self.used_after = gpu_used_bytes()
+
+    def footprint(self) -> int:
+        return (self.used_after or 0) - (self.used_before or 0)
+
+    def stop(self) -> None:
+        if self.proc is None:
+            return
+        self.proc.terminate()
+        try:
+            self.proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait()
+        self.proc = None
 
 
 class Server:
@@ -242,14 +321,27 @@ def mem_row(m: dict) -> dict:
     }
 
 
-def run_boot(
-    name: str, out: Path, args, texts: dict, extra_env: dict, log_hook=None
-) -> dict:
+def run_boot(name: str, out: Path, args, texts: dict, ballast_bytes: int = 0) -> dict:
     d = out / name
     d.mkdir(parents=True)
-    srv = Server(args.bin, args.model, args.port, d / "server.log", extra_env)
-    srv.boot()
-    rec: dict = {"name": name, "env": extra_env, "metrics": {}, "requests": {}}
+    rec: dict = {"name": name, "ballast": None, "metrics": {}, "requests": {}}
+    ballast = None
+    if ballast_bytes > 0:
+        ballast = Ballast(ballast_bytes, d / "ballast.log")
+        ballast.start()
+        rec["ballast"] = {
+            "requested_bytes": ballast_bytes,
+            "gpu_used_before": ballast.used_before,
+            "gpu_used_after": ballast.used_after,
+            "footprint_bytes": ballast.footprint(),
+        }
+    srv = Server(args.bin, args.model, args.port, d / "server.log", {})
+    try:
+        srv.boot()
+    except SystemExit:
+        if ballast:
+            ballast.stop()
+        raise
     try:
         time.sleep(1.0)
         rec["metrics"]["idle"] = mem_row(srv.metrics())
@@ -294,6 +386,8 @@ def run_boot(
         rec["busy_peer_overlap_s"] = round(p0_box.get("done_at", 0) - p2_sent, 3) if p0_box else None
     finally:
         srv.stop()
+        if ballast:
+            ballast.stop()
     rec["identity_sha256"] = sha(
         "\n".join(rec["requests"][k].get("text", "") for k in ("p1", "p0", "p2"))
     )
@@ -317,6 +411,8 @@ def parse_log(path: Path) -> dict:
         "averted": 0,
         "drains": [],
         "capacity_rejects": 0,
+        "static_floor": False,
+        "defer_cost_reserve_mb": None,
     }
     seen_reclaim = False
     for ln in lines:
@@ -360,6 +456,11 @@ def parse_log(path: Path) -> dict:
             ev["defers_total"] += 1
             if seen_reclaim:
                 ev["defers_after_reclaim"] += 1
+            m = RE_DEFER_COST.search(ln)
+            if m and ev["defer_cost_reserve_mb"] is None:
+                ev["defer_cost_reserve_mb"] = [int(m.group(1)), int(m.group(2))]
+        if RE_STATIC_FLOOR.search(ln):
+            ev["static_floor"] = True
         if RE_AVERTED.search(ln):
             ev["averted"] += 1
         m = RE_DRAIN.search(ln)
@@ -375,6 +476,9 @@ def parse_log(path: Path) -> dict:
 
 def main() -> None:
     argv = sys.argv[1:]
+    if argv[:1] == ["--ballast-hold"]:
+        ballast_hold(int(argv[1]))
+        return
     lock_fd = None
     lock_owner = "internal-canonical"
     if argv[:1] == ["--external-lock"]:
@@ -389,7 +493,6 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=18113)
     ap.add_argument("--prompt-words", type=int, default=22000, help="words per long prompt (about 1.4 tokens each)")
     ap.add_argument("--busy-tokens", type=int, default=400, help="greedy generation length of the busy peer")
-    ap.add_argument("--margin-mib", type=int, default=1024, help="preferred admission slack under F0; clamped into the window the calibration allows")
     ap.add_argument("--gpu-lock", default=os.environ.get("MEMRA_GPU_LOCK", "/tmp/memra-gpu.lock"))
     args = ap.parse_args(argv)
 
@@ -431,7 +534,7 @@ def main() -> None:
     (args.out / "prompts.json").write_text(json.dumps({k: sha(v) for k, v in texts.items()}, indent=2) + "\n")
 
     # ---- calibration boot -------------------------------------------------------------
-    cal = run_boot("calibration", args.out, args, texts, {})
+    cal = run_boot("calibration", args.out, args, texts)
     cal_ev = parse_log(args.out / "calibration" / "server.log")
     p2_tokens = cal["requests"]["p2"]["prompt_tokens"]
     p1_tokens = cal["requests"]["p1"]["prompt_tokens"]
@@ -443,56 +546,64 @@ def main() -> None:
     if cal_ev["reclaims"]:
         refuse("calibration boot already reclaimed (card too small for two entries at this size)")
     # The admission cap is prompt + max_tokens + a small boundary slack; pick the cost line
-    # whose ctx sits nearest above P2's prompt (P1's line is 66 tokens further away).
+    # whose ctx sits nearest above each prompt (P1's and P2's lines are 66 tokens apart).
     def nearest_cost(tokens: int):
         cands = [c for c in cal_ev["costs"] if tokens <= c["ctx"] < tokens + 1024]
         return min(cands, key=lambda c: c["ctx"] - tokens) if cands else None
 
     cost_p2 = nearest_cost(p2_tokens)
-    if cost_p2 is None:
-        refuse("no `[admission] request cost` line for the long prompt in the calibration log")
+    cost_p1 = nearest_cost(p1_tokens)
+    if cost_p2 is None or cost_p1 is None:
+        refuse("no `[admission] request cost` line for a long prompt in the calibration log")
+    if not cal_ev["static_floor"]:
+        refuse("the boot did not report the static transient floor; the design assumes "
+               "`[admit-cal] boot calibration skipped: spec serving disabled (static floor ...)`")
     # /metrics publishes only after the first retire, so `idle` reads 0: F0 is the effective
-    # free WITH the first request's persistent workspaces warm and E1 added back, which is
-    # exactly the baseline P2's admission sees in the measured boot.
+    # free WITH the first request's persistent workspaces warm and E1 added back.
     f1c = effective_free(cal["metrics"]["after_p1"])
     f2c = effective_free(cal["metrics"]["before_p2"])
     e1 = cal["metrics"]["after_p1"]["prefix_cache_bytes"]
     e0 = cal["metrics"]["before_p2"]["prefix_cache_bytes"] - e1  # the busy peer's own seed
     f0 = f1c + e1
     cost_p2_bytes = cost_p2["mb"] * 1_000_000
-    # Margin window from the calibration's own readings: the reclaim must FIRE with E1
-    # resident beside the busy peer (margin < F1c - F2c + E1) and P2 must FIT after a true
-    # credit of E1 + E0 (margin > F1c - F2c - E0). 128 MiB slack on each side.
-    peer_footprint = f1c - f2c
-    margin_lo = peer_footprint - e0 + 128 * MIB
-    margin_hi = peer_footprint + e1 - 128 * MIB
-    if margin_lo >= margin_hi:
-        refuse(f"no admissible margin: busy-peer footprint {peer_footprint} B, E1 {e1} B, E0 {e0} B")
-    margin = min(max(args.margin_mib * MIB, margin_lo), margin_hi)
-    reserve_mib = (f0 - cost_p2_bytes - margin) // MIB
-    if reserve_mib <= 0:
-        refuse(f"card too small for the design: F0={f0} cost={cost_p2_bytes} margin={margin}")
+    cost_p1_bytes = cost_p1["mb"] * 1_000_000
+    required_p2 = cost_p2_bytes + min(cost_p2_bytes, STATIC_RESERVE)
+    required_p1 = cost_p1_bytes + min(cost_p1_bytes, STATIC_RESERVE)
+    # Ballast window from the calibration's own readings: with B bytes held by the ballast,
+    # P2 must NOT fit beside the busy peer (f2c - B < required_p2) and must fit after a true
+    # credit of E1 + E0 (f2c - B + e1 + e0 >= required_p2). Aim at the middle.
+    b_lo = f2c - required_p2
+    b_hi = b_lo + e1 + e0
+    ballast = b_lo + (e1 + e0) // 2
+    if e1 + e0 < 512 * MIB:
+        refuse(f"entries too small to open a ballast window: E1={e1} E0={e0}; raise --prompt-words")
+    if ballast <= 0:
+        refuse(f"card already too small for the design: f2c={f2c} required_p2={required_p2}")
+    if f0 - ballast < required_p1 + 256 * MIB:
+        refuse(f"P1 would not fit beside the ballast: F0={f0} ballast={ballast} required_p1={required_p1}")
     calib = {
         "f0_effective_free_bytes": f0,
         "f1_after_p1_effective_free_bytes": f1c,
         "f2_before_p2_effective_free_bytes": f2c,
-        "busy_peer_footprint_bytes": peer_footprint,
+        "busy_peer_footprint_bytes": f1c - f2c,
         "e0_busy_peer_entry_bytes": e0,
-        "margin_bytes": margin,
-        "margin_window_bytes": [margin_lo, margin_hi],
         "e1_prefix_bytes": e1,
         "p1_prompt_tokens": p1_tokens,
         "p2_prompt_tokens": p2_tokens,
+        "cost_p1_mb": cost_p1["mb"],
         "cost_p2_mb": cost_p2["mb"],
-        "reserve_mib": reserve_mib,
-        "required_p2_bytes": cost_p2_bytes + reserve_mib * MIB,
+        "static_reserve_bytes": STATIC_RESERVE,
+        "required_p1_bytes": required_p1,
+        "required_p2_bytes": required_p2,
+        "ballast_window_bytes": [b_lo, b_hi],
+        "ballast_target_bytes": ballast,
         "inserts": cal_ev["inserts"],
         "costs": cal_ev["costs"],
     }
     (args.out / "calibration.json").write_text(json.dumps(calib, indent=2) + "\n")
 
     # ---- measured boot ----------------------------------------------------------------
-    meas = run_boot("measured", args.out, args, texts, {"MEMRA_ADMIT_RESERVE_MB": str(reserve_mib)})
+    meas = run_boot("measured", args.out, args, texts, ballast_bytes=ballast)
     ev = parse_log(args.out / "measured" / "server.log")
     e1m = meas["metrics"]["after_p1"]["prefix_cache_bytes"]
     if meas["requests"]["p0"].get("status") != 200:
@@ -502,7 +613,7 @@ def main() -> None:
         refuse(f"busy-box condition not met: P0 finished {overlap}s after P2 was sent; raise --busy-tokens")
     if not ev["reclaims"]:
         refuse("the measured boot never reached reclaim-on-defer; the pressure arithmetic did not bite "
-               f"(F0={f0} E1={e1m} reserve={reserve_mib}MiB); see measured/server.log")
+               f"(F0={f0} E1={e1m} ballast={meas['ballast']}); see measured/server.log")
 
     slack = 8 * MIB  # two granules plus the two 1e6-rounded MB figures in the line
     r = ev["reclaims"][0]
@@ -560,6 +671,8 @@ def main() -> None:
             "capacity_rejects": ev["capacity_rejects"],
             "p2": {k: v for k, v in p2.items() if k != "error"} | {"error": p2["error"]},
             "busy_peer_overlap_s": overlap,
+            "ballast": meas["ballast"],
+            "defer_cost_reserve_mb": ev["defer_cost_reserve_mb"],
             "metrics": meas["metrics"],
         },
         "identity": {"calibration": cal["identity_sha256"], "measured": meas["identity_sha256"], "equal": v4},

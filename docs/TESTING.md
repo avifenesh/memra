@@ -851,10 +851,14 @@ prefix-evict-reclaim-gate.py [--external-lock FD] --model <gguf> --bin <memra-se
 ```
 
 - Serving shape, one card, the real `memra-server`, two boots per cell: a calibration boot
-  measures F0 (effective free at idle), E1 (the long prompt's entry bytes) and P2's admission
-  cost; the measured boot sets the documented teeth door `MEMRA_ADMIT_RESERVE_MB` so that P2
-  requires `F0 - margin`, and sends P2 while a short busy peer is still decoding so the idle-box
-  `admission-drain` arm cannot mask the tick. No other override; `MEMRA_SERVE_SPEC=0`.
+  measures effective free after P1, E1 (the long prompt's entry bytes), E0 (the busy peer's
+  own seed) and the two long prompts' admission costs; the measured boot starts a ballast
+  process (one plain `cuMemAlloc` through `libcuda`, held for the boot) sized so that P2 is
+  short by less than E1 + E0 beside the busy peer and fits after a true credit, then sends P2
+  while the peer is still decoding so the idle-box `admission-drain` arm cannot mask the tick.
+  No admission door is touched: with `MEMRA_SERVE_SPEC=0` the reserve is the static 1536 MiB
+  floor (the boot line is asserted), so `required(P2) = cost(P2) + 1536 MiB` is known from the
+  calibration. The ballast models the small card #445 was filed on.
 - Assertions, all in bytes from the server's own lines and `/metrics`: V1 the reclaim-on-defer
   line credits at least E1; V2 P2 is admitted in that tick (no `VRAM defer` after the reclaim
   line, no `reject averted`, HTTP 200); V3 the settle line moves driver free and
