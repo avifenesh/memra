@@ -1,0 +1,47 @@
+== A: parallel (current battery behavior) + pair skips
+test dsv4_c4::tests::cuda_direct_host_copy_preserves_bits_and_live_prefix ... ok
+test dsv4_graph::tests::cuda_capture_runs_once_and_restores_scope_after_failure ... ok
+test dsv4_grouped::tests::cuda_matrix_mirrors_reuse_storage_and_clear_live_status ... ok
+test fused_gate_bounds_tests::q_gate_split_refuses_a_separate_gate_wq_instead_of_reading_past_it ... ok
+test spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read ... ok
+test qwen_prime_graph::tests::tap_replay_follows_relocated_destination_and_stride ... ok
+test dsv4_ep::tests::cuda_ep_partition_matches_original_full_bank ... ok
+test vision::tests::a_foreign_context_overlay_is_refused_not_dereferenced ... ok
+test dsv4_c4::tests::cuda_recent_c4_preserves_hits_misses_wrap_and_rollback ... ok
+test model_memory::native_tests::glm_same_ordinal_owners_are_not_lost ... ok
+test dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue ... ok
+test glm5_tp_sampler::tests::glm5_tp_device_sampler_gpu_oracles ... ok
+test dsv4_attention_split::tests::cuda_attention_split_existing_fp8_gemv_component_gate ... ok
+test dsv4_gpu::verify_topk_tests::cuda_numeric_topk_matches_host_ties_and_preserves_guards ... ok
+test dsv4_grouped::tests::cuda_gu_m1_matches_gu_reference ... ok
+test dsv4_grouped::tests::cuda_partition_routes_match_host_and_reject_global_ids ... ok
+test dsv4_ep::tests::cuda_tp_ep_local_only_clears_reused_contribution_and_rank_sums ... ok
+test dsv4_grouped::half2_chain_identity_tests::cuda_half2_chain_identity ... ok
+test dsv4_attention_split::tests::cuda_attention_split_device_2d_pack_matches_host ... ok
+test dsv4_grouped::tests::cuda_matrix_chain_full_bank_equals_two_partitions ... ok
+test dsv4_c4::tests::cuda_active_c4_gather_preserves_rows_and_reemissions ... ok
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 518 filtered out; finished in 1.15s
+== B: --test-threads=1 + pair skips
+test dsv4_attention_split::tests::cuda_attention_split_device_2d_pack_matches_host ... ok
+test dsv4_attention_split::tests::cuda_attention_split_existing_fp8_gemv_component_gate ... ok
+test dsv4_c4::tests::cuda_active_c4_gather_preserves_rows_and_reemissions ... ok
+test dsv4_c4::tests::cuda_direct_host_copy_preserves_bits_and_live_prefix ... ok
+test dsv4_c4::tests::cuda_recent_c4_preserves_hits_misses_wrap_and_rollback ... ok
+test dsv4_ep::tests::cuda_ep_partition_matches_original_full_bank ... ok
+test dsv4_ep::tests::cuda_tp_ep_local_only_clears_reused_contribution_and_rank_sums ... [moe-sk-form] dev=0 qt=108 sms=82 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=2048 n_active=4 max_m=6
+test dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue ... ok
+test dsv4_gpu::verify_topk_tests::cuda_numeric_topk_matches_host_ties_and_preserves_guards ... ok
+test dsv4_graph::tests::cuda_capture_runs_once_and_restores_scope_after_failure ... ok
+test dsv4_grouped::half2_chain_identity_tests::cuda_half2_chain_identity ... ok
+test dsv4_grouped::tests::cuda_gu_m1_matches_gu_reference ... ok
+test dsv4_grouped::tests::cuda_matrix_chain_full_bank_equals_two_partitions ... ok
+test dsv4_grouped::tests::cuda_matrix_mirrors_reuse_storage_and_clear_live_status ... ok
+test dsv4_grouped::tests::cuda_partition_routes_match_host_and_reject_global_ids ... ok
+test fused_gate_bounds_tests::q_gate_split_refuses_a_separate_gate_wq_instead_of_reading_past_it ... ok
+test glm5_tp_sampler::tests::glm5_tp_device_sampler_gpu_oracles ... ok
+test model_memory::native_tests::glm_same_ordinal_owners_are_not_lost ... ok
+test qwen_prime_graph::tests::tap_replay_follows_relocated_destination_and_stride ... ok
+test spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read ... ok
+test vision::tests::a_foreign_context_overlay_is_refused_not_dereferenced ... ok
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 518 filtered out; finished in 4.18s
+IGNORED_AB_DONE
