@@ -136,7 +136,46 @@ What the base actually did, from `/metrics` rows of the measured boot (bytes):
 - V4 held: calibration and measured boots hash `aa6cc3291b9816468b7cd1d5b03b08032f2e20aa873112eb15068d09231b79c9`
   over the three messages (P1 8 tokens, P0 400 tokens, P2 8 tokens, all `finish_reason=length`).
 
-FIX-PLACEHOLDER
+### Fix, `f4350c241` (`gate-fix`, gate source `678cc83ea`: the first fix cell, FAILED on the gate's own extra clause)
+
+Same ballast (requested 74,262,450,904 B; footprint 74,850,500,608 B), same window. The settle line, the
+reclaim-on-defer line and the verdict, verbatim:
+
+```text
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1751161856 pool_cached_gain_bytes=1751161856 trim_released_bytes=1610612736 driver_free_bytes 4827971584 -> 6438584320 pool_reserved_bytes 21709717504 -> 20099104768 pool_used_bytes 21685840360 -> 19934678504 pool_retained_bytes=140549120 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4852MB -> 6603MB
+PREFIX-EVICT-RECLAIM: entry_bytes=1592160256 reclaim_credit_bytes=1751000000 driver_free_delta_bytes=1610612736 trim_released_bytes=1610612736 p2=admit-same-tick busy_overlap_s=21.659 identity=aa6cc3291b981646 V1=ok V2=ok V3=FAIL V4=ok -> FAIL
+```
+
+- In the tick that evicted E1 and E0 (1,751,161,856 B): the fence made the pool's cached gain exactly the
+  evicted bytes; the trim to `used + cached_before` released 1,610,612,736 B (768 granules) and driver free
+  rose by exactly that, 4,827,971,584 to 6,438,584,320 B: more than E1 (1,592,160,256 B). The reclaim line
+  reports the eviction it names, `4852MB -> 6603MB`, a 1,751 MB credit.
+- The pool retained 140,549,120 B: the busy peer's own 159 MB seed E0 was allocated beside that peer's live
+  session state, so its chunk has a live neighbour and `cuMemPoolTrimTo` cannot release it. The server
+  prints those bytes as `pool_retained_bytes`; they stay counted by `effective_free_bytes` as pool-cached
+  headroom (which is where they are usable) and are never reported as driver free.
+- V3 failed here only because the first gate revision additionally demanded zero retained bytes. That clause
+  went past the criterion the lead set ("eviction does not move driver free by the entry's bytes" is the red
+  statement; the green one is that it does) and past the task's own allowance for the case the pool cannot
+  give back ("the admission must account for pool-held bytes rather than pretend they are free", which the
+  settle line does). `ec473770f` makes V3 the stated criterion and carries `pool_retained_bytes` in the
+  verdict line as a reported figure. This cell stays on disk as failed; the final pair below reruns BOTH arms
+  on the corrected gate so the two quoted verdicts share one gate source.
+- V4: the fix's three messages hash `aa6cc3291b9816468b7cd1d5b03b08032f2e20aa873112eb15068d09231b79c9`,
+  the same digest as the base's two boots. The tokens are byte-identical across binaries: the numeric
+  program did not move.
+
+### Which of the two fixes, with the numbers
+
+Both halves of the lead's sentence, in the order the sentence gives them. The trim returned
+1,610,612,736 B of the 1,751,161,856 B gain to the driver in the evicting tick: all of E1 and part of E0.
+The 140,549,120 B the pool could not release (E0's chunk shares a live neighbour) are accounted as
+pool-cached headroom on the settle line, never pretended to be driver free. `KvAllocator::Vmm` stays
+behind its door; no VMM plane was needed.
+
+FINAL-PLACEHOLDER
+
 
 
 ## Checks actually run
