@@ -1743,9 +1743,9 @@ Two caching tiers serve prompt tokens without recomputing them:
    exact-extension only — a new session that merely shares a system prompt always missed.
 2. **Cross-request prefix cache** (`MEMRA_PREFIX_CACHE_MB`, 0 = off): compact device snapshots
    of primed state at token boundaries, keyed by the exact token-id prefix within each model and
-   cache namespace. All entries share one worker-global byte budget, with byte-budgeted segmented
-   LRU (SLRU) eviction by default and plain global LRU under
-   `MEMRA_PREFIX_CACHE_POLICY=lru`. With no override, the budget holds two full-`MEMRA_CTX`
+   cache namespace. All entries share one worker-global byte budget with plain global LRU
+   eviction (the oldest unleased entry first; the segmented policy was retired 2026-09-21,
+   `docs/decisions/PREFIX-CACHE-POLICY.md`). With no override, the budget holds two full-`MEMRA_CTX`
    entries of the largest loaded model, clamped to post-load driver-free VRAM minus the
    serving-transient reserve; an explicit value remains authoritative. Entries are REUSABLE — a hit
    deep-copies the entry into the new session's cache, so one marketplace system prompt serves
@@ -1774,31 +1774,23 @@ captures. A request shed to plain at higher load probes and consumes that unchan
 the normal restore path. DFlash does not add an LCP or message-boundary capture arm, and disabling
 the prefix-cache budget disables its capture too. Legacy round-robin mode
 (`MEMRA_SERVE_BATCH=0`) bypasses the prefix cache.
-The segmentation rules below describe the default `MEMRA_PREFIX_CACHE_POLICY=slru` path;
-`MEMRA_PREFIX_CACHE_POLICY=lru` forces the protected share to 100% and restores plain global LRU.
-New entries enter PROBATION and earn PROTECTED residency only on a successful reuse. The global
-byte budget defaults to an 80% protected target and 20% probation target
-(`MEMRA_PREFIX_CACHE_PROTECTED_PCT`); probation can borrow unused protected bytes, so a cold cache
-uses the full budget and a large individually fitting entry is not refused merely because it is
-larger than the nominal probation share. Protected overflow demotes protected LRU back to
-probation. Capacity pressure evicts probation LRU first; when probation is exhausted, or holds
-only the entry being published, the protected LRU goes next, oldest first, with no floor at the
-protected share (the newest-turn-fits rule, memra#523 item 1, `room_victim_with`). The real
-contract is therefore: every UNLEASED byte, protected or not, is reclaimable for a publication
-that fits the budget; the protected share bounds only demotion and pinned admission; only leases
-are untouchable. A publication is refused in exactly two cases, both printed in bytes
-(`[prefix-cache] insert refused: entry N exceeds budget M (...)` and
-`[prefix-cache] insert refused: entry N cannot fit beside L leased bytes (budget M, ...)`), never
-silently. Trade-off, named: one-hit scan traffic still cycles through probation while probation
-holds an evictable victim other than the newcomer, but an entry larger than the free share beside
-a promoted cohort now evicts that cohort oldest-first instead of running cold on every turn, so
-scan resistance for entries larger than the free share is gone under SLRU. A single growing
-conversation whose turns exceed the free share removes another tenant's whole promoted cohort
-(the day-14 twin gate shows exactly this at a 1024 MiB budget). This is the shape #523 asked
-for; whether SLRU stays the default is #523 item 2, an interleaved A/B on the incident's shape.
-If a pinned fanout snapshot cannot fit from probation plus the protected bytes its own promotion
-would demote, that snapshot is not retained; participants continue from their private session
-copies instead of evicting below the protected byte share.
+**Eviction (plain global LRU, memra#523 item 2, 2026-09-21).** Capacity pressure evicts the
+oldest UNLEASED entry first, whatever its history; a hit refreshes the entry's recency and leases
+it for the restore, and the lease ends at the restore fence, before the request publishes its own
+entry. Every unleased byte is reclaimable for a publication that fits the budget, so the newest
+turn of a growing conversation always fits beside other tenants' entries (the newest-turn-fits
+rule, memra#523 item 1: an entry is never its own victim, because it is the global newest while
+any older unleased entry remains). A publication is refused in exactly two cases, both printed in
+bytes, never silently: `[prefix-cache] insert refused: entry N exceeds budget M (...)` and
+`[prefix-cache] insert refused: entry N cannot fit beside L leased bytes (budget M, ...)`. A pinned
+fanout snapshot that cannot fit beside the current leases is not retained; participants continue
+from their private session copies. The segmented policy (probation/protected shares, promotion on
+first reuse, `MEMRA_PREFIX_CACHE_POLICY`, `MEMRA_PREFIX_CACHE_PROTECTED_PCT`) is gone: on the
+incident's shape it cost the growing conversation 300 tokens after every other tenant's turn and
+protected a dead promoted entry over a fresh one, at every pair of a ten-pair interleaved A/B on
+one RTX PRO 6000 Blackwell (`research/spill-b-20260919/DAY15.md`,
+`docs/decisions/PREFIX-CACHE-POLICY.md`); the earlier hot-set receipt it rested on
+(`research/slrucache-20260813/`) is recorded there as the trade.
 Sessions always win over unpinned cache residency: a failed session-cache allocation evicts every
 unpinned entry across both segments and retries before erroring. Entries leased by live hit/fanout
 requests remain pinned until the last participant retires, then re-enter their current segment at
