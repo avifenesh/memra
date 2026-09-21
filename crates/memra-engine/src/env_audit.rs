@@ -14,18 +14,20 @@
 //! is retired, carrying its ledger heading. Retired outranks legal: a prose wildcard like
 //! `MEMRA_DSV4_*` does not resurrect a deleted DSV4 door.
 //!
-//! Scope, so this does not refuse the whole namespace: launchers legitimately set names no
-//! subsystem owns. A name is refused when it is RETIRED, or when it is unknown inside an OWNED
-//! family (a `MEMRA_<FAMILY>_` prefix with at least `OWNED_FAMILY_MIN` legal names, the shape the
-//! DSV4 registry already enforces for its own prefixes). An unknown name outside every owned family
-//! is a warning, printed once, never a refusal.
+//! Scope, so this does not refuse the whole namespace: launchers and gate scripts legitimately set
+//! names no subsystem reads (`MEMRA_CI_*`, `MEMRA_GATE_*`, ports, log dirs). A name is refused
+//! when it is RETIRED, or when it is unknown inside an OWNED family (a `MEMRA_<FAMILY>_` prefix
+//! under which the engine or server code reads at least `OWNED_FAMILY_MIN` distinct names, the
+//! shape the DSV4 registry already enforces for its own prefixes). Unknown names outside every
+//! owned family are reported in one line and never refused.
 //!
 //! `MEMRA_ENV_AUDIT=0` disables the audit (announced), `=warn` downgrades refusals to warnings.
 
 include!(concat!(env!("OUT_DIR"), "/memra_env_registry.rs"));
 
-/// A family needs this many documented names before an unknown sibling is refused rather than
-/// warned about.
+/// A family is owned when the engine or the server READS at least this many distinct names under
+/// it (`OWNED_FAMILIES`, derived from the sources by `build.rs`); an unknown sibling of an owned
+/// family is refused, an unknown name elsewhere is only reported.
 pub const OWNED_FAMILY_MIN: usize = 3;
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -55,8 +57,7 @@ fn retired(name: &str) -> Option<&'static str> {
 }
 
 fn family_is_owned(family: &str) -> bool {
-    LEGAL_NAMES.iter().filter(|n| n.starts_with(family)).count() >= OWNED_FAMILY_MIN
-        || LEGAL_PREFIXES.iter().any(|p| p.starts_with(family))
+    OWNED_FAMILIES.contains(&family)
 }
 
 /// Audit an explicit set of `(name, value)` pairs. Pure: tests feed it synthetic environments.
@@ -67,6 +68,11 @@ where
     V: AsRef<str>,
 {
     let mut out = EnvAudit::default();
+    let mut undocumented: Vec<String> = Vec::new();
+    if LEGAL_NAMES.is_empty() && RETIRED.is_empty() {
+        // packaged build without docs/FLAGS.md: nothing to compare against, say so once
+        return out;
+    }
     let mut names: Vec<String> = vars
         .into_iter()
         .map(|(k, _)| k.as_ref().to_string())
@@ -96,15 +102,21 @@ where
                 let siblings = LEGAL_NAMES.iter().filter(|n| n.starts_with(family)).count();
                 out.refusals.push(format!(
                     "{name}: unknown {family}* name ({siblings} documented names in that family, \
-                     none is this one). Not in docs/FLAGS.md and not in its Removed ledgers: a typo \
-                     or a name from another tree. It would be read by nothing."
+                     none is this one). Neither a documented name nor a retired one in \
+                     docs/FLAGS.md: a typo or a name from another tree. It would be read by nothing."
                 ));
             }
-            _ => out.warnings.push(format!(
-                "{name}: not a documented memra name (docs/FLAGS.md); nothing in this process \
-                 reads it. Left alone: launchers own names outside the engine's families."
-            )),
+            _ => undocumented.push(name.clone()),
         }
+    }
+    if !undocumented.is_empty() {
+        out.warnings.push(format!(
+            "{} MEMRA_* name(s) in the environment that nothing in this build reads and \
+             docs/FLAGS.md does not list: {}. Left alone: launchers and gate scripts own names \
+             outside the engine's families.",
+            undocumented.len(),
+            undocumented.join(", ")
+        ));
     }
     out
 }
@@ -129,6 +141,12 @@ pub fn audit_mode() -> AuditMode {
 /// with; warnings are printed here. Under `MEMRA_ENV_AUDIT=0` the audit announces itself off and
 /// returns `Ok`; under `=warn` refusals print as warnings and the boot continues.
 pub fn audit_process_env() -> Result<(), String> {
+    if LEGAL_NAMES.is_empty() && RETIRED.is_empty() {
+        eprintln!(
+            "[env-audit] registry absent in this build (no docs/FLAGS.md at build time); the MEMRA_* audit is inert"
+        );
+        return Ok(());
+    }
     let mode = audit_mode();
     if mode == AuditMode::Off {
         eprintln!(
@@ -173,6 +191,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(memra_env_registry_present)]
     fn registry_is_populated_sorted_and_disjoint() {
         assert!(LEGAL_NAMES.len() > 200, "{} legal names", LEGAL_NAMES.len());
         assert!(!RETIRED.is_empty());
@@ -186,7 +205,7 @@ mod tests {
                 "{name} is both a legal name and retired ({heading})"
             );
             assert!(
-                heading.starts_with("Removed"),
+                heading.starts_with("Removed") || heading.starts_with("row marked REMOVED"),
                 "{name}: heading {heading:?}"
             );
         }
@@ -194,6 +213,7 @@ mod tests {
 
     /// Non-vacuity: every legal name exported at once refuses nothing and warns about nothing.
     #[test]
+    #[cfg(memra_env_registry_present)]
     fn every_legal_name_passes() {
         let pairs: Vec<(&str, &str)> = LEGAL_NAMES.iter().map(|n| (*n, "1")).collect();
         let a = audit(&pairs);
@@ -209,6 +229,7 @@ mod tests {
 
     /// Red arm: a retired door refuses and names its ledger.
     #[test]
+    #[cfg(memra_env_registry_present)]
     fn a_retired_door_refuses_with_its_ledger() {
         let (name, heading) = RETIRED[0];
         let a = audit(&[(name, "reference")]);
@@ -220,27 +241,117 @@ mod tests {
         );
         assert!(a.warnings.is_empty());
         // the incident's own name, when it is in the ledger
-        if RETIRED.iter().any(|(n, _)| *n == "MEMRA_DSV4_MOE_PROGRAM") {
-            let a = audit(&[("MEMRA_DSV4_MOE_PROGRAM", "reference")]);
-            assert_eq!(a.refusals.len(), 1);
+        // the incident's own name, and the review's three escapees (multi-door bullets, a
+        // continuation line, a `###` ledger): all retired by name
+        for name in [
+            "MEMRA_DSV4_MOE_PROGRAM",
+            "MEMRA_DSV4_NORM_FUSE2",
+            "MEMRA_DSV4_NORM2_WIDE",
+            "MEMRA_PREFIX_CACHE_PROTECTED_PCT",
+            "MEMRA_PRIME_QW8",
+        ] {
+            let a = audit(&[(name, "1")]);
+            assert_eq!(a.refusals.len(), 1, "{name}: {a:?}");
+            assert!(
+                a.refusals[0].contains("retired"),
+                "{name}: {}",
+                a.refusals[0]
+            );
+        }
+    }
+
+    /// The tree must not READ a retired name, except the deliberate refusal reads in the worker
+    /// (they exist to refuse the name with its successors spelled out). Source-derived at test
+    /// time like `dsv4_doors::door_names_in_source`, so the allowlist cannot rot silently.
+    #[test]
+    #[cfg(memra_env_registry_present)]
+    fn retired_names_are_not_read_at_runtime() {
+        const DELIBERATE_REFUSAL_READS: &[&str] = &["MEMRA_NVFP4_BANK_V2", "MEMRA_SEL_DOWN8"];
+        let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let roots = [manifest.join("src"), manifest.join("../memra-server/src")];
+        let mut reads = std::collections::BTreeSet::new();
+        fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            if let Ok(rd) = std::fs::read_dir(dir) {
+                for e in rd.flatten() {
+                    let p = e.path();
+                    if p.is_dir() {
+                        walk(&p, out);
+                    } else if p.extension().is_some_and(|x| x == "rs") {
+                        out.push(p);
+                    }
+                }
+            }
+        }
+        let mut files = Vec::new();
+        for r in &roots {
+            walk(r, &mut files);
+        }
+        assert!(files.len() > 50, "source walk found {} files", files.len());
+        for f in files {
+            let text = std::fs::read_to_string(&f).unwrap();
+            for line in text.lines() {
+                if !(line.contains("env::var") || line.contains("env!(")) {
+                    continue;
+                }
+                let mut i = 0;
+                while let Some(rel) = line[i..].find("\"MEMRA_") {
+                    let start = i + rel + 1;
+                    let end = start
+                        + line[start..]
+                            .bytes()
+                            .take_while(|b| {
+                                b.is_ascii_uppercase() || b.is_ascii_digit() || *b == b'_'
+                            })
+                            .count();
+                    reads.insert(line[start..end].to_string());
+                    i = end;
+                }
+            }
+        }
+        assert!(reads.len() > 300, "{} runtime reads found", reads.len());
+        let mut offenders: Vec<&str> = reads
+            .iter()
+            .map(String::as_str)
+            .filter(|n| {
+                RETIRED.iter().any(|(r, _)| r == n) && !DELIBERATE_REFUSAL_READS.contains(n)
+            })
+            .collect();
+        offenders.sort();
+        assert!(
+            offenders.is_empty(),
+            "retired names still read at runtime: {offenders:?}"
+        );
+        for n in DELIBERATE_REFUSAL_READS {
+            assert!(
+                RETIRED.iter().any(|(r, _)| r == n),
+                "{n} is on the deliberate-refusal allowlist but no longer retired"
+            );
         }
     }
 
     /// An unknown name inside an owned family refuses; outside every family it only warns.
     #[test]
+    #[cfg(memra_env_registry_present)]
     fn unknown_names_refuse_inside_owned_families_and_warn_outside() {
-        let family = LEGAL_NAMES
-            .iter()
-            .filter_map(|n| family_of(n))
-            .find(|f| family_is_owned(f))
-            .expect("at least one owned family");
+        let family = OWNED_FAMILIES.first().expect("at least one owned family");
+        assert!(family_is_owned(family));
         let inside = format!("{family}DEFINITELY_NOT_A_DOOR_ZZ");
         let a = audit(&[(inside.as_str(), "1")]);
         assert_eq!(a.refusals.len(), 1, "{a:?}");
         assert!(a.refusals[0].contains("unknown"), "{}", a.refusals[0]);
-        let a = audit(&[("MEMRA_ZZ_ORPHAN_LAUNCHER_ONLY", "1")]);
+        let a = audit(&[
+            ("MEMRA_ZZ_ORPHAN_LAUNCHER_ONLY", "1"),
+            ("MEMRA_CI_LOCK_HELD", "1"),
+        ]);
         assert!(a.refusals.is_empty(), "{a:?}");
-        assert_eq!(a.warnings.len(), 1);
+        assert_eq!(a.warnings.len(), 1, "one summarized line: {a:?}");
+        assert!(
+            a.warnings[0].contains("MEMRA_CI_LOCK_HELD") && a.warnings[0].contains("2 MEMRA_*"),
+            "{}",
+            a.warnings[0]
+        );
+        // a gate-script family the engine never reads is not owned, whatever the catalog holds
+        assert!(!family_is_owned("MEMRA_CI_"), "{:?}", OWNED_FAMILIES);
         // the audit's own switch and non-MEMRA names are ignored
         let a = audit(&[("MEMRA_ENV_AUDIT", "warn"), ("PATH", "/bin")]);
         assert_eq!(a, EnvAudit::default());
