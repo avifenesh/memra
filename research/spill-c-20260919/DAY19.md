@@ -278,3 +278,49 @@ PASS = `flag_refused; env_door_documented`. Expectation from source: the `envon`
 `[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): 1 model program identities, ...` after the
 model loads (one model, no vision tower, a GGUF), then serves; the other two arms read as in
 `serverdoor19`. N=1 per arm, pass/fail, no timing read.
+
+## Cell `serverdoor19b` result (local RTX 5090, replay `DAY19 REPLAY serverdoor19b: PASS (16 checks)`)
+
+`rtx5090-day19/serverdoor19b/` (first attempt, lock free), the same binary `043cac6259…`, tree `cc035247f`
+(the pre-registration commit; the server source is `319f1ad58`'s, unchanged since), the same artifact and
+port, one hold 21:12:06Z to 21:12:19Z, 57..71 C, 171 W peak. Verbatim: `SERVERDOOR19 rule flag_exit=2
+flag_refused=True flag_booted=False flag_ready=False flag_door_lines=0 envon_ready=True envon_request_ok=True
+envon_door_line=True envon_exit=0 envbad_exit=1 envbad_refused=True envbad_ready=False -> flag_refused;
+env_door_documented`. Sixteen of sixteen clauses green.
+
+The flag arm reads exactly as in `serverdoor19` (one refusal line, exit 2 in 2.0 s, no build identity,
+never ready). The `envon` arm's line 16, verbatim: `[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1):
+1 model program identities, tenant salt per pool namespace, server governor ledger pinned/pageable 17180MB
+device 1046MB in-flight 66; host tier armed; KV plane D2H through the transfer engine on the pageable tier
+(Option B); KV plane H2D through the same engine on promote (Option C)`; ready in 6.0 s, one completion
+with text, no FATAL line, no MoE door line. The `envbad` arm reads as in `serverdoor19`. So on the fixed
+tree the door's flag as an ARGUMENT is refused before boot, and the door as an ENVIRONMENT variable
+behaves as `HOSTPREFIX-DOOR.md` documents (`1` arms the tier and serves; `on` refuses; unset or a zero
+tier prints the no-tier line and serves OFF, from `serverdoor19`). Both cells `executed-not-qualified`;
+nothing here qualifies anything.
+
+## Summary for the review and for #617
+
+- memra#617: fixed on this lane (`319f1ad58`): `crates/memra-server/src/argv.rs` `validate`, called first
+  in `serve_with` (`crates/memra-server/src/lib.rs`); 7 unit tests, 7 binary-boot tests, `docs/SERVING.md`
+  one sentence; `serverdoor19` flag arm and `serverdoor19b` on the local RTX 5090: `flag_refused=True`
+  (day 18: `False`). Not run on the target card today (the fix is CPU-side argv admission before any
+  device statement; the two binary-boot tests are the card-independent proof; the lead may want the cell on
+  the target card before main, stated as owed, not done). The issue stays open for the lead.
+- Arena lease handoff: scoped, wider than one bounded change (a new arena-backed lease type in
+  `memra-engine` plus the charge-once accounting and a budget ruling); note above; nothing implemented.
+- DFlash tail slice: pre-registered above; artifacts present on the local rig, no gate boots the drafter;
+  no cell.
+- Review table (`HOSTPREFIX-DOOR.md`): no row filled today; missing items 1 and 2 now carry their scope.
+
+## Push section
+
+Every push in `MEMRA_RELEASE_QUALIFICATION_MODE=development`, each with the hook's `UNQUALIFIED DEVELOPMENT:
+refs/heads/lane/spill-c-20260919 at <sha>; no GPU qualification claimed` line and a `log_skip` row:
+`05b42ede9` (the merge), `319f1ad58` (the fix, the pre-registration, the scoping notes; `6d09ac60f` the
+marker deletions rode with it), `cc035247f` (the `serverdoor19` result and the b pre-registration, before
+the b run), and the day's closing commit (this section, `STATE.md`, the `INDEX.md` row, the b result).
+No qualification is claimed by any of them.
+
+Agent time: about 1.3 hours of a 4-hour budget (merge and census 0.2, the fix and its tests 0.4, the two
+cells with their lock wait 0.4, the scoping notes and records 0.3).
