@@ -64,6 +64,54 @@ the shape metadata. Under the door:
   insert, `[prefix-host] REFUSED demote insert (contracts door)`;
 - a GLM (`HostGlmState`) image is refused by `bind_tier_image` (unchanged lane B rule).
 
+## Draft planes: what a spec-served entry carries (day 14 census, lead ruling 16, before code)
+
+Tree `fbe6c1635` (lane merge of main `30e433c4c`); every `file:line` is in that tree, `worker.rs`
+is `crates/memra-server/src/worker.rs`. Under the gates' default environment the MTP artifact
+serves speculatively and every prefix insert is `prefix_insert_from_spec_boundary`
+(`worker.rs:11609`, publisher `16875-16879`, `why = "spec-boundary"`). Beyond the plain surface
+(`kv`, `conv`, `ssm`, `last_logits`, shape) such an entry carries:
+
+| Plane | Device field | Host twin | Byte layout owner | Published by | D2H / H2D program (unchanged by this slice) | `MEMRA_KV_HOST_VERIFY` digest covers it | Identity field that must cover it |
+|---|---|---|---|---|---|---|---|
+| MTP draft-scratch K/V rows `[0..pos)` | `PrefixEntry.draft: Option<PrefixPlane>` (`worker.rs:6467`) | `HostPrefixEntry.draft: Option<HostPlane>` (`7757`) | `memra_kv::KvLayer` (`crates/memra-kv/src/lib.rs:470`: `k` q8_0 packed, 34 B per 32 elements; `v` q5_1 packed, 24 B per 32); row bytes from `mtp_scratch_layout` (`crates/memra-engine/src/spec.rs:2266-2285`): `(kv_dim/32) * kv_blk_bytes()` with `n_head_kv` taken from the draft geom when the head is a narrower student (`DraftGeom`, `hybrid.rs:3490`) | `SpecSession::draft_plane_ref` (`spec.rs:1582-1592`; returns `None` for a ring-backed step35 scratch), sliced by `copy_u8_into` at `worker.rs:11753-11779` into a `PrefixPlane { len: pos, k_tok_bytes, v_tok_bytes }` | `host_plane_from_device` (`8598-8601`, the same `dtoh_u8_into_pinned` as the trunk planes); `plane_up` (`9145-9148`, the same `htod_u8_into`) | NO: `prefix_entry_state_digest` (`11178-11262`) hashes `kv`, `conv`/`ssm` and `latent` per layer and nothing else | `artifact` (the MTP head's bytes: embedded in the trunk GGUF when `nextn_predict_layers > 0`, or an external GGUF through the per-model `+draft` attach `MtpHead::load_draft` at `13745` / `models[i].2`, or the global `MEMRA_MTP_DRAFT` at `hybrid.rs:5048-5054`); `serialized_plan` (`plan.mtp_blocks`, `model_plan.rs:33`; a `+draft` plan is attached at `13759` by `attach_external_draft` `model_plan.rs:1015`, a `MEMRA_MTP_DRAFT` head is NOT attached to the plan, so the artifact digest of the draft file is the only thing that names it); `numeric` (the draft rows' q8_0/q5_1 block encodings under `PREFIX_ENTRY_LAYOUT_VERSION`) |
+| Boundary trunk hidden `last_h` (row `pos-1`, pre-output_norm) | `PrefixEntry.last_h: Vec<f32>` (`6484`) | `HostPrefixEntry.last_h: HostF32` (`7759`) | `n_embd` f32, `capture_boundary_hidden` (`spec.rs:1732`) | `SpecBoundaryCapture.last_h` (`spec.rs:1719`); empty on plain-published entries | `HostF32::from_slice` / `to_vec` | NO | already bound as `Role::Hidden` (`bind_tier_image`); a plain entry has no Hidden segment because `add` skips empty bytes, so the layout already differs by class |
+| Boundary logits | `last_logits` (`6465`) | `last_logits: HostF32` (`7756`) | `n_vocab` f32 | both publishers | `HostF32` | NO | already bound as `Role::Logits` |
+| DFlash (DSPARK) draft KV tail | `PrefixEntry.dspark_draft: Option<DflashKvTail>` (`6480`) | `HostPrefixEntry.dspark_draft: Option<HostDflashTail>` (`7758`, struct `7710`) | `DflashKvTail` (`crates/memra-engine/src/dflash.rs:4779-4795`): per draft layer an f32 `(k, v)` pair plus `base`, `rows`, `len`, `row_bytes`, `floor` | `drain_dspark_prefix_capture` (`worker.rs:13050`), only under `MEMRA_DSPARK_SPEC=1` with `MEMRA_DSPARK_DRAFT=<export dir>` (`14146-14171`, `DflashDraft::load` `dflash.rs:1531`) | `HostF32::down` per layer (`8602-8620`); `engine.htod` per layer (`9149-9166`) | NO | would need the drafter's artifact identity (a byte manifest of the export directory: `config.json` plus safetensors), `DflashCfg` (`dflash.rs:17-44`) as the plan, and an f32 numeric class; none of that is derivable from a GGUF file digest, and no gate on the target card boots a DFlash drafter. NOT bound in this slice: refused by name |
+| GLM state (`glm`, `tp`, `latent`) | `latent` (`6454`), `tp` (`6472`) | `glm: Option<HostGlmState>` (`7748`) | `host_glm` | glm5 publishers (`13068`) | `host_glm` | `host_glm::digest` | unchanged: refused by lane B's rule and by the arena boot refusal (the arena path is out of scope for A and B) |
+
+Consumer of the draft plane: a spec restore (`worker.rs:21305-21372`) requires `entry.draft.is_some()`
+(`spec_restore_refusal`, `336-350`: "entry carries no draft plane (plain-published)") and hands
+`&draft.k, &draft.v, k_tok_bytes, v_tok_bytes, len, &entry.last_h` to
+`spec_session_from_restored_deferred` (`spec.rs:9147`), which re-arms the MTP head's scratch from
+those bytes. So a plane written by one MTP head and read by another is exactly the byte
+reinterpretation the identity must forbid, and a plain-published entry and a spec-published entry
+of the same prompt are two different serving programs (one restores a `SpecSession`, the other
+serves plain) that must never share a `ProgramIdentity`.
+
+Findings that shape the slice:
+
+1. **Encodings.** The draft rows use the trunk's block encodings (`KvLayer`, `kv_blk_bytes()`),
+   so the geometry rule `bind_tier_image` applies to trunk planes (34 B and 24 B row multiples,
+   `len == pos`) applies unchanged to the draft plane; only its row width differs (the MTP head's
+   `n_head_kv`).
+2. **The verify arm is blind to the draft plane.** `MEMRA_KV_HOST_VERIFY=1`'s `verify ok` attests
+   trunk planes only (`11178-11262`); under the door the contract checksums this slice adds are the
+   only byte attestation of the draft plane. Extending the digest (`memra-prefix-split-state-v3`)
+   would change the digest strings the OFF arm prints in `VERIFY FAILED` lines, so it is not part
+   of this slice; recorded here as the follow-up it is.
+3. **Chain width and trim do not enter the plane.** With `MEMRA_MTP_HEADS > 1` only head 0's
+   scratch plane is published (`draft_plane_ref` returns `scratch.kv`; `mtp_extra`,
+   `hybrid.rs:3884`, is not part of the entry). `MEMRA_FRSPEC_TRIM` changes the draft lm_head rows
+   (`d2t`), not the draft K/V bytes.
+4. **Draft source is knowable at boot for GGUF heads only.** Embedded (`lm.model.mtp.is_some()`
+   with no external path), per-model `+draft` (`models[i].2`, hashed like the trunk file), or
+   `MEMRA_MTP_DRAFT` (hashed the same way). A model with no MTP head gets no draft program, and a
+   draft-bearing entry for it is refused by name rather than bound to the plain program.
+5. **Charge split.** At demote the door charges `pinned` for `kv` planes only (`8834-8850`); the
+   draft plane is a pinned `HostPlane` too and must join the pinned sum (a tier-Some statement, OFF
+   untouched).
+
 ## Tests
 
 `crates/memra-kv/src/tiered/hostprefix.rs` `tests`:
