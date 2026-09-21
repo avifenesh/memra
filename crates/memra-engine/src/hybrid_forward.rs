@@ -275,6 +275,14 @@ impl<'a> PrimeCacheStages<'a> {
                     pos,
                     max_ctx,
                     tainted: false,
+                    // Day-11 rule 2: a layer the parent has out on a tier is still out on its
+                    // stage, so the stage's continuation gate refuses like the parent's would.
+                    suspended: parent
+                        .suspended
+                        .layers()
+                        .into_iter()
+                        .filter(|&layer| prime_cache_stage_for_layer(fence, layer) == stage)
+                        .collect(),
                     last_logits_dev: None,
                     dflash_taps: None,
                     hc_taps: None,

@@ -134,3 +134,42 @@ pub fn transfer_cancel_refused_after_source_consumed<T: TransferEngine>(
     assert!(engine.retired(&ticket).unwrap());
     engine.acknowledge(&ticket).unwrap();
 }
+
+/// Rule 2 fixture: a continuation gate over a cache whose layers can leave residency. `suspend`
+/// moves one layer's state out to a tier, `restore` brings it back, `continuation` asks the gate
+/// whether a decode or prime may run and, on refusal, returns the suspended layers the typed
+/// error named, ascending.
+pub trait ContinuationGateFixture {
+    fn suspend(&mut self, layer: u32);
+    fn restore(&mut self, layer: u32);
+    fn continuation(&mut self) -> std::result::Result<(), Vec<u32>>;
+}
+
+/// Rule 2. `layers` are distinct; at least two, so a partial restore is exercised. A whole cache
+/// continues; one suspended layer refuses and is named; asking is not restoring; every suspended
+/// layer is named; a partial restore still refuses, naming what is left; a restored cache
+/// continues again.
+pub fn required_resident_continuation<F: ContinuationGateFixture>(f: &mut F, layers: &[u32]) {
+    assert!(layers.len() >= 2, "the rule needs a partial restore");
+    let mut every = layers.to_vec();
+    every.sort_unstable();
+    every.dedup();
+    assert_eq!(every.len(), layers.len(), "layers must be distinct");
+    f.continuation().unwrap();
+    f.suspend(layers[0]);
+    assert_eq!(f.continuation(), Err(vec![layers[0]]));
+    assert_eq!(f.continuation(), Err(vec![layers[0]])); // asking is not restoring
+    for layer in &layers[1..] {
+        f.suspend(*layer);
+    }
+    assert_eq!(f.continuation(), Err(every));
+    f.restore(layers[0]);
+    let mut rest = layers[1..].to_vec();
+    rest.sort_unstable();
+    assert_eq!(f.continuation(), Err(rest));
+    for layer in &layers[1..] {
+        f.restore(*layer);
+    }
+    f.continuation().unwrap();
+    f.continuation().unwrap();
+}
