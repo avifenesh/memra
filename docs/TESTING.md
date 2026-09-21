@@ -943,7 +943,13 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
   refusal-line throttle (first line printed, identical repeats suppressed and counted in the skip
   counters, a changed shape printed again, every 64th identical repeat printed with its count)
   `prefix_refusal_announcer_prints_first_changed_and_every_nth_identical_refusal` and
-  `prefix_cache_repeated_refusals_count_every_time_and_print_once`. The eviction contract the fix
+  `prefix_cache_repeated_refusals_count_every_time_and_print_once`; for pressure relief (the kv-flex
+  shed and the step-OOM reclaim select with the same `room_victim_with` as the insert loop: probation
+  first, then protected oldest first, leases untouchable)
+  `evict_to_bytes_takes_protected_oldest_first_once_probation_is_empty`,
+  `evict_to_bytes_never_takes_a_leased_entry_even_below_target` and
+  `kv_flex_shed_reaches_the_floor_through_protected_entries_and_warns_only_when_all_is_leased`. The
+  eviction contract the fix
   changed is stated in `docs/SERVING.md` (SLRU paragraph) and the `MEMRA_PREFIX_CACHE_PROTECTED_PCT`
   row of `docs/FLAGS.md`: every unleased byte is reclaimable for the newest turn, the protected share
   bounds only demotion and pinned admission, scan resistance for entries larger than the free share

@@ -232,7 +232,22 @@ every turn, and `prefix_cache_bytes` equals exactly the resident entries the lin
   `prefix_refusal_announcer_prints_first_changed_and_every_nth_identical_refusal` and
   `prefix_cache_repeated_refusals_count_every_time_and_print_once`. A log throttle and documentation need no
   GPU rerun; the target-card cells above stand (no refusal was printed in any of them, so the throttle did
-  not take part). Every completion digest is identical across the two binaries on all
+  not take part).
+- **Pressure relief uses the same victim function (integ14 review finding 3).** The preflight's reclaimable
+  set had moved to `evictable_bytes()` (every unleased byte) while `evict_to_bytes`, the body of the kv-flex
+  shed and of the step-OOM reclaim (`px.evict_to_bytes(cache_before / 2)`, memra#145), still selected with
+  the raw SLRU capacity victim: probation LRU only, never the protected LRU. On the protected-heavy shape
+  this fix produces it stopped as soon as probation was empty and freed far less than its logged target,
+  while the memory-admission door (`Tiers::demotable_device_bytes`, fed from `evictable_bytes()`) and the
+  preflight counted protected bytes as reclaimable. `evict_to_bytes` now selects with
+  `room_victim_with(slru, None)`, the insert loop's order (probation first, then protected oldest first,
+  leases untouchable; the global oldest under `lru`), its doc comment says so, the no-arg
+  `capacity_victim` is gone, and the kv-flex `nothing evictable` line prints only when `evictable_bytes()`
+  is zero (a second, unreachable-by-construction line names the disagreement if a victim ever exists and
+  nothing is evicted). Tests: `evict_to_bytes_takes_protected_oldest_first_once_probation_is_empty`,
+  `evict_to_bytes_never_takes_a_leased_entry_even_below_target`,
+  `kv_flex_shed_reaches_the_floor_through_protected_entries_and_warns_only_when_all_is_leased`. Victim
+  order for pressure relief only; no bytes change; no GPU rerun. Every completion digest is identical across the two binaries on all
   8 turns and all 6 cohort sends (`254a65a01730e58b`, `24a97a2867768b2d`, `65eeb1ef8f716af1`,
   `64a99158cb668b0c`, `c6b9d167a76a942e`, `8e4798b352770d9a`, `f34ee12b3db5cb9c`, `ee53848835a29d90`),
   and identical to the cache-off calibration boot's cold completion of the same prompt on all 8 turns in
@@ -257,6 +272,7 @@ every turn, and `prefix_cache_bytes` equals exactly the resident entries the lin
 | `cargo test -p memra-server --offline --no-fail-fast` (dev, local, `CPUQuota=1200% MemoryMax=28G`; `pro-single-day14/local-checks/test-server.log`) | 748 passed, 0 failed, 6 ignored; the five prefix-cache tests above ran and passed |
 | `cargo clippy -p memra-server --offline --all-targets -- -D warnings` (dev, local, CPU quota) | PASS (`local-checks/clippy-server.log`) |
 | `bash tools/check-flags.sh`; `python3 tools/check-public-boundary.py check`; `git diff --check` | PASS (no uncovered runtime `MEMRA_*` name; boundary 0 new matches) |
+| Post-review battery, finding 3 (pressure-relief victim order, `local-checks/post-review/finding3/`): same six checks under the CPU quota | fmt PASS; 753 passed, 0 failed, 6 ignored (the three pressure-relief tests included); clippy PASS; flags PASS; docs-registry census PASS; diff check PASS. No GPU rerun: victim order for pressure relief, no bytes change |
 | Post-review battery (throttle + docs, `local-checks/post-review/`): `cargo fmt --all -- --check`, `cargo test -p memra-server`, `cargo clippy -p memra-server --all-targets -- -D warnings`, `tools/check-flags.sh`, `tools/docs-registry-census.sh`, `git diff --check`, all under the CPU quota | fmt PASS; 750 passed, 0 failed, 6 ignored (the two throttle tests included); clippy PASS after one lint fix (`is_multiple_of`); flags PASS; docs-registry census PASS (58 tables, 903 rows); diff check PASS. No GPU rerun: a log throttle and documentation change no numeric program and no victim selection; no refusal line was printed in any target-card cell |
 | Native release builds, one RTX PRO 6000 Blackwell (`build-main/`, `build-fix/`) | exit 0 / exit 0, `dirty.txt` empty |
 | `tools/prefix-newest-turn-fits-gate.py` on `main` `be07f2d36`, rounds 1, 2, 3 | `-> FAIL` in every round (red, as the defect requires) |
