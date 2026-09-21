@@ -17833,6 +17833,7 @@ pub fn run(
                 .expect("loaded model missing decode chunk policy");
             let (
                 cost,
+                context_cap_bytes,
                 bytes_per_token,
                 ring_bytes_per_token,
                 ring_rows,
@@ -17852,6 +17853,9 @@ pub fn run(
                 }
                 (
                     cost,
+                    // memra#476: the exact context allocation at the cap, so the predictive
+                    // charge below can re-key the physical cost's context term and nothing else.
+                    model.context_bytes(admission_cap, estimate_spec),
                     model.bytes_per_token(estimate_spec),
                     model.ring_bytes_per_token(estimate_spec),
                     model.ring_rows,
@@ -17926,14 +17930,29 @@ pub fn run(
                     .then_some(req.params.max_new as u64);
                 let (predicted, reason) =
                     completion_history.lhat(&tenant_row, &req.model, max_tokens_bound);
-                let request_kv_hat = crate::admit_predict::kv_hat_ring(
-                    prompt_len as u64,
-                    predicted,
-                    bytes_per_token as u64,
-                    ring_bytes_per_token as u64,
-                    ring_rows as u64,
+                // memra#476: the predictive charge is the physical cost the gate just built
+                // (ctx(C) + W + A + D, draft state included) with only its context term
+                // re-keyed to the predicted context. Before this it was ctx(P + L + 8) + A:
+                // the prefill workspace and the draft state were absent from this book, so an
+                // enforced predictive budget did not bound the workspace-inclusive footprint
+                // (research/spill-b-20260919/DAY24.md section 1). The verdict reads the COLD
+                // cost: the retained-prefix and eager arms have not run yet at this seam, so
+                // this is the worst case the request can book, never less than the book.
+                let request_kv_hat = crate::admit_predict::RequestCharge::from_physical_cost(
+                    cost as u64,
+                    context_cap_bytes as u64,
                     activation_bytes as u64,
-                );
+                    draft_state_bytes as u64,
+                    crate::admit_predict::kv_hat_ring(
+                        prompt_len as u64,
+                        predicted,
+                        bytes_per_token as u64,
+                        ring_bytes_per_token as u64,
+                        ring_rows as u64,
+                        0,
+                    ),
+                )
+                .total();
                 let booked = admission_book.shadow_booked_total();
                 let live_free_bytes = if admit_predict_cfg.enforce {
                     effective_free_bytes(&engine).map(|(free, _)| free as u64)
@@ -19118,14 +19137,24 @@ pub fn run(
                         let (predicted, _) =
                             completion_history.lhat(&tenant_row, &s.model, max_tokens_bound);
                         s.shadow_pred_total = predicted;
-                        s.shadow_kv_hat = crate::admit_predict::kv_hat_ring(
-                            prompt_len as u64,
-                            predicted,
-                            bytes_per_token as u64,
-                            ring_bytes_per_token as u64,
-                            ring_rows as u64,
+                        // memra#476: booked from the FINAL physical cost (restore- and
+                        // eager-adjusted, the same `cost` the real book takes on the line
+                        // above), re-keyed to the predicted context; see the verdict site.
+                        s.shadow_kv_hat = crate::admit_predict::RequestCharge::from_physical_cost(
+                            cost as u64,
+                            context_cap_bytes as u64,
                             activation_bytes as u64,
-                        );
+                            draft_state_bytes as u64,
+                            crate::admit_predict::kv_hat_ring(
+                                prompt_len as u64,
+                                predicted,
+                                bytes_per_token as u64,
+                                ring_bytes_per_token as u64,
+                                ring_rows as u64,
+                                0,
+                            ),
+                        )
+                        .total();
                     }
                     admission_book.admit(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
                     active.push(s);
@@ -35188,6 +35217,175 @@ mod tests {
     }
 
     #[test]
+    fn predictive_charge_books_the_physical_cost_terms_on_every_path() {
+        // memra#476: the predictive book (RequestCharge) and the physical cost differ by the
+        // context bracket ctx(C) - ctx(P + L + 8) and by nothing else, on the cold, retained-
+        // prefix and eager-arm compositions, on the plain and spec paths, flat and ring
+        // geometry. Before the fix the book was ctx(P + L + 8) + A: W and D were missing.
+        use crate::admit_predict::{RequestCharge, kv_hat_ring};
+        let models = [
+            (
+                super::AdmissionCostModel {
+                    plain_bytes_per_token: 9280,
+                    spec_bytes_per_token: 10208,
+                    plain_ring_bytes_per_token: 0,
+                    spec_ring_bytes_per_token: 0,
+                    ring_rows: 0,
+                    activation_bytes: 370 << 20,
+                    prefill: None,
+                    prime: Some(memra_engine::hybrid_forward::PrimeWorkspaceShape {
+                        call_row_bytes: 345_000,
+                        prompt_row_bytes: 8192,
+                        n_layers: 40,
+                    }),
+                    transient_floor: Some(1536 << 20),
+                    pp_activation_bytes: [0; 4],
+                    last_logged: None,
+                },
+                257_768usize,
+                257_696usize,
+                262_144usize,
+            ),
+            (
+                super::AdmissionCostModel {
+                    plain_bytes_per_token: 83_520,
+                    spec_bytes_per_token: 85_000,
+                    plain_ring_bytes_per_token: 600,
+                    spec_ring_bytes_per_token: 600,
+                    ring_rows: 4096,
+                    activation_bytes: 128 << 20,
+                    prefill: None,
+                    prime: Some(memra_engine::hybrid_forward::PrimeWorkspaceShape {
+                        call_row_bytes: 250_000,
+                        prompt_row_bytes: 12_288,
+                        n_layers: 32,
+                    }),
+                    transient_floor: None,
+                    pp_activation_bytes: [0; 4],
+                    last_logged: None,
+                },
+                30_000usize,
+                20_000usize,
+                40_000usize,
+            ),
+        ];
+        let predicted = 64u64;
+        for (model, prompt, restored, ctx) in models {
+            for spec in [false, true] {
+                let draft = if spec { 44usize << 20 } else { 0 };
+                let a = model.activation_bytes as u64;
+                let ctx_cap = model.context_bytes(ctx, spec) as u64;
+                let ctx_hat = kv_hat_ring(
+                    prompt as u64,
+                    predicted,
+                    model.bytes_per_token(spec) as u64,
+                    model.ring_bytes_per_token(spec) as u64,
+                    model.ring_rows as u64,
+                    0,
+                );
+                let legacy = kv_hat_ring(
+                    prompt as u64,
+                    predicted,
+                    model.bytes_per_token(spec) as u64,
+                    model.ring_bytes_per_token(spec) as u64,
+                    model.ring_rows as u64,
+                    a,
+                );
+                // cold: cost = ctx(C) + W(P) + A + D
+                let cold = model.estimate(ctx, prompt, spec) + draft;
+                let charge = RequestCharge::from_physical_cost(
+                    cold as u64,
+                    ctx_cap,
+                    a,
+                    draft as u64,
+                    ctx_hat,
+                );
+                assert_eq!(charge.context_hat_bytes, ctx_hat);
+                assert_eq!(charge.activation_bytes, a);
+                assert_eq!(
+                    charge.prefill_workspace_bytes,
+                    model.prefill_workspace_bytes(prompt) as u64,
+                    "W read from the cost equals the cost model's own W(P)"
+                );
+                assert_eq!(charge.draft_state_bytes, draft as u64);
+                assert_eq!(
+                    cold as u64 - charge.total(),
+                    ctx_cap - ctx_hat,
+                    "the two books differ by the context bracket only (spec={spec})"
+                );
+                assert_eq!(
+                    charge.total() - legacy,
+                    (model.prefill_workspace_bytes(prompt) + draft) as u64,
+                    "exactly W(P) + D was missing from the legacy book"
+                );
+                // retained prefix: W(P) -> W(P - R), everything else unchanged
+                let after = model
+                    .cost_after_prefix_restore(cold, prompt, restored)
+                    .expect("restore plan");
+                let charge_r = RequestCharge::from_physical_cost(
+                    after as u64,
+                    ctx_cap,
+                    a,
+                    draft as u64,
+                    ctx_hat,
+                );
+                assert_eq!(
+                    charge_r.prefill_workspace_bytes,
+                    model.prefill_workspace_bytes(prompt - restored) as u64
+                );
+                assert_eq!(after as u64 - charge_r.total(), ctx_cap - ctx_hat);
+                // eager arm: admitted without its captured draft state
+                let eager = cold - draft;
+                let charge_e =
+                    RequestCharge::from_physical_cost(eager as u64, ctx_cap, a, 0, ctx_hat);
+                assert_eq!(charge_e.draft_state_bytes, 0);
+                assert_eq!(
+                    charge_e.prefill_workspace_bytes,
+                    charge.prefill_workspace_bytes
+                );
+                assert_eq!(eager as u64 - charge_e.total(), ctx_cap - ctx_hat);
+            }
+        }
+        // No published shape (or MEMRA_ADMIT_PREFILL_WORKSPACE=0), plain path: W = D = 0 and
+        // the charge is bit-identical to the legacy kv_hat_ring (no regression there).
+        let bare = super::AdmissionCostModel {
+            plain_bytes_per_token: 9280,
+            spec_bytes_per_token: 10208,
+            plain_ring_bytes_per_token: 0,
+            spec_ring_bytes_per_token: 0,
+            ring_rows: 0,
+            activation_bytes: 64 << 20,
+            prefill: None,
+            prime: None,
+            transient_floor: None,
+            pp_activation_bytes: [0; 4],
+            last_logged: None,
+        };
+        let (prompt, ctx) = (4_000usize, 8_192usize);
+        let cold = bare.estimate(ctx, prompt, false);
+        let ctx_hat = kv_hat_ring(prompt as u64, predicted, 9280, 0, 0, 0);
+        let charge = RequestCharge::from_physical_cost(
+            cold as u64,
+            bare.context_bytes(ctx, false) as u64,
+            bare.activation_bytes as u64,
+            0,
+            ctx_hat,
+        );
+        assert_eq!(charge.prefill_workspace_bytes, 0);
+        assert_eq!(
+            charge.total(),
+            kv_hat_ring(
+                prompt as u64,
+                predicted,
+                9280,
+                0,
+                0,
+                bare.activation_bytes as u64
+            )
+        );
+    }
+
+    #[test]
     fn retained_restore_cost_keeps_context_draft_residual_and_reserve_paid() {
         let model = super::AdmissionCostModel {
             plain_bytes_per_token: 9280,
@@ -36403,6 +36601,46 @@ mod tests {
         assert!(
             reclaim < fence && fence < trim,
             "reclaim, then fence, then trim"
+        );
+    }
+
+    /// memra#524 (lane/spill-b-20260919 day 24): readiness waits for the one warmup the
+    /// server itself runs. In `run`, the boot calibration probe (one spec-shaped generation
+    /// through the real serving path: chunked prime, draft capture, sampled verify, pool
+    /// high-water read) precedes the `ready_tx` send, and `/readyz` cannot flip before that
+    /// send because `health.mark_ready()` follows it; until then `WorkerHealth` is in
+    /// PHASE_LOADING (`health::tests::loading_is_not_live_and_not_ready`). Anchored on the
+    /// comment-stripped production text so a reorder is a red test, not a log archaeology.
+    #[test]
+    fn readiness_follows_the_boot_calibration_probe() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+        let run_at = prod.find("pub fn run(").expect("worker::run exists");
+        let body = &prod[run_at..];
+        let calibrate = body
+            .find("run_boot_calibration(&engine, &loaded, &dspark_drafts, &mut admission_costs);")
+            .expect("run calls the boot calibration probe");
+        let ready = body.find("ready_tx.send(Ok(").expect("run sends readiness");
+        let mark = body
+            .find("health.mark_ready();")
+            .expect("run marks health ready");
+        assert!(
+            calibrate < ready && ready < mark,
+            "boot calibration ({calibrate}) must precede the readiness send ({ready}), which must \
+             precede health.mark_ready ({mark}): /readyz flips only after the warmup the server runs"
+        );
+        // The probe itself is the warmup: it runs a real generation, never a synthetic no-op.
+        let probe_at = prod.find("fn run_boot_calibration(").expect("probe fn");
+        let probe = &prod[probe_at..];
+        assert!(
+            probe.contains("generate_spec_session_sampled(")
+                && probe.contains("dspark_spec_session_burst("),
+            "the calibration probe generates through the real serving routes"
         );
     }
 
