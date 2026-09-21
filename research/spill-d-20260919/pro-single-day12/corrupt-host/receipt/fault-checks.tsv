@@ -1,0 +1,7 @@
+check	expected	observed	ok
+write-under-live-ticket	Err(Busy)	Err(Busy)	true
+write-sole-owner	Ok(())	Ok(())	true
+restore-integrity	Corrupt	Corrupt	true
+device-registry-unchanged	0	0	true
+holed-cache-refuses-continuation	Err	Err	true
+budget-zero	true	true	true

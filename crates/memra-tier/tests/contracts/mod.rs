@@ -10,3 +10,7 @@ mod wire;
 mod v12_bindings;
 
 mod v13_bindings;
+
+mod resident_bindings;
+
+mod fault_arm_bindings;

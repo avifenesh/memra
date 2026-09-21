@@ -1,9 +1,14 @@
 //! Pure fault-arm contract for `kv-tier-gate --fault <arm>`; `rustc --test` exercises it
 //! without CUDA. An arm passes only when every check the arm requires was recorded and every
-//! recorded check observed exactly what the frozen tier contract promises at the documented
-//! call. A red arm (fault not injected, a contract answer that differs, or a check that was
-//! never recorded) never prints the PASS line. Two arms have no seam in the contracts as they
-//! are; their checks must still hold, and their outcome is a typed refusal, never PASS.
+//! recorded check observed exactly what the tier contract promises at the documented call. A
+//! red arm (fault not injected, a contract answer that differs, or a check that was never
+//! recorded) never prints the PASS line. Day 12: the two arms that ended in a typed refusal on
+//! day 11 (no seam in the contracts as they were) drive lane A's rule seams,
+//! `TransferEngine::recover_source` and `Cache::suspend_layer` / `resume_layer`; a transport or
+//! a cache without the seam fails their required checks and is a failed cell, never a refusal
+//! and never PASS. The day-11 refusal texts survive only as the red arms' recorded findings
+//! (`crates/memra-tier/tests/reclaim/fault.rs`, `research/spill-d-20260919/verify-day11.py`).
+use memra_tier::contracts::{Epochs, TransferEngine, TransferTicket};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Arm {
@@ -43,32 +48,18 @@ impl Arm {
         Arm::ALL.into_iter().find(|arm| arm.name() == value)
     }
     /// The cache is whole again when the arm returns, so the gate captures it and compares
-    /// the manifest hash with the suspended prefix (`restored-identical`).
+    /// the manifest hash with the suspended prefix (`restored-identical`). The two arms that
+    /// lose a K plane (`corrupt-host`, `missing-host`) never restore it.
     pub fn restores_cache(self) -> bool {
-        !matches!(
-            self,
-            Arm::CancelRestore | Arm::CorruptHost | Arm::MissingHost
-        )
+        !matches!(self, Arm::CorruptHost | Arm::MissingHost)
     }
     /// A passing arm whose state is resident and bit-identical lets the same tokenwise
     /// continuation run; the offline verifier compares it with the frozen baseline bundle.
     pub fn continues(self) -> bool {
-        self.restores_cache() && self.refusal().is_none()
+        self.restores_cache()
     }
-    /// Arms whose expectation has no seam in the frozen contracts. The typed refusal names
-    /// the missing seam; recording it for the lead is the arm's deliverable.
-    pub fn refusal(self) -> Option<&'static str> {
-        match self {
-            Arm::CancelRestore => Some(
-                "REFUSED: cancel-restore revoked publication, but the transfer contract has no seam to recover the H2D source after cancellation; no tokens, budget drained",
-            ),
-            Arm::RequireResident => Some(
-                "REFUSED: require-resident has no contract today: Cache::ensure_usable accepts a suspended cache, decode_step_h unwraps a suspended layer, and tier RestoreDecision::RequireState is a load-versus-recompute rule",
-            ),
-            _ => None,
-        }
-    }
-    /// Every name here must be recorded, in any order, for the arm to pass.
+    /// Every name here must be recorded, in any order, for the arm to pass. Extra recorded rows
+    /// are evidence and must hold too (`verdict`).
     pub fn required_checks(self) -> &'static [&'static str] {
         match self {
             Arm::CancelDemote => &[
@@ -81,15 +72,27 @@ impl Arm {
                 "budget-zero",
                 "restored-identical",
             ],
+            // Rule 1 (lane A, day 11): the cancelled H2D holds its source for the caller,
+            // hands it back exactly once as the demoted copy, then retires normally and the
+            // same plane goes through the roundtrip's own `restore`.
             Arm::CancelRestore => &[
                 "cancel",
                 "ready-view-after-cancel",
                 "with-destination-after-cancel",
                 "take-after-cancel",
+                "retire-holds-source",
+                "retire-source-holds",
+                "recover-source",
+                "recovered-source-checksum",
+                "recovered-source-intact",
+                "recover-source-once",
+                "cancel-after-recovery",
                 "retire",
                 "acknowledge",
+                "pinned-held-by-recovered-lease",
                 "retake-demoted-copy",
                 "budget-zero",
+                "restored-identical",
             ],
             Arm::CorruptHost => &[
                 "write-under-live-ticket",
@@ -119,7 +122,20 @@ impl Arm {
                 "budget-zero",
                 "restored-identical",
             ],
-            Arm::RequireResident => &["budget-zero", "restored-identical"],
+            // Rule 2 (lane A, day 11): the register names every suspended layer, the
+            // continuation gate refuses with the typed error naming exactly them (asking is not
+            // restoring, a partial resume still refuses), and answers `Ok(())` once every layer
+            // is back.
+            Arm::RequireResident => &[
+                "suspended-register",
+                "continuation-gate-on-suspended-cache",
+                "continuation-gate-asked-twice",
+                "continuation-gate-after-partial-resume",
+                "register-empty-after-resume",
+                "continuation-gate-after-resume",
+                "budget-zero",
+                "restored-identical",
+            ],
         }
     }
 }
@@ -149,12 +165,96 @@ impl Check {
     }
 }
 
+/// Rule 1 rows of the `cancel-restore` arm, generic over the transport so the native arm and
+/// the CPU red arm (a transport without the seam) record the same names and expectations.
+/// Precondition for `cancel_restore_revoke`: the H2D is submitted and its producer completion
+/// observed; nothing is published. The native arm records its backend-only rows
+/// (`with-destination-after-cancel`, the recovered bytes, accounting) between these calls.
+pub fn cancel_restore_revoke<T: TransferEngine>(
+    t: &mut T,
+    ticket: &TransferTicket,
+    epochs: Epochs,
+    checks: &mut Vec<Check>,
+) {
+    checks.push(Check::new(
+        "cancel",
+        "Ok(PublicationRevoked)",
+        format!("{:?}", t.cancel(ticket)),
+    ));
+    checks.push(Check::new(
+        "ready-view-after-cancel",
+        "Err(Cancelled)",
+        format!("{:?}", t.ready_view(ticket, 0, epochs).map(|_| ())),
+    ));
+    checks.push(Check::new(
+        "take-after-cancel",
+        "Err(Cancelled)",
+        format!("{:?}", t.take_destination(ticket, 0, epochs)),
+    ));
+}
+/// The hold and the hand-back: a cancelled restore keeps its source for the caller (`retire`
+/// and `retire_source` answer `Busy`) until `recover_source` returns it. `None` means the
+/// transport did not hand the source back; the rows say what it answered instead.
+pub fn cancel_restore_recover<T: TransferEngine>(
+    t: &mut T,
+    ticket: &TransferTicket,
+    checks: &mut Vec<Check>,
+) -> Option<T::Host> {
+    checks.push(Check::new(
+        "retire-holds-source",
+        "Err(Busy)",
+        format!("{:?}", t.retire(ticket, None)),
+    ));
+    checks.push(Check::new(
+        "retire-source-holds",
+        "Err(Busy)",
+        format!("{:?}", t.retire_source(ticket)),
+    ));
+    let recovered = t.recover_source(ticket, 0);
+    checks.push(Check::new(
+        "recover-source",
+        "Ok(host)",
+        match &recovered {
+            Ok(_) => "Ok(host)".to_owned(),
+            Err(error) => format!("Err({error:?})"),
+        },
+    ));
+    recovered.ok()
+}
+/// After the hand-back: once only, no revocation over a source that left, normal retirement.
+pub fn cancel_restore_retire<T: TransferEngine>(
+    t: &mut T,
+    ticket: &TransferTicket,
+    checks: &mut Vec<Check>,
+) {
+    checks.push(Check::new(
+        "recover-source-once",
+        "Err(AlreadyReleased)",
+        format!("{:?}", t.recover_source(ticket, 0).map(|_| ())),
+    ));
+    checks.push(Check::new(
+        "cancel-after-recovery",
+        "Err(AlreadyReleased)",
+        format!("{:?}", t.cancel(ticket)),
+    ));
+    checks.push(Check::new(
+        "retire",
+        "Ok(())",
+        format!("{:?}", t.retire(ticket, None)),
+    ));
+    checks.push(Check::new(
+        "acknowledge",
+        "Ok(())",
+        format!("{:?}", t.acknowledge(ticket)),
+    ));
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Verdict {
-    /// `true` only for `FAULT-ARM PASS <name>`; a refusal and a failure are both `false`.
+    /// `true` only for `FAULT-ARM PASS <name>`.
     pub pass: bool,
-    /// The final console line: the PASS line, the arm's typed refusal, or the failure text
-    /// (which `cli::diagnostic` prefixes, so the collector classifies a failed cell).
+    /// The final console line: the PASS line or the failure text (which `cli::diagnostic`
+    /// prefixes, so the collector classifies a failed cell).
     pub line: String,
     pub missing: Vec<&'static str>,
     pub failed: Vec<&'static str>,
@@ -164,8 +264,8 @@ pub fn pass_line(arm: Arm) -> String {
     format!("FAULT-ARM PASS {}", arm.name())
 }
 
-/// A failed or missing check is a failed cell even for a refusal arm: the refusal states what
-/// the contract lacks, and it is only meaningful when everything the contract does promise held.
+/// A failed or missing check is a failed cell. There is no third outcome: a backend without a
+/// seam the arm requires fails the seam's rows and is reported as exactly that.
 pub fn verdict(arm: Arm, checks: &[Check]) -> Verdict {
     let missing: Vec<&'static str> = arm
         .required_checks()
@@ -185,14 +285,6 @@ pub fn verdict(arm: Arm, checks: &[Check]) -> Verdict {
                 missing.join(","),
                 failed.join(","),
             ),
-            missing,
-            failed,
-        };
-    }
-    if let Some(refusal) = arm.refusal() {
-        return Verdict {
-            pass: false,
-            line: refusal.to_owned(),
             missing,
             failed,
         };
@@ -250,59 +342,94 @@ mod tests {
     }
 
     #[test]
-    fn only_the_five_bound_arms_can_pass_and_three_continue() {
+    fn every_arm_can_pass_and_the_two_holing_arms_never_continue() {
         let passing: Vec<Arm> = Arm::ALL
             .into_iter()
             .filter(|arm| verdict(*arm, &green(*arm)).pass)
             .collect();
-        assert_eq!(
-            passing,
-            [
-                Arm::CancelDemote,
-                Arm::CorruptHost,
-                Arm::MissingHost,
-                Arm::HostBudgetShort,
-                Arm::DeviceShort
-            ]
-        );
+        assert_eq!(passing, Arm::ALL);
         let continuing: Vec<Arm> = Arm::ALL.into_iter().filter(|a| a.continues()).collect();
         assert_eq!(
             continuing,
-            [Arm::CancelDemote, Arm::HostBudgetShort, Arm::DeviceShort]
+            [
+                Arm::CancelDemote,
+                Arm::CancelRestore,
+                Arm::HostBudgetShort,
+                Arm::DeviceShort,
+                Arm::RequireResident
+            ]
         );
-        for arm in passing {
+        for arm in Arm::ALL {
             let v = verdict(arm, &green(arm));
             assert_eq!(v.line, format!("FAULT-ARM PASS {}", arm.name()));
             assert!(v.missing.is_empty() && v.failed.is_empty());
-            assert!(arm.refusal().is_none());
-        }
-        // A continuing arm always restores the cache; the incomplete arms never continue.
-        for arm in Arm::ALL {
-            assert!(!arm.continues() || arm.restores_cache(), "{arm:?}");
+            assert!(!v.line.contains('\n'));
+            // A continuing arm always restores the cache; the holing arms never continue.
+            assert_eq!(arm.continues(), arm.restores_cache(), "{arm:?}");
             assert_eq!(
                 arm.restores_cache(),
-                !matches!(
-                    arm,
-                    Arm::CancelRestore | Arm::CorruptHost | Arm::MissingHost
-                )
+                !matches!(arm, Arm::CorruptHost | Arm::MissingHost)
             );
+            // Every arm that restores must prove bit-identity.
+            assert_eq!(
+                arm.required_checks().contains(&"restored-identical"),
+                arm.restores_cache(),
+                "{arm:?}"
+            );
+            assert!(arm.required_checks().contains(&"budget-zero"), "{arm:?}");
         }
     }
 
+    /// The day-11 findings, replayed as answers: a transport that drains a cancelled restore
+    /// (`retire` `Ok(())`, `recover_source` `Unsupported`) and a cache whose gate accepts a
+    /// suspended cache (`Ok(())`) fail the seam rows. That is a failed cell with the seam
+    /// rows named, never a refusal and never PASS.
     #[test]
-    fn refusal_arms_never_print_pass_even_when_every_check_holds() {
-        for arm in [Arm::CancelRestore, Arm::RequireResident] {
-            let v = verdict(arm, &green(arm));
-            assert!(!v.pass);
-            assert!(v.line.starts_with("REFUSED: "), "{}", v.line);
-            assert_eq!(Some(v.line.as_str()), arm.refusal());
-            assert!(!v.line.contains('\n'));
-            assert!(!v.line.contains("PASS"));
+    fn a_backend_without_the_seam_is_a_failed_cell_not_a_refusal() {
+        let mut checks = green(Arm::CancelRestore);
+        for c in &mut checks {
+            match c.name {
+                "retire-holds-source" => c.observed = "Ok(())".into(),
+                "retire-source-holds" => c.observed = "Ok(())".into(),
+                "recover-source" => c.observed = "Err(Unsupported)".into(),
+                _ => {}
+            }
         }
+        let v = verdict(Arm::CancelRestore, &checks);
+        assert!(!v.pass);
+        assert_eq!(
+            v.failed,
+            [
+                "retire-holds-source",
+                "retire-source-holds",
+                "recover-source"
+            ]
+        );
+        assert_eq!(
+            v.line,
+            "fault arm cancel-restore did not prove its contract; missing=[] failed=[retire-holds-source,retire-source-holds,recover-source]"
+        );
+        assert!(!v.line.starts_with("REFUSED") && !v.line.contains("PASS"));
+        let mut checks = green(Arm::RequireResident);
+        for c in &mut checks {
+            if c.name.starts_with("continuation-gate-on") || c.name.ends_with("asked-twice") {
+                c.observed = "Ok(())".into();
+            }
+        }
+        let v = verdict(Arm::RequireResident, &checks);
+        assert!(!v.pass);
+        assert_eq!(
+            v.failed,
+            [
+                "continuation-gate-on-suspended-cache",
+                "continuation-gate-asked-twice"
+            ]
+        );
+        assert!(!v.line.starts_with("REFUSED") && !v.line.contains("PASS"));
     }
 
     #[test]
-    fn red_arm_fault_not_injected_is_a_failure_not_a_pass_and_not_a_refusal() {
+    fn red_arm_fault_not_injected_is_a_failure_not_a_pass() {
         // cancel-demote: the backend answered AlreadyPublished, so nothing was revoked.
         let mut checks = green(Arm::CancelDemote);
         checks[0] = Check::new("cancel", "Ok(PublicationRevoked)", "Ok(AlreadyPublished)");
@@ -314,6 +441,10 @@ mod tests {
                 .starts_with("fault arm cancel-demote did not prove its contract")
         );
         assert!(!v.line.contains("FAULT-ARM PASS") && !v.line.starts_with("REFUSED"));
+        // cancel-restore: the revocation was not granted, so the hold never existed.
+        let mut checks = green(Arm::CancelRestore);
+        checks[0] = Check::new("cancel", "Ok(PublicationRevoked)", "Ok(AlreadyPublished)");
+        assert!(!verdict(Arm::CancelRestore, &checks).pass);
         // corrupt-host: the restore accepted the flipped byte.
         let mut checks = green(Arm::CorruptHost);
         checks[2] = Check::new("restore-integrity", "Corrupt", "Ok(())");
@@ -330,11 +461,10 @@ mod tests {
         let mut checks = green(Arm::DeviceShort);
         checks[0] = Check::new("restore-admission", "Err(Capacity)", "Ok(lease)");
         assert!(!verdict(Arm::DeviceShort, &checks).pass);
-        // A refusal arm whose contract half failed is a failed cell, not the typed refusal.
-        let mut checks = green(Arm::CancelRestore);
-        checks[0] = Check::new("cancel", "Ok(PublicationRevoked)", "Ok(AlreadyPublished)");
-        let v = verdict(Arm::CancelRestore, &checks);
-        assert!(!v.pass && !v.line.starts_with("REFUSED"));
+        // require-resident: the register did not name the layers that left.
+        let mut checks = green(Arm::RequireResident);
+        checks[0] = Check::new("suspended-register", "[3, 4]", "[]");
+        assert!(!verdict(Arm::RequireResident, &checks).pass);
     }
 
     #[test]

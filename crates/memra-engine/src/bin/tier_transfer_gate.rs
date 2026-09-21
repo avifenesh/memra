@@ -76,8 +76,14 @@ fn h2d(t: &mut CudaTransfers, bytes: &[u8]) -> (CopyOp<CudaPinnedLease>, DeviceL
         keep,
     )
 }
-fn clean(t: &mut CudaTransfers, ticket: &TransferTicket, device: &DeviceLease) {
+/// Drain a cancelled H2D ticket. Day-11 rule 1: the cancelled restore holds its untouched
+/// source for the caller, so retirement waits until every accepted item's source is recovered.
+fn clean(t: &mut CudaTransfers, ticket: &TransferTicket, items: &[u32], device: &DeviceLease) {
     t.synchronize(ticket).unwrap();
+    assert_eq!(t.retire(ticket, None), Err(Error::Busy));
+    for item in items {
+        drop(t.recover_source(ticket, *item).unwrap());
+    }
     t.retire(ticket, None).unwrap();
     t.acknowledge(ticket).unwrap();
     t.release_device(device).unwrap();
@@ -89,6 +95,12 @@ fn conformance() {
     let ticket = t.h2d(op).unwrap();
     v1::transfer_cancel(&mut t, ticket, |t, ticket| {
         t.synchronize(ticket).unwrap();
+        // Day-11 rule 1: the frozen schedule is unchanged; its completion hook recovers the
+        // source before the ticket may retire.
+        assert_eq!(t.retire(ticket, None), Err(Error::Busy));
+        let host = t.recover_source(ticket, 0).unwrap();
+        assert_eq!(host.bytes().unwrap(), &bytes[..]);
+        drop(host);
         t.retire(ticket, None).unwrap();
     });
     t.release_device(&keep).unwrap();
@@ -99,7 +111,7 @@ fn conformance() {
     v1::transfer_complete_cancel(&mut t, ticket, &expected(&bytes), |t, ticket| {
         t.synchronize(ticket).unwrap()
     });
-    clean(&mut t, &ticket, &keep);
+    clean(&mut t, &ticket, &[0], &keep);
     println!("PASS v1.1 transfer_complete_cancel native CUDA");
 
     let (op, keep) = h2d(&mut t, &bytes);
@@ -120,6 +132,9 @@ fn conformance() {
             }
             v1::LifetimeStep::Graph => {
                 drop(graph.take());
+                // Day-11 rule 1: idle and revoked, the source is still held for the caller.
+                assert_eq!(t.retire(ticket, None), Err(Error::Busy));
+                drop(t.recover_source(ticket, 0).unwrap());
                 t.retire(ticket, None).unwrap();
             }
         },
@@ -167,7 +182,12 @@ fn conformance() {
         Err(Error::Rejected)
     ));
     t.cancel(&batch.ticket).unwrap();
-    clean(&mut t, &batch.ticket, &keep_a);
+    // The rejected sibling was returned at submission; it has no source to recover.
+    assert!(matches!(
+        t.recover_source(&batch.ticket, 1),
+        Err(Error::Rejected)
+    ));
+    clean(&mut t, &batch.ticket, &[0, 2], &keep_a);
     t.release_device(&keep_b).unwrap();
     drop(batch);
     t.release_device(&keep_c).unwrap();
@@ -262,8 +282,65 @@ fn conformance() {
     canonical_source_retirement(&mut t, &stream);
     canonical_hand_back(&mut t, &stream);
     destination_drop_retention(&mut t, &stream);
+    cancelled_restore_recovers_source(&mut t, &stream);
+    cancel_refused_after_source_consumed(&mut t);
     assert_eq!(gov.borrow().used(), TierBudget::zero(1));
     println!("PASS native governor zero after controlled drain");
+}
+
+// Day-11 rule 1 (lead ruling 9), recoverable outcome: the producer is held pending by a native
+// host function, a source graph pin and a real source consumer event are live; every advance is
+// an observed CUDA event or a released pin, never a flag. The frozen schedules are unchanged.
+fn cancelled_restore_recovers_source(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
+    let bytes = vec![47u8; 4096];
+    let (op, keep) = h2d(t, &bytes);
+    let hold = ProducerHold::new(stream);
+    let ticket = t.h2d(op).unwrap();
+    assert!(!t.poll(&ticket).unwrap().producer_done);
+    let mut source_graph = Some(t.pin_source_graph(&ticket).unwrap());
+    let charged = t.used();
+    let host = v1::transfer_cancel_recovers_source(
+        t,
+        ticket,
+        |t, ticket, step| match step {
+            v1::RecoverStep::Unknown => t.quarantine_observation(ticket).unwrap(),
+            v1::RecoverStep::Producer => {
+                hold.release();
+                stream.synchronize().unwrap();
+            }
+            v1::RecoverStep::Recover => t.synchronize(ticket).unwrap(),
+            v1::RecoverStep::SourceConsumer => {
+                t.record_source_consumer(ticket).unwrap();
+                stream.synchronize().unwrap();
+            }
+            v1::RecoverStep::SourceGraph => drop(source_graph.take()),
+        },
+        |t| {
+            assert_eq!(t.used(), charged);
+            assert_eq!(t.device_registry_len(), 1);
+        },
+    );
+    // The untouched source is the caller's again and carries its own pinned charge.
+    assert_eq!(host.bytes().unwrap(), bytes);
+    assert_eq!(t.used().pinned, bytes.len() as u64);
+    assert_eq!(t.used().inflight, 0);
+    drop(host);
+    t.release_device(&keep).unwrap();
+    assert_eq!(t.used(), TierBudget::zero(1));
+    println!("PASS rule cancelled-restore-recovers-source native CUDA");
+}
+// Day-11 rule 1, forbidden order: once the source left through per-side retirement, cancel is
+// refused and no recovery is offered.
+fn cancel_refused_after_source_consumed(t: &mut CudaTransfers) {
+    let bytes = vec![53u8; 4096];
+    let (op, keep) = h2d(t, &bytes);
+    let ticket = t.h2d(op).unwrap();
+    v1::transfer_cancel_refused_after_source_consumed(t, ticket, |t, ticket| {
+        t.synchronize(ticket).unwrap()
+    });
+    t.release_device(&keep).unwrap();
+    assert_eq!(t.used(), TierBudget::zero(1));
+    println!("PASS rule cancel-refused-after-source-consumed native CUDA");
 }
 // A native stream callback holds production pending without launching a
 // spin kernel or synthesizing completion. It never calls a CUDA API. RAII opens

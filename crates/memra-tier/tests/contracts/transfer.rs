@@ -42,11 +42,14 @@ struct Entry {
 }
 pub struct Transfers {
     entries: HashMap<TransferTicket, Entry>,
-    owner: DeviceOwner,
+    pub(super) owner: DeviceOwner,
     next: u64,
     pub rejects: Vec<usize>,
     pub short: Option<usize>,
     pub gov: Shared,
+    /// Day-11 red arm: the transport before rule 1. It offers no recovery, drains a cancelled
+    /// H2D at retirement and grants a revocation after the source has left the ticket.
+    pub legacy: bool,
 }
 impl Transfers {
     pub fn new(gov: Shared) -> Self {
@@ -57,7 +60,15 @@ impl Transfers {
             rejects: vec![],
             short: None,
             gov,
+            legacy: false,
         }
+    }
+    /// Rule 1: a cancelled ticket still holding an H2D source the caller has not recovered.
+    fn holds_cancelled_source(&self, e: &Entry) -> bool {
+        !self.legacy
+            && e.cancelled
+            && !e.source_retired
+            && e._ops.iter().any(|op| matches!(op, TransferOp::H2d(_)))
     }
     pub fn read(&self) -> (ReadPlan<Host>, ChargedLease) {
         let mut r = request(0, Priority::Demand);
@@ -164,7 +175,7 @@ impl Transfers {
     fn entry(&mut self, t: &TransferTicket) -> Result<&mut Entry> {
         self.entries.get_mut(t).ok_or(Error::UnknownTicket)
     }
-    fn finish(&mut self, t: &TransferTicket) {
+    pub(super) fn finish(&mut self, t: &TransferTicket) {
         let e = self.entries.get_mut(t).unwrap();
         e.disk = true;
         e.dma = true;
@@ -245,9 +256,13 @@ impl TransferEngine for Transfers {
         }
     }
     fn cancel(&mut self, t: &TransferTicket) -> Result<CancelState> {
+        let legacy = self.legacy;
         let e = self.entry(t)?;
         if e.published {
             Ok(CancelState::AlreadyPublished)
+        } else if e.source_retired && !legacy {
+            // Rule 1: the source left the ticket; no revocation can be granted over it.
+            Err(Error::AlreadyReleased)
         } else {
             e.cancelled = true;
             Ok(CancelState::PublicationRevoked)
@@ -293,6 +308,7 @@ impl TransferEngine for Transfers {
         ))
     }
     fn retire_source(&mut self, t: &TransferTicket) -> Result<()> {
+        let legacy = self.legacy;
         let e = self.entry(t)?;
         if e.source_retired {
             return Ok(());
@@ -308,9 +324,50 @@ impl TransferEngine for Transfers {
         if !e._ops.iter().all(|op| matches!(op, TransferOp::H2d(_))) {
             return Err(Error::Unsupported);
         }
+        if e.cancelled && !legacy {
+            // Rule 1: a cancelled restore's source is recovered by the caller, never retired here.
+            return Err(Error::Busy);
+        }
         e._ops.clear();
         e.source_retired = true;
         Ok(())
+    }
+    fn recover_source(&mut self, t: &TransferTicket, item: u32) -> Result<Host> {
+        if self.legacy {
+            return Err(Error::Unsupported);
+        }
+        let e = self.entry(t)?;
+        if e.published {
+            return Err(Error::AlreadyReleased);
+        }
+        if !e.cancelled {
+            return Err(Error::NotReady);
+        }
+        let outcome = e.c.items.get(item as usize).ok_or(Error::InvalidLayout)?;
+        if !outcome.accepted {
+            return Err(Error::Rejected);
+        }
+        if e.source_retired {
+            return Err(Error::AlreadyReleased);
+        }
+        if e.unknown {
+            return Err(Error::Quarantined);
+        }
+        if !e.disk || !e.dma || !e.source_consumer || !e.source_graph {
+            return Err(Error::Busy);
+        }
+        let position = e.c.items[..item as usize]
+            .iter()
+            .filter(|i| i.accepted)
+            .count();
+        if !matches!(e._ops.get(position), Some(TransferOp::H2d(_))) {
+            return Err(Error::Unsupported);
+        }
+        let TransferOp::H2d(op) = e._ops.remove(position) else {
+            unreachable!()
+        };
+        e.source_retired = true;
+        Ok(op.host)
     }
     fn retire(&mut self, t: &TransferTicket, done: Option<FenceId>) -> Result<()> {
         let e = self.entry(t)?;
@@ -330,17 +387,24 @@ impl TransferEngine for Transfers {
         {
             return Err(Error::Busy);
         }
+        let e = &self.entries[t];
+        if self.holds_cancelled_source(e) {
+            // Rule 1: whole retirement never drains a cancelled restore's source.
+            return Err(Error::Busy);
+        }
         Ok(())
     }
     fn retired(&mut self, t: &TransferTicket) -> Result<bool> {
-        let e = self.entry(t)?;
+        let e = self.entries.get(t).ok_or(Error::UnknownTicket)?;
+        // Rule 1: whole retirement cannot have happened while the caller's source is held.
         Ok(e.disk
             && e.dma
             && e.consumer
             && e.graph
             && e.source_consumer
             && e.source_graph
-            && !e.unknown)
+            && !e.unknown
+            && !self.holds_cancelled_source(e))
     }
     fn acknowledge(&mut self, t: &TransferTicket) -> Result<()> {
         if !self.retired(t)? {
@@ -768,6 +832,117 @@ fn revision_v13_source_retirement_preserves_taken_destination() {
         },
     );
     t.owner.release(&taken).unwrap();
+    gov.borrow_mut().release(&dc).unwrap();
+    assert_eq!(gov.borrow().used, TierBudget::zero(2));
+}
+
+/// Rule 1 fixture: an H2D restore whose producer is pending with a live source consumer and
+/// source graph pin; the destination side is idle (an unpublished restore has no destination
+/// consumer). Returns the ticket, the host and device charges and a retained destination lease.
+pub(super) fn pending_restore(
+    t: &mut Transfers,
+    gov: &Shared,
+) -> (TransferTicket, ChargedLease, ChargedLease, DeviceLease) {
+    let (read, hc) = t.read();
+    let mut req = request(0, Priority::MandatoryActive);
+    req.bytes.device[0] = 4;
+    let dc = gov.borrow_mut().reserve(&req).unwrap();
+    let device = t.owner.register(31, 4, Box::new(bytes(4)), &dc).unwrap();
+    let keep = t.owner.retain(&device).unwrap();
+    let ticket = t
+        .h2d(CopyOp {
+            host: read.destination,
+            device,
+            bytes: 4,
+            epochs: epochs(),
+            producer_fence: None,
+        })
+        .unwrap();
+    let e = t.entry(&ticket).unwrap();
+    e.consumer = true;
+    e.graph = true;
+    e.source_consumer = false;
+    e.source_graph = false;
+    (ticket, hc, dc, keep)
+}
+#[test]
+fn day11_cancelled_restore_recovers_its_source() {
+    let gov = shared();
+    let mut t = Transfers::new(gov.clone());
+    let (ticket, hc, dc, keep) = pending_restore(&mut t, &gov);
+    let host = super::conformance::transfer_cancel_recovers_source(
+        &mut t,
+        ticket,
+        |t, k, step| {
+            use super::conformance::RecoverStep::*;
+            let e = t.entry(k).unwrap();
+            match step {
+                Unknown => e.unknown = true,
+                Producer => {
+                    e.disk = true;
+                    e.dma = true;
+                }
+                Recover => e.unknown = false,
+                SourceConsumer => e.source_consumer = true,
+                SourceGraph => e.source_graph = true,
+            }
+        },
+        |t| {
+            assert_eq!(t.gov.borrow_mut().release(&hc), Err(Error::Busy));
+            assert_eq!(t.gov.borrow().used.pinned, 4);
+        },
+    );
+    // The untouched source is the caller's again, still carrying its own charge.
+    assert_eq!(host.bytes().unwrap(), &[3, 20, 37]);
+    assert_eq!(gov.borrow_mut().release(&hc), Err(Error::Busy));
+    drop(host);
+    gov.borrow_mut().release(&hc).unwrap();
+    t.owner.release(&keep).unwrap();
+    gov.borrow_mut().release(&dc).unwrap();
+    assert_eq!(gov.borrow().used, TierBudget::zero(2));
+}
+#[test]
+fn day11_cancel_is_refused_after_the_source_left() {
+    let gov = shared();
+    let mut t = Transfers::new(gov.clone());
+    let (ticket, hc, dc, keep) = pending_restore(&mut t, &gov);
+    super::conformance::transfer_cancel_refused_after_source_consumed(&mut t, ticket, |t, k| {
+        t.finish(k)
+    });
+    // Per-side retirement consumed the source and its charge; nothing was drained by cancel.
+    gov.borrow_mut().release(&hc).unwrap();
+    t.owner.release(&keep).unwrap();
+    gov.borrow_mut().release(&dc).unwrap();
+    assert_eq!(gov.borrow().used, TierBudget::zero(2));
+}
+/// Red arm, the finding verbatim: "No H2D-source recovery after `cancel`: the demoted copy's
+/// only caller handle is consumed at submission and released by `retire`; the D2H twin is
+/// take-once (`AlreadyReleased`). A cancelled restore can only be drained." The transport
+/// before the rule fails the schedule, and this is the shape of its failure.
+#[test]
+fn day11_red_arm_legacy_transport_drains_a_cancelled_restore() {
+    let gov = shared();
+    let mut t = Transfers::new(gov.clone());
+    t.legacy = true;
+    let (ticket, hc, dc, keep) = pending_restore(&mut t, &gov);
+    let schedule = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        super::conformance::transfer_cancel_recovers_source(&mut t, ticket, |_, _, _| {}, |_| {})
+    }));
+    assert!(
+        schedule.is_err(),
+        "the legacy transport must not pass rule 1"
+    );
+    t.finish(&ticket);
+    assert_eq!(t.cancel(&ticket), Ok(CancelState::PublicationRevoked));
+    assert!(matches!(
+        t.recover_source(&ticket, 0),
+        Err(Error::Unsupported)
+    ));
+    t.retire(&ticket, None).unwrap(); // drains: nothing is held for the caller
+    t.acknowledge(&ticket).unwrap();
+    // The source and its charge went with the entry; there is nothing left to hand back.
+    gov.borrow_mut().release(&hc).unwrap();
+    t.owner.release(&keep).unwrap();
     gov.borrow_mut().release(&dc).unwrap();
     assert_eq!(gov.borrow().used, TierBudget::zero(2));
 }

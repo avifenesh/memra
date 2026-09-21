@@ -1,0 +1,25 @@
+ttg_exit=0
+kv_exit=0
+source=e526357152d06d2d7829adcb354434a1e10d95fb branch=lane-a-day11 dirty=0
+fc5c8ad10889820634c9331b78bec76b04bd5878e9347b12ad6901c655b3387f  target/release/kv-tier-gate
+63393dbc6d2a267cdb42e9ef4e3ce2788465d88e1c775130acd71beb5ecd098a  target/release/tier-transfer-gate
+---LOG
+   Compiling memra-gguf v0.138.0 (/root/wt-a/crates/memra-gguf)
+   Compiling smallvec v1.15.2
+   Compiling aho-corasick v1.1.4
+   Compiling regex-syntax v0.8.11
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling memra-tokenizer v0.138.0 (/root/wt-a/crates/memra-tokenizer)
+   Compiling memra-runtime v0.138.0 (/root/wt-a/crates/memra-runtime)
+   Compiling memra-kv v0.138.0 (/root/wt-a/crates/memra-kv)
+   Compiling memra-reference v0.138.0 (/root/wt-a/crates/memra-reference)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 3m 00s
+---TTG
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 0.59s
+NVIDIA RTX PRO 6000 Blackwell Server Edition

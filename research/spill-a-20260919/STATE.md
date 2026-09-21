@@ -1,12 +1,13 @@
-# WP-A day 10 resumable state
+# WP-A day 11 resumable state
 
-- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. Merge of `origin/main` `30e9c7a38`: `ce423a158`.
-- Day 10 (lead ruling 8, storage `Busy` flake): RACE, not rig. Harness fix `5ac2952c1`; the receipts commit that adds this file is the branch tip.
-- Mechanism: a sibling test's `Command::spawn` copies the fd table between `clone3(CLONE_VFORK)` and `execve`, so a just-closed `flock` stays held and a fresh `try_lock` reads `Busy`. strace receipt: `day10-flake/strace/attempt-1.strace`; write-up `DAY10.md`.
-- Fix: process-wide RwLock fence in `tests/storage/mod.rs`; spawning tests hold it exclusively. No engine file, no sleep, no retry, no relaxed assertion, no frozen-schedule change.
-- Before: default threads 3 of 15 runs failed (threads=1 5/5; spawn tests skipped 10/10). After: 0 of 30 default runs, 5/5 threads=1, final 5/5 on the committed source.
-- Not rig-specific: the same :471 failure is in lane B's rented-5090 log; PRO 276/276 is one sample of a probabilistic race.
-- CPU gate green under the quota: fmt, tier+kv tests (265 passed), clippy tier/kv and engine (`DOCS_RS=1`) `-D warnings`, check-flags (864), `diff --check`.
-- Push refused by the pre-push perf-ci gate (nine `crates/memra-engine` files arriving from main through the merge). No `--no-verify`, no skip variable; the lead pushes.
-- Lead note, no change made: a production process that spawns children while another thread re-locks a store file on a fresh descriptor sees the same transient `Busy`; a separate receipted decision if it matters for serving.
+- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. Merges: `origin/main` `ea08bc7f8` (`1a1cbd0d8`), `origin/lane/spill-d-20260919` `15bd53152` (`be43012e7`).
+- Day 11 (lead ruling 9): lane D's findings (1) and (3) are typed contract rules with red arms beside the frozen schedules. Rule 1 `42e53f3a9`, rule 2 `e52635715`, receipts commit is the branch tip. Write-up `DAY11.md`.
+- Rule 1: `TransferEngine::recover_source` (default `Unsupported`); a cancelled H2D holds its source for the caller (`retire`/`retire_source` `Busy` until recovered), `cancel` `AlreadyReleased` once a source left. Schedules `transfer_cancel_recovers_source`, `transfer_cancel_refused_after_source_consumed`; CPU red arm `legacy` fake; native bindings in `tier-transfer-gate`, not yet run on a card.
+- Rule 2: `Cache::suspend_layer`/`resume_layer` over the typed `SuspendedLayers` register; `ensure_usable` returns `ContinuationRefused { path, layers }` while non-empty; `decode_step_h` unchanged. CPU red arm `TaintOnly`; real `Cache` binding in `memra-kv`. Positive suspend/resume roundtrip is native (D's rerun).
+- Frozen `revision_v11/v12/v13.rs` blobs byte-identical (`cd144f3b`, `981bcc81`, `50928b75`); `conformance/mod.rs` gained only the include. `WIRE_VERSION` 1. No `MEMRA_*` read, no `.cu`, no server change.
+- CPU gates green on `e52635715` under the quota: fmt, tier+kv tests (303 passed, 8 `day11_*`), clippy engine/tier/kv `-D warnings`, check-flags, `diff --check`. A first run on the working tree failed twice on the fake's flag-derived `retired()`; fixture fixed, recorded in `DAY11.md`.
+- BOX3 (`/root/wt-a`, git bundle to `e52635715`, branch `lane-a-day11`, clean): `cargo build --release -p memra-engine --bin kv-tier-gate --offline` exit 0, binary `fc5c8ad10889…3387f`; no GPU cell (lane B holds the card). Receipt `day11/box3-build/build.log`.
+- D's reruns (`cancel-restore`, `require-resident`) need the seam calls listed in `DAY11.md`; `fault.rs`/`fault_contract.rs`/`active.rs` were not changed here.
+- Push refused by the pre-push perf-ci gate (thirteen `crates/memra-engine` files arriving from main and D through the merges, plus this lane's own engine files). No `--no-verify`, no skip variable; the lead pushes.
+- `ensure_usable` caller audit: every `worker.rs` continuation reaches the gate; the ungated paths are gate/bench bins (graph sessions, prime graph) and the DSV4/qwen4exp `DecodeState` families (no `memra_kv::Cache`). List in `DAY11.md`.
 - Day 9 native state unchanged: `day9/RESULTS.md`, `V13-BINDING.md`; io_uring remains DEFERRED (`IO-BASELINE.md`).
