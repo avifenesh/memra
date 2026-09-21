@@ -86,6 +86,10 @@ RE_REFUSED = re.compile(r"\[prefix-cache\] insert refused: (.*)$")
 RE_SKIPPED = re.compile(r"\[prefix-cache\] snapshot skipped: (.*)$")
 RE_DEMOTE = re.compile(r"\[prefix-cache\] demote \(protected bytes\): ([\d.]+)MB")
 RE_RECLAIM = re.compile(r"\[admit-oom\] reclaim-on-defer: ")
+# The per-request route receipt (`[glm5-spec] route=plain ... cold=1 restored=0 reason=...`) is
+# printed by draft-capable models on every request; it is recorded per turn so a cold turn can
+# be quoted from the receipt, never a verdict input (V1 reads `cached_tokens` from the response).
+RE_ROUTE = re.compile(r"\[glm5-spec\] route=\S+ .*cold=(\d) restored=(\d)")
 
 
 def refuse(msg: str) -> None:
@@ -258,10 +262,14 @@ def effective_free(row: dict) -> int:
 
 
 def parse_window(lines: list[str]) -> dict:
-    ev: dict = {"inserts": [], "hits": [], "evicts": [], "refused": [], "skipped": [], "demotes": 0, "reclaims": 0, "lines": []}
+    ev: dict = {"inserts": [], "hits": [], "evicts": [], "refused": [], "skipped": [], "demotes": 0, "reclaims": 0, "lines": [], "route": []}
     for ln in lines:
-        if "[prefix-cache]" in ln or "[admit-oom]" in ln:
+        if "[prefix-cache]" in ln or "[admit-oom]" in ln or "[glm5-spec] route=" in ln:
             ev["lines"].append(ln.strip())
+        m = RE_ROUTE.search(ln)
+        if m:
+            ev["route"].append({"cold": int(m.group(1)), "restored": int(m.group(2)), "line": ln.strip()})
+            continue
         m = RE_INSERT.search(ln)
         if m:
             ev["inserts"].append({"why": m.group(1), "tokens": int(m.group(2)), "mb": float(m.group(3))})
@@ -522,8 +530,8 @@ def main() -> None:
         f"V1={'ok' if v1 else 'FAIL'} V2={'ok' if v2 else 'FAIL'} V3={'ok' if v3 else 'FAIL'} V4={'ok' if v4 else 'FAIL'} "
         f"-> {'PASS' if ok else 'FAIL'}"
     )
-    table = ["| turn | prompt_tokens | cached_tokens | prev prompt_tokens | hit line | insert | evict (segment) | refused/skipped | effective free consumed | prefix bytes grew | V3 error | elapsed s | text sha256[:16] |",
-             "| ---: | ---: | ---: | ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |"]
+    table = ["| turn | prompt_tokens | cached_tokens | prev prompt_tokens | route cold/restored | hit line | insert | evict (segment) | refused/skipped | effective free consumed | prefix bytes grew | V3 error | elapsed s | text sha256[:16] |",
+             "| ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |"]
     for t in turns:
         w = t["window"]
         hits = ", ".join("{hit} of {prompt}".format(**h) for h in w["hits"]) or "none"
@@ -531,8 +539,9 @@ def main() -> None:
         evicts = ", ".join("{tokens} tok {mb}MB ({segment})".format(**e) for e in w["evicts"]) or "none"
         prev = t["prev_prompt_tokens"] if t["prev_prompt_tokens"] is not None else "-"
         v3err = t["v3_credit_error_bytes"] if t["v3_credit_error_bytes"] is not None else "-"
+        route = ", ".join("cold={cold} restored={restored}".format(**r) for r in w["route"]) or "none"
         table.append(
-            f"| {t['turn']} | {t['prompt_tokens']} | {t['cached_tokens']} | {prev} | {hits} | {inserts} | {evicts} | "
+            f"| {t['turn']} | {t['prompt_tokens']} | {t['cached_tokens']} | {prev} | {route} | {hits} | {inserts} | {evicts} | "
             f"{len(w['refused']) + len(w['skipped'])} | {t['effective_free_consumed']} | {t['prefix_bytes_grew']} | "
             f"{v3err} | {t['elapsed_s']} | {t['text_sha256'][:16]} |"
         )

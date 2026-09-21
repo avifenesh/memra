@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Day 14 twin-gate cell driver: one arm (main|fix) through the collector with the inherited canonical lock.
 # Bounded lock retries (never kills a holder); every attempt leaves its own driver log.
-# The gate source is the checked-out /root/wt-b (recorded in <cell>/gate-source.txt).
+# The collector creates --out itself and refuses one that exists: nothing here pre-creates it
+# (the first sitting's chain refused on exactly that, `[Errno 17] File exists`).
+# The gate source is the checked-out /root/wt-b, recorded into the cell after the collector returns.
 set -uo pipefail
 arm=${1:?arm main|fix}; suffix=${2:-}
 export PATH=/root/.cargo/bin:/usr/local/cuda/bin:$PATH
@@ -10,8 +12,6 @@ cd /root/wt-b
 for attempt in 0 1 2 3 4 5; do
   out=$R/gate-$arm$suffix
   [ $attempt -gt 0 ] && out=$R/gate-$arm$suffix-retry$attempt
-  mkdir -p "$out"
-  git rev-parse HEAD > "$out/gate-source.txt"
   python3 tools/tier-battery.py --rig pro-single --timeout 1800 --out "$out" --external-lock \
     --execute python3 tools/prefix-newest-turn-fits-gate.py --external-lock @COLLECTOR_LOCK_FD@ \
       --model /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf \
@@ -20,6 +20,7 @@ for attempt in 0 1 2 3 4 5; do
       --turns 8 --start-tokens 9200 --grow-tokens 300 > "$out-driver.log" 2>&1
   rc=$?
   echo $rc > "$out.exit"
+  [ -d "$out" ] && git rev-parse HEAD > "$out/gate-source.txt"
   if grep -q "canonical rig lock\|BlockingIOError\|Resource temporarily unavailable" "$out-driver.log" && [ ! -d "$out/cell" ]; then
     echo "attempt $attempt: lock busy, sleeping 90s" >> "$R/gate-$arm-retries.log"
     sleep 90
