@@ -1570,6 +1570,23 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   wall times, N=5 per arm in both orders, one lock hold, 250 ms telemetry; the first cell of the decide-by
   review, not a verdict). Evidence: `research/spill-c-20260919/DAY16.md`, `pro-single-day16/`, replay
   `verify-day16.py`.
+- Option C unwind (day 16 review, PR #605 findings 1 and 2): the promote abort recovers only the ACCEPTED
+  items of a partially accepted batch (a rejected slot is `None` in the engine and `recover_source` answers
+  `Rejected`; recovering it pushed a leak that latched the tier over a clean state) and asks the engine
+  whether the ticket is published through `cancel` (`PublicationRevoked` recovers the sources per rule 1,
+  `AlreadyPublished` records the consumer fence, drains and retires the sources) instead of inferring it
+  from a loop index (which can disagree with `CudaTransfers::ready_view`, publish-after-check, and
+  `with_destination`, publish-before-check, and then leaves the ticket un-retired and every destination
+  refused). One-shot faults `MEMRA_KV_HOST_FAULT=contract-promote-reject` (the last op mis-sized by one
+  byte, rejected by the engine's own validation) and `contract-promote-readyview` (the first `ready_view`
+  published in the engine, the route told otherwise). GPU cells (`worker::tests`, `#[ignore]` without a
+  device): `option_c_partial_acceptance_unwinds_refused_with_every_destination_released`,
+  `option_c_first_ready_view_failure_unwinds_through_the_published_arm` (each: typed `Refused`, no leak
+  wording, host twins intact and sole-owned, ledger back to the image's leases, the next promote completes).
+  Gate: `tools/kv-host-contract-fault-gate.sh` cells `promote-reject` and `promote-readyview` (six cells in
+  all; the aborted ticket's sequence number is consumed, no `TIER DISABLED`, no drop, no `Capacity`, no
+  leaked wording). Evidence: `research/spill-c-20260919/DAY16.md` (review section), `pro-single-day16-review/`,
+  replay `verify-day16-review.py`.
 
 ### `h2d-probe --copies`
 
