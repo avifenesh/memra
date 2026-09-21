@@ -4206,6 +4206,94 @@ fn prefix_cache_protected_bytes(budget: usize, protected_pct: usize) -> usize {
         .saturating_add((budget % 100).saturating_mul(protected_pct) / 100)
 }
 
+/// The typed refusal for an entry larger than the whole prefix-cache budget (memra#523 item
+/// 1: a refused publication prints, in bytes, or it is a silent cold turn). One formatter for
+/// the insert path and the snapshot preflight, so a log reader has one line to grep.
+fn prefix_insert_refused_oversize(bytes: usize, budget: usize, why: &str, key: &PoolKey) -> String {
+    format!(
+        "[prefix-cache] insert refused: entry {bytes} exceeds budget {budget} ({why}, model {}{})",
+        key.0,
+        ns_suffix(&key.1)
+    )
+}
+
+/// The typed refusal for an entry that fits the budget but not beside the bytes currently
+/// leased by in-flight sessions (only leases are untouchable under the newest-turn-fits rule;
+/// every unleased byte, protected or not, is reclaimable for it).
+fn prefix_insert_refused_leased(
+    bytes: usize,
+    leased: usize,
+    budget: usize,
+    why: &str,
+    key: &PoolKey,
+) -> String {
+    format!(
+        "[prefix-cache] insert refused: entry {bytes} cannot fit beside {leased} leased bytes \
+         (budget {budget}, {why}, model {}{})",
+        key.0,
+        ns_suffix(&key.1)
+    )
+}
+
+/// The shape of a refused publication, for the stderr throttle: an identical shape repeating on
+/// a saturated cache is counted (`prefix_cache_skips_budget` / `prefix_cache_skips_pinned`) but
+/// not re-printed on every request. `leased` is `None` for the oversize refusal and the leased
+/// byte count for the leased refusal; the path that refused (`why`) is deliberately not part of
+/// the shape, so the same numbers refusing on the insert path and on the preflight are one shape.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PrefixRefusalShape {
+    leased: Option<usize>,
+    bytes: usize,
+    budget: usize,
+    key: PoolKey,
+}
+
+/// Every `PREFIX_REFUSAL_REANNOUNCE_EVERY`-th identical refusal is printed again, with the count
+/// of the repeats that were not.
+const PREFIX_REFUSAL_REANNOUNCE_EVERY: u64 = 64;
+
+/// The refusal-line throttle (memra#523 item 1, review on the newest-turn-fits fix): never a
+/// silent cold turn, never unbounded stderr either. The first refusal prints; identical repeats
+/// (same `PrefixRefusalShape`) are suppressed and counted; a changed shape prints at once and
+/// carries the previous shape's suppressed count; every N-th identical repeat prints with its
+/// count. Counting in the `/metrics` skip fields is the caller's and is never throttled.
+#[derive(Default)]
+struct PrefixRefusalAnnouncer {
+    last: Option<PrefixRefusalShape>,
+    /// Identical repeats not printed since the last printed line.
+    suppressed: u64,
+}
+
+impl PrefixRefusalAnnouncer {
+    /// The line to print for this refusal, or `None` when it is an identical repeat that is
+    /// counted but not printed.
+    fn announce(&mut self, shape: PrefixRefusalShape, line: String) -> Option<String> {
+        if self.last.as_ref() == Some(&shape) {
+            self.suppressed += 1;
+            if !self
+                .suppressed
+                .is_multiple_of(PREFIX_REFUSAL_REANNOUNCE_EVERY)
+            {
+                return None;
+            }
+            let repeats = std::mem::take(&mut self.suppressed);
+            return Some(format!(
+                "{line} (identical refusal repeated {repeats} times since the previous line; {} not printed)",
+                repeats - 1
+            ));
+        }
+        let previous = std::mem::take(&mut self.suppressed);
+        self.last = Some(shape);
+        if previous == 0 {
+            Some(line)
+        } else {
+            Some(format!(
+                "{line} (previous shape: {previous} identical refusals not printed)"
+            ))
+        }
+    }
+}
+
 /// MEMRA_KV_HOST_MB (lane/kv-host-spill-20260830): pinned-host spill tier for the prefix
 /// cache, in binary MiB. Default 0 = OFF BY DESIGN: the tier is unmeasured on serving
 /// hardware until its pod battery lands (tick-stall, identity, stress, 8-turn cache twin),
@@ -5011,14 +5099,27 @@ impl KvFlex {
         let t0 = Instant::now();
         let (n, freed) = px.evict_to_bytes(self.floor);
         if n == 0 {
-            // Above-floor residency that is entirely pinned (in-flight fanout leases)
-            // cannot shed; loud, because the zero-tax gate would otherwise read a silent
-            // no-op as a pass.
-            eprintln!(
-                "[kv-flex] shed ({why}): {:.1}MB above the floor is pinned by in-flight \
-                 leases; nothing evictable",
-                (px.total_bytes - self.floor) as f64 / 1e6,
-            );
+            let unleased = px.evictable_bytes();
+            if unleased == 0 {
+                // Above-floor residency that is entirely pinned (in-flight fanout leases)
+                // cannot shed; loud, because the zero-tax gate would otherwise read a silent
+                // no-op as a pass. This is the ONLY shape that may print "nothing evictable":
+                // `evict_to_bytes` takes probation first and then protected oldest first, so
+                // any unleased byte, protected or not, would have been a victim.
+                eprintln!(
+                    "[kv-flex] shed ({why}): {:.1}MB above the floor is pinned by in-flight \
+                     leases; nothing evictable",
+                    (px.total_bytes - self.floor) as f64 / 1e6,
+                );
+            } else {
+                // Unreachable by construction; loud if the victim function and the LRU
+                // indexes ever disagree.
+                eprintln!(
+                    "[kv-flex] shed ({why}): no entry evicted while {:.1}MB unleased bytes sit \
+                     above the floor; the victim function and the LRU indexes disagree",
+                    unleased as f64 / 1e6,
+                );
+            }
             return 0;
         }
         let ms = t0.elapsed().as_secs_f64() * 1e3;
@@ -6804,9 +6905,14 @@ struct PrefixCache {
     entries: HashMap<PoolKey, Vec<PrefixEntry>>,
     /// Byte-budgeted SLRU indexes. New entries enter probation; a real reuse promotes to
     /// protected. Capacity pressure consumes probation LRU first, so one-hit scan traffic
-    /// cannot displace a protected entry while probation has an evictable victim. Protected
-    /// overflow demotes its own LRU until it fits its byte target. The targets are global across
-    /// namespaces because VRAM is global; visibility remains scoped by `entries` above.
+    /// cannot displace a protected entry while probation has an evictable victim other than the
+    /// newcomer. Under the newest-turn-fits rule (memra#523 item 1, `room_victim_with`) every
+    /// UNLEASED byte is reclaimable for a publication that fits the budget: once probation is
+    /// exhausted the protected LRU goes oldest first, with no floor at `protected_target_bytes`.
+    /// The protected target bounds demotion (`rebalance_protected`) and pinned admission only.
+    /// Protected overflow demotes its own LRU until it fits its byte target. The targets are
+    /// global across namespaces because VRAM is global; visibility remains scoped by `entries`
+    /// above.
     ///
     /// Each BTreeMap preserves the Q3 O(log E) victim lookup and deterministic `(last_use,id)`
     /// tie break. Emergency flush compares both heads to retain global oldest-first removal.
@@ -6828,6 +6934,9 @@ struct PrefixCache {
     evictions: u64,
     skips_budget: u64,
     skips_pinned: u64,
+    /// stderr throttle for the two typed refusal lines; the skip counters above count every
+    /// refusal regardless.
+    refusals: PrefixRefusalAnnouncer,
     hit_tokens: u64,
     /// LCP histogram (lane/cache-metering): one sample per probe — the served entry's
     /// token length on a hit, `best_lcp` on a miss (both already computed; no new scan).
@@ -6920,6 +7029,41 @@ impl PrefixCache {
     /// Record one probe outcome into the LCP histogram (hit: entry length; miss: best_lcp).
     fn record_lcp(&mut self, n: usize) {
         self.lcp_hist[Self::lcp_bucket(n)] += 1;
+    }
+
+    /// The oversize refusal: counted every time, printed through the throttle.
+    fn refuse_oversize(&mut self, bytes: usize, budget: usize, why: &str, key: &PoolKey) {
+        self.record_budget_skip(false);
+        let shape = PrefixRefusalShape {
+            leased: None,
+            bytes,
+            budget,
+            key: key.clone(),
+        };
+        if let Some(line) = self.refusals.announce(
+            shape,
+            prefix_insert_refused_oversize(bytes, budget, why, key),
+        ) {
+            eprintln!("{line}");
+        }
+    }
+
+    /// The leased refusal: counted every time, printed through the throttle.
+    fn refuse_leased(&mut self, bytes: usize, budget: usize, why: &str, key: &PoolKey) {
+        let leased = self.pinned_bytes();
+        self.record_budget_skip(true);
+        let shape = PrefixRefusalShape {
+            leased: Some(leased),
+            bytes,
+            budget,
+            key: key.clone(),
+        };
+        if let Some(line) = self.refusals.announce(
+            shape,
+            prefix_insert_refused_leased(bytes, leased, budget, why, key),
+        ) {
+            eprintln!("{line}");
+        }
     }
 
     fn record_budget_skip(&mut self, pinned: bool) {
@@ -7385,10 +7529,6 @@ impl PrefixCache {
         Some(dead)
     }
 
-    fn capacity_victim(&self) -> Option<(PoolKey, usize)> {
-        self.capacity_victim_with(prefix_cache_slru_enabled())
-    }
-
     /// Victim selection, with the policy passed in so both arms are unit-testable
     /// (`prefix_cache_slru_enabled` is a process-wide `OnceLock` over the environment).
     fn capacity_victim_with(&self, slru: bool) -> Option<(PoolKey, usize)> {
@@ -7405,6 +7545,36 @@ impl PrefixCache {
         // SLRU: a protected entry becomes eligible only when protected exceeds its byte target:
         // rebalance_protected demotes that segment's LRU into this probation index first.
         self.probation_lru.values().next().cloned()
+    }
+
+    /// NEWEST-TURN-FITS (memra#523 item 1): the victim that makes room for an incoming or
+    /// just-inserted entry. Under SLRU the probation LRU goes first, exactly as
+    /// `capacity_victim_with` chooses it; when probation is exhausted, or when its only
+    /// remaining member is the entry being inserted (`keep`), the protected LRU goes next,
+    /// oldest first. An insert therefore never selects itself. Before this rule a growing
+    /// conversation whose every turn exceeded the free share beside a promoted cohort ran
+    /// `cold=1 restored=0` on every turn (`insert probation` then `evict (Probation LRU)` of
+    /// the same entry, or the snapshot preflight refusing) while the cohort sat protected.
+    /// Under plain LRU the global oldest is the victim as before: the newest entry is the
+    /// global newest and is never chosen while another unleased entry remains. For entries
+    /// that fit without touching protected bytes the chosen victims are unchanged.
+    fn room_victim_with(&self, slru: bool, keep: Option<u64>) -> Option<(PoolKey, usize)> {
+        let victim = self.capacity_victim_with(slru);
+        if !slru {
+            return victim;
+        }
+        let is_keep = |(key, i): &(PoolKey, usize)| {
+            keep.is_some_and(|id| {
+                self.entries
+                    .get(key)
+                    .and_then(|pool| pool.get(*i))
+                    .is_some_and(|entry| entry.id == id)
+            })
+        };
+        match victim {
+            Some(v) if !is_keep(&v) => Some(v),
+            _ => self.protected_lru.values().next().cloned(),
+        }
     }
 
     fn oldest_evictable(&self) -> Option<(PoolKey, usize)> {
@@ -7576,12 +7746,15 @@ impl PrefixCache {
             };
         }
         if e.bytes > budget {
-            self.record_budget_skip(false);
-            eprintln!(
-                "[prefix-cache] skip {why} insert: entry {:.1}MB > budget {:.0}MB",
-                e.bytes as f64 / 1e6,
-                budget as f64 / 1e6
-            );
+            self.refuse_oversize(e.bytes, budget, why, key);
+            return None;
+        }
+        // NEWEST-TURN-FITS preflight (memra#523 item 1): an unpinned entry that fits the
+        // budget either fits beside the leased bytes (every unleased byte is reclaimable for
+        // it, see `room_victim_with`) or is refused HERE, in bytes, without evicting anyone.
+        // Before this check such an entry evicted every unleased neighbour and then itself.
+        if initial_pins == 0 && e.bytes > budget.saturating_sub(self.pinned_bytes()) {
+            self.refuse_leased(e.bytes, budget, why, key);
             return None;
         }
         if initial_pins > 0 && e.bytes > budget.saturating_sub(self.pinned_bytes()) {
@@ -7650,7 +7823,9 @@ impl PrefixCache {
             self.rebalance_protected();
         }
         while self.total_bytes > budget {
-            let Some((k, i)) = self.capacity_victim_with(slru) else {
+            // Never the entry just inserted: probation LRU first, then protected LRU oldest
+            // first. The preflights above guarantee a victim exists while over budget.
+            let Some((k, i)) = self.room_victim_with(slru, Some(inserted_id)) else {
                 break;
             };
             let Some(dead) = self.remove_at(&k, i) else {
@@ -7682,16 +7857,23 @@ impl PrefixCache {
     }
 
     /// Reserve publication room before allocating its device snapshot. Leases and the
-    /// selected eviction policy remain authoritative. Refuse without evicting anything
-    /// when the eligible entries cannot make room; publication must never fail a request.
+    /// selected eviction policy remain authoritative for the ORDER of victims; under the
+    /// newest-turn-fits rule (memra#523 item 1) every unleased byte is reclaimable, probation
+    /// LRU first and then protected LRU oldest first, so the only refusals are an entry larger
+    /// than the whole budget or one that cannot fit beside the current leases. Both refuse
+    /// without evicting anything and print their typed `[prefix-cache] insert refused:` line
+    /// in bytes; publication must never fail a request, and it must never go cold silently.
     fn prepare_snapshot(
         &mut self,
+        key: &PoolKey,
         bytes: usize,
         budget: usize,
         slru: bool,
         mut demote: Option<&mut dyn FnMut(PrefixEntry)>,
     ) -> bool {
+        const WHY: &str = "snapshot preflight";
         if bytes > budget {
+            self.refuse_oversize(bytes, budget, WHY, key);
             return false;
         }
         let target = budget - bytes;
@@ -7699,17 +7881,13 @@ impl PrefixCache {
         if needed == 0 {
             return true;
         }
-        let reclaimable: usize = self
-            .probation_lru
-            .values()
-            .chain(self.protected_lru.values().filter(|_| !slru))
-            .map(|(key, i)| self.entries[key][*i].bytes)
-            .sum();
+        let reclaimable = usize::try_from(self.evictable_bytes()).unwrap_or(usize::MAX);
         if needed > reclaimable {
+            self.refuse_leased(bytes, budget, WHY, key);
             return false;
         }
         while self.total_bytes > target {
-            let Some((key, i)) = self.capacity_victim_with(slru) else {
+            let Some((key, i)) = self.room_victim_with(slru, None) else {
                 return false;
             };
             let Some(dead) = self.remove_at(&key, i) else {
@@ -7717,7 +7895,8 @@ impl PrefixCache {
             };
             self.evictions += 1;
             eprintln!(
-                "[prefix-cache] evict (snapshot preflight): {} tokens, {:.1}MB (model {}{})",
+                "[prefix-cache] evict (snapshot preflight, {:?} LRU): {} tokens, {:.1}MB (model {}{})",
+                dead.segment,
                 dead.toks.len(),
                 dead.bytes as f64 / 1e6,
                 key.0,
@@ -7736,18 +7915,28 @@ impl PrefixCache {
         true
     }
 
-    /// KV-FLEX SHED (lane/kv-flex-20260831): evict entries in capacity order (probation
-    /// LRU first, protected LRU past its share: the SAME victim function the insert-time
-    /// budget loop uses, so flex adds no second eviction policy) until residency is back
-    /// at `target`. Evicted bytes EVAPORATE (deliberately no demote sink, the `evict_all`
-    /// law: an admission-tick shed must not stall behind gigabytes of D2H). Pinned entries
-    /// are untouchable and the loop stops when no victim remains. Returns
-    /// (entries evicted, bytes freed).
+    /// KV-FLEX SHED (lane/kv-flex-20260831) and the step-OOM reclaim (memra#145): evict
+    /// entries in the insert loop's order, `room_victim_with(slru, None)`: probation LRU
+    /// first, then protected LRU oldest first, leases untouchable (under `lru`, the global
+    /// oldest). The SAME victim function the insert-time budget loop and the snapshot
+    /// preflight use, so pressure relief adds no second eviction policy and can reach every
+    /// byte `evictable_bytes()` promises the memory-admission door. Until memra#523 item 1's
+    /// review this loop selected with the raw SLRU capacity victim (probation LRU only), so
+    /// on a protected-heavy cache it stopped as soon as probation was empty and freed far
+    /// less than its logged target. Evicted bytes EVAPORATE (deliberately no demote sink,
+    /// the `evict_all` law: an admission-tick shed must not stall behind gigabytes of D2H).
+    /// The loop stops when no unleased victim remains. Returns (entries evicted, bytes
+    /// freed).
     fn evict_to_bytes(&mut self, target: usize) -> (usize, usize) {
+        self.evict_to_bytes_with(target, prefix_cache_slru_enabled())
+    }
+
+    /// [`Self::evict_to_bytes`] with the policy passed in, so both arms are unit-testable.
+    fn evict_to_bytes_with(&mut self, target: usize, slru: bool) -> (usize, usize) {
         let mut n = 0usize;
         let mut freed = 0usize;
         while self.total_bytes > target {
-            let Some((key, i)) = self.capacity_victim() else {
+            let Some((key, i)) = self.room_victim_with(slru, None) else {
                 break;
             };
             let Some(dead) = self.remove_at(&key, i) else {
@@ -12181,17 +12370,14 @@ fn prefix_insert_from_session(
     }
     let mut demote = |dead| host_demote_prefix_entry(engine, hpx, dead);
     if !px.prepare_snapshot(
+        &pool_key,
         prefix_snapshot_bytes(cache),
         prefix_cache_budget_bytes(),
         prefix_cache_slru_enabled(),
         Some(&mut demote),
     ) {
-        static ANNOUNCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if !ANNOUNCED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            eprintln!(
-                "[prefix-cache] snapshot skipped: cannot fit beside leased/protected entries; request continues"
-            );
-        }
+        // The preflight printed its typed `[prefix-cache] insert refused:` line in bytes
+        // (memra#523 item 1: never a silent cold turn); the request continues unpublished.
         return;
     }
     match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits, model) {
@@ -27616,9 +27802,11 @@ mod tests {
     };
     use super::{
         DEFAULT_PREFIX_CACHE_PROTECTED_PCT, HostPrefixCache, HostPrefixEntry,
-        PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION, PartialPrefixDecision, PoolKey,
-        PrefixCache, PrefixEntry, PrefixFanoutCandidate, PrefixFanoutGroup, PrefixSegment,
-        host_promote_candidate, partial_prefix_decision, prefix_fanout_groups, retire_prefix_pin,
+        PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION, PREFIX_REFUSAL_REANNOUNCE_EVERY,
+        PartialPrefixDecision, PoolKey, PrefixCache, PrefixEntry, PrefixFanoutCandidate,
+        PrefixFanoutGroup, PrefixRefusalAnnouncer, PrefixRefusalShape, PrefixSegment,
+        host_promote_candidate, partial_prefix_decision, prefix_fanout_groups,
+        prefix_insert_refused_leased, prefix_insert_refused_oversize, retire_prefix_pin,
         stable_boundary_arm, validate_prefix_plane_shape,
     };
     use super::{
@@ -33270,6 +33458,134 @@ mod tests {
         assert!(px.unpin(&pin));
     }
 
+    /// memra#523 item 1, review: pressure relief uses the insert loop's victim function. On a
+    /// protected-heavy cache (three promoted entries, one probation) `evict_to_bytes` reaches
+    /// its byte target by taking the probation LRU first and then the protected LRU oldest
+    /// first; the raw SLRU capacity victim names nothing once probation is empty, which is
+    /// where the old shed stopped short of its target.
+    #[test]
+    fn evict_to_bytes_takes_protected_oldest_first_once_probation_is_empty() {
+        const BUDGET: usize = 100;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", BUDGET);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        px.insert_with_budget(&k, entry_b(&k, 3, 10), "seed", BUDGET);
+        assert_eq!((px.protected_bytes, px.probation_bytes), (30, 10));
+        assert_eq!(px.evictable_bytes(), 40);
+
+        assert_eq!(
+            px.evict_to_bytes_with(35, true),
+            (1, 10),
+            "probation LRU first"
+        );
+        assert_eq!(px_survivors(&px), vec![0, 1, 2]);
+        assert!(
+            px.capacity_victim_with(true).is_none(),
+            "probation is empty: the raw SLRU capacity victim names nothing"
+        );
+        assert_eq!(
+            px.evict_to_bytes_with(25, true),
+            (1, 10),
+            "then the protected LRU, oldest first"
+        );
+        assert_eq!(px_survivors(&px), vec![1, 2]);
+        assert_eq!(px.evict_to_bytes_with(5, true), (2, 20));
+        assert!(px_survivors(&px).is_empty());
+        assert_eq!((px.total_bytes, px.evictions), (0, 4));
+        assert_eq!(px.evictable_bytes(), 0);
+
+        // The `lru` rollback arm is unchanged: the global oldest, promoted or not.
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", BUDGET);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        px.insert_with_budget(&k, entry_b(&k, 3, 10), "seed", BUDGET);
+        assert_eq!(px.evict_to_bytes_with(25, false), (2, 20));
+        assert_eq!(px_survivors(&px), vec![2, 3]);
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, review: a leased entry is never a pressure-relief victim, whatever the
+    /// target; when only leased bytes remain the loop reports zero and `evictable_bytes()` is
+    /// zero, the one shape the kv-flex "nothing evictable" line may describe.
+    #[test]
+    fn evict_to_bytes_never_takes_a_leased_entry_even_below_target() {
+        const BUDGET: usize = 100;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", BUDGET);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        px.insert_with_budget(&k, entry_b(&k, 3, 10), "seed", BUDGET);
+        let i1 = px.entries[&k].iter().position(|e| e.toks[0] == 1).unwrap();
+        let pin = px.pin(&k, i1).expect("a protected entry takes a lease");
+        assert_eq!(px.evictable_bytes(), 30);
+
+        assert_eq!(
+            px.evict_to_bytes_with(0, true),
+            (3, 30),
+            "every unleased entry goes, the leased one stays"
+        );
+        assert_eq!(px_survivors(&px), vec![1]);
+        assert_eq!(px.total_bytes, 10);
+        assert_eq!(px.evictable_bytes(), 0);
+        assert_eq!(
+            px.evict_to_bytes_with(0, true),
+            (0, 0),
+            "nothing unleased: a no-op that reports zero"
+        );
+        assert!(px.unpin(&pin));
+        assert_eq!(px.evictable_bytes(), 10);
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, review: the kv-flex shed reaches its floor through unleased
+    /// PROTECTED bytes (it counts as a shed, no warning path) and takes the "nothing
+    /// evictable" path only when every byte above the floor is leased.
+    #[test]
+    fn kv_flex_shed_reaches_the_floor_through_protected_entries_and_warns_only_when_all_is_leased()
+    {
+        let k = key("");
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", 100);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        assert_eq!((px.protected_bytes, px.probation_bytes), (30, 0));
+
+        let mut flex = armed_flex(15);
+        assert_eq!(
+            flex.shed(&mut px, false, "test"),
+            2,
+            "unleased protected bytes above the floor shed, oldest first"
+        );
+        assert_eq!(px_survivors(&px), vec![2]);
+        assert_eq!(px.total_bytes, 10);
+        assert_eq!(
+            flex.sheds, 1,
+            "a real shed is counted; the warning path never counts"
+        );
+
+        let i2 = px.entries[&k].iter().position(|e| e.toks[0] == 2).unwrap();
+        let pin = px.pin(&k, i2).expect("the survivor takes a lease");
+        let mut flex = armed_flex(5);
+        assert_eq!(px.evictable_bytes(), 0);
+        assert_eq!(
+            flex.shed(&mut px, false, "test"),
+            0,
+            "everything above the floor is leased: the warning path"
+        );
+        assert_eq!(flex.sheds, 0);
+        assert_eq!(px.total_bytes, 10);
+        assert!(px.unpin(&pin));
+        assert_prefix_cache_accounting(&px);
+    }
+
     /// The grant policy, pure: free minus guard while armed, zero under hold, zero
     /// disarmed, saturating: a grant can never underflow into a giant budget.
     #[test]
@@ -36789,9 +37105,11 @@ mod tests {
     fn prefix_cache_lru_policy_evicts_the_global_oldest_not_only_probation() {
         // The MEMRA_PREFIX_CACHE_POLICY=lru rollback must be able to reach a PROMOTED entry.
         // Shape: two entries earn a hit (so both are protected under a 100% protected share, which
-        // is what the lru policy forces), then a fresh entry arrives. Under SLRU the only
-        // candidate is the probation LRU — here the newcomer itself — so the promoted pair is
-        // immortal and the newcomer is its own victim. Under plain LRU the global oldest goes.
+        // is what the lru policy forces), then a fresh entry arrives. Under SLRU
+        // `capacity_victim_with` alone names the probation LRU, here the newcomer itself; the
+        // insert loop's newest-turn-fits rule (`room_victim_with`, memra#523 item 1) then takes
+        // the protected LRU instead, so the newcomer is never its own victim on either policy.
+        // Under plain LRU the global oldest goes.
         const BUDGET: usize = 10;
         let mut px = PrefixCache::default();
         px.insert_with_budget(&key(""), entry_b(&key(""), 0, 4), "test", BUDGET);
@@ -36810,12 +37128,21 @@ mod tests {
             .unwrap();
         assert_eq!(newest.segment, PrefixSegment::Probation);
 
-        // SLRU arm: the newcomer in probation is the victim.
+        // SLRU arm: the raw capacity victim is the probation LRU, the newcomer itself...
         let (_, slru_victim) = px.capacity_victim_with(true).expect("slru victim");
         assert_eq!(
             px.entries[&key("")][slru_victim].toks[0],
             2,
             "SLRU must evict the probation LRU"
+        );
+        // ...and the insert loop's room victim redirects to the protected LRU (memra#523).
+        let (_, room_victim) = px
+            .room_victim_with(true, Some(newest.id))
+            .expect("room victim");
+        assert_eq!(
+            px.entries[&key("")][room_victim].toks[0],
+            oldest.toks[0],
+            "newest-turn-fits must take the oldest protected entry, never the newcomer"
         );
 
         // LRU arm: the globally oldest entry is the victim, even though it is promoted.
@@ -36830,6 +37157,446 @@ mod tests {
             2,
             "policy=lru must not make every newcomer its own victim"
         );
+    }
+
+    /// memra#523 item 1, the incident shape in bytes: an 8192 MiB budget, 80 % protected, six
+    /// promoted 30k-token conversations (about 6.1 GB) beside one tenant growing 105k -> 168k
+    /// tokens by 300 per turn (entries 2.7 -> 4.3 GB, the incident's own sizes). The plain
+    /// path's restore lease ends after the restore fence, before publication
+    /// (docs/SERVING.md "Plain prefix-hit leases end ..."), so the previous turn's entry is
+    /// unleased when the new turn inserts. Every turn must insert, the victims must be the
+    /// cohort's protected entries first (oldest first) and then the tenant's own older turns,
+    /// and the inserted entry must never be its own victim.
+    #[test]
+    fn prefix_cache_slru_newest_turn_fits_beside_a_protected_cohort() {
+        const MIB: usize = 1 << 20;
+        const BUDGET: usize = 8192 * MIB;
+        const COHORT_ENTRY: usize = 1016 * MIB; // six of these: 6.1 GB
+        fn turn_bytes(tokens: usize) -> usize {
+            // 2.7 GB at 105k tokens, 4.3 GB at 168k: 25,397 B per token above 105k.
+            2_700_000_000 + (tokens - 105_000) * 25_397
+        }
+        let cohort = key("cohort");
+        let grow = key("grow");
+        let mut px = PrefixCache::default();
+        let mut victims: Vec<(u32, PrefixSegment)> = Vec::new();
+        for ident in 0..6u32 {
+            let mut sink = |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment));
+            px.insert_with_budget_pins_and_policy(
+                &cohort,
+                entry_b(&cohort, ident, COHORT_ENTRY),
+                "seed",
+                BUDGET,
+                80,
+                0,
+                Some(&mut sink),
+                true,
+            );
+            // The cohort's reuse: a restore lease promotes, its release returns to protected.
+            let i = px.entries[&cohort]
+                .iter()
+                .position(|e| e.toks[0] == ident)
+                .unwrap();
+            next_instant();
+            let pin = px.pin(&cohort, i).unwrap();
+            assert!(px.unpin(&pin));
+        }
+        assert_eq!(px.protected_bytes, 6 * COHORT_ENTRY);
+        assert_eq!(px.probation_bytes, 0);
+        assert!(
+            px.protected_bytes <= px.protected_target_bytes,
+            "no demotion before the growth"
+        );
+        assert!(victims.is_empty());
+
+        let mut prev: Option<u32> = None;
+        let mut tokens = 105_000usize;
+        let mut turn = 0u32;
+        while tokens <= 168_000 {
+            let ident = 100 + turn;
+            if let Some(prev_ident) = prev {
+                // The hit on the previous turn: leased for the restore, released at the fence.
+                let i = px.entries[&grow]
+                    .iter()
+                    .position(|e| e.toks[0] == prev_ident)
+                    .unwrap_or_else(|| panic!("turn {turn}: the previous turn must be resident"));
+                next_instant();
+                let pin = px
+                    .pin(&grow, i)
+                    .expect("previous turn leased for the restore");
+                assert!(px.unpin(&pin));
+            }
+            let before = victims.len();
+            let mut sink = |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment));
+            next_instant();
+            let inserted = px.insert_with_budget_pins_and_policy(
+                &grow,
+                entry_b(&grow, ident, turn_bytes(tokens)),
+                "seed",
+                BUDGET,
+                80,
+                0,
+                Some(&mut sink),
+                true,
+            );
+            assert!(
+                inserted.is_some(),
+                "turn {turn} ({tokens} tokens): the newest turn must be resident"
+            );
+            assert!(px_survivors(&px).contains(&ident));
+            assert!(px.total_bytes <= BUDGET);
+            assert!(
+                victims[before..].iter().all(|(v, _)| *v != ident),
+                "turn {turn}: an insert must never be its own victim"
+            );
+            if turn == 0 {
+                // Turn 1 in the incident: probation held only the newcomer, so the old code
+                // evicted it; the rule takes the OLDEST PROTECTED cohort member instead.
+                assert_eq!(victims, vec![(0, PrefixSegment::Protected)]);
+            }
+            assert_prefix_cache_accounting(&px);
+            prev = Some(ident);
+            tokens += 300;
+            turn += 1;
+        }
+        assert_eq!(turn, 211);
+        // The cohort went first, oldest first (directly from protected or after a demotion
+        // the tenant's own promotion forced), then the tenant's older turns, oldest first.
+        let order: Vec<u32> = victims.iter().map(|(v, _)| *v).collect();
+        assert_eq!(&order[..6], &[0, 1, 2, 3, 4, 5]);
+        assert!(order[6..].windows(2).all(|w| w[0] < w[1]));
+        assert!(!px.entries.contains_key(&cohort));
+        assert!(
+            victims
+                .iter()
+                .any(|(v, s)| *v >= 100 && *s == PrefixSegment::Protected),
+            "once three turns stop fitting, the redirect reaches the tenant's own protected turns"
+        );
+        // 4.3 GB + 4.29 GB exceed the budget: the final turn evicted its predecessor and stands alone.
+        assert_eq!(px_survivors(&px), vec![100 + 210]);
+        assert_eq!(px.skips_budget + px.skips_pinned, 0, "no turn was refused");
+    }
+
+    /// memra#523 item 1: an entry larger than the whole budget is refused with the typed line,
+    /// in bytes, on both publication paths, evicting nothing and counting in the budget skips.
+    #[test]
+    fn prefix_cache_oversized_insert_refuses_with_the_typed_line_and_evicts_nothing() {
+        const BUDGET: usize = 10;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, entry_b(&k, 0, 4), "test", BUDGET);
+        assert!(reuse_ident(&mut px, 0));
+        px.insert_with_budget(&k, entry_b(&k, 1, 3), "test", BUDGET);
+
+        let mut victims: Vec<u32> = Vec::new();
+        let mut sink = |dead: PrefixEntry| victims.push(dead.toks[0]);
+        let inserted = px.insert_with_budget_pins_and_policy(
+            &k,
+            entry_b(&k, 2, BUDGET + 1),
+            "test",
+            BUDGET,
+            80,
+            0,
+            Some(&mut sink),
+            true,
+        );
+        assert!(inserted.is_none());
+        assert!(!px.prepare_snapshot(&k, BUDGET + 1, BUDGET, true, Some(&mut sink)));
+        assert!(victims.is_empty(), "an oversized entry evicts nothing");
+        assert_eq!(px_survivors(&px), vec![0, 1]);
+        assert_eq!(px.evictions, 0);
+        assert_eq!(px.skips_budget, 2);
+        assert_eq!(
+            prefix_insert_refused_oversize(BUDGET + 1, BUDGET, "seed", &key("t")),
+            "[prefix-cache] insert refused: entry 11 exceeds budget 10 (seed, model m, ns \"t\")"
+        );
+        assert_eq!(
+            prefix_insert_refused_leased(6, 5, 10, "snapshot preflight", &key("")),
+            "[prefix-cache] insert refused: entry 6 cannot fit beside 5 leased bytes \
+             (budget 10, snapshot preflight, model m)"
+        );
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, review: the refusal lines are throttled, the counters are not. First
+    /// refusal printed; identical repeats suppressed and counted; a changed shape prints again
+    /// and carries the previous shape's count; the N-th identical repeat prints with its count.
+    #[test]
+    fn prefix_refusal_announcer_prints_first_changed_and_every_nth_identical_refusal() {
+        let n = PREFIX_REFUSAL_REANNOUNCE_EVERY;
+        let mut a = PrefixRefusalAnnouncer::default();
+        let oversize = |bytes: usize| PrefixRefusalShape {
+            leased: None,
+            bytes,
+            budget: 10,
+            key: key(""),
+        };
+        let line = || {
+            "[prefix-cache] insert refused: entry 11 exceeds budget 10 (seed, model m)".to_string()
+        };
+        // First refusal: printed verbatim.
+        assert_eq!(a.announce(oversize(11), line()), Some(line()));
+        assert_eq!(a.suppressed, 0);
+        // Identical repeats: suppressed and counted, up to the N-th, which prints with the count.
+        for i in 1..n {
+            assert_eq!(
+                a.announce(oversize(11), line()),
+                None,
+                "repeat {i} must be suppressed"
+            );
+            assert_eq!(a.suppressed, i);
+        }
+        assert_eq!(
+            a.announce(oversize(11), line()),
+            Some(format!(
+                "{} (identical refusal repeated {n} times since the previous line; {} not printed)",
+                line(),
+                n - 1
+            ))
+        );
+        assert_eq!(a.suppressed, 0, "the N-th repeat resets the count");
+        // The same path or the other path with the same numbers is the same shape: suppressed.
+        assert_eq!(
+            a.announce(oversize(11), "different why, same shape".to_string()),
+            None
+        );
+        assert_eq!(a.suppressed, 1);
+        // A changed shape (bytes) prints at once and carries the previous shape's count.
+        let changed =
+            "[prefix-cache] insert refused: entry 12 exceeds budget 10 (seed, model m)".to_string();
+        assert_eq!(
+            a.announce(oversize(12), changed.clone()),
+            Some(format!(
+                "{changed} (previous shape: 1 identical refusals not printed)"
+            ))
+        );
+        assert_eq!(a.suppressed, 0);
+        // A changed key (model or salt) is a new shape too, with nothing suppressed before it.
+        let other_key = PrefixRefusalShape {
+            leased: None,
+            bytes: 12,
+            budget: 10,
+            key: key("t"),
+        };
+        assert_eq!(
+            a.announce(other_key, "other tenant".to_string()),
+            Some("other tenant".to_string())
+        );
+        // A leased refusal with the same bytes and budget is a different shape from the
+        // oversize one, and a different leased byte count is a different shape again.
+        let leased = |leased: usize| PrefixRefusalShape {
+            leased: Some(leased),
+            bytes: 12,
+            budget: 10,
+            key: key("t"),
+        };
+        assert_eq!(
+            a.announce(leased(5), "leased 5".to_string()),
+            Some("leased 5".to_string())
+        );
+        assert_eq!(a.announce(leased(5), "leased 5".to_string()), None);
+        assert_eq!(
+            a.announce(leased(6), "leased 6".to_string()),
+            Some("leased 6 (previous shape: 1 identical refusals not printed)".to_string())
+        );
+    }
+
+    /// memra#523 item 1, review: through the cache itself, a saturated shape refusing on every
+    /// request counts every refusal in the skip counters while the announcer suppresses the
+    /// identical lines; the pinned and budget counters stay separate.
+    #[test]
+    fn prefix_cache_repeated_refusals_count_every_time_and_print_once() {
+        const BUDGET: usize = 10;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, entry_b(&k, 0, 4), "test", BUDGET);
+        let mut victims: Vec<u32> = Vec::new();
+        for ident in 1..=5u32 {
+            let mut sink = |dead: PrefixEntry| victims.push(dead.toks[0]);
+            let inserted = px.insert_with_budget_pins_and_policy(
+                &k,
+                entry_b(&k, ident, BUDGET + 1),
+                "test",
+                BUDGET,
+                80,
+                0,
+                Some(&mut sink),
+                true,
+            );
+            assert!(inserted.is_none());
+            assert!(!px.prepare_snapshot(&k, BUDGET + 1, BUDGET, true, Some(&mut sink)));
+        }
+        assert!(victims.is_empty());
+        assert_eq!(px.skips_budget, 10, "every refusal counts");
+        assert_eq!(px.skips_pinned, 0);
+        assert_eq!(
+            px.refusals.suppressed, 9,
+            "one line printed, nine identical refusals suppressed and counted"
+        );
+        assert_eq!(
+            px.refusals.last,
+            Some(PrefixRefusalShape {
+                leased: None,
+                bytes: BUDGET + 1,
+                budget: BUDGET,
+                key: k.clone()
+            })
+        );
+        // A leased refusal is a new shape: it prints (carrying the count) and resets.
+        let i0 = px.entries[&k].iter().position(|e| e.toks[0] == 0).unwrap();
+        let pin = px.pin(&k, i0).unwrap();
+        assert!(!px.prepare_snapshot(&k, 7, BUDGET, true, None));
+        assert_eq!(px.skips_pinned, 1);
+        assert_eq!(px.refusals.suppressed, 0);
+        assert_eq!(
+            px.refusals.last,
+            Some(PrefixRefusalShape {
+                leased: Some(4),
+                bytes: 7,
+                budget: BUDGET,
+                key: k.clone()
+            })
+        );
+        assert!(px.unpin(&pin));
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, the no-change half: for entries that fit without touching protected
+    /// bytes the SLRU victims are the same entries in the same order as before the rule
+    /// (probation LRU, oldest first; demoted protected overflow ahead of younger probation).
+    /// The room victim equals the raw capacity victim whenever probation holds an entry other
+    /// than the one being inserted.
+    #[test]
+    fn prefix_cache_slru_fitting_inserts_keep_the_same_victims_in_the_same_order() {
+        const BUDGET: usize = 10;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        let mut victims: Vec<(u32, PrefixSegment)> = Vec::new();
+        px.insert_with_budget(&k, entry_b(&k, 0, 5), "test", BUDGET);
+        assert!(reuse_ident(&mut px, 0));
+        px.insert_with_budget(&k, entry_b(&k, 1, 3), "test", BUDGET);
+        assert!(reuse_ident(&mut px, 1));
+        assert_eq!(px.protected_bytes, 8);
+        for ident in 2..22u32 {
+            let mut sink = |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment));
+            if ident > 2 {
+                // The older scan entry sits in probation: raw and room victims agree.
+                let raw = px.capacity_victim_with(true);
+                assert_eq!(px.room_victim_with(true, Some(u64::MAX)), raw);
+                assert_eq!(px.room_victim_with(true, None), raw);
+            }
+            px.insert_with_budget_pins_and_policy(
+                &k,
+                entry_b(&k, ident, 2),
+                "scan",
+                BUDGET,
+                80,
+                0,
+                Some(&mut sink),
+                true,
+            );
+        }
+        // Scan k evicts scan k-1 from probation; the promoted pair is untouched.
+        let expect: Vec<(u32, PrefixSegment)> =
+            (2..21u32).map(|v| (v, PrefixSegment::Probation)).collect();
+        assert_eq!(victims, expect);
+        assert_eq!(px_survivors(&px), vec![0, 1, 21]);
+        assert_eq!((px.protected_bytes, px.probation_bytes), (8, 2));
+
+        // The demotion shape (prefix_cache_slru_demotes_by_protected_bytes_not_entry_count):
+        // protected overflow is demoted and is the victim ahead of the younger newcomer.
+        let mut px = PrefixCache::default();
+        let mut victims: Vec<(u32, PrefixSegment)> = Vec::new();
+        px.insert_with_budget(&k, entry_b(&k, 0, 6), "test", BUDGET);
+        assert!(reuse_ident(&mut px, 0));
+        px.insert_with_budget(&k, entry_b(&k, 1, 4), "test", BUDGET);
+        assert!(reuse_ident(&mut px, 1));
+        let mut sink = |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment));
+        px.insert_with_budget_pins_and_policy(
+            &k,
+            entry_b(&k, 2, 5),
+            "test",
+            BUDGET,
+            80,
+            0,
+            Some(&mut sink),
+            true,
+        );
+        assert_eq!(victims, vec![(0, PrefixSegment::Probation)]);
+        assert_eq!(px_survivors(&px), vec![1, 2]);
+        assert_eq!(
+            (px.probation_bytes, px.protected_bytes, px.total_bytes),
+            (5, 4, 9)
+        );
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, the leased boundary: a publication whose predecessor is still leased
+    /// across the insert (the spec-session shape; the plain path releases at the restore
+    /// fence) fits while `entry + leased <= budget`, evicting unleased protected entries, and
+    /// is refused with the typed leased line otherwise, evicting nothing.
+    #[test]
+    fn prefix_cache_newest_turn_beside_a_leased_predecessor_fits_or_refuses_loudly() {
+        const BUDGET: usize = 10;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        let mut victims: Vec<(u32, PrefixSegment)> = Vec::new();
+        // 3 + 5 protected bytes stay inside the 8-byte share: no demotion, so the redirect
+        // (not `rebalance_protected`) is what reaches turn 1 below.
+        px.insert_with_budget(&k, entry_b(&k, 1, 3), "turn-1", BUDGET);
+        let i1 = px.entries[&k].iter().position(|e| e.toks[0] == 1).unwrap();
+        next_instant();
+        let pin1 = px.pin(&k, i1).unwrap(); // turn 2 restores from turn 1 and holds the lease
+        px.insert_with_budget(&k, entry_b(&k, 2, 5), "turn-2", BUDGET);
+        assert_eq!(px_survivors(&px), vec![1, 2]);
+        assert!(px.unpin(&pin1));
+        let i2 = px.entries[&k].iter().position(|e| e.toks[0] == 2).unwrap();
+        next_instant();
+        let pin2 = px.pin(&k, i2).unwrap(); // turn 3 restores from turn 2 and holds the lease
+
+        // 6 > 10 - 5 leased: refused up front, nothing evicted (the old code evicted turn 1
+        // and then the newcomer itself).
+        let refused = px.insert_with_budget_pins_and_policy(
+            &k,
+            entry_b(&k, 3, 6),
+            "turn-3",
+            BUDGET,
+            80,
+            0,
+            Some(&mut |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment))),
+            true,
+        );
+        assert!(refused.is_none());
+        assert!(!px.prepare_snapshot(
+            &k,
+            6,
+            BUDGET,
+            true,
+            Some(&mut |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment)))
+        ));
+        assert!(victims.is_empty());
+        assert_eq!(px_survivors(&px), vec![1, 2]);
+        assert_eq!(px.skips_pinned, 2);
+        assert_eq!(px.evictions, 0);
+
+        // 5 <= 10 - 5 leased: fits by evicting the unleased protected turn 1, never itself.
+        let fits = px.insert_with_budget_pins_and_policy(
+            &k,
+            entry_b(&k, 3, 5),
+            "turn-3",
+            BUDGET,
+            80,
+            0,
+            Some(&mut |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment))),
+            true,
+        );
+        assert!(fits.is_some());
+        assert_eq!(victims, vec![(1, PrefixSegment::Protected)]);
+        assert_eq!(px_survivors(&px), vec![2, 3]);
+        assert_eq!(px.total_bytes, 10);
+        assert_eq!(px.evictions, 1);
+        assert!(px.unpin(&pin2));
+        assert_prefix_cache_accounting(&px);
     }
 
     #[test]
@@ -37110,7 +37877,7 @@ mod tests {
             px.entries[&k][0].pins, 1,
             "the other session keeps its lease"
         );
-        assert!(!px.prepare_snapshot(size, budget, false, None));
+        assert!(!px.prepare_snapshot(&k, size, budget, false, None));
         assert_eq!(px_survivors(&px), vec![0]);
         assert_eq!(
             px.evictions, 0,
@@ -37120,7 +37887,7 @@ mod tests {
         let mut other_session_pin = Some(pin.clone());
         retire_prefix_pin(&mut px, &mut other_session_pin);
         assert_eq!(px.capacity_victim_with(false), Some((k.clone(), 0)));
-        assert!(px.prepare_snapshot(size, budget, false, None));
+        assert!(px.prepare_snapshot(&k, size, budget, false, None));
         assert_eq!(px.total_bytes, 0, "source drops before snapshot allocation");
         assert!(px.id_index(&pin).is_none());
         px.insert_with_budget(&k, entry_b(&k, 1, size), "deeper", budget);

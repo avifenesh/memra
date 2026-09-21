@@ -259,7 +259,77 @@ environment alone (now refused without `--private-lock-dir-for-tests`, loud star
 refuses foreign seams). D's note for the lead: `tools/ci-change-class.sh` classes `research/**` as docs-only while ten
 test-time `research/` reads now exist across lanes (list in D's DAY13.md); queued.
 
+## The integ11 tripwire settled (clean window, `main` `30e433c4c`)
+Rerun of `tools/local-ci.sh --perf` with no co-resident (`integration-day12/perfci-clean-window/`): correctness GREEN,
+serve-smoke 0 failed, hit gate ALL GREEN, `26b-plain-short: 208.52 tok/s [OK]`, `qwen9b-plain-short: 138.80 tok/s [OK]`,
+`perf stage: 0 fail, 0 warn`, rc=0, rows `window_clean:true`. The two `[FAIL]` rows of the integ11 run were the
+contended window (another session's process on the card), as the record said; the diff carried no tok/s change.
+
+## Lane C day 14 (`fc7375817`, pushed by the lane; ruling 16 exit criterion met)
+Census first (`HOSTPREFIX-DOOR.md` "Draft planes"): a spec-served entry carries the MTP draft-scratch K/V rows
+(`PrefixEntry.draft`, bytes owned by `memra_kv::KvLayer` in the trunk's own q8_0/q5_1 encodings, copied by the same
+`host_plane_from_device`/`plane_up` programs as the trunk), the boundary hidden `last_h` (already `Role::Hidden`), and
+under DSPARK the DFlash tail (no artifact identity derivable from a GGUF digest: stays refused by name). The
+`MEMRA_KV_HOST_VERIFY` digest is blind to the draft plane (a later slice). Code (`62f48ecec`, `worker.rs`):
+`host_tier_entry_class` (pure `Plain` / `MtpDraft`; refuses GLM TP/latent planes and the DFlash tail by name, same
+function at demote, bind, insert, promote); `host_tier_draft_program` folds the head's source, plan and draft encodings
+into `artifact`, `serialized_plan` and `numeric` (length-framed), so a spec entry and a plain entry of one prompt never
+share an identity; `bind_tier_image` binds `Role::Draft` K/V (`mtp-draft-q8_0`/`mtp-draft-q5_1`) with checksums, the
+trunk geometry rule and shape blob `host-prefix-shape-v2`; the pinned charge includes the draft plane. Packed bytes
+and copy programs untouched; every changed statement is inside a tier-Some block. Target card, DEFAULT spec env, OFF
+then ON, N=1, 600 W, `MEMRA_HOSTGATE_CACHE_MB=256`: identity gate `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`
+both, 13 verdict lines equal, demote bytes 160.7/160.6/161.1/161.1 MB equal, one promote and two `verify ok` equal,
+23-event prefix sequence and r1/r3 texts equal, ON refusal lines 0 (day 13: 5); failure gate the same pre-existing `1
+FAILURE(S)` and identical per-cell tier events (day 13 ON: 6); plain pairs and serve-smoke 33 lines identical.
+`verify-day14.py`: `DAY14 REPLAY: PASS` (76 ok). Findings: the draft plane adds about 0.2 MB per entry; the second
+promote is declined by the device protected-share rule identically OFF and ON (not a door effect); the verify digest
+attests the trunk only. Open for the lead: Option B next; the DFlash tail slice needs an export-dir manifest identity.
+
+## integ13 (`lane/spill-integ13-20260921`): C day 14
+Batteries (`integration-day12/integ13-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server suite; clippy
+`-D warnings`; check-flags; publish census; docs registry census; collector pytest; `verify-day14.py` PASS; perf board;
+diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` with the door unset (`integ13-serve-smoke-5090/`): `serve-smoke: 0 failed`.
+
+## Lane B day 14 (`25d252c6f`, pushed by the lane; #523 items 1 and 3)
+First sitting stopped by the lead after four hours without a receipt (driver refusals kept verbatim under
+`pro-single-day14/refused-sitting1/`: `REFUSED: [Errno 17] File exists: '.../gate-main'` and `REFUSED: --external-lock
+requires exactly one @COLLECTOR_LOCK_FD@ argument`; its binaries were also the wrong arms). Second sitting finished in
+0.8 agent-hours. Fix (`f42d921db`, `worker.rs`): the SLRU insert never selects itself as victim (`room_victim_with(slru,
+keep)`); when the newest turn does not fit it evicts from the protected segment oldest first; an entry larger than the
+budget refuses with the typed line `[prefix-cache] insert refused: entry <bytes> exceeds budget <bytes> (...)`; an
+entry that cannot fit beside leased bytes refuses with its own line. Victim selection, the preflight's reclaimable set
+and the refusal lines only; `prefix_snapshot` and restore untouched. Unit tests: the incident shape (211 turns beside a
+protected cohort, cohort evicted oldest first, never itself), the oversized refusal string, fitting inserts keep the
+same victims in the same order, the leased boundary. Gate `tools/prefix-newest-turn-fits-gate.py` (8-turn twin on a
+live `memra-server`, pre-seeded protected cohort from a second tenant, cache-off calibration boot, per-turn cold-versus-
+restored digest, V3 state identity after every turn). Target card, N=1, 600 W, base `be07f2d36` versus fix, verbatim:
+```text
+base: PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=737943552 turns=8 cold_turns_after_1=7 cached_ok=0/7 lines_ok=0/8 evictions=0 protected_evictions=0 refused_or_skipped=1 effective_free_ok=8/8 V1=FAIL V2=FAIL V3=ok V4=FAIL -> FAIL
+fix:  PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=737943552 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 protected_evictions=2 refused_or_skipped=0 effective_free_ok=8/8 V1=ok V2=ok V3=ok V4=ok -> PASS
+```
+Per turn cached_tokens, base then fix: 0/0, 0/9200, 0/9500, 0/9800, 0/10100, 0/10400, 0/10700, 0/11000. Completion digests
+identical across binaries on all 8 turns and 6 cohort sends, and identical to the cache-off boot's cold completions.
+`serve-smoke: 0 failed`, `cache-meter-gate: 0 failed` on the fix; `verify-day14.py` `DAY14 REPLAY OK`. Two earlier
+gate rounds are kept as failed cells (V3 first asserted consumed == grew without a footprint control, then a
+calibration that missed the cohort phase's retained growth); round 3 states V3 on states. Recorded observation, cause
+not inferred: the request path retains device memory growing with the longest prompt seen (67,200 B per token on turns
+3 to 8), identical across binaries and with the cache idle; not this gate's subject. #523 item 2 (policy re-decision,
+interleaved A/B N >= 5) stays open. Revuto on integ14 found two gaps, both fixed on the lane (`9655b9142`): SERVING.md
+and the protected-share FLAGS row still stated the old "probation before protected" guarantee (now the real rule with
+the scan-resistance trade-off named; lead ruling 18 below), and the refusal lines had lost their one-shot guard (now a
+shape-keyed throttle, counters unchanged).
+
+## integ14 (`lane/spill-integ14-20260921`): B day 14
+Batteries (`integration-day12/integ14-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server 748 tests; clippy `-D warnings`; check-flags; publish census; docs registry census; collector pytest; B's `verify-day14.py` OK; perf board; diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` (`integ14-serve-smoke-5090/`): `serve-smoke: 0 failed`.
+
+## Lead rulings, day 12 (continued)
+18. **The newest turn fits, and the docs say what that costs.** #523 item 1's rule stands (an insert never evicts
+    itself; protected oldest first when the free share is short; typed refusal only when the entry exceeds the budget
+    or cannot fit beside leases). The consequence that a growing one-hit tenant can remove another tenant's promoted
+    cohort is the documented trade-off, not a bug; the default policy is re-decided under #523 item 2 by interleaved
+    A/B on the incident shape, N >= 5, both orders, before any promotion or demotion of SLRU as the naked default.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
-- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 sealed and pushed (`31ba74550`); merged into integ11. B day 14 running (#523 items 1 and 3). E, F idle.
+- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 merged (#591); C day 14 sealed and pushed (`fc7375817`); merged into integ13. B day 14 sealed and pushed (`25d252c6f`); merged into integ14. A day 12 running (#384, #385 harness). E, F idle.
