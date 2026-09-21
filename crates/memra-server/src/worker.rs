@@ -4660,10 +4660,20 @@ fn host_tier_governor(
             .and_then(|b| b.checked_mul(2))
             .ok_or("host tier governor: capacity overflow")
     };
+    // Option C (day 16): a promote's residency charge (`tier_charge`, device=true, taken before
+    // the copy) and the registration of its fresh destination planes (`register_device`, released
+    // at `take_plane`) are both on this dimension while the H2D runs, over the promoted residents'
+    // own charges: at most one budget each, so three. The ledger records; the LRU decides.
+    let thrice = |bytes: usize| {
+        u64::try_from(bytes)
+            .ok()
+            .and_then(|b| b.checked_mul(3))
+            .ok_or("host tier governor: capacity overflow")
+    };
     let mut capacity = TierBudget::zero(dimensions);
     capacity.pinned = twice(host_budget)?;
     capacity.pageable = twice(host_budget)?;
-    capacity.device[device] = twice(device_budget)?;
+    capacity.device[device] = thrice(device_budget)?;
     // Option B: the transfer engine charges one in-flight op per K or V plane of the batch
     // (`submit_batch`); the day-13 ledger left this dimension at zero, which would have refused
     // the first contract-routed demote with `Capacity`.
@@ -8766,6 +8776,13 @@ impl HostTierContext {
         program.tenant_salt = memra_engine::cache::tiered::hostprefix::tenant_salt(&key.1);
         Ok((program, &programs.generation))
     }
+    /// Take the one-shot fault if it belongs to this side (`demote`: the D2H route; otherwise the
+    /// H2D promote route); a fault of the other side stays armed for the route it names.
+    fn take_fault(&self, demote: bool) -> Option<HostContractFault> {
+        let fault = self.fault.get().filter(|f| f.is_demote() == demote)?;
+        self.fault.set(None);
+        Some(fault)
+    }
 }
 impl HostPrefixCache {
     fn tier_charge(
@@ -9170,24 +9187,45 @@ enum HostContractFailure {
     TicketLeaked(String),
 }
 
-/// One-shot injected fault for the contract route: `MEMRA_KV_HOST_FAULT=contract-presubmit` or
-/// `contract-postpublish`, armed once at boot into `HostTierContext::fault` (the GPU unit tests
-/// set the cell directly). Each names the unwind path it exercises: a refusal before any op was
-/// submitted (every registered plane must come back, typed `Refused`, tier on), and a refusal
-/// after every destination was taken (the published ticket must retire against its consumer
-/// fence and be acknowledged, nothing leaked, tier on). Gate: `tools/kv-host-contract-fault-gate.sh`.
+/// One-shot injected fault for the contract routes: `MEMRA_KV_HOST_FAULT=contract-presubmit` or
+/// `contract-postpublish` (the D2H demote route, Option B) and `contract-promote-presubmit` or
+/// `contract-promote-postpublish` (the H2D promote route, Option C), armed once at boot into
+/// `HostTierContext::fault` (the GPU unit tests set the cell directly). Each names the unwind
+/// path it exercises: a refusal before any op was submitted (every registered plane must come
+/// back or release, typed `Refused`, tier on), and a refusal after publication (the published
+/// ticket must retire against its consumer fence and be acknowledged, nothing leaked, tier on).
+/// Each route takes only its own side (`HostTierContext::take_fault`), so one boot arms exactly
+/// one route. Gate: `tools/kv-host-contract-fault-gate.sh`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HostContractFault {
     PreSubmit,
     PostPublish,
+    PromotePreSubmit,
+    PromotePostPublish,
+    /// PR #605 review finding 1: the LAST op of the promote batch is mis-sized by one byte so the
+    /// engine's own validation rejects exactly that item (partial acceptance); the unwind must
+    /// recover only the accepted sources and end `Refused`, tier on.
+    PromoteReject,
+    /// PR #605 review finding 2: the first `ready_view` succeeds in the engine (the ticket IS
+    /// published) but the route is handed an injected error for it; the unwind must ask the
+    /// engine and take the published arm, nothing leaked, tier on.
+    PromoteReadyView,
 }
 impl HostContractFault {
     fn from_door(fault: &str) -> Option<Self> {
         match fault {
             "contract-presubmit" => Some(Self::PreSubmit),
             "contract-postpublish" => Some(Self::PostPublish),
+            "contract-promote-presubmit" => Some(Self::PromotePreSubmit),
+            "contract-promote-postpublish" => Some(Self::PromotePostPublish),
+            "contract-promote-reject" => Some(Self::PromoteReject),
+            "contract-promote-readyview" => Some(Self::PromoteReadyView),
             _ => None,
         }
+    }
+    /// The demote (D2H) side, as opposed to the promote (H2D) side.
+    fn is_demote(self) -> bool {
+        matches!(self, Self::PreSubmit | Self::PostPublish)
     }
 }
 
@@ -9227,7 +9265,7 @@ fn host_kv_planes_through_contract(
 ) -> Result<(Vec<Option<HostPlane>>, Option<HostPlane>), HostContractFailure> {
     use HostContractFailure::{Alloc, Refused, SourceQuarantined, TicketLeaked};
     use memra_engine::cache::tiered::*;
-    let fault = tier.fault.take();
+    let fault = tier.take_fault(true);
     let Some(transfers) = &tier.transfers else {
         return Err(Refused(
             "tier D2H transfer engine missing (the door context was built without a CUDA owner)"
@@ -9814,6 +9852,846 @@ fn host_contract_abort(
              fence is leaked",
             leaks.join(", ")
         )),
+    }
+}
+
+/// Why `device_entry_from_host` produced no device entry.
+#[derive(Debug)]
+enum HostPromoteFailure {
+    /// The pre-door meaning: an allocation or copy failed. The caller prints `promote failed
+    /// (..)` and books `rejected_allocs`; the host entry stays.
+    Failed(String),
+    /// Option C only: a contract refusal with the host entry intact and the ledger clean
+    /// (`promote refused (contracts door): ..`).
+    Refused(String),
+    /// Option C only: the H2D read host bytes that differ from the plane's D2H receipt. Nothing
+    /// was published; the caller drops the host entry exactly as `VERIFY FAILED` does.
+    ReceiptMismatch(String),
+    /// Option C only: the transfer engine holds state the server cannot reach (an unobservable
+    /// completion, a ticket that did not retire or acknowledge, a fresh destination that did not
+    /// come back). The host entry is intact and nothing is published, but the ledger is not
+    /// whole and in-flight is exactly one batch: the caller latches the tier off, typed.
+    Latched(String),
+}
+impl From<String> for HostPromoteFailure {
+    fn from(why: String) -> Self {
+        Self::Failed(why)
+    }
+}
+impl From<&str> for HostPromoteFailure {
+    fn from(why: &str) -> Self {
+        Self::Failed(why.into())
+    }
+}
+impl std::fmt::Display for HostPromoteFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Failed(why)
+            | Self::Refused(why)
+            | Self::ReceiptMismatch(why)
+            | Self::Latched(why) => f.write_str(why),
+        }
+    }
+}
+
+/// One destination of a contract-routed promote: its slot and geometry, and the RETAINED device
+/// leases (`retain_device`) that take the two fresh planes back after the ticket retires.
+struct PromotePlane {
+    slot: ContractSlot,
+    len: usize,
+    k_tok_bytes: usize,
+    v_tok_bytes: usize,
+    k: memra_engine::cache::tiered::DeviceLease,
+    v: memra_engine::cache::tiered::DeviceLease,
+}
+
+/// Whether a host entry carries a contract-routed plane (a D2H destination with its receipt).
+/// Under the door every KV plane of a resident entry is one (the route built them all; the one
+/// pinned producer left, the handoff import, is refused at insert); a mixed entry cannot be built
+/// by one demote and the route refuses it by name rather than half-routing it.
+fn host_entry_has_contract_plane(src: &HostPrefixEntry) -> bool {
+    src.kv
+        .iter()
+        .flatten()
+        .chain(src.draft.iter())
+        .any(|p| p.k.receipt().is_some() || p.v.receipt().is_some())
+}
+
+/// Option C: the H2D of every KV plane of one host entry (the trunk planes and the MTP draft
+/// plane) as ONE `TransferEngine` batch on the CUDA owner thread, the `kv_tier_gate` restore
+/// sequence (`kv_tier_gate/active.rs restore`) applied to the server's entry. The destinations
+/// are fresh device planes from the OFF allocator (`alloc_u8`, the same allocation `plane_up`
+/// makes), registered and retained; the sources are TWINS of the entry's own leases
+/// (`retain_host`): the contract's H2D consumes the lease it is handed, and the promote keeps its
+/// host twin resident exactly as OFF does, so the entry's handles never move. Before publication
+/// the completion must `require` against the planes' D2H receipts: the copy read exactly the
+/// bytes the D2H wrote. Publication in the contract's sense is `ready_view` per item; the live
+/// entry is published by the caller's `insert_pinned_demoting`, after this returns, over planes
+/// that have left the engine. One H2D per plane: the contract's `memcpy_htod` on the owner
+/// stream; nothing else copies.
+fn host_kv_planes_from_contract(
+    engine: &Engine,
+    tier: &HostTierContext,
+    src: &HostPrefixEntry,
+    class: HostTierEntryClass,
+) -> Result<(Vec<Option<PrefixPlane>>, Option<PrefixPlane>), HostPromoteFailure> {
+    use HostPromoteFailure::{Failed, Latched, ReceiptMismatch, Refused};
+    use memra_engine::cache::tiered::*;
+    let fault = tier.take_fault(false);
+    let Some(transfers) = &tier.transfers else {
+        return Err(Refused(
+            "tier H2D transfer engine missing (the door context was built without a CUDA owner)"
+                .into(),
+        ));
+    };
+    let mut t = transfers.borrow_mut();
+    let (program, _) = tier
+        .program(&src.pool_key, class)
+        .map_err(|why| Refused(format!("tier {why}")))?;
+    let tenant = program.tenant_salt;
+    let dimensions = t.used().device.len();
+    let request = move || BudgetRequest {
+        bytes: TierBudget::zero(dimensions),
+        priority: Priority::AdmittedRestore,
+        deadline: Deadline(u64::MAX),
+        tenant,
+    };
+    // 1. The plane list, borrowed: slot, geometry, the two contract leases with their receipts,
+    //    and the source pointers the unwind checks a recovered twin against. Every plane must be
+    //    a contract destination whose lease is exactly the plane (the D2H wrote all of it).
+    struct Planned<'a> {
+        slot: ContractSlot,
+        len: usize,
+        k_tok_bytes: usize,
+        v_tok_bytes: usize,
+        kb: usize,
+        vb: usize,
+        k: &'a memra_engine::tier_transfer::CudaPinnedLease,
+        v: &'a memra_engine::tier_transfer::CudaPinnedLease,
+        ck: Digest,
+        cv: Digest,
+    }
+    let mut planned = Vec::with_capacity(src.kv.len() + 1);
+    // (item index, the entry's own lease pointer) per op, in op order: the unwind recovers exactly
+    // the ACCEPTED items and checks each recovered twin against its pointer.
+    let mut sources: Vec<(u32, *const u8)> = Vec::with_capacity(2 * (src.kv.len() + 1));
+    {
+        let planes = src
+            .kv
+            .iter()
+            .enumerate()
+            .filter_map(|(i, p)| p.as_ref().map(|p| (ContractSlot::Kv(i), p)))
+            .chain(src.draft.as_ref().map(|p| (ContractSlot::Draft, p)));
+        for (slot, p) in planes {
+            let (
+                HostPlaneBytes::Contract {
+                    lease: k,
+                    receipt: ck,
+                },
+                HostPlaneBytes::Contract {
+                    lease: v,
+                    receipt: cv,
+                },
+            ) = (&p.k, &p.v)
+            else {
+                return Err(Refused(format!(
+                    "tier H2D refused: {slot:?} plane mixes contract-routed and pinned bytes"
+                )));
+            };
+            let (Some(kb), Some(vb)) = (
+                p.len.checked_mul(p.k_tok_bytes),
+                p.len.checked_mul(p.v_tok_bytes),
+            ) else {
+                return Err(Refused(format!(
+                    "tier H2D refused: {slot:?} plane byte overflow"
+                )));
+            };
+            if kb == 0 || vb == 0 || k.valid_bytes() != kb as u64 || v.valid_bytes() != vb as u64 {
+                return Err(Refused(format!(
+                    "tier H2D refused: {slot:?} plane geometry {} rows x {}/{} B against host \
+                     leases of {}/{} B",
+                    p.len,
+                    p.k_tok_bytes,
+                    p.v_tok_bytes,
+                    k.valid_bytes(),
+                    v.valid_bytes()
+                )));
+            }
+            for lease in [k, v] {
+                let pointer = lease
+                    .bytes()
+                    .map_err(|e| {
+                        Refused(format!(
+                            "tier H2D refused: {slot:?} plane host bytes unreadable ({e:?})"
+                        ))
+                    })?
+                    .as_ptr();
+                sources.push((sources.len() as u32, pointer));
+            }
+            planned.push(Planned {
+                slot,
+                len: p.len,
+                k_tok_bytes: p.k_tok_bytes,
+                v_tok_bytes: p.v_tok_bytes,
+                kb,
+                vb,
+                k,
+                v,
+                ck: *ck,
+                cv: *cv,
+            });
+        }
+    }
+    if planned.is_empty() {
+        return Err(Refused(
+            "tier H2D refused: the entry carries no KV plane".into(),
+        ));
+    }
+    // 2. Fresh destination planes in the OFF order (K then V per plane) from the OFF allocator;
+    //    a refusal here is the OFF failure (`promote failed (device alloc of N B failed: ..)`),
+    //    before anything entered the engine.
+    let mut fresh: Vec<(CudaSlice<u8>, CudaSlice<u8>)> = Vec::with_capacity(planned.len());
+    for p in &planned {
+        let k = engine
+            .alloc_u8(p.kb)
+            .map_err(|err| Failed(format!("device alloc of {} B failed: {err}", p.kb)))?;
+        let v = engine
+            .alloc_u8(p.vb)
+            .map_err(|err| Failed(format!("device alloc of {} B failed: {err}", p.vb)))?;
+        fresh.push((k, v));
+    }
+    // 3. Each fresh plane enters the registry at the destination generation with a retained twin
+    //    that takes it back after the ticket retires. A refused registration drops the fresh
+    //    plane it was handed (nothing of the entry's is at risk); every registered one is taken
+    //    back through `host_promote_release_fresh`, with the originals dropped first (their extra
+    //    Rc on the registry makes `take_plane` refuse `Busy`, review finding 1 on PR #599).
+    let mut registered: Vec<PromotePlane> = Vec::with_capacity(planned.len());
+    let mut originals: Vec<DeviceLease> = Vec::with_capacity(planned.len() * 2);
+    let generation = HOST_TIER_TRANSFER_EPOCHS.dst_gen;
+    for (p, (k, v)) in planned.iter().zip(fresh) {
+        let mut leaks: Vec<String> = Vec::new();
+        let k = match t.register_device(k, generation, request()) {
+            Ok(lease) => lease,
+            Err(e) => {
+                originals.clear();
+                return Err(host_promote_contract_abort(
+                    &mut t,
+                    registered,
+                    None,
+                    None,
+                    &[],
+                    &format!(
+                        "tier H2D register_device refused for the K plane of {:?} ({e:?})",
+                        p.slot
+                    ),
+                ));
+            }
+        };
+        let v = match t.register_device(v, generation, request()) {
+            Ok(lease) => lease,
+            Err(e) => {
+                originals.clear();
+                if let Err(e) = t.take_plane(&k) {
+                    leaks.push(format!(
+                        "fresh K plane of {:?} did not come back ({e:?})",
+                        p.slot
+                    ));
+                }
+                return Err(host_promote_contract_abort_with(
+                    &mut t,
+                    registered,
+                    None,
+                    None,
+                    &[],
+                    leaks,
+                    &format!(
+                        "tier H2D register_device refused for the V plane of {:?} ({e:?})",
+                        p.slot
+                    ),
+                ));
+            }
+        };
+        let keep_k = match t.retain_device(&k) {
+            Ok(keep) => keep,
+            Err(e) => {
+                originals.clear();
+                for (lease, what) in [(&k, "K"), (&v, "V")] {
+                    if let Err(e) = t.take_plane(lease) {
+                        leaks.push(format!(
+                            "fresh {what} plane of {:?} did not come back ({e:?})",
+                            p.slot
+                        ));
+                    }
+                }
+                return Err(host_promote_contract_abort_with(
+                    &mut t,
+                    registered,
+                    None,
+                    None,
+                    &[],
+                    leaks,
+                    &format!(
+                        "tier H2D retain_device refused for the K plane of {:?} ({e:?})",
+                        p.slot
+                    ),
+                ));
+            }
+        };
+        let keep_v = match t.retain_device(&v) {
+            Ok(keep) => keep,
+            Err(e) => {
+                originals.clear();
+                drop(keep_k);
+                for (lease, what) in [(&k, "K"), (&v, "V")] {
+                    if let Err(e) = t.take_plane(lease) {
+                        leaks.push(format!(
+                            "fresh {what} plane of {:?} did not come back ({e:?})",
+                            p.slot
+                        ));
+                    }
+                }
+                return Err(host_promote_contract_abort_with(
+                    &mut t,
+                    registered,
+                    None,
+                    None,
+                    &[],
+                    leaks,
+                    &format!(
+                        "tier H2D retain_device refused for the V plane of {:?} ({e:?})",
+                        p.slot
+                    ),
+                ));
+            }
+        };
+        originals.push(k);
+        originals.push(v);
+        registered.push(PromotePlane {
+            slot: p.slot,
+            len: p.len,
+            k_tok_bytes: p.k_tok_bytes,
+            v_tok_bytes: p.v_tok_bytes,
+            k: keep_k,
+            v: keep_v,
+        });
+    }
+    // 4. Source twins: a second owned handle on each of the entry's leases (`retain_host`); the
+    //    entry's own handles never move, so the host twin stays resident whatever happens below.
+    let mut hosts: Vec<memra_engine::tier_transfer::CudaPinnedLease> =
+        Vec::with_capacity(planned.len() * 2);
+    for p in &planned {
+        for (lease, what) in [(p.k, "K"), (p.v, "V")] {
+            match t.retain_host(lease) {
+                Ok(twin) => hosts.push(twin),
+                Err(e) => {
+                    drop(hosts);
+                    drop(originals);
+                    return Err(host_promote_contract_abort(
+                        &mut t,
+                        registered,
+                        None,
+                        None,
+                        &[],
+                        &format!(
+                            "tier H2D retain_host refused for the {what} plane of {:?} ({e:?})",
+                            p.slot
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    // 5. The producer fence (an event on the owner stream after the destination allocations),
+    //    then ONE batch and one ticket.
+    let recorded = if fault == Some(HostContractFault::PromotePreSubmit) {
+        Err(Error::Quarantined)
+    } else {
+        t.record_producer(HOST_TIER_TRANSFER_EPOCHS.dst_gen)
+    };
+    let producer = match recorded {
+        Ok(fence) => fence,
+        Err(e) => {
+            let why = if fault == Some(HostContractFault::PromotePreSubmit) {
+                "injected failure (MEMRA_KV_HOST_FAULT=contract-promote-presubmit)".to_string()
+            } else {
+                format!("{e:?}")
+            };
+            // Nothing was submitted: the originals and the twins are the only extra holders.
+            drop(hosts);
+            drop(originals);
+            return Err(host_promote_contract_abort(
+                &mut t,
+                registered,
+                None,
+                None,
+                &[],
+                &format!("tier H2D producer fence refused: {why}"),
+            ));
+        }
+    };
+    let sizes: Vec<u64> = planned
+        .iter()
+        .flat_map(|p| [p.kb as u64, p.vb as u64])
+        .collect();
+    let last = sizes.len() - 1;
+    let ops = originals
+        .into_iter()
+        .zip(hosts)
+        .zip(&sizes)
+        .enumerate()
+        .map(|(i, ((device, host), &bytes))| {
+            // `contract-promote-reject`: the last op asks for one byte more than its source holds,
+            // so the engine's own `CopyOp::validate` rejects exactly that item and the batch is
+            // accepted partially (PR #605 review finding 1).
+            let bytes = if fault == Some(HostContractFault::PromoteReject) && i == last {
+                bytes + 1
+            } else {
+                bytes
+            };
+            TransferOp::H2d(CopyOp {
+                host,
+                device,
+                bytes,
+                epochs: HOST_TIER_TRANSFER_EPOCHS,
+                producer_fence: Some(producer),
+            })
+        })
+        .collect();
+    let ticket = match t.submit_batch(ops) {
+        Ok(batch)
+            if batch
+                .items
+                .iter()
+                .all(|a| matches!(a, ItemAcceptance::Accepted { .. })) =>
+        {
+            batch.ticket
+        }
+        Ok(batch) => {
+            // Partial acceptance: the rejected ops came back (dropping them drops their twins
+            // and the original device handles; the retained twins release the fresh planes once
+            // the accepted items settle). Only the ACCEPTED items hold a source the unwind can
+            // recover: a rejected slot is `None` in the engine and `recover_source` answers
+            // `Rejected` for it (PR #605 review finding 1).
+            let accepted: Vec<(u32, *const u8)> = batch
+                .items
+                .iter()
+                .filter_map(|a| match a {
+                    ItemAcceptance::Accepted { item } => sources.get(*item as usize).copied(),
+                    ItemAcceptance::Rejected { .. } => None,
+                })
+                .collect();
+            let total = batch.items.len();
+            let rejected = total - accepted.len();
+            let ticket = batch.ticket;
+            drop(batch);
+            let injected = if fault == Some(HostContractFault::PromoteReject) {
+                " (injected failure (MEMRA_KV_HOST_FAULT=contract-promote-reject))"
+            } else {
+                ""
+            };
+            return Err(host_promote_contract_abort(
+                &mut t,
+                registered,
+                Some(ticket),
+                Some(producer),
+                &accepted,
+                &format!("tier H2D batch partially refused: {rejected} of {total} items{injected}"),
+            ));
+        }
+        Err(rejected) => {
+            let error = rejected.error.clone();
+            drop(rejected);
+            return Err(host_promote_contract_abort(
+                &mut t,
+                registered,
+                None,
+                Some(producer),
+                &[],
+                &format!("tier H2D submission refused: {error:?}"),
+            ));
+        }
+    };
+    // 6. Completion: the engine's event per item, then its status and its checksum of each
+    //    SOURCE after the copy (for an H2D the completion checksum is the host bytes the DMA read).
+    if let Err(e) = t.synchronize(&ticket) {
+        return Err(Latched(format!(
+            "tier H2D completion unknown ({e:?}); the transfer engine keeps the destinations \
+             and the source twins"
+        )));
+    }
+    let completion = match t.poll(&ticket) {
+        Ok(completion) => completion,
+        Err(e) => {
+            return Err(Latched(format!(
+                "tier H2D completion unreadable ({e:?}); the transfer engine keeps the \
+                 destinations and the source twins"
+            )));
+        }
+    };
+    // 7. The receipt check BEFORE publication: exact lengths from the server's own geometry and
+    //    the checksum each plane's D2H delivered, so `require` holds only if the copy read exactly
+    //    the bytes the demote wrote. A difference is a refusal with nothing published, EXCEPT under
+    //    the gate-box diagnostic that corrupts the image after the receipt by design (day 15): the
+    //    door names the injected difference and requires against the completion's own checksums
+    //    (the copy completed with exactly the bytes on the host), so the verify arm catches it at
+    //    promote as OFF does.
+    let receipts: Vec<Vec<SegmentExpectation>> = planned
+        .iter()
+        .flat_map(|p| [(p.kb as u64, p.ck), (p.vb as u64, p.cv)])
+        .map(|(bytes, checksum)| {
+            vec![SegmentExpectation {
+                valid_bytes: bytes,
+                io_bytes: bytes,
+                checksum,
+            }]
+        })
+        .collect();
+    let mut required = completion.require(&ticket, &receipts, true);
+    if let Err(Error::Corrupt) = &required
+        && kv_host_fault() == "flip-demote"
+    {
+        let differing = planned
+            .iter()
+            .flat_map(|p| [(p.slot, "K", p.ck), (p.slot, "V", p.cv)])
+            .zip(&completion.items)
+            .find(|((_, _, receipt), item)| {
+                item.segments.first().and_then(|s| s.checksum) != Some(*receipt)
+            })
+            .map(|((slot, role, _), _)| format!("{slot:?} {role}"))
+            .unwrap_or_else(|| "a".into());
+        eprintln!(
+            "[prefix-host] contracts door H2D receipt: {differing} plane host bytes differ from \
+             the D2H receipt as injected (MEMRA_KV_HOST_FAULT=flip-demote); the verify arm catches \
+             it at promote"
+        );
+        let own: Vec<Vec<SegmentExpectation>> = completion
+            .items
+            .iter()
+            .zip(&sizes)
+            .map(|(item, &bytes)| {
+                vec![SegmentExpectation {
+                    valid_bytes: bytes,
+                    io_bytes: bytes,
+                    checksum: item
+                        .segments
+                        .first()
+                        .and_then(|s| s.checksum)
+                        .unwrap_or([0; 32]),
+                }]
+            })
+            .collect();
+        required = completion.require(&ticket, &own, true);
+    }
+    if let Err(e) = required {
+        let why = format!(
+            "tier H2D receipt refused ({e:?}): the host bytes the copy read differ from the \
+             plane's D2H receipt"
+        );
+        return Err(
+            match host_promote_contract_abort(
+                &mut t,
+                registered,
+                Some(ticket),
+                Some(producer),
+                &sources,
+                &why,
+            ) {
+                HostPromoteFailure::Refused(why) => ReceiptMismatch(why),
+                other => other,
+            },
+        );
+    }
+    // 8. Publication in the contract's sense: a consumer-ready view per item (the engine's own
+    //    `require` with the consumer fences installed). Nothing is copied or read through it; the
+    //    planes leave the engine below and the caller publishes the live entry.
+    //    Whether the ticket is published after a refusal here is the ENGINE's state, not a loop
+    //    index: `ready_view` marks it after `owner.ready_view` succeeds, `with_destination` before
+    //    its fallible steps, and the abort asks through `cancel` (PR #605 review finding 2).
+    for item in 0..sizes.len() {
+        let mut ready = t
+            .ready_view(&ticket, item as u32, HOST_TIER_TRANSFER_EPOCHS)
+            .map(drop);
+        if item == 0 && fault == Some(HostContractFault::PromoteReadyView) && ready.is_ok() {
+            // The engine published the first item; the route is told otherwise.
+            ready = Err(Error::Quarantined);
+        }
+        if let Err(e) = ready {
+            let why = if item == 0 && fault == Some(HostContractFault::PromoteReadyView) {
+                "tier H2D destination 0 not publishable: injected failure \
+                 (MEMRA_KV_HOST_FAULT=contract-promote-readyview)"
+                    .to_string()
+            } else {
+                format!("tier H2D destination {item} not publishable: {e:?}")
+            };
+            return Err(host_promote_contract_abort(
+                &mut t,
+                registered,
+                Some(ticket),
+                Some(producer),
+                &sources,
+                &why,
+            ));
+        }
+    }
+    if fault == Some(HostContractFault::PromotePostPublish) {
+        return Err(host_promote_contract_abort(
+            &mut t,
+            registered,
+            Some(ticket),
+            Some(producer),
+            &sources,
+            "tier H2D publication refused: injected failure \
+             (MEMRA_KV_HOST_FAULT=contract-promote-postpublish)",
+        ));
+    }
+    // 9. The consumer fence (every copy precedes it on the owner stream), observed by a drain;
+    //    the source twins retire (the entry's handles are the sole owners again); the producer
+    //    fence releases; the published ticket retires against its consumer fence and is
+    //    acknowledged. No result is discarded (review finding 2 on PR #599).
+    let consumer = match t.record_consumer(&ticket) {
+        Ok(fence) => fence,
+        Err(e) => {
+            return Err(host_promote_contract_abort(
+                &mut t,
+                registered,
+                Some(ticket),
+                Some(producer),
+                &sources,
+                &format!("tier H2D consumer fence refused: {e:?}"),
+            ));
+        }
+    };
+    let settled = t
+        .owner_stream()
+        .synchronize()
+        .map_err(|_| Error::Quarantined)
+        .and_then(|_| t.retire_source(&ticket))
+        .and_then(|_| t.release_producer(producer))
+        .and_then(|_| t.retire(&ticket, Some(consumer)))
+        .and_then(|_| t.acknowledge(&ticket));
+    if let Err(e) = settled {
+        return Err(Latched(format!(
+            "tier H2D ticket did not retire ({e:?}); the host entry is intact and nothing is \
+             published, but the ticket's in-flight charge, its source twins or its destinations \
+             are leaked"
+        )));
+    }
+    // 10. The fresh planes leave the engine into `PrefixPlane`s, in their slots.
+    let mut kv: Vec<Option<PrefixPlane>> = (0..src.kv.len()).map(|_| None).collect();
+    let mut draft = None;
+    let mut kv_planes = 0usize;
+    for p in registered {
+        let back = |lease: &DeviceLease,
+                    what: &str,
+                    t: &mut memra_engine::tier_transfer::CudaTransfers| {
+            t.take_plane(lease)
+                .map_err(|e| {
+                    format!(
+                        "fresh {what} plane of {:?} did not come back ({e:?})",
+                        p.slot
+                    )
+                })?
+                .into_pooled()
+                .map_err(|e| {
+                    format!(
+                        "fresh {what} plane of {:?} is not pooled storage ({e})",
+                        p.slot
+                    )
+                })
+        };
+        let (k, v) = match (back(&p.k, "K", &mut t), back(&p.v, "V", &mut t)) {
+            (Ok(k), Ok(v)) => (k, v),
+            (Err(why), _) | (_, Err(why)) => {
+                return Err(Latched(format!(
+                    "tier H2D {why}; the transfer engine holds a destination plane and its charge"
+                )));
+            }
+        };
+        let plane = PrefixPlane {
+            k,
+            v,
+            len: p.len,
+            k_tok_bytes: p.k_tok_bytes,
+            v_tok_bytes: p.v_tok_bytes,
+        };
+        match p.slot {
+            ContractSlot::Kv(i) => {
+                kv[i] = Some(plane);
+                kv_planes += 1;
+            }
+            ContractSlot::Draft => draft = Some(plane),
+        }
+    }
+    // 11. The receipt line: the digest is over the same ordered item checksums under the same
+    //     domain as the D2H line, so for one entry it EQUALS the digest its demote printed.
+    let mut receipt = Vec::with_capacity(32 * sizes.len());
+    for p in &planned {
+        receipt.extend_from_slice(&p.ck);
+        receipt.extend_from_slice(&p.cv);
+    }
+    let complete = completion
+        .items
+        .iter()
+        .filter(|item| {
+            item.accepted
+                && item
+                    .segments
+                    .iter()
+                    .all(|s| s.status == ItemStatus::Complete)
+        })
+        .count();
+    eprintln!(
+        "[prefix-host] contracts door H2D receipt: ticket issuer={} seq={} epochs={}/{}/{} \
+         items={} ({kv_planes} KV planes{}) complete={complete} require=ok \
+         checksums_sha256={} published retired acknowledged",
+        ticket.issuer,
+        ticket.sequence,
+        ticket.epochs.state,
+        ticket.epochs.src_gen,
+        ticket.epochs.dst_gen,
+        sizes.len(),
+        if draft.is_some() { ", draft" } else { "" },
+        digest_hex(&digest("host-prefix-d2h-receipt", &receipt)),
+    );
+    Ok((kv, draft))
+}
+
+/// Take every fresh destination plane back out of the transfer engine through its retained twin
+/// and drop it (the planes are fresh allocations, nothing of the entry's). A refusal is a leak the
+/// caller latches on.
+fn host_promote_release_fresh(
+    t: &mut memra_engine::tier_transfer::CudaTransfers,
+    registered: Vec<PromotePlane>,
+    leaks: &mut Vec<String>,
+) {
+    for p in registered {
+        for (lease, what) in [(&p.k, "K"), (&p.v, "V")] {
+            if let Err(e) = t.take_plane(lease) {
+                leaks.push(format!(
+                    "fresh {what} plane of {:?} did not come back ({e:?})",
+                    p.slot
+                ));
+            }
+        }
+    }
+}
+
+/// Abort one contract-routed promote with the host entry intact (its handles never moved) and
+/// every fresh destination released where the contract allows it. A submitted ticket settles
+/// (event sync) first. Whether it is published is the ENGINE's answer, asked through `cancel`
+/// (PR #605 review finding 2): `PublicationRevoked` means unpublished, and each ACCEPTED source
+/// twin (`sources`: item index and the entry's own lease pointer; a rejected item holds none,
+/// finding 1) is recovered exactly once (lane A's rule 1), checked against its pointer, then
+/// dropped; `AlreadyPublished` means the consumer fence is recorded, the stream drained and the
+/// sources retired (the twins drop). Then the ticket retires (against the consumer fence if
+/// published) and is acknowledged, the producer fence releases after a drain, and the fresh
+/// planes come back through their retained twins. Every fence is observed before it is released
+/// or retired against and no result is discarded (review finding 2 on PR #599). `Refused` when
+/// everything came back; `Latched` when the engine still holds state the server cannot reach.
+fn host_promote_contract_abort(
+    t: &mut memra_engine::tier_transfer::CudaTransfers,
+    registered: Vec<PromotePlane>,
+    ticket: Option<memra_engine::cache::tiered::TransferTicket>,
+    producer: Option<memra_engine::cache::tiered::FenceId>,
+    sources: &[(u32, *const u8)],
+    why: &str,
+) -> HostPromoteFailure {
+    host_promote_contract_abort_with(t, registered, ticket, producer, sources, Vec::new(), why)
+}
+
+fn host_promote_contract_abort_with(
+    t: &mut memra_engine::tier_transfer::CudaTransfers,
+    registered: Vec<PromotePlane>,
+    ticket: Option<memra_engine::cache::tiered::TransferTicket>,
+    producer: Option<memra_engine::cache::tiered::FenceId>,
+    sources: &[(u32, *const u8)],
+    mut leaks: Vec<String>,
+    why: &str,
+) -> HostPromoteFailure {
+    use memra_engine::cache::tiered::{CancelState, PinnedLease, TransferEngine};
+    if let Some(ticket) = &ticket {
+        if let Err(e) = t.synchronize(ticket) {
+            // The DMA's completion is unknown: by the frozen rule the engine keeps the twins and
+            // the fresh planes; the entry's own handles are intact.
+            return HostPromoteFailure::Latched(format!(
+                "{why}; the H2D ticket did not settle ({e:?}), the transfer engine keeps the \
+                 destinations and the source twins"
+            ));
+        }
+        // The engine says whether publication happened; nothing here infers it.
+        let consumer = match t.cancel(ticket) {
+            Ok(CancelState::PublicationRevoked) => {
+                // Rule 1: publication revoked, now recover every ACCEPTED source twin exactly once.
+                for (item, expected) in sources {
+                    match t.recover_source(ticket, *item) {
+                        Ok(twin) => {
+                            match twin.bytes() {
+                                Ok(bytes) if bytes.as_ptr() == *expected => {}
+                                Ok(_) => leaks.push(format!(
+                                    "recovered source {item} is not the entry's own allocation"
+                                )),
+                                Err(e) => {
+                                    leaks.push(format!("recovered source {item} unreadable: {e:?}"))
+                                }
+                            }
+                            drop(twin);
+                        }
+                        Err(e) => leaks.push(format!("recover_source {item}: {e:?}")),
+                    }
+                }
+                if let Err(e) = t.owner_stream().synchronize() {
+                    leaks.push(format!("owner stream drain after cancel: {e}"));
+                }
+                None
+            }
+            Ok(CancelState::AlreadyPublished) => {
+                // A published ticket retires only against a consumer fence; its sources retire
+                // first (the twins drop).
+                let consumer = match t.record_consumer(ticket) {
+                    Ok(fence) => Some(fence),
+                    Err(e) => {
+                        leaks.push(format!("record_consumer: {e:?}"));
+                        None
+                    }
+                };
+                if let Err(e) = t.owner_stream().synchronize() {
+                    leaks.push(format!("owner stream drain after record_consumer: {e}"));
+                }
+                if let Err(e) = t.retire_source(ticket) {
+                    leaks.push(format!("retire_source: {e:?}"));
+                }
+                consumer
+            }
+            Err(e) => {
+                leaks.push(format!("cancel: {e:?}"));
+                None
+            }
+        };
+        if let Err(e) = t
+            .retire(ticket, consumer)
+            .and_then(|_| t.acknowledge(ticket))
+        {
+            leaks.push(format!("retire/acknowledge: {e:?}"));
+        }
+    }
+    if let Some(fence) = producer {
+        if let Err(e) = t.owner_stream().synchronize() {
+            leaks.push(format!("owner stream drain before release_producer: {e}"));
+        }
+        if let Err(e) = t.release_producer(fence) {
+            leaks.push(format!("release_producer: {e:?}"));
+        }
+    }
+    host_promote_release_fresh(t, registered, &mut leaks);
+    if leaks.is_empty() {
+        HostPromoteFailure::Refused(why.to_string())
+    } else {
+        HostPromoteFailure::Latched(format!(
+            "{why}; the H2D unwind left the transfer engine holding state ({}): the host entry \
+             is intact and nothing is published, but a ticket, a fence or a destination plane is \
+             leaked",
+            leaks.join(", ")
+        ))
     }
 }
 
@@ -10540,12 +11418,17 @@ fn pause_px_decision<'a>(
 
 /// H2D-rebuild a device `PrefixEntry` from its host twin. REFUSES a layout-version mismatch
 /// before any allocation: the host entry carries the version for exactly this check.
-fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<PrefixEntry, String> {
+fn device_entry_from_host(
+    engine: &Engine,
+    src: &HostPrefixEntry,
+    tier: Option<(&HostTierContext, HostTierEntryClass)>,
+) -> Result<PrefixEntry, HostPromoteFailure> {
     if src.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
         return Err(format!(
             "host entry layout version {} != runtime {}: promote refused",
             src.layout_version, PREFIX_ENTRY_LAYOUT_VERSION,
-        ));
+        )
+        .into());
     }
     if let Some(glm) = &src.glm {
         if !glm5_tp_kv_host_on() {
@@ -10580,13 +11463,29 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
             v_tok_bytes: p.v_tok_bytes,
         })
     };
-    let mut kv = Vec::with_capacity(src.kv.len());
-    for plane in &src.kv {
-        kv.push(match plane {
-            Some(p) => Some(plane_up(p)?),
-            None => None,
-        });
-    }
+    // Option C (day 16): under the door every KV plane of a resident entry is a contract
+    // destination, and the H2D of all of them is one transfer-engine batch. An all-pinned entry
+    // keeps the OFF program (none exists under the door today); a mixed entry is refused by name
+    // inside the route.
+    let contract_planes = match tier {
+        Some((tier, class)) if src.glm.is_none() && host_entry_has_contract_plane(src) => {
+            Some(host_kv_planes_from_contract(engine, tier, src, class)?)
+        }
+        _ => None,
+    };
+    let (kv, contract_draft) = match contract_planes {
+        Some((kv, draft)) => (kv, Some(draft)),
+        None => {
+            let mut kv = Vec::with_capacity(src.kv.len());
+            for plane in &src.kv {
+                kv.push(match plane {
+                    Some(p) => Some(plane_up(p)?),
+                    None => None,
+                });
+            }
+            (kv, None)
+        }
+    };
     let mut conv = Vec::with_capacity(src.conv.len());
     for c in &src.conv {
         conv.push(match c {
@@ -10601,9 +11500,12 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
             None => None,
         });
     }
-    let draft = match &src.draft {
-        Some(p) => Some(plane_up(p)?),
-        None => None,
+    let draft = match contract_draft {
+        Some(draft) => draft,
+        None => match &src.draft {
+            Some(p) => Some(plane_up(p)?),
+            None => None,
+        },
     };
     let dspark_draft = match &src.dspark_draft {
         Some(t) => {
@@ -10778,11 +11680,38 @@ fn host_promote_prefix_hit(
         (e.toks.len(), e.verify_digest.clone())
     };
     let t0 = Instant::now();
-    let mut e = match device_entry_from_host(engine, &host.entries[pool_key][hi]) {
+    let tier_route = match (&host.tier, tier_class) {
+        (Some(tier), Some(class)) => Some((tier, class)),
+        _ => None,
+    };
+    let mut e = match device_entry_from_host(engine, &host.entries[pool_key][hi], tier_route) {
         Ok(e) => e,
-        Err(err) => {
+        Err(HostPromoteFailure::Failed(err)) => {
             host.rejected_allocs += 1;
             eprintln!("[prefix-host] promote failed ({err}); serving without the host entry");
+            return None;
+        }
+        Err(HostPromoteFailure::Refused(why)) => {
+            eprintln!(
+                "[prefix-host] promote refused (contracts door): {why}; serving without the \
+                 host entry"
+            );
+            return None;
+        }
+        Err(HostPromoteFailure::ReceiptMismatch(why)) => {
+            // The host bytes no longer match what the D2H wrote: the entry leaves, as it does
+            // when the verify arm catches a mismatch after the copy.
+            host.digest_mismatches += 1;
+            host.remove_at(pool_key, hi);
+            eprintln!(
+                "[prefix-host] promote refused (contracts door): {why}; host entry dropped, \
+                 cold path serves"
+            );
+            return None;
+        }
+        Err(HostPromoteFailure::Latched(why)) => {
+            // The entry is intact, the ledger is not: the tier latches off with the one typed line.
+            host.disable(&why);
             return None;
         }
     };
@@ -16053,10 +16982,10 @@ pub fn run(
                      program identities, tenant salt per pool namespace, server governor \
                      ledger pinned/pageable {:.0}MB device {:.0}MB in-flight {}; host tier \
                      armed; KV plane D2H through the transfer engine on the pageable tier \
-                     (Option B)",
+                     (Option B); KV plane H2D through the same engine on promote (Option C)",
                     tier.programs.len(),
                     2.0 * hpx.budget as f64 / 1e6,
-                    2.0 * prefix_cache_budget_bytes() as f64 / 1e6,
+                    3.0 * prefix_cache_budget_bytes() as f64 / 1e6,
                     tier.inflight,
                 );
                 hpx.tier = Some(tier);
@@ -36783,6 +37712,561 @@ mod tests {
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
 
+    /// GPU-only: demote `gpu_entry` through the Option B route into a host image whose every KV
+    /// plane is a contract destination with its receipt; the ledger holds the six leases.
+    fn gpu_contract_image(
+        engine: &Engine,
+        host: &mut super::HostPrefixCache,
+        entry: &mut super::PrefixEntry,
+    ) -> super::HostPrefixEntry {
+        let image = super::host_entry_from_device(engine, host, entry, None)
+            .expect("a clean contract-routed demote");
+        assert!(
+            image
+                .kv
+                .iter()
+                .flatten()
+                .chain(image.draft.iter())
+                .all(|p| p.k.receipt().is_some() && p.v.receipt().is_some()),
+            "every plane crossed through the contract"
+        );
+        assert_eq!(gpu_used(host), (3 * 8 * 58, 0, 0));
+        image
+    }
+
+    /// GPU-only: the host twin is intact, holds exactly the demoted bytes, and is the SOLE owner
+    /// of each lease again (the flip fault's `write` refuses `Busy` while a source twin lives).
+    fn gpu_image_intact_and_sole_owner(
+        image: &mut super::HostPrefixEntry,
+        want: &[(Vec<u8>, Vec<u8>)],
+    ) {
+        let planes: Vec<&mut super::HostPlane> = image
+            .kv
+            .iter_mut()
+            .flatten()
+            .chain(image.draft.iter_mut())
+            .collect();
+        assert_eq!(planes.len(), want.len());
+        for (p, (k, v)) in planes.into_iter().zip(want) {
+            assert_eq!(p.k.bytes().unwrap(), &k[..]);
+            assert_eq!(p.v.bytes().unwrap(), &v[..]);
+            p.k.flip_first_byte()
+                .expect("the entry's handle is the sole owner: no twin outlived the route");
+            p.k.flip_first_byte().unwrap();
+            assert_eq!(p.k.bytes().unwrap(), &k[..]);
+        }
+    }
+
+    /// Option C (lead ruling 15, day 16): a clean contract-routed promote rebuilds every plane
+    /// with the demoted bytes, leaves the source device entry and the host twin untouched, drops
+    /// its source twins (the entry's handles are sole owners again) and its fresh destinations'
+    /// registrations, and never takes a demote-side fault.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let mut image = gpu_contract_image(&engine, &mut host, &mut entry);
+        let tier = host.tier.as_ref().unwrap();
+        // A demote-side fault stays armed for the demote route: the promote never takes it.
+        tier.fault.set(Some(super::HostContractFault::PreSubmit));
+        let promoted = super::device_entry_from_host(
+            &engine,
+            &image,
+            Some((tier, super::HostTierEntryClass::MtpDraft)),
+        )
+        .expect("a clean contract-routed promote");
+        assert_eq!(tier.fault.get(), Some(super::HostContractFault::PreSubmit));
+        tier.fault.set(None);
+        assert!(
+            gpu_entry_whole(&engine, &promoted, &want),
+            "every fresh plane holds the demoted bytes"
+        );
+        assert!(
+            gpu_entry_whole(&engine, &entry, &want),
+            "the source device entry is untouched"
+        );
+        assert_eq!(promoted.kv.len(), entry.kv.len());
+        assert!(promoted.kv[1].is_none(), "the recurrent slot stays empty");
+        gpu_image_intact_and_sole_owner(&mut image, &want);
+        assert_eq!(
+            gpu_used(&host),
+            (3 * 8 * 58, 0, 0),
+            "the twins dropped with retire_source, the destinations left the registry, in-flight \
+             released"
+        );
+        drop(promoted);
+        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        drop(image);
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// Option C: a refusal BEFORE any op is submitted releases every fresh destination through
+    /// its retained twin, drops every source twin, is a typed `Refused` (never `Latched`), and the
+    /// next promote through the same engine and ledger completes.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let mut image = gpu_contract_image(&engine, &mut host, &mut entry);
+        let tier = host.tier.as_ref().unwrap();
+        tier.fault
+            .set(Some(super::HostContractFault::PromotePreSubmit));
+        let route = Some((tier, super::HostTierEntryClass::MtpDraft));
+        let why = match super::device_entry_from_host(&engine, &image, route) {
+            Err(super::HostPromoteFailure::Refused(why)) => why,
+            Err(other) => panic!("a pre-submit refusal was not a plain refusal: {other:?}"),
+            Ok(_) => panic!("the injected refusal did not fire"),
+        };
+        assert!(
+            why.contains(
+                "tier H2D producer fence refused: injected failure \
+                 (MEMRA_KV_HOST_FAULT=contract-promote-presubmit)"
+            ),
+            "{why}"
+        );
+        assert!(!why.contains("leaked"), "{why}");
+        assert_eq!(tier.fault.get(), None, "one-shot");
+        gpu_image_intact_and_sole_owner(&mut image, &want);
+        assert_eq!(
+            gpu_used(&host),
+            (3 * 8 * 58, 0, 0),
+            "nothing but the image's leases charged after the unwind"
+        );
+        let promoted = super::device_entry_from_host(&engine, &image, route)
+            .expect("a clean promote after the refusal");
+        assert!(gpu_entry_whole(&engine, &promoted, &want));
+        gpu_image_intact_and_sole_owner(&mut image, &want);
+        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        drop(promoted);
+        drop(image);
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// Option C: a refusal AFTER publication (`ready_view` on every item) retires the published
+    /// ticket against an observed consumer fence after its sources retired, acknowledges it,
+    /// releases the producer fence and every fresh destination, stays a typed `Refused`, and the
+    /// next promote completes (in-flight is exactly one batch: a leaked ticket would refuse it
+    /// with `Capacity`).
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let mut image = gpu_contract_image(&engine, &mut host, &mut entry);
+        let tier = host.tier.as_ref().unwrap();
+        tier.fault
+            .set(Some(super::HostContractFault::PromotePostPublish));
+        let route = Some((tier, super::HostTierEntryClass::MtpDraft));
+        let why = match super::device_entry_from_host(&engine, &image, route) {
+            Err(super::HostPromoteFailure::Refused(why)) => why,
+            Err(other) => panic!("a post-publish refusal was not a plain refusal: {other:?}"),
+            Ok(_) => panic!("the injected refusal did not fire"),
+        };
+        assert!(
+            why.contains(
+                "tier H2D publication refused: injected failure \
+                 (MEMRA_KV_HOST_FAULT=contract-promote-postpublish)"
+            ),
+            "{why}"
+        );
+        assert!(!why.contains("leaked"), "the ticket retired: {why}");
+        gpu_image_intact_and_sole_owner(&mut image, &want);
+        assert_eq!(
+            gpu_used(&host),
+            (3 * 8 * 58, 0, 0),
+            "in-flight released by retire, twins by retire_source, destinations by take_plane"
+        );
+        let promoted = super::device_entry_from_host(&engine, &image, route)
+            .expect("a clean promote after the aborted ticket");
+        assert!(gpu_entry_whole(&engine, &promoted, &want));
+        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        drop(promoted);
+        drop(image);
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// Option C: host bytes that differ from a plane's D2H receipt refuse BEFORE publication:
+    /// the ticket is cancelled, every source twin is recovered (lane A's rule 1) and dropped so
+    /// the entry's handle is the sole owner again, the ticket retires and is acknowledged, the
+    /// fresh destinations release, and the outcome is `ReceiptMismatch` (the caller drops the
+    /// entry). Once the byte is restored the same image promotes cleanly.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let mut image = gpu_contract_image(&engine, &mut host, &mut entry);
+        image.kv[2].as_mut().unwrap().v.flip_first_byte().unwrap();
+        let tier = host.tier.as_ref().unwrap();
+        let route = Some((tier, super::HostTierEntryClass::MtpDraft));
+        let why = match super::device_entry_from_host(&engine, &image, route) {
+            Err(super::HostPromoteFailure::ReceiptMismatch(why)) => why,
+            Err(other) => panic!("a receipt mismatch was not typed as one: {other:?}"),
+            Ok(_) => panic!("the corrupt plane was published"),
+        };
+        assert!(why.contains("tier H2D receipt refused (Corrupt)"), "{why}");
+        assert!(!why.contains("leaked"), "{why}");
+        // The recovered twins dropped: the entry's handle is the sole owner and the flip reverts.
+        image.kv[2]
+            .as_mut()
+            .unwrap()
+            .v
+            .flip_first_byte()
+            .expect("sole owner after recover_source");
+        gpu_image_intact_and_sole_owner(&mut image, &want);
+        assert_eq!(
+            gpu_used(&host),
+            (3 * 8 * 58, 0, 0),
+            "the cancelled ticket retired: in-flight released, destinations released"
+        );
+        let promoted = super::device_entry_from_host(&engine, &image, route)
+            .expect("a clean promote once the bytes match the receipt again");
+        assert!(gpu_entry_whole(&engine, &promoted, &want));
+        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        drop(promoted);
+        drop(image);
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// PR #605 review finding 1: a batch the engine accepts PARTIALLY (the last op mis-sized by
+    /// one byte, `CopyOp::validate` rejects it) must unwind to a typed `Refused`: only the
+    /// accepted items are recovered (a rejected slot answers `Rejected`), the ticket retires and
+    /// is acknowledged, every fresh destination releases, the host twins stay intact and
+    /// sole-owned, the tier stays on, and the next promote completes.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_c_partial_acceptance_unwinds_refused_with_every_destination_released() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let mut image = gpu_contract_image(&engine, &mut host, &mut entry);
+        let tier = host.tier.as_ref().unwrap();
+        tier.fault
+            .set(Some(super::HostContractFault::PromoteReject));
+        let route = Some((tier, super::HostTierEntryClass::MtpDraft));
+        let why = match super::device_entry_from_host(&engine, &image, route) {
+            Err(super::HostPromoteFailure::Refused(why)) => why,
+            Err(other) => panic!("a partial acceptance was not a plain refusal: {other:?}"),
+            Ok(_) => panic!("the mis-sized op was accepted"),
+        };
+        assert!(
+            why.contains(
+                "tier H2D batch partially refused: 1 of 6 items (injected failure \
+                 (MEMRA_KV_HOST_FAULT=contract-promote-reject))"
+            ),
+            "{why}"
+        );
+        assert!(
+            !why.contains("leaked") && !why.contains("recover_source") && !why.contains("Rejected"),
+            "only the accepted items were recovered: {why}"
+        );
+        gpu_image_intact_and_sole_owner(&mut image, &want);
+        assert_eq!(
+            gpu_used(&host),
+            (3 * 8 * 58, 0, 0),
+            "the ticket retired, every fresh destination released, the twins dropped"
+        );
+        let promoted = super::device_entry_from_host(&engine, &image, route)
+            .expect("a clean promote after the partial acceptance");
+        assert!(gpu_entry_whole(&engine, &promoted, &want));
+        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        drop(promoted);
+        drop(image);
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// PR #605 review finding 2: a failure reported for the FIRST `ready_view` while the engine
+    /// has already published the ticket must unwind through the published arm (the engine's
+    /// `cancel` answers `AlreadyPublished`; consumer fence, drain, `retire_source`, retire against
+    /// the fence, acknowledge): no leak line, every fresh destination released, twins dropped,
+    /// tier on, and the next promote completes.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_c_first_ready_view_failure_unwinds_through_the_published_arm() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let mut image = gpu_contract_image(&engine, &mut host, &mut entry);
+        let tier = host.tier.as_ref().unwrap();
+        tier.fault
+            .set(Some(super::HostContractFault::PromoteReadyView));
+        let route = Some((tier, super::HostTierEntryClass::MtpDraft));
+        let why = match super::device_entry_from_host(&engine, &image, route) {
+            Err(super::HostPromoteFailure::Refused(why)) => why,
+            Err(other) => {
+                panic!("a first-item ready_view failure was not a plain refusal: {other:?}")
+            }
+            Ok(_) => panic!("the injected refusal did not fire"),
+        };
+        assert!(
+            why.contains(
+                "tier H2D destination 0 not publishable: injected failure \
+                 (MEMRA_KV_HOST_FAULT=contract-promote-readyview)"
+            ),
+            "{why}"
+        );
+        assert!(
+            !why.contains("leaked") && !why.contains("already published"),
+            "the published arm was taken from the engine's answer: {why}"
+        );
+        gpu_image_intact_and_sole_owner(&mut image, &want);
+        assert_eq!(
+            gpu_used(&host),
+            (3 * 8 * 58, 0, 0),
+            "in-flight released by retire against the consumer fence, destinations released"
+        );
+        let promoted = super::device_entry_from_host(&engine, &image, route)
+            .expect("a clean promote after the aborted published ticket");
+        assert!(gpu_entry_whole(&engine, &promoted, &want));
+        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        drop(promoted);
+        drop(image);
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// The one-shot fault cell has two sides: the demote route takes only its own two faults and
+    /// the promote route only its own, so one boot arms exactly one route.
+    #[test]
+    fn host_contract_fault_sides_are_taken_by_their_own_route_only() {
+        use super::HostContractFault as F;
+        assert_eq!(F::from_door("contract-presubmit"), Some(F::PreSubmit));
+        assert_eq!(F::from_door("contract-postpublish"), Some(F::PostPublish));
+        assert_eq!(
+            F::from_door("contract-promote-presubmit"),
+            Some(F::PromotePreSubmit)
+        );
+        assert_eq!(
+            F::from_door("contract-promote-postpublish"),
+            Some(F::PromotePostPublish)
+        );
+        assert_eq!(
+            F::from_door("contract-promote-reject"),
+            Some(F::PromoteReject)
+        );
+        assert_eq!(
+            F::from_door("contract-promote-readyview"),
+            Some(F::PromoteReadyView)
+        );
+        assert_eq!(F::from_door("flip-demote"), None);
+        assert!(F::PreSubmit.is_demote() && F::PostPublish.is_demote());
+        assert!(!F::PromotePreSubmit.is_demote() && !F::PromotePostPublish.is_demote());
+        assert!(!F::PromoteReject.is_demote() && !F::PromoteReadyView.is_demote());
+        let tier = contracts_context("m", Arc::new(()), 1 << 20);
+        tier.fault.set(Some(F::PromotePostPublish));
+        assert_eq!(
+            tier.take_fault(true),
+            None,
+            "the demote route leaves a promote fault armed"
+        );
+        assert_eq!(tier.fault.get(), Some(F::PromotePostPublish));
+        assert_eq!(tier.take_fault(false), Some(F::PromotePostPublish));
+        assert_eq!(tier.fault.get(), None, "one-shot");
+        tier.fault.set(Some(F::PreSubmit));
+        assert_eq!(tier.take_fault(false), None);
+        assert_eq!(tier.take_fault(true), Some(F::PreSubmit));
+        assert_eq!(tier.take_fault(true), None);
+    }
+
+    /// Option C (lead ruling 15): the promote route is reachable only under the door for an entry
+    /// whose planes crossed through the contract, follows the kv_tier_gate restore sequence in
+    /// order with the receipt check BEFORE publication, never touches the pre-door copy program
+    /// (`plane_up` keeps both `htod_u8_into` calls), and its unwind cancels, recovers every source
+    /// (rule 1), observes every fence and discards no result; the caller drops on a receipt
+    /// mismatch and latches on a leak.
+    #[test]
+    fn option_c_contract_route_is_door_only_and_keeps_the_frozen_promote_order() {
+        let worker = include_str!("worker.rs");
+        let start = worker
+            .find("fn host_kv_planes_from_contract(")
+            .expect("the promote route exists");
+        let end = start
+            + worker[start..]
+                .find("\nfn host_promote_release_fresh(")
+                .expect("the release helper follows the route");
+        let body = &worker[start..end];
+        let at = |needle: &str| {
+            body.find(needle)
+                .unwrap_or_else(|| panic!("{needle} missing from the promote route"))
+        };
+        let order = [
+            "take_fault(false)",
+            "alloc_u8(",
+            "register_device(",
+            "retain_device(",
+            "retain_host(",
+            "record_producer(",
+            "submit_batch(",
+            "synchronize(&ticket)",
+            "poll(&ticket)",
+            ".require(&ticket, &receipts, true)",
+            "ready_view(",
+            "record_consumer(",
+            "retire_source(&ticket)",
+            "release_producer(producer)",
+            "retire(&ticket, Some(consumer))",
+            "acknowledge(&ticket)",
+            "contracts door H2D receipt: ticket",
+        ];
+        let positions: Vec<usize> = order.iter().map(|n| at(n)).collect();
+        assert!(
+            positions.windows(2).all(|w| w[0] < w[1]),
+            "the frozen restore sequence is out of order: {:?}",
+            order.iter().zip(&positions).collect::<Vec<_>>()
+        );
+        // Destinations are allocated before any registration; the receipt check precedes the
+        // first publication; the fresh planes leave the engine only after acknowledgement.
+        assert!(body.rfind("alloc_u8(").unwrap() < at("register_device("));
+        assert!(at(".require(&ticket, &receipts, true)") < at("ready_view("));
+        assert!(at("acknowledge(&ticket)") < body.rfind("take_plane(").unwrap());
+        assert!(
+            !body.contains("htod_u8_into")
+                && !body.contains("memcpy_htod")
+                && !body.contains("clone_dtoh")
+                && !body.contains("alloc_host("),
+            "one H2D program per plane: the contract's, inside the transfer engine; no readback"
+        );
+        assert!(
+            !body.contains("k.clone()")
+                && !body.contains("v.clone()")
+                && !body.contains("try_clone("),
+            "no device byte copy"
+        );
+        assert!(
+            body.contains("Priority::AdmittedRestore"),
+            "the promote's own priority on every charge"
+        );
+        assert!(
+            body.contains("fault == Some(HostContractFault::PromotePreSubmit)")
+                && body.contains("fault == Some(HostContractFault::PromotePostPublish)")
+        );
+        assert!(
+            body.contains("HostPromoteFailure::Refused(why) => ReceiptMismatch(why)"),
+            "a clean unwind of a receipt refusal is the typed mismatch"
+        );
+        // Route selection: only the tier-Some arm of device_entry_from_host, once; OFF keeps
+        // `plane_up` (both `htod_u8_into` calls) for the trunk loop and the draft.
+        let entry_fn = worker.find("fn device_entry_from_host(").unwrap();
+        let entry_body = &worker[entry_fn
+            ..entry_fn
+                + worker[entry_fn..]
+                    .find("\n/// Pure admit-time probe-order decision")
+                    .unwrap()];
+        let call = entry_body
+            .find("host_kv_planes_from_contract(engine, tier, src, class)")
+            .expect("the route is called from device_entry_from_host");
+        let arm = entry_body[..call]
+            .rfind(
+                "Some((tier, class)) if src.glm.is_none() && host_entry_has_contract_plane(src) =>",
+            )
+            .expect("the call sits in the tier-Some, contract-planes arm");
+        assert!(call - arm < 200);
+        assert_eq!(
+            entry_body.matches("host_kv_planes_from_contract(").count(),
+            1
+        );
+        assert_eq!(entry_body.matches("plane_up(p)?").count(), 2);
+        assert_eq!(entry_body.matches(".htod_u8_into(").count(), 2);
+        // The demote route takes only its side of the fault cell.
+        let demote = worker.find("fn host_kv_planes_through_contract(").unwrap();
+        assert!(worker[demote..demote + 2000].contains("take_fault(true)"));
+        // The abort: an unpublished ticket is cancelled and every source recovered before it
+        // retires; a published one records and drains its consumer fence and retires its sources
+        // first; nothing is discarded.
+        let abort = worker.find("fn host_promote_contract_abort_with(").unwrap();
+        let abort_body = &worker[abort..abort + worker[abort..].find("\n}\n").unwrap()];
+        let a = |needle: &str| {
+            abort_body
+                .find(needle)
+                .unwrap_or_else(|| panic!("{needle} missing from the promote abort"))
+        };
+        assert!(a("t.synchronize(ticket)") < a("t.cancel(ticket)"));
+        assert!(a("t.cancel(ticket)") < a("recover_source(ticket, *item)"));
+        assert!(a("recover_source(ticket, *item)") < a("record_consumer("));
+        assert!(a("record_consumer(") < a("retire_source(ticket)"));
+        assert!(a("retire_source(ticket)") < a(".retire(ticket, consumer)"));
+        // PR #605 review: publication is the engine's answer (cancel: PublicationRevoked or
+        // AlreadyPublished), never a caller-side flag; only the accepted items are recovered.
+        assert!(
+            !abort_body.contains("published: bool") && !body.contains("item > 0"),
+            "no inferred published flag"
+        );
+        assert!(
+            abort_body.contains("Ok(CancelState::PublicationRevoked) =>")
+                && abort_body.contains("Ok(CancelState::AlreadyPublished) =>")
+                && abort_body.contains("for (item, expected) in sources"),
+            "the abort branches on the engine's cancel answer and recovers the given items"
+        );
+        assert!(
+            body.contains(
+                "ItemAcceptance::Accepted { item } => sources.get(*item as usize).copied()"
+            ),
+            "a partial acceptance hands the abort the accepted items only"
+        );
+        assert!(
+            abort_body.contains("bytes.as_ptr() == *expected"),
+            "a recovered source must be the entry's own allocation"
+        );
+        let consumer_at = a("record_consumer(");
+        let drain_after_consumer = consumer_at
+            + abort_body[consumer_at..]
+                .find("owner_stream().synchronize()")
+                .expect("the abort drains the owner stream after recording the consumer fence");
+        assert!(drain_after_consumer < a(".retire(ticket, consumer)"));
+        assert!(
+            !abort_body.contains("let _ = t"),
+            "no transfer-engine result is discarded in the abort"
+        );
+        assert!(abort_body.contains("HostPromoteFailure::Latched("));
+        // The caller: a receipt mismatch drops the host entry; a leak latches the tier.
+        let hook = worker.find("fn host_promote_prefix_hit(").unwrap();
+        let hook_body = &worker[hook..hook + worker[hook..].find("\n}\n").unwrap()];
+        let mismatch = hook_body
+            .find("Err(HostPromoteFailure::ReceiptMismatch(why)) =>")
+            .unwrap();
+        assert!(hook_body[mismatch..mismatch + 700].contains("host.remove_at(pool_key, hi);"));
+        assert!(hook_body[mismatch..mismatch + 700].contains("host.digest_mismatches += 1;"));
+        let latched = hook_body
+            .find("Err(HostPromoteFailure::Latched(why)) =>")
+            .unwrap();
+        assert!(hook_body[latched..latched + 400].contains("host.disable(&why);"));
+        // The ledger's device dimension holds three budgets under Option C.
+        let governor = worker.find("fn host_tier_governor(").unwrap();
+        assert!(
+            worker[governor..governor + 2500]
+                .contains("capacity.device[device] = thrice(device_budget)?;")
+        );
+    }
+
     #[test]
     fn host_tier_ledger_handle_charges_and_releases_the_servers_one_ledger() {
         use memra_engine::cache::tiered::*;
@@ -37228,6 +38712,20 @@ mod tests {
         governor.lock().unwrap().release(&resident).unwrap();
         governor.lock().unwrap().release(&incoming).unwrap();
         assert_eq!(governor.lock().unwrap().used().pinned, 0);
+        // The device dimension holds THREE budgets (Option C: promoted residents' charges, one
+        // incoming entry's restore charge, and its registered destination planes): a third
+        // whole-budget device charge is admitted, a fourth refuses.
+        let planes: Vec<_> = (0..3)
+            .map(|_| governor.lock().unwrap().reserve(&request(0, 500)).unwrap())
+            .collect();
+        assert_eq!(
+            governor.lock().unwrap().reserve(&request(0, 1)).err(),
+            Some(Error::Capacity)
+        );
+        for lease in &planes {
+            governor.lock().unwrap().release(lease).unwrap();
+        }
+        assert_eq!(governor.lock().unwrap().used().device[1], 0);
         // The device dimension is indexed by the worker's ordinal, sized for it exactly.
         assert_eq!(governor.lock().unwrap().used().device.len(), 2);
         assert!(super::host_tier_governor(usize::MAX, 1, 1, 4).is_err());

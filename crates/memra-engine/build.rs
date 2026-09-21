@@ -48,10 +48,6 @@ fn nvcc_version(p: &std::path::Path) -> Option<(u32, u32)> {
 /// release are always echoed via `cargo:warning`, so every build log records which nvcc
 /// produced its fatbins.
 fn resolve_nvcc() -> String {
-    // DOCS_RS flips the whole build between the CUDA build and the docs stub (below); without
-    // this line a `DOCS_RS=1` check pass leaves stub artifacts that the next real build links
-    // against (2026-09-21: `undefined symbol: memra_dsv4_c4_recent_write` in a server test run).
-    println!("cargo:rerun-if-env-changed=DOCS_RS");
     println!("cargo:rerun-if-env-changed=MEMRA_NVCC");
     println!("cargo:rerun-if-env-changed=CUDA_HOME");
     println!("cargo:rerun-if-env-changed=CUDA_PATH");
@@ -193,6 +189,12 @@ fn detect_arch() -> String {
 }
 
 fn main() {
+    // DOCS_RS flips the whole build between the CUDA build and the docs stub (below). Declare the
+    // dependency before the docs branch returns: a `DOCS_RS=1` pass must invalidate the next real
+    // build, or it links stub artifacts (2026-09-21: `undefined symbol: memra_dsv4_c4_recent_write`
+    // in a server test run after a `DOCS_RS=1` clippy pass). memra #608: the earlier declaration
+    // sat in resolve_nvcc, which the docs branch never reaches.
+    println!("cargo:rerun-if-env-changed=DOCS_RS");
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
     // docs.rs builders have no nvcc and no CUDA libs: emit empty placeholder fatbins so
