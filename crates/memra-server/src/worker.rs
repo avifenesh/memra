@@ -20199,7 +20199,7 @@ pub fn run(
                             prefill_single_tokens += consumed;
                         }
                     }
-                    Err(err) if prime_cancelled_abort(s, &err) => finished.push(i),
+                    Err(err) if prime_cancelled_abort(s, err.as_ref()) => finished.push(i),
                     Err(err) => {
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
@@ -20634,7 +20634,7 @@ pub fn run(
                     step_tower.as_ref(),
                     overlay_publish,
                 ) {
-                    if !prime_cancelled_abort(s, &err) {
+                    if !prime_cancelled_abort(s, err.as_ref()) {
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
                         ))));
