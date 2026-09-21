@@ -3042,6 +3042,23 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
     state->projection_failed = std::make_unique<std::atomic<bool>[]>(n);
     std::vector<IoJob> jobs;
     std::int32_t submitted = 0;
+    // Submit-side symmetry (memra#586, review round on #612): a later projection's stat, resize
+    // or mirror resolve can throw after earlier projections took their charge and annex claim
+    // but before pool.submit; nothing would ever release them and the cap would count phantom
+    // work for the life of the process. The guard releases exactly what this call took and is
+    // disarmed once the jobs are handed to the pool, from where the completion path owns every
+    // release (tools/test_cpu_expert_prefetch.sh, cell submit-throw).
+    struct SubmitGuard {
+        PrefetchAnnex & annex;
+        PrefetchState & state;
+        const std::int32_t & submitted;
+        bool armed = true;
+        ~SubmitGuard() {
+            if (!armed) return;
+            if (submitted > 0) prefetch_inflight().fetch_sub(submitted, std::memory_order_relaxed);
+            for (const auto & runtime : state.runtimes) annex.abort_read(runtime.cache_key);
+        }
+    } submit_guard { annex, *state, submitted };
     auto & profile = cpu_profile();
     for (std::size_t index = 0; index < state->descs.size(); ++index) {
         const auto & desc = state->descs[index];
@@ -3094,6 +3111,7 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
     state->outstanding.store(static_cast<int>(jobs.size()), std::memory_order_relaxed);
     auto & pool = IoPool::instance();
     pool.ensure_started(io_thread_count(8));
+    submit_guard.armed = false;  // the pool and the completion path own every release from here
     pool.submit(std::move(jobs));
     state.release();  // owned by the completion path from here
     if (error != nullptr && error_capacity != 0) error[0] = '\0';

@@ -30,6 +30,14 @@ Author's review of the full diff `main..lane/spill-integ23-20260921`, posted as 
 - Issue actions on merge (lead): close #586 (fix plus fixture in CI), #523 (four items held, map on the issue),
   #372 (landed by #377, verified today); #427 stays open (classified, kernel unnamed, fix owed); #385 with A.
 
+## Review round 1 (revuto, addressed in the integ)
+- Submit-side leak: a `SubmitGuard` (annex, state, submitted count; armed until the jobs are handed to the pool)
+  releases the charges and annex claims a throwing submit loop left behind. It is disarmed BEFORE `pool.submit`, so
+  a throw inside submit itself is not double-released by the guard and the completion path (that edge stays as it
+  was and is stated here). New fixture cell `submit-throw`: red without the guard (`inflight_signed=1 expected 0`),
+  green with it; both logs banked in the battery dir.
+- Fixture data race: the barrier cell's printf now prints a snapshot taken under the hook mutex.
+
 ## What I did not do
 - No GPU cell of my own; no serve smoke on this integ (no engine change; the CI step is CPU-only).
 - Not verified here: the new CI step on a GitHub runner (this PR's CI run is that check).

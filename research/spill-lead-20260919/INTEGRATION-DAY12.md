@@ -742,6 +742,17 @@ public-boundary `check` (0 new), collector pytest, C's #586 fixture (`cpu expert
 GREEN`), C's arena replay (`ARENA PAIR REPLAY: PASS (18 checks)`), perf board, `git diff --check`, em-dash scan:
 14 steps rc=0. No serve smoke (no engine change).
 
+Revuto round 1 on #612 (two findings, both real, fixed by the lead in the integ): (1) the submit side had no
+symmetric release: a later projection's `fstat`, `resize` or mirror `resolve` could throw after earlier projections
+took their charge and annex claim and before `pool.submit`, leaving phantom in-flight work for the life of the
+process (C had stated it as pre-existing). A `SubmitGuard` in `memra_cpu_expert_prefetch_v2` releases exactly what
+the call took and is disarmed before the jobs are handed to the pool. Fixture cell `submit-throw` (second projection
+on an unopenable fd): without the guard `FAIL: REGRESSION memra#586 at submit-throw: after the failed call:
+inflight_signed=1 expected 0` (`cpu-prefetch-586-round1-red.log`), with it `submit-throw: PASS` and
+`cpu expert prefetch accounting tests: ALL GREEN` (`cpu-prefetch-586-round1-green.log`). (2) the barrier cell's
+diagnostic printf read two hook counters without the hook mutex; snapshot under the lock. `docs/TESTING.md` and the
+script header name the fourth cell.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

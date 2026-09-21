@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # CPU-only accounting cells for the CPU expert companion's speculative prefetch (memra#586).
 # Builds tools/memra_cpu_expert_prefetch_test.cpp (the production translation unit included, the
-# shm test's pattern) and runs three process-level cells against a source fixture and a
+# shm test's pattern) and runs four process-level cells against a source fixture and a
 # byte-identical mirror on a SECOND filesystem (the companion's mirror map refuses a mirror on the
 # source's device), both opened O_DIRECT by the companion:
 #   barrier  three mirrored projections, every alternate half held after its primary half landed:
@@ -11,6 +11,8 @@
 #            behind it on a single worker: the charge is released once, the annex never publishes
 #            the failed buffer, the retry lands
 #   parity   the non-mirrored buffered control: one job per projection, unchanged by the repair
+#   submit-throw  one valid projection then an unopenable fd: the loop throws after the first
+#            charge and annex claim were taken; the call returns -1 and both are released
 # The counter is read inside the translation unit (prefetch_inflight()), never through the public
 # stats function's clamp. No GPU, no timing: pass/fail only.
 # usage: tools/test_cpu_expert_prefetch.sh [LOG_DIR] [SOURCE_DIR] [MIRROR_DIR]
@@ -112,6 +114,15 @@ run_case parity env MEMRA_CPU_EXPERT_IO_THREADS=3 MEMRA_CPU_EXPERT_PREFETCH_MAX_
 assert_log parity 'parity: three single-job reads held: inflight_signed=3 expected=3'
 assert_log parity 'parity: drained: inflight_signed=0 expected=0'
 assert_log parity 'PARITY_OK'
+
+# submit-throw: the submit side of the same invariant (review round on #612). The second
+# projection's fd is not open, so the submit loop throws after the first projection took its
+# charge and annex claim and before any job reached the pool; both must be released.
+run_case submit-throw env MEMRA_CPU_EXPERT_IO_THREADS=3 MEMRA_CPU_EXPERT_PREFETCH_MAX_INFLIGHT=8 \
+  "$test_bin" submit-throw "$source_fixture"
+assert_log submit-throw 'submit-throw: after the failed call: inflight_signed=0 expected=0'
+assert_log submit-throw 'submit-throw: after the retry landed: inflight_signed=0 expected=0'
+assert_log submit-throw 'submit-throw: PASS'
 
 if (( failures > 0 )); then
   printf 'cpu expert prefetch accounting tests: %d FAILURE(S)\n' "$failures"
