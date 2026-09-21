@@ -72,6 +72,17 @@ jobs:
       - name: Change-class teeth (the docs-only skip fails closed in every arm)
         run: tools/test_ci_change_class.sh
 
+      # Duplicate mapping keys: GitHub refuses the whole workflow file and runs ZERO jobs (main at
+      # 34ed99dfc, 2026-09-21: two portable-suites jobs from #592 and #590). This step can only
+      # protect the OTHER workflow files (a ci.yml that does not parse never reaches it); ci.yml
+      # itself is protected by the same census in tools/hooks/pre-push and by a PR run on a
+      # current merge ref. PyYAML's safe_load keeps the last key silently; the checker is a
+      # standard-library walker, so it needs no install line and cannot fail for a dependency.
+      - name: Workflow files carry no duplicate mapping key (stdlib walker; safe_load would pass)
+        run: |
+          tools/check-workflow-keys.py
+          tools/test_workflow_keys.sh
+
       - name: Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)
         run: tools/unittest-floor.sh tools test_cache_qualification.py 15
 
@@ -411,6 +422,8 @@ jobs:
           tools/unittest-floor.sh crates/memra-tier/tests/battery 'test_*.py' 80
       - name: unittest-floor teeth (empty discovery, a failing test and a floor above the count must all red)
         run: tools/test_unittest_floor.sh
+      - name: GPU CI orchestration failure controls (CPU only; from #590, unittest floor 9, 10 measured 2026-09-21)
+        run: tools/unittest-floor.sh tools test_gpu_ci.py 9
 
   # ── memra-engine: the CPU expert backend and the whole engine lib suite ────────────────────
   # memra#18 (2026-09-01): vision::tests and every other memra-engine lib test ran NOWHERE.

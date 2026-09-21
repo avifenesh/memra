@@ -170,11 +170,14 @@ cpu_chain() {
     # memra-cli onboarding receipts) ran only when a lane ran them by hand. One wrapper,
     # tools/portable-suites.sh, the same text ci.yml's portable-suites job runs, through the
     # skip census at budget 0; its teeth (tools/test_portable_suites.sh) run in CI. CPU
-    # execution, never GPU qualification. CARGO_BUILD_JOBS is cargo's own knob, set to the rig
-    # cap like the -j8 above. No skip door: the suites are CPU-only and about 25 s warm (the
-    # first run after a clean pays a debug build of gguf/reference/tokenizer/tier/kv/cli).
+    # execution, never GPU qualification. CARGO_BUILD_JOBS and RUST_TEST_THREADS are cargo's
+    # and libtest's own knobs, set to the rig cap like the -j8 above (the test-thread cap came
+    # from #590's second caller, folded here on day 14; the wrapper is the ONE entry point, so
+    # the three crates build and run once per local-ci). No skip door: the suites are CPU-only
+    # and about 25 s warm (the first run after a clean pays a debug build of
+    # gguf/reference/tokenizer/tier/kv/cli).
     echo "== local-ci: tier, KV and onboarding-CLI suites (tools/portable-suites.sh) =="
-    if ! CARGO_BUILD_JOBS=8 tools/portable-suites.sh; then
+    if ! CARGO_BUILD_JOBS=8 RUST_TEST_THREADS=8 tools/portable-suites.sh; then
         echo "local-ci: tier/KV/CLI suites FAILED (tools/portable-suites.sh)"; return 1
     fi
 }

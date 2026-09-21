@@ -1,0 +1,57 @@
+== binary and card
+  source aefb89d8996e38cdb07e69773b81621736ce7987
+  binary sha256 0e95bf16607f3b758e000041caf7794b8ecd4e584b7e8b6e0f76df70e102ee62
+  card NVIDIA RTX PRO 6000 Blackwell Server Edition, 600.00 W, 600.00 W, 580.178.04
+  ok: card at its 600 W limit
+  ok: build exit 0 (release binary and the GPU unit-cell binary)
+  cells: faultgate, gputests, hostgate-failure-off-default, hostgate-failure-on-default, hostgate-identity-off-default, hostgate-identity-on-default
+  ok: six cells captured  6
+  ok: faultgate: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: faultgate: --validate exit 0
+  ok: gputests: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: gputests: --validate exit 0
+  ok: hostgate-failure-off-default: collector captured the cell at 600 W  status=failed exit=1
+  ok: hostgate-failure-off-default: --validate exit 0
+  ok: hostgate-failure-on-default: collector captured the cell at 600 W  status=failed exit=1
+  ok: hostgate-failure-on-default: --validate exit 0
+  ok: hostgate-identity-off-default: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-off-default: --validate exit 0
+  ok: hostgate-identity-on-default: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-on-default: --validate exit 0
+== GPU unit cells of the unwind (ignored without a device; run on the card under the rig lock)
+  ok: both cells ran on the review source
+  ok: option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on ... ok
+  ok: option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on ... ok
+  ok: test result: ok. 2 passed; 0 failed
+  ok: gputests cell exit 0
+== tools/kv-host-contract-fault-gate.sh (door ON, one-shot contract-presubmit and contract-postpublish)
+  ok: ALL GREEN
+  ok: no FAIL line
+  ok: presubmit: exactly one injected refusal, typed
+  ok: presubmit: exactly one receipt and one demote, both after the refusal
+  ok: presubmit: the next ticket is seq=1 (no ticket was issued before)
+  ok: presubmit: tier never latched, nothing quarantined, nothing leaked, no Capacity
+  ok: presubmit: no host-tier refusal beyond the injected one
+  ok: presubmit: door ON with the transfer engine
+  ok: postpublish: exactly one injected refusal, typed
+  ok: postpublish: exactly one receipt and one demote, both after the refusal
+  ok: postpublish: the next ticket is seq=2 (the aborted ticket retired and was acknowledged)
+  ok: postpublish: tier never latched, nothing quarantined, nothing leaked, no Capacity
+  ok: postpublish: no host-tier refusal beyond the injected one
+  ok: postpublish: door ON with the transfer engine
+== kv-host-spill-identity-gate, default, door OFF vs ON (review binary)
+  ok: identity: verdict lines identical  13 lines
+  ok: identity: verdict as expected in both arms
+  ok: identity: demote byte counts equal  demote: 89 tokens, 160.7MB (host resident 160.7MB / 8590MB, model gate) | demote: 86 tokens, 160.6MB (host resident 321.3MB / 8590MB, model gate)
+  ok: identity: one receipt per ON demote
+  ok: identity: verify ok on the promote in both arms
+  ok: identity: no host-tier refusal ON
+== kv-host-spill-failure-gate, default, door OFF vs ON (review binary)
+  ok: failure: verdict lines identical  15 lines
+  ok: failure: verdict as expected in both arms
+  ok: failure: poolfull cell tier event lines identical  2 lines
+  ok: failure: digest cell tier event lines identical  5 lines
+  ok: failure: alloc cell tier event lines identical  2 lines
+  ok: failure: digest cell ON: receipt, flip, named injected difference, VERIFY FAILED
+
+DAY15 REVIEW REPLAY: PASS

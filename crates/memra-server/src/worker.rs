@@ -3578,8 +3578,8 @@ fn plain_ckpt_nominatable(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -> b
 //
 // VRAM: entries compete with session KV under MEMRA_PREFIX_CACHE_MB (0 disables). With no
 // override, the budget is derived from loaded-model geometry and boot free VRAM below. The
-// worker-global pool is byte-budgeted SLRU-evicted by default, or plain-LRU-evicted under the
-// rollback policy; model/namespace keys scope lookup visibility only. A failed session-cache
+// worker-global pool is byte-budgeted and plain-LRU-evicted (oldest unleased entry first,
+// memra#523 item 2); model/namespace keys scope lookup visibility only. A failed session-cache
 // alloc evicts the whole cache and retries (headroom discipline — sessions always win over it).
 //
 // POLICY (lane/spec-prefix-cache 2026-08-14, completed by lane/spec-on-cache-hit
@@ -3602,11 +3602,6 @@ fn plain_ckpt_nominatable(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -> b
 /// Prefixes shorter than this are not worth VRAM + copy bookkeeping (also keeps the bare
 /// chat-template header — common to every request of a model — out of the cache).
 const PREFIX_CACHE_MIN_TOKENS: usize = 64;
-
-/// Reused entries reserve this share of the global prefix-cache byte budget. The probation
-/// segment may borrow unused protected bytes; the split becomes binding only as protected
-/// entries earn their share.
-const DEFAULT_PREFIX_CACHE_PROTECTED_PCT: usize = 80;
 
 /// In-process prefix-entry ABI. Entries never cross a process today, but an explicit version
 /// makes a stale/corrupt object fail before any bounded device copy and keeps the same identity
@@ -4163,55 +4158,92 @@ fn prefix_cache_budget_bytes() -> usize {
     }
 }
 
-/// MEMRA_PREFIX_CACHE_PROTECTED_PCT (default 80): byte share reserved for entries that have
-/// demonstrated reuse. Keep both segments non-empty; malformed/out-of-range values fall back to
-/// the documented default.
-fn prefix_cache_protected_pct() -> usize {
-    static P: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *P.get_or_init(|| {
-        if !prefix_cache_slru_enabled() {
-            // Plain-LRU rollback: a 100% protected share removes the segment split as a source of
-            // eviction pressure; `capacity_victim` then evicts the GLOBAL oldest entry, which is
-            // what actually makes this the pre-SLRU LRU. The share alone does NOT do it — entries
-            // still enter probation and still promote on reuse, so without the victim-function
-            // branch a 100% share merely makes promoted entries unevictable (the earlier comment
-            // here claimed the opposite and was wrong).
-            return 100;
+/// The typed refusal for an entry larger than the whole prefix-cache budget (memra#523 item
+/// 1: a refused publication prints, in bytes, or it is a silent cold turn). One formatter for
+/// the insert path and the snapshot preflight, so a log reader has one line to grep.
+fn prefix_insert_refused_oversize(bytes: usize, budget: usize, why: &str, key: &PoolKey) -> String {
+    format!(
+        "[prefix-cache] insert refused: entry {bytes} exceeds budget {budget} ({why}, model {}{})",
+        key.0,
+        ns_suffix(&key.1)
+    )
+}
+
+/// The typed refusal for an entry that fits the budget but not beside the bytes currently
+/// leased by in-flight sessions (only leases are untouchable under the newest-turn-fits rule;
+/// every unleased byte, protected or not, is reclaimable for it).
+fn prefix_insert_refused_leased(
+    bytes: usize,
+    leased: usize,
+    budget: usize,
+    why: &str,
+    key: &PoolKey,
+) -> String {
+    format!(
+        "[prefix-cache] insert refused: entry {bytes} cannot fit beside {leased} leased bytes \
+         (budget {budget}, {why}, model {}{})",
+        key.0,
+        ns_suffix(&key.1)
+    )
+}
+
+/// The shape of a refused publication, for the stderr throttle: an identical shape repeating on
+/// a saturated cache is counted (`prefix_cache_skips_budget` / `prefix_cache_skips_pinned`) but
+/// not re-printed on every request. `leased` is `None` for the oversize refusal and the leased
+/// byte count for the leased refusal; the path that refused (`why`) is deliberately not part of
+/// the shape, so the same numbers refusing on the insert path and on the preflight are one shape.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PrefixRefusalShape {
+    leased: Option<usize>,
+    bytes: usize,
+    budget: usize,
+    key: PoolKey,
+}
+
+/// Every `PREFIX_REFUSAL_REANNOUNCE_EVERY`-th identical refusal is printed again, with the count
+/// of the repeats that were not.
+const PREFIX_REFUSAL_REANNOUNCE_EVERY: u64 = 64;
+
+/// The refusal-line throttle (memra#523 item 1, review on the newest-turn-fits fix): never a
+/// silent cold turn, never unbounded stderr either. The first refusal prints; identical repeats
+/// (same `PrefixRefusalShape`) are suppressed and counted; a changed shape prints at once and
+/// carries the previous shape's suppressed count; every N-th identical repeat prints with its
+/// count. Counting in the `/metrics` skip fields is the caller's and is never throttled.
+#[derive(Default)]
+struct PrefixRefusalAnnouncer {
+    last: Option<PrefixRefusalShape>,
+    /// Identical repeats not printed since the last printed line.
+    suppressed: u64,
+}
+
+impl PrefixRefusalAnnouncer {
+    /// The line to print for this refusal, or `None` when it is an identical repeat that is
+    /// counted but not printed.
+    fn announce(&mut self, shape: PrefixRefusalShape, line: String) -> Option<String> {
+        if self.last.as_ref() == Some(&shape) {
+            self.suppressed += 1;
+            if !self
+                .suppressed
+                .is_multiple_of(PREFIX_REFUSAL_REANNOUNCE_EVERY)
+            {
+                return None;
+            }
+            let repeats = std::mem::take(&mut self.suppressed);
+            return Some(format!(
+                "{line} (identical refusal repeated {repeats} times since the previous line; {} not printed)",
+                repeats - 1
+            ));
         }
-        std::env::var("MEMRA_PREFIX_CACHE_PROTECTED_PCT")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .filter(|&v| (1..100).contains(&v))
-            .unwrap_or(DEFAULT_PREFIX_CACHE_PROTECTED_PCT)
-    })
-}
-
-/// Prefix-cache eviction policy seam. `slru` (default) = byte-budgeted probation/protected with
-/// promotion on first reuse; `lru` = the pre-v0.82.0 plain global LRU.
-///
-/// The rollback exists because SLRU is not universally better: cx-slrutarget
-/// (`research/slrutarget-20260813/`) found a real losing shape — after a complete hot-cohort
-/// turnover, a stale protected cohort traps the new cyclic cohort in probation and the hit rate
-/// goes to **0% where plain LRU reaches 75%**, reproduced at both 4,096 and 49,152 MiB and for
-/// Q27-only, Q35-only, and worker-global paired entries. Until live telemetry says which shape our
-/// traffic actually has, an operator who sees cache hits collapse needs one flag to get LRU back.
-fn prefix_cache_slru_enabled() -> bool {
-    static S: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *S.get_or_init(|| {
-        !matches!(
-            std::env::var("MEMRA_PREFIX_CACHE_POLICY")
-                .as_deref()
-                .map(str::trim),
-            Ok("lru") | Ok("LRU")
-        )
-    })
-}
-
-fn prefix_cache_protected_bytes(budget: usize, protected_pct: usize) -> usize {
-    // Split before multiplying so even a saturated MEMRA_PREFIX_CACHE_MB cannot overflow.
-    (budget / 100)
-        .saturating_mul(protected_pct)
-        .saturating_add((budget % 100).saturating_mul(protected_pct) / 100)
+        let previous = std::mem::take(&mut self.suppressed);
+        self.last = Some(shape);
+        if previous == 0 {
+            Some(line)
+        } else {
+            Some(format!(
+                "{line} (previous shape: {previous} identical refusals not printed)"
+            ))
+        }
+    }
 }
 
 /// MEMRA_KV_HOST_MB (lane/kv-host-spill-20260830): pinned-host spill tier for the prefix
@@ -4489,10 +4521,56 @@ fn host_tier_shape_metadata(
 /// The same holds for promoted entries against the device prefix budget. The ledger records
 /// tenant, priority and bytes; the LRU decides. Option B may tighten it once eviction-to-fit
 /// runs before the charge.
+/// The transfer engine's handle on the server's governor: `CudaTransfers` takes an
+/// `Rc<RefCell<dyn BudgetGovernor>>` and the server holds an `Arc<Mutex<dyn BudgetGovernor +
+/// Send>>` (`hostprefix::SharedGovernor`), so this adapter locks the ONE ledger per call (lead
+/// ruling 15: never a second ledger). Every `CudaPinnedLease` the D2H delivers releases its
+/// pinned charge through it when the host entry drops; every ticket releases its in-flight
+/// charge through it at `retire`.
+struct HostTierLedger(memra_engine::cache::tiered::hostprefix::SharedGovernor);
+impl memra_engine::cache::tiered::BudgetGovernor for HostTierLedger {
+    fn reserve(
+        &mut self,
+        request: &memra_engine::cache::tiered::BudgetRequest,
+    ) -> memra_engine::cache::tiered::Result<memra_engine::cache::tiered::ChargedLease> {
+        self.0
+            .lock()
+            .map_err(|_| memra_engine::cache::tiered::Error::Quarantined)?
+            .reserve(request)
+    }
+    fn used(&self) -> memra_engine::cache::tiered::TierBudget {
+        // A read: a poisoned lock still reports what it holds.
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .used()
+    }
+    fn mark(
+        &mut self,
+        lease: &memra_engine::cache::tiered::ChargedLease,
+        state: memra_engine::cache::tiered::ChargeState,
+    ) -> memra_engine::cache::tiered::Result<()> {
+        self.0
+            .lock()
+            .map_err(|_| memra_engine::cache::tiered::Error::Quarantined)?
+            .mark(lease, state)
+    }
+    fn release(
+        &mut self,
+        lease: &memra_engine::cache::tiered::ChargedLease,
+    ) -> memra_engine::cache::tiered::Result<()> {
+        self.0
+            .lock()
+            .map_err(|_| memra_engine::cache::tiered::Error::Quarantined)?
+            .release(lease)
+    }
+}
+
 fn host_tier_governor(
     device: usize,
     host_budget: usize,
     device_budget: usize,
+    inflight: u64,
 ) -> Result<memra_engine::cache::tiered::hostprefix::SharedGovernor, String> {
     use memra_engine::cache::tiered::TierBudget;
     let dimensions = device
@@ -4508,6 +4586,10 @@ fn host_tier_governor(
     capacity.pinned = twice(host_budget)?;
     capacity.pageable = twice(host_budget)?;
     capacity.device[device] = twice(device_budget)?;
+    // Option B: the transfer engine charges one in-flight op per K or V plane of the batch
+    // (`submit_batch`); the day-13 ledger left this dimension at zero, which would have refused
+    // the first contract-routed demote with `Capacity`.
+    capacity.inflight = inflight;
     let epoch = Instant::now();
     memra_engine::cache::tiered::hostprefix::shared_governor(
         capacity,
@@ -4620,12 +4702,37 @@ fn host_tier_context(
             },
         );
     }
-    let governor = host_tier_governor(device, hpx.budget, prefix_cache_budget_bytes())?;
+    // Option B (day 15): the D2H transfer engine on the worker's owner stream, charging the same
+    // ledger through the adapter. One batch per demote, K and V per KV plane plus the draft
+    // pair, sizes the ledger's in-flight dimension over the loaded models.
+    let max_layers = loaded
+        .values()
+        .map(|lm| lm.model.layers.len())
+        .max()
+        .unwrap_or(0);
+    let inflight = u64::try_from(max_layers)
+        .ok()
+        .and_then(|n| n.checked_mul(2))
+        .and_then(|n| n.checked_add(2))
+        .ok_or("MEMRA_KV_HOST_CONTRACTS=1: in-flight bound overflow")?;
+    let governor = host_tier_governor(device, hpx.budget, prefix_cache_budget_bytes(), inflight)?;
+    let ledger: std::rc::Rc<std::cell::RefCell<dyn memra_engine::cache::tiered::BudgetGovernor>> =
+        std::rc::Rc::new(std::cell::RefCell::new(HostTierLedger(governor.clone())));
+    let transfers = memra_engine::tier_transfer::CudaTransfers::new(engine.stream(), ledger)
+        .map_err(|e| {
+            format!(
+                "MEMRA_KV_HOST_CONTRACTS=1 refused at boot: the D2H transfer engine could not \
+                 bind the worker's CUDA owner stream ({e:?})"
+            )
+        })?;
     Ok(HostTierContext {
         governor,
         programs,
         device: u32::try_from(device)
             .map_err(|_| "MEMRA_KV_HOST_CONTRACTS=1: device ordinal does not fit u32")?,
+        transfers: Some(std::cell::RefCell::new(transfers)),
+        inflight,
+        fault: std::cell::Cell::new(HostContractFault::from_door(kv_host_fault())),
     })
 }
 
@@ -4705,7 +4812,7 @@ fn kv_host_tenant_pct() -> usize {
 
 /// Pure parse half of [`kv_host_tenant_pct`] so the fallback matrix is unit-testable
 /// without an environment. Malformed or out-of-range values fall back to the default
-/// LOUDLY (the same posture as MEMRA_PREFIX_CACHE_PROTECTED_PCT): a share cap silently
+/// LOUDLY: a share cap silently
 /// parsed as 0 would evaporate every demotion, and one parsed as huge would never bind.
 fn parse_kv_host_tenant_pct(raw: Option<&str>) -> usize {
     const DEFAULT_KV_HOST_TENANT_PCT: usize = 50;
@@ -4787,7 +4894,7 @@ fn kv_host_handoff_cap_bytes() -> usize {
 /// to pause for a client-side tool round trip. With this armed (and the host tier on), the
 /// retire path arms a pause candidate; after MEMRA_KV_PAUSE_DEMOTE_MS untouched, the
 /// session's boundary prefix entry demotes to the pinned host tier instead of waiting for
-/// SLRU pressure, freeing device cache budget for the pause's duration. The next request
+/// capacity pressure, freeing device cache budget for the pause's duration. The next request
 /// (the tool-result turn) finds the host entry through the unchanged admit-time probe and
 /// promotes. OFF is byte-identical to today by construction: the retire path takes zero
 /// new work and the sweep never runs. See the FLAGS.md row for both arms and receipts.
@@ -5019,14 +5126,27 @@ impl KvFlex {
         let t0 = Instant::now();
         let (n, freed) = px.evict_to_bytes(self.floor);
         if n == 0 {
-            // Above-floor residency that is entirely pinned (in-flight fanout leases)
-            // cannot shed; loud, because the zero-tax gate would otherwise read a silent
-            // no-op as a pass.
-            eprintln!(
-                "[kv-flex] shed ({why}): {:.1}MB above the floor is pinned by in-flight \
-                 leases; nothing evictable",
-                (px.total_bytes - self.floor) as f64 / 1e6,
-            );
+            let unleased = px.evictable_bytes();
+            if unleased == 0 {
+                // Above-floor residency that is entirely pinned (in-flight fanout leases)
+                // cannot shed; loud, because the zero-tax gate would otherwise read a silent
+                // no-op as a pass. This is the ONLY shape that may print "nothing evictable":
+                // `evict_to_bytes` takes the oldest unleased entry first, so any unleased byte
+                // would have been a victim.
+                eprintln!(
+                    "[kv-flex] shed ({why}): {:.1}MB above the floor is pinned by in-flight \
+                     leases; nothing evictable",
+                    (px.total_bytes - self.floor) as f64 / 1e6,
+                );
+            } else {
+                // Unreachable by construction; loud if the victim function and the LRU
+                // indexes ever disagree.
+                eprintln!(
+                    "[kv-flex] shed ({why}): no entry evicted while {:.1}MB unleased bytes sit \
+                     above the floor; the victim function and the LRU indexes disagree",
+                    unleased as f64 / 1e6,
+                );
+            }
             return 0;
         }
         let ms = t0.elapsed().as_secs_f64() * 1e3;
@@ -6620,12 +6740,6 @@ struct PrefixPlane {
     v_tok_bytes: usize,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PrefixSegment {
-    Probation,
-    Protected,
-}
-
 /// A cached token-prefix: per-layer KV byte copies + recurrent conv/ssm copies + the logits
 /// row AT the boundary (empty-suffix resumes sample from it, same as the continuation pool).
 struct PrefixEntry {
@@ -6678,9 +6792,6 @@ struct PrefixEntry {
     /// Recency-index identity (Q3, audit 2026-08-05): unique per insert (monotonic counter,
     /// assigned by `insert`), disambiguating equal `last_use` Instants in the LRU BTreeMap key.
     id: u64,
-    /// New snapshots enter probation. A successful cross-request reuse is the only promotion
-    /// path into protected; protected overflow demotes its byte-LRU back to probation.
-    segment: PrefixSegment,
     /// In-flight fanout/cache-hit leases. A pinned entry is absent from the evictable LRU
     /// index until the last participating session retires.
     pins: usize,
@@ -6810,32 +6921,28 @@ struct PrefixCache {
     /// is the PC-ISO trust boundary — the equality check is part of the map key, so the
     /// default path pays nothing beyond hashing "" alongside the model id).
     entries: HashMap<PoolKey, Vec<PrefixEntry>>,
-    /// Byte-budgeted SLRU indexes. New entries enter probation; a real reuse promotes to
-    /// protected. Capacity pressure consumes probation LRU first, so one-hit scan traffic
-    /// cannot displace a protected entry while probation has an evictable victim. Protected
-    /// overflow demotes its own LRU until it fits its byte target. The targets are global across
+    /// Byte-budgeted recency index over UNLEASED entries, keyed `(last_use, id)` (the Q3
+    /// O(log E) victim lookup with a deterministic tie break). Plain global LRU: the oldest
+    /// unleased entry is the capacity victim (memra#523 item 2, decided 2026-09-21 on the
+    /// incident's shape, `docs/decisions/PREFIX-CACHE-POLICY.md`). The budget is global across
     /// namespaces because VRAM is global; visibility remains scoped by `entries` above.
-    ///
-    /// Each BTreeMap preserves the Q3 O(log E) victim lookup and deterministic `(last_use,id)`
-    /// tie break. Emergency flush compares both heads to retain global oldest-first removal.
-    /// PINNING (lane/cx-prefix-dedup): pinned entries are deliberately ABSENT from this
-    /// pair. The last lease release returns the entry at current recency. Value = (pool
-    /// key, index into that pool's Vec), kept exact on removal by swap_remove +
-    /// moved-entry index fixup. Every `last_use` write goes through touch/pin/unpin/insert
-    /// so index and entries never drift.
-    probation_lru: std::collections::BTreeMap<(Instant, u64), (PoolKey, usize)>,
-    protected_lru: std::collections::BTreeMap<(Instant, u64), (PoolKey, usize)>,
+    /// PINNING (lane/cx-prefix-dedup): pinned entries are deliberately ABSENT from this index;
+    /// the last lease release returns the entry at current recency. Value = (pool key, index
+    /// into that pool's Vec), kept exact on removal by swap_remove + moved-entry index fixup.
+    /// Every `last_use` write goes through touch/pin/unpin/insert so index and entries never
+    /// drift.
+    lru: std::collections::BTreeMap<(Instant, u64), (PoolKey, usize)>,
     next_id: u64,
     total_bytes: usize,
-    probation_bytes: usize,
-    protected_bytes: usize,
-    protected_target_bytes: usize,
     hits: u64,
     misses: u64,
     inserts: u64,
     evictions: u64,
     skips_budget: u64,
     skips_pinned: u64,
+    /// stderr throttle for the two typed refusal lines; the skip counters above count every
+    /// refusal regardless.
+    refusals: PrefixRefusalAnnouncer,
     hit_tokens: u64,
     /// LCP histogram (lane/cache-metering): one sample per probe — the served entry's
     /// token length on a hit, `best_lcp` on a miss (both already computed; no new scan).
@@ -6928,6 +7035,41 @@ impl PrefixCache {
     /// Record one probe outcome into the LCP histogram (hit: entry length; miss: best_lcp).
     fn record_lcp(&mut self, n: usize) {
         self.lcp_hist[Self::lcp_bucket(n)] += 1;
+    }
+
+    /// The oversize refusal: counted every time, printed through the throttle.
+    fn refuse_oversize(&mut self, bytes: usize, budget: usize, why: &str, key: &PoolKey) {
+        self.record_budget_skip(false);
+        let shape = PrefixRefusalShape {
+            leased: None,
+            bytes,
+            budget,
+            key: key.clone(),
+        };
+        if let Some(line) = self.refusals.announce(
+            shape,
+            prefix_insert_refused_oversize(bytes, budget, why, key),
+        ) {
+            eprintln!("{line}");
+        }
+    }
+
+    /// The leased refusal: counted every time, printed through the throttle.
+    fn refuse_leased(&mut self, bytes: usize, budget: usize, why: &str, key: &PoolKey) {
+        let leased = self.pinned_bytes();
+        self.record_budget_skip(true);
+        let shape = PrefixRefusalShape {
+            leased: Some(leased),
+            bytes,
+            budget,
+            key: key.clone(),
+        };
+        if let Some(line) = self.refusals.announce(
+            shape,
+            prefix_insert_refused_leased(bytes, leased, budget, why, key),
+        ) {
+            eprintln!("{line}");
+        }
     }
 
     fn record_budget_skip(&mut self, pinned: bool) {
@@ -7067,118 +7209,37 @@ impl PrefixCache {
         (e.last_use, e.id)
     }
 
-    fn remove_lru(&mut self, segment: PrefixSegment, key: &(Instant, u64)) {
-        match segment {
-            PrefixSegment::Probation => {
-                self.probation_lru.remove(key);
-            }
-            PrefixSegment::Protected => {
-                self.protected_lru.remove(key);
-            }
-        }
+    fn remove_lru(&mut self, key: &(Instant, u64)) {
+        self.lru.remove(key);
     }
 
-    fn insert_lru(
-        &mut self,
-        segment: PrefixSegment,
-        lru_key: (Instant, u64),
-        key: PoolKey,
-        i: usize,
-    ) {
-        match segment {
-            PrefixSegment::Probation => {
-                self.probation_lru.insert(lru_key, (key, i));
-            }
-            PrefixSegment::Protected => {
-                self.protected_lru.insert(lru_key, (key, i));
-            }
-        }
+    fn insert_lru(&mut self, lru_key: (Instant, u64), key: PoolKey, i: usize) {
+        self.lru.insert(lru_key, (key, i));
     }
 
-    /// Promote one demonstrated reuse. The caller detaches any evictable index entry first;
-    /// keeping byte accounting here makes pin, touch, and same-window fanout agree.
-    fn promote_segment(&mut self, key: &PoolKey, i: usize) -> bool {
-        let Some(bytes) = self
-            .entries
-            .get(key)
-            .and_then(|pool| pool.get(i))
-            .filter(|entry| entry.segment == PrefixSegment::Probation)
-            .map(|entry| entry.bytes)
-        else {
-            return false;
-        };
-        self.entries.get_mut(key).unwrap()[i].segment = PrefixSegment::Protected;
-        self.probation_bytes = self.probation_bytes.saturating_sub(bytes);
-        self.protected_bytes = self.protected_bytes.saturating_add(bytes);
-        true
-    }
-
-    /// Protected is a byte target, not an entry count. Demotion does not discard bytes: it
-    /// returns the protected LRU to probation, where later scan pressure may evict it. Pinned
-    /// protected entries are absent from the index and can defer rebalancing until release.
-    fn rebalance_protected(&mut self) {
-        while self.protected_bytes > self.protected_target_bytes {
-            let Some((lru_key, (key, i))) = self
-                .protected_lru
-                .first_key_value()
-                .map(|(lru_key, value)| (*lru_key, value.clone()))
-            else {
-                break;
-            };
-            let Some(bytes) = self
-                .entries
-                .get(&key)
-                .and_then(|pool| pool.get(i))
-                .filter(|entry| {
-                    entry.pins == 0
-                        && entry.segment == PrefixSegment::Protected
-                        && Self::lru_key(entry) == lru_key
-                })
-                .map(|entry| entry.bytes)
-            else {
-                debug_assert!(false, "protected prefix-cache index drift");
-                break;
-            };
-            self.protected_lru.remove(&lru_key);
-            self.entries.get_mut(&key).unwrap()[i].segment = PrefixSegment::Probation;
-            self.protected_bytes = self.protected_bytes.saturating_sub(bytes);
-            self.probation_bytes = self.probation_bytes.saturating_add(bytes);
-            self.probation_lru.insert(lru_key, (key.clone(), i));
-            eprintln!(
-                "[prefix-cache] demote (protected bytes): {:.1}MB to probation (model {}{})",
-                bytes as f64 / 1e6,
-                key.0,
-                ns_suffix(&key.1)
-            );
-        }
-    }
-
-    /// Refresh recency for pool[i] on a demonstrated reuse and promote probation to protected.
-    /// This is the ONLY legal unpinned `last_use` write after insert, so the segment indexes never
-    /// drift from the entries.
+    /// Refresh recency for pool[i] on a demonstrated reuse. This is the ONLY legal unpinned
+    /// `last_use` write after insert, so the index never drifts from the entries.
     #[cfg_attr(not(test), allow(dead_code))]
     fn touch(&mut self, key: &PoolKey, i: usize) {
-        let Some((old_lru, old_segment, pinned)) = self
+        let Some((old_lru, pinned)) = self
             .entries
             .get(key)
             .and_then(|p| p.get(i))
-            .map(|e| (Self::lru_key(e), e.segment, e.pins > 0))
+            .map(|e| (Self::lru_key(e), e.pins > 0))
         else {
             return;
         };
         if !pinned {
-            self.remove_lru(old_segment, &old_lru);
+            self.remove_lru(&old_lru);
         }
-        self.promote_segment(key, i);
-        let (new_lru, new_segment) = {
+        let new_lru = {
             let e = &mut self.entries.get_mut(key).unwrap()[i];
             e.last_use = Instant::now();
-            (Self::lru_key(e), e.segment)
+            Self::lru_key(e)
         };
         if !pinned {
-            self.insert_lru(new_segment, new_lru, key.clone(), i);
+            self.insert_lru(new_lru, key.clone(), i);
         }
-        self.rebalance_protected();
     }
 
     /// Acquire `n` in-flight leases on one entry. The first lease removes it from the
@@ -7187,20 +7248,18 @@ impl PrefixCache {
         if n == 0 {
             return None;
         }
-        let (old_lru, old_segment, id, was_unpinned) = {
+        let (old_lru, id, was_unpinned) = {
             let e = self.entries.get(key)?.get(i)?;
-            (Self::lru_key(e), e.segment, e.id, e.pins == 0)
+            (Self::lru_key(e), e.id, e.pins == 0)
         };
         if was_unpinned {
-            self.remove_lru(old_segment, &old_lru);
+            self.remove_lru(&old_lru);
         }
-        self.promote_segment(key, i);
         {
             let e = &mut self.entries.get_mut(key)?[i];
             e.pins = e.pins.checked_add(n).expect("prefix pin refcount overflow");
             e.last_use = Instant::now();
         }
-        self.rebalance_protected();
         Some(PrefixPin {
             key: key.clone(),
             id,
@@ -7265,7 +7324,7 @@ impl PrefixCache {
     }
 
     /// Release one session lease. The last release makes the entry evictable again and
-    /// treats the protected fanout interval as recent use.
+    /// treats the lease interval as recent use.
     fn unpin(&mut self, pin: &PrefixPin) -> bool {
         let Some(i) = self.id_index(pin) else {
             return false;
@@ -7278,14 +7337,13 @@ impl PrefixCache {
             e.pins -= 1;
             if e.pins == 0 {
                 e.last_use = Instant::now();
-                Some((e.segment, Self::lru_key(e)))
+                Some(Self::lru_key(e))
             } else {
                 None
             }
         };
-        if let Some((segment, lru_key)) = released {
-            self.insert_lru(segment, lru_key, pin.key.clone(), i);
-            self.rebalance_protected();
+        if let Some(lru_key) = released {
+            self.insert_lru(lru_key, pin.key.clone(), i);
         }
         true
     }
@@ -7299,55 +7357,9 @@ impl PrefixCache {
             .sum()
     }
 
-    /// Bytes a pinned admission may reclaim under the selected eviction policy. LRU may
-    /// reclaim either segment, but never a leased entry. SLRU preserves its protected share.
-    /// Existing probation is immediately eligible. A multi-participant fanout also promotes the incoming
-    /// entry, so only the protected LRU bytes that promotion would demote back to probation count.
-    fn pinned_admission_reclaimable_bytes(
-        &self,
-        incoming_bytes: usize,
-        promotes: bool,
-        slru: bool,
-    ) -> usize {
-        if !slru {
-            return self.total_bytes.saturating_sub(self.pinned_bytes());
-        }
-        let mut reclaimable = self
-            .probation_lru
-            .values()
-            .filter_map(|(key, i)| {
-                self.entries
-                    .get(key)
-                    .and_then(|pool| pool.get(*i))
-                    .map(|entry| entry.bytes)
-            })
-            .fold(0usize, usize::saturating_add);
-        if !promotes {
-            return reclaimable;
-        }
-        let mut projected_protected = self.protected_bytes.saturating_add(incoming_bytes);
-        for (key, i) in self.protected_lru.values() {
-            if projected_protected <= self.protected_target_bytes {
-                break;
-            }
-            let Some(bytes) = self
-                .entries
-                .get(key)
-                .and_then(|pool| pool.get(*i))
-                .map(|entry| entry.bytes)
-            else {
-                debug_assert!(false, "protected prefix-cache index drift during admission");
-                continue;
-            };
-            projected_protected = projected_protected.saturating_sub(bytes);
-            reclaimable = reclaimable.saturating_add(bytes);
-        }
-        reclaimable
-    }
-
     /// Remove pool[i] under `key`, keeping the recency index exact: swap_remove moves the
     /// pool's LAST entry into slot i, so exactly one surviving entry needs its index
-    /// re-pointed (pool order is free — every probe is order-independent: lookup's
+    /// re-pointed (pool order is free: every probe is order-independent, lookup's
     /// longest-match tie is impossible under exact-key dedupe, best_lcp is a max,
     /// has_covering/has_key are `any`).
     fn remove_at(&mut self, key: &PoolKey, i: usize) -> Option<PrefixEntry> {
@@ -7356,97 +7368,35 @@ impl PrefixCache {
             return None;
         }
         let dead = pool.swap_remove(i);
-        match dead.segment {
-            PrefixSegment::Probation => {
-                self.probation_lru.remove(&Self::lru_key(&dead));
-            }
-            PrefixSegment::Protected => {
-                self.protected_lru.remove(&Self::lru_key(&dead));
-            }
-        }
+        self.lru.remove(&Self::lru_key(&dead));
         if let Some(moved) = pool.get(i)
             && moved.pins == 0
         {
-            match moved.segment {
-                PrefixSegment::Probation => {
-                    self.probation_lru
-                        .insert(Self::lru_key(moved), (key.clone(), i));
-                }
-                PrefixSegment::Protected => {
-                    self.protected_lru
-                        .insert(Self::lru_key(moved), (key.clone(), i));
-                }
-            }
+            self.lru.insert(Self::lru_key(moved), (key.clone(), i));
         }
         if pool.is_empty() {
             self.entries.remove(key);
         }
         self.total_bytes = self.total_bytes.saturating_sub(dead.bytes);
-        match dead.segment {
-            PrefixSegment::Probation => {
-                self.probation_bytes = self.probation_bytes.saturating_sub(dead.bytes);
-            }
-            PrefixSegment::Protected => {
-                self.protected_bytes = self.protected_bytes.saturating_sub(dead.bytes);
-            }
-        }
         Some(dead)
     }
 
-    fn capacity_victim(&self) -> Option<(PoolKey, usize)> {
-        self.capacity_victim_with(prefix_cache_slru_enabled())
-    }
-
-    /// Victim selection, with the policy passed in so both arms are unit-testable
-    /// (`prefix_cache_slru_enabled` is a process-wide `OnceLock` over the environment).
-    fn capacity_victim_with(&self, slru: bool) -> Option<(PoolKey, usize)> {
-        if !slru {
-            // PLAIN-LRU ROLLBACK (MEMRA_PREFIX_CACHE_POLICY=lru): evict the GLOBAL oldest entry
-            // across both segments. Without this branch the seam did the OPPOSITE of what it
-            // advertises: forcing protected_pct=100 only sets protected_target_bytes = budget, so
-            // rebalance_protected can never demote, and every entry that earns a hit becomes
-            // permanently unevictable. The rollback exists because cx-slrutarget measured LRU 75%
-            // vs SLRU 0% after a hot-cohort turnover, so shipping it as a no-op degraded the exact
-            // failure an operator reaches for it to escape.
-            return self.oldest_evictable();
-        }
-        // SLRU: a protected entry becomes eligible only when protected exceeds its byte target:
-        // rebalance_protected demotes that segment's LRU into this probation index first.
-        self.probation_lru.values().next().cloned()
-    }
-
+    /// The capacity victim: the GLOBAL oldest unleased entry. NEWEST-TURN-FITS (memra#523 item
+    /// 1): the entry being published is the global newest, so it is never chosen while another
+    /// unleased entry remains, and the two preflights (`prepare_snapshot`, the insert loop's
+    /// leased check) guarantee that an entry which fits beside the leases never has to evict
+    /// itself. Plain LRU is the only policy (memra#523 item 2, 2026-09-21): on the incident's
+    /// shape the segmented arm cost one growing conversation 300 tokens after every other
+    /// tenant's turn and protected a dead promoted entry over a fresh one, at every pair of a
+    /// ten-pair interleaved A/B (`docs/decisions/PREFIX-CACHE-POLICY.md`).
     fn oldest_evictable(&self) -> Option<(PoolKey, usize)> {
-        match (
-            self.probation_lru.first_key_value(),
-            self.protected_lru.first_key_value(),
-        ) {
-            (Some((probation_key, probation)), Some((protected_key, protected))) => {
-                Some(if probation_key <= protected_key {
-                    probation.clone()
-                } else {
-                    protected.clone()
-                })
-            }
-            (Some((_, probation)), None) => Some(probation.clone()),
-            (None, Some((_, protected))) => Some(protected.clone()),
-            (None, None) => None,
-        }
+        self.lru.values().next().cloned()
     }
 
-    /// Insert (exact-key deduped per namespace) into probation, then SLRU-evict back under
-    /// MEMRA_PREFIX_CACHE_MB. The byte budget and both segment targets stay GLOBAL across
-    /// namespaces (VRAM is one resource); only visibility is namespaced.
+    /// Env-budgeted insert for unit tests (production inserts route through `insert_demoting`).
     #[cfg_attr(not(test), allow(dead_code))]
     fn insert(&mut self, key: &PoolKey, e: PrefixEntry, why: &str) {
-        let _ = self.insert_with_budget_pins_and_pct(
-            key,
-            e,
-            why,
-            prefix_cache_budget_bytes(),
-            prefix_cache_protected_pct(),
-            0,
-            None,
-        );
+        let _ = self.insert_with_budget_pins(key, e, why, prefix_cache_budget_bytes(), 0, None);
     }
 
     /// `insert`, with capacity-evicted entries DEMOTED into the pinned host tier instead of
@@ -7462,14 +7412,13 @@ impl PrefixCache {
         engine: &Engine,
         host: &mut HostPrefixCache,
     ) {
-        let _ = self.insert_with_budget_pins_and_pct(
+        let _ = self.insert_with_budget_pins(
             key,
             e,
             why,
             // Floor + flex grant (lane/kv-flex-20260831); with MEMRA_KV_FLEX off the grant
             // is 0 by construction and this is exactly prefix_cache_budget_bytes().
             kv_flex_effective_budget(),
-            prefix_cache_protected_pct(),
             0,
             Some(&mut |dead| host_demote_prefix_entry(engine, host, dead)),
         );
@@ -7488,13 +7437,12 @@ impl PrefixCache {
         engine: &Engine,
         host: &mut HostPrefixCache,
     ) -> Option<PrefixPin> {
-        let id = self.insert_with_budget_pins_and_pct(
+        let id = self.insert_with_budget_pins(
             key,
             e,
             why,
             // Floor + flex grant (lane/kv-flex-20260831); grant is 0 with the flag off.
             kv_flex_effective_budget(),
-            prefix_cache_protected_pct(),
             pins,
             Some(&mut |dead| host_demote_prefix_entry(engine, host, dead)),
         )?;
@@ -7505,63 +7453,25 @@ impl PrefixCache {
     }
 
     /// `insert` with the budget as a parameter (the env-independent seam the eviction
-    /// unit tests drive; production also supplies the configured protected percentage).
+    /// unit tests drive).
     #[cfg_attr(not(test), allow(dead_code))]
     fn insert_with_budget(&mut self, key: &PoolKey, e: PrefixEntry, why: &str, budget: usize) {
-        let _ = self.insert_with_budget_pins_and_pct(
-            key,
-            e,
-            why,
-            budget,
-            DEFAULT_PREFIX_CACHE_PROTECTED_PCT,
-            0,
-            None,
-        );
+        let _ = self.insert_with_budget_pins(key, e, why, budget, 0, None);
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the eviction/demote seam's call contract; bundling into a struct is a refactor, not a lint fix
-    fn insert_with_budget_pins_and_pct(
-        &mut self,
-        key: &PoolKey,
-        e: PrefixEntry,
-        why: &str,
-        budget: usize,
-        protected_pct: usize,
-        initial_pins: usize,
-        // HOST-TIER DEMOTE SINK (lane/kv-host-spill-20260830): capacity-evicted entries are
-        // handed here still holding their device bytes; the sink D2H-copies them into the
-        // pinned host tier and drops the device planes. None (tests / tier off) = plain drop.
-        // Leased/pinned entries never reach the sink: they are absent from the evictable LRU.
-        demote: Option<&mut dyn FnMut(PrefixEntry)>,
-    ) -> Option<u64> {
-        self.insert_with_budget_pins_and_policy(
-            key,
-            e,
-            why,
-            budget,
-            protected_pct,
-            initial_pins,
-            demote,
-            prefix_cache_slru_enabled(),
-        )
-    }
-
-    /// Explicit policy seam keeps admission and victim selection on the same arm in tests.
-    #[allow(clippy::too_many_arguments)] // allow: mirrors the existing insertion seam plus its policy
-    fn insert_with_budget_pins_and_policy(
+    /// Insert into the byte-budgeted cache, then evict oldest-first back under `budget`.
+    fn insert_with_budget_pins(
         &mut self,
         key: &PoolKey,
         mut e: PrefixEntry,
         why: &str,
         budget: usize,
-        protected_pct: usize,
         initial_pins: usize,
         // HOST-TIER DEMOTE SINK (lane/kv-host-spill-20260830): capacity-evicted entries are
         // handed here still holding their device bytes; the sink D2H-copies them into the
         // pinned host tier and drops the device planes. None (tests / tier off) = plain drop.
         // Leased/pinned entries never reach the sink: they are absent from the evictable LRU.
         mut demote: Option<&mut dyn FnMut(PrefixEntry)>,
-        slru: bool,
     ) -> Option<u64> {
         if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
             eprintln!(
@@ -7584,53 +7494,32 @@ impl PrefixCache {
             };
         }
         if e.bytes > budget {
-            self.record_budget_skip(false);
-            eprintln!(
-                "[prefix-cache] skip {why} insert: entry {:.1}MB > budget {:.0}MB",
-                e.bytes as f64 / 1e6,
-                budget as f64 / 1e6
-            );
+            self.refuse_oversize(e.bytes, budget, why, key);
             return None;
         }
-        if initial_pins > 0 && e.bytes > budget.saturating_sub(self.pinned_bytes()) {
-            self.record_budget_skip(true);
-            eprintln!(
-                "[prefix-cache] skip pinned {why} insert: entry {:.1}MB cannot fit \
-                       beside {:.1}MB already pinned (budget {:.0}MB)",
-                e.bytes as f64 / 1e6,
-                self.pinned_bytes() as f64 / 1e6,
-                budget as f64 / 1e6
-            );
-            return None;
-        }
-        self.protected_target_bytes = prefix_cache_protected_bytes(budget, protected_pct);
-        self.rebalance_protected();
-        if initial_pins > 0 {
-            let needed = self
-                .total_bytes
-                .saturating_add(e.bytes)
-                .saturating_sub(budget);
-            let reclaimable =
-                self.pinned_admission_reclaimable_bytes(e.bytes, initial_pins > 1, slru);
-            if needed > reclaimable {
+        // NEWEST-TURN-FITS preflight (memra#523 item 1): an entry that fits the budget either
+        // fits beside the leased bytes (every unleased byte is reclaimable for it, oldest
+        // first) or is refused HERE, in bytes, without evicting anyone. Before this check such
+        // an entry evicted every unleased neighbour and then itself.
+        if e.bytes > budget.saturating_sub(self.pinned_bytes()) {
+            if initial_pins == 0 {
+                self.refuse_leased(e.bytes, budget, why, key);
+            } else {
                 self.record_budget_skip(true);
                 eprintln!(
-                    "[prefix-cache] skip pinned {why} insert: entry {:.1}MB would evict \
-                           protected bytes below their {:.0}MB share (need {:.1}MB, \
-                           probation/demotable {:.1}MB)",
+                    "[prefix-cache] skip pinned {why} insert: entry {:.1}MB cannot fit \
+                           beside {:.1}MB already pinned (budget {:.0}MB)",
                     e.bytes as f64 / 1e6,
-                    self.protected_target_bytes as f64 / 1e6,
-                    needed as f64 / 1e6,
-                    reclaimable as f64 / 1e6
+                    self.pinned_bytes() as f64 / 1e6,
+                    budget as f64 / 1e6
                 );
-                return None;
             }
+            return None;
         }
         self.total_bytes += e.bytes;
-        self.probation_bytes += e.bytes;
         self.inserts += 1;
         eprintln!(
-            "[prefix-cache] insert probation ({why}): {} tokens, {:.1}MB (resident {:.1}MB / {:.0}MB, model {}{})",
+            "[prefix-cache] insert ({why}): {} tokens, {:.1}MB (resident {:.1}MB / {:.0}MB, model {}{})",
             e.toks.len(),
             e.bytes as f64 / 1e6,
             self.total_bytes as f64 / 1e6,
@@ -7640,7 +7529,6 @@ impl PrefixCache {
         );
         e.id = self.next_id;
         self.next_id += 1;
-        e.segment = PrefixSegment::Probation;
         e.pins = initial_pins;
         let inserted_id = e.id;
         let lk = Self::lru_key(&e);
@@ -7650,15 +7538,12 @@ impl PrefixCache {
             pool.len() - 1
         };
         if initial_pins == 0 {
-            self.probation_lru.insert(lk, (key.clone(), idx));
-        } else if initial_pins > 1 {
-            // In-batch fanout computes once for multiple participants: sibling two is already a
-            // measured reuse, so the new entry enters probation and immediately earns promotion.
-            self.promote_segment(key, idx);
-            self.rebalance_protected();
+            self.lru.insert(lk, (key.clone(), idx));
         }
         while self.total_bytes > budget {
-            let Some((k, i)) = self.capacity_victim_with(slru) else {
+            // Never the entry just inserted: it is the global newest (or leased), and the
+            // preflight above guarantees an older unleased victim exists while over budget.
+            let Some((k, i)) = self.oldest_evictable() else {
                 break;
             };
             let Some(dead) = self.remove_at(&k, i) else {
@@ -7666,8 +7551,7 @@ impl PrefixCache {
             };
             self.evictions += 1;
             eprintln!(
-                "[prefix-cache] evict ({:?} LRU): {} tokens, {:.1}MB (model {}{})",
-                dead.segment,
+                "[prefix-cache] evict (LRU): {} tokens, {:.1}MB (model {}{})",
                 dead.toks.len(),
                 dead.bytes as f64 / 1e6,
                 k.0,
@@ -7681,7 +7565,7 @@ impl PrefixCache {
         }
         debug_assert!(
             self.total_bytes <= budget,
-            "pinned-admission preflight must preserve the prefix-cache byte ceiling"
+            "the leased preflight must preserve the prefix-cache byte ceiling"
         );
         self.entries
             .get(key)
@@ -7689,17 +7573,22 @@ impl PrefixCache {
             .map(|_| inserted_id)
     }
 
-    /// Reserve publication room before allocating its device snapshot. Leases and the
-    /// selected eviction policy remain authoritative. Refuse without evicting anything
-    /// when the eligible entries cannot make room; publication must never fail a request.
+    /// Reserve publication room before allocating its device snapshot. Leases are
+    /// authoritative; every unleased byte is reclaimable, oldest first (memra#523 item 1), so
+    /// the only refusals are an entry larger than the whole budget or one that cannot fit
+    /// beside the current leases. Both refuse without evicting anything and print their typed
+    /// `[prefix-cache] insert refused:` line in bytes; publication must never fail a request,
+    /// and it must never go cold silently.
     fn prepare_snapshot(
         &mut self,
+        key: &PoolKey,
         bytes: usize,
         budget: usize,
-        slru: bool,
         mut demote: Option<&mut dyn FnMut(PrefixEntry)>,
     ) -> bool {
+        const WHY: &str = "snapshot preflight";
         if bytes > budget {
+            self.refuse_oversize(bytes, budget, WHY, key);
             return false;
         }
         let target = budget - bytes;
@@ -7707,17 +7596,13 @@ impl PrefixCache {
         if needed == 0 {
             return true;
         }
-        let reclaimable: usize = self
-            .probation_lru
-            .values()
-            .chain(self.protected_lru.values().filter(|_| !slru))
-            .map(|(key, i)| self.entries[key][*i].bytes)
-            .sum();
+        let reclaimable = usize::try_from(self.evictable_bytes()).unwrap_or(usize::MAX);
         if needed > reclaimable {
+            self.refuse_leased(bytes, budget, WHY, key);
             return false;
         }
         while self.total_bytes > target {
-            let Some((key, i)) = self.capacity_victim_with(slru) else {
+            let Some((key, i)) = self.oldest_evictable() else {
                 return false;
             };
             let Some(dead) = self.remove_at(&key, i) else {
@@ -7725,7 +7610,7 @@ impl PrefixCache {
             };
             self.evictions += 1;
             eprintln!(
-                "[prefix-cache] evict (snapshot preflight): {} tokens, {:.1}MB (model {}{})",
+                "[prefix-cache] evict (snapshot preflight, LRU): {} tokens, {:.1}MB (model {}{})",
                 dead.toks.len(),
                 dead.bytes as f64 / 1e6,
                 key.0,
@@ -7744,18 +7629,18 @@ impl PrefixCache {
         true
     }
 
-    /// KV-FLEX SHED (lane/kv-flex-20260831): evict entries in capacity order (probation
-    /// LRU first, protected LRU past its share: the SAME victim function the insert-time
-    /// budget loop uses, so flex adds no second eviction policy) until residency is back
-    /// at `target`. Evicted bytes EVAPORATE (deliberately no demote sink, the `evict_all`
-    /// law: an admission-tick shed must not stall behind gigabytes of D2H). Pinned entries
-    /// are untouchable and the loop stops when no victim remains. Returns
-    /// (entries evicted, bytes freed).
+    /// KV-FLEX SHED (lane/kv-flex-20260831) and the step-OOM reclaim (memra#145): evict
+    /// unleased entries oldest first until `total_bytes <= target`, the SAME victim order the
+    /// insert loop and the snapshot preflight use, so pressure relief adds no second eviction
+    /// policy and can reach every byte `evictable_bytes()` promises the memory-admission door.
+    /// Evicted bytes EVAPORATE (deliberately no demote sink, the `evict_all` law: an
+    /// admission-tick shed must not stall behind gigabytes of D2H). The loop stops when no
+    /// unleased victim remains. Returns (entries evicted, bytes freed).
     fn evict_to_bytes(&mut self, target: usize) -> (usize, usize) {
         let mut n = 0usize;
         let mut freed = 0usize;
         while self.total_bytes > target {
-            let Some((key, i)) = self.capacity_victim() else {
+            let Some((key, i)) = self.oldest_evictable() else {
                 break;
             };
             let Some(dead) = self.remove_at(&key, i) else {
@@ -7784,12 +7669,11 @@ impl PrefixCache {
 
     /// Device bytes currently held by UNLEASED entries: exactly what [`Self::evict_all`]
     /// would free, and therefore what the memory-admission door may offer an arrival as
-    /// `Tiers::demotable_device_bytes`. Leased entries are absent from both LRUs by
+    /// `Tiers::demotable_device_bytes`. Leased entries are absent from the index by
     /// construction, so they cannot be promised here and then refuse to move.
     fn evictable_bytes(&self) -> u64 {
-        self.probation_lru
+        self.lru
             .values()
-            .chain(self.protected_lru.values())
             .filter_map(|(key, i)| self.entries.get(key).and_then(|row| row.get(*i)))
             .map(|e| e.bytes as u64)
             .sum()
@@ -7858,11 +7742,70 @@ fn retire_prefix_pin(px: &mut PrefixCache, prefix_pin: &mut Option<PrefixPin>) {
 
 /// One full-attn layer's demoted prefix bytes: the pinned-host twin of `PrefixPlane`.
 struct HostPlane {
-    k: memra_engine::PinnedHostBuf,
-    v: memra_engine::PinnedHostBuf,
+    k: HostPlaneBytes,
+    v: HostPlaneBytes,
     len: usize,
     k_tok_bytes: usize,
     v_tok_bytes: usize,
+}
+
+/// The byte owner of one demoted plane. `Pinned` is the pre-door buffer every OFF-arm plane
+/// and every handoff import uses. `Contract` (lane/spill-c-20260919 day 15, lead rulings 14
+/// and 15 Option B, `MEMRA_KV_HOST_CONTRACTS=1` on the pageable tier) is the destination a
+/// `TransferEngine` D2H delivered: the lease keeps its own pinned-budget charge on the
+/// server's governor, and `receipt` is the transfer's completion checksum of exactly these
+/// bytes, which `bind_tier_image` checks its own `StateBundle` checksum against. Converting a
+/// lease into a `PinnedHostBuf` would be a second host copy of the plane, so the arm exists
+/// instead (census Part C item 1).
+enum HostPlaneBytes {
+    Pinned(memra_engine::PinnedHostBuf),
+    Contract {
+        lease: memra_engine::tier_transfer::CudaPinnedLease,
+        receipt: memra_engine::cache::tiered::Digest,
+    },
+}
+impl HostPlaneBytes {
+    /// The plane's bytes. A lease read is a driver call (the pinned slice's tracking event is
+    /// synchronized first), so it can refuse; a pinned buffer cannot.
+    fn bytes(&self) -> Result<&[u8], String> {
+        use memra_engine::cache::tiered::PinnedLease;
+        match self {
+            Self::Pinned(p) => Ok(p.as_slice()),
+            Self::Contract { lease, .. } => lease
+                .bytes()
+                .map_err(|e| format!("contract-routed plane bytes unreadable: {e:?}")),
+        }
+    }
+    /// The transfer's completion checksum, present only on a contract-routed plane.
+    fn receipt(&self) -> Option<&memra_engine::cache::tiered::Digest> {
+        match self {
+            Self::Pinned(_) => None,
+            Self::Contract { receipt, .. } => Some(receipt),
+        }
+    }
+    /// `MEMRA_KV_HOST_FAULT=flip-demote`, the one writer after the copy: flips byte 0. A lease
+    /// has whole-buffer `write` only, so the fault reads, flips and rewrites the plane there
+    /// (a host round trip of a gate-box diagnostic, never a serving path).
+    fn flip_first_byte(&mut self) -> Result<(), String> {
+        match self {
+            Self::Pinned(p) => {
+                p.as_mut_slice()[0] ^= 0xff;
+                Ok(())
+            }
+            Self::Contract { lease, .. } => {
+                use memra_engine::cache::tiered::PinnedLease;
+                let mut bytes = lease
+                    .bytes()
+                    .map_err(|e| format!("contract-routed plane bytes unreadable: {e:?}"))?
+                    .to_vec();
+                let first = bytes.first_mut().ok_or("contract-routed plane is empty")?;
+                *first ^= 0xff;
+                lease
+                    .write(&bytes)
+                    .map_err(|e| format!("contract-routed plane rewrite refused: {e:?}"))
+            }
+        }
+    }
 }
 
 /// Legacy pageable state only exists with the arena OFF. Every f32 payload in
@@ -8049,9 +7992,8 @@ impl std::fmt::Display for TenantShareRefusal {
     }
 }
 
-/// Pinned-host spill pool behind the device `PrefixCache`. Plain byte-budgeted LRU on purpose:
-/// demotions arrive already SLRU-ordered from the device tier, so a second segmentation here
-/// would re-derive the same ordering at extra bookkeeping cost. Keyed exactly like the device
+/// Pinned-host spill pool behind the device `PrefixCache`. Plain byte-budgeted LRU, the same
+/// order as the device tier (memra#523 item 2), so a demotion keeps its rank. Keyed exactly like the device
 /// cache: the PC-ISO `(model, cache namespace)` map key plus exact-token prefixes.
 #[derive(Default)]
 struct HostPrefixCache {
@@ -8690,6 +8632,17 @@ impl HostPrefixCache {
 // day 13, lead ruling 15 Option A); with the door OFF nothing constructs it.
 struct HostTierContext {
     governor: memra_engine::cache::tiered::hostprefix::SharedGovernor,
+    /// Option B (day 15, lead rulings 14 and 15): the native transfer engine on the worker's
+    /// CUDA owner stream, charging `governor` through `HostTierLedger`. Every pageable-tier
+    /// D2H of a KV plane goes through it; `None` only in CPU tests, where a demote refuses by
+    /// name (`tier D2H transfer engine missing`), never a silent by-reference fallback.
+    transfers: Option<std::cell::RefCell<memra_engine::tier_transfer::CudaTransfers>>,
+    /// The ledger's in-flight bound: one batch per demote, K and V per KV plane plus the draft
+    /// pair, over the loaded models (`2 x max layers + 2`).
+    inflight: u64,
+    /// The one-shot contract fault (`HostContractFault`), taken by the first demote that runs the
+    /// route; `None` in production without `MEMRA_KV_HOST_FAULT=contract-*`.
+    fault: std::cell::Cell<Option<HostContractFault>>,
     /// Per loaded model NAME: the model's program identities with a ZERO tenant salt (never
     /// handed out as-is, see `program`) and the generation `HostPrefixCache::model_generations`
     /// holds for that name. Pool namespaces arrive per request and cannot be enumerated at
@@ -8825,10 +8778,32 @@ impl HostPrefixCache {
         let mut add = |role: Role,
                        row: u64,
                        encoding: &[u8],
-                       bytes: &[u8]|
+                       bytes: &[u8],
+                       receipt: Option<&memra_engine::cache::tiered::Digest>|
          -> std::result::Result<(), String> {
             if bytes.is_empty() {
                 return Ok(());
+            }
+            let sum = checksum(bytes);
+            // Option B receipt check: a contract-routed plane's bundle checksum must be the
+            // transfer's completion checksum of the same bytes. The one legitimate difference
+            // is the `flip-demote` fault, which corrupts the image after the receipt exactly as
+            // it corrupts after the verify digest; it is named here, and the verify arm catches
+            // it at promote as it does with the door off.
+            if let Some(receipt) = receipt
+                && sum != *receipt
+            {
+                if kv_host_fault() == "flip-demote" {
+                    eprintln!(
+                        "[prefix-host] contracts door D2H receipt: {role:?} plane image checksum \
+                         differs from its D2H receipt as injected (MEMRA_KV_HOST_FAULT=flip-demote); \
+                         the verify arm catches it at promote"
+                    );
+                } else {
+                    return Err(format!(
+                        "tier image {role:?} plane checksum differs from its D2H contract receipt"
+                    ));
+                }
             }
             let group = u32::try_from(layout.segments.len()).map_err(|_| "tier group overflow")?;
             layout.segments.push(ByteSegment {
@@ -8856,7 +8831,7 @@ impl HostPrefixCache {
                 page_count: 1,
                 pages: PageRequirement::AllPages,
             });
-            checksums.push(checksum(bytes));
+            checksums.push(sum);
             Ok(())
         };
         // Every plane's geometry is the trunk rule: q8_0 K rows (34 B per 32), q5_1 V rows
@@ -8902,19 +8877,38 @@ impl HostPrefixCache {
             entry.draft.as_ref().map(plane_geometry),
         );
         for p in entry.kv.iter().flatten() {
-            add(Role::Key, p.k_tok_bytes as u64, b"q8_0", p.k.as_slice())?;
-            add(Role::Value, p.v_tok_bytes as u64, b"q5_1", p.v.as_slice())?;
+            add(
+                Role::Key,
+                p.k_tok_bytes as u64,
+                b"q8_0",
+                p.k.bytes()?,
+                p.k.receipt(),
+            )?;
+            add(
+                Role::Value,
+                p.v_tok_bytes as u64,
+                b"q5_1",
+                p.v.bytes()?,
+                p.v.receipt(),
+            )?;
         }
         for p in entry.conv.iter().chain(&entry.ssm).flatten() {
-            add(Role::Recurrent, 4, b"f32-native", f32s_as_bytes(p))?;
+            add(Role::Recurrent, 4, b"f32-native", f32s_as_bytes(p), None)?;
         }
         add(
             Role::Logits,
             4,
             b"f32-native",
             f32s_as_bytes(&entry.last_logits),
+            None,
         )?;
-        add(Role::Hidden, 4, b"f32-native", f32s_as_bytes(&entry.last_h))?;
+        add(
+            Role::Hidden,
+            4,
+            b"f32-native",
+            f32s_as_bytes(&entry.last_h),
+            None,
+        )?;
         // The MTP draft plane: its own K and V segments under `Role::Draft`, checksummed like
         // the trunk planes (the verify digest is blind to it; these checksums are its receipt).
         if let Some(p) = &entry.draft {
@@ -8922,16 +8916,24 @@ impl HostPrefixCache {
                 Role::Draft,
                 p.k_tok_bytes as u64,
                 b"mtp-draft-q8_0",
-                p.k.as_slice(),
+                p.k.bytes()?,
+                p.k.receipt(),
             )?;
             add(
                 Role::Draft,
                 p.v_tok_bytes as u64,
                 b"mtp-draft-q5_1",
-                p.v.as_slice(),
+                p.v.bytes()?,
+                p.v.receipt(),
             )?;
         }
-        add(Role::Transaction, 1, b"host-prefix-shape-v2", &metadata)?;
+        add(
+            Role::Transaction,
+            1,
+            b"host-prefix-shape-v2",
+            &metadata,
+            None,
+        )?;
         let id = KvBlockId::new(&program, [0; 32], &entry.toks, 0, 0, tier.device, 0)
             .map_err(|e| format!("{e:?}"))?;
         let bundle = StateBundle {
@@ -9016,12 +9018,721 @@ fn host_plane_from_device(
             .map_err(|err| format!("V plane D2H failed: {err}"))?;
     }
     Ok(HostPlane {
-        k,
-        v,
+        k: HostPlaneBytes::Pinned(k),
+        v: HostPlaneBytes::Pinned(v),
         len: p.len,
         k_tok_bytes: p.k_tok_bytes,
         v_tok_bytes: p.v_tok_bytes,
     })
+}
+
+/// Constant transfer epochs of the host tier's D2H under the door (Option B): state 0 is the
+/// immutable-prefix epoch (`KvBlockId.epoch`), and the source and destination generations are
+/// the single worker owner's for the life of the process. The model INSTANCE identity is not
+/// this number: `bind_tier_image`'s generation `Arc` and the identity lease enforce it.
+const HOST_TIER_TRANSFER_EPOCHS: memra_engine::cache::tiered::Epochs =
+    memra_engine::cache::tiered::Epochs {
+        state: 0,
+        src_gen: 1,
+        dst_gen: 1,
+    };
+
+fn digest_hex(d: &memra_engine::cache::tiered::Digest) -> String {
+    d.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Why `host_entry_from_device` produced no image.
+#[derive(Debug)]
+enum HostImageFailure {
+    /// No host copy exists and the device entry is whole: the pre-door meaning of a failure.
+    Failed(String),
+    /// Option B only: the transfer engine kept the source planes (a quarantined completion), so
+    /// the device entry is not whole and the caller must drop it.
+    SourceQuarantined(String),
+}
+impl From<String> for HostImageFailure {
+    fn from(why: String) -> Self {
+        Self::Failed(why)
+    }
+}
+impl From<&str> for HostImageFailure {
+    fn from(why: &str) -> Self {
+        Self::Failed(why.into())
+    }
+}
+impl std::fmt::Display for HostImageFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Failed(why) | Self::SourceQuarantined(why) => f.write_str(why),
+        }
+    }
+}
+
+/// Why one contract-routed D2H did not produce an image.
+enum HostContractFailure {
+    /// A pinned destination was refused (the ledger, the driver, or the `alloc-fail` fault)
+    /// before any plane left the entry: the caller latches the tier off exactly as the
+    /// pre-door alloc path does. The entry is whole.
+    Alloc(String),
+    /// A typed refusal with the entry whole (every registered plane came back).
+    Refused(String),
+    /// The transfer's completion is unknown or a plane could not be taken back: the frozen
+    /// contract keeps the source inside the engine, so the device entry has lost planes and
+    /// the caller must drop it; the tier latches off.
+    SourceQuarantined(String),
+    /// Every plane came back (the entry is whole, nothing published) but the ticket did not
+    /// retire or acknowledge, or its producer fence did not release: its in-flight charge and
+    /// destinations are leaked and the ledger's in-flight dimension is exactly one batch, so
+    /// the next demote would refuse `Capacity` forever. The caller latches the tier off with one
+    /// typed line (review finding 2 on PR #599).
+    TicketLeaked(String),
+}
+
+/// One-shot injected fault for the contract route: `MEMRA_KV_HOST_FAULT=contract-presubmit` or
+/// `contract-postpublish`, armed once at boot into `HostTierContext::fault` (the GPU unit tests
+/// set the cell directly). Each names the unwind path it exercises: a refusal before any op was
+/// submitted (every registered plane must come back, typed `Refused`, tier on), and a refusal
+/// after every destination was taken (the published ticket must retire against its consumer
+/// fence and be acknowledged, nothing leaked, tier on). Gate: `tools/kv-host-contract-fault-gate.sh`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostContractFault {
+    PreSubmit,
+    PostPublish,
+}
+impl HostContractFault {
+    fn from_door(fault: &str) -> Option<Self> {
+        match fault {
+            "contract-presubmit" => Some(Self::PreSubmit),
+            "contract-postpublish" => Some(Self::PostPublish),
+            _ => None,
+        }
+    }
+}
+
+/// Which slot of the entry a contract-routed plane came from and goes back to.
+#[derive(Clone, Copy, Debug)]
+enum ContractSlot {
+    Kv(usize),
+    Draft,
+}
+
+/// One registered plane of a contract-routed demote: its slot, its geometry, and the RETAINED
+/// device leases (`retain_device`) that take the two slices back after the sources retire.
+struct ContractPlane {
+    slot: ContractSlot,
+    len: usize,
+    k_tok_bytes: usize,
+    v_tok_bytes: usize,
+    k: memra_engine::cache::tiered::DeviceLease,
+    v: memra_engine::cache::tiered::DeviceLease,
+}
+
+/// Option B: the D2H of every KV plane of one entry (the trunk planes and the MTP draft plane)
+/// as ONE `TransferEngine` batch on the CUDA owner thread, the `kv_tier_gate` demote sequence
+/// (`kv_tier_gate/active.rs demote`) applied to the server's entry. Planes leave `dead` as
+/// owned `KvPlane`s (lead ruling 14: `Option::take` on the entry's plane slots, no placeholder,
+/// no device byte) and return through `take_plane` into the same slots. Pinned destinations
+/// are allocated first (a refusal there leaves the entry untouched), the device admission is
+/// probed before any plane leaves (a refused `register_device` drops the plane it was handed),
+/// and the receipt is the engine's completion checksum per item, carried on each `HostPlane`
+/// for `bind_tier_image` to check against the bundle checksum. One D2H per plane: the
+/// contract's `memcpy_dtoh` on the owner stream behind a producer fence; nothing else copies.
+fn host_kv_planes_through_contract(
+    engine: &Engine,
+    tier: &HostTierContext,
+    dead: &mut PrefixEntry,
+    class: HostTierEntryClass,
+) -> Result<(Vec<Option<HostPlane>>, Option<HostPlane>), HostContractFailure> {
+    use HostContractFailure::{Alloc, Refused, SourceQuarantined, TicketLeaked};
+    use memra_engine::cache::tiered::*;
+    let fault = tier.fault.take();
+    let Some(transfers) = &tier.transfers else {
+        return Err(Refused(
+            "tier D2H transfer engine missing (the door context was built without a CUDA owner)"
+                .into(),
+        ));
+    };
+    let mut t = transfers.borrow_mut();
+    let (program, _) = tier
+        .program(&dead.pool_key, class)
+        .map_err(|why| Refused(format!("tier {why}")))?;
+    let tenant = program.tenant_salt;
+    let dimensions = t.used().device.len();
+    let request = move || BudgetRequest {
+        bytes: TierBudget::zero(dimensions),
+        priority: Priority::Backup,
+        deadline: Deadline(u64::MAX),
+        tenant,
+    };
+    // 1. The plane list, borrowed: slot, geometry, byte counts, and the two checks a refused
+    //    `register_device` could otherwise make only by dropping the plane it was handed (an
+    //    empty plane, a plane allocated off the owner stream).
+    struct Planned {
+        slot: ContractSlot,
+        len: usize,
+        k_tok_bytes: usize,
+        v_tok_bytes: usize,
+        kb: usize,
+        vb: usize,
+        capacity: usize,
+    }
+    let mut planned = Vec::with_capacity(dead.kv.len() + 1);
+    {
+        let owner = t.owner_stream();
+        let planes = dead
+            .kv
+            .iter()
+            .enumerate()
+            .filter_map(|(i, p)| p.as_ref().map(|p| (ContractSlot::Kv(i), p)))
+            .chain(dead.draft.as_ref().map(|p| (ContractSlot::Draft, p)));
+        for (slot, p) in planes {
+            let (Some(kb), Some(vb)) = (
+                p.len.checked_mul(p.k_tok_bytes),
+                p.len.checked_mul(p.v_tok_bytes),
+            ) else {
+                return Err(Refused(format!(
+                    "tier D2H refused: {slot:?} plane byte overflow"
+                )));
+            };
+            if kb == 0 || vb == 0 || p.k.len() < kb || p.v.len() < vb {
+                return Err(Refused(format!(
+                    "tier D2H refused: {slot:?} plane geometry {} rows x {}/{} B against device \
+                     slices of {}/{} B",
+                    p.len,
+                    p.k_tok_bytes,
+                    p.v_tok_bytes,
+                    p.k.len(),
+                    p.v.len()
+                )));
+            }
+            if !Arc::ptr_eq(p.k.stream(), owner) || !Arc::ptr_eq(p.v.stream(), owner) {
+                return Err(Refused(format!(
+                    "tier D2H refused: {slot:?} plane was not allocated on the worker's owner \
+                     stream"
+                )));
+            }
+            planned.push(Planned {
+                slot,
+                len: p.len,
+                k_tok_bytes: p.k_tok_bytes,
+                v_tok_bytes: p.v_tok_bytes,
+                kb,
+                vb,
+                capacity: p.k.len() + p.v.len(),
+            });
+        }
+    }
+    if planned.is_empty() {
+        return Err(Refused(
+            "tier D2H refused: the entry carries no KV plane".into(),
+        ));
+    }
+    // 2. Pinned destinations first, in the OFF order (K then V per plane): a refusal here, the
+    //    ledger's, the driver's or the alloc-fail fault's, leaves the entry untouched and the
+    //    caller latches the tier exactly as the pre-door alloc path does.
+    let mut hosts = Vec::with_capacity(planned.len() * 2);
+    for p in &planned {
+        for n in [p.kb, p.vb] {
+            if kv_host_fault() == "alloc-fail" {
+                return Err(Alloc(format!(
+                    "pinned host alloc of {n} B failed: injected failure \
+                     (MEMRA_KV_HOST_FAULT=alloc-fail)"
+                )));
+            }
+            hosts.push(t.alloc_host(n, request()).map_err(|e| {
+                Alloc(format!(
+                    "pinned host alloc of {n} B failed: tier transfer engine {e:?}"
+                ))
+            })?);
+        }
+    }
+    // 3. Device admission probe on the same ledger: `register_device` charges the device
+    //    dimension per plane, so probing the sum first means the registration below cannot be
+    //    refused by the ledger, and no plane leaves the entry to be dropped by a refusal.
+    {
+        let mut probe = request();
+        *probe
+            .bytes
+            .device
+            .get_mut(tier.device as usize)
+            .ok_or_else(|| Refused("tier device missing".into()))? =
+            planned.iter().map(|p| p.capacity as u64).sum();
+        let mut ledger = tier
+            .governor
+            .lock()
+            .map_err(|_| Refused("tier governor poisoned".into()))?;
+        let lease = ledger
+            .reserve(&probe)
+            .map_err(|e| Refused(format!("tier D2H device admission refused: {e:?}")))?;
+        ledger
+            .release(&lease)
+            .map_err(|e| Refused(format!("tier D2H admission probe release refused: {e:?}")))?;
+    }
+    // 4. The planes leave the entry (lead ruling 14): `Option::take` on the slot, the two owned
+    //    `CudaSlice<u8>` become `KvPlane`s in the registry, and a retained lease per slice is
+    //    what takes them back. The originals go into the ops, K then V per plane, draft last.
+    let mut registered: Vec<ContractPlane> = Vec::with_capacity(planned.len());
+    let mut originals: Vec<DeviceLease> = Vec::with_capacity(planned.len() * 2);
+    for p in &planned {
+        let plane = match p.slot {
+            ContractSlot::Kv(i) => dead.kv[i].take(),
+            ContractSlot::Draft => dead.draft.take(),
+        };
+        let Some(PrefixPlane {
+            k,
+            v,
+            len,
+            k_tok_bytes,
+            v_tok_bytes,
+        }) = plane
+        else {
+            // Before submission the originals only hold the registry's Rc count above what
+            // `take_plane` accepts (the registry plus one retained twin), so they go first and
+            // the unwind returns every plane (review finding 1 on PR #599).
+            originals.clear();
+            return Err(host_contract_abort(
+                &mut t,
+                dead,
+                registered,
+                None,
+                None,
+                &format!(
+                    "tier D2H refused: {:?} plane slot emptied under the route",
+                    p.slot
+                ),
+            ));
+        };
+        let generation = HOST_TIER_TRANSFER_EPOCHS.src_gen;
+        let k = match t.register_device(k, generation, request()) {
+            Ok(lease) => lease,
+            Err(e) => {
+                // The plane handed in is gone (the registry drops a refused backing): the
+                // entry is not whole whatever the unwind of the others does.
+                originals.clear();
+                let _ = host_contract_planes_back(&mut t, dead, registered);
+                return Err(SourceQuarantined(format!(
+                    "tier D2H register_device refused after the admission probe ({e:?}); the K \
+                     plane of {:?} is lost",
+                    p.slot
+                )));
+            }
+        };
+        let v = match t.register_device(v, generation, request()) {
+            Ok(lease) => lease,
+            Err(e) => {
+                originals.clear();
+                let _ = t.take_plane(&k);
+                let _ = host_contract_planes_back(&mut t, dead, registered);
+                return Err(SourceQuarantined(format!(
+                    "tier D2H register_device refused after the admission probe ({e:?}); the V \
+                     plane of {:?} is lost",
+                    p.slot
+                )));
+            }
+        };
+        let (Ok(keep_k), Ok(keep_v)) = (t.retain_device(&k), t.retain_device(&v)) else {
+            originals.clear();
+            let _ = t.take_plane(&k);
+            let _ = t.take_plane(&v);
+            let _ = host_contract_planes_back(&mut t, dead, registered);
+            return Err(SourceQuarantined(format!(
+                "tier D2H retain_device refused right after registration; the {:?} plane is lost",
+                p.slot
+            )));
+        };
+        originals.push(k);
+        originals.push(v);
+        registered.push(ContractPlane {
+            slot: p.slot,
+            len,
+            k_tok_bytes,
+            v_tok_bytes,
+            k: keep_k,
+            v: keep_v,
+        });
+    }
+    // 5. The producer fence, then ONE batch and one ticket.
+    let recorded = if fault == Some(HostContractFault::PreSubmit) {
+        Err(Error::Quarantined)
+    } else {
+        t.record_producer(HOST_TIER_TRANSFER_EPOCHS.src_gen)
+    };
+    let producer = match recorded {
+        Ok(fence) => fence,
+        Err(e) => {
+            let why = if fault == Some(HostContractFault::PreSubmit) {
+                "injected failure (MEMRA_KV_HOST_FAULT=contract-presubmit)".to_string()
+            } else {
+                format!("{e:?}")
+            };
+            // Nothing was submitted: the originals are the only extra holders of the registry
+            // Rc, and `take_plane` refuses `Busy` while they live (review finding 1 on PR #599).
+            drop(originals);
+            return Err(host_contract_abort(
+                &mut t,
+                dead,
+                registered,
+                None,
+                None,
+                &format!("tier D2H producer fence refused: {why}"),
+            ));
+        }
+    };
+    let sizes: Vec<u64> = planned
+        .iter()
+        .flat_map(|p| [p.kb as u64, p.vb as u64])
+        .collect();
+    let ops = originals
+        .into_iter()
+        .zip(hosts)
+        .zip(&sizes)
+        .map(|((device, host), &bytes)| {
+            TransferOp::D2h(CopyOp {
+                host,
+                device,
+                bytes,
+                epochs: HOST_TIER_TRANSFER_EPOCHS,
+                producer_fence: Some(producer),
+            })
+        })
+        .collect();
+    let ticket = match t.submit_batch(ops) {
+        Ok(batch)
+            if batch
+                .items
+                .iter()
+                .all(|a| matches!(a, ItemAcceptance::Accepted { .. })) =>
+        {
+            batch.ticket
+        }
+        Ok(batch) => {
+            // Partial acceptance: the rejected ops came back (dropping them drops their host
+            // leases and the original device handles; the retained twins take the planes back
+            // once the accepted items complete).
+            let rejected = batch
+                .items
+                .iter()
+                .filter(|a| matches!(a, ItemAcceptance::Rejected { .. }))
+                .count();
+            let total = batch.items.len();
+            let ticket = batch.ticket;
+            drop(batch);
+            return Err(host_contract_abort(
+                &mut t,
+                dead,
+                registered,
+                Some(ticket),
+                Some(producer),
+                &format!("tier D2H batch partially refused: {rejected} of {total} items"),
+            ));
+        }
+        Err(rejected) => {
+            let error = rejected.error.clone();
+            drop(rejected);
+            return Err(host_contract_abort(
+                &mut t,
+                dead,
+                registered,
+                None,
+                Some(producer),
+                &format!("tier D2H submission refused: {error:?}"),
+            ));
+        }
+    };
+    // 6. Completion: the engine's event per item, then its status and its checksum of each
+    //    destination (the receipt), then each destination taken exactly once.
+    if let Err(e) = t.synchronize(&ticket) {
+        return Err(SourceQuarantined(format!(
+            "tier D2H completion unknown ({e:?}); the transfer engine keeps the planes"
+        )));
+    }
+    let completion = match t.poll(&ticket) {
+        Ok(completion) => completion,
+        Err(e) => {
+            return Err(SourceQuarantined(format!(
+                "tier D2H completion unreadable ({e:?}); the transfer engine keeps the planes"
+            )));
+        }
+    };
+    let mut destinations = Vec::with_capacity(sizes.len());
+    for item in 0..sizes.len() {
+        match t.take_destination(&ticket, item as u32, HOST_TIER_TRANSFER_EPOCHS) {
+            Ok(Destination::Host(lease)) => destinations.push(lease),
+            Ok(Destination::Device(_)) => {
+                return Err(host_contract_abort(
+                    &mut t,
+                    dead,
+                    registered,
+                    Some(ticket),
+                    Some(producer),
+                    "tier D2H returned a device destination",
+                ));
+            }
+            Err(e) => {
+                return Err(host_contract_abort(
+                    &mut t,
+                    dead,
+                    registered,
+                    Some(ticket),
+                    Some(producer),
+                    &format!("tier D2H destination {item} refused: {e:?}"),
+                ));
+            }
+        }
+    }
+    // 7. The caller-side contract check: exact lengths from the server's own plane geometry,
+    //    every item Complete, epochs equal, producer done. The checksum a `SegmentExpectation`
+    //    carries is the completion's own (there is no pre-copy hash of the device bytes short of
+    //    a second read), so the independent byte check is `bind_tier_image`'s: its bundle
+    //    checksum must equal the receipt each plane carries.
+    let expected: Vec<Vec<SegmentExpectation>> = completion
+        .items
+        .iter()
+        .zip(&sizes)
+        .map(|(item, &bytes)| {
+            vec![SegmentExpectation {
+                valid_bytes: bytes,
+                io_bytes: bytes,
+                checksum: item
+                    .segments
+                    .first()
+                    .and_then(|s| s.checksum)
+                    .unwrap_or([0; 32]),
+            }]
+        })
+        .collect();
+    let required = if fault == Some(HostContractFault::PostPublish) {
+        Err(Error::Corrupt)
+    } else {
+        completion.require(&ticket, &expected, false)
+    };
+    if let Err(e) = required {
+        let why = if fault == Some(HostContractFault::PostPublish) {
+            "injected failure (MEMRA_KV_HOST_FAULT=contract-postpublish)".to_string()
+        } else {
+            format!("{e:?}")
+        };
+        return Err(host_contract_abort(
+            &mut t,
+            dead,
+            registered,
+            Some(ticket),
+            Some(producer),
+            &format!("tier D2H receipt refused: {why}"),
+        ));
+    }
+    // 8. The consumer fence is recorded before the planes come back (their `take_plane` syncs
+    //    the stream, which completes it), the sources retire, the planes go back to their
+    //    slots, the producer fence releases, and the published ticket retires against its
+    //    consumer fence and is acknowledged: the destination leases are now the sole owners.
+    let consumer = match t.record_consumer(&ticket) {
+        Ok(fence) => fence,
+        Err(e) => {
+            return Err(host_contract_abort(
+                &mut t,
+                dead,
+                registered,
+                Some(ticket),
+                Some(producer),
+                &format!("tier D2H consumer fence refused: {e:?}"),
+            ));
+        }
+    };
+    if let Err(e) = t.retire_source(&ticket) {
+        return Err(SourceQuarantined(format!(
+            "tier D2H sources did not retire ({e:?}); the transfer engine keeps the planes"
+        )));
+    }
+    if let Err(why) = host_contract_planes_back(&mut t, dead, registered) {
+        return Err(SourceQuarantined(format!("tier D2H {why}")));
+    }
+    // The consumer fence was recorded before the planes came back and every `take_plane`
+    // drained the owner stream; one more drain here is the explicit observation `retire` needs
+    // (a `NOT_READY` consumer event is `Busy`, and a discarded `Busy` would leak the ticket).
+    let settled = t
+        .owner_stream()
+        .synchronize()
+        .map_err(|_| Error::Quarantined)
+        .and_then(|_| t.release_producer(producer))
+        .and_then(|_| t.retire(&ticket, Some(consumer)))
+        .and_then(|_| t.acknowledge(&ticket));
+    if let Err(e) = settled {
+        return Err(TicketLeaked(format!(
+            "tier D2H ticket did not retire ({e:?}); the entry is whole and nothing is \
+             published, but the ticket's in-flight charge and destinations are leaked"
+        )));
+    }
+    // 9. The host planes, each carrying the receipt of its own bytes, and the receipt line.
+    let mut destinations = destinations.into_iter();
+    let mut checksums = completion
+        .items
+        .iter()
+        .map(|item| item.segments.first().and_then(|s| s.checksum));
+    let mut kv: Vec<Option<HostPlane>> = (0..dead.kv.len()).map(|_| None).collect();
+    let mut draft = None;
+    let mut receipt = Vec::with_capacity(32 * sizes.len());
+    let mut kv_planes = 0usize;
+    for p in &planned {
+        let (Some(k), Some(v), Some(Some(ck)), Some(Some(cv))) = (
+            destinations.next(),
+            destinations.next(),
+            checksums.next(),
+            checksums.next(),
+        ) else {
+            return Err(Refused(
+                "tier D2H receipt shape does not match the plane list".into(),
+            ));
+        };
+        receipt.extend_from_slice(&ck);
+        receipt.extend_from_slice(&cv);
+        let plane = HostPlane {
+            k: HostPlaneBytes::Contract {
+                lease: k,
+                receipt: ck,
+            },
+            v: HostPlaneBytes::Contract {
+                lease: v,
+                receipt: cv,
+            },
+            len: p.len,
+            k_tok_bytes: p.k_tok_bytes,
+            v_tok_bytes: p.v_tok_bytes,
+        };
+        match p.slot {
+            ContractSlot::Kv(i) => {
+                kv[i] = Some(plane);
+                kv_planes += 1;
+            }
+            ContractSlot::Draft => draft = Some(plane),
+        }
+    }
+    let complete = completion
+        .items
+        .iter()
+        .filter(|item| {
+            item.accepted
+                && item
+                    .segments
+                    .iter()
+                    .all(|s| s.status == ItemStatus::Complete)
+        })
+        .count();
+    eprintln!(
+        "[prefix-host] contracts door D2H receipt: ticket issuer={} seq={} epochs={}/{}/{} \
+         items={} ({kv_planes} KV planes{}) complete={complete} require=ok \
+         checksums_sha256={} retired acknowledged",
+        ticket.issuer,
+        ticket.sequence,
+        ticket.epochs.state,
+        ticket.epochs.src_gen,
+        ticket.epochs.dst_gen,
+        sizes.len(),
+        if draft.is_some() { ", draft" } else { "" },
+        digest_hex(&digest("host-prefix-d2h-receipt", &receipt)),
+    );
+    let _ = engine;
+    Ok((kv, draft))
+}
+
+/// Take every registered plane back out of the transfer engine into its slot of `dead`. Every
+/// plane back means the entry is whole; a refusal means the engine still holds a plane (`Busy`
+/// while its ticket is live or quarantined) and the entry is not whole.
+fn host_contract_planes_back(
+    t: &mut memra_engine::tier_transfer::CudaTransfers,
+    dead: &mut PrefixEntry,
+    planes: Vec<ContractPlane>,
+) -> Result<(), String> {
+    for p in planes {
+        let back = |lease: &memra_engine::cache::tiered::DeviceLease,
+                    what: &str,
+                    t: &mut memra_engine::tier_transfer::CudaTransfers| {
+            t.take_plane(lease)
+                .map_err(|e| format!("{what} plane of {:?} did not come back ({e:?})", p.slot))?
+                .into_pooled()
+                .map_err(|e| format!("{what} plane of {:?} is not pooled storage ({e})", p.slot))
+        };
+        let k = back(&p.k, "K", t)?;
+        let v = back(&p.v, "V", t)?;
+        let plane = PrefixPlane {
+            k,
+            v,
+            len: p.len,
+            k_tok_bytes: p.k_tok_bytes,
+            v_tok_bytes: p.v_tok_bytes,
+        };
+        match p.slot {
+            ContractSlot::Kv(i) => dead.kv[i] = Some(plane),
+            ContractSlot::Draft => dead.draft = Some(plane),
+        }
+    }
+    Ok(())
+}
+
+/// Abort one contract-routed demote with the entry whole where the contract allows it: a
+/// submitted ticket settles (event sync, sources retired) before any plane can come back, the
+/// planes return to their slots, the producer fence releases, and the ticket retires (against a
+/// consumer fence if a destination was already taken) and is acknowledged. `Refused` when every
+/// plane came back; `SourceQuarantined` when the engine kept one.
+fn host_contract_abort(
+    t: &mut memra_engine::tier_transfer::CudaTransfers,
+    dead: &mut PrefixEntry,
+    registered: Vec<ContractPlane>,
+    ticket: Option<memra_engine::cache::tiered::TransferTicket>,
+    producer: Option<memra_engine::cache::tiered::FenceId>,
+    why: &str,
+) -> HostContractFailure {
+    use memra_engine::cache::tiered::TransferEngine;
+    if let Some(ticket) = &ticket
+        && let Err(e) = t.synchronize(ticket).and_then(|_| t.retire_source(ticket))
+    {
+        return HostContractFailure::SourceQuarantined(format!(
+            "{why}; the D2H ticket did not settle ({e:?}), the transfer engine keeps the planes"
+        ));
+    }
+    let back = host_contract_planes_back(t, dead, registered);
+    // Every fence below must be OBSERVED complete before it is released or retired against, and
+    // no result is discarded: a `Busy` swallowed here leaks the ticket (its in-flight charge is
+    // the whole dimension) or the producer fence (review finding 2 on PR #599).
+    let mut leaks: Vec<String> = Vec::new();
+    if let Some(fence) = producer {
+        if let Err(e) = t.owner_stream().synchronize() {
+            leaks.push(format!("owner stream drain before release_producer: {e}"));
+        }
+        if let Err(e) = t.release_producer(fence) {
+            leaks.push(format!("release_producer: {e:?}"));
+        }
+    }
+    if let Some(ticket) = &ticket {
+        // A published ticket (a destination was taken) retires only against a consumer fence;
+        // an unpublished one refuses `NotReady` here and retires against `None`.
+        let consumer = match t.record_consumer(ticket) {
+            Ok(fence) => Some(fence),
+            Err(memra_engine::cache::tiered::Error::NotReady) => None,
+            Err(e) => {
+                leaks.push(format!("record_consumer: {e:?}"));
+                None
+            }
+        };
+        if let Err(e) = t.owner_stream().synchronize() {
+            leaks.push(format!("owner stream drain before retire: {e}"));
+        }
+        if let Err(e) = t
+            .retire(ticket, consumer)
+            .and_then(|_| t.acknowledge(ticket))
+        {
+            leaks.push(format!("retire/acknowledge: {e:?}"));
+        }
+    }
+    match (back, leaks.is_empty()) {
+        (Err(e), _) => HostContractFailure::SourceQuarantined(format!("{why}; {e}")),
+        (Ok(()), true) => HostContractFailure::Refused(why.to_string()),
+        (Ok(()), false) => HostContractFailure::TicketLeaked(format!(
+            "{why}; the D2H unwind left the transfer engine holding state ({}); the entry is \
+             whole and nothing is published, but the ticket's in-flight charge or its producer \
+             fence is leaked",
+            leaks.join(", ")
+        )),
+    }
 }
 
 /// Deep-copy one evicted device entry into a host entry, field for field. The device entry is
@@ -9029,9 +9740,9 @@ fn host_plane_from_device(
 fn host_entry_from_device(
     engine: &Engine,
     host: &mut HostPrefixCache,
-    dead: &PrefixEntry,
+    dead: &mut PrefixEntry,
     verify_digest: Option<String>,
-) -> Result<HostPrefixEntry, String> {
+) -> Result<HostPrefixEntry, HostImageFailure> {
     let is_glm = dead.tp.is_some() || dead.latent.iter().any(Option::is_some);
     if dead.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
         return Err("host image layout version mismatch".into());
@@ -9086,7 +9797,8 @@ fn host_entry_from_device(
         return Err(format!(
             "pinned arena admission refused: host byte census does not match snapshot accounting {}",
             dead.bytes
-        ));
+        )
+        .into());
     }
     sizes.extend([dead.last_logits.len() * 4, dead.last_h.len() * 4]);
     let bytes = host_image_bytes(dead.bytes, &dead.toks, &dead.last_logits)?;
@@ -9096,20 +9808,58 @@ fn host_entry_from_device(
     } else {
         None
     };
-    let mut kv = Vec::with_capacity(dead.kv.len());
-    for plane in &dead.kv {
-        kv.push(match plane {
-            Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
-            _ => None,
-        });
-    }
+    // Option B (lane/spill-c-20260919 day 15, lead rulings 14 and 15): under the door on the
+    // pageable tier every KV plane, trunk and draft, crosses through the TransferEngine as an
+    // owned KvPlane and comes back to its slot; the draft plane rides the same ticket. OFF (and
+    // the arena arm, unreachable under the door) keeps the by-reference copies below, statement
+    // for statement.
+    let contract_planes = match &host.tier {
+        Some(tier) if host.arena.is_none() && !is_glm => {
+            let class =
+                host_tier_entry_class(false, dead.draft.is_some(), dead.dspark_draft.is_some())
+                    .map_err(|why| format!("tier image {why}"))?;
+            match host_kv_planes_through_contract(engine, tier, dead, class) {
+                Ok(planes) => Some(planes),
+                Err(HostContractFailure::Alloc(why)) => {
+                    host.rejected_allocs += 1;
+                    host.disable(&why);
+                    return Err(why.into());
+                }
+                Err(HostContractFailure::Refused(why)) => return Err(why.into()),
+                Err(HostContractFailure::TicketLeaked(why)) => {
+                    // The entry is whole, so this is a plain failure to the caller; the ledger
+                    // is not, so the tier latches off with the one typed line.
+                    host.disable(&why);
+                    return Err(why.into());
+                }
+                Err(HostContractFailure::SourceQuarantined(why)) => {
+                    host.disable(&why);
+                    return Err(HostImageFailure::SourceQuarantined(why));
+                }
+            }
+        }
+        _ => None,
+    };
+    let (mut kv, contract_draft) = match contract_planes {
+        Some((kv, draft)) => (kv, Some(draft)),
+        None => {
+            let mut kv = Vec::with_capacity(dead.kv.len());
+            for plane in &dead.kv {
+                kv.push(match plane {
+                    Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
+                    _ => None,
+                });
+            }
+            (kv, None)
+        }
+    };
     // Diagnostic fault door (see kv_host_fault): corrupt one demoted byte AFTER the demote
     // digest was recorded, so the MEMRA_KV_HOST_VERIFY promote check has a real mismatch to
     // catch. Gate-box only.
     if kv_host_fault() == "flip-demote"
         && let Some(plane) = kv.iter_mut().flatten().find(|p| p.len * p.k_tok_bytes > 0)
     {
-        plane.k.as_mut_slice()[0] ^= 0xff;
+        plane.k.flip_first_byte()?;
         eprintln!(
             "[prefix-host] FAULT: flipped one demoted K byte \
                  (MEMRA_KV_HOST_FAULT=flip-demote)"
@@ -9143,9 +9893,12 @@ fn host_entry_from_device(
             _ => None,
         });
     }
-    let draft = match &dead.draft {
-        Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
-        _ => None,
+    let draft = match contract_draft {
+        Some(draft) => draft,
+        None => match &dead.draft {
+            Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
+            _ => None,
+        },
     };
     let dspark_draft = match &dead.dspark_draft {
         Some(t) if glm.is_none() => {
@@ -9213,14 +9966,15 @@ fn host_entry_from_device(
             return Err(format!(
                 "GLM host byte census {bytes} != device snapshot accounting {}",
                 dead.bytes
-            ));
+            )
+            .into());
         }
     }
     Ok(entry)
 }
 
 /// What one demotion attempt did with the source entry's bytes, so callers that still OWN
-/// device state (the pause sweep) can dispose of it honestly. The SLRU sink ignores this:
+/// device state (the pause sweep) can dispose of it honestly. The eviction sink ignores this:
 /// its source entry was already evicted and dies either way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HostDemoteOutcome {
@@ -9232,8 +9986,13 @@ enum HostDemoteOutcome {
     /// The host copy PUBLISHED (insert succeeded); the device bytes are now redundant.
     Demoted,
     /// Digest/copy/alloc/insert failure: no host copy exists. A caller holding live device
-    /// state keeps it (fail closed); the SLRU sink's dying entry just drops.
+    /// state keeps it (fail closed); the eviction sink's dying entry just drops.
     Failed,
+    /// Option B only (`MEMRA_KV_HOST_CONTRACTS=1`): the contract-routed D2H's completion is
+    /// unknown and the transfer engine kept the source planes (the frozen rule: never return
+    /// potentially-live inputs). No host copy exists AND the device entry is not whole: a
+    /// caller holding it must drop it, never serve it. The tier latched off.
+    SourceQuarantined,
 }
 
 /// The demote hook: called from the device cache's capacity-eviction loop (the ONLY
@@ -9241,8 +10000,8 @@ enum HostDemoteOutcome {
 /// than stalling an alloc-pressure tick behind gigabytes of synchronous D2H; that flush is a
 /// named seam for a copy-stream follow-up, not an oversight). Pinned/leased entries never
 /// reach here: they are absent from the evictable LRU by construction.
-fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, dead: PrefixEntry) {
-    let _ = host_demote_prefix_ref(engine, host, &dead);
+fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, mut dead: PrefixEntry) {
+    let _ = host_demote_prefix_ref(engine, host, &mut dead);
     // `dead` drops here whatever happened: it was already evicted from the device tier.
 }
 
@@ -9274,8 +10033,10 @@ fn evict_all_demoting(
 ) -> (usize, usize, u64) {
     let (mut removed, mut demoted, mut demoted_bytes) = (0usize, 0usize, 0u64);
     while let Some((key, i)) = px.oldest_evictable() {
-        if host.armed() && demoted_bytes < demote_budget_bytes {
-            let entry = &px.entries[&key][i];
+        if host.armed()
+            && demoted_bytes < demote_budget_bytes
+            && let Some(entry) = px.entries.get_mut(&key).and_then(|pool| pool.get_mut(i))
+        {
             let bytes = entry.bytes as u64;
             if matches!(
                 host_demote_prefix_ref(engine, host, entry),
@@ -9294,7 +10055,7 @@ fn evict_all_demoting(
     (removed, demoted, demoted_bytes)
 }
 
-/// By-reference demote body shared by the SLRU sink above and the pause sweep
+/// By-reference demote body shared by the eviction sink above and the pause sweep
 /// (lane/kv-pause-demote-20260831): the SOURCE ENTRY IS NOT CONSUMED, so a caller whose
 /// device state is still live (a parked session, a resident prefix entry) removes it only
 /// after `Demoted`/`Evaporated`: the entry stays until the host copy publishes, which is
@@ -9310,7 +10071,7 @@ fn host_roundtrip_digest(engine: &Engine, entry: &PrefixEntry) -> Result<String,
 fn host_demote_prefix_ref(
     engine: &Engine,
     host: &mut HostPrefixCache,
-    dead: &PrefixEntry,
+    dead: &mut PrefixEntry,
 ) -> HostDemoteOutcome {
     if !host.armed() {
         return HostDemoteOutcome::Off; // tier off (or latched off): byte-identical to today
@@ -9403,9 +10164,10 @@ fn host_demote_prefix_ref(
             // refusal here would replace it, which is the gate-line change ruling 15 forbids).
             None
         } else {
-            // Pinned: every `HostPlane` the image will hold, the trunk KV planes and the MTP
-            // draft plane alike (`host_plane_from_device` pins both); the f32 planes, tokens
-            // and logits are the pageable remainder.
+            // The KV planes (trunk and MTP draft) are the image's pinned bytes. Under Option B
+            // each one's `CudaPinnedLease` carries its own pinned charge on the same ledger
+            // (`alloc_host`), so this residency charge takes the pageable remainder (f32
+            // planes, tokens, logits) and pinned ZERO: the same total, charged once.
             let pinned = dead
                 .kv
                 .iter()
@@ -9423,7 +10185,7 @@ fn host_demote_prefix_ref(
             let Some(pageable) = host_bytes.checked_sub(pinned) else {
                 return HostDemoteOutcome::Failed;
             };
-            match host.tier_charge(&dead.pool_key, class, pinned as u64, pageable as u64, false) {
+            match host.tier_charge(&dead.pool_key, class, 0, pageable as u64, false) {
                 Ok(charge) => charge,
                 Err(err) => {
                     eprintln!("[prefix-host] {err}");
@@ -9499,11 +10261,26 @@ fn host_demote_prefix_ref(
                 HostDemoteOutcome::Failed
             }
         }
-        Err(err) => {
+        Err(failure) => {
             // The fixed-arena path reclaims inside `reserve_image`, before a copy that can fail.
             host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "copy failed");
-            eprintln!("[prefix-host] demote failed ({err}); nothing demoted");
-            HostDemoteOutcome::Failed
+            match failure {
+                HostImageFailure::Failed(err) => {
+                    eprintln!("[prefix-host] demote failed ({err}); nothing demoted");
+                    HostDemoteOutcome::Failed
+                }
+                HostImageFailure::SourceQuarantined(err) => {
+                    eprintln!(
+                        "[prefix-host] demote failed ({err}); nothing demoted, and the device \
+                         entry is no longer whole: its planes stay with the quarantined transfer \
+                         ({} tokens, model {}{})",
+                        dead.toks.len(),
+                        dead.pool_key.0,
+                        ns_suffix(&dead.pool_key.1)
+                    );
+                    HostDemoteOutcome::SourceQuarantined
+                }
+            }
         }
     }
 }
@@ -9705,12 +10482,12 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
             .map_err(|err| format!("device alloc of {vb} B failed: {err}"))?;
         if kb > 0 {
             engine
-                .htod_u8_into(&mut k, 0, &p.k.as_slice()[..kb])
+                .htod_u8_into(&mut k, 0, &p.k.bytes()?[..kb])
                 .map_err(|err| format!("K plane H2D failed: {err}"))?;
         }
         if vb > 0 {
             engine
-                .htod_u8_into(&mut v, 0, &p.v.as_slice()[..vb])
+                .htod_u8_into(&mut v, 0, &p.v.bytes()?[..vb])
                 .map_err(|err| format!("V plane H2D failed: {err}"))?;
         }
         Ok(PrefixPlane {
@@ -9800,7 +10577,6 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
         bytes: src.device_bytes,
         last_use: Instant::now(),
         id: 0, // recency identity assigned by PrefixCache::insert
-        segment: PrefixSegment::Probation,
         pins: 0,
     })
 }
@@ -10412,28 +11188,33 @@ impl HandoffEntryOwned {
     }
 }
 
-/// Production view builder over a resident host entry (borrows the pinned slices).
-fn handoff_entry_ref(e: &HostPrefixEntry) -> HandoffEntryRef<'_> {
-    fn plane(p: &HostPlane) -> HandoffPlaneRef<'_> {
-        HandoffPlaneRef {
+/// Production view builder over a resident host entry (borrows the pinned slices). A
+/// contract-routed plane's bytes are a driver read, so the view can refuse.
+fn handoff_entry_ref(e: &HostPrefixEntry) -> Result<HandoffEntryRef<'_>, String> {
+    fn plane(p: &HostPlane) -> Result<HandoffPlaneRef<'_>, String> {
+        Ok(HandoffPlaneRef {
             len: p.len,
             k_tok_bytes: p.k_tok_bytes,
             v_tok_bytes: p.v_tok_bytes,
-            k: p.k.as_slice(),
-            v: p.v.as_slice(),
-        }
+            k: p.k.bytes()?,
+            v: p.v.bytes()?,
+        })
     }
-    HandoffEntryRef {
+    Ok(HandoffEntryRef {
         layout_version: e.layout_version,
         model: &e.pool_key.0,
         ns: &e.pool_key.1,
         toks: &e.toks,
-        kv: e.kv.iter().map(|p| p.as_ref().map(plane)).collect(),
+        kv: e
+            .kv
+            .iter()
+            .map(|p| p.as_ref().map(plane).transpose())
+            .collect::<Result<Vec<_>, _>>()?,
         conv: e.conv.iter().map(|p| p.as_deref()).collect(),
         ssm: e.ssm.iter().map(|p| p.as_deref()).collect(),
         pos: e.pos,
         last_logits: &e.last_logits,
-        draft: e.draft.as_ref().map(plane),
+        draft: e.draft.as_ref().map(plane).transpose()?,
         dspark: e.dspark_draft.as_ref().map(|t| HandoffTailRef {
             layers: t
                 .layers
@@ -10449,7 +11230,7 @@ fn handoff_entry_ref(e: &HostPrefixEntry) -> HandoffEntryRef<'_> {
         last_h: &e.last_h,
         bytes: e.device_bytes,
         verify_digest: e.verify_digest.as_deref(),
-    }
+    })
 }
 
 // ---- header IO --------------------------------------------------------------
@@ -10893,8 +11674,8 @@ fn host_plane_from_owned(
     let mut v = planes.take(p.v.len())?;
     v.copy_from_slice(&p.v).map_err(|e| e.to_string())?;
     Ok(HostPlane {
-        k,
-        v,
+        k: HostPlaneBytes::Pinned(k),
+        v: HostPlaneBytes::Pinned(v),
         len: p.len,
         k_tok_bytes: p.k_tok_bytes,
         v_tok_bytes: p.v_tok_bytes,
@@ -11046,11 +11827,11 @@ fn host_handoff_export(
     //    as a device eviction would treat them.
     let mut demoted = 0usize;
     while let Some((key, i)) = px.oldest_evictable() {
-        let Some(dead) = px.remove_at(&key, i) else {
+        let Some(mut dead) = px.remove_at(&key, i) else {
             break;
         };
         px.evictions += 1;
-        if host_demote_prefix_ref(engine, hpx, &dead) == HostDemoteOutcome::Demoted {
+        if host_demote_prefix_ref(engine, hpx, &mut dead) == HostDemoteOutcome::Demoted {
             demoted += 1;
         }
     }
@@ -11092,7 +11873,7 @@ fn host_handoff_export(
             },
         )?;
         for (key, i) in selected.iter().rev() {
-            handoff_write_entry(&mut w, &handoff_entry_ref(&hpx.entries[key][*i]))?;
+            handoff_write_entry(&mut w, &handoff_entry_ref(&hpx.entries[key][*i])?)?;
         }
         let f = w
             .into_inner()
@@ -11503,7 +12284,6 @@ fn prefix_snapshot(
         bytes,
         last_use: Instant::now(),
         id: 0, // recency identity assigned by PrefixCache::insert
-        segment: PrefixSegment::Probation,
         pins: 0,
     })
 }
@@ -12437,7 +13217,6 @@ fn prefix_insert_from_spec_boundary(
         bytes,
         last_use: Instant::now(),
         id: 0, // recency identity assigned by PrefixCache::insert
-        segment: PrefixSegment::Probation,
         pins: 0,
     };
     trace_prefix_entry_state(engine, &e, e.pos, "spec-snapshot", why);
@@ -12514,17 +13293,13 @@ fn prefix_insert_from_session(
     }
     let mut demote = |dead| host_demote_prefix_entry(engine, hpx, dead);
     if !px.prepare_snapshot(
+        &pool_key,
         prefix_snapshot_bytes(cache),
         prefix_cache_budget_bytes(),
-        prefix_cache_slru_enabled(),
         Some(&mut demote),
     ) {
-        static ANNOUNCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if !ANNOUNCED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            eprintln!(
-                "[prefix-cache] snapshot skipped: cannot fit beside leased/protected entries; request continues"
-            );
-        }
+        // The preflight printed its typed `[prefix-cache] insert refused:` line in bytes
+        // (memra#523 item 1: never a silent cold turn); the request continues unpublished.
         return;
     }
     match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits, model) {
@@ -12624,7 +13399,7 @@ fn maybe_plain_checkpoint(engine: &Engine, s: &mut Session) {
 /// depth ratchets upward (llama.cpp's subsumption maintenance, the field-survey mechanism the
 /// H11 analysis names — minus the erase: a shallower covered entry still serves traffic that
 /// diverges before the deep entry's end, which hybrid recurrent state cannot mid-entry-split
-/// to, so shallow entries are left to the SLRU byte budget rather than removed).
+/// to, so shallow entries are left to the LRU byte budget rather than removed).
 ///
 /// EXACTNESS: the deep entry is a whole-entry snapshot of THIS session's cache, and a future
 /// hit whole-entry restores it — byte-identical to the session that seeded it, exactly the
@@ -15163,10 +15938,13 @@ pub fn run(
                 eprintln!(
                     "[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): {} model \
                      program identities, tenant salt per pool namespace, server governor \
-                     ledger pinned/pageable {:.0}MB device {:.0}MB; host tier armed",
+                     ledger pinned/pageable {:.0}MB device {:.0}MB in-flight {}; host tier \
+                     armed; KV plane D2H through the transfer engine on the pageable tier \
+                     (Option B)",
                     tier.programs.len(),
                     2.0 * hpx.budget as f64 / 1e6,
                     2.0 * prefix_cache_budget_bytes() as f64 / 1e6,
+                    tier.inflight,
                 );
                 hpx.tier = Some(tier);
             }
@@ -15279,37 +16057,18 @@ pub fn run(
                 ),
             ),
         };
-        if prefix_cache_slru_enabled() {
-            eprintln!(
-                "[prefix-cache] on: budget {:.0}MB ({budget_provenance}), policy byte-SLRU \
-                 protected/probation {}%/{}% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix {} \
-                 tokens, immediate partial restore={} (transformer-only; hybrid mid-entry + \
-                 routed-MoE N/A)",
-                budget_bytes as f64 / 1e6,
-                prefix_cache_protected_pct(),
-                100 - prefix_cache_protected_pct(),
-                PREFIX_CACHE_MIN_TOKENS,
-                if partial_prefix_restore_enabled() {
-                    "on"
-                } else {
-                    "off (rollback)"
-                },
-            );
-        } else {
-            eprintln!(
-                "[prefix-cache] on: budget {:.0}MB ({budget_provenance}), policy plain-LRU \
-                 (MEMRA_PREFIX_CACHE_POLICY=lru rollback; no probation segment), min prefix {} \
-                 tokens, immediate partial restore={} (transformer-only; hybrid mid-entry + \
-                 routed-MoE N/A)",
-                budget_bytes as f64 / 1e6,
-                PREFIX_CACHE_MIN_TOKENS,
-                if partial_prefix_restore_enabled() {
-                    "on"
-                } else {
-                    "off (rollback)"
-                },
-            );
-        }
+        eprintln!(
+            "[prefix-cache] on: budget {:.0}MB ({budget_provenance}), policy plain-LRU (global \
+             oldest unleased entry first; leases untouchable), min prefix {} tokens, immediate \
+             partial restore={} (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+            budget_bytes as f64 / 1e6,
+            PREFIX_CACHE_MIN_TOKENS,
+            if partial_prefix_restore_enabled() {
+                "on"
+            } else {
+                "off (rollback)"
+            },
+        );
     } else if serve_batching()
         && matches!(prefix_budget, PrefixCacheBudget::Derived { bytes: 0, .. })
     {
@@ -19333,29 +20092,35 @@ pub fn run(
                         &park.last_logits,
                         loaded.get(&cand.pool_key.0).map(|l| &l.model),
                     ) {
-                        Ok(entry) => match host_demote_prefix_ref(&engine, &mut hpx, &entry) {
-                            HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated => {
-                                drop(entry); // the boundary copy's device planes free here
-                                let fed_len = pool[pi].fed.len();
-                                drop(pool.remove(pi));
-                                if pool.is_empty() {
-                                    reuse.remove(&cand.pool_key);
-                                }
-                                eprintln!(
-                                    "[prefix-host] pause demote: plain park released \
+                        Ok(mut entry) => {
+                            match host_demote_prefix_ref(&engine, &mut hpx, &mut entry) {
+                                HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated => {
+                                    drop(entry); // the boundary copy's device planes free here
+                                    let fed_len = pool[pi].fed.len();
+                                    drop(pool.remove(pi));
+                                    if pool.is_empty() {
+                                        reuse.remove(&cand.pool_key);
+                                    }
+                                    eprintln!(
+                                        "[prefix-host] pause demote: plain park released \
                                      ({fed_len} fed tokens, model {}{})",
-                                    cand.pool_key.0,
-                                    ns_suffix(&cand.pool_key.1),
-                                );
-                                demoted += 1;
-                            }
-                            HostDemoteOutcome::Failed | HostDemoteOutcome::Off => {
-                                eprintln!(
-                                    "[prefix-host] pause demote: host copy did not \
+                                        cand.pool_key.0,
+                                        ns_suffix(&cand.pool_key.1),
+                                    );
+                                    demoted += 1;
+                                }
+                                HostDemoteOutcome::Failed
+                                | HostDemoteOutcome::Off
+                                | HostDemoteOutcome::SourceQuarantined => {
+                                    // The boundary snapshot was a copy; the park itself is intact
+                                    // whatever the transfer kept.
+                                    eprintln!(
+                                        "[prefix-host] pause demote: host copy did not \
                                      publish; park kept"
-                                );
+                                    );
+                                }
                             }
-                        },
+                        }
                         Err(err) => eprintln!(
                             "[prefix-host] pause demote: boundary snapshot refused \
                              ({err}); park kept"
@@ -19371,10 +20136,26 @@ pub fn run(
                         .map(|e| (e.toks.as_slice(), e.last_use, e.pins)),
                     &cand.tape,
                     cand.armed_at,
-                ) {
-                    let outcome =
-                        host_demote_prefix_ref(&engine, &mut hpx, &px.entries[&cand.pool_key][ei]);
-                    if matches!(
+                ) && let Some(entry) = px
+                    .entries
+                    .get_mut(&cand.pool_key)
+                    .and_then(|pool| pool.get_mut(ei))
+                {
+                    let outcome = host_demote_prefix_ref(&engine, &mut hpx, entry);
+                    if outcome == HostDemoteOutcome::SourceQuarantined {
+                        // Option B: the transfer engine kept the entry's planes (a quarantined
+                        // completion); the entry is not whole and must not stay resident.
+                        if let Some(dead) = px.remove_at(&cand.pool_key, ei) {
+                            eprintln!(
+                                "[prefix-host] pause demote: device prefix entry DROPPED, its \
+                                 planes stay with a quarantined D2H ({} tokens, model {}{})",
+                                dead.toks.len(),
+                                cand.pool_key.0,
+                                ns_suffix(&cand.pool_key.1),
+                            );
+                            drop(dead);
+                        }
+                    } else if matches!(
                         outcome,
                         HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated
                     ) {
@@ -21842,7 +22623,7 @@ fn admit(
     // done its job: on the served-hit route the hit path above holds its OWN pin by now
     // (net one lease, released at session retire, exactly like a native device hit); on
     // every other route (probe skipped, restore failed, alloc-pressure flush) the promoted
-    // entry becomes ordinary evictable probation. An evict_all inside the probe cannot have
+    // entry becomes ordinary evictable. An evict_all inside the probe cannot have
     // removed it: pinned entries are absent from the evictable index.
     if let Some(pin) = host_promote_pin.take()
         && !px.unpin(&pin)
@@ -27950,13 +28731,6 @@ mod tests {
         prompt_source_limit_error, request_ctx_cap, resolve_ctx,
     };
     use super::{
-        DEFAULT_PREFIX_CACHE_PROTECTED_PCT, HostPrefixCache, HostPrefixEntry,
-        PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION, PartialPrefixDecision, PoolKey,
-        PrefixCache, PrefixEntry, PrefixFanoutCandidate, PrefixFanoutGroup, PrefixSegment,
-        host_promote_candidate, partial_prefix_decision, prefix_fanout_groups, retire_prefix_pin,
-        stable_boundary_arm, validate_prefix_plane_shape,
-    };
-    use super::{
         DecodeChunkPolicy, resolve_decode_chunk_policy, resolve_pp_wave_chunk_policy,
         schedule_decode_chunk,
     };
@@ -27969,6 +28743,14 @@ mod tests {
         summarize_confidence, utf8_delta,
     };
     use super::{HashMap, METER_TENANT_CAP, meter_account, meter_cached_credit};
+    use super::{
+        HostPrefixCache, HostPrefixEntry, PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION,
+        PREFIX_REFUSAL_REANNOUNCE_EVERY, PartialPrefixDecision, PoolKey, PrefixCache, PrefixEntry,
+        PrefixFanoutCandidate, PrefixFanoutGroup, PrefixRefusalAnnouncer, PrefixRefusalShape,
+        host_promote_candidate, partial_prefix_decision, prefix_fanout_groups,
+        prefix_insert_refused_leased, prefix_insert_refused_oversize, retire_prefix_pin,
+        stable_boundary_arm, validate_prefix_plane_shape,
+    };
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
     use super::{MAX_EVENT_QUEUE_EVENTS, event_channel};
     use super::{
@@ -32546,7 +33328,6 @@ mod tests {
             bytes: 1,
             last_use: std::time::Instant::now(),
             id: 0,
-            segment: PrefixSegment::Probation,
             pins: 0,
         }
     }
@@ -33468,16 +34249,20 @@ mod tests {
     }
 
     #[test]
-    fn dspark_exact_transition_touch_promotes_without_cached_token_credit() {
+    fn dspark_exact_transition_touch_refreshes_recency_without_cached_token_credit() {
         let k = key("");
         let prompt = toks(super::PREFIX_CACHE_MIN_TOKENS);
         let mut px = PrefixCache::default();
         px.insert_with_budget(&k, entry(&k, prompt.clone()), "dspark-test", 8);
-        assert_eq!(px.entries[&k][0].segment, PrefixSegment::Probation);
+        let before = px.entries[&k][0].last_use;
         let credits = (px.hits, px.misses, px.hit_tokens);
 
+        next_instant();
         assert!(px.touch_exact_without_credit(&k, &prompt));
-        assert_eq!(px.entries[&k][0].segment, PrefixSegment::Protected);
+        assert!(
+            px.entries[&k][0].last_use > before,
+            "the touch refreshes recency"
+        );
         assert_eq!(
             (px.hits, px.misses, px.hit_tokens),
             credits,
@@ -33603,6 +34388,82 @@ mod tests {
         assert_eq!((n, freed), (1, 10), "only the unpinned entry is evictable");
         assert_eq!(px.total_bytes, 10, "the pinned entry's bytes remain");
         assert!(px.unpin(&pin));
+    }
+
+    /// memra#523 item 1, review: a leased entry is never a pressure-relief victim, whatever the
+    /// target; when only leased bytes remain the loop reports zero and `evictable_bytes()` is
+    /// zero, the one shape the kv-flex "nothing evictable" line may describe.
+    #[test]
+    fn evict_to_bytes_never_takes_a_leased_entry_even_below_target() {
+        const BUDGET: usize = 100;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", BUDGET);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        px.insert_with_budget(&k, entry_b(&k, 3, 10), "seed", BUDGET);
+        let i1 = px.entries[&k].iter().position(|e| e.toks[0] == 1).unwrap();
+        let pin = px.pin(&k, i1).expect("a reused entry takes a lease");
+        assert_eq!(px.evictable_bytes(), 30);
+
+        assert_eq!(
+            px.evict_to_bytes(0),
+            (3, 30),
+            "every unleased entry goes, the leased one stays"
+        );
+        assert_eq!(px_survivors(&px), vec![1]);
+        assert_eq!(px.total_bytes, 10);
+        assert_eq!(px.evictable_bytes(), 0);
+        assert_eq!(
+            px.evict_to_bytes(0),
+            (0, 0),
+            "nothing unleased: a no-op that reports zero"
+        );
+        assert!(px.unpin(&pin));
+        assert_eq!(px.evictable_bytes(), 10);
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, review: the kv-flex shed reaches its floor through unleased bytes,
+    /// reused or not (it counts as a shed, no warning path), and takes the "nothing
+    /// evictable" path only when every byte above the floor is leased.
+    #[test]
+    fn kv_flex_shed_reaches_the_floor_through_reused_entries_and_warns_only_when_all_is_leased() {
+        let k = key("");
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", 100);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        assert_eq!(px.total_bytes, 30);
+
+        let mut flex = armed_flex(15);
+        assert_eq!(
+            flex.shed(&mut px, false, "test"),
+            2,
+            "unleased bytes above the floor shed, oldest first, reused or not"
+        );
+        assert_eq!(px_survivors(&px), vec![2]);
+        assert_eq!(px.total_bytes, 10);
+        assert_eq!(
+            flex.sheds, 1,
+            "a real shed is counted; the warning path never counts"
+        );
+
+        let i2 = px.entries[&k].iter().position(|e| e.toks[0] == 2).unwrap();
+        let pin = px.pin(&k, i2).expect("the survivor takes a lease");
+        let mut flex = armed_flex(5);
+        assert_eq!(px.evictable_bytes(), 0);
+        assert_eq!(
+            flex.shed(&mut px, false, "test"),
+            0,
+            "everything above the floor is leased: the warning path"
+        );
+        assert_eq!(flex.sheds, 0);
+        assert_eq!(px.total_bytes, 10);
+        assert!(px.unpin(&pin));
+        assert_prefix_cache_accounting(&px);
     }
 
     /// The grant policy, pure: free minus guard while armed, zero under hold, zero
@@ -35205,7 +36066,6 @@ mod tests {
             bytes,
             last_use: next_instant(),
             id: 0,
-            segment: PrefixSegment::Probation,
             pins: 0,
         }
     }
@@ -35365,7 +36225,7 @@ mod tests {
             &super::HostTierDraftSource::Embedded,
         );
         super::HostTierContext {
-            governor: super::host_tier_governor(0, host_budget, 1 << 30).unwrap(),
+            governor: super::host_tier_governor(0, host_budget, 1 << 30, 4).unwrap(),
             programs: HashMap::from([(
                 model.to_string(),
                 super::HostTierPrograms {
@@ -35375,7 +36235,432 @@ mod tests {
                 },
             )]),
             device: 0,
+            transfers: None,
+            inflight: 4,
+            fault: std::cell::Cell::new(None),
         }
+    }
+
+    /// GPU-only helper: a real `CudaTransfers` on the engine's owner stream over the server's
+    /// ledger, the in-flight dimension sized to EXACTLY one batch of `planes` K/V pairs, so a
+    /// leaked ticket would refuse the next demote with `Capacity`.
+    fn gpu_contracts_context(
+        engine: &Engine,
+        model: &str,
+        generation: Arc<()>,
+        planes: usize,
+    ) -> super::HostTierContext {
+        use memra_engine::cache::tiered::*;
+        let base = super::host_tier_program_base("artifact", "plan", None);
+        let draft = super::host_tier_draft_program(
+            &base,
+            "artifact",
+            "plan",
+            &super::HostTierDraftSource::Embedded,
+        );
+        let device = engine.ctx().ordinal();
+        let inflight = 2 * planes as u64;
+        let governor = super::host_tier_governor(device, 1 << 30, 1 << 30, inflight).unwrap();
+        let ledger: std::rc::Rc<std::cell::RefCell<dyn BudgetGovernor>> = std::rc::Rc::new(
+            std::cell::RefCell::new(super::HostTierLedger(governor.clone())),
+        );
+        let transfers =
+            memra_engine::tier_transfer::CudaTransfers::new(engine.stream(), ledger).unwrap();
+        super::HostTierContext {
+            governor,
+            programs: HashMap::from([(
+                model.to_string(),
+                super::HostTierPrograms {
+                    plain: base,
+                    draft: Some(draft),
+                    generation,
+                },
+            )]),
+            device: device as u32,
+            transfers: Some(std::cell::RefCell::new(transfers)),
+            inflight,
+            fault: std::cell::Cell::new(None),
+        }
+    }
+
+    /// GPU-only: one plane of `len` rows on the engine's owner stream with known bytes.
+    fn gpu_plane(
+        engine: &Engine,
+        len: usize,
+        k_tok: usize,
+        v_tok: usize,
+        seed: u8,
+    ) -> (super::PrefixPlane, (Vec<u8>, Vec<u8>)) {
+        let kbytes: Vec<u8> = (0..len * k_tok)
+            .map(|i| seed.wrapping_add(i as u8))
+            .collect();
+        let vbytes: Vec<u8> = (0..len * v_tok)
+            .map(|i| seed.wrapping_mul(3).wrapping_add(i as u8))
+            .collect();
+        let stream = engine.stream();
+        let plane = super::PrefixPlane {
+            k: stream.clone_htod(&kbytes).unwrap(),
+            v: stream.clone_htod(&vbytes).unwrap(),
+            len,
+            k_tok_bytes: k_tok,
+            v_tok_bytes: v_tok,
+        };
+        (plane, (kbytes, vbytes))
+    }
+
+    /// GPU-only: an 8-token entry with two trunk planes around a recurrent slot plus a draft
+    /// plane (three planes, six ops), and the bytes each plane must still hold afterwards.
+    #[allow(clippy::type_complexity)]
+    fn gpu_entry(engine: &Engine) -> (super::PrefixEntry, Vec<(Vec<u8>, Vec<u8>)>) {
+        let (p0, b0) = gpu_plane(engine, 8, 34, 24, 1);
+        let (p2, b2) = gpu_plane(engine, 8, 34, 24, 7);
+        let (pd, bd) = gpu_plane(engine, 8, 34, 24, 13);
+        let entry = super::PrefixEntry {
+            _tier_charge: None,
+            layout_version: super::PREFIX_ENTRY_LAYOUT_VERSION,
+            pool_key: ("m".into(), String::new()),
+            toks: (0..8).collect(),
+            kv: vec![Some(p0), None, Some(p2)],
+            conv: vec![None, None, None],
+            ssm: vec![None, None, None],
+            latent: vec![None, None, None],
+            tp: None,
+            pos: 8,
+            last_logits: vec![0.5],
+            draft: Some(pd),
+            dspark_draft: None,
+            last_h: vec![],
+            bytes: 3 * 8 * (34 + 24),
+            last_use: std::time::Instant::now(),
+            id: 0,
+            pins: 0,
+        };
+        (entry, vec![b0, b2, bd])
+    }
+
+    /// GPU-only: every plane is back in its slot and holds exactly the bytes it was built with.
+    fn gpu_entry_whole(
+        engine: &Engine,
+        e: &super::PrefixEntry,
+        want: &[(Vec<u8>, Vec<u8>)],
+    ) -> bool {
+        let stream = engine.stream();
+        let planes: Vec<&super::PrefixPlane> =
+            e.kv.iter().flatten().chain(e.draft.iter()).collect();
+        planes.len() == want.len()
+            && planes.iter().zip(want).all(|(p, (k, v))| {
+                stream.clone_dtoh(&p.k).unwrap() == *k && stream.clone_dtoh(&p.v).unwrap() == *v
+            })
+    }
+
+    fn gpu_used(host: &super::HostPrefixCache) -> (u64, u64, u64) {
+        let used = host.tier.as_ref().unwrap().governor.lock().unwrap().used();
+        (used.pinned, used.inflight, used.device.iter().sum())
+    }
+
+    /// Review finding 1 on PR #599: a refusal BEFORE any op is submitted must return every
+    /// registered plane to its slot (the originals must not hold the registry Rc above what
+    /// `take_plane` accepts), be a typed `Failed` (never `SourceQuarantined`), leave the tier on
+    /// and the ledger at zero, and the next demote through the same engine must complete.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        host.tier
+            .as_ref()
+            .unwrap()
+            .fault
+            .set(Some(super::HostContractFault::PreSubmit));
+        let why = match super::host_entry_from_device(&engine, &mut host, &mut entry, None) {
+            Err(super::HostImageFailure::Failed(why)) => why,
+            Err(super::HostImageFailure::SourceQuarantined(why)) => {
+                panic!("a pre-submit refusal escalated to quarantine: {why}")
+            }
+            Ok(_) => panic!("the injected refusal did not fire"),
+        };
+        assert!(
+            why.contains(
+                "tier D2H producer fence refused: injected failure \
+                 (MEMRA_KV_HOST_FAULT=contract-presubmit)"
+            ),
+            "{why}"
+        );
+        assert!(
+            !host.disabled,
+            "the tier must stay on after a recoverable refusal"
+        );
+        assert_eq!(host.rejected_allocs, 0);
+        assert!(
+            gpu_entry_whole(&engine, &entry, &want),
+            "every plane back in its slot with its bytes"
+        );
+        assert_eq!(
+            gpu_used(&host),
+            (0, 0, 0),
+            "nothing charged after the unwind"
+        );
+        // The next demote on the same engine and ledger completes: nothing wedged, nothing leaked.
+        let image = super::host_entry_from_device(&engine, &mut host, &mut entry, None)
+            .expect("a clean demote after the refusal");
+        assert!(
+            image
+                .kv
+                .iter()
+                .flatten()
+                .chain(image.draft.iter())
+                .all(|p| p.k.receipt().is_some() && p.v.receipt().is_some()),
+            "every plane crossed through the contract"
+        );
+        assert!(gpu_entry_whole(&engine, &entry, &want));
+        assert_eq!(
+            gpu_used(&host),
+            (3 * 8 * 58, 0, 0),
+            "six leases hold the pinned charge"
+        );
+        drop(image);
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// Review finding 2 on PR #599: a refusal AFTER every destination was taken must retire the
+    /// published ticket against an observed consumer fence and acknowledge it (its in-flight
+    /// charge is the whole dimension), release the producer fence, return every plane, stay a
+    /// typed `Failed` with the tier on, and the next demote must complete (a leaked ticket would
+    /// refuse it with `Capacity`).
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        host.tier
+            .as_ref()
+            .unwrap()
+            .fault
+            .set(Some(super::HostContractFault::PostPublish));
+        let why = match super::host_entry_from_device(&engine, &mut host, &mut entry, None) {
+            Err(super::HostImageFailure::Failed(why)) => why,
+            Err(super::HostImageFailure::SourceQuarantined(why)) => {
+                panic!("a post-publish refusal escalated to quarantine: {why}")
+            }
+            Ok(_) => panic!("the injected refusal did not fire"),
+        };
+        assert!(
+            why.contains(
+                "tier D2H receipt refused: injected failure \
+                 (MEMRA_KV_HOST_FAULT=contract-postpublish)"
+            ),
+            "{why}"
+        );
+        assert!(
+            !why.contains("leaked"),
+            "the ticket retired: no TicketLeaked wording in {why}"
+        );
+        assert!(
+            !host.disabled,
+            "the tier must stay on: the ticket retired and was acknowledged"
+        );
+        assert!(gpu_entry_whole(&engine, &entry, &want));
+        assert_eq!(
+            gpu_used(&host),
+            (0, 0, 0),
+            "in-flight released by retire, destinations freed by acknowledge, planes taken back"
+        );
+        // In-flight capacity is exactly one batch: a leaked ticket refuses this with Capacity.
+        let image = super::host_entry_from_device(&engine, &mut host, &mut entry, None)
+            .expect("a clean demote after the aborted ticket");
+        assert!(gpu_entry_whole(&engine, &entry, &want));
+        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        drop(image);
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    #[test]
+    fn host_tier_ledger_handle_charges_and_releases_the_servers_one_ledger() {
+        use memra_engine::cache::tiered::*;
+        let governor = super::host_tier_governor(0, 1000, 500, 4).unwrap();
+        let mut handle = super::HostTierLedger(governor.clone());
+        let mut bytes = TierBudget::zero(1);
+        bytes.pinned = 600;
+        bytes.inflight = 4;
+        let request = BudgetRequest {
+            bytes,
+            priority: Priority::Backup,
+            deadline: Deadline(u64::MAX),
+            tenant: hostprefix::tenant_salt(""),
+        };
+        let lease = handle.reserve(&request).unwrap();
+        // The charge is visible through the server's own handle: one ledger, two handles.
+        assert_eq!(governor.lock().unwrap().used().pinned, 600);
+        assert_eq!(handle.used().inflight, 4);
+        // The in-flight dimension is bounded at 2 x layers + 2 (4 here): a fifth op refuses.
+        let mut more = TierBudget::zero(1);
+        more.inflight = 1;
+        assert_eq!(
+            handle
+                .reserve(&BudgetRequest {
+                    bytes: more,
+                    ..request.clone()
+                })
+                .err(),
+            Some(Error::Capacity)
+        );
+        // Released through the adapter, credited on the server's handle.
+        handle.release(&lease).unwrap();
+        assert_eq!(governor.lock().unwrap().used().pinned, 0);
+        assert_eq!(governor.lock().unwrap().used().inflight, 0);
+    }
+
+    /// Option B (lead rulings 14 and 15): the contract route is reachable only under the door on
+    /// the pageable tier, follows the kv_tier_gate demote sequence in order, never touches the
+    /// pre-door copy program, and the OFF arm keeps both by-reference copies statement for
+    /// statement; a quarantined transfer is a typed outcome the live-entry caller drops on.
+    #[test]
+    fn option_b_contract_route_is_door_only_and_keeps_the_frozen_demote_order() {
+        let worker = include_str!("worker.rs");
+        let start = worker
+            .find("fn host_kv_planes_through_contract(")
+            .expect("the contract route exists");
+        let end = start
+            + worker[start..]
+                .find("\nfn host_contract_planes_back(")
+                .expect("the unwind follows the route");
+        let body = &worker[start..end];
+        let at = |needle: &str| {
+            body.find(needle)
+                .unwrap_or_else(|| panic!("{needle} missing from the contract route"))
+        };
+        let order = [
+            "alloc_host(",
+            "dead.kv[i].take()",
+            "register_device(",
+            "retain_device(",
+            "record_producer(",
+            "submit_batch(",
+            "synchronize(&ticket)",
+            "poll(&ticket)",
+            "take_destination(",
+            ".require(&ticket, &expected, false)",
+            "record_consumer(",
+            "retire_source(&ticket)",
+            "if let Err(why) = host_contract_planes_back(&mut t, dead, registered)",
+            "release_producer(producer)",
+            "retire(&ticket, Some(consumer))",
+            "acknowledge(&ticket)",
+            "HostPlaneBytes::Contract {",
+            "contracts door D2H receipt:",
+        ];
+        let positions: Vec<usize> = order.iter().map(|n| at(n)).collect();
+        assert!(
+            positions.windows(2).all(|w| w[0] < w[1]),
+            "the frozen demote sequence is out of order: {positions:?}"
+        );
+        // The last `alloc_host` (destinations first) precedes the first plane leaving the entry.
+        assert!(body.rfind("alloc_host(").unwrap() < at("dead.kv[i].take()"));
+        assert!(
+            !body.contains("dtoh_u8_into_pinned") && !body.contains("memcpy_dtoh"),
+            "one D2H program per plane: the contract's, inside the transfer engine"
+        );
+        assert!(
+            !body.contains("k.clone()")
+                && !body.contains("v.clone()")
+                && !body.contains("try_clone("),
+            "no device byte copy: planes move, they are never cloned"
+        );
+        // Route selection: only the tier-Some, arena-None arm of host_entry_from_device, once;
+        // OFF keeps the two by-reference copies (trunk loop and draft).
+        let entry_fn = worker.find("fn host_entry_from_device(").unwrap();
+        let entry_body = &worker[entry_fn
+            ..entry_fn
+                + worker[entry_fn..]
+                    .find("\n/// What one demotion attempt did")
+                    .unwrap()];
+        let call = entry_body
+            .find("host_kv_planes_through_contract(engine, tier, dead, class)")
+            .expect("the route is called from host_entry_from_device");
+        let arm = entry_body[..call]
+            .rfind("Some(tier) if host.arena.is_none() && !is_glm =>")
+            .expect("the call sits in the tier-Some, arena-None arm");
+        assert!(call - arm < 400);
+        assert_eq!(
+            entry_body
+                .matches("host_kv_planes_through_contract(")
+                .count(),
+            1
+        );
+        assert_eq!(
+            entry_body
+                .matches("host_plane_from_device(engine, host, p, &mut planes)")
+                .count(),
+            2
+        );
+        // Review findings on PR #599: every pre-submit unwind drops the originals first (their
+        // extra Rc on the registry makes `take_plane` refuse `Busy`), and the abort observes each
+        // fence before retiring against it and never discards a retire, acknowledge or
+        // release_producer result.
+        assert!(
+            body.contains("drop(originals);"),
+            "the record_producer arm drops the originals"
+        );
+        assert!(
+            body.matches("originals.clear();").count() >= 4,
+            "every in-loop pre-submit arm clears the originals before the unwind"
+        );
+        assert!(
+            at("drop(originals);") < at("host_contract_abort(") || {
+                let first_abort = at("host_contract_abort(");
+                body[..first_abort].contains("originals.clear();")
+            },
+            "originals leave before the first pre-submit abort"
+        );
+        let abort = worker.find("fn host_contract_abort(").unwrap();
+        let abort_body = &worker[abort..abort + worker[abort..].find("\n}\n").unwrap()];
+        let a = |needle: &str| {
+            abort_body
+                .find(needle)
+                .unwrap_or_else(|| panic!("{needle} missing from the abort"))
+        };
+        // The drain that matters is the one AFTER the consumer fence (the producer block drains
+        // once before it releases its own fence).
+        let consumer_at = a("record_consumer(");
+        let drain_after_consumer = consumer_at
+            + abort_body[consumer_at..]
+                .find("owner_stream().synchronize()")
+                .expect("the abort drains the owner stream after recording the consumer fence");
+        assert!(drain_after_consumer < a(".retire(ticket, consumer)"));
+        assert!(
+            !abort_body.contains("let _ = t"),
+            "no transfer-engine result is discarded in the abort"
+        );
+        assert!(abort_body.contains("TicketLeaked"));
+        assert!(
+            entry_body.contains("HostContractFailure::TicketLeaked(why)")
+                && entry_body[entry_body
+                    .find("HostContractFailure::TicketLeaked(why)")
+                    .unwrap()..]
+                    .contains("host.disable(&why)")
+        );
+        // The residency charge at demote takes pinned ZERO under the door: the leases carry it.
+        let hook = worker.find("fn host_demote_prefix_ref(").unwrap();
+        let hook_body = &worker[hook..hook + worker[hook..].find("\n}\n").unwrap()];
+        assert!(
+            hook_body
+                .contains("host.tier_charge(&dead.pool_key, class, 0, pageable as u64, false)")
+        );
+        assert!(hook_body.contains("HostImageFailure::SourceQuarantined(err)"));
+        // The one live-entry caller drops on the quarantined outcome.
+        let sweep = worker.find("if !pause_pending.is_empty() {").unwrap();
+        let sweep_body = &worker[sweep..sweep + 8000];
+        assert!(sweep_body.contains("outcome == HostDemoteOutcome::SourceQuarantined"));
     }
 
     #[test]
@@ -35612,7 +36897,7 @@ mod tests {
     fn host_tier_governor_ledger_admits_what_the_lru_would_and_binds_at_twice_the_budget() {
         use memra_engine::cache::tiered::*;
         let budget = 1000usize;
-        let governor = super::host_tier_governor(1, budget, 500).unwrap();
+        let governor = super::host_tier_governor(1, budget, 500, 4).unwrap();
         let request = |pinned: u64, device: u64| {
             let mut bytes = TierBudget::zero(2);
             bytes.pinned = pinned;
@@ -35646,7 +36931,7 @@ mod tests {
         assert_eq!(governor.lock().unwrap().used().pinned, 0);
         // The device dimension is indexed by the worker's ordinal, sized for it exactly.
         assert_eq!(governor.lock().unwrap().used().device.len(), 2);
-        assert!(super::host_tier_governor(usize::MAX, 1, 1).is_err());
+        assert!(super::host_tier_governor(usize::MAX, 1, 1, 4).is_err());
     }
 
     #[test]
@@ -36663,7 +37948,7 @@ mod tests {
 
     #[test]
     fn device_eviction_hands_unpinned_victims_to_the_demote_sink() {
-        // The demote hook's contract with insert_with_budget_pins_and_pct: capacity-evicted
+        // The demote hook's contract with insert_with_budget_pins: capacity-evicted
         // entries reach the sink still whole (identity intact), and PINNED entries never do
         // (they are absent from the evictable LRU).
         let mut px = PrefixCache::default();
@@ -36671,12 +37956,11 @@ mod tests {
         let mut demoted: Vec<u32> = Vec::new();
         let budget = 10usize;
         for ident in [1u32, 2] {
-            let _ = px.insert_with_budget_pins_and_pct(
+            let _ = px.insert_with_budget_pins(
                 &k,
                 entry_b(&k, ident, 5),
                 "test",
                 budget,
-                DEFAULT_PREFIX_CACHE_PROTECTED_PCT,
                 0,
                 Some(&mut |dead: PrefixEntry| demoted.push(dead.toks[0])),
             );
@@ -36685,12 +37969,11 @@ mod tests {
         // Pin entry 1: the eviction that admits entry 3 must victimize entry 2 instead.
         let i1 = px.key_index(&k, &[1]).expect("entry 1 resident");
         let pin = px.pin(&k, i1).expect("pin held");
-        let _ = px.insert_with_budget_pins_and_pct(
+        let _ = px.insert_with_budget_pins(
             &k,
             entry_b(&k, 3, 5),
             "test",
             budget,
-            DEFAULT_PREFIX_CACHE_PROTECTED_PCT,
             0,
             Some(&mut |dead: PrefixEntry| demoted.push(dead.toks[0])),
         );
@@ -36702,15 +37985,7 @@ mod tests {
         assert!(px.unpin(&pin));
         assert_prefix_cache_accounting(&px);
         // And with NO sink (tests / tier off) the same eviction is a plain drop.
-        let _ = px.insert_with_budget_pins_and_pct(
-            &k,
-            entry_b(&k, 4, 5),
-            "test",
-            budget,
-            DEFAULT_PREFIX_CACHE_PROTECTED_PCT,
-            0,
-            None,
-        );
+        let _ = px.insert_with_budget_pins(&k, entry_b(&k, 4, 5), "test", budget, 0, None);
         assert_eq!(demoted, vec![2], "no sink, no demotion record");
     }
 
@@ -37417,37 +38692,10 @@ mod tests {
             entries.iter().map(|entry| entry.bytes).sum::<usize>()
         );
         assert_eq!(
-            px.probation_bytes,
-            entries
-                .iter()
-                .filter(|entry| entry.segment == PrefixSegment::Probation)
-                .map(|entry| entry.bytes)
-                .sum::<usize>()
+            px.lru.len(),
+            entries.iter().filter(|entry| entry.pins == 0).count()
         );
-        assert_eq!(
-            px.protected_bytes,
-            entries
-                .iter()
-                .filter(|entry| entry.segment == PrefixSegment::Protected)
-                .map(|entry| entry.bytes)
-                .sum::<usize>()
-        );
-        assert_eq!(px.total_bytes, px.probation_bytes + px.protected_bytes);
-        assert_eq!(
-            px.probation_lru.len(),
-            entries
-                .iter()
-                .filter(|entry| entry.pins == 0 && entry.segment == PrefixSegment::Probation)
-                .count()
-        );
-        assert_eq!(
-            px.protected_lru.len(),
-            entries
-                .iter()
-                .filter(|entry| entry.pins == 0 && entry.segment == PrefixSegment::Protected)
-                .count()
-        );
-        for (lru_key, (key, i)) in px.probation_lru.iter().chain(&px.protected_lru) {
+        for (lru_key, (key, i)) in px.lru.iter() {
             let entry = &px.entries[key][*i];
             assert_eq!(*lru_key, PrefixCache::lru_key(entry));
             assert_eq!(entry.pins, 0);
@@ -37469,191 +38717,420 @@ mod tests {
         }
     }
 
+    /// The capacity victim is the GLOBAL oldest unleased entry, reused or not (memra#523 item
+    /// 2, 2026-09-21: plain LRU is the only policy). Two entries earn a hit, then a fresh entry
+    /// arrives: the victim is the oldest reused entry, never the newcomer.
     #[test]
-    fn prefix_cache_slru_protects_reused_bytes_from_cross_tenant_scan() {
-        const BUDGET: usize = 10;
-        let mut px = PrefixCache::default();
-        px.insert_with_budget(&key("hot-a"), entry_b(&key("hot-a"), 0, 5), "test", BUDGET);
-        assert!(reuse_ident(&mut px, 0));
-        px.insert_with_budget(&key("hot-b"), entry_b(&key("hot-b"), 1, 3), "test", BUDGET);
-        assert!(reuse_ident(&mut px, 1));
-        assert_eq!(px.protected_bytes, 8);
-
-        for ident in 2..22 {
-            let namespace = if ident % 2 == 0 { "scan-a" } else { "scan-b" };
-            px.insert_with_budget(
-                &key(namespace),
-                entry_b(&key(namespace), ident, 2),
-                "test",
-                BUDGET,
-            );
-            let survivors = px_survivors(&px);
-            assert!(survivors.contains(&0) && survivors.contains(&1));
-            assert!(px.total_bytes <= BUDGET);
-            assert_prefix_cache_accounting(&px);
-        }
-        assert_eq!(px.protected_bytes, 8);
-        assert_eq!(px.probation_bytes, 2);
-        assert_eq!(px.evictions, 19);
-    }
-
-    #[test]
-    fn prefix_cache_slru_demotes_by_protected_bytes_not_entry_count() {
-        const BUDGET: usize = 10;
-        let mut px = PrefixCache::default();
-        px.insert_with_budget(&key(""), entry_b(&key(""), 0, 6), "test", BUDGET);
-        assert!(reuse_ident(&mut px, 0));
-        px.insert_with_budget(&key(""), entry_b(&key(""), 1, 4), "test", BUDGET);
-        assert!(reuse_ident(&mut px, 1));
-
-        // 6 + 4 protected bytes exceed the 8-byte target. The older six-byte entry is
-        // demoted even though each segment held one entry; count-based accounting differs.
-        assert_eq!(
-            px.entries[&key("")]
-                .iter()
-                .find(|e| e.toks[0] == 0)
-                .unwrap()
-                .segment,
-            PrefixSegment::Probation
-        );
-        assert_eq!(
-            px.entries[&key("")]
-                .iter()
-                .find(|e| e.toks[0] == 1)
-                .unwrap()
-                .segment,
-            PrefixSegment::Protected
-        );
-        assert_eq!((px.probation_bytes, px.protected_bytes), (6, 4));
-
-        px.insert_with_budget(&key(""), entry_b(&key(""), 2, 5), "test", BUDGET);
-        assert_eq!(px_survivors(&px), vec![1, 2]);
-        assert_eq!(
-            (px.probation_bytes, px.protected_bytes, px.total_bytes),
-            (5, 4, 9)
-        );
-        assert_prefix_cache_accounting(&px);
-    }
-
-    #[test]
-    fn prefix_cache_lru_policy_evicts_the_global_oldest_not_only_probation() {
-        // The MEMRA_PREFIX_CACHE_POLICY=lru rollback must be able to reach a PROMOTED entry.
-        // Shape: two entries earn a hit (so both are protected under a 100% protected share, which
-        // is what the lru policy forces), then a fresh entry arrives. Under SLRU the only
-        // candidate is the probation LRU — here the newcomer itself — so the promoted pair is
-        // immortal and the newcomer is its own victim. Under plain LRU the global oldest goes.
+    fn prefix_cache_evicts_the_global_oldest_including_reused_entries() {
         const BUDGET: usize = 10;
         let mut px = PrefixCache::default();
         px.insert_with_budget(&key(""), entry_b(&key(""), 0, 4), "test", BUDGET);
         assert!(reuse_ident(&mut px, 0));
         px.insert_with_budget(&key(""), entry_b(&key(""), 1, 4), "test", BUDGET);
         assert!(reuse_ident(&mut px, 1));
+        next_instant();
         px.insert_with_budget(&key(""), entry_b(&key(""), 2, 2), "test", BUDGET);
-
-        let oldest = px.entries[&key("")]
-            .iter()
-            .find(|e| e.toks[0] == 0)
-            .unwrap();
-        let newest = px.entries[&key("")]
-            .iter()
-            .find(|e| e.toks[0] == 2)
-            .unwrap();
-        assert_eq!(newest.segment, PrefixSegment::Probation);
-
-        // SLRU arm: the newcomer in probation is the victim.
-        let (_, slru_victim) = px.capacity_victim_with(true).expect("slru victim");
+        let (_, victim) = px.oldest_evictable().expect("victim");
         assert_eq!(
-            px.entries[&key("")][slru_victim].toks[0],
-            2,
-            "SLRU must evict the probation LRU"
+            px.entries[&key("")][victim].toks[0],
+            0,
+            "the global oldest entry is the victim, including a reused one"
         );
+        // One more byte does not fit: the reused oldest goes, the newcomer stays.
+        next_instant();
+        px.insert_with_budget(&key(""), entry_b(&key(""), 3, 1), "test", BUDGET);
+        assert_eq!(px_survivors(&px), vec![1, 2, 3]);
+        assert_prefix_cache_accounting(&px);
+    }
 
-        // LRU arm: the globally oldest entry is the victim, even though it is promoted.
-        let (_, lru_victim) = px.capacity_victim_with(false).expect("lru victim");
-        assert_eq!(
-            px.entries[&key("")][lru_victim].toks[0],
-            oldest.toks[0],
-            "policy=lru must reach the global oldest entry, including a promoted one"
+    /// memra#523 item 1, the incident shape in bytes: an 8192 MiB budget, six reused 30k-token
+    /// conversations (about 6.1 GB) beside one tenant growing 105k -> 168k tokens by 300 per
+    /// turn (entries 2.7 -> 4.3 GB, the incident's own sizes). The plain path's restore lease
+    /// ends after the restore fence, before publication (docs/SERVING.md "Plain prefix-hit
+    /// leases end ..."), so the previous turn's entry is unleased when the new turn inserts.
+    /// Every turn must insert, the victims must be the cohort's entries first (oldest first)
+    /// and then the tenant's own older turns, and the inserted entry must never be its own
+    /// victim.
+    #[test]
+    fn prefix_cache_newest_turn_fits_beside_a_reused_cohort() {
+        const MIB: usize = 1 << 20;
+        const BUDGET: usize = 8192 * MIB;
+        const COHORT_ENTRY: usize = 1016 * MIB; // six of these: 6.1 GB
+        fn turn_bytes(tokens: usize) -> usize {
+            // 2.7 GB at 105k tokens, 4.3 GB at 168k: 25,397 B per token above 105k.
+            2_700_000_000 + (tokens - 105_000) * 25_397
+        }
+        let cohort = key("cohort");
+        let grow = key("grow");
+        let mut px = PrefixCache::default();
+        let mut victims: Vec<u32> = Vec::new();
+        for ident in 0..6u32 {
+            let mut sink = |dead: PrefixEntry| victims.push(dead.toks[0]);
+            px.insert_with_budget_pins(
+                &cohort,
+                entry_b(&cohort, ident, COHORT_ENTRY),
+                "seed",
+                BUDGET,
+                0,
+                Some(&mut sink),
+            );
+            // The cohort's reuse: a restore lease, released at the fence.
+            let i = px.entries[&cohort]
+                .iter()
+                .position(|e| e.toks[0] == ident)
+                .unwrap();
+            next_instant();
+            let pin = px.pin(&cohort, i).unwrap();
+            assert!(px.unpin(&pin));
+        }
+        assert_eq!(px.total_bytes, 6 * COHORT_ENTRY);
+        assert!(victims.is_empty());
+
+        let mut prev: Option<u32> = None;
+        let mut tokens = 105_000usize;
+        let mut turn = 0u32;
+        while tokens <= 168_000 {
+            let ident = 100 + turn;
+            if let Some(prev_ident) = prev {
+                // The hit on the previous turn: leased for the restore, released at the fence.
+                let i = px.entries[&grow]
+                    .iter()
+                    .position(|e| e.toks[0] == prev_ident)
+                    .unwrap_or_else(|| panic!("turn {turn}: the previous turn must be resident"));
+                next_instant();
+                let pin = px
+                    .pin(&grow, i)
+                    .expect("previous turn leased for the restore");
+                assert!(px.unpin(&pin));
+            }
+            let before = victims.len();
+            let mut sink = |dead: PrefixEntry| victims.push(dead.toks[0]);
+            next_instant();
+            let inserted = px.insert_with_budget_pins(
+                &grow,
+                entry_b(&grow, ident, turn_bytes(tokens)),
+                "seed",
+                BUDGET,
+                0,
+                Some(&mut sink),
+            );
+            assert!(
+                inserted.is_some(),
+                "turn {turn} ({tokens} tokens): the newest turn must be resident"
+            );
+            assert!(px_survivors(&px).contains(&ident));
+            assert!(px.total_bytes <= BUDGET);
+            assert!(
+                victims[before..].iter().all(|v| *v != ident),
+                "turn {turn}: an insert must never be its own victim"
+            );
+            if turn == 0 {
+                // Turn 1 in the incident: the old segmented code evicted the newcomer itself;
+                // the OLDEST cohort member goes instead.
+                assert_eq!(victims, vec![0]);
+            }
+            assert_prefix_cache_accounting(&px);
+            prev = Some(ident);
+            tokens += 300;
+            turn += 1;
+        }
+        assert_eq!(turn, 211);
+        // The cohort went first, oldest first, then the tenant's older turns, oldest first.
+        assert_eq!(&victims[..6], &[0, 1, 2, 3, 4, 5]);
+        assert!(victims[6..].windows(2).all(|w| w[0] < w[1]));
+        assert!(!px.entries.contains_key(&cohort));
+        // 4.3 GB + 4.29 GB exceed the budget: the final turn evicted its predecessor and stands alone.
+        assert_eq!(px_survivors(&px), vec![100 + 210]);
+        assert_eq!(px.skips_budget + px.skips_pinned, 0, "no turn was refused");
+    }
+
+    /// memra#523 item 1: an entry larger than the whole budget is refused with the typed line,
+    /// in bytes, on both publication paths, evicting nothing and counting in the budget skips.
+    #[test]
+    fn prefix_cache_oversized_insert_refuses_with_the_typed_line_and_evicts_nothing() {
+        const BUDGET: usize = 10;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, entry_b(&k, 0, 4), "test", BUDGET);
+        assert!(reuse_ident(&mut px, 0));
+        px.insert_with_budget(&k, entry_b(&k, 1, 3), "test", BUDGET);
+
+        let mut victims: Vec<u32> = Vec::new();
+        let mut sink = |dead: PrefixEntry| victims.push(dead.toks[0]);
+        let inserted = px.insert_with_budget_pins(
+            &k,
+            entry_b(&k, 2, BUDGET + 1),
+            "test",
+            BUDGET,
+            0,
+            Some(&mut sink),
         );
-        assert_ne!(
-            px.entries[&key("")][lru_victim].toks[0],
-            2,
-            "policy=lru must not make every newcomer its own victim"
+        assert!(inserted.is_none());
+        assert!(!px.prepare_snapshot(&k, BUDGET + 1, BUDGET, Some(&mut sink)));
+        assert!(victims.is_empty(), "an oversized entry evicts nothing");
+        assert_eq!(px_survivors(&px), vec![0, 1]);
+        assert_eq!(px.evictions, 0);
+        assert_eq!(px.skips_budget, 2);
+        assert_eq!(
+            prefix_insert_refused_oversize(BUDGET + 1, BUDGET, "seed", &key("t")),
+            "[prefix-cache] insert refused: entry 11 exceeds budget 10 (seed, model m, ns \"t\")"
+        );
+        assert_eq!(
+            prefix_insert_refused_leased(6, 5, 10, "snapshot preflight", &key("")),
+            "[prefix-cache] insert refused: entry 6 cannot fit beside 5 leased bytes \
+             (budget 10, snapshot preflight, model m)"
+        );
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, review: the refusal lines are throttled, the counters are not. First
+    /// refusal printed; identical repeats suppressed and counted; a changed shape prints again
+    /// and carries the previous shape's count; the N-th identical repeat prints with its count.
+    #[test]
+    fn prefix_refusal_announcer_prints_first_changed_and_every_nth_identical_refusal() {
+        let n = PREFIX_REFUSAL_REANNOUNCE_EVERY;
+        let mut a = PrefixRefusalAnnouncer::default();
+        let oversize = |bytes: usize| PrefixRefusalShape {
+            leased: None,
+            bytes,
+            budget: 10,
+            key: key(""),
+        };
+        let line = || {
+            "[prefix-cache] insert refused: entry 11 exceeds budget 10 (seed, model m)".to_string()
+        };
+        // First refusal: printed verbatim.
+        assert_eq!(a.announce(oversize(11), line()), Some(line()));
+        assert_eq!(a.suppressed, 0);
+        // Identical repeats: suppressed and counted, up to the N-th, which prints with the count.
+        for i in 1..n {
+            assert_eq!(
+                a.announce(oversize(11), line()),
+                None,
+                "repeat {i} must be suppressed"
+            );
+            assert_eq!(a.suppressed, i);
+        }
+        assert_eq!(
+            a.announce(oversize(11), line()),
+            Some(format!(
+                "{} (identical refusal repeated {n} times since the previous line; {} not printed)",
+                line(),
+                n - 1
+            ))
+        );
+        assert_eq!(a.suppressed, 0, "the N-th repeat resets the count");
+        // The same path or the other path with the same numbers is the same shape: suppressed.
+        assert_eq!(
+            a.announce(oversize(11), "different why, same shape".to_string()),
+            None
+        );
+        assert_eq!(a.suppressed, 1);
+        // A changed shape (bytes) prints at once and carries the previous shape's count.
+        let changed =
+            "[prefix-cache] insert refused: entry 12 exceeds budget 10 (seed, model m)".to_string();
+        assert_eq!(
+            a.announce(oversize(12), changed.clone()),
+            Some(format!(
+                "{changed} (previous shape: 1 identical refusals not printed)"
+            ))
+        );
+        assert_eq!(a.suppressed, 0);
+        // A changed key (model or salt) is a new shape too, with nothing suppressed before it.
+        let other_key = PrefixRefusalShape {
+            leased: None,
+            bytes: 12,
+            budget: 10,
+            key: key("t"),
+        };
+        assert_eq!(
+            a.announce(other_key, "other tenant".to_string()),
+            Some("other tenant".to_string())
+        );
+        // A leased refusal with the same bytes and budget is a different shape from the
+        // oversize one, and a different leased byte count is a different shape again.
+        let leased = |leased: usize| PrefixRefusalShape {
+            leased: Some(leased),
+            bytes: 12,
+            budget: 10,
+            key: key("t"),
+        };
+        assert_eq!(
+            a.announce(leased(5), "leased 5".to_string()),
+            Some("leased 5".to_string())
+        );
+        assert_eq!(a.announce(leased(5), "leased 5".to_string()), None);
+        assert_eq!(
+            a.announce(leased(6), "leased 6".to_string()),
+            Some("leased 6 (previous shape: 1 identical refusals not printed)".to_string())
         );
     }
 
+    /// memra#523 item 1, review: through the cache itself, a saturated shape refusing on every
+    /// request counts every refusal in the skip counters while the announcer suppresses the
+    /// identical lines; the pinned and budget counters stay separate.
     #[test]
-    fn prefix_cache_host_promote_pinned_admission_follows_policy_and_leases() {
-        // A host promotion takes one lease before restore. A prior reused device entry
-        // remains Protected after its lease ends, even under LRU's 100% share.
-        for slru in [false, true] {
-            let k = key("host-promote");
-            let mut px = PrefixCache::default();
-            px.insert_with_budget_pins_and_policy(
+    fn prefix_cache_repeated_refusals_count_every_time_and_print_once() {
+        const BUDGET: usize = 10;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, entry_b(&k, 0, 4), "test", BUDGET);
+        let mut victims: Vec<u32> = Vec::new();
+        for ident in 1..=5u32 {
+            let mut sink = |dead: PrefixEntry| victims.push(dead.toks[0]);
+            let inserted = px.insert_with_budget_pins(
                 &k,
-                entry_b(&k, 0, 8),
-                "seed",
-                10,
-                100,
+                entry_b(&k, ident, BUDGET + 1),
+                "test",
+                BUDGET,
                 0,
-                None,
-                slru,
-            )
-            .unwrap();
-            let lease = px.pin(&k, 0).unwrap();
-            assert_eq!(px.entries[&k][0].segment, PrefixSegment::Protected);
-            let mut demoted = Vec::new();
-            assert!(
-                px.insert_with_budget_pins_and_policy(
-                    &k,
-                    entry_b(&k, 1, 8),
-                    "host-promote",
-                    10,
-                    100,
-                    1,
-                    Some(&mut |dead| demoted.push(dead.toks[0])),
-                    slru,
-                )
-                .is_none(),
-                "an active lease must refuse promotion under either policy"
+                Some(&mut sink),
             );
-            assert!(demoted.is_empty());
-            assert_eq!(px_survivors(&px), vec![0]);
-            assert!(px.unpin(&lease));
-            assert_eq!(px.entries[&k][0].segment, PrefixSegment::Protected);
-            let promoted = px.insert_with_budget_pins_and_policy(
+            assert!(inserted.is_none());
+            assert!(!px.prepare_snapshot(&k, BUDGET + 1, BUDGET, Some(&mut sink)));
+        }
+        assert!(victims.is_empty());
+        assert_eq!(px.skips_budget, 10, "every refusal counts");
+        assert_eq!(px.skips_pinned, 0);
+        assert_eq!(
+            px.refusals.suppressed, 9,
+            "one line printed, nine identical refusals suppressed and counted"
+        );
+        assert_eq!(
+            px.refusals.last,
+            Some(PrefixRefusalShape {
+                leased: None,
+                bytes: BUDGET + 1,
+                budget: BUDGET,
+                key: k.clone()
+            })
+        );
+        // A leased refusal is a new shape: it prints (carrying the count) and resets.
+        let i0 = px.entries[&k].iter().position(|e| e.toks[0] == 0).unwrap();
+        let pin = px.pin(&k, i0).unwrap();
+        assert!(!px.prepare_snapshot(&k, 7, BUDGET, None));
+        assert_eq!(px.skips_pinned, 1);
+        assert_eq!(px.refusals.suppressed, 0);
+        assert_eq!(
+            px.refusals.last,
+            Some(PrefixRefusalShape {
+                leased: Some(4),
+                bytes: 7,
+                budget: BUDGET,
+                key: k.clone()
+            })
+        );
+        assert!(px.unpin(&pin));
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, the leased boundary: a publication whose predecessor is still leased
+    /// across the insert (the spec-session shape; the plain path releases at the restore
+    /// fence) fits while `entry + leased <= budget`, evicting unleased entries oldest first,
+    /// and is refused with the typed leased line otherwise, evicting nothing.
+    #[test]
+    fn prefix_cache_newest_turn_beside_a_leased_predecessor_fits_or_refuses_loudly() {
+        const BUDGET: usize = 10;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        let mut victims: Vec<u32> = Vec::new();
+        px.insert_with_budget(&k, entry_b(&k, 1, 3), "turn-1", BUDGET);
+        let i1 = px.entries[&k].iter().position(|e| e.toks[0] == 1).unwrap();
+        next_instant();
+        let pin1 = px.pin(&k, i1).unwrap(); // turn 2 restores from turn 1 and holds the lease
+        px.insert_with_budget(&k, entry_b(&k, 2, 5), "turn-2", BUDGET);
+        assert_eq!(px_survivors(&px), vec![1, 2]);
+        assert!(px.unpin(&pin1));
+        let i2 = px.entries[&k].iter().position(|e| e.toks[0] == 2).unwrap();
+        next_instant();
+        let pin2 = px.pin(&k, i2).unwrap(); // turn 3 restores from turn 2 and holds the lease
+
+        // 6 > 10 - 5 leased: refused up front, nothing evicted (the old code evicted turn 1
+        // and then the newcomer itself).
+        let refused = px.insert_with_budget_pins(
+            &k,
+            entry_b(&k, 3, 6),
+            "turn-3",
+            BUDGET,
+            0,
+            Some(&mut |dead: PrefixEntry| victims.push(dead.toks[0])),
+        );
+        assert!(refused.is_none());
+        assert!(!px.prepare_snapshot(
+            &k,
+            6,
+            BUDGET,
+            Some(&mut |dead: PrefixEntry| victims.push(dead.toks[0]))
+        ));
+        assert!(victims.is_empty());
+        assert_eq!(px_survivors(&px), vec![1, 2]);
+        assert_eq!(px.skips_pinned, 2);
+        assert_eq!(px.evictions, 0);
+
+        // 5 <= 10 - 5 leased: fits by evicting the unleased turn 1, never itself.
+        let fits = px.insert_with_budget_pins(
+            &k,
+            entry_b(&k, 3, 5),
+            "turn-3",
+            BUDGET,
+            0,
+            Some(&mut |dead: PrefixEntry| victims.push(dead.toks[0])),
+        );
+        assert!(fits.is_some());
+        assert_eq!(victims, vec![1]);
+        assert_eq!(px_survivors(&px), vec![2, 3]);
+        assert_eq!(px.total_bytes, 10);
+        assert_eq!(px.evictions, 1);
+        assert!(px.unpin(&pin2));
+        assert_prefix_cache_accounting(&px);
+    }
+
+    #[test]
+    fn prefix_cache_host_promote_pinned_admission_follows_leases() {
+        // A host promotion takes one lease before restore. While another entry is leased the
+        // promotion is refused and nothing is evicted; once that lease ends, the unleased
+        // reused entry is reclaimable and the promotion lands holding its own lease.
+        let k = key("host-promote");
+        let mut px = PrefixCache::default();
+        px.insert_with_budget_pins(&k, entry_b(&k, 0, 8), "seed", 10, 0, None)
+            .unwrap();
+        let lease = px.pin(&k, 0).unwrap();
+        let mut demoted = Vec::new();
+        assert!(
+            px.insert_with_budget_pins(
                 &k,
                 entry_b(&k, 1, 8),
                 "host-promote",
                 10,
-                100,
                 1,
                 Some(&mut |dead| demoted.push(dead.toks[0])),
-                slru,
-            );
-            if slru {
-                assert!(
-                    promoted.is_none(),
-                    "SLRU must retain bytes below its protected share"
-                );
-                assert!(demoted.is_empty());
-                assert_eq!(px_survivors(&px), vec![0]);
-                assert_eq!(px.evictions, 0);
-            } else {
-                let id = promoted.expect("LRU must reclaim protected but unleased bytes");
-                assert_eq!(
-                    demoted,
-                    vec![0],
-                    "the victim must reach the host demote sink"
-                );
-                assert_eq!(px_survivors(&px), vec![1]);
-                assert_eq!(px.entries[&k][0].id, id);
-                assert_eq!(px.entries[&k][0].pins, 1);
-                assert_eq!(px.evictions, 1);
-            }
-            assert_eq!(px.total_bytes, 8);
-            assert_prefix_cache_accounting(&px);
-        }
+            )
+            .is_none(),
+            "an active lease must refuse promotion"
+        );
+        assert!(demoted.is_empty());
+        assert_eq!(px_survivors(&px), vec![0]);
+        assert!(px.unpin(&lease));
+        let promoted = px.insert_with_budget_pins(
+            &k,
+            entry_b(&k, 1, 8),
+            "host-promote",
+            10,
+            1,
+            Some(&mut |dead| demoted.push(dead.toks[0])),
+        );
+        let id = promoted.expect("unleased bytes are reclaimable for the promotion");
+        assert_eq!(
+            demoted,
+            vec![0],
+            "the victim must reach the host demote sink"
+        );
+        assert_eq!(px_survivors(&px), vec![1]);
+        assert_eq!(px.entries[&k][0].id, id);
+        assert_eq!(px.entries[&k][0].pins, 1);
+        assert_eq!(px.evictions, 1);
+        assert_eq!(px.total_bytes, 8);
+        assert_prefix_cache_accounting(&px);
     }
 
     #[test]
@@ -37690,47 +39167,21 @@ mod tests {
 
     #[test]
     fn prefix_cache_refusal_counters_separate_total_budget_from_pinned_pressure() {
-        for protected_pct in [80, 100] {
-            let k = key("");
-            let mut px = PrefixCache::default();
-            assert!(
-                px.insert_with_budget_pins_and_pct(
-                    &k,
-                    entry_b(&k, 1, 6),
-                    "test",
-                    8,
-                    protected_pct,
-                    1,
-                    None,
-                )
+        let k = key("");
+        let mut px = PrefixCache::default();
+        assert!(
+            px.insert_with_budget_pins(&k, entry_b(&k, 1, 6), "test", 8, 1, None)
                 .is_some()
-            );
-            assert!(
-                px.insert_with_budget_pins_and_pct(
-                    &k,
-                    entry_b(&k, 2, 3),
-                    "test",
-                    8,
-                    protected_pct,
-                    1,
-                    None,
-                )
+        );
+        assert!(
+            px.insert_with_budget_pins(&k, entry_b(&k, 2, 3), "test", 8, 1, None)
                 .is_none()
-            );
-            assert_eq!((px.skips_budget, px.skips_pinned), (0, 1));
+        );
+        assert_eq!((px.skips_budget, px.skips_pinned), (0, 1));
 
-            // A temporary pinned-pressure refusal must not consume the first whole-budget warning.
-            let _ = px.insert_with_budget_pins_and_pct(
-                &k,
-                entry_b(&k, 0, 9),
-                "test",
-                8,
-                protected_pct,
-                0,
-                None,
-            );
-            assert_eq!((px.skips_budget, px.skips_pinned), (1, 1));
-        }
+        // A temporary pinned-pressure refusal must not consume the first whole-budget warning.
+        let _ = px.insert_with_budget_pins(&k, entry_b(&k, 0, 9), "test", 8, 0, None);
+        assert_eq!((px.skips_budget, px.skips_pinned), (1, 1));
     }
 
     #[test]
@@ -37738,44 +39189,18 @@ mod tests {
         let k = key("");
         let mut px = PrefixCache::default();
         let id = px
-            .insert_with_budget_pins_and_pct(&k, entry_b(&k, 0, 4), "fanout test", 8, 80, 2, None)
+            .insert_with_budget_pins(&k, entry_b(&k, 0, 4), "fanout test", 8, 2, None)
             .unwrap();
         let entry = px.entries[&k].iter().find(|entry| entry.id == id).unwrap();
-        assert_eq!(entry.segment, PrefixSegment::Protected);
         assert_eq!(entry.pins, 2);
-        assert!(px.probation_lru.is_empty() && px.protected_lru.is_empty());
+        assert!(px.lru.is_empty());
         assert_prefix_cache_accounting(&px);
 
         let pin = super::PrefixPin { key: k.clone(), id };
         assert!(px.unpin(&pin));
-        assert!(px.protected_lru.is_empty());
+        assert!(px.lru.is_empty());
         assert!(px.unpin(&pin));
-        assert_eq!(px.protected_lru.len(), 1);
-        assert_prefix_cache_accounting(&px);
-    }
-
-    #[test]
-    fn prefix_cache_pinned_probation_refuses_before_displacing_protected_share() {
-        const BUDGET: usize = 10;
-        let k = key("");
-        let mut px = PrefixCache::default();
-        px.insert_with_budget(&k, entry_b(&k, 0, 8), "test", BUDGET);
-        assert!(reuse_ident(&mut px, 0));
-        assert_eq!((px.protected_bytes, px.probation_bytes), (8, 0));
-
-        // A one-participant pinned insert has not demonstrated reuse. With no probation bytes to
-        // reclaim, it must be refused rather than evicting protected below its 80% byte share.
-        assert!(
-            px.insert_with_budget_pins_and_pct(&k, entry_b(&k, 1, 3), "test", BUDGET, 80, 1, None)
-                .is_none()
-        );
-        assert_eq!(px_survivors(&px), vec![0]);
-        assert_eq!(
-            (px.protected_bytes, px.probation_bytes, px.total_bytes),
-            (8, 0, 8)
-        );
-        assert_eq!((px.inserts, px.evictions), (1, 0));
-        assert_eq!((px.skips_budget, px.skips_pinned), (0, 1));
+        assert_eq!(px.lru.len(), 1);
         assert_prefix_cache_accounting(&px);
     }
 
@@ -37800,16 +39225,15 @@ mod tests {
         px.insert_with_budget(&k, entry_b(&k, 3, 4), "test", 8);
         assert_eq!(px_survivors(&px), vec![0, 3]);
 
-        // Last release returns the entry to the protected LRU. Probation scan entries continue
-        // to evict one another; release ends pinning but does not erase demonstrated reuse.
+        // Last release returns the entry to the LRU at current recency: newer than 3, so 3
+        // is the next victim; after that the released entry is the oldest unleased and goes.
         assert!(px.unpin(&pin));
         px.insert_with_budget(&k, entry_b(&k, 4, 4), "test", 8);
         assert_eq!(px_survivors(&px), vec![0, 4]);
         px.insert_with_budget(&k, entry_b(&k, 5, 4), "test", 8);
-        assert_eq!(px_survivors(&px), vec![0, 5]);
+        assert_eq!(px_survivors(&px), vec![4, 5]);
 
-        // Reusing 5 puts 8 bytes in protected against a 6-byte target. Protected LRU 0 is
-        // demoted, then the next admission evicts it from probation.
+        // Reusing 5 refreshes it; the next admission evicts the older 4.
         assert!(reuse_ident(&mut px, 5));
         px.insert_with_budget(&k, entry_b(&k, 6, 4), "test", 8);
         assert_eq!(px_survivors(&px), vec![5, 6]);
@@ -37860,7 +39284,7 @@ mod tests {
             px.entries[&k][0].pins, 1,
             "the other session keeps its lease"
         );
-        assert!(!px.prepare_snapshot(size, budget, false, None));
+        assert!(!px.prepare_snapshot(&k, size, budget, None));
         assert_eq!(px_survivors(&px), vec![0]);
         assert_eq!(
             px.evictions, 0,
@@ -37869,8 +39293,8 @@ mod tests {
 
         let mut other_session_pin = Some(pin.clone());
         retire_prefix_pin(&mut px, &mut other_session_pin);
-        assert_eq!(px.capacity_victim_with(false), Some((k.clone(), 0)));
-        assert!(px.prepare_snapshot(size, budget, false, None));
+        assert_eq!(px.oldest_evictable(), Some((k.clone(), 0)));
+        assert!(px.prepare_snapshot(&k, size, budget, None));
         assert_eq!(px.total_bytes, 0, "source drops before snapshot allocation");
         assert!(px.id_index(&pin).is_none());
         px.insert_with_budget(&k, entry_b(&k, 1, size), "deeper", budget);

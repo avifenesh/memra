@@ -881,6 +881,93 @@ prefix-evict-reclaim-gate.py [--external-lock FD] --model <gguf> --bin <memra-se
   CPU arm: `worker::tests::reclaim_settle_returns_only_the_reclaims_gain` pins the keep
   arithmetic.
 
+### The newest turn fits the prefix cache (`tools/prefix-newest-turn-fits-gate.py`)
+
+memra#523 items 1 and 3: under the segmented policy that was the default until 2026-09-21 a newly
+published entry could be its own capacity victim (probation held only the newcomer) or be refused
+by the snapshot preflight (only probation counted as reclaimable), so a growing long-context
+conversation ran `cold=1 restored=0` on every turn beside other tenants' promoted entries, and
+the only trace was one once-announced `snapshot skipped` line. The day-14 fix made every unleased
+byte reclaimable for the newest turn (protected LRU oldest first once probation was exhausted);
+since #523 item 2 (day 15, below) the only policy is plain global LRU, the oldest unleased entry
+first, and the newest turn is never its own victim because it is the global newest. The only
+refusals are typed and in bytes:
+`[prefix-cache] insert refused: entry N exceeds budget M (...)` and
+`[prefix-cache] insert refused: entry N cannot fit beside L leased bytes (budget M, ...)`.
+Victim selection and accounting only: captured and restored bytes are unchanged.
+
+```text
+prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra-server> --out <new-dir> \
+    [--budget-mib 1024] [--cohort-tokens 2800,3000,3200] [--turns 8] [--start-tokens 9200] [--grow-tokens 300]
+```
+
+- Serving shape, one card, two boots of the real `memra-server` per cell, plain path
+  (`MEMRA_SERVE_SPEC=0`), a small explicit prefix budget, the DEFAULT policy (the boot line must
+  report `plain-LRU`; the gate never sets a policy). A calibration boot with the cache OFF
+  (`MEMRA_PREFIX_CACHE_MB=0`) replays the identical request sequence first and records each turn's
+  own retained footprint (the bytes a request of that length keeps after it retires with no cache
+  activity; 1,111,666,004 B on the 9,200-token turn 1 of the day-14 shape, identical on both
+  binaries). In the measured boot a second tenant (`cache_salt=cohort`) seeds three
+  prompts twice each so the whole-entry hit makes them a reused, recently touched set. The growing
+  tenant (`cache_salt=grow`) then replays an 8-turn conversation whose turn k+1 is turn k's
+  `prompt_ids` plus 300 new ids. The pressure arithmetic is read from the server's own
+  `insert` lines (a bytes(tokens) fit for the artifact) and the gate REFUSES unless the
+  cohort is at most 80 % of the budget, cohort plus turn-1 entry exceed the budget, and every
+  turn's entry fits the budget: the incident's shape scaled to a small budget.
+- Assertions, bytes from the server's `[prefix-cache]` lines and `/metrics`: V1 every turn k >= 2
+  reports `usage.prompt_tokens_details.cached_tokens >= ` turn k-1's `prompt_tokens`; V2 turn 1
+  publishes and every later turn hits exactly once and publishes, with no `insert refused` or
+  `snapshot skipped` line for the growing tenant; V3 after every turn the calibration boot's
+  effective free (`cuda_driver_free_bytes + cuda_pool_cached_bytes`) equals the measured boot's
+  effective free plus the cache's resident bytes, within 64 MiB (the cache costs exactly what it
+  holds, so every evicted byte came back: #523 item 4 under the capacity shape, stated on states
+  because per-turn deltas need aligned starting states and the cohort phase does not give them);
+  V4 at least one eviction of a cohort entry (`ns "cohort"`) and no turn evicting the entry it
+  just published (the room came from the cohort, never from the entry itself). Per-turn
+  `text_sha256`, the same prompt's cold
+  digest from the calibration boot, and the per-request server receipt (`[glm5-spec] route=`
+  with `cold=`/`restored=`, or `[spec-k] ... cached= lcp=`) are recorded for the runner; identity
+  across binaries and against the cold boot is the runner's comparison, not a verdict inside one
+  cell.
+- Verdict line: `PREFIX-NEWEST-TURN-FITS: budget_bytes=... cohort_bytes=... turns=8 cold_turns_after_1=...
+  cached_ok=N/7 lines_ok=N/8 ... V1=.. V2=.. V3=.. V4=.. -> PASS|FAIL`; exit 0 PASS, 1 FAIL, 2
+  `REFUSED: ...` (lock, port, shape, an unserved request). Red on `main` and green on the fix,
+  same card, same artifact, same prompts:
+  [`research/spill-b-20260919/DAY14.md`](../research/spill-b-20260919/DAY14.md).
+- Canonical rig lock only, held for the whole cell; under the collector,
+  `tools/tier-battery.py --rig pro-single --external-lock --execute python3
+  tools/prefix-newest-turn-fits-gate.py --external-lock @COLLECTOR_LOCK_FD@ ...` (lead ruling 5).
+  CPU arms: `worker::tests::prefix_cache_newest_turn_fits_beside_a_reused_cohort` (the
+  incident shape, 211 turns, cohort oldest first, never its own victim),
+  `prefix_cache_oversized_insert_refuses_with_the_typed_line_and_evicts_nothing`,
+  `prefix_cache_evicts_the_global_oldest_including_reused_entries`,
+  `prefix_cache_newest_turn_beside_a_leased_predecessor_fits_or_refuses_loudly`, and for the
+  refusal-line throttle (first line printed, identical repeats suppressed and counted in the skip
+  counters, a changed shape printed again, every 64th identical repeat printed with its count)
+  `prefix_refusal_announcer_prints_first_changed_and_every_nth_identical_refusal` and
+  `prefix_cache_repeated_refusals_count_every_time_and_print_once`; for pressure relief (the kv-flex
+  shed and the step-OOM reclaim select with the same `oldest_evictable` as the insert loop and the
+  preflight: oldest unleased first, leases untouchable)
+  `evict_to_bytes_never_takes_a_leased_entry_even_below_target` and
+  `kv_flex_shed_reaches_the_floor_through_reused_entries_and_warns_only_when_all_is_leased`. The
+  eviction contract is stated in `docs/SERVING.md` ("Eviction (plain global LRU ...)"): every
+  unleased byte is reclaimable for the newest turn, oldest first; only leases are untouchable.
+- **The policy decision (day 15, memra#523 item 2).** `tools/prefix-policy-ab.py` (source at
+  `9466b891`; deleted with the door) replayed the incident's shape at a 2048 MiB budget on one RTX
+  PRO 6000 Blackwell (600 W): four reused cohort tenants (74 % of the budget), one loop 27,300 to
+  30,600 ids over 12 turns, cohort returns after every third loop turn and after the loop, 28
+  requests per run, `AB-0, BA-0, ..., AB-4, BA-4` (A = `slru`, B = `lru`), 20 runs, one lock hold,
+  one thermal window, plus a cache-off boot for the cold digests. Pre-registered rule: primary =
+  total computed tokens, lower is better; secondary = the cohort tenants' `cached_tokens` on their
+  returns; a policy wins only if better on the primary at every pair in both orders; digest
+  identity is a precondition. Verdict, verbatim:
+  `PREFIX-POLICY-AB: budget_bytes=2147483648 cohort_tenants=4 cohort_bytes=1589723136 turns=12 start_tokens=27300 grow=300 return_every=3 pairs_per_order=5 runs=20 requests_per_run=28 digests_identical=28/28 computed_tokens slru_median=132300 lru_median=122700 (N=10 each) pairs_slru_better=0/10 pairs_lru_better=10/10 ties=0/10 return_cached slru_median=0 lru_median=8700 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=46.0..50.0 power_limit_w=600.0 -> WINNER=lru`
+  (10/10 pairs, 132,300 vs 122,700 computed tokens in every pair, digests 28/28 identical across
+  the 20 runs and the cold boot). Landed as the naked default with the segmented arm deleted;
+  receipts `research/spill-b-20260919/pro-single-day15/ab-full/`, replay `verify-day15.py`,
+  decision `docs/decisions/PREFIX-CACHE-POLICY.md`. Target-card verdict; the local RTX 5090 replay
+  is a follow-up.
+
 ## Generic spill / tiered KV (memra-tier)
 
 The shared contract is `crates/memra-tier/src/contracts.rs`. The conformance schedules are
@@ -893,7 +980,7 @@ the publish census refuses internal dev-deps. These are **CPU execution gates, n
 qualification**. Run the whole pair:
 
 ```sh
-tools/portable-suites.sh          # cargo test -p memra-tier -p memra-kv -p memra-cli --offline --no-fail-fast, through the skip census
+tools/portable-suites.sh          # cargo test -p memra-tier -p memra-kv -p memra-cli --offline --locked --no-fail-fast, through the skip census
 tools/test_portable_suites.sh     # its teeth: planted tier/KV/CLI failures and an undeclared SKIP must red the wrapper
 cargo check -p memra-tier -p memra-kv --offline --all-targets
 cargo check -p memra-tier -p memra-kv --offline --all-targets --target x86_64-unknown-linux-gnu
@@ -915,8 +1002,9 @@ these suites: `ci.yml` compiled them (build, clippy) and executed other crates; 
 ran server, engine and gguf. `tools/portable-suites.sh` is now the one wrapper both run
 (`ci.yml` job `portable-suites`, `local-ci.sh`'s CPU chain): the three crates, no `--lib`
 (memra-tier's six integration suites and its four compile-fail doctests are most of the tests),
-`--no-fail-fast` (every binary runs, so a red names every failing suite), `--offline` against
-the committed lockfile, through `tools/skip-census.py` (`verify` over the three crates, then
+`--no-fail-fast` (every binary runs, so a red names every failing suite), `--offline --locked`
+against the committed lockfile (a lockfile that would need to change is a refusal), through
+`tools/skip-census.py` (`verify` over the three crates, then
 `run` at budget 0 and floor 300; 325 passed across 14 binaries on 2026-09-21, 22 s warm; 334
 after that day's main merges). The static census scans `crates/<crate>/src` AND
 `crates/<crate>/tests` (PR #592 review: it was src-only, so a skip born in an integration test
@@ -932,6 +1020,21 @@ tree's own target dir: cargo's metadata hash for a workspace member excludes its
 `cp -a` keeps mtimes, so a shared target dir let the copy's planted `memra_cli` test binary be
 reused by the next real run (found on the fixture's first run; the fix is the separate dir).
 A green here is CPU execution of these suites, never GPU qualification.
+**One entry point (day 14, 2026-09-21).** PR #590 landed `tools/ci-portable.sh`, a second runner
+of the same three crates (`cargo test --release --locked`, no census, no floor, no teeth), a
+second `ci.yml` job also named `portable-suites` and a second call in `local-ci.sh`; main
+carried both and GitHub refused the workflow file (a duplicate mapping key runs zero jobs). The
+fold: `tools/portable-suites.sh` is the one executor, `ci.yml` and `local-ci.sh` call it once
+(`--locked` and `RUST_TEST_THREADS=8` folded in from #590), `tools/ci-portable.sh` only forwards
+to it, and arm 3 of the teeth asserts exactly one `portable-suites` job, no live `cargo test`
+on the three crates outside the wrapper, and a forward that runs no cargo. The workflow files
+themselves are censused by `tools/check-workflow-keys.py` (a standard-library walker over
+block-style YAML, its scope stated in its docstring; `yaml.safe_load` keeps the last duplicate
+silently, and PyYAML is not assumed on every interpreter, so the hook cannot fail for a missing
+dependency) in `tools/hooks/pre-push` (exit 1 is a duplicate, exit 2 is "cannot answer", both
+refuse) and the `ci.yml` `gates` job, teeth `tools/test_workflow_keys.sh` including an arm that
+shadows `yaml` with a package that raises `ImportError`. Record: `research/spill-d-20260919/DAY14.md`; the hosted CI map is
+`docs/CI.md`.
 Conformance schedules drive explicit completion/cancellation/retirement, original
 item indices, namespace and epoch refusal, opaque bytes, accounting and borrowed
 release. v1.2 adds owner/fence identities, logical-vs-framed completion bytes,
@@ -1332,7 +1435,8 @@ the host tier's already-compiled sidecar route (`tier_charge`, `bind_tier_image`
 promote identity leases, lane B's `HOSTPREFIX-EXTENSION.md`) executes: one `ProgramIdentity` per
 loaded GGUF model, the tenant salt stamped per pool key by `memra_kv::tiered::hostprefix::
 tenant_salt` over the same namespace string `auth::meter_key` reads, the server's governor as a
-ledger. No copy program changes. OFF is byte-identical by construction (the constructor is
+ledger. Days 13 and 14 changed no copy program; day 15 (Option B, below) routes the pageable-tier D2H
+through the transfer engine. OFF is byte-identical by construction (the constructor is
 never called). The door refuses the boot, typed and loud, for a junk value, the startup arena
 (`MEMRA_GLM5_TP_KV_HOST=1`), a checkpoint-directory model or a loaded vision tower.
 
@@ -1372,6 +1476,55 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   line equal, `verify ok` on every ON promote, equal `[prefix-host] demote:` byte counts, no
   refusal line in the ON arm; the `MEMRA_SERVE_SPEC=0` pairs and serve-smoke unchanged from day 13.
   Evidence: `research/spill-c-20260919/DAY14.md`, `pro-single-day14/`, replay `verify-day14.py`.
+- Option B (day 15, lead rulings 14 and 15): under the door on the pageable tier the D2H of every KV
+  plane of an entry (trunk planes and the MTP draft plane) goes through the native `TransferEngine`
+  (`memra_engine::tier_transfer::CudaTransfers` on the worker's CUDA owner stream, charging the same
+  governor through the `HostTierLedger` adapter, one batch per demote): the owned `KvPlane`s leave the
+  entry's plane slots by `Option::take` (no placeholder, no device byte) and return through
+  `take_plane` into the same slots; `alloc_host` leases carry the pinned charge, so the demote's
+  residency charge takes pinned zero; the ledger gains an in-flight dimension (2 x max layers + 2). Each
+  `HostPlane` keeps its `CudaPinnedLease` and the engine's completion checksum as its receipt;
+  `bind_tier_image` refuses, typed, when its bundle checksum differs from that receipt, and names the
+  one legitimate difference (`MEMRA_KV_HOST_FAULT=flip-demote`, which corrupts the image after the
+  receipt as it does after the verify digest). A quarantined completion is `SourceQuarantined`: the
+  engine keeps the planes, the pause sweep drops the entry, the tier latches off. Receipt line per ON
+  demote: `[prefix-host] contracts door D2H receipt: ticket issuer=.. seq=.. epochs=0/1/1 items=N (..
+  KV planes[, draft]) complete=N require=ok checksums_sha256=.. retired acknowledged`. CPU cells
+  (`worker::tests`): `host_tier_ledger_handle_charges_and_releases_the_servers_one_ledger` (one ledger
+  through two handles, the in-flight bound refuses a fifth op),
+  `option_b_contract_route_is_door_only_and_keeps_the_frozen_demote_order` (the kv_tier_gate demote
+  sequence in order, door-only call site, no pre-door copy program or plane clone in the route, the
+  pinned-zero charge, the sweep's drop). Target card: `tools/kv-host-spill-identity-gate.sh` `ALL GREEN`
+  OFF and ON (default and plain), `tools/kv-host-spill-failure-gate.sh` `1 FAILURE(S)` OFF and ON (the
+  pre-existing pool-full line), lane A's `tools/kv-host-tenant-reclaim-gate.sh fix` `PASS` OFF and ON,
+  serve-smoke and lane B's `prefix-evict-reclaim-gate.py` / `prefix-newest-turn-fits-gate.py` lines
+  identical, one receipt before every ON demote, N=1, executed-not-qualified. Evidence:
+  `research/spill-c-20260919/DAY15.md`, `pro-single-day15/`, replay `verify-day15.py`.
+- Option B unwind (day 15 review, PR #599 findings 1 and 2): every pre-submit refusal drops the ops'
+  original `DeviceLease` handles before the unwind (an extra holder on the registry `Rc` makes
+  `take_plane` refuse `Busy`, which escalated a recoverable refusal to `SourceQuarantined`, latched the
+  tier and dropped a whole device entry over intact planes); the abort observes every fence before
+  retiring against it (owner-stream drain after `record_consumer`; an unpublished ticket retires
+  against `None`) and never discards a `retire`, `acknowledge` or `release_producer` result: a refusal
+  there is the typed `TicketLeaked` outcome and one `TIER DISABLED` line (a leaked batch is the
+  ledger's whole in-flight dimension). Injectable one-shot faults, `MEMRA_KV_HOST_FAULT=
+  contract-presubmit` (the producer fence refused before any op is submitted) and
+  `contract-postpublish` (the receipt check refused after every destination was taken), armed once at
+  boot into `HostTierContext::fault`. Cells: the GPU unit cells `option_b_presubmit_refusal_returns_
+  every_plane_and_keeps_the_tier_on` and `option_b_postpublish_refusal_retires_the_ticket_and_keeps_
+  the_tier_on` (`worker::tests`, `#[ignore]` without a device; a real `CudaTransfers` on the engine's
+  stream over a ledger whose in-flight dimension is exactly one batch: planes back with their bytes,
+  typed `Failed` never quarantine, tier on, ledger at zero, the next demote completes), and
+  `tools/kv-host-contract-fault-gate.sh [--external-lock FD] MODEL BIN EV` on a real server boot
+  (door ON, one cell per fault: r1 seeds, r2 evicts into the injected refusal, r3 evicts into a
+  clean demote; asserts exactly one typed `demote failed (tier D2H <producer fence, receipt> refused:
+  injected failure ...)`, then a D2H contract receipt whose ticket is `seq=1` (presubmit: no ticket was
+  issued) or `seq=2` (postpublish: the aborted ticket retired and was acknowledged) and a `demote:`,
+  no `TIER DISABLED`, no quarantine, no `Capacity`, no leaked wording; verdict `KV-HOST-CONTRACT-FAULT
+  GATE: ALL GREEN`). The source-text cell pins the `originals` drop before every pre-submit unwind and
+  the drain-then-retire order with no discarded result in the abort. Evidence:
+  `research/spill-c-20260919/DAY15.md` (review section), `pro-single-day15-review/`, replay
+  `verify-day15-review.py`.
 
 ### `h2d-probe --copies`
 

@@ -290,7 +290,195 @@ Batteries (`integration-day12/integ13-cpu-battery/`): fmt; `tools/portable-suite
 `-D warnings`; check-flags; publish census; docs registry census; collector pytest; `verify-day14.py` PASS; perf board;
 diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` with the door unset (`integ13-serve-smoke-5090/`): `serve-smoke: 0 failed`.
 
+## Lane B day 14 (`25d252c6f`, pushed by the lane; #523 items 1 and 3)
+First sitting stopped by the lead after four hours without a receipt (driver refusals kept verbatim under
+`pro-single-day14/refused-sitting1/`: `REFUSED: [Errno 17] File exists: '.../gate-main'` and `REFUSED: --external-lock
+requires exactly one @COLLECTOR_LOCK_FD@ argument`; its binaries were also the wrong arms). Second sitting finished in
+0.8 agent-hours. Fix (`f42d921db`, `worker.rs`): the SLRU insert never selects itself as victim (`room_victim_with(slru,
+keep)`); when the newest turn does not fit it evicts from the protected segment oldest first; an entry larger than the
+budget refuses with the typed line `[prefix-cache] insert refused: entry <bytes> exceeds budget <bytes> (...)`; an
+entry that cannot fit beside leased bytes refuses with its own line. Victim selection, the preflight's reclaimable set
+and the refusal lines only; `prefix_snapshot` and restore untouched. Unit tests: the incident shape (211 turns beside a
+protected cohort, cohort evicted oldest first, never itself), the oversized refusal string, fitting inserts keep the
+same victims in the same order, the leased boundary. Gate `tools/prefix-newest-turn-fits-gate.py` (8-turn twin on a
+live `memra-server`, pre-seeded protected cohort from a second tenant, cache-off calibration boot, per-turn cold-versus-
+restored digest, V3 state identity after every turn). Target card, N=1, 600 W, base `be07f2d36` versus fix, verbatim:
+```text
+base: PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=737943552 turns=8 cold_turns_after_1=7 cached_ok=0/7 lines_ok=0/8 evictions=0 protected_evictions=0 refused_or_skipped=1 effective_free_ok=8/8 V1=FAIL V2=FAIL V3=ok V4=FAIL -> FAIL
+fix:  PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=737943552 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 protected_evictions=2 refused_or_skipped=0 effective_free_ok=8/8 V1=ok V2=ok V3=ok V4=ok -> PASS
+```
+Per turn cached_tokens, base then fix: 0/0, 0/9200, 0/9500, 0/9800, 0/10100, 0/10400, 0/10700, 0/11000. Completion digests
+identical across binaries on all 8 turns and 6 cohort sends, and identical to the cache-off boot's cold completions.
+`serve-smoke: 0 failed`, `cache-meter-gate: 0 failed` on the fix; `verify-day14.py` `DAY14 REPLAY OK`. Two earlier
+gate rounds are kept as failed cells (V3 first asserted consumed == grew without a footprint control, then a
+calibration that missed the cohort phase's retained growth); round 3 states V3 on states. Recorded observation, cause
+not inferred: the request path retains device memory growing with the longest prompt seen (67,200 B per token on turns
+3 to 8), identical across binaries and with the cache idle; not this gate's subject. #523 item 2 (policy re-decision,
+interleaved A/B N >= 5) stays open. Revuto on integ14 found two gaps, both fixed on the lane (`9655b9142`): SERVING.md
+and the protected-share FLAGS row still stated the old "probation before protected" guarantee (now the real rule with
+the scan-resistance trade-off named; lead ruling 18 below), and the refusal lines had lost their one-shot guard (now a
+shape-keyed throttle, counters unchanged).
+
+## integ14 (`lane/spill-integ14-20260921`): B day 14
+Batteries (`integration-day12/integ14-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server 748 tests; clippy `-D warnings`; check-flags; publish census; docs registry census; collector pytest; B's `verify-day14.py` OK; perf board; diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` (`integ14-serve-smoke-5090/`): `serve-smoke: 0 failed`.
+
+## Lead rulings, day 12 (continued)
+18. **The newest turn fits, and the docs say what that costs.** #523 item 1's rule stands (an insert never evicts
+    itself; protected oldest first when the free share is short; typed refusal only when the entry exceeds the budget
+    or cannot fit beside leases). The consequence that a growing one-hit tenant can remove another tenant's promoted
+    cohort is the documented trade-off, not a bug; the default policy is re-decided under #523 item 2 by interleaved
+    A/B on the incident shape, N >= 5, both orders, before any promotion or demotion of SLRU as the naked default.
+## Lane A day 12 (`f122468a5`, pushed by the lane; #384 fixed and gated, #385 harness)
+#384: `HostPrefixCache::reclaim_tenant_share` (`worker.rs`): at the tenant share cap the demoting tenant's own unleased
+host entries are evicted oldest first (the twin spared, leased entries skipped through the new `IdentitySlot::leased`
+in memra-kv) until the demotion fits, one retry, else today's bounded refusal with nothing evicted; hook order is
+reclaim-then-refuse; `/metrics` gains `prefix_host_tenant_reclaims`. Gate `tools/kv-host-tenant-reclaim-gate.sh` on the
+target card (600 W, N=1, `executed-not-qualified`), base `be07f2d36` versus fix `405466cf7`, verbatim:
+base: [prefix-host] demote evaporated at the tenant share cap before the D2H copy: 93 tokens, 160.8MB (38% of 1074MB, MEMRA_KV_HOST_TENANT_PCT; model gate, ns "t:acme\u{1f}s1")   (three cap events)
+fix:  [prefix-host] evict (tenant share): 89 tokens, 160.7MB of tenant "t:acme"'s own entries for its 160.8MB demotion (row now 160.6MB / 408MB share = 38% of 1074MB, model gate, ns "t:acme\u{1f}s1")
+      [prefix-host] demote: 93 tokens, 160.8MB in 6.3ms (host resident 482.0MB / 1074MB, model gate, ns "t:acme\u{1f}s1")   (four reclaims, each followed by its demote)
+Cross-arm (`verify-day12.py` `DAY12 PASS`): every image base evaporated, fix demoted at the same byte count; all eight
+texts byte-identical; the other tenant's demote, promote and `cached_tokens` equal; the reclaimed entry serves on the
+fix arm (`cached_tokens` 95 versus 0); `/metrics` rejects 3 versus 0, reclaims absent versus 4; collector `--validate`
+exit 0 on all three evidence cells; three failed attempts kept and named. CPU: memra-server 748, memra-kv 73 tests,
+clippy, fmt, flags, docs, diff-check clean. Open and stated: the handoff import (`insert` direct) still evaporates at
+the cap; #385's decision cell is the 2x B200 pair. Revuto on integ15 found two gaps, both fixed on the lane
+(`8b29b2aa3`): the reclaim evicted before the image existed (five later failure paths could waste the tenant's warm
+row; now a pure plan before the D2H, the reclaim after `bind_tier_image` and before `insert`, and a
+`prefix_host_tenant_reclaims_wasted` counter with one WASTED line), and FLAGS/SERVING still promised the old evaporation
+rule (now the reclaim rule and both counters). Fix arm rerun on the card: PASS, reclaims 4, wasted 0.
+#385 harness (`research/spill-a-20260919/HOST-ARENA-STARTUP.md`, `tools/pinned-host-reserve-bench.py`): BOX3 only, 21.87 GiB
+(75 percent of MemFree), single versus 8 chunks, N=5 pairs per order both orders, GPU idle 36 to 40 C at 600 W:
+single median 3598.8 ms, chunked median 3583.8 ms, 6.1 GiB/s both; per-chunk completions step by about 450 ms, so this
+driver serializes concurrent `cuMemHostAlloc`. A harness receipt for this box; not the decision.
+Push note: A's first push was refused by the perf-ci gate with the lane's upstream range (six engine files arriving
+through the merge of main); A unset the upstream so `tools/push-range.sh` took the merge-base with `origin/main`, and
+the hook found no engine file in range (the documented range correction after a merge of main; no skip variable).
+## integ15 (`lane/spill-integ15-20260921`): A day 12
+Batteries (`integration-day12/integ15-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server 748 tests; clippy `-D warnings`; check-flags; publish census; docs registry census; collector pytest; A's `verify-day12.py` `DAY12 PASS`; perf board; diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` (`integ15-serve-smoke-5090/`): `serve-smoke: 0 failed`.
+
+## Lane B day 15 (`bc16ae4c2`, pushed by the lane; #523 item 2 decided on the target card)
+Pre-registered before any run (`9466b8912`): primary metric total computed tokens over the replay (lower wins),
+secondary the cohort tenants' `cached_tokens` on their returns (stated either way), a policy wins only if better on the
+primary at every pair in both orders, digest identity across arms, runs and the cache-off boot as the precondition.
+Shape: the 2026-09-05 incident's ratios at a 2048 MiB budget on `Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`: four reused cohort
+tenants (74 percent of the budget), one loop growing 27,300 to 30,600 ids over 12 turns, cohort returns every third turn
+and after the loop, 28 requests per run, `AB-0, BA-0, ..., AB-4, BA-4`, 20 runs, one lock hold, one binary. Target card,
+600 W, 46 to 50 C at run boundaries, 6,124 telemetry samples, verbatim:
+```text
+PREFIX-POLICY-AB: ... digests_identical=28/28 computed_tokens slru_median=132300 lru_median=122700 (N=10 each) pairs_slru_better=0/10 pairs_lru_better=10/10 ties=0/10 return_cached slru_median=0 lru_median=8700 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=46.0..50.0 power_limit_w=600.0 -> WINNER=lru
+```
+Every pair, both orders: 132,300 versus 122,700 computed tokens (+9,600, 7.3 percent), deterministic; cohort return
+cached 0 versus 8,700; loop cold 0 in both; TTFT loop p50 158.6 versus 157.8 ms. Mechanism from the server's own lines:
+SLRU evicts the loop's newest entry after each cohort return and protects the loop's dead last entry over the last
+tenant's fresh one. Landed (`87d9e5963`): plain LRU is the only policy; `MEMRA_PREFIX_CACHE_POLICY`,
+`MEMRA_PREFIX_CACHE_PROTECTED_PCT`, the segments, promotion and demotion, the SLRU tests and the A/B harness deleted
+(harness source at `9466b891` in history); refusals, throttle, leased preflight and the pressure-relief order kept; the
+twin gate's V4 is now "cohort eviction, never self-eviction"; FLAGS "Removed doors, 2026-09-21", SERVING, TESTING,
+`docs/decisions/PREFIX-CACHE-POLICY.md`. Landed binary on the card: twin gate `-> PASS` with day-14 digests 8/8,
+`serve-smoke: 0 failed`, `cache-meter-gate: 0 failed`; `verify-day15.py` `DAY15 REPLAY OK`. Reconciled with #597
+(`a63739afb`): A's tenant-share code intact (40 references), 754 server tests. One lock-busy refusal kept
+(`refused-lockbusy/`, lane C's cell held the card).
+
+## Lead rulings, day 12 (continued)
+19. **Plain LRU is the prefix-cache policy; the SLRU door is gone.** The primary metric is a function of bytes and
+    policy, not of the card (a mechanism result: SLRU's protection displaces the growing tenant's newest entry), so
+    the one-card verdict lands the naked default and deletes the losing arm per door hygiene; the owner's one-rig rule
+    is stated in the decision record and the local 5090 replay of the same harness (from history) is owed as a
+    confirmation cell, not as a blocker. The scan-resistance property SLRU advertised is documented as removed with
+    the door; a future segmented policy comes back only with its own A/B on this shape.
+
+## Main moved under the integs (09:47Z): #590
+Another session merged codex PR #590 "ci: execute portable suites and dispatch pinned GPU qualification" (`34ed99dfc`):
+`tools/ci-portable.sh`, `tools/gpu-ci.py`, `.github/workflows/gpu-ci.yml`, `docs/CI.md`, ci.yml and local-ci.sh lines.
+It overlaps D's #592 (`tools/portable-suites.sh`, the `portable-suites` job, the skip census with teeth): main now
+carries two entry points for the same suites. Not untangled here; flagged for the owner and queued (one entry point,
+the teeth kept). integ16 and integ17 merged `34ed99dfc` after their batteries (ci, tools and docs only; the battery
+trees' crate content is unchanged).
+
+## integ16 (`lane/spill-integ16-20260921`): B day 15
+Batteries (`integration-day12/integ16-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server 754 tests; clippy
+`-D warnings`; check-flags; publish census; docs registry census; collector pytest; B's `verify-day15.py` OK; perf board;
+diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` (`integ16-serve-smoke-5090/`): `serve-smoke: 0 failed`.
+
+## Lane B day 16 (`0fae7e715`, pushed by the lane; the owed 5090 confirmation cell stopped on its precondition)
+Scaled shape (budget 1024 MiB, byte shares preserved, ctx 16384), pre-registered prediction matched the card's byte
+arithmetic to the token (slru 31,700 versus lru 29,550 computed tokens at both pairs, 56/56 rows per arm), but the
+precondition failed: `digests_identical=26/28`, one restored-suffix request per arm lineage differs from the cache-off
+boot, deterministic across runs; and the admission reclaim ladder (`[admit-oom] reclaim-on-defer`) evicted 12 prefix
+entries per run under VRAM pressure on this 24 GB card, which the target card never did. By the pre-registered rule the
+day produced no verdict (`-> DIGEST-FAIL`) and the 20-run cell was not run; `verify-day16.py` `DAY16 REPLAY OK: receipts
+consistent, precondition FAILED on this card, no verdict`; the decision record carries the contrary result as a
+paragraph, the decision text untouched (target-card receipts). Lead reading: the restored-versus-cold divergence on the
+5090 is a correctness question of its own (one numeric program per request), not a policy question; B day 17 probes it
+with the day-14 twin gate on that card. B also found two stale `|||||||` diff3 markers in `research/INDEX.md` on main
+(from another session's merge at #587); removed in integ18.
+## Main red since 09:47Z: the duplicate workflow key (fixed by #600)
+#590 (codex, merged by another session) and #592 (D day 13) each added a ci.yml job named `portable-suites`; a duplicate
+mapping key makes the workflow invalid, GitHub ran zero jobs (run 35585228365 on main, "workflow file issue"), and every
+push and PR since read as failure. PyYAML `safe_load` keeps the last key silently, so the day-13 YAML-load step could
+not have caught it; #590 was green because its merge ref predated #592 (the stale-merge-ref class is closed only by the
+branch-protection "require branch up to date" setting; owner decision). Lead hotfix #600 (`9ef2f04d6`): #590's
+duplicate block removed, its one unique step (the gpu-ci orchestration tests) kept in the surviving job under the
+unittest floor. CI green again on the first run after it.
+## Lane D day 14 (`2d2b70c55`, pushed by the lane; one entry point for the portable suites)
+Census (D's DAY14.md §1): `tools/portable-suites.sh` (#592: `--offline --no-fail-fast`, static and run-side skip census at
+budget 0, floor 300, banked raw log, teeth, `needs: changes`) versus `tools/ci-portable.sh` (#590: `cargo test --release
+--locked`, no census, no floor, no teeth, ungated); `gpu-ci.yml` runs no CPU suite, and its dispatch prerequisites are
+still in draft #566, so every dispatch refuses as unconfigured by design. Fold: `portable-suites.sh` is the one executor
+(`--locked` folded in), `ci-portable.sh` is a forward that nothing tracked calls, one ci.yml job, one `local-ci.sh`
+call (`CARGO_BUILD_JOBS=8 RUST_TEST_THREADS=8`), `gpu-ci.yml` untouched, `docs/CI.md` and TESTING name the one entry
+point. New guard: `tools/check-workflow-keys.py` (a strict loader that raises on duplicate mapping keys) in the `gates`
+job and as an unconditional pre-push arm with no skip switch (a ci.yml step cannot protect ci.yml from itself; the push
+can), teeth `tools/test_workflow_keys.sh`; proven on main's own broken file (`duplicate mapping key 'portable-suites' at
+line 401 column 3 (first at line 206)` while `safe_load` exits 0). Teeth verbatim: `test_portable_suites: 22 ok, 0 FAIL`
+(new arm 3: exactly one job, no live cargo test on the three crates outside the wrapper, the forward runs no cargo),
+`test_workflow_keys: 9 ok, 0 FAIL`, `check-workflow-keys: OK: 5 workflow files, no duplicate mapping keys`, wrapper
+`skip-census: 335 passed, 0 skipped (budget 0)`, `unittest-floor: OK: ran 11 tests (floor 9) for tools (test_gpu_ci.py)`,
+collector pytest 87 with both rig locks held. Post-hotfix merge clean (one job, one gpu-ci step). Findings kept:
+`research/**` read at test time versus the docs-only classifier (day 13); an untracked day-11 `build/` leftover in D's
+receipts (now un-ignored by the repo rule; left for D to add or remove).
+## integ18 (`lane/spill-integ18-20260921`): D day 14
+Batteries (`integration-day12/integ18-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server suite; clippy
+`-D warnings`; check-flags; publish census; docs registry census; collector pytest; `check-workflow-keys.py`;
+`test_portable_suites.sh`; `test_workflow_keys.sh`; the gpu-ci tests under the floor; perf board; diff-check: all rc=0.
+Also in integ18: two stale `|||||||` diff3 markers removed from `research/INDEX.md` (left by another session's merge).
+## Lane C day 15 (`8ed05bfc6`, pushed by the lane; ruling 15 Option B behind the door)
+Census before code (`HOSTPREFIX-DOOR.md` "Option B"): the pageable demote was twelve steps by reference with per-plane
+`memcpy_dtoh` plus `synchronize`, no ticket, fence or checksum; the single point where owned planes can leave the entry
+is `Option::take` on the entry's slots under `&mut PrefixEntry` (no placeholder, no device byte; a `CudaSlice::clone`
+would be a D2D copy). Code (`5f8d327e2`, `worker.rs`, door ON only): `host_kv_planes_through_contract` runs the
+`kv_tier_gate/active.rs` sequence on the pageable tier (pre-checks, `alloc_host` per plane in the OFF order, admission
+probe on the same ledger, `take()` the planes, `register_device`, `retain_device` twins, `record_producer`, one
+`submit_batch` with K and V per plane and the draft last, `synchronize`, `poll`, `take_destination`,
+`Completion::require`, `record_consumer`, `retire_source`, `take_plane` and `into_pooled` back into the same slots,
+`release_producer`, `retire`, `acknowledge`); each host plane is `HostPlaneBytes::Contract { lease, receipt }`;
+`bind_tier_image` refuses when its bundle checksum differs from the receipt; a quarantined completion is typed
+`SourceQuarantined` and latches the tier off; `HostTierLedger` adapts the server's `Arc<Mutex<..>>` governor to the
+engine's `Rc<RefCell<dyn BudgetGovernor>>` (one ledger, two handles); `inflight = 2 x layers + 2`. Promote, arena and
+OFF untouched. Target card, default spec env, OFF then ON, N=1, 600 W (`verify-day15.py` `DAY15 REPLAY: PASS`, 134
+checks): identity gate `ALL GREEN (teeth=0)` both with equal demote bytes and `verify ok`; identity plain the same;
+failure gate the same pre-existing `1 FAILURE(S)` and, under ON, the digest fault cell prints the receipt, `FAULT`, the
+named injected difference and `VERIFY FAILED`; lane A's tenant-reclaim fix arm `PASS` with 8 equal demotes and 8
+receipts; serve-smoke 33 lines equal; lane B's two gates identical. Receipt per ON demote, verbatim:
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=1 epochs=0/1/1 items=34 (16 KV planes, draft) complete=34 require=ok checksums_sha256=435f0da4...d8c73ab9 retired acknowledged
+Finding for the decide-by review (N=1, no claim): the contract's destinations are write-combined (`cudarc alloc_pinned`
+is `CU_MEMHOSTALLOC_WRITECOMBINED`), so the bind hash runs at WC speed; demote 149 versus 281 ms and promote 267 versus
+398 ms OFF versus ON on single observations; the promote delta is unexplained and is Option C's first cell; the
+allocation flag is engine territory (`tier_transfer.rs`), untouched. C merged lane A's day 12 from its lane branch
+before #597 landed; the same commits are now on `main`. Revuto on integ17 found two real bugs in the unwind, both fixed on
+the lane (`30704905f`): pre-submit refusals escalated to quarantine because `originals` still held a lease when the
+planes came back (now dropped first; typed `Refused`, tier on), and the abort retired straight after `record_consumer`
+with the result discarded (a leaked in-flight charge would have made every later demote refuse `Capacity`; now drained,
+never discarded, `TicketLeaked` latches the tier). One-shot faults `contract-presubmit`/`contract-postpublish` and
+`tools/kv-host-contract-fault-gate.sh` (`ALL GREEN` on the card) prove both. Reconciled with #598 by the lane.
+## integ17 (`lane/spill-integ17-20260921`): C day 15
+Batteries (`integration-day12/integ17-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server 761 tests; clippy
+`-D warnings`; check-flags; publish census; docs registry census; collector pytest; C's `verify-day15.py` PASS; perf board;
+diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` with the door unset (`integ17-serve-smoke-5090/`): `serve-smoke:
+0 failed`. Main `34ed99dfc` (#590) merged after the battery (ci, tools and docs only).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
-- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 merged (#591); C day 14 sealed and pushed (`fc7375817`); merged into integ13. B day 14 running (#523 items 1 and 3; fix and gate committed at 02:21Z, target-card run pending). E, F idle.
+- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 merged (#591); C day 14 merged (#594); C day 15 sealed and pushed (`8ed05bfc6`); merged into integ17. B day 14 sealed and pushed (`25d252c6f`); merged into integ14. A day 12 running (#384, #385 harness). E, F idle.
