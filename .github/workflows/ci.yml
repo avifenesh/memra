@@ -202,10 +202,7 @@ jobs:
       - name: Unit suite (memra-lanes — lane admission + streaming-audio scheduler)
         run: cargo test -p memra-lanes --lib
 
-  # ── public boundary: what the public repository is permitted to publish ─────────────────────
-  # Its own job because the two steps together are ~250 s and share nothing with the fixtures
-  # above; a red here names which question failed ("a new violation appeared" vs "an old
-  # exemption stopped describing reality") because they are SEPARATE steps.
+  # Portable suites retain their integration tests and compile-fail doctests.
   portable-suites:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -222,6 +219,10 @@ jobs:
       - name: GPU CI orchestration failure controls (CPU only)
         run: python3 -m unittest discover -s tools -p test_gpu_ci.py -v
 
+  # ── public boundary: what the public repository is permitted to publish ─────────────────────
+  # Its own job because the two steps together are ~250 s and share nothing with the fixtures
+  # above; a red here names which question failed ("a new violation appeared" vs "an old
+  # exemption stopped describing reality") because they are SEPARATE steps.
   boundary:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

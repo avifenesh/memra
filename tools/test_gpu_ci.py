@@ -87,6 +87,25 @@ class GpuCiTests(unittest.TestCase):
                 ci.fetch_manifest("https://example.invalid/manifest", "a" * 64, self.root / "manifest.json")
         self.assertFalse((self.root / "manifest.json").exists())
 
+    def test_reported_commit_comes_from_hash_bound_source_evidence(self):
+        source = json.dumps({"commit": "b" * 40}).encode()
+        (self.root / "source.json").write_bytes(source)
+        record = {"status": "qualified", "source": {
+            "path": "source.json", "sha256": hashlib.sha256(source).hexdigest(),
+        }}
+        (self.root / "record.json").write_text(json.dumps(record))
+        self.assertEqual(ci.sealed_commit(self.root), "b" * 40)
+        (self.root / "source.json").write_text(json.dumps({"commit": "a" * 40}))
+        with self.assertRaises(ci.Refused):
+            ci.sealed_commit(self.root)
+
+    def test_unsealed_or_noncanonical_source_cannot_supply_a_commit(self):
+        (self.root / "record.json").write_text(json.dumps({
+            "status": "pending", "source": {"path": "../source.json", "sha256": "a" * 64},
+        }))
+        with self.assertRaises(ci.Refused):
+            ci.sealed_commit(self.root)
+
     def archive(self, members):
         path = self.root / "capsule.tar"
         with tarfile.open(path, "w") as archive:

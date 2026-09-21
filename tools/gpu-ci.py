@@ -222,6 +222,21 @@ def allocation_check():
         check(cuda.cuCtxDestroy_v2(context))
 
 
+def sealed_commit(evidence):
+    """Extract the commit bound by a sealed source descriptor, never a workflow echo."""
+    record = json.loads((evidence / "record.json").read_text())
+    source_ref = record.get("source", {})
+    if record.get("status") != "qualified" or source_ref.get("path") != "source.json":
+        raise Refused("sealed record has no canonical source descriptor")
+    source_path = evidence / "source.json"
+    if source_path.is_symlink() or sha256(source_path) != source_ref.get("sha256"):
+        raise Refused("sealed source descriptor does not match its bytes")
+    commit = json.loads(source_path.read_text()).get("commit", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise Refused("sealed source has no immutable commit")
+    return commit
+
+
 def capture(repo, build, commit, out, inputs):
     verify_build(repo, build, commit)
     inventory = manifest((build / "oracle-manifest.json").read_bytes())
@@ -262,6 +277,12 @@ def capture(repo, build, commit, out, inputs):
     q = qualification(repo)
     record = json.loads((out / "record.json").read_text())
     q.validate_record(record, q.Evidence(out), repo, commit)
+    reported_commit = sealed_commit(out)
+    if reported_commit != commit:
+        raise Refused("sealed evidence identifies a different candidate")
+    if output := os.environ.get("GITHUB_OUTPUT"):
+        with open(output, "a") as stream:
+            stream.write(f"qualified-candidate={reported_commit}\n")
     print(f"SEALED GPU qualification: {commit}; exact binaries and native evidence retained")
 
 

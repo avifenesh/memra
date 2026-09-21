@@ -4,6 +4,8 @@ Standard public runners execute builds, static gates, and CPU tests in `ci.yml`.
 `portable-suites` also runs `memra-tier`, `memra-kv`, and `memra-cli`, including
 integration tests and doctests. `tools/ci-portable.sh` is shared with the native
 local-CI entrypoint; it does not run GPU tests or grant GPU qualification.
+The local caller caps compilation and test threads at eight while it overlaps
+the CPU chain with device checks; hosted execution retains its runner defaults.
 
 ## Requesting GPU qualification
 
@@ -13,8 +15,10 @@ RTX PRO 6000 card, physical GPU0, Ubuntu 24.04. It does not replace additional
 hardware, topology, model-support, HTTP, performance, or release-publication gates.
 
 1. The CPU job checks out that exact candidate and requires the content-bound
-   qualification tools described in `RELEASE-QUALIFICATION.md`. Missing prerequisites
-   refuse before a GPU job can be queued.
+   qualification tooling tracked in [PR #566](https://github.com/avifenesh/memra/pull/566).
+   Until that dependency and the pinned input configuration are present, dispatch
+   fails as an unconfigured request before GPU queueing and publishes no candidate
+   check run.
 2. A valid committed qualification for the same source inputs and OS profile may
    be reused through `release_qualification.py verify`. This reuses the original
    tested evidence, not a new binary or an mtime.
@@ -29,8 +33,10 @@ hardware, topology, model-support, HTTP, performance, or release-publication gat
    Failed or interrupted work cannot seal. Raw native output and lease records are
    retained as Actions artifacts, including failures.
 6. A separate standard-runner job attaches `gpu-qualification/pro-ubuntu24` to the
-   requested commit. A skipped GPU job passes only when the CPU verifier accepted
-   reusable native evidence. CPU build success alone never passes this check.
+   requested candidate, comparing it with the commit read from the validated sealed
+   source descriptor for a new capture. A skipped GPU job passes only when the CPU
+   verifier accepted reusable native evidence. CPU build success alone never passes
+   this check.
 
 Provisioning and cleanup are coordinator responsibilities. The engine workflow
 contains no provider credentials or fleet policy. The GPU job has a read-only
