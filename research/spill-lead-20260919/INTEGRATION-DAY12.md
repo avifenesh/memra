@@ -499,7 +499,17 @@ WC pair (`WC-DESTINATIONS.md`, `wc-pair.py`, target card, N=5 per arm per order,
 ms; promote minus inline demote 4.5 versus 33.2; steady-state demote 6 to 8 versus 136 to 140 ms; a first-touch step of
 about 35 ms on the first three demotes in both arms. The day-15 promote delta was the inline demote inside the promote's
 window. Not a verdict: the first cell of the decide-by review. C's push was refused by the perf-ci gate (one engine file,
-`tier_transfer.rs`); the lead integrates from the lane worktree and runs the full `local-ci.sh --perf` on integ19.
+`tier_transfer.rs`); the lead integrates from the lane worktree and runs the full `local-ci.sh --perf` on integ19. Revuto
+on integ19 found two more unwind bugs, both fixed on the lane (`4467131f6`): partial acceptance asked `recover_source`
+for rejected slots (now accepted items only; `Refused`, not `Latched`), and `published` was inferred from the item
+index (now the engine's answer through `cancel`); two new faults, six fault-gate cells `ALL GREEN` on the card.
+
+## Main moved again (14:00Z): #589, the release qualification gate
+Codex PR #589 (merged by another session, `435a57a75`) retires the perf-ci freshness arm and refuses any engine-source
+push as `UNQUALIFIED` unless a content-bound qualification receipt exists or the push is announced as development
+(`MEMRA_RELEASE_QUALIFICATION_MODE=development`, logged). integ19 and integ20 push in that mode and claim no
+qualification; every cell stays executed-not-qualified. Lanes' own pushes of engine changes now stop at that arm; the
+lead pushes the integ trees.
 
 ## Lead rulings, day 12 (continued)
 20. **The host-contracts door cannot be promoted at write-combined cost.** A 4x demote and a 14x promote wall-time
@@ -520,7 +530,8 @@ rule); attempt 2 correctness GREEN, serve-smoke 0 failed, hit gate ALL GREEN, th
 attempt 3 (the two cells, card idle at 56 C, the 26B model fully page-cached): `26b-plain-short: 208.71 tok/s [OK]`,
 `qwen9b-plain-short: 138.97 tok/s [OK]`, `perf stage: 0 fail, 0 warn`, rc=0. Read per the tripwire text: a one-cell drop
 with the other cell fine and correctness green is machine state, not the diff (the cells run `run-gen`, untouched here);
-the attempt-2 rows stay in the log as measured.
+the attempt-2 rows stay in the log as measured. Second CPU battery after the review round (`integ19-cpu-battery-2/`): all
+rc=0, 758 server tests, `DAY16 REVIEW REPLAY: PASS`; local 5090 serve-smoke with the door unset: `serve-smoke: 0 failed`.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.

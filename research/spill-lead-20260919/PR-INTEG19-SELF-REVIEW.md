@@ -25,7 +25,23 @@ promote arms, `WC-DESTINATIONS.md`, `wc-pair.py`, `verify-day16.py`; receipts sp
    on the rerun of the full suite; earlier integ batteries (integ12, integ14) show it passing. Order-dependent flake in a
    test unrelated to this PR's files; recorded, receipts kept, an issue follows if it recurs.
 
+7. **Revuto round, both fixed on the lane (`4467131f6`).** Partial acceptance: `sources` carries `(item, lease
+   pointer)` per op and the unwind hands `recover_source` only the accepted items, so a rejected slot is never asked
+   and the abort ends `Refused` with the ticket retired and acknowledged and every fresh destination released. Published
+   state: the abort no longer infers `published` from the item index; it asks the engine through `cancel`
+   (`PublicationRevoked` recovers the accepted sources per rule 1, `AlreadyPublished` records the consumer fence, drains
+   and retires the sources), so the classification is the engine's. Two new one-shot faults (`contract-promote-reject`,
+   a last op mis-sized by one byte and rejected by the engine's own validation; `contract-promote-readyview`, the first
+   `ready_view` published by the engine with the route told otherwise) drive two new fault-gate cells and two GPU unit
+   cells; `ALL GREEN` on six cells on the card, the aborted ticket consumed, no `TIER DISABLED`, drop, `Capacity`,
+   `leaked` or `already published` line; identity gate ALL GREEN OFF and ON with one H2D receipt per promote. A
+   source-text cell pins the cancel-then-recover-then-consumer order and the absence of `published: bool`.
+8. **Push regime changed under the PR.** Main gained #589 (release qualification): the perf-ci arm is retired and an
+   engine-source push is `UNQUALIFIED` unless announced as development; this tree pushes in the announced, logged
+   development mode and claims no qualification.
+
 ## Verification this review relied on
-integ19 CPU battery (`integration-day12/integ19-cpu-battery/`, with the server-suite rerun), full `tools/local-ci.sh
---perf` on this tree (`integ19-local-ci-perf/`), C's target-card gates and the WC pair. This rig cannot run the model
+integ19 CPU batteries (`integration-day12/integ19-cpu-battery/` with the server-suite rerun, `-2/` after the review
+round, plus the local serve-smoke), full `tools/local-ci.sh --perf` on the pre-review tree (`integ19-local-ci-perf/`,
+attempt 3 green after a settled tripwire), C's target-card gates and the WC pair. This rig cannot run the model
 gates.
