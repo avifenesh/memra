@@ -22,7 +22,15 @@ addition, `tools/kv-host-tenant-reclaim-gate.sh` (skimmed: arms, matchers, self-
 6. **Nits (not blocking).** The handoff import path (`insert` direct) still evaporates at the cap and is stated as open;
    the gate's fixed byte figures bind to this artifact and budget.
 
+7. **Revuto round, both fixed on the lane (`8b29b2aa3`, `2718b348a`).** The reclaim no longer evicts before the
+   image exists: a pure `tenant_share_reclaim_plan` runs before the D2H (an infeasible demotion still skips the PCIe trip
+   with the evaporation line), `reclaim_tenant_share` runs inside the `Ok(mut e)` arm after `bind_tier_image` and right
+   before `insert`, and any reclaim that still ends without an insert is booked as `prefix_host_tenant_reclaims_wasted`
+   with one WASTED line (four exits). FLAGS row, SERVING.md share-cap paragraph and the `/metrics` table now state the
+   new rule and both counters. Fix arm rerun on the card (`tenant-fix-r4`): `GATE ... PASS`, reclaims 4, wasted 0,
+   rejects 0, texts byte-identical to base; the base binary and receipts are unchanged.
+
 ## Verification this review relied on
-integ15 CPU battery (`integration-day12/integ15-cpu-battery/`): fmt, portable suites, memra-server suite, clippy,
+integ15 CPU batteries (`integration-day12/integ15-cpu-battery/` before the review fixes, `integ15-cpu-battery-2/` after; 749 server tests): fmt, portable suites, memra-server suite, clippy,
 censuses, collector pytest, A's `verify-day12.py`, perf board, diff-check; local 5090 serve-smoke on this tree
 (`integ15-serve-smoke-5090/`). A's target-card gate on both arms. This rig cannot run the model gates.
