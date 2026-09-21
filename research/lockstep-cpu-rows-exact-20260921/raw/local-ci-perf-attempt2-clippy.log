@@ -1,0 +1,6 @@
+== local-ci: clippy gate (-D warnings) ==
+error: function `submit_rows` is never used
+error: could not compile `memra-engine` (lib) due to 1 previous error
+error: could not compile `memra-engine` (lib test) due to 1 previous error
+local-ci: clippy gate FAILED — the workspace stays clippy-zero (fix or #[allow] with a stated reason)
+LOCAL_CI_RC=1

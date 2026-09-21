@@ -1,0 +1,120 @@
+c65f3c11ea6ba58b8634106ecbd3ea9c75830bcf
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running unittests src/lib.rs (target/release/deps/memra_engine-f0322ac70f8275b7)
+
+running 3 tests
+test tier_transfer::tests::alloc_host_delegates_with_the_default_kind_and_no_other_pinned_allocation_remains ... ok
+test tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver ... FAILED
+test tier_transfer::tests::pinned_kind_default_is_todays_write_combined_flag_bits ... ok
+
+failures:
+
+---- tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver stdout ----
+
+thread 'tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver' (89082) panicked at crates/memra-engine/src/tier_transfer.rs:1424:13:
+assertion `left == right` failed: WriteCombined
+  left: 6
+ right: 4
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 539 filtered out; finished in 0.25s
+
+error: test failed, to rerun pass `-p memra-engine --lib`
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/root/spill-receipts/a-day13/gputest-cell.sh",
+    "3"
+  ],
+  "exit_code": 101,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "failed",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 80984717768970,
+  "ended_monotonic_ns": 80985296934954,
+  "started_utc": "2026-09-21T13:21:39.711626+00:00",
+  "ended_utc": "2026-09-21T13:21:40.290794+00:00",
+  "elapsed_seconds": 0.579165984,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1325,
+    "sha256": "0de2cdbedc55da9e72a33f41953c65067b15bb4cd0965d0ec8afbdd40ba8b677"
+  },
+  "failure_quote": "thread 'tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver' (89082) panicked at crates/memra-engine/src/tier_transfer.rs:1424:13:",
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 443,
+      "sha256": "a76fe5ab53bc20261966a266b87a36330f40b4d47c34422c80c4e245ae79d41e"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "failure": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.failure.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

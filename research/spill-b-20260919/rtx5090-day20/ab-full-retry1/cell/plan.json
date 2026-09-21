@@ -1,0 +1,272 @@
+{
+  "args": {
+    "model": "/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "bin": "/home/avifenesh/projects/wt-spill-b-ab/target/release/memra-server",
+    "out": "/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day20/ab-full-retry1/cell",
+    "port": 18115,
+    "budget_mib": 1024,
+    "cohort_tokens": "1248,1344,1440,1536",
+    "turns": 12,
+    "start_tokens": 10912,
+    "grow_tokens": 160,
+    "return_every": 3,
+    "pairs": 5,
+    "ctx": 16384,
+    "max_tokens": 8,
+    "gpu_lock": "/tmp/memra-5090.lock"
+  },
+  "requests": [
+    {
+      "role": "seed1",
+      "tenant": 1,
+      "salt": "cohort-1",
+      "turn": null,
+      "idx": 0,
+      "prompt_ids": 1248,
+      "ids_sha256": "1b2215ddc2cd5d0ed6654ebc06e207d0fbba17367a56c64ac1a70fb0089290bd"
+    },
+    {
+      "role": "seed2",
+      "tenant": 1,
+      "salt": "cohort-1",
+      "turn": null,
+      "idx": 1,
+      "prompt_ids": 1248,
+      "ids_sha256": "1b2215ddc2cd5d0ed6654ebc06e207d0fbba17367a56c64ac1a70fb0089290bd"
+    },
+    {
+      "role": "seed1",
+      "tenant": 2,
+      "salt": "cohort-2",
+      "turn": null,
+      "idx": 2,
+      "prompt_ids": 1344,
+      "ids_sha256": "7f2d0cec7948f02c620d27e456b276b854bb48a2c6869b30ecf0366c83e5f36b"
+    },
+    {
+      "role": "seed2",
+      "tenant": 2,
+      "salt": "cohort-2",
+      "turn": null,
+      "idx": 3,
+      "prompt_ids": 1344,
+      "ids_sha256": "7f2d0cec7948f02c620d27e456b276b854bb48a2c6869b30ecf0366c83e5f36b"
+    },
+    {
+      "role": "seed1",
+      "tenant": 3,
+      "salt": "cohort-3",
+      "turn": null,
+      "idx": 4,
+      "prompt_ids": 1440,
+      "ids_sha256": "330fc52972b3cfa605e0237242275b3079ae5b7040eb42124a2850211028c501"
+    },
+    {
+      "role": "seed2",
+      "tenant": 3,
+      "salt": "cohort-3",
+      "turn": null,
+      "idx": 5,
+      "prompt_ids": 1440,
+      "ids_sha256": "330fc52972b3cfa605e0237242275b3079ae5b7040eb42124a2850211028c501"
+    },
+    {
+      "role": "seed1",
+      "tenant": 4,
+      "salt": "cohort-4",
+      "turn": null,
+      "idx": 6,
+      "prompt_ids": 1536,
+      "ids_sha256": "c26058787df9a7d827c626a2c8cef14eb8f7b8c5c1c9a233278a5fac2f8d46ae"
+    },
+    {
+      "role": "seed2",
+      "tenant": 4,
+      "salt": "cohort-4",
+      "turn": null,
+      "idx": 7,
+      "prompt_ids": 1536,
+      "ids_sha256": "c26058787df9a7d827c626a2c8cef14eb8f7b8c5c1c9a233278a5fac2f8d46ae"
+    },
+    {
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 1,
+      "idx": 8,
+      "prompt_ids": 10912,
+      "ids_sha256": "85fe036e2729157ee864e4d38e3e99158fa3cf7e86a1a9a374ac52292a261101"
+    },
+    {
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 2,
+      "idx": 9,
+      "prompt_ids": 11072,
+      "ids_sha256": "e132bb27e2b822ca5892533700facfb32f82a4c34c29ea23029deb3ea68b33cf"
+    },
+    {
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 3,
+      "idx": 10,
+      "prompt_ids": 11232,
+      "ids_sha256": "c4520459fc667f31106155669d88fe9992da17fa311be6a5c8df92456cc46711"
+    },
+    {
+      "role": "return",
+      "tenant": 1,
+      "salt": "cohort-1",
+      "turn": 3,
+      "idx": 11,
+      "prompt_ids": 1408,
+      "ids_sha256": "8ffea873c077e30b1fd2142472b6fed75cfb8f766bc7f2fbaed9978f2d307b48"
+    },
+    {
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 4,
+      "idx": 12,
+      "prompt_ids": 11392,
+      "ids_sha256": "843583ee6213a9508cb0f5356dde4886e7d85bacd39ca1f55582896025702ecf"
+    },
+    {
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 5,
+      "idx": 13,
+      "prompt_ids": 11552,
+      "ids_sha256": "57ac21675b5c3ea612424f28a47e18a9aae675aa7f055eb36ba9b87445107854"
+    },
+    {
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 6,
+      "idx": 14,
+      "prompt_ids": 11712,
+      "ids_sha256": "042bb2b6c9558d6409b212950d5c8941f9e289e09886475fff4d43e8e186738d"
+    },
+    {
+      "role": "return",
+      "tenant": 2,
+      "salt": "cohort-2",
+      "turn": 6,
+      "idx": 15,
+      "prompt_ids": 1504,
+      "ids_sha256": "813b52c59293ec6d984145acd66b3b68b61fa0b38aaf3bf653f5e0c50de3b212"
+    },
+    {
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 7,
+      "idx": 16,
+      "prompt_ids": 11872,
+      "ids_sha256": "c2ed4ab097e8196c937f27cd704079198bcf64031a59d0a4d6f41c1d60b6f412"
+    },
+    {
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 8,
+      "idx": 17,
+      "prompt_ids": 12032,
+      "ids_sha256": "225210833b40851cfc7f616eebb7a300760893bd81f3418bab0e9949378d8387"
+    },
+    {
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 9,
+      "idx": 18,
+      "prompt_ids": 12192,
+      "ids_sha256": "ab98aafa17dbaba8f4021d65f771fc4b0de8fe9845f9ffbeba75540d0933e09c"
+    },
+    {
+      "role": "return",
+      "tenant": 3,
+      "salt": "cohort-3",
+      "turn": 9,
+      "idx": 19,
+      "prompt_ids": 1600,
+      "ids_sha256": "c379f52053745739aed889a9b485dd804eeb432d7b0aa7357cb075d386cafdc3"
+    },
+    {
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 10,
+      "idx": 20,
+      "prompt_ids": 12352,
+      "ids_sha256": "7cde393b01538f9959fcf0eea4a4a90159a23161b67adc819a9892f33beddb9f"
+    },
+    {
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 11,
+      "idx": 21,
+      "prompt_ids": 12512,
+      "ids_sha256": "623f231bc1352c61c8769c64e78c57c675a962b3aa8fb338f9fcb8544e7edc9c"
+    },
+    {
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 12,
+      "idx": 22,
+      "prompt_ids": 12672,
+      "ids_sha256": "f6aadd809dfec7a7099159dd8a90224a58471d2eae12487d10be03df4c3bac92"
+    },
+    {
+      "role": "return",
+      "tenant": 4,
+      "salt": "cohort-4",
+      "turn": 12,
+      "idx": 23,
+      "prompt_ids": 1696,
+      "ids_sha256": "cee7a8ae2f5542c00813a2726dd2c52bd7d4465f98076a52c8c4b6fde5a1953d"
+    },
+    {
+      "role": "final",
+      "tenant": 1,
+      "salt": "cohort-1",
+      "turn": 12,
+      "idx": 24,
+      "prompt_ids": 1568,
+      "ids_sha256": "8abdbfdead3552ace5935d3190e060e2ef4c08e73ec43b39e11c8b2148ededf9"
+    },
+    {
+      "role": "final",
+      "tenant": 2,
+      "salt": "cohort-2",
+      "turn": 12,
+      "idx": 25,
+      "prompt_ids": 1664,
+      "ids_sha256": "5cb5068d98134ff02baaabeb24d163124e6309905dcc1d40bceabcb70269414c"
+    },
+    {
+      "role": "final",
+      "tenant": 3,
+      "salt": "cohort-3",
+      "turn": 12,
+      "idx": 26,
+      "prompt_ids": 1760,
+      "ids_sha256": "06def66aa9bcfd4b984afc5105ac76c226774eeb64affa949ec7f50a9b11136f"
+    },
+    {
+      "role": "final",
+      "tenant": 4,
+      "salt": "cohort-4",
+      "turn": 12,
+      "idx": 27,
+      "prompt_ids": 1856,
+      "ids_sha256": "2bf32cef1e3fce796c72ed5123405bf47cd837ddbd2d49ba644a133df30bab65"
+    }
+  ]
+}

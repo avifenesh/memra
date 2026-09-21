@@ -1,0 +1,101 @@
+4488d83fe5784c0289644e3eb500af6206dceafe
+8cbeda3a0991c7d1c0092934c92c8580c58c6e5957695c3b3dbcf931a254c5a7  /root/spill-receipts/a-day14/bins/tier-transfer-gate
+PINNED-DEFAULT device="NVIDIA RTX PRO 6000 Blackwell Server Edition" kind=cached flags=0
+PASS v1 transfer_cancel native CUDA
+PASS v1.1 transfer_complete_cancel native CUDA
+PASS v1.1 transfer_lifetime native events + injected observation loss + graph retention
+PASS v1.1 transfer_zero_accept Unsupported NVMe preserves owned input
+PASS v1.1 acceptance exhaustive native mixed batch; rejected sibling blocks publication
+PASS v1.2 transfer_completion_bytes native CUDA; stale epochs, ready publication, take once, authentic consumer fence
+PASS additive source retirement Busy while source consumer bound; host destination survives source release
+PASS v1.3 transfer_source_retirement native CUDA
+PINNED-DEFAULT device="NVIDIA RTX PRO 6000 Blackwell Server Edition" kind=cached flags=0
+PASS v1.3 device_hand_back native CUDA
+PASS additive dropped destination retains backing and charge until graph retirement and acknowledgement
+PASS rule cancelled-restore-recovers-source native CUDA
+PASS rule cancel-refused-after-source-consumed native CUDA
+PASS native governor zero after controlled drain
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/root/spill-receipts/a-day14/gate-cell.sh",
+    "3",
+    "conformance"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 86424580626388,
+  "ended_monotonic_ns": 86425143226910,
+  "started_utc": "2026-09-21T14:52:19.574484+00:00",
+  "ended_utc": "2026-09-21T14:52:20.137086+00:00",
+  "elapsed_seconds": 0.562600522,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1248,
+    "sha256": "6153a2f8f4a443168397522d115f7ac8ac727e3fda4a78e9016343518f519cf8"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 446,
+      "sha256": "1c34eb02bf56b6041711df014b73cdd6e303a0df94bf636734123c4e55f7d073"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

@@ -1,0 +1,7 @@
+| point | expected capture | published | restored (cached_tokens) | hit line | restored % grid | suffix | hit prime calls | off-grid calls | completion | finish | sha[:16] | cold sha[:16] | == cold | first diff char | grid ok | restored text | cold text |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | ---: | --- | --- | --- |
+| 12288 | 12288 | 12288 | 12288 | 12288 | 0 | 362 | 1 | 0 | 8 | length | a60e5ad8da5b0484 | a60e5ad8da5b0484 | yes | - | yes | ".Range referenced ReserveMoneySCRIPT/productchoices" | ".Range referenced ReserveMoneySCRIPT/productchoices" |
+| 12320 | 12320 | 12320 | 12320 | 12320 | 0 | 330 | 1 | 0 | 8 | length | a60e5ad8da5b0484 | a60e5ad8da5b0484 | yes | - | yes | ".Range referenced ReserveMoneySCRIPT/productchoices" | ".Range referenced ReserveMoneySCRIPT/productchoices" |
+| 12200 | 12160 | 12200 | 12200 | 12200 | 8 | 450 | 1 | 1 | 8 | length | a60e5ad8da5b0484 | a60e5ad8da5b0484 | yes | - | NO | ".Range referenced ReserveMoneySCRIPT/productchoices" | ".Range referenced ReserveMoneySCRIPT/productchoices" |
+| 12250 | 12224 | 12250 | 12250 | 12250 | 26 | 400 | 1 | 1 | 8 | length | a60e5ad8da5b0484 | a60e5ad8da5b0484 | yes | - | NO | ".Range referenced ReserveMoneySCRIPT/productchoices" | ".Range referenced ReserveMoneySCRIPT/productchoices" |
+| 12300 | 12256 | 12300 | 12300 | 12300 | 12 | 350 | 1 | 1 | 8 | length | a60e5ad8da5b0484 | a60e5ad8da5b0484 | yes | - | NO | ".Range referenced ReserveMoneySCRIPT/productchoices" | ".Range referenced ReserveMoneySCRIPT/productchoices" |

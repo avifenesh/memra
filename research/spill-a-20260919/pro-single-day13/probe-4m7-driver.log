@@ -1,0 +1,134 @@
+e78397f1a78c82d7481fc12d75a5268325420165a6b5f53fc6dcb44d768aefd3  /root/spill-receipts/a-day13/pinned-read-probe.py
+Python 3.12.3
+0.35 0.44 0.38 2/515 90018
+PROBE warmup {"flags": 4, "driver_flags": 6, "alloc_ms": 0.923391999094747, "sha256_ms": 39.1771769936895, "copy_ms": 18.820081997546367, "exact": true}
+PROBE warmup {"flags": 0, "driver_flags": 2, "alloc_ms": 0.8522110001649708, "sha256_ms": 2.195563996792771, "copy_ms": 0.6922409957041964, "exact": true}
+PROBE timed {"flags": 4, "driver_flags": 6, "alloc_ms": 0.736621004762128, "sha256_ms": 38.9041470043594, "copy_ms": 18.70672199584078, "exact": true, "order": 1, "pair": 1}
+PROBE timed {"flags": 0, "driver_flags": 2, "alloc_ms": 0.8140409918269143, "sha256_ms": 2.1923839958617464, "copy_ms": 0.6596610037377104, "exact": true, "order": 1, "pair": 1}
+PROBE timed {"flags": 4, "driver_flags": 6, "alloc_ms": 0.6854810053482652, "sha256_ms": 39.35265800100751, "copy_ms": 18.512741007725708, "exact": true, "order": 1, "pair": 2}
+PROBE timed {"flags": 0, "driver_flags": 2, "alloc_ms": 0.8082610002020374, "sha256_ms": 2.188924001529813, "copy_ms": 0.6747110019205138, "exact": true, "order": 1, "pair": 2}
+PROBE timed {"flags": 4, "driver_flags": 6, "alloc_ms": 0.7266409957082942, "sha256_ms": 39.20407699479256, "copy_ms": 18.585491998237558, "exact": true, "order": 1, "pair": 3}
+PROBE timed {"flags": 0, "driver_flags": 2, "alloc_ms": 0.8732010028325021, "sha256_ms": 2.1986339997965842, "copy_ms": 0.6759910029359162, "exact": true, "order": 1, "pair": 3}
+PROBE timed {"flags": 0, "driver_flags": 2, "alloc_ms": 0.6935609999345616, "sha256_ms": 2.1881330030737445, "copy_ms": 0.6805820012232289, "exact": true, "order": 2, "pair": 1}
+PROBE timed {"flags": 4, "driver_flags": 6, "alloc_ms": 0.7981410017237067, "sha256_ms": 39.09707699494902, "copy_ms": 18.719072002568282, "exact": true, "order": 2, "pair": 1}
+PROBE timed {"flags": 0, "driver_flags": 2, "alloc_ms": 0.8288919925689697, "sha256_ms": 2.194534012232907, "copy_ms": 0.6742709956597537, "exact": true, "order": 2, "pair": 2}
+PROBE timed {"flags": 4, "driver_flags": 6, "alloc_ms": 0.6973920098971575, "sha256_ms": 39.23414699966088, "copy_ms": 18.491141992853954, "exact": true, "order": 2, "pair": 2}
+PROBE timed {"flags": 0, "driver_flags": 2, "alloc_ms": 0.7986310083651915, "sha256_ms": 2.198953996412456, "copy_ms": 0.6578410102520138, "exact": true, "order": 2, "pair": 3}
+PROBE timed {"flags": 4, "driver_flags": 6, "alloc_ms": 0.7336609996855259, "sha256_ms": 39.25800799333956, "copy_ms": 18.49260099697858, "exact": true, "order": 2, "pair": 3}
+RESULT {"cell": "pinned-read-probe", "bytes": 4718592, "pairs_per_order": 3, "python_sha256": true, "summary": {"write-combined": {"n": 6, "sha256_ms_median": 39.21911199722672, "copy_ms_median": 18.549116502981633, "alloc_ms_median": 0.73015099769691, "sha256_MBps": 120.31358589489899, "driver_flags": [6], "exact_all": true}, "cached": {"n": 6, "sha256_ms_median": 2.1934590040473267, "copy_ms_median": 0.6744909987901337, "alloc_ms_median": 0.8111509960144758, "sha256_MBps": 2151.2104813873193, "driver_flags": [2], "exact_all": true}}, "qualification": false}
+0.35 0.44 0.38 2/515 90026
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/root/spill-receipts/a-day13/probe-cell.sh",
+    "3",
+    "4718592",
+    "3"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 81815711074850,
+  "ended_monotonic_ns": 81816524051964,
+  "started_utc": "2026-09-21T13:35:30.704932+00:00",
+  "ended_utc": "2026-09-21T13:35:31.517911+00:00",
+  "elapsed_seconds": 0.812977114,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 3181,
+    "sha256": "a5e293078c219e9386082461debcc51b70c6ea2a553052263792ecc828b367a2"
+  },
+  "failure_quote": null,
+  "result": {
+    "cell": "pinned-read-probe",
+    "bytes": 4718592,
+    "pairs_per_order": 3,
+    "python_sha256": true,
+    "summary": {
+      "write-combined": {
+        "n": 6,
+        "sha256_ms_median": 39.21911199722672,
+        "copy_ms_median": 18.549116502981633,
+        "alloc_ms_median": 0.73015099769691,
+        "sha256_MBps": 120.31358589489899,
+        "driver_flags": [
+          6
+        ],
+        "exact_all": true
+      },
+      "cached": {
+        "n": 6,
+        "sha256_ms_median": 2.1934590040473267,
+        "copy_ms_median": 0.6744909987901337,
+        "alloc_ms_median": 0.8111509960144758,
+        "sha256_MBps": 2151.2104813873193,
+        "driver_flags": [
+          2
+        ],
+        "exact_all": true
+      }
+    },
+    "qualification": false
+  },
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 554,
+      "sha256": "52f60c97f3abfe91b2aa51225bde7311dabebad3ff6b292b06bf10aaf7c58e9c"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

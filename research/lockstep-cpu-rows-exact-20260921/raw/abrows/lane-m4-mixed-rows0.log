@@ -1,0 +1,310 @@
+[w4a16] artifact contract accepted: expert_weights=nvfp4 expert_activations=bf16-rounded q8_expert_program=disabled
+[loader-law] WARNING: output.weight loads as 2D Float ne=[4096, 120832] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_k.weight loads as 2D Float ne=[4096, 1024] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_v.weight loads as 2D Float ne=[4096, 1024] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_output.weight loads as 2D Float ne=[8192, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_gate.weight loads as 2D Float ne=[4096, 13312] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up.weight loads as 2D Float ne=[4096, 13312] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down.weight loads as 2D Float ne=[13312, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[slab-populate] blk1-gate: 648 MiB in 0.1s (7624 MiB/s)
+[slab-populate] blk1-up: 648 MiB in 0.1s (8107 MiB/s)
+[slab-populate] blk1-down: 648 MiB in 0.1s (8686 MiB/s)
+[moe] resident-experts decision (dev0): experts 165.11GB + trunk 0.00GB vs free 98.09GB (expert budget 96.09GB) -> SLRU cache
+[loader-law] WARNING: blk.*.ffn_gate_shexp.weight loads as 2D Float ne=[4096, 1536] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up_shexp.weight loads as 2D Float ne=[4096, 1536] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down_shexp.weight loads as 2D Float ne=[1536, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[slab-populate] blk2-gate: 648 MiB in 0.1s (8462 MiB/s)
+[slab-populate] blk2-up: 648 MiB in 0.1s (8148 MiB/s)
+[slab-populate] blk2-down: 648 MiB in 0.1s (7964 MiB/s)
+[slab-populate] blk3-gate: 648 MiB in 0.1s (9238 MiB/s)
+[slab-populate] blk3-up: 648 MiB in 0.1s (9732 MiB/s)
+[slab-populate] blk3-down: 648 MiB in 0.1s (9765 MiB/s)
+[slab-populate] blk4-gate: 648 MiB in 0.1s (9857 MiB/s)
+[slab-populate] blk4-up: 648 MiB in 0.1s (9633 MiB/s)
+[slab-populate] blk4-down: 648 MiB in 0.1s (9681 MiB/s)
+[slab-populate] blk5-gate: 648 MiB in 0.1s (11217 MiB/s)
+[slab-populate] blk5-up: 648 MiB in 0.1s (11828 MiB/s)
+[slab-populate] blk5-down: 648 MiB in 0.1s (11747 MiB/s)
+[slab-populate] blk6-gate: 648 MiB in 0.1s (11492 MiB/s)
+[slab-populate] blk6-up: 648 MiB in 0.1s (11592 MiB/s)
+[slab-populate] blk6-down: 648 MiB in 0.1s (11474 MiB/s)
+[slab-populate] blk7-gate: 648 MiB in 0.1s (11235 MiB/s)
+[slab-populate] blk7-up: 648 MiB in 0.1s (11366 MiB/s)
+[slab-populate] blk7-down: 648 MiB in 0.1s (11424 MiB/s)
+[slab-populate] blk8-gate: 648 MiB in 0.1s (11381 MiB/s)
+[slab-populate] blk8-up: 648 MiB in 0.1s (12709 MiB/s)
+[slab-populate] blk8-down: 648 MiB in 0.1s (12593 MiB/s)
+[slab-populate] blk9-gate: 648 MiB in 0.1s (12679 MiB/s)
+[slab-populate] blk9-up: 648 MiB in 0.1s (12697 MiB/s)
+[slab-populate] blk9-down: 648 MiB in 0.1s (12824 MiB/s)
+[slab-populate] blk10-gate: 648 MiB in 0.1s (12587 MiB/s)
+[slab-populate] blk10-up: 648 MiB in 0.1s (12731 MiB/s)
+[slab-populate] blk10-down: 648 MiB in 0.1s (12752 MiB/s)
+[slab-populate] blk11-gate: 648 MiB in 0.1s (12656 MiB/s)
+[slab-populate] blk11-up: 648 MiB in 0.1s (12773 MiB/s)
+[slab-populate] blk11-down: 648 MiB in 0.1s (12527 MiB/s)
+[slab-populate] blk12-gate: 648 MiB in 0.1s (12480 MiB/s)
+[slab-populate] blk12-up: 648 MiB in 0.1s (12457 MiB/s)
+[slab-populate] blk12-down: 648 MiB in 0.1s (12501 MiB/s)
+[slab-populate] blk13-gate: 648 MiB in 0.1s (12720 MiB/s)
+[slab-populate] blk13-up: 648 MiB in 0.1s (11206 MiB/s)
+[slab-populate] blk13-down: 648 MiB in 0.1s (11255 MiB/s)
+[slab-populate] blk14-gate: 648 MiB in 0.1s (10354 MiB/s)
+[slab-populate] blk14-up: 648 MiB in 0.1s (10731 MiB/s)
+[slab-populate] blk14-down: 648 MiB in 0.1s (10921 MiB/s)
+[slab-populate] blk15-gate: 648 MiB in 0.1s (10454 MiB/s)
+[slab-populate] blk15-up: 648 MiB in 0.1s (11465 MiB/s)
+[slab-populate] blk15-down: 648 MiB in 0.1s (11497 MiB/s)
+[slab-populate] blk16-gate: 648 MiB in 0.1s (11063 MiB/s)
+[slab-populate] blk16-up: 648 MiB in 0.1s (10878 MiB/s)
+[slab-populate] blk16-down: 648 MiB in 0.1s (10652 MiB/s)
+[slab-populate] blk17-gate: 648 MiB in 0.1s (10463 MiB/s)
+[slab-populate] blk17-up: 648 MiB in 0.1s (11832 MiB/s)
+[slab-populate] blk17-down: 648 MiB in 0.1s (11578 MiB/s)
+[slab-populate] blk18-gate: 648 MiB in 0.1s (11967 MiB/s)
+[slab-populate] blk18-up: 648 MiB in 0.1s (11750 MiB/s)
+[slab-populate] blk18-down: 648 MiB in 0.1s (11532 MiB/s)
+[slab-populate] blk19-gate: 648 MiB in 0.1s (10664 MiB/s)
+[slab-populate] blk19-up: 648 MiB in 0.1s (11096 MiB/s)
+[slab-populate] blk19-down: 648 MiB in 0.1s (10460 MiB/s)
+[slab-populate] blk20-gate: 648 MiB in 0.1s (12656 MiB/s)
+[slab-populate] blk20-up: 648 MiB in 0.1s (12795 MiB/s)
+[slab-populate] blk20-down: 648 MiB in 0.1s (12821 MiB/s)
+[slab-populate] blk21-gate: 648 MiB in 0.1s (12177 MiB/s)
+[slab-populate] blk21-up: 648 MiB in 0.1s (12648 MiB/s)
+[slab-populate] blk21-down: 648 MiB in 0.1s (12452 MiB/s)
+[slab-populate] blk22-gate: 648 MiB in 0.1s (12500 MiB/s)
+[slab-populate] blk22-up: 648 MiB in 0.1s (12533 MiB/s)
+[slab-populate] blk22-down: 648 MiB in 0.1s (12865 MiB/s)
+[slab-populate] blk23-gate: 648 MiB in 0.1s (10901 MiB/s)
+[slab-populate] blk23-up: 648 MiB in 0.1s (9351 MiB/s)
+[slab-populate] blk23-down: 648 MiB in 0.1s (9712 MiB/s)
+[slab-populate] blk24-gate: 648 MiB in 0.1s (9911 MiB/s)
+[slab-populate] blk24-up: 648 MiB in 0.1s (8582 MiB/s)
+[slab-populate] blk24-down: 648 MiB in 0.1s (8479 MiB/s)
+[slab-populate] blk25-gate: 648 MiB in 0.1s (9689 MiB/s)
+[slab-populate] blk25-up: 648 MiB in 0.1s (10148 MiB/s)
+[slab-populate] blk25-down: 648 MiB in 0.1s (10271 MiB/s)
+[slab-populate] blk26-gate: 648 MiB in 0.1s (9676 MiB/s)
+[slab-populate] blk26-up: 648 MiB in 0.1s (10717 MiB/s)
+[slab-populate] blk26-down: 648 MiB in 0.1s (10472 MiB/s)
+[slab-populate] blk27-gate: 648 MiB in 0.1s (8874 MiB/s)
+[slab-populate] blk27-up: 648 MiB in 0.1s (8901 MiB/s)
+[slab-populate] blk27-down: 648 MiB in 0.1s (10267 MiB/s)
+[slab-populate] blk28-gate: 648 MiB in 0.1s (11473 MiB/s)
+[slab-populate] blk28-up: 648 MiB in 0.1s (10552 MiB/s)
+[slab-populate] blk28-down: 648 MiB in 0.1s (9846 MiB/s)
+[slab-populate] blk29-gate: 648 MiB in 0.1s (8911 MiB/s)
+[slab-populate] blk29-up: 648 MiB in 0.1s (9887 MiB/s)
+[slab-populate] blk29-down: 648 MiB in 0.1s (9565 MiB/s)
+[slab-populate] blk30-gate: 648 MiB in 0.1s (10228 MiB/s)
+[slab-populate] blk30-up: 648 MiB in 0.1s (9800 MiB/s)
+[slab-populate] blk30-down: 648 MiB in 0.1s (9484 MiB/s)
+[slab-populate] blk31-gate: 648 MiB in 0.1s (9550 MiB/s)
+[slab-populate] blk31-up: 648 MiB in 0.1s (10239 MiB/s)
+[slab-populate] blk31-down: 648 MiB in 0.1s (10362 MiB/s)
+[slab-populate] blk32-gate: 648 MiB in 0.1s (9188 MiB/s)
+[slab-populate] blk32-up: 648 MiB in 0.1s (9466 MiB/s)
+[slab-populate] blk32-down: 648 MiB in 0.1s (10353 MiB/s)
+[slab-populate] blk33-gate: 648 MiB in 0.1s (11238 MiB/s)
+[slab-populate] blk33-up: 648 MiB in 0.1s (11004 MiB/s)
+[slab-populate] blk33-down: 648 MiB in 0.1s (9547 MiB/s)
+[slab-populate] blk34-gate: 648 MiB in 0.1s (9626 MiB/s)
+[slab-populate] blk34-up: 648 MiB in 0.1s (9097 MiB/s)
+[slab-populate] blk34-down: 648 MiB in 0.1s (9821 MiB/s)
+[slab-populate] blk35-gate: 648 MiB in 0.1s (9344 MiB/s)
+[slab-populate] blk35-up: 648 MiB in 0.1s (10119 MiB/s)
+[slab-populate] blk35-down: 648 MiB in 0.1s (11299 MiB/s)
+[slab-populate] blk36-gate: 648 MiB in 0.1s (11360 MiB/s)
+[slab-populate] blk36-up: 648 MiB in 0.1s (11420 MiB/s)
+[slab-populate] blk36-down: 648 MiB in 0.1s (9654 MiB/s)
+[slab-populate] blk37-gate: 648 MiB in 0.1s (8935 MiB/s)
+[slab-populate] blk37-up: 648 MiB in 0.1s (9439 MiB/s)
+[slab-populate] blk37-down: 648 MiB in 0.1s (11452 MiB/s)
+[slab-populate] blk38-gate: 648 MiB in 0.1s (10195 MiB/s)
+[slab-populate] blk38-up: 648 MiB in 0.1s (11077 MiB/s)
+[slab-populate] blk38-down: 648 MiB in 0.1s (10322 MiB/s)
+[slab-populate] blk39-gate: 648 MiB in 0.1s (10137 MiB/s)
+[slab-populate] blk39-up: 648 MiB in 0.1s (10894 MiB/s)
+[slab-populate] blk39-down: 648 MiB in 0.1s (10600 MiB/s)
+[slab-populate] blk40-gate: 648 MiB in 0.1s (10553 MiB/s)
+[slab-populate] blk40-up: 648 MiB in 0.1s (11453 MiB/s)
+[slab-populate] blk40-down: 648 MiB in 0.1s (10872 MiB/s)
+[slab-populate] blk41-gate: 648 MiB in 0.1s (9118 MiB/s)
+[slab-populate] blk41-up: 648 MiB in 0.1s (9843 MiB/s)
+[slab-populate] blk41-down: 648 MiB in 0.1s (10300 MiB/s)
+[slab-populate] blk42-gate: 648 MiB in 0.1s (10574 MiB/s)
+[slab-populate] blk42-up: 648 MiB in 0.1s (11431 MiB/s)
+[slab-populate] blk42-down: 648 MiB in 0.1s (10327 MiB/s)
+[slab-populate] blk43-gate: 648 MiB in 0.1s (9753 MiB/s)
+[slab-populate] blk43-up: 648 MiB in 0.1s (9711 MiB/s)
+[slab-populate] blk43-down: 648 MiB in 0.1s (9234 MiB/s)
+[slab-populate] blk44-gate: 648 MiB in 0.1s (9901 MiB/s)
+[slab-populate] blk44-up: 648 MiB in 0.1s (10410 MiB/s)
+[slab-populate] blk44-down: 648 MiB in 0.1s (10848 MiB/s)
+[slab-populate] blk45-gate: 648 MiB in 0.1s (10373 MiB/s)
+[slab-populate] blk45-up: 648 MiB in 0.1s (11498 MiB/s)
+[slab-populate] blk45-down: 648 MiB in 0.1s (10987 MiB/s)
+[slab-populate] blk46-gate: 648 MiB in 0.1s (10019 MiB/s)
+[slab-populate] blk46-up: 648 MiB in 0.1s (11084 MiB/s)
+[slab-populate] blk46-down: 648 MiB in 0.1s (10250 MiB/s)
+[slab-populate] blk47-gate: 648 MiB in 0.1s (11161 MiB/s)
+[slab-populate] blk47-up: 648 MiB in 0.1s (10612 MiB/s)
+[slab-populate] blk47-down: 648 MiB in 0.1s (10372 MiB/s)
+[slab-populate] blk48-gate: 648 MiB in 0.1s (9228 MiB/s)
+[slab-populate] blk48-up: 648 MiB in 0.1s (10777 MiB/s)
+[slab-populate] blk48-down: 648 MiB in 0.1s (10627 MiB/s)
+[slab-populate] blk49-gate: 648 MiB in 0.1s (9027 MiB/s)
+[slab-populate] blk49-up: 648 MiB in 0.1s (9016 MiB/s)
+[slab-populate] blk49-down: 648 MiB in 0.1s (9939 MiB/s)
+[slab-populate] blk50-gate: 648 MiB in 0.1s (8787 MiB/s)
+[slab-populate] blk50-up: 648 MiB in 0.1s (10353 MiB/s)
+[slab-populate] blk50-down: 648 MiB in 0.1s (10757 MiB/s)
+[slab-populate] blk51-gate: 648 MiB in 0.1s (10964 MiB/s)
+[slab-populate] blk51-up: 648 MiB in 0.1s (11252 MiB/s)
+[slab-populate] blk51-down: 648 MiB in 0.1s (10678 MiB/s)
+[slab-populate] blk52-gate: 648 MiB in 0.1s (10928 MiB/s)
+[slab-populate] blk52-up: 648 MiB in 0.1s (9759 MiB/s)
+[slab-populate] blk52-down: 648 MiB in 0.1s (10171 MiB/s)
+[slab-populate] blk53-gate: 648 MiB in 0.1s (10944 MiB/s)
+[slab-populate] blk53-up: 648 MiB in 0.1s (9861 MiB/s)
+[slab-populate] blk53-down: 648 MiB in 0.1s (11938 MiB/s)
+[slab-populate] blk54-gate: 648 MiB in 0.1s (10886 MiB/s)
+[slab-populate] blk54-up: 648 MiB in 0.1s (10439 MiB/s)
+[slab-populate] blk54-down: 648 MiB in 0.1s (11025 MiB/s)
+[slab-populate] blk55-gate: 648 MiB in 0.1s (9566 MiB/s)
+[slab-populate] blk55-up: 648 MiB in 0.1s (11962 MiB/s)
+[slab-populate] blk55-down: 648 MiB in 0.1s (9872 MiB/s)
+[slab-populate] blk56-gate: 648 MiB in 0.1s (10127 MiB/s)
+[slab-populate] blk56-up: 648 MiB in 0.1s (9005 MiB/s)
+[slab-populate] blk56-down: 648 MiB in 0.1s (10031 MiB/s)
+[slab-populate] blk57-gate: 648 MiB in 0.1s (10345 MiB/s)
+[slab-populate] blk57-up: 648 MiB in 0.1s (10624 MiB/s)
+[slab-populate] blk57-down: 648 MiB in 0.1s (10412 MiB/s)
+[slab-populate] blk58-gate: 648 MiB in 0.1s (10185 MiB/s)
+[slab-populate] blk58-up: 648 MiB in 0.1s (9792 MiB/s)
+[slab-populate] blk58-down: 648 MiB in 0.1s (9422 MiB/s)
+[slab-populate] blk59-gate: 648 MiB in 0.0s (13542 MiB/s)
+[slab-populate] blk59-up: 648 MiB in 0.0s (14854 MiB/s)
+[slab-populate] blk59-down: 648 MiB in 0.0s (14914 MiB/s)
+[slab-populate] blk60-gate: 648 MiB in 0.0s (14958 MiB/s)
+[slab-populate] blk60-up: 648 MiB in 0.0s (14684 MiB/s)
+[slab-populate] blk60-down: 648 MiB in 0.0s (14453 MiB/s)
+[slab-populate] blk61-gate: 648 MiB in 0.0s (14198 MiB/s)
+[slab-populate] blk61-up: 648 MiB in 0.0s (14228 MiB/s)
+[slab-populate] blk61-down: 648 MiB in 0.1s (12851 MiB/s)
+[slab-populate] blk62-gate: 648 MiB in 0.1s (9645 MiB/s)
+[slab-populate] blk62-up: 648 MiB in 0.1s (9988 MiB/s)
+[slab-populate] blk62-down: 648 MiB in 0.1s (10205 MiB/s)
+[slab-populate] blk63-gate: 648 MiB in 0.1s (9711 MiB/s)
+[slab-populate] blk63-up: 648 MiB in 0.1s (9787 MiB/s)
+[slab-populate] blk63-down: 648 MiB in 0.1s (10843 MiB/s)
+[slab-populate] blk64-gate: 648 MiB in 0.1s (11000 MiB/s)
+[slab-populate] blk64-up: 648 MiB in 0.1s (10600 MiB/s)
+[slab-populate] blk64-down: 648 MiB in 0.1s (10812 MiB/s)
+[slab-populate] blk65-gate: 648 MiB in 0.1s (9597 MiB/s)
+[slab-populate] blk65-up: 648 MiB in 0.1s (10173 MiB/s)
+[slab-populate] blk65-down: 648 MiB in 0.1s (10266 MiB/s)
+[slab-populate] blk66-gate: 648 MiB in 0.1s (9586 MiB/s)
+[slab-populate] blk66-up: 648 MiB in 0.1s (9422 MiB/s)
+[slab-populate] blk66-down: 648 MiB in 0.1s (10584 MiB/s)
+[slab-populate] blk67-gate: 648 MiB in 0.1s (9152 MiB/s)
+[slab-populate] blk67-up: 648 MiB in 0.1s (9130 MiB/s)
+[slab-populate] blk67-down: 648 MiB in 0.1s (10711 MiB/s)
+[slab-populate] blk68-gate: 648 MiB in 0.1s (11083 MiB/s)
+[slab-populate] blk68-up: 648 MiB in 0.1s (10153 MiB/s)
+[slab-populate] blk68-down: 648 MiB in 0.1s (8953 MiB/s)
+[slab-populate] blk69-gate: 648 MiB in 0.1s (8994 MiB/s)
+[slab-populate] blk69-up: 648 MiB in 0.1s (8960 MiB/s)
+[slab-populate] blk69-down: 648 MiB in 0.1s (8953 MiB/s)
+[slab-populate] blk70-gate: 648 MiB in 0.1s (9226 MiB/s)
+[slab-populate] blk70-up: 648 MiB in 0.1s (9815 MiB/s)
+[slab-populate] blk70-down: 648 MiB in 0.1s (10680 MiB/s)
+[slab-populate] blk71-gate: 648 MiB in 0.1s (9816 MiB/s)
+[slab-populate] blk71-up: 648 MiB in 0.1s (9551 MiB/s)
+[slab-populate] blk71-down: 648 MiB in 0.1s (10219 MiB/s)
+[slab-populate] blk72-gate: 648 MiB in 0.1s (8269 MiB/s)
+[slab-populate] blk72-up: 648 MiB in 0.1s (8875 MiB/s)
+[slab-populate] blk72-down: 648 MiB in 0.1s (10358 MiB/s)
+[slab-populate] blk73-gate: 648 MiB in 0.1s (8882 MiB/s)
+[slab-populate] blk73-up: 648 MiB in 0.1s (9016 MiB/s)
+[slab-populate] blk73-down: 648 MiB in 0.1s (9594 MiB/s)
+[slab-populate] blk74-gate: 648 MiB in 0.1s (7730 MiB/s)
+[slab-populate] blk74-up: 648 MiB in 0.1s (9532 MiB/s)
+[slab-populate] blk74-down: 648 MiB in 0.1s (7607 MiB/s)
+[slab-populate] blk75-gate: 648 MiB in 0.1s (6804 MiB/s)
+[slab-populate] blk75-up: 648 MiB in 0.1s (6989 MiB/s)
+[slab-populate] blk75-down: 648 MiB in 0.1s (6840 MiB/s)
+[slab-populate] blk76-gate: 648 MiB in 0.1s (6896 MiB/s)
+[slab-populate] blk76-up: 648 MiB in 0.1s (6979 MiB/s)
+[slab-populate] blk76-down: 648 MiB in 0.1s (7050 MiB/s)
+[slab-populate] blk77-gate: 648 MiB in 0.1s (6798 MiB/s)
+[slab-populate] blk77-up: 648 MiB in 0.1s (6849 MiB/s)
+[slab-populate] blk77-down: 648 MiB in 0.1s (6566 MiB/s)
+[slab-populate] blk78-gate: 648 MiB in 0.1s (5916 MiB/s)
+[slab-populate] blk78-up: 648 MiB in 0.1s (5953 MiB/s)
+[slab-populate] blk78-down: 648 MiB in 0.1s (6581 MiB/s)
+[slab-populate] blk79-gate: 648 MiB in 0.1s (6478 MiB/s)
+[slab-populate] blk79-up: 648 MiB in 0.1s (6405 MiB/s)
+[slab-populate] blk79-down: 648 MiB in 0.1s (5578 MiB/s)
+loaded Hy3 (80 trunk layers)
+prompts: 4 distinct across m=4 streams (lens [20, 25, 23, 26]), n_new=32
+[moe-cache] size-aware fixed slots: 16409 slots in 1 classes, 58.07 GB / 58.07 GB budget
+[spill-pread] enabled: depth=32 buffer_bytes=3538944 total_pinned_bytes=113246208 (bounded O_DIRECT worker prefetch, caller-thread compute-stream H2D, mmap error fallback)
+[moe-cache] residency frozen: 16409 slots, 15675 resident blocks; 5225 complete experts, 0 one-projection fragments, 0 two-projection fragments (0 stranded blocks)
+[moe-cache] freeze profile restored: 15675/15675 blocks restaged from /root/lane/hy3.freeze
+[fa-pool] grow #0 dev=0 o_len 0 -> 8192 ml_len 0 -> 64 (retired kept, zero=false)
+[glm5-vrows-t1-deny] dev=0 il=1 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=false uniform=true n_used=8 sigmoid_cfg=true pre_clamp=false cpu_hybrid=true observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=2 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=false uniform=true n_used=8 sigmoid_cfg=true pre_clamp=false cpu_hybrid=true observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=3 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=false uniform=true n_used=8 sigmoid_cfg=true pre_clamp=false cpu_hybrid=true observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=4 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=false uniform=true n_used=8 sigmoid_cfg=true pre_clamp=false cpu_hybrid=true observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=5 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=false uniform=true n_used=8 sigmoid_cfg=true pre_clamp=false cpu_hybrid=true observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=6 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=false uniform=true n_used=8 sigmoid_cfg=true pre_clamp=false cpu_hybrid=true observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=7 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=false uniform=true n_used=8 sigmoid_cfg=true pre_clamp=false cpu_hybrid=true observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=8 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=false uniform=true n_used=8 sigmoid_cfg=true pre_clamp=false cpu_hybrid=true observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[memra] experimental CPU expert backend: /root/lane/libmemra-cpu-experts.so (threads=16)
+[memra-cpu] RAM headroom cap: requested=60.00 GiB available=1074.65 GiB reserve=8.00 GiB effective=60.00 GiB
+[memra-cpu] normal-RAM expert cache: 60.00 GiB policy=lru io=direct
+stream0 step 0: argmax 503 top2-margin 1.784156e1
+stream0 step 1: argmax 29463 top2-margin 1.772148e1
+stream0 step 2: argmax 1512 top2-margin 8.176077e0
+stream0 step 3: argmax 1208 top2-margin 2.010009e1
+stream0 step 4: argmax 47736 top2-margin 1.498914e1
+stream0 step 5: argmax 503 top2-margin 2.052575e1
+stream0 step 6: argmax 316 top2-margin 7.863861e0
+stream0 step 7: argmax 244 top2-margin 1.429990e1
+stream0 step 8: argmax 9321 top2-margin 6.293554e0
+stream0 step 9: argmax 287 top2-margin 1.198953e1
+stream0 step 10: argmax 4791 top2-margin 1.038750e1
+stream0 step 11: argmax 1017 top2-margin 2.027633e1
+stream0 step 12: argmax 102155 top2-margin 2.054604e0
+stream0 step 13: argmax 17366 top2-margin 1.497235e1
+stream0 step 14: argmax 3791 top2-margin 7.178764e-1
+stream0 step 15: argmax 2438 top2-margin 2.222897e0
+stream0 step 16: argmax 28615 top2-margin 7.423016e0
+stream0 step 17: argmax 341 top2-margin 7.708740e-2
+stream0 step 18: argmax 68 top2-margin 2.144051e0
+stream0 step 19: argmax 2693 top2-margin 1.811287e1
+stream0 step 20: argmax 1871 top2-margin 1.938354e1
+stream0 step 21: argmax 32195 top2-margin 3.216812e0
+stream0 step 22: argmax 25215 top2-margin 1.469785e1
+stream0 step 23: argmax 8 top2-margin 1.290544e1
+stream0 step 24: argmax 2553 top2-margin 8.810545e0
+stream0 step 25: argmax 9687 top2-margin 1.383349e1
+stream0 step 26: argmax 252 top2-margin 2.052687e1
+stream0 step 27: argmax 3602 top2-margin 3.500519e0
+stream0 step 28: argmax 5500 top2-margin 1.154430e1
+stream0 step 29: argmax 13 top2-margin 4.314995e-1
+stream0 step 30: argmax 286 top2-margin 1.592089e1
+stream0 step 31: argmax 503 top2-margin 1.012429e1
+stream0 step 32: argmax 20743 top2-margin 4.336121e0
+lockstep m=4: 128 tokens in 63.836s = 2.01 tok/s aggregate, 0.50 tok/s per stream
+CPU experts DECODE-WINDOW: calls=9883 experts=41318 backend_wall=58.988s RAM_hits=109314 RAM_misses=14640 RAM_fills=51.81 GB io=29.189s compute=28.835s
+stream 0: [503, 29463, 1512, 1208, 47736, 503, 316, 244, 9321, 287, 4791, 1017, 102155, 17366, 3791, 2438, 28615, 341, 68, 2693, 1871, 32195, 25215, 8, 2553, 9687, 252, 3602, 5500, 13, 286, 503]
+stream 1: [37, 32553, 377, 252, 118582, 11, 185, 90196, 22216, 252, 14476, 88, 34567, 84057, 93550, 8945, 4297, 111359, 13, 120025, 120025, 6331, 244, 557, 51947, 1121, 244, 118582, 280, 11928, 562, 252]
+stream 2: [3946, 431, 2310, 3635, 5952, 279, 252, 7157, 15924, 25, 286, 16, 13, 1970, 27431, 14244, 1358, 252, 2021, 1860, 255, 506, 24421, 765, 503, 2088, 7157, 6642, 617, 6627, 1079, 2310]
+stream 3: [32, 35055, 341, 17520, 877, 33741, 10683, 8, 30307, 3407, 10960, 3785, 289, 1286, 28417, 369, 4292, 1119, 4032, 19540, 445, 6387, 50164, 3204, 289, 11506, 9685, 5250, 11, 1357, 402, 5620]
+stream-identity gate: SKIP (distinct prompts)
+[memra-cpu-cache] hits=122478 misses=25107 hit_rate=82.99% read_GB=88.852 resident_GB=64.423
+[memra-cpu-profile] calls=12657 prepare=1.639345s io=45.987705s insert=0.029836s compute=34.726075s read_projections=25107 read_GB=88.852 stage_entry=3.678349s stage_cached=30.705606s stage_missing=0.134477s stage_accum=0.041358s prefetch_projections=0 prefetch_GB=0.000

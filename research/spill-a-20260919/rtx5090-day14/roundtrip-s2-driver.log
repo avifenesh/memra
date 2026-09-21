@@ -1,0 +1,99 @@
+4488d83fe5784c0289644e3eb500af6206dceafe
+1360288006606f29b85e5ce145678ba46364a74c9d95f1a53d8292569feae889  /home/avifenesh/projects/wt-spill-a/research/spill-a-20260919/rtx5090-day14/bins/tier-transfer-gate
+PINNED-DEFAULT device="NVIDIA GeForce RTX 5090 Laptop GPU" kind=write-combined flags=4
+PINNED-DEFAULT roundtrip bytes=4096 kind=write-combined driver_flags=6
+PASS native D2H-H2D roundtrip bytes=4096 N=1 expected_sha256=6c46c24e2d97b8748d12fa91ef223a34552d2806f58ccb13878ef2eaa21eaee3 actual_sha256=6c46c24e2d97b8748d12fa91ef223a34552d2806f58ccb13878ef2eaa21eaee3 byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true
+PINNED-DEFAULT roundtrip bytes=65536 kind=write-combined driver_flags=6
+PASS native D2H-H2D roundtrip bytes=65536 N=1 expected_sha256=6edce3836c4209dbb8e0ed74a6175fd3af6e96a14249058b546517682a5b2918 actual_sha256=6edce3836c4209dbb8e0ed74a6175fd3af6e96a14249058b546517682a5b2918 byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true
+PINNED-DEFAULT roundtrip bytes=1048576 kind=write-combined driver_flags=6
+PASS native D2H-H2D roundtrip bytes=1048576 N=1 expected_sha256=00bd4a23ebc3345fea2d83fabb67b64fbeddb924cfd3db925b551dbfa26479cd actual_sha256=00bd4a23ebc3345fea2d83fabb67b64fbeddb924cfd3db925b551dbfa26479cd byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true
+PINNED-DEFAULT roundtrip bytes=16777216 kind=write-combined driver_flags=6
+PASS native D2H-H2D roundtrip bytes=16777216 N=1 expected_sha256=592ec7e492639c0ae83e07d13e9f28ca1c73baff241960eede80addde508fdae actual_sha256=592ec7e492639c0ae83e07d13e9f28ca1c73baff241960eede80addde508fdae byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true
+PINNED-DEFAULT roundtrip bytes=67108864 kind=write-combined driver_flags=6
+PASS native D2H-H2D roundtrip bytes=67108864 N=1 expected_sha256=2905c1974c20a50b9a21b2cb7e1faa4941dba3d1b130d01941a22d6cd3b44f7c actual_sha256=2905c1974c20a50b9a21b2cb7e1faa4941dba3d1b130d01941a22d6cd3b44f7c byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true
+PINNED-DEFAULT roundtrip bytes=268435456 kind=write-combined driver_flags=6
+PASS native D2H-H2D roundtrip bytes=268435456 N=1 expected_sha256=6020d865b68ed263bbee3a2556e6c064906410f5e220a584827034fdbc72191b actual_sha256=6020d865b68ed263bbee3a2556e6c064906410f5e220a584827034fdbc72191b byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/home/avifenesh/projects/wt-spill-a/research/spill-a-20260919/rtx5090-day14/gate-cell.sh",
+    "3",
+    "roundtrip"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "[N/A]",
+      "power.max_limit": "175.00 W"
+    }
+  ],
+  "started_monotonic_ns": 106482675555641,
+  "ended_monotonic_ns": 106494819436884,
+  "started_utc": "2026-09-21T14:51:02.726013+00:00",
+  "ended_utc": "2026-09-21T14:51:14.869895+00:00",
+  "elapsed_seconds": 12.143881243,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 2494,
+    "sha256": "e659cb6c922ef4229f06c17571ea683350bf8007c01c94b18125a21f7aa37f06"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 5132,
+      "sha256": "df662be9239fb94e9e62f7002d294c19358b352b85968cba2fe10c29aedc4d2b"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 176,
+    "sha256": "dcb17b61c672c6c1abd4bc4e9c6a9c7ff69efc7ddf1d5cd8f9847e59430d9842"
+  }
+}

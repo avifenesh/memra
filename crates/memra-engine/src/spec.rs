@@ -9550,7 +9550,14 @@ impl HybridModel {
             // entry's tail is the live generation header the next re-render replaces, so on a
             // hybrid (whole-entry restores) it can never serve the conversation's next turn —
             // the stable-boundary capture above IS this publication, minus the poisoned tail.
-            if spec_restore_republish_on() && boundary_captures.is_empty() {
+            // GRID LAW (memra#602, day 19): a prompt-end entry is a legal capture only when the
+            // prompt end sits on the GDN prime grid; off the grid the worker armed a grid
+            // boundary above (`republish_at`, captured in the split feed) or nothing, and a
+            // restore of an off-grid end would prime its suffix as a second program.
+            if spec_restore_republish_on()
+                && boundary_captures.is_empty()
+                && (pos + t).is_multiple_of(crate::Engine::gdn_chunk_size())
+            {
                 debug_assert_eq!(
                     cache.pos,
                     pos + t,
@@ -9659,11 +9666,12 @@ impl HybridModel {
             turn_ckpt: restored_turn_ckpt,
             telem: SpecTelemetryCounters::default(),
             capture_at: if deferred && spec_restore_republish_on() {
-                Some(
-                    republish_at
-                        .and_then(|p| p.checked_sub(pos))
-                        .unwrap_or(suffix.len()),
-                )
+                republish_at.and_then(|p| p.checked_sub(pos)).or_else(|| {
+                    // the prompt-end republish exists only on the grid (memra#602, day 19)
+                    (pos + suffix.len())
+                        .is_multiple_of(crate::Engine::gdn_chunk_size())
+                        .then_some(suffix.len())
+                })
             } else {
                 None
             },

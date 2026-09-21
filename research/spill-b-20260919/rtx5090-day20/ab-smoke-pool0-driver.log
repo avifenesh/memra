@@ -1,0 +1,119 @@
+run 01 AB-0 slru: computed=31776 loop_cold_after_1=0 return_cached=0 evictions=21 digests==cold 28/28 ttft_loop p50=183.931 p95=280.552 ms wall=57.5s temp 75.0->70.0 C
+run 02 AB-0 lru: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=19 digests==cold 28/28 ttft_loop p50=182.229 p95=183.787 ms wall=55.9s temp 70.0->68.0 C
+run 03 BA-0 lru: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=19 digests==cold 28/28 ttft_loop p50=181.427 p95=182.597 ms wall=53.8s temp 68.0->67.0 C
+run 04 BA-0 slru: computed=31776 loop_cold_after_1=0 return_cached=0 evictions=21 digests==cold 28/28 ttft_loop p50=182.033 p95=280.11 ms wall=55.2s temp 67.0->68.0 C
+| pair | order | slru computed | lru computed | slru - lru | better | slru return cached | lru return cached | slru loop cold | lru loop cold | slru ttft loop p50/p95 ms | lru ttft loop p50/p95 ms | slru temp C | lru temp C |
+| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |
+| AB-0 | AB | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 183.931/280.552 | 182.229/183.787 | 75.0->70.0 | 70.0->68.0 |
+| BA-0 | BA | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 182.033/280.11 | 181.427/182.597 | 67.0->68.0 | 68.0->67.0 |
+PREFIX-POLICY-AB: budget_bytes=1073741824 cohort_tenants=4 cohort_bytes=792920064 turns=12 start_tokens=10912 grow=160 return_every=3 pairs_per_order=1 runs=4 requests_per_run=28 digests_identical=28/28 computed_tokens slru_median=31776 lru_median=29600 (N=2 each) pairs_slru_better=0/2 pairs_lru_better=2/2 ties=0/2 return_cached slru_median=0 lru_median=1696 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=67.0..75.0 power_limit_w=None -> SMOKE
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "python3",
+    "tools/prefix-policy-ab.py",
+    "--external-lock",
+    "3",
+    "--model",
+    "/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "--bin",
+    "/home/avifenesh/projects/wt-spill-b-ab/target/release/memra-server",
+    "--out",
+    "/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day20/ab-smoke-pool0/cell",
+    "--budget-mib",
+    "1024",
+    "--cohort-tokens",
+    "1248,1344,1440,1536",
+    "--turns",
+    "12",
+    "--start-tokens",
+    "10912",
+    "--grow-tokens",
+    "160",
+    "--return-every",
+    "3",
+    "--pairs",
+    "1",
+    "--ctx",
+    "16384",
+    "--max-tokens",
+    "8",
+    "--gpu-lock",
+    "/tmp/memra-5090.lock"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "[N/A]",
+      "power.max_limit": "175.00 W"
+    }
+  ],
+  "started_monotonic_ns": 107043853183707,
+  "ended_monotonic_ns": 107430440359999,
+  "started_utc": "2026-09-21T15:00:23.903643+00:00",
+  "ended_utc": "2026-09-21T15:06:50.490820+00:00",
+  "elapsed_seconds": 386.587176292,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1709,
+    "sha256": "8c8e841f35c3e516bc7e56e5556c6238f843b6cd90cdacea352abeedb6d3201a"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 162819,
+      "sha256": "04de3ed1a8597bae399831dbe5ae4c1598de7469d964eede5704fcda1082fd67"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 176,
+    "sha256": "dcb17b61c672c6c1abd4bc4e9c6a9c7ff69efc7ddf1d5cd8f9847e59430d9842"
+  }
+}

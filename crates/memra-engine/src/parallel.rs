@@ -46,7 +46,9 @@ impl HardwareTarget {
         }
     }
 
-    fn from_device_name(name: &str) -> Result<Self, TopologyError> {
+    /// The card class by device name; `tier_transfer::PinnedKind::for_device` keys the pinned
+    /// destination default on the same names (WP-A day 14).
+    pub(crate) fn from_device_name(name: &str) -> Result<Self, TopologyError> {
         if name.contains("RTX PRO 6000") && name.contains("Blackwell") {
             return Ok(Self::RtxPro6000Blackwell);
         }

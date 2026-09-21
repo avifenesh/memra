@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Day 14 target-card build receipt: tier-transfer-gate release and the memra-engine release lib test
+# binary at the lane tip with the per-device default (refs/bundle/a14, branch lane-a-day14). No GPU
+# cell.
+set -uo pipefail
+export PATH=/root/.cargo/bin:/usr/local/cuda/bin:$PATH
+R=/root/spill-receipts/a-day14
+out=$R/build
+mkdir -p "$out" "$R/bins"
+cd /root/wt-a
+git checkout -q lane-a-day14
+git rev-parse HEAD > "$out/source.txt"
+git status --porcelain > "$out/dirty.txt"
+date -u +%FT%TZ > "$out/started.txt"
+rustc --version > "$out/toolchain.txt"; nvcc --version | tail -1 >> "$out/toolchain.txt"
+nice -n 19 cargo build --release -p memra-engine --bin tier-transfer-gate --offline -j 16 > "$out/build-gate.log" 2>&1
+echo $? > "$out/exit-gate"
+cp target/release/tier-transfer-gate "$R/bins/tier-transfer-gate"
+sha256sum "$R/bins/tier-transfer-gate" > "$out/binary-gate.sha256"
+nice -n 19 cargo test --release -p memra-engine --offline --lib tier_transfer --no-run > "$out/build-test.log" 2>&1
+echo $? > "$out/exit-test"
+date -u +%FT%TZ > "$out/finished.txt"
+echo "gate exit $(cat "$out/exit-gate") test-build exit $(cat "$out/exit-test")"
