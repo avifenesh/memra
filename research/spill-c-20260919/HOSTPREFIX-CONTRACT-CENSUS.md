@@ -1,5 +1,17 @@
 # Census: the two native owners against the `memra_tier` contracts
 
+**Option A landed (day 13, `ff46abc75`, lead rulings 13 to 15).** `HostTierContext` now has a
+constructor: `worker.rs host_tier_context`, behind the default-OFF door `MEMRA_KV_HOST_CONTRACTS`
+(`HOSTPREFIX-DOOR.md`, decide-by 2026-10-05). The three rulings the census asked for came back
+as: (13) `tenant_salt` has one owner, `memra_kv::tiered::hostprefix::tenant_salt`, fed the exact
+`PoolKey.1` string `auth::meter_key` reads; (14) Option B moves planes out of `PrefixEntry` as
+owned `KvPlane`s, no borrowed-source seam in `CudaTransfers`, no v1.4; (15) A first, the startup
+arena out of scope for A and B (the door refuses at boot when the arena is configured), B after
+A's receipts, C after B's. Part B rows whose "contract-routed path needs" was the bootstrap
+(program identity, tenant, identity lease) are met by A; the epoch, transfer engine, device
+ownership, host destination and checksum rows remain Option B territory and are unchanged
+below. Receipts: `DAY13.md`. The rest of this document is the day-twelve text, unchanged.
+
 Lane `lane/spill-c-20260919`, day twelve. Tree `e9c31d740` (lane merge of main `a1bd0be62`);
 every `file:line` below is in that tree. This is the decision input for issue #552
 acceptance criterion 1 ("Integrate the existing native HostPrefix and bank dispatch owners

@@ -1,7 +1,7 @@
 # HostPrefix contracts door: `MEMRA_KV_HOST_CONTRACTS` (lead ruling 15, Option A)
 
-Status: landed on `lane/spill-c-20260919` day 13, default OFF, env door with a `docs/FLAGS.md`
-row. Decide-by: **2026-10-05** (14 days after landing, 2026-09-21). Every cell behind it is
+Status: landed on `lane/spill-c-20260919` day 13 (`ff46abc75`, `e7e23dcf4`, `b81881dad`), default OFF, env door
+with a `docs/FLAGS.md` row. Decide-by: **2026-10-05** (14 days after landing, 2026-09-21). Every cell behind it is
 `executed-not-qualified` development evidence on one card class; nothing here is a support
 state. Rulings applied: 13 (one `tenant_salt` owner in `memra-kv`), 14 (no borrowed-source
 seam, no v1.4; not exercised by A, which moves no bytes through `TransferEngine`), 15 (Option
@@ -11,23 +11,24 @@ arena is out of scope). Census that motivated it: `HOSTPREFIX-CONTRACT-CENSUS.md
 ## What the door does
 
 `MEMRA_KV_HOST_CONTRACTS=1` constructs `HostTierContext` (`crates/memra-server/src/worker.rs`,
-struct at 8100) once at boot, after every model has loaded and `model_generations` exists, and
+struct at 8102) once at boot, after every model has loaded and `model_generations` exists, and
 stores it in `HostPrefixCache::tier`. That field existed since lane B's day-two sidecar with no
-constructor in the crate (census, Part B headline), so the sidecar route (`tier_charge` 8125,
-`bind_tier_image` 8174, the insert identity check 7952, the promote leases 9129) was compiled
+constructor in the crate (census, Part B headline), so the sidecar route (`tier_charge` 8127,
+`bind_tier_image` 8176, the insert identity check 7975, the promote leases 9139) was compiled
 and unit-tested but never executed. With the door ON it executes; the D2H and H2D programs are
 the pre-door `dtoh_u8_into_pinned` / `htod_u8_into` calls, untouched.
 
 | Surface | Where | What it does |
 |---|---|---|
 | Door read | `worker.rs:4227` `kv_host_contracts_door`, `4239` `parse_kv_host_contracts` | Strict: unset or `0` OFF, `1` ON, anything else (bare `=`, `on`, `true`, `11`, non-UTF-8) refuses the boot with a message naming the variable. No fallback to OFF: a door whose OFF arm must be byte-identical cannot file a typo under the ON arm. |
-| Arena refusal | `worker.rs:4255` `host_tier_arena_refusal`; checked at `14364` before the arena reserve and again in `host_tier_context` | `MEMRA_GLM5_TP_KV_HOST=1` with the door refuses at boot: the arena is charged by its owner and `tier_charge` would refuse every demote with `tier fixed-arena lease handoff pending` (8138). The refusal names the arena and both variables; nothing is pinned first. |
+| Arena refusal | `worker.rs:4255` `host_tier_arena_refusal`; checked at `14374` before the arena reserve and again in `host_tier_context` | `MEMRA_GLM5_TP_KV_HOST=1` with the door refuses at boot: the arena is charged by its owner and `tier_charge` would refuse every demote with `tier fixed-arena lease handoff pending` (8141). The refusal names the arena and both variables; nothing is pinned first. |
 | Program identity | `worker.rs:4308` `host_tier_program_base` (pure), `4376` `host_tier_context` (sources) | One `ProgramIdentity` per loaded GGUF model with a zero tenant salt; field sources in the table below. A checkpoint-directory model or a loaded vision tower refuses the boot (typed). |
-| Tenant salt | `crates/memra-kv/src/tiered/hostprefix.rs:129` `tenant_salt`; stamped by `HostTierContext::program` (`worker.rs:8114`) | The ONE derivation (ruling 13): `digest("tenant-salt", namespace)` over the exact `PoolKey.1` string the server feeds `auth::meter_key` for the share-cap row (`worker.rs` insert 7952 and remove paths). `programs` is keyed by model name; the pool namespace completes the identity per key, deterministically, so the demote charge and the insert or promote lease name one program. |
+| Tenant salt | `crates/memra-kv/src/tiered/hostprefix.rs:129` `tenant_salt`; stamped by `HostTierContext::program` (`worker.rs:8116`) | The ONE derivation (ruling 13): `digest("tenant-salt", namespace)` over the exact `PoolKey.1` string the server feeds `auth::meter_key` for the share-cap row (`worker.rs` insert 7975 and remove paths). `programs` is keyed by model name; the pool namespace completes the identity per key, deterministically, so the demote charge and the insert or promote lease name one program. |
 | Governor | `hostprefix.rs:137` `shared_governor`; `worker.rs:4342` `host_tier_governor` | The server's governor (ruling 15), one `Arc<Mutex<dyn BudgetGovernor>>` built at boot over `memra_tier::tier::Governor`. Ledger sizing for A: twice the host budget on `pinned` and `pageable`, twice the device prefix budget on `device[ordinal]`, zero headroom, no queue. Why twice: residents are at most one budget (the host LRU invariant), one incoming image is at most one budget (`insert` refuses larger), and the charge is taken before the LRU makes room, so the ledger must never be what refuses a demote the OFF arm would have made (equal `[prefix-host] demote:` counts are the ruling 15 gate). The ledger records tenant, priority and bytes; the LRU decides. Option B may tighten it once eviction-to-fit runs before the charge. |
-| Generation | `worker.rs:8401` (`host_entry_from_device`) | Under the door every host image carries the model generation `Arc` (`bind_tier_image` refuses an image without one, 8185). OFF arm unchanged: the same `None`. This is the one OFF-path statement the door touches, an added `else if` arm. |
-| Loud refusals | `worker.rs:8724` demote surface, `7956`/`7966` insert, `9153`/`9222` promote | Lane B's tier blocks returned `Failed`/`false`/`None` silently; each now prints a `(contracts door)` line naming the refusal. All inside `tier`-Some blocks. |
-| Boot wiring | `worker.rs:14364` parse and arena check, `14409` construct and announce | `[prefix-host] contracts door: model <name> program identity artifact_sha256=<hex> plan_debug_sha256=<hex> numeric=<class> template=<gguf-jinja or chatml-fallback> device=<n> (<ms> to hash <path>)` per model, then `[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): ...`. |
+| Generation | `worker.rs:8403` (`host_entry_from_device`) | Under the door every host image carries the model generation `Arc` (`bind_tier_image` refuses an image without one, 8189). OFF arm unchanged: the same `None`. This is the one OFF-path statement the door touches, an added `else if` arm. |
+| Over-budget image | `worker.rs:8734` (demote), `7975` (insert order) | An image above the whole host budget takes no ledger charge and `insert` refuses it by name after the copy, exactly as the OFF arm (`skip demote: entry N MB > host budget M MB`, the failure gate's pool-full cell asserts that line); the door's identity check in `insert` runs after that refusal and before residency. Commit `e7e23dcf4`. |
+| Loud refusals | `worker.rs:8726` demote surface, `7979`/`7989` insert, `9163`/`9232` promote | Lane B's tier blocks returned `Failed`/`false`/`None` silently; each now prints a `(contracts door)` line naming the refusal. All inside `tier`-Some blocks. |
+| Boot wiring | `worker.rs:14374` parse and arena check, `14419` construct and announce (`b81881dad`: with `MEMRA_KV_HOST_MB=0` no tier exists, so the door constructs nothing and prints one `[kv-host-contracts] ... nothing to route` line under its own tag; the identity gate's OFF twin boot asserts `[prefix-host]` stays silent) | `[prefix-host] contracts door: model <name> program identity artifact_sha256=<hex> plan_debug_sha256=<hex> numeric=<class> template=<gguf-jinja or chatml-fallback> device=<n> (<ms> to hash <path>)` per model, then `[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): ...`. |
 
 ## `ProgramIdentity` fields and their sources (`host_tier_program_base`, `host_tier_context`)
 

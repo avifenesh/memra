@@ -1170,6 +1170,41 @@ controls, every cell `MATCH` / `SELF-CONSISTENCY PASS` with eviction engaged) an
 (one RTX PRO 6000 Blackwell: default and 8 GiB banks, ON and OFF, same verdicts). All cells are
 N=1 and `executed-not-qualified`; no support state or default moves on them.
 
+### Host tier contracts door (`memra-server`, `MEMRA_KV_HOST_CONTRACTS`)
+
+`MEMRA_KV_HOST_CONTRACTS=1` (default OFF; `docs/FLAGS.md` row, decide-by 2026-10-05; design
+`research/spill-c-20260919/HOSTPREFIX-DOOR.md`) constructs `HostTierContext` at model load, so
+the host tier's already-compiled sidecar route (`tier_charge`, `bind_tier_image`, the insert and
+promote identity leases, lane B's `HOSTPREFIX-EXTENSION.md`) executes: one `ProgramIdentity` per
+loaded GGUF model, the tenant salt stamped per pool key by `memra_kv::tiered::hostprefix::
+tenant_salt` over the same namespace string `auth::meter_key` reads, the server's governor as a
+ledger. No copy program changes. OFF is byte-identical by construction (the constructor is
+never called). The door refuses the boot, typed and loud, for a junk value, the startup arena
+(`MEMRA_GLM5_TP_KV_HOST=1`), a checkpoint-directory model or a loaded vision tower.
+
+- CPU tests (`cargo test -p memra-server -p memra-kv --offline`): `crates/memra-kv/src/tiered/
+  hostprefix.rs` `tenant_salt_is_one_derivation_of_the_namespace_string`,
+  `empty_namespace_is_the_default_single_tenant_namespace_not_a_refusal`,
+  `shared_governor_is_the_injected_trait_object_and_charges_through_it`;
+  `crates/memra-server/src/worker.rs` `kv_host_contracts_door_parse_is_strict_and_never_falls_
+  back_to_off` (bare `=`, junk, doubled values, non-UTF-8 all refuse; only `1`/`0`/unset parse),
+  `host_tier_arena_refusal_names_the_arena_and_passes_without_it`,
+  `host_tier_program_base_is_a_pure_function_of_its_sources`,
+  `host_tier_context_program_stamps_the_pool_namespace_salt_once`,
+  `host_tier_governor_ledger_admits_what_the_lru_would_and_binds_at_twice_the_budget`,
+  `host_cache_with_contracts_door_refuses_an_unbound_image_and_admits_it_with_the_door_off`.
+- Target-card gates, door OFF then ON on the same binary and prompts, through the canonical
+  collector: `tools/serve-smoke.sh` (plain and cache-metering arms), `tools/kv-host-spill-
+  identity-gate.sh`, `tools/kv-host-spill-failure-gate.sh`, and lane B's `tools/prefix-evict-
+  reclaim-gate.py`. Admissibility (lead ruling 15): every verdict line equal across arms,
+  `MEMRA_KV_HOST_VERIFY=1` `verify ok` on every ON promote, equal `[prefix-host] demote:` byte
+  counts. Evidence: `research/spill-c-20260919/DAY13.md` and `pro-single-day13/` (one RTX PRO
+  6000 Blackwell at 600 W, N=1, `executed-not-qualified`; no support state or default moves).
+- ON-arm surface is lane B's first slice: plain KV plus recurrent continuation. Entries with
+  TP, latent or draft planes (spec-published boundary captures) are refused by name at demote
+  (`[prefix-host] demote refused (contracts door)`), handoff imports at insert; the receipts
+  record these as the arm difference they are.
+
 ### `h2d-probe --copies`
 
 `crates/memra-engine/src/bin/h2d_probe.rs` is copy plumbing: `--bytes` one of the ten
