@@ -637,6 +637,42 @@ by design: the two rule clauses read inconclusive, all 13 integrity checks ok, `
 verdict: inconclusive`); perf board; diff-check. Local 5090 `tools/serve-smoke.sh` (`integ21-serve-smoke-5090/`):
 `serve-smoke: 0 failed`. Pushed in the announced development mode (engine source in range).
 
+## integ22 (`lane/spill-integ22-20260921`): B day 20, the LRU decision confirmed on the second card class
+B redid the day-16 confirmation on the local RTX 5090 with both capture sites on the 32-token grid (#602 fixed
+the day-16 digest failure). Same harness and two-arm binary, the shape moved onto the grid with the target's byte
+shares preserved, `AB-0, BA-0, ..., AB-4, BA-4`, 20 runs, one lock hold, 250 ms telemetry, verbatim:
+`PREFIX-POLICY-AB: budget_bytes=1073741824 cohort_tenants=4 cohort_bytes=792920064 turns=12 start_tokens=10912
+grow=160 return_every=3 pairs_per_order=5 runs=20 requests_per_run=28 digests_identical=28/28 computed_tokens
+slru_median=31776 lru_median=29600 (N=10 each) pairs_slru_better=0/10 pairs_lru_better=10/10 ties=0/10
+return_cached slru_median=0 lru_median=1696 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0
+temp_c=66.0..74.0 power_limit_w=None -> WINNER=lru`. Same three mechanisms as the target card, row for row;
+every `cached_tokens` row equals the offline prediction (280/280 per arm). The one deviation from day 16, stated in
+the pre-registration: the scored cell ran with `MEMRA_REUSE_POOL=0`, because the continuation pool's parked
+sessions were the VRAM the admission reclaim ladder took from the prefix cache on that 24 GB card (11 events per
+run at the default pool; 0 in all 21 boots with the pool off; the default-pool smoke on the same binary read the
+same rows and 28/28 digests, so the pool moved residency, not bytes). No timing compared across boxes. Lead
+reading: agreement with the target card, the decision in `docs/decisions/PREFIX-CACHE-POLICY.md` holds on both
+card classes; B replaced the day-16 no-verdict paragraph with the day-20 result and the Status line no longer says
+the 5090 cell is owed. #523 item 2 is done (B's comment); the issue stays open for its other items.
+
+Lane tip merged: B `952e0f87c` (clean merge, no engine source in the range; the only tracked file outside
+`research/` is the decision doc). Batteries (`integration-day12/integ22-cpu-battery/`): `git diff --check`, perf
+board check, flags census, public-boundary `check` (0 new), workflow-key census, B's three replays
+(`verify-day20.py` on `ab-full-retry1`, `ab-smoke-pool0`, `ab-smoke-default`: each `replayed rule on the primary:
+WINNER=lru`, harness outcomes `WINNER=lru`, `SMOKE`, `SMOKE`), em-dash scan on the prose: all rc=0 on the merged
+tree. The first pass ran while `origin/main` moved under it (integ21 merged at 15:41Z) and read `rc=2` on
+`git diff --check` and on my mis-typed invocations of the boundary scan and the replay; the summary keeps both
+passes.
+
+**Correction carried in this integ.** That diff-check complaint (`research/INDEX.md:563: leftover conflict marker`)
+exposed a real defect: #604's `research/INDEX.md` (main `c53d0b9f7`) carried a stray diff3 base marker
+(`||||||| parent of cdb3b49a1 ...`) above its own row `lockstep-cpu-rows-exact-20260921`. My integ21 merge of that
+main hit a conflict in INDEX.md and the union resolver read the marker as a hunk base, so it kept every other row
+and dropped the lockstep row together with the marker. Main after #607 has no marker and no lockstep row.
+integ22 restores the row verbatim from `c53d0b9f7` (appended after `spill-a-20260919/day14`); a set difference of
+the two INDEX files shows it was the only line lost. Ruling 24: a union resolve is followed by a set-difference
+check of every conflicted file against both parents, and the marker grep covers `|||||||` too.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
