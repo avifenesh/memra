@@ -880,6 +880,40 @@ line, an RTX 5090-class pair). Replay correction stated by C: v1 of `day18-repla
 refusal line carries; corrected to the pre-registered bracketed tags before any other result was read, no threshold
 moved. `pro-single-day18/.gitattributes` marks receipt logs `-whitespace` (precedent `research/ttft-20260808/`).
 
+**B day 23 (tip `5d9e61d3f`, ruling 26 executed): the gates re-run on main's mechanism, both cards, verbatim.** Lane
+merged `origin/main 653c997f4`; `lib.rs` is main's `small_m_tier_max()` with the lane's `prefill_rows` field, scope,
+`batched_tier_admits` and both admission conjuncts removed; `hybrid_forward.rs` arm removed; the continuation gate is
+main's; `qwen-a4-width-walk` kept as a one-arm plain-program diagnostic. Against main the lane's non-research diff is
+that binary plus one `docs/TESTING.md` pointer sentence. Local RTX 5090 (`rtx5090-day23/`): `WIDTH WALK width 16 vs 17:
+0 of 497 tensors differ; tensor names: {}; sites: []` (48 vs 17 also 0); seven arms every split `ok`,
+`A4 CONTINUATION GATE: PASS` x7, `9280 + 16: logits_sha=14ab5f8b365dbd71 ok`, chunk-32 one-call `14ab5f8b365dbd71`,
+digest for digest the day-22 table; `kernel-check` both manifests `ALL GREEN (109 cells, 10 skipped)`;
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`; twin gate `... V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS`; run-gen
+`prefill argmax=271 decode argmax=271 ... MATCH` (std), probe 90 tokens MATCH plus batched-prime MATCH, p16 (16 tokens)
+`23314 ... MATCH` plus batched-prime MATCH, p4112 (4112 tokens) `84728 ... MATCH` plus batched-prime MATCH; run-spec
+K=1..8 (embedded NextN drafter, `nextn=1`) `=== SELF-CONSISTENCY PASS ===` on probe, p16, p4112, every K
+`self-consistency: PASS (identical to plain target)`, acceptance above 0. Target card (`pro-single-day23/`): step35
+manifest alone `ALL GREEN (109 cells, 6 skipped)`; both manifests `ALL GREEN (109 cells, 6 skipped)` with
+`DUAL-BATCHED-AUX [NVFP4 rp] out=48 m=3: bit-bad=0/0 OK` (the 9B staged from the verified local copy, SHA-256
+`52c9cceb...` equal to five repo receipts, into the lane's own dir; `/root/artifacts`, manifests and checker untouched);
+run-gen and run-spec argmaxes, accepted and drafted counts and verdicts identical to the local card; the seven-arm
+table digest for digest. Scope gap: closed by construction by #614; B's site reading in `PRIME-MIN-T-DECISION.md`
+"Superseded by #614": `step35_prime_cache_batch` passes `m = total = sum(ts)` (16 at B=1) with `attn_gate` at `out_f`
+64 or 96 (below the GEMM floor, so it could reach the tier), `prime_layers_gemma` passes `m = t` but every gemma
+quantized projection has `out_f >= 128` (width-safe by census only); no Step-3.7-Flash GGUF on either rig, so the
+step35 split cell stays owed as a confirmation. Lead reading: every gate ruling 25 named is green and verbatim above;
+memra#427 closes with this integ on #614's mechanism and these receipts, the step35 split confirmation stays as a note
+on the issue's close.
+
+**Lead slices in integ25.** (1) `research/INDEX.md` on main carried a second stray diff3 base marker
+(`||||||| parent of 8faa37ca4 ...`, from #614's rebase); removed, every row of every parent present (set difference
+against main, B and C: 0 missing). (2) A conflict-marker census, `tools/check-conflict-markers.sh` (all four marker
+kinds over tracked source, docs and data; receipt logs and raw dirs excluded; no skip switch), wired into the pre-push
+hook after the docs-registry census and into the CI gates job, teeth `tools/test_conflict_markers.sh` (7 arms). Its
+first run found a third marker on main: `research/tune-data/perf-ci.jsonl:1147` (a non-JSON line in the append-only log
+the perf gate parses, from the #604 rebase); removed, every remaining line parses. Ruling 27: a marker line in a
+tracked file is a push refusal from now on, and a hand-resolved merge is followed by this census before its commit.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
