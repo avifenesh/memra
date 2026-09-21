@@ -219,6 +219,7 @@ pub fn run(
     }
 
     // Restore: the faulted K plane answers per arm; every other plane goes through `restore`.
+    let mut holed = false;
     for (i, mut layer, k, v) in suspended {
         let faulted = faulted_layer == Some(i);
         let mut whole = true;
@@ -260,11 +261,25 @@ pub fn run(
             cache.kv[i] = Some(layer);
         } else {
             // Fail closed: an incomplete layer never re-enters the cache, so no token can
-            // address it; its restored V plane and the placeholder are released here.
+            // address it; its restored V plane and the placeholder are released here. The
+            // cache itself records the hole (`mark_tainted`, the state `ensure_usable` already
+            // refuses), so a continuation is a typed refusal on the cache rather than an
+            // `unwrap` on `kv[i] == None` prevented only by this binary's early return
+            // (revuto finding on #584).
+            cache.mark_tainted();
+            holed = true;
             drop(layer);
         }
     }
     e.stream().synchronize()?;
+    if holed {
+        let gate = if cache.ensure_usable("kv-tier-gate continuation").is_err() {
+            "Err"
+        } else {
+            "Ok"
+        };
+        p.check("holed-cache-refuses-continuation", "Err", gate);
+    }
     p.check("budget-zero", "true", zero_budget(&transfers));
     p.observe(
         "device_registry_after_drain",
