@@ -74,6 +74,8 @@ Downloads enforce HTTPS, exact byte counts and SHA-256, unique plain filenames,
 disk headroom and a total input ceiling. Artifacts cannot redirect outside HTTPS.
 Build capsules permit only the named metadata and six executables, with no links,
 duplicate members or traversal. A foreign source/build or changed ELF refuses.
+Python imports use a private cache outside the checkout and disable bytecode writes,
+so adapter verification cannot contaminate the native producer's clean-source gate.
 
 ## Receipt custody and release
 

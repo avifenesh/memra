@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  PYTHONPYCACHEPREFIX: /tmp/memra-gpu-ci-python-${{ github.run_id }}-${{ github.run_attempt }}
+
 concurrency:
   group: gpu-ci-${{ inputs.candidate }}-pro-ubuntu24
   cancel-in-progress: false

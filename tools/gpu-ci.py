@@ -6,6 +6,7 @@ CPU orchestration tests and a successful build never constitute GPU qualificatio
 """
 
 import argparse
+import atexit
 import ctypes
 import hashlib
 import importlib.util
@@ -17,8 +18,17 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.parse
 import urllib.request
+
+
+# Qualification imports must neither consume nor create ignored project bytecode.
+# The native producer applies the same isolation when it takes over capture/seal.
+_PY_CACHE = tempfile.TemporaryDirectory(prefix="memra-gpu-ci-python-")
+atexit.register(_PY_CACHE.cleanup)
+sys.pycache_prefix = _PY_CACHE.name
+sys.dont_write_bytecode = True
 
 
 BINARIES = ("kernel-check", "run-gen", "run-spec", "argmax-margin-probe", "memra-server", "tok-parity")
