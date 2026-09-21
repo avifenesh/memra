@@ -1,7 +1,7 @@
 # HostPrefix contracts door: `MEMRA_KV_HOST_CONTRACTS` (lead ruling 15, Option A)
 
 Status: landed on `lane/spill-c-20260919` day 13 (`ff46abc75`, `e7e23dcf4`, `b81881dad`), default OFF, env door
-with a `docs/FLAGS.md` row. Decide-by: **2026-10-05** (14 days after landing, 2026-09-21). Every cell behind it is
+with a `docs/FLAGS.md` row; surface grown to MTP draft-bearing entries on day 14 (lead ruling 16, `DAY14.md`). Decide-by: **2026-10-05** (14 days after landing, 2026-09-21). Every cell behind it is
 `executed-not-qualified` development evidence on one card class; nothing here is a support
 state. Rulings applied: 13 (one `tenant_salt` owner in `memra-kv`), 14 (no borrowed-source
 seam, no v1.4; not exercised by A, which moves no bytes through `TransferEngine`), 15 (Option
@@ -51,18 +51,40 @@ slice is GGUF only), a modality for image-conditioned entries (vision tower load
 
 ## What the ON arm routes, and what it refuses by name
 
-Lane B's first-slice surface (`bind_tier_image`): plain KV planes (`q8_0` K rows of 34 B,
-`q5_1` V rows of 24 B, `len == pos`) plus recurrent continuation planes, logits, hidden and
-the shape metadata. Under the door:
+Surface after day 14 (lead ruling 16): lane B's first slice (plain KV planes, `q8_0` K rows of
+34 B and `q5_1` V rows of 24 B, `len == pos`, plus recurrent continuation planes, logits, hidden
+and the shape metadata) AND MTP draft-bearing entries. Two entry classes (`HostTierEntryClass`,
+pure `host_tier_entry_class(glm, mtp_draft, dflash_tail)`), one program each:
 
-- an entry with TP shards, latent planes or a draft plane (spec-published boundary entries)
-  is refused at demote, `[prefix-host] demote refused (contracts door): entry carries TP,
-  latent or draft planes outside the contract-routed surface`; the OFF arm demotes it. So with
-  spec serving ON, demote counts differ between arms by exactly those entries; the ruling 15
-  equal-count gate is measured with `MEMRA_SERVE_SPEC=0` where the gate does not set it;
-- a handoff import (`host_entry_from_owned`, unbound by design, FREEZE B8) is refused at
-  insert, `[prefix-host] REFUSED demote insert (contracts door)`;
-- a GLM (`HostGlmState`) image is refused by `bind_tier_image` (unchanged lane B rule).
+| Class | Planes bound (`bind_tier_image`) | Program (`HostTierContext::program(key, class)`) |
+|---|---|---|
+| `Plain` | `Role::Key`/`Value` per layer (`q8_0`/`q5_1`), `Recurrent` (conv, ssm), `Logits`, `Hidden` (empty on plain-published entries, so no segment), `Transaction` = `host-prefix-shape-v2` | the day-13 identity (`host_tier_program_base`), tenant salt per pool key |
+| `MtpDraft` (`entry.draft.is_some()`) | the plain segments plus `Role::Draft` K (`mtp-draft-q8_0`, row bytes `k_tok_bytes`) and `Role::Draft` V (`mtp-draft-q5_1`, `v_tok_bytes`), each checksummed, geometry rule identical to the trunk planes (34/24 multiples, `len == pos`); the shape blob frames draft presence and `(len, k_tok_bytes, v_tok_bytes)` | `host_tier_draft_program`: the plain base with `artifact = digest("artifact-sha256+mtp-draft", framed(trunk hex, draft source))`, `serialized_plan = digest("plan-debug+mtp-draft", framed(plan debug, draft source))`, `numeric = digest("numeric", host_tier_draft_numeric_class())` (`<plain class>+mtp-draft-kv-q8_0-34B-q5_1-24B`); stream, tokenizer, template, adapter, modality, position unchanged; tenant salt per pool key. Draft source: `embedded` (head in the trunk GGUF), or `external:<sha256>` for the per-model `+draft` attach or `MEMRA_MTP_DRAFT` (precedence: per-model, then env, then embedded, the loader's own) |
+
+The class is computed from the same fields at every site (demote refusal and charge, `bind_tier_image`,
+insert lease, promote lease and the post-H2D `require`), so one entry names one program. The
+`pinned` charge at demote sums the trunk KV planes and the draft plane (both are `HostPlane`s).
+
+Refused by name, typed, nothing skipped silently:
+
+- GLM state (`tp` shards, `latent` planes, `glm` image): `[prefix-host] demote refused (contracts
+  door): entry carries TP or latent (GLM) planes outside the contract-routed surface`; also at
+  insert (`REFUSED demote insert (contracts door)`) and promote (`promote refused (contracts door)`).
+  Unchanged rule; the arena path is out of scope for A and B.
+- DFlash draft tail (`dspark_draft`): `... entry carries a DFlash draft tail outside the
+  contract-routed surface (no drafter artifact identity in this slice)`. Its slice needs a byte
+  manifest of the `MEMRA_DSPARK_DRAFT` export directory as the artifact, `DflashCfg` as the plan, an
+  f32 tail numeric class, `Role::Tail` segments per draft layer, and a gate that boots a DFlash
+  drafter on the target card (none does today).
+- A draft-bearing entry on a model with no MTP head: `tier draft program identity missing: the
+  model has no MTP head, so a draft-bearing entry cannot name its program` (never bound to the
+  plain program).
+- A handoff import (`host_entry_from_owned`, unbound by design, FREEZE B8): refused at insert.
+- An unknown model: `tier program identity missing`.
+
+Boot receipt per model: the day-13 program-identity line, then `[prefix-host] contracts door:
+model <name> draft program identity source=<embedded|external:hex> numeric=<draft class> (<ms>)`,
+or `... has no MTP head: no draft program, draft-bearing entries are refused by name`.
 
 ## Draft planes: what a spec-served entry carries (day 14 census, lead ruling 16, before code)
 
