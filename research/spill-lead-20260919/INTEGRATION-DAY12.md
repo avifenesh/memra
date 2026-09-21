@@ -253,7 +253,10 @@ Ruling 12: `MEMRA_TIER_BATTERY_LOCK_DIR` seam in `tools/tier-battery.py` and `to
 suite inside a private `/tmp` (`bwrap`): before `24 failed, 64 passed`, after `86 passed, 32 subtests passed`, rc=0; a
 receipt written under the seam refuses to validate without it (`REFUSED: missing/noncanonical collector lock`).
 Boundary: two raw cargo logs matched `live_fingerprint` on cargo's own test-binary path (`memra-<hash>`); pinned as
-false positives. D's note for the lead: `tools/ci-change-class.sh` classes `research/**` as docs-only while ten
+false positives. Revuto on integ12 found two gaps, both fixed on the lane (`0e9e30b31`): the static skip census scanned `src/` only
+(now `tests/` too; memra-tokenizer's four `llama_parity` skips declared) and the private lock seam was honoured from the
+environment alone (now refused without `--private-lock-dir-for-tests`, loud startup line, seam in `lock.json`, validate
+refuses foreign seams). D's note for the lead: `tools/ci-change-class.sh` classes `research/**` as docs-only while ten
 test-time `research/` reads now exist across lanes (list in D's DAY13.md); queued.
 
 ## Lanes

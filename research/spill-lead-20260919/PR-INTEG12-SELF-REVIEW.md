@@ -22,7 +22,14 @@ Read in full: `.github/workflows/ci.yml` (`portable-suites` job), `tools/portabl
    test-binary path); the rule could exclude `target/debug/deps/` paths, a policy edit for a later PR. The
    `research/**` docs-only classing in `tools/ci-change-class.sh` versus test-time `research/` reads is queued.
 
+6. **Revuto round, both fixed on the lane (`0e9e30b31`).** The static census now covers `crates/<crate>/tests` as
+   well as `src` (it found and declared memra-tokenizer's four artifact-gated skips), and the teeth plant the
+   undeclared SKIP under `tests/` too. The private lock seam is no longer honoured by the environment alone:
+   `--execute` and `--dry-run` refuse under `MEMRA_TIER_BATTERY_LOCK_DIR` without `--private-lock-dir-for-tests`, the
+   flag without the seam refuses, one loud stderr line names the private directory, `lock.json` carries the seam, and
+   every validate path refuses a capture whose seam is not the validating process's own. Red arms for each.
+
 ## Verification this review relied on
-integ12 CPU battery (`integration-day12/integ12-cpu-battery/`): fmt, the portable-suites wrapper, the teeth script,
+integ12 CPU batteries (`integration-day12/integ12-cpu-battery/` before the review fixes, `integ12-cpu-battery-2/` after): fmt, the portable-suites wrapper, the teeth script,
 memra-server suite, clippy `-D warnings` (incl. memra-cli), censuses, collector pytest, ci.yml YAML load, perf board,
 `git diff --check`. D's own receipts under `research/spill-d-20260919/day13/`. No GPU work in this PR.
