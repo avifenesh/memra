@@ -13,8 +13,13 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent / "pro-single-day16" / "wc-pair"
-EV = ROOT / "ev"
+ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent / "pro-single-day16" / "wc-pair2"
+# The cell script writes its evidence under the BASE cell name; the collector's own capture (CELL.jsonl,
+# the 250 ms sampler) lands in the attempt that held the lock, `<base>` or the highest `<base>-retryN`.
+BASE = ROOT.parent / re.sub(r"-retry\d+$", "", ROOT.name)
+EV = BASE / "ev"
+_attempts = [d for d in ROOT.parent.glob(f"{BASE.name}*") if d.is_dir() and re.fullmatch(rf"{re.escape(BASE.name)}(-retry\d+)?", d.name) and (d / "CELL.jsonl").exists()]
+CAPTURED = sorted(_attempts, key=lambda d: int(d.name.rsplit("retry", 1)[1]) if "retry" in d.name else -1)[-1] if _attempts else ROOT
 DEMOTE = re.compile(r"\[prefix-host\] demote: (\d+) tokens, ([\d.]+)MB in ([\d.]+)ms")
 PROMOTE = re.compile(r"\[prefix-host\] promote: (\d+) tokens, ([\d.]+)MB in ([\d.]+)ms")
 ARMS = ["o1-off", "o1-on", "o2-on", "o2-off"]
@@ -52,9 +57,9 @@ def fmt(xs):
 
 
 def regime():
-    sampler = ROOT / "command.sampler.log"
+    sampler = CAPTURED / "command.gpu.csv"
     if not sampler.exists():
-        return "telemetry: sampler log absent"
+        return f"telemetry: command.gpu.csv absent under {CAPTURED.name}"
     rows = list(csv.DictReader(sampler.open(errors="replace"), skipinitialspace=True))
     def col(name, conv=float):
         out = []
@@ -77,7 +82,7 @@ def regime():
 
 
 def main():
-    print(f"WC pair cell: {ROOT}")
+    print(f"WC pair cell: evidence {EV}, collector capture {CAPTURED.name}")
     per = {}
     for label in ARMS:
         d, p, r = parse(label)
@@ -86,6 +91,8 @@ def main():
         pm = [x[2] for x in p[:5]]
         pe = [x[4] for x in p[:5] if x[4] is not None]
         print(f"\n{label}: {len(d)} demotes, {len(p)} promotes, receipts D2H={r['D2H']} H2D={r['H2D']}")
+        print(f"  raw demote ms (r2..r7):  {[x[2] for x in d]}")
+        print(f"  raw promote ms (r3..r7): {[x[2] for x in p]}  inline demote ms: {[x[3] for x in p]}")
         print(f"  demote  (r2..r6): {fmt(dm)}")
         print(f"  promote (r3..r7): {fmt(pm)}")
         print(f"  promote minus inline demote: {fmt(pe)}")

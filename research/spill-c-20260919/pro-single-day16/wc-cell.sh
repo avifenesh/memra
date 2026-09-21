@@ -6,11 +6,13 @@
 # is a host hit that promotes and whose insert evicts the other entry (demote inside the promote window).
 # Demotes r2..r6 (N=5) and promotes r3..r7 (N=5) are the observations; the server log is the receipt.
 # MEMRA_KV_HOST_VERIFY unset (the production promote shape; the verify digest is its own D2H readback).
-# usage: wc-cell.sh <lockfd>
+# usage: wc-cell.sh <lockfd> [cell-name]   (the first sitting, `wc-pair`, was refused by an unbound variable in
+# this script's own `local` line before any boot; the cell ran as `wc-pair2`)
 set -uo pipefail
 fd=$1
+cell=${2:-wc-pair}
 R=/root/spill-receipts/c-day16
-EV=$R/wc-pair/ev
+EV=$R/$cell/ev
 export PATH=/root/.cargo/bin:/usr/local/cuda/bin:$PATH
 cd /root/wt-c
 mkdir -p "$EV"
@@ -69,7 +71,8 @@ PYEOF
 }
 mark() { printf '%s\t%s\n' "$(date -u +%FT%T.%3NZ)" "$1" >> "$EV/marks.tsv"; }
 arm() { # $1 off|on  $2 label
-    local a=$1 label=$2 log="$EV/$label-server.log" extra=""
+    local a=$1 label=$2
+    local log="$EV/$label-server.log" extra=""
     [ "$a" = on ] && extra="MEMRA_KV_HOST_CONTRACTS=1"
     mark "$label boot"
     boot "$extra" "$log" || { mark "$label boot-failed"; return 1; }

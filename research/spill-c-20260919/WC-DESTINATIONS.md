@@ -68,6 +68,60 @@ order: demotes r2..r6 (N=5), promotes r3..r7 (N=5), from the `[prefix-host] demo
 min and max, and the telemetry regime (temperature, power draw, SM clock) over the cell and per arm window
 (`marks.tsv`). Single card, one window, executed-not-qualified: the first cell, not a verdict.
 
-## Results
+## Results (day 16, `pro-single-day16/wc-pair2-retry3/` capture, `wc-pair2/ev/` evidence; replay `wc-pair.py`: `WC PAIR REPLAY: PASS`, 12 checks)
 
-(filled after the cell runs; see the section appended below)
+The first cell of the decide-by review, not a verdict. One RTX PRO 6000 Blackwell Server Edition at its
+600 W limit, binary `cd8e9c11...` (tree `25891baa9`), one collector lock hold (the runner waited three
+120 s retries behind lane B's campaign, then held the lock for the whole 64 s window), four boots OFF, ON,
+ON, OFF, seven requests each, `MEMRA_KV_HOST_VERIFY` unset, default spec environment (34 items per batch).
+Regime over the window (257 samples at 250 ms, `command.gpu.csv`): temperature 37 to 51 C, power draw at
+most 492 W under the 600 W cap, SM clock 180 (idle between boots) to 2422 MHz. `executed-not-qualified`.
+
+| Line | OFF, order 1 (N=5) | OFF, order 2 (N=5) | ON, order 1 (N=5) | ON, order 2 (N=5) | pooled OFF (N=10) | pooled ON (N=10) |
+|---|---|---|---|---|---|---|
+| `demote:` ms, r2..r6 | median 37.8 (6.1 to 42.9) | 37.8 (6.1 to 42.7) | 169.2 (136.1 to 174.6) | 169.2 (135.7 to 174.3) | **37.8** | **169.2** |
+| `promote:` ms, r3..r7 (the window contains the inline demote) | 12.2 (10.5 to 47.4) | 12.3 (10.6 to 47.2) | 172.2 (169.6 to 207.3) | 171.2 (168.9 to 206.7) | **12.2** | **171.7** |
+| promote minus its inline demote, ms | 4.5 (4.4 to 4.5) | 4.5 (4.5 to 4.6) | 33.4 (32.7 to 33.7) | 33.2 (32.4 to 33.4) | **4.5** | **33.2** |
+
+Raw sequences, verbatim from the logs (ms), the two orders agree to within 0.5 ms on every position:
+
+| Arm | demotes r2..r7 | promotes r3..r7 |
+|---|---|---|
+| o1-off | 37.8, 41.8, 42.9, 6.1, 7.7, 6.1 | 46.3, 47.4, 10.5, 12.2, 10.5 |
+| o2-off | 37.8, 42.2, 42.7, 6.1, 7.8, 6.2 | 46.8, 47.2, 10.6, 12.3, 10.7 |
+| o1-on | 169.2, 171.7, 174.6, 136.1, 139.5, 135.9 | 205.1, 207.3, 169.7, 172.2, 169.6 |
+| o2-on | 169.2, 171.4, 174.3, 135.7, 138.8, 135.5 | 204.6, 206.7, 169.0, 171.2, 168.9 |
+
+What the sequences show, stated as observations:
+
+1. **A first-touch step in BOTH arms, the same size.** The first three demotes of every boot (r2, r3,
+   r4) cost about 35 ms more than the last three (r5, r6, r7): 38 to 43 against 6 to 8 ms OFF, 169 to
+   175 against 136 to 140 ms ON. The host tier grows by one fresh 160 MB pinned region per demote until
+   r4 (A, B, then A's replacement is allocated before the old twin drops); from r5 the replacement drops a
+   region the next `cuMemHostAlloc` can reuse. The step is the cost of page-locking and zero-filling fresh
+   host pages (`PinnedHostBuf::new` OFF, `alloc_host` ON), equal in both arms: not a door effect and not a
+   WC effect. The medians above straddle it (three slow, two fast in r2..r6); the steady-state pair is the
+   r5..r7 rows.
+2. **The steady-state demote delta is about 130 ms, at first touch also about 130 ms.** ON minus OFF:
+   136 to 140 against 6 to 8 (r5..r7), 169 to 175 against 38 to 43 (r2..r4). The delta is what the door
+   adds at demote: the two CPU SHA-256 passes over the write-combined destination (the engine's completion
+   checksum, bind's bundle checksum), the ticket lifecycle (fence, submit, per-item event sync, take,
+   require, retire, acknowledge) and the receipt line. This cell does not split those; the hash-speed
+   micro-cell does.
+3. **The promote's own share is 4.5 ms OFF against 33 ms ON.** OFF's `htod_u8_into` is an asynchronous
+   `cuMemcpyHtoDAsync` with no completion observation, so 4.5 ms is the allocations and the launch; the
+   DMA completes inside the following inline demote's window (its D2H synchronizes the same stream). ON's
+   33 ms includes the observed completion of the H2D (`synchronize(&ticket)`, about 160 MB over PCIe), the
+   engine's SHA-256 over the write-combined source at completion, `require`, `ready_view` per item and the
+   ticket's retirement. So the two numbers are not the same quantity; the honest comparison is the whole
+   promote line with its inline demote, 12.2 against 171.7 ms (median, N=10), of which the inline demote
+   carries 6 to 43 against 136 to 175.
+4. **The gate cells' larger numbers (day 15 and this day's identity gate: demote about 150 and 278 ms,
+   promote 266 and 423 ms) carry `MEMRA_KV_HOST_VERIFY=1`**, which digests the device entry at demote and
+   again at promote (a D2H readback plus a hash of 160 MB each, in both arms); this cell runs without it,
+   the production promote shape.
+
+For the decide-by review, from this cell: the door's cost at demote is about 130 ms per 160 MB entry
+(N=10, one card, one window) and at promote about 29 ms on the promote's own share plus the same demote
+cost inside its window; a cached-pinned `alloc_host` arm would remove the WC share of the two demote-side
+hashes and the one promote-side hash, and only the micro-cell says how much of the 130 that is.

@@ -468,6 +468,14 @@ H2D through the same engine on promote (Option C)` and prints the device ledger 
 receipt line's digest uses the D2H line's domain so the two lines of one entry carry one digest. The
 GPU cells ran on the card first (`gputests`: `6 passed; 0 failed`, the B pair and the four C cells).
 
+Receipts (`DAY16.md`, `pro-single-day16/`, `verify-day16.py` `DAY16 REPLAY: PASS`, 203 checks): the fault
+gate `ALL GREEN` on four cells (the promote cells' aborted ticket sequence consumed, `seq=2` skipped, no
+`Capacity`), identity default and plain `ALL GREEN` OFF and ON with one H2D receipt per ON promote whose
+digest equals its D2H's, failure `1 FAILURE(S)` both arms with the flip named at the H2D and `VERIFY
+FAILED` after it, lane A's tenant fix arm `PASS` with 8 D2H and 2 H2D receipts, serve-smoke and lane B's
+gates line-identical. The WC pair's first cell: `WC-DESTINATIONS.md` "Results" (demote median 37.8 OFF
+against 169.2 ms ON, N=10; the promote's own share 4.5 against 33.2; a first-touch step in both arms).
+
 ### One-shot faults and the receipt line
 
 `MEMRA_KV_HOST_FAULT=contract-promote-presubmit` (the producer fence refused before any op is submitted:

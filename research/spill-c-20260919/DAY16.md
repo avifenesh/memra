@@ -56,3 +56,120 @@ server (the gate's typed operand hand-off for one plane; the server's operands a
 planes published at `insert_pinned_demoting`, and its equivalent checks are the identity lease `require`
 and the receipt expectation); the arena path and the DFlash tail slice are unchanged; the allocation flag
 is unchanged (`WC-DESTINATIONS.md`).
+
+## Target-card receipts (`pro-single-day16/`, replay `verify-day16.py`)
+
+Every gate cell: door OFF then ON, same binary, same prompts, same environment otherwise; `default` = the
+gate's own environment (this MTP artifact serves speculatively, every prefix insert is a spec-boundary
+capture with a draft plane, 34 items per batch); `plain` = `MEMRA_SERVE_SPEC=0` (32 items).
+`MEMRA_HOSTGATE_CACHE_MB=256` for the host-spill gates. The card was free when the driver started (lane
+B's earlier server had exited); lane B's next server took the card between my driver's `done` and the WC
+pair cell, which waited on the rig lock through the runner's bounded retries. Verdict lines verbatim.
+Collector `--validate` exit 0 on every cell (`validate.log`).
+
+| Cell | OFF | ON | Equal |
+|---|---|---|---|
+| GPU unit cells, `cargo test --release -- --ignored` under the collector lock (`gputests/`) | | `test result: ok. 6 passed; 0 failed` in 0.25 s: `option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on`, `option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on`, `option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin`, `option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin`, `option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin`, `option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source`, each `... ok`. The first real CUDA exercise of the route, `retain_host`, `cancel` plus `recover_source` and the receipt mismatch path. | |
+| `tools/kv-host-contract-fault-gate.sh`, four cells (`faultgate-fix/`; tree `75573cad3`, same binary) | | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 40 `ok:`. Demote side as on day 15 (`seq=1`, `seq=2`). Promote side, verbatim sequences: `promote-presubmit`: D2H `seq=1`, `promote refused (contracts door): tier H2D producer fence refused: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-presubmit); serving without the host entry`, D2H `seq=2` (the cold path's insert evicted), H2D `seq=3`, D2H `seq=4`, `promote: 86 tokens, 159.6MB`; `promote-postpublish`: D2H `seq=1`, `promote refused (contracts door): tier H2D publication refused: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-postpublish); serving without the host entry`, D2H `seq=3`, H2D `seq=4`, D2H `seq=5`, `promote:`: the aborted ticket's `seq=2` is consumed and never leaked (in-flight is one batch; a leak would have refused every later transfer with `Capacity`). No `TIER DISABLED`, no `host entry dropped`, no `Capacity`, no `leaked`, no refusal beyond the injected one, in both. The first sitting (`faultgate/`, tree `25891baa9`) ran the same four cells and printed `2 FAILURE(S)` on the gate's own matcher (it compared the FIRST D2H receipt in the log, the r2 one before the refusal, with the refusal's position); every unwind assertion was `ok`; the matcher fix is `75573cad3`, kept as the record. | |
+| `tools/kv-host-spill-identity-gate.sh`, **default** | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`, 13 verdict lines | the same 13 lines | yes |
+| same, `[prefix-host] demote:` byte counts | `89 tokens, 160.7MB`, `86 tokens, 160.6MB` | identical | yes |
+| same, promote, verify, lane B's device line | `promote: 89 tokens, 159.7MB`, 1 `verify ok`, 1 `[prefix-cache] insert refused` (r4, both arms) | identical | yes |
+| same, prefix event sequence (timings stripped, door lines excluded) | 16 events | the same 16 | yes |
+| same, contract receipts ON (verbatim order) | none | D2H `seq=1 ... items=34 (16 KV planes, draft) complete=34 require=ok checksums_sha256=435f0da4...`, then `demote: 89`, then **H2D `seq=2 ... items=34 (16 KV planes, draft) complete=34 require=ok checksums_sha256=435f0da4... published retired acknowledged`** (the same digest as the D2H of the same entry), `verify ok`, D2H `seq=3 ... df514e08...` (the inline demote of the other entry), `demote: 86`, `promote: 89` | as required |
+| same, r1/r3/r4 texts and `cached_tokens` | r3 and r4 `cached 89 / prompt 102`, identical texts | identical texts and counts | yes |
+| same, promote and demote wall times (N=1, not a claim; the WC cell measures) | promote `266.1 ms`, demotes `149.6 / 150.6 ms` | promote `423.0 ms`, demotes `277.6 / 278.9 ms`; the promote's window contains the second demote, so the promote itself is `144.1` against `115.5` ms | |
+| `tools/kv-host-spill-identity-gate.sh`, plain | `ALL GREEN`, 13 lines, demotes `89 / 160.5MB`, `86 / 160.4MB`, 1 promote, 1 `verify ok`, 15 events | identical; D2H `seq=1 ... items=32 (16 KV planes) ... c90ed5ec...`, H2D `seq=2 ... items=32 ... c90ed5ec... published retired acknowledged`, D2H `seq=3 ... 892a1252...`; promote `417.8` against `267.5` ms, demotes `273.4 / 275.2` against `146.9 / 151.5` | yes |
+| `tools/kv-host-spill-failure-gate.sh`, **default** | `KV-HOST-SPILL FAILURE GATE: 1 FAILURE(S)` (`FAIL: pool-full refusal is LOUD and named`, pre-existing since day 13), 15 lines | the same 15 lines | yes |
+| same, digest cell ON (verbatim order) | `FAULT: flipped one demoted K byte`, `demote:`, `VERIFY FAILED: promoted digest aaec09b2... != demote digest 7674c8a1...` | D2H receipt `seq=1`, `FAULT: flipped one demoted K byte (MEMRA_KV_HOST_FAULT=flip-demote)`, `contracts door D2H receipt: Key plane image checksum differs from its D2H receipt as injected (...); the verify arm catches it at promote`, `demote: 89`, then **`contracts door H2D receipt: Kv(3) K plane host bytes differ from the D2H receipt as injected (MEMRA_KV_HOST_FAULT=flip-demote); the verify arm catches it at promote`**, the H2D receipt `seq=2 ... require=ok` (against the completion's own checksums), then `VERIFY FAILED: promoted digest aaec09b2... != demote digest 7674c8a1...`: the OFF shape held, the door named the difference at both ends, no `tier H2D receipt refused` | yes |
+| same, alloc and pool-full cells | `TIER DISABLED: pinned host alloc ... (MEMRA_KV_HOST_FAULT=alloc-fail)`; `demote evaporated at the tenant share cap` | identical tier event lines | yes |
+| lane A `tools/kv-host-tenant-reclaim-gate.sh fix` | `GATE: kv-host-tenant-reclaim (fix arm) PASS`, 29 verdict lines, 8 demotes, 2 promotes, 3 `evict (tenant share)` | the same 29 lines and sequence; 8 D2H receipts (7 distinct digests: beta's entry demoted twice with one digest) and 2 H2D receipts whose digests (`79f0c67d...`, `394f1089...`) are both among the D2H digests of the same log | yes |
+| `tools/serve-smoke.sh` plain + cache-metering | 34 lines, `ok: cache-metering accounting exact (per-request + /metrics + economics)`, `serve-smoke: 0 failed` | the same 34 lines (no host tier on these boots: one `[kv-host-contracts] ... nothing to route` line) | yes |
+| lane B `tools/prefix-evict-reclaim-gate.py` | `PREFIX-EVICT-RECLAIM: entry_bytes=1592160256 reclaim_credit_bytes=1751000000 driver_free_delta_bytes=1610612736 trim_released_bytes=1610612736 pool_retained_bytes=140549120 p2=admit-same-tick busy_overlap_s=21.659 identity=aa6cc3291b981646 V1=ok V2=ok V3=ok V4=ok -> PASS` | the identical line except `busy_overlap_s=21.661` (the gate's own wall-clock overlap window, 2 ms apart; no host tier on these boots; day 15's equality to the millisecond was chance) | yes, timing stripped |
+| lane B `tools/prefix-newest-turn-fits-gate.py` | `PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=737943552 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 V1=ok V2=ok V3=ok V4=ok -> PASS` | the identical line | yes |
+
+The bytes-unchanged chain, one link longer than day 15: `verify ok` in the ON arm on every promote (the
+promoted device entry's digest, over planes that crossed BOTH ways through the contract, equals the
+pre-demote device digest), the same `verify ok` in OFF, equal demote byte counts, byte-identical r1, r3
+and r4 texts and `cached_tokens` across arms, the receipt's per-plane checksum equal to bind's bundle
+checksum at demote (day 15), and, new, `Completion::require` at promote holding against those same
+receipts before publication, visible as the H2D line's digest equal to the D2H line's digest for every
+entry in every ON log (identity default and plain, the tenant gate's two promotes, the fault gate's four
+cells), with the one difference in the whole day the injected flip, named at both ends.
+
+### Findings
+
+1. **The day-15 promote delta was the inline demote.** With the promote's own share separated (the
+   promote line minus the demote line printed inside its window), OFF promotes the entry in `115.5 ms`
+   and days 13 to 15's ON in `116.6 ms` (day 15's `397.7 - 281.1`); Option C's ON promote is `144.1 ms`
+   (N=1), the engine's SHA-256 of the write-combined source at H2D completion plus the ticket lifecycle.
+   The WC cell (below) is the N=5 measurement of both lines.
+2. **The receipt digest chains the two directions.** The H2D receipt of every promote carries the D2H
+   digest of the same entry's demote: `435f0da4...`, `c90ed5ec...` (identity default and plain), beta's
+   `79f0c67d...` and acme's `394f1089...` (tenant), `df514e08...` (the fault gate's r4). A grep pairs
+   every promote with the demote whose bytes it restored, across boots.
+3. **A consumed ticket sequence is the leak proof.** The post-publish promote fault's aborted ticket took
+   `seq=2` and the next transfers ran `seq=3, 4, 5`: `retire` released its in-flight charge (the whole
+   dimension) and `acknowledge` dropped it; the demote-side cells show the same (day 15).
+4. **The flip lands on `Kv(3)`.** The first KV plane of this hybrid model sits at layer 3 (layers 0 to 2
+   are recurrent), so the door's named difference reads `Kv(3) K plane`; the OFF `FAULT` line does not
+   name the slot.
+5. **Two gate scripts had matcher bugs of mine, both fixed on the day and kept as records:** the fault
+   gate's promote cells compared the first receipt in the log with the refusal (`75573cad3`, `after_any`),
+   and the WC cell script tripped `set -u` on its own `local` line (`label: unbound variable`) before any
+   boot (`wc-pair/`, rerun as `wc-pair2`).
+
+## The WC pair (`WC-DESTINATIONS.md` "Results"; `pro-single-day16/wc-pair2-retry3/`, replay `wc-pair.py` PASS)
+
+One collector lock hold (64 s, after three 120 s waits behind lane B), four boots OFF, ON, ON, OFF, seven
+requests each over the two identity-gate prompts, `MEMRA_KV_HOST_VERIFY` unset, default spec environment.
+Regime: 37 to 51 C, at most 492 W under the 600 W cap, 257 samples at 250 ms. Medians (ms): demote OFF
+**37.8** against ON **169.2** (N=10 pooled, each order N=5 agreeing within 0.5 ms per position); promote
+line OFF **12.2** against ON **171.7**; promote minus its inline demote OFF **4.5** against ON **33.2**.
+Every boot shows a first-touch step of about 35 ms on the first three demotes in BOTH arms (fresh pinned
+regions page-locked and zero-filled; from r5 a dropped twin's region is reused), so the steady-state pair
+is r5..r7: demote 6 to 8 against 136 to 140 ms. The door's cost at demote is therefore about 130 ms per
+160 MB entry on this card in this window (two CPU hashes over write-combined memory plus the ticket
+lifecycle; the split needs the hash-speed micro-cell), and about 29 ms on the promote's own share (the
+observed H2D completion, one hash over the WC source, the ticket), with OFF's 4.5 ms being an
+asynchronous launch whose DMA completes inside the next demote's window. Reported as the first cell of the
+decide-by review, not a verdict; the flag is the engine's (`tier_transfer.rs`) and is unchanged.
+
+## Local battery (this rig, `systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=28G`, logs `day16-local/`)
+
+On `25891baa9`: `cargo fmt --all -- --check` clean; `cargo test -p memra-server -p memra-kv -p memra-engine
+--offline` (under `flock -n /tmp/memra-5090.lock`, no bare GPU run): memra-server 758 passed, 0 failed, 12
+ignored (the six GPU cells of B and C plus the six pre-existing), memra-kv 71 passed, memra-engine 515
+passed, 24 ignored; 265 suites, 1562 `ok`, 0 failed; `cargo clippy -p memra-server -p memra-kv -p
+memra-engine --offline --all-targets -- -D warnings` clean on the first pass; `tools/check-flags.sh` 865
+runtime names, none uncovered; `tools/docs-registry-census.sh` clean (58 tables, 901 rows); `git diff
+--check` clean. The source-text cell failed once on its own list (the first `take_plane(` in the route is
+the registration unwind, not the final take; the trailing `rfind` assertion covers the final one), fixed in
+the test. No `DOCS_RS=1` command ran. The final tree's fmt, flags census, docs census and diff-check are in
+`day16-local/final-*.log`.
+
+## Push
+
+`git push origin lane/spill-c-20260919` at `a902fd2e9` was refused by the pre-push hook's perf-ci
+freshness arm, verbatim: `pre-push: engine files touched after the last perf-ci battery. base (merge-base
+with refs/remotes/origin/lane/spill-c-20260919): 64ee65c9c69fd497cf8ac2e35621b2fa248f7f99 engine files this
+branch changes: crates/memra-engine/src/tier_transfer.rs Run: tools/local-ci.sh --perf (or --perf-quick for
+the 31B subset) Override knowingly with MEMRA_SKIP_PERF_CI=1.` Every other arm passed (perf board,
+flags census, releasability censuses, docs-registry census, workflow-file census). No skip variable was
+used and none will be by this lane; `tools/local-ci.sh --perf` is the local 5090's multi-model perf
+battery, outside today's budget and blocked on this rig by the recorded hit-gate identity regression at
+main (memory note 2026-09-20). The lane's tip stays unpushed with this record; the lead decides the
+perf-ci run or the receipt.
+
+## What remains
+
+- **The WC decision** (`WC-DESTINATIONS.md`): the engine's allocation flag; the hash-speed micro-cell
+  (cached against write-combined SHA-256 GB/s on this host); a cached-pinned `alloc_host` arm measured the
+  same way on both rigs; or one hash per plane at demote; or the documented cost.
+- **The arena path** (`MEMRA_GLM5_TP_KV_HOST`, refused with the door at boot): its fixed backing is not
+  governor-charged and its slices are not leases.
+- **The DFlash tail slice**: no drafter artifact identity is derivable from a GGUF digest and no gate boots a
+  DFlash drafter on the card.
+- **Verify digest v3** (the draft plane in `MEMRA_KV_HOST_VERIFY`), **the pool-full failure-gate line**:
+  unchanged from days 14 and 15.
+
+Effort: approximately 6.5 agent-hours (budget 8).
