@@ -72,6 +72,16 @@ jobs:
       - name: Change-class teeth (the docs-only skip fails closed in every arm)
         run: tools/test_ci_change_class.sh
 
+      # Duplicate mapping keys: GitHub refuses the whole workflow file and runs ZERO jobs (main at
+      # 34ed99dfc, 2026-09-21: two portable-suites jobs from #592 and #590). This step can only
+      # protect the OTHER workflow files (a ci.yml that does not parse never reaches it); ci.yml
+      # itself is protected by the same census in tools/hooks/pre-push and by a PR run on a
+      # current merge ref. PyYAML's safe_load keeps the last key silently, so the loader raises.
+      - name: Workflow files carry no duplicate mapping key (strict loader; safe_load would pass)
+        run: |
+          tools/check-workflow-keys.py
+          tools/test_workflow_keys.sh
+
       - name: Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)
         run: tools/unittest-floor.sh tools test_cache_qualification.py 15
 
