@@ -1,0 +1,22 @@
+0e95bf16607f3b758e000041caf7794b8ecd4e584b7e8b6e0f76df70e102ee62  /root/spill-receipts/c-day15-review/bins/memra-server
+== cell presubmit: MEMRA_KV_HOST_FAULT=contract-presubmit (one-shot) ==
+  ok: presubmit: three completions served
+  ok: presubmit: door ON with the transfer engine
+  ok: presubmit: exactly one typed injected refusal, the producer fence
+  ok: presubmit: the next demote completes with a D2H contract receipt after the refusal
+  ok: presubmit: the next demote publishes
+  ok: presubmit: the tier never latched off
+  ok: presubmit: no entry was dropped as not whole (no quarantine)
+  ok: presubmit: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: presubmit: no host-tier refusal line beyond the injected one
+== cell postpublish: MEMRA_KV_HOST_FAULT=contract-postpublish (one-shot) ==
+  ok: postpublish: three completions served
+  ok: postpublish: door ON with the transfer engine
+  ok: postpublish: exactly one typed injected refusal, the receipt
+  ok: postpublish: the next demote completes with a D2H contract receipt after the refusal
+  ok: postpublish: the next demote publishes
+  ok: postpublish: the tier never latched off
+  ok: postpublish: no entry was dropped as not whole (no quarantine)
+  ok: postpublish: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: postpublish: no host-tier refusal line beyond the injected one
+KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
