@@ -1117,6 +1117,13 @@ path under a latched gpu fault served 200. A first boot binds after the probe, s
 the respawn window only (by design, unchanged). Comments on #524 and #526; both stay open (the release battery decides
 what it requires).
 
+Battery (`integration-day12/integ29-cpu-battery/`, CPUQuota 1200 percent): fmt, portable suites, memra-server suite,
+clippy, censuses, collector pytest, engine CPU lib tests, server clippy `-D warnings`, marker census, workflow keys,
+perf board: rc=0; `git diff --check` tripped on B's HTTP header receipts ending in the protocol blank line, marked
+`-whitespace` by a `.gitattributes` in the receipt dirs (the bytes stay). Local 5090 `tools/serve-smoke.sh`:
+`serve-smoke: 0 failed`; the health fault gate on this tree (`integ29-health-fault-gate-5090/`):
+`health-fault-gate: arms=a,b,c,d,e,f pass=6 documented=3 fail=0`, receipts copied in.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
