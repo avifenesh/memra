@@ -1061,6 +1061,7 @@ async fn ttft_request_start_with_trace(
 mod request_lifecycle_http_tests {
     use super::*;
     use axum::body::{Bytes, HttpBody as _};
+    use std::time::Duration;
 
     const KEY: &str = "0123456789abcdef0123456789abcdef";
 
