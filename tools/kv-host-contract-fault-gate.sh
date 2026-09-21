@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # kv-host-contract-fault-gate.sh: the contract-routed host-tier D2H (MEMRA_KV_HOST_CONTRACTS=1,
-# lane/spill-c-20260919 Option B) must UNWIND a refusal without wedging the tier. Two cells, one
-# server boot each, door ON, one one-shot fault each (docs/FLAGS.md `MEMRA_KV_HOST_FAULT`), the two
-# unwind paths the PR #599 review found broken:
+# lane/spill-c-20260919 Option B) and H2D (Option C) must UNWIND a refusal without wedging the tier.
+# Four cells, one server boot each, door ON, one one-shot fault each (docs/FLAGS.md
+# `MEMRA_KV_HOST_FAULT`). The demote side first, the two unwind paths the PR #599 review found broken:
 #   presubmit    MEMRA_KV_HOST_FAULT=contract-presubmit: the producer fence is refused before any op
 #                is submitted. Every registered plane must come back to its slot, the demote fails
 #                typed, no ticket exists (the next receipt is `seq=1`), the tier stays on, and the
@@ -15,6 +15,20 @@
 # Cell shape (device budget holds ONE seed entry): r1 P_A seeds E_A; r2 P_B seeds E_B, the byte
 # budget evicts E_A, whose demote takes the injected refusal; r3 P_C seeds E_C, evicts E_B, whose
 # demote must complete. Three 200s, and the server log is the receipt.
+# Option C (day 16) adds the promote side of the same door, two more cells, one boot each:
+#   promote-presubmit    MEMRA_KV_HOST_FAULT=contract-promote-presubmit: the H2D producer fence is
+#                        refused before any op is submitted. Every fresh destination must release,
+#                        every source twin drop, the host entry stay intact, the promote refuse typed
+#                        (`promote refused (contracts door): tier H2D producer fence refused: ...`),
+#                        the tier stay on, and the NEXT promote complete with an H2D receipt.
+#   promote-postpublish  MEMRA_KV_HOST_FAULT=contract-promote-postpublish: a refusal after
+#                        `ready_view` published every item. The published ticket must retire against
+#                        its consumer fence after its sources retired and be acknowledged, the
+#                        promote refuse typed, the tier stay on, and the NEXT promote complete.
+# Promote cell shape: r1 P_A seeds E_A; r2 P_B seeds E_B, evicts E_A (a clean demote, D2H seq=1);
+# r3 P_A again: device miss, host hit, the promote takes the injected refusal and the cold path
+# serves (its insert evicts E_B into a clean demote); r4 P_B: host hit, the promote must complete
+# (an H2D receipt, then `[prefix-host] promote:`). Four 200s.
 #
 # usage: kv-host-contract-fault-gate.sh [--external-lock FD] <model.gguf> <server_bin> <evidence_dir>
 # env:   MEMRA_HOSTGATE_CACHE_MB (default 256)  device prefix budget; must hold ONE seed entry but not two
@@ -185,8 +199,50 @@ cell() { # $1 name $2 fault $3 refused-kind $4 expected next-receipt seq
     chk "$name: no host-tier refusal line beyond the injected one" no_extra_refusal "$log"
 }
 
+one_refusal_only() { # $1 log $2 refusal: the only host-tier refusal line is the injected one
+    python3 - "$1" "$2" <<'PYEOF'
+import re, sys
+log, refusal = sys.argv[1], sys.argv[2]
+pat = re.compile(r"\[prefix-host\] (demote refused|promote refused|REFUSED|.*\(contracts door\): |demote failed)")
+lines = [l for l in open(log, errors="replace").read().splitlines() if pat.search(l)]
+sys.exit(0 if len(lines) == 1 and refusal in lines[0] else 1)
+PYEOF
+}
+four_served() { # $1 evidence prefix: r1..r4 each carry a non-empty completion
+    python3 - "$1" <<'PYEOF'
+import json, sys
+p = sys.argv[1]
+sys.exit(0 if all(json.load(open(f"{p}-r{i}.json"))["choices"][0]["text"] for i in (1, 2, 3, 4)) else 1)
+PYEOF
+}
+
+pcell() { # $1 name $2 fault $3 refused-kind
+    local name=$1 fault=$2 kind=$3 log="$EV/$1-server.log"
+    local refusal="promote refused (contracts door): tier H2D $kind refused: injected failure (MEMRA_KV_HOST_FAULT=$fault); serving without the host entry"
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, promote side) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_B" "$EV/$name-r2.json"
+    req "$P_A" "$EV/$name-r3.json"
+    req "$P_B" "$EV/$name-r4.json"
+    stop
+    chk "$name: four completions served" four_served "$EV/$name"
+    chk "$name: door ON with the transfer engine on both sides" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine.*KV plane H2D through the same engine on promote" "$log"
+    chk "$name: exactly one typed injected refusal, the $kind" count_eq "$refusal" "$log" 1
+    chk "$name: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)" after "$refusal" "contracts door D2H receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* require=ok" "$log"
+    chk "$name: the next promote completes with an H2D contract receipt after the refusal" after "$refusal" "contracts door H2D receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* require=ok .* published retired acknowledged" "$log"
+    chk "$name: the next promote publishes" after "$refusal" "\\[prefix-host\\] promote: " "$log"
+    chk "$name: the promote refusal kept the host entry" absent "host entry dropped" "$log"
+    chk "$name: the tier never latched off" absent "TIER DISABLED" "$log"
+    chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+    chk "$name: no host-tier refusal line beyond the injected one" one_refusal_only "$log" "$refusal"
+}
+
 cell presubmit contract-presubmit "producer fence" 1
 cell postpublish contract-postpublish receipt 2
+pcell promote-presubmit contract-promote-presubmit "producer fence"
+pcell promote-postpublish contract-promote-postpublish publication
 
 if [ "$FAILS" -eq 0 ]; then
     echo "KV-HOST-CONTRACT-FAULT GATE: ALL GREEN"
