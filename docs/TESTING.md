@@ -1471,6 +1471,31 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   serve-smoke and lane B's `prefix-evict-reclaim-gate.py` / `prefix-newest-turn-fits-gate.py` lines
   identical, one receipt before every ON demote, N=1, executed-not-qualified. Evidence:
   `research/spill-c-20260919/DAY15.md`, `pro-single-day15/`, replay `verify-day15.py`.
+- Option B unwind (day 15 review, PR #599 findings 1 and 2): every pre-submit refusal drops the ops'
+  original `DeviceLease` handles before the unwind (an extra holder on the registry `Rc` makes
+  `take_plane` refuse `Busy`, which escalated a recoverable refusal to `SourceQuarantined`, latched the
+  tier and dropped a whole device entry over intact planes); the abort observes every fence before
+  retiring against it (owner-stream drain after `record_consumer`; an unpublished ticket retires
+  against `None`) and never discards a `retire`, `acknowledge` or `release_producer` result: a refusal
+  there is the typed `TicketLeaked` outcome and one `TIER DISABLED` line (a leaked batch is the
+  ledger's whole in-flight dimension). Injectable one-shot faults, `MEMRA_KV_HOST_FAULT=
+  contract-presubmit` (the producer fence refused before any op is submitted) and
+  `contract-postpublish` (the receipt check refused after every destination was taken), armed once at
+  boot into `HostTierContext::fault`. Cells: the GPU unit cells `option_b_presubmit_refusal_returns_
+  every_plane_and_keeps_the_tier_on` and `option_b_postpublish_refusal_retires_the_ticket_and_keeps_
+  the_tier_on` (`worker::tests`, `#[ignore]` without a device; a real `CudaTransfers` on the engine's
+  stream over a ledger whose in-flight dimension is exactly one batch: planes back with their bytes,
+  typed `Failed` never quarantine, tier on, ledger at zero, the next demote completes), and
+  `tools/kv-host-contract-fault-gate.sh [--external-lock FD] MODEL BIN EV` on a real server boot
+  (door ON, one cell per fault: r1 seeds, r2 evicts into the injected refusal, r3 evicts into a
+  clean demote; asserts exactly one typed `demote failed (tier D2H <producer fence, receipt> refused:
+  injected failure ...)`, then a D2H contract receipt whose ticket is `seq=1` (presubmit: no ticket was
+  issued) or `seq=2` (postpublish: the aborted ticket retired and was acknowledged) and a `demote:`,
+  no `TIER DISABLED`, no quarantine, no `Capacity`, no leaked wording; verdict `KV-HOST-CONTRACT-FAULT
+  GATE: ALL GREEN`). The source-text cell pins the `originals` drop before every pre-submit unwind and
+  the drain-then-retire order with no discarded result in the abort. Evidence:
+  `research/spill-c-20260919/DAY15.md` (review section), `pro-single-day15-review/`, replay
+  `verify-day15-review.py`.
 
 ### `h2d-probe --copies`
 
