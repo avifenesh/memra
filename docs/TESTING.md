@@ -881,6 +881,42 @@ prefix-evict-reclaim-gate.py [--external-lock FD] --model <gguf> --bin <memra-se
   CPU arm: `worker::tests::reclaim_settle_returns_only_the_reclaims_gain` pins the keep
   arithmetic.
 
+### A restored prompt is the cold prompt at every restore point (`tools/prefix-restore-identity-gate.py`)
+
+memra#602 (`research/spill-b-20260919/DAY17.md`, probe E): the prompt-end seed was the one prefix-cache
+capture left off the GDN prime grid, so a hit restored an off-grid entry and primed the suffix from
+an off-grid call start, a second numeric program under the chunked GDN scan (the prime-grid law in
+`docs/SERVING.md`); the 12,350-id turn 10 of the day-16 chain restored from on-grid entries (12,288,
+12,320) reproduced the cold bytes and from off-grid entries (12,250, 12,300) produced the other
+stream. Since 2026-09-21 the seed publishes at the grid-aligned boundary (`seed_capture_boundary`,
+worker.rs), the same law the LCP and message-boundary captures already obeyed.
+
+```text
+prefix-restore-identity-gate.py [--external-lock FD] --model <gguf> --bin <memra-server> --out <new-dir> \
+    [--budget-mib 1024] [--turns 10] [--start-tokens 11000] [--grow-tokens 150] \
+    [--points 12288,12320,12200,12250,12300] [--grid 32] [--max-tokens 8]
+```
+
+- Serving shape, one card, two boots of the real `memra-server`, plain path (`MEMRA_SERVE_SPEC=0`),
+  greedy `prompt_ids`, the twin gate's own id generators (the target is turn `--turns` of the
+  day-16 chain byte for byte; 10 is the 12,350-id near-tie). The cache-off boot serves the target
+  cold, text kept; the cache-on boot, per restore point p under its own `cache_salt`, seeds
+  `target[:p]` cold and then sends the whole target (a restore plus a suffix prime).
+- Clauses: V1 identity, every hit's completion text equals the cold completion's; V2 grid, per
+  point the seed's `insert (seed): N tokens` has `N == capture_len(p)`, the hit's `cached_tokens`
+  and `hit: N of M` line equal that N, N is a grid multiple, and every `[primeseg] call` of the
+  hit has `grid_off=0`. Red on the pre-fix `main` for every off-grid point even where V1 holds by
+  a near-tie that did not flip.
+- Verdict line: `PREFIX-RESTORE-IDENTITY: target=12350 points=5 identical=K/5 grid_ok=M/5 grid=32
+  p(seedS,restoredR,offO,suffixQ):yes|NO ... V1=.. V2=.. -> PASS|FAIL`; exit 0/1/2 as the twin
+  gate. Receipts on both cards: [`research/spill-b-20260919/DAY18.md`](../research/spill-b-20260919/DAY18.md)
+  and [`DAY19.md`](../research/spill-b-20260919/DAY19.md).
+- Canonical rig lock only; under the collector, `tools/tier-battery.py --rig rtx5090 --external-lock
+  --execute python3 tools/prefix-restore-identity-gate.py --external-lock @COLLECTOR_LOCK_FD@ ...`.
+  CPU arms: `worker::tests::seed_capture_boundary_lands_on_the_grid_or_refuses` (lengths just above
+  and below a grid line, the exact prompt-end line, the sub-floor refusal band, covered re-sends)
+  and `seed_boundary_inside_prompt_is_a_stop_only_below_the_prompt_end`.
+
 ### The newest turn fits the prefix cache (`tools/prefix-newest-turn-fits-gate.py`)
 
 memra#523 items 1 and 3: under the segmented policy that was the default until 2026-09-21 a newly
@@ -898,7 +934,7 @@ Victim selection and accounting only: captured and restored bytes are unchanged.
 
 ```text
 prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra-server> --out <new-dir> \
-    [--budget-mib 1024] [--cohort-tokens 2800,3000,3200] [--turns 8] [--start-tokens 9200] [--grow-tokens 300]
+    [--budget-mib 1024] [--cohort-tokens 2800,3000,3200] [--turns 8] [--start-tokens 9200] [--grow-tokens 300] [--grid 32]
 ```
 
 - Serving shape, one card, two boots of the real `memra-server` per cell, plain path
@@ -914,26 +950,53 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
   `insert` lines (a bytes(tokens) fit for the artifact) and the gate REFUSES unless the
   cohort is at most 80 % of the budget, cohort plus turn-1 entry exceed the budget, and every
   turn's entry fits the budget: the incident's shape scaled to a small budget.
-- Assertions, bytes from the server's `[prefix-cache]` lines and `/metrics`: V1 every turn k >= 2
-  reports `usage.prompt_tokens_details.cached_tokens >= ` turn k-1's `prompt_tokens`; V2 turn 1
-  publishes and every later turn hits exactly once and publishes, with no `insert refused` or
-  `snapshot skipped` line for the growing tenant; V3 after every turn the calibration boot's
+- The capture law the gate is stated in (memra#602, fixed 2026-09-21; `docs/SERVING.md`, "The
+  prompt-end seed obeys the same law"): every entry the cache publishes lands on the GDN prime
+  grid, the plain seed and the spec session's `insert (spec-boundary)` alike (day 19), so a
+  prompt of P tokens publishes `capture_len(P)` tokens (P when P is a multiple of
+  `--grid`, otherwise the largest multiple below P whose remainder is at least PRIME_MIN_T = 16,
+  never under the 64-token entry floor), a hit restores exactly that many, and `cached_tokens`
+  reports the restored length, never P. `--grid` names the engine's `gdn_chunk_size()` (32); a
+  server on another grid fails V6 loudly.
+- Assertions, bytes from the server's `[prefix-cache]` lines and `/metrics`, every one a verdict:
+  V1 every turn k >= 2 reports `usage.prompt_tokens_details.cached_tokens` EQUAL to the entry turn
+  k-1 published (its `insert (seed): N tokens` line; until day 18 this read `>= prompt_tokens`,
+  which only an off-grid prompt-end entry satisfies); V2 turn 1 publishes exactly one seed entry
+  and every later turn hits exactly once, for the previous turn's published length, and publishes
+  its own, with no `insert refused`, `snapshot skipped` or `seed REFUSED (grid)` line for the
+  growing tenant; V3 after every turn the calibration boot's
   effective free (`cuda_driver_free_bytes + cuda_pool_cached_bytes`) equals the measured boot's
   effective free plus the cache's resident bytes, within 64 MiB (the cache costs exactly what it
   holds, so every evicted byte came back: #523 item 4 under the capacity shape, stated on states
   because per-turn deltas need aligned starting states and the cohort phase does not give them);
   V4 at least one eviction of a cohort entry (`ns "cohort"`) and no turn evicting the entry it
-  just published (the room came from the cohort, never from the entry itself). Per-turn
-  `text_sha256`, the same prompt's cold
-  digest from the calibration boot, and the per-request server receipt (`[glm5-spec] route=`
-  with `cold=`/`restored=`, or `[spec-k] ... cached= lcp=`) are recorded for the runner; identity
-  across binaries and against the cold boot is the runner's comparison, not a verdict inside one
-  cell.
+  just published (the room came from the cohort, never from the entry itself); V5 every turn's
+  completion text equals the calibration boot's cold completion of the same prompt (the restored
+  render is the cold render; turn 1 pins that the cache-on cold prime, stopped on its seed
+  boundary, is the cache-off one); V6 every `insert (seed)` of the measured boot, cohort and
+  turns, has exactly `capture_len(prompt_tokens)` tokens and every restored length is the
+  published one and a grid multiple. The per-request server receipt (`[glm5-spec] route=` with
+  `cold=`/`restored=`, or `[spec-k] ... cached= lcp=`), the `[primeseg] call start=.. grid_off=..`
+  prime-call receipts (MEMRA_DEBUG_PRIMESEG=1, a documented diagnostic) and the count of off-grid
+  call starts are recorded, not judged.
 - Verdict line: `PREFIX-NEWEST-TURN-FITS: budget_bytes=... cohort_bytes=... turns=8 cold_turns_after_1=...
-  cached_ok=N/7 lines_ok=N/8 ... V1=.. V2=.. V3=.. V4=.. -> PASS|FAIL`; exit 0 PASS, 1 FAIL, 2
-  `REFUSED: ...` (lock, port, shape, an unserved request). Red on `main` and green on the fix,
-  same card, same artifact, same prompts:
-  [`research/spill-b-20260919/DAY14.md`](../research/spill-b-20260919/DAY14.md).
+  cached_ok=N/7 lines_ok=N/8 ... identity_ok=N/8 grid_ok=N/M grid=32 off_grid_calls=N V1=.. V2=..
+  V3=.. V4=.. V5=.. V6=.. -> PASS|FAIL`; exit 0 PASS, 1 FAIL, 2 `REFUSED: ...` (lock, port, shape,
+  an unserved request). Red on `main` and green on the fix, same card, same artifact, same
+  prompts: the capacity shape (V1..V4) in
+  [`research/spill-b-20260919/DAY14.md`](../research/spill-b-20260919/DAY14.md); the day-16 lru
+  shape (`--cohort-tokens 1250,1350,1450,1550 --turns 12 --start-tokens 11000 --grow-tokens
+  150`, V5 and V6: `identity_ok=11/12 grid_ok=0/31 off_grid_calls=11 ... V5=FAIL V6=FAIL -> FAIL`
+  on the pre-fix `main`, `identity_ok=12/12 grid_ok=31/31 off_grid_calls=0 ... -> PASS` on the
+  fix, local RTX 5090; the fix also `-> PASS` on one RTX PRO 6000 Blackwell) in
+  [`research/spill-b-20260919/DAY18.md`](../research/spill-b-20260919/DAY18.md) and, on the
+  completed fix (both capture sites), in
+  [`research/spill-b-20260919/DAY19.md`](../research/spill-b-20260919/DAY19.md). The
+  `tools/spec-on-cache-hit-gate.sh qwen` cells state the same law in their own numbers since
+  day 19 (an identical sampled repeat restores `capture_len(P)`, 64 of 106; the growth turns
+  restore the republished render-stable boundary, 96 of 119; an on-grid `fc` pair built
+  through `/v1/tokenize` keeps the whole-prompt full-cover shape and its `restore-full-cover`
+  boundary site exercised); its identity law, spec-on text == spec-off text, is unchanged.
 - Canonical rig lock only, held for the whole cell; under the collector,
   `tools/tier-battery.py --rig pro-single --external-lock --execute python3
   tools/prefix-newest-turn-fits-gate.py --external-lock @COLLECTOR_LOCK_FD@ ...` (lead ruling 5).
