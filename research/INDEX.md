@@ -538,3 +538,5 @@ local-ci-one-card-20260921 | "the battery's GPU-only #[ignore] stage was red on 
 lockstep-mixed-577-20260921 | "two row-count-dependent programs sat in moe_ffn_lockstep, neither of them the router (#565) and neither the gathered m_e-row expert call. The shared expert ran as one mrows-wide matmul, and the CPU companion's multi-row ABI re-split a row's expert sum ... With the shared expert per row and the CPU experts on the one-job-per-row program, run_lockstep M=4 reproduces the M=1 logits bit for bit over 33 steps on Hy3" | lockstep-mixed-577-20260921/README.md
 
 - `release-qualification/pro-ubuntu2404-a3dc3cc2-20260921` | "All five canonical generic cells passed"; fresh v3 Ubuntu24 source/build/model/physical-card-bound proof, both-profile tag guard remains | [RESULTS](release-qualification/pro-ubuntu2404-a3dc3cc2-20260921/RESULTS.md)
+
+- `release-qualification/pro-ubuntu2404-25545777-20260921` | "All five canonical generic cells passed"; fresh v3 Ubuntu24 proof on accepted current main; both-profile tag guard remains | [RESULTS](release-qualification/pro-ubuntu2404-25545777-20260921/RESULTS.md)
