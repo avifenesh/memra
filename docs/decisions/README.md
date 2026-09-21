@@ -18,6 +18,7 @@ half — "we tried X and it lost by Y% on Z" cannot be reconstructed from the co
 | [PRO6000-MULTICARD.md](PRO6000-MULTICARD.md) | why PP is the 2–4 card PCIe baseline, and when dense TP or MoE TP/EP/ETP may replace it |
 | [KV-PHYSICAL-RECLAIM.md](KV-PHYSICAL-RECLAIM.md) | VMM-backed KV planes for physical demote/reclaim (gate-only door); pool trim rejected by measurement |
 | [PREFIX-CACHE-POLICY.md](PREFIX-CACHE-POLICY.md) | plain LRU as the only prefix-cache eviction policy; the segmented (SLRU) arm and its two doors deleted after losing every pair of the incident-shape A/B |
+| [PINNED-DESTINATIONS.md](PINNED-DESTINATIONS.md) | the contract path's pinned host destinations cached on the RTX PRO 6000 Blackwell class and write-combined on the RTX 5090 class and elsewhere, a per-device default from two pre-registered A/B cells; an env door and a global flip rejected |
 
 Adding one: a decision that changes a default, a format, a target or an arm belongs here, with
 the measurement that settled it. Superseded records get a banner naming what replaced them —
