@@ -835,6 +835,22 @@ snapshot refused by the SWA flat-history layout; section 3 open on the gemma sid
 ladder on the target card). Lead ruling 25: the fix does not reach main until every owed gate above is green and
 verbatim in this record; a red one keeps the lane as `wip:` and the integ waits.
 
+**Ruling 26 (2026-09-21 19:5xZ).** While B's fix was on the lane, PR #614 (`653c997f4`, another session, merged
+19:46Z, record `research/prime-tail16-20260921/`) fixed the same defect on main by a different mechanism:
+`Engine::small_m_tier_max()` is 16 inside the verify-exact scope and `PRIME_MIN_T - 1` otherwise, and both general
+entries `matmul` and `matmul_pre` use it as the batched small-m tier's ceiling; `matmul_decode_exact*` keep their own
+`2..=16` tiers (they are the decode class). Its gate: the continuation gate on the 9B NVFP4 and on the served mint,
+every split `ok`, the one-call digest unchanged; a `MEMRA_CI_CONTGATE` arm in `tools/local-ci.sh`. It covers every
+caller of the general entries, so the scope gap B named (`prime_layers_gemma`, `step35_prime_cache_batch`) is closed by
+construction. B's `prefill_rows` scope is a second mechanism for the same behaviour and covers fewer sites: main's
+mechanism stands, the scope is dropped in the merge (lib.rs, hybrid_forward.rs, the gate binary take main's side), the
+width-walk diagnostic stays without its scope arm, and B's gate receipts (width walk, continuation gate, kernel-check,
+hit gate, twin gate, base-versus-fix identity, the target-card table) become the evidence that guards #614's mechanism,
+re-run on the merged tree. The integ25 CPU battery and smoke run on B's tree (`f35bed45e`, 13 steps rc=0 except the
+memra-server suite's known scheduler-sensitive `darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown`,
+`left: 1 right: 2` on the yield counter under the battery's load, 3 of 3 green alone; `serve-smoke: 0 failed`) are
+superseded by the battery on the merged tree and kept as receipts.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
