@@ -730,6 +730,136 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "multi-row expert path (decode-amortized, bit-identity, {rows_type:?}): PASS"
                 );
             }
+
+            // Raw rows + exact accumulate (memra#577 follow-up): a row's CPU experts folded
+            // from the raw twin's down rows with `fma(y, w * down_scale, sum)` in job order must
+            // be bit-identical to the ONE multi-expert moe call. Non-power-of-two weights and
+            // scales on purpose: the scaled rows twin (`y * ds * w`) only coincides with the
+            // token program when they are powers of two, which is what the arm above proves and
+            // what hid the divergence in the lockstep harness. Row 0 of an m_r=2 raw call must
+            // also equal the m_r=1 raw call for the same input (amortization changes no bit).
+            type RowsRawFn = unsafe extern "C" fn(
+                *const Expert,
+                *const f32,
+                i32,
+                *mut f32,
+                i32,
+                *mut i8,
+                usize,
+            ) -> i32;
+            let rows_raw_fn: Option<RowsRawFn> = unsafe {
+                let symbol = libc::dlsym(handle, c"memra_cpu_expert_rows_raw_v2".as_ptr());
+                if symbol.is_null() {
+                    None
+                } else {
+                    Some(std::mem::transmute::<*mut libc::c_void, RowsRawFn>(symbol))
+                }
+            };
+            if let Some(rows_raw_fn) = rows_raw_fn {
+                for rows_type in [
+                    GgmlType::Q2_K,
+                    GgmlType::IQ3_S,
+                    GgmlType::Q4_K,
+                    GgmlType::NVFP4,
+                ] {
+                    let type_row = fixture(rows_type, 256);
+                    let n_experts = 3usize;
+                    let route_weights = [0.37f32, -0.61, 0.9];
+                    let down_scales = [0.7f32, 0.3, 0.9];
+                    let mut blobs: Vec<Vec<u8>> = Vec::new();
+                    for e in 0..n_experts {
+                        for projection_index in 0..3usize {
+                            let mut row = type_row.clone();
+                            row[13] ^= 0x51 ^ ((e * 3 + projection_index) as u8);
+                            blobs.push(row.repeat(256));
+                        }
+                    }
+                    let make = |weights: *const u8, scale: f32| Projection {
+                        weights,
+                        qtype: qtype(rows_type),
+                        in_features: 256,
+                        out_features: 256,
+                        row_bytes: type_row.len(),
+                        byte_len: type_row.len() * 256,
+                        file_fd: -1,
+                        file_offset: 0,
+                        scale,
+                    };
+                    let experts: Vec<Expert> = (0..n_experts)
+                        .map(|e| Expert {
+                            gate: make(blobs[e * 3].as_ptr(), 0.5),
+                            up: make(blobs[e * 3 + 1].as_ptr(), 0.25),
+                            down: make(blobs[e * 3 + 2].as_ptr(), down_scales[e]),
+                            route_weight: route_weights[e],
+                        })
+                        .collect();
+                    let x0: Vec<f32> = (0..256).map(|i| 0.01 * ((i as f32) * 0.07).sin()).collect();
+                    let x1: Vec<f32> = (0..256)
+                        .map(|i| 0.01 * ((i as f32) * 0.11 + 0.3).cos())
+                        .collect();
+                    let reference = run_with_input(&experts, &x0)?;
+                    let raw = |expert: &Expert,
+                               inputs: &[f32],
+                               m_r: usize|
+                     -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+                        let mut out = vec![f32::NAN; m_r * 256];
+                        let mut error = vec![0i8; 512];
+                        let status = unsafe {
+                            rows_raw_fn(
+                                expert,
+                                inputs.as_ptr(),
+                                m_r as i32,
+                                out.as_mut_ptr(),
+                                8,
+                                error.as_mut_ptr(),
+                                error.len(),
+                            )
+                        };
+                        if status != 0 {
+                            let message =
+                                unsafe { CStr::from_ptr(error.as_ptr()) }.to_string_lossy();
+                            return Err(format!("expert rows raw call failed: {message}").into());
+                        }
+                        Ok(out)
+                    };
+                    let mut sum = vec![0.0f32; 256];
+                    for expert in &experts {
+                        let y = raw(expert, &x0, 1)?;
+                        let scale = expert.route_weight * expert.down.scale;
+                        for (acc, &v) in sum.iter_mut().zip(&y) {
+                            *acc = v.mul_add(scale, *acc);
+                        }
+                        // amortized call: row 0 of [x0, x1] equals the solo x0 row
+                        let mut both = Vec::with_capacity(512);
+                        both.extend_from_slice(&x0);
+                        both.extend_from_slice(&x1);
+                        let two = raw(expert, &both, 2)?;
+                        for (index, (a, b)) in two[..256].iter().zip(&y).enumerate() {
+                            if a.to_bits() != b.to_bits() {
+                                return Err(format!(
+                                    "raw rows m_r=2 row 0 output {index} != m_r=1 ({rows_type:?}): {a} vs {b}"
+                                )
+                                .into());
+                            }
+                        }
+                    }
+                    for (index, (actual, expected)) in sum.iter().zip(reference.iter()).enumerate()
+                    {
+                        if actual.to_bits() != expected.to_bits() {
+                            return Err(format!(
+                                "raw rows + exact accumulate output {index} not bit-identical to the \
+                                 one-job program ({rows_type:?}): expected={expected} actual={actual}"
+                            )
+                            .into());
+                        }
+                    }
+                    println!(
+                        "multi-row raw + exact accumulate == one-job program ({rows_type:?}, 3 experts, non-power-of-two weights): PASS"
+                    );
+                }
+            } else {
+                println!("multi-row raw expert path: SKIP (symbol absent)");
+            }
         } else {
             println!("multi-row expert path: SKIP (symbol absent)");
         }

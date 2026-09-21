@@ -2833,20 +2833,28 @@ extern "C" int memra_cpu_moe_token_v2(
 
 // Lane-3 M3: one EXPERT evaluated for m_r activation rows in a single call. The weight
 // bytes stream through the caches once and each weight-row's decode is amortized across all
-// rows (dot_row_multi). Outputs are per-row down-projections scaled by that row's route
-// weight; the caller owns cross-expert accumulation order. Cache/read behavior matches the
-// single-row path (same prepare_projection, same pipelined-or-serial read policy).
-extern "C" std::int32_t memra_cpu_expert_rows_v2(
+// rows (dot_row_multi). `scaled` outputs are per-row down-projections times the expert's down
+// scale times that row's route weight (memra_cpu_expert_rows_v2); raw outputs are the bare
+// down-projection rows (memra_cpu_expert_rows_raw_v2), so the caller can reproduce the
+// single-token program's cross-expert accumulation exactly: memra_cpu_moe_token_v2 folds each
+// expert as `sum = fma(y, route_weight * down.scale, sum)` in job order from zero, and the
+// scaled twin's `y * down.scale * w` rounds differently unless the weights are powers of two.
+// The caller owns cross-expert accumulation order. Cache/read behavior matches the single-row
+// path (same prepare_projection, same pipelined-or-serial read policy).
+namespace {
+
+std::int32_t expert_rows_impl(
         const memra_cpu_expert_v2 * expert,
         const float * inputs,
         std::int32_t m_r,
         const float * route_weights,
+        bool scaled,
         float * outputs,
         std::int32_t threads,
         char * error,
         std::size_t error_capacity) try {
     if (expert == nullptr || inputs == nullptr || outputs == nullptr
-        || route_weights == nullptr || m_r <= 0 || m_r > 64 || threads <= 0) {
+        || (scaled && route_weights == nullptr) || m_r <= 0 || m_r > 64 || threads <= 0) {
         throw std::runtime_error("invalid CPU expert rows invocation (m_r must be 1..=64)");
     }
     for (const auto * projection : { &expert->gate, &expert->up, &expert->down }) {
@@ -2948,9 +2956,9 @@ extern "C" std::int32_t memra_cpu_expert_rows_v2(
         for (int index = 0; index < static_cast<int>(rows) * n_embd; ++index) {
             const std::size_t r = static_cast<std::size_t>(index) / n_embd;
             const int column = index % n_embd;
+            const float y = down_out[r * static_cast<std::size_t>(n_embd) + column];
             outputs[r * static_cast<std::size_t>(n_embd) + column] =
-                down_out[r * static_cast<std::size_t>(n_embd) + column]
-                    * expert->down.scale * route_weights[r];
+                scaled ? y * expert->down.scale * route_weights[r] : y;
         }
     }
     if (std::find(act_finite.begin(), act_finite.end(), 0) != act_finite.end()) {
@@ -2966,6 +2974,34 @@ extern "C" std::int32_t memra_cpu_expert_rows_v2(
 } catch (...) {
     copy_error(error, error_capacity, "unknown CPU expert rows failure");
     return 1;
+}
+
+} // namespace
+
+extern "C" std::int32_t memra_cpu_expert_rows_v2(
+        const memra_cpu_expert_v2 * expert,
+        const float * inputs,
+        std::int32_t m_r,
+        const float * route_weights,
+        float * outputs,
+        std::int32_t threads,
+        char * error,
+        std::size_t error_capacity) {
+    return expert_rows_impl(expert, inputs, m_r, route_weights, true, outputs, threads,
+                            error, error_capacity);
+}
+
+// Raw twin: bare down-projection rows, no down scale, no route weight (see above).
+extern "C" std::int32_t memra_cpu_expert_rows_raw_v2(
+        const memra_cpu_expert_v2 * expert,
+        const float * inputs,
+        std::int32_t m_r,
+        float * outputs,
+        std::int32_t threads,
+        char * error,
+        std::size_t error_capacity) {
+    return expert_rows_impl(expert, inputs, m_r, nullptr, false, outputs, threads,
+                            error, error_capacity);
 }
 
 // Detached speculative prefetch: reads the given projections into the RAM cache as cold

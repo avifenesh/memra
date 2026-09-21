@@ -1,0 +1,20 @@
+== local-ci: clippy gate (-D warnings) ==
+== local-ci: memra-server HTTP-surface unit suite ==
+test anthropic::tests::sse_midstream_fault_emits_the_anthropic_error_event ... ok
+test auth::tests::malformed_rings_are_loud_errors ... ok
+test affinity::tests::malformed_values_are_startup_errors_never_a_silent_off ... ok
+test body_limit_tests::oversize_body_is_a_clean_413_in_our_error_shape ... ok
+test constrained::tests::consume_outside_mask_is_error ... ok
+test prefill_receipt::tests::completion_error_rejects_inner_receipt_before_drop ... ok
+test surfaces::tests::collect_final_surfaces_engine_faults_as_classified_errors ... ok
+test tests::a_committed_prefill_timeout_is_a_named_sse_error_and_zero_debit ... ok
+test tests::admission_peek_preserves_context_error_for_the_ledger ... ok
+test tests::detokenize_oov_uses_named_prompt_ids_error ... ok
+test tests::error_bodies_use_the_openai_object_shape ... ok
+test tests::interactive_admission_error_is_a_preheader_429 ... ok
+test tests::metadata_reload_without_boot_path_errors ... ok
+test tests::stream_worker_error_is_a_data_chunk_not_a_named_event ... ok
+test tests::the_native_shape_carries_the_deadline_error_and_omits_it_otherwise ... ok
+test tests::token_endpoints_unknown_model_matches_chat_error ... ok
+test tests::unfixable_client_errors_say_x_should_retry_false ... ok
+test worker::tests::postthink_unclosed_terminal_is_a_named_client_error ... ok
