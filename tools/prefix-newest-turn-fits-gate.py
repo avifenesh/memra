@@ -9,8 +9,12 @@ re-prefill, the incident's 90-130 s ticks and 408s) while other tenants' entries
 and the only trace was one once-announced `snapshot skipped` line. `cached_tokens` decides the
 customer's bill and whether the cache engaged at all, so the gate reads it from the response.
 
-Serving shape, one card, one boot of the real `memra-server` per cell, plain path
-(`MEMRA_SERVE_SPEC=0`), a SMALL explicit prefix budget, default policy:
+Serving shape, one card, two boots of the real `memra-server` per cell, plain path
+(`MEMRA_SERVE_SPEC=0`), a SMALL explicit prefix budget, default policy. The CALIBRATION boot
+runs with the prefix cache OFF (`MEMRA_PREFIX_CACHE_MB=0`) and replays the identical request
+sequence, so each twin turn's own retained footprint (the bytes a request of that length
+keeps after it retires, with no cache activity at all) is measured on the same binary and the
+same card; the MEASURED boot then arms the cache with the small budget:
 
   1. cohort: a second tenant (`cache_salt=cohort`) sends three prompts of different lengths, each
      twice; the second send is a whole-entry hit whose lease promotes the entry, so the cohort
@@ -35,15 +39,19 @@ Assertions (bytes from the server's `[prefix-cache]` lines and `/metrics`):
                   growing tenant is refused or skipped.
   V3 effective:   for every turn whose window carries an `evict` line, the bytes the cache grew
                   by (`prefix_cache_bytes` after minus before) equal the effective free
-                  (`cuda_driver_free_bytes + cuda_pool_cached_bytes`) the turn consumed, within
-                  a slack: an eviction that did not return its bytes to effective free would show
-                  the turn consuming the whole inserted entry. This is #523 item 4's honesty
-                  (the day-13 gate's V3) under the capacity-eviction shape.
+                  (`cuda_driver_free_bytes + cuda_pool_cached_bytes`) the turn consumed MINUS the
+                  same turn's cache-off footprint from the calibration boot, within a slack: an
+                  eviction that did not return its bytes to effective free would show the turn
+                  consuming the whole inserted entry. This is #523 item 4's honesty (the day-13
+                  gate's V3) under the capacity-eviction shape. The first day-14 round asserted
+                  the identity without the footprint term and failed on the fix by exactly the
+                  base's cache-free consumption on every turn (1,111,666,004 B on turn 1); the
+                  footprint is now measured, reported per turn, and subtracted, never assumed.
+  Identity is recorded per turn (sha256 of each completion text) for the runner to compare
+  across binaries, and against the calibration boot's cold completion of the same prompt; it is
+  not a verdict inside one cell (restored-vs-cold identity has its own gates).
   V4 protected:   at least one `evict (... Protected LRU)` line in the growing tenant's turns:
                   the room came from the protected cohort, never from the entry itself.
-  Identity is recorded per turn (sha256 of each completion text) for the runner to compare
-  across binaries; it is not a verdict inside one cell (restored-vs-cold identity has its
-  own gates).
 
 Exit 0 = every assertion held; 1 = a verdict failed (red on `main` today: `cached_tokens=0` on
 every turn after the once-announced `snapshot skipped` line); 2 = REFUSED (lock, port, shape).
@@ -90,6 +98,9 @@ RE_RECLAIM = re.compile(r"\[admit-oom\] reclaim-on-defer: ")
 # printed by draft-capable models on every request; it is recorded per turn so a cold turn can
 # be quoted from the receipt, never a verdict input (V1 reads `cached_tokens` from the response).
 RE_ROUTE = re.compile(r"\[glm5-spec\] route=\S+ .*cold=(\d) restored=(\d)")
+# Models without that route line print the spec admission receipt per request instead
+# (`[spec-k] model=... prompt=N cached=M lcp=L ...`); recorded for the same reason.
+RE_SPECK = re.compile(r"\[spec-k\] model=.* prompt=(\d+) cached=(\d+) lcp=(\d+)")
 
 
 def refuse(msg: str) -> None:
@@ -264,11 +275,15 @@ def effective_free(row: dict) -> int:
 def parse_window(lines: list[str]) -> dict:
     ev: dict = {"inserts": [], "hits": [], "evicts": [], "refused": [], "skipped": [], "demotes": 0, "reclaims": 0, "lines": [], "route": []}
     for ln in lines:
-        if "[prefix-cache]" in ln or "[admit-oom]" in ln or "[glm5-spec] route=" in ln:
+        if "[prefix-cache]" in ln or "[admit-oom]" in ln or "[glm5-spec] route=" in ln or "[spec-k] model=" in ln:
             ev["lines"].append(ln.strip())
         m = RE_ROUTE.search(ln)
         if m:
-            ev["route"].append({"cold": int(m.group(1)), "restored": int(m.group(2)), "line": ln.strip()})
+            ev["route"].append({"kind": "route", "cold": int(m.group(1)), "restored": int(m.group(2)), "line": ln.strip()})
+            continue
+        m = RE_SPECK.search(ln)
+        if m:
+            ev["route"].append({"kind": "spec-k", "prompt": int(m.group(1)), "cached": int(m.group(2)), "lcp": int(m.group(3)), "line": ln.strip()})
             continue
         m = RE_INSERT.search(ln)
         if m:
@@ -315,6 +330,73 @@ def fit_bytes_per_token(points: list[tuple[int, float]]) -> tuple[float, float]:
 def ids_for(tokens: int) -> list[int]:
     # Stable, well inside the vocab, non-repeating over the longest prompt used here.
     return [3000 + (i % 7000) for i in range(tokens)]
+
+
+def cohort_ids(tokens: int) -> list[int]:
+    # A distinct id range: the cohort shares no prefix with the twin.
+    return [i + 60000 for i in ids_for(tokens)]
+
+
+def twin_ids(start_tokens: int, grow_tokens: int, turns: int) -> list[list[int]]:
+    """Turn k+1 is turn k's ids plus the appended ids (the previous answer plus the next message)."""
+    out = []
+    ids = ids_for(start_tokens)
+    for k in range(1, turns + 1):
+        if k > 1:
+            ids = ids + [20000 + ((k * 1000 + j) % 9000) for j in range(grow_tokens)]
+        out.append(ids)
+    return out
+
+
+def calibrate_footprint(args, cohort_tokens: list[int], prompts: list[list[int]]) -> dict:
+    """The cache-off boot: the identical request sequence, no prefix cache, per-turn consumed bytes."""
+    srv = Server(args.bin, args.model, args.port, args.out / "calibration" / "server.log", 0)
+    srv.boot()
+    cal: dict = {"boot_lines": [], "cohort": [], "turns": []}
+    try:
+        boot_lines = srv.new_log_lines()
+        cal["boot_lines"] = [ln.strip() for ln in boot_lines if "[prefix-cache]" in ln]
+        if any(RE_ON.search(ln) for ln in boot_lines):
+            refuse("the calibration boot armed the prefix cache; MEMRA_PREFIX_CACHE_MB=0 must disable it")
+        for n in cohort_tokens:
+            ids = cohort_ids(n)
+            sends = []
+            for _ in range(2):
+                r = srv.complete(ids, "cohort")
+                time.sleep(0.5)
+                srv.new_log_lines()
+                if r["status"] != 200:
+                    refuse(f"calibration: cohort prompt of {n} tokens was not served: {r['error']}")
+                sends.append(r)
+            cal["cohort"].append({"tokens": n, "first": sends[0], "second": sends[1], "metrics_after": srv.settled_metrics()})
+        for k, ids in enumerate(prompts, start=1):
+            before = srv.settled_metrics()
+            r = srv.complete(ids, "grow")
+            time.sleep(0.5)
+            window = parse_window(srv.new_log_lines())
+            after = srv.settled_metrics()
+            if before is None or after is None:
+                refuse(f"calibration turn {k}: /metrics never settled")
+            if r["status"] != 200:
+                refuse(f"calibration turn {k} was not served (HTTP {r['status']}): {r['error']}")
+            if before["prefix_cache_bytes"] or after["prefix_cache_bytes"] or window["inserts"] or window["hits"]:
+                refuse(f"calibration turn {k}: the prefix cache took part in a cache-off boot")
+            cal["turns"].append({
+                "turn": k,
+                "prompt_ids": len(ids),
+                "prompt_tokens": r["prompt_tokens"],
+                "cached_tokens": r["cached_tokens"],
+                "elapsed_s": r["elapsed_s"],
+                "finish_reason": r["finish_reason"],
+                "text_sha256": r["text_sha256"],
+                "window": window,
+                "metrics_before": before,
+                "metrics_after": after,
+                "effective_free_consumed": effective_free(before) - effective_free(after),
+            })
+    finally:
+        srv.stop()
+    return cal
 
 
 def main() -> None:
@@ -377,7 +459,13 @@ def main() -> None:
     binsha = hashlib.sha256(Path(args.bin).read_bytes()).hexdigest()
     (args.out / "rig.json").write_text(json.dumps({"nvidia_smi": rig, "binary_sha256": binsha, "binary": args.bin, "model": args.model}, indent=2) + "\n")
 
-    srv = Server(args.bin, args.model, args.port, args.out / "server.log", args.budget_mib)
+    prompts = twin_ids(args.start_tokens, args.grow_tokens, args.turns)
+    cal = calibrate_footprint(args, cohort_tokens, prompts)
+    (args.out / "calibration.json").write_text(json.dumps(cal, indent=2) + "\n")
+    footprint = {t["turn"]: t["effective_free_consumed"] for t in cal["turns"]}
+    cold_sha = {t["turn"]: t["text_sha256"] for t in cal["turns"]}
+
+    srv = Server(args.bin, args.model, args.port, args.out / "measured" / "server.log", args.budget_mib)
     srv.boot()
     rec: dict = {"boot": {}, "cohort": [], "turns": []}
     try:
@@ -397,8 +485,7 @@ def main() -> None:
         # ---- 1. the protected cohort -----------------------------------------------------
         points: list[tuple[int, float]] = []
         for n in cohort_tokens:
-            ids = ids_for(n)
-            ids = [i + 60000 for i in ids]  # a distinct id range: the cohort shares no prefix with the twin
+            ids = cohort_ids(n)
             first = srv.complete(ids, "cohort")
             time.sleep(0.5)
             w1 = parse_window(srv.new_log_lines())
@@ -450,12 +537,8 @@ def main() -> None:
             refuse(f"the last turn's entry {e_last:.0f} B exceeds the budget {budget} B; every turn must be insertable")
 
         # ---- 2. the 8-turn twin ------------------------------------------------------------
-        ids = ids_for(args.start_tokens)
         prev_prompt_tokens = None
-        for k in range(1, args.turns + 1):
-            if k > 1:
-                # The appended ids stand for the previous answer plus the next message.
-                ids = ids + [20000 + ((k * 1000 + j) % 9000) for j in range(args.grow_tokens)]
+        for k, ids in enumerate(prompts, start=1):
             before = srv.settled_metrics()
             r = srv.complete(ids, "grow")
             time.sleep(0.5)
@@ -483,10 +566,13 @@ def main() -> None:
                 "effective_free_before": eff_before,
                 "effective_free_after": eff_after,
                 "effective_free_consumed": consumed,
+                "footprint_calibration_bytes": footprint[k],
                 "prefix_bytes_grew": grew,
                 "inserted_bytes_from_line": int(sum(i["mb"] for i in window["inserts"]) * 1e6),
                 "evicted_bytes_from_lines": int(sum(e["mb"] for e in window["evicts"]) * 1e6),
-                "v3_credit_error_bytes": (consumed - grew) if window["evicts"] else None,
+                "v3_credit_error_bytes": (consumed - footprint[k] - grew) if window["evicts"] else None,
+                "cold_text_sha256": cold_sha[k],
+                "text_identical_to_cold": r["text_sha256"] == cold_sha[k],
             }
             rec["turns"].append(turn)
             if r["status"] != 200:
@@ -530,8 +616,8 @@ def main() -> None:
         f"V1={'ok' if v1 else 'FAIL'} V2={'ok' if v2 else 'FAIL'} V3={'ok' if v3 else 'FAIL'} V4={'ok' if v4 else 'FAIL'} "
         f"-> {'PASS' if ok else 'FAIL'}"
     )
-    table = ["| turn | prompt_tokens | cached_tokens | prev prompt_tokens | route cold/restored | hit line | insert | evict (segment) | refused/skipped | effective free consumed | prefix bytes grew | V3 error | elapsed s | text sha256[:16] |",
-             "| ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |"]
+    table = ["| turn | prompt_tokens | cached_tokens | prev prompt_tokens | server receipt | hit line | insert | evict (segment) | refused/skipped | effective free consumed | footprint (cache-off boot) | prefix bytes grew | V3 error | elapsed s | text sha256[:16] | == cold |",
+             "| ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |"]
     for t in turns:
         w = t["window"]
         hits = ", ".join("{hit} of {prompt}".format(**h) for h in w["hits"]) or "none"
@@ -539,11 +625,13 @@ def main() -> None:
         evicts = ", ".join("{tokens} tok {mb}MB ({segment})".format(**e) for e in w["evicts"]) or "none"
         prev = t["prev_prompt_tokens"] if t["prev_prompt_tokens"] is not None else "-"
         v3err = t["v3_credit_error_bytes"] if t["v3_credit_error_bytes"] is not None else "-"
-        route = ", ".join("cold={cold} restored={restored}".format(**r) for r in w["route"]) or "none"
+        route = ", ".join(
+            ("cold={cold} restored={restored}" if r["kind"] == "route" else "cached={cached} lcp={lcp}").format(**r) for r in w["route"]
+        ) or "none"
         table.append(
             f"| {t['turn']} | {t['prompt_tokens']} | {t['cached_tokens']} | {prev} | {route} | {hits} | {inserts} | {evicts} | "
-            f"{len(w['refused']) + len(w['skipped'])} | {t['effective_free_consumed']} | {t['prefix_bytes_grew']} | "
-            f"{v3err} | {t['elapsed_s']} | {t['text_sha256'][:16]} |"
+            f"{len(w['refused']) + len(w['skipped'])} | {t['effective_free_consumed']} | {t['footprint_calibration_bytes']} | "
+            f"{t['prefix_bytes_grew']} | {v3err} | {t['elapsed_s']} | {t['text_sha256'][:16]} | {'yes' if t['text_identical_to_cold'] else 'NO'} |"
         )
     summary = {
         "verdict": verdict,
@@ -554,6 +642,8 @@ def main() -> None:
         "shape": shape,
         "cohort": rec["cohort"],
         "turns": turns,
+        "calibration": {"cohort": cal["cohort"], "turns": cal["turns"], "boot_lines": cal["boot_lines"]},
+        "turns_identical_to_cold": sum(1 for t in turns if t["text_identical_to_cold"]),
         "final_metrics": rec.get("final_metrics"),
         "refused_or_skipped_lines": refused_lines,
         "assertions": {"V1_cached": v1, "V2_lines": v2, "V3_effective_free": v3, "V4_protected_evicted": v4},
@@ -563,6 +653,8 @@ def main() -> None:
     (args.out / "TURNS.md").write_text("\n".join(table) + "\n")
     (args.out / "VERDICT.txt").write_text(verdict + "\n")
     print(rec["boot"]["line"])
+    print(f"calibration (cache off): footprint per turn {[footprint[t['turn']] for t in turns]} B; "
+          f"measured completions identical to cold on {summary['turns_identical_to_cold']}/{len(turns)} turns")
     for ln in refused_lines:
         print("refusal:", ln)
     for t in turns:
