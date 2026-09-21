@@ -31822,9 +31822,16 @@ fn prefill_tick(
                             .glm5_plain_prime_start(engine, cache, &chunk, q - take)?,
                     );
             }
-            let mut walker = lm
+            let walker = lm
                 .model
                 .glm5_plain_prime_walker(engine, &mut s.glm5_plain_prime);
+            let scope = if q > take {
+                crate::prime_observation::PrimeScope::SegmentWithContinuation
+            } else {
+                crate::prime_observation::PrimeScope::RemainingPrompt
+            };
+            let mut walker =
+                crate::prime_observation::observe_prime(walker, s.ttft.as_deref(), scope);
             if !s.prime_service.advance(&mut walker)? {
                 return Ok(0);
             }
@@ -31848,12 +31855,32 @@ fn prefill_tick(
                 let tx = s.tx.clone();
                 Box::new(move || tx.is_closed())
             });
-            let (l, _h, x) = lm.model.prime_cache_overlaid(
-                engine,
-                &chunk,
-                s.cache.as_mut().unwrap(),
-                s.prefill_queue.len(),
-                ov_window.as_ref(),
+            let trace = if s.vision.is_none() && s.capture.is_none() {
+                s.ttft.as_deref()
+            } else {
+                None
+            };
+            let scope = if s.prefill_queue.is_empty() {
+                crate::prime_observation::PrimeScope::RemainingPrompt
+            } else {
+                crate::prime_observation::PrimeScope::SegmentWithContinuation
+            };
+            let (l, _h, x) = crate::prime_observation::observe_call(
+                trace,
+                memra_engine::prime_walker::PrimeChunk {
+                    phase: "plain-prime-call",
+                    rows: chunk.len(),
+                },
+                scope,
+                || {
+                    lm.model.prime_cache_overlaid(
+                        engine,
+                        &chunk,
+                        s.cache.as_mut().unwrap(),
+                        s.prefill_queue.len(),
+                        ov_window.as_ref(),
+                    )
+                },
             )?;
             (l, x)
         };
@@ -31930,9 +31957,25 @@ fn prefill_tick(
                 let _ = s.tx.send(Event::PromptCapture { hidden, logits });
             }
         } else {
-            s.last_logits = lm
-                .model
-                .decode_step(engine, tok, s.cache.as_mut().unwrap())?;
+            let trace = if s.vision.is_none() && s.capture.is_none() {
+                s.ttft.as_deref()
+            } else {
+                None
+            };
+            let scope = if s.prefill_queue.is_empty() {
+                crate::prime_observation::PrimeScope::RemainingPrompt
+            } else {
+                crate::prime_observation::PrimeScope::SegmentWithContinuation
+            };
+            s.last_logits = crate::prime_observation::observe_call(
+                trace,
+                memra_engine::prime_walker::PrimeChunk {
+                    phase: "plain-prompt-token",
+                    rows: 1,
+                },
+                scope,
+                || lm.model.decode_step(engine, tok, s.cache.as_mut().unwrap()),
+            )?;
         }
         if let Some(&target) = s.prefill_queue.front() {
             write_confidence_trace(s, tok, target, &s.last_logits)?;
@@ -32952,13 +32995,18 @@ fn step_session(
                 .constraint
                 .as_mut()
                 .map(|c| crate::constrained::SpecGrammar::new(c, lm.eos_id));
-            let mut walker = lm.model.mtp_prime_walker(
+            let walker = lm.model.mtp_prime_walker(
                 engine,
                 spec,
                 &mut s.mtp_prime,
                 grammar
                     .as_mut()
                     .map(|g| g as &mut dyn memra_engine::spec::SpecConstraint),
+            );
+            let mut walker = crate::prime_observation::observe_prime(
+                walker,
+                s.ttft.as_deref(),
+                crate::prime_observation::PrimeScope::RemainingPrompt,
             );
             if !s.prime_service.advance(&mut walker)? {
                 return Ok(true);
@@ -33759,7 +33807,12 @@ fn step_dspark_spec(
                 )?,
             });
         }
-        let mut walker = lm.model.dspark_prime_walker(engine, d, &mut s.dspark_prime);
+        let walker = lm.model.dspark_prime_walker(engine, d, &mut s.dspark_prime);
+        let mut walker = crate::prime_observation::observe_prime(
+            walker,
+            s.ttft.as_deref(),
+            crate::prime_observation::PrimeScope::RemainingPrompt,
+        );
         if !s.prime_service.advance(&mut walker)? {
             return Ok(true);
         }
@@ -34108,7 +34161,12 @@ fn step_glm5_spec(
                 )?,
             });
         }
-        let mut walker = lm.model.glm5_prime_walker(engine, &mut s.glm5_prime);
+        let walker = lm.model.glm5_prime_walker(engine, &mut s.glm5_prime);
+        let mut walker = crate::prime_observation::observe_prime(
+            walker,
+            s.ttft.as_deref(),
+            crate::prime_observation::PrimeScope::RemainingPrompt,
+        );
         if !s.prime_service.advance(&mut walker)? {
             return Ok(true);
         }

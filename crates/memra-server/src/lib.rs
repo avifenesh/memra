@@ -111,6 +111,7 @@ mod embed_api;
 pub mod metering;
 mod prefill_receipt;
 pub mod prime_fairness;
+mod prime_observation;
 mod responses_api;
 pub mod route_contract;
 mod surfaces;

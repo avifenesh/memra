@@ -598,6 +598,34 @@ impl MtpPrimeWalker<'_> {
 impl PrimeWalker for MtpPrimeWalker<'_> {
     type Output = ();
 
+    fn next_chunk(&self) -> Option<PrimeChunk> {
+        let s = self.state.as_ref()?;
+        if let Some(chunk) = s.chunks.get(s.cursor) {
+            // A short prime intentionally drains its frozen trunk segments in
+            // one advance, including its bounded draft fill. Match the rows
+            // returned by that operation, not just the first segment's width.
+            let rows = if s.short {
+                s.chunks[s.cursor..]
+                    .iter()
+                    .map(|chunk| chunk.end - chunk.start)
+                    .sum()
+            } else {
+                chunk.end - chunk.start
+            };
+            Some(PrimeChunk {
+                phase: "mtp-trunk",
+                rows,
+            })
+        } else if s.fill_cursor < s.prompt.len() {
+            Some(PrimeChunk {
+                phase: "mtp-draft-fill",
+                rows: (s.prompt.len() - s.fill_cursor).min(s.fill_chunk),
+            })
+        } else {
+            None
+        }
+    }
+
     fn remaining_chunks(&self) -> usize {
         self.state.as_ref().map_or(0, |s| {
             if s.short {

@@ -498,6 +498,20 @@ impl HybridModel {
 }
 impl PrimeWalker for Glm5PrimeWalker<'_> {
     type Output = Glm5SpecSession;
+    fn next_chunk(&self) -> Option<PrimeChunk> {
+        let s = self.state.as_ref()?;
+        if let Some(rows) = s.trunk.as_ref().and_then(Glm5TrunkPrime::next_rows) {
+            Some(PrimeChunk {
+                phase: "glm5-trunk",
+                rows,
+            })
+        } else {
+            s.fill.get(s.fill_cursor).map(|(start, end)| PrimeChunk {
+                phase: "glm5-draft",
+                rows: end - start,
+            })
+        }
+    }
     fn remaining_chunks(&self) -> usize {
         self.state.as_ref().map_or(0, |s| s.remaining())
     }
@@ -612,6 +626,16 @@ impl HybridModel {
 }
 impl PrimeWalker for Glm5PlainPrimeWalker<'_> {
     type Output = (Cache, Vec<f32>, CudaSlice<f32>);
+    fn next_chunk(&self) -> Option<PrimeChunk> {
+        self.state
+            .as_ref()?
+            .trunk
+            .next_rows()
+            .map(|rows| PrimeChunk {
+                phase: "glm5-plain-trunk",
+                rows,
+            })
+    }
     fn remaining_chunks(&self) -> usize {
         self.state.as_ref().map_or(0, |s| s.trunk.remaining())
     }

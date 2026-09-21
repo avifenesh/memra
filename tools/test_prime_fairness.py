@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""CPU tests of the actual generic walker and scheduler, without CUDA stubs.
+"""CPU tests of the actual walker, scheduler and lifecycle seam, without CUDA stubs.
 
-This compiles only those two std-only source modules. It is not a server build,
+This compiles only the std-only source modules. It is not a server build,
 adapter qualification, or GPU performance test. Cargo tests exercise the same
 modules as part of their owning crates on a supported build host.
 """
@@ -20,6 +20,8 @@ def main() -> int:
         modules = {
             "prime_walker": root / "crates/memra-engine/src/prime_walker.rs",
             "prime_fairness": root / "crates/memra-server/src/prime_fairness.rs",
+            "ttft": root / "crates/memra-server/src/ttft.rs",
+            "prime_observation": root / "crates/memra-server/src/prime_observation.rs",
         }
         harness.write_text(
             "extern crate self as memra_engine;\n"

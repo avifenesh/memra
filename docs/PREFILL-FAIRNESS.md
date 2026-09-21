@@ -55,10 +55,18 @@ question. Refusal is an explicit policy limitation, not a model-format rejection
 ## Required controls and native record
 
 Run `python3 tools/test_prime_fairness.py` for the actual std-only engine walker
-and scheduler modules. It tests frozen tapes, failed ownership/finalization,
+and scheduler, quantum observer and Trace modules. It tests frozen tapes, failed ownership/finalization,
 elapsed recovery, continuous arrivals, initial-prefill starvation, non-runnable
 peers and invalid service intervals. It does not type-check the complete server.
 Linux server compilation and affected CPU tests remain separate prerequisites.
+
+The diagnostic wiring follows [REQUEST-LIFECYCLE.md](REQUEST-LIFECYCLE.md): actual
+frozen input rows, host return through the existing last-chunk finalization,
+unknown continuation counts and no invented cache-hit/queued-cancellation proof.
+Event-capacity and explicit retirement-site coverage remain separate prerequisites
+for a complete long trace and queued-cancellation qualification. Correctness and
+mechanism cells may collect timing as unscored pilot data; performance/default
+verdicts require later registered targets and holdout evaluation.
 
 For each proposed route/default, freeze the model/artifact, source, binary,
 topology, numeric settings, chunk tape and service interval before measurement.
