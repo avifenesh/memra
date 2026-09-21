@@ -1,0 +1,367 @@
+{
+ "kind": "pinned-host-reserve-bench",
+ "issue": "memra#385",
+ "cell": "smoke2-chunked",
+ "arms": [
+  "single",
+  "chunked"
+ ],
+ "bytes": 1073741824,
+ "basis": "bytes",
+ "fraction": null,
+ "margin_bytes": null,
+ "chunks": 8,
+ "pairs_per_order": 1,
+ "floor": 1.1,
+ "hugepage_min_fraction": 0.9,
+ "mem_total": 65390514176,
+ "mem_available_at_start": 56639311872,
+ "mem_free_at_start": 5637283840,
+ "anon_huge_at_start": 0,
+ "hugepages_total": 0,
+ "thp_mode": "always [madvise] never",
+ "cpus": 24,
+ "gpu_at_start": "54, 30.53 W, [N/A], 202 MHz",
+ "loadavg_at_start": [
+  "2.53",
+  "3.99",
+  "3.18"
+ ],
+ "rows": [
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 240.67855199973565,
+   "free_ms": 57.65810101001989,
+   "free_rc": [
+    0
+   ],
+   "order": "AB",
+   "pair": 0,
+   "arm": "single",
+   "mem_available_before": 56142970880,
+   "mem_free_before": 4889272320,
+   "utc": "2026-09-21T16:46:57Z"
+  },
+  {
+   "ok": true,
+   "rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "alloc_ms": 229.69939500035252,
+   "chunk_bytes": 134217728,
+   "chunk_alloc_ms": [
+    36.073,
+    37.034,
+    64.973,
+    91.778,
+    117.778,
+    143.828,
+    170.14,
+    199.237
+   ],
+   "free_ms": 56.353173989919014,
+   "free_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "order": "AB",
+   "pair": 0,
+   "arm": "chunked",
+   "mem_available_before": 56110825472,
+   "mem_free_before": 4838768640,
+   "utc": "2026-09-21T16:46:57Z"
+  },
+  {
+   "ok": true,
+   "rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "alloc_ms": 236.05466399749275,
+   "chunk_bytes": 134217728,
+   "chunk_alloc_ms": [
+    37.307,
+    38.98,
+    67.304,
+    94.234,
+    120.746,
+    147.321,
+    175.162,
+    203.994
+   ],
+   "free_ms": 57.10102499870118,
+   "free_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "order": "BA",
+   "pair": 0,
+   "arm": "chunked",
+   "mem_available_before": 56116736000,
+   "mem_free_before": 4708425728,
+   "utc": "2026-09-21T16:46:58Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 237.4306410056306,
+   "free_ms": 53.67942500743084,
+   "free_rc": [
+    0
+   ],
+   "order": "BA",
+   "pair": 0,
+   "arm": "single",
+   "mem_available_before": 56088526848,
+   "mem_free_before": 4457873408,
+   "utc": "2026-09-21T16:46:58Z"
+  }
+ ],
+ "roundtrips": [
+  {
+   "arm": "single",
+   "reserve": {
+    "ok": true,
+    "rc": 0,
+    "alloc_ms": 222.0884499984095
+   },
+   "ok": true,
+   "driver_flags": [
+    {
+     "rc": 0,
+     "flags": 3
+    }
+   ],
+   "wc_bit_absent": true,
+   "flags_read_ok": true,
+   "portable_bit_set": true,
+   "blocks": 512,
+   "mismatched_blocks": 0,
+   "byte_exact": true,
+   "h2d_rc": [
+    0
+   ],
+   "d2h_rc": [
+    0
+   ],
+   "device_free_rc": 0,
+   "release_rc": [
+    0
+   ],
+   "fill_ms": 71.83908201113809,
+   "h2d_ms": 37.51935299078468,
+   "wipe_ms": 16.555877999053337,
+   "d2h_ms": 47.766581003088504,
+   "compare_ms": 313.4522920008749,
+   "h2d_gib_per_s": 26.652911638577965,
+   "d2h_gib_per_s": 20.93513873089099,
+   "mem_available_before": 56239894528,
+   "utc": "2026-09-21T16:46:56Z"
+  },
+  {
+   "arm": "chunked",
+   "reserve": {
+    "ok": true,
+    "rc": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "alloc_ms": 238.0938879941823,
+    "chunk_bytes": 134217728,
+    "chunk_alloc_ms": [
+     37.153,
+     90.904,
+     35.983,
+     63.775,
+     118.001,
+     147.111,
+     174.256,
+     206.595
+    ]
+   },
+   "ok": true,
+   "driver_flags": [
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    }
+   ],
+   "wc_bit_absent": true,
+   "flags_read_ok": true,
+   "portable_bit_set": true,
+   "blocks": 512,
+   "mismatched_blocks": 0,
+   "byte_exact": true,
+   "h2d_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "d2h_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "device_free_rc": 0,
+   "release_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "fill_ms": 72.39321799715981,
+   "h2d_ms": 37.50069301167969,
+   "wipe_ms": 15.92530999914743,
+   "d2h_ms": 45.62904698832426,
+   "compare_ms": 311.8146660126513,
+   "h2d_gib_per_s": 26.666173867468196,
+   "d2h_gib_per_s": 21.915864257605115,
+   "mem_available_before": 56142970880,
+   "utc": "2026-09-21T16:46:57Z"
+  }
+ ],
+ "gpu_at_end": "54, 28.40 W, [N/A], 1590 MHz",
+ "loadavg_at_end": [
+  "2.49",
+  "3.96",
+  "3.17"
+ ],
+ "mem_available_at_end": 56068411392,
+ "mem_free_at_end": 4269633536,
+ "anon_huge_at_end": 0,
+ "summary": {
+  "single": {
+   "n": 2,
+   "alloc_ms_median": 239.05459650268313,
+   "alloc_ms_min": 237.4306410056306,
+   "alloc_ms_max": 240.67855199973565,
+   "free_ms_median": 55.668763008725364,
+   "alloc_gib_per_s_median": 4.183337885504427,
+   "alloc_ms_median_AB": 240.67855199973565,
+   "alloc_ms_median_BA": 237.4306410056306
+  },
+  "chunked": {
+   "n": 2,
+   "alloc_ms_median": 232.87702949892264,
+   "alloc_ms_min": 229.69939500035252,
+   "alloc_ms_max": 236.05466399749275,
+   "free_ms_median": 56.727099494310096,
+   "alloc_gib_per_s_median": 4.294911464924342,
+   "alloc_ms_median_AB": 229.69939500035252,
+   "alloc_ms_median_BA": 236.05466399749275
+  }
+ },
+ "status": "executed-not-qualified",
+ "rule": {
+  "cell": "smoke2-chunked",
+  "candidate": "chunked",
+  "bytes": 1073741824,
+  "n_per_order": 1,
+  "pooled": 2,
+  "alloc_ok": true,
+  "roundtrip_exact": {
+   "single": true,
+   "chunked": true
+  },
+  "wc_bit_absent": true,
+  "flags_read_ok": true,
+  "portable_bit_set": true,
+  "hugepage_min_fraction_seen": null,
+  "hugepage_ok": null,
+  "cand_below_single_pairs": "2/2",
+  "medians_both_orders": true,
+  "median_AB": {
+   "single": 240.67855199973565,
+   "chunked": 229.69939500035252
+  },
+  "median_BA": {
+   "single": 237.4306410056306,
+   "chunked": 236.05466399749275
+  },
+  "pooled_median_ms": {
+   "single": 239.05459650268313,
+   "chunked": 232.87702949892264
+  },
+  "ratio_single_over_candidate": 1.0265271633576427,
+  "floor": 1.1,
+  "materiality": false,
+  "integrity": true,
+  "speed": true,
+  "candidate_arm": "inconclusive"
+ },
+ "rule_line": "ARENA-RESERVE rule cell=smoke2-chunked candidate=chunked bytes=1073741824 n_per_order=1 pooled=2 alloc_ok=true roundtrip_exact_single=true roundtrip_exact_candidate=true wc_bit_absent=true flags_read_ok=true portable_bit_set=true hugepage_fraction=na hugepage_ok=na cand_below_single_pairs=2/2 medians_both_orders=true pooled_single_ms=239.055 pooled_candidate_ms=232.877 ratio=1.0265 floor=1.10 materiality=false candidate_arm=inconclusive"
+}

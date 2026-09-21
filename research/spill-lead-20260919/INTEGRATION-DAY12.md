@@ -759,6 +759,45 @@ process. The guard now releases from a `claimed` vector filled the moment `begin
 round-1 tree `submit-throw-claim: key claimable after the failed call=0 expected=1` (`cpu-prefetch-586-round2-red.log`),
 fixed tree `=1 expected=1`, `ALL GREEN` (`cpu-prefetch-586-round2-green.log`). Five cells now.
 
+## integ24 (`lane/spill-integ24-20260921`): A day 15
+Lane tip merged: A `b9eb3638b` (clean; no `crates/` change; the only tracked file outside `research/` is
+`tools/pinned-host-reserve-bench.py`, extended with the chunked and THP arms, `cuMemHostGetFlags` read-back and the
+huge-page fraction from smaps). Pushed in the announced development mode (qualification pointer behind main).
+
+**memra#385 on the target card class** (one RTX PRO 6000 Blackwell Server Edition at 600 W, driver 580.178.04; host
+30 CPUs, one NUMA node, 88.4 GiB, no swap, THP `madvise`, no hugetlb pool). Reserve size 53.0 GiB (`MemAvailable`
+minus the engine's own 32 GiB `check_headroom` margin, read at each cell's start): the largest arena the engine admits
+on this box; the 288 GiB figure from the B200 pair does not fit. Two collector cells, one lock hold each, N=5 per arm
+per order, both orders, a correctness pass per arm at full size (byte-exact roundtrip, `cuMemHostGetFlags` = 3 in every
+arm, write-combined bit absent). Regime: GPU 32 to 36 C, 32 to 107 W (idle card), loadavg 0.09 to 1.21. Verbatim:
+`ARENA-RESERVE rule cell=arena-chunked candidate=chunked bytes=56916705280 n_per_order=5 pooled=10 alloc_ok=true
+roundtrip_exact_single=true roundtrip_exact_candidate=true wc_bit_absent=true flags_read_ok=true portable_bit_set=true
+hugepage_fraction=na hugepage_ok=na cand_below_single_pairs=7/10 medians_both_orders=true pooled_single_ms=8870.374
+pooled_candidate_ms=8831.379 ratio=1.0044 floor=1.10 materiality=false candidate_arm=inconclusive` (8 threads, chunk =
+bytes/8; the eight calls complete 1.1 s apart in every row: the driver serializes pinned allocation) and
+`ARENA-RESERVE rule cell=arena-thp candidate=thp bytes=56969134080 n_per_order=5 pooled=10 alloc_ok=true
+roundtrip_exact_single=true roundtrip_exact_candidate=true wc_bit_absent=true flags_read_ok=true portable_bit_set=true
+hugepage_fraction=0.6361 hugepage_ok=false cand_below_single_pairs=10/10 medians_both_orders=true
+pooled_single_ms=8876.902 pooled_candidate_ms=2885.637 ratio=3.0762 floor=1.10 materiality=true candidate_arm=void
+(hugepage-requested-not-granted)`. Void under the pre-registered huge-page clause, applied as written: where the kernel
+granted 100 percent huge pages (9 of 10 timed rows) the register call pinned 53 GiB in 2.87 to 2.91 s (3.1x today's
+call); where it did not, 18.3 s at 64 percent (the first THP pin, page cache full of other lanes' artifacts) and 6.6 s
+at 84 percent. Both replays `ARENA AB REPLAY: PASS`. Lead reading: no engine change; `chunked` is flat, `thp` is a real
+3x when huge pages are granted and void by the rule because they are not always granted. A landing needs a hugetlb
+pool or a pre-registered page-cache regime, `reserve` plus `Drop` plus a fall-back policy, and the 2x B200 decision cell
+with the same harness. `cuMemHostAlloc(PORTABLE)` stays. #385 stays open with the receipt (A's comment).
+
+**The HOSTPREFIX door's review input (task 2, C's harness on this tree):** `WC PAIR REPLAY: PASS (12 checks)`; demote
+OFF 37.8 against ON 113.6 ms pooled (N=10; steady-state r5..r7 6.1 to 6.9 against 81.8 to 83.0), promote 11.4 against
+88.7, promote minus inline demote 4.4 against 5.8; orders agree within 1.2 ms; texts identical across all four boots;
+36 to 51 C, 491 W peak. Banked for the 2026-10-05 review, no verdict. Side effect stated by A: the sitting took the
+box's page cache from 57 to 17 GiB.
+
+Battery (`integration-day12/integ24-cpu-battery/`, docs battery): diff-check, perf board, flags census, docs-registry
+census, workflow-key census, public-boundary `check` (0 new), the bench tool's `py_compile` and `--help`, A's replays on
+both arena cells (`ARENA AB REPLAY: PASS`, rule clauses restating the verdict), C's `wc-pair.py` on A's pair cell
+(`WC PAIR REPLAY: PASS (12 checks)`), em-dash scan: 12 steps rc=0.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

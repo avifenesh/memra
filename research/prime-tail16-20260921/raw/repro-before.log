@@ -1,0 +1,14 @@
+== baseline
+[q8rp] split-plane decode mirrors built: 92 tensors
+one call over 9296 tokens: logits_sha=f15b4cd735a1296e
+  9280 + 16: logits_sha=2445bfcae820c7cd DIFFERS (known: a 16-row final segment is not bitwise on either artifact)
+  9248 + 48: logits_sha=f15b4cd735a1296e ok
+  9216 + 80: logits_sha=f15b4cd735a1296e ok
+A4 CONTINUATION GATE: PASS
+== MEMRA_GDN_CHUNKED=0
+[q8rp] split-plane decode mirrors built: 92 tensors
+one call over 9296 tokens: logits_sha=157ccce52df13b0d
+  9280 + 16: logits_sha=061241760eb77906 DIFFERS (known: a 16-row final segment is not bitwise on either artifact)
+  9248 + 48: logits_sha=157ccce52df13b0d ok
+  9216 + 80: logits_sha=157ccce52df13b0d ok
+A4 CONTINUATION GATE: PASS
