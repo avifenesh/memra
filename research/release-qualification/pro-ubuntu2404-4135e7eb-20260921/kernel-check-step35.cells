@@ -1,0 +1,11 @@
+# Synthetic cells that directly gate Step-3.7-Flash kernel mechanisms.
+fa_prefill_view_ws_w_hd128
+attn_head_gate
+swiglu_clamped
+# Dual-active PP-2 schedule policy cells (model-free, always required for Step serving).
+dual-pp-wave-split
+dual-pp-single-slot-refusal
+pp-wave-grid
+pp-wave-refusal
+dual-pp-hostbounce-refusal
+peer-probe-off-refusal
