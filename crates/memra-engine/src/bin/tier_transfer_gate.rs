@@ -45,11 +45,29 @@ fn setup() -> (CudaTransfers, Arc<CudaStream>, SharedBudget) {
     let gov: SharedBudget = Rc::new(RefCell::new(
         Governor::new(cap, TierBudget::zero(1), 64, 0, Arc::new(|| 0)).unwrap(),
     ));
-    (
-        CudaTransfers::new(stream.clone(), gov.clone()).unwrap(),
-        stream,
-        gov,
-    )
+    let t = CudaTransfers::new(stream.clone(), gov.clone()).unwrap();
+    // The per-device pinned destination default this card resolves to (WP-A day 14, lead ruling
+    // 22): the arm `alloc_host` takes in every case below, printed once per process so each
+    // card's receipt names it.
+    println!(
+        "PINNED-DEFAULT device=\"{}\" kind={} flags={}",
+        ctx.name().unwrap(),
+        t.pinned_default().name(),
+        t.pinned_default().host_alloc_flags()
+    );
+    (t, stream, gov)
+}
+/// `cuMemHostGetFlags` on a lease: the driver's own record of the arm it was allocated under.
+fn driver_flags(host: &CudaPinnedLease) -> u32 {
+    let mut flags: std::ffi::c_uint = u32::MAX;
+    // SAFETY: the pointer is a live cuMemHostAlloc allocation owned by `host` for the duration of
+    // the call; the query writes only `flags`.
+    unsafe {
+        sys::cuMemHostGetFlags(&mut flags, host.bytes().unwrap().as_ptr() as *mut _)
+            .result()
+            .unwrap()
+    };
+    flags
 }
 fn expected(bytes: &[u8]) -> Vec<Vec<SegmentExpectation>> {
     vec![vec![SegmentExpectation {
@@ -631,6 +649,13 @@ fn roundtrip() {
             .unwrap();
         let producer = t.record_producer(epochs().src_gen).unwrap();
         let host = t.alloc_host(n, request()).unwrap();
+        // The default lease's arm as the driver recorded it (a UVA driver adds DEVICEMAP, 2: 6 for
+        // write-combined, 2 for cached), beside the byte-exactness line of the same roundtrip.
+        println!(
+            "PINNED-DEFAULT roundtrip bytes={n} kind={} driver_flags={}",
+            host.pinned_kind().unwrap().name(),
+            driver_flags(&host)
+        );
         let source_copy = t.retain_device(&source).unwrap();
         let down = t
             .d2h(CopyOp {
@@ -771,14 +796,7 @@ fn pinned_roundtrip(
     let host = t.alloc_host_kind(n, request(), arm).unwrap();
     let alloc_ms = ms(t0);
     assert_eq!(host.pinned_kind(), Some(arm));
-    let mut driver_flags: std::ffi::c_uint = u32::MAX;
-    // SAFETY: the pointer is a live cuMemHostAlloc allocation owned by `host` for the duration of
-    // the call; the query writes only `driver_flags`.
-    unsafe {
-        sys::cuMemHostGetFlags(&mut driver_flags, host.bytes().unwrap().as_ptr() as *mut _)
-            .result()
-            .unwrap()
-    };
+    let driver_flags = driver_flags(&host);
     let source_copy = t.retain_device(&source).unwrap();
     let t0 = Instant::now();
     let down = t
@@ -1063,7 +1081,7 @@ fn pinned_ab(bytes: usize, pairs: usize) {
         })
         .collect();
     println!(
-        "RESULT {{\"cell\":\"pinned-ab\",\"bytes\":{bytes},\"pairs_per_order\":{pairs},\"arms\":{{\"A\":\"{}\",\"B\":\"{}\"}},\"orders\":[\"A B\",\"B A\"],\"warmup_per_arm\":1,\"byte_exact_all\":{all_exact},\"driver_flags_honoured\":{flags_ok},\"per_pair\":{{\"bind_hash_cached_below_wc\":{},\"engine_hash_cached_below_wc\":{},\"d2h_cached_not_above_wc\":{},\"d2h_cached_strictly_below_wc\":{},\"h2d_cached_not_above_wc\":{}}},\"medians_both_orders\":{medians_win},\"cached_arm\":\"{}\",\"cached_arm_strict_d2h_reading\":\"{}\",\"medians_ms\":{{{}}},\"samples\":[{}],\"qualification\":false,\"scope\":\"one card, one window, executed-not-qualified; the target-card cell of the MEMRA_KV_HOST_CONTRACTS decide-by review, not a default change\"}}",
+        "RESULT {{\"cell\":\"pinned-ab\",\"bytes\":{bytes},\"pairs_per_order\":{pairs},\"arms\":{{\"A\":\"{}\",\"B\":\"{}\"}},\"orders\":[\"A B\",\"B A\"],\"warmup_per_arm\":1,\"byte_exact_all\":{all_exact},\"driver_flags_honoured\":{flags_ok},\"per_pair\":{{\"bind_hash_cached_below_wc\":{},\"engine_hash_cached_below_wc\":{},\"d2h_cached_not_above_wc\":{},\"d2h_cached_strictly_below_wc\":{},\"h2d_cached_not_above_wc\":{}}},\"medians_both_orders\":{medians_win},\"cached_arm\":\"{}\",\"cached_arm_strict_d2h_reading\":\"{}\",\"medians_ms\":{{{}}},\"samples\":[{}],\"qualification\":false,\"scope\":\"one card, one window, executed-not-qualified; one card class's cell of the per-device pinned destination default (docs/decisions/PINNED-DESTINATIONS.md), never by itself a default change\"}}",
         a.name(),
         b.name(),
         pair(bind),
