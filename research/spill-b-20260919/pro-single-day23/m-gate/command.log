@@ -40,3 +40,16 @@ one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
 A4 CONTINUATION GATE: PASS
 exit=0
 == arm F-9296-chunk16 total=9296 tails=16 48 env: MEMRA_PRIME_CHUNK=16
+/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=bafe0e0a09a3d0a4
+  9280 + 16: logits_sha=bafe0e0a09a3d0a4 ok
+  9248 + 48: logits_sha=bafe0e0a09a3d0a4 ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm F-9296-nobatched total=9296 tails=16 48 env: MEMRA_NO_BATCHED=1
+/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=14ab5f8b365dbd71 ok
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+exit=0

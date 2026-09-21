@@ -79,9 +79,104 @@ crate under the quota: `cargo clippy -p memra-engine --all-targets -- -D warning
 
 PENDING: filled in as the chain (`rtx5090-day23/chain-day23-local.sh`, `chain.log`) completes.
 
-## 4. Target card, merged tree `5f2060381`
+## 4. Target card, merged tree `5f2060381` (one RTX PRO 6000 Blackwell; `pro-single-day23/m-*`, mirrored from `/root/spill-receipts/b-day23/`)
 
-PENDING: filled in as the box chain (`/root/spill-receipts/b-day23/chain.log`) completes.
+`/root/wt-b` reset to `5f2060381` and built on the box (`build-merged/`, exit 0; `kernel-check cc04dfca...`,
+`qwen-a4-continuation-gate 11456b33...`, `run-spec`/`run-gen` per `binary.sha256`); the four cells ran back to back
+(`chain.log`, 20:00:38Z to 20:10:36Z) through the collector, the card alone before and after each, artifact
+`Qwen3.8-27B-NVFP4-Q5K-mtp.gguf` (`1facf36c...`, the same bytes as the local copy).
+
+**Task 1, `kernel-check` on the merged tree (`m-kc-step35`, `m-kc-full`; runner `run-day23-kc-box3.sh`,
+`MEMRA_KC_MODELS_DIR=/root/spill-receipts/b-day23/models`, the 9B staged as in section 1), verbatim:**
+
+```text
+m-kc-step35 (MANIFESTS=tools/kernel-check-step35.cells):                     ALL GREEN (109 cells, 6 skipped)   exit=0
+m-kc-full   (tools/kernel-check-27b.cells tools/kernel-check-step35.cells):  ALL GREEN (109 cells, 6 skipped)   exit=0
+DUAL-BATCHED-AUX [NVFP4 rp] out=48 m=3: bit-bad=0/0 OK
+```
+
+The same six skips as section 1 (absent models and the sigrouter capture). The 27b manifest's requirement is met by
+the staged artifact, not by editing the manifest or the checker.
+
+**Task 2, `run-spec` K=1..8 self-consistency with the MTP drafter (`m-genspec/cell/spec-*.log`; runner
+`run-day23-genspec-box3.sh`; `MEMRA_SPEC_TEMP=0 MEMRA_NGEN=32`, the naked K=1..8 sweep as `tools/local-ci.sh`
+runs it; no `MEMRA_MTP_DRAFT`: the mint's own NextN head is the drafter, `loaded qwen35 (65 layers, nextn=1)` in
+every log).** Token counts: `probe` = `tools/fast-gate/prompts/probe.txt`, `text prompt (472 chars) -> 90 tokens`;
+`p16` = 16 raw ids; `p4112` = 4112 raw ids (16 mod 4096). Verbatim, the per-K lines in order K=1..8:
+
+```text
+probe (90 tokens):
+  acceptance: 12/19 = 63.2%   self-consistency: PASS (identical to plain target)
+  acceptance: 19/28 = 67.9%   self-consistency: PASS (identical to plain target)
+  acceptance: 19/36 = 52.8%   self-consistency: PASS (identical to plain target)
+  acceptance: 22/48 = 45.8%   self-consistency: PASS (identical to plain target)
+  acceptance: 21/55 = 38.2%   self-consistency: PASS (identical to plain target)
+  acceptance: 21/66 = 31.8%   self-consistency: PASS (identical to plain target)
+  acceptance: 21/77 = 27.3%   self-consistency: PASS (identical to plain target)
+  acceptance: 21/88 = 23.9%   self-consistency: PASS (identical to plain target)
+=== SELF-CONSISTENCY PASS ===
+p16 (16 tokens):
+  acceptance: 14/18 = 77.8%   self-consistency: PASS (identical to plain target)
+  acceptance: 18/30 = 60.0%   self-consistency: PASS (identical to plain target)
+  acceptance: 21/39 = 53.8%   self-consistency: PASS (identical to plain target)
+  acceptance: 21/52 = 40.4%   self-consistency: PASS (identical to plain target)
+  acceptance: 21/65 = 32.3%   self-consistency: PASS (identical to plain target)
+  acceptance: 21/78 = 26.9%   self-consistency: PASS (identical to plain target)
+  acceptance: 21/91 = 23.1%   self-consistency: PASS (identical to plain target)
+  acceptance: 21/104 = 20.2%   self-consistency: PASS (identical to plain target)
+=== SELF-CONSISTENCY PASS ===
+p4112 (4112 tokens):
+  acceptance: 14/17 = 82.4%   self-consistency: PASS (identical to plain target)
+  acceptance: 17/30 = 56.7%   self-consistency: PASS (identical to plain target)
+  acceptance: 18/42 = 42.9%   self-consistency: PASS (identical to plain target)
+  acceptance: 18/56 = 32.1%   self-consistency: PASS (identical to plain target)
+  acceptance: 18/70 = 25.7%   self-consistency: PASS (identical to plain target)
+  acceptance: 18/84 = 21.4%   self-consistency: PASS (identical to plain target)
+  acceptance: 18/98 = 18.4%   self-consistency: PASS (identical to plain target)
+  acceptance: 18/112 = 16.1%   self-consistency: PASS (identical to plain target)
+=== SELF-CONSISTENCY PASS ===
+```
+
+Every K on every prompt token-identical to the plain target with acceptance > 0 (both halves of the gate). The
+`tok/s` figures in those logs are single runs on a pass/fail cell and are not measurements.
+
+**Task 3, `run-gen` argmax gate (`m-genspec/cell/gen-*.log`, `MEMRA_NGEN=8`), verbatim:**
+
+```text
+std   (CONTRIBUTING's raw ids 9419 11 1814 0, 4 tokens):
+      prefill argmax=271  decode argmax=271  logit maxdiff=2.276e-1  MATCH
+probe (90 tokens):
+      prefill argmax=15666  decode argmax=15666  logit maxdiff=5.047e-1  MATCH
+      batched-prime argmax=15666  tokenwise argmax=15666  logit maxdiff=3.523e-1  MATCH
+p16   (16 tokens):
+      prefill argmax=23314  decode argmax=23314  logit maxdiff=2.965e-1  MATCH
+      batched-prime argmax=23314  tokenwise argmax=23314  logit maxdiff=2.392e-1  MATCH
+p4112 (4112 tokens):
+      prefill argmax=84728  decode argmax=84728  logit maxdiff=7.075e-1  MATCH
+      batched-prime argmax=84728  tokenwise argmax=84728  logit maxdiff=7.158e-1  MATCH
+```
+
+The `batched-prime` line is the one that walks the 16-row shape: on `p16` the whole prompt is one 16-row prime
+chunk, on `p4112` the second chunk is; both equal the tokenwise reference. The base-versus-fixed run-gen comparison
+of the original task 3 was not run: ruling 26 narrowed task 3 to the merged tree, and the bit-level statement it was
+after (a 16-row prime equals the wide program) is the continuation table's, below and in section 3.
+
+**The seven-arm continuation table on the merged tree (`m-gate`, runner `run-day23-cont-box3.sh`, exit 0),
+verbatim, digest for digest the local table of section 3 and the day-22 fix table on both cards:**
+
+```text
+F-9296:            one call 14ab5f8b365dbd71; 9280 + 16 ok; 9248 + 48 ok; 9216 + 80 ok; 9184 + 112 ok; 9152 + 144 ok; 9120 + 176 ok; 9088 + 208 ok; A4 CONTINUATION GATE: PASS
+F-9297:            one call e641952cac19e526; 9280 + 17 ok; 9248 + 49 ok; PASS
+F-9311:            one call b61719f294866b05; 9280 + 31 ok; 9248 + 63 ok; PASS
+F-9312:            one call 736a88d7c7448dcb; 9280 + 32 ok; 9248 + 64 ok; 9216 + 96 ok; PASS
+F-9296-chunk32:    one call 14ab5f8b365dbd71 (MEMRA_PRIME_CHUNK=32); 9280 + 16 ok; 9248 + 48 ok; PASS
+F-9296-chunk16:    one call bafe0e0a09a3d0a4 (MEMRA_PRIME_CHUNK=16); 9280 + 16 ok; 9248 + 48 ok; PASS
+F-9296-nobatched:  one call 14ab5f8b365dbd71 (MEMRA_NO_BATCHED=1); 9280 + 16 ok; 9248 + 48 ok; PASS
+```
+
+Reading across the day: the lane's scope (day 22) and main's tier bound (#614) produce the same bits at every one of
+these splits on both card classes; the two mechanisms are the same numeric program for the prime path. Nothing here
+is red against #614.
 
 ## 5. Close of day
 
