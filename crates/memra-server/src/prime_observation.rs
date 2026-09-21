@@ -72,12 +72,11 @@ impl<W: PrimeWalker> PrimeWalker for ObservedPrime<'_, W> {
     fn advance_chunk(&mut self) -> Result<PrimeChunk, PrimeError> {
         // A queue length, legacy TTFT mark or unknown/zero metadata is not proof
         // of a nonzero operation. No trace is opened for those shapes.
-        let observation = self.trace.and_then(|trace| {
-            self.walker
-                .next_chunk()
-                .filter(|chunk| chunk.rows > 0)
-                .map(|chunk| (trace, chunk))
-        });
+        let chunk = self
+            .trace
+            .and_then(|_| self.walker.next_chunk())
+            .filter(|chunk| chunk.rows > 0);
+        let observation = self.trace.zip(chunk);
         if let Some((trace, chunk)) = observation {
             trace.mark_prime_quantum_start(chunk.phase, chunk.rows);
         }
@@ -236,7 +235,8 @@ mod tests {
             trace.mark_first_decode();
             trace.mark_http_body_eof();
             trace.mark_http_body_drop();
-            trace.mark_retired(RetirementOutcome::Completed);
+            trace.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+            trace.mark_retired(RetirementOutcome::Aborted);
             drop(trace);
             let records = observer.json_lines();
             assert!(records.last().unwrap().contains("\"event\":\"trace_end\""));

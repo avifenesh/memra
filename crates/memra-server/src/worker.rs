@@ -22583,7 +22583,10 @@ pub fn run(
                 release_admission_reservation(req.lane);
                 drop(req);
                 if let Some(trace) = trace {
-                    trace.mark_retired(crate::ttft::RetirementOutcome::Aborted);
+                    trace.mark_retired_at(
+                        crate::ttft::RetirementOutcome::Aborted,
+                        crate::ttft::RetirementSite::WorkerQueue,
+                    );
                 }
                 continue;
             }
@@ -34531,7 +34534,10 @@ impl Drop for AbortedRetirementTrace {
         if let Some(trace) = self.0.as_ref()
             && !std::thread::panicking()
         {
-            trace.mark_retired(crate::ttft::RetirementOutcome::Aborted);
+            trace.mark_retired_at(
+                crate::ttft::RetirementOutcome::Aborted,
+                crate::ttft::RetirementSite::ActiveSession,
+            );
         }
     }
 }

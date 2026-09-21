@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 const UNSET: u64 = u64::MAX;
-const MAX_LIFECYCLE_EVENTS: u64 = 256;
+const MAX_LIFECYCLE_EVENTS: u64 = 8192;
 const MAX_IDENTITY_BYTES: usize = 256;
 static NEXT_TRACE_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -24,20 +24,35 @@ impl ReceiverCloseCause {
 }
 
 /// Supplied only AFTER the caller has released the request's owned resources.
-/// Aborted does not mean proven client cancellation: inspect close cause and HTTP.
+/// Only aborted retirement is instrumented. It does not mean proven client
+/// cancellation: inspect close cause and HTTP.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RetirementOutcome {
-    Completed,
     Aborted,
-    Failed,
 }
 
 impl RetirementOutcome {
     fn name(self) -> &'static str {
         match self {
-            Self::Completed => "completed",
             Self::Aborted => "aborted",
-            Self::Failed => "failed",
+        }
+    }
+}
+
+/// The caller's actual after-release hook site, never inferred from phase.
+/// This identifies a resource owner; it proves neither absence of GPU work nor
+/// cache use. Readers requiring queue retirement must require literal WorkerQueue.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RetirementSite {
+    WorkerQueue,
+    ActiveSession,
+}
+
+impl RetirementSite {
+    fn name(self) -> &'static str {
+        match self {
+            Self::WorkerQueue => "WorkerQueue",
+            Self::ActiveSession => "ActiveSession",
         }
     }
 }
@@ -61,12 +76,12 @@ struct Lifecycle {
     active_quantum: Option<Quantum>,
     last_quantum: Option<Quantum>,
     quantum_count: u64,
-    quantum_failed: bool,
     http_eof: bool,
     http_dropped: bool,
     http_pending_dropped: bool,
     close_cause: Option<ReceiverCloseCause>,
     retirement: Option<RetirementOutcome>,
+    retirement_site: Option<RetirementSite>,
     first_error: Option<&'static str>,
     seq: u64,
     suppressed: u64,
@@ -84,12 +99,12 @@ impl Default for Lifecycle {
             active_quantum: None,
             last_quantum: None,
             quantum_count: 0,
-            quantum_failed: false,
             http_eof: false,
             http_dropped: false,
             http_pending_dropped: false,
             close_cause: None,
             retirement: None,
+            retirement_site: None,
             first_error: None,
             seq: 0,
             suppressed: 0,
@@ -174,9 +189,12 @@ struct Meta {
 /// PID boot/start identity. No prompts, credentials or arbitrary header values
 /// are read. The parent may supply ONLY its dedicated diagnostic correlation key
 /// through bind_client_trace_key; that key never replaces server request identity.
-/// At most 256 ordinary records, one overflow record and one final trace_end are
+/// At most 8192 ordinary records, one overflow record and one final trace_end are
 /// emitted. Consumers must require the final record, complete bindings, no errors
 /// or suppression, and the actual scenario observations; no record qualifies a run.
+/// ordinary_event_limit advertises this fixed diagnostic capacity on every event.
+/// The caller's preflight must fit its entire frozen target/draft/HTTP event budget
+/// within it. This is not a latency/SLO guarantee; nothing is silently coalesced.
 /// Actual prime evidence comes ONLY from explicit nonzero quantum calls. Legacy
 /// prime timing marks run on cached empty-suffix MTP paths too and are not phase
 /// evidence. Missing quantum events imply neither a cache hit nor absence of work:
@@ -438,7 +456,9 @@ impl Trace {
             quantum.end_ns = Some(at);
             quantum.completed = Some(completed);
             quantum.remaining_chunks = remaining_chunks;
-            state.quantum_failed |= !completed;
+            if !completed {
+                state.invalidate("failed_prime_quantum");
+            }
             state.last_quantum = Some(quantum);
             if completed && remaining_chunks == Some(0) {
                 state.phase = "prime_finished";
@@ -519,7 +539,22 @@ impl Trace {
     /// Explicit AFTER-release observation. A parent guard may call Aborted only
     /// after all Session fields drop, and must not arm on OOM requeue or panic.
     /// Trace/Arc destruction never calls this method on the caller's behalf.
+    /// Historical unscoped-record fixture API. Production hooks require an explicit
+    /// site via mark_retired_at; fixtures keep unknown/null instead of guessing it.
+    #[cfg(test)]
     pub fn mark_retired(&self, outcome: RetirementOutcome) {
+        self.record_retirement(outcome, None);
+    }
+
+    /// Explicit AFTER-release observation at the actual owner hook. Use WorkerQueue
+    /// only after dropping the closed queued Box<Request>; ActiveSession only from
+    /// the after-Session-drop guard. A stale queued phase does not imply queue work.
+    /// The first retirement's site is immutable, including a legacy unknown site.
+    pub fn mark_retired_at(&self, outcome: RetirementOutcome, site: RetirementSite) {
+        self.record_retirement(outcome, Some(site));
+    }
+
+    fn record_retirement(&self, outcome: RetirementOutcome, site: Option<RetirementSite>) {
         self.record("retired", None, |state, _| {
             state.require_worker();
             if state.retirement.is_some() {
@@ -529,23 +564,11 @@ impl Trace {
             if state.active_quantum.is_some() {
                 state.invalidate("retirement_before_quantum_return");
             }
-            match outcome {
-                RetirementOutcome::Aborted if state.close_cause.is_none() => {
-                    state.invalidate("abort_retirement_without_close_observation");
-                }
-                RetirementOutcome::Completed
-                    if state.close_cause.is_some()
-                        || ((state.http_dropped || state.http_pending_dropped)
-                            && !state.http_eof)
-                        || state.quantum_failed
-                        || state.phase == "prime" =>
-                {
-                    state.invalidate("completed_after_close_failed_or_unfinished_prime");
-                }
-                RetirementOutcome::Failed => state.invalidate("failed_retirement"),
-                _ => {}
+            if state.close_cause.is_none() {
+                state.invalidate("abort_retirement_without_close_observation");
             }
             state.retirement = Some(outcome);
+            state.retirement_site = site;
         });
     }
 
@@ -592,10 +615,11 @@ impl Trace {
             ),
         );
         let line = format!(
-            "{{\"schema\":\"memra-request-lifecycle-v1\",\"pid\":{},\"trace_id\":{},\"seq\":{},\"clock\":\"trace_elapsed_ns\",\"at_ns\":{},\"event\":{},\"client_trace_key\":{},\"request_id\":{},\"model\":{},\"http_route\":{},\"worker_generation\":{},\"worker_route\":{},\"phase\":{},\"quantum_active\":{},\"quantum\":{},\"http_body\":{},\"receiver_close_cause\":{},\"observed_close_cause\":{},\"retirement\":{},\"bindings_complete\":{},\"sequence_valid\":{},\"first_error\":{},\"suppressed_events\":{},\"evidence_only\":true}}",
+            "{{\"schema\":\"memra-request-lifecycle-v1\",\"pid\":{},\"trace_id\":{},\"seq\":{},\"ordinary_event_limit\":{},\"clock\":\"trace_elapsed_ns\",\"at_ns\":{},\"event\":{},\"client_trace_key\":{},\"request_id\":{},\"model\":{},\"http_route\":{},\"worker_generation\":{},\"worker_route\":{},\"phase\":{},\"quantum_active\":{},\"quantum\":{},\"http_body\":{},\"receiver_close_cause\":{},\"observed_close_cause\":{},\"retirement\":{},\"retirement_site\":{},\"bindings_complete\":{},\"sequence_valid\":{},\"first_error\":{},\"suppressed_events\":{},\"evidence_only\":true}}",
             std::process::id(),
             self.trace_id,
             state.seq,
+            MAX_LIFECYCLE_EVENTS,
             at,
             json_string(emitted_event),
             string(state.client_trace_key.as_deref()),
@@ -611,6 +635,7 @@ impl Trace {
             string(state.close_cause.map(ReceiverCloseCause::name)),
             string(observed_close_cause.map(ReceiverCloseCause::name)),
             string(state.retirement.map(RetirementOutcome::name)),
+            string(state.retirement_site.map(RetirementSite::name)),
             state.bound(),
             state.first_error.is_none(),
             string(state.first_error),
@@ -907,9 +932,10 @@ mod tests {
             )
         );
         trace.mark_first_sse_byte();
-        trace.mark_retired(RetirementOutcome::Completed);
         trace.mark_http_body_eof();
         trace.mark_http_body_drop();
+        trace.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+        trace.mark_retired(RetirementOutcome::Aborted);
         drop(trace);
         let events = events.lock().unwrap();
         coherent(&events);
@@ -968,7 +994,8 @@ mod tests {
         trace.mark_first_decode(); // Real decode is still recorded, but gap is not repaired.
         trace.mark_http_body_eof();
         trace.mark_http_body_drop();
-        trace.mark_retired(RetirementOutcome::Completed);
+        trace.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+        trace.mark_retired(RetirementOutcome::Aborted);
         drop(trace);
         let events = events.lock().unwrap();
         assert_eq!(event(&events, "prime_quantum_end").phase, "prime");
@@ -987,21 +1014,21 @@ mod tests {
     }
 
     #[test]
-    fn completed_retirement_is_not_a_substitute_for_unknown_prime_completion() {
+    fn aborted_retirement_does_not_claim_unknown_prime_completion() {
         let trace = trace();
         let events = observe(&trace);
         trace.mark_prime_quantum_start("observed", 8);
         trace.mark_prime_quantum_end(true, None);
         trace.mark_prime_end();
-        trace.mark_http_body_eof();
         trace.mark_http_body_drop();
-        trace.mark_retired(RetirementOutcome::Completed);
+        trace.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+        trace.mark_retired(RetirementOutcome::Aborted);
         drop(trace);
         let events = events.lock().unwrap();
         let retired = event(&events, "retired");
         assert_eq!(retired.phase, "prime");
         assert_eq!(retired.quantum.unwrap().remaining_chunks, None);
-        assert!(!retired.valid);
+        assert!(retired.valid); // An abort retires unfinished work; it does not finish prime.
         assert!(!events.iter().any(|e| e.phase == "prime_finished"));
     }
 
@@ -1035,7 +1062,8 @@ mod tests {
         trace.mark_prime_quantum_end(false, Some(0));
         trace.mark_prime_end();
         trace.mark_http_body_drop();
-        trace.mark_retired(RetirementOutcome::Failed);
+        trace.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+        trace.mark_retired(RetirementOutcome::Aborted);
         drop(trace);
         let events = events.lock().unwrap();
         let end = event(&events, "prime_quantum_end");
@@ -1081,7 +1109,8 @@ mod tests {
         }
         trace.mark_http_body_eof();
         trace.mark_http_body_drop();
-        trace.mark_retired(RetirementOutcome::Completed);
+        trace.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+        trace.mark_retired(RetirementOutcome::Aborted);
         drop(trace);
         let events = events.lock().unwrap();
         coherent(&events);
@@ -1150,8 +1179,7 @@ mod tests {
         assert_eq!(last.http, "dropped_before_eof");
         let duplicate = events
             .iter()
-            .filter(|e| e.event == "receiver_closed")
-            .last()
+            .rfind(|e| e.event == "receiver_closed")
             .unwrap();
         assert!(
             duplicate
@@ -1214,11 +1242,13 @@ mod tests {
                 t.mark_prime_start();
                 t.mark_prime_quantum_start("q", 8);
                 t.mark_prime_quantum_end(false, None);
-                t.mark_retired(RetirementOutcome::Completed);
+                t.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+                t.mark_retired(RetirementOutcome::Aborted);
             },
             |t| {
-                t.mark_retired(RetirementOutcome::Failed);
-                t.mark_retired(RetirementOutcome::Completed);
+                t.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+                t.mark_retired(RetirementOutcome::Aborted);
+                t.mark_retired(RetirementOutcome::Aborted);
             },
         ];
         for case in cases {
@@ -1350,7 +1380,8 @@ mod tests {
     fn event_cap_reports_loss_and_always_retains_final_end_record() {
         let trace = trace();
         let events = observe(&trace);
-        for _ in 0..200 {
+        assert_eq!(MAX_LIFECYCLE_EVENTS, 8192);
+        for _ in 0..(MAX_LIFECYCLE_EVENTS / 2 + 16) {
             trace.mark_prime_quantum_start("q", 1);
             trace.mark_prime_quantum_end(true, None);
         }
@@ -1361,6 +1392,26 @@ mod tests {
         let events = events.lock().unwrap();
         assert_eq!(events.len(), MAX_LIFECYCLE_EVENTS as usize + 2);
         assert_eq!(events.iter().filter(|e| e.event == "overflow").count(), 1);
+        for (i, e) in events
+            .iter()
+            .take(MAX_LIFECYCLE_EVENTS as usize)
+            .enumerate()
+        {
+            assert_eq!(
+                e.seq,
+                i as u64 + 1,
+                "ordinary records must not be coalesced"
+            );
+        }
+        let overflow = &events[MAX_LIFECYCLE_EVENTS as usize];
+        assert_eq!(overflow.event, "overflow");
+        assert_eq!(overflow.seq, MAX_LIFECYCLE_EVENTS + 1);
+        assert!(!overflow.valid);
+        assert!(
+            events
+                .iter()
+                .all(|e| e.json.contains("\"ordinary_event_limit\":8192"))
+        );
         assert_eq!(events.last().unwrap().event, "trace_end");
         assert!(!events.last().unwrap().valid);
         assert!(
@@ -1370,6 +1421,192 @@ mod tests {
                 .json
                 .contains("lifecycle_event_limit")
         );
+        assert!(
+            !events
+                .last()
+                .unwrap()
+                .json
+                .contains("\"suppressed_events\":0")
+        );
+    }
+
+    #[test]
+    fn long_target_and_draft_quantum_protocol_fits_without_suppression() {
+        let trace = trace();
+        let events = observe(&trace);
+        let target_quanta = 131_072 / 1024;
+        let draft_quanta = 131_072 / 512;
+        let total = target_quanta + draft_quanta;
+        for i in 0..total {
+            let (route, rows) = if i < target_quanta {
+                ("target_prime", 1024)
+            } else {
+                ("draft_fill", 512)
+            };
+            trace.mark_prime_quantum_start(route, rows);
+            trace.mark_prime_quantum_end(true, Some(total - i - 1));
+        }
+        trace.mark_first_decode();
+        trace.mark_http_body_drop();
+        trace.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+        trace.mark_retired_at(RetirementOutcome::Aborted, RetirementSite::ActiveSession);
+        drop(trace);
+        let events = events.lock().unwrap();
+        coherent(&events);
+        assert!(events.len() > 256 && events.len() < MAX_LIFECYCLE_EVENTS as usize);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e.event == "prime_quantum_start")
+                .count(),
+            total
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e.event == "prime_quantum_end")
+                .count(),
+            total
+        );
+        for route in ["target_prime", "draft_fill"] {
+            let rows: usize = events
+                .iter()
+                .filter(|e| e.event == "prime_quantum_start")
+                .filter_map(|e| e.quantum)
+                .filter(|q| q.route == route)
+                .map(|q| q.rows)
+                .sum();
+            assert_eq!(rows, 131_072);
+        }
+        assert!(
+            events
+                .iter()
+                .all(|e| e.json.contains("\"ordinary_event_limit\":8192")
+                    && e.json.contains("\"suppressed_events\":0"))
+        );
+        assert!(!events.iter().any(|e| e.event == "overflow"));
+        assert_eq!(events.last().unwrap().event, "trace_end");
+        assert!(
+            events
+                .last()
+                .unwrap()
+                .json
+                .contains("\"retirement_site\":\"ActiveSession\"")
+        );
+        // Actual producer protocol only: no model/GPU work or latency/SLO assertion.
+    }
+
+    #[test]
+    fn legacy_retirement_keeps_unknown_site_regardless_of_observed_phase() {
+        for decoded in [false, true] {
+            let trace = trace();
+            let events = observe(&trace);
+            if decoded {
+                trace.mark_first_decode();
+            }
+            trace.mark_http_body_drop();
+            trace.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+            trace.mark_retired(RetirementOutcome::Aborted);
+            drop(trace);
+            let events = events.lock().unwrap();
+            coherent(&events);
+            assert_eq!(
+                event(&events, "retired").phase,
+                if decoded { "decode" } else { "queued" }
+            );
+            assert!(
+                events
+                    .iter()
+                    .all(|e| e.json.contains("\"retirement_site\":null"))
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_active_site_does_not_inherit_a_stale_queued_phase() {
+        for site in [RetirementSite::WorkerQueue, RetirementSite::ActiveSession] {
+            let trace = trace();
+            let events = observe(&trace);
+            // The producer has not observed any actual prime/decode boundary.
+            // In real partially instrumented code this phase can be stale.
+            trace.mark_http_pending_drop();
+            trace.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+            trace.mark_retired_at(RetirementOutcome::Aborted, site);
+            drop(trace);
+            let events = events.lock().unwrap();
+            coherent(&events);
+            let retired = event(&events, "retired");
+            assert_eq!(retired.phase, "queued");
+            assert!(retired.quantum.is_none());
+            let expected = format!("\"retirement_site\":{}", json_string(site.name()));
+            assert!(retired.json.contains(&expected));
+            assert!(events.last().unwrap().json.contains(&expected));
+            if site == RetirementSite::ActiveSession {
+                assert!(!retired.json.contains("WorkerQueue"));
+            }
+        }
+    }
+
+    #[test]
+    fn retirement_site_cannot_be_relabelled_even_from_unknown() {
+        let sites = [
+            None,
+            Some(RetirementSite::WorkerQueue),
+            Some(RetirementSite::ActiveSession),
+        ];
+        for first in sites {
+            for second in sites {
+                let trace = trace();
+                let events = observe(&trace);
+                trace.mark_http_body_drop();
+                trace.mark_receiver_closed(ReceiverCloseCause::ReceiverDropped);
+                for site in [first, second] {
+                    match site {
+                        Some(site) => trace.mark_retired_at(RetirementOutcome::Aborted, site),
+                        None => trace.mark_retired(RetirementOutcome::Aborted),
+                    }
+                }
+                drop(trace);
+                let events = events.lock().unwrap();
+                assert!(event(&events, "retired").valid);
+                assert!(!events.last().unwrap().valid);
+                let value = first.map_or_else(|| "null".to_string(), |s| json_string(s.name()));
+                let expected = format!("\"retirement_site\":{value}");
+                assert!(
+                    events
+                        .iter()
+                        .filter(|e| e.event == "retired" || e.event == "trace_end")
+                        .all(|e| e.json.contains(&expected))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn explicit_retirement_site_uses_the_same_abort_validation() {
+        for site in [
+            None,
+            Some(RetirementSite::WorkerQueue),
+            Some(RetirementSite::ActiveSession),
+        ] {
+            let trace = trace();
+            let events = observe(&trace);
+            trace.mark_http_body_drop();
+            // No sender-close observation: naming a hook site must not bypass it.
+            match site {
+                Some(site) => trace.mark_retired_at(RetirementOutcome::Aborted, site),
+                None => trace.mark_retired(RetirementOutcome::Aborted),
+            }
+            drop(trace);
+            let events = events.lock().unwrap();
+            let retired = event(&events, "retired");
+            assert!(!retired.valid);
+            assert!(
+                retired
+                    .json
+                    .contains("abort_retirement_without_close_observation")
+            );
+        }
     }
 
     #[test]
