@@ -151,7 +151,8 @@ def receipt(folder, arm, baseline, build):
     require(rows and all(set(row) == {"check", "expected", "observed", "ok"} for row in rows), f"{arm}: checks header")
     for row in rows:
         require(row["ok"] == str(row["expected"] == row["observed"]).lower(), f"{arm}: ok column {row}")
-        require(row["check"] in REQUIRED[arm], f"{arm}: unexpected check {row['check']}")
+        # Extra recorded rows are evidence, not errors: every row must hold (ok column above) and
+        # verdict() insists the required names are present; the gate may add rows over time.
     ok, line = verdict(arm, rows)
     require(summary["arm"] == arm and summary["line"] == line, f"{arm}: recorded line differs from the pure verdict")
     require(summary["verdict"] == ("PASS" if ok else "REFUSED"), f"{arm}: verdict {summary['verdict']}")

@@ -1,0 +1,30 @@
+== local-ci: clippy gate (-D warnings) ==
+== local-ci: memra-server HTTP-surface unit suite ==
+test admit_memory::tests::memory_line_renders_every_arm_and_its_placeholders ... ok
+test admit_predict::tests::verdict_line_optional_fields_render_placeholders ... ok
+test health::tests::worker_death_and_gpu_fault_latch_immediately_without_a_threshold_wait ... ok
+test surfaces::tests::scrubber_holds_back_partial_stops_and_reports_the_match ... ok
+test toolcall::tests::dsv4_partial_dsml_open_holdback_never_loses_bytes ... ok
+test toolcall::tests::gemma_partial_open_tag_holdback_never_loses_bytes ... ok
+test toolcall::tests::gemma_tools_partial_open_tag_holdback_never_loses_bytes ... ok
+test toolcall::tests::glm5_newline_holdback_never_swallows_real_content ... ok
+test toolcall::tests::partial_tag_holdback_never_loses_bytes ... ok
+test worker::tests::a_plain_step_refuses_a_session_holding_a_glm5_session ... ok
+test worker::tests::a_plain_step_refuses_a_session_holding_a_dspark_session ... ok
+test worker::tests::derived_prefix_budget_holds_two_q27_8192_entries_and_reserves_boot_headroom ... ok
+test worker::tests::glm5_spec_k_clamp_holds_the_verify_knee ... ok
+test worker::tests::spec_gate_threshold_overrides_remain_explicit_and_clamped ... ok
+test worker::vision_special_guard_tests::extra_placeholder_beside_a_real_run_refuses ... ok
+== local-ci: memra-engine lib suite (CPU-safe part) ==
+test dflash::dspark_vt_tests::confidence_vt_is_cumprod_survival_not_per_slot_threshold ... ok
+== local-ci: memra-gguf artifact-present skip census ==
+DRAFTER-ATTACH WIRING GATE: ALL GREEN
+test_pair_only_tests: ALL GREEN
+test_local_ci_lock: ALL GREEN
+local-ci: WARNING — other GPU compute apps present (numbers not window-valid):
+2646142 /tmp/tmp.dyo7QTSwJy/hold 21922 
+2647007 /home/avifenesh/projects/wt-perfci/target/release/kernel-check /data/ai-ml/hf-mo
+== local-ci: correctness stage ==
+Error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+kernel-check FAIL
+LOCAL_CI_RC=1
