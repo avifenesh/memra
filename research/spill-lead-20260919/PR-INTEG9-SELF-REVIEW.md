@@ -20,7 +20,12 @@ Read in full: `kv_tier_gate/fault.rs` (582 lines), `kv_tier_gate/fault_contract.
 5. **Findings are honest, not patched.** The two refusals document real gaps (no H2D-source recovery after cancel;
    no required-resident contract at continuation) instead of inventing seams; lead ruling 9 routes them to lane A as
    contract rules.
-6. **Nits (not blocking).** `Arm::NAMES` duplicates the `name()` list as a string; a `join` over `ALL` would keep them
+6. **Holed cache is tainted (revuto finding, fixed in this PR).** The three arms that drop an incomplete layer left
+   `cache.kv[i] == None` with a decode path that would `unwrap` it; only the gate's early return stood in the way.
+   The drop site now calls `cache.mark_tainted()` (the state `ensure_usable` already refuses) and adds the check
+   `holed-cache-refuses-continuation = Err`, so the cache itself records that no token may address it. Extra check
+   row, not a required one, so D's committed receipts still replay (30 tests green).
+7. **Nits (not blocking).** `Arm::NAMES` duplicates the `name()` list as a string; a `join` over `ALL` would keep them
    in sync. The `device-short` arm exercises exhaustion through a second tenant because the governor has no
    post-construction capacity seam; the arm name promises less than a pool shrink and the receipt says so.
 
