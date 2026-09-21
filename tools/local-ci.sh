@@ -734,8 +734,12 @@ echo "== local-ci: memra-engine lib suite (GPU-only #[ignore] tests) =="
 # return on a rig with one CUDA device; `--show-output` surfaces those lines from passing
 # tests so the skip is counted here, never silent (#484: account for every skip).
 LIB_LOG=$(mktemp -t memra-lib-gpu.XXXXXX)
+# `set -e` would exit on the failing pipeline before the accounting and the FAILED line below
+# (revuto finding on #583); the exit code is read from PIPESTATUS with errexit paused.
+set +e
 cargo test --release -p memra-engine --lib -j8 -- --ignored --show-output 2>&1 | tee "$LIB_LOG"
 LIB_RC=${PIPESTATUS[0]}
+set -e
 PAIR_SKIPS=$(grep -c '^SKIP-PAIR ' "$LIB_LOG" || true)
 if [ "$PAIR_SKIPS" -gt 0 ]; then
     echo "local-ci: SKIP $PAIR_SKIPS pair-only GPU test(s) on this rig (need 2 CUDA devices):"
