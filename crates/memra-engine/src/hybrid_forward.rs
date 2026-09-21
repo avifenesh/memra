@@ -2387,7 +2387,7 @@ impl HybridModel {
         }
         let mut hiddens = e.uninit(t * n_embd)?;
         let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
-        for &(start, end) in &ranges {
+        for (chunk_idx, &(start, end)) in ranges.iter().enumerate() {
             self.glm5_taps_range_begin(cache, start);
             let (l, hs, x) =
                 self.prime_chunk_hyper(e, &tokens[start..end], cache, seq_end, start, overlay)?;
@@ -2398,6 +2398,8 @@ impl HybridModel {
             // so the device finished it. Stamp the odometer /health reads, so a BUSY
             // worker mid-long-prefill is never mistaken for a wedged one.
             crate::progress::note_prime_rows(end - start);
+            // CANCELLATION POINT (memra#536): see progress.rs; fires only between chunks.
+            crate::progress::prime_cancel_point(chunk_idx, end, t)?;
         }
         let (logits, h_seed) = last.expect("hyper_prime_ranges never returns an empty schedule");
         Ok((logits, h_seed, hiddens))
@@ -5692,6 +5694,7 @@ impl HybridModel {
             let mut hiddens = e.uninit(t * n_embd)?;
             let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
             let mut start = 0usize;
+            let mut chunk_idx = 0usize;
             while start < t {
                 // A trailing chunk below the walk floor folds into the previous one; every chunk
                 // this entry sees must clear PRIME_MIN_T on its own.
@@ -5720,6 +5723,10 @@ impl HybridModel {
                 // so the device finished it. Stamp the odometer /health reads, so a BUSY
                 // worker mid-long-prefill is never mistaken for a wedged one.
                 crate::progress::note_prime_rows(end - start);
+                // CANCELLATION POINT (memra#536): a gone client stops the walk here, at a
+                // completed chunk, before the next one starts; never after the last chunk.
+                crate::progress::prime_cancel_point(chunk_idx, end, t)?;
+                chunk_idx += 1;
                 start = end;
             }
             let (logits, h_seed) = last.expect("prime produced no chunk");
@@ -5918,7 +5925,7 @@ impl HybridModel {
         }
         let mut hiddens = e.uninit(t * n_embd)?;
         let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
-        for &(start, end) in &ranges {
+        for (chunk_idx, &(start, end)) in ranges.iter().enumerate() {
             // chunked prime writes tap rows at the chunk's absolute offset. `origin` is the
             // sink's own write base (0 for every single-call prime): a boundary-split dspark
             // prime carries ONE whole-prompt buffer across two calls and sets it to the split
@@ -5934,6 +5941,8 @@ impl HybridModel {
             // so the device finished it. Stamp the odometer /health reads, so a BUSY
             // worker mid-long-prefill is never mistaken for a wedged one.
             crate::progress::note_prime_rows(end - start);
+            // CANCELLATION POINT (memra#536): see progress.rs; fires only between chunks.
+            crate::progress::prime_cancel_point(chunk_idx, end, t)?;
         }
         let (logits, h_seed) = last.unwrap();
         Ok((logits, h_seed, hiddens))
