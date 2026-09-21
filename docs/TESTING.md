@@ -1406,7 +1406,8 @@ the host tier's already-compiled sidecar route (`tier_charge`, `bind_tier_image`
 promote identity leases, lane B's `HOSTPREFIX-EXTENSION.md`) executes: one `ProgramIdentity` per
 loaded GGUF model, the tenant salt stamped per pool key by `memra_kv::tiered::hostprefix::
 tenant_salt` over the same namespace string `auth::meter_key` reads, the server's governor as a
-ledger. No copy program changes. OFF is byte-identical by construction (the constructor is
+ledger. Days 13 and 14 changed no copy program; day 15 (Option B, below) routes the pageable-tier D2H
+through the transfer engine. OFF is byte-identical by construction (the constructor is
 never called). The door refuses the boot, typed and loud, for a junk value, the startup arena
 (`MEMRA_GLM5_TP_KV_HOST=1`), a checkpoint-directory model or a loaded vision tower.
 
@@ -1446,6 +1447,30 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   line equal, `verify ok` on every ON promote, equal `[prefix-host] demote:` byte counts, no
   refusal line in the ON arm; the `MEMRA_SERVE_SPEC=0` pairs and serve-smoke unchanged from day 13.
   Evidence: `research/spill-c-20260919/DAY14.md`, `pro-single-day14/`, replay `verify-day14.py`.
+- Option B (day 15, lead rulings 14 and 15): under the door on the pageable tier the D2H of every KV
+  plane of an entry (trunk planes and the MTP draft plane) goes through the native `TransferEngine`
+  (`memra_engine::tier_transfer::CudaTransfers` on the worker's CUDA owner stream, charging the same
+  governor through the `HostTierLedger` adapter, one batch per demote): the owned `KvPlane`s leave the
+  entry's plane slots by `Option::take` (no placeholder, no device byte) and return through
+  `take_plane` into the same slots; `alloc_host` leases carry the pinned charge, so the demote's
+  residency charge takes pinned zero; the ledger gains an in-flight dimension (2 x max layers + 2). Each
+  `HostPlane` keeps its `CudaPinnedLease` and the engine's completion checksum as its receipt;
+  `bind_tier_image` refuses, typed, when its bundle checksum differs from that receipt, and names the
+  one legitimate difference (`MEMRA_KV_HOST_FAULT=flip-demote`, which corrupts the image after the
+  receipt as it does after the verify digest). A quarantined completion is `SourceQuarantined`: the
+  engine keeps the planes, the pause sweep drops the entry, the tier latches off. Receipt line per ON
+  demote: `[prefix-host] contracts door D2H receipt: ticket issuer=.. seq=.. epochs=0/1/1 items=N (..
+  KV planes[, draft]) complete=N require=ok checksums_sha256=.. retired acknowledged`. CPU cells
+  (`worker::tests`): `host_tier_ledger_handle_charges_and_releases_the_servers_one_ledger` (one ledger
+  through two handles, the in-flight bound refuses a fifth op),
+  `option_b_contract_route_is_door_only_and_keeps_the_frozen_demote_order` (the kv_tier_gate demote
+  sequence in order, door-only call site, no pre-door copy program or plane clone in the route, the
+  pinned-zero charge, the sweep's drop). Target card: `tools/kv-host-spill-identity-gate.sh` `ALL GREEN`
+  OFF and ON (default and plain), `tools/kv-host-spill-failure-gate.sh` `1 FAILURE(S)` OFF and ON (the
+  pre-existing pool-full line), lane A's `tools/kv-host-tenant-reclaim-gate.sh fix` `PASS` OFF and ON,
+  serve-smoke and lane B's `prefix-evict-reclaim-gate.py` / `prefix-newest-turn-fits-gate.py` lines
+  identical, one receipt before every ON demote, N=1, executed-not-qualified. Evidence:
+  `research/spill-c-20260919/DAY15.md`, `pro-single-day15/`, replay `verify-day15.py`.
 
 ### `h2d-probe --copies`
 

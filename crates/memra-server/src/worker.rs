@@ -4577,10 +4577,56 @@ fn host_tier_shape_metadata(
 /// The same holds for promoted entries against the device prefix budget. The ledger records
 /// tenant, priority and bytes; the LRU decides. Option B may tighten it once eviction-to-fit
 /// runs before the charge.
+/// The transfer engine's handle on the server's governor: `CudaTransfers` takes an
+/// `Rc<RefCell<dyn BudgetGovernor>>` and the server holds an `Arc<Mutex<dyn BudgetGovernor +
+/// Send>>` (`hostprefix::SharedGovernor`), so this adapter locks the ONE ledger per call (lead
+/// ruling 15: never a second ledger). Every `CudaPinnedLease` the D2H delivers releases its
+/// pinned charge through it when the host entry drops; every ticket releases its in-flight
+/// charge through it at `retire`.
+struct HostTierLedger(memra_engine::cache::tiered::hostprefix::SharedGovernor);
+impl memra_engine::cache::tiered::BudgetGovernor for HostTierLedger {
+    fn reserve(
+        &mut self,
+        request: &memra_engine::cache::tiered::BudgetRequest,
+    ) -> memra_engine::cache::tiered::Result<memra_engine::cache::tiered::ChargedLease> {
+        self.0
+            .lock()
+            .map_err(|_| memra_engine::cache::tiered::Error::Quarantined)?
+            .reserve(request)
+    }
+    fn used(&self) -> memra_engine::cache::tiered::TierBudget {
+        // A read: a poisoned lock still reports what it holds.
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .used()
+    }
+    fn mark(
+        &mut self,
+        lease: &memra_engine::cache::tiered::ChargedLease,
+        state: memra_engine::cache::tiered::ChargeState,
+    ) -> memra_engine::cache::tiered::Result<()> {
+        self.0
+            .lock()
+            .map_err(|_| memra_engine::cache::tiered::Error::Quarantined)?
+            .mark(lease, state)
+    }
+    fn release(
+        &mut self,
+        lease: &memra_engine::cache::tiered::ChargedLease,
+    ) -> memra_engine::cache::tiered::Result<()> {
+        self.0
+            .lock()
+            .map_err(|_| memra_engine::cache::tiered::Error::Quarantined)?
+            .release(lease)
+    }
+}
+
 fn host_tier_governor(
     device: usize,
     host_budget: usize,
     device_budget: usize,
+    inflight: u64,
 ) -> Result<memra_engine::cache::tiered::hostprefix::SharedGovernor, String> {
     use memra_engine::cache::tiered::TierBudget;
     let dimensions = device
@@ -4596,6 +4642,10 @@ fn host_tier_governor(
     capacity.pinned = twice(host_budget)?;
     capacity.pageable = twice(host_budget)?;
     capacity.device[device] = twice(device_budget)?;
+    // Option B: the transfer engine charges one in-flight op per K or V plane of the batch
+    // (`submit_batch`); the day-13 ledger left this dimension at zero, which would have refused
+    // the first contract-routed demote with `Capacity`.
+    capacity.inflight = inflight;
     let epoch = Instant::now();
     memra_engine::cache::tiered::hostprefix::shared_governor(
         capacity,
@@ -4708,12 +4758,36 @@ fn host_tier_context(
             },
         );
     }
-    let governor = host_tier_governor(device, hpx.budget, prefix_cache_budget_bytes())?;
+    // Option B (day 15): the D2H transfer engine on the worker's owner stream, charging the same
+    // ledger through the adapter. One batch per demote, K and V per KV plane plus the draft
+    // pair, sizes the ledger's in-flight dimension over the loaded models.
+    let max_layers = loaded
+        .values()
+        .map(|lm| lm.model.layers.len())
+        .max()
+        .unwrap_or(0);
+    let inflight = u64::try_from(max_layers)
+        .ok()
+        .and_then(|n| n.checked_mul(2))
+        .and_then(|n| n.checked_add(2))
+        .ok_or("MEMRA_KV_HOST_CONTRACTS=1: in-flight bound overflow")?;
+    let governor = host_tier_governor(device, hpx.budget, prefix_cache_budget_bytes(), inflight)?;
+    let ledger: std::rc::Rc<std::cell::RefCell<dyn memra_engine::cache::tiered::BudgetGovernor>> =
+        std::rc::Rc::new(std::cell::RefCell::new(HostTierLedger(governor.clone())));
+    let transfers = memra_engine::tier_transfer::CudaTransfers::new(engine.stream(), ledger)
+        .map_err(|e| {
+            format!(
+                "MEMRA_KV_HOST_CONTRACTS=1 refused at boot: the D2H transfer engine could not \
+                 bind the worker's CUDA owner stream ({e:?})"
+            )
+        })?;
     Ok(HostTierContext {
         governor,
         programs,
         device: u32::try_from(device)
             .map_err(|_| "MEMRA_KV_HOST_CONTRACTS=1: device ordinal does not fit u32")?,
+        transfers: Some(std::cell::RefCell::new(transfers)),
+        inflight,
     })
 }
 
@@ -8047,11 +8121,70 @@ fn retire_prefix_pin(px: &mut PrefixCache, prefix_pin: &mut Option<PrefixPin>) {
 
 /// One full-attn layer's demoted prefix bytes: the pinned-host twin of `PrefixPlane`.
 struct HostPlane {
-    k: memra_engine::PinnedHostBuf,
-    v: memra_engine::PinnedHostBuf,
+    k: HostPlaneBytes,
+    v: HostPlaneBytes,
     len: usize,
     k_tok_bytes: usize,
     v_tok_bytes: usize,
+}
+
+/// The byte owner of one demoted plane. `Pinned` is the pre-door buffer every OFF-arm plane
+/// and every handoff import uses. `Contract` (lane/spill-c-20260919 day 15, lead rulings 14
+/// and 15 Option B, `MEMRA_KV_HOST_CONTRACTS=1` on the pageable tier) is the destination a
+/// `TransferEngine` D2H delivered: the lease keeps its own pinned-budget charge on the
+/// server's governor, and `receipt` is the transfer's completion checksum of exactly these
+/// bytes, which `bind_tier_image` checks its own `StateBundle` checksum against. Converting a
+/// lease into a `PinnedHostBuf` would be a second host copy of the plane, so the arm exists
+/// instead (census Part C item 1).
+enum HostPlaneBytes {
+    Pinned(memra_engine::PinnedHostBuf),
+    Contract {
+        lease: memra_engine::tier_transfer::CudaPinnedLease,
+        receipt: memra_engine::cache::tiered::Digest,
+    },
+}
+impl HostPlaneBytes {
+    /// The plane's bytes. A lease read is a driver call (the pinned slice's tracking event is
+    /// synchronized first), so it can refuse; a pinned buffer cannot.
+    fn bytes(&self) -> Result<&[u8], String> {
+        use memra_engine::cache::tiered::PinnedLease;
+        match self {
+            Self::Pinned(p) => Ok(p.as_slice()),
+            Self::Contract { lease, .. } => lease
+                .bytes()
+                .map_err(|e| format!("contract-routed plane bytes unreadable: {e:?}")),
+        }
+    }
+    /// The transfer's completion checksum, present only on a contract-routed plane.
+    fn receipt(&self) -> Option<&memra_engine::cache::tiered::Digest> {
+        match self {
+            Self::Pinned(_) => None,
+            Self::Contract { receipt, .. } => Some(receipt),
+        }
+    }
+    /// `MEMRA_KV_HOST_FAULT=flip-demote`, the one writer after the copy: flips byte 0. A lease
+    /// has whole-buffer `write` only, so the fault reads, flips and rewrites the plane there
+    /// (a host round trip of a gate-box diagnostic, never a serving path).
+    fn flip_first_byte(&mut self) -> Result<(), String> {
+        match self {
+            Self::Pinned(p) => {
+                p.as_mut_slice()[0] ^= 0xff;
+                Ok(())
+            }
+            Self::Contract { lease, .. } => {
+                use memra_engine::cache::tiered::PinnedLease;
+                let mut bytes = lease
+                    .bytes()
+                    .map_err(|e| format!("contract-routed plane bytes unreadable: {e:?}"))?
+                    .to_vec();
+                let first = bytes.first_mut().ok_or("contract-routed plane is empty")?;
+                *first ^= 0xff;
+                lease
+                    .write(&bytes)
+                    .map_err(|e| format!("contract-routed plane rewrite refused: {e:?}"))
+            }
+        }
+    }
 }
 
 /// Legacy pageable state only exists with the arena OFF. Every f32 payload in
@@ -8879,6 +9012,14 @@ impl HostPrefixCache {
 // day 13, lead ruling 15 Option A); with the door OFF nothing constructs it.
 struct HostTierContext {
     governor: memra_engine::cache::tiered::hostprefix::SharedGovernor,
+    /// Option B (day 15, lead rulings 14 and 15): the native transfer engine on the worker's
+    /// CUDA owner stream, charging `governor` through `HostTierLedger`. Every pageable-tier
+    /// D2H of a KV plane goes through it; `None` only in CPU tests, where a demote refuses by
+    /// name (`tier D2H transfer engine missing`), never a silent by-reference fallback.
+    transfers: Option<std::cell::RefCell<memra_engine::tier_transfer::CudaTransfers>>,
+    /// The ledger's in-flight bound: one batch per demote, K and V per KV plane plus the draft
+    /// pair, over the loaded models (`2 x max layers + 2`).
+    inflight: u64,
     /// Per loaded model NAME: the model's program identities with a ZERO tenant salt (never
     /// handed out as-is, see `program`) and the generation `HostPrefixCache::model_generations`
     /// holds for that name. Pool namespaces arrive per request and cannot be enumerated at
@@ -9014,10 +9155,32 @@ impl HostPrefixCache {
         let mut add = |role: Role,
                        row: u64,
                        encoding: &[u8],
-                       bytes: &[u8]|
+                       bytes: &[u8],
+                       receipt: Option<&memra_engine::cache::tiered::Digest>|
          -> std::result::Result<(), String> {
             if bytes.is_empty() {
                 return Ok(());
+            }
+            let sum = checksum(bytes);
+            // Option B receipt check: a contract-routed plane's bundle checksum must be the
+            // transfer's completion checksum of the same bytes. The one legitimate difference
+            // is the `flip-demote` fault, which corrupts the image after the receipt exactly as
+            // it corrupts after the verify digest; it is named here, and the verify arm catches
+            // it at promote as it does with the door off.
+            if let Some(receipt) = receipt
+                && sum != *receipt
+            {
+                if kv_host_fault() == "flip-demote" {
+                    eprintln!(
+                        "[prefix-host] contracts door D2H receipt: {role:?} plane image checksum \
+                         differs from its D2H receipt as injected (MEMRA_KV_HOST_FAULT=flip-demote); \
+                         the verify arm catches it at promote"
+                    );
+                } else {
+                    return Err(format!(
+                        "tier image {role:?} plane checksum differs from its D2H contract receipt"
+                    ));
+                }
             }
             let group = u32::try_from(layout.segments.len()).map_err(|_| "tier group overflow")?;
             layout.segments.push(ByteSegment {
@@ -9045,7 +9208,7 @@ impl HostPrefixCache {
                 page_count: 1,
                 pages: PageRequirement::AllPages,
             });
-            checksums.push(checksum(bytes));
+            checksums.push(sum);
             Ok(())
         };
         // Every plane's geometry is the trunk rule: q8_0 K rows (34 B per 32), q5_1 V rows
@@ -9091,19 +9254,38 @@ impl HostPrefixCache {
             entry.draft.as_ref().map(plane_geometry),
         );
         for p in entry.kv.iter().flatten() {
-            add(Role::Key, p.k_tok_bytes as u64, b"q8_0", p.k.as_slice())?;
-            add(Role::Value, p.v_tok_bytes as u64, b"q5_1", p.v.as_slice())?;
+            add(
+                Role::Key,
+                p.k_tok_bytes as u64,
+                b"q8_0",
+                p.k.bytes()?,
+                p.k.receipt(),
+            )?;
+            add(
+                Role::Value,
+                p.v_tok_bytes as u64,
+                b"q5_1",
+                p.v.bytes()?,
+                p.v.receipt(),
+            )?;
         }
         for p in entry.conv.iter().chain(&entry.ssm).flatten() {
-            add(Role::Recurrent, 4, b"f32-native", f32s_as_bytes(p))?;
+            add(Role::Recurrent, 4, b"f32-native", f32s_as_bytes(p), None)?;
         }
         add(
             Role::Logits,
             4,
             b"f32-native",
             f32s_as_bytes(&entry.last_logits),
+            None,
         )?;
-        add(Role::Hidden, 4, b"f32-native", f32s_as_bytes(&entry.last_h))?;
+        add(
+            Role::Hidden,
+            4,
+            b"f32-native",
+            f32s_as_bytes(&entry.last_h),
+            None,
+        )?;
         // The MTP draft plane: its own K and V segments under `Role::Draft`, checksummed like
         // the trunk planes (the verify digest is blind to it; these checksums are its receipt).
         if let Some(p) = &entry.draft {
@@ -9111,16 +9293,24 @@ impl HostPrefixCache {
                 Role::Draft,
                 p.k_tok_bytes as u64,
                 b"mtp-draft-q8_0",
-                p.k.as_slice(),
+                p.k.bytes()?,
+                p.k.receipt(),
             )?;
             add(
                 Role::Draft,
                 p.v_tok_bytes as u64,
                 b"mtp-draft-q5_1",
-                p.v.as_slice(),
+                p.v.bytes()?,
+                p.v.receipt(),
             )?;
         }
-        add(Role::Transaction, 1, b"host-prefix-shape-v2", &metadata)?;
+        add(
+            Role::Transaction,
+            1,
+            b"host-prefix-shape-v2",
+            &metadata,
+            None,
+        )?;
         let id = KvBlockId::new(&program, [0; 32], &entry.toks, 0, 0, tier.device, 0)
             .map_err(|e| format!("{e:?}"))?;
         let bundle = StateBundle {
@@ -9205,12 +9395,627 @@ fn host_plane_from_device(
             .map_err(|err| format!("V plane D2H failed: {err}"))?;
     }
     Ok(HostPlane {
-        k,
-        v,
+        k: HostPlaneBytes::Pinned(k),
+        v: HostPlaneBytes::Pinned(v),
         len: p.len,
         k_tok_bytes: p.k_tok_bytes,
         v_tok_bytes: p.v_tok_bytes,
     })
+}
+
+/// Constant transfer epochs of the host tier's D2H under the door (Option B): state 0 is the
+/// immutable-prefix epoch (`KvBlockId.epoch`), and the source and destination generations are
+/// the single worker owner's for the life of the process. The model INSTANCE identity is not
+/// this number: `bind_tier_image`'s generation `Arc` and the identity lease enforce it.
+const HOST_TIER_TRANSFER_EPOCHS: memra_engine::cache::tiered::Epochs =
+    memra_engine::cache::tiered::Epochs {
+        state: 0,
+        src_gen: 1,
+        dst_gen: 1,
+    };
+
+fn digest_hex(d: &memra_engine::cache::tiered::Digest) -> String {
+    d.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Why `host_entry_from_device` produced no image.
+#[derive(Debug)]
+enum HostImageFailure {
+    /// No host copy exists and the device entry is whole: the pre-door meaning of a failure.
+    Failed(String),
+    /// Option B only: the transfer engine kept the source planes (a quarantined completion), so
+    /// the device entry is not whole and the caller must drop it.
+    SourceQuarantined(String),
+}
+impl From<String> for HostImageFailure {
+    fn from(why: String) -> Self {
+        Self::Failed(why)
+    }
+}
+impl From<&str> for HostImageFailure {
+    fn from(why: &str) -> Self {
+        Self::Failed(why.into())
+    }
+}
+impl std::fmt::Display for HostImageFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Failed(why) | Self::SourceQuarantined(why) => f.write_str(why),
+        }
+    }
+}
+
+/// Why one contract-routed D2H did not produce an image.
+enum HostContractFailure {
+    /// A pinned destination was refused (the ledger, the driver, or the `alloc-fail` fault)
+    /// before any plane left the entry: the caller latches the tier off exactly as the
+    /// pre-door alloc path does. The entry is whole.
+    Alloc(String),
+    /// A typed refusal with the entry whole (every registered plane came back).
+    Refused(String),
+    /// The transfer's completion is unknown or a plane could not be taken back: the frozen
+    /// contract keeps the source inside the engine, so the device entry has lost planes and
+    /// the caller must drop it; the tier latches off.
+    SourceQuarantined(String),
+}
+
+/// Which slot of the entry a contract-routed plane came from and goes back to.
+#[derive(Clone, Copy, Debug)]
+enum ContractSlot {
+    Kv(usize),
+    Draft,
+}
+
+/// One registered plane of a contract-routed demote: its slot, its geometry, and the RETAINED
+/// device leases (`retain_device`) that take the two slices back after the sources retire.
+struct ContractPlane {
+    slot: ContractSlot,
+    len: usize,
+    k_tok_bytes: usize,
+    v_tok_bytes: usize,
+    k: memra_engine::cache::tiered::DeviceLease,
+    v: memra_engine::cache::tiered::DeviceLease,
+}
+
+/// Option B: the D2H of every KV plane of one entry (the trunk planes and the MTP draft plane)
+/// as ONE `TransferEngine` batch on the CUDA owner thread, the `kv_tier_gate` demote sequence
+/// (`kv_tier_gate/active.rs demote`) applied to the server's entry. Planes leave `dead` as
+/// owned `KvPlane`s (lead ruling 14: `Option::take` on the entry's plane slots, no placeholder,
+/// no device byte) and return through `take_plane` into the same slots. Pinned destinations
+/// are allocated first (a refusal there leaves the entry untouched), the device admission is
+/// probed before any plane leaves (a refused `register_device` drops the plane it was handed),
+/// and the receipt is the engine's completion checksum per item, carried on each `HostPlane`
+/// for `bind_tier_image` to check against the bundle checksum. One D2H per plane: the
+/// contract's `memcpy_dtoh` on the owner stream behind a producer fence; nothing else copies.
+fn host_kv_planes_through_contract(
+    engine: &Engine,
+    tier: &HostTierContext,
+    dead: &mut PrefixEntry,
+    class: HostTierEntryClass,
+) -> Result<(Vec<Option<HostPlane>>, Option<HostPlane>), HostContractFailure> {
+    use HostContractFailure::{Alloc, Refused, SourceQuarantined};
+    use memra_engine::cache::tiered::*;
+    let Some(transfers) = &tier.transfers else {
+        return Err(Refused(
+            "tier D2H transfer engine missing (the door context was built without a CUDA owner)"
+                .into(),
+        ));
+    };
+    let mut t = transfers.borrow_mut();
+    let (program, _) = tier
+        .program(&dead.pool_key, class)
+        .map_err(|why| Refused(format!("tier {why}")))?;
+    let tenant = program.tenant_salt;
+    let dimensions = t.used().device.len();
+    let request = move || BudgetRequest {
+        bytes: TierBudget::zero(dimensions),
+        priority: Priority::Backup,
+        deadline: Deadline(u64::MAX),
+        tenant,
+    };
+    // 1. The plane list, borrowed: slot, geometry, byte counts, and the two checks a refused
+    //    `register_device` could otherwise make only by dropping the plane it was handed (an
+    //    empty plane, a plane allocated off the owner stream).
+    struct Planned {
+        slot: ContractSlot,
+        len: usize,
+        k_tok_bytes: usize,
+        v_tok_bytes: usize,
+        kb: usize,
+        vb: usize,
+        capacity: usize,
+    }
+    let mut planned = Vec::with_capacity(dead.kv.len() + 1);
+    {
+        let owner = t.owner_stream();
+        let planes = dead
+            .kv
+            .iter()
+            .enumerate()
+            .filter_map(|(i, p)| p.as_ref().map(|p| (ContractSlot::Kv(i), p)))
+            .chain(dead.draft.as_ref().map(|p| (ContractSlot::Draft, p)));
+        for (slot, p) in planes {
+            let (Some(kb), Some(vb)) = (
+                p.len.checked_mul(p.k_tok_bytes),
+                p.len.checked_mul(p.v_tok_bytes),
+            ) else {
+                return Err(Refused(format!(
+                    "tier D2H refused: {slot:?} plane byte overflow"
+                )));
+            };
+            if kb == 0 || vb == 0 || p.k.len() < kb || p.v.len() < vb {
+                return Err(Refused(format!(
+                    "tier D2H refused: {slot:?} plane geometry {} rows x {}/{} B against device \
+                     slices of {}/{} B",
+                    p.len,
+                    p.k_tok_bytes,
+                    p.v_tok_bytes,
+                    p.k.len(),
+                    p.v.len()
+                )));
+            }
+            if !Arc::ptr_eq(p.k.stream(), owner) || !Arc::ptr_eq(p.v.stream(), owner) {
+                return Err(Refused(format!(
+                    "tier D2H refused: {slot:?} plane was not allocated on the worker's owner \
+                     stream"
+                )));
+            }
+            planned.push(Planned {
+                slot,
+                len: p.len,
+                k_tok_bytes: p.k_tok_bytes,
+                v_tok_bytes: p.v_tok_bytes,
+                kb,
+                vb,
+                capacity: p.k.len() + p.v.len(),
+            });
+        }
+    }
+    if planned.is_empty() {
+        return Err(Refused(
+            "tier D2H refused: the entry carries no KV plane".into(),
+        ));
+    }
+    // 2. Pinned destinations first, in the OFF order (K then V per plane): a refusal here, the
+    //    ledger's, the driver's or the alloc-fail fault's, leaves the entry untouched and the
+    //    caller latches the tier exactly as the pre-door alloc path does.
+    let mut hosts = Vec::with_capacity(planned.len() * 2);
+    for p in &planned {
+        for n in [p.kb, p.vb] {
+            if kv_host_fault() == "alloc-fail" {
+                return Err(Alloc(format!(
+                    "pinned host alloc of {n} B failed: injected failure \
+                     (MEMRA_KV_HOST_FAULT=alloc-fail)"
+                )));
+            }
+            hosts.push(t.alloc_host(n, request()).map_err(|e| {
+                Alloc(format!(
+                    "pinned host alloc of {n} B failed: tier transfer engine {e:?}"
+                ))
+            })?);
+        }
+    }
+    // 3. Device admission probe on the same ledger: `register_device` charges the device
+    //    dimension per plane, so probing the sum first means the registration below cannot be
+    //    refused by the ledger, and no plane leaves the entry to be dropped by a refusal.
+    {
+        let mut probe = request();
+        *probe
+            .bytes
+            .device
+            .get_mut(tier.device as usize)
+            .ok_or_else(|| Refused("tier device missing".into()))? =
+            planned.iter().map(|p| p.capacity as u64).sum();
+        let mut ledger = tier
+            .governor
+            .lock()
+            .map_err(|_| Refused("tier governor poisoned".into()))?;
+        let lease = ledger
+            .reserve(&probe)
+            .map_err(|e| Refused(format!("tier D2H device admission refused: {e:?}")))?;
+        ledger
+            .release(&lease)
+            .map_err(|e| Refused(format!("tier D2H admission probe release refused: {e:?}")))?;
+    }
+    // 4. The planes leave the entry (lead ruling 14): `Option::take` on the slot, the two owned
+    //    `CudaSlice<u8>` become `KvPlane`s in the registry, and a retained lease per slice is
+    //    what takes them back. The originals go into the ops, K then V per plane, draft last.
+    let mut registered: Vec<ContractPlane> = Vec::with_capacity(planned.len());
+    let mut originals: Vec<DeviceLease> = Vec::with_capacity(planned.len() * 2);
+    for p in &planned {
+        let plane = match p.slot {
+            ContractSlot::Kv(i) => dead.kv[i].take(),
+            ContractSlot::Draft => dead.draft.take(),
+        };
+        let Some(PrefixPlane {
+            k,
+            v,
+            len,
+            k_tok_bytes,
+            v_tok_bytes,
+        }) = plane
+        else {
+            return Err(host_contract_abort(
+                &mut t,
+                dead,
+                registered,
+                None,
+                None,
+                &format!(
+                    "tier D2H refused: {:?} plane slot emptied under the route",
+                    p.slot
+                ),
+            ));
+        };
+        let generation = HOST_TIER_TRANSFER_EPOCHS.src_gen;
+        let k = match t.register_device(k, generation, request()) {
+            Ok(lease) => lease,
+            Err(e) => {
+                // The plane handed in is gone (the registry drops a refused backing): the
+                // entry is not whole whatever the unwind of the others does.
+                let _ = host_contract_planes_back(&mut t, dead, registered);
+                return Err(SourceQuarantined(format!(
+                    "tier D2H register_device refused after the admission probe ({e:?}); the K \
+                     plane of {:?} is lost",
+                    p.slot
+                )));
+            }
+        };
+        let v = match t.register_device(v, generation, request()) {
+            Ok(lease) => lease,
+            Err(e) => {
+                let _ = t.take_plane(&k);
+                let _ = host_contract_planes_back(&mut t, dead, registered);
+                return Err(SourceQuarantined(format!(
+                    "tier D2H register_device refused after the admission probe ({e:?}); the V \
+                     plane of {:?} is lost",
+                    p.slot
+                )));
+            }
+        };
+        let (Ok(keep_k), Ok(keep_v)) = (t.retain_device(&k), t.retain_device(&v)) else {
+            let _ = t.take_plane(&k);
+            let _ = t.take_plane(&v);
+            let _ = host_contract_planes_back(&mut t, dead, registered);
+            return Err(SourceQuarantined(format!(
+                "tier D2H retain_device refused right after registration; the {:?} plane is lost",
+                p.slot
+            )));
+        };
+        originals.push(k);
+        originals.push(v);
+        registered.push(ContractPlane {
+            slot: p.slot,
+            len,
+            k_tok_bytes,
+            v_tok_bytes,
+            k: keep_k,
+            v: keep_v,
+        });
+    }
+    // 5. The producer fence, then ONE batch and one ticket.
+    let producer = match t.record_producer(HOST_TIER_TRANSFER_EPOCHS.src_gen) {
+        Ok(fence) => fence,
+        Err(e) => {
+            return Err(host_contract_abort(
+                &mut t,
+                dead,
+                registered,
+                None,
+                None,
+                &format!("tier D2H producer fence refused: {e:?}"),
+            ));
+        }
+    };
+    let sizes: Vec<u64> = planned
+        .iter()
+        .flat_map(|p| [p.kb as u64, p.vb as u64])
+        .collect();
+    let ops = originals
+        .into_iter()
+        .zip(hosts)
+        .zip(&sizes)
+        .map(|((device, host), &bytes)| {
+            TransferOp::D2h(CopyOp {
+                host,
+                device,
+                bytes,
+                epochs: HOST_TIER_TRANSFER_EPOCHS,
+                producer_fence: Some(producer),
+            })
+        })
+        .collect();
+    let ticket = match t.submit_batch(ops) {
+        Ok(batch)
+            if batch
+                .items
+                .iter()
+                .all(|a| matches!(a, ItemAcceptance::Accepted { .. })) =>
+        {
+            batch.ticket
+        }
+        Ok(batch) => {
+            // Partial acceptance: the rejected ops came back (dropping them drops their host
+            // leases and the original device handles; the retained twins take the planes back
+            // once the accepted items complete).
+            let rejected = batch
+                .items
+                .iter()
+                .filter(|a| matches!(a, ItemAcceptance::Rejected { .. }))
+                .count();
+            let total = batch.items.len();
+            let ticket = batch.ticket;
+            drop(batch);
+            return Err(host_contract_abort(
+                &mut t,
+                dead,
+                registered,
+                Some(ticket),
+                Some(producer),
+                &format!("tier D2H batch partially refused: {rejected} of {total} items"),
+            ));
+        }
+        Err(rejected) => {
+            let error = rejected.error.clone();
+            drop(rejected);
+            return Err(host_contract_abort(
+                &mut t,
+                dead,
+                registered,
+                None,
+                Some(producer),
+                &format!("tier D2H submission refused: {error:?}"),
+            ));
+        }
+    };
+    // 6. Completion: the engine's event per item, then its status and its checksum of each
+    //    destination (the receipt), then each destination taken exactly once.
+    if let Err(e) = t.synchronize(&ticket) {
+        return Err(SourceQuarantined(format!(
+            "tier D2H completion unknown ({e:?}); the transfer engine keeps the planes"
+        )));
+    }
+    let completion = match t.poll(&ticket) {
+        Ok(completion) => completion,
+        Err(e) => {
+            return Err(SourceQuarantined(format!(
+                "tier D2H completion unreadable ({e:?}); the transfer engine keeps the planes"
+            )));
+        }
+    };
+    let mut destinations = Vec::with_capacity(sizes.len());
+    for item in 0..sizes.len() {
+        match t.take_destination(&ticket, item as u32, HOST_TIER_TRANSFER_EPOCHS) {
+            Ok(Destination::Host(lease)) => destinations.push(lease),
+            Ok(Destination::Device(_)) => {
+                return Err(host_contract_abort(
+                    &mut t,
+                    dead,
+                    registered,
+                    Some(ticket),
+                    Some(producer),
+                    "tier D2H returned a device destination",
+                ));
+            }
+            Err(e) => {
+                return Err(host_contract_abort(
+                    &mut t,
+                    dead,
+                    registered,
+                    Some(ticket),
+                    Some(producer),
+                    &format!("tier D2H destination {item} refused: {e:?}"),
+                ));
+            }
+        }
+    }
+    // 7. The caller-side contract check: exact lengths from the server's own plane geometry,
+    //    every item Complete, epochs equal, producer done. The checksum a `SegmentExpectation`
+    //    carries is the completion's own (there is no pre-copy hash of the device bytes short of
+    //    a second read), so the independent byte check is `bind_tier_image`'s: its bundle
+    //    checksum must equal the receipt each plane carries.
+    let expected: Vec<Vec<SegmentExpectation>> = completion
+        .items
+        .iter()
+        .zip(&sizes)
+        .map(|(item, &bytes)| {
+            vec![SegmentExpectation {
+                valid_bytes: bytes,
+                io_bytes: bytes,
+                checksum: item
+                    .segments
+                    .first()
+                    .and_then(|s| s.checksum)
+                    .unwrap_or([0; 32]),
+            }]
+        })
+        .collect();
+    if let Err(e) = completion.require(&ticket, &expected, false) {
+        return Err(host_contract_abort(
+            &mut t,
+            dead,
+            registered,
+            Some(ticket),
+            Some(producer),
+            &format!("tier D2H receipt refused: {e:?}"),
+        ));
+    }
+    // 8. The consumer fence is recorded before the planes come back (their `take_plane` syncs
+    //    the stream, which completes it), the sources retire, the planes go back to their
+    //    slots, the producer fence releases, and the published ticket retires against its
+    //    consumer fence and is acknowledged: the destination leases are now the sole owners.
+    let consumer = match t.record_consumer(&ticket) {
+        Ok(fence) => fence,
+        Err(e) => {
+            return Err(host_contract_abort(
+                &mut t,
+                dead,
+                registered,
+                Some(ticket),
+                Some(producer),
+                &format!("tier D2H consumer fence refused: {e:?}"),
+            ));
+        }
+    };
+    if let Err(e) = t.retire_source(&ticket) {
+        return Err(SourceQuarantined(format!(
+            "tier D2H sources did not retire ({e:?}); the transfer engine keeps the planes"
+        )));
+    }
+    if let Err(why) = host_contract_planes_back(&mut t, dead, registered) {
+        return Err(SourceQuarantined(format!("tier D2H {why}")));
+    }
+    let settled = t
+        .release_producer(producer)
+        .and_then(|_| t.retire(&ticket, Some(consumer)))
+        .and_then(|_| t.acknowledge(&ticket));
+    if let Err(e) = settled {
+        return Err(Refused(format!(
+            "tier D2H ticket did not retire ({e:?}); the entry is whole, nothing published"
+        )));
+    }
+    // 9. The host planes, each carrying the receipt of its own bytes, and the receipt line.
+    let mut destinations = destinations.into_iter();
+    let mut checksums = completion
+        .items
+        .iter()
+        .map(|item| item.segments.first().and_then(|s| s.checksum));
+    let mut kv: Vec<Option<HostPlane>> = (0..dead.kv.len()).map(|_| None).collect();
+    let mut draft = None;
+    let mut receipt = Vec::with_capacity(32 * sizes.len());
+    let mut kv_planes = 0usize;
+    for p in &planned {
+        let (Some(k), Some(v), Some(Some(ck)), Some(Some(cv))) = (
+            destinations.next(),
+            destinations.next(),
+            checksums.next(),
+            checksums.next(),
+        ) else {
+            return Err(Refused(
+                "tier D2H receipt shape does not match the plane list".into(),
+            ));
+        };
+        receipt.extend_from_slice(&ck);
+        receipt.extend_from_slice(&cv);
+        let plane = HostPlane {
+            k: HostPlaneBytes::Contract {
+                lease: k,
+                receipt: ck,
+            },
+            v: HostPlaneBytes::Contract {
+                lease: v,
+                receipt: cv,
+            },
+            len: p.len,
+            k_tok_bytes: p.k_tok_bytes,
+            v_tok_bytes: p.v_tok_bytes,
+        };
+        match p.slot {
+            ContractSlot::Kv(i) => {
+                kv[i] = Some(plane);
+                kv_planes += 1;
+            }
+            ContractSlot::Draft => draft = Some(plane),
+        }
+    }
+    let complete = completion
+        .items
+        .iter()
+        .filter(|item| {
+            item.accepted
+                && item
+                    .segments
+                    .iter()
+                    .all(|s| s.status == ItemStatus::Complete)
+        })
+        .count();
+    eprintln!(
+        "[prefix-host] contracts door D2H receipt: ticket issuer={} seq={} epochs={}/{}/{} \
+         items={} ({kv_planes} KV planes{}) complete={complete} require=ok \
+         checksums_sha256={} retired acknowledged",
+        ticket.issuer,
+        ticket.sequence,
+        ticket.epochs.state,
+        ticket.epochs.src_gen,
+        ticket.epochs.dst_gen,
+        sizes.len(),
+        if draft.is_some() { ", draft" } else { "" },
+        digest_hex(&digest("host-prefix-d2h-receipt", &receipt)),
+    );
+    let _ = engine;
+    Ok((kv, draft))
+}
+
+/// Take every registered plane back out of the transfer engine into its slot of `dead`. Every
+/// plane back means the entry is whole; a refusal means the engine still holds a plane (`Busy`
+/// while its ticket is live or quarantined) and the entry is not whole.
+fn host_contract_planes_back(
+    t: &mut memra_engine::tier_transfer::CudaTransfers,
+    dead: &mut PrefixEntry,
+    planes: Vec<ContractPlane>,
+) -> Result<(), String> {
+    for p in planes {
+        let back = |lease: &memra_engine::cache::tiered::DeviceLease,
+                    what: &str,
+                    t: &mut memra_engine::tier_transfer::CudaTransfers| {
+            t.take_plane(lease)
+                .map_err(|e| format!("{what} plane of {:?} did not come back ({e:?})", p.slot))?
+                .into_pooled()
+                .map_err(|e| format!("{what} plane of {:?} is not pooled storage ({e})", p.slot))
+        };
+        let k = back(&p.k, "K", t)?;
+        let v = back(&p.v, "V", t)?;
+        let plane = PrefixPlane {
+            k,
+            v,
+            len: p.len,
+            k_tok_bytes: p.k_tok_bytes,
+            v_tok_bytes: p.v_tok_bytes,
+        };
+        match p.slot {
+            ContractSlot::Kv(i) => dead.kv[i] = Some(plane),
+            ContractSlot::Draft => dead.draft = Some(plane),
+        }
+    }
+    Ok(())
+}
+
+/// Abort one contract-routed demote with the entry whole where the contract allows it: a
+/// submitted ticket settles (event sync, sources retired) before any plane can come back, the
+/// planes return to their slots, the producer fence releases, and the ticket retires (against a
+/// consumer fence if a destination was already taken) and is acknowledged. `Refused` when every
+/// plane came back; `SourceQuarantined` when the engine kept one.
+fn host_contract_abort(
+    t: &mut memra_engine::tier_transfer::CudaTransfers,
+    dead: &mut PrefixEntry,
+    registered: Vec<ContractPlane>,
+    ticket: Option<memra_engine::cache::tiered::TransferTicket>,
+    producer: Option<memra_engine::cache::tiered::FenceId>,
+    why: &str,
+) -> HostContractFailure {
+    use memra_engine::cache::tiered::TransferEngine;
+    if let Some(ticket) = &ticket
+        && let Err(e) = t.synchronize(ticket).and_then(|_| t.retire_source(ticket))
+    {
+        return HostContractFailure::SourceQuarantined(format!(
+            "{why}; the D2H ticket did not settle ({e:?}), the transfer engine keeps the planes"
+        ));
+    }
+    let back = host_contract_planes_back(t, dead, registered);
+    let _ = t.owner_stream().synchronize();
+    if let Some(fence) = producer {
+        let _ = t.release_producer(fence);
+    }
+    if let Some(ticket) = &ticket {
+        let consumer = t.record_consumer(ticket).ok();
+        let _ = t
+            .retire(ticket, consumer)
+            .and_then(|_| t.acknowledge(ticket));
+    }
+    match back {
+        Ok(()) => HostContractFailure::Refused(why.to_string()),
+        Err(e) => HostContractFailure::SourceQuarantined(format!("{why}; {e}")),
+    }
 }
 
 /// Deep-copy one evicted device entry into a host entry, field for field. The device entry is
@@ -9218,9 +10023,9 @@ fn host_plane_from_device(
 fn host_entry_from_device(
     engine: &Engine,
     host: &mut HostPrefixCache,
-    dead: &PrefixEntry,
+    dead: &mut PrefixEntry,
     verify_digest: Option<String>,
-) -> Result<HostPrefixEntry, String> {
+) -> Result<HostPrefixEntry, HostImageFailure> {
     let is_glm = dead.tp.is_some() || dead.latent.iter().any(Option::is_some);
     if dead.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
         return Err("host image layout version mismatch".into());
@@ -9275,7 +10080,8 @@ fn host_entry_from_device(
         return Err(format!(
             "pinned arena admission refused: host byte census does not match snapshot accounting {}",
             dead.bytes
-        ));
+        )
+        .into());
     }
     sizes.extend([dead.last_logits.len() * 4, dead.last_h.len() * 4]);
     let bytes = host_image_bytes(dead.bytes, &dead.toks, &dead.last_logits)?;
@@ -9285,20 +10091,52 @@ fn host_entry_from_device(
     } else {
         None
     };
-    let mut kv = Vec::with_capacity(dead.kv.len());
-    for plane in &dead.kv {
-        kv.push(match plane {
-            Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
-            _ => None,
-        });
-    }
+    // Option B (lane/spill-c-20260919 day 15, lead rulings 14 and 15): under the door on the
+    // pageable tier every KV plane, trunk and draft, crosses through the TransferEngine as an
+    // owned KvPlane and comes back to its slot; the draft plane rides the same ticket. OFF (and
+    // the arena arm, unreachable under the door) keeps the by-reference copies below, statement
+    // for statement.
+    let contract_planes = match &host.tier {
+        Some(tier) if host.arena.is_none() && !is_glm => {
+            let class =
+                host_tier_entry_class(false, dead.draft.is_some(), dead.dspark_draft.is_some())
+                    .map_err(|why| format!("tier image {why}"))?;
+            match host_kv_planes_through_contract(engine, tier, dead, class) {
+                Ok(planes) => Some(planes),
+                Err(HostContractFailure::Alloc(why)) => {
+                    host.rejected_allocs += 1;
+                    host.disable(&why);
+                    return Err(why.into());
+                }
+                Err(HostContractFailure::Refused(why)) => return Err(why.into()),
+                Err(HostContractFailure::SourceQuarantined(why)) => {
+                    host.disable(&why);
+                    return Err(HostImageFailure::SourceQuarantined(why));
+                }
+            }
+        }
+        _ => None,
+    };
+    let (mut kv, contract_draft) = match contract_planes {
+        Some((kv, draft)) => (kv, Some(draft)),
+        None => {
+            let mut kv = Vec::with_capacity(dead.kv.len());
+            for plane in &dead.kv {
+                kv.push(match plane {
+                    Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
+                    _ => None,
+                });
+            }
+            (kv, None)
+        }
+    };
     // Diagnostic fault door (see kv_host_fault): corrupt one demoted byte AFTER the demote
     // digest was recorded, so the MEMRA_KV_HOST_VERIFY promote check has a real mismatch to
     // catch. Gate-box only.
     if kv_host_fault() == "flip-demote"
         && let Some(plane) = kv.iter_mut().flatten().find(|p| p.len * p.k_tok_bytes > 0)
     {
-        plane.k.as_mut_slice()[0] ^= 0xff;
+        plane.k.flip_first_byte()?;
         eprintln!(
             "[prefix-host] FAULT: flipped one demoted K byte \
                  (MEMRA_KV_HOST_FAULT=flip-demote)"
@@ -9332,9 +10170,12 @@ fn host_entry_from_device(
             _ => None,
         });
     }
-    let draft = match &dead.draft {
-        Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
-        _ => None,
+    let draft = match contract_draft {
+        Some(draft) => draft,
+        None => match &dead.draft {
+            Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
+            _ => None,
+        },
     };
     let dspark_draft = match &dead.dspark_draft {
         Some(t) if glm.is_none() => {
@@ -9402,7 +10243,8 @@ fn host_entry_from_device(
             return Err(format!(
                 "GLM host byte census {bytes} != device snapshot accounting {}",
                 dead.bytes
-            ));
+            )
+            .into());
         }
     }
     Ok(entry)
@@ -9423,6 +10265,11 @@ enum HostDemoteOutcome {
     /// Digest/copy/alloc/insert failure: no host copy exists. A caller holding live device
     /// state keeps it (fail closed); the SLRU sink's dying entry just drops.
     Failed,
+    /// Option B only (`MEMRA_KV_HOST_CONTRACTS=1`): the contract-routed D2H's completion is
+    /// unknown and the transfer engine kept the source planes (the frozen rule: never return
+    /// potentially-live inputs). No host copy exists AND the device entry is not whole: a
+    /// caller holding it must drop it, never serve it. The tier latched off.
+    SourceQuarantined,
 }
 
 /// The demote hook: called from the device cache's capacity-eviction loop (the ONLY
@@ -9430,8 +10277,8 @@ enum HostDemoteOutcome {
 /// than stalling an alloc-pressure tick behind gigabytes of synchronous D2H; that flush is a
 /// named seam for a copy-stream follow-up, not an oversight). Pinned/leased entries never
 /// reach here: they are absent from the evictable LRU by construction.
-fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, dead: PrefixEntry) {
-    let _ = host_demote_prefix_ref(engine, host, &dead);
+fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, mut dead: PrefixEntry) {
+    let _ = host_demote_prefix_ref(engine, host, &mut dead);
     // `dead` drops here whatever happened: it was already evicted from the device tier.
 }
 
@@ -9463,8 +10310,10 @@ fn evict_all_demoting(
 ) -> (usize, usize, u64) {
     let (mut removed, mut demoted, mut demoted_bytes) = (0usize, 0usize, 0u64);
     while let Some((key, i)) = px.oldest_evictable() {
-        if host.armed() && demoted_bytes < demote_budget_bytes {
-            let entry = &px.entries[&key][i];
+        if host.armed()
+            && demoted_bytes < demote_budget_bytes
+            && let Some(entry) = px.entries.get_mut(&key).and_then(|pool| pool.get_mut(i))
+        {
             let bytes = entry.bytes as u64;
             if matches!(
                 host_demote_prefix_ref(engine, host, entry),
@@ -9499,7 +10348,7 @@ fn host_roundtrip_digest(engine: &Engine, entry: &PrefixEntry) -> Result<String,
 fn host_demote_prefix_ref(
     engine: &Engine,
     host: &mut HostPrefixCache,
-    dead: &PrefixEntry,
+    dead: &mut PrefixEntry,
 ) -> HostDemoteOutcome {
     if !host.armed() {
         return HostDemoteOutcome::Off; // tier off (or latched off): byte-identical to today
@@ -9592,9 +10441,10 @@ fn host_demote_prefix_ref(
             // refusal here would replace it, which is the gate-line change ruling 15 forbids).
             None
         } else {
-            // Pinned: every `HostPlane` the image will hold, the trunk KV planes and the MTP
-            // draft plane alike (`host_plane_from_device` pins both); the f32 planes, tokens
-            // and logits are the pageable remainder.
+            // The KV planes (trunk and MTP draft) are the image's pinned bytes. Under Option B
+            // each one's `CudaPinnedLease` carries its own pinned charge on the same ledger
+            // (`alloc_host`), so this residency charge takes the pageable remainder (f32
+            // planes, tokens, logits) and pinned ZERO: the same total, charged once.
             let pinned = dead
                 .kv
                 .iter()
@@ -9612,7 +10462,7 @@ fn host_demote_prefix_ref(
             let Some(pageable) = host_bytes.checked_sub(pinned) else {
                 return HostDemoteOutcome::Failed;
             };
-            match host.tier_charge(&dead.pool_key, class, pinned as u64, pageable as u64, false) {
+            match host.tier_charge(&dead.pool_key, class, 0, pageable as u64, false) {
                 Ok(charge) => charge,
                 Err(err) => {
                     eprintln!("[prefix-host] {err}");
@@ -9688,11 +10538,26 @@ fn host_demote_prefix_ref(
                 HostDemoteOutcome::Failed
             }
         }
-        Err(err) => {
+        Err(failure) => {
             // The fixed-arena path reclaims inside `reserve_image`, before a copy that can fail.
             host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "copy failed");
-            eprintln!("[prefix-host] demote failed ({err}); nothing demoted");
-            HostDemoteOutcome::Failed
+            match failure {
+                HostImageFailure::Failed(err) => {
+                    eprintln!("[prefix-host] demote failed ({err}); nothing demoted");
+                    HostDemoteOutcome::Failed
+                }
+                HostImageFailure::SourceQuarantined(err) => {
+                    eprintln!(
+                        "[prefix-host] demote failed ({err}); nothing demoted, and the device \
+                         entry is no longer whole: its planes stay with the quarantined transfer \
+                         ({} tokens, model {}{})",
+                        dead.toks.len(),
+                        dead.pool_key.0,
+                        ns_suffix(&dead.pool_key.1)
+                    );
+                    HostDemoteOutcome::SourceQuarantined
+                }
+            }
         }
     }
 }
@@ -9894,12 +10759,12 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
             .map_err(|err| format!("device alloc of {vb} B failed: {err}"))?;
         if kb > 0 {
             engine
-                .htod_u8_into(&mut k, 0, &p.k.as_slice()[..kb])
+                .htod_u8_into(&mut k, 0, &p.k.bytes()?[..kb])
                 .map_err(|err| format!("K plane H2D failed: {err}"))?;
         }
         if vb > 0 {
             engine
-                .htod_u8_into(&mut v, 0, &p.v.as_slice()[..vb])
+                .htod_u8_into(&mut v, 0, &p.v.bytes()?[..vb])
                 .map_err(|err| format!("V plane H2D failed: {err}"))?;
         }
         Ok(PrefixPlane {
@@ -10601,28 +11466,33 @@ impl HandoffEntryOwned {
     }
 }
 
-/// Production view builder over a resident host entry (borrows the pinned slices).
-fn handoff_entry_ref(e: &HostPrefixEntry) -> HandoffEntryRef<'_> {
-    fn plane(p: &HostPlane) -> HandoffPlaneRef<'_> {
-        HandoffPlaneRef {
+/// Production view builder over a resident host entry (borrows the pinned slices). A
+/// contract-routed plane's bytes are a driver read, so the view can refuse.
+fn handoff_entry_ref(e: &HostPrefixEntry) -> Result<HandoffEntryRef<'_>, String> {
+    fn plane(p: &HostPlane) -> Result<HandoffPlaneRef<'_>, String> {
+        Ok(HandoffPlaneRef {
             len: p.len,
             k_tok_bytes: p.k_tok_bytes,
             v_tok_bytes: p.v_tok_bytes,
-            k: p.k.as_slice(),
-            v: p.v.as_slice(),
-        }
+            k: p.k.bytes()?,
+            v: p.v.bytes()?,
+        })
     }
-    HandoffEntryRef {
+    Ok(HandoffEntryRef {
         layout_version: e.layout_version,
         model: &e.pool_key.0,
         ns: &e.pool_key.1,
         toks: &e.toks,
-        kv: e.kv.iter().map(|p| p.as_ref().map(plane)).collect(),
+        kv: e
+            .kv
+            .iter()
+            .map(|p| p.as_ref().map(plane).transpose())
+            .collect::<Result<Vec<_>, _>>()?,
         conv: e.conv.iter().map(|p| p.as_deref()).collect(),
         ssm: e.ssm.iter().map(|p| p.as_deref()).collect(),
         pos: e.pos,
         last_logits: &e.last_logits,
-        draft: e.draft.as_ref().map(plane),
+        draft: e.draft.as_ref().map(plane).transpose()?,
         dspark: e.dspark_draft.as_ref().map(|t| HandoffTailRef {
             layers: t
                 .layers
@@ -10638,7 +11508,7 @@ fn handoff_entry_ref(e: &HostPrefixEntry) -> HandoffEntryRef<'_> {
         last_h: &e.last_h,
         bytes: e.device_bytes,
         verify_digest: e.verify_digest.as_deref(),
-    }
+    })
 }
 
 // ---- header IO --------------------------------------------------------------
@@ -11082,8 +11952,8 @@ fn host_plane_from_owned(
     let mut v = planes.take(p.v.len())?;
     v.copy_from_slice(&p.v).map_err(|e| e.to_string())?;
     Ok(HostPlane {
-        k,
-        v,
+        k: HostPlaneBytes::Pinned(k),
+        v: HostPlaneBytes::Pinned(v),
         len: p.len,
         k_tok_bytes: p.k_tok_bytes,
         v_tok_bytes: p.v_tok_bytes,
@@ -11235,11 +12105,11 @@ fn host_handoff_export(
     //    as a device eviction would treat them.
     let mut demoted = 0usize;
     while let Some((key, i)) = px.oldest_evictable() {
-        let Some(dead) = px.remove_at(&key, i) else {
+        let Some(mut dead) = px.remove_at(&key, i) else {
             break;
         };
         px.evictions += 1;
-        if host_demote_prefix_ref(engine, hpx, &dead) == HostDemoteOutcome::Demoted {
+        if host_demote_prefix_ref(engine, hpx, &mut dead) == HostDemoteOutcome::Demoted {
             demoted += 1;
         }
     }
@@ -11281,7 +12151,7 @@ fn host_handoff_export(
             },
         )?;
         for (key, i) in selected.iter().rev() {
-            handoff_write_entry(&mut w, &handoff_entry_ref(&hpx.entries[key][*i]))?;
+            handoff_write_entry(&mut w, &handoff_entry_ref(&hpx.entries[key][*i])?)?;
         }
         let f = w
             .into_inner()
@@ -15349,10 +16219,13 @@ pub fn run(
                 eprintln!(
                     "[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): {} model \
                      program identities, tenant salt per pool namespace, server governor \
-                     ledger pinned/pageable {:.0}MB device {:.0}MB; host tier armed",
+                     ledger pinned/pageable {:.0}MB device {:.0}MB in-flight {}; host tier \
+                     armed; KV plane D2H through the transfer engine on the pageable tier \
+                     (Option B)",
                     tier.programs.len(),
                     2.0 * hpx.budget as f64 / 1e6,
                     2.0 * prefix_cache_budget_bytes() as f64 / 1e6,
+                    tier.inflight,
                 );
                 hpx.tier = Some(tier);
             }
@@ -19519,29 +20392,35 @@ pub fn run(
                         &park.last_logits,
                         loaded.get(&cand.pool_key.0).map(|l| &l.model),
                     ) {
-                        Ok(entry) => match host_demote_prefix_ref(&engine, &mut hpx, &entry) {
-                            HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated => {
-                                drop(entry); // the boundary copy's device planes free here
-                                let fed_len = pool[pi].fed.len();
-                                drop(pool.remove(pi));
-                                if pool.is_empty() {
-                                    reuse.remove(&cand.pool_key);
-                                }
-                                eprintln!(
-                                    "[prefix-host] pause demote: plain park released \
+                        Ok(mut entry) => {
+                            match host_demote_prefix_ref(&engine, &mut hpx, &mut entry) {
+                                HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated => {
+                                    drop(entry); // the boundary copy's device planes free here
+                                    let fed_len = pool[pi].fed.len();
+                                    drop(pool.remove(pi));
+                                    if pool.is_empty() {
+                                        reuse.remove(&cand.pool_key);
+                                    }
+                                    eprintln!(
+                                        "[prefix-host] pause demote: plain park released \
                                      ({fed_len} fed tokens, model {}{})",
-                                    cand.pool_key.0,
-                                    ns_suffix(&cand.pool_key.1),
-                                );
-                                demoted += 1;
-                            }
-                            HostDemoteOutcome::Failed | HostDemoteOutcome::Off => {
-                                eprintln!(
-                                    "[prefix-host] pause demote: host copy did not \
+                                        cand.pool_key.0,
+                                        ns_suffix(&cand.pool_key.1),
+                                    );
+                                    demoted += 1;
+                                }
+                                HostDemoteOutcome::Failed
+                                | HostDemoteOutcome::Off
+                                | HostDemoteOutcome::SourceQuarantined => {
+                                    // The boundary snapshot was a copy; the park itself is intact
+                                    // whatever the transfer kept.
+                                    eprintln!(
+                                        "[prefix-host] pause demote: host copy did not \
                                      publish; park kept"
-                                );
+                                    );
+                                }
                             }
-                        },
+                        }
                         Err(err) => eprintln!(
                             "[prefix-host] pause demote: boundary snapshot refused \
                              ({err}); park kept"
@@ -19557,10 +20436,26 @@ pub fn run(
                         .map(|e| (e.toks.as_slice(), e.last_use, e.pins)),
                     &cand.tape,
                     cand.armed_at,
-                ) {
-                    let outcome =
-                        host_demote_prefix_ref(&engine, &mut hpx, &px.entries[&cand.pool_key][ei]);
-                    if matches!(
+                ) && let Some(entry) = px
+                    .entries
+                    .get_mut(&cand.pool_key)
+                    .and_then(|pool| pool.get_mut(ei))
+                {
+                    let outcome = host_demote_prefix_ref(&engine, &mut hpx, entry);
+                    if outcome == HostDemoteOutcome::SourceQuarantined {
+                        // Option B: the transfer engine kept the entry's planes (a quarantined
+                        // completion); the entry is not whole and must not stay resident.
+                        if let Some(dead) = px.remove_at(&cand.pool_key, ei) {
+                            eprintln!(
+                                "[prefix-host] pause demote: device prefix entry DROPPED, its \
+                                 planes stay with a quarantined D2H ({} tokens, model {}{})",
+                                dead.toks.len(),
+                                cand.pool_key.0,
+                                ns_suffix(&cand.pool_key.1),
+                            );
+                            drop(dead);
+                        }
+                    } else if matches!(
                         outcome,
                         HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated
                     ) {
@@ -35681,7 +36576,7 @@ mod tests {
             &super::HostTierDraftSource::Embedded,
         );
         super::HostTierContext {
-            governor: super::host_tier_governor(0, host_budget, 1 << 30).unwrap(),
+            governor: super::host_tier_governor(0, host_budget, 1 << 30, 4).unwrap(),
             programs: HashMap::from([(
                 model.to_string(),
                 super::HostTierPrograms {
@@ -35691,7 +36586,142 @@ mod tests {
                 },
             )]),
             device: 0,
+            transfers: None,
+            inflight: 4,
         }
+    }
+
+    #[test]
+    fn host_tier_ledger_handle_charges_and_releases_the_servers_one_ledger() {
+        use memra_engine::cache::tiered::*;
+        let governor = super::host_tier_governor(0, 1000, 500, 4).unwrap();
+        let mut handle = super::HostTierLedger(governor.clone());
+        let mut bytes = TierBudget::zero(1);
+        bytes.pinned = 600;
+        bytes.inflight = 4;
+        let request = BudgetRequest {
+            bytes,
+            priority: Priority::Backup,
+            deadline: Deadline(u64::MAX),
+            tenant: hostprefix::tenant_salt(""),
+        };
+        let lease = handle.reserve(&request).unwrap();
+        // The charge is visible through the server's own handle: one ledger, two handles.
+        assert_eq!(governor.lock().unwrap().used().pinned, 600);
+        assert_eq!(handle.used().inflight, 4);
+        // The in-flight dimension is bounded at 2 x layers + 2 (4 here): a fifth op refuses.
+        let mut more = TierBudget::zero(1);
+        more.inflight = 1;
+        assert_eq!(
+            handle
+                .reserve(&BudgetRequest {
+                    bytes: more,
+                    ..request.clone()
+                })
+                .err(),
+            Some(Error::Capacity)
+        );
+        // Released through the adapter, credited on the server's handle.
+        handle.release(&lease).unwrap();
+        assert_eq!(governor.lock().unwrap().used().pinned, 0);
+        assert_eq!(governor.lock().unwrap().used().inflight, 0);
+    }
+
+    /// Option B (lead rulings 14 and 15): the contract route is reachable only under the door on
+    /// the pageable tier, follows the kv_tier_gate demote sequence in order, never touches the
+    /// pre-door copy program, and the OFF arm keeps both by-reference copies statement for
+    /// statement; a quarantined transfer is a typed outcome the live-entry caller drops on.
+    #[test]
+    fn option_b_contract_route_is_door_only_and_keeps_the_frozen_demote_order() {
+        let worker = include_str!("worker.rs");
+        let start = worker
+            .find("fn host_kv_planes_through_contract(")
+            .expect("the contract route exists");
+        let end = start
+            + worker[start..]
+                .find("\nfn host_contract_planes_back(")
+                .expect("the unwind follows the route");
+        let body = &worker[start..end];
+        let at = |needle: &str| {
+            body.find(needle)
+                .unwrap_or_else(|| panic!("{needle} missing from the contract route"))
+        };
+        let order = [
+            "alloc_host(",
+            "dead.kv[i].take()",
+            "register_device(",
+            "retain_device(",
+            "record_producer(",
+            "submit_batch(",
+            "synchronize(&ticket)",
+            "poll(&ticket)",
+            "take_destination(",
+            ".require(&ticket, &expected, false)",
+            "record_consumer(",
+            "retire_source(&ticket)",
+            "if let Err(why) = host_contract_planes_back(&mut t, dead, registered)",
+            "release_producer(producer)",
+            "retire(&ticket, Some(consumer))",
+            "acknowledge(&ticket)",
+            "HostPlaneBytes::Contract {",
+            "contracts door D2H receipt:",
+        ];
+        let positions: Vec<usize> = order.iter().map(|n| at(n)).collect();
+        assert!(
+            positions.windows(2).all(|w| w[0] < w[1]),
+            "the frozen demote sequence is out of order: {positions:?}"
+        );
+        // The last `alloc_host` (destinations first) precedes the first plane leaving the entry.
+        assert!(body.rfind("alloc_host(").unwrap() < at("dead.kv[i].take()"));
+        assert!(
+            !body.contains("dtoh_u8_into_pinned") && !body.contains("memcpy_dtoh"),
+            "one D2H program per plane: the contract's, inside the transfer engine"
+        );
+        assert!(
+            !body.contains("k.clone()")
+                && !body.contains("v.clone()")
+                && !body.contains("try_clone("),
+            "no device byte copy: planes move, they are never cloned"
+        );
+        // Route selection: only the tier-Some, arena-None arm of host_entry_from_device, once;
+        // OFF keeps the two by-reference copies (trunk loop and draft).
+        let entry_fn = worker.find("fn host_entry_from_device(").unwrap();
+        let entry_body = &worker[entry_fn
+            ..entry_fn
+                + worker[entry_fn..]
+                    .find("\n/// What one demotion attempt did")
+                    .unwrap()];
+        let call = entry_body
+            .find("host_kv_planes_through_contract(engine, tier, dead, class)")
+            .expect("the route is called from host_entry_from_device");
+        let arm = entry_body[..call]
+            .rfind("Some(tier) if host.arena.is_none() && !is_glm =>")
+            .expect("the call sits in the tier-Some, arena-None arm");
+        assert!(call - arm < 400);
+        assert_eq!(
+            entry_body
+                .matches("host_kv_planes_through_contract(")
+                .count(),
+            1
+        );
+        assert_eq!(
+            entry_body
+                .matches("host_plane_from_device(engine, host, p, &mut planes)")
+                .count(),
+            2
+        );
+        // The residency charge at demote takes pinned ZERO under the door: the leases carry it.
+        let hook = worker.find("fn host_demote_prefix_ref(").unwrap();
+        let hook_body = &worker[hook..hook + worker[hook..].find("\n}\n").unwrap()];
+        assert!(
+            hook_body
+                .contains("host.tier_charge(&dead.pool_key, class, 0, pageable as u64, false)")
+        );
+        assert!(hook_body.contains("HostImageFailure::SourceQuarantined(err)"));
+        // The one live-entry caller drops on the quarantined outcome.
+        let sweep = worker.find("if !pause_pending.is_empty() {").unwrap();
+        let sweep_body = &worker[sweep..sweep + 8000];
+        assert!(sweep_body.contains("outcome == HostDemoteOutcome::SourceQuarantined"));
     }
 
     #[test]
@@ -35928,7 +36958,7 @@ mod tests {
     fn host_tier_governor_ledger_admits_what_the_lru_would_and_binds_at_twice_the_budget() {
         use memra_engine::cache::tiered::*;
         let budget = 1000usize;
-        let governor = super::host_tier_governor(1, budget, 500).unwrap();
+        let governor = super::host_tier_governor(1, budget, 500, 4).unwrap();
         let request = |pinned: u64, device: u64| {
             let mut bytes = TierBudget::zero(2);
             bytes.pinned = pinned;
@@ -35962,7 +36992,7 @@ mod tests {
         assert_eq!(governor.lock().unwrap().used().pinned, 0);
         // The device dimension is indexed by the worker's ordinal, sized for it exactly.
         assert_eq!(governor.lock().unwrap().used().device.len(), 2);
-        assert!(super::host_tier_governor(usize::MAX, 1, 1).is_err());
+        assert!(super::host_tier_governor(usize::MAX, 1, 1, 4).is_err());
     }
 
     #[test]
