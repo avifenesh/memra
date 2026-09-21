@@ -5099,14 +5099,27 @@ impl KvFlex {
         let t0 = Instant::now();
         let (n, freed) = px.evict_to_bytes(self.floor);
         if n == 0 {
-            // Above-floor residency that is entirely pinned (in-flight fanout leases)
-            // cannot shed; loud, because the zero-tax gate would otherwise read a silent
-            // no-op as a pass.
-            eprintln!(
-                "[kv-flex] shed ({why}): {:.1}MB above the floor is pinned by in-flight \
-                 leases; nothing evictable",
-                (px.total_bytes - self.floor) as f64 / 1e6,
-            );
+            let unleased = px.evictable_bytes();
+            if unleased == 0 {
+                // Above-floor residency that is entirely pinned (in-flight fanout leases)
+                // cannot shed; loud, because the zero-tax gate would otherwise read a silent
+                // no-op as a pass. This is the ONLY shape that may print "nothing evictable":
+                // `evict_to_bytes` takes probation first and then protected oldest first, so
+                // any unleased byte, protected or not, would have been a victim.
+                eprintln!(
+                    "[kv-flex] shed ({why}): {:.1}MB above the floor is pinned by in-flight \
+                     leases; nothing evictable",
+                    (px.total_bytes - self.floor) as f64 / 1e6,
+                );
+            } else {
+                // Unreachable by construction; loud if the victim function and the LRU
+                // indexes ever disagree.
+                eprintln!(
+                    "[kv-flex] shed ({why}): no entry evicted while {:.1}MB unleased bytes sit \
+                     above the floor; the victim function and the LRU indexes disagree",
+                    unleased as f64 / 1e6,
+                );
+            }
             return 0;
         }
         let ms = t0.elapsed().as_secs_f64() * 1e3;
@@ -7516,10 +7529,6 @@ impl PrefixCache {
         Some(dead)
     }
 
-    fn capacity_victim(&self) -> Option<(PoolKey, usize)> {
-        self.capacity_victim_with(prefix_cache_slru_enabled())
-    }
-
     /// Victim selection, with the policy passed in so both arms are unit-testable
     /// (`prefix_cache_slru_enabled` is a process-wide `OnceLock` over the environment).
     fn capacity_victim_with(&self, slru: bool) -> Option<(PoolKey, usize)> {
@@ -7906,18 +7915,28 @@ impl PrefixCache {
         true
     }
 
-    /// KV-FLEX SHED (lane/kv-flex-20260831): evict entries in capacity order (probation
-    /// LRU first, protected LRU past its share: the SAME victim function the insert-time
-    /// budget loop uses, so flex adds no second eviction policy) until residency is back
-    /// at `target`. Evicted bytes EVAPORATE (deliberately no demote sink, the `evict_all`
-    /// law: an admission-tick shed must not stall behind gigabytes of D2H). Pinned entries
-    /// are untouchable and the loop stops when no victim remains. Returns
-    /// (entries evicted, bytes freed).
+    /// KV-FLEX SHED (lane/kv-flex-20260831) and the step-OOM reclaim (memra#145): evict
+    /// entries in the insert loop's order, `room_victim_with(slru, None)`: probation LRU
+    /// first, then protected LRU oldest first, leases untouchable (under `lru`, the global
+    /// oldest). The SAME victim function the insert-time budget loop and the snapshot
+    /// preflight use, so pressure relief adds no second eviction policy and can reach every
+    /// byte `evictable_bytes()` promises the memory-admission door. Until memra#523 item 1's
+    /// review this loop selected with the raw SLRU capacity victim (probation LRU only), so
+    /// on a protected-heavy cache it stopped as soon as probation was empty and freed far
+    /// less than its logged target. Evicted bytes EVAPORATE (deliberately no demote sink,
+    /// the `evict_all` law: an admission-tick shed must not stall behind gigabytes of D2H).
+    /// The loop stops when no unleased victim remains. Returns (entries evicted, bytes
+    /// freed).
     fn evict_to_bytes(&mut self, target: usize) -> (usize, usize) {
+        self.evict_to_bytes_with(target, prefix_cache_slru_enabled())
+    }
+
+    /// [`Self::evict_to_bytes`] with the policy passed in, so both arms are unit-testable.
+    fn evict_to_bytes_with(&mut self, target: usize, slru: bool) -> (usize, usize) {
         let mut n = 0usize;
         let mut freed = 0usize;
         while self.total_bytes > target {
-            let Some((key, i)) = self.capacity_victim() else {
+            let Some((key, i)) = self.room_victim_with(slru, None) else {
                 break;
             };
             let Some(dead) = self.remove_at(&key, i) else {
@@ -33437,6 +33456,134 @@ mod tests {
         assert_eq!((n, freed), (1, 10), "only the unpinned entry is evictable");
         assert_eq!(px.total_bytes, 10, "the pinned entry's bytes remain");
         assert!(px.unpin(&pin));
+    }
+
+    /// memra#523 item 1, review: pressure relief uses the insert loop's victim function. On a
+    /// protected-heavy cache (three promoted entries, one probation) `evict_to_bytes` reaches
+    /// its byte target by taking the probation LRU first and then the protected LRU oldest
+    /// first; the raw SLRU capacity victim names nothing once probation is empty, which is
+    /// where the old shed stopped short of its target.
+    #[test]
+    fn evict_to_bytes_takes_protected_oldest_first_once_probation_is_empty() {
+        const BUDGET: usize = 100;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", BUDGET);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        px.insert_with_budget(&k, entry_b(&k, 3, 10), "seed", BUDGET);
+        assert_eq!((px.protected_bytes, px.probation_bytes), (30, 10));
+        assert_eq!(px.evictable_bytes(), 40);
+
+        assert_eq!(
+            px.evict_to_bytes_with(35, true),
+            (1, 10),
+            "probation LRU first"
+        );
+        assert_eq!(px_survivors(&px), vec![0, 1, 2]);
+        assert!(
+            px.capacity_victim_with(true).is_none(),
+            "probation is empty: the raw SLRU capacity victim names nothing"
+        );
+        assert_eq!(
+            px.evict_to_bytes_with(25, true),
+            (1, 10),
+            "then the protected LRU, oldest first"
+        );
+        assert_eq!(px_survivors(&px), vec![1, 2]);
+        assert_eq!(px.evict_to_bytes_with(5, true), (2, 20));
+        assert!(px_survivors(&px).is_empty());
+        assert_eq!((px.total_bytes, px.evictions), (0, 4));
+        assert_eq!(px.evictable_bytes(), 0);
+
+        // The `lru` rollback arm is unchanged: the global oldest, promoted or not.
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", BUDGET);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        px.insert_with_budget(&k, entry_b(&k, 3, 10), "seed", BUDGET);
+        assert_eq!(px.evict_to_bytes_with(25, false), (2, 20));
+        assert_eq!(px_survivors(&px), vec![2, 3]);
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, review: a leased entry is never a pressure-relief victim, whatever the
+    /// target; when only leased bytes remain the loop reports zero and `evictable_bytes()` is
+    /// zero, the one shape the kv-flex "nothing evictable" line may describe.
+    #[test]
+    fn evict_to_bytes_never_takes_a_leased_entry_even_below_target() {
+        const BUDGET: usize = 100;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", BUDGET);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        px.insert_with_budget(&k, entry_b(&k, 3, 10), "seed", BUDGET);
+        let i1 = px.entries[&k].iter().position(|e| e.toks[0] == 1).unwrap();
+        let pin = px.pin(&k, i1).expect("a protected entry takes a lease");
+        assert_eq!(px.evictable_bytes(), 30);
+
+        assert_eq!(
+            px.evict_to_bytes_with(0, true),
+            (3, 30),
+            "every unleased entry goes, the leased one stays"
+        );
+        assert_eq!(px_survivors(&px), vec![1]);
+        assert_eq!(px.total_bytes, 10);
+        assert_eq!(px.evictable_bytes(), 0);
+        assert_eq!(
+            px.evict_to_bytes_with(0, true),
+            (0, 0),
+            "nothing unleased: a no-op that reports zero"
+        );
+        assert!(px.unpin(&pin));
+        assert_eq!(px.evictable_bytes(), 10);
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, review: the kv-flex shed reaches its floor through unleased
+    /// PROTECTED bytes (it counts as a shed, no warning path) and takes the "nothing
+    /// evictable" path only when every byte above the floor is leased.
+    #[test]
+    fn kv_flex_shed_reaches_the_floor_through_protected_entries_and_warns_only_when_all_is_leased()
+    {
+        let k = key("");
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", 100);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        assert_eq!((px.protected_bytes, px.probation_bytes), (30, 0));
+
+        let mut flex = armed_flex(15);
+        assert_eq!(
+            flex.shed(&mut px, false, "test"),
+            2,
+            "unleased protected bytes above the floor shed, oldest first"
+        );
+        assert_eq!(px_survivors(&px), vec![2]);
+        assert_eq!(px.total_bytes, 10);
+        assert_eq!(
+            flex.sheds, 1,
+            "a real shed is counted; the warning path never counts"
+        );
+
+        let i2 = px.entries[&k].iter().position(|e| e.toks[0] == 2).unwrap();
+        let pin = px.pin(&k, i2).expect("the survivor takes a lease");
+        let mut flex = armed_flex(5);
+        assert_eq!(px.evictable_bytes(), 0);
+        assert_eq!(
+            flex.shed(&mut px, false, "test"),
+            0,
+            "everything above the floor is leased: the warning path"
+        );
+        assert_eq!(flex.sheds, 0);
+        assert_eq!(px.total_bytes, 10);
+        assert!(px.unpin(&pin));
+        assert_prefix_cache_accounting(&px);
     }
 
     /// The grant policy, pure: free minus guard while armed, zero under hold, zero
