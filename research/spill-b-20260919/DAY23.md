@@ -77,7 +77,113 @@ crate under the quota: `cargo clippy -p memra-engine --all-targets -- -D warning
 
 ## 3. Local RTX 5090, merged tree `5f2060381` (main's mechanism, no scope): the five day-22 cells and run-gen/run-spec
 
-PENDING: filled in as the chain (`rtx5090-day23/chain-day23-local.sh`, `chain.log`) completes.
+One serial chain (`rtx5090-day23/chain-day23-local.sh`, `chain.log`, 19:58:59Z to 20:17:52Z), every cell exit 0 on
+the `build-merged` binaries, the served mint, prompt `docs/SERVING.md` where the gate takes one. (`gate-source.txt` in
+a cell names the lane HEAD at the time the cell ran, which moved by docs commits during the chain; the binary SHA-256 in
+each cell is the build at `5f2060381`, and no `crates/` file changed after it.)
+
+**(a) Width walk (`walk/`, `run-day23-walk.sh walk 1800 17 16 48`, one arm, no scope), verbatim:**
+
+```text
+WIDTH WALK width 16 vs 17: 0 of 497 tensors differ; tensor names: {}; sites: []
+WIDTH WALK width 48 vs 17: 0 of 497 tensors differ; tensor names: {}; sites: []
+layer 00 ssm_beta  qtype=NVFP4   in_f=5120   out_f=48     width  16 vs 17: rows_differ=0/16 maxabs=0.000e0 ref_sha=e40f0aeaaec76762 sha=e40f0aeaaec76762 same
+layer 00 ssm_alpha qtype=NVFP4   in_f=5120   out_f=48     width  16 vs 17: rows_differ=0/16 maxabs=0.000e0 ref_sha=27a9e796e65eee50 sha=27a9e796e65eee50 same
+```
+
+The prediction of ruling 26 held: 0 of 497 at 16 vs 17 with no scope (the `ref_sha` of the 17-row program is day
+22's, so #614 moved no wide call), 994 `same` lines, 0 `DIFFERS`. The day-22 `scope=bare` arm that read 96 differing
+tensors was the tier at m = 16; under #614 that tier is not admitted at m = 16 outside verify-exact, so there is no
+second arm to run.
+
+**(b) The seven-arm continuation table (`gate/`, `run-day23-gate.sh gate 2400`), verbatim:**
+
+```text
+== arm F-9296 total=9296 tails=16 48 80 112 144 176 208 env:
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=14ab5f8b365dbd71 ok
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+  9216 + 80: logits_sha=14ab5f8b365dbd71 ok
+  9184 + 112: logits_sha=14ab5f8b365dbd71 ok
+  9152 + 144: logits_sha=14ab5f8b365dbd71 ok
+  9120 + 176: logits_sha=14ab5f8b365dbd71 ok
+  9088 + 208: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+== arm F-9297 total=9297 tails=17 49 env:
+one call over 9297 tokens: logits_sha=e641952cac19e526
+  9280 + 17: logits_sha=e641952cac19e526 ok
+  9248 + 49: logits_sha=e641952cac19e526 ok
+A4 CONTINUATION GATE: PASS
+== arm F-9311 total=9311 tails=31 63 env:
+one call over 9311 tokens: logits_sha=b61719f294866b05
+  9280 + 31: logits_sha=b61719f294866b05 ok
+  9248 + 63: logits_sha=b61719f294866b05 ok
+A4 CONTINUATION GATE: PASS
+== arm F-9312 total=9312 tails=32 64 96 env:
+one call over 9312 tokens: logits_sha=736a88d7c7448dcb
+  9280 + 32: logits_sha=736a88d7c7448dcb ok
+  9248 + 64: logits_sha=736a88d7c7448dcb ok
+  9216 + 96: logits_sha=736a88d7c7448dcb ok
+A4 CONTINUATION GATE: PASS
+== arm F-9296-chunk32 total=9296 tails=16 48 env: MEMRA_PRIME_CHUNK=32
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=14ab5f8b365dbd71 ok
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+== arm F-9296-chunk16 total=9296 tails=16 48 env: MEMRA_PRIME_CHUNK=16
+one call over 9296 tokens: logits_sha=bafe0e0a09a3d0a4
+  9280 + 16: logits_sha=bafe0e0a09a3d0a4 ok
+  9248 + 48: logits_sha=bafe0e0a09a3d0a4 ok
+A4 CONTINUATION GATE: PASS
+== arm F-9296-nobatched total=9296 tails=16 48 env: MEMRA_NO_BATCHED=1
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=14ab5f8b365dbd71 ok
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+```
+
+Digest for digest the day-22 fix table (DAY22.md 1.5 (b)) and the day-22 base table where the two agree
+(1.5 (f)): main's mechanism and the lane's produce the same bits at every split, and the chunk-32 one-call prime
+digests as the default schedule (`14ab5f8b365dbd71`, not the pre-fix `35bd15f063bfd5ba`).
+
+**(c) `kernel-check`, both manifests (`kc/`, `run-day23-kc.sh kc 1800`):** `ALL GREEN (109 cells, 10 skipped)`,
+exit 0; the same ten skips as day 22 (the rig's absent `Qwen3.6-35B-A3B-UD-IQ4_XS.gguf` x7, `gemma-4-12b-it-qat-q4_0.gguf`,
+`Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf`, `sigrouter-served-replay`), within local-ci's budget of 11.
+
+**(d) The #379 hit gate (`hitgate/`, `tools/spec-on-cache-hit-gate.sh qwen` on the merged `memra-server`
+`cbb7d4ad...`, 9B trunk):** `ok: g1 spec==plain byte identity`, `ok: g2 spec==plain byte identity`,
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, exit 0. As on days 19 and 22 the external drafter local-ci attaches is
+absent on this rig (`drafter.txt`; local-ci's WARNING branch), recorded, not hidden.
+
+**(e) The twin gate (`twin/`, `tools/prefix-newest-turn-fits-gate.py`, default 8-turn shape, LRU default), verbatim:**
+
+```text
+PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS
+```
+
+Byte for byte days 21 and 22.
+
+**(f) `run-gen` argmax and `run-spec` K=1..8 (`genspec/`, `run-day23-genspec.sh genspec 3000`; the same arms as
+section 4's target-card cell), verbatim:**
+
+```text
+run-gen std   (9419 11 1814 0):  prefill argmax=271  decode argmax=271  logit maxdiff=2.276e-1  MATCH
+run-gen probe (90 tokens):       prefill argmax=15666  decode argmax=15666  logit maxdiff=5.047e-1  MATCH
+                                 batched-prime argmax=15666  tokenwise argmax=15666  logit maxdiff=3.523e-1  MATCH
+run-gen p16   (16 tokens):       prefill argmax=23314  decode argmax=23314  logit maxdiff=2.965e-1  MATCH
+                                 batched-prime argmax=23314  tokenwise argmax=23314  logit maxdiff=2.392e-1  MATCH
+run-gen p4112 (4112 tokens):     prefill argmax=84728  decode argmax=84728  logit maxdiff=4.292e-1  MATCH
+                                 batched-prime argmax=84728  tokenwise argmax=84728  logit maxdiff=3.407e-1  MATCH
+run-spec probe (90 tokens):  acceptance 12/19, 19/28, 19/36, 22/48, 21/55, 21/66, 21/77, 21/88 for K=1..8, each
+                             `self-consistency: PASS (identical to plain target)`; `=== SELF-CONSISTENCY PASS ===`
+run-spec p16 (16 tokens):    acceptance 14/18, 18/30, 21/39, 21/52, 21/65, 21/78, 21/91, 21/104 for K=1..8, each PASS; `=== SELF-CONSISTENCY PASS ===`
+run-spec p4112 (4112 tokens): acceptance 14/17, 17/30, 18/42, 18/56, 18/70, 18/84, 18/98, 18/112 for K=1..8, each PASS; `=== SELF-CONSISTENCY PASS ===`
+```
+
+Every argmax, every accepted/drafted count and every verdict equals the target card's (section 4); the only figures
+that differ between the cards are the `logit maxdiff` diagnostics on `p4112` (4.292e-1 / 3.407e-1 here against
+7.075e-1 / 7.158e-1 there), which the gate does not read as severity (run-gen's own note) and which are not a
+verdict. `nvidia-smi --query-compute-apps` empty before and after every cell.
 
 ## 4. Target card, merged tree `5f2060381` (one RTX PRO 6000 Blackwell; `pro-single-day23/m-*`, mirrored from `/root/spill-receipts/b-day23/`)
 
@@ -180,4 +286,19 @@ is red against #614.
 
 ## 5. Close of day
 
-PENDING.
+What the day leaves: memra#427 is fixed on main by #614 and guarded by the continuation gate in `tools/local-ci.sh`;
+this lane's contribution that survives is the evidence (the width walk that named `ssm_beta`/`ssm_alpha` and the
+batched tier, the seven-arm table on both card classes, the decision record) and two things in the tree: the one-arm
+`qwen-a4-width-walk` diagnostic and the TESTING.md pointer to it. Nothing here is red against #614. The step35
+continuation split (16 versus 17 rows) stays owed to a rig that holds a Step-3.7-Flash GGUF (none on either rig);
+under #614 it is a confirmation, not a gap. The original task 3's base-versus-fixed `run-gen` comparison was not run
+(ruling 26 narrowed it; section 4 states why the table already answers it).
+
+Checks on the final tree: `cargo fmt --all -- --check`, `git diff --check`, `tools/check-flags.sh` (no uncovered
+runtime names; no new `MEMRA_*` read today), `python3 tools/check-public-boundary.py check` (0 new), `cargo clippy -p
+memra-engine --all-targets -- -D warnings` under the quota (exit 0, `rtx5090-day23/checks/`). Scratch under `/tmp`
+(the tokenizer scratch, the comment draft) removed at close. On the box: the staged 9B (5.7 GB) and the symlink
+directory stay under `/root/spill-receipts/b-day23/` (this lane's own dir; `/root/artifacts` untouched) for the
+integ's re-runs. `target/bins/day22-*` and the `build/` dirs under the day 11/12 receipts stay untracked as before.
+Nothing merged, no PR; the lead integrates. Budget: about 2.6 agent-hours (19:36Z to about 20:32Z of wall time with
+both rigs running in parallel, counted once) against the 4-hour brief.
