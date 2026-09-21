@@ -7,12 +7,32 @@ model/cell ran, qualify a numeric program, or replace step-pro and the standard 
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shlex
 import sys
 
-LOCKS = {"rtx5090": "/tmp/memra-5090.lock", "pro-single": "/tmp/memra-gpu.lock", "pro-pair": "/tmp/memra-gpu.lock", "pro-four": "/tmp/memra-gpu.lock", "cpu": None}
+CANONICAL_LOCKS = {"rtx5090": "/tmp/memra-5090.lock", "pro-single": "/tmp/memra-gpu.lock", "pro-pair": "/tmp/memra-gpu.lock", "pro-four": "/tmp/memra-gpu.lock", "cpu": None}
+# Test seam (lead ruling 12, 2026-09-21): the battery's CPU tests must never contend a serving
+# job's rig lock. MEMRA_TIER_BATTERY_LOCK_DIR re-roots the two canonical NAMES under a private
+# directory (`<dir>/memra-5090.lock`, `<dir>/memra-gpu.lock`); the names and the rig->name table
+# are unchanged and a receipt written under the seam records the private path, so it never
+# validates against the canonical table in a process without the seam. Unset (the default and
+# every production launcher), the table is the two rig locks. It is a test seam, not a third name.
+LOCK_DIR_SEAM = "MEMRA_TIER_BATTERY_LOCK_DIR"
+
+
+def lock_table(private_dir=None):
+    if private_dir is None:
+        return dict(CANONICAL_LOCKS)
+    if not Path(private_dir).is_dir():
+        raise ValueError(f"{LOCK_DIR_SEAM}={private_dir!r} is not an existing directory")
+    return {rig: None if path is None else str(Path(private_dir) / Path(path).name)
+            for rig, path in CANONICAL_LOCKS.items()}
+
+
+LOCKS = lock_table(os.environ.get(LOCK_DIR_SEAM))
 ROUTES = {"local", "pcie-p2p", "host-bounce", "host", "nvme"}
 IDENTITY = ("runtime_commit", "binary_sha256", "artifact_sha256", "plan_sha256", "layout_sha256", "prompt_sha256", "numeric_class", "context_tokens", "requests", "rig", "kind")
 CASES = {
@@ -114,7 +134,6 @@ import csv
 import datetime
 import fcntl
 import math
-import os
 import signal
 import shutil
 import statistics

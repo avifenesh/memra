@@ -14,9 +14,11 @@ import unittest
 ROOT = Path(__file__).resolve().parents[4]
 spec = importlib.util.spec_from_file_location('battery4', ROOT/'tools/tier-battery.py')
 B = importlib.util.module_from_spec(spec); spec.loader.exec_module(B)
+import private_lock
 
 
-class Day4Tests(unittest.TestCase):
+class Day4Tests(private_lock.PrivateLockMixin, unittest.TestCase):
+    BATTERY = B
     def bootstrap(self, out, extra=(), source=None):
         script = source or (ROOT/'tools/tier-rig-bootstrap.sh').read_text()
         return subprocess.run(['bash', '-s', '--', '--dry-run', '--out', str(out), *extra],

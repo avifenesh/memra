@@ -51,6 +51,17 @@ RIGS = {
                    'stub': 'NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887, 600.00, 600.00\n'},
 }
 RIG = RIGS[a.rig]
+# Test seam (lead ruling 12, 2026-09-21), the same one tools/tier-battery.py honours: the
+# battery's CPU tests run this bootstrap in --dry-run, which holds the rig lock on purpose, and
+# they must never contend a serving job's lock. MEMRA_TIER_BATTERY_LOCK_DIR re-roots the
+# canonical NAME under a private directory; the name, the rig->name table, the report and the
+# generated wrapper all carry the same path, so a receipt written under the seam shows it.
+# Unset (the default and every operator launch), the lock is the rig's canonical file.
+if os.environ.get('MEMRA_TIER_BATTERY_LOCK_DIR'):
+    _private = Path(os.environ['MEMRA_TIER_BATTERY_LOCK_DIR'])
+    if not _private.is_dir():
+        sys.exit('MEMRA_TIER_BATTERY_LOCK_DIR must name an existing directory (test seam)')
+    RIG = {**RIG, 'lock': str(_private / Path(RIG['lock']).name)}
 # A locked pidfile identifies this bootstrap invocation, not a process-name substring.
 # flock, rather than kill(pid, 0), also makes stale/recycled PIDs harmless. Never unlink
 # this inode while another invocation could have opened it. Status never creates files.
