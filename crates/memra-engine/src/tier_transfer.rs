@@ -391,6 +391,9 @@ impl CudaTransfers {
         if e.retired {
             return Ok(());
         }
+        if Self::holds_cancelled_source(e) {
+            return Err(Error::Busy);
+        }
         if !e.completion.producer_done || !e.source.idle()? {
             return Err(Error::Busy);
         }
@@ -432,6 +435,54 @@ impl CudaTransfers {
             item.source_retired = true;
         }
         Ok(())
+    }
+    /// Day-11 rule 1 (lead ruling 9): a cancelled restore still holding an H2D source the
+    /// caller has not recovered. Such a ticket is never drained by `retire` or `retire_source`.
+    fn holds_cancelled_source(e: &Entry) -> bool {
+        e.cancelled
+            && e.items
+                .iter()
+                .flatten()
+                .any(|i| i.direction == CopyDirection::HostToDevice && !i.source_retired)
+    }
+    /// Day-11 rule 1: hand a cancelled restore's untouched host source back to the caller,
+    /// exactly once, after its DMA has been observed complete and every source consumer and
+    /// source graph pin has retired. The lease keeps its own pinned charge; the caller owns it
+    /// again as it did before submission. See `TransferEngine::recover_source`.
+    pub fn recover_source(
+        &mut self,
+        ticket: &TransferTicket,
+        item: u32,
+    ) -> Result<CudaPinnedLease> {
+        self.progress(ticket)?;
+        let e = self.entries.get(ticket).ok_or(Error::UnknownTicket)?;
+        if e.retired || e.published {
+            return Err(Error::AlreadyReleased);
+        }
+        if !e.cancelled {
+            return Err(Error::NotReady);
+        }
+        let i = e
+            .items
+            .get(item as usize)
+            .ok_or(Error::InvalidLayout)?
+            .as_ref()
+            .ok_or(Error::Rejected)?;
+        if i.direction != CopyDirection::HostToDevice {
+            return Err(Error::Unsupported);
+        }
+        if i.source_retired {
+            return Err(Error::AlreadyReleased);
+        }
+        // The DMA or a source consumer may still read the source: no hand-back under a live read.
+        if !e.completion.items[item as usize].segments[0].producer_done || !e.source.idle()? {
+            return Err(Error::Busy);
+        }
+        let e = self.entries.get_mut(ticket).unwrap();
+        let i = e.items[item as usize].as_mut().unwrap();
+        let host = i.host.take().ok_or(Error::AlreadyReleased)?;
+        i.source_retired = true;
+        Ok(host)
     }
     /// Resolve only a sealed view issued by this backend, while its exact ticket
     /// is still live. Consumers must launch on owner_stream(), then record_consumer.
@@ -939,6 +990,11 @@ impl TransferEngine for CudaTransfers {
         if e.published {
             return Ok(CancelState::AlreadyPublished);
         }
+        // Day-11 rule 1: a source that left the ticket (per-side retirement, whole retirement
+        // or recovery) cannot be followed by a revocation over it.
+        if e.retired || e.items.iter().flatten().any(|i| i.source_retired) {
+            return Err(Error::AlreadyReleased);
+        }
         e.cancelled = true;
         Ok(CancelState::PublicationRevoked)
     }
@@ -1036,6 +1092,10 @@ impl TransferEngine for CudaTransfers {
         } else if e.published {
             return Err(Error::Busy);
         }
+        if Self::holds_cancelled_source(e) {
+            // Day-11 rule 1: the caller recovers a cancelled restore's source; retirement waits.
+            return Err(Error::Busy);
+        }
         if e.items
             .iter()
             .flatten()
@@ -1065,6 +1125,9 @@ impl TransferEngine for CudaTransfers {
     }
     fn retire_source(&mut self, ticket: &TransferTicket) -> Result<()> {
         CudaTransfers::retire_source(self, ticket)
+    }
+    fn recover_source(&mut self, ticket: &TransferTicket, item: u32) -> Result<Self::Host> {
+        CudaTransfers::recover_source(self, ticket, item)
     }
     fn retired(&mut self, ticket: &TransferTicket) -> Result<bool> {
         self.check_thread()?;

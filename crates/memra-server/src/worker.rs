@@ -6209,6 +6209,104 @@ fn ensure_driver_headroom(engine: &Engine, loaded: &HashMap<String, LoadedModel>
     );
 }
 
+/// One device's async-pool reading taken BEFORE a prefix-cache reclaim (memra#346, #445), so
+/// the settle step can hand back exactly what the reclaim added to the pool's cached blocks.
+#[derive(Clone, Copy, Debug)]
+struct PoolReading {
+    device: usize,
+    reserved: usize,
+    used: usize,
+    driver_free: usize,
+}
+
+fn pool_readings(engine: &Engine, loaded: &HashMap<String, LoadedModel>) -> Vec<PoolReading> {
+    let mut out = Vec::new();
+    for_each_device_engine(engine, loaded, &mut |device, owner| {
+        let (reserved, used) = owner.pool_reserved_used();
+        let driver_free = owner.ctx().mem_get_info().map(|(f, _)| f).unwrap_or(0);
+        out.push(PoolReading {
+            device,
+            reserved,
+            used,
+            driver_free,
+        });
+    });
+    out
+}
+
+/// The `keep` handed to `cuMemPoolTrimTo` after a prefix-cache reclaim: the pool keeps its
+/// live bytes plus the blocks that were already parked before the reclaim (the graph-launch
+/// pin), and returns the reclaim's own cached gain to the driver. `None` when the reclaim
+/// added nothing to this device's cache, so a trim would only evict the parked blocks.
+fn reclaim_settle_keep(
+    cached_before: usize,
+    reserved_after: usize,
+    used_after: usize,
+) -> Option<usize> {
+    let cached_after = reserved_after.saturating_sub(used_after);
+    (cached_after > cached_before).then(|| used_after.saturating_add(cached_before))
+}
+
+/// RECLAIM SETTLE (memra#346, #445, #523 item 4). Evicting a prefix entry drops its
+/// `CudaSlice`s, and each drop is a stream-ordered `cuMemFreeAsync` into the caching pool:
+/// until the owning stream is fenced the pool still reports the bytes as used, and after the
+/// fence they sit mapped in the pool where `cuMemGetInfo` cannot see them. Admission re-reads
+/// headroom in the SAME tick it evicts, so without this step a 43.5 GB eviction credited
+/// nothing (`effective free 69204MB -> 69204MB`, #346) and everything that allocates from the
+/// driver (cuBLAS workspace, graph instantiation, the driver-headroom rung) stayed starved
+/// behind an entry that was already gone (#445). Fence every model-owned stream, then trim
+/// each device's pool to `used + cached_before` (`reclaim_settle_keep`): exactly the reclaim's
+/// gain goes back to the driver and the blocks parked before it stay parked. One receipt line
+/// per device, in bytes. A shortfall (the trim released less than the gain: a live neighbour
+/// shares the chunk) is printed, never inferred away; those bytes stay counted by
+/// `effective_free_bytes` as pool-cached headroom, which is right for pool allocations and is
+/// the honest reading for everything else.
+fn settle_reclaimed_prefix_bytes(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    before: &[PoolReading],
+    evicted_prefix_bytes: usize,
+    why: &str,
+) {
+    synchronize_model_devices(engine, loaded, why);
+    for_each_device_engine(engine, loaded, &mut |device, owner| {
+        let Some(prior) = before.iter().find(|r| r.device == device) else {
+            return;
+        };
+        let cached_before = prior.reserved.saturating_sub(prior.used);
+        let (reserved_after, used_after) = owner.pool_reserved_used();
+        let gain = reserved_after
+            .saturating_sub(used_after)
+            .saturating_sub(cached_before);
+        let released = match reclaim_settle_keep(cached_before, reserved_after, used_after) {
+            Some(keep) => owner.pool_trim_to(keep),
+            None => 0,
+        };
+        let (reserved_final, used_final) = owner.pool_reserved_used();
+        let driver_free_after = owner.ctx().mem_get_info().map(|(f, _)| f).unwrap_or(0);
+        let retained = gain.saturating_sub(released);
+        eprintln!(
+            "[admit-oom] reclaim settle ({why}): dev{device} evicted_prefix_bytes={evicted_prefix_bytes} \
+             pool_cached_gain_bytes={gain} trim_released_bytes={released} \
+             driver_free_bytes {} -> {} pool_reserved_bytes {} -> {} pool_used_bytes {} -> {}{}",
+            prior.driver_free,
+            driver_free_after,
+            prior.reserved,
+            reserved_final,
+            prior.used,
+            used_final,
+            if retained > 0 {
+                format!(
+                    " pool_retained_bytes={retained} (live neighbour or fragmentation; counted \
+                     as pool-cached headroom, not driver free)"
+                )
+            } else {
+                String::new()
+            },
+        );
+    });
+}
+
 fn step_oom_retries() -> u32 {
     static R: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
     *R.get_or_init(|| {
@@ -15805,6 +15903,11 @@ pub fn run(
                         // dropped, bounded by this arrival's own shortfall so a tick never
                         // stalls behind more D2H than the admission needs. Off, this is
                         // byte-identical to `px.evict_all()`.
+                        // RECLAIM SETTLE (memra#346/#445): the readings the receipt line and
+                        // the settle step compare against are taken BEFORE the eviction.
+                        let free_before_reclaim = headroom.limiting_free_bytes();
+                        let prefix_bytes_before_reclaim = px.total_bytes;
+                        let pool_before_reclaim = pool_readings(&engine, &loaded);
                         let (evicted_prefix, demoted_prefix, demoted_prefix_bytes) =
                             if admit_memory_cfg.armed {
                                 // The SAME decision rule the defer site uses, taken here
@@ -15844,18 +15947,25 @@ pub fn run(
                                 hpx.budget as f64 / 1e6,
                             );
                         }
-                        if evicted_prefix > 0
-                            && let Some(next_headroom) =
+                        if evicted_prefix > 0 {
+                            settle_reclaimed_prefix_bytes(
+                                &engine,
+                                &loaded,
+                                &pool_before_reclaim,
+                                prefix_bytes_before_reclaim.saturating_sub(px.total_bytes),
+                                "reclaim-on-defer",
+                            );
+                            if let Some(next_headroom) =
                                 admission_headroom(&engine, &loaded, device_requirements.as_deref())
-                        {
-                            headroom = next_headroom;
+                            {
+                                headroom = next_headroom;
+                            }
                         }
                         // Dormant sessions are reclaimable capacity, not a reason to queue live
                         // work. Evict globally oldest across both existing pool maps, re-reading
                         // effective headroom after each drop. This is deliberately only a hook:
                         // pool keys, vectors, identity, checkpoints, and resume selection remain
                         // owned by their respective lanes.
-                        let free_before_reclaim = headroom.limiting_free_bytes();
                         let mut evicted_plain = 0usize;
                         let mut evicted_spec = 0usize;
                         let mut evicted_dspark = 0usize;
@@ -27111,6 +27221,41 @@ mod tests {
         assert_eq!(
             super::driver_headroom_trim_keep(mib(10), mib(9000), mib(1000), 0),
             None
+        );
+    }
+
+    #[test]
+    fn reclaim_settle_returns_only_the_reclaims_gain() {
+        let mib = |n: usize| n << 20;
+        // memra#346 shape: 43.5 GB of prefix entries evicted on a pool that already parked
+        // 512 MB of cached blocks. Keep = live + previously cached; the gain goes back.
+        let keep = super::reclaim_settle_keep(mib(512), mib(70000), mib(25000))
+            .expect("a reclaim that grew the cache trims");
+        assert_eq!(
+            keep,
+            mib(25000) + mib(512),
+            "keep live bytes plus the prior cache"
+        );
+        assert_eq!(
+            mib(70000) - keep,
+            mib(45000) - mib(512),
+            "the released slice is exactly the cached gain"
+        );
+        // The reclaim added nothing to the cache (frees not yet settled, or nothing evicted
+        // on this device): do not evict the parked blocks the graph-launch pin relies on.
+        assert_eq!(
+            super::reclaim_settle_keep(mib(512), mib(9000), mib(8488)),
+            None
+        );
+        // The cache shrank across the reclaim (a concurrent alloc reused the blocks): None.
+        assert_eq!(
+            super::reclaim_settle_keep(mib(512), mib(9000), mib(8900)),
+            None
+        );
+        // Nothing was cached before: keep exactly the live bytes.
+        assert_eq!(
+            super::reclaim_settle_keep(0, mib(9000), mib(1000)),
+            Some(mib(1000))
         );
     }
 

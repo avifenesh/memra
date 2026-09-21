@@ -70,7 +70,123 @@ fmt, `cargo test -p memra-tier -p memra-kv -p memra-gguf` (all rc=0), clippy `-D
 census, docs registry census, collector pytest, perf board, `git diff --check`: all rc=0. D's own: 30 Rust + 85 Python
 tests, native build receipts on BOX3 (clippy clean, 295 tests, binary hash bound), seven cells with `--validate`.
 
+## Lane B day 13 (`1fef60006`, pushed by the lead without an override once #583 landed; #445 §1, #346, #523 item 4)
+`tools/prefix-evict-reclaim-gate.py` (serving shape, real `memra-server`, plain path, 48k-token prompt seeds a
+1,592,160,256 B prefix entry, ballast child makes the card short, P2 arrives beside a busy peer). Target card, 600 W,
+N=1, verbatim:
+```text
+base main ea08bc7f8: [admit-oom] reclaim-on-defer: evicted 2 prefix entries + ... effective free 6603MB -> 6603MB
+                     PREFIX-EVICT-RECLAIM: entry_bytes=1592160256 reclaim_credit_bytes=0 driver_free_delta_bytes=none trim_released_bytes=none pool_retained_bytes=none p2=admit-same-tick busy_overlap_s=21.655 identity=aa6cc3291b981646 V1=FAIL V2=ok V3=FAIL V4=ok -> FAIL
+fix f4350c241:       [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1751161856 pool_cached_gain_bytes=1751161856 trim_released_bytes=1610612736 driver_free_bytes 4827971584 -> 6438584320 pool_reserved_bytes 21709717504 -> 20099104768 pool_used_bytes 21685840360 -> 19934678504 pool_retained_bytes=140549120 (...)
+                     effective free 4852MB -> 6603MB
+                     PREFIX-EVICT-RECLAIM: entry_bytes=1592160256 reclaim_credit_bytes=1751000000 driver_free_delta_bytes=1610612736 trim_released_bytes=1610612736 pool_retained_bytes=140549120 p2=admit-same-tick busy_overlap_s=21.659 identity=aa6cc3291b981646 V1=ok V2=ok V3=ok V4=ok -> PASS
+```
+Fix (`crates/memra-server/src/worker.rs`): `settle_reclaimed_prefix_bytes` after an eviction fences the model-owned
+streams, trims each pool to `used + cached_before` (only the eviction's gain leaves the pool), re-reads driver free;
+bytes the pool cannot release (a chunk shared with a live neighbour) are printed as `pool_retained_bytes` and count as
+pool-cached headroom, never as driver free. Tokens byte-identical across all four boots (`aa6cc3291b98...`). B's
+finding for the lead: on this card the pool `used` counter fell at the free call, so the pool-side gate admitted P2
+same-tick even on `main`; the #346 `X -> X` text is the line's capture point plus the driver never getting the bytes.
+Two refused calibration cells and one over-tight first V3 clause kept in the receipts. Target card `serve-smoke: 0
+failed`, `cache-meter-gate: 0 failed` on the fix. Issues #346, #445, #523 commented by the lane.
+
+## Lane A day 11 (`432816926`, pushed by the lead without an override; ruling 9)
+Rule 1 (verbatim): a restore (H2D) that is cancelled before its consumer event completes must either hand the
+untouched host source back to the caller as a typed lease (recoverable) or refuse the cancel with a typed error while
+the source is still intact; consuming the source and then cancelling is forbidden by the rule. Seam
+`TransferEngine::recover_source(ticket, item)`; `CudaTransfers` holds a cancelled H2D source for the caller,
+`retire`/`retire_source` answer `Busy` until recovered, once-only, `cancel` answers `AlreadyReleased` once a source left
+the ticket. Schedules `transfer_cancel_recovers_source`, `transfer_cancel_refused_after_source_consumed`
+(`conformance/recovery.rs`); red arm = the CPU fake with `legacy = true`, which replays D's finding literally. Frozen
+v1.1/v1.2/v1.3 blobs byte-identical (`cd144f3b`, `981bcc81`, `50928b75`). Native bindings added to
+`tier-transfer-gate`; not run natively today (D day 12).
+Rule 2 (verbatim): a continuation (decode or prime) over a cache with any suspended layer must be refused at
+`Cache::ensure_usable` with a typed error naming the suspended layers, unless the caller restores first;
+`decode_step_h` is NOT changed. Seam `Cache::suspend_layer(il)` / `resume_layer(il, layer)` over the typed
+`SuspendedLayers` register; `ensure_usable` returns `ContinuationRefused { path, layers }` while non-empty; signature
+unchanged, 30 callers compile, none in `memra-server` continues without the gate (caller census in A's DAY11.md;
+ungated paths are bins and the DSV4/qwen4exp `DecodeState` families, which do not use `memra_kv::Cache`). Gates:
+tier+kv 303 tests, clippy, fmt, flags, diff-check exit 0; BOX3 release builds of both gates exit 0.
+
+## integ10 (`lane/spill-integ10-20260921`): B day 13 + A day 11
+Batteries (`integration-day12/integ10-cpu-battery/`): fmt; tier+kv+gguf 600 tests; memra-server 734 tests; clippy
+`-D warnings`; check-flags; publish census; docs registry census; collector pytest 85 (rerun; attempt 1 hit `REFUSED:
+[Errno 11] Resource temporarily unavailable` in 20 collector tests while the lead's serve-smoke held
+`/tmp/memra-5090.lock`, kept as `pytest-battery-attempt1-rig-lock-held-by-smoke.log`); perf board; diff-check: all
+rc=0. Local 5090 `tools/serve-smoke.sh` on the merged tree (`integ10-serve-smoke-5090/`): `serve-smoke: 0 failed`. Full
+`tools/local-ci.sh --perf` on the integ10 tree (`integ10-local-ci-perf/`): correctness GREEN, serve-smoke 0 failed,
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 3 pair-only skips, `perf stage: 0 fail, 0 warn`, rc=0; rows appended to
+`perf-ci.jsonl`, so this push needed no override.
+Lead finding: `crates/memra-engine/build.rs` read `DOCS_RS` without `cargo:rerun-if-env-changed=DOCS_RS`, so a
+`DOCS_RS=1` clippy pass left stub artifacts that the next `cargo test -p memra-server` linked against (`undefined
+symbol: memra_dsv4_c4_recent_write`); one line added in integ10, the two failed attempts kept. The lead's battery
+script now sets `DOCS_RS=1` for clippy only.
+
+## Lead rulings, day 12 (continued)
+11. **#346 closes with integ10; #445 and #523 stay open.** #346's shape (eviction leaves effective free unchanged) is
+    fixed and gated; #445 sections 2 and 3 (gemma spec-route prefix capture, spec under concurrency) and #523 items 1
+    to 3 (newest-turn invariant, policy re-decision, 8-turn twin gate) are separate work items in the queue.
+12. **Collector pytest lock path.** The tier battery's Python tests take the real rig lock path; they must take a
+    private lock path under test (lane F or D, small), so a serving job on the rig cannot redden a CPU suite.
+
+## Lane C day 12 (`7efedd13d`, pushed by the lead with the logged override: `moe_cache.rs` after the row; #552 criterion 1)
+`research/spill-c-20260919/HOSTPREFIX-CONTRACT-CENSUS.md` (179 lines, every cell file:line). Bank owner: carried are the
+artifact digest on every `BankId` and lease, record identity validated against the semantic `RecordId`, byte-for-byte
+record check plus chained checksums, CUDA ownership typed as a `ThreadId` with `WrongOwner`, scale planes refused at
+three places; dropped were the identity across the proxy seam (two `u64`s), tenant (= artifact digest by
+construction), epoch (constant `{0,0,0}`), an owner-thread check at `install_banked`, a `TransferEngine` (completion is
+a compute-stream drain), GPU slots outside the governor, the positional MTP key `layer = u16::MAX`. HostPrefix owner,
+the decisive finding: `HostTierContext` (`worker.rs:7869`) has no constructor anywhere in the crate; B's sidecar route
+(`tier_charge`, `bind_tier_image`, insert/promote identity leases) is compiled and unit-tested but never executed in
+any boot; the server holds no `ProgramIdentity` for a loaded model; the D2H is `memcpy_dtoh` + `synchronize` or the
+arena's async copy + fence with no ticket, producer fence, epochs or `Completion`; `host_demote_prefix_ref(&PrefixEntry)`
+conflicts with `CudaTransfers::register_device`'s owned `KvPlane`; `PinnedHostBuf` is not `CudaPinnedLease`;
+`tier_charge` refuses whenever the startup arena exists; the contract checksum and the `MEMRA_KV_HOST_VERIFY` digest
+are two hash programs. Eight risks listed (host-destination conversion as a second byte owner; promote is the restore
+program; three copy programs in one entry; digest versus checksum boundary; one tenant derivation; epoch and
+generation checks are refusals; MTP key collision at depth > 0; scale planes payload-only would change dequant).
+Landed on the bank side (`69905776f`): `bank::dispatch_id(&RecordId)` as the single mapping; `ExpertLeaseToken` carries
+`owner, lease, record, artifact, epochs` (still `Send + Sync`); `demand` refuses a bank leasing another record
+(`ProgramMismatch`); `with_bytes`/`finish` refuse a foreign token; `admit_banked` asserts the record identity before
+the H2D; `slru-synthetic.json` re-pinned with 2013 identical rows; 6 new tests; tier 223 tests, clippy, fmt, flags,
+docs, diff-check clean. No byte or H2D program change; no server change.
+
+## Lead rulings, day 12 (continued)
+13. **Tenant salt has one owner.** `memra-kv` gets one helper deriving `tenant_salt` from the scope namespace string;
+    the server passes the same string it feeds `auth::meter_key`. No second derivation anywhere.
+14. **Borrow discipline for the contract-routed demote.** Planes move out of `PrefixEntry` as owned `KvPlane`s for the
+    D2H; no borrowed-source seam in `CudaTransfers` (that would be a second ownership program). No v1.4.
+15. **HostPrefix through the contracts, in C's order.** Option A first: construct `HostTierContext` behind a
+    default-OFF door with a decide-by (build `ProgramIdentity` at model load, salt per ruling 13, inject the server's
+    governor); OFF must be byte-identical by construction, ON must leave `serve-smoke.sh`, `cache-meter-gate.py`, B's
+    `prefix-evict-reclaim-gate.py` (`V1..V4 -> PASS`) and `kv-host-spill-{identity,failure}-gate.sh` lines unchanged,
+    with `MEMRA_KV_HOST_VERIFY=1` `verify ok` on every promote and equal `[prefix-host] demote:` byte counts. The
+    startup arena path is out of scope for the first two slices. Option B (D2H through `TransferEngine` on the
+    pageable path) only after A's receipts; C (promotion) after B's. C day 13 owns Option A.
+
+## Lane D day 12 (`b3324c262`, pushed by the lead with the logged override; the two refusals become PASS through A's seams)
+All seven fault arms now print `FAULT-ARM PASS <arm>` on the target card (N=1, 8k, pooled, gate source `55f242e98`,
+`pro-single-day12/`): `cancel-restore` through `recover_source` (`retire`/`retire_source` `Err(Busy)` first,
+`recover_source` `Ok(host)`, recovered checksum equal to the bundle's, `StateBundle::verify` `Ok(())`, second recover
+and post-recovery cancel `Err(AlreadyReleased)`, pinned 239,468,544 B held by the lease, then retire, restore,
+continue); `require-resident` through `suspend_layer`/`resume_layer` (`Err(ContinuationRefused { path: "kv-tier-gate
+continuation", layers: [3, 7, ..., 63] })` twice while suspended, `Ok(())` after the last resume). Root validation
+`cells 9, failed_commands 0, refused_commands 0, qualification false`; the five continuing arms match the frozen 8k
+bundle on all seven surfaces. First native run of A's rule lines (`tier-transfer-gate`, 13 PASS lines, exit 0):
+```text
+PASS rule cancelled-restore-recovers-source native CUDA
+PASS rule cancel-refused-after-source-consumed native CUDA
+```
+Contract vocabulary: `Arm::refusal` and the REFUSED branch are gone; a backend without a seam is a failed cell; rule-1
+rows are generic over `TransferEngine` and shared with a CPU binding (`tests/contracts/fault_arm_bindings.rs`, legacy
+fake = red arm); all arms detach through `suspend_layer`/`resume_layer`; `active::roundtrip` (B's series path) keeps
+raw `take()` because its frozen 32k receipts were produced that way. Replays: `verify-day12.py` MATCH, reclaim 32 and
+contracts 68 tests, clippy, fmt, flags, boundary, docs clean. Revuto on integ10 had found exactly this gap (A's `retire`
+refusal versus the day-11 `cancel-restore` sequence still on main); D's day 12 is the fix and rides in integ10.
+#552 criterion 2 is now met natively on the target card (fault arms with cancellation, corrupt and missing state,
+exhaustion, required state), still executed-not-qualified.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
-- B day 13 running (#445/#346/#523.4), twice restarted after transient API errors; not in integ9.
-- A day 11 to be dispatched (ruling 9) when an agent slot frees. C idle (next: #552 criterion 1). E, F idle.
+- B day 13 sealed and pushed (`1fef60006`); merged into integ10.
+- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 running (Option A, ruling 15). E, F idle.

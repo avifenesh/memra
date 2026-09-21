@@ -1,11 +1,11 @@
-# Session D day 11 handoff
-- Lane `lane/spill-d-20260919`, local only: merge `9872c1469` (origin lane + origin/main, tree == main), then `bda5d3c91` arms, `688b40468` clippy fix, `b2962bac0` TESTING/verifier, plus the day-11 data commit. Push refused by the perf-ci pre-push arm (19 inherited engine files); no override used. The lead pushes.
-- #552 criterion 2 delivered as `kv-tier-gate --fault <arm>` (7 arms, pooled, `--case active` only): 5 `FAULT-ARM PASS`, 2 typed refusals naming missing seams (cancel-restore recovery, require-resident contract). Table and verbatim lines: `DAY11.md`; rows: `docs/TESTING.md`.
-- **No D job running on the single-PRO clone**; tmux sessions closed; no D lock held; GPU idle after the run.
-- Native receipts `/root/spill-receipts/d-day11/` (build, build-2, seven arms, root `validate.json`: cells 7, failed 0, refused 2) mirrored under `pro-single-day11/`; `verify-day11.py` replay MATCH (`day11/verify-day11.log`); Rust replay in `crates/memra-tier/tests/reclaim/fault.rs`.
-- Continuing arms match the frozen 8k target-card bundle on all seven surfaces; every arm's suspended prefix equals the bundle's.
-- Clone branch `d-day11` = origin/main + the two lane patches (`git am`); tree id equals local `688b40468`. `/root/wt-d` may be reset to the pushed lane once the lead pushes.
-- Shared-roundtrip changes lane B should know: whole-state admission (`admit_whole_state`) and `StateBundle::verify` as the restore integrity check.
-- Findings for the lead: no H2D-source recovery after cancel; no governor capacity-shrink seam; no continuation-time required-resident contract (`ensure_usable` accepts a suspended cache, `decode_step_h` unwraps).
-- Checks: 30 Rust + 85 Python tests, fmt, diff-check, flags census, docs census, boundary scan, shellcheck, build-2 clippy 0. No engine/server battery, no timing, no 5090 cell.
-- About 3.5 agent-hours this session. Next: lead push, #552 comment posted with the arm table (issue stays open).
+# Session D day 12 handoff
+- Lane `lane/spill-d-20260919`, local only: merges `ffffd84b1` (main), `5a7eb8517` (A's seams), `c0655f249` (integ9), `4c94a123e` (main after #584), code `55f242e98`, plus the day-12 data commit. Both pushes refused by the perf-ci pre-push arm (nine engine files, six inherited); no override used. The lead pushes.
+- #552 criterion 2: all seven `kv-tier-gate --fault` arms print `FAULT-ARM PASS` on one RTX PRO 6000 Blackwell; `cancel-restore` and `require-resident` drive lane A's rule seams (`recover_source`; `suspend_layer`/`resume_layer`, `ContinuationRefused`). No arm has a refusal any more; a backend without a seam is a failed cell. Table and verbatim lines: `DAY12.md`; rows: `docs/TESTING.md`.
+- A's two day-11 rule lines ran natively for the first time (`tier-transfer-gate conformance`, 13 PASS lines; `roundtrip` 6 lines byte-exact): `pro-single-day12/transfer-gate/`.
+- **No D job running on the single-PRO clone**; tmux session ended; no D lock held; GPU idle after the run. Clone branch `lane-d-day12` = `55f242e98`, clean tree.
+- Receipts `/root/spill-receipts/d-day12/` (build, seven arms, two transfer cells, root `validate.json`: cells 9, failed 0, refused 0) mirrored under `pro-single-day12/`; `verify-day12.py` MATCH (`day12/verify-day12.log`); Rust replay `crates/memra-tier/tests/reclaim/fault.rs` (day-11 five arms, day-12 seven, day-11 refusals pinned as failed cells).
+- Day-11 refusal receipts and `verify-day11.py` are untouched records; the refusal texts live only there and in the red arms.
+- `active::roundtrip` (B's series path) still uses raw `take()`: the seam move there is the lead's placement.
+- Three `pub(super)` widenings in A's CPU fixture (`pending_restore`, `finish`, `owner`) for the new `fault_arm_bindings.rs`; no rule text changed.
+- Checks: clippy (engine, tier, kv, all targets) 0, `reclaim` 32 and `contracts` 68 tests, fmt, diff-check, flags census, shellcheck, py_compile; native build receipt 0/0/0. No engine/server battery, no timing, no 5090 cell.
+- About 2 agent-hours this session. Next: lead push, #552 comment posted with the arm table (issue stays open).
