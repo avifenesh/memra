@@ -3,8 +3,13 @@
 Status: landed on `lane/spill-c-20260919` day 13 (`ff46abc75`, `e7e23dcf4`, `b81881dad`), default OFF, env door
 with a `docs/FLAGS.md` row; surface grown to MTP draft-bearing entries on day 14 (lead ruling 16, `DAY14.md`);
 Option B landed on day 15 (`5f8d327e2`, `DAY15.md`): under the door the pageable-tier D2H of every KV plane
-goes through the native `TransferEngine`, the sequence in the "Option B" section below; Option C (the
-promote H2D through the same engine, day 16, `DAY16.md`) is censused in the "Option C" section below. Decide-by: **2026-10-05** (14 days after landing,
+goes through the native `TransferEngine`, the sequence in the "Option B" section below; Option C landed
+on day 16 (`25891baa9`, `DAY16.md`): under the door the promote H2D of every contract-routed KV plane goes
+through the same engine, the sequence in the "Option C" section below. What remains before the decide-by:
+the arena path (`MEMRA_GLM5_TP_KV_HOST`, refused with the door at boot; its fixed backing is not
+governor-charged and its slices are not leases), the DFlash tail slice (no drafter artifact identity
+derivable from a GGUF digest; no gate boots a DFlash drafter on the card), and the write-combined
+destination decision (`WC-DESTINATIONS.md`: the engine's allocation flag, measured, both rigs). Decide-by: **2026-10-05** (14 days after landing,
 2026-09-21). Every cell behind it is `executed-not-qualified` development evidence on one card class;
 nothing here is a support state. Rulings applied: 13 (one `tenant_salt` owner in `memra-kv`), 14
 (planes leave `PrefixEntry` as owned `KvPlane`s, no borrowed-source seam in `CudaTransfers`, no v1.4:
@@ -442,6 +447,26 @@ unwinds drop the ops' original device handles and the host twins before `take_pl
 the abort drains before every release or retire and discards no result (review finding 2). A mixed entry
 (some planes `Contract`, some `Pinned`) cannot be built by one demote and is refused by name rather than
 half-routed; an all-`Pinned` entry keeps the OFF `plane_up` (stated: none exists under the door today).
+
+### Landed (day 16, `25891baa9`; receipts in `DAY16.md`, `pro-single-day16/`, replay `verify-day16.py`)
+
+As censused, with these points fixed while writing it: the source twins are minted by the one engine
+addition `CudaTransfers::retain_host` (`tier_transfer.rs`, after `retain_device`; owner thread and context,
+`AlreadyReleased` on a released backing); the route is `host_kv_planes_from_contract` (`worker.rs`), its
+unwind `host_promote_contract_abort` (cancel, recover every source with its pointer checked against the
+entry's lease, drain, retire against the consumer fence only if published, acknowledge, release the
+producer after a drain, take every fresh plane back through its retained twin; nothing discarded);
+`device_entry_from_host(engine, src, tier: Option<(&HostTierContext, HostTierEntryClass)>)` selects the
+route under `Some((tier, class)) if src.glm.is_none() && host_entry_has_contract_plane(src)` and keeps
+`plane_up` (both `htod_u8_into` calls) for everything else; `host_promote_prefix_hit` books the four
+outcomes (`Failed`: `rejected_allocs` and the OFF line; `Refused`: `promote refused (contracts door): ..;
+serving without the host entry`; `ReceiptMismatch`: `digest_mismatches`, `remove_at`, `..; host entry
+dropped, cold path serves`; `Latched`: `host.disable`). The fault cell has two sides
+(`HostTierContext::take_fault(demote)`), the demote route takes only `PreSubmit`/`PostPublish` and the
+promote route only `PromotePreSubmit`/`PromotePostPublish`. The boot line ends `... (Option B); KV plane
+H2D through the same engine on promote (Option C)` and prints the device ledger at three budgets. The
+receipt line's digest uses the D2H line's domain so the two lines of one entry carry one digest. The
+GPU cells ran on the card first (`gputests`: `6 passed; 0 failed`, the B pair and the four C cells).
 
 ### One-shot faults and the receipt line
 
