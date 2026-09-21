@@ -60,6 +60,13 @@ impl IdentitySlot {
         lease.require(program, generation)?;
         Ok(lease)
     }
+    /// True while at least one `IdentityLease` handed out by [`Self::lease`] is alive. The
+    /// lease is the only other holder of the proof, so the count is exact. An unbound slot and
+    /// a bound slot whose leases all dropped are unleased. Owners use this to leave a leased
+    /// image alone (the host tier's tenant-share reclaim, memra#384).
+    pub fn leased(&self) -> bool {
+        self.0.as_ref().is_some_and(|p| Arc::strong_count(p) > 1)
+    }
     pub fn invalidate(&mut self) {
         if let Some(proof) = self.0.take() {
             proof.live.store(false, Ordering::Release);
@@ -235,6 +242,15 @@ mod tests {
         assert_ne!(default_ns, tenant_salt("t:default\u{1f}"));
         assert_ne!(default_ns, tenant_salt("t:\u{1f}"));
         assert_ne!(default_ns, [0; 32]);
+    }
+
+    #[test]
+    fn unbound_slot_is_never_leased() {
+        // The positive half (bound, leased while an IdentityLease lives, unleased after it
+        // drops) needs a program and a bundle and lives with the host tier's reclaim tests
+        // in memra-server (`host_cache_tenant_share_reclaim_skips_leased_entries_*`).
+        let slot = IdentitySlot::default();
+        assert!(!slot.leased());
     }
 
     #[test]
