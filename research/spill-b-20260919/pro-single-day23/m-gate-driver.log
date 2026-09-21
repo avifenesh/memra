@@ -1,0 +1,42 @@
+== arm F-9296 total=9296 tails=16 48 80 112 144 176 208 env: 
+/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=14ab5f8b365dbd71 ok
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+  9216 + 80: logits_sha=14ab5f8b365dbd71 ok
+  9184 + 112: logits_sha=14ab5f8b365dbd71 ok
+  9152 + 144: logits_sha=14ab5f8b365dbd71 ok
+  9120 + 176: logits_sha=14ab5f8b365dbd71 ok
+  9088 + 208: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm F-9297 total=9297 tails=17 49 env: 
+/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9297 tokens: logits_sha=e641952cac19e526
+  9280 + 17: logits_sha=e641952cac19e526 ok
+  9248 + 49: logits_sha=e641952cac19e526 ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm F-9311 total=9311 tails=31 63 env: 
+/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9311 tokens: logits_sha=b61719f294866b05
+  9280 + 31: logits_sha=b61719f294866b05 ok
+  9248 + 63: logits_sha=b61719f294866b05 ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm F-9312 total=9312 tails=32 64 96 env: 
+/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9312 tokens: logits_sha=736a88d7c7448dcb
+  9280 + 32: logits_sha=736a88d7c7448dcb ok
+  9248 + 64: logits_sha=736a88d7c7448dcb ok
+  9216 + 96: logits_sha=736a88d7c7448dcb ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm F-9296-chunk32 total=9296 tails=16 48 env: MEMRA_PRIME_CHUNK=32
+/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=14ab5f8b365dbd71 ok
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm F-9296-chunk16 total=9296 tails=16 48 env: MEMRA_PRIME_CHUNK=16
