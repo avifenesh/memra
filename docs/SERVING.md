@@ -1781,8 +1781,21 @@ byte budget defaults to an 80% protected target and 20% probation target
 (`MEMRA_PREFIX_CACHE_PROTECTED_PCT`); probation can borrow unused protected bytes, so a cold cache
 uses the full budget and a large individually fitting entry is not refused merely because it is
 larger than the nominal probation share. Protected overflow demotes protected LRU back to
-probation, and capacity pressure evicts probation LRU before protected LRU. Thus one-hit scan
-traffic cycles through probation instead of displacing entries that have demonstrated reuse.
+probation. Capacity pressure evicts probation LRU first; when probation is exhausted, or holds
+only the entry being published, the protected LRU goes next, oldest first, with no floor at the
+protected share (the newest-turn-fits rule, memra#523 item 1, `room_victim_with`). The real
+contract is therefore: every UNLEASED byte, protected or not, is reclaimable for a publication
+that fits the budget; the protected share bounds only demotion and pinned admission; only leases
+are untouchable. A publication is refused in exactly two cases, both printed in bytes
+(`[prefix-cache] insert refused: entry N exceeds budget M (...)` and
+`[prefix-cache] insert refused: entry N cannot fit beside L leased bytes (budget M, ...)`), never
+silently. Trade-off, named: one-hit scan traffic still cycles through probation while probation
+holds an evictable victim other than the newcomer, but an entry larger than the free share beside
+a promoted cohort now evicts that cohort oldest-first instead of running cold on every turn, so
+scan resistance for entries larger than the free share is gone under SLRU. A single growing
+conversation whose turns exceed the free share removes another tenant's whole promoted cohort
+(the day-14 twin gate shows exactly this at a 1024 MiB budget). This is the shape #523 asked
+for; whether SLRU stays the default is #523 item 2, an interleaved A/B on the incident's shape.
 If a pinned fanout snapshot cannot fit from probation plus the protected bytes its own promotion
 would demote, that snapshot is not retained; participants continue from their private session
 copies instead of evicting below the protected byte share.

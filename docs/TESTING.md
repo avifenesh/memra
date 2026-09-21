@@ -881,6 +881,80 @@ prefix-evict-reclaim-gate.py [--external-lock FD] --model <gguf> --bin <memra-se
   CPU arm: `worker::tests::reclaim_settle_returns_only_the_reclaims_gain` pins the keep
   arithmetic.
 
+### The newest turn fits the prefix cache (`tools/prefix-newest-turn-fits-gate.py`)
+
+memra#523 items 1 and 3: under the default policy (`MEMRA_PREFIX_CACHE_POLICY=slru`) a newly
+published entry could be its own capacity victim (probation held only the newcomer) or be refused
+by the snapshot preflight (only probation counted as reclaimable), so a growing long-context
+conversation ran `cold=1 restored=0` on every turn beside other tenants' promoted entries, and
+the only trace was one once-announced `snapshot skipped` line. The fix (`room_victim_with`,
+worker.rs) takes the probation LRU first as before and, when probation is exhausted or holds only
+the entry being inserted, the protected LRU oldest first; every unleased byte is reclaimable for
+the newest turn. The only refusals are typed and in bytes:
+`[prefix-cache] insert refused: entry N exceeds budget M (...)` and
+`[prefix-cache] insert refused: entry N cannot fit beside L leased bytes (budget M, ...)`.
+Victim selection and accounting only: captured and restored bytes are unchanged.
+
+```text
+prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra-server> --out <new-dir> \
+    [--budget-mib 1024] [--cohort-tokens 2800,3000,3200] [--turns 8] [--start-tokens 9200] [--grow-tokens 300]
+```
+
+- Serving shape, one card, two boots of the real `memra-server` per cell, plain path
+  (`MEMRA_SERVE_SPEC=0`), a small explicit prefix budget, the DEFAULT policy (the boot line must
+  report SLRU; the gate never sets the policy). A calibration boot with the cache OFF
+  (`MEMRA_PREFIX_CACHE_MB=0`) replays the identical request sequence first and records each turn's
+  own retained footprint (the bytes a request of that length keeps after it retires with no cache
+  activity; 1,111,666,004 B on the 9,200-token turn 1 of the day-14 shape, identical on both
+  binaries). In the measured boot a second tenant (`cache_salt=cohort`) seeds three
+  prompts twice each so the whole-entry hit promotes them: the cohort ends protected. The growing
+  tenant (`cache_salt=grow`) then replays an 8-turn conversation whose turn k+1 is turn k's
+  `prompt_ids` plus 300 new ids. The pressure arithmetic is read from the server's own
+  `insert probation` lines (a bytes(tokens) fit for the artifact) and the gate REFUSES unless the
+  cohort fits the protected share, cohort plus turn-1 entry exceed the budget, and every turn's
+  entry fits the budget: the incident's shape scaled to a small budget.
+- Assertions, bytes from the server's `[prefix-cache]` lines and `/metrics`: V1 every turn k >= 2
+  reports `usage.prompt_tokens_details.cached_tokens >= ` turn k-1's `prompt_tokens`; V2 turn 1
+  publishes and every later turn hits exactly once and publishes, with no `insert refused` or
+  `snapshot skipped` line for the growing tenant; V3 after every turn the calibration boot's
+  effective free (`cuda_driver_free_bytes + cuda_pool_cached_bytes`) equals the measured boot's
+  effective free plus the cache's resident bytes, within 64 MiB (the cache costs exactly what it
+  holds, so every evicted byte came back: #523 item 4 under the capacity shape, stated on states
+  because per-turn deltas need aligned starting states and the cohort phase does not give them);
+  V4 at least one `evict (... Protected LRU)` line (the room came from the cohort, never from the
+  entry itself). Per-turn `text_sha256`, the same prompt's cold
+  digest from the calibration boot, and the per-request server receipt (`[glm5-spec] route=`
+  with `cold=`/`restored=`, or `[spec-k] ... cached= lcp=`) are recorded for the runner; identity
+  across binaries and against the cold boot is the runner's comparison, not a verdict inside one
+  cell.
+- Verdict line: `PREFIX-NEWEST-TURN-FITS: budget_bytes=... cohort_bytes=... turns=8 cold_turns_after_1=...
+  cached_ok=N/7 lines_ok=N/8 ... V1=.. V2=.. V3=.. V4=.. -> PASS|FAIL`; exit 0 PASS, 1 FAIL, 2
+  `REFUSED: ...` (lock, port, shape, an unserved request). Red on `main` and green on the fix,
+  same card, same artifact, same prompts:
+  [`research/spill-b-20260919/DAY14.md`](../research/spill-b-20260919/DAY14.md).
+- Canonical rig lock only, held for the whole cell; under the collector,
+  `tools/tier-battery.py --rig pro-single --external-lock --execute python3
+  tools/prefix-newest-turn-fits-gate.py --external-lock @COLLECTOR_LOCK_FD@ ...` (lead ruling 5).
+  CPU arms: `worker::tests::prefix_cache_slru_newest_turn_fits_beside_a_protected_cohort` (the
+  incident shape, 211 turns, never its own victim),
+  `prefix_cache_oversized_insert_refuses_with_the_typed_line_and_evicts_nothing`,
+  `prefix_cache_slru_fitting_inserts_keep_the_same_victims_in_the_same_order`,
+  `prefix_cache_newest_turn_beside_a_leased_predecessor_fits_or_refuses_loudly`, and for the
+  refusal-line throttle (first line printed, identical repeats suppressed and counted in the skip
+  counters, a changed shape printed again, every 64th identical repeat printed with its count)
+  `prefix_refusal_announcer_prints_first_changed_and_every_nth_identical_refusal` and
+  `prefix_cache_repeated_refusals_count_every_time_and_print_once`; for pressure relief (the kv-flex
+  shed and the step-OOM reclaim select with the same `room_victim_with` as the insert loop: probation
+  first, then protected oldest first, leases untouchable)
+  `evict_to_bytes_takes_protected_oldest_first_once_probation_is_empty`,
+  `evict_to_bytes_never_takes_a_leased_entry_even_below_target` and
+  `kv_flex_shed_reaches_the_floor_through_protected_entries_and_warns_only_when_all_is_leased`. The
+  eviction contract the fix
+  changed is stated in `docs/SERVING.md` (SLRU paragraph) and the `MEMRA_PREFIX_CACHE_PROTECTED_PCT`
+  row of `docs/FLAGS.md`: every unleased byte is reclaimable for the newest turn, the protected share
+  bounds only demotion and pinned admission, scan resistance for entries larger than the free share
+  is gone under SLRU until #523 item 2 re-decides the default.
+
 ## Generic spill / tiered KV (memra-tier)
 
 The shared contract is `crates/memra-tier/src/contracts.rs`. The conformance schedules are
