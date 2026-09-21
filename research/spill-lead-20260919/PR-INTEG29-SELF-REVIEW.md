@@ -27,6 +27,10 @@ Author's review of the full diff `main..lane/spill-integ29-20260922`, posted as 
   engine CPU lib tests, server clippy `-D warnings`, marker census, workflow keys, perf board, diff-check), the local
   5090 serve-smoke, and the gate itself run once more on this tree.
 
+## Review round 1 (revuto, addressed in the integ)
+- Default port 8186 collided with `serve-gemma4-batch-gate.sh`; moved to 8189 (unused across `tools/` by census), the
+  `memra_port_guard` line unchanged; gate re-run on this tree at 8189, same verdicts.
+
 ## What I did not do
 - No release-battery decision (#526): the gate is an input; the owner decides what the battery requires.
 - The step-OOM and client-disconnect arms stay pre-registered.

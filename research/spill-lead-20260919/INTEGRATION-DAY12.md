@@ -1123,6 +1123,9 @@ perf board: rc=0; `git diff --check` tripped on B's HTTP header receipts ending 
 `-whitespace` by a `.gitattributes` in the receipt dirs (the bytes stay). Local 5090 `tools/serve-smoke.sh`:
 `serve-smoke: 0 failed`; the health fault gate on this tree (`integ29-health-fault-gate-5090/`):
 `health-fault-gate: arms=a,b,c,d,e,f pass=6 documented=3 fail=0`, receipts copied in.
+Revuto round 1 on #621: the gate's default port 8186 was `serve-gemma4-batch-gate.sh`'s, the collision class the
+2026-08-19 gate-integrity audit removed; moved to 8189 after a census of every port literal under `tools/` (8189 unused),
+the port guard unchanged; the gate re-run on this tree at 8189 (`health-fault-gate-port8189.log`).
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.

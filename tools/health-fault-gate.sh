@@ -33,7 +33,7 @@
 #      `code: draining`, the stream runs to `[DONE]` with a finish_reason, exit 0, `drain complete`.
 #
 # Usage: tools/health-fault-gate.sh [model.gguf]
-#   HFG_PORT (8186), HFG_ARMS (a,b,c,d,e,f; a and b share one boot), HFG_OUT (receipt dir).
+#   HFG_PORT (8189; 8186 is serve-gemma4-batch-gate.sh's, revuto on #621; census of tools/ before choosing a default), HFG_ARMS (a,b,c,d,e,f; a and b share one boot), HFG_OUT (receipt dir).
 #   Run under the rig lock (`flock /tmp/memra-5090.lock`, or the collector on a PRO box); the
 #   gate boots seven servers in sequence and never takes the lock itself, like serve-smoke.
 #   Exit 0 when no arm FAILED (DOCUMENTED arms do not fail the gate); 1 on any FAIL; 2 on setup.
@@ -42,7 +42,7 @@ cd "$(dirname "$0")/.." || exit 2
 
 MODEL="${1:-/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}"
 [ -f "$MODEL" ] || { echo "health-fault-gate: SKIP (no model at $MODEL)"; exit 0; }
-PORT="${HFG_PORT:-8186}"
+PORT="${HFG_PORT:-8189}"
 ADDR=127.0.0.1:$PORT
 BASE=http://$ADDR
 ARMS="${HFG_ARMS:-a,b,c,d,e,f}"
