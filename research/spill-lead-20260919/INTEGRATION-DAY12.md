@@ -798,6 +798,171 @@ census, workflow-key census, public-boundary `check` (0 new), the bench tool's `
 both arena cells (`ARENA AB REPLAY: PASS`, rule clauses restating the verdict), C's `wc-pair.py` on A's pair cell
 (`WC PAIR REPLAY: PASS (12 checks)`), em-dash scan: 12 steps rc=0.
 
+## integ25 (`lane/spill-integ25-20260921`): B day 22 (and day 23 when it lands), the memra#427 fix
+Lane tip merged: B `99af46bf2` (clean, on main `d6401ff70`). Engine source changes: `crates/memra-engine/src/lib.rs`
+(a `prefill_rows` AtomicBool on `Engine`, `prefill_rows_scope()` RAII on the existing `ExactScope` guard,
+`batched_tier_admits() = verify_exact_on() || !prefill_rows_on()` added as a conjunct to the batched weight-resident
+MMVQ tier's admission `(2..=16).contains(&m) && fast && ...` in both `matmul` and `matmul_pre`),
+`hybrid_forward.rs` (the scope armed at the top of `HybridModel::prime_layers`), the continuation gate no longer
+exempting a 16-row tail, and a new diagnostic binary `qwen-a4-width-walk` (per-operation digests of a 16-row versus a
+17-row chunk under the prime's own program). No new `MEMRA_*` read, no kernel, no third program: a prime chunk of
+exactly `PRIME_MIN_T` rows now takes the `grid.y = m` dp4a program every wider chunk takes; decode and verify keep the
+tier (the exact-16 batched-decode tier and the K = 15 verify ride it by the decode-parity law; `verify_exact` keeps
+precedence). Pushed in the announced development mode; nothing here claims qualification.
+
+**B day 22, the kernel named and the fix gated on the local 5090** (verbatim, `rtx5090-day22/`): (a) width walk
+`WIDTH WALK scope=prime width 16 vs 17: 0 of 497 tensors differ`, `scope=prime width 48 vs 17: 0 of 497`, and the
+bare control `scope=bare width 16 vs 17: 96 of 497 tensors differ; tensor names: {"ssm_alpha", "ssm_beta"}`; the
+named site `scope=prime layer 00 ssm_beta qtype=NVFP4 in_f=5120 out_f=48 width 16 vs 17: rows_differ=0/16
+maxabs=0.000e0 ref_sha=e40f0aeaaec76762 sha=e40f0aeaaec76762 same` (bare `sha=0a984de6e2ed5fd0 DIFFERS`): the b16
+batched-MMVQ tier at m = 16 on the `out_f < 128` GDN projections. (b) continuation gate, seven arms, every split `ok`,
+`A4 CONTINUATION GATE: PASS` each: 9296 one call `14ab5f8b365dbd71`, `9280 + 16: logits_sha=14ab5f8b365dbd71 ok`,
+48..208 ok; `MEMRA_PRIME_CHUNK=32` one call `14ab5f8b365dbd71` (was `35bd15f063bfd5ba`); `MEMRA_NO_BATCHED=1`
+identical to default. (c) `kernel-check` both manifests `ALL GREEN (109 cells, 10 skipped)`. (d)
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (drafter absent on this rig, WARNING branch as day 19). (e) twin gate
+`PREFIX-NEWEST-TURN-FITS: ... V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS`. (f) base tree (the three source hunks
+reverted) versus fix: default 9296 `14ab5f8b365dbd71` on both, 9297 `e641952cac19e526` on both; `MEMRA_PRIME_CHUNK=32`
+base `35bd15f063bfd5ba` versus fix `14ab5f8b365dbd71` (the wide-chunk digest); base `9280 + 16: 35bd15f063bfd5ba
+DIFFERS`. The fix moved only the 16-row chunk program. Stated by B: day 21 used one artifact (the served mint); the
+calibrated A4 artifact of #427's table is on neither rig. Target card (`pro-single-day22/`): the continuation gate's
+seven arms digest-identical to the local table; `kernel-check` 362 cells OK, 0 FAIL, 15 SKIP but
+`MISSING REQUIRED CELL DUAL-BATCHED-AUX` (the 27b manifest's one cell needs the 9B artifact, absent on the box), so
+the target-card kernel-check line is owed. Also owed before main and assigned to B day 23: `run-spec` K=1..8 with the
+MTP drafter on the target card, `run-gen` argmax on 16-token and 16-mod-4096 prompts on both cards, the
+`docs/TESTING.md` sentence, and the scope gap (`prime_layers_gemma` and `step35_prime_cache_batch` do not take the
+scope: stated or armed). memra#445 map posted by B (section 1 closed by #588; section 2 open behind #151, gemma prefix
+snapshot refused by the SWA flat-history layout; section 3 open on the gemma side, needs a pre-registered c=1/4/8
+ladder on the target card). Lead ruling 25: the fix does not reach main until every owed gate above is green and
+verbatim in this record; a red one keeps the lane as `wip:` and the integ waits.
+
+**Ruling 26 (2026-09-21 19:5xZ).** While B's fix was on the lane, PR #614 (`653c997f4`, another session, merged
+19:46Z, record `research/prime-tail16-20260921/`) fixed the same defect on main by a different mechanism:
+`Engine::small_m_tier_max()` is 16 inside the verify-exact scope and `PRIME_MIN_T - 1` otherwise, and both general
+entries `matmul` and `matmul_pre` use it as the batched small-m tier's ceiling; `matmul_decode_exact*` keep their own
+`2..=16` tiers (they are the decode class). Its gate: the continuation gate on the 9B NVFP4 and on the served mint,
+every split `ok`, the one-call digest unchanged; a `MEMRA_CI_CONTGATE` arm in `tools/local-ci.sh`. It covers every
+caller of the general entries, so the scope gap B named (`prime_layers_gemma`, `step35_prime_cache_batch`) is closed by
+construction. B's `prefill_rows` scope is a second mechanism for the same behaviour and covers fewer sites: main's
+mechanism stands, the scope is dropped in the merge (lib.rs, hybrid_forward.rs, the gate binary take main's side), the
+width-walk diagnostic stays without its scope arm, and B's gate receipts (width walk, continuation gate, kernel-check,
+hit gate, twin gate, base-versus-fix identity, the target-card table) become the evidence that guards #614's mechanism,
+re-run on the merged tree. The integ25 CPU battery and smoke run on B's tree (`f35bed45e`, 13 steps rc=0 except the
+memra-server suite's known scheduler-sensitive `darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown`,
+`left: 1 right: 2` on the yield counter under the battery's load, 3 of 3 green alone; `serve-smoke: 0 failed`) are
+superseded by the battery on the merged tree and kept as receipts.
+
+**C day 18 (tip `29fe66640`, merged into integ25): the MoE slot cache door's decide-by inputs and the HOSTPREFIX
+review table.** New diagnostic binary `hash-micro` (`crates/memra-engine/src/bin/hash_micro.rs`: the engine's
+`memra_tier::contracts::checksum` over cached pinned, write-combined pinned and heap bytes; no engine path, no flag).
+Item 4 (overlap, target card, N=5 per arm per order, both orders, one 976 s hold, 36 to 40 C, 189 W peak, tape
+identical), verbatim: `OVERLAP-PAIR rule decode_off_s=0.408 decode_on_s=2.343 decode_ratio=5.743 ratio_o1=5.694
+ratio_o2=5.833 off_range=0.407..0.409 on_range=2.301..2.528 door_cost_ms_per_decode_token=60.47
+steady_mb_per_token=43.5 door_cost_ms_per_staged_MB=1.390 misses_off=[8211] misses_on=[18195] reads_on=[22077]
+evictions_on=[12091] install_on_s=74.84 forward_off_s=0.65 forward_on_s=6.28 forward_ratio=9.627 N=5/arm/order
+pooled=10 orders=2 temp_c=36..40 power_max_w=189 power_limit_w=600.00 W identity=ok integrity=ok ->
+sync_miss_path_slower`; replay `DAY18 REPLAY overlap: PASS (9 checks)`. Reading: the synchronous miss path is the
+door's only miss path at the 8 GiB budget (decode 5.7x slower with the door ON, install 75 s per process at this
+artifact); it is the promotion blocker, and a delete decision at the decide-by deletes the whole door. Item 3 hash
+lock, both cards: `HASHLOCK rule door_exit=1 sha_mismatch_line=True door_lines=0 control_exit=0 control_match=True
+... -> hash_lock_refuses` (`PASS (7 checks)` each); scale admission is a CPU proof only (`memra-gguf expert_banks` 10
+passed), no scale-bearing artifact on either rig, native cell pre-registered. Item 6, both cards: `SERVERDOOR rule
+ready=True request_ok=True door_lines=0 flag_refused=False flag_silently_accepted=True ->
+door_unreachable_in_serving`; hygiene finding, queued for a lane: `memra-server` rejects no unknown argument at all.
+Item 1: census (every `with_moe_cache` caller is a MoE layer function on whichever thread walks the layer; no PP gate
+binary carries the installer) plus the CPU proof `memra-tier owner_proxy` 4 passed (`WrongOwner` from a spawned
+thread). Hash micro-cell, both cards (`PASS (8 checks)`): target host `cached_ms=77.922 wc_ms=1698.063 heap_ms=77.990
+... wc_over_cached=21.792`; local host `cached_ms=37.339 wc_ms=1431.613 ... wc_over_cached=38.340`. HOSTPREFIX review
+table appended to `HOSTPREFIX-DOOR.md`: banked (identity and failure gates, contract fault gate 40 ok, the review-round
+cells, A's tenant arm, A's cached pair, the hash micro-cell, the arena pair), one arithmetic reading (one cached hash
+pass, 77.9 ms, equals A's steady demote delta, 76 ms, so the ticket lifecycle is below resolution), two census questions
+named and not resolved, and the missing list (arena lease handoff, DFlash tail slice, verify digest v3, the pool-full
+line, an RTX 5090-class pair). Replay correction stated by C: v1 of `day18-replay.py` counted a bare substring the
+refusal line carries; corrected to the pre-registered bracketed tags before any other result was read, no threshold
+moved. `pro-single-day18/.gitattributes` marks receipt logs `-whitespace` (precedent `research/ttft-20260808/`).
+
+**B day 23 (tip `5d9e61d3f`, ruling 26 executed): the gates re-run on main's mechanism, both cards, verbatim.** Lane
+merged `origin/main 653c997f4`; `lib.rs` is main's `small_m_tier_max()` with the lane's `prefill_rows` field, scope,
+`batched_tier_admits` and both admission conjuncts removed; `hybrid_forward.rs` arm removed; the continuation gate is
+main's; `qwen-a4-width-walk` kept as a one-arm plain-program diagnostic. Against main the lane's non-research diff is
+that binary plus one `docs/TESTING.md` pointer sentence. Local RTX 5090 (`rtx5090-day23/`): `WIDTH WALK width 16 vs 17:
+0 of 497 tensors differ; tensor names: {}; sites: []` (48 vs 17 also 0); seven arms every split `ok`,
+`A4 CONTINUATION GATE: PASS` x7, `9280 + 16: logits_sha=14ab5f8b365dbd71 ok`, chunk-32 one-call `14ab5f8b365dbd71`,
+digest for digest the day-22 table; `kernel-check` both manifests `ALL GREEN (109 cells, 10 skipped)`;
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`; twin gate `... V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS`; run-gen
+`prefill argmax=271 decode argmax=271 ... MATCH` (std), probe 90 tokens MATCH plus batched-prime MATCH, p16 (16 tokens)
+`23314 ... MATCH` plus batched-prime MATCH, p4112 (4112 tokens) `84728 ... MATCH` plus batched-prime MATCH; run-spec
+K=1..8 (embedded NextN drafter, `nextn=1`) `=== SELF-CONSISTENCY PASS ===` on probe, p16, p4112, every K
+`self-consistency: PASS (identical to plain target)`, acceptance above 0. Target card (`pro-single-day23/`): step35
+manifest alone `ALL GREEN (109 cells, 6 skipped)`; both manifests `ALL GREEN (109 cells, 6 skipped)` with
+`DUAL-BATCHED-AUX [NVFP4 rp] out=48 m=3: bit-bad=0/0 OK` (the 9B staged from the verified local copy, SHA-256
+`52c9cceb...` equal to five repo receipts, into the lane's own dir; `/root/artifacts`, manifests and checker untouched);
+run-gen and run-spec argmaxes, accepted and drafted counts and verdicts identical to the local card; the seven-arm
+table digest for digest. Scope gap: closed by construction by #614; B's site reading in `PRIME-MIN-T-DECISION.md`
+"Superseded by #614": `step35_prime_cache_batch` passes `m = total = sum(ts)` (16 at B=1) with `attn_gate` at `out_f`
+64 or 96 (below the GEMM floor, so it could reach the tier), `prime_layers_gemma` passes `m = t` but every gemma
+quantized projection has `out_f >= 128` (width-safe by census only); no Step-3.7-Flash GGUF on either rig, so the
+step35 split cell stays owed as a confirmation. Lead reading: every gate ruling 25 named is green and verbatim above;
+memra#427 closes with this integ on #614's mechanism and these receipts, the step35 split confirmation stays as a note
+on the issue's close.
+
+**Lead slices in integ25.** (1) `research/INDEX.md` on main carried a second stray diff3 base marker
+(`||||||| parent of 8faa37ca4 ...`, from #614's rebase); removed, every row of every parent present (set difference
+against main, B and C: 0 missing). (2) A conflict-marker census, `tools/check-conflict-markers.sh` (all four marker
+kinds over tracked source, docs and data; receipt logs and raw dirs excluded; no skip switch), wired into the pre-push
+hook after the docs-registry census and into the CI gates job, teeth `tools/test_conflict_markers.sh` (7 arms). Its
+first run found a third marker on main: `research/tune-data/perf-ci.jsonl:1147` (a non-JSON line in the append-only log
+the perf gate parses, from the #604 rebase); removed, every remaining line parses. Ruling 27: a marker line in a
+tracked file is a push refusal from now on, and a hand-resolved merge is followed by this census before its commit.
+
+Final battery on the integ25 tree (`integration-day12/integ25-cpu-battery/`, tree `5a14f5188`, CPUQuota 1200 percent):
+fmt, portable suites (335 passed, 0 skipped), memra-server suite (green), clippy, flags, publish and docs-registry
+censuses, collector pytest (87 passed), memra-engine CPU lib tests (518 passed), engine clippy `-D warnings`, perf
+board, diff-check, then the marker census and its teeth, workflow keys, em-dash scan: 16 steps rc=0. Local 5090
+`tools/serve-smoke.sh` (`integ25-serve-smoke-5090/`): `serve-smoke: 0 failed` (gemma4 and Q35 arms SKIP, models absent
+on this rig; a lane's continuation-gate process shared the card during the window, recorded in `window.txt`).
+
+## integ26 (`lane/spill-integ26-20260921`): A day 16, memra#536 census, stall cell, prime cancellation point
+Lane tip merged: A `a71bd8db9` on main `e2e9e294a` (#616). INDEX.md conflicted because A had inherited #614's stray
+marker: A's day-16 row kept, the marker dropped, every row of both parents present, the census clean. Engine source:
+`crates/memra-engine/src/progress.rs` (`PrimeCancelScope`, a thread-local predicate installed for one prime call and
+restored on drop; typed `PrimeCancelled { chunk, rows_done, rows_total }`; `prime_cancel_point` answering `Ok` with no
+scope or at the last chunk), `hybrid_forward.rs` (the check at the chunk boundary of the three sequential walks: the
+serial chunk walk, the GEMM chunk loop of `step35_prime_cache_batch`, the single-engine hyper range walk; the
+pipelined PP walks and `prime_cache_batch` keep the tick-top sweep, stated in the module note), `memra-server
+worker.rs` (the scope installed around the one prime call with `EventSender::is_closed` as the predicate;
+`prime_cancelled_abort` downcasts the typed error, prints one `[prime] cancelled at chunk ...` receipt line and
+retires the session as aborted: no park, no publish, the half-primed cache returns to the pool; `abort_log` gains
+`fed`), `tools/prime-cancel-gate.sh`. No flag, no new `MEMRA_*` read, no numeric change: the check either lets the walk
+continue exactly as before or returns after a completed chunk and before the next; a cancelled prime returns no logits,
+so the capture sites (after an `Ok` prime only) are never reached.
+
+**Census** (`OWNER-THREAD-CENSUS.md`): every class (prime, decode, D2D capture, D2D restore, D2H demote, H2D promote,
+trim) runs on the one worker thread inside the tick. Prime: one `prefill_tick` per tick (1024 rows; 8192 for a sole
+fresh request; the whole prompt for the monolithic class), per-internal-chunk D2H of logits, cancellation only at the
+tick-top sweep (before today). Demote OFF: host-blocking synchronize per plane. Promote OFF: no host wait, owner
+stream. Under the host-contracts door `CudaTransfers::new(owner, ..)` keeps the worker's owner stream as its only stream
+and pins the thread; both routes `synchronize(&ticket)` plus owner drain before `retire`: the door moved ownership and
+receipts, not the copy. Trim: two synchronizes, evictions and device trim in one `TrimPools` call.
+
+**Stall cell** (one RTX PRO 6000 Blackwell at 600 W, `MEMRA_SERVE_SPEC=0`, N=5 per arm per order, both orders, replays
+PASS, zero errors), verbatim fragments: `stall-prime ... idle_p50=13.5 idle_p99=14.9 ... arm_p99=295.7 arm_max=315.9
+stall_median=301.5 stall_min=285.6 stall_max=302.5` (a 5122-token prime beside a decoding tenant: five stretched ticks
+of 286 to 316 ms per run, one per 1024-row chunk); `stall-demote-off ... arm_p99=87.6 arm_max=132.0 stall_median=117.5`
+(server demote 37 to 43 ms inside a 131 ms tick); `stall-demote-on ... arm_max=207.6 stall_median=193.5` (113 to 118 ms
+inside a 207 ms tick); `stall-promote-off ... arm_max=133.6 stall_median=85.0`; `stall-promote-on ... arm_max=211.2
+stall_median=162.8`. Unattributed and stated: a second 88 ms tick per demote intruder, present without a demote too.
+
+**Cancellation gate**, verbatim: target card `[prime] cancelled at chunk 2 (768 of 7488 rows of this take primed; fed 0,
+queued 20, prompt 7508, model "gate")` and `PRIME-CANCEL GATE: PASS (disconnect_ms=300 words=6000
+cold=f243df4517b99525 warm=f243df4517b99525)`; local 5090 (Qwen3.5-9B) cancel at chunk 4 (1280 of 7488 rows),
+`PRIME-CANCEL GATE: PASS`. One program on the changed binary, both cards: `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`
+(61 ok) and `A4 CONTINUATION GATE: PASS`. Two false starts A kept as records: the hit gate has no `--external-lock`
+arm, and its stop matches the server by the name `memra-server`, so a renamed binary left A's own server on the port on
+both rigs (stopped by pid; reruns used the canonical name). Design note `OWNER-THREAD-OFFLOAD.md`: Move 1 (the door's
+D2H and H2D on a second stream, tick-top polls, `Demoting`/`promoting` states, about 2 agent-days) and Move 2 (a D2D
+contract, about 4 agent-days after Move 1), each with its decision cells; nothing started. #536 comment posted, issue
+open.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

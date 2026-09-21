@@ -20199,6 +20199,7 @@ pub fn run(
                             prefill_single_tokens += consumed;
                         }
                     }
+                    Err(err) if prime_cancelled_abort(s, err.as_ref()) => finished.push(i),
                     Err(err) => {
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
@@ -20633,9 +20634,11 @@ pub fn run(
                     step_tower.as_ref(),
                     overlay_publish,
                 ) {
-                    let _ = s.tx.send(Event::Error(EngineError::engine(format!(
-                        "prefill error: {err}"
-                    ))));
+                    if !prime_cancelled_abort(s, err.as_ref()) {
+                        let _ = s.tx.send(Event::Error(EngineError::engine(format!(
+                            "prefill error: {err}"
+                        ))));
+                    }
                     finished.push(i);
                 }
                 break; // one dark chunk per tick — the headroom budget is tick-global
@@ -26365,6 +26368,16 @@ fn prefill_tick(
                 .as_ref()
                 .and_then(|v| v.overlay.as_ref())
                 .and_then(|o| o.window(fed_len, take));
+            // CANCELLATION POINT (memra#536 item 2): for the duration of this one prime call
+            // the engine's sequential chunk walks ask, at every completed internal chunk, whether
+            // this session's client is gone (`EventSender::is_closed`, the same predicate the
+            // tick-top sweep reads once per tick). A gone client returns the typed
+            // `PrimeCancelled` through `?`; the call sites match it and retire the session as
+            // aborted (no park, no publish). The guard restores the previous scope on every path.
+            let _cancel_scope = memra_engine::progress::PrimeCancelScope::install({
+                let tx = s.tx.clone();
+                Box::new(move || tx.is_closed())
+            });
             let (l, _h, x) = lm.model.prime_cache_overlaid(
                 engine,
                 &chunk,
@@ -28920,14 +28933,40 @@ fn glm5_prof_rounds_flush(s: &mut Session, force: bool) {
 fn abort_log(s: &mut Session) {
     s.aborted = true;
     eprintln!(
-        "[abort] client disconnected: model {:?}, prompt {} ({} cached), \
+        "[abort] client disconnected: model {:?}, prompt {} ({} cached, {} fed), \
                {} generated — billed to abort point, {:.2}s",
         s.model,
         s.n_prompt,
         s.n_cached,
+        s.fed.len(),
         s.generated.len(),
         s.t0.elapsed().as_secs_f64()
     );
+}
+
+/// PRIME CANCELLATION (memra#536 item 2): a `prefill_tick` error that is the engine's typed
+/// `PrimeCancelled` is a client that left mid-prime, not an engine fault. One receipt line names
+/// the chunk boundary that stopped the walk (the gate greps it), then the session is retired as
+/// aborted exactly as the tick-top sweep would have: `retire_may_park` refuses the park, the
+/// half-primed cache returns to the pool at drop, and no `Event::Error` is sent on a closed
+/// channel. Returns false for every other error so the caller keeps its error path.
+fn prime_cancelled_abort(s: &mut Session, err: &(dyn std::error::Error + 'static)) -> bool {
+    let Some(c) = err.downcast_ref::<memra_engine::progress::PrimeCancelled>() else {
+        return false;
+    };
+    eprintln!(
+        "[prime] cancelled at chunk {} ({} of {} rows of this take primed; fed {}, queued {}, \
+         prompt {}, model {:?}): client gone, nothing published, cache released at retire",
+        c.chunk,
+        c.rows_done,
+        c.rows_total,
+        s.fed.len(),
+        s.prefill_queue.len(),
+        s.n_prompt,
+        s.model
+    );
+    abort_log(s);
+    true
 }
 
 fn retire_may_park(aborted: bool, oom_teardown: bool) -> bool {

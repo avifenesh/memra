@@ -1,0 +1,9 @@
+loaded qwen35 (64 trunk layers; optional MTP skipped)
+prompt tokens: [2, 69208, 1892, 279, 5097, 15015, 7099, 321, 279, 35729, 24303, 271, 1919, 369, 279, 8418]
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+prefill argmax=23314  decode argmax=23314  logit maxdiff=2.965e-1  MATCH
+batched-prime argmax=23314  tokenwise argmax=23314  logit maxdiff=2.392e-1  MATCH
+prefill 16 tok in 0.0906s = 176.5 tok/s (pp16)
+generated 8 tokens in 0.176s = 45.47 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.091s) [stop: MaxNew]
+tokens: [23314, 4139, 314, 279, 1558, 83019, 3255, 13]
+exit=0
