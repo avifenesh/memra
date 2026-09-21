@@ -980,7 +980,7 @@ the publish census refuses internal dev-deps. These are **CPU execution gates, n
 qualification**. Run the whole pair:
 
 ```sh
-tools/portable-suites.sh          # cargo test -p memra-tier -p memra-kv -p memra-cli --offline --no-fail-fast, through the skip census
+tools/portable-suites.sh          # cargo test -p memra-tier -p memra-kv -p memra-cli --offline --locked --no-fail-fast, through the skip census
 tools/test_portable_suites.sh     # its teeth: planted tier/KV/CLI failures and an undeclared SKIP must red the wrapper
 cargo check -p memra-tier -p memra-kv --offline --all-targets
 cargo check -p memra-tier -p memra-kv --offline --all-targets --target x86_64-unknown-linux-gnu
@@ -1002,8 +1002,9 @@ these suites: `ci.yml` compiled them (build, clippy) and executed other crates; 
 ran server, engine and gguf. `tools/portable-suites.sh` is now the one wrapper both run
 (`ci.yml` job `portable-suites`, `local-ci.sh`'s CPU chain): the three crates, no `--lib`
 (memra-tier's six integration suites and its four compile-fail doctests are most of the tests),
-`--no-fail-fast` (every binary runs, so a red names every failing suite), `--offline` against
-the committed lockfile, through `tools/skip-census.py` (`verify` over the three crates, then
+`--no-fail-fast` (every binary runs, so a red names every failing suite), `--offline --locked`
+against the committed lockfile (a lockfile that would need to change is a refusal), through
+`tools/skip-census.py` (`verify` over the three crates, then
 `run` at budget 0 and floor 300; 325 passed across 14 binaries on 2026-09-21, 22 s warm; 334
 after that day's main merges). The static census scans `crates/<crate>/src` AND
 `crates/<crate>/tests` (PR #592 review: it was src-only, so a skip born in an integration test
@@ -1019,6 +1020,21 @@ tree's own target dir: cargo's metadata hash for a workspace member excludes its
 `cp -a` keeps mtimes, so a shared target dir let the copy's planted `memra_cli` test binary be
 reused by the next real run (found on the fixture's first run; the fix is the separate dir).
 A green here is CPU execution of these suites, never GPU qualification.
+**One entry point (day 14, 2026-09-21).** PR #590 landed `tools/ci-portable.sh`, a second runner
+of the same three crates (`cargo test --release --locked`, no census, no floor, no teeth), a
+second `ci.yml` job also named `portable-suites` and a second call in `local-ci.sh`; main
+carried both and GitHub refused the workflow file (a duplicate mapping key runs zero jobs). The
+fold: `tools/portable-suites.sh` is the one executor, `ci.yml` and `local-ci.sh` call it once
+(`--locked` and `RUST_TEST_THREADS=8` folded in from #590), `tools/ci-portable.sh` only forwards
+to it, and arm 3 of the teeth asserts exactly one `portable-suites` job, no live `cargo test`
+on the three crates outside the wrapper, and a forward that runs no cargo. The workflow files
+themselves are censused by `tools/check-workflow-keys.py` (a standard-library walker over
+block-style YAML, its scope stated in its docstring; `yaml.safe_load` keeps the last duplicate
+silently, and PyYAML is not assumed on every interpreter, so the hook cannot fail for a missing
+dependency) in `tools/hooks/pre-push` (exit 1 is a duplicate, exit 2 is "cannot answer", both
+refuse) and the `ci.yml` `gates` job, teeth `tools/test_workflow_keys.sh` including an arm that
+shadows `yaml` with a package that raises `ImportError`. Record: `research/spill-d-20260919/DAY14.md`; the hosted CI map is
+`docs/CI.md`.
 Conformance schedules drive explicit completion/cancellation/retirement, original
 item indices, namespace and epoch refusal, opaque bytes, accounting and borrowed
 release. v1.2 adds owner/fence identities, logical-vs-framed completion bytes,
