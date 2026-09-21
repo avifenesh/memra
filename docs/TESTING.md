@@ -1313,10 +1313,24 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `MEMRA_KV_HOST_VERIFY=1` `verify ok` on every ON promote, equal `[prefix-host] demote:` byte
   counts. Evidence: `research/spill-c-20260919/DAY13.md` and `pro-single-day13/` (one RTX PRO
   6000 Blackwell at 600 W, N=1, `executed-not-qualified`; no support state or default moves).
-- ON-arm surface is lane B's first slice: plain KV plus recurrent continuation. Entries with
-  TP, latent or draft planes (spec-published boundary captures) are refused by name at demote
-  (`[prefix-host] demote refused (contracts door)`), handoff imports at insert; the receipts
-  record these as the arm difference they are.
+- ON-arm surface (day 14, lead ruling 16): lane B's first slice (plain KV plus recurrent
+  continuation) AND MTP draft-bearing entries (spec-published boundary captures), each bound to
+  its own program: the draft plane is its own `Role::Draft` K and V segments with checksums, and a
+  model with an MTP head carries a second `ProgramIdentity` (`host_tier_draft_program`) whose
+  artifact, plan and numeric fold in the draft head's source and the draft rows' encodings, so a
+  spec entry and a plain entry of one prompt never share an identity. GLM state (TP, latent) and
+  the DFlash draft tail are refused by name at demote (`[prefix-host] demote refused (contracts
+  door): entry carries ...`), handoff imports at insert. CPU tests (`worker.rs`):
+  `host_tier_entry_class_admits_plain_and_mtp_draft_and_refuses_glm_and_dflash_by_name`,
+  `host_tier_draft_program_differs_from_plain_in_exactly_artifact_plan_and_numeric`,
+  `host_tier_context_program_selects_the_class_and_refuses_a_draft_entry_without_a_head`,
+  `host_tier_shape_metadata_v2_frames_the_draft_plane_presence_unconditionally`. Exit criterion
+  on the target card: `tools/kv-host-spill-identity-gate.sh` and
+  `tools/kv-host-spill-failure-gate.sh` under the gates' DEFAULT spec environment (every insert
+  a draft-bearing spec-boundary capture), door OFF then ON on one binary and prompts: every verdict
+  line equal, `verify ok` on every ON promote, equal `[prefix-host] demote:` byte counts, no
+  refusal line in the ON arm; the `MEMRA_SERVE_SPEC=0` pairs and serve-smoke unchanged from day 13.
+  Evidence: `research/spill-c-20260919/DAY14.md`, `pro-single-day14/`, replay `verify-day14.py`.
 
 ### `h2d-probe --copies`
 
