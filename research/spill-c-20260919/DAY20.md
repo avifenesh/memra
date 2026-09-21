@@ -235,3 +235,87 @@ line names the allocation that failed.**
 
 So on this card today the standalone DFlash2 path admits 16,382 tokens and refuses from 32,759 tokens up; the
 tap is the refused allocation at 65,507 and the starving resident at 32,759. `executed-not-qualified`.
+
+## Task 3: the bounded storage landed on the standalone qwen entry point (`4fd4f3b41`)
+
+**One seam, in `crates/memra-engine/src/dflash.rs` only.** `generate_spec_dspark`'s prime block (the
+whole-prompt `DflashTapSink` at the former `dflash.rs:3975`, the single `prime_cache(prompt)` call, the
+256-row ingest loop after it) is replaced by a call to the serving walker `prime_dflash_taps(e, draft,
+&mut cache, &mut dkv, prompt, None, &mut boundary, oracle)`: `DflashKv::new` moves before the prime, the
+`DflashPrimeOracle` is armed under `MEMRA_ALLOC_TRACE=1` exactly as the serving path arms it (so the
+standalone path now prints `[dflash-oracle]` and `[dflash-taps]`), the boundary token is drawn from the
+returned last-chunk logits by the unchanged `sample_boundary_token` / `argmax` composition, `PRIME_NANOS`
+is stored around the same span (prefill plus ingestion). No kernel changed, no value written changed, no
+flag added, no `unsafe`, no dependency. The gemma arm (`generate_spec_dflash`), the serving path, the
+per-round keep-ingest sinks and `hybrid_forward.rs` are untouched.
+
+**The typed refusal.** `apply_tap_batch_op`'s `Copy` arm used to `expect("copy requires a live chunk sink")`.
+It now returns a typed error when there is no live chunk sink (`DFlash tap carry: copy requested with no
+live chunk sink (a tap row would be read before the trunk wrote it)`) or when the copy's source rows lie
+past the rows the chunk sink holds (`DFlash tap carry: copy of rows a..b exceeds the N-row chunk sink the
+trunk wrote`). Neither fires on the production schedule (the carry emits Copy sources inside `0..rows` of
+the chunk it was given); they turn a bookkeeping fault into a request error instead of a panic or a stale
+row.
+
+**CPU tests (the module's plus one on the chunk bookkeeping).**
+`standalone_prime_consumes_each_chunk_before_the_next_and_keeps_the_256_row_partition`: for prompt lengths
+16, 255, 256, 257, 4096, 4097, 4111, 4112, 8192, 8194, 16382, 32759 and 65507 on the single-device 4096-row
+grid with the sub-16 tail folded, every `Copy` source lies inside the chunk the trunk just wrote, every
+`Ingest` covers only rows already copied, after each chunk the whole chunk has been consumed and at most 255
+rows survive the edge (in the carry, never in a chunk sink), and the ingested batches are exactly
+`(0..tp).step_by(256)` in order, the whole-buffer path's partition; `next_position == tp`, `pending == 0`
+after the flush. The existing `production_carry_preserves_whole_buffer_batches_across_chunks_and_boundary`
+and `tap_hash_preserves_bits_across_arbitrary_capture_partitions` are unchanged. Results of the run are in
+the Gates section below.
+
+## Cell `tapladder20b` result (local RTX 5090 Laptop GPU, after; `rtx5090-day20/tapladder20b-retry2/`)
+
+Replay: `DAY20 REPLAY tapladder20b: PASS (9 checks) -> identity; bounded` (`ev/replay.txt`). Attempts 0 and
+1 found `/tmp/memra-5090.lock` held by another lane and slept 120 s each (`lock-retries.log`, the two
+`tapladder20b*-driver.log` files read `REFUSED: [Errno 11] Resource temporarily unavailable`; no holder was
+inspected or signalled); attempt 2 took the lock: one hold 22:13:49Z to 22:18:56Z, 1,349 telemetry samples,
+`dspark_q38_gate` `514109da2f93…` from tree `4fd4f3b41` (the change commit), the same three artifacts, the same
+five prompts (`prompts.txt` hashes equal), `ngen 32`. No other compute process before or after any rung. The
+CPU test compile of this lane ran on the host from 22:12:51Z to 22:14:30Z, overlapping the first rung's
+window (host load only; the cell reads no timing as a claim). Regime 66..90 C, 178 W peak.
+
+| Rung | Prompt tokens | Result | Largest `dflash.rs` allocation | `[dflash-taps]` chunk / carry / former | Acceptance | `spec_sha256` | `prime_s` | Device peak MiB (before) |
+|---|---|---|---|---|---|---|---|---|
+| 4,763 | 8,194 | `EXACT`, rc 0 | `419635200` at `dflash.rs:5266` (chunk sink, 4,098 rows) | `419635200` / `26214400` / `839065600` | `28/28 = 1.000 rounds=4` | `72cf198537ff594e…3162ef22` (= before) | 6.210 | 21,415 (21,607) |
+| 9,527 | 16,382 | `EXACT`, rc 0 | `419430400` (4,096 rows) | `419430400` / `26214400` / `1677516800` | `28/28 = 1.000 rounds=4` | `0d6449b292e6f417…f047492e` (= before) | 12.749 | 21,415 (22,759) |
+| 19,055 | 32,759 | `EXACT`, rc 0 (before: OOM) | `419430400` | `419430400` / `26214400` / `3354521600` | `28/28 = 1.000 rounds=4` | `c009f8ea51f0168b…7ebc5a6e` | 28.472 | 22,215 (23,961, OOM) |
+| 38,109 | 65,507 | `EXACT`, rc 0 (before: tap refused) | `419430400` | `419430400` / `26214400` / `6707916800` | `28/28 = 1.000 rounds=4` | `8b90adb8213eed06…ae8f6db5` | 66.587 | 23,609 (23,958, OOM) |
+| 76,217 | 131,004 | OOM, rc 1, in the plain control (as before) | `81920` (drafter load) | none | none | none | none | 23,961 (23,961) |
+
+Verbatim, the two rungs the before cell admitted: `[dspark-q38-gate] prompt.txt: prompt=8194
+spec_sha256=72cf198537ff594ea929ae040c7d6a3d875b864a2d90c9cd82b809943162ef22 plain_sha256=72cf198537ff594ea929ae040c7d6a3d875b864a2d90c9cd82b809943162ef22
+spec_len=32 plain_len=32 prime_s=6.210`, `[dspark-q38] acceptance 28/28 = 1.000 rounds=4 draft=33.4ms snap=2.0ms
+verify=179.2ms rollback+replay=0.0ms ingest=1.5ms`, `[dflash-taps] base=0 rows=8194 max_chunk_rows=4098
+chunk_tap_bytes=419635200 carry_bytes=26214400 former_full_tap_bytes=839065600`; `[dspark-q38-gate] prompt.txt:
+prompt=16382 spec_sha256=0d6449b292e6f417e94a0640733ce13efba0458828bf1f168eb4b3a2f047492e
+plain_sha256=0d6449b292e6f417e94a0640733ce13efba0458828bf1f168eb4b3a2f047492e spec_len=32 plain_len=32
+prime_s=12.749`, `[dspark-q38] acceptance 28/28 = 1.000 rounds=4 ...`, `[dflash-taps] base=0 rows=16382
+max_chunk_rows=4096 chunk_tap_bytes=419430400 carry_bytes=26214400 former_full_tap_bytes=1677516800`. The
+identity clause holds at both: the same 32 ids (digest equal to the before cell's), the same length, the same
+acceptance; both `EXACT` against the plain oracle. The 4,098-row chunk at 8,194 tokens is the fold law
+(8,194 = 2 x 4,096 + 2, the two-row tail folded into the last chunk), so its sink is 419,635,200 bytes, inside
+the 4,111-row cap the rule states.
+
+The two rungs the before cell refused now complete: 32,759 tokens `prompt.txt: prompt 32759 -> gen 32 | plain
+1.2 tok/s | spec 102.1 tok/s | EXACT`, `[dflash-taps] base=0 rows=32759 max_chunk_rows=4096
+chunk_tap_bytes=419430400 carry_bytes=26214400 former_full_tap_bytes=3354521600`, `acceptance 28/28`; 65,507
+tokens `prompt.txt: prompt 65507 -> gen 32 | plain 0.5 tok/s | spec 68.5 tok/s | EXACT`, `[dflash-taps] base=0
+rows=65507 max_chunk_rows=4096 chunk_tap_bytes=419430400 carry_bytes=26214400 former_full_tap_bytes=6707916800`,
+`acceptance 28/28`. The tap peak at 65,507 tokens fell from 6,707,916,800 bytes (refused) to 419,430,400 plus the
+26,214,400-byte carry, a factor of 15.05 at that length; the device peak at that rung reads 23,609 MiB where the
+before cell died at 23,958. The 131,004-token rung refuses exactly where it refused before, in the gate's PLAIN
+control (`[alloc-trace] 285212672 bytes from crates/memra-engine/src/hybrid_forward.rs:6578` then `Error:
+DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")`, before any DFlash allocation): a resource the change
+does not touch, named, the `moved` clause as pre-registered. The `[dflash-oracle]` digests (taps, features,
+positions, target logits) are new on the standalone path and are recorded per rung in `w*.receipt` and the logs
+for a later comparison; no before-side oracle exists to compare them against today.
+
+`prime_s` (diagnostic, N=1) reads 6.210 against 5.780 and 12.749 against 11.984 at the two shared rungs: the
+after path interleaves ingestion with the trunk chunks and synchronizes per chunk, and the test compile
+overlapped the first rung; this is not a timing claim in either direction and the cell was not designed to
+make one. `executed-not-qualified`.

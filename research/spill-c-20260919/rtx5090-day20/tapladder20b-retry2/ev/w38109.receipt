@@ -1,0 +1,8 @@
+[dflash-taps] base=0 rows=65507 max_chunk_rows=4096 chunk_tap_bytes=419430400 carry_bytes=26214400 former_full_tap_bytes=6707916800
+[dspark-q38] acceptance 28/28 = 1.000 rounds=4 draft=46.4ms snap=1.7ms verify=415.6ms rollback+replay=0.0ms ingest=1.6ms
+prompt.txt: prompt 65507 -> gen 32 | plain 0.5 tok/s | spec 68.5 tok/s | EXACT
+[dspark-q38-gate] prompt.txt: prompt=65507 spec_sha256=8b90adb8213eed06693cbc4ee86850057b4f1e6feaa4e5213f9257beae8f6db5 plain_sha256=8b90adb8213eed06693cbc4ee86850057b4f1e6feaa4e5213f9257beae8f6db5 spec_len=32 plain_len=32 prime_s=66.587
+== dspark_q38_gate: ALL EXACT | mean plain 0.5 tok/s | mean spec 68.5 tok/s | 32 tokens ==
+[alloc-trace] 419430400 bytes from crates/memra-engine/src/dflash.rs:5266
+[alloc-trace] 419430400 bytes from crates/memra-engine/src/dflash.rs:5266
+[alloc-trace] 419430400 bytes from crates/memra-engine/src/dflash.rs:5266
