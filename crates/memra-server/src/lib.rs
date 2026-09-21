@@ -6516,6 +6516,9 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         body["prefix_host_purged_entries"] = json!(m.prefix_host_purged_entries);
         body["prefix_host_purged_bytes"] = json!(m.prefix_host_purged_bytes);
         body["prefix_host_tenant_rejects"] = json!(m.prefix_host_tenant_rejects);
+        // Tenant-share reclaim (memra#384): entries evicted from a tenant's own row to admit
+        // that tenant's demotion at its share cap; a subset of the tier's evictions.
+        body["prefix_host_tenant_reclaims"] = json!(m.prefix_host_tenant_reclaims);
         // Agent-pause demotion (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831):
         // pause_demotes is a subset of prefix_host_demotions; pause_cancels counts armed
         // candidates whose session returned before the timer (or left nothing demotable).

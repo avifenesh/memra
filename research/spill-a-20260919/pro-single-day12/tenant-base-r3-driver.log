@@ -1,0 +1,117 @@
+a0ff733ba34df52eac7f52d75fa1b11eb4a548c2
+b30ac09d04f4de309f6cb509054a2c87eb2d9252ab540e2c78604a0c802aaa0f  /root/spill-receipts/a-day12/bins/memra-server-base
+== base arm boot (host 1024 MiB, tenant share 38%, device 384 MiB, two keyring tenants) ==
+b30ac09d04f4de309f6cb509054a2c87eb2d9252ab540e2c78604a0c802aaa0f  /root/spill-receipts/a-day12/bins/memra-server-base
+== both arms: shape ==
+  ok: r1 HTTP 200
+  ok: r2 HTTP 200
+  ok: r3 HTTP 200
+  ok: r4 HTTP 200
+  ok: r5 HTTP 200
+  ok: r6 HTTP 200
+  ok: r7 HTTP 200
+  ok: r8 HTTP 200
+  ok: /metrics scraped with the operator token (200, process-wide counters present)
+  ok: no device-tier promote-insert skip (the device budget holds a promote beside a protected entry)
+  ok: the tier is on with the configured share cap
+  ok: the pool never filled: no LRU eviction
+  ok: no allocation refusal
+  ok: no host-tier refusal or failure line
+  ok: beta's first demote landed
+  ok: acme's first two demotes landed (r3, r4)
+  ok: beta's entry promotes at r7 in this arm: acme's cap did not touch beta's row
+  ok: the r7 promote line names beta
+  ok: no tenant-share eviction ever names beta
+  ok: every tenant-share eviction names acme, in both the row and the namespace
+== base arm: the verdict lines ==
+  ok: base: acme's third demotion EVAPORATED at the cap (the pre-#384 line)
+  ok: base: nothing of acme's own was evicted
+  ok: base: r8 is cold (the evaporated entry is gone)
+  ok: base: /metrics counts the rejects
+  ok: base: /metrics has no reclaims
+GATE: kv-host-tenant-reclaim (base arm) PASS
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/root/spill-receipts/a-day12/tenant-cell.sh",
+    "base",
+    "3",
+    "tenant-base-r3"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 59054856446716,
+  "ended_monotonic_ns": 59068452576530,
+  "started_utc": "2026-09-21T07:16:09.850304+00:00",
+  "ended_utc": "2026-09-21T07:16:23.446436+00:00",
+  "elapsed_seconds": 13.596129814,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1547,
+    "sha256": "3bbab9f6242417acef9639afc3b2fc01422a3b97710b171be6ab81f621964082"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 6089,
+      "sha256": "0d1564bbdf368526936fd526a50ab1f9e53cb2a7b5e7a819da3f81271459ca9b"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

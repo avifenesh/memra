@@ -2067,6 +2067,10 @@ pub struct Metrics {
     /// lane/kv-tenancy-compaction-20260831): a nonzero rate here with a low overall
     /// pool occupancy is the whale-tenant signature the cap exists to bound.
     pub prefix_host_tenant_rejects: u64,
+    /// Host entries evicted from a tenant's OWN row to admit that tenant's demotion at its
+    /// share cap (memra#384, lane/spill-a-20260919 day 12). A moving count with
+    /// `prefix_host_tenant_rejects` flat is the cap doing turnover instead of evaporation.
+    pub prefix_host_tenant_reclaims: u64,
     /// Agent-pause demotion (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, tiering
     /// spec Arc E): entries the pause sweep demoted to host (subset of
     /// prefix_host_demotions), and armed candidates that expired without demoting because
@@ -7952,6 +7956,73 @@ struct HostPrefixEntry {
     _tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
 }
 
+impl HostPrefixEntry {
+    /// A live identity lease (`IdentitySlot::lease`, held by a promote in flight or any future
+    /// asynchronous reader) marks the entry LEASED: the tenant-share reclaim never evicts it.
+    /// Unbound legacy entries and entries whose leases all dropped are unleased.
+    fn leased(&self) -> bool {
+        self._tier_identity.leased()
+    }
+}
+
+/// What the tenant-share reclaim (memra#384) evicted from the demoting tenant's own row.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct TenantShareReclaim {
+    evicted: usize,
+    freed: usize,
+}
+
+/// Why the tenant-share reclaim refused; every arm evicted NOTHING except `RetryStillShort`,
+/// which reports what it did evict (the single-owner invariant makes it unreachable, so a hit
+/// there is a bug report, not a policy).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TenantShareRefusalWhy {
+    ImageExceedsShare { image: usize, share: usize },
+    NoEligibleSpace,
+    RetryStillShort { evicted: usize, freed: usize },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TenantShareRefusal {
+    why: TenantShareRefusalWhy,
+    /// Bytes the row had to give up for the demotion to fit its share.
+    need: usize,
+    /// Bytes this row could have given up: its unleased entries other than the exact twin.
+    eligible: usize,
+    leased_skipped: usize,
+    leased_bytes: usize,
+}
+impl std::fmt::Display for TenantShareRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mb = |b: usize| b as f64 / 1e6;
+        match self.why {
+            TenantShareRefusalWhy::ImageExceedsShare { image, share } => write!(
+                f,
+                "reclaim refused: the image alone exceeds the share ({:.1}MB > {:.0}MB); nothing \
+                 evicted",
+                mb(image),
+                mb(share)
+            ),
+            TenantShareRefusalWhy::NoEligibleSpace => write!(
+                f,
+                "reclaim refused: needed {:.1}MB from this tenant's own unleased entries, \
+                 {:.1}MB eligible ({} leased entries holding {:.1}MB skipped); nothing evicted",
+                mb(self.need),
+                mb(self.eligible),
+                self.leased_skipped,
+                mb(self.leased_bytes)
+            ),
+            TenantShareRefusalWhy::RetryStillShort { evicted, freed } => write!(
+                f,
+                "reclaim retry still short after evicting {evicted} own entries ({:.1}MB) of \
+                 {:.1}MB needed",
+                mb(freed),
+                mb(self.need)
+            ),
+        }
+    }
+}
+
 /// Pinned-host spill pool behind the device `PrefixCache`. Plain byte-budgeted LRU on purpose:
 /// demotions arrive already SLRU-ordered from the device tier, so a second segmentation here
 /// would re-derive the same ordering at extra bookkeeping cost. Keyed exactly like the device
@@ -7999,6 +8070,10 @@ struct HostPrefixCache {
     tenant_pct: usize,
     tenant_bytes: HashMap<String, usize>,
     tenant_rejects: u64,
+    /// TENANT-SHARE RECLAIM (memra#384): entries evicted from a tenant's OWN row so that
+    /// tenant's demotion fits its share (a subset of `evictions`; `telemetry_stamp` already
+    /// moves with `evictions`). Never another tenant's entry, never a leased one.
+    tenant_reclaims: u64,
     /// AGENT-PAUSE DEMOTION (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, tiering
     /// spec Arc E). `pause_demotes` counts entries the pause sweep moved into this tier
     /// (a subset of `demotions`: park-boundary publishes plus resident device entries);
@@ -8133,6 +8208,132 @@ impl HostPrefixCache {
             .map_or(0, |i| self.entries[key][i].bytes);
         let resident = self.tenant_bytes.get(row).copied().unwrap_or(0);
         resident.saturating_sub(twin) + bytes > self.tenant_budget()
+    }
+
+    /// TENANT-SHARE RECLAIM (memra#384, lane/spill-a-20260919 day 12). At the share cap a
+    /// demotion used to EVAPORATE even while the pool had free space, because the cap is
+    /// per-row arithmetic and nothing of the row's own was ever evicted for it (the gates-3
+    /// run: three refusals at 152.7 GB resident of a 154.6 GB share, zero allocation
+    /// rejections). This evicts THIS tenant's own unleased entries, oldest first, until the
+    /// demotion fits its share, and nothing else: another tenant's row is never read, a
+    /// leased entry (`HostPrefixEntry::leased`, a live identity lease) is skipped, and the
+    /// exact-key twin is left alone because `tenant_cap_would_evaporate` already credits it
+    /// and `insert` replaces it. The refusal stays bounded: when the image alone exceeds the
+    /// share, or the row's unleased bytes cannot cover the shortfall, NOTHING is evicted and
+    /// the caller prints the same evaporation line as before plus what the reclaim found.
+    /// `tenant_budget()` is unchanged, so the row never exceeds its share after the retry
+    /// either. `Ok` means the predicate is now false (the one retry passed); the accounting
+    /// flows through `remove_at`, exactly like every other removal.
+    fn reclaim_tenant_share(
+        &mut self,
+        key: &PoolKey,
+        toks: &[u32],
+        bytes: usize,
+    ) -> Result<TenantShareReclaim, TenantShareRefusal> {
+        let mut reclaim = TenantShareReclaim::default();
+        if !self.tenant_cap_would_evaporate(key, toks, bytes) {
+            return Ok(reclaim);
+        }
+        let cap = self.tenant_budget();
+        let row = crate::auth::meter_key(&key.1).to_string();
+        let twin = self
+            .key_index(key, toks)
+            .map_or(0, |i| self.entries[key][i].bytes);
+        let resident = self.tenant_bytes.get(&row).copied().unwrap_or(0);
+        // The shortfall: what the row must give up before `resident - twin + bytes <= cap`.
+        let need = (resident.saturating_sub(twin) + bytes).saturating_sub(cap);
+        // Eligibility pass, no mutation: this row's unleased entries other than the twin.
+        let (mut eligible, mut leased_skipped, mut leased_bytes) = (0usize, 0usize, 0usize);
+        for (k, i) in self.lru.values() {
+            if crate::auth::meter_key(&k.1) != row {
+                continue;
+            }
+            let e = &self.entries[k][*i];
+            if k == key && e.toks[..] == *toks {
+                continue;
+            }
+            if e.leased() {
+                leased_skipped += 1;
+                leased_bytes += e.bytes;
+            } else {
+                eligible += e.bytes;
+            }
+        }
+        let refusal = |why: TenantShareRefusalWhy| TenantShareRefusal {
+            why,
+            need,
+            eligible,
+            leased_skipped,
+            leased_bytes,
+        };
+        if bytes > cap {
+            return Err(refusal(TenantShareRefusalWhy::ImageExceedsShare {
+                image: bytes,
+                share: cap,
+            }));
+        }
+        if eligible < need {
+            return Err(refusal(TenantShareRefusalWhy::NoEligibleSpace));
+        }
+        // Eviction pass: oldest eligible first, re-resolved after every removal because
+        // `remove_at` swap-removes and shifts pool indexes.
+        while self.tenant_cap_would_evaporate(key, toks, bytes) {
+            let Some((victim_key, victim_i)) = self.oldest_reclaimable(&row, key, toks) else {
+                break;
+            };
+            let Some(dead) = self.remove_at(&victim_key, victim_i) else {
+                break;
+            };
+            self.evictions += 1;
+            self.tenant_reclaims += 1;
+            reclaim.evicted += 1;
+            reclaim.freed += dead.bytes;
+            eprintln!(
+                "[prefix-host] evict (tenant share): {} tokens, {:.1}MB of tenant {row:?}'s own \
+                 entries for its {:.1}MB demotion (row now {:.1}MB / {:.0}MB share = {}% of \
+                 {:.0}MB, model {}{})",
+                dead.toks.len(),
+                dead.bytes as f64 / 1e6,
+                bytes as f64 / 1e6,
+                self.tenant_bytes.get(&row).copied().unwrap_or(0) as f64 / 1e6,
+                cap as f64 / 1e6,
+                self.tenant_pct,
+                self.budget as f64 / 1e6,
+                victim_key.0,
+                ns_suffix(&victim_key.1)
+            );
+            drop(dead);
+            self.log_arena("tenant share eviction");
+        }
+        // The one retry: the predicate must now be false. It cannot still hold after the
+        // eligibility pass on this single-threaded owner, but the answer fails closed.
+        if self.tenant_cap_would_evaporate(key, toks, bytes) {
+            return Err(refusal(TenantShareRefusalWhy::RetryStillShort {
+                evicted: reclaim.evicted,
+                freed: reclaim.freed,
+            }));
+        }
+        Ok(reclaim)
+    }
+
+    /// Oldest entry in `row` that the tenant-share reclaim may evict: not the exact-key
+    /// twin of the incoming demotion, not leased. LRU order is the `lru` map's own.
+    fn oldest_reclaimable(
+        &self,
+        row: &str,
+        key: &PoolKey,
+        toks: &[u32],
+    ) -> Option<(PoolKey, usize)> {
+        self.lru.values().find_map(|(k, i)| {
+            if crate::auth::meter_key(&k.1) != row {
+                return None;
+            }
+            let e = &self.entries[k][*i];
+            if (k == key && e.toks[..] == *toks) || e.leased() {
+                return None;
+            }
+            Some((k.clone(), *i))
+        })
     }
 
     /// The tier takes work only when it has a budget and has not latched off.
@@ -9058,12 +9259,21 @@ fn host_demote_prefix_ref(
     // PER-TENANT SHARE CAP (MEMRA_KV_HOST_TENANT_PCT), checked BEFORE the D2H copy: a
     // demotion that would evaporate at insert must skip the PCIe trip entirely, not
     // pay gigabytes of synchronous copy for an entry the pool then refuses.
-    if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes) {
+    //
+    // TENANT-SHARE RECLAIM (memra#384): at the cap, first evict this tenant's OWN unleased
+    // LRU host entries until the demotion fits its share and retry the predicate once
+    // (`reclaim_tenant_share` answers `Ok` only when it does). The cap and the lease
+    // protections are unchanged and no other tenant's row is touched; when the row has no
+    // eligible space the refusal below is today's line plus what the reclaim found, and
+    // nothing was evicted for it. The D2H payload is the same bytes either way.
+    if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes)
+        && let Err(refusal) = host.reclaim_tenant_share(&dead.pool_key, &dead.toks, host_bytes)
+    {
         host.tenant_rejects += 1;
         eprintln!(
             "[prefix-host] demote evaporated at the tenant share cap before the D2H \
              copy: {} tokens, {:.1}MB ({}% of {:.0}MB, MEMRA_KV_HOST_TENANT_PCT; \
-             model {}{})",
+             model {}{}); {refusal}",
             dead.toks.len(),
             host_bytes as f64 / 1e6,
             host.tenant_pct,
@@ -19129,6 +19339,7 @@ pub fn run(
             m.prefix_host_purged_entries = hpx.purged_entries;
             m.prefix_host_purged_bytes = hpx.purged_bytes;
             m.prefix_host_tenant_rejects = hpx.tenant_rejects;
+            m.prefix_host_tenant_reclaims = hpx.tenant_reclaims;
             m.prefix_host_pause_demotes = hpx.pause_demotes;
             m.prefix_host_pause_cancels = hpx.pause_cancels;
             m.prefix_host_handoff_exports = hpx.handoff_exports;
@@ -35772,6 +35983,285 @@ mod tests {
         let _ = h.purge_tenant("acme");
         assert!(!h.tenant_bytes.contains_key("t:acme"));
         assert!(h.insert(&a, host_entry(&a, t(5000), 50)));
+    }
+
+    // ---- TENANT-SHARE RECLAIM (memra#384, lane/spill-a-20260919 day 12) ----
+    // The demote hook's pre-copy arm: at the share cap, the demoting tenant's OWN unleased
+    // LRU entries make room and the admission is retried once; the cap, the lease protection
+    // and the other tenants' rows are untouched, and a row with no eligible space keeps the
+    // bounded refusal with nothing evicted. The D2H halves are the target-card gate
+    // (tools/kv-host-tenant-reclaim-gate.sh).
+
+    fn tenant_toks(base: u32) -> Vec<u32> {
+        (base..base + super::PREFIX_CACHE_MIN_TOKENS as u32).collect()
+    }
+
+    /// Same-tenant turnover succeeds where it evaporated before, oldest first, across the
+    /// tenant's salts; the other tenant's row and entries are exactly as they were.
+    #[test]
+    fn host_cache_tenant_share_reclaim_evicts_the_tenants_own_oldest_entries_only() {
+        let mut h = HostPrefixCache::new(100);
+        h.tenant_pct = 50;
+        let t = tenant_toks;
+        let a = key(&crate::auth::scope_namespace("acme", "s1"));
+        let a2 = key(&crate::auth::scope_namespace("acme", "s2")); // same row, another salt
+        let b = key(&crate::auth::scope_namespace("beta", "s1"));
+        assert!(h.insert(&b, host_entry(&b, t(1000), 20))); // beta, the oldest entry overall
+        assert!(h.insert(&a, host_entry(&a, t(1000), 20))); // acme's oldest
+        assert!(h.insert(&a2, host_entry(&a2, t(2000), 30))); // acme at its 50-byte share
+        // Below the cap the reclaim is a no-op answer, not an eviction.
+        let c = key(&crate::auth::scope_namespace("gamma", "s1"));
+        assert_eq!(
+            h.reclaim_tenant_share(&c, &t(1000), 10),
+            Ok(super::TenantShareReclaim::default())
+        );
+        // At the cap: the 20-byte demotion evaporated before (the existing test above); now
+        // acme's OLDEST entry goes, its newer one stays, and beta is not consulted.
+        assert!(h.tenant_cap_would_evaporate(&a, &t(3000), 20));
+        let r = h.reclaim_tenant_share(&a, &t(3000), 20).unwrap();
+        assert_eq!((r.evicted, r.freed), (1, 20));
+        assert!(h.key_index(&a, &t(1000)).is_none(), "acme's oldest evicted");
+        assert!(
+            h.key_index(&a2, &t(2000)).is_some(),
+            "acme's newer entry kept"
+        );
+        assert!(h.key_index(&b, &t(1000)).is_some(), "beta untouched");
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(30));
+        assert_eq!(h.tenant_bytes.get("t:beta").copied(), Some(20));
+        assert_eq!(
+            (h.evictions, h.tenant_reclaims, h.tenant_rejects),
+            (1, 1, 0)
+        );
+        // The retried admission lands and the row sits exactly at its share.
+        assert!(!h.tenant_cap_would_evaporate(&a, &t(3000), 20));
+        assert!(h.insert(&a, host_entry(&a, t(3000), 20)));
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+        assert_eq!((h.n_entries(), h.total_bytes), (3, 70));
+        // A shortfall that needs two entries takes the two oldest in LRU order (t2000 was
+        // inserted before t3000), across the tenant's salts; beta still untouched.
+        let r = h.reclaim_tenant_share(&a, &t(4000), 50).unwrap();
+        assert_eq!((r.evicted, r.freed), (2, 50));
+        assert!(!h.tenant_bytes.contains_key("t:acme"));
+        assert_eq!(h.tenant_bytes.get("t:beta").copied(), Some(20));
+        assert!(h.insert(&a, host_entry(&a, t(4000), 50)));
+        assert_eq!((h.n_entries(), h.total_bytes), (2, 70));
+        assert_eq!(
+            (h.evictions, h.tenant_reclaims, h.tenant_rejects),
+            (3, 3, 0)
+        );
+    }
+
+    /// The exact-key twin is never a victim (the predicate credits it, `insert` replaces
+    /// it); an image above the share refuses with nothing evicted, into a full row and into
+    /// an empty one; `tenant_pct = 100` disarms the reclaim with the cap.
+    #[test]
+    fn host_cache_tenant_share_reclaim_spares_the_twin_and_refuses_an_image_above_the_share() {
+        let mut h = HostPrefixCache::new(100);
+        h.tenant_pct = 50;
+        let t = tenant_toks;
+        let a = key(&crate::auth::scope_namespace("acme", "s1"));
+        assert!(h.insert(&a, host_entry(&a, t(1000), 20)));
+        assert!(h.insert(&a, host_entry(&a, t(2000), 30)));
+        // Re-demoting the 30-byte key at 31 bytes needs 1 byte: the twin is spared and the
+        // older 20-byte entry goes instead.
+        let r = h.reclaim_tenant_share(&a, &t(2000), 31).unwrap();
+        assert_eq!((r.evicted, r.freed), (1, 20));
+        assert!(
+            h.key_index(&a, &t(2000)).is_some(),
+            "the twin is never a victim"
+        );
+        assert!(h.key_index(&a, &t(1000)).is_none());
+        assert!(h.insert(&a, host_entry(&a, t(2000), 31)));
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(31));
+        // The image alone exceeds the share: refused by name, nothing evicted.
+        let err = h.reclaim_tenant_share(&a, &t(5000), 51).unwrap_err();
+        assert_eq!(
+            err.why,
+            super::TenantShareRefusalWhy::ImageExceedsShare {
+                image: 51,
+                share: 50
+            }
+        );
+        assert_eq!(err.eligible, 31);
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(31));
+        assert_eq!((h.evictions, h.tenant_reclaims), (1, 1));
+        // Into an empty row too: the cap is per-row arithmetic, not pool pressure.
+        let c = key(&crate::auth::scope_namespace("gamma", "s1"));
+        let err = h.reclaim_tenant_share(&c, &t(1000), 51).unwrap_err();
+        assert_eq!((err.need, err.eligible), (1, 0));
+        assert!(err.to_string().contains("nothing evicted"), "{err}");
+        // 100 = cap off by contract: nothing evaporates, so nothing is reclaimed.
+        h.tenant_pct = 100;
+        assert_eq!(
+            h.reclaim_tenant_share(&a, &t(6000), 90),
+            Ok(super::TenantShareReclaim::default())
+        );
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(31));
+    }
+
+    /// Bind an identity slot to a one-segment bundle (a 4-byte logits row, pure functions
+    /// only, no device planes) so a test can hold a real `IdentityLease` on a resident entry.
+    /// The shape rules are `bind_tier_image`'s: immutable prefix, start 0, high water = tokens.
+    fn bind_identity(
+        slot: &mut memra_engine::cache::tiered::hostprefix::IdentitySlot,
+        toks: &[u32],
+        program: &memra_engine::cache::record::ProgramIdentity,
+        generation: Arc<()>,
+    ) {
+        use memra_engine::cache::tiered::*;
+        let payload = 1.0f32.to_le_bytes();
+        let layout = RecordLayout {
+            version: WIRE_VERSION,
+            segments: vec![ByteSegment {
+                version: WIRE_VERSION,
+                group: 0,
+                page: 0,
+                owner: 0,
+                role: Role::Logits,
+                tensor: None,
+                offset: 0,
+                valid_bytes: 4,
+                storage_bytes: 4,
+                alignment: 1,
+                encoding: EncodingId {
+                    version: WIRE_VERSION,
+                    program: digest("native-kv-encoding", b"f32-native"),
+                    row_bytes: 4,
+                },
+            }],
+            requirements: vec![GroupRequirement {
+                version: WIRE_VERSION,
+                group: 0,
+                owner: 0,
+                role: Role::Logits,
+                page_count: 1,
+                pages: PageRequirement::AllPages,
+            }],
+        };
+        let id = KvBlockId::new(program, [0; 32], toks, 0, 0, 0, 0).unwrap();
+        let bundle = StateBundle {
+            version: WIRE_VERSION,
+            id,
+            program: program.clone(),
+            layout: layout.clone(),
+            kind: StateKind::ImmutablePrefix,
+            committed_high_water: toks.len() as u64,
+            owner_aliases: vec![],
+            checksums: vec![checksum(&payload)],
+        };
+        slot.bind(bundle, toks, program, &layout, generation)
+            .expect("a well-formed one-segment bundle binds");
+    }
+
+    /// A leased entry is skipped even when it is the oldest; a row whose only remaining
+    /// bytes are leased keeps the bounded refusal with nothing evicted; once the lease drops
+    /// the same demotion fits. Also the positive half of `IdentitySlot::leased`.
+    #[test]
+    fn host_cache_tenant_share_reclaim_skips_leased_entries_and_refuses_when_only_leased_remain() {
+        let mut h = HostPrefixCache::new(100);
+        h.tenant_pct = 50;
+        let t = tenant_toks;
+        let generation = Arc::new(());
+        let tier = contracts_context("m", generation.clone(), 1 << 20);
+        let a = key(&crate::auth::scope_namespace("acme", "s1"));
+        let (program, _) = tier.program(&a, super::HostTierEntryClass::Plain).unwrap();
+        // Door OFF pool (`tier` None): insert admits a bound entry like any other, and the
+        // lease is the only thing that distinguishes it from its neighbours.
+        let mut bound = host_entry(&a, t(1000), 30);
+        assert!(!bound.leased(), "unbound: never leased");
+        bind_identity(
+            &mut bound._tier_identity,
+            &t(1000),
+            &program,
+            generation.clone(),
+        );
+        assert!(!bound.leased(), "bound but unleased");
+        let lease = bound._tier_identity.lease(&program, &generation).unwrap();
+        assert!(
+            bound.leased(),
+            "a live IdentityLease marks the entry leased"
+        );
+        assert!(h.insert(&a, bound)); // acme 30: the OLDEST, and leased
+        assert!(h.insert(&a, host_entry(&a, t(2000), 20))); // acme 50, newer, unleased
+        // Needs 20: the oldest is leased and skipped, the newer unleased entry goes.
+        let r = h.reclaim_tenant_share(&a, &t(3000), 20).unwrap();
+        assert_eq!((r.evicted, r.freed), (1, 20));
+        assert!(
+            h.key_index(&a, &t(1000)).is_some(),
+            "the leased entry is never evicted"
+        );
+        assert!(h.key_index(&a, &t(2000)).is_none());
+        assert!(h.insert(&a, host_entry(&a, t(3000), 20)));
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+        // Needs 30 but only 20 unleased bytes exist: refused, nothing evicted, the leased
+        // bytes named in the refusal.
+        let err = h.reclaim_tenant_share(&a, &t(4000), 30).unwrap_err();
+        assert_eq!(err.why, super::TenantShareRefusalWhy::NoEligibleSpace);
+        assert_eq!(
+            (err.need, err.eligible, err.leased_skipped, err.leased_bytes),
+            (30, 20, 1, 30)
+        );
+        assert!(
+            h.key_index(&a, &t(3000)).is_some(),
+            "nothing evicted on refusal"
+        );
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+        assert_eq!((h.evictions, h.tenant_reclaims), (1, 1));
+        assert_eq!(
+            err.to_string(),
+            "reclaim refused: needed 0.0MB from this tenant's own unleased entries, 0.0MB \
+             eligible (1 leased entries holding 0.0MB skipped); nothing evicted"
+        );
+        // The lease drops: the entry is unleased again and the same demotion fits by
+        // evicting exactly it (oldest, 30 bytes = the shortfall).
+        drop(lease);
+        assert!(!h.entries[&a].iter().any(|e| e.leased()));
+        let r = h.reclaim_tenant_share(&a, &t(4000), 30).unwrap();
+        assert_eq!((r.evicted, r.freed), (1, 30));
+        assert!(h.key_index(&a, &t(1000)).is_none());
+        assert!(h.key_index(&a, &t(3000)).is_some());
+        assert!(h.insert(&a, host_entry(&a, t(4000), 30)));
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+    }
+
+    /// The hook consults the reclaim before printing the evaporation line, and the counter
+    /// reaches the published snapshot and the HTTP render.
+    #[test]
+    fn tenant_share_reclaim_is_wired_into_the_demote_hook_and_the_metrics() {
+        let strip = |src: &str| -> String {
+            src.lines()
+                .map(|l| l.split("//").next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let worker = strip(include_str!("worker.rs"));
+        let hook = worker
+            .find("fn host_demote_prefix_ref(")
+            .expect("the demote hook exists");
+        let evaporation = worker[hook..]
+            .find("demote evaporated at the tenant share cap before the D2H")
+            .expect("the evaporation line exists in the hook");
+        let pre_copy = &worker[hook..hook + evaporation];
+        assert!(
+            pre_copy.contains("host.reclaim_tenant_share(&dead.pool_key, &dead.toks, host_bytes)"),
+            "the hook must reclaim the tenant's own entries BEFORE the evaporation line"
+        );
+        assert!(
+            !pre_copy.contains("host_entry_from_device("),
+            "the reclaim and the refusal both sit BEFORE the D2H copy"
+        );
+        let publish = worker
+            .find("m.prefix_host_tenant_rejects = hpx.tenant_rejects")
+            .expect("the host-tier metrics publish exists");
+        assert!(
+            worker[publish..publish + 400]
+                .contains("m.prefix_host_tenant_reclaims = hpx.tenant_reclaims")
+        );
+        let lib = strip(include_str!("lib.rs"));
+        let render = lib
+            .find("body[\"prefix_host_tenant_rejects\"]")
+            .expect("the host-tier /metrics render exists");
+        assert!(lib[render..render + 600].contains("prefix_host_tenant_reclaims"));
     }
 
     /// PARK COMPACTION eligibility (MEMRA_KV_PARK_COMPACT, tiering spec Arc C1): the
