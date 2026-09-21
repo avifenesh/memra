@@ -14,13 +14,16 @@ pub struct Args {
     pub reclaim_diagnostic: bool,
     /// Day 11: repeat the demote/restore program N >= 2 times in one process (diagnostic only).
     pub reclaim_cycles: Option<usize>,
+    /// Day 11 (lane D): inject exactly one fault at a documented contract call of the active
+    /// roundtrip. Pooled allocator only; usage error unless `--case active`.
+    pub fault: Option<super::fault_contract::Arm>,
     pub case: String,
     pub context: usize,
     pub tiers: String,
     pub out: PathBuf,
 }
 
-pub const USAGE: &str = "kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|32768 --tiers host|host,nvme --same-program [--kv-allocator pooled|vmm] [--reclaim-diagnostic [--reclaim-cycles N]] --out <new-directory>";
+pub const USAGE: &str = "kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|32768 --tiers host|host,nvme --same-program [--kv-allocator pooled|vmm] [--reclaim-diagnostic [--reclaim-cycles N]] [--fault cancel-demote|cancel-restore|corrupt-host|missing-host|host-budget-short|device-short|require-resident] --out <new-directory>";
 const CYCLES_REFUSAL: &str = "REFUSED: --reclaim-cycles requires an integer count >= 2";
 
 pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
@@ -29,7 +32,25 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut same = false;
     let mut reclaim_diagnostic = false;
     let mut reclaim_cycles = None;
+    let mut fault = None;
     while let Some(key) = iter.next() {
+        if key == "--fault" {
+            if fault.is_some() {
+                return Err("duplicate --fault".into());
+            }
+            let value = iter.next().ok_or("missing value for --fault")?;
+            if value.is_empty() || value.starts_with("--") {
+                return Err("missing value for --fault".into());
+            }
+            // The arm name is never echoed: the collector reads the refusal from the last line.
+            fault = Some(super::fault_contract::Arm::parse(&value).ok_or_else(|| {
+                format!(
+                    "REFUSED: unknown fault arm (expected {})",
+                    super::fault_contract::Arm::NAMES
+                )
+            })?);
+            continue;
+        }
         if key == "--reclaim-cycles" {
             if reclaim_cycles.is_some() {
                 return Err("REFUSED: duplicate --reclaim-cycles".into());
@@ -118,11 +139,27 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     {
         return Err("REFUSED: reclaim diagnostic requires active VMM host mode".into());
     }
+    if fault.is_some() {
+        // A fault arm is a door on the active roundtrip: anywhere else it is a usage error.
+        if case != "active" {
+            return Err(format!("--fault requires --case active; {USAGE}"));
+        }
+        if reclaim_diagnostic {
+            return Err("REFUSED: fault arms do not combine with the reclaim diagnostic".into());
+        }
+        if kv_allocator != KvAllocator::Pooled {
+            return Err(
+                "REFUSED: fault arms are bound to the pooled allocator; the VMM door is not a fault surface"
+                    .into(),
+            );
+        }
+    }
     Ok(Args {
         artifact,
         kv_allocator,
         reclaim_diagnostic,
         reclaim_cycles,
+        fault,
         case,
         context,
         tiers,
@@ -290,6 +327,101 @@ mod tests {
             args.extend(["--reclaim-cycles".into(), "3".into()]);
             refused(args);
         }
+    }
+    fn active_host() -> Vec<String> {
+        let mut args = base();
+        args[3] = "active".into();
+        args[7] = "host".into();
+        args
+    }
+    #[test]
+    fn fault_arms_parse_only_on_the_active_pooled_roundtrip() {
+        use super::super::fault_contract::Arm;
+        assert_eq!(parse(active_host()).unwrap().fault, None);
+        for arm in Arm::ALL {
+            let mut args = active_host();
+            args.extend(["--fault".into(), arm.name().into()]);
+            let parsed = parse(args.clone()).unwrap();
+            assert_eq!(parsed.fault, Some(arm));
+            assert_eq!(parsed.kv_allocator, KvAllocator::Pooled);
+            assert!(!parsed.reclaim_diagnostic);
+            // Explicit pooled is the same door; argument order is not part of the contract.
+            args.extend(["--kv-allocator".into(), "pooled".into()]);
+            assert_eq!(parse(args.clone()).unwrap().fault, Some(arm));
+            args.rotate_right(2);
+            assert_eq!(parse(args).unwrap().fault, Some(arm));
+        }
+    }
+    #[test]
+    fn fault_door_is_a_usage_error_off_the_active_case_and_fails_closed() {
+        // Not a refusal: the collector must classify a wrong invocation as a failed cell.
+        for case in ["baseline", "prefix"] {
+            let mut args = base();
+            args[3] = case.into();
+            args[7] = "host".into();
+            args.extend(["--fault".into(), "cancel-demote".into()]);
+            let error = parse(args).unwrap_err();
+            assert!(
+                error.starts_with("--fault requires --case active"),
+                "{error}"
+            );
+            assert!(!error.starts_with("REFUSED"));
+        }
+        let mut args = active_host();
+        args.retain(|a| a != "--same-program");
+        args.extend(["--fault".into(), "cancel-demote".into()]);
+        assert!(parse(args).unwrap_err().contains("mandatory"));
+        // Duplicate, missing value, a flag in the value slot, and junk.
+        let mut args = active_host();
+        args.extend(["--fault", "cancel-demote", "--fault", "cancel-demote"].map(String::from));
+        assert_eq!(parse(args).unwrap_err(), "duplicate --fault");
+        let mut args = active_host();
+        args.push("--fault".into());
+        assert_eq!(parse(args).unwrap_err(), "missing value for --fault");
+        let mut args = active_host();
+        args.extend(["--fault".into(), "--out".into()]);
+        assert_eq!(parse(args).unwrap_err(), "missing value for --fault");
+        for junk in ["cancel", "Cancel-Demote", "cancel-demote ", "vmm", ""] {
+            let mut args = active_host();
+            args.extend(["--fault".into(), junk.into()]);
+            let error = parse(args).unwrap_err();
+            if junk.is_empty() {
+                assert_eq!(error, "missing value for --fault");
+            } else {
+                assert!(
+                    error.starts_with("REFUSED: unknown fault arm"),
+                    "{junk:?}: {error}"
+                );
+                if !super::super::fault_contract::Arm::NAMES.contains(junk) {
+                    assert!(!error.contains(junk), "junk echoed: {error}");
+                }
+            }
+        }
+    }
+    #[test]
+    fn fault_arms_refuse_the_vmm_door_and_the_reclaim_diagnostic() {
+        let mut args = active_host();
+        args.extend(["--fault", "device-short", "--kv-allocator", "vmm"].map(String::from));
+        let error = parse(args).unwrap_err();
+        assert!(
+            error.starts_with("REFUSED: fault arms are bound to the pooled allocator"),
+            "{error}"
+        );
+        let mut args = diagnostic_vmm();
+        args.extend(["--fault".into(), "device-short".into()]);
+        let error = parse(args).unwrap_err();
+        assert_eq!(
+            error,
+            "REFUSED: fault arms do not combine with the reclaim diagnostic"
+        );
+        let mut args = diagnostic_vmm();
+        args.extend(["--reclaim-cycles", "5", "--fault", "cancel-demote"].map(String::from));
+        assert!(parse(args).unwrap_err().starts_with("REFUSED:"));
+        // Without --same-program the mandatory-program error still wins.
+        let mut args = active_host();
+        args.retain(|a| a != "--same-program");
+        args.extend(["--fault", "missing-host", "--kv-allocator", "vmm"].map(String::from));
+        assert!(parse(args).unwrap_err().contains("mandatory"));
     }
     #[test]
     fn unsupported_ladder_and_routes_refuse() {
