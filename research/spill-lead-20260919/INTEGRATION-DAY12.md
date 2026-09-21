@@ -1078,6 +1078,45 @@ perf board, diff-check: rc=0; C's replay first ran without its arguments (rc=1, 
 documented before and after evidence dirs and the five rung word counts: `DAY20 REPLAY tapladder20b: PASS (9 checks)
 -> identity; bounded`. Local 5090 `tools/serve-smoke.sh`: `serve-smoke: 0 failed`.
 
+## integ29 (`lane/spill-integ29-20260922`): B day 25, the health, readiness and lifecycle fault gate (memra#524, #526)
+Lane tip merged: B `fe622cb5b` on main `124dacc76` (#620), clean. Changes in `memra-server` (`health.rs`:
+`PHASE_WARMING` between LOADING and IDLE, `mark_warming()` by `compare_exchange` from LOADING only so a serving worker
+is never demoted, `live()` names it; `worker.rs`: `run_boot_calibration(.., &health)` marks warming after every skip
+return and before the probe generation, `mark_ready` ends it; a CPU test on the order and the day-24 source-order test
+extended), `tools/health-fault-gate.sh` (new), `tools/local-ci.sh` (the gate after the smoke, `MEMRA_CI_HEALTH_FAULT=0`
+skips), `docs/FLAGS.md` (the skip row; `MEMRA_PANIC_AFTER` and `MEMRA_ADMIT_CALIBRATE` rows say what the gate uses
+them for), `docs/SERVING.md` (phase table), `docs/TESTING.md`. No new fault hook anywhere: arm (d) uses the existing
+`MEMRA_PANIC_AFTER` door, (e) a PATH-shadowed `nvidia-smi` in the server's environment with the documented
+`MEMRA_GPU_WATCH_S` and `MEMRA_GPU_PROBE_TIMEOUT_S`, (f) SIGTERM. There is no `/healthz` route; the gate asserts
+`/health` (the same handler as `/livez`) and says so.
+
+**Verdicts, verbatim, target card** (one RTX PRO 6000 Blackwell, collector, 34.9 s; the two local 5090 runs read the
+same in every asserted field): `HFG (a) readiness-before-probe: probe_done_line=30 listening_line=33
+pre_ready_samples=17 pre_ready_codes={000:17,503:0} ready_samples_not_ready=0 ready_while_warming=0
+first_ready_phase=idle -> PASS`; `HFG (b) ready-then-first-request: readyz_before=200/ready request_http=200
+finish_reason=length completion_tokens=32 request_ms=143 ready_to_completion_ms=229 readyz_after=200/ready (N=1, not
+a timing claim) -> PASS`; `HFG (c) probe-skipped c-calibrate0 [MEMRA_ADMIT_CALIBRATE=0]: skip_line=16
+probe_done_line=0 warming_samples=0 ready_ms=1095 first_request_http=200 first_request_ms=166 (N=1) -> DOCUMENTED
+(ready without warmup; the first request pays the cold route)` (and the same DOCUMENTED reading for `c-spec0` and
+`c-reserve`); `HFG (d) panic-respawn-truthful-health: trigger_http=200 health_503_quoted_after_ms=192
+readyz_while_dead=503/not_ready/dead untruthful_samples=0 recovered_after_ms=3469 generation_after=1
+request_after_http=200 health_after=200/ok log_panic_line=44 log_respawn_line=45 -> PASS`; `HFG (a2)
+warming-phase-on-respawn: not_ready_phase_sequence=dead>loading>warming loading_samples=5 warming_samples=4
+loading_then_warming=true -> PASS`; `HFG (e) fatal-fault-not-cleared-by-timeout: watch_on_line=5
+control_200_samples=3/3 latched_after_ms=2727 shim_answering_again_for_ms=8157 health_after=503/unhealthy
+readyz_after=503/not_ready health_200_after_clear=0 critical_lines=1 request_http_while_latched=200 (observed, bounded,
+not asserted) -> PASS`; `HFG (f) sigterm-drains-and-flips-readiness-first: stream_frames_at_sigterm=5
+readyz_during_drain=503/not_ready retry_after_s=60 health_during_drain=200/draining new_request_http=503
+new_request_code=draining new_request_retry_after_s=60 stream_curl_rc=0 stream_frames=258 stream_done=1
+stream_finish_reason=length stream_finished_after_sigterm_ms=886 exit_code=0 exit_after_sigterm_ms=1074
+drain_complete_line=48 deadline_hit_line=0 -> PASS`; `health-fault-gate: arms=a,b,c,d,e,f pass=6 documented=3
+fail=0`. Two harness attempts kept as labelled failures (`attempt1-harness-clock-bug`: uutils `date +%s%3N` prints
+nanoseconds on this rig; `attempt2-harness-jget-bug`); no assertion changed after a result. Pre-registered only: the
+step-OOM arm (`MEMRA_STEP_OOM_FAULT`) and the client-disconnect arm. Owner question, recorded, not asserted: the request
+path under a latched gpu fault served 200. A first boot binds after the probe, so `warming` is observable over HTTP on
+the respawn window only (by design, unchanged). Comments on #524 and #526; both stay open (the release battery decides
+what it requires).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
