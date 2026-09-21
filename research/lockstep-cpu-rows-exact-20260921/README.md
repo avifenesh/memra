@@ -1,7 +1,8 @@
 # Lockstep CPU experts: exact cross-stream program (memra#577 follow-up)
 
-Verdict: the companion's multi-row arm is back on by default and a stream's bytes no longer
-depend on its peers. The rows kernel already produced per-row bit-identical down projections;
+Verdict: the companion's multi-row arm is exact now (bit-identical to M=1, proved on CPU and on
+Hy3) and ships opt-in; it is not the throughput winner on the receipt host, so the one-job-per-row
+default stands with the default question's missing gate named. The rows kernel already produced per-row bit-identical down projections;
 what broke exactness was the fold. `memra_cpu_moe_token_v2` folds each expert as
 `sum = fma(y, route_weight * down_scale, sum)` in job order from zero, while the scaled rows
 twin returned `y * down_scale * w` and the Rust side added tickets in expert order. The new raw
@@ -45,11 +46,32 @@ real routing, real sharing across streams, and the companion's amortized decode.
 
 ## Cost
 
-THROUGHPUT
+Same box, same lane binary, same window (2026-09-21 11:33 to 12:33 UTC, GPU 26 C idle to 38 C),
+M=4 mixed prompts, 64 new tokens, one process at a time behind the GPU lock. A = exact multi-row
+arm (`MEMRA_LOCKSTEP_CPU_ROWS=1`), B = one job per row (the default). Five AB pairs, then five
+BA pairs (`raw/abint/results.tsv`, per-run logs alongside; `raw/ab-interleave.sh`).
+
+| Order | A median (tok/s aggregate) | B median | B over A |
+| --- | --- | --- | --- |
+| AB x5 | 1.85 | 2.30 | +24% |
+| BA x5 | 2.24 | 2.70 | +21% |
+| all 10 each | 2.18 | 2.48 | +14% |
+
+The window drifts upward (later runs faster, page cache warming); the interleaving carries
+that, and B wins in both orders. On this host (EPYC 9B14, 16 companion threads) the exact
+multi-row arm pays one companion call per CPU expert, unshared experts included, where the
+one-job program pays one call per row; the decode amortization does not buy that back at M=4.
+The earlier Ryzen 9950X single run read the other way (+2.5% for the pre-exact arm). Per the
+per-hardware rule the arm stays default off with its missing gate named: the same N>=5 A/B on a
+9950X-class host. Both programs are exact, so the choice is throughput only.
+
+Single-cell numbers from the exactness matrix (32 tokens, one run each, `raw/abrows/`): base
+M=1 1.42, lane M=1 1.34, lane M=4 mixed rows on 1.83, rows off 2.01, base M=4 mixed 1.81,
+lane M=4 same 2.71 tok/s aggregate.
 
 ## Doors
 
-`MEMRA_LOCKSTEP_CPU_ROWS=0` is now the rollback seam to the one-job-per-row program (also
-exact, no cross-stream amortization); remove by 2026-10-05 if unused. The scaled
+`MEMRA_LOCKSTEP_CPU_ROWS=1` opts into the exact multi-row arm; default is the one-job-per-row
+program. decide-by 2026-10-05: flip or delete on the 9950X-class A/B. The scaled
 `memra_cpu_expert_rows_v2` stays exported for ABI compatibility; memra no longer calls it from
 the lockstep path.
