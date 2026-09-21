@@ -302,6 +302,8 @@ r8 = json.load(open('$EV/r8.json'))['usage']['prompt_tokens_details']['cached_to
 sys.exit(0 if r8 == r6 and r6 > 0 else 1)"
     chk "fix: the r8 promote line names acme" present "\[prefix-host\] promote: .*t:acme" "$LOG"
     chk "fix: /metrics counts the reclaims and no rejects" jqpy "$EV/metrics.json" "r.get('prefix_host_tenant_reclaims', 0) >= 1 and r.get('prefix_host_tenant_rejects', 0) == 0"
+    chk "fix: /metrics has no wasted reclaim (every reclaim's demotion inserted)" jqpy "$EV/metrics.json" "r.get('prefix_host_tenant_reclaims_wasted', 0) == 0"
+    chk "fix: no WASTED line" absent "tenant share reclaim WASTED" "$LOG"
 fi
 
 # The replay verifier's input: the facts of this arm, one JSON.
@@ -335,9 +337,11 @@ json.dump({
     "promotes": [strip_ms(l) for l in pick(r"^\[prefix-host\] promote: ")],
     "lru_evictions": pick(r"^\[prefix-host\] evict \(LRU\)"),
     "device_promote_skips": pick(r"skip pinned host-promote insert"),
+    "wasted_reclaims": pick(r"tenant share reclaim WASTED"),
     "metrics": {k: m.get(k) for k in ("prefix_host_entries", "prefix_host_bytes", "prefix_host_demotions",
                                        "prefix_host_promotions", "prefix_host_tenant_rejects",
-                                       "prefix_host_tenant_reclaims", "prefix_host_rejected_allocs")},
+                                       "prefix_host_tenant_reclaims", "prefix_host_tenant_reclaims_wasted",
+                                       "prefix_host_rejected_allocs")},
 }, open(f"{ev}/SUMMARY.json", "w"), indent=1)
 PY
 

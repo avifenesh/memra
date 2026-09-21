@@ -965,18 +965,26 @@ while it is non-empty; `decode_step_h` is unchanged and never sees a suspended l
 `research/spill-a-20260919/DAY11.md`.
 Day 12 (memra#384, host tier tenant-share cap): at the configured `MEMRA_KV_HOST_TENANT_PCT` cap a
 demotion evaporated before the D2H copy even while the pool had free space. The demote hook now
-calls `HostPrefixCache::reclaim_tenant_share` first: the demoting tenant's OWN unleased host
-entries go oldest first until the demotion fits its share, then the predicate is retried once.
-Another tenant's row is never read, a leased entry (`IdentitySlot::leased`, a live identity
-lease) is skipped, the exact-key twin is spared, and a row with no eligible space keeps the
-bounded refusal: today's `demote evaporated at the tenant share cap before the D2H copy` line
-plus what the reclaim found, nothing evicted. `insert`'s authoritative gate, the cap and the
-D2H bytes are unchanged; `/metrics` gains `prefix_host_tenant_reclaims`. CPU cells
+runs `HostPrefixCache::tenant_share_reclaim_plan` before the copy (pure: infeasible demotions
+skip the PCIe trip, nothing evicted) and `reclaim_tenant_share` once the image is built and
+bound, right before `insert`: the demoting tenant's OWN unleased host entries go oldest first
+until the demotion fits its share, then the predicate is retried once. Another tenant's row is
+never read, a leased entry (`IdentitySlot::leased`, a live identity lease) is skipped, the
+exact-key twin is spared, and a row with no eligible space keeps the bounded refusal: today's
+`demote evaporated at the tenant share cap before the D2H copy` line plus what the plan found,
+nothing evicted. A charge, digest or copy failure therefore costs the row nothing (integ15
+review of PR #597); a reclaim whose `insert` still refuses is booked in
+`prefix_host_tenant_reclaims_wasted` with a `tenant share reclaim WASTED` line. `insert`'s
+authoritative gate, the cap and the D2H bytes are unchanged; `/metrics` gains
+`prefix_host_tenant_reclaims` and `prefix_host_tenant_reclaims_wasted`. CPU cells
 (`cargo test -p memra-server --offline tenant_share`):
 `host_cache_tenant_share_reclaim_evicts_the_tenants_own_oldest_entries_only`,
 `host_cache_tenant_share_reclaim_spares_the_twin_and_refuses_an_image_above_the_share`,
 `host_cache_tenant_share_reclaim_skips_leased_entries_and_refuses_when_only_leased_remain`
-(binds a real `IdentitySlot` and holds its lease), `tenant_share_reclaim_is_wired_into_the_demote_hook_and_the_metrics`;
+(binds a real `IdentitySlot` and holds its lease),
+`host_cache_tenant_share_plan_is_pure_and_a_reclaim_is_consumed_by_insert_or_booked_wasted`,
+`tenant_share_reclaim_is_wired_into_the_demote_hook_and_the_metrics` (plan before the copy,
+reclaim after bind and before insert, waste booked at every later exit);
 the pre-existing `host_cache_tenant_share_cap_evaporates_one_tenant_and_still_demotes_the_other`
 still pins `insert`'s gate. Target-card gate `tools/kv-host-tenant-reclaim-gate.sh <base|fix>`:
 two keyring tenants, a 1024 MiB pool, a 38 percent share (two ~161 MB entries, not three) and a

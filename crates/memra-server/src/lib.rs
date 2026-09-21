@@ -6519,6 +6519,7 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         // Tenant-share reclaim (memra#384): entries evicted from a tenant's own row to admit
         // that tenant's demotion at its share cap; a subset of the tier's evictions.
         body["prefix_host_tenant_reclaims"] = json!(m.prefix_host_tenant_reclaims);
+        body["prefix_host_tenant_reclaims_wasted"] = json!(m.prefix_host_tenant_reclaims_wasted);
         // Agent-pause demotion (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831):
         // pause_demotes is a subset of prefix_host_demotions; pause_cancels counts armed
         // candidates whose session returned before the timer (or left nothing demotable).
