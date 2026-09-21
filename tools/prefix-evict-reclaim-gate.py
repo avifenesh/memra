@@ -17,8 +17,10 @@ Serving shape, one card, one boot of the real `memra-server` per arm:
     driver free + pool cached, from /metrics), E1 (`prefix_cache_bytes`), and the three greedy
     texts.
   measured boot: MEMRA_ADMIT_RESERVE_MB = (F0 - C2 - margin) / MiB, the documented
-    teeth/diagnostics door, so that P2's admission requires F0 - margin: with E1 resident the
-    box is short by about E1, and after a TRUE credit it fits. Same P1, P0, P2. P2 arrives while
+    teeth/diagnostics door, so that P2's admission requires F0 - margin: with E1 resident beside
+    the busy peer the box is short, and after a TRUE credit it fits. F0 is effective free after
+    P1 plus E1 (the /metrics publish trails the first retire, so the idle scrape reads 0), and
+    the margin is clamped into the window the calibration's own readings allow. Same P1, P0, P2. P2 arrives while
     P0 is still decoding, so the idle-box drain arm (`admission-drain`) cannot mask the tick.
 
 Assertions (every number in bytes from the server's own lines and /metrics):
@@ -128,7 +130,7 @@ class Server:
                 "MEMRA_COMPAT": "openai",
                 "MEMRA_MODELS": f"gate={self.model}",
                 "MEMRA_ADDR": f"127.0.0.1:{self.port}",
-                "MEMRA_CTX": "49152",
+                "MEMRA_CTX": "65536",
                 "MEMRA_MAX_SESSIONS": "4",
                 "MEMRA_PREFIX_CACHE_MB": "6144",
                 "MEMRA_SERVE_SPEC": "0",
@@ -196,9 +198,14 @@ class Server:
             except json.JSONDecodeError:
                 payload = {"raw": raw}
         elapsed = time.monotonic() - t0
+        # Identity covers the WHOLE message (content and any reasoning channel: a short
+        # greedy budget lands in the thinking channel and leaves `content` empty).
         text_out = ""
+        finish = None
         if status == 200:
-            text_out = payload["choices"][0]["message"].get("content") or ""
+            choice = payload["choices"][0]
+            text_out = json.dumps(choice.get("message"), sort_keys=True)
+            finish = choice.get("finish_reason")
         usage = payload.get("usage") or {}
         return {
             "status": status,
@@ -208,7 +215,8 @@ class Server:
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
             "cached_tokens": (usage.get("prompt_tokens_details") or {}).get("cached_tokens"),
-            "text_sha256": sha(text_out),
+            "finish_reason": finish,
+            "message_sha256": sha(text_out),
             "text": text_out,
             "error": None if status == 200 else payload,
         }
@@ -381,7 +389,7 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=18113)
     ap.add_argument("--prompt-words", type=int, default=22000, help="words per long prompt (about 1.4 tokens each)")
     ap.add_argument("--busy-tokens", type=int, default=400, help="greedy generation length of the busy peer")
-    ap.add_argument("--margin-mib", type=int, default=384, help="admission slack under F0 in the measured boot")
+    ap.add_argument("--margin-mib", type=int, default=1024, help="preferred admission slack under F0; clamped into the window the calibration allows")
     ap.add_argument("--gpu-lock", default=os.environ.get("MEMRA_GPU_LOCK", "/tmp/memra-gpu.lock"))
     args = ap.parse_args(argv)
 
@@ -430,26 +438,48 @@ def main() -> None:
     if cal["requests"]["p2"]["status"] != 200 or cal["requests"]["p0"].get("status") != 200:
         refuse("calibration boot did not serve P0/P2 (no pressure applied yet): "
                f"p0={cal['requests']['p0'].get('status')} p2={cal['requests']['p2']['status']}")
-    if p1_tokens + 8 >= 49152 or p2_tokens + 8 >= 49152:
-        refuse(f"prompt too long for MEMRA_CTX=49152: p1={p1_tokens} p2={p2_tokens}")
+    if p1_tokens + 8 + 64 >= 65536 or p2_tokens + 8 + 64 >= 65536:
+        refuse(f"prompt too long for MEMRA_CTX=65536: p1={p1_tokens} p2={p2_tokens}")
     if cal_ev["reclaims"]:
         refuse("calibration boot already reclaimed (card too small for two entries at this size)")
-    cost_p2 = next((c for c in cal_ev["costs"] if c["ctx"] == p2_tokens + 8), None)
-    if cost_p2 is None:
-        # Same (ctx, path, cost) key as P1 suppresses the second line: the cost is P1's.
-        cost_p2 = next((c for c in cal_ev["costs"] if c["ctx"] == p1_tokens + 8), None)
+    # The admission cap is prompt + max_tokens + a small boundary slack; pick the cost line
+    # whose ctx sits nearest above P2's prompt (P1's line is 66 tokens further away).
+    def nearest_cost(tokens: int):
+        cands = [c for c in cal_ev["costs"] if tokens <= c["ctx"] < tokens + 1024]
+        return min(cands, key=lambda c: c["ctx"] - tokens) if cands else None
+
+    cost_p2 = nearest_cost(p2_tokens)
     if cost_p2 is None:
         refuse("no `[admission] request cost` line for the long prompt in the calibration log")
-    f0 = effective_free(cal["metrics"]["idle"])
+    # /metrics publishes only after the first retire, so `idle` reads 0: F0 is the effective
+    # free WITH the first request's persistent workspaces warm and E1 added back, which is
+    # exactly the baseline P2's admission sees in the measured boot.
+    f1c = effective_free(cal["metrics"]["after_p1"])
+    f2c = effective_free(cal["metrics"]["before_p2"])
     e1 = cal["metrics"]["after_p1"]["prefix_cache_bytes"]
+    e0 = cal["metrics"]["before_p2"]["prefix_cache_bytes"] - e1  # the busy peer's own seed
+    f0 = f1c + e1
     cost_p2_bytes = cost_p2["mb"] * 1_000_000
-    reserve_mib = (f0 - cost_p2_bytes - args.margin_mib * MIB) // MIB
+    # Margin window from the calibration's own readings: the reclaim must FIRE with E1
+    # resident beside the busy peer (margin < F1c - F2c + E1) and P2 must FIT after a true
+    # credit of E1 + E0 (margin > F1c - F2c - E0). 128 MiB slack on each side.
+    peer_footprint = f1c - f2c
+    margin_lo = peer_footprint - e0 + 128 * MIB
+    margin_hi = peer_footprint + e1 - 128 * MIB
+    if margin_lo >= margin_hi:
+        refuse(f"no admissible margin: busy-peer footprint {peer_footprint} B, E1 {e1} B, E0 {e0} B")
+    margin = min(max(args.margin_mib * MIB, margin_lo), margin_hi)
+    reserve_mib = (f0 - cost_p2_bytes - margin) // MIB
     if reserve_mib <= 0:
-        refuse(f"card too small for the design: F0={f0} cost={cost_p2_bytes} margin={args.margin_mib}MiB")
-    if e1 <= 2 * args.margin_mib * MIB:
-        refuse(f"entry too small against the margin: E1={e1} margin={args.margin_mib}MiB; raise --prompt-words")
+        refuse(f"card too small for the design: F0={f0} cost={cost_p2_bytes} margin={margin}")
     calib = {
         "f0_effective_free_bytes": f0,
+        "f1_after_p1_effective_free_bytes": f1c,
+        "f2_before_p2_effective_free_bytes": f2c,
+        "busy_peer_footprint_bytes": peer_footprint,
+        "e0_busy_peer_entry_bytes": e0,
+        "margin_bytes": margin,
+        "margin_window_bytes": [margin_lo, margin_hi],
         "e1_prefix_bytes": e1,
         "p1_prompt_tokens": p1_tokens,
         "p2_prompt_tokens": p2_tokens,
