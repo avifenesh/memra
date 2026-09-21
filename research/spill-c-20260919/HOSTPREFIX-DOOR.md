@@ -1,10 +1,10 @@
-# HostPrefix contracts door: `MEMRA_KV_HOST_CONTRACTS` (lead ruling 15, Option A)
+# HostPrefix contracts door: `MEMRA_KV_HOST_CONTRACTS` (lead ruling 15, Options A, B and C)
 
 Status: landed on `lane/spill-c-20260919` day 13 (`ff46abc75`, `e7e23dcf4`, `b81881dad`), default OFF, env door
 with a `docs/FLAGS.md` row; surface grown to MTP draft-bearing entries on day 14 (lead ruling 16, `DAY14.md`);
 Option B landed on day 15 (`5f8d327e2`, `DAY15.md`): under the door the pageable-tier D2H of every KV plane
-goes through the native `TransferEngine`, the sequence in the "Option B" section below. Option C (the
-promote H2D) is next and waits for B's receipts. Decide-by: **2026-10-05** (14 days after landing,
+goes through the native `TransferEngine`, the sequence in the "Option B" section below; Option C (the
+promote H2D through the same engine, day 16, `DAY16.md`) is censused in the "Option C" section below. Decide-by: **2026-10-05** (14 days after landing,
 2026-09-21). Every cell behind it is `executed-not-qualified` development evidence on one card class;
 nothing here is a support state. Rulings applied: 13 (one `tenant_salt` owner in `memra-kv`), 14
 (planes leave `PrefixEntry` as owned `KvPlane`s, no borrowed-source seam in `CudaTransfers`, no v1.4:
@@ -305,6 +305,156 @@ refusal). The recurrent, logits and hidden f32 planes: they are `CudaSlice<f32>`
 than being reinterpreted as u8 planes; they are not pinned on the pageable tier today and take no
 `pinned` charge. `dtoh_u8_into_pinned` stays the OFF program for every KV plane and the arena arm's
 neighbour; under ON no KV plane reaches it.
+
+## Option C: the promote H2D through `TransferEngine` (lead ruling 15, after B's receipts; day 16 census, before code)
+
+Tree `48ec3f0c5` (lane merge of main `1b354be59`, PR #599 integ17 plus #601); every `file:line` is in that
+tree. `worker.rs` is `crates/memra-server/src/worker.rs`, `tier_transfer.rs` is
+`crates/memra-engine/src/tier_transfer.rs`, `contracts.rs` is `crates/memra-tier/src/contracts.rs`,
+`active.rs` is `crates/memra-engine/src/bin/kv_tier_gate/active.rs`, `core.rs` is cudarc 0.19.8
+`src/driver/safe/core.rs`.
+
+### The promote as it is today (door ON, arena absent), in order
+
+| Step | Where (`worker.rs`) | What happens |
+|---|---|---|
+| 1 | `host_promote_prefix_hit(engine, px, host, pool_key, prompt, device_best_len)` 10612 | Entry point, from the admission probe on a device miss or a device hit shallower than the host's best (`host_promote_candidate` 10592: `armed()`, `lookup`, deeper-than-device). `generation_current` 10621 (a stale GLM instance drops the entry). |
+| 2 | 10631-10672 | Door: `host_tier_entry_class` on the candidate's fields; `tier.program(pool_key, class)`; `candidate._tier_identity.lease(&program, generation)` (an unbound handoff import refuses here). Each refusal prints `promote refused (contracts door): ...` and serves without the host entry. |
+| 3 | 10675-10693 | Door: `tier_charge(pool_key, class, device_bytes, pageable, true)`: a `ResidentCharge` with `Priority::AdmittedRestore` on the DEVICE dimension for the entry's device bytes (KV planes and f32 planes) and `pageable` for tokens, logits and hidden. Taken BEFORE any allocation; a refusal is `promote refused (tier admission refused ...)`. |
+| 4 | 10694-10697 | `host_len`, the demote's `verify_digest` (`MEMRA_KV_HOST_VERIFY=1`), `t0 = Instant::now()`. |
+| 5 | 10699 `device_entry_from_host(engine, src: &HostPrefixEntry)` 10461 | BY REFERENCE, the host entry stays resident. Layout version 10462; the GLM door and owner check 10468-10473; `plane_up` 10474-10501 per KV plane (step 6); `for plane in &src.kv` 10502; conv and ssm `engine.htod(&HostF32)` 10509-10521 (a `Heap` `Vec<f32>` on this tier, `memcpy_htod` from pageable memory); the draft plane 10522 through the same `plane_up`; the DFlash tail `engine.htod` per layer 10526-10545; entry assembly 10546-10590 with `_tier_charge: None`, `pos`, `last_logits.to_vec()`, `last_h.to_vec()`, `bytes: src.device_bytes`, `id: 0`, `pins: 0`. A failure is `promote failed ({err}); serving without the host entry` and `rejected_allocs += 1` (10700-10704); the tier does not latch. |
+| 6 | `plane_up` 10474-10501 | `kb = len * k_tok_bytes`, `vb = len * v_tok_bytes`; `engine.alloc_u8(kb.max(1))` 10478 then `alloc_u8(vb.max(1))` 10481 (`crates/memra-engine/src/lib.rs:7463`: `stream.alloc_zeros::<u8>(n)`, the owner stream's pool allocator plus a memset, `keep_if_capturing`); the H2D COPY PROGRAM: `engine.htod_u8_into(&mut k, 0, &p.k.bytes()?[..kb])` 10485 and `(&mut v, 0, &p.v.bytes()?[..vb])` 10490 (`lib.rs:6853`: `stream.memcpy_htod(src: &[u8], &mut dst.slice_mut(off..off+n))`, one `cuMemcpyHtoDAsync` on the owner stream, `core.rs:1602-1611`; a `[T]` source takes `SyncOnDrop::Sync(None)`, `core.rs:1345-1360`, so no synchronize follows: the copy is ordered by the stream); `PrefixPlane { k, v, len, k_tok_bytes, v_tok_bytes }`. The host bytes come from `HostPlaneBytes::bytes()` 7770: `Pinned` is `PinnedHostBuf::as_slice()` (`cuMemHostAlloc(.., 0)`, `pinned_host.rs:190`); `Contract` is `CudaPinnedLease::bytes()` (`tier_transfer.rs:63-71`: `PinnedHostSlice::as_slice()`, which first synchronizes the slice's tracking event, `core.rs:1468-1471`, then the whole initialized range; `cuMemHostAlloc(.., CU_MEMHOSTALLOC_WRITECOMBINED)`, `core.rs:1412-1420`). Both are page-locked driver allocations, so the driver runs the same DMA from either; under ON every KV plane of a resident entry is `Contract` (the D2H route built it) and no `Pinned` KV plane exists on the pageable tier (the one `Pinned` producer left, the handoff import `host_entry_from_owned`, is refused at insert under the door). |
+| 7 | 10705-10727 | `MEMRA_KV_HOST_VERIFY=1`: `host_roundtrip_digest(engine, &e)` 10063 = `prefix_entry_state_digest` over the NEW device entry (its own D2H reads), compared with the demote's digest: `verify ok` 10711, or `VERIFY FAILED ... host entry dropped, cold path serves` 10719 (`digest_mismatches += 1`, `remove_at`), or `verify digest failed (..); promote refused`. |
+| 8 | 10728-10736 | Door: `identity.require(program, generation)` after the H2D: the identity lease must still hold (the model instance did not change under the copy). |
+| 9 | 10739-10744 | `e._tier_charge = tier_charge` (the residency charge rides the device entry); `host.touch(pool_key, hi)` (recency; `hi` is dead after this). |
+| 10 | 10746 `px.insert_pinned_demoting(pool_key, e, "host-promote", 1, engine, host)` 7431 | **PUBLICATION.** The one point where the device planes become the live entry: `insert_with_budget_pins` 7463 (version and key, `key_index` twin, `refuse_oversize`, newest-turn preflight, the evictable LRU) with the demote sink `host_demote_prefix_entry` for what the insert evicts (an inline D2H of the evicted twin, under ON the Option B route). The pin keeps the entry until the hit path pins it for the session. |
+| 11 | 10747-10758 | `id_index`, `ms = t0.elapsed()`, `promotions += 1`, `promote_ms_total`, `[prefix-host] promote: {host_len} tokens, {MB} in {ms}ms (model ..)`. |
+
+What must hold before step 10, and holds today: the bytes are complete on the device (the H2D is
+stream-ordered on the owner stream and every later kernel runs on that stream; there is no explicit
+completion observation in the OFF program), the verify digest matched when armed (step 7, the OFF
+check), and under the door the identity lease still holds (step 8). Nothing in the OFF promote
+attests the host source bytes: the D2H receipt each `Contract` plane carries (Option B) is read by
+nobody at promote.
+
+### The promote's timing window (day-15 finding 1, the promote delta, explained by the census)
+
+`t0` 10697 precedes `device_entry_from_host`; `ms` 10748 follows `insert_pinned_demoting` 10746,
+whose sink demotes the entry the insert evicts INLINE, so a promote that evicts (every r3 in the
+identity gate: the device budget holds one entry) counts the evicted twin's whole demote in its wall
+time. Under ON that demote carries bind's SHA-256 over write-combined destinations (day 15: +132 ms
+on the demote line), so the promote delta on day 15 (+131 ms) is the same hash, printed twice. The
+H2D program is identical in both arms (step 6). The WC cell (`WC-DESTINATIONS.md`) reports the
+promote line with and without the inline demote.
+
+### The contract sequence that replaces step 6 (`active.rs:306-382` `restore`, native `CudaTransfers`)
+
+`alloc_device(capacity, dst_gen, request)` or `register_device(plane, dst_gen, request)` (`tier_transfer.rs:246`,
+`273`: `device[ordinal]` charged for `physical_bytes`), `retain_device` 302, `h2d(CopyOp { host, device,
+bytes, epochs, producer_fence: None })` 765 into `submit_batch` 811: `CopyOp::validate` (`contracts.rs:1302`;
+an H2D requires `host.bytes()` readable, the destination generation `dst_gen`, no fence), the owner stream
+and context check 660-676, the whole initialized host range 661, the `inflight` charge 837, the optional
+producer wait 921, `bind_destination` 924-927 (the destination is bound to the ticket: `ready_view` later
+requires it), `memcpy_htod(backing (a PinnedHostSlice), &mut device.slice_mut(..bytes))` 937-944 on the owner
+stream (`core.rs:1602`: `stream.wait(pinned.event)` before, the pinned slice's event recorded after, the same
+`cuMemcpyHtoDAsync`), the item event 949 and its consumer wait 951. Then `synchronize(&ticket)` 640 (event
+sync per item, `progress` 688: status `Complete`, `valid_bytes`, `checksum = checksum(item.host.bytes())`
+722-724: for an H2D the completion checksum is the hash of the HOST SOURCE after the copy, `producer_done`);
+`ready_view(&ticket, item, epochs)` 1001 (`publishable` 741: `Completion::require(.., &expected, true)`; a
+borrowed `ReadyView`, no handle; **this IS publication**, 1027-1028) or `with_destination` 504 (the same, with a
+stream-scoped read of the destination: the gate's own D2H readback and checksum, a second copy the server
+does not make; the verify digest is its check); `record_consumer(&ticket)` 572 (requires `published`);
+`retire_source(&ticket)` 388 (the H2D items DROP their host source, `item.host.take()` 429: an H2D
+consumes its source lease); `retire(&ticket, Some(consumer))` 1071 (`retire_binding`, the items dropped,
+the `inflight` charge released 1121); `acknowledge` 1140; `take_plane(&keep)` 366 (registry release,
+`Rc::try_unwrap` into the `KvPlane`), `into_pooled` (`plane.rs:242`). The `KvMaterializer` (`active.rs:38-97`
+`NativeMaterializer`) is the gate's typed operand hand-off for one plane: `materialize` re-checks program,
+bundle, ticket and allocation identity, epochs, device and capacity against the `ReadyView`, and `retire`
+retires the ticket against the consumer fence. The server's operands are the `PrefixEntry` planes published
+at step 10, and its equivalent checks are the identity lease `require` (step 8) and the receipt expectation
+below; no materializer type is added.
+
+### The host source: an H2D consumes its lease, the promote keeps its twin
+
+The contract's H2D takes `CopyOp.host: CudaPinnedLease` BY VALUE and `retire_source` drops it (`tier_transfer.rs:429`,
+"H2D host source backing and its pinned-budget charge are dropped here"); `recover_source` 452 hands it
+back only for a CANCELLED restore (lane A's rule 1, `contracts.rs:1502-1515`). The OFF promote keeps the
+host twin resident (`host.touch` 10744; "The host twin is kept (recency-touched)", 10604-10607), and every
+gate line depends on it (the identity gate's r4 second promote attempt, lane B's typed `insert refused ...
+cannot fit beside ... leased bytes` line in both arms, the tenant gate's re-demote of beta's entry).
+Moving the entry's lease into the op would empty the host twin on every successful ON promote: a visible
+ON/OFF divergence, refused. `CudaPinnedLease` has no public clone (`tier_transfer.rs:31-33`, the `Rc` is
+private). The engine already accepts a SHARED H2D source: `validate` counts owners only for a D2H
+destination (658, "A taken host destination may be used as an immutable H2D source before the earlier
+ticket is acknowledged", 934-935), `take_destination` mints a second owner for a D2H destination (1057-1058,
+"Both owners share ONE physical allocation and governor charge"), `write` refuses `Busy` while an owner is
+shared (74-89), `PinnedAllocation::drop` releases the charge on the last owner (90-108). What the server
+cannot do today is reach that state after the D2H ticket was acknowledged (Option B acknowledges at demote).
+**The one engine addition: `CudaTransfers::retain_host(&CudaPinnedLease) -> CudaPinnedLease`**, the host
+mirror of `retain_device` (302): a second owned handle on the same allocation and charge, on the owner
+thread, same context. The H2D op takes the twin; the entry's handle never moves; `retire_source` drops the
+twin and the entry's handle is the sole owner again (the flip fault's `write` works again, which the GPU cell
+asserts). Not a borrowed-source seam (ruling 14): the op owns a lease, the trait is unchanged, no v1.4.
+
+### Charges: the device dimension under Option C
+
+`tier_charge(.., device=true)` at step 3 charges the entry's device bytes as a `ResidentCharge` BEFORE the
+copy; `register_device` charges `device[ordinal]` again for each destination plane during the copy and
+releases it at `take_plane` (`register_device` doc, 271-272: "Do not double-charge a buffer already
+accounted elsewhere; callers must transfer its admission first"; there is no transfer, every registry entry
+carries its own `ChargedLease`). Bound: residents' restore charges (promoted entries only; a request-inserted
+entry carries `_tier_charge: None`) at most one device prefix budget, one incoming entry's restore charge at
+most one budget, its registered planes at most one budget. The day-13 ledger sizes `device` at twice the
+budget (`host_tier_governor` 4569-4590), which covers B (residents plus one entry's planes) and every gate
+cell of C (identity 256 MB: 160 + 160 at r3, 160 + 160 + 160 at r4 against 512; tenant 384 MB: at most
+480 against 768) but not the general bound, so under C the device dimension is sized at three times the
+device prefix budget; pinned and pageable stay at twice. The ledger must never be what refuses a promote
+the OFF arm would have made (the ruling-15 gate); the LRU decides.
+
+### Publication and what must hold before it, under Option C
+
+Publication stays step 10 (`insert_pinned_demoting` 10746), and every plane reaches it OUT of the engine:
+before it, in this order, (a) `synchronize(&ticket)` observed every item's event, (b) the server's
+`Completion::require(&ticket, &expected, true)` held with `expected[i] = SegmentExpectation { valid_bytes:
+kb_or_vb, io_bytes: same, checksum: the plane's D2H receipt }`: the H2D read exactly the bytes the D2H wrote
+(the completion checksum is the hash of the host source after the copy, 722-724), (c) the engine's own
+`require` in `ready_view` (publication in the contract's sense), (d) the consumer fence recorded and the owner
+stream drained, (e) `retire_source`, `retire`, `acknowledge`, (f) `take_plane` into `PrefixPlane`s, (g) the
+verify digest (step 7, unchanged) and the identity lease (step 8, unchanged). A refusal at (b) with no fault
+armed is `ReceiptMismatch`: `cancel` (`PublicationRevoked`), `recover_source` per item (rule 1; the recovered
+twin's `bytes().as_ptr()` must equal the entry's lease pointer), `retire(None)`, `acknowledge`, the fresh
+destinations taken back and dropped, and the CALLER drops the host entry (`remove_at`, `digest_mismatches +=
+1`) exactly as `VERIFY FAILED` does: the host bytes no longer match what was written. Under
+`MEMRA_KV_HOST_FAULT=flip-demote` (the gate-box diagnostic that corrupts the image after the D2H receipt by
+design, day 15) the door prints the named injected difference and requires against the completion's own
+checksums instead, so the verify arm catches it at promote and the failure gate's digest cell keeps its OFF
+shape (`FAULT`, `demote:`, `VERIFY FAILED`), the day-15 precedent at bind.
+
+### Refusals, typed
+
+`HostPromoteFailure::{Failed, Refused, ReceiptMismatch, Latched}` from `device_entry_from_host`: `Failed` is the
+OFF meaning (`promote failed (..)`, `rejected_allocs`; a device alloc refusal under ON books the same);
+`Refused` is a contract refusal with the entry intact and the ledger clean (`promote refused (contracts door):
+..; serving without the host entry`); `ReceiptMismatch` drops the host entry; `Latched` (an unobservable
+completion, a ticket that did not retire or acknowledge, a destination that did not come back: the ledger holds
+state the server cannot reach, and in-flight is exactly one batch) is one `TIER DISABLED` line. Pre-submit
+unwinds drop the ops' original device handles and the host twins before `take_plane` (review finding 1);
+the abort drains before every release or retire and discards no result (review finding 2). A mixed entry
+(some planes `Contract`, some `Pinned`) cannot be built by one demote and is refused by name rather than
+half-routed; an all-`Pinned` entry keeps the OFF `plane_up` (stated: none exists under the door today).
+
+### One-shot faults and the receipt line
+
+`MEMRA_KV_HOST_FAULT=contract-promote-presubmit` (the producer fence refused before any op is submitted:
+every fresh destination released, every twin dropped, entry intact and writable, tier on, the next promote
+completes) and `contract-promote-postpublish` (a refusal after `ready_view` published every item: the ticket
+retires against its consumer fence and is acknowledged, the twins drop, the destinations release, tier on,
+the next promote completes). The demote route takes only its own two faults and the promote route only
+its own, so one boot arms exactly one side. Receipt line per ON promote, before `promote:`: `[prefix-host]
+contracts door H2D receipt: ticket issuer=<n> seq=<n> epochs=0/1/1 items=<n> (<k> KV planes[, draft])
+complete=<n> require=ok checksums_sha256=<hex> published retired acknowledged`, where the digest is over the
+same ordered item checksums under the same domain as the D2H line, so for one entry the H2D line's digest
+EQUALS the D2H line's digest of its demote (the replay checks it).
 
 ## Tests
 
