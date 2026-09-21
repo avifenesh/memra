@@ -32,8 +32,11 @@ Assertions (every number in bytes from the server's own lines and /metrics):
   V2 same_tick_admit:   P2 is admitted in that tick: no `[admit-oom] VRAM defer` line after the
                         reclaim line, no `reject averted`, HTTP 200.
   V3 driver_free_moved: the `[admit-oom] reclaim settle` line shows driver free rising by
-                        >= E1 - one 2 MiB granule and `trim_released_bytes` >= the same; a
-                        `pool_retained_bytes` shortfall is quoted verbatim and fails.
+                        >= E1 - one 2 MiB granule and `trim_released_bytes` >= the same. Bytes the
+                        pool could not release (a live neighbour shares the chunk) are printed by
+                        the server as `pool_retained_bytes` and stay counted as pool-cached
+                        headroom; the gate reports them in its verdict line, it does not fail on
+                        them (the criterion is the ENTRY's bytes reaching the driver).
   V4 identity:          sha256 over (P1, P0, P2) texts is identical between the calibration boot
                         and the measured boot (pressure changes admission, never tokens). The
                         runner compares the same digest across binaries (base vs fix).
@@ -622,6 +625,7 @@ def main() -> None:
     p2 = meas["requests"]["p2"]
     v2 = p2["status"] == 200 and ev["defers_after_reclaim"] == 0 and ev["averted"] == 0
     settle = next((s for s in ev["settles"] if s["why"] == "reclaim-on-defer"), None)
+    retained = None
     if settle is None:
         v3 = False
         driver_delta = None
@@ -629,11 +633,9 @@ def main() -> None:
     else:
         driver_delta = settle["driver_free_after"] - settle["driver_free_before"]
         released = settle["trim_released_bytes"]
-        v3 = (
-            driver_delta >= e1m - GRANULE
-            and released >= e1m - GRANULE
-            and "pool_retained_bytes" not in settle["tail"]
-        )
+        m_ret = re.search(r"pool_retained_bytes=(\d+)", settle["tail"])
+        retained = int(m_ret.group(1)) if m_ret else 0
+        v3 = driver_delta >= e1m - GRANULE and released >= e1m - GRANULE
     v4 = cal["identity_sha256"] == meas["identity_sha256"]
 
     if p2["status"] != 200:
@@ -649,6 +651,7 @@ def main() -> None:
         f"PREFIX-EVICT-RECLAIM: entry_bytes={e1m} reclaim_credit_bytes={credit} "
         f"driver_free_delta_bytes={driver_delta if driver_delta is not None else 'none'} "
         f"trim_released_bytes={released if released is not None else 'none'} "
+        f"pool_retained_bytes={retained if retained is not None else 'none'} "
         f"p2={p2_verdict} busy_overlap_s={overlap} identity={meas['identity_sha256'][:16]} "
         f"V1={'ok' if v1 else 'FAIL'} V2={'ok' if v2 else 'FAIL'} V3={'ok' if v3 else 'FAIL'} "
         f"V4={'ok' if v4 else 'FAIL'} -> {'PASS' if ok else 'FAIL'}"
@@ -664,6 +667,7 @@ def main() -> None:
             "reclaim_line": r["line"],
             "reclaim_credit_bytes": credit,
             "settle": settle,
+            "pool_retained_bytes": retained,
             "defers_total": ev["defers_total"],
             "defers_after_reclaim": ev["defers_after_reclaim"],
             "reject_averted": ev["averted"],
