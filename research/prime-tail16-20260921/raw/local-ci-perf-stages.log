@@ -1,0 +1,39 @@
+== local-ci: clippy gate (-D warnings) ==
+== local-ci: memra-server HTTP-surface unit suite ==
+== local-ci: memra-engine lib suite (CPU-safe part) ==
+== local-ci: memra-gguf artifact-present skip census ==
+== local-ci: tier, KV and onboarding-CLI suites (tools/portable-suites.sh) ==
+portable-suites: PASS (tier, KV and onboarding CLI suites executed on CPU; skips 0 of budget 0; NOT GPU qualification)
+DRAFTER-ATTACH WIRING GATE: ALL GREEN
+test_local_ci_lock: ALL GREEN
+== local-ci: correctness stage ==
+kernel-check: ALL GREEN (109 cells, 10 skipped)
+== local-ci: prime continuation gate (one call vs head + tail; tails 16/48/80) ==
+  9280 + 16: logits_sha=02d5580b21201991 ok
+  9248 + 48: logits_sha=02d5580b21201991 ok
+  9216 + 80: logits_sha=02d5580b21201991 ok
+prime continuation gate: PASS (16/48/80-row tails bitwise with the one-call prime)
+decode-batch-gate config B=8: ALL GREEN (9B NVFP4)
+decode-batch-gate strict B=4 equalized: ALL GREEN (9B NVFP4)
+decode-batch-gate config B=8: ALL GREEN (9B Q8_0)
+decode-batch-gate strict B=4 equalized: ALL GREEN (9B Q8_0)
+ALL GREEN: graph-warmup-stress (10 cycles x 4 arms + overlap, bit-identical, no fault)
+ALL GREEN: graph-warmup-stress gate (10 cycles + canary)
+decode-dc-gate: PASS
+graph-decode-gate: PASS
+graph-session-gate: ALL GREEN
+serve-stress-gate: ALL GREEN (c=64 complete, streams well-formed, worker alive, log clean)
+SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+== local-ci: memra-engine lib suite (GPU-only #[ignore] tests) ==
+SKIP-PAIR dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup needs 2 CUDA devices, found 1
+SKIP-PAIR model_memory::native_tests::glm_indexed_mla_kda_state_materialization needs 2 CUDA devices, found 1
+SKIP-PAIR model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill needs 2 CUDA devices, found 1
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 518 filtered out; finished in 4.41s
+    SKIP-PAIR dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup needs 2 CUDA devices, found 1
+    SKIP-PAIR model_memory::native_tests::glm_indexed_mla_kda_state_materialization needs 2 CUDA devices, found 1
+    SKIP-PAIR model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill needs 2 CUDA devices, found 1
+== local-ci: perf stage (--perf) ==
+  26b-plain-short: 209.32 tok/s [OK]
+  qwen9b-plain-short: 139.16 tok/s [OK]
+LOCAL_CI_RC=0
