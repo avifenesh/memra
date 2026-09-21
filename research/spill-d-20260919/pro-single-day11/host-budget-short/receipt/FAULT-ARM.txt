@@ -1,0 +1,15 @@
+arm=host-budget-short
+verdict=PASS
+line=FAULT-ARM PASS host-budget-short
+continues=true
+restores_cache=true
+faulted_layer=none
+faulted_role=none
+faulted_valid_bytes=0
+checks=5
+checks_failed=
+checks_missing=
+required_checks=whole-state-admission,layers-resident,pinned-charged,budget-zero,restored-identical
+observation.whole_state_pinned_bytes=239468544
+observation.governor_pinned_capacity_bytes=239468543
+observation.governor_device_capacity_bytes=2147483648
