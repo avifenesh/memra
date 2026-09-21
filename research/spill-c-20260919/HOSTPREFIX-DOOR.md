@@ -158,7 +158,8 @@ gates.
 
 ## Target-card receipts
 
-`DAY13.md`, `pro-single-day13/`. OFF and ON on the same binary, same prompts, N=1,
+`DAY13.md`, `pro-single-day13/` (plain surface); `DAY14.md`, `pro-single-day14/` (draft-bearing surface
+under the gates' default spec environment, replay `verify-day14.py`). OFF and ON on the same binary, same prompts, N=1,
 `executed-not-qualified`, one RTX PRO 6000 Blackwell at its 600 W limit, through the
 canonical collector (`tools/tier-battery.py --rig pro-single`, lock `/tmp/memra-gpu.lock`).
 

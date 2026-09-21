@@ -88,7 +88,17 @@ def identity_pair(spec, label):
     on_log = ROOT / on_cell / "ev/host-on-server.log"
     check(f"[{spec}] [prefix-host] demote: byte counts equal", demotes(off_log) == demotes(on_log) and len(demotes(on_log)) >= 1, " | ".join(demotes(on_log)))
     promotes = count(on_log, r"\[prefix-host\] promote: ")
-    check(f"[{spec}] ON: verify ok on every promote", count(on_log, r"\[prefix-host\] verify ok") == promotes and promotes >= 1, f"promotes={promotes}")
+    verify_ok = count(on_log, r"\[prefix-host\] verify ok")
+    # A promote that passes verify can still be declined by the DEVICE cache's protected-share
+    # rule (`[prefix-cache] skip pinned host-promote insert: ... would evict protected bytes`),
+    # the spec environment's own behavior at MEMRA_HOSTGATE_CACHE_MB=256 (identical in the OFF
+    # arm and in day 13's OFF-default cell). Every verify ok is therefore a promote or that
+    # named skip; nothing else may absorb one.
+    skips = count(on_log, r"\[prefix-cache\] skip pinned host-promote insert")
+    check(f"[{spec}] ON: verify ok on every promote, every other verify ok is the named device-side skip", promotes >= 1 and verify_ok == promotes + skips, f"promotes={promotes} verify_ok={verify_ok} skips={skips}")
+    check(f"[{spec}] promote, verify and skip counts equal across arms", (count(off_log, r"\[prefix-host\] promote: "), count(off_log, r"\[prefix-host\] verify ok"), count(off_log, r"\[prefix-cache\] skip pinned host-promote insert")) == (promotes, verify_ok, skips))
+    events = lambda log: [strip_ms(l) for l in lines(log, r"\[prefix-(cache|host)\] ") if "contracts door" not in l]
+    check(f"[{spec}] prefix-cache and prefix-host event sequence identical across arms (timings stripped)", events(off_log) == events(on_log) and len(events(on_log)) >= 8, f"{len(events(on_log))} events")
     check(f"[{spec}] ON: door announced with the plain program identity", count(on_log, r"contracts door: model gate program identity artifact_sha256=[0-9a-f]{64} plan_debug_sha256=[0-9a-f]{64} numeric=server-prefix-entry-v5-kv-q8_0-34B-q5_1-24B template=gguf-jinja device=0") == 1)
     check(f"[{spec}] ON: door announced the draft program identity (embedded MTP head)", count(on_log, r"contracts door: model gate draft program identity source=embedded numeric=" + re.escape(DRAFT_CLASS)) == 1)
     check(f"[{spec}] ON: door ON line", count(on_log, r"contracts door ON \(MEMRA_KV_HOST_CONTRACTS=1\): 1 model program identities") == 1)
