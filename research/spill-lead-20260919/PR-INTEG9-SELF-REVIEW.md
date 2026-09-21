@@ -24,7 +24,10 @@ Read in full: `kv_tier_gate/fault.rs` (582 lines), `kv_tier_gate/fault_contract.
    `cache.kv[i] == None` with a decode path that would `unwrap` it; only the gate's early return stood in the way.
    The drop site now calls `cache.mark_tainted()` (the state `ensure_usable` already refuses) and adds the check
    `holed-cache-refuses-continuation = Err`, so the cache itself records that no token may address it. Extra check
-   row, not a required one, so D's committed receipts still replay (30 tests green).
+   row, not a required one. Revuto's second round caught that both replays (`tests/reclaim/fault.rs` and
+   `verify-day11.py`) rejected any row outside the required set, which would have reddened D's day-12 reruns; both
+   now accept extra evidence rows (every row must hold, the required names must be present). 30 Rust tests and the
+   day-11 Python replay green on the committed receipts.
 7. **Nits (not blocking).** `Arm::NAMES` duplicates the `name()` list as a string; a `join` over `ALL` would keep them
    in sync. The `device-short` arm exercises exhaustion through a second tenant because the governor has no
    post-construction capacity seam; the arm name promises less than a pool shrink and the receipt says so.

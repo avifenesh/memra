@@ -142,12 +142,17 @@ fn committed_target_card_receipts_replay_their_verdicts() {
             .map(|row| {
                 let f: Vec<&str> = row.split('\t').collect();
                 assert_eq!(f.len(), 4, "{row}");
+                // Required names resolve to their static spelling; any other recorded row is
+                // extra evidence (the gate may add rows, e.g. `holed-cache-refuses-continuation`)
+                // and is kept, still required to hold. `verdict` insists on the required set.
                 let name = arm
                     .required_checks()
                     .iter()
                     .copied()
                     .find(|n| *n == f[0])
-                    .unwrap_or_else(|| panic!("{arm:?}: unexpected check {}", f[0]));
+                    .unwrap_or_else(|| -> &'static str {
+                        Box::leak(f[0].to_string().into_boxed_str())
+                    });
                 assert_eq!(f[3], (f[1] == f[2]).to_string(), "{row}");
                 Check::new(name, f[1], f[2])
             })
