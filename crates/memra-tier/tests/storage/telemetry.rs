@@ -8,6 +8,8 @@ fn telemetry_join_schema_cumulative_bytes_unknowns_and_bounded_intervals() {
     };
     use std::io::Write;
     use std::process::{Command, Stdio};
+    // Spawns python3: hold the process fence exclusively (see `OwnedDirectory`).
+    let _fence = Fence::exclusive();
     let mut join = StorageTelemetry::new(3).unwrap();
     let mut sample = StorageSample {
         version: 1,

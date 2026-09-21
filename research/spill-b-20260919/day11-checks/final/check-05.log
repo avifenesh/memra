@@ -1,0 +1,251 @@
+{
+  "checked": {
+    "pro-single/cycles-32768": {
+      "card": "one RTX PRO 6000 Blackwell 96 GB",
+      "power_envelope": {
+        "power.limit": "600.00 W",
+        "power.max_limit": "600.00 W"
+      },
+      "source": "1566d4f81a5f58d39c96a78ba987c34cfc66ccf3",
+      "binary_sha256": "e85a6ab7305fa1937e68eac81fac6539944ad531b401a37afa61f905996cbc03",
+      "artifact_sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a",
+      "baseline": "matches the frozen target-card bundle (BOX3-BASELINES.json)",
+      "console": "RECLAIM-CYCLES: class=one-time-driver-mapping-metadata cycles=5 granule=2097152 residual_first=2097152 residual_last=2097152 g1_reclaim_qualified=false",
+      "cycles": [
+        {
+          "cycle": 1,
+          "free_before_bytes": 85313847296,
+          "free_after_demote_bytes": 86217719808,
+          "free_after_restore_bytes": 85313847296,
+          "vmm_released_chunk_bytes": 905969664,
+          "vmm_granularity_bytes": 2097152,
+          "reclaimed_bytes": 903872512,
+          "reacquired_bytes": 903872512,
+          "residual_bytes": 2097152,
+          "restore_residual_bytes": 0,
+          "reclaim_observed": true,
+          "reclaim_exact_equal": false,
+          "g1_reclaim_qualified": "false",
+          "residual_class": "unclassified",
+          "restored_prefix_state_manifest_sha256": "17db124714451a991b6c370c5d5f4141aacc425412cf4daa342fb93352ebf7af"
+        },
+        {
+          "cycle": 2,
+          "free_before_bytes": 85313847296,
+          "free_after_demote_bytes": 86217719808,
+          "free_after_restore_bytes": 85313847296,
+          "vmm_released_chunk_bytes": 905969664,
+          "vmm_granularity_bytes": 2097152,
+          "reclaimed_bytes": 903872512,
+          "reacquired_bytes": 903872512,
+          "residual_bytes": 2097152,
+          "restore_residual_bytes": 0,
+          "reclaim_observed": true,
+          "reclaim_exact_equal": false,
+          "g1_reclaim_qualified": "false",
+          "residual_class": "unclassified",
+          "restored_prefix_state_manifest_sha256": "17db124714451a991b6c370c5d5f4141aacc425412cf4daa342fb93352ebf7af"
+        },
+        {
+          "cycle": 3,
+          "free_before_bytes": 85313847296,
+          "free_after_demote_bytes": 86217719808,
+          "free_after_restore_bytes": 85313847296,
+          "vmm_released_chunk_bytes": 905969664,
+          "vmm_granularity_bytes": 2097152,
+          "reclaimed_bytes": 903872512,
+          "reacquired_bytes": 903872512,
+          "residual_bytes": 2097152,
+          "restore_residual_bytes": 0,
+          "reclaim_observed": true,
+          "reclaim_exact_equal": false,
+          "g1_reclaim_qualified": "false",
+          "residual_class": "unclassified",
+          "restored_prefix_state_manifest_sha256": "17db124714451a991b6c370c5d5f4141aacc425412cf4daa342fb93352ebf7af"
+        },
+        {
+          "cycle": 4,
+          "free_before_bytes": 85313847296,
+          "free_after_demote_bytes": 86217719808,
+          "free_after_restore_bytes": 85313847296,
+          "vmm_released_chunk_bytes": 905969664,
+          "vmm_granularity_bytes": 2097152,
+          "reclaimed_bytes": 903872512,
+          "reacquired_bytes": 903872512,
+          "residual_bytes": 2097152,
+          "restore_residual_bytes": 0,
+          "reclaim_observed": true,
+          "reclaim_exact_equal": false,
+          "g1_reclaim_qualified": "false",
+          "residual_class": "unclassified",
+          "restored_prefix_state_manifest_sha256": "17db124714451a991b6c370c5d5f4141aacc425412cf4daa342fb93352ebf7af"
+        },
+        {
+          "cycle": 5,
+          "free_before_bytes": 85313847296,
+          "free_after_demote_bytes": 86217719808,
+          "free_after_restore_bytes": 85313847296,
+          "vmm_released_chunk_bytes": 905969664,
+          "vmm_granularity_bytes": 2097152,
+          "reclaimed_bytes": 903872512,
+          "reacquired_bytes": 903872512,
+          "residual_bytes": 2097152,
+          "restore_residual_bytes": 0,
+          "reclaim_observed": true,
+          "reclaim_exact_equal": false,
+          "g1_reclaim_qualified": "false",
+          "residual_class": "unclassified",
+          "restored_prefix_state_manifest_sha256": "17db124714451a991b6c370c5d5f4141aacc425412cf4daa342fb93352ebf7af"
+        }
+      ],
+      "residual_series_class": "one-time-driver-mapping-metadata",
+      "verdict": "ACTIVE-32K physical reclaim/restore bit-identical across 5 cycles, residual 2097152 B each cycle, class one-time-driver-mapping-metadata, not G1 PASS"
+    },
+    "pro-single/cycles-8192": {
+      "card": "one RTX PRO 6000 Blackwell 96 GB",
+      "power_envelope": {
+        "power.limit": "600.00 W",
+        "power.max_limit": "600.00 W"
+      },
+      "source": "1566d4f81a5f58d39c96a78ba987c34cfc66ccf3",
+      "binary_sha256": "e85a6ab7305fa1937e68eac81fac6539944ad531b401a37afa61f905996cbc03",
+      "artifact_sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a",
+      "status": "refused",
+      "console": "REFUSED: diagnostic could not re-reserve original VMM address",
+      "prompt_committed_before_refusal": 7936,
+      "verdict": "ACTIVE-8K reclaim-cycles control not executed: REFUSED: diagnostic could not re-reserve original VMM address"
+    },
+    "pro-single/cycles-8192-retry": {
+      "card": "one RTX PRO 6000 Blackwell 96 GB",
+      "power_envelope": {
+        "power.limit": "600.00 W",
+        "power.max_limit": "600.00 W"
+      },
+      "source": "1566d4f81a5f58d39c96a78ba987c34cfc66ccf3",
+      "binary_sha256": "e85a6ab7305fa1937e68eac81fac6539944ad531b401a37afa61f905996cbc03",
+      "artifact_sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a",
+      "status": "refused",
+      "console": "REFUSED: diagnostic could not re-reserve original VMM address",
+      "prompt_committed_before_refusal": 7936,
+      "verdict": "ACTIVE-8K reclaim-cycles control not executed: REFUSED: diagnostic could not re-reserve original VMM address"
+    },
+    "rtx5090/cycles-32768": {
+      "card": "RTX 5090 Laptop GPU (local development rig; no frozen bundle of its own)",
+      "power_envelope": {
+        "power.limit": "[N/A]",
+        "power.max_limit": "175.00 W"
+      },
+      "source": "1566d4f81a5f58d39c96a78ba987c34cfc66ccf3",
+      "binary_sha256": "b47d025891dfce8abf5226de73c16b4c52d1a79b84826106175f4992ae076094",
+      "artifact_sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a",
+      "baseline": "decoded surfaces differ from the rented RTX 5090 bundle on prefix-state.tsv, final-state.tsv, logits.tsv, final-logits.f32le; this laptop card has no frozen bundle, continuation identity is in-process only",
+      "console": "RECLAIM-CYCLES: class=one-time-driver-mapping-metadata cycles=5 granule=2097152 residual_first=2097152 residual_last=2097152 g1_reclaim_qualified=false",
+      "cycles": [
+        {
+          "cycle": 1,
+          "free_before_bytes": 8784248832,
+          "free_after_demote_bytes": 9688121344,
+          "free_after_restore_bytes": 8784248832,
+          "vmm_released_chunk_bytes": 905969664,
+          "vmm_granularity_bytes": 2097152,
+          "reclaimed_bytes": 903872512,
+          "reacquired_bytes": 903872512,
+          "residual_bytes": 2097152,
+          "restore_residual_bytes": 0,
+          "reclaim_observed": true,
+          "reclaim_exact_equal": false,
+          "g1_reclaim_qualified": "false",
+          "residual_class": "unclassified",
+          "restored_prefix_state_manifest_sha256": "9d4d4191314b7e708f57471d8478d7b6c53b1c6ee245311600ee7f59d68fee87"
+        },
+        {
+          "cycle": 2,
+          "free_before_bytes": 8784248832,
+          "free_after_demote_bytes": 9688121344,
+          "free_after_restore_bytes": 8784248832,
+          "vmm_released_chunk_bytes": 905969664,
+          "vmm_granularity_bytes": 2097152,
+          "reclaimed_bytes": 903872512,
+          "reacquired_bytes": 903872512,
+          "residual_bytes": 2097152,
+          "restore_residual_bytes": 0,
+          "reclaim_observed": true,
+          "reclaim_exact_equal": false,
+          "g1_reclaim_qualified": "false",
+          "residual_class": "unclassified",
+          "restored_prefix_state_manifest_sha256": "9d4d4191314b7e708f57471d8478d7b6c53b1c6ee245311600ee7f59d68fee87"
+        },
+        {
+          "cycle": 3,
+          "free_before_bytes": 8784248832,
+          "free_after_demote_bytes": 9688121344,
+          "free_after_restore_bytes": 8784248832,
+          "vmm_released_chunk_bytes": 905969664,
+          "vmm_granularity_bytes": 2097152,
+          "reclaimed_bytes": 903872512,
+          "reacquired_bytes": 903872512,
+          "residual_bytes": 2097152,
+          "restore_residual_bytes": 0,
+          "reclaim_observed": true,
+          "reclaim_exact_equal": false,
+          "g1_reclaim_qualified": "false",
+          "residual_class": "unclassified",
+          "restored_prefix_state_manifest_sha256": "9d4d4191314b7e708f57471d8478d7b6c53b1c6ee245311600ee7f59d68fee87"
+        },
+        {
+          "cycle": 4,
+          "free_before_bytes": 8784248832,
+          "free_after_demote_bytes": 9688121344,
+          "free_after_restore_bytes": 8784248832,
+          "vmm_released_chunk_bytes": 905969664,
+          "vmm_granularity_bytes": 2097152,
+          "reclaimed_bytes": 903872512,
+          "reacquired_bytes": 903872512,
+          "residual_bytes": 2097152,
+          "restore_residual_bytes": 0,
+          "reclaim_observed": true,
+          "reclaim_exact_equal": false,
+          "g1_reclaim_qualified": "false",
+          "residual_class": "unclassified",
+          "restored_prefix_state_manifest_sha256": "9d4d4191314b7e708f57471d8478d7b6c53b1c6ee245311600ee7f59d68fee87"
+        },
+        {
+          "cycle": 5,
+          "free_before_bytes": 8784248832,
+          "free_after_demote_bytes": 9688121344,
+          "free_after_restore_bytes": 8784248832,
+          "vmm_released_chunk_bytes": 905969664,
+          "vmm_granularity_bytes": 2097152,
+          "reclaimed_bytes": 903872512,
+          "reacquired_bytes": 903872512,
+          "residual_bytes": 2097152,
+          "restore_residual_bytes": 0,
+          "reclaim_observed": true,
+          "reclaim_exact_equal": false,
+          "g1_reclaim_qualified": "false",
+          "residual_class": "unclassified",
+          "restored_prefix_state_manifest_sha256": "9d4d4191314b7e708f57471d8478d7b6c53b1c6ee245311600ee7f59d68fee87"
+        }
+      ],
+      "residual_series_class": "one-time-driver-mapping-metadata",
+      "verdict": "ACTIVE-32K physical reclaim/restore bit-identical across 5 cycles, residual 2097152 B each cycle, class one-time-driver-mapping-metadata, not G1 PASS"
+    },
+    "rtx5090/cycles-8192": {
+      "card": "RTX 5090 Laptop GPU (local development rig; no frozen bundle of its own)",
+      "power_envelope": {
+        "power.limit": "[N/A]",
+        "power.max_limit": "175.00 W"
+      },
+      "source": "1566d4f81a5f58d39c96a78ba987c34cfc66ccf3",
+      "binary_sha256": "b47d025891dfce8abf5226de73c16b4c52d1a79b84826106175f4992ae076094",
+      "artifact_sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a",
+      "status": "refused",
+      "console": "REFUSED: diagnostic could not re-reserve original VMM address",
+      "prompt_committed_before_refusal": 7936,
+      "verdict": "ACTIVE-8K reclaim-cycles control not executed: REFUSED: diagnostic could not re-reserve original VMM address"
+    }
+  },
+  "pending": [],
+  "cuda_executed_by_replay": false,
+  "cross_card_timing_compared": false
+}

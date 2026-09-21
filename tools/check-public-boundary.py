@@ -750,6 +750,14 @@ def evaluate_content(policy: Policy, rel: str, data: bytes) -> Optional[Violatio
         )
     if bypass:
         return None
+    if not raw_bytes_prefilter(data, policy.secret_sources):
+        # Same gate the checkout scan applies through `git grep --text -P` before it decodes
+        # anything: a rule must match the RAW bytes. Without it the commit and ref scans judged
+        # a blob the checkout scan never looked at, and `decode(errors="ignore")` glued the
+        # neighbours of undecodable bytes into a provider name no reader sees (2026-09-20: two
+        # gzipped trace logs refused by the pre-push hook at "line 1810" of the deflate stream,
+        # then called stale pins by `check` and `verify-allowlist`). One candidate set, both scans.
+        return None
     hits = scan_secret_bytes(
         data, policy.secret_union, policy.secret_groups, policy.secret_patterns
     )
@@ -758,6 +766,28 @@ def evaluate_content(policy: Policy, rel: str, data: bytes) -> Optional[Violatio
     return build_violation(
         policy, rel, hashlib.sha256(data).hexdigest(), "secret_pattern", hits
     )
+
+
+_RAW_RULES: Dict[str, Optional[re.Pattern[bytes]]] = {}
+
+
+def raw_bytes_prefilter(data: bytes, sources: Dict[str, str]) -> bool:
+    """True when any rule source matches the raw bytes, as `git grep --text -P` would.
+
+    The checkout scan prefilters candidates with git's PCRE walker over bytes; this is the same
+    question asked of a loose blob. A source that does not compile as a bytes pattern keeps the
+    blob a candidate (fail open into the text scan, never silently out of it).
+    """
+    for name, source in sources.items():
+        if name not in _RAW_RULES:
+            try:
+                _RAW_RULES[name] = re.compile(source.encode("utf-8"))
+            except (re.error, UnicodeEncodeError):
+                _RAW_RULES[name] = None
+        pattern = _RAW_RULES[name]
+        if pattern is None or pattern.search(data) is not None:
+            return True
+    return False
 
 
 def evaluate(policy: Policy) -> List[Violation]:

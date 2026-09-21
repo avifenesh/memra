@@ -21810,7 +21810,13 @@ impl HybridModel {
         let lim_exp = cfg.clamp_exp_at(il as u32);
         let lim_shexp = cfg.clamp_shexp_at(il as u32);
 
-        let logits = e.matmul(&m.gate_inp, zbatch, mrows)?;
+        // Router: lockstep's cuBLAS matmul reduced all stream rows at once, so its `m =
+        // stream_count` made one session's expert selection depend on how many peers shared the
+        // decode batch. Keep lockstep on the fixed per-row reduction program instead. The serial
+        // trunk's `moe_router_logits` and Gemma's `gemma4_moe` already use this m-invariant
+        // `router_gemv` selector; it preserves each row's logits shape for the sigmoid-router
+        // trace and every downstream routing/dispatch step.
+        let logits = Self::moe_router_logits(e, m, zbatch, mrows, cfg)?;
         if let Some(sig) = cfg.sigmoid_router() {
             Self::trace_sigmoid_router_logits(e, il, mrows, n_expert, n_used, &logits, m, sig)?;
         }

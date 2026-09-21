@@ -269,6 +269,7 @@ fn baseline(args: &cli::Args) -> Result<()> {
         "prefix",
     )?;
     let mut reclaim_observed = false;
+    let mut series_status: Option<String> = None;
     if args.case == "active" {
         use memra_tier::contracts::{ProgramIdentity, digest};
         let program = ProgramIdentity {
@@ -284,20 +285,69 @@ fn baseline(args: &cli::Args) -> Result<()> {
             position: digest("prompt-u32le", &prompt_bytes),
             tenant_salt: digest("tenant", b"gate-exclusive-request"),
         };
-        reclaim_observed =
-            active::roundtrip(&e, &mut cache, program, &args.out, args.reclaim_diagnostic)?;
-        let restored = capture(
-            &e,
-            &cache,
-            &model.plan,
-            &logits,
-            &e.dtoh(&hidden)?,
-            &args.out,
-            "restored-prefix",
-        )?;
-        if restored != prefix_hash {
-            return Err("active restored state is not bit-identical to suspended state".into());
+        // One process, one cache, one numeric program: `--reclaim-cycles N` repeats the SAME
+        // demote/restore roundtrip N times so a residual is classified by its series (constant
+        // one granule, growing, or none). Each cycle writes a full receipt under `cycle-<k>/` and
+        // must restore the suspended state bit-identically before the next cycle starts.
+        let cycles = args.reclaim_cycles.unwrap_or(1);
+        let mut series = Vec::with_capacity(cycles);
+        reclaim_observed = true;
+        // `--reclaim-cycles N` only: the series verdict of lead ruling 6 (day 12). The label
+        // exists only when `write_cycles` returns it; every other shape keeps its status line.
+        let mut series_label = None;
+        for cycle in 1..=cycles {
+            let out = if args.reclaim_cycles.is_some() {
+                let dir = args.out.join(format!("cycle-{cycle}"));
+                fs::create_dir(&dir)?;
+                dir
+            } else {
+                args.out.clone()
+            };
+            let roundtrip = active::roundtrip(
+                &e,
+                &mut cache,
+                program.clone(),
+                &out,
+                args.reclaim_diagnostic,
+            )?;
+            let restored = capture(
+                &e,
+                &cache,
+                &model.plan,
+                &logits,
+                &e.dtoh(&hidden)?,
+                &out,
+                "restored-prefix",
+            )?;
+            if restored != prefix_hash {
+                return Err(format!(
+                    "active restored state is not bit-identical to suspended state (cycle {cycle} of {cycles})"
+                )
+                .into());
+            }
+            reclaim_observed &= roundtrip.reclaimed;
+            eprintln!(
+                "reclaim-cycle {cycle}/{cycles}: free_before={} free_after_demote={} free_after_restore={} released={} residual={} class={}",
+                roundtrip.cycle.free_before,
+                roundtrip.cycle.free_after_demote,
+                roundtrip.cycle.free_after_restore,
+                roundtrip.cycle.released,
+                roundtrip.residual,
+                roundtrip.residual_class,
+            );
+            series.push((roundtrip, restored));
         }
+        if args.reclaim_cycles.is_some() {
+            fs::copy(
+                args.out
+                    .join(format!("cycle-{cycles}"))
+                    .join("restored-prefix-state.tsv"),
+                args.out.join("restored-prefix-state.tsv"),
+            )?;
+            series_label =
+                active::write_cycles(&args.out, &series, &prefix_hash, args.context)?.label;
+        }
+        series_status = series_label;
     }
     let mut rows = File::create(args.out.join("logits.tsv"))?;
     writeln!(rows, "committed\tlogits_f32le_sha256")?;
@@ -338,12 +388,17 @@ fn baseline(args: &cli::Args) -> Result<()> {
     fs::write(args.out.join("output.txt"), tokenizer.decode(&ids))?;
     fs::write(args.out.join("final-logits.f32le"), f32_bytes(&logits))?;
     let active = args.case == "active";
-    let status = if active && reclaim_observed {
-        "ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS"
-    } else if active {
-        "ACTIVE_COPY_RESTORE_CAPTURED; reclaim qualification incomplete; see metrics; continuation comparison pending; not G1 PASS"
-    } else {
-        "BASELINE_CAPTURED"
+    // The classified series label (lead ruling 6) replaces the status line only when the series
+    // verdict produced it; every other shape prints exactly what it printed before.
+    let status = match (active, series_status, reclaim_observed) {
+        (true, Some(label), _) => label,
+        (true, None, true) => {
+            "ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS".to_string()
+        }
+        (true, None, false) => {
+            "ACTIVE_COPY_RESTORE_CAPTURED; reclaim qualification incomplete; see metrics; continuation comparison pending; not G1 PASS".to_string()
+        }
+        (false, _, _) => "BASELINE_CAPTURED".to_string(),
     };
     fs::write(
         args.out

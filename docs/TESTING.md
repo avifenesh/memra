@@ -914,7 +914,7 @@ cells the freeze lists as required.
 (pure, testable without CUDA):
 
 ```text
-kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|32768 --tiers host|host,nvme --same-program [--kv-allocator pooled|vmm] [--reclaim-diagnostic] --out <new-directory>
+kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|32768 --tiers host|host,nvme --same-program [--kv-allocator pooled|vmm] [--reclaim-diagnostic [--reclaim-cycles N]] --out <new-directory>
 ```
 
 - `--same-program` is mandatory. Without it the parser rejects the invocation
@@ -950,6 +950,48 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|3276
   `mapped_va_release_delta_bytes`, `mapped_unmap_delta_bytes`, `mapped_va_roundtrip_equal`,
   `free_after_mapped_va_probe_bytes`, `residual_bytes`, `residual_class` and
   `free_after_restore_bytes` to `residual-diagnostic.txt`.
+- `--reclaim-cycles N` (N >= 2, ASCII digits only) repeats the SAME demote/restore roundtrip N
+  times in one process on one cache under `--reclaim-diagnostic`, so a residual is classified by
+  its series instead of inferred from one roundtrip (lead ruling, day 11). Every cycle writes the
+  full roundtrip receipt set under `cycle-<k>/` (`active-reclaim.txt`, `residual-diagnostic.txt`,
+  `mapped-va-probe.tsv`, `vmm-planes.tsv`, `active-bundles.tsv`, `reclaim-diagnosis.txt`,
+  `restored-prefix-state.tsv`) and must restore the suspended state bit-identically before the
+  next cycle starts (`active restored state is not bit-identical to suspended state (cycle k of
+  N)` aborts the gate). The receipt root gains `reclaim-cycles.tsv` (one row per cycle: free
+  VRAM before demote, after demote, after restore; `reclaimed_bytes`, `reacquired_bytes`,
+  `residual_bytes`, `restore_residual_bytes`, `free_before_drift_bytes`, the per-cycle flags and
+  the restored-prefix manifest hash) and `reclaim-cycles.txt` with `residual_series_class`
+  (`kv_tier_gate/reclaim_contract.rs`, `classify_cycles`): `none` (zero residual every cycle),
+  `one-time-driver-mapping-metadata` (exactly one granule after cycle 1 and identical through
+  cycle N, criteria (a) to (c) holding every cycle, no drift of the process free baseline),
+  `growing-residual` (the residual, or the bytes still unreturned against the first cycle's
+  baseline, grows across cycles), otherwise `unclassified`. The per-cycle G1 line is unchanged
+  (`reclaimed = vmm_granularity != 0 && reclaim_observed && observation.residual == 0`, tightening
+  (e)). The series `g1_reclaim_qualified` follows lead ruling 6 (day 12,
+  `reclaim_contract::series_verdict`): `true` with a nonzero residual only when all of these hold:
+  the run is a `--reclaim-cycles N` series with N >= 5 (`series_min_cycles=5`), the class is
+  `one-time-driver-mapping-metadata`, criteria (a) to (c) hold in every cycle, the restored prefix
+  is bit-identical in every cycle, and the free baseline drifts by 0. Then, and only then, the gate
+  prints `ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, N cycles)` as its
+  status line (the `K` tag follows the committed context) and writes it as `series_label`;
+  otherwise `series_label=not-printed`. A series whose every cycle is exact (class `none`) is
+  `true` with no new label. A single roundtrip with a nonzero residual, a series shorter than 5,
+  any other class, a drifting baseline, a differing restore, and any pooled run stay `false` /
+  `not-applicable-pooled` with their existing status lines. Criteria (a) to (d) are unchanged and
+  (e) stays in force for every other shape. The console prints `reclaim-cycle k/N: ...` per cycle
+  and one `RECLAIM-CYCLES: class=... cycles=N granule=... residual_first=... residual_last=...
+  g1_reclaim_qualified=...` line before the status line.
+  Refusals (exit 2, `REFUSED:` last line): without `--reclaim-diagnostic`
+  (`REFUSED: --reclaim-cycles requires --reclaim-diagnostic`), a pooled allocator
+  (`REFUSED: --reclaim-cycles requires --kv-allocator vmm; a pooled cache releases no chunk`),
+  a duplicate (`REFUSED: duplicate --reclaim-cycles`), and N < 2, a missing value or junk
+  (`REFUSED: --reclaim-cycles requires an integer count >= 2`; the value is never echoed). No
+  new `MEMRA_*` read. CPU replay: `crates/memra-tier/tests/reclaim/` includes the gate's pure
+  modules by path and replays the committed day-10 target-card receipts as series (`day11.rs`) and
+  the committed day-11 series bytes of both card classes under ruling 6 (`day12.rs`); the lane's
+  offline replays are `research/spill-b-20260919/verify-day11.py` (day-11 rule) and
+  `verify-day12.py` (ruling 6: the label must have been printed by the gate as the final status
+  line, exactly once, and the receipt fields must follow the pure verdict).
 - Receipts: `BASELINE.txt` (first line `BASELINE_CAPTURED`) or `ACTIVE.txt` (first line
   `ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS` or
   `ACTIVE_COPY_RESTORE_CAPTURED; reclaim qualification incomplete; see metrics; continuation
@@ -962,8 +1004,9 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|3276
   `kv_tier_gate/reclaim_contract.rs`; on top of criteria (a) to (d) the gate applies the day-10
   tightening (e): `g1_reclaim_qualified=true` requires `residual_bytes=0`
   (`active.rs`: `reclaimed = vmm_granularity != 0 && reclaim_observed && observation.residual == 0`),
-  so a *classified* nonzero residual is recorded but does not qualify. The binary never prints a G1
-  verdict; the lane's offline replay (`research/spill-b-20260919/verify-day10.py`, which enforces
+  so a *classified* nonzero residual is recorded but does not qualify in any single roundtrip. The
+  binary prints a G1 label in exactly one shape, the ruling-6 series label above; for every other
+  shape the lane's offline replay (`research/spill-b-20260919/verify-day10.py`, which enforces
   the same zero-residual rule) compares the receipt with the frozen baseline bundle and assigns
   `ACTIVE-8K G1 PASS` only when (a) to (e) hold.
 - Refusal token contract (lead ruling): a refusal is a final console line
@@ -979,6 +1022,16 @@ empty-plane swap, then direct construction with 34 VMM planes). 32k on both card
 bit-identical, one granule (2,097,152 B) of residual unclassified (the mapped-VA probe
 returned 0 B, so VA-reservation release is not the mechanism), not G1 PASS. B's verifier prints that
 label with a dash; the wording here follows the writing rule.
+
+Status on 2026-09-21 (`research/spill-b-20260919/DAY12.md`, gate source `c7dd20cc5`): the 32k
+five-cycle series rerun printed, on one RTX PRO 6000 Blackwell and on the local RTX 5090 Laptop
+GPU, verbatim `ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, 5 cycles)`
+(residual 2,097,152 B in every cycle, drift 0, restored prefix bit-identical in every cycle; the
+PRO continuation matches its frozen bundle, the laptop card has no frozen bundle and its
+continuation identity is in-process only). The 8k series control is not rerun: the mapped-VA
+probe refuses to re-reserve the original address for the small 8k planes on both cards (lead
+ruling 7, open item in the decision record); the 8k evidence stays the single-roundtrip
+`ACTIVE-8K G1 PASS` with residual 0. Gate-only door, decide-by 2026-10-04 unchanged.
 
 ### Experts-via-tier gate (`run-gen` / `run-spec --experts-via-tier`)
 

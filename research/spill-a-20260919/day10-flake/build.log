@@ -1,0 +1,24 @@
+   Compiling version_check v0.9.5
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling typenum v1.20.1
+   Compiling quote v1.0.46
+   Compiling serde_core v1.0.228
+   Compiling zmij v1.0.21
+   Compiling serde v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling generic-array v0.14.7
+   Compiling memchr v2.8.2
+   Compiling cpufeatures v0.2.17
+   Compiling itoa v1.0.18
+   Compiling cfg-if v1.0.4
+   Compiling syn v2.0.118
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling serde_derive v1.0.228
+   Compiling memra-tier v0.138.0 (/home/avifenesh/projects/wt-spill-a/crates/memra-tier)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.10s
+  Executable tests/storage/mod.rs (target/debug/deps/storage-1825ca21bf643b79)
+systemd-run --user --scope -q -p CPUQuota=1200% -p MemoryMax=28G cargo test -  5.05s user 1.40s system 125% cpu 5.148 total
