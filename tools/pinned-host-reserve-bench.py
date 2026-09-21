@@ -11,13 +11,15 @@ is needed to compare reserve mechanisms. Arms:
 
 Interleaved A/B pairs in both orders (AB x pairs, then BA x pairs) inside ONE process and one
 window; every allocation is freed before the next so the box never holds two arenas. The
-default size is 75 percent of MemAvailable at start (the task's "largest arena the box's free
-host RAM allows minus 25 percent"), rounded down to 2 MiB. Prints one JSON row per
+default size is 75 percent of MemFree at start (the task's "largest arena the box's free host
+RAM allows minus 25 percent", read literally so the pin never evicts another tenant's page
+cache on a shared box; `--basis available` sizes on MemAvailable for a box that runs nothing
+else), rounded down to 2 MiB. Prints one JSON row per
 measurement and a summary with per-arm medians. A harness receipt: the numbers describe the
 box that ran it and nothing else; the decision cell for #385 is the 2x B200 pair.
 
-usage: pinned-host-reserve-bench.py [--bytes N | --fraction 0.75] [--chunks 8] [--pairs-per-order 5]
-                                     [--device 0] [--out receipt.json]
+usage: pinned-host-reserve-bench.py [--bytes N | --fraction 0.75 [--basis free|available]] [--chunks 8]
+                                     [--pairs-per-order 5] [--device 0] [--out receipt.json]
 Exit 0 = every allocation succeeded and was freed; 2 = a driver call failed (the code is printed).
 """
 import argparse
@@ -134,7 +136,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     size = ap.add_mutually_exclusive_group()
     size.add_argument("--bytes", type=int, help="arena size in bytes (rounded down to 2 MiB)")
-    size.add_argument("--fraction", type=float, default=0.75, help="fraction of MemAvailable at start (default 0.75)")
+    size.add_argument("--fraction", type=float, default=0.75, help="fraction of the --basis field at start (default 0.75)")
+    ap.add_argument("--basis", choices=["free", "available"], default="free",
+                    help="MemFree (default: never evicts another tenant's page cache) or MemAvailable")
     ap.add_argument("--chunks", type=int, default=8)
     ap.add_argument("--pairs-per-order", type=int, default=5)
     ap.add_argument("--device", type=int, default=0)
@@ -143,8 +147,10 @@ def main():
     if args.chunks < 2 or args.pairs_per_order < 1:
         raise SystemExit("REFUSED: --chunks >= 2 and --pairs-per-order >= 1")
     avail0 = meminfo("MemAvailable")
+    free0 = meminfo("MemFree")
     total = meminfo("MemTotal")
-    nbytes = args.bytes if args.bytes else int(avail0 * args.fraction)
+    basis0 = free0 if args.basis == "free" else avail0
+    nbytes = args.bytes if args.bytes else int(basis0 * args.fraction)
     nbytes = nbytes // ALIGN * ALIGN
     if nbytes <= 0 or nbytes >= avail0:
         raise SystemExit(f"REFUSED: {nbytes} bytes is not below MemAvailable {avail0}")
@@ -153,10 +159,13 @@ def main():
         "kind": "pinned-host-reserve-bench",
         "issue": "memra#385",
         "bytes": nbytes,
+        "basis": args.basis if not args.bytes else "bytes",
+        "fraction": args.fraction if not args.bytes else None,
         "chunks": args.chunks,
         "pairs_per_order": args.pairs_per_order,
         "mem_total": total,
         "mem_available_at_start": avail0,
+        "mem_free_at_start": free0,
         "gpu_at_start": gpu_state(),
         "loadavg_at_start": loadavg(),
         "rows": [],
@@ -170,8 +179,9 @@ def main():
         for pair in range(args.pairs_per_order):
             for arm in seq:
                 avail = meminfo("MemAvailable")
+                free = meminfo("MemFree")
                 row = arms[arm]()
-                row.update(order=order, pair=pair, arm=arm, mem_available_before=avail,
+                row.update(order=order, pair=pair, arm=arm, mem_available_before=avail, mem_free_before=free,
                            utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
                 receipt["rows"].append(row)
                 print(json.dumps(row), flush=True)
@@ -185,6 +195,7 @@ def main():
     receipt["gpu_at_end"] = gpu_state()
     receipt["loadavg_at_end"] = loadavg()
     receipt["mem_available_at_end"] = meminfo("MemAvailable")
+    receipt["mem_free_at_end"] = meminfo("MemFree")
     summary = {}
     for arm in arms:
         ok = [r for r in receipt["rows"] if r["arm"] == arm and r["ok"]]
