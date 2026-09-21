@@ -259,6 +259,12 @@ environment alone (now refused without `--private-lock-dir-for-tests`, loud star
 refuses foreign seams). D's note for the lead: `tools/ci-change-class.sh` classes `research/**` as docs-only while ten
 test-time `research/` reads now exist across lanes (list in D's DAY13.md); queued.
 
+## The integ11 tripwire settled (clean window, `main` `30e433c4c`)
+Rerun of `tools/local-ci.sh --perf` with no co-resident (`integration-day12/perfci-clean-window/`): correctness GREEN,
+serve-smoke 0 failed, hit gate ALL GREEN, `26b-plain-short: 208.52 tok/s [OK]`, `qwen9b-plain-short: 138.80 tok/s [OK]`,
+`perf stage: 0 fail, 0 warn`, rc=0, rows `window_clean:true`. The two `[FAIL]` rows of the integ11 run were the
+contended window (another session's process on the card), as the record said; the diff carried no tok/s change.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
