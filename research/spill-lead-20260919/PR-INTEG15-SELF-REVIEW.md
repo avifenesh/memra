@@ -30,7 +30,14 @@ addition, `tools/kv-host-tenant-reclaim-gate.sh` (skimmed: arms, matchers, self-
    new rule and both counters. Fix arm rerun on the card (`tenant-fix-r4`): `GATE ... PASS`, reclaims 4, wasted 0,
    rejects 0, texts byte-identical to base; the base binary and receipts are unchanged.
 
+8. **Revuto round two, fixed on the lane (`8302f6b0a`).** The "nothing evicted before the image exists" claim is now
+   scoped: pageable tier, the evictions wait for the built image; fixed arena (`MEMRA_GLM5_TP_KV_HOST=1`),
+   `reserve_image` evicts at reservation before the copy because the planes' backing must exist first, and a copy
+   failure there is booked as `prefix_host_tenant_reclaims_wasted`. Stated in SERVING.md, the FLAGS row, TESTING.md,
+   the code comments and DAY12.md; one CPU cell covers the no-arena no-op and the wasted booking shape; the arena
+   eviction itself is receipt-only (needs a CUDA arena; no card cell ran the fixed-arena tier).
+
 ## Verification this review relied on
-integ15 CPU batteries (`integration-day12/integ15-cpu-battery/` before the review fixes, `integ15-cpu-battery-2/` after; 749 server tests): fmt, portable suites, memra-server suite, clippy,
+integ15 CPU batteries (`integration-day12/integ15-cpu-battery/` before the review fixes, `integ15-cpu-battery-2/` and `-3/` after; 749 and 750 server tests): fmt, portable suites, memra-server suite, clippy,
 censuses, collector pytest, A's `verify-day12.py`, perf board, diff-check; local 5090 serve-smoke on this tree
 (`integ15-serve-smoke-5090/`). A's target-card gate on both arms. This rig cannot run the model gates.
