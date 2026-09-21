@@ -1,0 +1,68 @@
+name: MTP depth receipts
+
+on:
+  pull_request:
+    paths:
+      - research/mtp-calibrated-depth-20260920/**
+      - research/mtp-continuing-session-20260921/**
+      - .github/workflows/mtp-depth-receipts.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mtp-depth-receipts-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Receipt reader and protocol regressions
+        run: |
+          tools/unittest-floor.sh research/mtp-calibrated-depth-20260920 'test_*.py' 6
+          tools/unittest-floor.sh research/mtp-continuing-session-20260921 'test_*.py' 9
+
+      - name: Expanded archive boundary review
+        run: python3 research/mtp-continuing-session-20260921/verify_archives.py
+
+      - name: Extract hash-pinned cold and warm records
+        run: |
+          python3 research/mtp-calibrated-depth-20260920/unpack_receipts.py --destination "$RUNNER_TEMP/mtp-cold"
+          python3 research/mtp-continuing-session-20260921/unpack_receipts.py --destination "$RUNNER_TEMP/mtp-warm"
+
+      - name: Reproduce all four model reports
+        shell: bash
+        run: |
+          for family in qwen gemma; do
+            python3 research/mtp-calibrated-depth-20260920/analyze.py \
+              --family "$family" --ledger "$RUNNER_TEMP/mtp-cold/$family-selected-sets.json" \
+              --receipts "$RUNNER_TEMP/mtp-cold" --output "$RUNNER_TEMP/cold-$family.json"
+            python3 research/mtp-continuing-session-20260921/analyze.py \
+              --family "$family" --ledger "$RUNNER_TEMP/mtp-warm/experiment/$family-selected-sets.json" \
+              --receipts "$RUNNER_TEMP/mtp-warm/experiment" --output "$RUNNER_TEMP/warm-$family.json"
+          done
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          temp = Path(os.environ["RUNNER_TEMP"])
+          for mode, lane in [
+              ("cold", Path("research/mtp-calibrated-depth-20260920")),
+              ("warm", Path("research/mtp-continuing-session-20260921")),
+          ]:
+              for family in ["qwen", "gemma"]:
+                  expected = json.loads((lane / f"{family}-analysis.json").read_text())
+                  actual = json.loads((temp / f"{mode}-{family}.json").read_text())
+                  assert actual == expected, (mode, family, "report changed")
+          print("All four reports reproduced exactly.")
+          PY
+
+      - name: Reject corrupted warm selections and measurements
+        run: |
+          python3 research/mtp-continuing-session-20260921/check_selection_rejections.py \
+            --receipts "$RUNNER_TEMP/mtp-warm/experiment" --tmp "$RUNNER_TEMP" \
+            --output "$RUNNER_TEMP/mtp-rejection-tests.json"
