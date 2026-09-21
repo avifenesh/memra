@@ -2386,8 +2386,13 @@ private:
                         PrefetchAnnex::instance().complete_read(
                             job.projection->cache_key, job.projection->weight_owner);
                     }
+                    // The in-flight charge is per PROJECTION (one fetch_add at submit), so it
+                    // is released exactly once, with the projection's final half, success or
+                    // failure. A mirrored projection is two jobs; releasing per job drove the
+                    // signed counter negative and let the admission cap admit excess work
+                    // (memra#586, tools/test_cpu_expert_prefetch.sh).
+                    prefetch_inflight().fetch_sub(1, std::memory_order_relaxed);
                 }
-                prefetch_inflight().fetch_sub(1, std::memory_order_relaxed);
                 if (state->outstanding.fetch_sub(1, std::memory_order_acq_rel) == 1) {
                     delete state;
                 }
@@ -3037,6 +3042,28 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
     state->projection_failed = std::make_unique<std::atomic<bool>[]>(n);
     std::vector<IoJob> jobs;
     std::int32_t submitted = 0;
+    // Submit-side symmetry (memra#586, review rounds on #612): a projection's stat, resize or
+    // O_DIRECT/mirror resolve can throw after the annex claim was taken (begin_read) and after
+    // earlier projections took their charge, all before pool.submit; nothing would ever release
+    // them, the cap would count phantom work and the key would read as speculated for the life
+    // of the process. `claimed` records every claim the moment it is taken (a runtime is pushed
+    // only later, so state->runtimes cannot drive this). The guard releases exactly what this
+    // call took and is disarmed once the jobs are handed to the pool, from where the completion
+    // path owns every release (tools/test_cpu_expert_prefetch.sh, cells submit-throw and
+    // submit-throw-claim).
+    std::vector<CacheKey> claimed;
+    claimed.reserve(n);
+    struct SubmitGuard {
+        PrefetchAnnex & annex;
+        const std::vector<CacheKey> & claimed;
+        const std::int32_t & submitted;
+        bool armed = true;
+        ~SubmitGuard() {
+            if (!armed) return;
+            if (submitted > 0) prefetch_inflight().fetch_sub(submitted, std::memory_order_relaxed);
+            for (const auto & key : claimed) annex.abort_read(key);
+        }
+    } submit_guard { annex, claimed, submitted };
     auto & profile = cpu_profile();
     for (std::size_t index = 0; index < state->descs.size(); ++index) {
         const auto & desc = state->descs[index];
@@ -3047,6 +3074,7 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
         const CacheKey key { source, desc.file_offset, desc.byte_len };
         if (weight_cache().contains(key)) continue;
         if (!annex.begin_read(key)) continue;  // already speculated or in flight (dedup)
+        claimed.push_back(key);
         ProjectionRuntime runtime;
         runtime.desc = &state->descs[index];
         runtime.cache_key = key;
@@ -3089,6 +3117,7 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
     state->outstanding.store(static_cast<int>(jobs.size()), std::memory_order_relaxed);
     auto & pool = IoPool::instance();
     pool.ensure_started(io_thread_count(8));
+    submit_guard.armed = false;  // the pool and the completion path own every release from here
     pool.submit(std::move(jobs));
     state.release();  // owned by the completion path from here
     if (error != nullptr && error_capacity != 0) error[0] = '\0';
@@ -3152,6 +3181,9 @@ extern "C" void memra_cpu_expert_prefetch_stats_v2(
         *submitted = cpu_profile().prefetch_projections.load(std::memory_order_relaxed);
     }
     if (inflight != nullptr) {
+        // The unsigned ABI field cannot carry a negative count; the clamp keeps the legacy
+        // signature and is NOT the balancing oracle. tools/test_cpu_expert_prefetch.sh reads
+        // the signed counter inside this translation unit (memra#586).
         *inflight = static_cast<std::uint64_t>(
             std::max(0, prefetch_inflight().load(std::memory_order_relaxed)));
     }

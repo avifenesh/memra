@@ -5,6 +5,20 @@ first cell of the `MEMRA_KV_HOST_CONTRACTS` decide-by review (2026-10-05), not a
 flag is engine territory (`crates/memra-engine/src/tier_transfer.rs`) and is NOT changed by this lane. Every
 `file:line` is in tree `25891baa9`; `core.rs` is cudarc 0.19.8 `src/driver/safe/core.rs`.
 
+**Superseded on the target card class (day 17, closed by pointer).** The decision this file asked for
+was taken by lane A: `docs/decisions/PINNED-DESTINATIONS.md` (lead ruling 23). `PinnedKind::for_device`
+returns `Cached` for the RTX PRO 6000 Blackwell class (day-13 receipt: bind hash 77.6 against 1711 ms
+write-combined at 160 MiB, D2H not above at every pair) and `WriteCombined` for the RTX 5090 class and
+every unrecognized name (its cell inconclusive under the rule as pre-registered); `alloc_host` takes the
+resolved kind, no environment variable exists, `alloc_host_kind` is the gate's measurement seam. So
+sections "Mechanism" and "The CPU reads of a contract plane" below describe the destinations as they were
+in tree `25891baa9`; on the target card class the contract's destinations are now cacheable and the
+"Results" numbers (demote 37.8 against 169.2 ms and the rest) are the WRITE-COMBINED cost, kept as the
+record, not the door's current cost there. What the door's decide-by review still owes (`HOSTPREFIX-
+DOOR.md` Status): the same pair cell on a binary carrying `for_device` (the cost with cached destinations)
+and the hash-speed micro-cell; items 2 and 3 of "What a decision needs" are otherwise answered by lane A's
+record (item 3 by the decision, item 2 by the pinned-ab cell's engine-hash and bind-hash columns).
+
 ## Mechanism
 
 | Allocation | Call | Flags | Used by |
