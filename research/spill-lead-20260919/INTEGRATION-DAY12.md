@@ -752,6 +752,12 @@ inflight_signed=1 expected 0` (`cpu-prefetch-586-round1-red.log`), with it `subm
 `cpu expert prefetch accounting tests: ALL GREEN` (`cpu-prefetch-586-round1-green.log`). (2) the barrier cell's
 diagnostic printf read two hook counters without the hook mutex; snapshot under the lock. `docs/TESTING.md` and the
 script header name the fourth cell.
+Revuto round 2: the round-1 guard released claims from `state->runtimes`, but the claim of the projection whose own
+resize or resolve throws is taken before its runtime is pushed, so that key stayed `speculated` for the life of the
+process. The guard now releases from a `claimed` vector filled the moment `begin_read` succeeds. Fixture cell
+`submit-throw-claim` (O_DIRECT with a mirror map keyed on the mirror fixture's inode, so the source is absent):
+round-1 tree `submit-throw-claim: key claimable after the failed call=0 expected=1` (`cpu-prefetch-586-round2-red.log`),
+fixed tree `=1 expected=1`, `ALL GREEN` (`cpu-prefetch-586-round2-green.log`). Five cells now.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.

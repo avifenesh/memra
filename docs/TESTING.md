@@ -801,11 +801,15 @@ mirror map refuses one device; defaults `<repo>/target` and `/dev/shm`), both op
 refuses to run where either is unavailable rather than skipping. Before the repair the first two
 cells read `inflight_signed=0` where 3 and 1 were charged (`research/spill-c-20260919/
 day17-local/prefetch-test-red.log`); every cell runs even after a failure and the summary line
-carries the count (`cpu expert prefetch accounting tests: N FAILURE(S)` or `ALL GREEN`). A fourth
-cell, `submit-throw`, covers the submit side of the same invariant: the second projection names an
-fd that is not open, so the submit loop throws after the first projection took its charge and annex
+carries the count (`cpu expert prefetch accounting tests: N FAILURE(S)` or `ALL GREEN`). Two more
+cells cover the submit side of the same invariant. `submit-throw`: the second projection names an fd
+that is not open, so the submit loop throws after the first projection took its charge and annex
 claim and before any job reached the pool; the call must return -1 and release both (a guard in
-`memra_cpu_expert_prefetch_v2`, disarmed once the jobs are handed to the pool).
+`memra_cpu_expert_prefetch_v2`, disarmed once the jobs are handed to the pool). `submit-throw-
+claim`: under O_DIRECT with a mirror map that does not list the source, the loop takes the
+projection's annex claim and then mirror resolve throws for that same projection, before a runtime
+or a charge exists; the key must be claimable again afterwards (the guard tracks claims the moment
+they are taken).
 
 ## Receipts
 

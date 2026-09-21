@@ -383,10 +383,35 @@ int run_submit_throw(const char * source_path) {
     return 0;
 }
 
+// Cell 5, the claim taken in the throwing iteration itself (review round 2 on #612). Under
+// O_DIRECT with a mirror map that does not list this source, the loop takes the annex claim
+// (begin_read) and then mirror resolve throws for the same projection, before a runtime exists
+// and before any charge. The call must return -1 and the key must not stay claimed: begin_read
+// on it afterwards must succeed (the fixture releases that probe claim again). Before the fix,
+// the key read as speculated for the life of the process and no retry was ever admitted.
+int run_submit_throw_claim(const char * source_path) {
+    const int fd = open_readonly(source_path);
+    memra_cpu_projection_v2 desc = projection(fd, 0, kProjectionBytes);
+    std::array<char, 512> error {};
+    const std::int32_t rc = memra_cpu_expert_prefetch_v2(&desc, 1, error.data(), error.size());
+    std::printf("submit-throw-claim: prefetch returned %d error=\"%s\"\n", rc, error.data());
+    expect(rc < 0, "submit-throw-claim: the call under a mirror map without this source did not fail");
+    observe("submit-throw-claim: after the failed call", 0);
+    const CacheKey key = key_of(fd, desc);
+    const bool reclaimable = PrefetchAnnex::instance().begin_read(key);
+    std::printf("submit-throw-claim: key claimable after the failed call=%d expected=1\n",
+                reclaimable ? 1 : 0);
+    if (reclaimable) PrefetchAnnex::instance().abort_read(key);
+    expect(reclaimable, "REGRESSION memra#586 (submit side): the throwing projection's own annex "
+                        "claim leaked, the key reads as speculated");
+    std::printf("submit-throw-claim: PASS\n");
+    return 0;
+}
+
 int run(int argc, char ** argv) {
     if (argc < 2) fail("usage: make-fixture PATH | write-map SOURCE MIRROR MAP | "
                        "barrier SOURCE MIRROR | failure SOURCE MIRROR | parity SOURCE | "
-                       "submit-throw SOURCE");
+                       "submit-throw SOURCE | submit-throw-claim SOURCE");
     const std::string mode = argv[1];
     if (mode == "make-fixture" && argc == 3) {
         make_fixture(argv[2]);
@@ -401,6 +426,7 @@ int run(int argc, char ** argv) {
     if (mode == "failure" && argc == 4) return run_failure(argv[2], argv[3]);
     if (mode == "parity" && argc == 3) return run_parity(argv[2]);
     if (mode == "submit-throw" && argc == 3) return run_submit_throw(argv[2]);
+    if (mode == "submit-throw-claim" && argc == 3) return run_submit_throw_claim(argv[2]);
     fail("unknown mode or argument count: " + mode);
 }
 

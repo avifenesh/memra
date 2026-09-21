@@ -3042,23 +3042,28 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
     state->projection_failed = std::make_unique<std::atomic<bool>[]>(n);
     std::vector<IoJob> jobs;
     std::int32_t submitted = 0;
-    // Submit-side symmetry (memra#586, review round on #612): a later projection's stat, resize
-    // or mirror resolve can throw after earlier projections took their charge and annex claim
-    // but before pool.submit; nothing would ever release them and the cap would count phantom
-    // work for the life of the process. The guard releases exactly what this call took and is
-    // disarmed once the jobs are handed to the pool, from where the completion path owns every
-    // release (tools/test_cpu_expert_prefetch.sh, cell submit-throw).
+    // Submit-side symmetry (memra#586, review rounds on #612): a projection's stat, resize or
+    // O_DIRECT/mirror resolve can throw after the annex claim was taken (begin_read) and after
+    // earlier projections took their charge, all before pool.submit; nothing would ever release
+    // them, the cap would count phantom work and the key would read as speculated for the life
+    // of the process. `claimed` records every claim the moment it is taken (a runtime is pushed
+    // only later, so state->runtimes cannot drive this). The guard releases exactly what this
+    // call took and is disarmed once the jobs are handed to the pool, from where the completion
+    // path owns every release (tools/test_cpu_expert_prefetch.sh, cells submit-throw and
+    // submit-throw-claim).
+    std::vector<CacheKey> claimed;
+    claimed.reserve(n);
     struct SubmitGuard {
         PrefetchAnnex & annex;
-        PrefetchState & state;
+        const std::vector<CacheKey> & claimed;
         const std::int32_t & submitted;
         bool armed = true;
         ~SubmitGuard() {
             if (!armed) return;
             if (submitted > 0) prefetch_inflight().fetch_sub(submitted, std::memory_order_relaxed);
-            for (const auto & runtime : state.runtimes) annex.abort_read(runtime.cache_key);
+            for (const auto & key : claimed) annex.abort_read(key);
         }
-    } submit_guard { annex, *state, submitted };
+    } submit_guard { annex, claimed, submitted };
     auto & profile = cpu_profile();
     for (std::size_t index = 0; index < state->descs.size(); ++index) {
         const auto & desc = state->descs[index];
@@ -3069,6 +3074,7 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
         const CacheKey key { source, desc.file_offset, desc.byte_len };
         if (weight_cache().contains(key)) continue;
         if (!annex.begin_read(key)) continue;  // already speculated or in flight (dedup)
+        claimed.push_back(key);
         ProjectionRuntime runtime;
         runtime.desc = &state->descs[index];
         runtime.cache_key = key;

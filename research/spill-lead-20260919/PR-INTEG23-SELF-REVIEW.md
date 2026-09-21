@@ -38,6 +38,12 @@ Author's review of the full diff `main..lane/spill-integ23-20260921`, posted as 
   green with it; both logs banked in the battery dir.
 - Fixture data race: the barrier cell's printf now prints a snapshot taken under the hook mutex.
 
+## Review round 2 (revuto, addressed in the integ)
+- The round-1 guard missed the claim of the throwing iteration itself (taken at `begin_read`, runtime pushed only
+  after resize and the two resolves). The guard now releases every key in `claimed`, appended right after
+  `begin_read` succeeds. Cell `submit-throw-claim` forces the mirror-resolve throw with a map that lacks the source:
+  red on the round-1 tree (`key claimable after the failed call=0`), green on the fix. Both logs banked.
+
 ## What I did not do
 - No GPU cell of my own; no serve smoke on this integ (no engine change; the CI step is CPU-only).
 - Not verified here: the new CI step on a GitHub runner (this PR's CI run is that check).
