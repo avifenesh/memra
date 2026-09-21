@@ -92,3 +92,55 @@ continuation table, `run-gen`, `run-spec` and the twin gate on both cards are th
 Receipts: `research/spill-b-20260919/DAY22.md` (the pre-registration, the verbatim lines, the fix cells),
 `rtx5090-day22/{seam,width-walk,fix-walk,fix-gate,fix-kc,fix-hitgate}/`, runners `run-day22-*.sh`, builds
 `rtx5090-day22/{build-tip,build-walk-fmt,build-fix}/`.
+
+## Superseded by #614 (2026-09-21, lead ruling 26)
+
+Main merged #614 (`653c997f4`, 19:46Z, another session) while this lane's day 23 was running: the same defect fixed
+by a different mechanism. `Engine::small_m_tier_max()` returns 16 inside the verify-exact scope and
+`PRIME_MIN_T - 1` (`.min(16)`, the batched family's hard stop) outside it; `matmul` and `matmul_pre` use it as the
+batched small-m tier's ceiling (`(2..=self.small_m_tier_max()).contains(&m)`); `matmul_decode_exact*` keep their own
+`2..=16` tiers because they ARE the decode/verify class. Main's `qwen-a4-continuation-gate` counts a differing 16-row
+tail as a failure and runs in `tools/local-ci.sh` (`MEMRA_CI_CONTGATE`, `MEMRA_CI_CONT_MODEL`).
+
+**Both mechanisms.** The lane's shape (a) as built (`89c693be0`): a `prefill_rows` RAII scope armed at the top of
+`HybridModel::prime_layers` and `batched_tier_admits() = verify_exact_on() || !prefill_rows_on()` on the tier in
+`matmul` and `matmul_pre`. Main's: the tier's upper bound itself, written in terms of the prime floor. Both leave a
+16-row prime call on the `grid.y = m` dp4a program its wider siblings run; both keep the tier for verify-exact and for
+the decode-exact classes; neither adds a kernel, a flag or a numeric program.
+
+**Why main's is the more general one.** The lane's scope covered exactly the callers that armed it. `prime_layers`
+is the per-chunk layer walk of the qwen/hybrid prime, and the lane STATED the gap: `prime_layers_gemma` and
+`step35_prime_cache_batch` do not go through it. Main's bound sits at the tier, so it holds for every caller of the
+general entries, present and future, with no site to forget; and because the bound is `PRIME_MIN_T - 1`, the prime
+floor and the tier ceiling cannot drift back onto each other. The scope was therefore a second mechanism for the same
+behaviour and was removed on the lane in the merge (`180ca38aa`): the field, `prefill_rows_on`, `prefill_rows_scope`,
+`batched_tier_admits`, the two admission conjuncts, the `hybrid_forward.rs` arm. `qwen-a4-width-walk` stays as the
+per-operation 16-versus-17 digest diagnostic, one arm (the plain program: exactly the calls the prime walk makes).
+
+**The scope gap, read at the two sites (for the record; closed by construction by #614).**
+
+- `step35_prime_cache_batch` -> `step35_prime_batch_layers(.., ts, ..)`, `let total: usize = ts.iter().sum();`, then
+  per attention layer `e.matmul_group(&[&fa.wq, &fa.wk, &fa.wv, gate_w], &h, total)` (or `matmul_group_xh` when
+  `pp_f16_enabled() && total >= 16`; a weight without an f16 mirror falls to `matmul` there as well) ->
+  `matmul(w, x, m = total)`. Every `ts[s] >= PRIME_MIN_T` is asserted, so at B = 1 a 16-token prompt or a 16-row
+  continuation chunk gives `total = 16`. `attn_gate.weight` is `[n_embd, n_head_l]` with `n_head_l` = 64 (full) /
+  96 (SWA) on Step-3.7-Flash (`hybrid.rs`, the field's doc), `out_f < GEMM_MIN_OUT_F = 128`: under the GEMM floor
+  and, quantized in a b16-admitted qtype, in the batched tier at m = 16 before #614. So a 16-row prime chunk COULD
+  reach the tier there, the lane's scope did not cover that site, and #614 does. No Step-3.7-Flash GGUF exists on
+  either rig (locally only the HF safetensors `Step-3.7-Flash` and `-FP8`), so the step35 continuation split
+  (16 versus 17 rows) is owed to a rig that holds one; the step35 `kernel-check` manifest is model-free and ran on
+  both cards (DAY23.md).
+- `prime_layers_gemma` -> `gemma4_attn_prime(e, fa, il, &h, pos_d, t, ..)` -> `e.matmul(&fa.wq, h, t)`,
+  `e.matmul(&fa.wk, h, t)`, `e.matmul(&fa.wv, h, t)`, `e.matmul(&fa.wo, .., t)`; the FFN through
+  `gemma4_layer_tail_add` -> `gemma4_layer_tail_core`: `matmul_q4_fused2_batched(ffn_gate, ffn_up, .., t)` or
+  `matmul(ffn_gate, .., t)` + `matmul(ffn_up, .., t)`, then `matmul_pre(ffn_down, .., t)` / `matmul(ffn_down, .., t)`.
+  m = t, and t = 16 is a legal chunk. The gemma4 packs' quantized projections are wq `[query_heads * head_dim]`,
+  wk/wv `[kv_heads * head_dim]`, wo, gate/up/down `[intermediate]`; q_norm/k_norm are `FloatOnly` `[head_dim]`
+  vectors; the MoE router is `[n_expert = 128]`. On the gemma-4 artifacts every quantized `out_f >= 128`, so at
+  m = 16 the GEMM arm takes them and the tier is not reached at any width: the site was width-safe by the artifact
+  census, not by construction. #614 makes it so by construction for any gemma variant with a small projection. A
+  gemma continuation-split tool does not exist (the continuation gate is the qwen/hybrid prime path); not run.
+
+**What the lane's gates guard now.** The width walk, the seven-arm continuation table, `kernel-check`, the #379 hit
+gate and the twin gate re-ran on the merged tree (main's mechanism, no scope): `DAY23.md`. The day-22 receipts on the
+lane's mechanism stand as evidence for the defect and its placement; they are not receipts for main's code.

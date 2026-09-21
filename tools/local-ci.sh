@@ -409,6 +409,29 @@ else
     echo "prime-gate: SKIP (no q35 model at $Q35)"
 fi
 
+# CONTINUATION GATE (memra#427): a restored suffix prime must equal the one-call prime at every
+# grid-aligned split, INCLUDING a final segment of exactly PRIME_MIN_T (16) rows. That shape was
+# the one prime call that rode the batched decode/verify mmvq tier (`2..=16`) instead of the
+# prefill program; the tier now ends at PRIME_MIN_T-1 outside the verify scope, and this arm is
+# what keeps it there. Tails 16/48/80 over a 9,296-token repo-text prompt on the 9B NVFP4 GDN
+# hybrid (the served class); about 40 s. MEMRA_CI_CONTGATE=0 skips; MEMRA_CI_CONT_MODEL overrides.
+CONT_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_CONTGATE:-1}" = "1" ] && [ -f "$CONT_MODEL" ]; then
+    echo "== local-ci: prime continuation gate (one call vs head + tail; tails 16/48/80) =="
+    [ -x target/release/qwen-a4-continuation-gate ] \
+        || cargo build --release -p memra-engine --bin qwen-a4-continuation-gate >/dev/null 2>&1
+    CONT_PROMPT=$(mktemp "${TMPDIR:-/tmp}/local-ci-cont-prompt.XXXXXX")
+    cat docs/FLAGS.md docs/TESTING.md > "$CONT_PROMPT"
+    out=$(NVIDIA_TF32_OVERRIDE=0 target/release/qwen-a4-continuation-gate "$CONT_MODEL" "$CONT_PROMPT" 9296 16 48 80 2>&1 || true)
+    rm -f "$CONT_PROMPT"
+    echo "$out" | grep -E '^  [0-9]+ \+ [0-9]+:' || true
+    echo "$out" | grep -q "CONTINUATION GATE: PASS" \
+        || { echo "$out" | tail -12; echo "prime continuation gate FAIL (a split differs from the one-call prime)"; exit 1; }
+    echo "prime continuation gate: PASS (16/48/80-row tails bitwise with the one-call prime)"
+else
+    echo "prime continuation gate: SKIP (no 9B NVFP4 model at $CONT_MODEL or MEMRA_CI_CONTGATE=0)"
+fi
+
 # The standing MTP exactness gate. A naked run-spec invocation sweeps K=1..8; explicitly clear
 # single-K and alternate-mode env so a caller cannot silently narrow or change the gate.
 # The Gemma-4 31B target below uses a separate assistant-drafter API, so its independent

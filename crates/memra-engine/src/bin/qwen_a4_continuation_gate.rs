@@ -14,11 +14,11 @@
 //! nothing about the artifact -- 8 of 10 unaligned splits differ, for the served mint exactly as
 //! much as for a calibrated one. The gate refuses an unaligned head rather than reporting it.
 //!
-//! A final segment of exactly PRIME_MIN_T (16) rows used to be a known non-bitwise shape on both
-//! artifacts (memra#427: the 16-row chunk took the batched MMVQ tier for the GDN alpha/beta
-//! projections while wider chunks took the grid.y=m dp4a program). Since the prefill-rows scope
-//! (`Engine::prefill_rows_scope`, lane/spill-b-20260919 day 22) it is a verdict like every other
-//! split: a differing 16-row split FAILS this gate.
+//! A final segment of exactly PRIME_MIN_T (16) rows used to be a known non-bitwise shape on
+//! both artifacts (memra#427): the general matmul entries routed m=16 through the batched
+//! decode/verify mmvq tier while every longer prime rode the generic path. The tier now stops
+//! at PRIME_MIN_T-1 outside the verify scope, and this gate counts the 16-row tail like any
+//! other split.
 //!
 //! usage: qwen-a4-continuation-gate <model.gguf> <prompt.txt> [total] [splits...]
 use memra_engine::Engine;

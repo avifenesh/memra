@@ -6718,11 +6718,6 @@ impl HybridModel {
         cache: &mut Cache,
         seq_end: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        // PREFILL ROWS (memra#427): every projection in this chunk's walk is a prefill of `t`
-        // rows. The scope keeps a chunk of exactly PRIME_MIN_T rows off the batched MMVQ
-        // tier (a decode/verify class), so the same rows take the same program as in a
-        // wider chunk; RAII, restored on every exit. See `Engine::batched_tier_admits`.
-        let _prefill_rows_scope = e.prefill_rows_scope();
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
