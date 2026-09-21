@@ -319,3 +319,64 @@ for a later comparison; no before-side oracle exists to compare them against tod
 after path interleaves ingestion with the trunk chunks and synchronizes per chunk, and the test compile
 overlapped the first rung; this is not a timing claim in either direction and the cell was not designed to
 make one. `executed-not-qualified`.
+
+## Gates on the changed binary (local RTX 5090, after the cells)
+
+- CPU: `cargo test --release -p memra-engine dflash::` (under the CPU quota, 22:12:51Z to 22:14:30Z): `running 57
+  tests` ... `test result: ok. 57 passed; 0 failed; 0 ignored; 0 measured; 489 filtered out; finished in 0.17s`,
+  the three `dflash_tap_oracle_tests` among them (`standalone_prime_consumes_each_chunk_before_the_next_and_keeps_the_256_row_partition ... ok`).
+  `cargo clippy --release -p memra-engine --all-targets -- -D warnings`: `Finished` with no warning (22:11:38Z to
+  22:12:02Z). `cargo fmt -p memra-engine -- --check` clean.
+- Hit gate, `tools/spec-on-cache-hit-gate.sh qwen` on the Qwen3.5-9B NVFP4 MTP GGUF (`52c9cceb…`) with
+  `memra-server` `a13e31f5bd36…` from `4fd4f3b41`, canonical binary name, the gate's own `flock -w 300` on
+  `/tmp/memra-5090.lock`, 22:23:26Z to 22:23:55Z, no `memra-server` process on the host before it started
+  (checked read-only by name; the gate stops servers by name, so a foreign one would have been a reason not to
+  run it): `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (63 `ok` clauses across the spec-on and spec-off boots; 33
+  evidence files in `rtx5090-day20/hitgate/ev/`; `hitgate/hitgate.log`).
+- Twin gate, `qwen-a4-continuation-gate` (`f68d228c051a…` from `4fd4f3b41`) on the same 9B artifact with lane
+  A's 9,296-token `cont-prompt.txt` (copied into `rtx5090-day20/contgate/`), behind `flock -w 1800` on the
+  canonical lock, 22:23:55Z to 22:24:04Z: `one call over 9296 tokens: logits_sha=fd4ab9787e0a3823`, `9248 + 48 ok`,
+  `9216 + 80 ok`, `9280 + 16 ok` (three unaligned splits `SKIPPED` by the grid law), `A4 CONTINUATION GATE: PASS`
+  (`contgate/contgate.log`; the same digest lane A read on day 16 on this card).
+Both gates run the SERVING path (the 9B MTP drafter and the trunk prime), which this change does not touch; they
+are the "nothing else moved" check the brief asked for, not proof of the DFlash change (that is the after cell).
+No compute process on the card before or after either gate. `executed-not-qualified`.
+
+## Summary for the review and for #365
+
+- Census: the tap is `n_taps x hidden` f32 per prompt token (102,400 bytes on the 27B with the five-tap DFlash2
+  export; `131,070 x 102,400 = 13,421,568,000`), written per tapped layer per prime chunk by `dflash_tap`, read
+  once by the drafter's ingestion in 256-row windows in prompt order, freed after ingestion. The SERVING path
+  was already bounded by #370 (chunk sink plus 256-row carry). The whole-prompt sink survived only in the
+  standalone entry points `generate_spec_dspark` (qwen) and `generate_spec_dflash` (gemma, bounded to 2,048 rows
+  by its own window assert).
+- Landed (`4fd4f3b41`): `generate_spec_dspark` primes through the serving walker `prime_dflash_taps`; the tap
+  is one trunk chunk (4,096 rows, 419,430,400 bytes; 4,111 rows at most) plus the 26,214,400-byte carry, and the
+  monolithic prime's whole-prompt `hiddens` goes with it; a typed refusal replaces the carry's `expect`; one CPU
+  test on the bookkeeping. No kernel, value, flag, dependency or serving-path change.
+- Before, local RTX 5090 (`tapladder20`): 8,194 and 16,382 tokens `EXACT`; 32,759 OOM on a GDN prefill transient
+  with the 3,354,521,600-byte tap resident; 65,507 the 6,707,916,800-byte tap itself refused; 131,004 the gate's
+  plain control refused first.
+- After (`tapladder20b`): `DAY20 REPLAY tapladder20b: PASS (9 checks) -> identity; bounded`: the two admitted
+  rungs give the same `spec_sha256`, length and `28/28` acceptance; 32,759 and 65,507 now complete `EXACT` with a
+  419,430,400-byte chunk sink; 131,004 refuses where it did, in the plain control. Hit gate `ALL GREEN (qwen)`,
+  twin gate `PASS` on the changed binary.
+- Not done, named: the 131k rung needs a control that fits (the gate's plain oracle primes monolithically and
+  holds a 2.68 GB `hiddens`); a before-side `[dflash-oracle]` digest does not exist for the standalone path, so
+  the tap/feature digests recorded today are the baseline for the next change, not a comparison; the serving
+  path's own 128k and near-262k cells the issue lists (eight-turn cold and warm, vision resident, host pressure)
+  are #370's and #377's territory and were not run here; nothing ran on the target card (the change is
+  device-independent bookkeeping, the target-card cell is owed if the lead wants it before main). memra#365
+  stays open with the census and the receipt as a comment.
+
+## Push section
+
+Every push in `MEMRA_RELEASE_QUALIFICATION_MODE=development`, each with the hook's `UNQUALIFIED DEVELOPMENT:
+refs/heads/lane/spill-c-20260919 at <sha>; no GPU qualification claimed` line and a `log_skip` row: `6c30f2d39`
+(the merge of main `a18c936a3`), `4fd4f3b41` (the change, the census, the before cell; `0e346fe7d` the gate
+receipt line and the prompt generator rode with it), `537ed6860` (the after cell, the replay), and the day's
+closing commit (this section, `STATE.md`, the `INDEX.md` row, the gates). No qualification is claimed by any of
+them.
+
+Agent time: about 2.6 hours of a 4-hour budget (merge and reading 0.4, census 0.5, harness and before cell 0.5,
+the change, tests and after cell 0.7, gates and records 0.5).
