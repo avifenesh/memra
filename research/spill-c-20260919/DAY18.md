@@ -268,3 +268,109 @@ complete; 59..72 C, 164 W peak. The server log carries zero `experts-via-tier`, 
 request_ok=True door_lines=0 flag_refused=False flag_silently_accepted=True -> door_unreachable_in_serving`.
 As expected from source: the server consults argv for `--version` and the key-lifecycle flags only. The
 target-card arm follows the overlap pair below.
+
+## Item 4 result: the synchronous miss path priced on the target card (`overlap`, replay `DAY18 REPLAY overlap: PASS (9 checks)`)
+
+`pro-single-day18/overlap/`: one collector lock hold of 976 s (`marks.tsv` 19:21:42.232Z to 19:37:57.781Z),
+twenty `run-gen` runs, `293bada0…` built from `e16bc69e8`, the approved artifact (`df27a780…`), the day-nine
+environment (`MEMRA_MOE_RESIDENT=0 MEMRA_NGEN=32 MEMRA_MOE_SLOTS=9986`, prompt `55 88 13`), OFF = no door,
+ON = `--experts-via-tier` with the default 256 MiB host budget (16 host slots). Regime over the window
+(3,894 samples at 250 ms, `command.gpu.csv`): 36 to 40 C, power draw at most 189 W under the 600 W limit,
+SM clock 2332 to 2377 MHz. The first run (`o1-off-r1`) re-read the artifact from disk (55.0 s wall; lane A's
+sitting had dropped the page cache); every later run loaded from the page cache. Collector `--validate`
+rc=0 (`overlap-validate.log`). `executed-not-qualified`.
+
+Integrity, all held: twenty runs exit 0 with `MATCH`; one `tokens:` tape across the twenty; `slots=9986` in
+every cache line; one STEADY-STATE line across the twenty (`hit-rate=90.4% | 43.5 MB/decode-token`); every ON
+run prints `[experts-via-tier] installed ... host_slots=16 max_expert_bytes=860160` and
+`physical_reads=22077 owner_close=Ok(())`; no OFF run prints a door line.
+
+| Run | decode gen-only s (OFF) | decode gen-only s (ON) | cumulative misses OFF / ON | ON `install_s` | `forward_s` OFF / ON | wall s (marks) OFF / ON |
+|---|---|---|---|---|---|---|
+| o1 r1..r5 | 0.408, 0.407, 0.407, 0.408, 0.408 | 2.368, 2.323, 2.320, 2.323, 2.301 | 8,211 / 18,195 (every run) | 75.53, 74.55, 75.06, 75.16, 74.55 | 0.65 / 6.26, 6.07, 6.20, 6.16, 6.03 | 5.5 (r1 55.0, cold) / 87 |
+| o2 r1..r5 | 0.408, 0.409, 0.409, 0.408, 0.408 | 2.522, 2.305, 2.363, 2.380, 2.528 | same | 74.48, 75.14, 75.37, 74.44, 74.62 | 0.65 / 6.54, 6.30, 6.38, 6.41, 6.56 | 5.5 / 87 |
+
+Pooled (N=10 per arm): decode OFF **0.408 s** (0.407 to 0.409), ON **2.343 s** (2.301 to 2.528); ratio
+**5.743** (order 1 5.694, order 2 5.833); door cost **60.5 ms per decode token**, **1.39 ms per staged MB**
+at the steady 43.5 MB per token; ON `install_s` median **74.8 s** (the SHA-256 pass over the 19 GB artifact,
+the plan-derived catalog bind and the byte-for-byte compare of every retained record against the loaded
+`HostExps`); `forward_s` (loaded to generated: prefill, warmup, decode) 0.65 against 6.28 s, ratio 9.6;
+whole-process wall 5.5 against 87.2 s (medians from the driver's marks). Every ON run carries 22,077
+`[expert-host-slru]` trace lines (one per host demand) inside its time; the 12,091 GPU evictions and 22,077
+physical reads of day nine are reproduced exactly in every ON run. ON `physical_reads` (22,077) exceeds ON
+cumulative GPU misses (18,195): the 16-slot host tier misses on its own re-reads as well.
+
+Verdict, verbatim from the replay of the pre-registered rule:
+
+`OVERLAP-PAIR rule decode_off_s=0.408 decode_on_s=2.343 decode_ratio=5.743 ratio_o1=5.694 ratio_o2=5.833 off_range=0.407..0.409 on_range=2.301..2.528 door_cost_ms_per_decode_token=60.47 steady_mb_per_token=43.5 door_cost_ms_per_staged_MB=1.390 misses_off=[8211] misses_on=[18195] reads_on=[22077] evictions_on=[12091] install_on_s=74.84 forward_off_s=0.65 forward_on_s=6.28 forward_ratio=9.627 N=5/arm/order pooled=10 orders=2 temp_c=36..40 power_max_w=189 power_limit_w=600.00 W identity=ok integrity=ok -> sync_miss_path_slower`
+
+Observations, stated as observations:
+
+1. **The synchronous miss path is 5.7x slower at decode at this budget, in both orders, with the tape
+   identical.** 60.5 ms per decode token for 43.5 MB of staged experts is 1.39 ms per MB, about 0.72 GB/s
+   effective, against the legacy SLRU's own miss path at the same slot count (the OFF arm stages the same
+   bytes per token in 0.408 s for 32 tokens). The door's miss is one demand, one pread into the 16-slot host
+   tier when that misses, one H2D and a full compute-stream drain, serialized; the legacy path prefetches
+   (its cumulative misses are 8,211 against 18,195 because its detached prefetch turns demands into hits,
+   and `prefetch_source` returns `false` under the bank, as pre-registered).
+2. **The install is 75 s per process at this artifact.** That is the hash lock's SHA-256 over 19 GB (at the
+   2.15 GB/s this host hashes, about 9 s of it) plus the record compare (every retained record read and
+   compared byte for byte) and the catalog bind; it is the door's per-boot cost as landed, not a per-request
+   cost, and it is not inside the decode ratio.
+3. **`forward_s` carries the prefill misses too**: 6.28 against 0.65 s, ratio 9.6, so the synchronous path
+   costs relatively more where the working set is cold (prefill) than at the steady decode.
+
+Against the door, as pre-registered: `sync_miss_path_slower` holds, so item 4 is confirmed as the promotion
+blocker at this budget on the target card. The door cannot sit behind the tiered materializer on speed
+without several leases in flight retired on copy-stream events (and without reintroducing the
+publish-before-completion hole `d0acf6f03` closed). The synchronous path is the door's only miss path;
+there is no separate arm to delete for this item, so a delete decision at the decide-by deletes the whole
+list in the door doc's "Decision at decide-by". The decision stays the review's.
+
+## Item 6 result, target-card arm (`serverdoor`, replay `DAY18 REPLAY serverdoor: PASS (4 checks)`)
+
+`pro-single-day18/serverdoor/`: `memra-server` `c195b89e…` from this tree with `--experts-via-tier` on its
+argv, the approved artifact as `gate`, `MEMRA_MOE_RESIDENT=0`, ready in 8.0 s (page-cached), one completion
+returned text (`spec-acc ctx=8 burst=7/24`; the MTP verify-graph pool declined on the non-resident MoE MTP
+head and the eager verify walk served, a serving detail outside the door), TERM, drain complete; 37 to 45 C,
+314 W peak under 600 W. Zero `experts-via-tier`, `expert-host-slru` or `expert-gpu-slru` lines, no usage or
+unknown-argument line. Verbatim: `SERVERDOOR rule ready=True request_ok=True door_lines=0 flag_refused=False
+flag_silently_accepted=True -> door_unreachable_in_serving`, the same line as the local arm.
+
+For the review: the door has no serving surface, so the serving-shape bit-identity gate item 6 requires
+(banked against native, solo against batched) cannot exist before a serving installer does; and the door's
+flag reaches the server's argv and produces neither the door nor a refusal on either card (the server scans
+argv for `--version` and the key-lifecycle flags only). The second is a hygiene finding, not a door defect:
+`memra-server` rejects no unknown argument of any kind.
+
+## Local battery on the final tree (`day18-local/`) and hygiene
+
+`cargo fmt --all -- --check` clean (the one new Rust file, `hash_micro.rs`, rustfmt-clean); `git diff
+--check` clean; `tools/check-flags.sh` every runtime `MEMRA_*` name resolves (no new read: `hash-micro` reads
+none; the cell scripts set existing names); `python3 tools/check-public-boundary.py check` 582
+grandfathered, 0 new; `tools/docs-registry-census.sh` clean (58 tables, 905 rows); `shellcheck -x` clean on
+`day18-cell.sh` and `day18-run-cell.sh`; `py_compile` clean on `day18-replay.py`; the em-dash scan over the
+day's prose, scripts, the bin and the commit messages finds none. Every local GPU run went through the
+collector on `/tmp/memra-5090.lock` (`rtx5090-day18/*/lock.json`); every CPU-heavy local step ran under
+`systemd-run --user --scope` with a CPU quota. BOX3 after the sitting: no `tmux` session, no `memra-server`,
+`/tmp/memra-gpu.lock` free, `/root/wt-c` detached at `refs/bundle/c18` (`e16bc69e8`), receipts
+`/root/spill-receipts/c-day18/` mirrored to `pro-single-day18/` without the binaries (`bins/` stays there);
+`/root/artifacts` and `/root/memra-spill` untouched; the shipped bundle deleted on both ends.
+
+## Push
+
+Every push today in the announced development mode, verbatim shape `UNQUALIFIED DEVELOPMENT:
+refs/heads/lane/spill-c-20260919 at <sha>; no GPU qualification claimed` then `pre-push: skip recorded in
+.../.git/memra-gate-skips.log`: `922927619` (the merge of main), `7050170ba` (the pre-registration, before
+any GPU run), `a3e27505a` (the first receipts), `19b3ee36b` (interim results and the review table), and the
+day-docs tip named in `STATE.md`. No commit on main or the lead branch; no PR; the lead integrates.
+
+## Effort and what remains
+
+About 2.5 agent-hours against the 4-hour budget (the four target-card cells took 17 minutes of card time,
+the overlap pair 16 of them; both builds were warm). Done: items 1, 3 (second half), 4 and 6 have their
+day-18 inputs with verbatim verdicts and replays (item 1 as census and CPU proof, item 3's scale half as CPU
+proof, both stated); the HOSTPREFIX review table with the hash micro-cell on both cards. Not done, stated:
+a native item-1 cell (needs the installer in a PP gate binary, code), a native scale-admission cell (needs a
+scale-bearing artifact), the arena lease handoff pricing, the DFlash tail slice, verify digest v3, the
+RTX 5090-class pair for the HOSTPREFIX door, and the two census questions the hash arithmetic raised.

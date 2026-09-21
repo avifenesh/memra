@@ -54,7 +54,8 @@ assertion above, and the receipt verifiers `verify-day8.py` / `verify-day9.py` /
 test can construct `MoeSlotCache`, so `install_banked` and `admit_banked`
 refusals are exercised only by native cells.
 
-Evidence: `DAY8.md` (rented 5090, bank budgets 8 GiB and 4 GiB, refusal cell),
+Evidence: `DAY18.md` (day-18 inputs for items 1, 3, 4 and 6, verbatim lines under each item below),
+`DAY8.md` (rented 5090, bank budgets 8 GiB and 4 GiB, refusal cell),
 `DAY9.md` (target card: default and 8 GiB, gen `MATCH`, spec K1..8
 `SELF-CONSISTENCY PASS`, ON/OFF tapes identical, 12,091 / 63,996 GPU evictions).
 
@@ -70,7 +71,13 @@ or is a transport, so this document records them rather than speculating in code
    bank refuses today. Usable behind the materializer needs one of: a bank owner
    registered per CUDA owner thread (per stage), or a typed owner-thread hand-off
    (channel or RPC) that keeps `ExpertBankOwner` `!Send`. Neither is small; the
-   choice depends on the PP placement design the lead owns.
+   choice depends on the PP placement design the lead owns. Day 18 input (`DAY18.md`): the
+   census of `with_moe_cache` callers (the MoE layer functions in `hybrid_forward.rs`, run on
+   whichever thread walks the layer; under the stage-split scopes that is a stage thread) and the
+   CPU proof `cargo test -p memra-tier --test bank owner_proxy` (4 passed, `WrongOwner` from a
+   spawned thread for `validate`, `demand`, `with_bytes`, `finish`); no native cell exists because
+   no PP gate binary carries the installer. Landed behavior under a stage split: a typed refusal
+   before any demand or H2D.
 2. **GPU-side budget refusal.** Landed on day ten as option A (lead ruling 2):
    `--expert-bank-gpu-bytes=N` (Budgets row above), `MEMRA_MOE_SLOTS` untouched.
    Cells and receipts: `DAY10.md`. Still open inside this item: the door budget
@@ -94,14 +101,26 @@ or is a transport, so this document records them rather than speculating in code
    consume`) instead of banking scale-bearing records for the Hy3/Step ladder
    (`banked_residency.rs` already checksums scale planes on the tier side). Each new
    artifact and family is its own census, gates and receipts; the shared loader proves
-   nothing.
+   nothing. Day 18 input (`DAY18.md`, cell `hashlock`, both cards): the hash lock refuses a
+   non-approved artifact with `Error: "experts-via-tier artifact SHA256 mismatch"` (exit 1, no door
+   line) and the same artifact runs natively without the door (`MATCH`), verbatim `-> hash_lock_refuses`
+   on the RTX 5090 (Qwen3.5-9B NVFP4 MTP) and on the target card (Qwen3.8-27B NVFP4 Q5K MTP); the
+   scale-admission refusal has its CPU proof (`cargo test -p memra-gguf --lib expert_banks`, 10 passed,
+   `a_scale_plane_on_a_bank_is_refused_by_name`) and no native cell (no scale-bearing artifact on
+   either rig; shape pre-registered).
 4. **Overlap.** `max_pending = 1`, `items: 1`, `tickets: 1`: every miss is
    synchronous (demand, H2D, full `stream().synchronize()`, finish), and
    `prefetch_source` returns `false`. Speed behind the materializer needs several
    leases in flight retired on copy-stream events instead of a compute-stream
    drain. Performance item; needs interleaved receipts on both rig classes before
    any default, and it must not reintroduce the publish-before-completion hole
-   `d0acf6f03` closed.
+   `d0acf6f03` closed. Day 18 input (`DAY18.md`, cell `overlap`, target card, N=5 per arm per
+   order, both orders, one lock hold, the day-nine 8 GiB pressure shape): verbatim
+   `... decode_off_s=0.408 decode_on_s=2.343 decode_ratio=5.743 ratio_o1=5.694 ratio_o2=5.833 ...
+   door_cost_ms_per_decode_token=60.47 ... door_cost_ms_per_staged_MB=1.390 ... install_on_s=74.84
+   ... -> sync_miss_path_slower` (tape identical, `DAY18 REPLAY overlap: PASS (9 checks)`). The item
+   is confirmed as the promotion blocker at this budget; the synchronous path is the door's only
+   miss path, so there is no separate arm to delete for it.
 5. **Refused arms.** `install_banked` requires the untouched default SLRU, so
    LFU, size-aware classes, pread backends, and frozen residency all refuse with
    the bank installed. Hy3 mixed layouts need size-aware classes; that
@@ -109,7 +128,12 @@ or is a transport, so this document records them rather than speculating in code
 6. **Serving shape.** The door exists in `run-gen` and `run-spec` only;
    `memra-server` has no installer and no serving-shape gate. The one numeric
    program per request rule requires a serving-shape bit-identity gate (banked vs
-   native, solo vs batched) before any promotion.
+   native, solo vs batched) before any promotion. Day 18 input (`DAY18.md`, cell `serverdoor`, both
+   cards): `memra-server` booted with `--experts-via-tier` on its argv serves the native program and
+   prints no door line and no refusal (`flag_silently_accepted=true`), verbatim
+   `-> door_unreachable_in_serving`; the server consults argv for `--version` and the key-lifecycle
+   flags only. The serving-shape identity gate this item requires cannot exist before a serving
+   installer does; the silent acceptance is a hygiene finding for the review.
 
 ## Decision at decide-by
 
