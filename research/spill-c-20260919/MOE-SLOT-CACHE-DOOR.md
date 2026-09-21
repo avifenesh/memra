@@ -16,7 +16,8 @@ Landing commits (oldest first): `e21870438`, `82d75d9cd`, `ec1c356de`,
 `748903f73`, `79353d53d` (typed budgets, GPU slot refusal, native refusal
 token), `1de17d41f` (day-ten cell driver and verifier), `6db8ac122` (installer catalog from
 the model plan and tensor contract, typed catalog refusals), `76f78c569` (exact flag keys,
-shared slot tail pad, gate helpers off the crate root), `6defcd604` (day-eleven driver).
+shared slot tail pad, gate helpers off the crate root), `6defcd604` (day-eleven driver),
+`69905776f` (day twelve: lease token identity, `bank::dispatch_id`, `admit_banked` record assertion).
 
 decide-by: 2026-10-04 (covers the door and both budget flags; CLI doors carry
 their decide-by here, not in `docs/FLAGS.md`).
