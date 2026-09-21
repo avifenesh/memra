@@ -1499,6 +1499,22 @@ pub trait TransferEngine {
     fn retire_source(&mut self, _ticket: &TransferTicket) -> Result<()> {
         Err(Error::Unsupported)
     }
+    /// Day-11 rule (lead ruling 9), additive and optional: a cancelled restore recovers its
+    /// source. An H2D whose publication `cancel` revoked hands its untouched host source back
+    /// to the caller exactly once, as this typed lease, after the copy's producer has been
+    /// observed complete and no source consumer or source graph pin remains; until then it
+    /// refuses `Busy` or `Quarantined` and retains ownership and charge. A ticket whose
+    /// publication was not revoked keeps its source (`NotReady`); a published ticket consumed
+    /// it (`AlreadyReleased`); a second recovery is `AlreadyReleased`. A cancelled ticket never
+    /// drains its source: `retire` and `retire_source` wait (`Busy`) until the caller has
+    /// recovered it, and `cancel` refuses (`AlreadyReleased`) once a source has left the
+    /// ticket, so consuming the source and then cancelling cannot happen. A backend without
+    /// this seam keeps the default refusal and must then refuse `cancel` on an unpublished
+    /// H2D (`Unsupported`) while the source is intact, never revoke and drain it.
+    /// `conformance::transfer_cancel_recovers_source` is the schedule.
+    fn recover_source(&mut self, _ticket: &TransferTicket, _item: u32) -> Result<Self::Host> {
+        Err(Error::Unsupported)
+    }
     fn retire(&mut self, ticket: &TransferTicket, consumer_done: Option<FenceId>) -> Result<()>;
     fn retired(&mut self, ticket: &TransferTicket) -> Result<bool>;
     fn acknowledge(&mut self, ticket: &TransferTicket) -> Result<()>;

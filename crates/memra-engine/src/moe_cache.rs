@@ -978,6 +978,13 @@ impl MoeSlotCache {
         }
         self.misses += 1;
         let token = bank.demand(local, bytes)?;
+        if token.record() != local {
+            // The proxy refuses a mismatched lease before minting a token; this is the
+            // consumer's own assertion at the seam. Retire the lease if it ever fires so no
+            // host use leaks, and copy nothing.
+            bank.finish(&token)?;
+            return Err("banked lease names another expert than the one demanded".into());
+        }
         self.banked_pending = Some(token);
         // Move only the identity out while borrowing payload on the owner. Put it
         // back before observing completion, including any failed enqueue.

@@ -4250,6 +4250,406 @@ fn glm5_tp_kv_host_on() -> bool {
     std::env::var("MEMRA_GLM5_TP_KV_HOST").as_deref() == Ok("1")
 }
 
+/// HOST TIER CONTRACTS DOOR (MEMRA_KV_HOST_CONTRACTS, lane/spill-c-20260919 day 13, lead
+/// ruling 15 Option A; door doc `research/spill-c-20260919/HOSTPREFIX-DOOR.md`). Read once at
+/// boot. OFF = `HostPrefixCache::tier` stays `None` and `host_tier_context` is never called.
+fn kv_host_contracts_door() -> Result<bool, String> {
+    match std::env::var("MEMRA_KV_HOST_CONTRACTS") {
+        Ok(raw) => parse_kv_host_contracts(Some(&raw)),
+        Err(std::env::VarError::NotPresent) => parse_kv_host_contracts(None),
+        Err(std::env::VarError::NotUnicode(_)) => parse_kv_host_contracts(Some("<non-utf8>")),
+    }
+}
+
+/// Pure parse half of [`kv_host_contracts_door`]. Strict on purpose: unset or `0` is OFF, `1` is
+/// ON, and every other value REFUSES THE BOOT. A door whose OFF arm must be byte-identical
+/// by construction cannot fall back to OFF on a typo (`on`, `true`, a bare `=`, `11`): that is
+/// the silent OFF ruling 15 forbids, and it would file an OFF run under the ON arm.
+fn parse_kv_host_contracts(raw: Option<&str>) -> Result<bool, String> {
+    match raw {
+        None | Some("0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(other) => Err(format!(
+            "MEMRA_KV_HOST_CONTRACTS={other:?} refused: the host tier contracts door takes \
+             exactly `1` (on) or `0` (off, the default); it does not fall back to off"
+        )),
+    }
+}
+
+/// The startup pinned arena (MEMRA_GLM5_TP_KV_HOST=1) is charged by its own owner and its
+/// backing-lease handoff to the tier governor is out of scope for this slice (lead ruling
+/// 15); `tier_charge` refuses every demote with `tier fixed-arena lease handoff pending`
+/// while the arena exists, so the door refuses at boot instead of booting a tier that cannot
+/// demote and looks OFF.
+fn host_tier_arena_refusal(arena_door_on: bool) -> Result<(), String> {
+    if arena_door_on {
+        return Err(
+            "MEMRA_KV_HOST_CONTRACTS=1 refused at boot: the startup pinned arena \
+                    (MEMRA_GLM5_TP_KV_HOST=1) is charged by its own owner and its lease \
+                    handoff to the tier governor is out of scope for this slice; the tier \
+                    would refuse every demote with `tier fixed-arena lease handoff pending`. \
+                    Unset one of the two"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+/// Streaming SHA-256 of one artifact file as lowercase hex (the door's artifact identity).
+/// Streams because the served GGUFs are tens of GB; never reads the file into memory.
+fn sha256_file_hex(path: &str) -> Result<String, String> {
+    let mut file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 8 << 20];
+    loop {
+        let n = std::io::Read::read(&mut file, &mut buf).map_err(|e| format!("{path}: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// The numeric class every host-tier image of this server is captured under: the in-process
+/// prefix-entry layout version and the trunk KV block encodings (`memra_kv::kv_blk_bytes`,
+/// q8_0 K rows of 34 B and q5_1 V rows of 24 B per 32 elements). One class, because the
+/// prefix cache is shared by the prime, batched-decode and spec paths and the serving gates
+/// hold those bit-identical (one numeric program per request).
+fn host_tier_numeric_class() -> String {
+    let (k, v) = memra_engine::cache::kv_blk_bytes();
+    format!("server-prefix-entry-v{PREFIX_ENTRY_LAYOUT_VERSION}-kv-q8_0-{k}B-q5_1-{v}B")
+}
+
+/// The program identity of one loaded GGUF model with a ZERO tenant salt; the pool namespace
+/// stamps the salt in `HostTierContext::program`. Every field is a framed contract digest
+/// over what the server holds for the model at load:
+///   artifact        streaming sha256 of the GGUF file (`sha256_file_hex`)
+///   serialized_plan the compiled `ModelPlan` in its `Debug` form (the same convention as
+///                   `kv_tier_gate`, `plan-debug`)
+///   numeric         `host_tier_numeric_class`
+///   stream          the single worker owner thread that runs every copy and kernel
+///   tokenizer       the artifact (a GGUF tokenizer is parsed from the artifact itself)
+///   template        the GGUF chat template text, or the ChatML fallback when it has none
+///   adapter         none (the server serves no adapter)
+///   modality        text (a loaded vision tower refuses the door, `host_tier_context`)
+///   position        immutable prefixes start at token zero (`IdentitySlot::bind` enforces it)
+fn host_tier_program_base(
+    artifact_sha256_hex: &str,
+    plan_debug: &str,
+    chat_template: Option<&str>,
+) -> memra_engine::cache::record::ProgramIdentity {
+    use memra_engine::cache::record::{ProgramIdentity, WIRE_VERSION, digest};
+    ProgramIdentity {
+        version: WIRE_VERSION,
+        artifact: digest("artifact-sha256", artifact_sha256_hex.as_bytes()),
+        serialized_plan: digest("plan-debug", plan_debug.as_bytes()),
+        numeric: digest("numeric", host_tier_numeric_class().as_bytes()),
+        stream: digest("stream", b"server-worker-single-owner-thread"),
+        tokenizer: digest("artifact-tokenizer", artifact_sha256_hex.as_bytes()),
+        template: match chat_template {
+            Some(template) => digest("template-jinja", template.as_bytes()),
+            None => digest("template", b"chatml-fallback"),
+        },
+        adapter: digest("adapter", b"none"),
+        modality: digest("modality", b"text"),
+        position: digest("position", b"prefix-from-token-zero"),
+        tenant_salt: [0; 32],
+    }
+}
+
+/// The numeric class of a DRAFT-BEARING image (day 14, lead ruling 16): the plain class plus
+/// the MTP draft-scratch rows' block encodings, which are the trunk's own (`memra_kv::KvLayer`:
+/// q8_0 K rows, q5_1 V rows; `mtp_scratch_layout` sizes them from `kv_blk_bytes()` with the
+/// draft head's `n_head_kv`). Distinct from the plain class by construction, so a spec-published
+/// entry and a plain-published entry of one prompt never share `numeric`.
+fn host_tier_draft_numeric_class() -> String {
+    let (k, v) = memra_engine::cache::kv_blk_bytes();
+    format!(
+        "{}+mtp-draft-kv-q8_0-{k}B-q5_1-{v}B",
+        host_tier_numeric_class()
+    )
+}
+
+/// Where a loaded model's MTP draft head came from (`HOSTPREFIX-DOOR.md`, "Draft planes"):
+/// embedded in the trunk GGUF (`nextn_predict_layers > 0`, no external attach), or an external
+/// GGUF (the per-model `+draft` attach or `MEMRA_MTP_DRAFT`) named by its own streaming sha256.
+/// A model without an MTP head has no draft program; a draft-bearing entry for it is refused by
+/// name rather than bound to the plain program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum HostTierDraftSource {
+    Embedded,
+    External { sha256_hex: String },
+}
+impl HostTierDraftSource {
+    fn describe(&self) -> String {
+        match self {
+            Self::Embedded => "embedded".to_string(),
+            Self::External { sha256_hex } => format!("external:{sha256_hex}"),
+        }
+    }
+}
+
+/// Which program identity one host image binds to under the door. Pure, so the demote refusal,
+/// `bind_tier_image`, the insert lease and the promote lease name one class for one entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostTierEntryClass {
+    Plain,
+    MtpDraft,
+}
+
+/// Classify an entry by the planes it carries, refusing BY NAME every plane outside the
+/// contract-routed surface: GLM state (TP shards, latent planes) and the DFlash draft tail (no
+/// drafter artifact identity is derivable from a GGUF digest in this slice). The refusal text
+/// is what the caller prints under `(contracts door)`; nothing is skipped silently. The tail
+/// refusal outranks a draft plane on purpose: two spec programs never coexist on one model (the
+/// boot guard refuses the combination) and this function does not guess which one won.
+fn host_tier_entry_class(
+    glm: bool,
+    mtp_draft: bool,
+    dflash_tail: bool,
+) -> Result<HostTierEntryClass, &'static str> {
+    if glm {
+        return Err("entry carries TP or latent (GLM) planes outside the contract-routed surface");
+    }
+    if dflash_tail {
+        return Err(
+            "entry carries a DFlash draft tail outside the contract-routed surface (no drafter \
+             artifact identity in this slice)",
+        );
+    }
+    Ok(if mtp_draft {
+        HostTierEntryClass::MtpDraft
+    } else {
+        HostTierEntryClass::Plain
+    })
+}
+
+/// Length-framed pair for a contract digest: never hash an ambiguous concatenation.
+fn host_tier_framed_pair(a: &str, b: &str) -> Vec<u8> {
+    let mut bytes = (a.len() as u64).to_le_bytes().to_vec();
+    bytes.extend(a.as_bytes());
+    bytes.extend((b.len() as u64).to_le_bytes());
+    bytes.extend(b.as_bytes());
+    bytes
+}
+
+/// The draft-bearing program of one model (day 14, lead ruling 16): the plain base with the MTP
+/// draft head folded into `artifact` (the trunk digest framed with the draft source, so an
+/// external draft file's own sha256 enters), `serialized_plan` (the plan text framed with the
+/// draft source under the draft domain; a `+draft` attach already carries the external draft's
+/// `mtp_blocks` in the plan, a `MEMRA_MTP_DRAFT` head does not, which is why the artifact field
+/// names the file) and `numeric` (`host_tier_draft_numeric_class`). Every other field is the
+/// plain field: same stream, tokenizer, template, adapter, modality, position, zero tenant salt.
+fn host_tier_draft_program(
+    plain: &memra_engine::cache::record::ProgramIdentity,
+    artifact_sha256_hex: &str,
+    plan_debug: &str,
+    source: &HostTierDraftSource,
+) -> memra_engine::cache::record::ProgramIdentity {
+    use memra_engine::cache::record::digest;
+    let mut program = plain.clone();
+    program.artifact = digest(
+        "artifact-sha256+mtp-draft",
+        &host_tier_framed_pair(artifact_sha256_hex, &source.describe()),
+    );
+    program.serialized_plan = digest(
+        "plan-debug+mtp-draft",
+        &host_tier_framed_pair(plan_debug, &source.describe()),
+    );
+    program.numeric = digest("numeric", host_tier_draft_numeric_class().as_bytes());
+    program
+}
+
+/// The `Role::Transaction` shape blob of one host image (`host-prefix-shape-v2`): presence,
+/// length and order of every plane, so two images with equal payload bytes but a different
+/// plane structure never bind to one layout. v2 (day 14) frames the MTP draft plane's presence
+/// and geometry UNCONDITIONALLY (one byte, then `len`, `k_tok_bytes`, `v_tok_bytes` as u64 when
+/// present), so a plain blob and a draft-bearing blob are never prefixes of each other.
+fn host_tier_shape_metadata(
+    pos: usize,
+    conv: &[Option<usize>],
+    ssm: &[Option<usize>],
+    kv: &[Option<(usize, usize, usize)>],
+    draft: Option<(usize, usize, usize)>,
+) -> Vec<u8> {
+    let mut metadata = vec![];
+    metadata.extend((pos as u64).to_le_bytes());
+    for planes in [conv, ssm] {
+        metadata.extend((planes.len() as u64).to_le_bytes());
+        for plane in planes {
+            metadata.push(u8::from(plane.is_some()));
+            metadata.extend((plane.unwrap_or(0) as u64).to_le_bytes());
+        }
+    }
+    metadata.extend((kv.len() as u64).to_le_bytes());
+    for plane in kv {
+        metadata.push(u8::from(plane.is_some()));
+        if let Some((len, k_tok_bytes, v_tok_bytes)) = plane {
+            for n in [len, k_tok_bytes, v_tok_bytes] {
+                metadata.extend((*n as u64).to_le_bytes());
+            }
+        }
+    }
+    metadata.push(u8::from(draft.is_some()));
+    if let Some((len, k_tok_bytes, v_tok_bytes)) = draft {
+        for n in [len, k_tok_bytes, v_tok_bytes] {
+            metadata.extend((n as u64).to_le_bytes());
+        }
+    }
+    metadata
+}
+
+/// The server's governor (lead ruling 15: injected, one instance, never prefix-only). Sized
+/// as a LEDGER for this slice: twice the host budget on `pinned` and `pageable`, twice the
+/// device prefix budget on `device[ordinal]`. Why twice: the host LRU keeps resident images
+/// at or under the budget and `insert` refuses any single image above it, while the charge
+/// is taken BEFORE the LRU makes room, so a charge of at most one budget on top of at most
+/// one budget of residents must never be what refuses a demote the OFF arm would have made
+/// (equal `[prefix-host] demote:` counts across arms are ruling 15's admissibility gate).
+/// The same holds for promoted entries against the device prefix budget. The ledger records
+/// tenant, priority and bytes; the LRU decides. Option B may tighten it once eviction-to-fit
+/// runs before the charge.
+fn host_tier_governor(
+    device: usize,
+    host_budget: usize,
+    device_budget: usize,
+) -> Result<memra_engine::cache::tiered::hostprefix::SharedGovernor, String> {
+    use memra_engine::cache::tiered::TierBudget;
+    let dimensions = device
+        .checked_add(1)
+        .ok_or("host tier governor: device ordinal overflow")?;
+    let twice = |bytes: usize| {
+        u64::try_from(bytes)
+            .ok()
+            .and_then(|b| b.checked_mul(2))
+            .ok_or("host tier governor: capacity overflow")
+    };
+    let mut capacity = TierBudget::zero(dimensions);
+    capacity.pinned = twice(host_budget)?;
+    capacity.pageable = twice(host_budget)?;
+    capacity.device[device] = twice(device_budget)?;
+    let epoch = Instant::now();
+    memra_engine::cache::tiered::hostprefix::shared_governor(
+        capacity,
+        TierBudget::zero(dimensions),
+        0,
+        0,
+        Arc::new(move || u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(u64::MAX)),
+    )
+    .map_err(|e| format!("host tier governor: {e:?}"))
+}
+
+/// Build the door's context after every model has loaded and `model_generations` is set.
+/// Typed refusals, never a silent OFF: the arena (see `host_tier_arena_refusal`), a loaded
+/// vision tower (image-conditioned prefix entries have no modality identity in this slice),
+/// a checkpoint-directory model (this slice's artifact digest is the GGUF file digest).
+fn host_tier_context(
+    engine: &Engine,
+    hpx: &HostPrefixCache,
+    loaded: &HashMap<String, LoadedModel>,
+    models: &[(String, String, Option<String>)],
+    vision_tower_loaded: bool,
+) -> Result<HostTierContext, String> {
+    host_tier_arena_refusal(hpx.arena.is_some())?;
+    if vision_tower_loaded {
+        return Err(
+            "MEMRA_KV_HOST_CONTRACTS=1 refused at boot: a vision tower is loaded and \
+                    image-conditioned prefix entries have no modality identity in this slice \
+                    (text only); unset the door or the tower"
+                .into(),
+        );
+    }
+    let device = engine.ctx().ordinal();
+    let mut programs = HashMap::new();
+    // MEMRA_MTP_DRAFT replaces every loaded MTP head with the one in this file (hybrid.rs); a
+    // per-model `+draft` attach replaces it again for that model. Same precedence here.
+    let external_mtp_draft = std::env::var("MEMRA_MTP_DRAFT")
+        .ok()
+        .filter(|path| !path.is_empty());
+    for (name, path, per_model_draft) in models {
+        let lm = loaded
+            .get(name)
+            .ok_or_else(|| format!("MEMRA_KV_HOST_CONTRACTS=1: model {name} is not loaded"))?;
+        if lm.from_dir {
+            return Err(format!(
+                "MEMRA_KV_HOST_CONTRACTS=1 refused at boot: model {name} loads from a \
+                 checkpoint directory ({path}); this slice derives the artifact identity from \
+                 a GGUF file digest only"
+            ));
+        }
+        let generation =
+            hpx.model_generations.get(name).cloned().ok_or_else(|| {
+                format!("MEMRA_KV_HOST_CONTRACTS=1: model {name} has no generation")
+            })?;
+        let t0 = Instant::now();
+        let artifact = sha256_file_hex(path)?;
+        let plan = format!("{:?}", lm.model.plan);
+        let plan_sha256 = {
+            let mut h = Sha256::new();
+            h.update(plan.as_bytes());
+            format!("{:x}", h.finalize())
+        };
+        let base = host_tier_program_base(&artifact, &plan, lm.tok.chat_template());
+        eprintln!(
+            "[prefix-host] contracts door: model {name} program identity artifact_sha256={artifact} \
+             plan_debug_sha256={plan_sha256} numeric={} template={} device={device} \
+             ({:.0}ms to hash {path})",
+            host_tier_numeric_class(),
+            if lm.tok.chat_template().is_some() {
+                "gguf-jinja"
+            } else {
+                "chatml-fallback"
+            },
+            t0.elapsed().as_secs_f64() * 1e3,
+        );
+        // Draft program (day 14, lead ruling 16): one per model WITH an MTP head, naming the
+        // head's source. A model without one gets none, and its draft-bearing entries (none can
+        // exist) would be refused by name rather than bound to the plain program.
+        let t1 = Instant::now();
+        let draft_source = match (lm.model.mtp.is_some(), per_model_draft, &external_mtp_draft) {
+            (false, _, _) => None,
+            (true, Some(dpath), _) | (true, None, Some(dpath)) => {
+                Some(HostTierDraftSource::External {
+                    sha256_hex: sha256_file_hex(dpath)?,
+                })
+            }
+            (true, None, None) => Some(HostTierDraftSource::Embedded),
+        };
+        let draft = draft_source
+            .as_ref()
+            .map(|source| host_tier_draft_program(&base, &artifact, &plan, source));
+        match &draft_source {
+            Some(source) => eprintln!(
+                "[prefix-host] contracts door: model {name} draft program identity \
+                 source={} numeric={} ({:.0}ms)",
+                source.describe(),
+                host_tier_draft_numeric_class(),
+                t1.elapsed().as_secs_f64() * 1e3,
+            ),
+            None => eprintln!(
+                "[prefix-host] contracts door: model {name} has no MTP head: no draft program, \
+                 draft-bearing entries are refused by name"
+            ),
+        }
+        programs.insert(
+            name.clone(),
+            HostTierPrograms {
+                plain: base,
+                draft,
+                generation,
+            },
+        );
+    }
+    let governor = host_tier_governor(device, hpx.budget, prefix_cache_budget_bytes())?;
+    Ok(HostTierContext {
+        governor,
+        programs,
+        device: u32::try_from(device)
+            .map_err(|_| "MEMRA_KV_HOST_CONTRACTS=1: device ordinal does not fit u32")?,
+    })
+}
+
 fn kv_host_budget_bytes() -> usize {
     static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *B.get_or_init(|| {
@@ -7915,16 +8315,6 @@ impl HostPrefixCache {
     /// entry is the last-evicted device state: it may carry draft planes an older twin
     /// lacks, so it wins), then LRU-evict back under the host byte budget.
     fn insert(&mut self, key: &PoolKey, mut e: HostPrefixEntry) -> bool {
-        if let Some(tier) = &self.tier {
-            let Some((program, generation)) = tier.programs.get(key) else {
-                return false;
-            };
-            if e._tier_charge.as_ref().and_then(|c| c.program()) != Some(program)
-                || e._tier_identity.lease(program, generation).is_err()
-            {
-                return false;
-            }
-        }
         if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
             eprintln!(
                 "[prefix-host] REFUSED demote insert: entry identity/version mismatch \
@@ -7945,6 +8335,49 @@ impl HostPrefixCache {
                 self.budget as f64 / 1e6,
             );
             return false;
+        }
+        // Contracts door: after the whole-budget refusal so an over-budget image prints the
+        // same `skip demote` line in both arms; before residency so nothing unbound lands.
+        if let Some(tier) = &self.tier {
+            let class = match host_tier_entry_class(
+                e.glm.is_some(),
+                e.draft.is_some(),
+                e.dspark_draft.is_some(),
+            ) {
+                Ok(class) => class,
+                Err(why) => {
+                    eprintln!(
+                        "[prefix-host] REFUSED demote insert (contracts door): {why} ({} tokens, \
+                         model {}{})",
+                        e.toks.len(),
+                        key.0,
+                        ns_suffix(&key.1)
+                    );
+                    return false;
+                }
+            };
+            let (program, generation) = match tier.program(key, class) {
+                Ok(program) => program,
+                Err(why) => {
+                    eprintln!(
+                        "[prefix-host] REFUSED demote insert (contracts door): {why} (model {})",
+                        key.0
+                    );
+                    return false;
+                }
+            };
+            if e._tier_charge.as_ref().and_then(|c| c.program()) != Some(&program)
+                || e._tier_identity.lease(&program, generation).is_err()
+            {
+                eprintln!(
+                    "[prefix-host] REFUSED demote insert (contracts door): image identity or \
+                     residency charge does not name this pool's program ({} tokens, model {}{})",
+                    e.toks.len(),
+                    key.0,
+                    ns_suffix(&key.1)
+                );
+                return false;
+            }
         }
         // PER-TENANT SHARE CAP (MEMRA_KV_HOST_TENANT_PCT): a demotion that would push
         // this tenant's resident bytes past its share EVAPORATES (the entry drops,
@@ -8048,15 +8481,57 @@ impl HostPrefixCache {
 
 // Explicit owner injection only: None is the unchanged legacy path. The bootstrap must
 // supply artifact/plan/numeric/tenant provenance; it must never infer it from token IDs.
+// Constructed by `host_tier_context` behind MEMRA_KV_HOST_CONTRACTS=1 (lane/spill-c-20260919
+// day 13, lead ruling 15 Option A); with the door OFF nothing constructs it.
 struct HostTierContext {
     governor: memra_engine::cache::tiered::hostprefix::SharedGovernor,
-    programs: HashMap<PoolKey, (memra_engine::cache::record::ProgramIdentity, Arc<()>)>,
+    /// Per loaded model NAME: the model's program identities with a ZERO tenant salt (never
+    /// handed out as-is, see `program`) and the generation `HostPrefixCache::model_generations`
+    /// holds for that name. Pool namespaces arrive per request and cannot be enumerated at
+    /// boot, so the identity is completed per pool key rather than stored per pool key.
+    programs: HashMap<String, HostTierPrograms>,
     device: u32,
+}
+/// One loaded model's programs under the door: the plain program (day 13) and, for a model with
+/// an MTP head, the draft-bearing program (day 14, `host_tier_draft_program`).
+struct HostTierPrograms {
+    plain: memra_engine::cache::record::ProgramIdentity,
+    draft: Option<memra_engine::cache::record::ProgramIdentity>,
+    generation: Arc<()>,
+}
+impl HostTierContext {
+    /// The program identity of one pool key and entry class: the model's base identity for that
+    /// class with `tenant_salt` derived by the ONE memra-kv helper (lead ruling 13) from the pool
+    /// namespace, the same string `auth::meter_key(&key.1)` reads for the share-cap row.
+    /// Deterministic, so the charge taken at demote and the lease checked at insert or promote
+    /// name one program. Typed refusals: an unknown model, or a draft-bearing entry on a model
+    /// that has no MTP head (never bound to the plain program).
+    fn program(
+        &self,
+        key: &PoolKey,
+        class: HostTierEntryClass,
+    ) -> Result<(memra_engine::cache::record::ProgramIdentity, &Arc<()>), &'static str> {
+        let programs = self
+            .programs
+            .get(&key.0)
+            .ok_or("tier program identity missing")?;
+        let base = match class {
+            HostTierEntryClass::Plain => &programs.plain,
+            HostTierEntryClass::MtpDraft => programs.draft.as_ref().ok_or(
+                "tier draft program identity missing: the model has no MTP head, so a \
+                 draft-bearing entry cannot name its program",
+            )?,
+        };
+        let mut program = base.clone();
+        program.tenant_salt = memra_engine::cache::tiered::hostprefix::tenant_salt(&key.1);
+        Ok((program, &programs.generation))
+    }
 }
 impl HostPrefixCache {
     fn tier_charge(
         &self,
         key: &PoolKey,
+        class: HostTierEntryClass,
         bytes: u64,
         pageable: u64,
         device: bool,
@@ -8070,10 +8545,7 @@ impl HostPrefixCache {
         if self.arena.is_some() {
             return Err("tier fixed-arena lease handoff pending".into());
         }
-        let (program, _) = tier
-            .programs
-            .get(key)
-            .ok_or("tier program identity missing")?;
+        let (program, _) = tier.program(key, class)?;
         let dimensions = tier
             .governor
             .lock()
@@ -8101,7 +8573,7 @@ impl HostPrefixCache {
         } else {
             request.bytes.pinned = bytes;
         }
-        crate::admit_memory::reserve_tier_image(tier.governor.clone(), program, &request)
+        crate::admit_memory::reserve_tier_image(tier.governor.clone(), &program, &request)
             .map(Some)
             .map_err(|e| format!("tier admission refused: {e:?}"))
     }
@@ -8111,10 +8583,16 @@ impl HostPrefixCache {
         let Some(tier) = &self.tier else {
             return Ok(());
         };
-        let (program, generation) = tier
-            .programs
-            .get(&entry.pool_key)
-            .ok_or("tier program identity missing")?;
+        // Surface (day 14, lead ruling 16): plain KV plus recurrent continuation, and MTP
+        // draft-bearing entries, each bound to its own program. GLM state and the DFlash tail
+        // refuse by name (`host_tier_entry_class`); nothing outside the surface is skipped.
+        let class = host_tier_entry_class(
+            entry.glm.is_some(),
+            entry.draft.is_some(),
+            entry.dspark_draft.is_some(),
+        )
+        .map_err(|why| format!("tier image {why}"))?;
+        let (program, generation) = tier.program(&entry.pool_key, class)?;
         if entry
             .model_generation
             .as_ref()
@@ -8122,12 +8600,9 @@ impl HostPrefixCache {
         {
             return Err("tier model generation mismatch".into());
         }
-        // Narrow first slice: native plain KV + recurrent continuation. Other surfaces
-        // remain legacy-only when tier=None; enabled unsupported routes fail closed.
-        if entry.glm.is_some()
-            || entry.draft.is_some()
-            || entry.dspark_draft.is_some()
-            || entry.pos != entry.toks.len()
+        // Enabled unsupported routes fail closed; other surfaces remain legacy-only when
+        // tier=None.
+        if entry.pos != entry.toks.len()
             || entry.toks.is_empty()
             || entry.last_logits.is_empty()
             || entry.kv.len() != entry.conv.len()
@@ -8179,35 +8654,51 @@ impl HostPrefixCache {
             checksums.push(checksum(bytes));
             Ok(())
         };
+        // Every plane's geometry is the trunk rule: q8_0 K rows (34 B per 32), q5_1 V rows
+        // (24 B per 32), exactly `pos` rows. The MTP draft plane shares the encodings
+        // (`memra_kv::KvLayer`, `mtp_scratch_layout`) and differs only in row width.
+        let geometry = |p: &HostPlane, what: &str| -> std::result::Result<(), String> {
+            if !p.k_tok_bytes.is_multiple_of(34)
+                || !p.v_tok_bytes.is_multiple_of(24)
+                || p.k_tok_bytes == 0
+                || p.v_tok_bytes == 0
+                || p.len != entry.pos
+            {
+                return Err(format!("tier {what} geometry mismatch"));
+            }
+            Ok(())
+        };
+        for p in entry.kv.iter().flatten() {
+            geometry(p, "native KV")?;
+        }
+        if let Some(p) = &entry.draft {
+            geometry(p, "MTP draft plane")?;
+        }
         // Capture presence/length/order metadata as well as every payload. No raw pointers,
         // padding, codec, alternate attention program or old handoff identity is imported.
-        let mut metadata = vec![];
-        metadata.extend((entry.pos as u64).to_le_bytes());
-        for planes in [&entry.conv, &entry.ssm] {
-            metadata.extend((planes.len() as u64).to_le_bytes());
-            for plane in planes {
-                metadata.push(u8::from(plane.is_some()));
-                metadata.extend((plane.as_ref().map_or(0, |p| p.len()) as u64).to_le_bytes());
-            }
-        }
-        metadata.extend((entry.kv.len() as u64).to_le_bytes());
-        for plane in &entry.kv {
-            metadata.push(u8::from(plane.is_some()));
-            if let Some(p) = plane {
-                if !p.k_tok_bytes.is_multiple_of(34)
-                    || !p.v_tok_bytes.is_multiple_of(24)
-                    || p.k_tok_bytes == 0
-                    || p.v_tok_bytes == 0
-                    || p.len != entry.pos
-                {
-                    return Err("tier native KV geometry mismatch".into());
-                }
-                for n in [p.len, p.k_tok_bytes, p.v_tok_bytes] {
-                    metadata.extend((n as u64).to_le_bytes());
-                }
-                add(Role::Key, p.k_tok_bytes as u64, b"q8_0", p.k.as_slice())?;
-                add(Role::Value, p.v_tok_bytes as u64, b"q5_1", p.v.as_slice())?;
-            }
+        let plane_geometry = |p: &HostPlane| (p.len, p.k_tok_bytes, p.v_tok_bytes);
+        let metadata = host_tier_shape_metadata(
+            entry.pos,
+            &entry
+                .conv
+                .iter()
+                .map(|p| p.as_ref().map(|p| p.len()))
+                .collect::<Vec<_>>(),
+            &entry
+                .ssm
+                .iter()
+                .map(|p| p.as_ref().map(|p| p.len()))
+                .collect::<Vec<_>>(),
+            &entry
+                .kv
+                .iter()
+                .map(|p| p.as_ref().map(plane_geometry))
+                .collect::<Vec<_>>(),
+            entry.draft.as_ref().map(plane_geometry),
+        );
+        for p in entry.kv.iter().flatten() {
+            add(Role::Key, p.k_tok_bytes as u64, b"q8_0", p.k.as_slice())?;
+            add(Role::Value, p.v_tok_bytes as u64, b"q5_1", p.v.as_slice())?;
         }
         for p in entry.conv.iter().chain(&entry.ssm).flatten() {
             add(Role::Recurrent, 4, b"f32-native", f32s_as_bytes(p))?;
@@ -8219,8 +8710,24 @@ impl HostPrefixCache {
             f32s_as_bytes(&entry.last_logits),
         )?;
         add(Role::Hidden, 4, b"f32-native", f32s_as_bytes(&entry.last_h))?;
-        add(Role::Transaction, 1, b"host-prefix-shape-v1", &metadata)?;
-        let id = KvBlockId::new(program, [0; 32], &entry.toks, 0, 0, tier.device, 0)
+        // The MTP draft plane: its own K and V segments under `Role::Draft`, checksummed like
+        // the trunk planes (the verify digest is blind to it; these checksums are its receipt).
+        if let Some(p) = &entry.draft {
+            add(
+                Role::Draft,
+                p.k_tok_bytes as u64,
+                b"mtp-draft-q8_0",
+                p.k.as_slice(),
+            )?;
+            add(
+                Role::Draft,
+                p.v_tok_bytes as u64,
+                b"mtp-draft-q5_1",
+                p.v.as_slice(),
+            )?;
+        }
+        add(Role::Transaction, 1, b"host-prefix-shape-v2", &metadata)?;
+        let id = KvBlockId::new(&program, [0; 32], &entry.toks, 0, 0, tier.device, 0)
             .map_err(|e| format!("{e:?}"))?;
         let bundle = StateBundle {
             version: WIRE_VERSION,
@@ -8233,10 +8740,10 @@ impl HostPrefixCache {
             checksums,
         };
         let metadata_charge =
-            self.tier_charge(&entry.pool_key, 0, metadata.capacity() as u64, false)?;
+            self.tier_charge(&entry.pool_key, class, 0, metadata.capacity() as u64, false)?;
         entry
             ._tier_identity
-            .bind(bundle, &entry.toks, program, &layout, generation.clone())
+            .bind(bundle, &entry.toks, &program, &layout, generation.clone())
             .map_err(|e| format!("tier image identity refused: {e:?}"))?;
         entry._tier_metadata_charge = metadata_charge;
         entry._tier_metadata = metadata;
@@ -8334,6 +8841,10 @@ fn host_entry_from_device(
                 .cloned()
                 .ok_or("GLM host image has no loaded model generation")?,
         )
+    } else if host.tier.is_some() {
+        // Contracts door: `bind_tier_image` refuses an image that does not name the loaded
+        // model instance it was captured under, so every image carries its generation.
+        host.model_generations.get(&dead.pool_key.0).cloned()
     } else {
         None
     };
@@ -8647,30 +9158,57 @@ fn host_demote_prefix_ref(
         return HostDemoteOutcome::Evaporated;
     }
     let tier_charge = if host.tier.is_some() {
-        if dead.tp.is_some()
-            || dead.latent.iter().any(Option::is_some)
-            || dead.draft.is_some()
-            || dead.dspark_draft.is_some()
-        {
-            return HostDemoteOutcome::Failed;
-        }
-        let pinned = dead.kv.iter().flatten().try_fold(0usize, |n, p| {
-            p.k_tok_bytes
-                .checked_add(p.v_tok_bytes)
-                .and_then(|row| p.len.checked_mul(row))
-                .and_then(|bytes| n.checked_add(bytes))
-        });
-        let Some(pinned) = pinned else {
-            return HostDemoteOutcome::Failed;
-        };
-        let Some(pageable) = host_bytes.checked_sub(pinned) else {
-            return HostDemoteOutcome::Failed;
-        };
-        match host.tier_charge(&dead.pool_key, pinned as u64, pageable as u64, false) {
-            Ok(charge) => charge,
-            Err(err) => {
-                eprintln!("[prefix-host] {err}");
+        // Surface (day 14, lead ruling 16): plain and MTP draft-bearing entries bind; GLM state
+        // and the DFlash tail refuse by name, each its own line.
+        let class = match host_tier_entry_class(
+            dead.tp.is_some() || dead.latent.iter().any(Option::is_some),
+            dead.draft.is_some(),
+            dead.dspark_draft.is_some(),
+        ) {
+            Ok(class) => class,
+            Err(why) => {
+                eprintln!(
+                    "[prefix-host] demote refused (contracts door): {why} ({} tokens, model {}{})",
+                    dead.toks.len(),
+                    dead.pool_key.0,
+                    ns_suffix(&dead.pool_key.1)
+                );
                 return HostDemoteOutcome::Failed;
+            }
+        };
+        if host_bytes > host.budget {
+            // An image above the whole budget is never resident: `insert` refuses it by name
+            // (`skip demote: entry > host budget`) after the copy, exactly as the OFF arm does,
+            // so the ledger takes no charge and the OFF line stays the line (a `Capacity`
+            // refusal here would replace it, which is the gate-line change ruling 15 forbids).
+            None
+        } else {
+            // Pinned: every `HostPlane` the image will hold, the trunk KV planes and the MTP
+            // draft plane alike (`host_plane_from_device` pins both); the f32 planes, tokens
+            // and logits are the pageable remainder.
+            let pinned = dead
+                .kv
+                .iter()
+                .flatten()
+                .chain(&dead.draft)
+                .try_fold(0usize, |n, p| {
+                    p.k_tok_bytes
+                        .checked_add(p.v_tok_bytes)
+                        .and_then(|row| p.len.checked_mul(row))
+                        .and_then(|bytes| n.checked_add(bytes))
+                });
+            let Some(pinned) = pinned else {
+                return HostDemoteOutcome::Failed;
+            };
+            let Some(pageable) = host_bytes.checked_sub(pinned) else {
+                return HostDemoteOutcome::Failed;
+            };
+            match host.tier_charge(&dead.pool_key, class, pinned as u64, pageable as u64, false) {
+                Ok(charge) => charge,
+                Err(err) => {
+                    eprintln!("[prefix-host] {err}");
+                    return HostDemoteOutcome::Failed;
+                }
             }
         }
     } else {
@@ -9068,15 +9606,53 @@ fn host_promote_prefix_hit(
         return None;
     }
 
-    let tier_identity = if let Some(tier) = &host.tier {
-        let (program, generation) = tier.programs.get(pool_key)?;
+    // Under the door the candidate's class (plain or MTP draft-bearing) names its program; the
+    // same class the demote charged and the insert leased, computed from the same fields.
+    let tier_class = if host.tier.is_some() {
+        match host_tier_entry_class(
+            candidate.glm.is_some(),
+            candidate.draft.is_some(),
+            candidate.dspark_draft.is_some(),
+        ) {
+            Ok(class) => Some(class),
+            Err(why) => {
+                eprintln!(
+                    "[prefix-host] promote refused (contracts door): {why}; serving without \
+                     the host entry"
+                );
+                return None;
+            }
+        }
+    } else {
+        None
+    };
+    let tier_identity = if let (Some(tier), Some(class)) = (&host.tier, tier_class) {
+        let (program, generation) = match tier.program(pool_key, class) {
+            Ok(program) => program,
+            Err(why) => {
+                eprintln!(
+                    "[prefix-host] promote refused (contracts door): {why}; serving without \
+                     the host entry"
+                );
+                return None;
+            }
+        };
         // Old imports are unbound and cannot masquerade as generic-tier hits.
-        Some(candidate._tier_identity.lease(program, generation).ok()?)
+        match candidate._tier_identity.lease(&program, generation) {
+            Ok(lease) => Some((lease, program, generation.clone())),
+            Err(err) => {
+                eprintln!(
+                    "[prefix-host] promote refused (contracts door): image identity lease \
+                     refused ({err:?}); serving without the host entry"
+                );
+                return None;
+            }
+        }
     } else {
         None
     };
     // Synchronous borrow retains the actual host payload; no async submission is added.
-    let tier_charge = if host.tier.is_some() {
+    let tier_charge = if let Some(class) = tier_class {
         let hidden = candidate.last_h.len().checked_mul(4)?;
         let device_bytes = candidate.device_bytes.checked_sub(hidden)?;
         let pageable = candidate
@@ -9085,7 +9661,7 @@ fn host_promote_prefix_hit(
             .checked_add(candidate.last_logits.len())?
             .checked_mul(4)?
             .checked_add(hidden)?;
-        match host.tier_charge(pool_key, device_bytes as u64, pageable as u64, true) {
+        match host.tier_charge(pool_key, class, device_bytes as u64, pageable as u64, true) {
             Ok(charge) => charge,
             Err(err) => {
                 eprintln!("[prefix-host] promote refused ({err})");
@@ -9131,9 +9707,14 @@ fn host_promote_prefix_hit(
             }
         }
     }
-    if let (Some(identity), Some(tier)) = (&tier_identity, &host.tier) {
-        let (program, generation) = tier.programs.get(pool_key)?;
-        identity.require(program, generation).ok()?;
+    if let Some((identity, program, generation)) = &tier_identity
+        && let Err(err) = identity.require(program, generation)
+    {
+        eprintln!(
+            "[prefix-host] promote refused (contracts door): image identity lease no \
+             longer holds after the H2D ({err:?}); serving without the host entry"
+        );
+        return None;
     }
     // Keep destination residency charged until this PrefixEntry is actually destroyed;
     // the retained host twin keeps its independent source charge.
@@ -14264,6 +14845,21 @@ pub fn run(
     // Pinned-host spill tier behind it (lane/kv-host-spill-20260830; default OFF, see
     // kv_host_budget_bytes). Feeds the device cache only: the restore path is untouched.
     let mut hpx = HostPrefixCache::new(kv_host_budget_bytes());
+    // HOST TIER CONTRACTS DOOR (MEMRA_KV_HOST_CONTRACTS, lane/spill-c-20260919 day 13, lead
+    // ruling 15 Option A). Parsed here, before the arena reserve, so a refused combination
+    // never pins the arena first. OFF: `hpx.tier` stays None and no statement below changes.
+    // ON: the context is built once `model_generations` exists, below.
+    let kv_host_contracts = match kv_host_contracts_door() {
+        Ok(on) => on,
+        Err(err) => {
+            let _ = ready_tx.send(Err(err));
+            return;
+        }
+    };
+    if kv_host_contracts && let Err(err) = host_tier_arena_refusal(glm5_tp_kv_host_on()) {
+        let _ = ready_tx.send(Err(err));
+        return;
+    }
     if glm5_tp_kv_host_on() {
         let reserve = (|| -> Result<(), String> {
             // Parse afresh and fail rather than silently clamp, shrink or disarm.
@@ -14298,6 +14894,36 @@ pub fn run(
     // A worker reload creates a new map/cache/context. Tokens bind images to
     // these exact loaded instances, even if names and device ordinals repeat.
     hpx.model_generations = loaded.keys().map(|k| (k.clone(), Arc::new(()))).collect();
+    if kv_host_contracts && hpx.budget == 0 {
+        // No host tier exists on this boot (MEMRA_KV_HOST_MB=0 or clamped to zero), so there
+        // is nothing to route: the door constructs nothing and says so under its own tag.
+        // Not `[prefix-host]`: with the tier off that tag stays silent, which the identity
+        // gate's OFF twin boot asserts.
+        eprintln!(
+            "[kv-host-contracts] MEMRA_KV_HOST_CONTRACTS=1 with no host tier on this boot \
+             (MEMRA_KV_HOST_MB=0): nothing to route, no program identity built"
+        );
+    }
+    if kv_host_contracts && hpx.budget > 0 {
+        let vision_loaded = vision_tower.is_some() || gemma_tower.is_some() || glm5_tower.is_some();
+        match host_tier_context(&engine, &hpx, &loaded, &models, vision_loaded) {
+            Ok(tier) => {
+                eprintln!(
+                    "[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): {} model \
+                     program identities, tenant salt per pool namespace, server governor \
+                     ledger pinned/pageable {:.0}MB device {:.0}MB; host tier armed",
+                    tier.programs.len(),
+                    2.0 * hpx.budget as f64 / 1e6,
+                    2.0 * prefix_cache_budget_bytes() as f64 / 1e6,
+                );
+                hpx.tier = Some(tier);
+            }
+            Err(err) => {
+                let _ = ready_tx.send(Err(err));
+                return;
+            }
+        }
+    }
 
     if hpx.budget > 0 {
         if prefix_cache_budget_bytes() > 0 && serve_batching() {
@@ -34381,6 +35007,427 @@ mod tests {
             92
         );
         assert!(super::host_image_bytes(usize::MAX, &[1], &[]).is_err());
+    }
+
+    // ---- HOST TIER CONTRACTS DOOR (MEMRA_KV_HOST_CONTRACTS, lane/spill-c-20260919 day 13) ----
+    // CPU halves: the strict door parse, the arena refusal, the identity builder as a pure
+    // function of its sources, the per-pool-key tenant salt, the governor ledger sizing and
+    // the ON-path identity gate at insert. The D2H/H2D route under the door is target-card
+    // territory (research/spill-c-20260919/DAY13.md).
+
+    #[test]
+    fn kv_host_contracts_door_parse_is_strict_and_never_falls_back_to_off() {
+        assert_eq!(super::parse_kv_host_contracts(None), Ok(false));
+        assert_eq!(super::parse_kv_host_contracts(Some("0")), Ok(false));
+        assert_eq!(super::parse_kv_host_contracts(Some("1")), Ok(true));
+        // A bare `MEMRA_KV_HOST_CONTRACTS=` is not OFF: it is a refusal that names the variable.
+        let bare = super::parse_kv_host_contracts(Some("")).unwrap_err();
+        assert!(bare.contains("MEMRA_KV_HOST_CONTRACTS"), "{bare}");
+        assert!(bare.contains("does not fall back to off"), "{bare}");
+        // Junk, every spelling a hand might produce for "on" or "off".
+        for junk in [
+            "on", "off", "true", "false", "yes", "ON", " 1", "1 ", "01", "2",
+        ] {
+            assert!(
+                super::parse_kv_host_contracts(Some(junk)).is_err(),
+                "{junk:?} must refuse"
+            );
+        }
+        // A process environment binds one value per name, so a duplicate can only appear
+        // inside the value; a doubled door is junk, not a louder ON.
+        for dup in ["11", "1,1", "1;1", "1 1", "1=1"] {
+            assert!(
+                super::parse_kv_host_contracts(Some(dup)).is_err(),
+                "{dup:?} must refuse"
+            );
+        }
+        assert!(super::parse_kv_host_contracts(Some("<non-utf8>")).is_err());
+    }
+
+    #[test]
+    fn host_tier_arena_refusal_names_the_arena_and_passes_without_it() {
+        assert_eq!(super::host_tier_arena_refusal(false), Ok(()));
+        let err = super::host_tier_arena_refusal(true).unwrap_err();
+        assert!(
+            err.contains("MEMRA_KV_HOST_CONTRACTS=1 refused at boot"),
+            "{err}"
+        );
+        assert!(err.contains("MEMRA_GLM5_TP_KV_HOST=1"), "{err}");
+        assert!(
+            err.contains("tier fixed-arena lease handoff pending"),
+            "{err}"
+        );
+        // The context builder applies the same refusal when the arena is already reserved:
+        // the boot checks the env first so the arena is never pinned for a refused boot.
+        let mut h = HostPrefixCache::new(1 << 20);
+        h.model_generations.insert("m".into(), Arc::new(()));
+        assert!(h.arena.is_none());
+    }
+
+    #[test]
+    fn host_tier_program_base_is_a_pure_function_of_its_sources() {
+        let a = super::host_tier_program_base("aa", "plan-1", Some("{{ jinja }}"));
+        assert_eq!(
+            a,
+            super::host_tier_program_base("aa", "plan-1", Some("{{ jinja }}"))
+        );
+        assert_eq!(a.tenant_salt, [0; 32], "the base never carries a tenant");
+        assert_eq!(a.version, memra_engine::cache::record::WIRE_VERSION);
+        // The artifact digest feeds artifact AND tokenizer (a GGUF tokenizer is the artifact's).
+        let b = super::host_tier_program_base("bb", "plan-1", Some("{{ jinja }}"));
+        assert_ne!(a.artifact, b.artifact);
+        assert_ne!(a.tokenizer, b.tokenizer);
+        assert_eq!(a.serialized_plan, b.serialized_plan);
+        assert_eq!(a.template, b.template);
+        // The plan changes exactly the plan digest.
+        let c = super::host_tier_program_base("aa", "plan-2", Some("{{ jinja }}"));
+        assert_ne!(a.serialized_plan, c.serialized_plan);
+        assert_eq!(a.artifact, c.artifact);
+        // A GGUF without a template names the ChatML fallback, distinct from an empty template.
+        let d = super::host_tier_program_base("aa", "plan-1", None);
+        let e = super::host_tier_program_base("aa", "plan-1", Some(""));
+        assert_ne!(d.template, a.template);
+        assert_ne!(d.template, e.template);
+        // Numeric, stream, adapter, modality, position are server constants.
+        assert_eq!(a.numeric, d.numeric);
+        assert_eq!(a.stream, d.stream);
+        assert_eq!(a.adapter, d.adapter);
+        assert_eq!(a.modality, d.modality);
+        assert_eq!(a.position, d.position);
+        assert!(
+            super::host_tier_numeric_class().contains(&format!("v{}", PREFIX_ENTRY_LAYOUT_VERSION))
+        );
+    }
+
+    fn contracts_context(
+        model: &str,
+        generation: Arc<()>,
+        host_budget: usize,
+    ) -> super::HostTierContext {
+        let base = super::host_tier_program_base("artifact", "plan", None);
+        let draft = super::host_tier_draft_program(
+            &base,
+            "artifact",
+            "plan",
+            &super::HostTierDraftSource::Embedded,
+        );
+        super::HostTierContext {
+            governor: super::host_tier_governor(0, host_budget, 1 << 30).unwrap(),
+            programs: HashMap::from([(
+                model.to_string(),
+                super::HostTierPrograms {
+                    plain: base,
+                    draft: Some(draft),
+                    generation,
+                },
+            )]),
+            device: 0,
+        }
+    }
+
+    #[test]
+    fn host_tier_context_program_stamps_the_pool_namespace_salt_once() {
+        let generation = Arc::new(());
+        let tier = contracts_context("m", generation.clone(), 1 << 20);
+        let plain = super::HostTierEntryClass::Plain;
+        let (a1, g1) = tier
+            .program(&("m".into(), "t:acme\u{1f}salt".into()), plain)
+            .unwrap();
+        let (a2, _) = tier
+            .program(&("m".into(), "t:acme\u{1f}salt".into()), plain)
+            .unwrap();
+        let (b, _) = tier
+            .program(&("m".into(), "t:blue\u{1f}salt".into()), plain)
+            .unwrap();
+        let (default_ns, _) = tier.program(&("m".into(), String::new()), plain).unwrap();
+        assert_eq!(
+            a1, a2,
+            "deterministic: the demote charge and the insert lease agree"
+        );
+        assert!(Arc::ptr_eq(g1, &generation));
+        // The salt is the one memra-kv derivation of the exact namespace string the share-cap
+        // row reads (`auth::meter_key(&key.1)` takes the same `key.1`).
+        assert_eq!(
+            a1.tenant_salt,
+            memra_engine::cache::tiered::hostprefix::tenant_salt("t:acme\u{1f}salt")
+        );
+        assert_ne!(a1.tenant_salt, b.tenant_salt);
+        assert_ne!(a1.tenant_salt, default_ns.tenant_salt);
+        assert_ne!(a1.tenant_salt, [0; 32]);
+        // Everything but the salt is the model's base identity.
+        let mut b_unsalted = b.clone();
+        b_unsalted.tenant_salt = a1.tenant_salt;
+        assert_eq!(a1, b_unsalted);
+        // An unknown model has no identity: the callers refuse rather than invent one.
+        assert_eq!(
+            tier.program(&("other".into(), String::new()), plain)
+                .unwrap_err(),
+            "tier program identity missing"
+        );
+    }
+
+    // ---- DRAFT-BEARING ENTRIES UNDER THE DOOR (lane/spill-c-20260919 day 14, lead ruling 16) ----
+    // CPU halves: the entry class as a pure function of the planes, the draft program as a pure
+    // function of its sources (distinct from the plain program in exactly artifact, plan and
+    // numeric), class selection with the tenant salt stamped once, and the v2 shape blob. The
+    // draft plane's D2H/H2D under the door is target-card territory (DAY14.md: the identity and
+    // failure gates under the default spec environment, OFF then ON).
+
+    #[test]
+    fn host_tier_entry_class_admits_plain_and_mtp_draft_and_refuses_glm_and_dflash_by_name() {
+        use super::HostTierEntryClass::{MtpDraft, Plain};
+        assert_eq!(super::host_tier_entry_class(false, false, false), Ok(Plain));
+        assert_eq!(
+            super::host_tier_entry_class(false, true, false),
+            Ok(MtpDraft)
+        );
+        let glm = super::host_tier_entry_class(true, false, false).unwrap_err();
+        assert!(glm.contains("TP or latent (GLM) planes"), "{glm}");
+        let tail = super::host_tier_entry_class(false, false, true).unwrap_err();
+        assert!(tail.contains("DFlash draft tail"), "{tail}");
+        assert!(
+            tail.contains("no drafter artifact identity"),
+            "the refusal names what is missing: {tail}"
+        );
+        // A tail beside a draft plane cannot exist (the boot guard refuses two spec programs on
+        // one model); the class function refuses rather than guessing which one won.
+        assert_eq!(super::host_tier_entry_class(false, true, true), Err(tail));
+        assert_eq!(super::host_tier_entry_class(true, true, true), Err(glm));
+    }
+
+    #[test]
+    fn host_tier_draft_program_differs_from_plain_in_exactly_artifact_plan_and_numeric() {
+        use memra_engine::cache::record::Wire;
+        let plain = super::host_tier_program_base("aa", "plan", Some("{{ t }}"));
+        let embedded = super::host_tier_draft_program(
+            &plain,
+            "aa",
+            "plan",
+            &super::HostTierDraftSource::Embedded,
+        );
+        let external = |hex: &str| {
+            super::host_tier_draft_program(
+                &plain,
+                "aa",
+                "plan",
+                &super::HostTierDraftSource::External {
+                    sha256_hex: hex.to_string(),
+                },
+            )
+        };
+        for draft in [&embedded, &external("bb"), &external("cc")] {
+            assert_ne!(draft.artifact, plain.artifact);
+            assert_ne!(draft.serialized_plan, plain.serialized_plan);
+            assert_ne!(draft.numeric, plain.numeric);
+            assert_eq!(draft.stream, plain.stream);
+            assert_eq!(draft.tokenizer, plain.tokenizer);
+            assert_eq!(draft.template, plain.template);
+            assert_eq!(draft.adapter, plain.adapter);
+            assert_eq!(draft.modality, plain.modality);
+            assert_eq!(draft.position, plain.position);
+            assert_eq!(draft.tenant_salt, [0; 32]);
+            assert!(draft.validate().is_ok());
+            // The namespace every KvBlockId hangs off differs, so a spec entry and a plain entry
+            // of one prompt can never share a block id.
+            assert_ne!(draft.namespace().unwrap(), plain.namespace().unwrap());
+        }
+        // The draft source is part of the artifact: embedded, and each external file, differ.
+        assert_ne!(embedded.artifact, external("bb").artifact);
+        assert_ne!(external("bb").artifact, external("cc").artifact);
+        assert_eq!(
+            embedded,
+            super::host_tier_draft_program(
+                &plain,
+                "aa",
+                "plan",
+                &super::HostTierDraftSource::Embedded
+            ),
+            "pure function of its sources"
+        );
+        // A different trunk moves the draft program too: the plane is a function of both.
+        let other = super::host_tier_program_base("dd", "plan", Some("{{ t }}"));
+        assert_ne!(
+            super::host_tier_draft_program(
+                &other,
+                "dd",
+                "plan",
+                &super::HostTierDraftSource::Embedded
+            )
+            .artifact,
+            embedded.artifact
+        );
+        assert_eq!(
+            super::host_tier_draft_numeric_class(),
+            format!(
+                "{}+mtp-draft-kv-q8_0-34B-q5_1-24B",
+                super::host_tier_numeric_class()
+            )
+        );
+        assert_eq!(super::HostTierDraftSource::Embedded.describe(), "embedded");
+        assert_eq!(
+            super::HostTierDraftSource::External {
+                sha256_hex: "bb".into()
+            }
+            .describe(),
+            "external:bb"
+        );
+        // Framing: the pair is length-prefixed, so moving a byte across the boundary changes it.
+        assert_ne!(
+            super::host_tier_framed_pair("ab", "c"),
+            super::host_tier_framed_pair("a", "bc")
+        );
+    }
+
+    #[test]
+    fn host_tier_context_program_selects_the_class_and_refuses_a_draft_entry_without_a_head() {
+        use super::HostTierEntryClass::{MtpDraft, Plain};
+        let generation = Arc::new(());
+        let mut tier = contracts_context("m", generation.clone(), 1 << 20);
+        let key = ("m".to_string(), "t:acme\u{1f}salt".to_string());
+        let (plain, _) = tier.program(&key, Plain).unwrap();
+        let (draft, g) = tier.program(&key, MtpDraft).unwrap();
+        assert!(Arc::ptr_eq(g, &generation));
+        assert_ne!(
+            plain, draft,
+            "a spec entry and a plain entry of one prompt never share an identity"
+        );
+        assert_eq!(
+            plain.tenant_salt, draft.tenant_salt,
+            "one pool key stamps one tenant salt on both classes"
+        );
+        assert_eq!(
+            draft,
+            tier.program(&key, MtpDraft).unwrap().0,
+            "deterministic: the demote charge and the insert or promote lease agree"
+        );
+        // No MTP head: no draft program, and a draft-bearing entry is refused by name, never
+        // bound to the plain program.
+        tier.programs.get_mut("m").unwrap().draft = None;
+        assert!(tier.program(&key, Plain).is_ok());
+        let why = tier.program(&key, MtpDraft).unwrap_err();
+        assert!(why.contains("no MTP head"), "{why}");
+        assert_eq!(
+            tier.program(&("ghost".to_string(), key.1.clone()), MtpDraft)
+                .unwrap_err(),
+            "tier program identity missing"
+        );
+    }
+
+    #[test]
+    fn host_tier_shape_metadata_v2_frames_the_draft_plane_presence_unconditionally() {
+        let kv = [Some((89usize, 34usize * 8, 24usize * 8)), None];
+        let conv = [Some(4usize), None];
+        let ssm = [None, Some(6usize)];
+        let plain = super::host_tier_shape_metadata(89, &conv, &ssm, &kv, None);
+        let draft = super::host_tier_shape_metadata(89, &conv, &ssm, &kv, Some((89, 68, 48)));
+        assert_ne!(plain, draft);
+        // Plain ends in the absent-draft byte; the draft blob carries presence plus geometry.
+        assert_eq!(plain[plain.len() - 1], 0);
+        assert_eq!(draft.len(), plain.len() + 3 * 8);
+        assert_eq!(&draft[..plain.len() - 1], &plain[..plain.len() - 1]);
+        assert_eq!(draft[plain.len() - 1], 1);
+        assert_eq!(
+            &draft[plain.len()..],
+            [
+                89u64.to_le_bytes(),
+                68u64.to_le_bytes(),
+                48u64.to_le_bytes()
+            ]
+            .concat()
+        );
+        // The trunk part is what v1 wrote: pos, then conv and ssm (count, presence, len), then
+        // kv (count, presence, geometry).
+        let mut v1 = vec![];
+        v1.extend(89u64.to_le_bytes());
+        for planes in [&conv[..], &ssm[..]] {
+            v1.extend((planes.len() as u64).to_le_bytes());
+            for p in planes {
+                v1.push(u8::from(p.is_some()));
+                v1.extend((p.unwrap_or(0) as u64).to_le_bytes());
+            }
+        }
+        v1.extend(2u64.to_le_bytes());
+        v1.push(1);
+        for n in [89u64, 272, 192] {
+            v1.extend(n.to_le_bytes());
+        }
+        v1.push(0);
+        assert_eq!(&plain[..plain.len() - 1], &v1[..]);
+    }
+
+    #[test]
+    fn host_tier_governor_ledger_admits_what_the_lru_would_and_binds_at_twice_the_budget() {
+        use memra_engine::cache::tiered::*;
+        let budget = 1000usize;
+        let governor = super::host_tier_governor(1, budget, 500).unwrap();
+        let request = |pinned: u64, device: u64| {
+            let mut bytes = TierBudget::zero(2);
+            bytes.pinned = pinned;
+            bytes.pageable = pinned;
+            bytes.device[1] = device;
+            BudgetRequest {
+                bytes,
+                priority: Priority::Backup,
+                deadline: Deadline(u64::MAX),
+                tenant: hostprefix::tenant_salt(""),
+            }
+        };
+        // Residents at the whole budget plus one incoming image at the whole budget: admitted.
+        let resident = governor
+            .lock()
+            .unwrap()
+            .reserve(&request(budget as u64, 500))
+            .unwrap();
+        let incoming = governor
+            .lock()
+            .unwrap()
+            .reserve(&request(budget as u64, 500))
+            .unwrap();
+        // A third whole-budget charge is what the LRU could never have made room for.
+        assert_eq!(
+            governor.lock().unwrap().reserve(&request(1, 0)).err(),
+            Some(Error::Capacity)
+        );
+        governor.lock().unwrap().release(&resident).unwrap();
+        governor.lock().unwrap().release(&incoming).unwrap();
+        assert_eq!(governor.lock().unwrap().used().pinned, 0);
+        // The device dimension is indexed by the worker's ordinal, sized for it exactly.
+        assert_eq!(governor.lock().unwrap().used().device.len(), 2);
+        assert!(super::host_tier_governor(usize::MAX, 1, 1).is_err());
+    }
+
+    #[test]
+    fn host_cache_with_contracts_door_refuses_an_unbound_image_and_admits_it_with_the_door_off() {
+        let key = key("t:acme\u{1f}salt");
+        let generation = Arc::new(());
+        // Door OFF: the legacy insert admits the image (the byte-identical arm).
+        let mut off = HostPrefixCache::new(1 << 20);
+        off.model_generations
+            .insert(key.0.clone(), generation.clone());
+        assert!(off.insert(
+            &key,
+            host_entry(&key, toks(super::PREFIX_CACHE_MIN_TOKENS), 64)
+        ));
+        assert_eq!(off.entries[&key].len(), 1);
+        // Door ON: the same unbound image (no identity lease, no residency charge) is refused
+        // before it becomes resident; the pool and its accounting are untouched.
+        let mut on = HostPrefixCache::new(1 << 20);
+        on.model_generations
+            .insert(key.0.clone(), generation.clone());
+        on.tier = Some(contracts_context(&key.0, generation, 1 << 20));
+        assert!(!on.insert(
+            &key,
+            host_entry(&key, toks(super::PREFIX_CACHE_MIN_TOKENS), 64)
+        ));
+        assert!(on.entries.is_empty());
+        assert_eq!(on.total_bytes, 0);
+        assert!(on.tenant_bytes.is_empty());
+        // A pool whose model the door never loaded is refused the same way.
+        let foreign = ("ghost".to_string(), key.1.clone());
+        assert!(!on.insert(
+            &foreign,
+            host_entry(&foreign, toks(super::PREFIX_CACHE_MIN_TOKENS), 64)
+        ));
     }
 
     #[test]
