@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "wrapper_pid": 1630360,
+  "child_pid": 1630365,
+  "requested_uuids": [
+    "GPU-1ee63385-225d-6adb-4f53-80a3032e9891"
+  ],
+  "lock_order": [
+    "GPU-1ee63385-225d-6adb-4f53-80a3032e9891"
+  ],
+  "lock_files": {
+    "GPU-1ee63385-225d-6adb-4f53-80a3032e9891": "/tmp/memra-gpu-locks/GPU-1ee63385-225d-6adb-4f53-80a3032e9891.lock"
+  },
+  "lock_inodes": {
+    "GPU-1ee63385-225d-6adb-4f53-80a3032e9891": {
+      "inode": 18088688,
+      "device_major": 253,
+      "device_minor": 1
+    }
+  },
+  "devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-1ee63385-225d-6adb-4f53-80a3032e9891",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:05:00.0"
+    }
+  ],
+  "all_devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-1ee63385-225d-6adb-4f53-80a3032e9891",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:05:00.0"
+    },
+    {
+      "index": 1,
+      "uuid": "GPU-9aac15ee-fcda-a1e3-367f-f9517f7376ff",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:06:00.0"
+    },
+    {
+      "index": 2,
+      "uuid": "GPU-0ef61756-6a47-f49f-7c77-4ea56a37dd41",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:07:00.0"
+    },
+    {
+      "index": 3,
+      "uuid": "GPU-09f40640-fcd1-6793-8acf-5fef0a021ddf",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:08:00.0"
+    }
+  ],
+  "command": [
+    "/usr/bin/python3",
+    "-B",
+    "/home/memra-five/owners/issue-547/src-53db184d912c040e14db5ca95a548ff76ff6a25e/tools/qualify-release.py",
+    "capture",
+    "--repo",
+    "/home/memra-five/owners/issue-547/src-53db184d912c040e14db5ca95a548ff76ff6a25e",
+    "--expected-head",
+    "53db184d912c040e14db5ca95a548ff76ff6a25e",
+    "--build",
+    "/home/memra-five/owners/issue-547/build-53db184d912c040e14db5ca95a548ff76ff6a25e-ubuntu2404-attempt-1",
+    "--out",
+    "/data/receipts/issue-547-53db184d912c040e14db5ca95a548ff76ff6a25e-attempt-1/generic-capture-001",
+    "--oracles",
+    "/data/models/kernel-oracles"
+  ],
+  "started_unix": 1789987017.262473,
+  "state": "finished",
+  "exit_code": 0,
+  "child_exit_code": 0,
+  "finished_unix": 1789987255.3178842,
+  "timed_out": false,
+  "interrupted_signal": null,
+  "lingering_compute": []
+}
