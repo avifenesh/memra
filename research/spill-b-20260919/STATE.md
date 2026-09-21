@@ -1,11 +1,11 @@
-# WP-B day 12 checkpoint: ruling 6 landed, both cards printed the classified label
-- Branch lane/spill-b-20260919 on top of the pushed day-11 tip d1844b3c0: c7dd20cc5 (gate: series_verdict, write_cycles, status line, tests), 152c736cf (TESTING.md, decision record, verify-day12.py, test-day12.py, run-day12-checks.py), then the day-12 data commit (see git log).
-- Gate source for every cell: c7dd20cc5. Native checkout /root/wt-b at c7dd20cc5 (git bundle), clean; no B tmux on either rig; /root/spill-receipts/b-day12 mirrored to pro-single-day12/.
-- 32k series, both cards, verbatim: ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, 5 cycles). Residual 2097152 B every cycle, drift 0, restore bit-identical every cycle, series g1_reclaim_qualified=true, per-cycle line false.
-- PRO continuation matches the frozen target-card bundle; the laptop card has no frozen bundle (tokens match the rented bundle, logits/state differ), continuation identity in-process only.
-- 8k series control not rerun (ruling 7: mapped-VA probe refuses to re-reserve small planes; open item in the decision record; no probe or CLI change).
-- Replay: python3 research/spill-b-20260919/verify-day12.py --require-complete; battery: run-day12-checks.py -> day12-checks/final/ (8/8 exit 0, 280 tests).
-- Local release kv+tier tests: 2 storage day4 Err flakes (lane A code, day4.rs:143 and :471), reported, not touched; PRO 280/280.
-- Nothing relaxed beyond ruling 6; (a) to (d) unchanged; (e) in force for every other shape.
-- Push refused by tools/hooks/pre-push perf-ci freshness: "engine files touched after the last perf-ci battery" (base d1844b3c0; crates/memra-engine/src/bin/kv_tier_gate.rs, kv_tier_gate/active.rs, kv_tier_gate/reclaim_contract.rs). No override used. Unpushed tip = the data commit at the top of git log; the lead pushes it with the logged override.
+# WP-B day 13 checkpoint: prefix eviction credits admission and the driver in the evicting tick (#346, #445, #523 item 4)
+- Branch lane/spill-b-20260919 on top of 1cfdac6eb (merge of origin/main ea08bc7f8): b351d7db9 gate, f4350c241 FIX (worker.rs settle_reclaimed_prefix_bytes), a1a2239e3 + 678cc83ea + ec473770f gate corrections, ebda75396 TESTING.md, then the DAY13.md/receipt data commits (see git log).
+- Push refused by tools/hooks/pre-push perf-ci freshness on the merge commit's engine files (all from origin/main, none touched by this lane). No override; the lead pushes the tip.
+- Fix: snapshot pools before the eviction; fence model-owned streams; cuMemPoolTrimTo(used + cached_before) per device; one `[admit-oom] reclaim settle` line in bytes; the reclaim-on-defer line's "before" now precedes the eviction. No numeric-program change, no new MEMRA_* read, VMM door untouched.
+- Gate tools/prefix-evict-reclaim-gate.py: serving shape, real memra-server, calibration boot + ballast boot (plain cuMemAlloc child), P2 arrives beside a busy peer; V1 credit, V2 same-tick admit, V3 driver free moved by >= E1, V4 identical messages across boots.
+- Target card (one RTX PRO 6000 Blackwell, 600 W, collector-locked, N=1), final pair, gate ec473770f, verbatim: main ea08bc7f8 `... reclaim_credit_bytes=0 driver_free_delta_bytes=none ... V1=FAIL V2=ok V3=FAIL V4=ok -> FAIL`; fix f4350c241 `... reclaim_credit_bytes=1751000000 driver_free_delta_bytes=1610612736 trim_released_bytes=1610612736 pool_retained_bytes=140549120 ... V1=ok V2=ok V3=ok V4=ok -> PASS`. Identity digest aa6cc3291b98... identical across all four boots.
+- Two refused cells (gate-main, gate-main-rerun) and one failed cell (gate-fix, over-tight V3) kept as-is; reasons in DAY13.md.
+- Batteries on the fix, target card: serve-smoke 0 failed (spec/gemma4/Q35 arms SKIP, no draft/model); cache-meter-gate 0 failed. Local: memra-server 734 + memra-kv 64 tests passed, clippy -D warnings PASS, fmt/flags/boundary/diff-check PASS.
+- Receipts mirrored from the target card to pro-single-day13/ (binaries excluded); BOX3 left with no B tmux, no server, /root/wt-b detached clean at ec473770f.
+- Issue comments posted on #445, #346, #523 (not closed; the lead closes).
 - Decide-by 2026-10-04 for the --kv-allocator vmm door unchanged.
