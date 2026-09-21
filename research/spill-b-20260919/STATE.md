@@ -1,11 +1,9 @@
-# WP-B day 12 checkpoint: ruling 6 landed, both cards printed the classified label
-- Branch lane/spill-b-20260919 on top of the pushed day-11 tip d1844b3c0: c7dd20cc5 (gate: series_verdict, write_cycles, status line, tests), 152c736cf (TESTING.md, decision record, verify-day12.py, test-day12.py, run-day12-checks.py), then the day-12 data commit (see git log).
-- Gate source for every cell: c7dd20cc5. Native checkout /root/wt-b at c7dd20cc5 (git bundle), clean; no B tmux on either rig; /root/spill-receipts/b-day12 mirrored to pro-single-day12/.
-- 32k series, both cards, verbatim: ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, 5 cycles). Residual 2097152 B every cycle, drift 0, restore bit-identical every cycle, series g1_reclaim_qualified=true, per-cycle line false.
-- PRO continuation matches the frozen target-card bundle; the laptop card has no frozen bundle (tokens match the rented bundle, logits/state differ), continuation identity in-process only.
-- 8k series control not rerun (ruling 7: mapped-VA probe refuses to re-reserve small planes; open item in the decision record; no probe or CLI change).
-- Replay: python3 research/spill-b-20260919/verify-day12.py --require-complete; battery: run-day12-checks.py -> day12-checks/final/ (8/8 exit 0, 280 tests).
-- Local release kv+tier tests: 2 storage day4 Err flakes (lane A code, day4.rs:143 and :471), reported, not touched; PRO 280/280.
-- Nothing relaxed beyond ruling 6; (a) to (d) unchanged; (e) in force for every other shape.
-- Push refused by tools/hooks/pre-push perf-ci freshness: "engine files touched after the last perf-ci battery" (base d1844b3c0; crates/memra-engine/src/bin/kv_tier_gate.rs, kv_tier_gate/active.rs, kv_tier_gate/reclaim_contract.rs). No override used. Unpushed tip = the data commit at the top of git log; the lead pushes it with the logged override.
-- Decide-by 2026-10-04 for the --kv-allocator vmm door unchanged.
+# WP-B day 13 checkpoint (provisional, cells in flight): prefix eviction must credit admission and the driver
+- Branch lane/spill-b-20260919: 1cfdac6eb merges origin/main ea08bc7f8; b351d7db9 gate (tools/prefix-evict-reclaim-gate.py); f4350c241 fix (worker.rs settle_reclaimed_prefix_bytes); a1a2239e3 gate calibration fix; ebda75396 TESTING.md section.
+- Push refused by tools/hooks/pre-push perf-ci freshness ("engine files touched after the last perf-ci battery", the merge's engine files). No override; the lead pushes.
+- Defect: reclaim-on-defer drops prefix planes (stream-ordered cuMemFreeAsync into the pool) and re-reads headroom in the same tick; the receipt line took its "before" AFTER the eviction, so it could never show the credit (#346). The idle-box drain arm only runs with no active peer (#445 shape on a busy box).
+- Fix: snapshot pools before eviction; after it, fence model-owned streams, cuMemPoolTrimTo(used + cached_before) per device, one `[admit-oom] reclaim settle` line in bytes; the reclaim line's "before" moves before the eviction. No numeric-program change, no new MEMRA_* read, VMM door untouched.
+- Local: cargo test -p memra-server -p memra-kv --offline under CPUQuota=1200%: 734 + 64 passed, 0 failed. fmt, check-flags, boundary, diff --check clean.
+- BOX3 (/root/wt-b at ebda75396; bins under /root/spill-receipts/b-day13/bins/{main,fix}): main ea08bc7f8 sha 6fc3ec03..., fix f4350c241 sha 24d6b453....
+- gate-main (first cell): REFUSED by the gate's own precondition after a complete calibration boot (cost-line lookup); kept as refused. gate-main-rerun in flight; gate-fix next.
+- Receipts mirror target: research/spill-b-20260919/pro-single-day13/ (from /root/spill-receipts/b-day13/).
