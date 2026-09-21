@@ -26,7 +26,7 @@
 #   6. rg absent                              -> WARNS and continues (condition self-checked)
 #   7. wiring census                          -> the hook calls check-flags.sh, ci.yml still
 #                                                runs the self-test backstop and this fixture
-#   8. MEMRA_SKIP_PERF_CI=1 on an engine file -> perf gate skip PRINTED and LOGGED too
+#   8. MEMRA_SKIP_PERF_CI=1                 -> retired waiver explicitly refused
 #   9. rewritten topic based on newer main    -> boundary scan excludes already-remote commits
 #
 # SCOPE, since the filename is narrower than the content: arms 1-4, 6 and 7 are the census arm;
@@ -101,6 +101,8 @@ stage() {
         # and every arm below would "pass" for the wrong reason.
         printf 'import sys\nsys.exit(0)\n' > tools/update-perf-board.py
         printf 'import sys\nsys.exit(0)\n' > tools/check-public-boundary.py
+        # Qualification has its own real-hook controls in test_release_qualification.py.
+        printf 'import sys\nsys.exit(0)\n' > tools/release_qualification.py
 
         # The three releasability censuses (landed on main 2026-08-23 in 7f342b42b6). They are
         # deliberately skip-less and fail CLOSED on a missing script, so an unstubbed one refuses
@@ -298,89 +300,18 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Arm 8: the OTHER escape hatch. MEMRA_SKIP_PERF_CI is the most-used override in this repo (at
-# least four uses on 2026-08-19 alone) and until 2026-08-23 it was a NEGATIVE condition, so
-# setting it took no branch and produced no output and no trace whatsoever. It now announces and
-# logs like the census skip.
-#
-# It only engages when the push touches an engine file, so the arm has to commit one — that is
-# the branch's real precondition and an arm that skipped it would be testing nothing. The engine
-# file is deliberately FLAG-FREE so the census stays green and a failure here can only be the
-# perf-gate skip. MEMRA_MODELS_DIR is irrelevant: the skip branch is taken before the model dir
-# is consulted, which the assertions below prove by never providing one.
+# Arm 8: the retired perf skip must refuse, even when every other gate is stubbed green.
+# Actual qualified/development behavior is covered by test_release_qualification.py.
 # ---------------------------------------------------------------------------
 stage arm8
-( cd "$work" \
-    && mkdir -p crates/memra-engine/src \
-    && printf '// engine change with no MEMRA_ read, so only the perf gate can object.\n' \
-        > crates/memra-engine/src/lib.rs \
-    && git add crates/memra-engine/src/lib.rs \
-    && git commit -qm 'engine file: engages the perf-ci freshness gate' ) >/dev/null
-
-# MEMRA_MODELS_DIR IS PINNED TO A PATH THAT CANNOT EXIST, and that pin is the fix for a real
-# defect this arm shipped with (main red at 5ffa711c32, repaired here). Unpinned, the precondition
-# push below takes a DIFFERENT branch on each machine:
-#   * rig      — /data/ai-ml/hf-models exists, so the gate looks for perf-ci.jsonl, does not find
-#                it in a throwaway repo, and REFUSES the push (exit 1).
-#   * runner   — no model dir, so the gate prints its NOTE and the push SUCCEEDS.
-# Both satisfied the assertion below, so the precondition arm went green in both places — for
-# opposite reasons. The consequence landed on the NEXT push: on the runner the precondition push
-# had already advanced the bare origin, so the override push had nothing to send, git printed
-# "Everything up-to-date" and NEVER RAN THE HOOK. Two arms then failed for a reason that had
-# nothing to do with the code under test. An environment-dependent fixture is a fixture that
-# reports on the machine instead of the change.
-export MEMRA_MODELS_DIR="$tmp/no-such-models-dir"
-
-# PRECONDITION: without the override, this push must reach the perf-ci gate at all. Otherwise
-# "the skip announced itself" would be a claim about a branch nothing else can reach.
-out=$(push "$work" "MEMRA_MODELS_DIR=$MEMRA_MODELS_DIR")
-if [[ "$out" == *"perf-ci"* || "$out" == *"perf_ci"* || "$out" == *"model dir"* ]]; then
-    ok "arm8: the engine file DOES engage the perf-ci gate (precondition, not assumed)"
+plant_read "$work"
+document "$work" "$FIXTURE_FLAG"
+if out=$(push "$work" MEMRA_SKIP_PERF_CI=1); then
+    bad "arm8: retired perf waiver still allowed a push"
+elif [[ "$out" == *"MEMRA_SKIP_PERF_CI is retired"* ]]; then
+    ok "arm8: retired perf waiver refuses explicitly"
 else
-    bad "arm8: engine file did not engage the perf-ci gate — arm 8 would prove nothing
-$out"
-fi
-
-# A SECOND commit, so the override push always has work to send no matter whether the
-# precondition push landed. A no-op push exits 0 without running any hook, which is the trap
-# above: green-looking plumbing, zero coverage.
-( cd "$work" \
-    && printf '// second engine change, so the override push is never a no-op.\n' \
-        >> crates/memra-engine/src/lib.rs \
-    && git add crates/memra-engine/src/lib.rs \
-    && git commit -qm 'engine file: second change for the override push' ) >/dev/null
-
-if out=$(push "$work" MEMRA_SKIP_PERF_CI=1 "MEMRA_MODELS_DIR=$MEMRA_MODELS_DIR"); then
-    # Assert the push was NOT a no-op before reading anything into its output. This is the
-    # permanent guard for the defect described above: `git push` with nothing to send succeeds,
-    # prints "Everything up-to-date", and runs no hook — so every downstream assertion about
-    # hook behaviour would be measuring silence.
-    if [[ "$out" == *"Everything up-to-date"* ]]; then
-        bad "arm8: the override push was a NO-OP (no hook ran) — the arm proved nothing
-$out"
-        bad "arm8: (log not evaluated — nothing was pushed)"
-    else
-        if [[ "$out" == *"SKIPPED"* && "$out" == *"MEMRA_SKIP_PERF_CI=1"* ]]; then
-            ok "arm8: MEMRA_SKIP_PERF_CI=1 ANNOUNCES itself (it used to be silent)"
-        else
-            bad "arm8: perf-ci skip was silent — no announcement in the push output
-$out"
-        fi
-        skip_log=$work/.git/memra-gate-skips.log
-        # The row must NAME WHAT IT LET THROUGH, not merely that a skip happened.
-        if [[ -s "$skip_log" ]] \
-            && grep -q 'perf-ci.*MEMRA_SKIP_PERF_CI=1.*engine_files=.*memra-engine' "$skip_log"
-        then
-            ok "arm8: the row names the engine files it waved past"
-        else
-            bad "arm8: no durable row naming the engine files at $skip_log
-$(cat "$skip_log" 2>/dev/null)"
-        fi
-    fi
-else
-    bad "arm8: MEMRA_SKIP_PERF_CI=1 did not let the push through
-$out"
-    bad "arm8: (log not evaluated — the escape hatch did not work)"
+    bad "arm8: wrong refusal for retired waiver: $out"
 fi
 
 # ---------------------------------------------------------------------------
@@ -448,10 +379,10 @@ fi
 # The fixture's own floor, the shape test_check_flags.sh uses: a run that records FEWER
 # assertions than it should is BROKEN, not green. Every `bad` path above is paired so the count
 # is invariant to which branch was taken.
-#   arms 1-2: 2 | arm 3: 1 | arm 4: 1 | arm 5: 2 | arm 6: 1 | arm 7: 3 | arm 8: 3
-#   arm 9: 1  = 14
+#   arms 1-2: 2 | arm 3: 1 | arm 4: 1 | arm 5: 2 | arm 6: 1 | arm 7: 3 | arm 8: 1
+#   arm 9: 1  = 12
 # ---------------------------------------------------------------------------
-EXPECTED_ASSERTIONS=14
+EXPECTED_ASSERTIONS=12
 total=$((pass + fail))
 printf '\ntest_flags_guard: %d passed, %d failed (%d assertions, expected %d)\n' \
     "$pass" "$fail" "$total" "$EXPECTED_ASSERTIONS"

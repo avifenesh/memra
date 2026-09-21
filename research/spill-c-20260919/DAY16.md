@@ -160,6 +160,18 @@ battery, outside today's budget and blocked on this rig by the recorded hit-gate
 main (memory note 2026-09-20). The lane's tip stays unpushed with this record; the lead decides the
 perf-ci run or the receipt.
 
+After the review round the lane merged main `435a57a75`, whose #547 change retires that arm (`pre-push:
+MEMRA_SKIP_PERF_CI is retired; it cannot waive GPU qualification.`) for a content-bound native release
+qualification (`tools/release_qualification.py push`, evidence under `research/release-qualification/`).
+`git push origin lane/spill-c-20260919` at `a59e33e86` was refused by it, verbatim: `UNQUALIFIED:
+UNQUALIFIED: source inputs changed: crates/memra-engine/src/tier_transfer.rs,
+crates/memra-server/src/worker.rs, crates/memra-server/src/worker/host_glm.rs, docs/FLAGS.md,
+docs/TESTING.md, research/spill-c-20260919/HOSTPREFIX-DOOR.md, research/spill-c-20260919/STATE.md,
+tools/kv-host-contract-fault-gate.sh` then `error: failed to push some refs`. Its `development` mode
+(`MEMRA_RELEASE_QUALIFICATION_MODE=development`) pushes the topic as unqualified and writes a `log_skip`
+row: a logged skip, so this lane does not set it. The tip stays unpushed with both refusals recorded; the
+lead runs the battery on integ19 and holds the qualification evidence.
+
 ## What remains
 
 - **The WC decision** (`WC-DESTINATIONS.md`): the engine's allocation flag; the hash-speed micro-cell
@@ -172,4 +184,55 @@ perf-ci run or the receipt.
 - **Verify digest v3** (the draft plane in `MEMRA_KV_HOST_VERIFY`), **the pool-full failure-gate line**:
   unchanged from days 14 and 15.
 
-Effort: approximately 6.5 agent-hours (budget 8).
+
+## Review round (PR #605, integ19: revuto findings 1 and 2 on `host_kv_planes_from_contract`'s unwind; both held)
+
+Tree after the fixes: merge of main `435a57a75` (`2ad0be159`), fix `4467131f6`. Both findings were in the
+abort's CLASSIFICATION, not in the engine, and both would have latched the tier over a state the engine
+could unwind cleanly.
+
+**Finding 1 (partial acceptance).** `host_promote_contract_abort_with`'s unpublished arm looped
+`recover_source` over every entry of `sources`, but a rejected op's slot is `None` in the engine
+(`submit_batch` pushes `entry.items.push(None)`) and `recover_source` answers `Rejected` for it, so every
+rejected index pushed a leak line, the abort returned `Latched` and the caller `host.disable`d the whole
+tier, although the rejected ops' twins and device handles had already dropped with the returned batch and
+`retire`, `acknowledge` and `take_plane` would have succeeded. Fix: `sources` carries `(item index, the
+entry's lease pointer)` per op, and the partial-acceptance arm hands the abort the ACCEPTED items only
+(`ItemAcceptance::Accepted { item } => sources.get(item)`), so the abort recovers exactly those and ends
+`Refused` as its comment says.
+
+**Finding 2 (an inferred published flag).** The `ready_view` loop passed `published = item > 0` to the
+abort. Whether the ticket is published is the engine's state: `CudaTransfers::ready_view` sets it after
+`owner.ready_view` succeeds (`tier_transfer.rs:1052`), `with_destination` before its fallible steps
+(`:552`); a caller-side flag can disagree with either, and when it does the abort took the cancel arm on
+a published ticket (`AlreadyPublished` pushed as a leak), `retire(ticket, None)` hit the `e.published`
+`Busy` guard, `retire_binding` never ran and every `take_plane` was refused: a latched tier plus leaked
+destinations where the consumer-fence path would have unwound cleanly. Fix: the abort has no `published`
+parameter; it asks the engine through `cancel`, the contract's own question ("Revoke only before
+publication; after publication return AlreadyPublished"): `PublicationRevoked` recovers the accepted
+sources (rule 1), `AlreadyPublished` records the consumer fence, drains and retires the sources, and then
+both arms retire (against the fence if published) and acknowledge.
+
+**Injectable, one-shot** (`MEMRA_KV_HOST_FAULT`, promote side, taken by the promote route only):
+`contract-promote-reject` (the last op of the batch asks for one byte more than its source holds, so the
+engine's own `CopyOp::validate` rejects exactly that item: a real partial acceptance) and
+`contract-promote-readyview` (the first `ready_view` runs and publishes in the engine; the route is handed
+an injected error for it). FLAGS row updated; `tools/kv-host-contract-fault-gate.sh` gains the cells
+`promote-reject` and `promote-readyview` (six cells now). The source-text cell pins the abort's order
+(`synchronize`, `cancel`, `recover_source(ticket, *item)`, `record_consumer`, `retire_source`, `retire`),
+the two `CancelState` arms, the accepted-only hand-off, and the absence of `published: bool` and `item > 0`.
+
+
+| Cell (target card, `4467131f6`, binary `b5ea1c25...`, 600 W; `pro-single-day16-review/`, replay `verify-day16-review.py`: `DAY16 REVIEW REPLAY: PASS`, 42 checks; collector `--validate` rc=0 on all four) | Verbatim |
+|---|---|
+| GPU unit cells (`cargo test --release -p memra-server -- --ignored`, under the collector lock) | `test result: ok. 8 passed; 0 failed` in 0.25 s: the six of the day plus `option_c_partial_acceptance_unwinds_refused_with_every_destination_released ... ok` and `option_c_first_ready_view_failure_unwinds_through_the_published_arm ... ok`. Each: a real `CudaTransfers`, a host image built by the B route, the injected shape, `Refused` with no leak wording, the twins dropped (the image's leases writable again), the ledger back to `(pinned = image, 0, 0)`, then a clean promote. |
+| `tools/kv-host-contract-fault-gate.sh`, six cells | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 62 `ok:`. `promote-reject`: D2H `seq=1`, `promote refused (contracts door): tier H2D batch partially refused: 1 of 34 items (injected failure (MEMRA_KV_HOST_FAULT=contract-promote-reject)); serving without the host entry`, D2H `seq=3`, H2D `seq=4` (digest `df514e08...`, the D2H `seq=3` digest), D2H `seq=5`, `promote: 86 tokens, 159.6MB`. `promote-readyview`: D2H `seq=1`, `promote refused (contracts door): tier H2D destination 0 not publishable: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-readyview); serving without the host entry`, D2H `seq=3`, H2D `seq=4`, D2H `seq=5`, `promote:`. In both the aborted ticket's `seq=2` is consumed and never leaked (retired and acknowledged), no `TIER DISABLED`, no `host entry dropped`, no `Capacity`, no `leaked`, no `already published`, no refusal beyond the injected one. The four earlier cells unchanged. |
+| `tools/kv-host-spill-identity-gate.sh`, default, OFF vs ON | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` both arms, verdict lines identical, equal demote bytes, 16 events equal, `verify ok`, one H2D receipt for the one promote with its D2H's digest, no refusal line. |
+
+Local battery on `4467131f6` (`day16-local-review/`, the same quota scope and lock): fmt clean; memra-server
+758 passed, 0 failed, 14 ignored (eight GPU cells plus six pre-existing), memra-kv 71, memra-engine 515 with
+24 ignored, 0 failed, exit 0; clippy `-D warnings` on the three crates clean; check-flags 865, none uncovered;
+docs-registry census clean (58 tables, 905 rows after main's merge); diff --check clean. Final-tree logs
+`day16-local-review/final-*.log`.
+
+Effort: approximately 6.5 agent-hours for the day plus approximately 1.5 for the review round (budget 8).

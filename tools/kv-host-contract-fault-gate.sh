@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # kv-host-contract-fault-gate.sh: the contract-routed host-tier D2H (MEMRA_KV_HOST_CONTRACTS=1,
 # lane/spill-c-20260919 Option B) and H2D (Option C) must UNWIND a refusal without wedging the tier.
-# Four cells, one server boot each, door ON, one one-shot fault each (docs/FLAGS.md
+# Six cells, one server boot each, door ON, one one-shot fault each (docs/FLAGS.md
 # `MEMRA_KV_HOST_FAULT`). The demote side first, the two unwind paths the PR #599 review found broken:
 #   presubmit    MEMRA_KV_HOST_FAULT=contract-presubmit: the producer fence is refused before any op
 #                is submitted. Every registered plane must come back to its slot, the demote fails
@@ -25,6 +25,12 @@
 #                        `ready_view` published every item. The published ticket must retire against
 #                        its consumer fence after its sources retired and be acknowledged, the
 #                        promote refuse typed, the tier stay on, and the NEXT promote complete.
+#   promote-reject       MEMRA_KV_HOST_FAULT=contract-promote-reject (PR #605 finding 1): the last op of the
+#                        batch is mis-sized by one byte and the engine rejects exactly it; the unwind must
+#                        recover only the accepted sources and end as a plain refusal, tier on.
+#   promote-readyview    MEMRA_KV_HOST_FAULT=contract-promote-readyview (PR #605 finding 2): the first
+#                        `ready_view` published the ticket in the engine but the route sees a failure; the
+#                        unwind must ask the engine and take the published arm, nothing leaked, tier on.
 # Promote cell shape: r1 P_A seeds E_A; r2 P_B seeds E_B, evicts E_A (a clean demote, D2H seq=1);
 # r3 P_A again: device miss, host hit, the promote takes the injected refusal and the cold path
 # serves (its insert evicts E_B into a clean demote); r4 P_B: host hit, the promote must complete
@@ -226,9 +232,16 @@ sys.exit(0 if all(json.load(open(f"{p}-r{i}.json"))["choices"][0]["text"] for i 
 PYEOF
 }
 
-pcell() { # $1 name $2 fault $3 refused-kind
+pcell() { # $1 name $2 fault $3 refused-kind-or-literal: a kind ("producer fence", "publication") names the
+          # `tier H2D <kind> refused: injected failure (...)` shape; a value starting with `tier H2D ` is the whole
+          # typed reason (the reject and readyview cells carry the engine's own wording plus the injected marker)
     local name=$1 fault=$2 kind=$3 log="$EV/$1-server.log"
-    local refusal="promote refused (contracts door): tier H2D $kind refused: injected failure (MEMRA_KV_HOST_FAULT=$fault); serving without the host entry"
+    local reason
+    case "$kind" in
+        "tier H2D "*) reason="$kind" ;;
+        *) reason="tier H2D $kind refused: injected failure (MEMRA_KV_HOST_FAULT=$fault)" ;;
+    esac
+    local refusal="promote refused (contracts door): $reason; serving without the host entry"
     echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, promote side) =="
     boot "MEMRA_KV_HOST_FAULT=$fault" "$log"
     req "$P_A" "$EV/$name-r1.json"
@@ -253,6 +266,10 @@ cell presubmit contract-presubmit "producer fence" 1
 cell postpublish contract-postpublish receipt 2
 pcell promote-presubmit contract-promote-presubmit "producer fence"
 pcell promote-postpublish contract-promote-postpublish publication
+# PR #605 review: a partially accepted batch (one op the engine rejects) and a first ready_view reported failed
+# while the engine has published; both must end as plain refusals with the ticket retired and acknowledged.
+pcell promote-reject contract-promote-reject "tier H2D batch partially refused: 1 of 34 items (injected failure (MEMRA_KV_HOST_FAULT=contract-promote-reject))"
+pcell promote-readyview contract-promote-readyview "tier H2D destination 0 not publishable: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-readyview)"
 
 if [ "$FAILS" -eq 0 ]; then
     echo "KV-HOST-CONTRACT-FAULT GATE: ALL GREEN"

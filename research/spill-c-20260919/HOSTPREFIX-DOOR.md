@@ -476,6 +476,18 @@ FAILED` after it, lane A's tenant fix arm `PASS` with 8 D2H and 2 H2D receipts, 
 gates line-identical. The WC pair's first cell: `WC-DESTINATIONS.md` "Results" (demote median 37.8 OFF
 against 169.2 ms ON, N=10; the promote's own share 4.5 against 33.2; a first-touch step in both arms).
 
+### Review fixes (PR #605, findings 1 and 2; `DAY16.md` review section)
+
+Two classification defects in the promote abort, both real: a partially accepted batch had every rejected
+index pushed as a leak (a rejected slot is `None` in the engine and `recover_source` answers `Rejected`),
+so a clean unwind latched the tier (fixed: the abort recovers exactly the ACCEPTED items it is handed);
+and the `ready_view` loop inferred `published` from its index, which can disagree with the engine (whose
+`ready_view` publishes after `owner.ready_view`, `with_destination` before its fallible steps) and then
+takes the wrong arm, leaving the ticket un-retired and every destination refused (fixed: the abort asks
+the engine through `cancel`, `PublicationRevoked` recovers, `AlreadyPublished` takes the consumer-fence
+arm). Both paths are injectable one-shot faults, `contract-promote-reject` and `contract-promote-readyview`,
+exercised by two GPU unit cells and two new cells of `tools/kv-host-contract-fault-gate.sh`.
+
 ### One-shot faults and the receipt line
 
 `MEMRA_KV_HOST_FAULT=contract-promote-presubmit` (the producer fence refused before any op is submitted:
