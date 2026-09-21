@@ -735,9 +735,13 @@ if [ "$ARM" = qwen ]; then
         # silently: the cold prime's first token, a continuation burst's stashed token
         # (max_tokens 48 > MEMRA_SPEC_BURST 32, so every sampled cell crosses one boundary),
         # and a converted full-cover hit's seed.
-        # ... and a converted SUFFIX hit's first draw (the s/sp/sx cells since the capture law
-        # moved their entries under the prompt end; the fc cells keep the full-cover site lit).
-        for SITE in cold-prime burst-tail-commit restore-full-cover restore-suffix-feed; do
+        # The converted SUFFIX hits (s/sp/sx since the capture law moved their entries under the
+        # prompt end) draw their first token in the prime path (`cold-prime`): the deferred
+        # restore primes the carried suffix through the walker, and `restore-suffix-feed` is the
+        # legacy non-deferred shape's site, unreachable from these cells. Day 19 asserted it for
+        # one run and removed the assertion the same day (its own addition, never a shipped
+        # check); the fc cells keep the full-cover site lit.
+        for SITE in cold-prime burst-tail-commit restore-full-cover; do
             if grep -q "\[spec-boundary\] site=$SITE " "$EV/qwen-on-server.log"; then
                 echo "  ok: boundary site $SITE fired"
             else

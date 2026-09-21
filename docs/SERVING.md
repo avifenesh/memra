@@ -2662,14 +2662,27 @@ start. Operator-visible consequences, stated plainly:
   rather than publishing it.
 - A cold session whose seed boundary lies inside the prompt primes alone (the concat prime
   cannot honor a per-session stop, the same rule the LCP split has); the in-batch fanout is
-  unchanged (its participants never seed). The spec session's `capture_at` publication keeps
-  its prompt-end position and is the named follow-up (`prefix_fanout_groups` likewise takes
-  the raw in-batch LCP; both are inspection findings, not measured flips).
+  unchanged (its participants never seed).
+- The spec session's publications obey the same law since 2026-09-21 as well (day 19, lead
+  ruling: one capture law for every site the server captures at). A cold spec session's
+  `capture_at` is the seed's grid boundary and a prime stop of its own beside the affinity
+  boundary (`insert (spec-boundary): 64 tokens` for a 106-token prompt); a restored spec
+  session republishes at the render-stable boundary ahead of what it restored, or at the
+  seed's grid boundary when none lies ahead, and the engine's prompt-end republish fires only
+  when the prompt end is itself on the grid. Consequence the `#379` gate now states in its own
+  numbers: an identical sampled repeat of an off-grid prompt restores `capture_len(P)` and
+  cold-primes the rest from the grid, so the whole-prompt "full-cover" hit exists only for
+  on-grid prompts (the gate builds one through `/v1/tokenize`); spec-on and spec-off restore
+  the same entry and prime the same suffix from the same grid start, which is what makes their
+  byte identity hold. Still by inspection only: `prefix_fanout_groups` takes the raw in-batch
+  LCP as its capture length.
 
 Gates: `tools/prefix-newest-turn-fits-gate.py` (V5 identity and V6 grid are verdict clauses)
 and `tools/prefix-restore-identity-gate.py` (the five restore points), red on the pre-fix
 binary and green on the fix on the local RTX 5090, green on the fix on one RTX PRO 6000
-Blackwell (`research/spill-b-20260919/DAY18.md`). What the grid law still does NOT promise:
+Blackwell (`research/spill-b-20260919/DAY18.md`, the plain seed; `DAY19.md`, both capture
+sites, with `tools/spec-on-cache-hit-gate.sh qwen` ALL GREEN on the fix and red on the
+pre-fix binary's accounting). What the grid law still does NOT promise:
 verbatim-extension continuation resumes keep decode-computed rows whose arithmetic a cold
 prefill never reproduces (`primepath --hist` measures that arm: bounded logit perturbation,
 flips only at near-ties). That path carries the documented cached-hit-vs-fresh-prime near-tie

@@ -909,7 +909,8 @@ prefix-restore-identity-gate.py [--external-lock FD] --model <gguf> --bin <memra
   a near-tie that did not flip.
 - Verdict line: `PREFIX-RESTORE-IDENTITY: target=12350 points=5 identical=K/5 grid_ok=M/5 grid=32
   p(seedS,restoredR,offO,suffixQ):yes|NO ... V1=.. V2=.. -> PASS|FAIL`; exit 0/1/2 as the twin
-  gate. Receipts on both cards: [`research/spill-b-20260919/DAY18.md`](../research/spill-b-20260919/DAY18.md).
+  gate. Receipts on both cards: [`research/spill-b-20260919/DAY18.md`](../research/spill-b-20260919/DAY18.md)
+  and [`DAY19.md`](../research/spill-b-20260919/DAY19.md).
 - Canonical rig lock only; under the collector, `tools/tier-battery.py --rig rtx5090 --external-lock
   --execute python3 tools/prefix-restore-identity-gate.py --external-lock @COLLECTOR_LOCK_FD@ ...`.
   CPU arms: `worker::tests::seed_capture_boundary_lands_on_the_grid_or_refuses` (lengths just above
@@ -951,7 +952,8 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
   turn's entry fits the budget: the incident's shape scaled to a small budget.
 - The capture law the gate is stated in (memra#602, fixed 2026-09-21; `docs/SERVING.md`, "The
   prompt-end seed obeys the same law"): every entry the cache publishes lands on the GDN prime
-  grid, so a prompt of P tokens publishes `capture_len(P)` tokens (P when P is a multiple of
+  grid, the plain seed and the spec session's `insert (spec-boundary)` alike (day 19), so a
+  prompt of P tokens publishes `capture_len(P)` tokens (P when P is a multiple of
   `--grid`, otherwise the largest multiple below P whose remainder is at least PRIME_MIN_T = 16,
   never under the 64-token entry floor), a hit restores exactly that many, and `cached_tokens`
   reports the restored length, never P. `--grid` names the engine's `gdn_chunk_size()` (32); a
@@ -987,7 +989,14 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
   150`, V5 and V6: `identity_ok=11/12 grid_ok=0/31 off_grid_calls=11 ... V5=FAIL V6=FAIL -> FAIL`
   on the pre-fix `main`, `identity_ok=12/12 grid_ok=31/31 off_grid_calls=0 ... -> PASS` on the
   fix, local RTX 5090; the fix also `-> PASS` on one RTX PRO 6000 Blackwell) in
-  [`research/spill-b-20260919/DAY18.md`](../research/spill-b-20260919/DAY18.md).
+  [`research/spill-b-20260919/DAY18.md`](../research/spill-b-20260919/DAY18.md) and, on the
+  completed fix (both capture sites), in
+  [`research/spill-b-20260919/DAY19.md`](../research/spill-b-20260919/DAY19.md). The
+  `tools/spec-on-cache-hit-gate.sh qwen` cells state the same law in their own numbers since
+  day 19 (an identical sampled repeat restores `capture_len(P)`, 64 of 106; the growth turns
+  restore the republished render-stable boundary, 96 of 119; an on-grid `fc` pair built
+  through `/v1/tokenize` keeps the whole-prompt full-cover shape and its `restore-full-cover`
+  boundary site exercised); its identity law, spec-on text == spec-off text, is unchanged.
 - Canonical rig lock only, held for the whole cell; under the collector,
   `tools/tier-battery.py --rig pro-single --external-lock --execute python3
   tools/prefix-newest-turn-fits-gate.py --external-lock @COLLECTOR_LOCK_FD@ ...` (lead ruling 5).
