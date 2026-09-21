@@ -1218,6 +1218,33 @@ allocation with the ticket until acknowledgement. The frozen schedules were not 
 PASS here is development correctness on one card class; it does not discharge the serving-shape
 cells the freeze lists as required.
 
+`tier-transfer-gate pinned-ab [--bytes N] [--pairs N]` (lane/spill-a-20260919 day 13) is the
+allocation-flag A/B of the contract's pinned host leases. The contract path allocated through
+cudarc's `alloc_pinned`, which hard-codes `cuMemHostAlloc(.., CU_MEMHOSTALLOC_WRITECOMBINED)`, so
+every CPU read of a demoted plane under `MEMRA_KV_HOST_CONTRACTS=1` (the engine's completion
+checksum, the bind checksum, and Option C's H2D-source checksum) ran uncached. The seam
+`memra_engine::tier_transfer::PinnedKind { WriteCombined, Cached }` (`alloc_host_kind`; `alloc_host`
+keeps today's write-combined default, flag bits 4) is selected by the gate only, never by an
+environment variable. One process, one CUDA context, one collector lock hold: one untimed warm-up
+roundtrip per arm, then A B x N and B A x N, per roundtrip the allocation wall, the D2H wall (submit
+to owner-stream synchronize), the engine's completion-hash wall, the bind-hash wall, the byte
+compare, the H2D wall, the H2D-source hash wall, `cuMemHostGetFlags` (a UVA driver reports
+`DEVICEMAP` on every pinned allocation: 6 for write-combined, 2 for cached) and `byte_exact` on both
+legs; one `PINNED-AB rule` line and one `RESULT` JSON. CPU cells
+`pinned_kind_default_is_todays_write_combined_flag_bits` and
+`alloc_host_delegates_with_the_default_kind_and_no_other_pinned_allocation_remains`; GPU cell
+`pinned_kind_arm_is_honoured_by_the_driver` (ignored without a device). Target card (one RTX PRO
+6000 Blackwell at 600 W, `research/spill-a-20260919/DAY13.md`, `pro-single-day13/`, replay
+`wc-ab.py`; pre-registered rule in `DAY13.md`): on the 160 MiB decision cell the cached arm reads
+the lease in 77.6 ms against 1711 ms write-combined (bind hash, pooled medians, N=10, cached below
+at 10/10 pairs), D2H 3.00 against 3.01 ms and H2D 2.98 against 2.98 ms (the DMA is
+flag-independent), byte exact 22/22, `cached_arm=wins-on-this-card`; a first sitting of the same
+cell was `inconclusive` on the per-pair D2H clause by 1 and 4 us. `conformance` and `roundtrip`
+print the same lines through the engine-owned backing as before. No default moved: the local RTX
+5090 cell is the follow-up and the lead rules at the door's decide-by review (2026-10-05).
+`research/spill-a-20260919/PINNED-FLAGS.md` is the census of every pinned allocation and every host
+read on the path.
+
 ### `kv-tier-gate`: fitting-context KV tiering under one numeric program
 
 `crates/memra-engine/src/bin/kv_tier_gate.rs`; the argument contract is `kv_tier_gate/cli.rs`
