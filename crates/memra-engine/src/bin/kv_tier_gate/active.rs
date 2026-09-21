@@ -7,13 +7,13 @@ use memra_kv::{Cache, KvLayer, KvPlane};
 use memra_tier::{bank::SharedBudget, contracts::*, tier::governor::Governor};
 use std::{cell::RefCell, fs, io::Write, path::Path, rc::Rc, sync::Arc};
 
-type Transfers = Rc<RefCell<CudaTransfers>>;
-const EPOCHS: Epochs = Epochs {
+pub(super) type Transfers = Rc<RefCell<CudaTransfers>>;
+pub(super) const EPOCHS: Epochs = Epochs {
     state: 1,
     src_gen: 1,
     dst_gen: 1,
 };
-fn request() -> BudgetRequest {
+pub(super) fn request() -> BudgetRequest {
     BudgetRequest {
         bytes: TierBudget::zero(1),
         priority: Priority::Demand,
@@ -84,18 +84,18 @@ impl KvMaterializer for NativeMaterializer {
     }
 }
 
-struct HostPlane {
-    host: CudaPinnedLease,
-    ticket: TransferTicket,
-    bundle: StateBundle,
-    capacity: usize,
+pub(super) struct HostPlane {
+    pub(super) host: CudaPinnedLease,
+    pub(super) ticket: TransferTicket,
+    pub(super) bundle: StateBundle,
+    pub(super) capacity: usize,
     source_owners_before_release: usize,
     source_owners_after_release: usize,
     vmm: Option<KvPlane>,
     released_bytes: usize,
     granularity: usize,
 }
-fn bundle(
+pub(super) fn bundle(
     program: &ProgramIdentity,
     group: u32,
     role: Role,
@@ -162,7 +162,12 @@ fn bundle(
     Ok(b)
 }
 
-fn demote(e: &Engine, t: &Transfers, backing: KvPlane, b: StateBundle) -> super::Result<HostPlane> {
+pub(super) fn demote(
+    e: &Engine,
+    t: &Transfers,
+    backing: KvPlane,
+    b: StateBundle,
+) -> super::Result<HostPlane> {
     let capacity = backing.len();
     let is_vmm = backing.is_vmm();
     let bytes = b.layout.storage_bytes()? as usize;
@@ -217,7 +222,14 @@ fn demote(e: &Engine, t: &Transfers, backing: KvPlane, b: StateBundle) -> super:
         granularity,
     })
 }
-fn restore(e: &Engine, transfers: &Transfers, plane: HostPlane) -> super::Result<KvPlane> {
+/// The contract's own integrity check guards the device: `StateBundle::verify` refuses a
+/// demoted copy whose bytes no longer match the sealed checksum (`Error::Corrupt`) before any
+/// device allocation, H2D submission or publication happens.
+pub(super) fn restore(
+    e: &Engine,
+    transfers: &Transfers,
+    plane: HostPlane,
+) -> super::Result<KvPlane> {
     let HostPlane {
         host,
         ticket: d2h,
@@ -227,9 +239,7 @@ fn restore(e: &Engine, transfers: &Transfers, plane: HostPlane) -> super::Result
         released_bytes,
         ..
     } = plane;
-    if checksum(host.bytes()?) != bundle.checksums[0] {
-        return Err("host residency checksum mismatch".into());
-    }
+    bundle.verify(&[host.bytes()?.to_vec()])?;
     let bytes = host.valid_bytes();
     let (ticket, keep) = {
         let mut t = transfers.borrow_mut();
@@ -291,6 +301,30 @@ fn restore(e: &Engine, transfers: &Transfers, plane: HostPlane) -> super::Result
     t.retire(&d2h, Some(consumer))?;
     t.acknowledge(&d2h)?;
     Ok(t.take_plane(&keep)?) // No D2D; original native operand type/accounting returns to Cache.
+}
+
+/// Pinned bytes the whole committed K/V state needs on the host tier: every nonempty full
+/// history plane at the committed position, the same extent `roundtrip` demotes.
+pub(super) fn whole_state_bytes(cache: &Cache) -> super::Result<usize> {
+    let mut total = 0usize;
+    for layer in cache.kv.iter().flatten().filter(|kv| kv.len != 0) {
+        for row in [layer.k_tok_bytes, layer.v_tok_bytes] {
+            let valid = cache.pos.checked_mul(row).ok_or("active extent overflow")?;
+            total = total.checked_add(valid).ok_or("whole-state sum overflow")?;
+        }
+    }
+    Ok(total)
+}
+
+/// Whole-state admission through the governor's own `reserve` (the `TierStore::admit` rule:
+/// reserve before moving bytes). The probe lease is released at once; the per-plane
+/// `alloc_host` charges then follow under the same governor. `Err(Capacity)` means the host
+/// tier cannot hold the demoted bytes, so no layer is taken and no byte moves.
+pub(super) fn admit_whole_state(governor: &SharedBudget, pinned: usize) -> Result<()> {
+    let mut probe = request();
+    probe.bytes.pinned = pinned as u64;
+    let lease = governor.borrow_mut().reserve(&probe)?;
+    governor.borrow_mut().release(&lease)
 }
 
 /// What one demote/restore roundtrip observed, exactly as written to `active-reclaim.txt`.
@@ -396,7 +430,17 @@ pub fn roundtrip(
         0,
         Arc::new(|| 0),
     )?));
-    let transfers = Rc::new(RefCell::new(CudaTransfers::new(e.stream(), governor)?));
+    let transfers = Rc::new(RefCell::new(CudaTransfers::new(
+        e.stream(),
+        governor.clone(),
+    )?));
+    let whole_state = whole_state_bytes(cache)?;
+    if let Err(error) = admit_whole_state(&governor, whole_state) {
+        return Err(format!(
+            "REFUSED: host tier budget below demoted bytes ({whole_state}); demotion refused before any copy: {error}"
+        )
+        .into());
+    }
     e.stream().synchronize()?;
     e.pool_trim_to_zero(); // Equal trim before/after isolates newly freed source allocations.
     let free_before_spare_reserve = e.ctx().mem_get_info()?.0;

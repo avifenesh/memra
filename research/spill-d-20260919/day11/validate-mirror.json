@@ -1,0 +1,86 @@
+{
+  "kind": "capture-integrity",
+  "cells": 7,
+  "failed_commands": 0,
+  "refused_commands": 2,
+  "qualification": false,
+  "results": [
+    {
+      "cell": "cancel-demote/collector-0",
+      "kind": "capture-integrity",
+      "status": "executed-not-qualified",
+      "started_utc": "2026-09-20T23:43:13.208253+00:00",
+      "ended_utc": "2026-09-20T23:45:27.233548+00:00",
+      "elapsed_seconds": 134.025293143,
+      "qualification": false,
+      "legacy_timing": false,
+      "storage_label": "not recorded; no NVMe/spill-speed claim"
+    },
+    {
+      "cell": "cancel-restore/collector-0",
+      "kind": "capture-integrity",
+      "status": "refused",
+      "started_utc": "2026-09-20T23:45:27.315341+00:00",
+      "ended_utc": "2026-09-20T23:47:39.601309+00:00",
+      "elapsed_seconds": 132.285965691,
+      "qualification": false,
+      "legacy_timing": false,
+      "storage_label": "not recorded; no NVMe/spill-speed claim"
+    },
+    {
+      "cell": "corrupt-host/collector-0",
+      "kind": "capture-integrity",
+      "status": "executed-not-qualified",
+      "started_utc": "2026-09-20T23:47:39.683809+00:00",
+      "ended_utc": "2026-09-20T23:49:51.953803+00:00",
+      "elapsed_seconds": 132.269992751,
+      "qualification": false,
+      "legacy_timing": false,
+      "storage_label": "not recorded; no NVMe/spill-speed claim"
+    },
+    {
+      "cell": "device-short/collector-0",
+      "kind": "capture-integrity",
+      "status": "executed-not-qualified",
+      "started_utc": "2026-09-20T23:54:10.180467+00:00",
+      "ended_utc": "2026-09-20T23:56:24.651989+00:00",
+      "elapsed_seconds": 134.471520753,
+      "qualification": false,
+      "legacy_timing": false,
+      "storage_label": "not recorded; no NVMe/spill-speed claim"
+    },
+    {
+      "cell": "host-budget-short/collector-0",
+      "kind": "capture-integrity",
+      "status": "executed-not-qualified",
+      "started_utc": "2026-09-20T23:52:04.086441+00:00",
+      "ended_utc": "2026-09-20T23:54:10.098045+00:00",
+      "elapsed_seconds": 126.011601491,
+      "qualification": false,
+      "legacy_timing": false,
+      "storage_label": "not recorded; no NVMe/spill-speed claim"
+    },
+    {
+      "cell": "missing-host/collector-0",
+      "kind": "capture-integrity",
+      "status": "executed-not-qualified",
+      "started_utc": "2026-09-20T23:49:52.034937+00:00",
+      "ended_utc": "2026-09-20T23:52:04.005358+00:00",
+      "elapsed_seconds": 131.970418688,
+      "qualification": false,
+      "legacy_timing": false,
+      "storage_label": "not recorded; no NVMe/spill-speed claim"
+    },
+    {
+      "cell": "require-resident/collector-0",
+      "kind": "capture-integrity",
+      "status": "refused",
+      "started_utc": "2026-09-20T23:56:24.733733+00:00",
+      "ended_utc": "2026-09-20T23:58:37.221736+00:00",
+      "elapsed_seconds": 132.488001602,
+      "qualification": false,
+      "legacy_timing": false,
+      "storage_label": "not recorded; no NVMe/spill-speed claim"
+    }
+  ]
+}
