@@ -27,7 +27,14 @@ direct-io disk 2.7 GB/s write and 5.1 GB/s read, 2026-09-21. (A first box with 1
 thrashed in disk wait on the first cell and was destroyed; see the acceptance note in the
 memory corpus.) `Tiyuvta/Hy3-NVFP4@0af425172b7a`, SHA256SUMS verified (README-only mismatch),
 frozen residency, native companion built from this lane, greedy, 32 new tokens, stream 0 = P0.
-base = origin/main `9ef2f04d6` (one job per row, #587's default), lane = this branch.
+base = origin/main `9ef2f04d6` (one job per row, #587's default), lane = this branch **at
+`b20739740`**, the commit whose `lockstep_cpu_rows_on()` defaulted the arm ON (it read
+`!= Ok("0")`). `raw/ab-rows.sh` is that box's driver: its lane cells carry no
+`MEMRA_LOCKSTEP_CPU_ROWS` and therefore ran the multi-row arm; `lane-m4-mixed-rows0` set `=0`
+for the one-job contrast. The default flipped to opt-in in a later commit of this lane
+(`8b23db523`), so re-running `raw/ab-rows.sh` against the merged tree would put those cells on
+the default program; the arm-on reading of this table is bound to `b20739740`
+(`raw/abrows/commits.txt`). The second box below ran the flipped code with the flag explicit.
 `cpu_native_check` on the box: the raw + exact accumulate arm PASS for all four formats
 (`raw/cpu-native-check-box.log`).
 
@@ -76,8 +83,12 @@ submitted inline through the executor's bounded queue, so the dispatcher parked 
 work before launching the GPU groups, and the multi-row arm's larger job count made that worse.
 Jobs are now prepared inline and submitted from a scoped helper thread. Re-measured on a second
 EPYC 9B14 box (220 GB, disk 5.1/6.6 GB/s direct; 2026-09-21 13:39 to 14:47 UTC, GPU 42 C to 46 C),
-same protocol (M=4 mixed, 64 tokens, 5 AB then 5 BA), lane head `ebb1fe43a` (the PR head
-differs only by the local-ci verdict fix and receipts).
+same protocol (M=4 mixed, 64 tokens, 5 AB then 5 BA), lane head `ebb1fe43a` (arm opt-in; the
+PR head differs only by the local-ci verdict fix and receipts; `raw/abrows-dispatchfix/
+commits-boxes.txt`). Driver `raw/ab-rows-dispatchfix.sh`: `lane-m4-mixed` passes
+`MEMRA_LOCKSTEP_CPU_ROWS=1` explicitly (arm on); `lane-m1` and `base-m1` carry no flag and run
+the default one-job program, so that pair is an M=1 identity check across binaries, not an arm
+cell. `ab-interleave.sh` sets `1`/`0` explicitly for A/B on both boxes.
 
 | Order | A median (tok/s aggregate) | B median | B over A |
 | --- | --- | --- | --- |
