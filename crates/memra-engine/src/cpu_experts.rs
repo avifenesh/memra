@@ -704,6 +704,7 @@ fn executor() -> Result<&'static CpuExecutor, String> {
 }
 
 pub(crate) fn submit(job: CpuExpertJob) -> Result<CpuExpertTicket, String> {
+    // kept for the sequential callers; lockstep goes through `submit_job`
     submit_any(CpuJob::Token(job))
 }
 
@@ -785,6 +786,23 @@ pub(crate) fn prepare_rows_raw_job(
 /// True when the companion exports the raw rows entry point the exact lockstep program needs.
 pub(crate) fn rows_raw_supported() -> bool {
     backend().is_ok_and(|b| b.rows_raw.is_some())
+}
+
+/// True when `expert` can take the rows kernel at all: the companion's rows path serves
+/// quantized projections only (`memra_cpu_experts.cpp`, "CPU expert rows path serves quantized
+/// experts only"), while the one-job program also takes F32 and BF16. A caller that would send
+/// an unquantized expert down the rows path must fall back to the one-job program for that row
+/// set instead of surfacing the companion's refusal mid-step.
+pub(crate) fn rows_raw_admits(weights: &MoeWeights, expert: usize) -> bool {
+    [&weights.gate_exps, &weights.up_exps, &weights.down_exps]
+        .iter()
+        .all(|exps| !matches!(exps.expert_layout(expert).qtype, QT_F32 | QT_BF16))
+}
+
+/// Submit an already prepared job; the persistent executor queue is bounded (one slot per
+/// executor), so a dispatcher that has GPU work to launch should submit from a helper thread.
+pub(crate) fn submit_job(job: CpuJob) -> Result<CpuExpertTicket, String> {
+    submit_any(job)
 }
 
 /// The down-projection scale the companion applies for `expert`: the same field
