@@ -19,8 +19,9 @@ tests or grants GPU qualification.
 The same job ends with the CPU failure controls of the GPU adapter below
 (`tools/unittest-floor.sh tools test_gpu_ci.py 9`; 10 measured 2026-09-21; a bare
 `unittest discover` is green over zero tests). The `gates` job runs
-`tools/check-workflow-keys.py`, which loads every workflow file with a loader that refuses a
-duplicate mapping key. GitHub refuses a workflow file with a duplicate
+`tools/check-workflow-keys.py`, a standard-library walker (no PyYAML, so the gate cannot fail
+for a missing dependency) that refuses a duplicate mapping key at any depth and reports a
+construct outside its documented scope as "cannot answer" (exit 2), never as green. GitHub refuses a workflow file with a duplicate
 key and runs zero jobs; main carried two `portable-suites` jobs on 2026-09-21 (#592 and #590)
 and every run was red at the workflow level until one was removed. The `gates` step protects
 the other workflow files; `ci.yml` itself is protected by the same census in

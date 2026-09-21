@@ -7,12 +7,29 @@ the file: the push run had ZERO jobs and read "This run likely failed because of
 file issue". Every push and PR after it was red at the workflow level, and no job in ci.yml
 could catch it, because ci.yml itself was the file that did not parse. PyYAML's `safe_load`
 keeps the LAST duplicate silently, so `python3 -c "import yaml; yaml.safe_load(...)"` passed on
-that tree; a loader has to be told to raise.
+that tree.
 
-WHAT. Every `.github/workflows/*.yml` and `*.yaml` is loaded with a SafeLoader whose mapping
-constructor raises on the first duplicate key at any depth (jobs, steps, `with:`, `env:`,
-`inputs:`). Zero workflow files is a failure too (a moved directory must not read as green).
-Exit 0 prints one line per file with its job names; exit 1 names file, line, column and key.
+WHAT. Standard library only (revuto on #601: PyYAML is not guaranteed on every interpreter this
+repo's hooks run under, and a gate that fails for a missing dependency gets uninstalled). A
+line-based walker over the block-style YAML that workflow files are written in:
+
+  * a mapping key is the text before the first `:` followed by a space or the end of line, at
+    the line's indentation (after any `- ` sequence indicators); quoted keys are unquoted;
+  * mapping scopes are tracked by indentation column: a key at a shallower column closes the
+    deeper scopes, a `- ` item closes the previous item's scope even at equal indentation;
+  * a block scalar (`|`, `>` with chomping or indentation indicators, optional comment) swallows
+    every following line indented deeper than its key, so `run: |` bodies never yield keys;
+  * full-line comments, document markers, directives and blank lines are skipped; flow
+    sequences (`[main]`) are values and yield no keys; continuation lines of a multi-line plain
+    scalar yield no key unless they contain `: `, in which case they open a scope of their own
+    and can only report a duplicate against a twin continuation line (not seen in practice).
+
+Scope, stated: flow mappings (`{a: 1}`), complex keys (`? `), merge keys (`<<`), anchors or
+tags in key position and tab indentation are NOT modelled; the walker refuses them with exit 2
+("cannot answer"), never green. GitHub's own parser rejects most of them too. Zero workflow
+files is a refusal (a moved directory must not read as green); a file without a `jobs:`
+mapping is a refusal. Exit 0 prints one line per file with its job names; exit 1 names the
+file, the key, its line and column and the line of the first occurrence.
 
 WHERE. tools/hooks/pre-push (no skip switch: a tree whose workflow GitHub cannot parse is
 unshippable) and the ci.yml `gates` job, which protects the OTHER workflow files; ci.yml can
@@ -21,44 +38,114 @@ Teeth: tools/test_workflow_keys.sh.
 """
 
 import pathlib
+import re
 import sys
 
-import yaml
+
+class Refused(Exception):
+    """Exit 1: a duplicate key, a missing jobs mapping, no workflow files."""
 
 
-class Duplicate(Exception):
-    pass
+class Unsupported(Exception):
+    """Exit 2: a construct the walker does not model; the census cannot answer."""
 
 
-class StrictLoader(yaml.SafeLoader):
-    def construct_mapping(self, node, deep=False):
-        if not isinstance(node, yaml.MappingNode):
-            raise yaml.constructor.ConstructorError(
-                None, None, f"expected a mapping node, but found {node.id}", node.start_mark
+BLOCK_SCALAR = re.compile(r"^[|>][-+0-9]*\s*(#.*)?$")
+KEY_LINE = re.compile(
+    r"""^(?P<indent>[ ]*)(?P<dashes>(?:-[ ]+)*)
+        (?P<key>"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s"'#\[\]{},&*!|>%@`?][^#]*?)
+        [ ]*:(?:[ ]+(?P<value>.*)|$)""",
+    re.VERBOSE,
+)
+
+
+def unquote(key):
+    if len(key) >= 2 and key[0] == key[-1] and key[0] in "\"'":
+        return key[1:-1]
+    return key.strip()
+
+
+def walk(text):
+    """Yield nothing; raise Refused on a duplicate key. Return the list of job names."""
+    scopes = []  # each: {"col": int, "keys": {name: line_no}, "parent": (col, key) or None}
+    jobs = None
+    block_col = None  # indentation column of the key whose block scalar is being skipped
+    for number, raw in enumerate(text.splitlines(), start=1):
+        line = raw.rstrip("\r")
+        stripped = line.strip()
+        if block_col is not None:
+            if not stripped:
+                continue
+            if len(line) - len(line.lstrip(" ")) > block_col:
+                continue
+            block_col = None
+        if not stripped or stripped.startswith("#"):
+            continue
+        if line.startswith(("---", "...", "%")):
+            continue
+        if line[: len(line) - len(line.lstrip())].find("\t") >= 0:
+            raise Unsupported(f"line {number}: tab indentation is not modelled")
+        if stripped.startswith("? ") or stripped == "?":
+            raise Unsupported(f"line {number}: complex key (`? `) is not modelled")
+        match = KEY_LINE.match(line)
+        if not match:
+            body = re.sub(r"^[ ]*(?:-[ ]+)*", "", line)
+            if body and body[0] in "&*!" and re.search(r":( |$)", body):
+                # a PLAIN key starting with an indicator; a quoted "*" key is an ordinary string
+                raise Unsupported(f"line {number}: anchor, alias or tag in key position is not modelled")
+            continue  # a scalar sequence item, a plain-scalar continuation, a flow line
+        indent = len(match.group("indent"))
+        dashes = match.group("dashes")
+        key = unquote(match.group("key"))
+        key_col = indent + len(dashes)
+        if key == "<<":
+            raise Unsupported(f"line {number}: merge key (`<<`) is not modelled")
+        value = (match.group("value") or "").strip()
+        if value.startswith("{"):
+            raise Unsupported(f"line {number}: flow mapping (`{{...}}`) is not modelled; use block style")
+        if value.startswith("[") and "{" in value:
+            raise Unsupported(f"line {number}: flow mapping inside a flow sequence is not modelled")
+        if dashes:
+            # a new sequence item closes the previous item's mapping even at equal indentation
+            while scopes and scopes[-1]["col"] > indent:
+                scopes.pop()
+        while scopes and scopes[-1]["col"] > key_col:
+            scopes.pop()
+        if scopes and scopes[-1]["col"] == key_col and not dashes:
+            scope = scopes[-1]
+        elif scopes and scopes[-1]["col"] == key_col and dashes:
+            # `- key:` at the column of an open mapping: a fresh item mapping replaces it
+            scopes.pop()
+            scope = None
+        else:
+            scope = None
+        if scope is None:
+            parent = None
+            if scopes:
+                top = scopes[-1]
+                last = max(top["keys"], key=top["keys"].get) if top["keys"] else None
+                parent = (top["col"], last)
+            scope = {"col": key_col, "keys": {}, "parent": parent}
+            scopes.append(scope)
+            if parent == (0, "jobs") and jobs is None:
+                jobs = scope["keys"]
+        if key in scope["keys"]:
+            raise Refused(
+                f"duplicate mapping key {key!r} at line {number} column {key_col + 1} "
+                f"(first at line {scope['keys'][key]})"
             )
-        self.flatten_mapping(node)
-        seen = {}
-        for key_node, _ in node.value:
-            key = self.construct_object(key_node, deep=deep)
-            if key in seen:
-                first = seen[key]
-                raise Duplicate(
-                    f"duplicate mapping key {key!r} at line {key_node.start_mark.line + 1} "
-                    f"column {key_node.start_mark.column + 1} (first at line {first.line + 1})"
-                )
-            seen[key] = key_node.start_mark
-        return super().construct_mapping(node, deep=deep)
+        scope["keys"][key] = number
+        if BLOCK_SCALAR.match(value):
+            block_col = key_col
+    if not scopes or scopes[0]["col"] != 0 or "jobs" not in scopes[0]["keys"]:
+        raise Refused("no top-level `jobs:` mapping")
+    if not jobs:
+        raise Refused("`jobs:` has no jobs")
+    return list(jobs)
 
 
 def check(path):
-    with path.open("rb") as stream:
-        data = yaml.load(stream, Loader=StrictLoader)
-    if not isinstance(data, dict):
-        raise Duplicate("top level is not a mapping")
-    jobs = data.get("jobs")
-    if not isinstance(jobs, dict) or not jobs:
-        raise Duplicate("no `jobs:` mapping")
-    return list(jobs)
+    return walk(path.read_text(encoding="utf-8"))
 
 
 def main(argv):
@@ -67,19 +154,31 @@ def main(argv):
     if not files:
         print(f"check-workflow-keys: FAIL: no workflow files under {root}", file=sys.stderr)
         return 1
-    bad = 0
+    refused = 0
+    unsupported = 0
     for path in files:
         try:
             jobs = check(path)
-        except (Duplicate, yaml.YAMLError) as error:
+        except Refused as error:
             print(f"check-workflow-keys: FAIL: {path}: {error}", file=sys.stderr)
-            bad += 1
+            refused += 1
+            continue
+        except (Unsupported, UnicodeDecodeError, OSError) as error:
+            print(f"check-workflow-keys: CANNOT ANSWER: {path}: {error}", file=sys.stderr)
+            unsupported += 1
             continue
         print(f"check-workflow-keys: {path}: jobs {', '.join(jobs)}")
-    if bad:
-        print(f"check-workflow-keys: FAIL: {bad} of {len(files)} workflow files refused", file=sys.stderr)
+    if refused:
+        print(f"check-workflow-keys: FAIL: {refused} of {len(files)} workflow files refused", file=sys.stderr)
         return 1
-    print(f"check-workflow-keys: OK: {len(files)} workflow files, no duplicate mapping keys")
+    if unsupported:
+        print(
+            f"check-workflow-keys: CANNOT ANSWER: {unsupported} of {len(files)} workflow files use a "
+            "construct this walker does not model (see above); fails closed",
+            file=sys.stderr,
+        )
+        return 2
+    print(f"check-workflow-keys: OK: {len(files)} workflow files, no duplicate mapping keys (stdlib walker)")
     return 0
 
 
