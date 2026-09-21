@@ -211,7 +211,27 @@ Both final cells ran through the collector; the collector labels a gate exit 1 `
 
 ## Checks actually run
 
-CHECKS-PLACEHOLDER
+| Check | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | PASS |
+| `cargo check -p memra-server --offline --all-targets` (dev, local, CPU quota) | PASS |
+| `cargo test -p memra-server -p memra-kv --offline --no-fail-fast` (dev, local, `CPUQuota=1200% MemoryMax=28G`; `pro-single-day13/local-checks/cargo-test-server-kv.log`) | `memra-kv` 64 passed; `memra-server` 734 passed, 0 failed, 6 ignored; exit 0 |
+| `cargo clippy -p memra-server --offline --all-targets -- -D warnings` (dev, local, CPU quota) | PASS (`local-checks/clippy-server.log`) |
+| `bash tools/check-flags.sh`; `python3 tools/check-public-boundary.py check`; `git diff --check` | PASS (no uncovered runtime `MEMRA_*` name; boundary 0 new matches) |
+| Native release builds, one RTX PRO 6000 Blackwell (`build-main/`, `build-fix/`) | exit 0 / exit 0, `dirty.txt` empty |
+| `tools/prefix-evict-reclaim-gate.py` on `main` `ea08bc7f8` (`gate-main-final`) | `-> FAIL` (red, as the defect requires) |
+| `tools/prefix-evict-reclaim-gate.py` on `f4350c241` (`gate-fix-final`) | `-> PASS` |
+| `tools/serve-smoke.sh <Qwen3.8 artifact> /nonexistent-draft` through the collector on the target card (`serve-smoke/`; the battery rebuilt `memra-server` from the checkout `ec473770f`, same Rust as `f4350c241`, binary `e7b61778fa9f08f763b673ac0ce276251b90aaf4106cb18f62661d7c0009e61a`) | `serve-smoke: 0 failed`; spec, gemma4 and Q35 arms `SKIP` (no draft or model on this box) |
+| `tools/cache-meter-gate.py --n 5 --k 256` against the fix binary `24d6b453...`, native path, `MEMRA_SERVE_SPEC=0`, through the collector (`cache-meter/`) | `cache-meter-gate: 0 failed` |
+| Full GPU exactness battery (`kernel-check`, `run-gen`, `run-spec`), local 5090 cells | NOT RUN (no kernel or numeric change; the local card carried the lead's perf battery) |
+
+Receipt directories under `pro-single-day13/` (mirror of the target card's `b-day13`, binaries excluded):
+`gate-main` (refused), `gate-main-rerun` (refused), `gate-main-rerun2` (red, gate `678cc83ea`), `gate-fix`
+(failed on the over-tight V3, gate `678cc83ea`), `gate-main-final` and `gate-fix-final` (the quoted pair,
+gate `ec473770f`), `serve-smoke`, `cache-meter`, `build-main`, `build-fix`, the driver logs and exit files.
+Each gate cell holds `LOCK.json`, `rig.json`, `prompts.json`, `calibration.json`, `summary.json`,
+`VERDICT.txt`, and per boot `server.log`, `cell.json` and (measured) `ballast.log`; the collector adds
+`CELL.jsonl`, `command.log`, `command.gpu.csv` (250 ms telemetry) and `command.capture.json`.
 
 ## Boundaries and record
 

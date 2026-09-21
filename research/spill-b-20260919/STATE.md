@@ -1,9 +1,11 @@
-# WP-B day 13 checkpoint (provisional, cells in flight): prefix eviction must credit admission and the driver
-- Branch lane/spill-b-20260919: 1cfdac6eb merges origin/main ea08bc7f8; b351d7db9 gate (tools/prefix-evict-reclaim-gate.py); f4350c241 fix (worker.rs settle_reclaimed_prefix_bytes); a1a2239e3 gate calibration fix; ebda75396 TESTING.md section.
-- Push refused by tools/hooks/pre-push perf-ci freshness ("engine files touched after the last perf-ci battery", the merge's engine files). No override; the lead pushes.
-- Defect: reclaim-on-defer drops prefix planes (stream-ordered cuMemFreeAsync into the pool) and re-reads headroom in the same tick; the receipt line took its "before" AFTER the eviction, so it could never show the credit (#346). The idle-box drain arm only runs with no active peer (#445 shape on a busy box).
-- Fix: snapshot pools before eviction; after it, fence model-owned streams, cuMemPoolTrimTo(used + cached_before) per device, one `[admit-oom] reclaim settle` line in bytes; the reclaim line's "before" moves before the eviction. No numeric-program change, no new MEMRA_* read, VMM door untouched.
-- Local: cargo test -p memra-server -p memra-kv --offline under CPUQuota=1200%: 734 + 64 passed, 0 failed. fmt, check-flags, boundary, diff --check clean.
-- BOX3 (/root/wt-b at ebda75396; bins under /root/spill-receipts/b-day13/bins/{main,fix}): main ea08bc7f8 sha 6fc3ec03..., fix f4350c241 sha 24d6b453....
-- gate-main (first cell): REFUSED by the gate's own precondition after a complete calibration boot (cost-line lookup); kept as refused. gate-main-rerun in flight; gate-fix next.
-- Receipts mirror target: research/spill-b-20260919/pro-single-day13/ (from /root/spill-receipts/b-day13/).
+# WP-B day 13 checkpoint: prefix eviction credits admission and the driver in the evicting tick (#346, #445, #523 item 4)
+- Branch lane/spill-b-20260919 on top of 1cfdac6eb (merge of origin/main ea08bc7f8): b351d7db9 gate, f4350c241 FIX (worker.rs settle_reclaimed_prefix_bytes), a1a2239e3 + 678cc83ea + ec473770f gate corrections, ebda75396 TESTING.md, then the DAY13.md/receipt data commits (see git log).
+- Push refused by tools/hooks/pre-push perf-ci freshness on the merge commit's engine files (all from origin/main, none touched by this lane). No override; the lead pushes the tip.
+- Fix: snapshot pools before the eviction; fence model-owned streams; cuMemPoolTrimTo(used + cached_before) per device; one `[admit-oom] reclaim settle` line in bytes; the reclaim-on-defer line's "before" now precedes the eviction. No numeric-program change, no new MEMRA_* read, VMM door untouched.
+- Gate tools/prefix-evict-reclaim-gate.py: serving shape, real memra-server, calibration boot + ballast boot (plain cuMemAlloc child), P2 arrives beside a busy peer; V1 credit, V2 same-tick admit, V3 driver free moved by >= E1, V4 identical messages across boots.
+- Target card (one RTX PRO 6000 Blackwell, 600 W, collector-locked, N=1), final pair, gate ec473770f, verbatim: main ea08bc7f8 `... reclaim_credit_bytes=0 driver_free_delta_bytes=none ... V1=FAIL V2=ok V3=FAIL V4=ok -> FAIL`; fix f4350c241 `... reclaim_credit_bytes=1751000000 driver_free_delta_bytes=1610612736 trim_released_bytes=1610612736 pool_retained_bytes=140549120 ... V1=ok V2=ok V3=ok V4=ok -> PASS`. Identity digest aa6cc3291b98... identical across all four boots.
+- Two refused cells (gate-main, gate-main-rerun) and one failed cell (gate-fix, over-tight V3) kept as-is; reasons in DAY13.md.
+- Batteries on the fix, target card: serve-smoke 0 failed (spec/gemma4/Q35 arms SKIP, no draft/model); cache-meter-gate 0 failed. Local: memra-server 734 + memra-kv 64 tests passed, clippy -D warnings PASS, fmt/flags/boundary/diff-check PASS.
+- Receipts mirrored from the target card to pro-single-day13/ (binaries excluded); BOX3 left with no B tmux, no server, /root/wt-b detached clean at ec473770f.
+- Issue comments posted on #445, #346, #523 (not closed; the lead closes).
+- Decide-by 2026-10-04 for the --kv-allocator vmm door unchanged.

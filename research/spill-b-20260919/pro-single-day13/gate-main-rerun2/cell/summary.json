@@ -1,0 +1,142 @@
+{
+  "verdict": "PREFIX-EVICT-RECLAIM: entry_bytes=1592160256 reclaim_credit_bytes=0 driver_free_delta_bytes=none trim_released_bytes=none p2=admit-same-tick busy_overlap_s=21.655 identity=aa6cc3291b981646 V1=FAIL V2=ok V3=FAIL V4=ok -> FAIL",
+  "pass": false,
+  "binary_sha256": "6fc3ec03e708951e34172ae53cf0e14a20fbb41b170df85ce1101f9ccf124e57",
+  "rig": "NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887 MiB, 600.00 W, 600.00 W, 580.178.04",
+  "calibration": {
+    "f0_effective_free_bytes": 81930532908,
+    "f1_after_p1_effective_free_bytes": 80338372652,
+    "f2_before_p2_effective_free_bytes": 79698482712,
+    "busy_peer_footprint_bytes": 639889940,
+    "e0_busy_peer_entry_bytes": 159001600,
+    "e1_prefix_bytes": 1592160256,
+    "p1_prompt_tokens": 48332,
+    "p2_prompt_tokens": 48266,
+    "cost_p1_mb": 4701,
+    "cost_p2_mb": 4701,
+    "static_reserve_bytes": 1610612736,
+    "required_p1_bytes": 6311612736,
+    "required_p2_bytes": 6311612736,
+    "ballast_window_bytes": [
+      73386869976,
+      75138031832
+    ],
+    "ballast_target_bytes": 74262450904,
+    "inserts": [
+      {
+        "why": "seed",
+        "tokens": 48332,
+        "mb": 1592.2
+      },
+      {
+        "why": "seed",
+        "tokens": 71,
+        "mb": 159.0
+      },
+      {
+        "why": "seed",
+        "tokens": 48266,
+        "mb": 1590.2
+      }
+    ],
+    "costs": [
+      {
+        "ctx": 48404,
+        "path": "plain",
+        "mb": 4306
+      },
+      {
+        "ctx": 535,
+        "path": "plain",
+        "mb": 448
+      },
+      {
+        "ctx": 48338,
+        "path": "plain",
+        "mb": 4701
+      }
+    ]
+  },
+  "measured": {
+    "e1_prefix_bytes": 1592160256,
+    "reclaim_line": "[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 6603MB -> 6603MB",
+    "reclaim_credit_bytes": 0,
+    "settle": null,
+    "defers_total": 0,
+    "defers_after_reclaim": 0,
+    "reject_averted": 0,
+    "admission_drain_trims": [],
+    "capacity_rejects": 0,
+    "p2": {
+      "status": 200,
+      "elapsed_s": 17.428,
+      "prompt_tokens": 48266,
+      "completion_tokens": 8,
+      "cached_tokens": 0,
+      "finish_reason": "length",
+      "message_sha256": "3cb7a18daa43029f48e8e74f70238d4e20c787273bf57e6d0ec53b298780d989",
+      "error": null
+    },
+    "busy_peer_overlap_s": 21.655,
+    "ballast": {
+      "requested_bytes": 74262450904,
+      "gpu_used_before": 0,
+      "gpu_used_after": 74850500608,
+      "footprint_bytes": 74850500608
+    },
+    "defer_cost_reserve_mb": null,
+    "metrics": {
+      "idle": {
+        "cuda_driver_free_bytes": 0,
+        "cuda_pool_reserved_bytes": 0,
+        "cuda_pool_used_bytes": 0,
+        "cuda_pool_cached_bytes": 0,
+        "prefix_cache_bytes": 0,
+        "prefix_cache_entries": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "after_p1": {
+        "cuda_driver_free_bytes": 5129961472,
+        "cuda_pool_reserved_bytes": 21407727616,
+        "cuda_pool_used_bytes": 21045950420,
+        "cuda_pool_cached_bytes": 361777196,
+        "prefix_cache_bytes": 1592160256,
+        "prefix_cache_entries": 1,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "before_p2": {
+        "cuda_driver_free_bytes": 4827971584,
+        "cuda_pool_reserved_bytes": 21709717504,
+        "cuda_pool_used_bytes": 21685840360,
+        "cuda_pool_cached_bytes": 23877144,
+        "prefix_cache_bytes": 1751161856,
+        "prefix_cache_entries": 2,
+        "active_sessions": 1,
+        "queued_requests": 0
+      },
+      "final": {
+        "cuda_driver_free_bytes": 2980380672,
+        "cuda_pool_reserved_bytes": 23555211264,
+        "cuda_pool_used_bytes": 21522796392,
+        "cuda_pool_cached_bytes": 2032414872,
+        "prefix_cache_bytes": 1590200320,
+        "prefix_cache_entries": 1,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    }
+  },
+  "identity": {
+    "calibration": "aa6cc3291b9816468b7cd1d5b03b08032f2e20aa873112eb15068d09231b79c9",
+    "measured": "aa6cc3291b9816468b7cd1d5b03b08032f2e20aa873112eb15068d09231b79c9",
+    "equal": true
+  },
+  "assertions": {
+    "V1_reclaim_credit": false,
+    "V2_same_tick_admit": true,
+    "V3_driver_free_moved": false,
+    "V4_identity": true
+  }
+}
