@@ -269,6 +269,20 @@ Receipt line per demote (ON only, printed before `demote:`): `[prefix-host] cont
 receipt: ticket issuer=<n> seq=<n> epochs=0/1/1 items=<n> (<k> KV planes[, draft]) complete=<n>
 require=ok checksums_sha256=<hex over the ordered item checksums> retired acknowledged`.
 
+### Receipts and findings (day 15, `DAY15.md`)
+
+Landed as designed at `5f8d327e2`; `pro-single-day15/`, replay `verify-day15.py` `DAY15 REPLAY: PASS`
+(134 checks): identity gate `ALL GREEN` OFF and ON under the default and plain environments with equal
+demote bytes, `verify ok`, equal event sequences and one receipt before every ON demote (`items=34 (16 KV
+planes, draft)` with the draft plane, `items=32` without, `complete = items`, `require=ok`); failure gate
+`1 FAILURE(S)` both arms (the pre-existing pool-full line), the digest cell's receipt preceding the flip
+and the bind naming the injected difference before `VERIFY FAILED` at promote; lane A's tenant reclaim
+fix arm `PASS` both arms with eight receipts; serve-smoke and lane B's two gates line-identical. Finding
+to weigh at decide-by: the contract's destinations are write-combined (`cudarc alloc_pinned` =
+`CU_MEMHOSTALLOC_WRITECOMBINED`, `PinnedHostBuf::new` is cached), so the bind hash over them runs at WC
+speed (N=1: demote 149 vs 281 ms, promote 267 vs 398 ms OFF vs ON; not a claim). Option C (the promote
+H2D) is next.
+
 ### What stays as it is
 
 OFF: every statement outside the door's `tier`-Some arms; the borrow becomes exclusive with no
@@ -304,7 +318,9 @@ gates.
 ## Target-card receipts
 
 `DAY13.md`, `pro-single-day13/` (plain surface); `DAY14.md`, `pro-single-day14/` (draft-bearing surface
-under the gates' default spec environment, replay `verify-day14.py`). OFF and ON on the same binary, same prompts, N=1,
+under the gates' default spec environment, replay `verify-day14.py`); `DAY15.md`, `pro-single-day15/`
+(Option B: the D2H contract receipt before every ON demote across the identity, failure, tenant-reclaim
+cells, serve-smoke and lane B's gates unchanged, replay `verify-day15.py`). OFF and ON on the same binary, same prompts, N=1,
 `executed-not-qualified`, one RTX PRO 6000 Blackwell at its 600 W limit, through the
 canonical collector (`tools/tier-battery.py --rig pro-single`, lock `/tmp/memra-gpu.lock`).
 
