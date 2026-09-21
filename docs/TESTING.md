@@ -789,19 +789,27 @@ speculative prefetch (memra#586). It compiles `tools/memra_cpu_expert_prefetch_t
 includes the production translation unit (`tools/memra_cpu_experts.cpp`, the shm test's pattern) so
 it reads the SIGNED in-flight counter `prefetch_inflight()` directly and never the public stats
 function's clamp to zero, and renames the unit's one `pread` call so a cell can HOLD a read at its
-entry and FAIL one on demand. A worker that enters a held read has finished every job it took
-before it, so "every alternate half held, queue empty" is the deterministic point at which the
-projections' charge is read. Three cells: `barrier` (three mirrored projections under three I/O
-workers and a cap of three: the counter must still read 3, a fourth must be refused, the drain must
-reach exactly 0 and admit the retry), `failure` (one mirrored projection whose alternate half fails
-with `EIO`, a single-job sentinel queued behind it on one worker: the charge is released once, the
-annex never publishes the failed buffer, the retry lands) and `parity` (the non-mirrored buffered
-control). It needs a source fixture and a byte-identical mirror on two different filesystems (the
-companion's mirror map refuses one device; defaults `<repo>/target` and `/dev/shm`), both opened
-`O_DIRECT`; it refuses to run where either is unavailable rather than skipping. Before the repair
-the first two cells read `inflight_signed=0` where 3 and 1 were charged (`research/spill-c-20260919/
+entry and FAIL one on demand. A worker that enters a held read has finished every job it took before
+it, so "every alternate half held, queue empty" is the deterministic point at which the projections'
+charge is read. Three cells: `barrier` (three mirrored projections under three I/O workers and a cap
+of three: the counter must still read 3, a fourth must be refused, the drain must reach exactly 0
+and admit the retry), `failure` (one mirrored projection whose alternate half fails with `EIO`, a
+single-job sentinel queued behind it on one worker: the charge is released once, the annex never
+publishes the failed buffer, the retry lands) and `parity` (the non-mirrored buffered control). It
+needs a source fixture and a byte-identical mirror on two different filesystems (the companion's
+mirror map refuses one device; defaults `<repo>/target` and `/dev/shm`), both opened `O_DIRECT`; it
+refuses to run where either is unavailable rather than skipping. Before the repair the first two
+cells read `inflight_signed=0` where 3 and 1 were charged (`research/spill-c-20260919/
 day17-local/prefetch-test-red.log`); every cell runs even after a failure and the summary line
-carries the count (`cpu expert prefetch accounting tests: N FAILURE(S)` or `ALL GREEN`).
+carries the count (`cpu expert prefetch accounting tests: N FAILURE(S)` or `ALL GREEN`). Two more
+cells cover the submit side of the same invariant. `submit-throw`: the second projection names an fd
+that is not open, so the submit loop throws after the first projection took its charge and annex
+claim and before any job reached the pool; the call must return -1 and release both (a guard in
+`memra_cpu_expert_prefetch_v2`, disarmed once the jobs are handed to the pool). `submit-throw-
+claim`: under O_DIRECT with a mirror map that does not list the source, the loop takes the
+projection's annex claim and then mirror resolve throws for that same projection, before a runtime
+or a charge exists; the key must be claimable again afterwards (the guard tracks claims the moment
+they are taken).
 
 ## Receipts
 

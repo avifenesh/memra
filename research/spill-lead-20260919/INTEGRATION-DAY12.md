@@ -679,6 +679,86 @@ cpu_native_check.rs, ...` although `git diff origin/main HEAD -- crates` is empt
 with the push range, and main's engine tree has moved past the last receipt (#604, #607). Pushed in the announced
 development mode; the receipt is the release lane's to renew, nothing here claims qualification.
 
+## Lead slices between integs (2026-09-21, after integ22)
+- #608 (build.rs `DOCS_RS` declaration sat past the docs early return): fixed in #610, merged `a51e29abb`, issue closed.
+- D's day-13 note (the docs-only classifier calls `research/**` documentation while crates include research files
+  at compile time): `tools/ci-change-class.sh` now derives the included set from the head tree
+  (`include_str!`/`include_bytes!` literals under `crates/`, resolved to repo paths) and classifies a change to one of
+  them as `compile-input:<path>`; any failure to derive the set is code. Revuto round 1 on #611: the first census was
+  line-based and missed the multi-line `include_str!(` form (ep_map, the ornith template); the census now reads each
+  file as one record (`grep -z`) and exposes `ci-change-class.sh census <rev>`. Real tree today: six included paths
+  (recompute-load and two C fixtures, the ep-placement example map, the qwen38 and ornith15 chat templates); teeth arm
+  18 asserts them on this repository. Teeth arms 15 and 16 in `tools/test_ci_change_class.sh`.
+
+## integ23 (`lane/spill-integ23-20260921`): C day 17 and B day 21
+Lane tips merged: C `a6b62c998`, B `c5384d53c` (clean merges on main `1097d7450`). Files outside `research/`: C's
+`tools/memra_cpu_experts.cpp` (one hunk), `tools/memra_cpu_expert_prefetch_test.cpp`, `tools/test_cpu_expert_prefetch.sh`,
+a `ci.yml` step in the engine-tests job, a `docs/TESTING.md` paragraph. No `crates/` change; the push still goes in the
+announced development mode (the qualification pointer is behind main, see integ22).
+
+**C day 17.** memra#586: confirmed from source, the mirrored projection queues two `IoJob`s and charges
+`prefetch_inflight` once while `worker_loop` released per job; the public stats function clamps the negative to zero.
+Fixture first (`tools/test_cpu_expert_prefetch.sh`, cells `barrier`, `failure`, `parity`; it compiles the production
+translation unit with its one `pread` renamed so a cell can hold a half, and reads the signed counter): before,
+verbatim, `FAIL: REGRESSION memra#586 at barrier: primaries complete, alternates held: inflight_signed=0 expected 3`
+and `... at failure: primary half complete, alternate half held: inflight_signed=0 expected 1`, summary
+`cpu expert prefetch accounting tests: 9 FAILURE(S)`; after the one-hunk fix (the `fetch_sub` moved inside the
+final-half branch, released once per projection, success or failure): `ALL GREEN` locally and on the target rig's
+host (`pro-single-day17/cpubank/`, collector validate rc=0); `memra native CPU quant check: ALL GREEN` on both.
+Pre-existing and stated, not fixed: the companion's submit-side exception path leaves earlier projections' charges
+behind. Arena pair cell (`pro-single-day17/arena-pair/`, pre-registered and pushed before the run, N=5 per arm per
+order, both orders, one 50 s lock hold, 33 to 51 C, 493 W peak under the 600 W limit), verbatim:
+`ARENA-PAIR rule first_touch_page_o1=35.4 first_touch_page_o2=35.8 first_touch_arena_o1=0.0 first_touch_arena_o2=0.0
+steady_demote_page=6.1 steady_demote_arena=6.2 demote_page=38.0 demote_arena=6.2 promote_page=11.3
+promote_arena=6.6 promote_excl_page=4.5 promote_excl_arena=0.4 N=5/arm/order pooled=10 orders=2 window=50s
+temp_c=33..51 power_max_w=493 power_limit_w=600.00 W identity=ok integrity=ok -> arena_first_touch_absent;
+arena_not_slower`, replay `ARENA PAIR REPLAY: PASS (18 checks)`. Reading: the day-16 first-touch step was the fresh
+pinned region, moved to a 1.3 s boot reserve under the arena; steady-state demote equal; the promote-share
+difference is a census item, not a mechanism claim. WC item closed by pointer to `PINNED-DESTINATIONS.md` (ruling
+23); the door's review still owes its cost with cached destinations on the target card (A day 15 task 2).
+
+**B day 21.** memra#523 map: (1) newest turn fits (#596, twin gate V2/V4); (2) default re-decided, LRU naked, SLRU
+door deleted (#598, #609); (3) the 8-turn twin gate held literally today on both cards, verbatim
+`PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7
+lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8
+identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` (the clause is
+equality to the previous published entry rather than `>= prompt_tokens`, because of the capture law); (4) reclaim
+truth (#588, evict-reclaim gate V1/V3). Lead reading: every item is held by a landed mechanism and a gate; #523
+closes with this integ. memra#427: reproduced on the tip on both cards with byte-identical digests
+(`9280 + 16: logits_sha=35bd15f063bfd5ba DIFFERS`; tails 17, 31, 32, 48 to 208 `ok`); the two capture-site fixes
+did not change it; existing rollback seams keep the difference; the chunk arms classify it: under
+`MEMRA_PRIME_CHUNK=32` the one-call prime's own 16-row tail chunk digests to `35bd15f063bfd5ba`, the default run's
+16-row suffix digest, so the restore is exact and a prime chunk of exactly `PRIME_MIN_T` rows is its own numeric
+program, in cold primes whose schedule ends in one as well. The kernel is not yet named (B day 22, running). Not
+fixed: both fix shapes move bytes outside the restore path and owe batteries (DAY21 2.4). memra#372: already landed
+by #377 (`628521007`, v0.137.0: `AdmissionRestoreRoute::Dflash`, `cost_after_prefix_restore` with the min-prime
+workspace rule; the cited exclusion is gone); three CPU plan tests pass on the merged tree; the bounded serving cell
+is pre-registered and not run (a 429 reproduction needs a pre-#377 binary). Lead reading: #372 closes on #377's record
+with this integ.
+
+Battery (`integration-day12/integ23-cpu-battery/`, merged tree `b2d995870`, CPUQuota 1200 percent): fmt, portable
+suites, memra-server suite, flags, publish, docs-registry and workflow-key censuses, the classifier teeth (18 arms),
+public-boundary `check` (0 new), collector pytest, C's #586 fixture (`cpu expert prefetch accounting tests: ALL
+GREEN`), C's arena replay (`ARENA PAIR REPLAY: PASS (18 checks)`), perf board, `git diff --check`, em-dash scan:
+14 steps rc=0. No serve smoke (no engine change).
+
+Revuto round 1 on #612 (two findings, both real, fixed by the lead in the integ): (1) the submit side had no
+symmetric release: a later projection's `fstat`, `resize` or mirror `resolve` could throw after earlier projections
+took their charge and annex claim and before `pool.submit`, leaving phantom in-flight work for the life of the
+process (C had stated it as pre-existing). A `SubmitGuard` in `memra_cpu_expert_prefetch_v2` releases exactly what
+the call took and is disarmed before the jobs are handed to the pool. Fixture cell `submit-throw` (second projection
+on an unopenable fd): without the guard `FAIL: REGRESSION memra#586 at submit-throw: after the failed call:
+inflight_signed=1 expected 0` (`cpu-prefetch-586-round1-red.log`), with it `submit-throw: PASS` and
+`cpu expert prefetch accounting tests: ALL GREEN` (`cpu-prefetch-586-round1-green.log`). (2) the barrier cell's
+diagnostic printf read two hook counters without the hook mutex; snapshot under the lock. `docs/TESTING.md` and the
+script header name the fourth cell.
+Revuto round 2: the round-1 guard released claims from `state->runtimes`, but the claim of the projection whose own
+resize or resolve throws is taken before its runtime is pushed, so that key stayed `speculated` for the life of the
+process. The guard now releases from a `claimed` vector filled the moment `begin_read` succeeds. Fixture cell
+`submit-throw-claim` (O_DIRECT with a mirror map keyed on the mirror fixture's inode, so the source is absent):
+round-1 tree `submit-throw-claim: key claimable after the failed call=0 expected=1` (`cpu-prefetch-586-round2-red.log`),
+fixed tree `=1 expected=1`, `ALL GREEN` (`cpu-prefetch-586-round2-green.log`). Five cells now.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

@@ -236,8 +236,16 @@ int run_barrier(const char * source_path, const char * mirror_path) {
     }
     expect(submit(descs.data(), 3) == 3, "barrier: three projections were not all submitted");
     wait_for([&] { return h.held_alternate == 3; }, "three alternate halves to be held");
+    int completed_primary = 0;
+    int held_alternate = 0;
+    {
+        // Snapshot under the hook mutex: the workers write these counters under it.
+        std::lock_guard<std::mutex> lock(h.mutex);
+        completed_primary = h.completed_primary;
+        held_alternate = h.held_alternate;
+    }
     std::printf("barrier: primary halves completed=%d alternate halves held=%d\n",
-                h.completed_primary, h.held_alternate);
+                completed_primary, held_alternate);
     observe("barrier: primaries complete, alternates held", 3);
     const std::int32_t excess = submit(&descs[3], 1);
     std::printf("barrier: cap 3 with 3 charged: extra projection admitted=%d expected=0\n", excess);
@@ -349,9 +357,61 @@ int run_parity(const char * source_path) {
     return 0;
 }
 
+// Cell 4, the submit side (review round on #612). Two projections: the first is valid and takes
+// its charge and annex claim inside the submit loop; the second names an fd that is not open, so
+// file_key() throws before it is charged and before any job reaches the pool. The call must
+// return -1, release the first projection's charge (inflight 0) and its annex claim (the same
+// projection is admitted on retry, lands, and matches the file). Before the guard, the charge
+// and the claim leaked for the life of the process.
+int run_submit_throw(const char * source_path) {
+    const int fd = open_readonly(source_path);
+    std::array<memra_cpu_projection_v2, 2> descs {};
+    descs[0] = projection(fd, 0, kProjectionBytes);
+    descs[1] = projection(1 << 20, kProjectionBytes, kProjectionBytes);  // not an open fd
+    std::array<char, 512> error {};
+    const std::int32_t rc =
+        memra_cpu_expert_prefetch_v2(descs.data(), 2, error.data(), error.size());
+    std::printf("submit-throw: prefetch returned %d error=\"%s\"\n", rc, error.data());
+    expect(rc < 0, "submit-throw: the call with an unopenable fd did not fail");
+    observe("submit-throw: after the failed call", 0);
+    expect(submit(descs.data(), 1) == 1,
+           "REGRESSION memra#586 (submit side): the first projection's annex claim leaked, "
+           "the retry was refused");
+    take_and_verify(fd, descs[0], "submit-throw");
+    drain_to_zero("submit-throw: after the retry landed");
+    std::printf("submit-throw: PASS\n");
+    return 0;
+}
+
+// Cell 5, the claim taken in the throwing iteration itself (review round 2 on #612). Under
+// O_DIRECT with a mirror map that does not list this source, the loop takes the annex claim
+// (begin_read) and then mirror resolve throws for the same projection, before a runtime exists
+// and before any charge. The call must return -1 and the key must not stay claimed: begin_read
+// on it afterwards must succeed (the fixture releases that probe claim again). Before the fix,
+// the key read as speculated for the life of the process and no retry was ever admitted.
+int run_submit_throw_claim(const char * source_path) {
+    const int fd = open_readonly(source_path);
+    memra_cpu_projection_v2 desc = projection(fd, 0, kProjectionBytes);
+    std::array<char, 512> error {};
+    const std::int32_t rc = memra_cpu_expert_prefetch_v2(&desc, 1, error.data(), error.size());
+    std::printf("submit-throw-claim: prefetch returned %d error=\"%s\"\n", rc, error.data());
+    expect(rc < 0, "submit-throw-claim: the call under a mirror map without this source did not fail");
+    observe("submit-throw-claim: after the failed call", 0);
+    const CacheKey key = key_of(fd, desc);
+    const bool reclaimable = PrefetchAnnex::instance().begin_read(key);
+    std::printf("submit-throw-claim: key claimable after the failed call=%d expected=1\n",
+                reclaimable ? 1 : 0);
+    if (reclaimable) PrefetchAnnex::instance().abort_read(key);
+    expect(reclaimable, "REGRESSION memra#586 (submit side): the throwing projection's own annex "
+                        "claim leaked, the key reads as speculated");
+    std::printf("submit-throw-claim: PASS\n");
+    return 0;
+}
+
 int run(int argc, char ** argv) {
     if (argc < 2) fail("usage: make-fixture PATH | write-map SOURCE MIRROR MAP | "
-                       "barrier SOURCE MIRROR | failure SOURCE MIRROR | parity SOURCE");
+                       "barrier SOURCE MIRROR | failure SOURCE MIRROR | parity SOURCE | "
+                       "submit-throw SOURCE | submit-throw-claim SOURCE");
     const std::string mode = argv[1];
     if (mode == "make-fixture" && argc == 3) {
         make_fixture(argv[2]);
@@ -365,6 +425,8 @@ int run(int argc, char ** argv) {
     if (mode == "barrier" && argc == 4) return run_barrier(argv[2], argv[3]);
     if (mode == "failure" && argc == 4) return run_failure(argv[2], argv[3]);
     if (mode == "parity" && argc == 3) return run_parity(argv[2]);
+    if (mode == "submit-throw" && argc == 3) return run_submit_throw(argv[2]);
+    if (mode == "submit-throw-claim" && argc == 3) return run_submit_throw_claim(argv[2]);
     fail("unknown mode or argument count: " + mode);
 }
 

@@ -66,6 +66,55 @@ ok "arm12 missing args"
 out=$("$cls" push "" "$base" "$base" "$tmp") && printf '%s\n' "$out" | grep -qx 'code=true' || bad "arm13 non-repo: $out"
 ok "arm13 non-repo dir"
 
+# arm 15: a research file a crate includes at compile time is a compile input, not docs
+# (lane D day 13: four include_str! sites under crates/ read research/ files; the 2026-09-02
+# "zero research/ literals" note the docs-only class rested on was stale).
+g reset -q --hard "$base"
+mkdir -p "$repo/crates/memra-kv/src/tiered" "$repo/research/lane/fixtures"
+printf 'fn f() -> &%sstatic str { include_str!("../../../../research/lane/fixtures/load.csv") }\n' "'" > "$repo/crates/memra-kv/src/tiered/t.rs"
+echo "a,b" > "$repo/research/lane/fixtures/load.csv"
+g add -A; g commit -q -m include-site
+base2=$(g rev-parse HEAD)
+echo "a,b,c" >> "$repo/research/lane/fixtures/load.csv"
+g add -A; g commit -q -m fixture-only
+expect true "arm15 included research file" -- pull_request "$base2" "" "$(g rev-parse HEAD)"
+out=$("$cls" pull_request "$base2" "" "$(g rev-parse HEAD)" "$repo")
+printf '%s\n' "$out" | grep -qx 'reason=compile-input:research/lane/fixtures/load.csv' || bad "arm15 reason: $out"
+# arm 16: a sibling research file nobody includes is still docs-only, with the include present
+g reset -q --hard "$base2"; commit receipt research/lane/RESULTS.md
+expect false "arm16 non-included research file beside an include" -- pull_request "$base2" "" "$(g rev-parse HEAD)"
+g reset -q --hard "$base"
+
+# arm 17: the multi-line include form (macro name and literal on different lines) is seen too
+# (revuto on #611: crates/memra-engine/src/ep_map.rs and two template sites use it).
+g reset -q --hard "$base"
+mkdir -p "$repo/crates/memra-engine/src" "$repo/research/ep-map"
+printf 'fn g() -> &%sstatic str {\n    include_str!(\n        "../../../research/ep-map/example.json"\n    )\n}\n' "'" > "$repo/crates/memra-engine/src/ep.rs"
+echo '{}' > "$repo/research/ep-map/example.json"
+g add -A; g commit -q -m multiline-include-site
+base3=$(g rev-parse HEAD)
+echo '{"a":1}' > "$repo/research/ep-map/example.json"
+g add -A; g commit -q -m multiline-fixture-only
+expect true "arm17 multi-line included research file" -- pull_request "$base3" "" "$(g rev-parse HEAD)"
+out=$("$cls" pull_request "$base3" "" "$(g rev-parse HEAD)" "$repo")
+printf '%s\n' "$out" | grep -qx 'reason=compile-input:research/ep-map/example.json' || bad "arm17 reason: $out"
+g reset -q --hard "$base"
+
+# arm 18: the census on THIS repository's tree resolves every known include and nothing is left
+# unresolved. Known sites as of 2026-09-21; a removed include drops a line here and this arm
+# says so, which is the point.
+census=$("$cls" census HEAD "$here")
+printf '%s\n' "$census" | grep -q '^?$' && bad "arm18 real census has an unresolved row: $census"
+for want in research/spill-b-20260919/fixtures/recompute-load.csv \
+            research/reasoning-schema-20260823/qwen38-27b.chat_template.jinja \
+            research/reasoning-schema-20260823/ornith15.chat_template.jinja \
+            research/ep-placement-map-20260831/example-map-coactivation.json; do
+  if [ -e "$here/$want" ]; then
+    printf '%s\n' "$census" | grep -qxF "$want" || bad "arm18 real census misses $want: $census"
+  fi
+done
+ok "arm18 real-tree census ($(printf '%s\n' "$census" | grep -c .) paths, none unresolved)"
+
 # arm 14: ci.yml wiring, in the fail-closed form. Every compile job must gate on
 # `code != 'false'` (a missing output compiles) and none on `== 'true'` (a missing output
 # would skip the compile). Comment lines stripped so this cannot be satisfied by prose.
