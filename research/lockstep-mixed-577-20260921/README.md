@@ -86,3 +86,11 @@ percent here.
 4. `decode_step_lockstep` has one caller, the harness; memra-server does not run it. The law
    this closes is the one in memra's CLAUDE.md: one numeric program per request, batched vs
    solo being a named pair.
+
+## Battery on this lane (2026-09-21, local RTX 5090 Laptop)
+
+`raw/local-ci-perf-stages.log`: `tools/local-ci.sh --perf` on this branch rebased onto main
+`a1bd0be62`, exit 0. Every correctness stage green, the three pair-only tests `SKIP-PAIR`
+(#583), the perf stage ran and appended its rows to `research/tune-data/perf-ci.jsonl` in this
+lane. No local model reaches `moe_ffn_lockstep`; the Hy3 receipts above are this change's
+measurement, the battery is the regression fence for everything else the engine crate builds.
