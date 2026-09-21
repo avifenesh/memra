@@ -11409,9 +11409,11 @@ fn host_demote_prefix_ref(
                 t0,
                 polls: 0,
             });
+            // The line carries no "(contracts door): " marker: that form is the door's REFUSAL
+            // shape and the fault gate counts it (`no_extra_refusal`); a submission is not one.
             eprintln!(
-                "[prefix-host] demote submitted off the tick (contracts door): {} tokens, {:.1}MB, \
-                 ticket seq={seq}, {items} items on the copy stream (model {}{})",
+                "[prefix-host] demote submitted off the tick: {} tokens, {:.1}MB, ticket \
+                 seq={seq}, {items} items on the contracts door's copy stream (model {}{})",
                 dead.toks.len(),
                 host_bytes as f64 / 1e6,
                 dead.pool_key.0,
