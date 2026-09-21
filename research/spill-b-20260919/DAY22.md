@@ -337,3 +337,68 @@ Read against `fix-gate/`:
 So the fix moved exactly the 16-row chunk program and only that: a schedule without a 16-row chunk is bit-identical
 to the base, and the one with a 16-row chunk now equals the wide program. (a) to (f) all hold; the fix stands on the
 lane as `fix:` (commit `89c693be0`), still `executed-not-qualified` everywhere, the target-card table in section 2.
+
+## 2. Target card: the table and `kernel-check` on the fixed tree (one RTX PRO 6000 Blackwell, `pro-single-day22/`)
+
+The box was free on resume (`ssh -O check` master running, `/tmp/memra-gpu.lock` free, no compute app). `/root/wt-b`
+fetched and reset to the lane tip `de4fb332b` (the merged tree; no `crates/` file differs from `89c693be0`), built on
+the box (`build-fix/`, 3 m 13 s, exit 0; the first attempt `build-fix-attempt1-no-cargo-path/` exited 127 because
+the detached shell had no cargo on its PATH and is kept as-is): continuation gate SHA-256 `acbe9414...`,
+`kernel-check` `d61a41b5...`, artifact `Qwen3.8-27B-NVFP4-Q5K-mtp.gguf` `1facf36c...` (the same bytes as the local
+copy). Every cell through `tools/tier-battery.py --rig pro-single` (`executed-not-qualified`), pass/fail, not timed,
+`nvidia-smi --query-compute-apps` empty before and after; nothing here is compared in time with the local card.
+
+**The #427 table (`fix-gate/`, `run-day22-cont-box3.sh`, the seven local arms byte for byte, 291.8 s wall, exit
+0).** Every line equals the local `fix-gate/` line of section 1.5 (b), digest for digest:
+
+```text
+F-9296:            one call 14ab5f8b365dbd71; 9280 + 16 ok; 9248 + 48 ok; 9216 + 80 ok; 9184 + 112 ok; 9152 + 144 ok; 9120 + 176 ok; 9088 + 208 ok; A4 CONTINUATION GATE: PASS
+F-9297:            one call e641952cac19e526; 9280 + 17 ok; 9248 + 49 ok; PASS
+F-9311:            one call b61719f294866b05; 9280 + 31 ok; 9248 + 63 ok; PASS
+F-9312:            one call 736a88d7c7448dcb; 9280 + 32 ok; 9248 + 64 ok; 9216 + 96 ok; PASS
+F-9296-chunk32:    one call 14ab5f8b365dbd71 (MEMRA_PRIME_CHUNK=32); 9280 + 16 ok; 9248 + 48 ok; PASS
+F-9296-chunk16:    one call bafe0e0a09a3d0a4 (MEMRA_PRIME_CHUNK=16); 9280 + 16 ok; 9248 + 48 ok; PASS
+F-9296-nobatched:  one call 14ab5f8b365dbd71 (MEMRA_NO_BATCHED=1); 9280 + 16 ok; 9248 + 48 ok; PASS
+```
+
+(The full lines, with `logits_sha=` on every split, are `fix-gate/command.log`; the `[prime-row]` receipts are
+`fix-gate/cell/arm-*.log`.) Two card classes, one artifact, one fixed tree: every split of every arm at the one-call
+digest, and the one-call digests byte-identical across the cards, as on day 21 for the pre-fix digests.
+
+**`kernel-check` (`fix-kc/`, `run-day22-kc-box3.sh`, both manifests, `MEMRA_KC_MODELS_DIR=/root/artifacts`,
+12.1 s wall, collector exit 0).** Stated plainly, not ALL GREEN: 362 cells `OK`, 0 `FAIL`, 15 `SKIP` (the box holds
+only the two artifacts; skipped for want of `Qwen3.5-9B-NVFP4-MTP-GGUF.gguf` x10 cells, `ornith-1.0-35b-Q4_K_M.gguf`,
+`Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf`, `gemma-4-12b-it-qat-q4_0.gguf`, `gemma-4-26B_q4_0-it.gguf`,
+`Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf`, plus `sigrouter-served-replay`), and the run ended
+`MISSING REQUIRED CELL DUAL-BATCHED-AUX` / `Error: "1 required cell(s) missing"` / `exit=1`: the 27b manifest's one
+required cell needs the 9B artifact, which is not on the box. That is the manifest doing its job on a box without the
+model, not a red cell; the local run (section 1.5 (c)) has that cell green. A second cell requiring the step35
+manifest alone (`fix-kc-step35`, `MANIFESTS=tools/kernel-check-step35.cells`, the runner parametrized for it) was
+queued behind the table and never ran: the canonical lock was held by another lane from 19:20:59Z through the
+runner's sixth attempt at 19:28:29Z (`fix-kc-step35-retries.log`, six `REFUSED: [Errno 11] Resource temporarily
+unavailable` driver logs, no `cell/`); the holder was not inspected and the runner exited on its bound. The
+target-card `kernel-check` verdict line is therefore owed to the integ (or to a rerun when the box is free), with the
+9B artifact staged or the step35 manifest alone.
+
+## 3. memra#445 past section 1: the map
+
+Posted as a comment on #445 (no cell, no code). Section 1 is closed by #588 (`f4350c241`, gate `b351d7db9`, day 13).
+Section 2 (prefix capture on the gemma spec route): open; #561/#564 gave gemma the generic continuation-capable
+prime (memra#535 P1a), but the capture sites stay keyed on the eager-only class because gemma's prefix snapshot is
+refused by the SWA flat-history layout (memra#151, open) and its plain-affinity resume has no gate
+(`worker.rs`, the boundary-stop block); needs #151's ring-aware snapshot and restore with a bit-identity gate first,
+then the three capture sites under the #602 capture law, then the hit gate and twin gate on a gemma trunk. Section 3
+(spec under concurrency): the shared mechanism moved (#266 closed, the resumed-carrier K floor, the sampled wave,
+#429 closed on qwen35), none of it measured with the gemma drafter and no INDEX row for the gemma4 full-serving lane;
+needs one pre-registered c=1/4/8 ladder on the target card reading the `[spec-k]` source lines, N>=5 both orders,
+plain batched arm beside it.
+
+## 4. Close of day
+
+Checks on the final tree: `cargo fmt --all -- --check` ok, `git diff --check` ok, `tools/check-flags.sh` (no
+uncovered runtime names), `python3 tools/check-public-boundary.py check` (0 new), `cargo clippy -p memra-engine
+--all-targets -- -D warnings` under the CPU quota (exit 0, `rtx5090-day22/checks/`). Scratch: the two comment
+drafts under `/tmp` removed after posting; the reverse patch removed after the base build; `target/bins/day22-*`
+hold the base and fix binaries for the receipts' SHAs (untracked build products, as `target/bins/{base,fix}` since
+day 18). Nothing merged, no PR; the lead integrates. Budget: about 1.1 agent-hours on the resumed run (19:02Z to
+about 20:05Z) on top of the dead run's roughly 0.75 h of fix cells.
