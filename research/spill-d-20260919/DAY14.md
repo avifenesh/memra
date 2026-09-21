@@ -169,3 +169,100 @@ Teeth, `tools/test_workflow_keys.sh` (nine arms): the control (`yaml.safe_load` 
 duplicate-job file, exit 0), a duplicate job key reds and the refusal names the key and its
 line, a duplicate nested key (two `run:` in one step) reds, a clean file greens and the green
 names its jobs, an empty directory reds, the tree's own workflows green.
+
+## 4. Local battery (CPU only, `systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=28G`)
+
+One scope, sequential (`day14/battery.sh`, `battery.log`; per cell `<name>.log` and `<name>.exit`).
+Every cell exit 0. After the battery the `test_gpu_ci.py` step moved to #600's position, so the
+cells that read ci.yml ran again (`day14/rerun/`, all exit 0; the teeth and floors below are
+quoted from the rerun where they differ in nothing but timing).
+
+- `cargo fmt --all -- --check`: exit 0 (no Rust touched).
+- `tools/portable-suites.sh` (`wrapper.log`, raw cargo output `wrapper-raw.log`):
+  `skip-census: VERIFY OK` (tier 0, kv 0, cli 0 artifact-gated skips, all declared),
+  `skip-census: running: cargo test -p memra-tier -p memra-kv -p memra-cli --offline --locked --no-fail-fast -- --test-threads=1 --nocapture`,
+  `skip-census: 335 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 14 binaries`,
+  `portable-suites: PASS (tier, KV and onboarding CLI suites executed on CPU; skips 0 of budget 0; NOT GPU qualification)`.
+  334 became 335 through this morning's main merge. 16 s warm.
+- `tools/test_portable_suites.sh` (`rerun/teeth.log`, verbatim):
+
+```
+ok   arm1 planted failures red the wrapper (exit 1)
+ok   arm1 wrapper banked the raw cargo log
+ok   arm1 failures list names planted_retirement_keeps_owner_red_arm
+ok   arm1 failures list names planted_red_arm::planted_kv_hierarchy_red_arm
+ok   arm1 failures list names planted_red_arm::planted_onboarding_receipt_red_arm
+ok   arm1 cargo names the failed target -p memra-tier --test contracts (every crate ran)
+ok   arm1 cargo names the failed target -p memra-kv --lib (every crate ran)
+ok   arm1 cargo names the failed target -p memra-cli --lib (every crate ran)
+ok   arm1 no PASS line
+ok   arm2a undeclared SKIP reds the wrapper (exit 1)
+ok   arm2a the static census names the planted test (planted_artifact_gated_integration_test)
+ok   arm2a refused before cargo ran
+ok   arm2b undeclared SKIP reds the wrapper (exit 1)
+ok   arm2b the static census names the planted test (planted_skip::planted_artifact_gated_test)
+ok   arm2b refused before cargo ran
+ok   arm3 ci.yml runs tools/portable-suites.sh
+ok   arm3 ci.yml runs this fixture
+ok   arm3 tools/local-ci.sh runs tools/portable-suites.sh
+ok   arm3 ci.yml has exactly one portable-suites job
+ok   arm3 no live cargo test on memra-tier/-kv/-cli outside the wrapper (one executor)
+ok   arm3 tools/ci-portable.sh forwards to the wrapper and runs no cargo of its own
+ok   arm3 neither ci.yml nor tools/local-ci.sh calls tools/ci-portable.sh
+test_portable_suites: 22 ok, 0 FAIL
+```
+
+- `python3 tools/test_gpu_ci.py`: `Ran 11 tests in 0.005s`, `OK` (the ten #590 controls plus the
+  wiring arm). The ci.yml step form: `unittest-floor: OK: ran 11 tests (floor 9) for tools (test_gpu_ci.py)`.
+  The step text keeps #600's "10 measured 2026-09-21" (the count when the floor was set; 11 run
+  now, the floor stands).
+- `python3 -m pytest -q crates/memra-tier/tests/battery/`: `87 passed, 32 subtests passed in 17.69s`.
+- The ci.yml lock-held step, inside `bwrap --tmpfs /tmp` so the rig's real locks were never
+  touched (`unittest-lock-held.log`): `holding /tmp/memra-5090.lock and /tmp/memra-gpu.lock in a private /tmp (bwrap) for the whole suite`,
+  `OK`, `unittest-floor: OK: ran 87 tests (floor 80) for crates/memra-tier/tests/battery (test_*.py)`.
+- `tools/test_workflow_keys.sh`: `test_workflow_keys: 9 ok, 0 FAIL`; `tools/check-workflow-keys.py`:
+  `check-workflow-keys: OK: 5 workflow files, no duplicate mapping keys` (ci.yml jobs: changes,
+  gates, boundary, build, clippy, server-tests, portable-suites, engine-tests, arch-coverage,
+  publish-dryrun).
+- `python3 -c "import yaml; yaml.safe_load(...)"` on ci.yml and gpu-ci.yml: `safe_load ok` (kept as
+  the control it is, not as the guard).
+- `tools/test_ci_change_class.sh`: `test_ci_change_class: 14 arms PASS`. `tools/test_unittest_floor.sh`:
+  `test_unittest_floor: 5 ok, 0 FAIL`. `tools/check-action-pins.sh` exit 0 and
+  `action-pin census fixture: PASS` (gpu-ci.yml's four pinned actions pass the census; main
+  never ran it on that file).
+- `bash tools/check-flags.sh`: `check-flags: no uncovered runtime names` (no new `MEMRA_*` read
+  today). `bash tools/docs-registry-census.sh`: `ROUTER.md lines=46 (cap 60)`, `flags-table-census:
+  docs/FLAGS.md tables=58 rows=903`. `git diff --check` exit 0. `shellcheck -S warning` on the
+  wrapper, the forward, both teeth scripts and the hook: exit 0; `bash -n tools/local-ci.sh` exit 0.
+- `DOCS_RS` never set; no GPU cell, no engine file, no `.cu`, no flag default, no numeric program.
+
+## 5. Findings for the lead
+
+1. Main was red at the workflow level from 09:47Z (`34ed99dfc`) until #600 lands: zero jobs per
+   run, so no build, clippy, boundary or publish check ran on main or on any PR opened since.
+   This lane's fold carries the same removal hunk as #600 plus #600's exact `test_gpu_ci.py` step
+   text and position, so the merge after #600 is clean and leaves one copy of each.
+2. The class of failure (a PR green on a stale merge ref, base moved, combination invalid) is
+   closed only by the branch-protection setting that requires the branch to be current before
+   merging. The hook arm catches a lane that pushes the duplicate; nothing in this repo can
+   catch a merge-button combination. Owner decision, not changed here.
+3. `gpu-ci.yml` dispatch prerequisites are still in draft #566 (`qualify-release.py`,
+   `release_qualification.py`, `release_inputs.py`, `release_input_view.py`,
+   `install-release-sandbox-ci.sh`), so every dispatch refuses as unconfigured today, as
+   `docs/CI.md` says. Untouched.
+4. Day-13 finding 1 stands: `ci-change-class.sh` treats `research/**` as docs-only while ten
+   test-time `research/` reads exist across lanes A/B/C/D.
+5. `research/spill-d-20260919/pro-single-day11/build/` is an untracked leftover of a day-11
+   build receipt (a source SHA, a driver probe line, an exit code, build/clippy/test logs), not
+   ignored and not mentioned in DAY11.md. Left in place; nothing in it is a receipt this lane
+   cites, and it is the owner's call whether it is banked or removed.
+
+## 6. Scope and receipts
+
+CPU-only gate plumbing: one executor for three crates' suites, one job, one call per battery, a
+workflow-file census with teeth in the hook and the `gates` job, docs aligned. No GPU cell, no
+timing claim, no default, flag default, numeric program or support state changed. Receipts under
+`research/spill-d-20260919/day14/` (`battery.sh`, `battery.log`, per-cell logs and exit codes,
+`wrapper-raw.log` banked verbatim and pinned in the boundary allowlist like day 13's raw logs,
+`guard-on-main-34ed99dfc.log`, `rerun/`). Scratch `/tmp/spill-d-day14/` removed at close.
+About 3.5 agent-hours against the 4-hour budget.
