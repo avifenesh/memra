@@ -115,3 +115,8 @@ pub use revision_v12::*;
 // v1.3 adds optional source retirement and concrete-owner hand-back schedules.
 mod revision_v13;
 pub use revision_v13::*;
+
+// Day-11 rules (lead ruling 9) sit beside the frozen schedules, unversioned: a cancelled
+// restore recovers its source; a continuation over a suspended layer is refused.
+mod recovery;
+pub use recovery::*;

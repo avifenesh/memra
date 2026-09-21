@@ -2067,6 +2067,74 @@ impl ResidentTpKvCache {
     }
 }
 
+/// Day-11 rule 2 (lead ruling 9): the register of layers whose K/V planes are out on a tier.
+/// Entries move only through [`Cache::suspend_layer`] and [`Cache::resume_layer`];
+/// [`Cache::ensure_usable`] refuses every continuation while the register is non-empty. It is
+/// not a taint: a restored layer clears its entry. A raw `kv[il].take()` is outside the
+/// contract and leaves the gate blind, exactly the observed finding.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct SuspendedLayers(std::collections::BTreeSet<usize>);
+impl SuspendedLayers {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    pub fn contains(&self, layer: usize) -> bool {
+        self.0.contains(&layer)
+    }
+    /// Ascending layer ids.
+    pub fn layers(&self) -> Vec<usize> {
+        self.0.iter().copied().collect()
+    }
+}
+impl FromIterator<usize> for SuspendedLayers {
+    fn from_iter<I: IntoIterator<Item = usize>>(iter: I) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+/// The typed refusal of [`Cache::ensure_usable`] under rule 2: a continuation (decode or prime)
+/// was asked over suspended layers. Callers downcast the boxed error to read the layers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContinuationRefused {
+    pub path: String,
+    /// Ascending layer ids whose state is out on a tier.
+    pub layers: Vec<usize>,
+}
+impl std::fmt::Display for ContinuationRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: continuation refused: layers {:?} are suspended on a tier and must be restored first",
+            self.path, self.layers
+        )
+    }
+}
+impl std::error::Error for ContinuationRefused {}
+/// Typed refusals of the suspend/resume seam.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SuspendError {
+    /// The slot holds no resident full-attention layer (a non-attention layer, an out-of-range
+    /// id, or a layer already taken).
+    NotResident {
+        layer: usize,
+    },
+    AlreadySuspended {
+        layer: usize,
+    },
+    NotSuspended {
+        layer: usize,
+    },
+    /// The slot was refilled behind the register's back.
+    Occupied {
+        layer: usize,
+    },
+}
+impl std::fmt::Display for SuspendError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+impl std::error::Error for SuspendError {}
+
 pub struct Cache {
     /// Drop first: its engine-owned destructor fences replay before any session
     /// KV or recurrent allocation is released, including cancellation/error paths.
@@ -2099,6 +2167,9 @@ pub struct Cache {
     /// A failed multi-stage wave may have advanced only a prefix of layers/rows. Such state is
     /// not a legal rollback point and must never be retried or returned to a reuse pool.
     pub tainted: bool,
+    /// Day-11 rule 2: layers whose K/V planes are out on a tier. `ensure_usable` refuses while
+    /// non-empty; `suspend_layer`/`resume_layer` are the only movers. See [`SuspendedLayers`].
+    pub suspended: SuspendedLayers,
     /// BATCHED-TICK increment 2 component 3 (lean logits, 2026-08-01): device-side park of
     /// this session's LAST logits row. Device-sampled rows in the batched serving tick skip
     /// the [n_vocab] logits D2H entirely; the tick instead dtod-copies the row here (device
@@ -2580,6 +2651,9 @@ pub struct CacheSnapshot {
 }
 
 impl Cache {
+    /// The continuation gate. Every decode and prime entry asks it first. Refuses a tainted
+    /// cache (one-way) and, under day-11 rule 2, a cache with any suspended layer, with the
+    /// typed [`ContinuationRefused`] naming the layers, until the caller restores them.
     pub fn ensure_usable(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         if self.tainted {
             return Err(format!(
@@ -2587,6 +2661,51 @@ impl Cache {
             )
             .into());
         }
+        if !self.suspended.is_empty() {
+            return Err(Box::new(ContinuationRefused {
+                path: path.to_owned(),
+                layers: self.suspended.layers(),
+            }));
+        }
+        Ok(())
+    }
+
+    /// Day-11 rule 2: take layer `il`'s K/V out for demotion and register the suspension, so
+    /// `ensure_usable` refuses every continuation until `resume_layer` returns it. Captured
+    /// decode/prime graphs bake this cache's plane pointers and the restored plane may land
+    /// elsewhere, so they are dropped here (the cache's own rule for any seam that replaces a
+    /// state buffer). No numeric program changes: the layer's bytes are untouched.
+    pub fn suspend_layer(&mut self, il: usize) -> Result<KvLayer, SuspendError> {
+        if self.suspended.contains(il) {
+            return Err(SuspendError::AlreadySuspended { layer: il });
+        }
+        let layer = self
+            .kv
+            .get_mut(il)
+            .and_then(Option::take)
+            .ok_or(SuspendError::NotResident { layer: il })?;
+        self.suspended.0.insert(il);
+        self.glm5_decode_graph = None;
+        self.glm5_tp_sym_graph = None;
+        self.qwen_prime_graph = None;
+        Ok(layer)
+    }
+
+    /// Day-11 rule 2: return a suspended layer's K/V and clear its register entry. Only a layer
+    /// taken through `suspend_layer` can come back this way.
+    pub fn resume_layer(&mut self, il: usize, layer: KvLayer) -> Result<(), SuspendError> {
+        if !self.suspended.contains(il) {
+            return Err(SuspendError::NotSuspended { layer: il });
+        }
+        let slot = self
+            .kv
+            .get_mut(il)
+            .ok_or(SuspendError::NotSuspended { layer: il })?;
+        if slot.is_some() {
+            return Err(SuspendError::Occupied { layer: il });
+        }
+        *slot = Some(layer);
+        self.suspended.0.remove(&il);
         Ok(())
     }
 
@@ -2867,6 +2986,7 @@ impl Cache {
             pos: 0,
             max_ctx,
             tainted: false,
+            suspended: SuspendedLayers::default(),
             dflash_taps: None,
             hc_taps: None,
             glm5_decode_graph: None,
@@ -3440,6 +3560,7 @@ mod tp_transaction_tests {
             pos: 0,
             max_ctx: 10_000,
             tainted: false,
+            suspended: super::SuspendedLayers::default(),
             dflash_taps: None,
             hc_taps: None,
             glm5_decode_graph: None,
@@ -3652,5 +3773,115 @@ mod swa_ring_tests {
 
         // A checkpoint from before the rebase is gone: refuse, never slice.
         assert!(ring.restore_plan(400).is_err());
+    }
+}
+
+#[cfg(test)]
+mod continuation_gate_tests {
+    //! Day-11 rule 2 (lead ruling 9) on the real `Cache`: `ensure_usable` is the gate, the
+    //! register is the state, `ContinuationRefused` is the typed answer. CPU-built cache, no
+    //! device: a `KvLayer` cannot be constructed here, so the positive `suspend_layer` /
+    //! `resume_layer` roundtrip is native (kv-tier-gate); its refusals are exercised below.
+    use super::{Cache, ContinuationRefused, SuspendError, SuspendedLayers};
+    use memra_tier::conformance::{ContinuationGateFixture, required_resident_continuation};
+
+    fn cache(layers: usize) -> Cache {
+        Cache {
+            kv: (0..layers).map(|_| None).collect(),
+            recur: (0..layers).map(|_| None).collect(),
+            latent: (0..layers).map(|_| None).collect(),
+            tp_kv: (0..layers).map(|_| None).collect(),
+            glm5_tp_recur: (0..layers).map(|_| None).collect(),
+            glm5_tp_latent_peer: (0..layers).map(|_| None).collect(),
+            pos: 0,
+            max_ctx: 8192,
+            tainted: false,
+            suspended: SuspendedLayers::default(),
+            dflash_taps: None,
+            hc_taps: None,
+            glm5_decode_graph: None,
+            glm5_tp_sym_graph: None,
+            qwen_prime_graph: None,
+            last_logits_dev: None,
+        }
+    }
+
+    /// The real gate under the shared schedule. Suspension is registered directly (the plane
+    /// that would leave cannot exist without a device); the answer is the real typed error.
+    struct Gate(Cache);
+    impl ContinuationGateFixture for Gate {
+        fn suspend(&mut self, layer: u32) {
+            assert!(self.0.suspended.0.insert(layer as usize));
+        }
+        fn restore(&mut self, layer: u32) {
+            assert!(self.0.suspended.0.remove(&(layer as usize)));
+        }
+        fn continuation(&mut self) -> Result<(), Vec<u32>> {
+            match self.0.ensure_usable("decode_step_h") {
+                Ok(()) => Ok(()),
+                Err(error) => {
+                    let refused = error
+                        .downcast_ref::<ContinuationRefused>()
+                        .unwrap_or_else(|| panic!("untyped refusal: {error}"));
+                    assert_eq!(refused.path, "decode_step_h");
+                    Err(refused.layers.iter().map(|&l| l as u32).collect())
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn day11_ensure_usable_refuses_a_suspended_cache_until_restored() {
+        required_resident_continuation(&mut Gate(cache(16)), &[3, 0, 15]);
+    }
+
+    #[test]
+    fn day11_refusal_is_typed_and_names_the_layers() {
+        let mut c = cache(4);
+        c.suspended.0.extend([2, 1]);
+        let error = c.ensure_usable("prime_cache").unwrap_err();
+        let refused = error.downcast_ref::<ContinuationRefused>().unwrap();
+        assert_eq!(refused.layers, [1, 2]);
+        assert_eq!(
+            error.to_string(),
+            "prime_cache: continuation refused: layers [1, 2] are suspended on a tier and must be restored first"
+        );
+        // Taint keeps its precedence and its wording; it is a different, one-way condition.
+        c.mark_tainted();
+        assert!(
+            !c.ensure_usable("prime_cache")
+                .unwrap_err()
+                .to_string()
+                .contains("suspended")
+        );
+    }
+
+    #[test]
+    fn day11_seam_refusals_on_a_cache_without_resident_planes() {
+        let mut c = cache(2);
+        assert_eq!(
+            c.suspend_layer(0).err(),
+            Some(SuspendError::NotResident { layer: 0 })
+        );
+        assert_eq!(
+            c.suspend_layer(9).err(),
+            Some(SuspendError::NotResident { layer: 9 })
+        );
+        assert!(c.suspended.is_empty());
+        c.ensure_usable("decode_step_h").unwrap();
+        c.suspended.0.insert(1);
+        assert_eq!(
+            c.suspend_layer(1).err(),
+            Some(SuspendError::AlreadySuspended { layer: 1 })
+        );
+        assert_eq!(c.suspended.layers(), [1]);
+        assert!(c.suspended.contains(1));
+        let stage: SuspendedLayers = c
+            .suspended
+            .layers()
+            .into_iter()
+            .filter(|&l| l == 1)
+            .collect();
+        assert_eq!(stage, c.suspended);
     }
 }
