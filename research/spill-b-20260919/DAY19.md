@@ -207,6 +207,19 @@ with this record). The first push attempt at `49d79b946` was refused by that gat
 attempt after the battery was allowed (`push-2.log`: `3e261c1c2..fa5d7a014`). No skip variable, no
 `--no-verify`, at either attempt.
 
+## Incident, recorded against this lane
+
+At 13:07:30 UTC, after the chain had finished, `pgrep` on this rig still showed `bash tools/local-ci.sh
+--perf` (PID 1154050, parent 1118658, elapsed 4:45, a `cargo-clippy` child). I read it as a leftover of my
+own `--perf` run and sent it SIGTERM by PID. It was not mine: my run had exited 0 at 13:03:54 (`chain.log`),
+and this process had started at about 13:02:45 UTC, in another session's worktree on this rig, which I
+could not identify afterwards (the parent was gone too; the rig's most recent other cargo activity was in
+a sibling worktree at 12:53 UTC). It held no GPU memory (15 MiB on the card) and was in its clippy step.
+Whoever owns that run: it died from my signal, not from the code or the lock; rerun it. The rule the
+memory already carried ("never kill by pattern; your own processes only") was followed in letter (a PID)
+and broken in substance (a misidentified PID); the check that would have prevented it is `readlink
+/proc/<pid>/cwd` before the signal, which I ran only after.
+
 ## Boundaries and record
 
 - Forbidden list honored: the identity law `spec-on text == spec-off text` untouched; no prime program
