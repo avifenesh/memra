@@ -964,12 +964,17 @@ PASS additive dropped destination retains backing and charge until graph retirem
 PASS v1.3 device_hand_back native CUDA
 ```
 
-Day 11 added two lines whose bindings exist but have not run natively yet (no GPU cell that
-day; lane B held the card): `PASS rule cancelled-restore-recovers-source native CUDA` and
-`PASS rule cancel-refused-after-source-consumed native CUDA`. The v1 `transfer_cancel`, v1.1
+Day 11 added two lines, `PASS rule cancelled-restore-recovers-source native CUDA` and
+`PASS rule cancel-refused-after-source-consumed native CUDA`, whose bindings could not run
+natively that day (lane B held the card). The v1 `transfer_cancel`, v1.1
 `transfer_complete_cancel`, `transfer_lifetime` and acceptance bindings now recover the
-cancelled H2D source before retiring (the schedules themselves are unchanged); until the gate
-is rerun on a card, the recorded day-9 lines stand as the last native evidence.
+cancelled H2D source before retiring (the schedules themselves are unchanged). Lane D ran the
+gate natively on day 12 (one RTX PRO 6000 Blackwell, collector-locked, N=1, gate source
+`55f242e98`): the `conformance` cell printed both lines verbatim among its 13 `PASS` lines and
+ended on `PASS native governor zero after controlled drain`; the `roundtrip` cell printed every
+size line with `byte_exact=true`. Receipts
+`research/spill-d-20260919/pro-single-day12/transfer-gate/{conformance,roundtrip}/`, replayed by
+`research/spill-d-20260919/verify-day12.py`; write-up `research/spill-d-20260919/DAY12.md`.
 
 plus one `PASS native D2H-H2D roundtrip bytes=… byte_exact=true source_freed_host_live=true` line per
 size (4 KiB to 256 MiB). All lines were recorded on one RTX PRO 6000 Blackwell through the collector
@@ -1076,8 +1081,19 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|3276
   records the contract's answers as `check / expected / observed` rows (`fault-checks.tsv`,
   summary `FAULT-ARM.txt`); `fault_contract::verdict` prints `FAULT-ARM PASS <arm>` only when
   every required check was recorded and held, a differing answer or a missing check is a failed
-  cell (`fault arm <arm> did not prove its contract; missing=[..] failed=[..]`), and the two arms
-  whose expectation has no seam in the frozen contracts end in a typed refusal, never PASS. A
+  cell (`fault arm <arm> did not prove its contract; missing=[..] failed=[..]`), and there is no
+  third outcome: on day 11 the two arms whose expectation had no seam in the contracts ended in
+  a typed refusal; since day 12 they drive lane A's rule seams (`TransferEngine::recover_source`,
+  `Cache::suspend_layer` / `resume_layer`), and a backend without a seam fails the seam rows, a
+  failed cell, never a refusal and never PASS. Every arm detaches a layer only through
+  `Cache::suspend_layer` and reattaches it through `Cache::resume_layer` (rule 2), so
+  `ensure_usable` is the continuation gate for the whole demoted interval; the holed arms keep
+  the day-11 taint row (`holed-cache-refuses-continuation`). The rule-1 rows are one generic
+  sequence over `TransferEngine` (`fault_contract::cancel_restore_revoke` / `_recover` /
+  `_retire`) recorded by the native arm and by the CPU binding
+  `crates/memra-tier/tests/contracts/fault_arm_bindings.rs` against lane A's fake transport,
+  whose `legacy = true` is the red arm (the transport before the rule drains the cancelled
+  restore, the seam rows fail, the verdict names them). A
   passing arm whose cache is whole and bit-identical (`restored-identical`) runs the same
   tokenwise continuation and writes `ACTIVE.txt` with the PASS line as its first line; an arm
   whose cache is incomplete prints `FAULT-ARM PASS <arm> committed=<n> generated=0` and writes no
@@ -1090,17 +1106,22 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|3276
   | Arm | Injection point (contract call) | Required checks (expected answer) | Outcome |
   | --- | --- | --- | --- |
   | `cancel-demote` | D2H submitted and observed complete (`synchronize`), then `TransferEngine::cancel` before `take_destination` | `cancel` `Ok(PublicationRevoked)`; `take-after-cancel` `Err(Cancelled)`; `retire` and `acknowledge` `Ok(())`; `pinned-after-cancel` `0`; `source-returned` (`take_plane` gives the untouched source, `len=<capacity> vmm=false`); `budget-zero`; `restored-identical` | PASS, intact-resident, continuation runs |
-  | `cancel-restore` | H2D submitted and observed complete, then `cancel` before `ready_view` | `cancel` `Ok(PublicationRevoked)`; `ready-view-after-cancel`, `with-destination-after-cancel`, `take-after-cancel` all `Err(Cancelled)`; `retire`, `acknowledge` `Ok(())`; `retake-demoted-copy` (`take_destination` on the D2H ticket) `Err(AlreadyReleased)`; `budget-zero` | typed refusal on day 11: the H2D source handle is consumed at submission and released by `retire`; the D2H twin is take-once; no contract seam recovers the copy, so no restore and no token. Seam since lane A day 11 (rule 1): `retire` answers `Busy`, `recover_source(ticket, 0)` returns the intact source, then `retire`/`acknowledge` and a second `restore`; lane D reruns for the PASS line |
+  | `cancel-restore` | H2D submitted and observed complete, then `cancel` before `ready_view`; rule 1 (lane A, day 11) from there | `cancel` `Ok(PublicationRevoked)`; `ready-view-after-cancel`, `with-destination-after-cancel`, `take-after-cancel` all `Err(Cancelled)`; `retire-holds-source` and `retire-source-holds` `Err(Busy)` (the engine never drains a cancelled restore); `recover-source` `Ok(host)`; `recovered-source-checksum` (equals the bundle's sealed checksum) and `recovered-source-intact` (`StateBundle::verify` `Ok(())`); `recover-source-once` and `cancel-after-recovery` `Err(AlreadyReleased)`; `retire`, `acknowledge` `Ok(())`; `pinned-held-by-recovered-lease` (the pinned charge stays with the lease); `retake-demoted-copy` (`take_destination` on the D2H ticket) `Err(AlreadyReleased)`; `budget-zero`; `restored-identical` | PASS, the recovered copy goes through the roundtrip's own `restore`, cache whole and bit-identical, continuation runs. Day 11 (no seam) ended in the typed refusal `REFUSED: cancel-restore revoked publication, but the transfer contract has no seam to recover the H2D source after cancellation; no tokens, budget drained`; that receipt is kept and is a failed cell under the day-12 rule |
   | `corrupt-host` | after `demote`: `CudaPinnedLease::write` under the live D2H ticket, then the legal drain (`record_consumer`, `retire`, `acknowledge`), then `write` again; `restore` on the flipped copy | `write-under-live-ticket` `Err(Busy)`; `write-sole-owner` `Ok(())`; `restore-integrity` `Corrupt` (`StateBundle::verify`, before any device call); `device-registry-unchanged`; `budget-zero` | PASS, no publish, no token |
   | `missing-host` | D2H completed and never taken; `retire(None)` and `acknowledge` remove the engine-owned copy; `take_destination` at restore | `completion-checksum` (`poll` checksum equals the bundle's); `remove` `retire=Ok(()) acknowledge=Ok(())`; `pinned-released` (the plane's bytes); `retake-removed-copy` `Err(UnknownTicket)`; `budget-zero` | PASS, no publish, no token |
   | `host-budget-short` | governor pinned capacity set to the whole demoted bytes minus one; `admit_whole_state` before any layer is taken | `whole-state-admission` `Err(Capacity)`; `layers-resident` unchanged; `pinned-charged` `0`; `budget-zero`; `restored-identical` | PASS, nothing copied, continuation runs |
   | `device-short` | after demote, a competing tenant reserves the governor's device dimension down to one byte less than the restore needs; `alloc_device` (restore's first call) | `restore-admission` `Err(Capacity)`; `device-registry-unchanged`; `host-copy-intact` (`StateBundle::verify` `Ok(())`); competitor released; `budget-zero`; `restored-identical` | PASS, continuation runs. The governor has no post-construction capacity seam; the seam used is its own admission with a second tenant |
-  | `require-resident` | demote all, ask `Cache::ensure_usable` (the engine's only continuation gate) while suspended, restore all | `budget-zero`; `restored-identical`; observation `continuation_gate_on_suspended_cache` | typed refusal on day 11: no continuation-time required-resident contract exists (the taint flag is one-way and pipeline-scoped; `decode_step_h` unwraps a suspended layer; `tiered::policy::RestoreDecision::RequireState` is a load-versus-recompute rule). Seam since lane A day 11 (rule 2): detach through `Cache::suspend_layer`, reattach through `Cache::resume_layer`; `ensure_usable` on the suspended cache answers `ContinuationRefused` naming every suspended layer and `Ok(())` after the restore; lane D reruns for the PASS line |
+  | `require-resident` | every plane leaves through `Cache::suspend_layer`; `Cache::ensure_usable("kv-tier-gate continuation")` asked while suspended, again, after the first `resume_layer`, and after the last; rule 2 (lane A, day 11) | `suspended-register` (the register names exactly the taken layers, ascending); `continuation-gate-on-suspended-cache` and `continuation-gate-asked-twice` `Err(ContinuationRefused { path: "kv-tier-gate continuation", layers: [<every suspended layer>] })`; `continuation-gate-after-partial-resume` names what is left; `register-empty-after-resume` `true`; `continuation-gate-after-resume` `Ok(())`; `budget-zero`; `restored-identical` | PASS, continuation runs. Day 11 (no seam; `ensure_usable` answered `Ok(())` on the fully suspended cache) ended in the typed refusal `REFUSED: require-resident has no contract today: Cache::ensure_usable accepts a suspended cache, decode_step_h unwraps a suspended layer, and tier RestoreDecision::RequireState is a load-versus-recompute rule`; that receipt is kept and is a failed cell under the day-12 rule |
 
-  CPU replay: `crates/memra-tier/tests/reclaim/fault.rs` (door, red arms per arm, committed
-  target-card receipts); the lane's offline replay is `research/spill-d-20260919/verify-day11.py`
-  and its cells are `research/spill-d-20260919/pro-single-day11/<arm>/` (N=1, one RTX PRO 6000
-  Blackwell, `executed-not-qualified` or `refused`, never qualification).
+  CPU replay: `crates/memra-tier/tests/reclaim/fault.rs` (door, red arm per arm, the committed
+  target-card receipts of both days: the five unchanged arms replay from their day-11 cells, every
+  arm from its day-12 cell, and the two day-11 refusal receipts are pinned as failed cells under the
+  day-12 rule) and `crates/memra-tier/tests/contracts/fault_arm_bindings.rs` (the rule-1 rows on
+  the CPU fake, seam and legacy). The lane's offline replays are
+  `research/spill-d-20260919/verify-day11.py` (day-11 vocabulary, frozen: two typed refusals) over
+  `pro-single-day11/<arm>/` and `verify-day12.py` (seven PASS arms plus the two
+  `tier-transfer-gate` cases) over `pro-single-day12/` (N=1, one RTX PRO 6000 Blackwell,
+  `executed-not-qualified`, never qualification).
 - Receipts: `BASELINE.txt` (first line `BASELINE_CAPTURED`) or `ACTIVE.txt` (first line
   `ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS` or
   `ACTIVE_COPY_RESTORE_CAPTURED; reclaim qualification incomplete; see metrics; continuation
