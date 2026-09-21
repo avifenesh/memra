@@ -191,3 +191,80 @@ results section as arithmetic across sittings on the same box, not as a same-win
 **Budget.** About 2.5 agent-hours for the four GPU cells and the two local arms; the overlap pair is the
 long one (ten ON runs at about 90 s each on day nine's shape). If the budget runs out the remaining cells
 stay pre-registered here and the results section says so.
+
+## Builds and CPU proofs
+
+Local (`day18-local/build.log`, `systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=28G`, tree
+`e16bc69e8`, rc=0): run-gen `ad113e31…`, run-spec `836ca8ee…`, hash-micro `73ca7d76…`, memra-server
+`a492631b…`. Target card (`pro-single-day18/build.log`, `/root/wt-c` at `refs/bundle/c18` = `e16bc69e8`,
+nvcc under `/usr/local/cuda`, rc=0 both): run-gen `293bada0…`, run-spec `3f2040cd…`, hash-micro `deac707c…`,
+memra-server `c195b89e…`. The tree's `crates/`, `tools/`, `docs/` and workflows are byte-identical to main
+`5804cac6a` except for the `hash-micro` bin and its `Cargo.toml` entry (`git diff origin/main -- crates/
+tools/ docs/ .github/` before `e16bc69e8` was empty).
+
+CPU proofs (`day18-local/cpu-proofs.log`, `CPUQuota=400%`, a separate target dir, all rc=0):
+`cargo test -p memra-tier --test bank owner_proxy`: 4 passed, among them
+`proxy_and_token_are_send_sync_but_staging_is_owner_only` (the spawned thread's `validate`, `demand`,
+`with_bytes` and `finish` each return `WrongOwner`); `cargo test -p memra-tier --lib bank::owner_proxy`:
+5 passed; `cargo test -p memra-gguf --lib expert_banks`: 10 passed, among them
+`a_scale_plane_on_a_bank_is_refused_by_name`, `a_dense_plan_has_no_expert_projections`,
+`a_missing_expert_tensor_is_the_contract_missing_verdict`, `a_duplicated_expert_tensor_is_ambiguous`,
+`a_shape_incompatible_expert_tensor_is_refused`. These are the item 1 and item 3 (scale admission) proofs
+named in the pre-registration; they are CPU tests of the refusal mechanisms, not native cells.
+
+## Item 1 result: census and proof, no native cell
+
+The census in the pre-registration stands as the review input (no code changed under it today). The proof
+is the CPU test above. Item 1 is a design item: nothing here decides between an owner per CUDA owner thread
+and a typed owner-thread hand-off; the landed behavior under a stage split is a typed `WrongOwner` refusal
+before any demand or H2D.
+
+## Item 3 result: the hash lock refuses on both cards (`hashlock`, replay `DAY18 REPLAY hashlock: PASS (7 checks)` on both)
+
+Both cells through the collector, one lock hold each, `--validate` rc=0 (`*-validate.log`).
+
+| Card | Artifact (sha256 prefix) | door run | control run | Rule line (verbatim) |
+|---|---|---|---|---|
+| RTX 5090 Laptop (`rtx5090-day18/hashlock/`, 55..60 C) | Qwen3.5-9B NVFP4 MTP GGUF, `52c9cceb190055e0` | exit 1, last line `Error: "experts-via-tier artifact SHA256 mismatch"`, no door line; the only other stdout line is `[q8rp] split-plane decode mirrors built: 92 tensors` 1.66 s before the refusal (the SHA pass over the page-cached artifact) | exit 0, `prefill argmax=198  decode argmax=198  logit maxdiff=2.199e-1  MATCH`, `generated 8 tokens in 0.055s` | `HASHLOCK rule door_exit=1 sha_mismatch_line=True door_lines=0 control_exit=0 control_match=True lock_cost_after_last_load_line_s=1.66 door_wall_s=2.9 control_wall_s=1.7 (N=1, not pooled) artifact=52c9cceb190055e0 -> hash_lock_refuses` |
+| RTX PRO 6000 Blackwell (`pro-single-day18/hashlock/`, 37..42 C, 147 W peak under 600 W) | Qwen3.8-27B NVFP4 Q5K MTP GGUF, `1facf36c2db359dc` | exit 1, the refusal is the only stdout line (this artifact prints nothing during load), 12.3 s wall including the load and the SHA pass over an artifact the page cache no longer held | exit 0, `prefill argmax=271  decode argmax=271  logit maxdiff=2.591e-1  MATCH`, `generated 8 tokens in 0.109s`, 4.7 s wall | `HASHLOCK rule door_exit=1 sha_mismatch_line=True door_lines=0 control_exit=0 control_match=True lock_cost_after_last_load_line_s=nan door_wall_s=12.3 control_wall_s=4.7 (N=1, not pooled) artifact=1facf36c2db359dc -> hash_lock_refuses` |
+
+Replay correction, stated: `day18-replay.py` as first committed counted any line containing the substring
+`experts-via-tier` as a door line, and the refusal line itself contains it, so the first replay of both cells
+printed `door_lines=1` and `FAIL` on that clause. The pre-registered clause names the bracketed tags
+(`[experts-via-tier]`, `[expert-host-slru]`, `[expert-gpu-slru]`); the replay was corrected to the clause as
+written (commit after `7050170ba`) before any other result was read, and the logs carry no bracketed tag
+(`grep` shows the refusal line only). The `lock_cost_after_last_load_line_s` field is `nan` on the target
+card because that artifact prints no load line; the wall from the driver's marks is reported instead. No
+threshold moved.
+
+Reading for the review: the lock refuses before the catalog, before any bank, CUDA slot or record read, with
+the typed text, on both cards, and the same artifact runs natively without the door. The lock's cost is the
+SHA-256 pass over the whole artifact after load (1.7 s for a 6 GB page-cached file here; the 19 GB approved
+artifact on the target card is inside the ON `install_s` of the overlap pair below). The scale-admission
+refusal has its CPU proof above and no native cell (no scale-bearing artifact on either rig; shape
+pre-registered).
+
+## HOSTPREFIX door: the hash micro-cell (`hashmicro`, both cards, replay `DAY18 REPLAY hashmicro: PASS (8 checks)` on both)
+
+| Host | Rule line (verbatim) |
+|---|---|
+| RTX 5090 Laptop rig (`rtx5090-day18/hashmicro/`, 58..59 C) | `HASH-MICRO rule device="NVIDIA GeForce RTX 5090 Laptop GPU" bytes=167772160 n_per_order=5 pooled=10 orders=2 digest_equal=true wc_bit_cached=false wc_bit_wc=true cached_ms=37.339 wc_ms=1431.613 heap_ms=37.480 cached_range=37.244..39.231 wc_range=1424.480..1454.788 heap_range=37.227..37.912 cached_o1=37.357 cached_o2=37.263 wc_o1=1433.402 wc_o2=1428.212 heap_o1=37.542 heap_o2=37.443 cached_gbps=4.493 wc_gbps=0.117 heap_gbps=4.476 wc_over_cached=38.340 cached_over_heap=0.996 two_hashes_cached_ms=74.679 one_hash_cached_ms=37.339` |
+| BOX3 host, RTX PRO 6000 Blackwell (`pro-single-day18/hashmicro/`, 36..38 C, 149 W peak under 600 W) | `HASH-MICRO rule device="NVIDIA RTX PRO 6000 Blackwell Server Edition" bytes=167772160 n_per_order=5 pooled=10 orders=2 digest_equal=true wc_bit_cached=false wc_bit_wc=true cached_ms=77.922 wc_ms=1698.063 heap_ms=77.990 cached_range=77.823..78.041 wc_range=1694.567..1700.849 heap_range=77.871..78.162 cached_o1=77.889 cached_o2=77.938 wc_o1=1696.512 wc_o2=1699.887 heap_o1=77.983 heap_o2=78.016 cached_gbps=2.153 wc_gbps=0.099 heap_gbps=2.151 wc_over_cached=21.792 cached_over_heap=0.999 two_hashes_cached_ms=155.843 one_hash_cached_ms=77.922` |
+
+Observations: the engine's hash runs at the host CPU's SHA-256 speed over cached pinned and heap memory
+alike (2.15 GB/s on the target box, 4.49 GB/s on the local rig; `cached_over_heap` 0.999 and 0.996) and at
+0.10 to 0.12 GB/s over write-combined memory (21.8x and 38.3x slower), the driver confirming the WC bit on
+the WC buffer only. The two orders agree within 0.1 ms per kind. The arithmetic against lane A's cached pair
+and the day-16 write-combined pair, and the two census questions it raises (the promote side, and day 16's
+130 ms delta against a 1698 ms write-combined pass), are written once in `HOSTPREFIX-DOOR.md` "Review table
+for the decide-by" and not repeated here.
+
+## Item 6 result, local arm: the server ignores the door's flag (`serverdoor`, RTX 5090, replay `DAY18 REPLAY serverdoor: PASS (4 checks)`)
+
+`rtx5090-day18/serverdoor/`: `memra-server` from this tree with `--experts-via-tier` on its argv, the Qwen3.5-9B
+NVFP4 MTP GGUF, ready in 4.0 s, one completion returned text (`spec-acc ctx=8 burst=13/15`), TERM, drain
+complete; 59..72 C, 164 W peak. The server log carries zero `experts-via-tier`, `expert-host-slru` or
+`expert-gpu-slru` lines and no usage or unknown-argument line. Verbatim: `SERVERDOOR rule ready=True
+request_ok=True door_lines=0 flag_refused=False flag_silently_accepted=True -> door_unreachable_in_serving`.
+As expected from source: the server consults argv for `--version` and the key-lifecycle flags only. The
+target-card arm follows the overlap pair below.
