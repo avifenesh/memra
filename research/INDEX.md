@@ -552,3 +552,5 @@ Historical qualification entry above: the superseded a3/8f capsule is preserved 
 - `release-qualification/pro-ubuntu2404-25545777-20260921` | "All five canonical generic cells passed"; fresh v3 Ubuntu24 proof on accepted current main; both-profile tag guard remains | [RESULTS](release-qualification/pro-ubuntu2404-25545777-20260921/RESULTS.md)
 
 - `release-qualification/pro-ubuntu2404-53db184d-20260921` | "All five canonical generic cells passed"; fresh v3 Ubuntu24 proof on accepted current main; both-profile tag guard remains | [RESULTS](release-qualification/pro-ubuntu2404-53db184d-20260921/RESULTS.md)
+
+- `release-qualification/pro-ubuntu2404-4135e7eb-20260921` | "All five canonical generic cells passed"; fresh v3 Ubuntu24 proof on accepted current main; both-profile tag guard remains | [RESULTS](release-qualification/pro-ubuntu2404-4135e7eb-20260921/RESULTS.md)
