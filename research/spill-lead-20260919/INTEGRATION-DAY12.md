@@ -963,6 +963,52 @@ D2H and H2D on a second stream, tick-top polls, `Demoting`/`promoting` states, a
 contract, about 4 agent-days after Move 1), each with its decision cells; nothing started. #536 comment posted, issue
 open.
 
+## integ27 (`lane/spill-integ27-20260922`): C day 19 (memra#617) and B day 24 (memra#476, #524 gap)
+Lane tips merged: C `cb53b91b0`, B `6b9574473`, on main `a18c936a3` (#618). INDEX.md conflicted twice on the shared
+marker deletion; both sides' rows kept, every parent row present, census clean. Engine-crate changes are in
+`memra-server` only: `argv.rs` (new), `lib.rs` (the validator as the first statement of `serve_with`),
+`admit_predict.rs` (`RequestCharge`), `worker.rs` (the two predictor sites), `tests/argv_boot.rs`; docs
+`SERVING.md` (one sentence), `FLAGS.md` (the two admission door rows describe the fuller charge; no new read).
+
+**C day 19, memra#617.** `argv::validate(&[String]) -> Result<(), String>` admits exactly the documented command line
+(`--version | -V | --gen-key <tenant> [--lane ...] [--rate-limit N] [--keys <path>] | --revoke-key <prefix> [--keys
+<path>]`), refuses any other token with `[server] FATAL: unknown argument "<token>" refused at boot; accepted
+arguments: ...` and exit 2 before the version print, the first environment read and any device work; a key modifier
+without a key command is refused too; a missing value is left to `run_cli` as before. Tests: `argv::tests` 7 and
+`tests/argv_boot.rs` 7 booting the real binary. Lead check: no tracked launcher (`tools/`, `docs/`) passes
+`memra-server` any argument outside that set. Serverdoor cell on the fixed tree (local 5090, `serverdoor19b`,
+`PASS (16 checks)`), verbatim: `SERVERDOOR19 rule flag_exit=2 flag_refused=True flag_booted=False flag_ready=False
+flag_door_lines=0 envon_ready=True envon_request_ok=True envon_door_line=True envon_exit=0 envbad_exit=1
+envbad_refused=True envbad_ready=False -> flag_refused; env_door_documented`; the first cell (`serverdoor19`, the
+day-18 shape without `MEMRA_KV_HOST_MB`) is kept as `FAIL` verbatim (the door printed its documented no-tier line), rule
+untouched, the b cell pre-registered before its run. Not run on the target card (argv admission precedes any device
+statement). Arena lease handoff: scoped wider than one bounded change (an arena-backed lease type in `tier_transfer.rs`,
+worker charge-once accounting, and a lead ruling on one budget or two); nothing implemented; the DFlash tail slice
+pre-registered only. Ruling 28: the arena handoff stays scoped until the HOSTPREFIX decide-by review; the budget
+question (one pinned budget or two) is decided there with the door.
+
+**B day 24, memra#476.** Arithmetic first (DAY24 section 1): the physical gate charges `cost = ctx(C) + W(P) + A + D`
+(`W(P - R)` after a retained-prefix plan), the predictive book charged `kv_hat = ctx(P + L + 8) + A`, so `cost - kv_hat =
+[ctx(C) - ctx(P+L+8)] + W(P) + D`: the bracket is by design, `W` and `D` were in the real book and not the predictive
+one. Fix: `RequestCharge::from_physical_cost(cost, ctx(C), A, D, ctx(P+L+8)).total()` at both predictor sites (verdict
+reads the cold cost; booking takes the final restore- or eager-adjusted cost the real book takes); no new numeric
+program, no flag; the lock tests unchanged and green. Before (local 5090, Qwen3.5-9B NVFP4, shadow mode), verbatim:
+fourth concurrent admit `kv_hat=217983412 booked_bytes=615855840 booked_real=5156718304 inflight=3` (8.37x); `a0 P=6006
+cost_exact=1702520120 kv_hat=193525048 real/shadow=8.80x`; `A: max |residual~| = 1672223244 bytes`. After, same script
+and tolerances: `a0 cost_exact=1702520120 kv_hat=1701213496` (difference `1306624 = 14848 x 88`, the bracket to the
+byte); fourth admit `booked_bytes=5152798432 booked_real=5156718304`; `A: max |residual~| = 479880 bytes` PASS (inside
+the 1 MB line grain); `C: Overloaded/OOM lines = 0: PASS`. Pre-registered `B: max_underbook_real=2550136832 <=
+floor=1610612736: FAIL` before and after: the pool keeps freed blocks mapped, so at inflight 0 the device delta is the
+pool high-water while both books are 0 (in-flight only 822879944, inside the floor); recorded, not relaxed; the fix does
+not touch the real book. CPU tests `16 passed`. Named, not done: outstanding-only `W` release at prime completion; the
+physical book charges the shared prime slab per request (over-books 4-way by about 5.6 GB, conservative); the enforcing
+door on the fuller charge needs its own cell; the retained-prefix arm did not trigger on this card. memra#524:
+`run_boot_calibration` precedes `ready_tx.send(Ok` and `mark_ready`, so on the armed path readiness already waits for
+the one warmup the server runs (ready to first completion 1437 and 1426 ms at a 500 ms poll); the gap is the
+probe-skipped paths (`MEMRA_ADMIT_CALIBRATE=0`, plain-only serving, `MEMRA_ADMIT_RESERVE_MB`, probe failure) and shapes
+the B=1 probe never walks, plus no `phase=warming`; a source-order CPU test lands; `tools/health-fault-gate.sh` arms (a)
+to (f) pre-registered as a two-day lane. Both issues stay open.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
