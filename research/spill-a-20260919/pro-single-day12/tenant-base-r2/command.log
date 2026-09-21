@@ -1,0 +1,37 @@
+9887b1c0d7861acc2bf1f7d0de29a386a86f365d
+b30ac09d04f4de309f6cb509054a2c87eb2d9252ab540e2c78604a0c802aaa0f  /root/spill-receipts/a-day12/bins/memra-server-base
+== base arm boot (host 1024 MiB, tenant share 38%, device 384 MiB, two keyring tenants) ==
+b30ac09d04f4de309f6cb509054a2c87eb2d9252ab540e2c78604a0c802aaa0f  /root/spill-receipts/a-day12/bins/memra-server-base
+== both arms: shape ==
+  ok: r1 HTTP 200
+  ok: r2 HTTP 200
+  ok: r3 HTTP 200
+  ok: r4 HTTP 200
+  ok: r5 HTTP 200
+  ok: r6 HTTP 200
+  ok: r7 HTTP 200
+  ok: r8 HTTP 200
+  ok: /metrics scraped with the operator token (200, process-wide counters present)
+  ok: no device-tier promote-insert skip (the device budget holds a promote beside a protected entry)
+  ok: the tier is on with the configured share cap
+grep: Invalid range end
+  ok: the pool never filled: no LRU eviction
+  ok: no allocation refusal
+grep: Invalid range end
+  ok: no host-tier refusal or failure line
+grep: Invalid range end
+  FAIL: beta's first demote landed
+  ok: acme's first two demotes landed (r3, r4)
+  ok: beta's entry promotes at r7 in this arm: acme's cap did not touch beta's row
+grep: Invalid range end
+  FAIL: the r7 promote line names beta
+  ok: no tenant-share eviction ever names beta
+  ok: every tenant-share eviction names acme, in both the row and the namespace
+== base arm: the verdict lines ==
+  ok: base: acme's third demotion EVAPORATED at the cap (the pre-#384 line)
+grep: Invalid range end
+  ok: base: nothing of acme's own was evicted
+  ok: base: r8 is cold (the evaporated entry is gone)
+  ok: base: /metrics counts the rejects
+  ok: base: /metrics has no reclaims
+GATE: kv-host-tenant-reclaim (base arm) FAIL (2 assertions)
