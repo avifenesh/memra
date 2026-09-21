@@ -851,6 +851,35 @@ memra-server suite's known scheduler-sensitive `darklane::tests::stop_mode_full_
 `left: 1 right: 2` on the yield counter under the battery's load, 3 of 3 green alone; `serve-smoke: 0 failed`) are
 superseded by the battery on the merged tree and kept as receipts.
 
+**C day 18 (tip `29fe66640`, merged into integ25): the MoE slot cache door's decide-by inputs and the HOSTPREFIX
+review table.** New diagnostic binary `hash-micro` (`crates/memra-engine/src/bin/hash_micro.rs`: the engine's
+`memra_tier::contracts::checksum` over cached pinned, write-combined pinned and heap bytes; no engine path, no flag).
+Item 4 (overlap, target card, N=5 per arm per order, both orders, one 976 s hold, 36 to 40 C, 189 W peak, tape
+identical), verbatim: `OVERLAP-PAIR rule decode_off_s=0.408 decode_on_s=2.343 decode_ratio=5.743 ratio_o1=5.694
+ratio_o2=5.833 off_range=0.407..0.409 on_range=2.301..2.528 door_cost_ms_per_decode_token=60.47
+steady_mb_per_token=43.5 door_cost_ms_per_staged_MB=1.390 misses_off=[8211] misses_on=[18195] reads_on=[22077]
+evictions_on=[12091] install_on_s=74.84 forward_off_s=0.65 forward_on_s=6.28 forward_ratio=9.627 N=5/arm/order
+pooled=10 orders=2 temp_c=36..40 power_max_w=189 power_limit_w=600.00 W identity=ok integrity=ok ->
+sync_miss_path_slower`; replay `DAY18 REPLAY overlap: PASS (9 checks)`. Reading: the synchronous miss path is the
+door's only miss path at the 8 GiB budget (decode 5.7x slower with the door ON, install 75 s per process at this
+artifact); it is the promotion blocker, and a delete decision at the decide-by deletes the whole door. Item 3 hash
+lock, both cards: `HASHLOCK rule door_exit=1 sha_mismatch_line=True door_lines=0 control_exit=0 control_match=True
+... -> hash_lock_refuses` (`PASS (7 checks)` each); scale admission is a CPU proof only (`memra-gguf expert_banks` 10
+passed), no scale-bearing artifact on either rig, native cell pre-registered. Item 6, both cards: `SERVERDOOR rule
+ready=True request_ok=True door_lines=0 flag_refused=False flag_silently_accepted=True ->
+door_unreachable_in_serving`; hygiene finding, queued for a lane: `memra-server` rejects no unknown argument at all.
+Item 1: census (every `with_moe_cache` caller is a MoE layer function on whichever thread walks the layer; no PP gate
+binary carries the installer) plus the CPU proof `memra-tier owner_proxy` 4 passed (`WrongOwner` from a spawned
+thread). Hash micro-cell, both cards (`PASS (8 checks)`): target host `cached_ms=77.922 wc_ms=1698.063 heap_ms=77.990
+... wc_over_cached=21.792`; local host `cached_ms=37.339 wc_ms=1431.613 ... wc_over_cached=38.340`. HOSTPREFIX review
+table appended to `HOSTPREFIX-DOOR.md`: banked (identity and failure gates, contract fault gate 40 ok, the review-round
+cells, A's tenant arm, A's cached pair, the hash micro-cell, the arena pair), one arithmetic reading (one cached hash
+pass, 77.9 ms, equals A's steady demote delta, 76 ms, so the ticket lifecycle is below resolution), two census questions
+named and not resolved, and the missing list (arena lease handoff, DFlash tail slice, verify digest v3, the pool-full
+line, an RTX 5090-class pair). Replay correction stated by C: v1 of `day18-replay.py` counted a bare substring the
+refusal line carries; corrected to the pre-registered bracketed tags before any other result was read, no threshold
+moved. `pro-single-day18/.gitattributes` marks receipt logs `-whitespace` (precedent `research/ttft-20260808/`).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
