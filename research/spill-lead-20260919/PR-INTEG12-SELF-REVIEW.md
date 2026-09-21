@@ -29,6 +29,14 @@ Read in full: `.github/workflows/ci.yml` (`portable-suites` job), `tools/portabl
    flag without the seam refuses, one loud stderr line names the private directory, `lock.json` carries the seam, and
    every validate path refuses a capture whose seam is not the validating process's own. Red arms for each.
 
+7. **Revuto round two, fixed by the lead in integ12.** The two `python3 -m unittest discover` steps (cache
+   qualification harness at `ci.yml` line 76, the collector suite in `portable-suites`) had no non-vacuity floor;
+   discovery over a non-package directory reports zero tests green (exit 0, or 5 on Python 3.12+). New
+   `tools/unittest-floor.sh <dir> <pattern> <min>` runs the discovery, parses `Ran N tests`, fails below the floor
+   before looking at the exit code, and both steps go through it (floors 15 of 16 measured, 80 of 87 measured);
+   `tools/test_unittest_floor.sh` (5 arms: empty discovery, at floor, above count, failing test, bad floor) runs as
+   its own CI step.
+
 ## Verification this review relied on
 integ12 CPU batteries (`integration-day12/integ12-cpu-battery/` before the review fixes, `integ12-cpu-battery-2/` after): fmt, the portable-suites wrapper, the teeth script,
 memra-server suite, clippy `-D warnings` (incl. memra-cli), censuses, collector pytest, ci.yml YAML load, perf board,

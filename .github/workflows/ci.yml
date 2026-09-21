@@ -72,8 +72,8 @@ jobs:
       - name: Change-class teeth (the docs-only skip fails closed in every arm)
         run: tools/test_ci_change_class.sh
 
-      - name: Cache qualification harness regressions
-        run: python3 -m unittest discover -s tools -p test_cache_qualification.py
+      - name: Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)
+        run: tools/unittest-floor.sh tools test_cache_qualification.py 15
 
       - name: CPU-only artifact path safety tests
         run: python3 tools/test_nvme_builder_safety.py
@@ -405,7 +405,12 @@ jobs:
           exec 8>/tmp/memra-5090.lock 7>/tmp/memra-gpu.lock
           flock -n 8 && flock -n 7
           echo "holding /tmp/memra-5090.lock and /tmp/memra-gpu.lock for the whole suite"
-          python3 -m unittest discover -s crates/memra-tier/tests/battery -p 'test_*.py'
+          # Non-vacuity floor (revuto on #592): discovery over a non-package dir exits 0 (or 5 on
+          # Python 3.12+) on zero tests. 87 measured 2026-09-21; a stated minimum, raise it as the
+          # suite grows, never lower it to pass.
+          tools/unittest-floor.sh crates/memra-tier/tests/battery 'test_*.py' 80
+      - name: unittest-floor teeth (empty discovery, a failing test and a floor above the count must all red)
+        run: tools/test_unittest_floor.sh
 
   # ── memra-engine: the CPU expert backend and the whole engine lib suite ────────────────────
   # memra#18 (2026-09-01): vision::tests and every other memra-engine lib test ran NOWHERE.
