@@ -1,0 +1,27 @@
+== arm S0-baseline total=9296 tails=16 48 env: 
+/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=35bd15f063bfd5ba DIFFERS (known: a 16-row final segment is not bitwise on either artifact)
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm S1-nobatched total=9296 tails=16 48 env: MEMRA_NO_BATCHED=1
+/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=14ab5f8b365dbd71 ok
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm S2-nobatched-chunk32 total=9296 tails=16 48 env: MEMRA_NO_BATCHED=1 MEMRA_PRIME_CHUNK=32
+/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=14ab5f8b365dbd71 ok
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm S3-nobatched-t17 total=9297 tails=17 env: MEMRA_NO_BATCHED=1
+/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9297 tokens: logits_sha=e641952cac19e526
+  9280 + 17: logits_sha=e641952cac19e526 ok
+A4 CONTINUATION GATE: PASS
+exit=0

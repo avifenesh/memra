@@ -196,62 +196,69 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let sites = sites(&model);
-    let mut differing: Vec<Vec<String>> = vec![Vec::new(); widths.len()];
-    let mut checked = 0usize;
-    for site in &sites {
-        let in_f = site.w.in_features();
-        let out_f = site.w.out_features();
-        let host = activation(max_rows, in_f);
-        let x_ref = e.htod(&host[..reference * in_f])?;
-        let y_ref = e.dtoh(&e.matmul_prefill(site.w, &x_ref, reference)?)?;
-        let label = format!(
-            "layer {} {:<9} qtype={:<7} in_f={:<6} out_f={:<6}",
-            site.layer,
-            site.name,
-            qtype_name(site.w),
-            in_f,
-            out_f
-        );
-        for (wi, &m) in widths.iter().enumerate() {
-            let x_m = e.htod(&host[..m * in_f])?;
-            let y_m = e.dtoh(&e.matmul_prefill(site.w, &x_m, m)?)?;
-            let shared = m.min(reference);
-            let mut rows_differ = 0usize;
-            let mut maxabs = 0.0f32;
-            for r in 0..shared {
-                let a = &y_ref[r * out_f..(r + 1) * out_f];
-                let b = &y_m[r * out_f..(r + 1) * out_f];
-                if a.iter().zip(b).any(|(p, q)| p.to_bits() != q.to_bits()) {
-                    rows_differ += 1;
-                }
-                for (p, q) in a.iter().zip(b) {
-                    maxabs = maxabs.max((p - q).abs());
-                }
-            }
-            let verdict = if rows_differ == 0 { "same" } else { "DIFFERS" };
-            println!(
-                "{label} width {m:>3} vs {reference}: rows_differ={rows_differ}/{shared} maxabs={maxabs:.3e} \
-                 ref_sha={:016x} sha={:016x} {verdict}",
-                digest(&y_ref[..shared * out_f]),
-                digest(&y_m[..shared * out_f]),
+    // Two scopes per tensor. `prime` is what the prime layer walk runs (`prime_layers` arms
+    // `Engine::prefill_rows_scope`, memra#427); `bare` is the same call outside any scope, the
+    // decode/verify class a batched verify or the exact-16 decode tier would take at m = 16.
+    for scope in ["prime", "bare"] {
+        let mut differing: Vec<Vec<String>> = vec![Vec::new(); widths.len()];
+        let mut checked = 0usize;
+        for site in &sites {
+            let in_f = site.w.in_features();
+            let out_f = site.w.out_features();
+            let host = activation(max_rows, in_f);
+            let guard = (scope == "prime").then(|| e.prefill_rows_scope());
+            let x_ref = e.htod(&host[..reference * in_f])?;
+            let y_ref = e.dtoh(&e.matmul_prefill(site.w, &x_ref, reference)?)?;
+            let label = format!(
+                "scope={scope:<5} layer {} {:<9} qtype={:<7} in_f={:<6} out_f={:<6}",
+                site.layer,
+                site.name,
+                qtype_name(site.w),
+                in_f,
+                out_f
             );
-            if rows_differ != 0 {
-                differing[wi].push(format!("{}/{}", site.layer, site.name));
+            for (wi, &m) in widths.iter().enumerate() {
+                let x_m = e.htod(&host[..m * in_f])?;
+                let y_m = e.dtoh(&e.matmul_prefill(site.w, &x_m, m)?)?;
+                let shared = m.min(reference);
+                let mut rows_differ = 0usize;
+                let mut maxabs = 0.0f32;
+                for r in 0..shared {
+                    let a = &y_ref[r * out_f..(r + 1) * out_f];
+                    let b = &y_m[r * out_f..(r + 1) * out_f];
+                    if a.iter().zip(b).any(|(p, q)| p.to_bits() != q.to_bits()) {
+                        rows_differ += 1;
+                    }
+                    for (p, q) in a.iter().zip(b) {
+                        maxabs = maxabs.max((p - q).abs());
+                    }
+                }
+                let verdict = if rows_differ == 0 { "same" } else { "DIFFERS" };
+                println!(
+                    "{label} width {m:>3} vs {reference}: rows_differ={rows_differ}/{shared} maxabs={maxabs:.3e} \
+                 ref_sha={:016x} sha={:016x} {verdict}",
+                    digest(&y_ref[..shared * out_f]),
+                    digest(&y_m[..shared * out_f]),
+                );
+                if rows_differ != 0 {
+                    differing[wi].push(format!("{}/{}", site.layer, site.name));
+                }
             }
+            drop(guard);
+            checked += 1;
         }
-        checked += 1;
-    }
-    for (wi, &m) in widths.iter().enumerate() {
-        let names: std::collections::BTreeSet<&str> = differing[wi]
-            .iter()
-            .map(|s| s.split('/').nth(1).unwrap_or(s))
-            .collect();
-        println!(
-            "WIDTH WALK width {m} vs {reference}: {} of {checked} tensors differ; tensor names: {:?}; sites: {:?}",
-            differing[wi].len(),
-            names,
-            differing[wi]
-        );
+        for (wi, &m) in widths.iter().enumerate() {
+            let names: std::collections::BTreeSet<&str> = differing[wi]
+                .iter()
+                .map(|s| s.split('/').nth(1).unwrap_or(s))
+                .collect();
+            println!(
+                "WIDTH WALK scope={scope} width {m} vs {reference}: {} of {checked} tensors differ; tensor names: {:?}; sites: {:?}",
+                differing[wi].len(),
+                names,
+                differing[wi]
+            );
+        }
     }
     Ok(())
 }
