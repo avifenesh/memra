@@ -7,3 +7,61 @@ tree 554852bcf096096b17a4462183a9cc62e0c33c75 started 2026-09-21T22:47:54Z host 
    | skip-census: 335 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 14 binaries
    | portable-suites: PASS (tier, KV and onboarding CLI suites executed on CPU; skips 0 of budget 0; NOT GPU qualification)
 == test-server: cargo test -p memra-server --offline --no-fail-fast
+   rc=0 (167s)
+   |
+   | test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   |
+== clippy: env DOCS_RS=1 cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf -p memra-cli --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
+   rc=0 (34s)
+   |     Checking hyper-util v0.1.20
+   |     Checking axum v0.7.9
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 33.29s
+== check-flags: bash tools/check-flags.sh
+   rc=0 (1s)
+   | check-flags: runtime literal reads=866
+   | check-flags: no uncovered runtime names
+   | check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+== publish-census: bash tools/workspace-publish-census.sh
+   rc=0 (0s)
+   | publish-census: OK — 12 publishable members, 12 listed, order topological, unpublishable: memra-probe
+== docs-registry: bash tools/docs-registry-census.sh
+   rc=0 (0s)
+   | docs-registry-census: ROUTER.md lines=47 (cap 60)
+   | docs-registry-census: check-flags --list answered with 866 runtime names (coverage enforced by check-flags.sh itself)
+   | docs-registry-census: flags-table-census: docs/FLAGS.md tables=58 rows=914, every row matches its header
+== pytest-battery: python3 -m pytest -q crates/memra-tier/tests/battery/
+   rc=0 (18s)
+   | .................................................. [ 57%]
+   | .....................................                          [100%]
+   | 87 passed, 32 subtests passed in 17.88s
+== test-engine-cpu: cargo test -p memra-engine --lib --offline --no-fail-fast
+   rc=0 (24s)
+   |
+   | test result: ok. 526 passed; 0 failed; 25 ignored; 0 measured; 0 filtered out; finished in 9.13s
+   |
+== clippy-engine: cargo clippy -p memra-engine --offline --all-targets -- -D warnings
+   rc=0 (147s)
+   | warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   | warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 26s
+== conflict-markers: bash tools/check-conflict-markers.sh
+   rc=0 (0s)
+   | check-conflict-markers: OK (no conflict marker line in tracked source or docs)
+== workflow-keys: python3 tools/check-workflow-keys.py
+   rc=0 (0s)
+   | check-workflow-keys: .github/workflows/publish.yml: jobs publish
+   | check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+   | check-workflow-keys: OK: 5 workflow files, no duplicate mapping keys (stdlib walker)
+== replay-c20: python3 research/spill-c-20260919/day20-replay.py
+   rc=1 (1s)
+   |     before, after, words = sys.argv[1], sys.argv[2], sys.argv[3:]
+   |                            ~~~~~~~~^^^
+   | IndexError: list index out of range
+== perf-board: python3 tools/update-perf-board.py --check
+   rc=0 (0s)
+   | perf board is up to date
+== diff-check: git diff --check origin/main HEAD
+   rc=0 (0s)
+finished 2026-09-21T22:54:52Z
+== replay-c20 (lead rerun with the documented arguments): python3 research/spill-c-20260919/day20-replay.py <before_ev> <after_ev> 4763 9527 19055 38109 76217
+   rc=0

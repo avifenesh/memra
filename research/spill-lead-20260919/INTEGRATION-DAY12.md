@@ -1072,6 +1072,12 @@ before-side `[dflash-oracle]` digest existed for the standalone path (today's ar
 card (device-independent bookkeeping). memra#365 comment posted; the issue's serving 128k and 262k cells stay with
 #370 and #377; the issue stays open for those.
 
+Battery (`integration-day12/integ28-cpu-battery/`, CPUQuota 1200 percent): fmt, portable suites, memra-server suite,
+clippy, censuses, collector pytest, engine CPU lib tests, engine clippy `-D warnings`, marker census, workflow keys,
+perf board, diff-check: rc=0; C's replay first ran without its arguments (rc=1, my invocation), then with the
+documented before and after evidence dirs and the five rung word counts: `DAY20 REPLAY tapladder20b: PASS (9 checks)
+-> identity; bounded`. Local 5090 `tools/serve-smoke.sh`: `serve-smoke: 0 failed`.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
