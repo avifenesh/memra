@@ -1,0 +1,30 @@
+tree b2d995870b8e4a3be2a738fd28b2fa024f9b1548 started 2026-09-21T16:41:13Z host avifenesh rustc rustc 1.97.1 (8bab26f4f 2026-07-14)
+== fmt: cargo fmt --all -- --check
+   rc=0 (3s)
+== portable-suites: bash tools/portable-suites.sh
+   rc=0 (21s)
+== test-server: cargo test -p memra-server --offline --no-fail-fast
+   rc=0 (169s)
+== check-flags: bash tools/check-flags.sh
+   rc=0 (2s)
+== publish-census: bash tools/workspace-publish-census.sh
+   rc=0 (0s)
+== docs-registry: bash tools/docs-registry-census.sh
+   rc=0 (0s)
+== workflow-keys: python3 tools/check-workflow-keys.py
+   rc=0 (0s)
+== ci-change-class: bash tools/test_ci_change_class.sh
+   rc=0 (1s)
+== boundary: python3 tools/check-public-boundary.py check
+   rc=0 (51s)
+== pytest-battery: python3 -m pytest -q crates/memra-tier/tests/battery/
+   rc=0 (19s)
+== cpu-prefetch-586: bash tools/test_cpu_expert_prefetch.sh research/spill-lead-20260919/integration-day12/integ23-cpu-battery/cpu-prefetch-586-logs
+   rc=0 (3s)
+== arena-replay-c17: python3 research/spill-c-20260919/arena-pair.py
+   rc=0 (0s)
+== perf-board: python3 tools/update-perf-board.py --check
+   rc=0 (0s)
+== diff-check: git diff --check origin/main HEAD
+   rc=0 (0s)
+finished 2026-09-21T16:45:42Z
