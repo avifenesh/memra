@@ -87,3 +87,112 @@ pair, deterministically; predicted secondary, return cached slru 0, lru 1,700; l
 0 in both arms; refusals 0; digests 28/28. Day 15 is the reference for what a deviation would mean: a
 different token count with the same three mechanisms is a fit difference to record; a pair where lru is not
 better is a disagreement to stop on and report.
+
+## Result: the smoke cell on the local RTX 5090, verbatim, and why the day stopped there
+
+Binary `4a55ad8e656b15b5a5c3c47977551052b56d1f3fec86681d47ff607871536721` built from `9466b8912` in the
+detached worktree (`build-tip/`, `dirty.txt` empty, 2 min 57 s with the rig's sccache), artifact
+`Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`, NVIDIA GeForce RTX 5090 Laptop GPU (24,463 MiB, driver 595.84,
+`power.limit` `[N/A]`, `power.max_limit` 175 W), through `tools/tier-battery.py --rig rtx5090` with the canonical
+`/tmp/memra-5090.lock` inherited by the harness (proof in `ab-smoke/lock.json` and `ab-smoke/cell/LOCK.json`, same
+device and inode), the lock free on the first attempt. One pair per order, four runs plus the cache-off boot, 28
+requests each, 386.7 s, 1,525 telemetry samples at 250 ms (temperature 54 to 88 C over the cell, peak draw
+192.3 W, peak `memory.used` 23,033 MiB of 24,463; the first and last samples read 15 MiB, so the card was alone for the
+whole cell and every byte above that is this cell's own), collector status `failed`, exit 1:
+
+```text
+PREFIX-POLICY-AB: budget_bytes=1073741824 cohort_tenants=4 cohort_bytes=793870336 turns=12 start_tokens=11000 grow=150 return_every=3 pairs_per_order=1 runs=4 requests_per_run=28 digests_identical=26/28 computed_tokens slru_median=31700 lru_median=29550 (N=2 each) pairs_slru_better=0/2 pairs_lru_better=2/2 ties=0/2 return_cached slru_median=0 lru_median=1700 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=69.0..75.0 power_limit_w=None -> DIGEST-FAIL
+```
+
+The shape gates held from this card's own `insert` lines (fit 29,700 B/token + 156,895,000 B; cohort 793,870,336 B
+= 73.9 %, turn 1 45.0 %, turn 12 49.6 % of the budget, every gate true), exactly the pre-registered shares.
+
+Per pair (computed tokens, lower is better; N=2 runs per arm, a smoke, no verdict by design):
+
+| pair | order | slru computed | lru computed | slru - lru | better | slru return cached | lru return cached | slru loop cold | lru loop cold | slru ttft loop p50/p95 ms | lru ttft loop p50/p95 ms | slru temp C | lru temp C |
+| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |
+| AB-0 | AB | 31700 | 29550 | 2150 | lru | 0 | 1700 | 0 | 0 | 191.16/280.406 | 184.097/187.013 | 74.0->71.0 | 71.0->69.0 |
+| BA-0 | BA | 31700 | 29550 | 2150 | lru | 0 | 1700 | 0 | 0 | 188.215/285.607 | 193.092/197.588 | 75.0->73.0 | 69.0->75.0 |
+
+### What agreed with the target card
+
+The byte arithmetic. Every run's primary and secondary landed on the pre-registered prediction to the token:
+slru 31,700 and lru 29,550 computed tokens (lru better by 2,150 at both pairs), cohort returns cached 0 under slru
+and 1,700 under lru, loop cold turns after turn 1 = 0 in both arms, no refusal line. The per-request rows
+(`ab-smoke/cell/REQUESTS.md`) line up with day 15's table row for row: the return publications evict the loop's
+newest entry under SLRU (`evict 11300 (Probation)`, `11750`, `12200`, `12650`) and the hit entry under LRU
+(`evict 11150 (Protected)`, `11600`, `12050`, `12500`), so the post-return turns compute 300 under SLRU and 150
+under LRU (rows 12, 16, 20); after the loop SLRU evicts the fresh cohort-4 entry (row 25, `evict 1700
+(Probation)`) and cohort-4's final is cold (row 27, 1,850 computed) while LRU evicts the dead `12650` and serves the
+final from cache (`hit 1700`, 150 computed). `day16-predict.py`'s 28-row table matches every run's `cached_tokens`
+on all 28 requests. Those are the day-15 mechanisms 2 and 3, made by the policy under test, on the second card.
+
+### What did not: the precondition, and a confound
+
+1. **Digest identity failed, 26/28.** The two slru runs differ from the cache-off boot at request 14 (loop
+   turn 6, prompt 11,750 = 11,600 restored + 150 prefilled): run digest `70efa8d085a5531a`, cold `24a97a2867768b2d`,
+   8 tokens and `finish_reason: length` on both sides. The two lru runs differ at request 20 (loop turn 10, prompt
+   12,350 = 12,200 restored + 150): run `22f023976ebc22fd` (8 tokens, `length`), cold `4415b7e361fc6f6b` (3
+   tokens, `stop`). Deterministic per arm: runs 1 and 4 agree with each other, runs 2 and 3 agree with each other,
+   so identity ACROSS runs held and identity against the cold boot did not, at one restored-suffix request per
+   lineage (the two arms restore different chains after turn 4, so the near-tie that flips sits at a different
+   turn in each). The target card held 28/28 across 20 runs and the cache-off boot on day 15, and 8/8 on day
+   14's twin gate. By the pre-registered rule a mismatch is a FAIL of the day, not a data point, so this card
+   produced `-> DIGEST-FAIL` and no verdict. Not diagnosed here; two candidates, neither established: the
+   restored-prefix-plus-suffix prefill and the cold monolithic prefill are different programs (the
+   `splitiso-20260813` class) and are not bit-identical on this card's kernel arms, so a KV lineage of restores
+   drifts in its low bits until a greedy near-tie flips; or the VRAM-pressure path below changes a workspace
+   geometry on this card. Day 14's twin gate (V3, restored == cold on every turn) has never run on the 5090 and
+   is the direct probe.
+2. **The admission reclaim ladder evicted prefix entries in every run, in both arms.** The card cannot hold the
+   model (about 19 GB with the CUDA context and workspaces, read from the target card's own settled `/metrics`),
+   the 1024 MiB budget, the 2.1 GB prefill workspace an 11k-token prompt is charged, the parked plain sessions and
+   the admission floor (`[admit-trim] ... floor_bytes=2147483648`) at once. So at every loop turn from 2 to 12 the
+   server's `[admit-oom] reclaim-on-defer: evicted N prefix entries + M plain ... parked sessions (global LRU)`
+   ran BEFORE the prefill, 11 events and 12 prefix entries per run (2 at turn 2, the cohort's `1450` and
+   `1550`; then one per loop turn), the same in both arms, and `reclaim spared the prompt's prefix entry` each
+   time. The policy's own `[prefix-cache] evict` lines fell to 9 (slru) and 7 (lru) per run against the target
+   card's 21 and 19; the loop-turn evictions on this card were the reclaim's, not the policy's. The target card
+   logged zero `[admit-oom]` and zero `[admit-trim]` lines in the whole 20-run cell. The reclaim takes the global
+   oldest unleased entry, which at every loop turn coincided with the entry each policy would have taken next,
+   which is why the primary still matched the prediction to the token; but the receipts cannot prove a choice the
+   policy never had to make. The return and final publications, where the two arms differ and the day-15
+   reading lives, were the policy's own decisions (their evict lines are in the rows above).
+
+The shape cannot be replayed on this card without the confound: four cohort entries cost 4 x 157 MB = 628 MB
+fixed before a single token, so the 80 % protected share needs a budget of at least 785 MB and the loop's two
+consecutive entries beside it need the 1024 MiB used here, while the card's free VRAM after the model, the
+prefill workspace and the 2 GiB admission floor is under 1 GB. The harness pins `MEMRA_MAX_SESSIONS=4` and the
+parked-session count; changing it means changing the harness, which this day does not do.
+
+### Stopped here, by the brief
+
+The brief: "if the 5090 disagrees, stop and report, the lead decides." The disagreement is on the precondition,
+and the 20-run cell (`ab-full`) would end in the same `DIGEST-FAIL` by the same rule with the same confound, so it
+was NOT run; no GPU time went into a cell whose verdict rule was already failed. Prediction, mechanism rows and
+the failing precondition are all in the smoke receipts, replayed offline by `verify-day16.py`.
+
+## Checks actually run
+
+| Check | Result |
+| --- | --- |
+| Native release build, detached worktree at `9466b8912`, own target dir, CPU quota (`build-tip/`) | exit 0, `dirty.txt` empty |
+| `tools/prefix-policy-ab.py --pairs 1` through the collector, `--rig rtx5090`, inherited canonical lock (`ab-smoke/`) | `-> DIGEST-FAIL`, exit 1, collector `failed`; 4/4 runs on the predicted primary; digests 26/28 |
+| `research/spill-b-20260919/verify-day16.py` (offline replay of the smoke receipts) | `DAY16 REPLAY OK` (receipts consistent; precondition FAILED re-derived; prediction matched 28/28 rows in every run; 12 reclaim evictions per run counted from the server logs) |
+| `day16-predict.py --day15` (the corrected model against day 15's measured runs) | slru 132,300, lru 122,700, evictions 21/19, return cached 0/8,700: exact |
+| `cargo fmt --all -- --check`, `bash tools/docs-registry-census.sh`, `git diff --check` (lane tree, CPU quota) | see the commit log line and STATE.md |
+| `tools/tier-battery.py --validate` on the smoke | NOT RUN: the collector already labels the capture `failed`; `--validate` asserts `executed-not-qualified` captures, and there is nothing to qualify here |
+| The 20-run cell (`ab-full`) | NOT RUN (precondition failed on the smoke; the brief says stop and report) |
+| Full GPU exactness battery | NOT RUN (no code change; the digest finding above is the one to chase, on its own lane) |
+
+## Boundaries and record
+
+- Every GPU command on this card went through `tools/tier-battery.py --rig rtx5090` with the canonical
+  `/tmp/memra-5090.lock` (inherited FD, proof in `lock.json` and `cell/LOCK.json`); no third lock name; no bare
+  GPU run; no `--no-verify`; no skip variable; no other lane's worktree touched, `main` untouched; nothing of
+  V4.1; no external dependency; no captured, restored or served byte changed; the harness and the SLRU arm were
+  used from the detached worktree only and never returned to the lane. Build and cell under
+  `systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=28G`.
+- The detached worktree and its target dir were removed when the day closed; the binary's SHA-256 and source ref
+  are in `build-tip/`.
+- No timing is compared with the target card. The TTFT columns are this card's own record of its own runs.

@@ -106,3 +106,23 @@ no self-eviction instead of a protected eviction.
 - Live telemetry of `prefix_cache_hits` / `cached_tokens` on production shapes with small entries,
   where the `slrucache-20260813` result would show if it mattered; a new receipt on a real shape is
   what would bring segmentation back.
+
+## Confirmation on the second card class (2026-09-21, day 16)
+
+The follow-up cell on the local RTX 5090 Laptop GPU (24,463 MiB) did not confirm the verdict, and it did not
+contradict it either: it failed the precondition. The same harness and two-arm binary from `9466b891`, the
+shape scaled to the 1024 MiB budget that card allows with the byte shares preserved (cohort 73.9 %, loop
+entries 45.0 to 49.6 %, 150 ids per turn), one pair per order as the smoke before the 20-run cell, verbatim:
+`PREFIX-POLICY-AB: budget_bytes=1073741824 cohort_tenants=4 cohort_bytes=793870336 turns=12 start_tokens=11000
+grow=150 return_every=3 pairs_per_order=1 runs=4 requests_per_run=28 digests_identical=26/28 computed_tokens
+slru_median=31700 lru_median=29550 (N=2 each) pairs_slru_better=0/2 pairs_lru_better=2/2 ties=0/2 return_cached
+slru_median=0 lru_median=1700 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=69.0..75.0
+power_limit_w=None -> DIGEST-FAIL` (N=2 runs per arm, one lock hold, 54 to 88 C over the cell, no power limit
+reported by nvidia-smi on that laptop part). The byte arithmetic reproduced the target card's mechanism to the
+token in all four runs (lru better by 2,150 at both pairs, the post-return turns and the last tenant's final
+exactly as above), but one restored-suffix request per arm lineage produced different bytes from the cache-off
+boot (deterministic across runs), and the admission reclaim ladder evicted 12 prefix entries per run under VRAM
+pressure in both arms, which the target card never did. By the pre-registered rule a digest mismatch is a FAIL
+of the day, so the 5090 produced no verdict and the 20-run cell was not run. The decision above stands on the
+target card's receipts; the 5090 finding (restored versus cold identity on that card) is its own follow-up.
+Record: `research/spill-b-20260919/DAY16.md`, receipts `rtx5090-day16/`, replay `verify-day16.py`.
