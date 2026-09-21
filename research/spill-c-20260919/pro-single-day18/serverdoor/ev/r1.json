@@ -1,0 +1,29 @@
+{
+ "object": "text_completion",
+ "model": "gate",
+ "choices": [
+  {
+   "index": 0,
+   "text": "\n\n<think>\n\n</think>\n\nRed, Blue, Yellow<|endoftext|><|im_start|>add\n\n<|im_start|>",
+   "finish_reason": "stop"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 8,
+  "completion_tokens": 16,
+  "total_tokens": 24,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 0.142890293,
+  "spec": {
+   "rounds": 8,
+   "drafted": 24,
+   "accepted": 7,
+   "acceptance_rate": 0.2916666666666667
+  }
+ },
+ "id": "cmpl-0261a3fb8677bae928d895f14fc67d0e",
+ "created": 1790019486,
+ "system_fingerprint": "memra-0.138.0-62f61e5a8145"
+}

@@ -1,0 +1,71 @@
+Running as unit: c18cpu-1790018218.scope; invocation ID: f931355028c04d44bd44e99189c764c6
+cpu proofs start 2026-09-21T19:16:58Z tree e16bc69e8d345501d68ef94c61c0a112cfe6572a
+   Compiling version_check v0.9.5
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling typenum v1.20.1
+   Compiling quote v1.0.46
+   Compiling serde_core v1.0.228
+   Compiling zmij v1.0.21
+   Compiling serde v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling itoa v1.0.18
+   Compiling generic-array v0.14.7
+   Compiling cpufeatures v0.2.17
+   Compiling memchr v2.8.2
+   Compiling cfg-if v1.0.4
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling digest v0.10.7
+   Compiling syn v2.0.118
+   Compiling sha2 v0.10.9
+   Compiling serde_derive v1.0.228
+   Compiling memra-tier v0.138.0 (/home/avifenesh/projects/wt-spill-c/crates/memra-tier)
+    Finished `release` profile [optimized] target(s) in 12.31s
+     Running tests/bank/main.rs (target-cpu/release/deps/bank-8487ed0f0f3c4912)
+
+running 4 tests
+test owner_proxy::dropping_owner_invalidates_proxy_without_auto_finishing_open_dma ... ok
+test owner_proxy::token_identity_names_the_fixture_lease ... ok
+test owner_proxy::proxy_bounds_pending_and_preserves_failed_finish_and_foreign_tokens ... ok
+test owner_proxy::proxy_and_token_are_send_sync_but_staging_is_owner_only ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 58 filtered out; finished in 0.00s
+
+memra-tier owner_proxy rc=0
+   Compiling memra-tier v0.138.0 (/home/avifenesh/projects/wt-spill-c/crates/memra-tier)
+    Finished `release` profile [optimized] target(s) in 1.72s
+     Running unittests src/lib.rs (target-cpu/release/deps/memra_tier-458513554ce0ed35)
+
+running 5 tests
+test bank::owner_proxy::tests::a_lease_for_another_record_is_refused_before_a_token_exists_and_retired ... ok
+test bank::owner_proxy::tests::a_forged_token_with_the_right_numbers_and_the_wrong_identity_is_foreign ... ok
+test bank::owner_proxy::tests::a_lease_whose_record_has_no_dispatch_id_is_refused_and_retired ... ok
+test bank::owner_proxy::tests::dispatch_id_is_the_native_key_and_refuses_what_it_cannot_name ... ok
+test bank::owner_proxy::tests::token_carries_the_identity_the_registry_holds_for_its_lease ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+memra-tier lib owner_proxy rc=0
+   Compiling libc v0.2.186
+   Compiling memmap2 v0.9.11
+   Compiling memra-gguf v0.138.0 (/home/avifenesh/projects/wt-spill-c/crates/memra-gguf)
+    Finished `release` profile [optimized] target(s) in 9.03s
+     Running unittests src/lib.rs (target-cpu/release/deps/memra_gguf-d359464918b1b411)
+
+running 10 tests
+test expert_banks::tests::a_contract_with_two_entries_for_one_bank_is_ambiguous ... ok
+test expert_banks::tests::a_contract_without_the_bank_entry_is_refused ... ok
+test expert_banks::tests::a_duplicated_expert_tensor_is_ambiguous ... ok
+test expert_banks::tests::a_non_gguf_contract_is_refused ... ok
+test expert_banks::tests::a_missing_expert_tensor_is_the_contract_missing_verdict ... ok
+test expert_banks::tests::a_shape_incompatible_expert_tensor_is_refused ... ok
+test expert_banks::tests::errors_read_as_one_sentence ... ok
+test expert_banks::tests::plan_derived_catalog_matches_the_literal_day10_spelling ... ok
+test expert_banks::tests::a_scale_plane_on_a_bank_is_refused_by_name ... ok
+test expert_banks::tests::a_dense_plan_has_no_expert_projections ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 282 filtered out; finished in 0.00s
+
+memra-gguf expert_banks rc=0
+cpu proofs done 2026-09-21T19:17:21Z

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Day 23 copy of the day-22/21 runner for the MERGED tree (origin/main 653c997f4, #614 small_m_tier_max; the lane's prefill_rows scope removed): same cell, same arms, receipts under rtx5090-day23/.
+# Day 22 memra#427 cell F2, local RTX 5090: the continuation table on the FIX binary (prefill-rows scope; the gate now
+# counts a differing 16-row split as a failure). Day-21 table plus the chunk arms; predictions in DAY22.md section 1.4.
+# Pass/fail digests, not timed. Bounded lock retries, never kills a holder.
+# usage: run-day22-fixgate.sh <cell-name> <collector-timeout-s>
+set -uo pipefail
+cell=${1:?cell}; tmo=${2:?timeout}
+WT=${WT:-$HOME/projects/wt-spill-b}
+R=${R:-$WT/research/spill-b-20260919/rtx5090-day23}
+GATE=${GATE:-$WT/target/release/qwen-a4-continuation-gate}
+MODEL=${MODEL:-/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf}
+PROMPT=${PROMPT:-$WT/docs/SERVING.md}
+run() { systemd-run --user --scope -q -p CPUQuota=1200% -p MemoryMax=28G "$@"; }
+cd "$WT" || exit 1
+mkdir -p "$R"
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$R/$cell-compute-apps-before.csv"
+body='set -uo pipefail; G="$1"; M="$2"; P="$3"; O="$4"; mkdir -p "$O"
+arm() { name="$1"; shift; total="$1"; shift; tails="$1"; shift
+  echo "== arm $name total=$total tails=$tails env: $*"
+  env MEMRA_PRIME_ROW_RECEIPT=1 "$@" "$G" "$M" "$P" "$total" $tails > "$O/arm-$name.log" 2>&1
+  echo "exit=$?" >> "$O/arm-$name.log"; grep -v "^\[prime-row\]" "$O/arm-$name.log"; }
+arm F-9296 9296 "16 48 80 112 144 176 208"
+arm F-9297 9297 "17 49"
+arm F-9311 9311 "31 63"
+arm F-9312 9312 "32 64 96"
+arm F-9296-chunk32 9296 "16 48" MEMRA_PRIME_CHUNK=32
+arm F-9296-chunk16 9296 "16 48" MEMRA_PRIME_CHUNK=16
+arm F-9296-nobatched 9296 "16 48" MEMRA_NO_BATCHED=1'
+for attempt in 0 1 2 3 4 5; do
+  out=$R/$cell
+  [ $attempt -gt 0 ] && out=$R/$cell-retry$attempt
+  run python3 tools/tier-battery.py --rig rtx5090 --timeout "$tmo" --out "$out" \
+    --execute bash -c "$body" fixgate "$GATE" "$MODEL" "$PROMPT" "$out/cell" > "$out-driver.log" 2>&1
+  rc=$?
+  echo $rc > "$out.exit"
+  [ -d "$out" ] && { git rev-parse HEAD > "$out/gate-source.txt"; sha256sum "$GATE" "$MODEL" > "$out/binary.sha256"; sha256sum "$PROMPT" > "$out/prompt.sha256"; }
+  nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$R/$cell-compute-apps-after.csv"
+  if grep -q "canonical rig lock\|BlockingIOError\|Resource temporarily unavailable" "$out-driver.log" && [ ! -d "$out/cell" ]; then
+    echo "attempt $attempt: lock busy at $(date -u +%T), sleeping 90s" >> "$R/$cell-retries.log"
+    sleep 90
+    continue
+  fi
+  exit $rc
+done
+exit 3
