@@ -37,6 +37,7 @@
 //!     question `/health` asks ("should this process be RESTARTED?") and wrong for any
 //!     per-request SLO, which admission and the first-token deadline own instead.
 
+use std::cell::RefCell;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
@@ -89,6 +90,115 @@ pub fn snapshot() -> Option<Progress> {
         events: EVENTS.load(Ordering::Relaxed),
         age_ms: now_ms().saturating_sub(last),
     })
+}
+
+// ---------------------------------------------------------------------------------------------
+// PRIME CANCELLATION POINT (memra#536 item 2, lane/spill-a-20260919 day 16).
+//
+// THE DEFECT. The worker's only cancellation point for a prime is the tick-top disconnect sweep
+// (`worker.rs` "DISCONNECT ABORT"), which runs once per `prefill_tick` call: a disconnected client's
+// prompt is primed to the end of the CURRENT take (1024 tokens; 8192 for a sole fresh request; the
+// whole prompt for the monolithic class) before the sweep can retire it. Inside the engine call the
+// chunk walks below already stop at every internal chunk boundary to stamp the odometer above, so
+// that boundary is where a cancellation check costs nothing and leaves the cache at a completed
+// chunk. The 2026-09-05 incident (329 `[abort] client disconnected while queued` lines behind one
+// prime) is the class.
+//
+// THE SEAM, and why it is a thread-local rather than a parameter. The engine knows no HTTP channel;
+// the worker installs a predicate ("is this session's client gone?") for the duration of ONE prime
+// call through `PrimeCancelScope`, on the thread that runs the walk. Every walk asks the same one
+// function at its chunk boundary; with no scope installed (the CLI, the gates, every test) the check
+// is one thread-local read that answers "not cancelled", so those callers are byte-identical. The
+// scope is a guard: it restores the previous predicate on drop, on the `?` paths too.
+//
+// ONE NUMERIC PROGRAM. The check never changes a chunk schedule: it either lets the walk continue
+// exactly as before or returns `PrimeCancelled` AFTER a chunk completed and BEFORE the next starts.
+// A request that is not cancelled produces the same bytes (the hit gate and the continuation gate are
+// the proof; `tools/prime-cancel-gate.sh` compares the cold and warm digests of the next request
+// against a run without the disconnect). A cancelled prime never returns logits, so its caller can
+// publish nothing from it; the worker retires the session as aborted (no park, the cache returns to
+// the pool at drop) and the capture sites, which run only after an `Ok` prime, are never reached.
+//
+// WHERE THE CHECK IS AND IS NOT (stated, not implied). It sits in the three sequential walks: the
+// serial chunk walk (`prime_cache_overlaid_inner`), the GEMM chunk loop (`step35_prime_cache_batch`
+// per chunk) and the single-engine hyper range walk. It is NOT in the pipelined walks (the PP-2 split
+// primes with a `next_slot` in flight, the ppN wave walk): returning at a wave boundary there would
+// leave another stage's work in flight against a cache the caller is about to drop, which is a
+// wider seam (a drain plus the tainted-cache contract) than one check per chunk; those walks keep the
+// tick-top sweep as their cancellation point. `prime_cache_batch` (one call for SEVERAL sessions) has
+// no per-session cancel either: one member's disconnect cannot stop a wave that is priming its peers.
+// ---------------------------------------------------------------------------------------------
+
+thread_local! {
+    static PRIME_CANCEL: RefCell<Option<Box<dyn Fn() -> bool>>> = const { RefCell::new(None) };
+}
+
+/// Installs a "cancelled?" predicate for the prime calls made on this thread while the guard lives.
+/// Nested scopes restore the outer predicate on drop.
+pub struct PrimeCancelScope {
+    prev: Option<Box<dyn Fn() -> bool>>,
+}
+
+impl PrimeCancelScope {
+    pub fn install(cancelled: Box<dyn Fn() -> bool>) -> Self {
+        let prev = PRIME_CANCEL.with(|c| c.borrow_mut().replace(cancelled));
+        Self { prev }
+    }
+}
+
+impl Drop for PrimeCancelScope {
+    fn drop(&mut self) {
+        let prev = self.prev.take();
+        PRIME_CANCEL.with(|c| *c.borrow_mut() = prev);
+    }
+}
+
+/// The typed outcome of a cancelled prime: which chunk boundary stopped it and how many rows of
+/// the call's take were primed (and are now in the cache the caller owns and will drop).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrimeCancelled {
+    /// index (from 0) of the chunk that completed just before the check fired
+    pub chunk: usize,
+    /// rows of this call primed before the stop
+    pub rows_done: usize,
+    /// rows this call was asked to prime
+    pub rows_total: usize,
+}
+
+impl std::fmt::Display for PrimeCancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "prime cancelled at chunk {} after {} of {} rows (client gone)",
+            self.chunk, self.rows_done, self.rows_total
+        )
+    }
+}
+
+impl std::error::Error for PrimeCancelled {}
+
+/// The chunk-boundary check. Called by a walk right after a chunk completed (the odometer stamp) and
+/// only when more chunks remain (`rows_done < rows_total`): a finished prime is never "cancelled",
+/// its logits return and the worker's sweep retires the session. Answers `Ok(())` with no scope
+/// installed or while the predicate says the client is still there.
+pub fn prime_cancel_point(
+    chunk: usize,
+    rows_done: usize,
+    rows_total: usize,
+) -> Result<(), PrimeCancelled> {
+    if rows_done >= rows_total {
+        return Ok(());
+    }
+    let cancelled = PRIME_CANCEL.with(|c| c.borrow().as_ref().is_some_and(|pred| pred()));
+    if cancelled {
+        Err(PrimeCancelled {
+            chunk,
+            rows_done,
+            rows_total,
+        })
+    } else {
+        Ok(())
+    }
 }
 
 /// The odometer's observable state.
@@ -150,6 +260,63 @@ mod tests {
                 "the shim for {entry} is gone: its entry is stamping nothing"
             );
         }
+    }
+
+    /// The cancellation point answers "not cancelled" with no scope, fires only while a scope says
+    /// so, never fires at the last chunk, and the guard restores the outer predicate on drop.
+    #[test]
+    fn prime_cancel_point_fires_only_under_an_installed_scope_and_never_at_the_end() {
+        assert_eq!(prime_cancel_point(0, 256, 1024), Ok(()));
+        {
+            let _scope = PrimeCancelScope::install(Box::new(|| true));
+            assert_eq!(
+                prime_cancel_point(2, 768, 1024),
+                Err(PrimeCancelled {
+                    chunk: 2,
+                    rows_done: 768,
+                    rows_total: 1024
+                })
+            );
+            // a completed take is never cancelled: its logits return
+            assert_eq!(prime_cancel_point(3, 1024, 1024), Ok(()));
+            {
+                let _inner = PrimeCancelScope::install(Box::new(|| false));
+                assert_eq!(prime_cancel_point(0, 1, 2), Ok(()));
+            }
+            // the inner guard restored the outer predicate
+            assert!(prime_cancel_point(0, 1, 2).is_err());
+        }
+        assert_eq!(prime_cancel_point(0, 1, 2), Ok(()));
+        let e: Box<dyn std::error::Error> = Box::new(PrimeCancelled {
+            chunk: 1,
+            rows_done: 512,
+            rows_total: 4096,
+        });
+        assert!(e.downcast_ref::<PrimeCancelled>().is_some());
+        assert_eq!(
+            e.to_string(),
+            "prime cancelled at chunk 1 after 512 of 4096 rows (client gone)"
+        );
+    }
+
+    /// WIRING GATE for the cancellation point, the odometer gate's twin: the three sequential walks
+    /// must ask `prime_cancel_point` at their chunk boundary, in comment-stripped source. Bound from
+    /// below (walks get added); the pipelined walks are deliberately absent (see the module note).
+    #[test]
+    fn the_sequential_prime_walks_ask_the_cancellation_point() {
+        let src = include_str!("hybrid_forward.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.trim_start())
+            .filter(|l| !l.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let calls = code.matches("crate::progress::prime_cancel_point(").count();
+        assert!(
+            calls >= 3,
+            "the sequential prime walks must ask the cancellation point at their chunk boundary \
+             (memra#536); found {calls} live call sites in hybrid_forward.rs"
+        );
     }
 
     /// The never-advanced state is DISTINCT from a zero age. Asserted because the whole point

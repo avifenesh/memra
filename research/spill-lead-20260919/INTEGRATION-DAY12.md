@@ -921,6 +921,48 @@ board, diff-check, then the marker census and its teeth, workflow keys, em-dash 
 `tools/serve-smoke.sh` (`integ25-serve-smoke-5090/`): `serve-smoke: 0 failed` (gemma4 and Q35 arms SKIP, models absent
 on this rig; a lane's continuation-gate process shared the card during the window, recorded in `window.txt`).
 
+## integ26 (`lane/spill-integ26-20260921`): A day 16, memra#536 census, stall cell, prime cancellation point
+Lane tip merged: A `a71bd8db9` on main `e2e9e294a` (#616). INDEX.md conflicted because A had inherited #614's stray
+marker: A's day-16 row kept, the marker dropped, every row of both parents present, the census clean. Engine source:
+`crates/memra-engine/src/progress.rs` (`PrimeCancelScope`, a thread-local predicate installed for one prime call and
+restored on drop; typed `PrimeCancelled { chunk, rows_done, rows_total }`; `prime_cancel_point` answering `Ok` with no
+scope or at the last chunk), `hybrid_forward.rs` (the check at the chunk boundary of the three sequential walks: the
+serial chunk walk, the GEMM chunk loop of `step35_prime_cache_batch`, the single-engine hyper range walk; the
+pipelined PP walks and `prime_cache_batch` keep the tick-top sweep, stated in the module note), `memra-server
+worker.rs` (the scope installed around the one prime call with `EventSender::is_closed` as the predicate;
+`prime_cancelled_abort` downcasts the typed error, prints one `[prime] cancelled at chunk ...` receipt line and
+retires the session as aborted: no park, no publish, the half-primed cache returns to the pool; `abort_log` gains
+`fed`), `tools/prime-cancel-gate.sh`. No flag, no new `MEMRA_*` read, no numeric change: the check either lets the walk
+continue exactly as before or returns after a completed chunk and before the next; a cancelled prime returns no logits,
+so the capture sites (after an `Ok` prime only) are never reached.
+
+**Census** (`OWNER-THREAD-CENSUS.md`): every class (prime, decode, D2D capture, D2D restore, D2H demote, H2D promote,
+trim) runs on the one worker thread inside the tick. Prime: one `prefill_tick` per tick (1024 rows; 8192 for a sole
+fresh request; the whole prompt for the monolithic class), per-internal-chunk D2H of logits, cancellation only at the
+tick-top sweep (before today). Demote OFF: host-blocking synchronize per plane. Promote OFF: no host wait, owner
+stream. Under the host-contracts door `CudaTransfers::new(owner, ..)` keeps the worker's owner stream as its only stream
+and pins the thread; both routes `synchronize(&ticket)` plus owner drain before `retire`: the door moved ownership and
+receipts, not the copy. Trim: two synchronizes, evictions and device trim in one `TrimPools` call.
+
+**Stall cell** (one RTX PRO 6000 Blackwell at 600 W, `MEMRA_SERVE_SPEC=0`, N=5 per arm per order, both orders, replays
+PASS, zero errors), verbatim fragments: `stall-prime ... idle_p50=13.5 idle_p99=14.9 ... arm_p99=295.7 arm_max=315.9
+stall_median=301.5 stall_min=285.6 stall_max=302.5` (a 5122-token prime beside a decoding tenant: five stretched ticks
+of 286 to 316 ms per run, one per 1024-row chunk); `stall-demote-off ... arm_p99=87.6 arm_max=132.0 stall_median=117.5`
+(server demote 37 to 43 ms inside a 131 ms tick); `stall-demote-on ... arm_max=207.6 stall_median=193.5` (113 to 118 ms
+inside a 207 ms tick); `stall-promote-off ... arm_max=133.6 stall_median=85.0`; `stall-promote-on ... arm_max=211.2
+stall_median=162.8`. Unattributed and stated: a second 88 ms tick per demote intruder, present without a demote too.
+
+**Cancellation gate**, verbatim: target card `[prime] cancelled at chunk 2 (768 of 7488 rows of this take primed; fed 0,
+queued 20, prompt 7508, model "gate")` and `PRIME-CANCEL GATE: PASS (disconnect_ms=300 words=6000
+cold=f243df4517b99525 warm=f243df4517b99525)`; local 5090 (Qwen3.5-9B) cancel at chunk 4 (1280 of 7488 rows),
+`PRIME-CANCEL GATE: PASS`. One program on the changed binary, both cards: `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`
+(61 ok) and `A4 CONTINUATION GATE: PASS`. Two false starts A kept as records: the hit gate has no `--external-lock`
+arm, and its stop matches the server by the name `memra-server`, so a renamed binary left A's own server on the port on
+both rigs (stopped by pid; reruns used the canonical name). Design note `OWNER-THREAD-OFFLOAD.md`: Move 1 (the door's
+D2H and H2D on a second stream, tick-top polls, `Demoting`/`promoting` states, about 2 agent-days) and Move 2 (a D2D
+contract, about 4 agent-days after Move 1), each with its decision cells; nothing started. #536 comment posted, issue
+open.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
