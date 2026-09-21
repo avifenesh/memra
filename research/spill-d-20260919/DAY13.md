@@ -199,7 +199,94 @@ files `crates/memra-engine/src/bin/run_lockstep.rs` and `crates/memra-engine/src
 hook arm passed (perf board, flags census 866 reads, releasability censuses, docs-registry census).
 No `--no-verify`, no skip variable: the lane stays local and the lead pushes.
 
+## Addendum: PR #592 (integ12) review, two findings fixed on the lane
+
+Both hold and both are fixed here (receipts under `day13/review/`).
+
+**1. The static skip census was `src/`-only.** `tools/skip-census.py` `static_census` scanned
+`crates/<crate>/src`, so the wrapper's claim ("an artifact-gated `#[test]` must be declared") was
+false for anything under `crates/<crate>/tests/**`; only the run-side census could catch such a
+skip, and only where it fired. Fix: the scan now covers `src` and `tests` (`crate_tests`,
+`file_module_path`: `tests/<name>.rs` and `tests/<bin>/{mod,main,lib}.rs` are the root of their
+binary and print no prefix, `tests/<bin>/<file>.rs` prints `<file>::`, deeper dirs nest; libtest
+never prints the binary name, so the run-side match stays an equality). A crate without `tests/`
+scans its `src` alone. What the extension found, declared in `tools/skip-census.tsv` with the
+reason in its header: memra-tokenizer's `tests/llama_parity.rs` (`parity_with_llama_tokenize`,
+two messages; `round_trip`; `golden_pairs`), which skip without a GGUF model (`MEMRA_TEST_MODEL`)
+or a `llama-tokenize` binary (`MEMRA_LLAMA_TOKENIZE`); ci.yml runs that crate `--lib`, so they
+never execute there. `verify` over memra-gguf, -reference, -tokenizer, -validate, -sampling,
+-lanes, -tier, -kv and -cli: `skip-census: VERIFY OK` (gguf 14 declared, tokenizer 4, the rest 0).
+`tools/test_gate_template_integrity.sh` builds a crate copy for its census arms; the copy now
+carries memra-tokenizer's `tests/` tree so the new manifest rows resolve there
+(`gate-template integrity: ALL 51 ASSERTIONS GREEN`). Teeth arm 2 now plants the undeclared
+SKIP as a NEW integration-test file `crates/memra-cli/tests/planted_skip.rs` (2a) and inside
+`src/` (2b); the wrapper's echo says `src/ and tests/`. Verbatim (`day13/review/teeth.log`):
+
+```
+ok   arm2a undeclared SKIP reds the wrapper (exit 1)
+ok   arm2a the static census names the planted test (planted_artifact_gated_integration_test)
+ok   arm2a refused before cargo ran
+ok   arm2b undeclared SKIP reds the wrapper (exit 1)
+ok   arm2b the static census names the planted test (planted_skip::planted_artifact_gated_test)
+ok   arm2b refused before cargo ran
+test_portable_suites: 18 ok, 0 FAIL
+rc=0 elapsed=20s
+```
+
+Wrapper on the real tree afterwards (`day13/review/wrapper.log`): `portable-suites: static skip
+census over memra-tier memra-kv memra-cli, src/ and tests/ (an artifact-gated #[test] must be
+declared)`, `skip-census: 334 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 14
+binaries` (325 became 334 through the day's main merges).
+
+**2. The seam alone could move a real campaign.** `MEMRA_TIER_BATTERY_LOCK_DIR` was read from
+the ambient environment at import and silently redirected `campaign_lock` on the real
+`--execute` path too; an inherited export would flock `<private>/memra-gpu.lock` beside a serving
+job on the canonical file, and only `--validate` noticed, after the collision. Fix, in
+`tools/tier-battery.py` and the same in `tools/tier-rig-bootstrap.sh`:
+
+- `--private-lock-dir-for-tests` (`PRIVATE_LOCK_FLAG`): under the seam, `--execute` and
+  `--dry-run` (and every lock-holding bootstrap run; `--status` is read-only and exempt) refuse
+  before any directory is created or any lock opened unless the flag is passed; the flag without
+  the seam refuses too. `--plan` and `--validate` take no lock and run. Every launch site in the
+  battery passes `private_lock.FLAG`; nothing else does.
+- One loud stderr line at startup under the seam:
+  `tier-battery: MEMRA_TIER_BATTERY_LOCK_DIR=<dir>: PRIVATE lock directory (test seam); the rig lock is NOT held by this process`
+  (`tier-rig-bootstrap: ...; the rig lock is NOT held by this run`).
+- `lock.json` carries `"seam": "<dir>"`, the dry-run manifest `"seam"`, `BOOTSTRAP.json`
+  `lock_seam`; `validate_cell`, `validate_capture` (external-lock proof) and `validate_campaign`
+  require the recorded seam to equal the validating process's own (`active_seam()`, read at call
+  time, None when unset): `REFUSED: lock.json seam='<dir>' is not this process's
+  MEMRA_TIER_BATTERY_LOCK_DIR=None: a private-lock test capture never validates as a rig-locked
+  cell`. A different seam is refused the same way. The canonical-path check stays behind it.
+
+Red arms (`test_day10.py::test_seam_without_the_explicit_flag_refuses_before_any_lock_or_receipt`,
+`test_collector.py::test_private_lock_seam_receipts_never_validate_against_the_canonical_table`):
+collector `--execute` and `--dry-run` under the seam without the flag exit 2 with
+`REFUSED: MEMRA_TIER_BATTERY_LOCK_DIR is set but --private-lock-dir-for-tests was not passed`, no
+`--out` directory exists afterwards and the private lock is still free; the flag with the
+canonical environment exits 2 with `REFUSED: --private-lock-dir-for-tests without
+MEMRA_TIER_BATTERY_LOCK_DIR`; the bootstrap's dry run refuses both ways with the same texts and
+creates nothing; a flagged run prints the loud line, writes the seam into `lock.json`, validates
+under the seam and refuses without it or under another seam; the in-process dry run's manifest
+records the seam and `validate_campaign` refuses it under `canonical_locks()`. 87 tests now (86
+plus the new red arm). Proof, verbatim (`day13/review/pytest-lock-held.log`,
+`unittest-lock-held.log`):
+
+```
+holding /tmp/memra-5090.lock and /tmp/memra-gpu.lock in a private /tmp (bwrap) for the whole suite
+87 passed, 32 subtests passed in 17.63s
+rc=0 elapsed=18s
+Ran 87 tests in 17.559s
+OK
+```
+
+Checks after the fixes, all exit 0: fmt, `git diff --check`, check-flags, docs-registry census
+(rows 903), action pins, YAML load, shellcheck on the three touched scripts, pytest with and
+without the locks held (87), the CI step form, the wrapper (334), the teeth (18), the gate-template
+fixture (51). Records: `docs/FLAGS.md` row rewritten, `docs/TESTING.md` (both passages),
+`tools/skip-census.tsv` header and rows. About 1.5 agent-hours on the review, 5.5 in total.
+
 ## Scope
 
 CPU-only gate plumbing and test-seam work; no GPU cell, no timing claim, no default, flag default
-or support state changed. About 4 agent-hours against the 5-hour budget.
+or support state changed. About 4 agent-hours against the 5-hour budget before the review; see the addendum.

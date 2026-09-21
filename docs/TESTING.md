@@ -917,13 +917,17 @@ ran server, engine and gguf. `tools/portable-suites.sh` is now the one wrapper b
 (memra-tier's six integration suites and its four compile-fail doctests are most of the tests),
 `--no-fail-fast` (every binary runs, so a red names every failing suite), `--offline` against
 the committed lockfile, through `tools/skip-census.py` (`verify` over the three crates, then
-`run` at budget 0 and floor 300; 325 passed across 14 binaries on 2026-09-21, 22 s warm). The
-raw cargo output is banked at `target/portable-suites.log`. Its teeth are
-`tools/test_portable_suites.sh`, run by the same CI job: a copy of the tree with a planted
-failing retirement/ownership test in `tests/contracts`, a planted KV test and a planted
-onboarding-receipt test must red the wrapper with all three targets named (arm 1); a planted
-`#[test]` that prints `SKIP` and returns must red the static census before cargo runs (arm 2);
-the wiring is asserted (arm 3). The copy builds into `target/portable-suites-teeth`, never the
+`run` at budget 0 and floor 300; 325 passed across 14 binaries on 2026-09-21, 22 s warm; 334
+after that day's main merges). The static census scans `crates/<crate>/src` AND
+`crates/<crate>/tests` (PR #592 review: it was src-only, so a skip born in an integration test
+was never forced to be declared; the extension found memra-tokenizer's four `llama_parity`
+skips, now declared in `tools/skip-census.tsv`). The raw cargo output is banked at
+`target/portable-suites.log`. Its teeth are `tools/test_portable_suites.sh`, run by the same CI
+job: a copy of the tree with a planted failing retirement/ownership test in `tests/contracts`,
+a planted KV test and a planted onboarding-receipt test must red the wrapper with all three
+targets named (arm 1); a planted `#[test]` that prints `SKIP` and returns, as a new file under
+`crates/memra-cli/tests/` (arm 2a) and inside `src/` (arm 2b), must red the static census before
+cargo runs; the wiring is asserted (arm 3). The copy builds into `target/portable-suites-teeth`, never the
 tree's own target dir: cargo's metadata hash for a workspace member excludes its path and
 `cp -a` keeps mtimes, so a shared target dir let the copy's planted `memra_cli` test binary be
 reused by the next real run (found on the fixture's first run; the fix is the separate dir).
@@ -1362,6 +1366,17 @@ python3 tools/tier-battery.py --rig rtx5090|pro-single|pro-pair|pro-four --timeo
   have no seam: `test_external_lock.py` drives fixture copies with the literal substituted and
   asserts the tracked literals. It is a test seam only: unset in every production launcher, and
   the ci.yml `portable-suites` job runs the whole suite with both real paths held.
+  The seam alone moves nothing (PR #592 review): a collector `--execute` or `--dry-run` and any
+  lock-holding bootstrap run refuse under it, before creating a directory or opening a lock,
+  unless the process also passes `--private-lock-dir-for-tests` (`REFUSED: MEMRA_TIER_BATTERY_LOCK_DIR
+  is set but --private-lock-dir-for-tests was not passed`, exit 2; the flag without the seam
+  refuses too; `--plan`, `--validate` and the bootstrap's `--status` take no lock and run). A
+  process under the seam prints `PRIVATE lock directory (test seam); the rig lock is NOT held`
+  on stderr; `lock.json` and the dry-run manifest carry `"seam": "<dir>"` (`lock_seam` in
+  `BOOTSTRAP.json`), and `--validate` refuses a capture whose seam is not the validating
+  process's own (`lock.json seam=... is not this process's MEMRA_TIER_BATTERY_LOCK_DIR=...`).
+  Every launch site in the suite passes the flag (`private_lock.FLAG`); red arms in
+  `test_day10.py` and `test_collector.py`.
 - `--external-lock`: legacy shell gates run under the collector's inherited lock, never
   wrapped twice. The collector passes its lock FD to the child, replacing exactly one
   `@COLLECTOR_LOCK_FD@` argument, and writes `lock.json` with the device/inode proof; it is

@@ -43,6 +43,8 @@ p.add_argument('--hourly-cost', type=Decimal, help='optional private operator ra
 p.add_argument('--expected-power', type=int, default=600)
 p.add_argument('--gap-seconds', type=int, default=60)
 p.add_argument('--jobs', type=int, default=4)
+p.add_argument('--private-lock-dir-for-tests', action='store_true',
+               help='required with MEMRA_TIER_BATTERY_LOCK_DIR (test seam) for any run that holds the rig lock; an inherited environment variable alone never moves this bootstrap off the canonical lock')
 a = p.parse_args()
 RIGS = {
     'rtx5090': {'match': 'RTX 5090', 'min_memory_mib': 31000, 'lock': '/tmp/memra-5090.lock',
@@ -57,11 +59,23 @@ RIG = RIGS[a.rig]
 # canonical NAME under a private directory; the name, the rig->name table, the report and the
 # generated wrapper all carry the same path, so a receipt written under the seam shows it.
 # Unset (the default and every operator launch), the lock is the rig's canonical file.
-if os.environ.get('MEMRA_TIER_BATTERY_LOCK_DIR'):
-    _private = Path(os.environ['MEMRA_TIER_BATTERY_LOCK_DIR'])
+# The seam alone never moves the lock: without --private-lock-dir-for-tests a lock-holding run
+# refuses before it creates a directory or opens a lock (--status is read-only and exempt), and a
+# run under the seam announces it on stderr and records `lock_seam` in BOOTSTRAP.json.
+LOCK_SEAM = os.environ.get('MEMRA_TIER_BATTERY_LOCK_DIR') or None
+if a.private_lock_dir_for_tests and LOCK_SEAM is None:
+    print('REFUSED: --private-lock-dir-for-tests without MEMRA_TIER_BATTERY_LOCK_DIR: the flag only accompanies the test seam', file=sys.stderr)
+    sys.exit(2)
+if LOCK_SEAM is not None and not a.status:
+    if not a.private_lock_dir_for_tests:
+        print('REFUSED: MEMRA_TIER_BATTERY_LOCK_DIR is set but --private-lock-dir-for-tests was not passed: an inherited environment variable alone never moves this bootstrap off the canonical rig lock; unset it, or pass the flag from a test', file=sys.stderr)
+        sys.exit(2)
+    _private = Path(LOCK_SEAM)
     if not _private.is_dir():
-        sys.exit('MEMRA_TIER_BATTERY_LOCK_DIR must name an existing directory (test seam)')
+        print('REFUSED: MEMRA_TIER_BATTERY_LOCK_DIR must name an existing directory (test seam)', file=sys.stderr)
+        sys.exit(2)
     RIG = {**RIG, 'lock': str(_private / Path(RIG['lock']).name)}
+    print(f'tier-rig-bootstrap: MEMRA_TIER_BATTERY_LOCK_DIR={LOCK_SEAM}: PRIVATE lock directory (test seam); the rig lock is NOT held by this run', file=sys.stderr)
 # A locked pidfile identifies this bootstrap invocation, not a process-name substring.
 # flock, rather than kill(pid, 0), also makes stale/recycled PIDs harmless. Never unlink
 # this inode while another invocation could have opened it. Status never creates files.
@@ -112,7 +126,7 @@ host = re.sub('[^A-Za-z0-9_.-]', '_', os.uname().nodename)
 report = {'schema_version': 1, 'kind': 'cpu-stub' if a.dry_run else 'rig-bootstrap',
           'status': 'incomplete', 'branch': branch, 'minimum_commit': minimum_commit, 'started_utc': utc,
           'expected_power_w': a.expected_power, 'gap_seconds': a.gap_seconds,
-          'lock': RIG['lock'], 'rig': a.rig, 'qualification': False, 'steps': [],
+          'lock': RIG['lock'], 'lock_seam': LOCK_SEAM, 'rig': a.rig, 'qualification': False, 'steps': [],
           'provider': provider, 'provider_instance_id': instance,
           'hourly_cost': str(a.hourly_cost) if a.hourly_cost is not None else None,
           'private_receipt': True}

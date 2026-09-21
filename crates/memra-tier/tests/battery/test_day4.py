@@ -21,7 +21,7 @@ class Day4Tests(private_lock.PrivateLockMixin, unittest.TestCase):
     BATTERY = B
     def bootstrap(self, out, extra=(), source=None):
         script = source or (ROOT/'tools/tier-rig-bootstrap.sh').read_text()
-        return subprocess.run(['bash', '-s', '--', '--dry-run', '--out', str(out), *extra],
+        return subprocess.run(['bash', '-s', '--', '--dry-run', private_lock.FLAG, '--out', str(out), *extra],
                               input=script, text=True, cwd=ROOT, capture_output=True,
                               env={**os.environ, 'BRANCH': 'lane/spill-d-test'}, timeout=30)
 
@@ -63,7 +63,7 @@ class Day4Tests(private_lock.PrivateLockMixin, unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); out = root/'out'; script = root/'kill.sh'
             script.write_text(source)
-            proc = subprocess.Popen(['bash', str(script), '--dry-run', '--out', str(out)],
+            proc = subprocess.Popen(['bash', str(script), '--dry-run', private_lock.FLAG, '--out', str(out)],
                                     cwd=ROOT, env={**os.environ, 'BRANCH': 'lane/spill-d-test'},
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                     start_new_session=True)
@@ -135,7 +135,7 @@ class Day4Tests(private_lock.PrivateLockMixin, unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); out = root/'cell'
             command = [sys.executable, '-c', "print('baseline')"]
-            argv = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090', '--out', str(out)]
+            argv = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090', private_lock.FLAG, '--out', str(out)]
             env = {**os.environ, 'PATH': str(root/'missing')}
             first = subprocess.run([*argv, '--execute', *command], env=env, capture_output=True)
             self.assertEqual(first.returncode, 0, first.stderr)

@@ -74,7 +74,7 @@ class ExternalLockTests(private_lock.PrivateLockMixin, unittest.TestCase):
 
     def collect(self, root, child, timeout=5):
         return subprocess.run([sys.executable, str(ROOT/'tools/tier-battery.py'),
-            '--rig', 'rtx5090', '--timeout', str(timeout), '--out', str(root/'cell'),
+            '--rig', 'rtx5090', private_lock.FLAG, '--timeout', str(timeout), '--out', str(root/'cell'),
             '--external-lock', '--execute', *child], capture_output=True, text=True,
             env={**os.environ, 'PATH': str(root/'no-tools')}, timeout=timeout+10)
 
@@ -137,7 +137,7 @@ class ExternalLockTests(private_lock.PrivateLockMixin, unittest.TestCase):
                 cellroot = root/(str(i)+'-capture'); cellroot.mkdir()
                 # bash is absolute because the collector test PATH hides nvidia-smi,
                 # while the script needs ordinary CPU utilities for proof checking.
-                command = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090',
+                command = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090', private_lock.FLAG,
                     '--out', str(cellroot/'cell'), '--external-lock', '--execute',
                     shutil.which('bash'), str(script), '--external-lock', '@COLLECTOR_LOCK_FD@',
                     'unused-model', 'unused-binary', str(external)]

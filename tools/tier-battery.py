@@ -21,6 +21,18 @@ CANONICAL_LOCKS = {"rtx5090": "/tmp/memra-5090.lock", "pro-single": "/tmp/memra-
 # validates against the canonical table in a process without the seam. Unset (the default and
 # every production launcher), the table is the two rig locks. It is a test seam, not a third name.
 LOCK_DIR_SEAM = "MEMRA_TIER_BATTERY_LOCK_DIR"
+# The seam alone never moves a campaign: an inherited export must not make `--execute` or
+# `--dry-run` flock `<private>/memra-gpu.lock` beside a serving job holding the canonical file.
+# Those modes refuse under the seam unless this flag is also passed (the battery's tests pass
+# it; nothing else does), the process announces the seam on stderr, and every lock.json and
+# dry-run manifest written under it carries `"seam": "<dir>"`, which `--validate` refuses in any
+# process whose own seam differs (review of memra #545 / PR #592, 2026-09-21).
+PRIVATE_LOCK_FLAG = "--private-lock-dir-for-tests"
+
+
+def active_seam():
+    """The private lock directory in force for THIS process, or None. Read at call time."""
+    return os.environ.get(LOCK_DIR_SEAM) or None
 
 
 def lock_table(private_dir=None):
@@ -32,7 +44,7 @@ def lock_table(private_dir=None):
             for rig, path in CANONICAL_LOCKS.items()}
 
 
-LOCKS = lock_table(os.environ.get(LOCK_DIR_SEAM))
+LOCKS = lock_table(active_seam())
 ROUTES = {"local", "pcie-p2p", "host-bounce", "host", "nvme"}
 IDENTITY = ("runtime_commit", "binary_sha256", "artifact_sha256", "plan_sha256", "layout_sha256", "prompt_sha256", "numeric_class", "context_tokens", "requests", "rig", "kind")
 CASES = {
@@ -554,6 +566,8 @@ def validate_capture(record, root):
         require(utc_timestamp(record["ended_utc"]) >= utc_timestamp(record["started_utc"]), "capture UTC regressed")
     if "lock_proof" in record:
         proof = json.loads(evidence(root, record["lock_proof"]).read_text())
+        require(proof.get("seam") == active_seam(),
+                f"lock proof seam={proof.get('seam')!r} is not this process's {LOCK_DIR_SEAM}={active_seam()!r}: a private-lock test capture never validates as a rig-locked cell")
         require(proof["rig"] in LOCKS and proof["rig"] != "cpu" and proof["lock"] == LOCKS[proof["rig"]]
                 and proof["acquired"] is True and proof["owner"] == "collector"
                 and proof["mechanism"] == "inherited-flock-same-open-description"
@@ -627,6 +641,8 @@ def validate_cell(path):
         require(end["started_utc"] == capture["started_utc"] and end["ended_utc"] == capture["ended_utc"], "CELL capture UTC mismatch")
         require(start.get("storage") == end.get("storage") == capture.get("storage"), "CELL storage mismatch")
     lock = json.loads((root / "lock.json").read_text())
+    require(lock.get("seam") == active_seam(),
+            f"lock.json seam={lock.get('seam')!r} is not this process's {LOCK_DIR_SEAM}={active_seam()!r}: a private-lock test capture never validates as a rig-locked cell")
     require(lock["rig"] in LOCKS and lock["rig"] != "cpu" and lock["lock"] == LOCKS[lock["rig"]]
             and lock["acquired"] is True, "missing/noncanonical collector lock")
     return {"kind": "capture-integrity", "status": capture["status"],
@@ -684,7 +700,7 @@ def run_dry_campaign(out, n=5, rig="pro-pair", thermal="synthetic-no-thermal-mea
                 "numeric_class": "opaque-fixture-no-executor", "context_tokens": 3, "requests": 1, "rig": "cpu", "kind": "cpu-fixture"}
     records, runs, failures = [], [], []
     with campaign_lock(rig) as lock:
-        (out / "manifest.json").write_text(json.dumps({"schema_version":1,"kind":"cpu-fixture","status":"dry-run-not-qualification","source":revision,"runner_sha256":digest(runner),"collector_sha256":digest(Path(__file__)),"lock":lock,"lock_acquired":True,"rig_label_for_lock_only":rig,"thermal_regime":thermal,"AB_pairs":n,"BA_pairs":n,"sampler_interval_ms":250,"clock":"virtual-monotonic","telemetry_unknowns":"No measured GPU clocks/power/temperature or physical SSD bytes","started_utc":datetime.datetime.now(datetime.timezone.utc).isoformat()},indent=2)+"\n")
+        (out / "manifest.json").write_text(json.dumps({"schema_version":1,"kind":"cpu-fixture","status":"dry-run-not-qualification","source":revision,"runner_sha256":digest(runner),"collector_sha256":digest(Path(__file__)),"lock":lock,"lock_acquired":True,"seam":active_seam(),"rig_label_for_lock_only":rig,"thermal_regime":thermal,"AB_pairs":n,"BA_pairs":n,"sampler_interval_ms":250,"clock":"virtual-monotonic","telemetry_unknowns":"No measured GPU clocks/power/temperature or physical SSD bytes","started_utc":datetime.datetime.now(datetime.timezone.utc).isoformat()},indent=2)+"\n")
         def run(arm, pair, phase, order, fail=False):
             rid = f"{phase}-{pair}-{arm}"
             run_dir = out / rid; run_dir.mkdir()
@@ -747,6 +763,8 @@ def validate_campaign(root):
     """Check retained order, controls, telemetry hashes/window and published synthetic N."""
     manifest = json.loads((root / "manifest.json").read_text())
     require(manifest["kind"] == "cpu-fixture" and manifest["status"] == "dry-run-not-qualification", "live qualification needs native runner bindings")
+    require(manifest.get("seam") == active_seam(),
+            f"manifest seam={manifest.get('seam')!r} is not this process's {LOCK_DIR_SEAM}={active_seam()!r}: a private-lock dry run never validates as a rig-locked campaign")
     require(manifest["lock"] == LOCKS[manifest["rig_label_for_lock_only"]] and manifest["lock_acquired"] is True, "campaign lock metadata")
     n = manifest["AB_pairs"]
     require(n == manifest["BA_pairs"], "unbalanced order counts")
@@ -910,6 +928,7 @@ def main():
     modes.add_argument("--validate-campaign", type=Path, metavar="BUNDLE")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--external-lock", action="store_true", help="inherit canonical lock FD; replace exactly one @COLLECTOR_LOCK_FD@ child argument (explicit opt-in only)")
+    parser.add_argument(PRIVATE_LOCK_FLAG, action="store_true", help=f"required with {LOCK_DIR_SEAM} for --execute and --dry-run: a test's explicit statement that the private lock directory is intended; an inherited environment variable alone never moves a campaign off the canonical rig lock")
     parser.add_argument("--schema", choices=["auto", "runs", "telemetry", "storage-cell"], default="auto")
     parser.add_argument("--storage-root", type=Path, help="actual filesystem path for this storage cell; ancestry captured before execution")
     parser.add_argument("--allow-unproven-storage", action="store_true", help="explicit overlay/unproven development mode; never NVMe/spill-speed evidence")
@@ -927,6 +946,13 @@ def main():
     args = parser.parse_args(argv if execute is None else argv[:execute + 1])
     if execute is not None:
         args.execute = argv[execute + 1:]
+    seam = active_seam()
+    if seam is not None:
+        print(f"tier-battery: {LOCK_DIR_SEAM}={seam}: PRIVATE lock directory (test seam); the rig lock is NOT held by this process", file=sys.stderr)
+    require(not args.private_lock_dir_for_tests or seam is not None,
+            f"{PRIVATE_LOCK_FLAG} without {LOCK_DIR_SEAM}: the flag only accompanies the test seam")
+    require(seam is None or args.private_lock_dir_for_tests or (args.execute is None and not args.dry_run),
+            f"{LOCK_DIR_SEAM} is set but {PRIVATE_LOCK_FLAG} was not passed: an inherited environment variable alone never moves a campaign off the canonical rig lock; unset it, or pass the flag from a test")
     if args.execute is not None:
         require(args.execute and args.out is not None and args.timeout > 0, "--execute requires argv, new --out and positive timeout")
         if args.hourly_cost is not None:
@@ -953,6 +979,8 @@ def main():
                 "external-lock FD argv is ephemeral; use a fresh cell instead of --resume")
         with campaign_lock(args.rig, inherit=args.external_lock) as lock:
             proof = {"rig": args.rig, "lock": LOCKS[args.rig], "acquired": True}
+            if seam is not None:
+                proof["seam"] = seam
             pass_fds = ()
             if args.external_lock:
                 pass_fds = (lock.fileno(),)

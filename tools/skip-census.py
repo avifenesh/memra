@@ -28,9 +28,12 @@ Three assertions, because a count alone can go blind in three different ways:
           `test result:` line says ok., the run is not vacuous or name-filtered), then the
           SKIPs are counted against the budget. A census over a suite that did not run, or ran
           12 of 90 tests, would be a green number about nothing.
-  verify  the STATIC census — every `#[test]` in the crate that prints SKIP and returns — is
-          compared with tools/skip-census.tsv in BOTH directions. A new artifact-gated test
-          cannot be born invisible: it has to be declared, or `verify` reds.
+  verify  the STATIC census — every `#[test]` in the crate that prints SKIP and returns, under
+          crates/<crate>/src AND crates/<crate>/tests (integration-test binaries; 2026-09-21,
+          memra #545 review: the scan was src-only, so a skip born under tests/** was never
+          forced to be declared and only the run-side census could catch it, and only where
+          the skip fired) — is compared with tools/skip-census.tsv in BOTH directions. A new
+          artifact-gated test cannot be born invisible: it has to be declared, or `verify` reds.
   report  the census file the shell gates append to (MEMRA_SKIP_CENSUS) asserted against an
           expected count, for batteries that mix Rust tests and generated gate scripts.
 
@@ -94,6 +97,32 @@ def crate_src(crate: str) -> Path:
     return path
 
 
+def crate_tests(crate: str) -> Path | None:
+    """The crate's integration-test tree, or None: a crate without tests/ is legitimate."""
+    path = ROOT / "crates" / crate / "tests"
+    return path if path.is_dir() else None
+
+
+def file_module_path(rel: Path, integration: bool) -> tuple[str, ...]:
+    """The module prefix libtest prints for a test defined in this file.
+
+    src/: the path under src is the module path (`source/hy3.rs` -> `source::hy3`), with
+    `lib.rs`, `main.rs` and `mod.rs` naming their parent. tests/: every top-level entry is its
+    own binary and libtest prints paths RELATIVE TO THAT BINARY, so `tests/parity.rs` and
+    `tests/contracts/mod.rs` (or `main.rs`) are the root of their binary and print no prefix,
+    while `tests/contracts/transfer.rs` prints `transfer::...`. The name of the binary itself
+    never appears in a `test ... ok` line, which is why the run-side match stays an equality.
+    """
+    parts = list(rel.parts[:-1])
+    if integration:
+        if not parts:
+            return ()  # tests/<name>.rs is the root of its own binary
+        parts = parts[1:]  # tests/<binary>/... : the binary directory is not a module
+    if rel.stem not in ("lib", "main", "mod"):
+        parts.append(rel.stem)
+    return tuple(parts)
+
+
 def static_census(crate: str) -> list[dict[str, str]]:
     """Every #[test] in the crate that prints SKIP and returns, with its message.
 
@@ -101,19 +130,26 @@ def static_census(crate: str) -> list[dict[str, str]]:
     `eprintln!("SKIP...")` to the nearest enclosing `fn`, then checks that a `#[test]` attribute
     sits within the five lines above that fn. Both halves are asserted against the manifest by
     `verify`, so a miss on either side shows up as a disagreement rather than as silence.
+    Scans crates/<crate>/src and crates/<crate>/tests (see the module docstring).
     """
     rows: list[dict[str, str]] = []
-    src = crate_src(crate)
-    for path in sorted(src.rglob("*.rs")):
+    roots = [(crate_src(crate), False)]
+    tests = crate_tests(crate)
+    if tests is not None:
+        roots.append((tests, True))
+    for root, integration in roots:
+        rows.extend(_census_tree(crate, root, integration))
+    return rows
+
+
+def _census_tree(crate: str, root: Path, integration: bool) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for path in sorted(root.rglob("*.rs")):
         # The file's own module path, so the census reports the EXACT string libtest prints
         # (`source::hy3_repack_probe::hy3_manifest_offset_roundtrip`) and the run-side match can
         # be an equality. A suffix match would work today and would quietly accept the wrong
         # test the day two modules share a function name.
-        rel = path.relative_to(src)
-        parts = list(rel.parts[:-1])
-        if rel.stem not in ("lib", "main", "mod"):
-            parts.append(rel.stem)
-        file_mods = tuple(parts)
+        file_mods = file_module_path(path.relative_to(root), integration)
         lines = path.read_text(encoding="utf-8").splitlines()
         # Module path by brace depth, so the census reports the same name libtest prints.
         mod_at_line: list[tuple[str, ...]] = []
