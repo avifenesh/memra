@@ -21,7 +21,27 @@ powers of two, which is also what hid the divergence in the lockstep harness unt
 
 ## Proof 2: Hy3 on a rented RTX PRO 6000 (`raw/abrows/`)
 
-BOX_TABLE
+Rig: one rented RTX PRO 6000 Blackwell WS (97887 MiB), AMD EPYC 9B14, 188 GB container RAM,
+direct-io disk 2.7 GB/s write and 5.1 GB/s read, 2026-09-21. (A first box with 125 GB RAM
+thrashed in disk wait on the first cell and was destroyed; see the acceptance note in the
+memory corpus.) `Tiyuvta/Hy3-NVFP4@0af425172b7a`, SHA256SUMS verified (README-only mismatch),
+frozen residency, native companion built from this lane, greedy, 32 new tokens, stream 0 = P0.
+base = origin/main `9ef2f04d6` (one job per row, #587's default), lane = this branch.
+`cpu_native_check` on the box: the raw + exact accumulate arm PASS for all four formats
+(`raw/cpu-native-check-box.log`).
+
+| Cell (`raw/abrows/`) | Logits vs base M=1 |
+| --- | --- |
+| lane M=1 | IDENTICAL, 33 steps |
+| lane M=2 mixed | IDENTICAL |
+| lane M=3 mixed | IDENTICAL |
+| lane M=4 mixed | IDENTICAL |
+| lane M=4 same prompt | IDENTICAL |
+| lane M=4 mixed, `MEMRA_LOCKSTEP_CPU_ROWS=0` (one job per row) | IDENTICAL |
+| base M=4 mixed | IDENTICAL (main's default program, as #587 left it) |
+
+Every M>1 cell reproduces the M=1 bytes with the multi-row arm on: the exact fold holds with
+real routing, real sharing across streams, and the companion's amortized decode.
 
 ## Cost
 
