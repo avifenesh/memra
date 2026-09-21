@@ -69,6 +69,33 @@ Single-cell numbers from the exactness matrix (32 tokens, one run each, `raw/abr
 M=1 1.42, lane M=1 1.34, lane M=4 mixed rows on 1.83, rows off 2.01, base M=4 mixed 1.81,
 lane M=4 same 2.71 tok/s aggregate.
 
+## A/B after the dispatch fix (second box, `raw/abint-dispatchfix/`)
+
+Review of the first measurement (revuto on #604) named a mechanical confound: CPU jobs were
+submitted inline through the executor's bounded queue, so the dispatcher parked behind the CPU
+work before launching the GPU groups, and the multi-row arm's larger job count made that worse.
+Jobs are now prepared inline and submitted from a scoped helper thread. Re-measured on a second
+EPYC 9B14 box (220 GB, disk 5.1/6.6 GB/s direct; 2026-09-21 13:39 to 14:47 UTC, GPU 42 C to 46 C),
+same protocol (M=4 mixed, 64 tokens, 5 AB then 5 BA), lane head `ebb1fe43a` (the PR head
+differs only by the local-ci verdict fix and receipts).
+
+| Order | A median (tok/s aggregate) | B median | B over A |
+| --- | --- | --- | --- |
+| AB x5 | 2.73 | 3.13 | +15% |
+| BA x5 | 2.76 | 3.12 | +13% |
+| all 10 each | 2.75 | 3.13 | +14% |
+
+Spread: A 2.69 to 2.77, B 3.10 to 3.16. The dispatch fix moved both
+arms up (the first box read A 1.85 to 2.24, B 2.30 to 2.70 medians) and narrowed the gap from
+about a quarter to about a seventh, but B, one job per row, still wins in both orders with
+non-overlapping ranges. Exactness re-confirmed on this box with the new dispatch: lane M=1 and
+lane M=4 mixed (arm on) bit-identical to base M=1 (`raw/abrows-dispatchfix/compare-report.txt`).
+
+Verdict for the default: unchanged. One job per row stays; the exact multi-row arm is opt-in
+(`MEMRA_LOCKSTEP_CPU_ROWS=1`). What would flip it: an N>=5 both-orders A/B on a 9950X-class host
+showing the arm ahead, before 2026-10-05; otherwise the door and the arm go, keeping the raw twin
+and the exact fold only if something else uses them.
+
 ## Doors
 
 `MEMRA_LOCKSTEP_CPU_ROWS=1` opts into the exact multi-row arm; default is the one-job-per-row
