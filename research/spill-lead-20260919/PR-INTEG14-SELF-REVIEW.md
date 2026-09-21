@@ -20,8 +20,16 @@ calibration boot), `docs/TESTING.md` section, `verify-day14.py`; receipts spot-c
    observation outside this PR's subject; it belongs to #536's family and should get an issue. The gate's V4 text sha
    binds to this artifact's outputs; another artifact is its own gate run.
 
+5. **Revuto round, both fixed on the lane (`9655b9142`).** The SLRU contract as changed is now stated in
+   `docs/SERVING.md`, the `MEMRA_PREFIX_CACHE_PROTECTED_PCT` row and B's DAY14.md, with the trade-off named (scan
+   resistance for entries larger than the free share is gone under SLRU until #523 item 2 re-decides the default by
+   interleaved A/B); the lead kept the behaviour because #523 item 1 asked for exactly it. The refusal lines are
+   throttled by `PrefixRefusalAnnouncer` (first prints, identical repeats suppressed and counted, a changed shape
+   prints at once, every 64th repeat prints with the count) while `prefix_cache_skips_*` count every refusal; two
+   tests. No GPU rerun: a log throttle and docs change no victim selection, and no refusal line printed in any card cell.
+
 ## Verification this review relied on
-integ14 CPU battery (`integration-day12/integ14-cpu-battery/`): fmt, portable suites, memra-server suite, clippy,
+integ14 CPU batteries (`integration-day12/integ14-cpu-battery/` before the review fixes, `integ14-cpu-battery-2/` after): fmt, portable suites, memra-server suite, clippy,
 censuses, collector pytest, `verify-day14.py` (B), perf board, diff-check; local 5090 serve-smoke on this tree
 (`integ14-serve-smoke-5090/`). B's target-card twin gate, serve-smoke and cache-meter on the fix. This rig cannot run
 the model gates.

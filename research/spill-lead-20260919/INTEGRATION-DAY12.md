@@ -314,10 +314,20 @@ gate rounds are kept as failed cells (V3 first asserted consumed == grew without
 calibration that missed the cohort phase's retained growth); round 3 states V3 on states. Recorded observation, cause
 not inferred: the request path retains device memory growing with the longest prompt seen (67,200 B per token on turns
 3 to 8), identical across binaries and with the cache idle; not this gate's subject. #523 item 2 (policy re-decision,
-interleaved A/B N >= 5) stays open.
+interleaved A/B N >= 5) stays open. Revuto on integ14 found two gaps, both fixed on the lane (`9655b9142`): SERVING.md
+and the protected-share FLAGS row still stated the old "probation before protected" guarantee (now the real rule with
+the scan-resistance trade-off named; lead ruling 18 below), and the refusal lines had lost their one-shot guard (now a
+shape-keyed throttle, counters unchanged).
 
 ## integ14 (`lane/spill-integ14-20260921`): B day 14
 Batteries (`integration-day12/integ14-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server 748 tests; clippy `-D warnings`; check-flags; publish census; docs registry census; collector pytest; B's `verify-day14.py` OK; perf board; diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` (`integ14-serve-smoke-5090/`): `serve-smoke: 0 failed`.
+
+## Lead rulings, day 12 (continued)
+18. **The newest turn fits, and the docs say what that costs.** #523 item 1's rule stands (an insert never evicts
+    itself; protected oldest first when the free share is short; typed refusal only when the entry exceeds the budget
+    or cannot fit beside leases). The consequence that a growing one-hit tenant can remove another tenant's promoted
+    cohort is the documented trade-off, not a bug; the default policy is re-decided under #523 item 2 by interleaved
+    A/B on the incident shape, N >= 5, both orders, before any promotion or demotion of SLRU as the naked default.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
