@@ -1,0 +1,64 @@
+cold turn 10: prompt=12350 completion=3 finish=stop sha=4415b7e361fc6f6b 8.806s
+restore point 12288 (grid_off 0): seed cached=0 hit cached=12288 suffix=62 completion=3 finish=stop sha=4415b7e361fc6f6b == cold
+restore point 12320 (grid_off 0): seed cached=0 hit cached=12320 suffix=30 completion=3 finish=stop sha=4415b7e361fc6f6b == cold
+restore point 12200 (grid_off 8): seed cached=0 hit cached=12200 suffix=150 completion=3 finish=stop sha=4415b7e361fc6f6b == cold
+restore point 12250 (grid_off 26): seed cached=0 hit cached=12250 suffix=100 completion=8 finish=length sha=22f023976ebc22fd != cold (first diff char 1)
+restore point 12300 (grid_off 12): seed cached=0 hit cached=12300 suffix=50 completion=8 finish=length sha=22f023976ebc22fd != cold (first diff char 1)
+[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+restore point 12288: [primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12288 budget=8192
+restore point 12288: [primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4096 budget=1024
+restore point 12288: [primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=3072 budget=1024
+restore point 12288: [primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2048 budget=1024
+restore point 12288: [primeseg] call start=11264 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1024 budget=1024
+restore point 12288: [prefix-cache] insert (seed): 12288 tokens, 521.8MB (resident 521.8MB / 1074MB, model gate, ns "rp-12288")
+restore point 12288: [prefix-cache] hit: 12288 of 12350 prompt tokens from cache (model gate)
+restore point 12288: [prefix-cache] source lease released after restore fence (entry 12288 tokens, model gate)
+restore point 12288: [primeseg] call start=12288 take=62 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=62 budget=1024
+restore point 12320: [primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12320 budget=8192
+restore point 12320: [primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4128 budget=1024
+restore point 12320: [primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=3104 budget=1024
+restore point 12320: [primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2080 budget=1024
+restore point 12320: [primeseg] call start=11264 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1056 budget=1024
+restore point 12320: [primeseg] call start=12288 take=32 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=32 budget=1024
+restore point 12320: [prefix-cache] insert (seed): 12320 tokens, 522.7MB (resident 1044.5MB / 1074MB, model gate, ns "rp-12320")
+restore point 12320: [prefix-cache] hit: 12320 of 12350 prompt tokens from cache (model gate)
+restore point 12320: [prefix-cache] source lease released after restore fence (entry 12320 tokens, model gate)
+restore point 12320: [primeseg] call start=12320 take=30 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=30 budget=1024
+restore point 12200: [primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12200 budget=8192
+restore point 12200: [primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4008 budget=1024
+restore point 12200: [primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2984 budget=1024
+restore point 12200: [primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1960 budget=1024
+restore point 12200: [primeseg] call start=11264 take=936 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=936 budget=1024
+restore point 12200: [prefix-cache] insert (seed): 12200 tokens, 519.2MB (resident 519.2MB / 1074MB, model gate, ns "rp-12200")
+restore point 12200: [prefix-cache] hit: 12200 of 12350 prompt tokens from cache (model gate)
+restore point 12200: [prefix-cache] source lease released after restore fence (entry 12200 tokens, model gate)
+restore point 12200: [primeseg] call start=12200 take=150 grid_off=8 bound_rem=None ckpt_at=None snapshot_at=None q=150 budget=1024
+restore point 12200: [prefix-cache] insert (seed): 12350 tokens, 523.6MB (resident 1042.8MB / 1074MB, model gate, ns "rp-12200")
+restore point 12250: [primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12250 budget=8192
+restore point 12250: [primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4058 budget=1024
+restore point 12250: [primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=3034 budget=1024
+restore point 12250: [primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2010 budget=1024
+restore point 12250: [primeseg] call start=11264 take=986 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=986 budget=1024
+restore point 12250: [prefix-cache] insert (seed): 12250 tokens, 520.7MB (resident 520.7MB / 1074MB, model gate, ns "rp-12250")
+restore point 12250: [prefix-cache] hit: 12250 of 12350 prompt tokens from cache (model gate)
+restore point 12250: [prefix-cache] source lease released after restore fence (entry 12250 tokens, model gate)
+restore point 12250: [primeseg] call start=12250 take=100 grid_off=26 bound_rem=None ckpt_at=None snapshot_at=None q=100 budget=1024
+restore point 12250: [prefix-cache] insert (seed): 12350 tokens, 523.6MB (resident 1044.3MB / 1074MB, model gate, ns "rp-12250")
+restore point 12300: [primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12300 budget=8192
+restore point 12300: [primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4108 budget=1024
+restore point 12300: [primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=3084 budget=1024
+restore point 12300: [primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2060 budget=1024
+restore point 12300: [primeseg] call start=11264 take=1036 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1036 budget=1024
+restore point 12300: [prefix-cache] insert (seed): 12300 tokens, 522.2MB (resident 522.2MB / 1074MB, model gate, ns "rp-12300")
+restore point 12300: [prefix-cache] hit: 12300 of 12350 prompt tokens from cache (model gate)
+restore point 12300: [prefix-cache] source lease released after restore fence (entry 12300 tokens, model gate)
+restore point 12300: [primeseg] call start=12300 take=50 grid_off=12 bound_rem=None ckpt_at=None snapshot_at=None q=50 budget=1024
+| turn | prompt | cached | suffix | completion | finish | sha[:16] | cold completion | cold finish | cold sha[:16] | == cold | first diff char | restored text | cold text |
+| ---: | ---: | ---: | ---: | ---: | --- | --- | ---: | --- | --- | --- | ---: | --- | --- |
+| rp 12288 | 12350 | 12288 | 62 | 3 | stop | 4415b7e361fc6f6b | 3 | stop | 4415b7e361fc6f6b | yes | - | "_\n" | "_\n" |
+| rp 12320 | 12350 | 12320 | 30 | 3 | stop | 4415b7e361fc6f6b | 3 | stop | 4415b7e361fc6f6b | yes | - | "_\n" | "_\n" |
+| rp 12200 | 12350 | 12200 | 150 | 3 | stop | 4415b7e361fc6f6b | 3 | stop | 4415b7e361fc6f6b | yes | - | "_\n" | "_\n" |
+| rp 12250 | 12350 | 12250 | 100 | 8 | length | 22f023976ebc22fd | 3 | stop | 4415b7e361fc6f6b | NO | 1 | "_\t\t\"\t\t\"\t" | "_\n" |
+| rp 12300 | 12350 | 12300 | 50 | 8 | length | 22f023976ebc22fd | 3 | stop | 4415b7e361fc6f6b | NO | 1 | "_\t\t\"\t\t\"\t" | "_\n" |
+RESTORE-VS-COLD: arm=restore-points turns=0 compared=0 identical=0/0 first_divergent_turn=none -> IDENTICAL
+RESTORE-POINTS: arm=restore-points target=12350 points=5 identical=3/5 12288(off0,suffix62):yes 12320(off0,suffix30):yes 12200(off8,suffix150):yes 12250(off26,suffix100):NO 12300(off12,suffix50):NO -> DIVERGENT

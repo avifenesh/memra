@@ -1,6 +1,8 @@
 //! Native owner-stream H2D/D2H implementation of the frozen tier contract.
 //! No worker may submit CUDA work. Unknown completion retains backing and quota.
-use cudarc::driver::{CudaEvent, CudaSlice, CudaStream, PinnedHostSlice, result, sys};
+use cudarc::driver::{
+    CudaContext, CudaEvent, CudaSlice, CudaStream, DriverError, HostSlice, SyncOnDrop, result, sys,
+};
 use memra_kv::KvPlane;
 use memra_tier::{bank::SharedBudget, contracts::*};
 use std::{
@@ -9,6 +11,158 @@ use std::{
     rc::Rc,
     sync::Arc,
 };
+
+/// The `cuMemHostAlloc` flags of a contract pinned host allocation (WP-A day 13,
+/// `research/spill-a-20260919/PINNED-FLAGS.md`). The default is exactly what cudarc's
+/// `alloc_pinned` passed before this seam existed: write-combined, the attribute that suits CPU
+/// stores and DMA in both directions but makes every CPU READ of the bytes uncached. The door's
+/// byte attestation reads every demoted plane on the CPU (the completion hash, the bind hash), so
+/// the arm is a measured question, not a default: it moves only on the balanced same-window A/B
+/// the owner law asks for, on the card class it applies to. No environment variable selects it;
+/// the transfer gate passes the arm it measures.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PinnedKind {
+    /// `CU_MEMHOSTALLOC_WRITECOMBINED`: today's behaviour (cudarc `alloc_pinned`).
+    #[default]
+    WriteCombined,
+    /// `cuMemHostAlloc(.., 0)`: cached, page-locked, the OFF tier's `PinnedHostBuf` attribute.
+    Cached,
+}
+impl PinnedKind {
+    /// The flag bits handed to `cuMemHostAlloc`. `WriteCombined` is the constant cudarc passes.
+    pub const fn host_alloc_flags(self) -> u32 {
+        match self {
+            PinnedKind::WriteCombined => sys::CU_MEMHOSTALLOC_WRITECOMBINED,
+            PinnedKind::Cached => 0,
+        }
+    }
+    pub const fn name(self) -> &'static str {
+        match self {
+            PinnedKind::WriteCombined => "write-combined",
+            PinnedKind::Cached => "cached",
+        }
+    }
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "write-combined" => Some(PinnedKind::WriteCombined),
+            "cached" => Some(PinnedKind::Cached),
+            _ => None,
+        }
+    }
+}
+
+/// The engine-owned page-locked backing of a `CudaPinnedLease`: one `cuMemHostAlloc` with the
+/// arm's flag bits through the existing `result::malloc_host` FFI, freed with `result::free_host`
+/// after its tracking event is synchronized. It presents exactly the `HostSlice` contract cudarc's
+/// `PinnedHostSlice` presents (the owner stream waits on the tracking event before a copy and
+/// records it after), so the two arms differ in the flag bits and in nothing else: the same
+/// `memcpy_htod` / `memcpy_dtoh` driver calls, in the same order, on the same owner stream. Host
+/// access (`as_ptr`, `as_slice` and their mutable twins) synchronizes the tracking event first, as
+/// `PinnedHostSlice` does, so no CPU read observes bytes a queued copy still owns.
+pub struct PinnedBacking {
+    ptr: *mut u8,
+    len: usize,
+    kind: PinnedKind,
+    event: CudaEvent,
+}
+impl PinnedBacking {
+    /// # Safety
+    /// The bytes are unset after this call; the caller initializes every byte before any safe
+    /// slice exists (`alloc_host_kind` zero-fills through `as_mut_ptr`).
+    unsafe fn alloc(
+        context: &Arc<CudaContext>,
+        bytes: usize,
+        kind: PinnedKind,
+    ) -> std::result::Result<Self, DriverError> {
+        context.bind_to_thread()?;
+        let ptr = unsafe { result::malloc_host(bytes, kind.host_alloc_flags())? }.cast::<u8>();
+        assert!(!ptr.is_null());
+        let event = match context.new_event(Some(sys::CUevent_flags::CU_EVENT_BLOCKING_SYNC)) {
+            Ok(event) => event,
+            Err(e) => {
+                // SAFETY: `ptr` came from `malloc_host` above and nothing else owns it.
+                let _ = unsafe { result::free_host(ptr.cast()) };
+                return Err(e);
+            }
+        };
+        Ok(Self {
+            ptr,
+            len: bytes,
+            kind,
+            event,
+        })
+    }
+    pub fn len(&self) -> usize {
+        self.len
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    pub fn kind(&self) -> PinnedKind {
+        self.kind
+    }
+    /// The context this was created in.
+    pub fn context(&self) -> &Arc<CudaContext> {
+        self.event.context()
+    }
+    /// Waits for any scheduled work on the backing to complete, then the host pointer.
+    pub fn as_ptr(&self) -> std::result::Result<*const u8, DriverError> {
+        self.event.synchronize()?;
+        Ok(self.ptr)
+    }
+    pub fn as_mut_ptr(&mut self) -> std::result::Result<*mut u8, DriverError> {
+        self.event.synchronize()?;
+        Ok(self.ptr)
+    }
+    pub fn as_slice(&self) -> std::result::Result<&[u8], DriverError> {
+        self.event.synchronize()?;
+        // SAFETY: `ptr` is a live `malloc_host` allocation of `len` bytes owned by `self`, every
+        // byte was initialized before this backing was handed out, and the event synchronize
+        // above retired every queued copy that could still write it.
+        Ok(unsafe { std::slice::from_raw_parts(self.ptr, self.len) })
+    }
+    pub fn as_mut_slice(&mut self) -> std::result::Result<&mut [u8], DriverError> {
+        self.event.synchronize()?;
+        // SAFETY: as `as_slice`, with `&mut self` guaranteeing the single mutable view.
+        Ok(unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) })
+    }
+}
+impl Drop for PinnedBacking {
+    fn drop(&mut self) {
+        let ctx = self.event.context();
+        ctx.record_err(self.event.synchronize());
+        // SAFETY: `ptr` was returned by `malloc_host` and is freed exactly once, here.
+        ctx.record_err(unsafe { result::free_host(self.ptr.cast()) });
+    }
+}
+impl HostSlice<u8> for PinnedBacking {
+    fn len(&self) -> usize {
+        self.len
+    }
+    unsafe fn stream_synced_slice<'a>(
+        &'a self,
+        stream: &'a CudaStream,
+    ) -> (&'a [u8], SyncOnDrop<'a>) {
+        stream.context().record_err(stream.wait(&self.event));
+        (
+            // SAFETY: the caller's contract (`HostSlice`): the slice is used only with `stream`,
+            // which now waits on every prior use recorded on the tracking event.
+            unsafe { std::slice::from_raw_parts(self.ptr, self.len) },
+            SyncOnDrop::Record(Some((&self.event, stream))),
+        )
+    }
+    unsafe fn stream_synced_mut_slice<'a>(
+        &'a mut self,
+        stream: &'a CudaStream,
+    ) -> (&'a mut [u8], SyncOnDrop<'a>) {
+        stream.context().record_err(stream.wait(&self.event));
+        (
+            // SAFETY: as `stream_synced_slice`, with `&mut self` for the single mutable view.
+            unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) },
+            SyncOnDrop::Record(Some((&self.event, stream))),
+        )
+    }
+}
 
 fn cuda<T>(r: std::result::Result<T, cudarc::driver::DriverError>) -> Result<T> {
     r.map_err(|e| {
@@ -32,7 +186,7 @@ pub struct CudaPinnedLease {
     allocation: Rc<PinnedAllocation>,
 }
 struct PinnedAllocation {
-    backing: Option<PinnedHostSlice<u8>>,
+    backing: Option<PinnedBacking>,
     charge: Option<ChargedLease>,
     pin: Option<LeasePin>,
     governor: SharedBudget,
@@ -41,6 +195,7 @@ impl std::fmt::Debug for CudaPinnedLease {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CudaPinnedLease")
             .field("bytes", &self.storage_bytes())
+            .field("kind", &self.pinned_kind())
             .finish()
     }
 }
@@ -71,6 +226,10 @@ impl PinnedLease for CudaPinnedLease {
     }
 }
 impl CudaPinnedLease {
+    /// The arm this lease was allocated under; `None` once the backing is released.
+    pub fn pinned_kind(&self) -> Option<PinnedKind> {
+        self.allocation.backing.as_ref().map(PinnedBacking::kind)
+    }
     pub fn write(&mut self, bytes: &[u8]) -> Result<()> {
         if bytes.len() as u64 != self.valid_bytes() {
             return Err(Error::InvalidLayout);
@@ -207,10 +366,17 @@ impl CudaTransfers {
         }
     }
     /// Admission policy belongs to the caller; only the physical dimension is set here.
-    pub fn alloc_host(
+    /// The allocation carries today's flag bits (`PinnedKind::default()`, write-combined).
+    pub fn alloc_host(&mut self, bytes: usize, request: BudgetRequest) -> Result<CudaPinnedLease> {
+        self.alloc_host_kind(bytes, request, PinnedKind::default())
+    }
+    /// `alloc_host` with the `cuMemHostAlloc` flag bits chosen by the caller (WP-A day 13). The
+    /// transfer gate measures the arms with it; production callers take `alloc_host`.
+    pub fn alloc_host_kind(
         &mut self,
         bytes: usize,
         mut request: BudgetRequest,
+        kind: PinnedKind,
     ) -> Result<CudaPinnedLease> {
         self.check_thread()?;
         if bytes == 0 || bytes > isize::MAX as usize {
@@ -222,7 +388,8 @@ impl CudaTransfers {
         // Initialize through a raw pointer: constructing an uninitialized slice
         // would itself be invalid, even if immediately followed by fill().
         let allocation = (|| {
-            let mut backing = cuda(unsafe { self.stream.context().alloc_pinned::<u8>(bytes) })?;
+            let mut backing =
+                cuda(unsafe { PinnedBacking::alloc(self.stream.context(), bytes, kind) })?;
             unsafe {
                 cuda(backing.as_mut_ptr())?.write_bytes(0, bytes);
             }
@@ -1167,5 +1334,132 @@ impl TransferEngine for CudaTransfers {
         }
         self.entries.remove(ticket);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// WP-A day 13: the seam's default is exactly the flag bits cudarc's `alloc_pinned` passed
+    /// before it existed, and the other arm is the cached attribute the OFF tier allocates with.
+    #[test]
+    fn pinned_kind_default_is_todays_write_combined_flag_bits() {
+        assert_eq!(PinnedKind::default(), PinnedKind::WriteCombined);
+        assert_eq!(
+            PinnedKind::default().host_alloc_flags(),
+            sys::CU_MEMHOSTALLOC_WRITECOMBINED
+        );
+        assert_eq!(PinnedKind::WriteCombined.host_alloc_flags(), 4);
+        assert_eq!(PinnedKind::Cached.host_alloc_flags(), 0);
+        for kind in [PinnedKind::WriteCombined, PinnedKind::Cached] {
+            let flags = kind.host_alloc_flags();
+            assert_eq!(flags & sys::CU_MEMHOSTALLOC_PORTABLE, 0, "{kind:?}");
+            assert_eq!(flags & sys::CU_MEMHOSTALLOC_DEVICEMAP, 0, "{kind:?}");
+            assert_eq!(PinnedKind::parse(kind.name()), Some(kind));
+        }
+        assert_eq!(PinnedKind::parse("wc"), None);
+        assert_eq!(PinnedKind::parse("Cached"), None);
+        assert_eq!(PinnedKind::parse(""), None);
+    }
+
+    /// The production allocator takes the default arm and nothing in this file allocates
+    /// pinned memory any other way: a caller of `alloc_host` gets today's flag bits.
+    #[test]
+    fn alloc_host_delegates_with_the_default_kind_and_no_other_pinned_allocation_remains() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap()];
+        let start = body.find("pub fn alloc_host(").unwrap();
+        let end = body[start..].find("pub fn alloc_host_kind(").unwrap() + start;
+        assert!(
+            body[start..end]
+                .contains("self.alloc_host_kind(bytes, request, PinnedKind::default())"),
+            "alloc_host must delegate with the default arm"
+        );
+        assert_eq!(
+            body.matches("result::malloc_host(").count(),
+            1,
+            "exactly one cuMemHostAlloc site, inside PinnedBacking::alloc"
+        );
+        // Call syntax only: the doc comments name cudarc's `alloc_pinned` as the history.
+        assert_eq!(body.matches("alloc_pinned::<").count(), 0);
+        assert_eq!(body.matches(".alloc_pinned(").count(), 0);
+        assert!(body.contains("result::malloc_host(bytes, kind.host_alloc_flags())"));
+    }
+
+    fn native_fixture() -> (CudaTransfers, Arc<CudaStream>, SharedBudget) {
+        use memra_tier::tier::governor::Governor;
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.new_stream().unwrap();
+        let cap = TierBudget {
+            version: 1,
+            device: vec![1 << 30],
+            peer: vec![0],
+            replicas: vec![0],
+            pinned: 1 << 30,
+            pageable: 1 << 30,
+            staging: 1 << 30,
+            loaders: 64,
+            inflight: 64,
+            nvme: 0,
+        };
+        let gov: SharedBudget = Rc::new(RefCell::new(
+            Governor::new(cap, TierBudget::zero(1), 64, 0, Arc::new(|| 0)).unwrap(),
+        ));
+        (
+            CudaTransfers::new(stream.clone(), gov.clone()).unwrap(),
+            stream,
+            gov,
+        )
+    }
+    fn request() -> BudgetRequest {
+        BudgetRequest {
+            bytes: TierBudget::zero(1),
+            priority: Priority::Demand,
+            deadline: Deadline(u64::MAX),
+            tenant: [0; 32],
+        }
+    }
+
+    /// The arm is honoured by the driver, not just recorded: `cuMemHostGetFlags` on the lease's
+    /// pointer returns the arm's flag bits, the default lease reads back write-combined, and a
+    /// host write followed by a host read is exact under both arms.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn pinned_kind_arm_is_honoured_by_the_driver() {
+        let (mut t, _stream, gov) = native_fixture();
+        let bytes = 1 << 20;
+        let pattern: Vec<u8> = (0..bytes).map(|i| (i * 7 % 251) as u8).collect();
+        let default = t.alloc_host(bytes, request()).unwrap();
+        assert_eq!(default.pinned_kind(), Some(PinnedKind::WriteCombined));
+        drop(default);
+        for kind in [PinnedKind::WriteCombined, PinnedKind::Cached] {
+            let mut lease = t.alloc_host_kind(bytes, request(), kind).unwrap();
+            assert_eq!(lease.pinned_kind(), Some(kind));
+            assert_eq!(lease.bytes().unwrap(), vec![0u8; bytes].as_slice());
+            let mut flags: std::ffi::c_uint = u32::MAX;
+            // SAFETY: the pointer is a live cuMemHostAlloc allocation owned by `lease` for the
+            // duration of the call; the query writes only `flags`.
+            unsafe {
+                sys::cuMemHostGetFlags(&mut flags, lease.bytes().unwrap().as_ptr() as *mut _)
+                    .result()
+                    .unwrap()
+            };
+            // The driver's record carries the arm's bit; on a UVA platform it also reports
+            // `CU_MEMHOSTALLOC_DEVICEMAP` (every pinned allocation is device-mapped), so the
+            // write-combined arm reads back 6 and the cached arm 2 (day 13, first sitting).
+            assert_eq!(
+                flags & sys::CU_MEMHOSTALLOC_WRITECOMBINED,
+                kind.host_alloc_flags(),
+                "{kind:?}: driver flags {flags}"
+            );
+            assert_eq!(flags & sys::CU_MEMHOSTALLOC_PORTABLE, 0, "{kind:?}");
+            lease.write(&pattern).unwrap();
+            assert_eq!(lease.bytes().unwrap(), pattern.as_slice());
+            assert_eq!(checksum(lease.bytes().unwrap()), checksum(&pattern));
+            assert_eq!(gov.borrow().used().pinned, bytes as u64);
+            drop(lease);
+            assert_eq!(gov.borrow().used().pinned, 0);
+        }
     }
 }

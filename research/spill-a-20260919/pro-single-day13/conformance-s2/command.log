@@ -1,0 +1,15 @@
+abfc3fc324534cc2b851be3ce5a525d6671d0167
+746cb5217541a7a4a1d59767df53e47aa8635c9648290c73415bcbecdefc1637  /root/spill-receipts/a-day13/bins/tier-transfer-gate
+PASS v1 transfer_cancel native CUDA
+PASS v1.1 transfer_complete_cancel native CUDA
+PASS v1.1 transfer_lifetime native events + injected observation loss + graph retention
+PASS v1.1 transfer_zero_accept Unsupported NVMe preserves owned input
+PASS v1.1 acceptance exhaustive native mixed batch; rejected sibling blocks publication
+PASS v1.2 transfer_completion_bytes native CUDA; stale epochs, ready publication, take once, authentic consumer fence
+PASS additive source retirement Busy while source consumer bound; host destination survives source release
+PASS v1.3 transfer_source_retirement native CUDA
+PASS v1.3 device_hand_back native CUDA
+PASS additive dropped destination retains backing and charge until graph retirement and acknowledgement
+PASS rule cancelled-restore-recovers-source native CUDA
+PASS rule cancel-refused-after-source-consumed native CUDA
+PASS native governor zero after controlled drain

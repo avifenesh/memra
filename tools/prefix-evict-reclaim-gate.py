@@ -31,8 +31,10 @@ Assertions (every number in bytes from the server's own lines and /metrics):
                         B - A >= E1 - slack in the tick that evicted E1.
   V2 same_tick_admit:   P2 is admitted in that tick: no `[admit-oom] VRAM defer` line after the
                         reclaim line, no `reject averted`, HTTP 200.
-  V3 driver_free_moved: the `[admit-oom] reclaim settle` line shows driver free rising by
-                        >= E1 - one 2 MiB granule and `trim_released_bytes` >= the same. Bytes the
+  V3 driver_free_moved: the `[admit-oom] reclaim settle` line shows driver free rising, plus the
+                        bytes the pool retained (`pool_retained_bytes`, counted headroom since day
+                        19: they stay pool-cached, i.e. effective free), by >= E1 - one 2 MiB
+                        granule, and `trim_released_bytes` + the retained bytes >= the same. Bytes the
                         pool could not release (a live neighbour shares the chunk) are printed by
                         the server as `pool_retained_bytes` and stay counted as pool-cached
                         headroom; the gate reports them in its verdict line, it does not fail on
@@ -637,7 +639,15 @@ def main() -> None:
         released = settle["trim_released_bytes"]
         m_ret = re.search(r"pool_retained_bytes=(\d+)", settle["tail"])
         retained = int(m_ret.group(1)) if m_ret else 0
-        v3 = driver_delta >= e1m - GRANULE and released >= e1m - GRANULE
+        # pool_retained_bytes is counted headroom (day 19, memra#602 thread): the settle line the
+        # day-13 fix prints reports the bytes the trim left in the pool as still pool-cached, and
+        # they are effective free by V3's own definition (`cuda_driver_free_bytes +
+        # cuda_pool_cached_bytes`). Until day 19 V3 read the driver delta alone and passed only
+        # while the shape evicted a second (busy-peer) seed beside E1 whose bytes covered the
+        # card's ~140 to 148 MB retention; once the capture law refused that 71-token seed the
+        # reclaim evicted exactly E1 and the same retention read as a shortfall. A gate bug,
+        # fixed in the gate: retained bytes count toward the credit, driver and trim alike.
+        v3 = (driver_delta + retained >= e1m - GRANULE) and (released + retained >= e1m - GRANULE)
     v4 = cal["identity_sha256"] == meas["identity_sha256"]
 
     if p2["status"] != 200:
