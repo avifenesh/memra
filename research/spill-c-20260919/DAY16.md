@@ -160,6 +160,18 @@ battery, outside today's budget and blocked on this rig by the recorded hit-gate
 main (memory note 2026-09-20). The lane's tip stays unpushed with this record; the lead decides the
 perf-ci run or the receipt.
 
+After the review round the lane merged main `435a57a75`, whose #547 change retires that arm (`pre-push:
+MEMRA_SKIP_PERF_CI is retired; it cannot waive GPU qualification.`) for a content-bound native release
+qualification (`tools/release_qualification.py push`, evidence under `research/release-qualification/`).
+`git push origin lane/spill-c-20260919` at `a59e33e86` was refused by it, verbatim: `UNQUALIFIED:
+UNQUALIFIED: source inputs changed: crates/memra-engine/src/tier_transfer.rs,
+crates/memra-server/src/worker.rs, crates/memra-server/src/worker/host_glm.rs, docs/FLAGS.md,
+docs/TESTING.md, research/spill-c-20260919/HOSTPREFIX-DOOR.md, research/spill-c-20260919/STATE.md,
+tools/kv-host-contract-fault-gate.sh` then `error: failed to push some refs`. Its `development` mode
+(`MEMRA_RELEASE_QUALIFICATION_MODE=development`) pushes the topic as unqualified and writes a `log_skip`
+row: a logged skip, so this lane does not set it. The tip stays unpushed with both refusals recorded; the
+lead runs the battery on integ19 and holds the qualification evidence.
+
 ## What remains
 
 - **The WC decision** (`WC-DESTINATIONS.md`): the engine's allocation flag; the hash-speed micro-cell
