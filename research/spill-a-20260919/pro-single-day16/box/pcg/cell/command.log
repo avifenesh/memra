@@ -1,0 +1,18 @@
+prime-cancel-gate: control boot
+  control: cold sha=f243df4517b99525 prompt_tokens=7508; warm sha=f243df4517b99525 cached_tokens=7488
+  ok: control warm arm is a prefix hit (cached_tokens=7488)
+  ok: control cold and warm digests agree (the hit gate's law, this fixture)
+prime-cancel-gate: fault boot (disconnect after 300 ms)
+  server: [prime] cancelled at chunk 2 (768 of 7488 rows of this take primed; fed 0, queued 20, prompt 7508, model "gate"): client gone, nothing published, cache released at retire
+  server: [abort] client disconnected: model "gate", prompt 7508 (0 cached, 0 fed), 0 generated — billed to abort point, 0.34s
+  ok: stopped at chunk 2 after 768 of 7488 rows (within one chunk of the disconnect, before the take ended)
+  ok: session retired as a client abort (no park, cache released)
+  ok: nothing published (no '[prefix-cache] insert' before the next request)
+  ok: no 'prefill error' path taken
+  fault: cold sha=f243df4517b99525 prompt_tokens=7508 cached=0; warm sha=f243df4517b99525 cached_tokens=7488
+  ok: the next cold request restored nothing from the aborted prime (cached_tokens=0)
+  ok: cold digest unchanged versus the control boot
+  ok: warm digest unchanged versus the control boot
+  ok: prompt_tokens equal (7508)
+  ok: warm cached_tokens equal (7488)
+PRIME-CANCEL GATE: PASS (disconnect_ms=300 words=6000 cold=f243df4517b99525 warm=f243df4517b99525)
