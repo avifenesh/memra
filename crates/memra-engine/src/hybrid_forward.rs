@@ -21784,18 +21784,17 @@ impl HybridModel {
         Ok(moe_out)
     }
 
-    /// Diagnostic door (memra#577): `MEMRA_LOCKSTEP_SPLIT_GROUPS=1` runs every lockstep
-    /// resident-expert group one row at a time (`m_e = 1` per call) instead of one gathered
-    /// `m_e`-row call. Bit-identity with the M=1 run under this door places the mixed-peer
-    /// divergence in the grouped expert GEMM; a persisting divergence rules it out.
-    fn lockstep_split_groups() -> bool {
-        std::env::var("MEMRA_LOCKSTEP_SPLIT_GROUPS").as_deref() == Ok("1")
-    }
-
-    /// Diagnostic door (memra#577): `MEMRA_LOCKSTEP_CPU_ROWS=0` keeps every CPU expert on the
-    /// one-row companion call (no multi-row ABI for experts shared by two or more streams).
+    /// `MEMRA_LOCKSTEP_CPU_ROWS=1` opts the lockstep CPU experts into the companion's
+    /// multi-row ABI (one call per expert shared by two or more streams). Default OFF
+    /// (memra#577): the M=1 run sums a row's CPU experts inside ONE companion job, and the
+    /// multi-row arm re-splits that sum across per-expert tickets, so from three streams up
+    /// a row's bytes depended on which experts its peers shared (M=4 mixed: every logit
+    /// differs from the first lockstep step; with this arm off and the shared expert per row,
+    /// bit-identical over 33 steps). The arm is the M3 amortization receipt
+    /// (research/moe/draft-head-and-concurrency-lanes.md, +4.8% at m=4); it comes back by
+    /// default only with an exactness proof against the M=1 sum order.
     fn lockstep_cpu_rows_on() -> bool {
-        std::env::var("MEMRA_LOCKSTEP_CPU_ROWS").as_deref() != Ok("0")
+        std::env::var("MEMRA_LOCKSTEP_CPU_ROWS").as_deref() == Ok("1")
     }
 
     /// Lane-3 M2: cross-stream MoE for lockstep decode. Routes all m stream rows in one
@@ -21956,37 +21955,20 @@ impl HybridModel {
                 .cmp(&groups[&a].rows.len())
                 .then(a.cmp(&b))
         });
-        // One work item per gathered group; under the split door, one per (row, slot) so every
-        // expert call is `m_e = 1` (memra#577 discriminator). Order and slot placement unchanged.
-        let split_groups = Self::lockstep_split_groups();
-        let mut work: Vec<(usize, Vec<i32>, Vec<i32>, Vec<f32>)> = Vec::new();
+        // The gathered `m_e`-row expert call is per-row exact: forcing every group to
+        // `m_e = 1` changed no bit of the M=4 mixed run (memra#577 probe, 2026-09-21).
         for &ex in &order {
             let group = &groups[&ex];
-            if split_groups {
-                for ((&row, &slot), &weight) in
-                    group.rows.iter().zip(&group.slots).zip(&group.weights)
-                {
-                    work.push((ex, vec![row], vec![slot], vec![weight]));
-                }
-            } else {
-                work.push((
-                    ex,
-                    group.rows.clone(),
-                    group.slots.clone(),
-                    group.weights.clone(),
-                ));
-            }
-        }
-        for (ex, rows, slots, weights) in work {
+            let (rows, slots, weights) = (&group.rows, &group.slots, &group.weights);
             let m_e = rows.len();
             let gl = m.gate_exps.expert_layout(ex);
             let ul = m.up_exps.expert_layout(ex);
             let dl = m.down_exps.expert_layout(ex);
-            let row_idx_d = e.htod_i32(&rows)?;
-            let slot_idx_d = e.htod_i32(&slots)?;
+            let row_idx_d = e.htod_i32(rows)?;
+            let slot_idx_d = e.htod_i32(slots)?;
             let dmac = m.down_exps.macro_scale(ex);
             let weight_d = if dmac == 1.0 {
-                e.htod(&weights)?
+                e.htod(weights)?
             } else {
                 let scaled: Vec<f32> = weights.iter().map(|&w| w * dmac).collect();
                 e.htod(&scaled)?
