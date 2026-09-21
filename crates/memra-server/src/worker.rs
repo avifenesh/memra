@@ -4806,13 +4806,21 @@ fn host_tier_context(
     let governor = host_tier_governor(device, hpx.budget, prefix_cache_budget_bytes(), inflight)?;
     let ledger: std::rc::Rc<std::cell::RefCell<dyn memra_engine::cache::tiered::BudgetGovernor>> =
         std::rc::Rc::new(std::cell::RefCell::new(HostTierLedger(governor.clone())));
-    let transfers = memra_engine::tier_transfer::CudaTransfers::new(engine.stream(), ledger)
-        .map_err(|e| {
+    // WP-A day 17 (memra#536 Move 1): the engine carries a second stream of the same context for
+    // the D2H copies; a failure to create it is a boot refusal, never a silent owner-stream fall
+    // back.
+    let transfers =
+        memra_engine::tier_transfer::CudaTransfers::new_with_copy_stream(engine.stream(), ledger)
+            .map_err(|e| {
             format!(
                 "MEMRA_KV_HOST_CONTRACTS=1 refused at boot: the D2H transfer engine could not \
-                 bind the worker's CUDA owner stream ({e:?})"
+             bind the worker's CUDA owner stream or create its copy stream ({e:?})"
             )
         })?;
+    eprintln!(
+        "[prefix-host] contracts door: D2H demotes ride the transfer engine's copy stream and \
+         publish at the tick top (memra#536 Move 1, first slice)"
+    );
     Ok(HostTierContext {
         governor,
         programs,
@@ -8089,6 +8097,9 @@ impl std::fmt::Display for TenantShareRefusal {
 /// cache: the PC-ISO `(model, cache namespace)` map key plus exact-token prefixes.
 #[derive(Default)]
 struct HostPrefixCache {
+    /// WP-A day 17: the one `Demoting` entry, if a contract-routed demote is in flight on the copy
+    /// stream. Declared before `tier` so its retained twins drop before the transfer engine.
+    demoting: Option<PendingDemote>,
     tier: Option<HostTierContext>,
     arena: Option<memra_engine::PinnedHostArena>,
     arena_reserve_ms: f64,
@@ -8690,6 +8701,9 @@ impl HostPrefixCache {
     /// (`disabled`): latched-off means no NEW pinned allocs, and the resident bytes are
     /// exactly what a revocation must clear. Returns (namespaces, entries, bytes) removed.
     fn purge_tenant(&mut self, tenant: &str) -> (usize, usize, usize) {
+        // WP-A day 17: a `Demoting` entry settles before the purge so a revoked tenant's bytes
+        // cannot land after the purge's receipt.
+        host_demote_settle_pending(self, ContractWait::Block, "a tenant purge");
         let row = crate::auth::meter_key(&crate::auth::scope_namespace(tenant, "")).to_string();
         let victims: Vec<PoolKey> = self
             .entries
@@ -9187,6 +9201,95 @@ enum HostContractFailure {
     TicketLeaked(String),
 }
 
+/// Which program the door's D2H takes (WP-A day 17, memra#536 Move 1 first slice). `OnTick`: the
+/// day-16 program, the route blocks the owner thread on the copy's events and publishes before it
+/// returns (every by-reference caller: the admission reclaim flush, the pause sweep, the handoff
+/// export). `OffTick`: the eviction sink's route, the D2H is issued on the transfer engine's copy
+/// stream and the entry is `Demoting` until a tick-top poll observes every item complete and
+/// publishes it (`host_demote_settle_pending`). Honoured only where the contract route exists
+/// (tier on, pageable tier, non-GLM entry); elsewhere the image is built as today.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ContractD2h {
+    OnTick,
+    OffTick,
+}
+
+/// How a settle step waits for a contract-routed D2H: `Block` is a host wait on every item's event
+/// (the day-16 program; taken when a second demote, a promote or a purge meets a `Demoting` entry),
+/// `Poll` reads the events and hands the ticket back when one is still pending (the tick top).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ContractWait {
+    Block,
+    Poll,
+}
+
+/// One plane of a contract-routed demote as planned before any plane leaves the entry: slot,
+/// geometry, byte counts and device capacity.
+struct ContractPlanned {
+    slot: ContractSlot,
+    len: usize,
+    k_tok_bytes: usize,
+    v_tok_bytes: usize,
+    kb: usize,
+    vb: usize,
+    capacity: usize,
+}
+
+/// A contract-routed D2H that was submitted and not yet settled (WP-A day 17): the ticket, its
+/// producer fence, the registered planes (their retained twins take them back), the plan and the
+/// per-item sizes, the one-shot fault the submission took, and when it was submitted. Owned by
+/// `PendingDemote` while the entry is `Demoting`; consumed by `host_kv_planes_settle_contract`.
+struct PendingContractDemote {
+    ticket: memra_engine::cache::tiered::TransferTicket,
+    producer: memra_engine::cache::tiered::FenceId,
+    registered: Vec<ContractPlane>,
+    planned: Vec<ContractPlanned>,
+    sizes: Vec<u64>,
+    fault: Option<HostContractFault>,
+    submitted: Instant,
+}
+
+/// What one settle step of a contract-routed D2H produced.
+enum ContractSettle {
+    /// `Poll` found at least one item's event not yet complete: the ticket is handed back.
+    Pending(PendingContractDemote),
+    /// Every item complete, the receipt required, the planes back, the ticket retired and
+    /// acknowledged: the host planes, each carrying its receipt (trunk, then the draft).
+    Done(Vec<Option<HostPlane>>, Option<HostPlane>),
+}
+
+/// The image `host_entry_from_device` built: whole (every plane on the host, the pre-door
+/// meaning) or `Demoting` (the f32 planes and metadata on the host, the KV planes in flight on the
+/// copy stream; `kv` and `draft` are empty until the settle fills them).
+enum HostImage {
+    Whole(HostPrefixEntry),
+    Demoting(HostPrefixEntry, PendingContractDemote),
+}
+impl HostImage {
+    #[cfg(test)]
+    fn whole(self) -> HostPrefixEntry {
+        match self {
+            Self::Whole(e) => e,
+            Self::Demoting(..) => panic!("the synchronous route produced a Demoting image"),
+        }
+    }
+}
+
+/// The one `Demoting` entry of the worker (WP-A day 17): out of the device LRU (evicted), not in
+/// the host LRU (unpublished), its KV planes on the copy stream. `dead` is the evicted device entry
+/// whose slots take the planes back (`host_contract_planes_back`) so their storage returns to the
+/// pool when it drops; `image` is the host entry with everything but the KV planes; `host_bytes`
+/// and `t0` are what the publish line reports. Exactly one exists per worker: the ledger's
+/// in-flight dimension is one batch, and every other route settles it first.
+struct PendingDemote {
+    dead: Option<PrefixEntry>,
+    image: HostPrefixEntry,
+    contract: Option<PendingContractDemote>,
+    host_bytes: usize,
+    t0: Instant,
+    polls: u32,
+}
+
 /// One-shot injected fault for the contract routes: `MEMRA_KV_HOST_FAULT=contract-presubmit` or
 /// `contract-postpublish` (the D2H demote route, Option B) and `contract-promote-presubmit` or
 /// `contract-promote-postpublish` (the H2D promote route, Option C), armed once at boot into
@@ -9256,14 +9359,38 @@ struct ContractPlane {
 /// probed before any plane leaves (a refused `register_device` drops the plane it was handed),
 /// and the receipt is the engine's completion checksum per item, carried on each `HostPlane`
 /// for `bind_tier_image` to check against the bundle checksum. One D2H per plane: the
-/// contract's `memcpy_dtoh` on the owner stream behind a producer fence; nothing else copies.
+/// contract's `memcpy_dtoh` behind a producer fence; nothing else copies.
+///
+/// WP-A day 17 (memra#536 Move 1): the route is two halves. `host_kv_planes_submit_contract`
+/// plans, allocates, registers, fences and submits (the copies ride the engine's copy stream);
+/// `host_kv_planes_settle_contract` observes completion, requires the receipt, takes the planes
+/// back and retires the ticket. This synchronous wrapper is the day-16 program: submit, then a
+/// blocking settle (`ContractWait::Block`), for the by-reference callers.
 fn host_kv_planes_through_contract(
     engine: &Engine,
     tier: &HostTierContext,
     dead: &mut PrefixEntry,
     class: HostTierEntryClass,
 ) -> Result<(Vec<Option<HostPlane>>, Option<HostPlane>), HostContractFailure> {
-    use HostContractFailure::{Alloc, Refused, SourceQuarantined, TicketLeaked};
+    let pending = host_kv_planes_submit_contract(engine, tier, dead, class)?;
+    match host_kv_planes_settle_contract(tier, dead, pending, ContractWait::Block)? {
+        ContractSettle::Done(kv, draft) => Ok((kv, draft)),
+        ContractSettle::Pending(_) => Err(HostContractFailure::SourceQuarantined(
+            "tier D2H blocking settle returned a pending ticket".into(),
+        )),
+    }
+}
+
+/// The submit half (steps 1 to 5 of the frozen demote sequence): the plane list, pinned
+/// destinations, the device admission probe, the planes leaving the entry into the registry, the
+/// producer fence and ONE batch. Returns the pending ticket; every refusal unwinds as before.
+fn host_kv_planes_submit_contract(
+    engine: &Engine,
+    tier: &HostTierContext,
+    dead: &mut PrefixEntry,
+    class: HostTierEntryClass,
+) -> Result<PendingContractDemote, HostContractFailure> {
+    use HostContractFailure::{Alloc, Refused, SourceQuarantined};
     use memra_engine::cache::tiered::*;
     let fault = tier.take_fault(true);
     let Some(transfers) = &tier.transfers else {
@@ -9287,16 +9414,7 @@ fn host_kv_planes_through_contract(
     // 1. The plane list, borrowed: slot, geometry, byte counts, and the two checks a refused
     //    `register_device` could otherwise make only by dropping the plane it was handed (an
     //    empty plane, a plane allocated off the owner stream).
-    struct Planned {
-        slot: ContractSlot,
-        len: usize,
-        k_tok_bytes: usize,
-        v_tok_bytes: usize,
-        kb: usize,
-        vb: usize,
-        capacity: usize,
-    }
-    let mut planned = Vec::with_capacity(dead.kv.len() + 1);
+    let mut planned: Vec<ContractPlanned> = Vec::with_capacity(dead.kv.len() + 1);
     {
         let owner = t.owner_stream();
         let planes = dead
@@ -9331,7 +9449,7 @@ fn host_kv_planes_through_contract(
                      stream"
                 )));
             }
-            planned.push(Planned {
+            planned.push(ContractPlanned {
                 slot,
                 len: p.len,
                 k_tok_bytes: p.k_tok_bytes,
@@ -9559,9 +9677,53 @@ fn host_kv_planes_through_contract(
             ));
         }
     };
+    let _ = engine;
+    Ok(PendingContractDemote {
+        ticket,
+        producer,
+        registered,
+        planned,
+        sizes,
+        fault,
+        submitted: Instant::now(),
+    })
+}
+
+/// The settle half (steps 6 to 9): completion, the receipt, the planes back, the ticket retired
+/// and acknowledged, the host planes with their receipts. `Block` waits on every item's event on
+/// the host (the day-16 program); `Poll` reads them and hands the ticket back as `Pending` while
+/// one is still running (the tick top, WP-A day 17). Every failure is the day-15 typed unwind.
+fn host_kv_planes_settle_contract(
+    tier: &HostTierContext,
+    dead: &mut PrefixEntry,
+    pending: PendingContractDemote,
+    wait: ContractWait,
+) -> Result<ContractSettle, HostContractFailure> {
+    use HostContractFailure::{Refused, SourceQuarantined, TicketLeaked};
+    use memra_engine::cache::tiered::*;
+    let Some(transfers) = &tier.transfers else {
+        return Err(SourceQuarantined(
+            "tier D2H transfer engine missing at settle (the door context was built without a \
+             CUDA owner)"
+                .into(),
+        ));
+    };
+    let mut t = transfers.borrow_mut();
+    let PendingContractDemote {
+        ticket,
+        producer,
+        registered,
+        planned,
+        sizes,
+        fault,
+        submitted,
+    } = pending;
     // 6. Completion: the engine's event per item, then its status and its checksum of each
-    //    destination (the receipt), then each destination taken exactly once.
-    if let Err(e) = t.synchronize(&ticket) {
+    //    destination (the receipt), then each destination taken exactly once. `Block` is the host
+    //    wait; `Poll` observes without waiting and returns while any item is pending.
+    if wait == ContractWait::Block
+        && let Err(e) = t.synchronize(&ticket)
+    {
         return Err(SourceQuarantined(format!(
             "tier D2H completion unknown ({e:?}); the transfer engine keeps the planes"
         )));
@@ -9574,6 +9736,24 @@ fn host_kv_planes_through_contract(
             )));
         }
     };
+    if !completion.producer_done {
+        if wait == ContractWait::Poll {
+            return Ok(ContractSettle::Pending(PendingContractDemote {
+                ticket,
+                producer,
+                registered,
+                planned,
+                sizes,
+                fault,
+                submitted,
+            }));
+        }
+        return Err(SourceQuarantined(
+            "tier D2H completion not done after a blocking wait; the transfer engine keeps the \
+             planes"
+                .into(),
+        ));
+    }
     let mut destinations = Vec::with_capacity(sizes.len());
     for item in 0..sizes.len() {
         match t.take_destination(&ticket, item as u32, HOST_TIER_TRANSFER_EPOCHS) {
@@ -9750,8 +9930,7 @@ fn host_kv_planes_through_contract(
         if draft.is_some() { ", draft" } else { "" },
         digest_hex(&digest("host-prefix-d2h-receipt", &receipt)),
     );
-    let _ = engine;
-    Ok((kv, draft))
+    Ok(ContractSettle::Done(kv, draft))
 }
 
 /// Take every registered plane back out of the transfer engine into its slot of `dead`. Every
@@ -10702,7 +10881,8 @@ fn host_entry_from_device(
     host: &mut HostPrefixCache,
     dead: &mut PrefixEntry,
     verify_digest: Option<String>,
-) -> Result<HostPrefixEntry, HostImageFailure> {
+    route: ContractD2h,
+) -> Result<HostImage, HostImageFailure> {
     let is_glm = dead.tp.is_some() || dead.latent.iter().any(Option::is_some);
     if dead.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
         return Err("host image layout version mismatch".into());
@@ -10778,7 +10958,13 @@ fn host_entry_from_device(
             let class =
                 host_tier_entry_class(false, dead.draft.is_some(), dead.dspark_draft.is_some())
                     .map_err(|why| format!("tier image {why}"))?;
-            match host_kv_planes_through_contract(engine, tier, dead, class) {
+            let routed = match route {
+                ContractD2h::OnTick => host_kv_planes_through_contract(engine, tier, dead, class)
+                    .map(|(kv, draft)| ContractSettle::Done(kv, draft)),
+                ContractD2h::OffTick => host_kv_planes_submit_contract(engine, tier, dead, class)
+                    .map(ContractSettle::Pending),
+            };
+            match routed {
                 Ok(planes) => Some(planes),
                 Err(HostContractFailure::Alloc(why)) => {
                     host.rejected_allocs += 1;
@@ -10800,8 +10986,15 @@ fn host_entry_from_device(
         }
         _ => None,
     };
-    let (mut kv, contract_draft) = match contract_planes {
-        Some((kv, draft)) => (kv, Some(draft)),
+    let (mut kv, contract_draft, pending) = match contract_planes {
+        Some(ContractSettle::Done(kv, draft)) => (kv, Some(draft), None),
+        // WP-A day 17: the KV planes are in flight on the copy stream; their slots fill at the
+        // settle. `Some(None)` for the draft: the contract owns it, nothing is copied by reference.
+        Some(ContractSettle::Pending(pending)) => (
+            (0..dead.kv.len()).map(|_| None).collect(),
+            Some(None),
+            Some(pending),
+        ),
         None => {
             let mut kv = Vec::with_capacity(dead.kv.len());
             for plane in &dead.kv {
@@ -10810,21 +11003,13 @@ fn host_entry_from_device(
                     _ => None,
                 });
             }
-            (kv, None)
+            (kv, None, None)
         }
     };
     // Diagnostic fault door (see kv_host_fault): corrupt one demoted byte AFTER the demote
     // digest was recorded, so the MEMRA_KV_HOST_VERIFY promote check has a real mismatch to
-    // catch. Gate-box only.
-    if kv_host_fault() == "flip-demote"
-        && let Some(plane) = kv.iter_mut().flatten().find(|p| p.len * p.k_tok_bytes > 0)
-    {
-        plane.k.flip_first_byte()?;
-        eprintln!(
-            "[prefix-host] FAULT: flipped one demoted K byte \
-                 (MEMRA_KV_HOST_FAULT=flip-demote)"
-        );
-    }
+    // catch. Gate-box only. A `Demoting` image has no plane yet; the settle applies it.
+    apply_flip_demote_fault(&mut kv)?;
     let mut conv = Vec::with_capacity(dead.conv.len());
     for c in &dead.conv {
         if glm.is_some() {
@@ -10930,7 +11115,26 @@ fn host_entry_from_device(
             .into());
         }
     }
-    Ok(entry)
+    Ok(match pending {
+        Some(pending) => HostImage::Demoting(entry, pending),
+        None => HostImage::Whole(entry),
+    })
+}
+
+/// The `flip-demote` fault (see `kv_host_fault`): one K byte of the first demoted plane flipped
+/// AFTER the demote digest was recorded, so `MEMRA_KV_HOST_VERIFY` has a real mismatch to catch.
+/// Applied once per image: at build for a whole image, at the settle for a `Demoting` one.
+fn apply_flip_demote_fault(kv: &mut [Option<HostPlane>]) -> Result<(), String> {
+    if kv_host_fault() == "flip-demote"
+        && let Some(plane) = kv.iter_mut().flatten().find(|p| p.len * p.k_tok_bytes > 0)
+    {
+        plane.k.flip_first_byte()?;
+        eprintln!(
+            "[prefix-host] FAULT: flipped one demoted K byte \
+                 (MEMRA_KV_HOST_FAULT=flip-demote)"
+        );
+    }
+    Ok(())
 }
 
 /// What one demotion attempt did with the source entry's bytes, so callers that still OWN
@@ -10953,6 +11157,10 @@ enum HostDemoteOutcome {
     /// potentially-live inputs). No host copy exists AND the device entry is not whole: a
     /// caller holding it must drop it, never serve it. The tier latched off.
     SourceQuarantined,
+    /// WP-A day 17, the eviction sink's route only (`ContractD2h::OffTick`): the D2H was submitted
+    /// on the copy stream and the entry is `Demoting`; the tick-top poll publishes it. No
+    /// by-reference caller ever receives this.
+    Demoting,
 }
 
 /// The demote hook: called from the device cache's capacity-eviction loop (the ONLY
@@ -10961,8 +11169,20 @@ enum HostDemoteOutcome {
 /// named seam for a copy-stream follow-up, not an oversight). Pinned/leased entries never
 /// reach here: they are absent from the evictable LRU by construction.
 fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, mut dead: PrefixEntry) {
-    let _ = host_demote_prefix_ref(engine, host, &mut dead);
-    // `dead` drops here whatever happened: it was already evicted from the device tier.
+    // WP-A day 17 (memra#536 Move 1): under the door the sink's D2H leaves the tick. The route
+    // sets `host.demoting` in the same step that answers `Demoting`; the evicted entry's shell
+    // then travels with it so the planes have slots to return to (and pool storage to free).
+    let route = if host.tier.is_some() {
+        ContractD2h::OffTick
+    } else {
+        ContractD2h::OnTick
+    };
+    if host_demote_prefix_ref(engine, host, &mut dead, route) == HostDemoteOutcome::Demoting
+        && let Some(pending) = host.demoting.as_mut()
+    {
+        pending.dead = Some(dead);
+    }
+    // Otherwise `dead` drops here whatever happened: it was already evicted from the device tier.
 }
 
 /// MEMORY-ADMISSION FLUSH (memra#365, door `MEMRA_ADMIT_BY_MEMORY`): the admission reclaim
@@ -10999,7 +11219,7 @@ fn evict_all_demoting(
         {
             let bytes = entry.bytes as u64;
             if matches!(
-                host_demote_prefix_ref(engine, host, entry),
+                host_demote_prefix_ref(engine, host, entry, ContractD2h::OnTick),
                 HostDemoteOutcome::Demoted
             ) {
                 demoted += 1;
@@ -11032,10 +11252,16 @@ fn host_demote_prefix_ref(
     engine: &Engine,
     host: &mut HostPrefixCache,
     dead: &mut PrefixEntry,
+    route: ContractD2h,
 ) -> HostDemoteOutcome {
     if !host.armed() {
         return HostDemoteOutcome::Off; // tier off (or latched off): byte-identical to today
     }
+    // WP-A day 17: one `Demoting` entry per worker. A second demote of any route settles the
+    // pending one first (a host wait on its events, then the same publication code): the
+    // ledger's one-batch in-flight dimension is never raced and no demotable entry is dropped
+    // to a `Capacity` refusal.
+    host_demote_settle_pending(host, ContractWait::Block, "a second demote");
     // GLM host images are opt-in. OFF preserves the old refusal; ON copies
     // all current model-owned planes, with byte census before publication.
     if dead.tp.is_some() && !glm5_tp_kv_host_on() {
@@ -11168,58 +11394,35 @@ fn host_demote_prefix_ref(
     } else {
         None
     };
-    match host_entry_from_device(engine, host, dead, verify_digest) {
-        Ok(mut e) => {
+    match host_entry_from_device(engine, host, dead, verify_digest, route) {
+        Ok(HostImage::Demoting(mut e, contract)) => {
+            // WP-A day 17: the KV planes are on the copy stream. The residency charge travels
+            // with the image; publication (bind, reclaim, insert) waits for the tick-top poll.
+            e._tier_charge = tier_charge;
+            let items = contract.sizes.len();
+            let seq = contract.ticket.sequence;
+            host.demoting = Some(PendingDemote {
+                dead: None,
+                image: e,
+                contract: Some(contract),
+                host_bytes,
+                t0,
+                polls: 0,
+            });
+            eprintln!(
+                "[prefix-host] demote submitted off the tick (contracts door): {} tokens, {:.1}MB, \
+                 ticket seq={seq}, {items} items on the copy stream (model {}{})",
+                dead.toks.len(),
+                host_bytes as f64 / 1e6,
+                dead.pool_key.0,
+                ns_suffix(&dead.pool_key.1)
+            );
+            HostDemoteOutcome::Demoting
+        }
+        Ok(HostImage::Whole(mut e)) => {
             // Native D2H has completed and owns a distinct immutable image before bind.
             e._tier_charge = tier_charge;
-            if let Err(err) = host.bind_tier_image(&mut e) {
-                host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "bind refused");
-                eprintln!("[prefix-host] demote failed ({err}); nothing published");
-                return HostDemoteOutcome::Failed;
-            }
-            // TENANT-SHARE RECLAIM (memra#384), the evictions: the image exists and is bound, so
-            // the only refusal left after an eviction is `insert`'s own (booked as wasted below).
-            // The plan passed before the copy and nothing since mutates the row on this
-            // single-owner worker, so a refusal here is unreachable; it fails closed and says so.
-            if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes)
-                && let Err(refusal) =
-                    host.reclaim_tenant_share(&dead.pool_key, &dead.toks, host_bytes)
-            {
-                host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "reclaim refused");
-                host.tenant_rejects += 1;
-                eprintln!(
-                    "[prefix-host] demote failed after the D2H copy: the tenant share reclaim \
-                     that was feasible before the copy refused ({refusal}); nothing published \
-                     ({} tokens, model {}{})",
-                    dead.toks.len(),
-                    dead.pool_key.0,
-                    ns_suffix(&dead.pool_key.1)
-                );
-                return HostDemoteOutcome::Failed;
-            }
-            let toks = e.toks.len();
-            let bytes = e.bytes;
-            if host.insert(&dead.pool_key, e) {
-                let ms = t0.elapsed().as_secs_f64() * 1e3;
-                host.log_arena("demotion");
-                host.demotions += 1;
-                host.demote_ms_total += ms;
-                eprintln!(
-                    "[prefix-host] demote: {toks} tokens, {:.1}MB in {ms:.1}ms (host resident \
-                     {:.1}MB / {:.0}MB, model {}{})",
-                    bytes as f64 / 1e6,
-                    host.total_bytes as f64 / 1e6,
-                    host.budget as f64 / 1e6,
-                    dead.pool_key.0,
-                    ns_suffix(&dead.pool_key.1)
-                );
-                HostDemoteOutcome::Demoted
-            } else {
-                // insert's own refusals (identity/version mismatch, entry > whole budget)
-                // already logged their reason; a reclaim that paid for them is booked wasted.
-                host.waste_pending_reclaim(&dead.pool_key, toks, "insert refused");
-                HostDemoteOutcome::Failed
-            }
+            host_demote_publish(host, dead, e, host_bytes, t0)
         }
         Err(failure) => {
             // The fixed-arena path reclaims inside `reserve_image`, before a copy that can fail.
@@ -11241,6 +11444,180 @@ fn host_demote_prefix_ref(
                     HostDemoteOutcome::SourceQuarantined
                 }
             }
+        }
+    }
+}
+
+/// The publication of a built image (shared by the synchronous route and the tick-top settle,
+/// WP-A day 17): bind the tier image (its bundle checksum against each plane's receipt), the
+/// tenant-share reclaim, `insert` into the host LRU, the `[prefix-host] demote:` line. Nothing
+/// before this function makes the entry visible to a hit.
+fn host_demote_publish(
+    host: &mut HostPrefixCache,
+    dead: &PrefixEntry,
+    mut e: HostPrefixEntry,
+    host_bytes: usize,
+    t0: Instant,
+) -> HostDemoteOutcome {
+    if let Err(err) = host.bind_tier_image(&mut e) {
+        host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "bind refused");
+        eprintln!("[prefix-host] demote failed ({err}); nothing published");
+        return HostDemoteOutcome::Failed;
+    }
+    // TENANT-SHARE RECLAIM (memra#384), the evictions: the image exists and is bound, so
+    // the only refusal left after an eviction is `insert`'s own (booked as wasted below).
+    // The plan passed before the copy and nothing since mutates the row on this
+    // single-owner worker, so a refusal here is unreachable; it fails closed and says so.
+    if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes)
+        && let Err(refusal) = host.reclaim_tenant_share(&dead.pool_key, &dead.toks, host_bytes)
+    {
+        host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "reclaim refused");
+        host.tenant_rejects += 1;
+        eprintln!(
+            "[prefix-host] demote failed after the D2H copy: the tenant share reclaim \
+             that was feasible before the copy refused ({refusal}); nothing published \
+             ({} tokens, model {}{})",
+            dead.toks.len(),
+            dead.pool_key.0,
+            ns_suffix(&dead.pool_key.1)
+        );
+        return HostDemoteOutcome::Failed;
+    }
+    let toks = e.toks.len();
+    let bytes = e.bytes;
+    if host.insert(&dead.pool_key, e) {
+        let ms = t0.elapsed().as_secs_f64() * 1e3;
+        host.log_arena("demotion");
+        host.demotions += 1;
+        host.demote_ms_total += ms;
+        eprintln!(
+            "[prefix-host] demote: {toks} tokens, {:.1}MB in {ms:.1}ms (host resident \
+             {:.1}MB / {:.0}MB, model {}{})",
+            bytes as f64 / 1e6,
+            host.total_bytes as f64 / 1e6,
+            host.budget as f64 / 1e6,
+            dead.pool_key.0,
+            ns_suffix(&dead.pool_key.1)
+        );
+        HostDemoteOutcome::Demoted
+    } else {
+        // insert's own refusals (identity/version mismatch, entry > whole budget)
+        // already logged their reason; a reclaim that paid for them is booked wasted.
+        host.waste_pending_reclaim(&dead.pool_key, toks, "insert refused");
+        HostDemoteOutcome::Failed
+    }
+}
+
+/// WP-A day 17: one settle step of the `Demoting` entry. `Poll` at the tick top; `Block` (with
+/// `why` naming the path) where a second demote, a promote or a purge meets it. Publishes through
+/// `host_demote_publish` when every item completed; on a typed failure nothing is published and
+/// the outcome is the day-15 unwind's (`Refused`: the entry drops whole; `SourceQuarantined` and
+/// `TicketLeaked`: the tier latches off). Returns `None` when nothing was pending.
+fn host_demote_settle_pending(
+    host: &mut HostPrefixCache,
+    wait: ContractWait,
+    why: &str,
+) -> Option<HostDemoteOutcome> {
+    host_demote_settle_with(host, wait, why, host_kv_planes_settle_contract)
+}
+
+/// The state machine behind `host_demote_settle_pending`, with the contract step injected so the
+/// CPU conformance tests drive every arm without a device.
+fn host_demote_settle_with(
+    host: &mut HostPrefixCache,
+    wait: ContractWait,
+    why: &str,
+    settle: impl FnOnce(
+        &HostTierContext,
+        &mut PrefixEntry,
+        PendingContractDemote,
+        ContractWait,
+    ) -> Result<ContractSettle, HostContractFailure>,
+) -> Option<HostDemoteOutcome> {
+    let mut pending = host.demoting.take()?;
+    pending.polls += 1;
+    let (Some(mut dead), Some(contract)) = (pending.dead.take(), pending.contract.take()) else {
+        // Unreachable by construction (the sink attaches the shell in the same step); a pending
+        // demote without its shell cannot take its planes back, so it is dropped as a failure.
+        eprintln!(
+            "[prefix-host] demote failed: a Demoting entry has no source shell or ticket; \
+             nothing published"
+        );
+        return Some(HostDemoteOutcome::Failed);
+    };
+    let seq = contract.ticket.sequence;
+    let submitted = contract.submitted;
+    let settled = match &host.tier {
+        Some(tier) => settle(tier, &mut dead, contract, wait),
+        None => Err(HostContractFailure::SourceQuarantined(
+            "tier context gone under a Demoting entry".into(),
+        )),
+    };
+    match settled {
+        Ok(ContractSettle::Pending(contract)) => {
+            pending.dead = Some(dead);
+            pending.contract = Some(contract);
+            host.demoting = Some(pending);
+            Some(HostDemoteOutcome::Demoting)
+        }
+        Ok(ContractSettle::Done(mut kv, draft)) => {
+            let copy_ms = submitted.elapsed().as_secs_f64() * 1e3;
+            let mode = match wait {
+                ContractWait::Poll => "tick-top poll".to_string(),
+                ContractWait::Block => format!("settled synchronously by {why}"),
+            };
+            if !host.armed() {
+                eprintln!(
+                    "[prefix-host] demote dropped: the tier latched off while ticket seq={seq} was \
+                     Demoting ({mode}); nothing published"
+                );
+                return Some(HostDemoteOutcome::Failed);
+            }
+            if let Err(err) = apply_flip_demote_fault(&mut kv) {
+                eprintln!("[prefix-host] demote failed ({err}); nothing published");
+                return Some(HostDemoteOutcome::Failed);
+            }
+            let mut e = pending.image;
+            e.kv = kv;
+            e.draft = draft;
+            eprintln!(
+                "[prefix-host] demote published off the tick: ticket seq={seq} complete after {} \
+                 poll(s), {copy_ms:.1}ms from submission to completion ({mode})",
+                pending.polls
+            );
+            Some(host_demote_publish(
+                host,
+                &dead,
+                e,
+                pending.host_bytes,
+                pending.t0,
+            ))
+        }
+        Err(failure) => {
+            host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "copy failed");
+            Some(match failure {
+                HostContractFailure::Alloc(err) | HostContractFailure::Refused(err) => {
+                    eprintln!("[prefix-host] demote failed ({err}); nothing demoted");
+                    HostDemoteOutcome::Failed
+                }
+                HostContractFailure::TicketLeaked(err) => {
+                    eprintln!("[prefix-host] demote failed ({err}); nothing demoted");
+                    host.disable(&err);
+                    HostDemoteOutcome::Failed
+                }
+                HostContractFailure::SourceQuarantined(err) => {
+                    eprintln!(
+                        "[prefix-host] demote failed ({err}); nothing demoted, and the device \
+                         entry is no longer whole: its planes stay with the quarantined transfer \
+                         ({} tokens, model {}{})",
+                        dead.toks.len(),
+                        dead.pool_key.0,
+                        ns_suffix(&dead.pool_key.1)
+                    );
+                    host.disable(&err);
+                    HostDemoteOutcome::SourceQuarantined
+                }
+            })
         }
     }
 }
@@ -11601,6 +11978,10 @@ fn host_promote_prefix_hit(
     prompt: &[u32],
     device_best_len: usize,
 ) -> Option<(usize, PrefixPin)> {
+    // WP-A day 17: a promote never races the `Demoting` entry for the ledger's one-batch
+    // in-flight dimension; the pending demote settles first (and a hit on ITS prompt then finds
+    // it published rather than priming cold).
+    host_demote_settle_pending(host, ContractWait::Block, "a promote");
     let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
     let candidate = &host.entries[pool_key][hi];
     if !host.generation_current(candidate) {
@@ -12842,7 +13223,9 @@ fn host_handoff_export(
             break;
         };
         px.evictions += 1;
-        if host_demote_prefix_ref(engine, hpx, &mut dead) == HostDemoteOutcome::Demoted {
+        if host_demote_prefix_ref(engine, hpx, &mut dead, ContractD2h::OnTick)
+            == HostDemoteOutcome::Demoted
+        {
             demoted += 1;
         }
     }
@@ -17316,6 +17699,11 @@ pub fn run(
     health.mark_ready();
 
     loop {
+        // WP-A day 17 (memra#536 Move 1): the tick-top poll of the one `Demoting` entry. Its D2H
+        // rides the transfer engine's copy stream; publication into the host prefix index happens
+        // HERE, on the owner thread, once every item's event has completed, before admission so
+        // a request admitted this tick can hit what just published.
+        host_demote_settle_pending(&mut hpx, ContractWait::Poll, "the tick top");
         // Cheap runtime peer validation stays on its copy-count cadence here, between scheduler
         // ticks on the CUDA owner thread. Idle-only rungs remain pending. A mismatch continues on
         // validated host bounce; only inability to arm that staging reaches the panic ladder.
@@ -17342,6 +17730,7 @@ pub fn run(
             if pending_constraints.is_empty()
                 && pause_pending.is_empty()
                 && handoff_import.is_none()
+                && hpx.demoting.is_none()
             {
                 // Do not let an already-arrived request sit behind an idle-only probe. Once the
                 // channel is observed empty, one pending expensive rung may run before the worker
@@ -17403,6 +17792,11 @@ pub fn run(
                 let mut wait = idle_recv_wait(&pending_constraints, &pause_pending, Instant::now());
                 if handoff_import.is_some() {
                     wait = wait.min(Duration::from_millis(1));
+                }
+                // WP-A day 17: a `Demoting` entry is tick work on an idle box too: keep the poll
+                // running so the entry publishes without waiting for the next request.
+                if hpx.demoting.is_some() {
+                    wait = wait.min(Duration::from_millis(2));
                 }
                 match rx.recv_timeout(wait) {
                     Ok(cmd) => handle_cmd(
@@ -21149,7 +21543,12 @@ pub fn run(
                         loaded.get(&cand.pool_key.0).map(|l| &l.model),
                     ) {
                         Ok(mut entry) => {
-                            match host_demote_prefix_ref(&engine, &mut hpx, &mut entry) {
+                            match host_demote_prefix_ref(
+                                &engine,
+                                &mut hpx,
+                                &mut entry,
+                                ContractD2h::OnTick,
+                            ) {
                                 HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated => {
                                     drop(entry); // the boundary copy's device planes free here
                                     let fed_len = pool[pi].fed.len();
@@ -21167,9 +21566,11 @@ pub fn run(
                                 }
                                 HostDemoteOutcome::Failed
                                 | HostDemoteOutcome::Off
-                                | HostDemoteOutcome::SourceQuarantined => {
+                                | HostDemoteOutcome::SourceQuarantined
+                                | HostDemoteOutcome::Demoting => {
                                     // The boundary snapshot was a copy; the park itself is intact
-                                    // whatever the transfer kept.
+                                    // whatever the transfer kept. `Demoting` is unreachable on the
+                                    // by-reference route (WP-A day 17) and reads as unpublished.
                                     eprintln!(
                                         "[prefix-host] pause demote: host copy did not \
                                      publish; park kept"
@@ -21197,7 +21598,8 @@ pub fn run(
                     .get_mut(&cand.pool_key)
                     .and_then(|pool| pool.get_mut(ei))
                 {
-                    let outcome = host_demote_prefix_ref(&engine, &mut hpx, entry);
+                    let outcome =
+                        host_demote_prefix_ref(&engine, &mut hpx, entry, ContractD2h::OnTick);
                     if outcome == HostDemoteOutcome::SourceQuarantined {
                         // Option B: the transfer engine kept the entry's planes (a quarantined
                         // completion); the entry is not whole and must not stay resident.
@@ -37508,6 +37910,263 @@ mod tests {
         }
     }
 
+    // ---- WP-A day 17: the `Demoting` state machine (memra#536 Move 1, first slice) ----
+    // CPU halves: what a settle step does with a pending demote given the contract's answer
+    // (`host_demote_settle_with` takes the contract step as a closure), and what every other path
+    // does when it meets a `Demoting` entry. The copy itself, the receipt and the publication of a
+    // real image are the gates' (`tools/kv-host-spill-identity-gate.sh`, the fault gate) on a card.
+
+    /// A `Demoting` entry with a 64-token key (the lookup floor) and no planes: the shape every
+    /// CPU test starts from. The ticket and fence are plain data; the engine never sees them.
+    fn cpu_pending_demote(host: &mut HostPrefixCache, pool_key: &PoolKey) {
+        let toks: Vec<u32> = (100..164).collect();
+        let mut dead = entry_b(pool_key, 100, 4096);
+        dead.toks = toks.clone();
+        let image = host_entry(pool_key, toks, 4096);
+        let contract = super::PendingContractDemote {
+            ticket: memra_engine::cache::tiered::TransferTicket {
+                issuer: 7,
+                sequence: 1,
+                epochs: super::HOST_TIER_TRANSFER_EPOCHS,
+            },
+            producer: memra_engine::cache::tiered::FenceId {
+                issuer: 7,
+                owner: 0,
+                generation: 1,
+                sequence: 1,
+            },
+            registered: Vec::new(),
+            planned: Vec::new(),
+            sizes: vec![64, 64],
+            fault: None,
+            submitted: std::time::Instant::now(),
+        };
+        host.demoting = Some(super::PendingDemote {
+            dead: Some(dead),
+            image,
+            contract: Some(contract),
+            host_bytes: 4096,
+            t0: std::time::Instant::now(),
+            polls: 0,
+        });
+    }
+
+    fn cpu_door_host() -> (HostPrefixCache, PoolKey) {
+        let generation = Arc::new(());
+        let mut host = HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(contracts_context("m", generation, 1 << 30));
+        (host, ("m".to_string(), String::new()))
+    }
+
+    #[test]
+    fn demoting_entry_is_a_miss_and_a_pending_poll_publishes_nothing() {
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_demote(&mut host, &key);
+        let prompt: Vec<u32> = (100..170).collect();
+        // A hit on the Demoting prompt is a miss: the entry is in neither index.
+        assert_eq!(host.lookup(&key, &prompt), None);
+        assert_eq!(host.n_entries(), 0);
+        // Three tick-top polls that find an item still running: the state is kept, nothing is
+        // published, the poll count advances, the tier stays armed.
+        for expected_polls in 1..=3u32 {
+            let outcome = super::host_demote_settle_with(
+                &mut host,
+                super::ContractWait::Poll,
+                "the tick top",
+                |_, _, contract, wait| {
+                    assert_eq!(wait, super::ContractWait::Poll);
+                    Ok(super::ContractSettle::Pending(contract))
+                },
+            );
+            assert_eq!(outcome, Some(super::HostDemoteOutcome::Demoting));
+            assert_eq!(host.demoting.as_ref().unwrap().polls, expected_polls);
+            assert!(host.demoting.as_ref().unwrap().dead.is_some());
+            assert!(host.demoting.as_ref().unwrap().contract.is_some());
+            assert_eq!(host.n_entries(), 0);
+            assert_eq!(host.lookup(&key, &prompt), None);
+            assert!(host.armed());
+            assert_eq!(host.demotions, 0);
+        }
+        // Nothing pending answers None and touches nothing.
+        host.demoting = None;
+        assert_eq!(
+            super::host_demote_settle_with(
+                &mut host,
+                super::ContractWait::Poll,
+                "x",
+                |_, _, _, _| { panic!("the contract step must not run with nothing pending") }
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn completion_reaches_publication_exactly_once_and_only_after_done() {
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_demote(&mut host, &key);
+        // `Done` hands the planes to the publication step. On the CPU no plane can exist, so
+        // `bind_tier_image` refuses by name there ("surface is not qualified"): the outcome is a
+        // typed `Failed`, the state is consumed, and nothing is resident. That the refusal is
+        // bind's proves the settle reached publication and not before.
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Block,
+            "a promote",
+            |_, dead, _, wait| {
+                assert_eq!(wait, super::ContractWait::Block);
+                assert_eq!(
+                    dead.toks.len(),
+                    64,
+                    "the shell travels with the pending demote"
+                );
+                Ok(super::ContractSettle::Done(Vec::new(), None))
+            },
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
+        assert!(
+            host.demoting.is_none(),
+            "a settled demote is never polled again"
+        );
+        assert_eq!(host.n_entries(), 0);
+        assert_eq!(host.demotions, 0);
+        assert!(host.armed(), "a bind refusal is not a latch");
+    }
+
+    #[test]
+    fn a_failing_copy_never_publishes_and_keeps_the_day15_typed_outcomes() {
+        use super::HostContractFailure::*;
+        // Refused: the entry drops whole, the tier stays on.
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_demote(&mut host, &key);
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            |_, _, _, _| Err(Refused("tier D2H receipt refused: injected".into())),
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
+        assert!(host.demoting.is_none());
+        assert_eq!(host.n_entries(), 0);
+        assert!(host.armed());
+        // SourceQuarantined: nothing published, the tier latches off.
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_demote(&mut host, &key);
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            |_, _, _, _| {
+                Err(SourceQuarantined(
+                    "tier D2H completion unknown; the transfer engine keeps the planes".into(),
+                ))
+            },
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::SourceQuarantined));
+        assert!(host.demoting.is_none());
+        assert_eq!(host.n_entries(), 0);
+        assert!(
+            !host.armed(),
+            "a quarantined completion latches the tier off"
+        );
+        // TicketLeaked: nothing published, the tier latches off.
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_demote(&mut host, &key);
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Block,
+            "a second demote",
+            |_, _, _, _| Err(TicketLeaked("tier D2H ticket did not retire".into())),
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
+        assert!(host.demoting.is_none());
+        assert_eq!(host.n_entries(), 0);
+        assert!(!host.armed());
+    }
+
+    #[test]
+    fn a_tier_latched_off_under_a_demoting_entry_drops_it_unpublished() {
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_demote(&mut host, &key);
+        host.disable("alloc-fail elsewhere");
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            |_, _, _, _| Ok(super::ContractSettle::Done(Vec::new(), None)),
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
+        assert!(host.demoting.is_none());
+        assert_eq!(host.n_entries(), 0);
+        assert_eq!(host.demotions, 0);
+    }
+
+    /// Source census: every path the contract names settles the pending demote FIRST (a second
+    /// demote of any route, a promote, a tenant purge), the tick-top poll runs before admission,
+    /// the idle block is not indefinite while an entry is `Demoting`, and the eviction sink is the
+    /// only `OffTick` caller.
+    #[test]
+    fn every_path_that_meets_a_demoting_entry_settles_it_first() {
+        let worker = include_str!("worker.rs");
+        let body = |start: &str| {
+            let a = worker
+                .find(start)
+                .unwrap_or_else(|| panic!("{start} missing"));
+            let b = a + worker[a..].find("\n}\n").unwrap();
+            &worker[a..b]
+        };
+        let hook = body("fn host_demote_prefix_ref(");
+        let settle = hook
+            .find("host_demote_settle_pending(host, ContractWait::Block, \"a second demote\")")
+            .expect("the hook settles a pending demote before its own copy");
+        assert!(settle < hook.find("host_entry_from_device(").unwrap());
+        let promote = body("fn host_promote_prefix_hit(");
+        let settle = promote
+            .find("host_demote_settle_pending(host, ContractWait::Block, \"a promote\")")
+            .expect("the promote hook settles first");
+        assert!(settle < promote.find("host_promote_candidate(").unwrap());
+        let purge = body("    fn purge_tenant(&mut self, tenant: &str) -> (usize, usize, usize) {");
+        assert!(
+            purge.contains(
+                "host_demote_settle_pending(self, ContractWait::Block, \"a tenant purge\")"
+            )
+        );
+        // The run loop: the poll is the first statement of the loop body, and the indefinite idle
+        // block requires no Demoting entry.
+        let run = worker.find("pub fn run(").unwrap();
+        let loop_at = run + worker[run..].find("\n    loop {\n").unwrap();
+        let poll = worker[loop_at..]
+            .find("host_demote_settle_pending(&mut hpx, ContractWait::Poll, \"the tick top\")")
+            .unwrap();
+        assert!(poll < 700, "the poll is the loop body's first statement");
+        assert!(worker[loop_at..loop_at + 3000].contains("&& hpx.demoting.is_none()"));
+        assert!(worker[loop_at..loop_at + 8000].contains("if hpx.demoting.is_some() {"));
+        // OffTick is the eviction sink's route and nobody else's.
+        let sink = body("fn host_demote_prefix_entry(");
+        assert!(sink.contains("ContractD2h::OffTick"));
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let code: Vec<&str> = production
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect();
+        assert_eq!(
+            code.join("\n").matches("ContractD2h::OffTick").count(),
+            2,
+            "the sink and the route selector in host_entry_from_device, nobody else"
+        );
+        // The settle-with driver is the only place that publishes a Demoting image, and it does
+        // so through the shared publication function after `Done`.
+        let driver = body("fn host_demote_settle_with(");
+        let done = driver
+            .find("Ok(ContractSettle::Done(mut kv, draft)) => {")
+            .unwrap();
+        let publish = driver.find("host_demote_publish(").unwrap();
+        assert!(done < publish);
+        assert!(driver[..done].find("host_demote_publish(").is_none());
+        assert!(driver.contains("if !host.armed() {"));
+    }
+
     /// GPU-only helper: a real `CudaTransfers` on the engine's owner stream over the server's
     /// ledger, the in-flight dimension sized to EXACTLY one batch of `planes` K/V pairs, so a
     /// leaked ticket would refuse the next demote with `Capacity`.
@@ -37531,8 +38190,11 @@ mod tests {
         let ledger: std::rc::Rc<std::cell::RefCell<dyn BudgetGovernor>> = std::rc::Rc::new(
             std::cell::RefCell::new(super::HostTierLedger(governor.clone())),
         );
-        let transfers =
-            memra_engine::tier_transfer::CudaTransfers::new(engine.stream(), ledger).unwrap();
+        let transfers = memra_engine::tier_transfer::CudaTransfers::new_with_copy_stream(
+            engine.stream(),
+            ledger,
+        )
+        .unwrap();
         super::HostTierContext {
             governor,
             programs: HashMap::from([(
@@ -37644,7 +38306,13 @@ mod tests {
             .unwrap()
             .fault
             .set(Some(super::HostContractFault::PreSubmit));
-        let why = match super::host_entry_from_device(&engine, &mut host, &mut entry, None) {
+        let why = match super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OnTick,
+        ) {
             Err(super::HostImageFailure::Failed(why)) => why,
             Err(super::HostImageFailure::SourceQuarantined(why)) => {
                 panic!("a pre-submit refusal escalated to quarantine: {why}")
@@ -37673,8 +38341,15 @@ mod tests {
             "nothing charged after the unwind"
         );
         // The next demote on the same engine and ledger completes: nothing wedged, nothing leaked.
-        let image = super::host_entry_from_device(&engine, &mut host, &mut entry, None)
-            .expect("a clean demote after the refusal");
+        let image = super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OnTick,
+        )
+        .map(super::HostImage::whole)
+        .expect("a clean demote after the refusal");
         assert!(
             image
                 .kv
@@ -37714,7 +38389,13 @@ mod tests {
             .unwrap()
             .fault
             .set(Some(super::HostContractFault::PostPublish));
-        let why = match super::host_entry_from_device(&engine, &mut host, &mut entry, None) {
+        let why = match super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OnTick,
+        ) {
             Err(super::HostImageFailure::Failed(why)) => why,
             Err(super::HostImageFailure::SourceQuarantined(why)) => {
                 panic!("a post-publish refusal escalated to quarantine: {why}")
@@ -37743,8 +38424,15 @@ mod tests {
             "in-flight released by retire, destinations freed by acknowledge, planes taken back"
         );
         // In-flight capacity is exactly one batch: a leaked ticket refuses this with Capacity.
-        let image = super::host_entry_from_device(&engine, &mut host, &mut entry, None)
-            .expect("a clean demote after the aborted ticket");
+        let image = super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OnTick,
+        )
+        .map(super::HostImage::whole)
+        .expect("a clean demote after the aborted ticket");
         assert!(gpu_entry_whole(&engine, &entry, &want));
         assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
         drop(image);
@@ -37758,8 +38446,10 @@ mod tests {
         host: &mut super::HostPrefixCache,
         entry: &mut super::PrefixEntry,
     ) -> super::HostPrefixEntry {
-        let image = super::host_entry_from_device(engine, host, entry, None)
-            .expect("a clean contract-routed demote");
+        let image =
+            super::host_entry_from_device(engine, host, entry, None, super::ContractD2h::OnTick)
+                .map(super::HostImage::whole)
+                .expect("a clean contract-routed demote");
         assert!(
             image
                 .kv
@@ -39585,7 +40275,10 @@ mod tests {
         let hook = worker
             .find("fn host_demote_prefix_ref(")
             .expect("the demote hook exists");
-        let body_end = hook + worker[hook..].find("\n}\n").expect("the hook ends");
+        // WP-A day 17: the publication tail lives in `host_demote_publish`, right after the hook,
+        // shared with the tick-top settle; the census spans both.
+        let publish = hook + worker[hook..].find("\nfn host_demote_publish(").unwrap();
+        let body_end = publish + worker[publish..].find("\n}\n").expect("the publish ends");
         let body = &worker[hook..body_end];
         let at = |needle: &str| {
             body.find(needle)
@@ -39593,8 +40286,8 @@ mod tests {
         };
         let plan = at("host.tenant_share_reclaim_plan(&dead.pool_key, &dead.toks, host_bytes)");
         let evaporation = at("demote evaporated at the tenant share cap before the D2H");
-        let copy = at("host_entry_from_device(engine, host, dead, verify_digest)");
-        let ok_arm = at("Ok(mut e) => {");
+        let copy = at("host_entry_from_device(engine, host, dead, verify_digest, route)");
+        let ok_arm = at("Ok(HostImage::Whole(mut e)) => {");
         let bind = at("host.bind_tier_image(&mut e)");
         let reclaim = at("host.reclaim_tenant_share(&dead.pool_key, &dead.toks, host_bytes)");
         let insert = at("host.insert(&dead.pool_key, e)");
