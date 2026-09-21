@@ -914,6 +914,13 @@ first run found a third marker on main: `research/tune-data/perf-ci.jsonl:1147` 
 the perf gate parses, from the #604 rebase); removed, every remaining line parses. Ruling 27: a marker line in a
 tracked file is a push refusal from now on, and a hand-resolved merge is followed by this census before its commit.
 
+Final battery on the integ25 tree (`integration-day12/integ25-cpu-battery/`, tree `5a14f5188`, CPUQuota 1200 percent):
+fmt, portable suites (335 passed, 0 skipped), memra-server suite (green), clippy, flags, publish and docs-registry
+censuses, collector pytest (87 passed), memra-engine CPU lib tests (518 passed), engine clippy `-D warnings`, perf
+board, diff-check, then the marker census and its teeth, workflow keys, em-dash scan: 16 steps rc=0. Local 5090
+`tools/serve-smoke.sh` (`integ25-serve-smoke-5090/`): `serve-smoke: 0 failed` (gemma4 and Q35 arms SKIP, models absent
+on this rig; a lane's continuation-gate process shared the card during the window, recorded in `window.txt`).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
