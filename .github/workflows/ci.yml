@@ -83,6 +83,21 @@ jobs:
           tools/check-workflow-keys.py
           tools/test_workflow_keys.sh
 
+      - name: Content-bound release qualification controls (CPU-only)
+        run: |
+          python3 tools/test_release_qualification.py
+          python3 tools/test_release_inputs.py
+          python3 -m unittest tools.test_check_hardware_gate
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: "1.97.1"
+      - name: Prepare compiler input isolation
+        run: bash tools/install-release-sandbox-ci.sh
+      - name: Compiler input view and filesystem boundary (CPU-only)
+        run: |
+          python3 tools/test_release_input_view.py
+
       - name: Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)
         run: tools/unittest-floor.sh tools test_cache_qualification.py 15
 
@@ -134,7 +149,9 @@ jobs:
       - name: Argmax-margin input and verdict controls
         run: python3 tools/test_argmax_margin_gate.py
       - name: Push-range fixture (round 1)
-        run: tools/test_push_range.sh
+        run: |
+          python3 tools/test_push_range_setup.py
+          tools/test_push_range.sh
       - name: Gate-template teeth fixture (round 3)
         run: |
           tools/test_gate_template_integrity.sh
@@ -188,9 +205,6 @@ jobs:
       # suite does: adding memra-reference took the pass count to 417, so a floor left at 130
       # would have let all ~68 of that crate's speech tests disappear behind a green check.
       # 400 leaves slack for the declared skips and for honest single-test removals only.
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-        with:
-          toolchain: "1.97.1"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: ci-gates
