@@ -89,7 +89,10 @@ def parse_gen(path):
             r["t_last"] = t
         if "[expert-host-slru]" in l:
             r["trace_lines"] += 1
-        if "experts-via-tier" in l or "expert-host-slru" in l or "expert-gpu-slru" in l:
+        # The pre-registered clause names the bracketed tags; the refusal line itself carries the bare
+        # substring "experts-via-tier" and is not a door line (replay v1 counted the substring; corrected
+        # to the clause as written before any other result was read, DAY18.md hashlock results).
+        if "[experts-via-tier]" in l or "[expert-host-slru]" in l or "[expert-gpu-slru]" in l:
             r["door_lines"] += 1
         if l.startswith("[q8rp] split-plane decode mirrors built"):
             r["t_q8rp"] = t
@@ -199,11 +202,24 @@ def hashlock(cell):
     check(ctl["exit"] == 0 and ctl["match"], f"control run exit {ctl['exit']} with MATCH={ctl['match']}")
     check(ctl["door_lines"] == 0, "control run prints no door line")
     lock_s = (door["t_last"] - door["t_q8rp"]) if door["t_q8rp"] is not None and door["t_last"] is not None else float("nan")
+    marks = {}
+    for raw in (ev / "marks.tsv").read_text().splitlines():
+        t, what = raw.split("\t", 1)
+        marks[what.split(" rc=")[0]] = t
+    def wall(label):
+        import datetime
+        try:
+            a = datetime.datetime.fromisoformat(marks[f"{label} start"].replace("Z", "+00:00"))
+            b = datetime.datetime.fromisoformat(marks[f"{label} end"].replace("Z", "+00:00"))
+            return (b - a).total_seconds()
+        except KeyError:
+            return float("nan")
+    door_wall, ctl_wall = wall("door"), wall("control")
     text, d = regime(cell)
     print(text)
     verdict = "hash_lock_refuses" if all(checks) else "FAIL"
     line = (f"HASHLOCK rule door_exit={door['exit']} sha_mismatch_line={door['sha_mismatch']} door_lines={door['door_lines']} "
-            f"control_exit={ctl['exit']} control_match={ctl['match']} lock_cost_after_load_s={lock_s:.2f} (N=1, not pooled) "
+            f"control_exit={ctl['exit']} control_match={ctl['match']} lock_cost_after_last_load_line_s={lock_s:.2f} door_wall_s={door_wall:.1f} control_wall_s={ctl_wall:.1f} (N=1, not pooled) "
             f"artifact={(ev / 'artifact.sha256').read_text().split()[0][:16] if (ev / 'artifact.sha256').exists() else 'na'} -> {verdict}")
     print(line)
     return line
