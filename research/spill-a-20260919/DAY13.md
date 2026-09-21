@@ -281,3 +281,16 @@ discrepancy with C's whole-demote line (bytes, not rate). Not done, stated: the 
 door; the split of the ticket lifecycle inside C's 130 ms; any default change (the seam stays at
 `PinnedKind::WriteCombined` until the lead rules at the decide-by review, 2026-10-05). memra#552
 gets a comment pointing here; it stays open.
+
+## Push
+
+`git push origin lane/spill-a-20260919` at `ccc02604c` (`day13/push-attempt1.log`, no
+`--no-verify`, no skip variable) ran the perf board, flags census, releasability censuses,
+docs-registry census and workflow-file census green and was then refused, verbatim: `pre-push:
+engine files touched after the last perf-ci battery.` with `base (merge-base with
+refs/remotes/origin/lane/spill-a-20260919): c2f13f6cccca400f425dd2353f7211a37c5da381` and the two
+engine files this lane changes, `crates/memra-engine/src/bin/tier_transfer_gate.rs` and
+`crates/memra-engine/src/tier_transfer.rs`. The refusal is correct (this lane changes engine files)
+and is not overridden: the lead runs `tools/local-ci.sh --perf` on the integ tree. The lane's remote
+tip stays at `c2f13f6cc`; the unpushed commits are `febd54201`, `33405a186`, `c65f3c11e`,
+`abfc3fc32`, `ccc02604c` and the commit that adds this section.
