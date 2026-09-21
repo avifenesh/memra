@@ -149,7 +149,9 @@ jobs:
       - name: Argmax-margin input and verdict controls
         run: python3 tools/test_argmax_margin_gate.py
       - name: Push-range fixture (round 1)
-        run: tools/test_push_range.sh
+        run: |
+          python3 tools/test_push_range_setup.py
+          tools/test_push_range.sh
       - name: Gate-template teeth fixture (round 3)
         run: |
           tools/test_gate_template_integrity.sh
