@@ -998,6 +998,41 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|3276
   offline replays are `research/spill-b-20260919/verify-day11.py` (day-11 rule) and
   `verify-day12.py` (ruling 6: the label must have been printed by the gate as the final status
   line, exactly once, and the receipt fields must follow the pure verdict).
+- `--fault <arm>` (lane D, day 11; `kv_tier_gate/fault.rs`, pure rule `fault_contract.rs`): one
+  fault at one documented contract call of the same active roundtrip, on the first full-history
+  K plane, on the pooled allocator only. The door is a usage error off `--case active`
+  (`--fault requires --case active`, a failed cell), refuses the VMM door
+  (`REFUSED: fault arms are bound to the pooled allocator; the VMM door is not a fault surface`)
+  and the reclaim diagnostic (`REFUSED: fault arms do not combine with the reclaim diagnostic`),
+  and never echoes an unknown arm (`REFUSED: unknown fault arm (expected ...)`). Every arm
+  records the contract's answers as `check / expected / observed` rows (`fault-checks.tsv`,
+  summary `FAULT-ARM.txt`); `fault_contract::verdict` prints `FAULT-ARM PASS <arm>` only when
+  every required check was recorded and held, a differing answer or a missing check is a failed
+  cell (`fault arm <arm> did not prove its contract; missing=[..] failed=[..]`), and the two arms
+  whose expectation has no seam in the frozen contracts end in a typed refusal, never PASS. A
+  passing arm whose cache is whole and bit-identical (`restored-identical`) runs the same
+  tokenwise continuation and writes `ACTIVE.txt` with the PASS line as its first line; an arm
+  whose cache is incomplete prints `FAULT-ARM PASS <arm> committed=<n> generated=0` and writes no
+  token: a layer whose K plane did not come back never re-enters the cache. The whole-state
+  admission (`active::admit_whole_state`: the governor's own `reserve` for every byte the
+  demotion would pin, released at once, before any layer is taken) and the restore integrity
+  check (`StateBundle::verify`, `Error::Corrupt`, before any device allocation) are part of the
+  roundtrip for every run, not only the arms.
+
+  | Arm | Injection point (contract call) | Required checks (expected answer) | Outcome |
+  | --- | --- | --- | --- |
+  | `cancel-demote` | D2H submitted and observed complete (`synchronize`), then `TransferEngine::cancel` before `take_destination` | `cancel` `Ok(PublicationRevoked)`; `take-after-cancel` `Err(Cancelled)`; `retire` and `acknowledge` `Ok(())`; `pinned-after-cancel` `0`; `source-returned` (`take_plane` gives the untouched source, `len=<capacity> vmm=false`); `budget-zero`; `restored-identical` | PASS, intact-resident, continuation runs |
+  | `cancel-restore` | H2D submitted and observed complete, then `cancel` before `ready_view` | `cancel` `Ok(PublicationRevoked)`; `ready-view-after-cancel`, `with-destination-after-cancel`, `take-after-cancel` all `Err(Cancelled)`; `retire`, `acknowledge` `Ok(())`; `retake-demoted-copy` (`take_destination` on the D2H ticket) `Err(AlreadyReleased)`; `budget-zero` | typed refusal: the H2D source handle is consumed at submission and released by `retire`; the D2H twin is take-once; no contract seam recovers the copy, so no restore and no token |
+  | `corrupt-host` | after `demote`: `CudaPinnedLease::write` under the live D2H ticket, then the legal drain (`record_consumer`, `retire`, `acknowledge`), then `write` again; `restore` on the flipped copy | `write-under-live-ticket` `Err(Busy)`; `write-sole-owner` `Ok(())`; `restore-integrity` `Corrupt` (`StateBundle::verify`, before any device call); `device-registry-unchanged`; `budget-zero` | PASS, no publish, no token |
+  | `missing-host` | D2H completed and never taken; `retire(None)` and `acknowledge` remove the engine-owned copy; `take_destination` at restore | `completion-checksum` (`poll` checksum equals the bundle's); `remove` `retire=Ok(()) acknowledge=Ok(())`; `pinned-released` (the plane's bytes); `retake-removed-copy` `Err(UnknownTicket)`; `budget-zero` | PASS, no publish, no token |
+  | `host-budget-short` | governor pinned capacity set to the whole demoted bytes minus one; `admit_whole_state` before any layer is taken | `whole-state-admission` `Err(Capacity)`; `layers-resident` unchanged; `pinned-charged` `0`; `budget-zero`; `restored-identical` | PASS, nothing copied, continuation runs |
+  | `device-short` | after demote, a competing tenant reserves the governor's device dimension down to one byte less than the restore needs; `alloc_device` (restore's first call) | `restore-admission` `Err(Capacity)`; `device-registry-unchanged`; `host-copy-intact` (`StateBundle::verify` `Ok(())`); competitor released; `budget-zero`; `restored-identical` | PASS, continuation runs. The governor has no post-construction capacity seam; the seam used is its own admission with a second tenant |
+  | `require-resident` | demote all, ask `Cache::ensure_usable` (the engine's only continuation gate) while suspended, restore all | `budget-zero`; `restored-identical`; observation `continuation_gate_on_suspended_cache` | typed refusal: no continuation-time required-resident contract exists (the taint flag is one-way and pipeline-scoped; `decode_step_h` unwraps a suspended layer; `tiered::policy::RestoreDecision::RequireState` is a load-versus-recompute rule) |
+
+  CPU replay: `crates/memra-tier/tests/reclaim/fault.rs` (door, red arms per arm, committed
+  target-card receipts); the lane's offline replay is `research/spill-d-20260919/verify-day11.py`
+  and its cells are `research/spill-d-20260919/pro-single-day11/<arm>/` (N=1, one RTX PRO 6000
+  Blackwell, `executed-not-qualified` or `refused`, never qualification).
 - Receipts: `BASELINE.txt` (first line `BASELINE_CAPTURED`) or `ACTIVE.txt` (first line
   `ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS` or
   `ACTIVE_COPY_RESTORE_CAPTURED; reclaim qualification incomplete; see metrics; continuation
