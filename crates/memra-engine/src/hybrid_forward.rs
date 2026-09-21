@@ -21792,15 +21792,19 @@ impl HybridModel {
         Ok(moe_out)
     }
 
-    /// The lockstep CPU experts share expert decodes across streams (the companion's multi-row
-    /// ABI, one call per expert over every stream that routed to it) and re-accumulate each
-    /// row EXACTLY as the one-job program does (`cpu_experts::accumulate_expert_exact`: raw
-    /// down rows, `fma(y, w * down_scale, sum)` in selection order from zero). Bit-identical to
-    /// the M=1 run by construction (proof: `cpu-native-check`, "rows raw + exact accumulate"
-    /// arm; box receipt memra#577 follow-up). `MEMRA_LOCKSTEP_CPU_ROWS=0` is the rollback seam
-    /// to the one-job-per-row program, also exact, without the cross-stream amortization.
+    /// `MEMRA_LOCKSTEP_CPU_ROWS=1` opts the lockstep CPU experts into the companion's multi-row
+    /// program: one raw rows call per CPU expert over every stream that routed to it (decode
+    /// amortized across streams), each row then re-accumulated EXACTLY as the one-job program
+    /// does (`cpu_experts::accumulate_expert_exact`: `fma(y, w * down_scale, sum)` in selection
+    /// order from zero). Bit-identical to M=1 either way (proof: `cpu-native-check` "raw + exact
+    /// accumulate" arm; Hy3 box receipt in research/lockstep-cpu-rows-exact-20260921). Default
+    /// OFF because the default question is not settled: the arm read +2.5% aggregate at M=4 on a
+    /// Ryzen 9950X host (single run, the pre-exact arithmetic) and lost about a quarter on an
+    /// EPYC 9B14 host (N=5 interleaved, both orders, same window). Missing gate for a default
+    /// flip: the same N>=5 A/B on a 9950X-class host. The one-job-per-row program stays the
+    /// default; it is the M=1 program itself.
     fn lockstep_cpu_rows_on() -> bool {
-        std::env::var("MEMRA_LOCKSTEP_CPU_ROWS").as_deref() != Ok("0")
+        std::env::var("MEMRA_LOCKSTEP_CPU_ROWS").as_deref() == Ok("1")
     }
 
     /// Lane-3 M2: cross-stream MoE for lockstep decode. Routes all m stream rows in one
@@ -21896,11 +21900,12 @@ impl HybridModel {
         }
 
         // CPU tickets first: reads/compute overlap the GPU grouped work below. Default
-        // program: one raw rows job per CPU expert over every row that routed to it (weight
-        // decode amortized across streams), then each row re-accumulated in its own selection
-        // order with the one-job program's exact arithmetic (`accumulate_expert_exact`).
-        // Rollback (`MEMRA_LOCKSTEP_CPU_ROWS=0`): one companion job per row, the M=1 program
-        // itself. Either way a stream's bytes do not depend on its peers (memra#577).
+        // program: one companion job per row, the M=1 program itself. Opt-in
+        // (`MEMRA_LOCKSTEP_CPU_ROWS=1`): one raw rows job per CPU expert over every row that
+        // routed to it (weight decode amortized across streams), then each row re-accumulated
+        // in its own selection order with the one-job program's exact arithmetic
+        // (`accumulate_expert_exact`). Either way a stream's bytes do not depend on its peers
+        // (memra#577); the default is a throughput question, see `lockstep_cpu_rows_on`.
         let host_rows = e.dtoh(zbatch)?;
         let rows_exact = crate::cpu_experts::rows_raw_supported() && Self::lockstep_cpu_rows_on();
         enum CpuPart {
