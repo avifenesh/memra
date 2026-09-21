@@ -401,6 +401,19 @@ Batteries (`integration-day12/integ16-cpu-battery/`): fmt; `tools/portable-suite
 `-D warnings`; check-flags; publish census; docs registry census; collector pytest; B's `verify-day15.py` OK; perf board;
 diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh` (`integ16-serve-smoke-5090/`): `serve-smoke: 0 failed`.
 
+## Lane B day 16 (`0fae7e715`, pushed by the lane; the owed 5090 confirmation cell stopped on its precondition)
+Scaled shape (budget 1024 MiB, byte shares preserved, ctx 16384), pre-registered prediction matched the card's byte
+arithmetic to the token (slru 31,700 versus lru 29,550 computed tokens at both pairs, 56/56 rows per arm), but the
+precondition failed: `digests_identical=26/28`, one restored-suffix request per arm lineage differs from the cache-off
+boot, deterministic across runs; and the admission reclaim ladder (`[admit-oom] reclaim-on-defer`) evicted 12 prefix
+entries per run under VRAM pressure on this 24 GB card, which the target card never did. By the pre-registered rule the
+day produced no verdict (`-> DIGEST-FAIL`) and the 20-run cell was not run; `verify-day16.py` `DAY16 REPLAY OK: receipts
+consistent, precondition FAILED on this card, no verdict`; the decision record carries the contrary result as a
+paragraph, the decision text untouched (target-card receipts). Lead reading: the restored-versus-cold divergence on the
+5090 is a correctness question of its own (one numeric program per request), not a policy question; B day 17 probes it
+with the day-14 twin gate on that card. B also found two stale `|||||||` diff3 markers in `research/INDEX.md` on main
+(from another session's merge at #587); removed in integ18.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
