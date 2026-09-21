@@ -1,0 +1,15 @@
+test health::tests::startup_canary_ok_on_first_or_last_probe_keeps_rich ... ok
+test health::tests::startup_canary_spawn_stops_immediately ... ok
+test health::tests::warming_sits_between_loading_and_ready ... ok
+test health::tests::worker_death_and_gpu_fault_latch_immediately_without_a_threshold_wait ... ok
+test health::tests::xid_classification_covers_both_kernel_line_forms_and_the_fatal_set ... ok
+test worker::tests::readiness_follows_the_boot_calibration_probe ... ok
+test health::tests::tick_max_records_the_longest_iteration ... ok
+test health::tests::a_stale_odometer_neither_rescues_nor_condemns ... ok
+test health::tests::idle_is_healthy_at_any_age_but_busy_stalls ... ok
+test health::tests::no_progress_source_is_the_pre_fix_beat_age_verdict ... ok
+test health::tests::a_worker_whose_progress_also_froze_is_unhealthy_within_the_bound ... ok
+test health::tests::a_busy_worker_that_is_still_priming_chunks_is_live_however_stale_the_beat ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 763 filtered out; finished in 0.50s
+
