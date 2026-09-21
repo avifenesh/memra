@@ -1,0 +1,176 @@
+Diff in /home/avifenesh/projects/wt-spill-b/crates/memra-server/src/admit_predict.rs:1005:
+         let (bpt, ring_bpt, ring_rows) = (1_000u64, 0u64, 0u64);
+         let (prompt, predicted, cap) = (6_000u64, 96u64, 6_200u64); // P + L + 8 = 6_104 < cap: a positive bracket
+         let ctx_cap = context_cache_bytes(bpt, ring_bpt, ring_rows, cap);
+[31m-        let ctx_hat = context_cache_bytes(bpt, ring_bpt, ring_rows, prompt + predicted + CTX_HAT_SLACK);
+[m[32m+        let ctx_hat =
+[m[32m+            context_cache_bytes(bpt, ring_bpt, ring_rows, prompt + predicted + CTX_HAT_SLACK);
+[m         let (a, w, d) = (155 << 20, 412 << 20, 96 << 20);
+         let cost = ctx_cap + a + w + d;
+         let charge = RequestCharge::from_physical_cost(cost, ctx_cap, a, d, ctx_hat);
+Diff in /home/avifenesh/projects/wt-spill-b/crates/memra-server/src/admit_predict.rs:1012:
+[31m-        assert_eq!(charge.prefill_workspace_bytes, w, "W is the remainder the cost carries");
+[m[32m+        assert_eq!(
+[m[32m+            charge.prefill_workspace_bytes, w,
+[m[32m+            "W is the remainder the cost carries"
+[m[32m+        );
+[m         assert_eq!(charge.activation_bytes, a);
+         assert_eq!(charge.draft_state_bytes, d);
+         assert_eq!(charge.total(), ctx_hat + a + w + d);
+Diff in /home/avifenesh/projects/wt-spill-b/crates/memra-server/src/admit_predict.rs:1016:
+         // The two books differ by the context bracket and by nothing else.
+         assert_eq!(cost - charge.total(), ctx_cap - ctx_hat);
+         // Pre-#476 arithmetic (the omission): W and D absent from the predictive book.
+[31m-        assert_eq!(kv_hat_ring(prompt, predicted, bpt, ring_bpt, ring_rows, a), ctx_hat + a);
+[m[31m-        assert_eq!(charge.total() - kv_hat_ring(prompt, predicted, bpt, ring_bpt, ring_rows, a), w + d);
+[m[32m+        assert_eq!(
+[m[32m+            kv_hat_ring(prompt, predicted, bpt, ring_bpt, ring_rows, a),
+[m[32m+            ctx_hat + a
+[m[32m+        );
+[m[32m+        assert_eq!(
+[m[32m+            charge.total() - kv_hat_ring(prompt, predicted, bpt, ring_bpt, ring_rows, a),
+[m[32m+            w + d
+[m[32m+        );
+[m     }
+ 
+     #[test]
+Diff in /home/avifenesh/projects/wt-spill-b/crates/memra-server/src/admit_predict.rs:1027:
+         let ctx_cap = 6_096_000u64;
+         let ctx_hat = 6_104_000u64; // P + L + 8 may exceed C by the slack: still exact.
+         let (a, w_cold, w_suffix, d) = (100u64, 900u64, 300u64, 50u64);
+[31m-        let restored = RequestCharge::from_physical_cost(ctx_cap + a + w_suffix + d, ctx_cap, a, d, ctx_hat);
+[m[32m+        let restored =
+[m[32m+            RequestCharge::from_physical_cost(ctx_cap + a + w_suffix + d, ctx_cap, a, d, ctx_hat);
+[m         assert_eq!(restored.prefill_workspace_bytes, w_suffix);
+         assert_eq!(restored.total(), ctx_hat + a + w_suffix + d);
+         let eager = RequestCharge::from_physical_cost(ctx_cap + a + w_cold, ctx_cap, a, 0, ctx_hat);
+Diff in /home/avifenesh/projects/wt-spill-b/crates/memra-server/src/admit_predict.rs:1043:
+         let (bpt, ring_bpt, ring_rows) = (83_520u64, 600u64, 4_096u64);
+         let (prompt, predicted, cap, a) = (30_000u64, 1_200u64, 40_000u64, 10_000_000u64);
+         let ctx_cap = context_cache_bytes(bpt, ring_bpt, ring_rows, cap);
+[31m-        let ctx_hat = context_cache_bytes(bpt, ring_bpt, ring_rows, prompt + predicted + CTX_HAT_SLACK);
+[m[32m+        let ctx_hat =
+[m[32m+            context_cache_bytes(bpt, ring_bpt, ring_rows, prompt + predicted + CTX_HAT_SLACK);
+[m         let charge = RequestCharge::from_physical_cost(ctx_cap + a, ctx_cap, a, 0, ctx_hat);
+[31m-        assert_eq!(charge.total(), kv_hat_ring(prompt, predicted, bpt, ring_bpt, ring_rows, a));
+[m[32m+        assert_eq!(
+[m[32m+            charge.total(),
+[m[32m+            kv_hat_ring(prompt, predicted, bpt, ring_bpt, ring_rows, a)
+[m[32m+        );
+[m     }
+ 
+     #[test]
+Diff in /home/avifenesh/projects/wt-spill-b/crates/memra-server/src/admit_predict.rs:1052:
+     fn request_charge_saturates_instead_of_wrapping() {
+         // cost below its own components cannot happen by construction; guarded anyway.
+         let charge = RequestCharge::from_physical_cost(10, 100, 5, 5, 7);
+[31m-        assert_eq!((charge.prefill_workspace_bytes, charge.activation_bytes, charge.draft_state_bytes), (0, 0, 0));
+[m[32m+        assert_eq!(
+[m[32m+            (
+[m[32m+                charge.prefill_workspace_bytes,
+[m[32m+                charge.activation_bytes,
+[m[32m+                charge.draft_state_bytes
+[m[32m+            ),
+[m[32m+            (0, 0, 0)
+[m[32m+        );
+[m         assert_eq!(charge.total(), 7);
+         let big = RequestCharge::from_physical_cost(u64::MAX, 0, u64::MAX, 0, u64::MAX);
+         assert_eq!(big.total(), u64::MAX);
+Diff in /home/avifenesh/projects/wt-spill-b/crates/memra-server/src/worker.rs:35222:
+         // context bracket ctx(C) - ctx(P + L + 8) and by nothing else, on the cold, retained-
+         // prefix and eager-arm compositions, on the plain and spec paths, flat and ring
+         // geometry. Before the fix the book was ctx(P + L + 8) + A: W and D were missing.
+[31m-        use crate::admit_predict::{kv_hat_ring, RequestCharge};
+[m[32m+        use crate::admit_predict::{RequestCharge, kv_hat_ring};
+[m         let models = [
+             (
+                 super::AdmissionCostModel {
+Diff in /home/avifenesh/projects/wt-spill-b/crates/memra-server/src/worker.rs:35293:
+                 );
+                 // cold: cost = ctx(C) + W(P) + A + D
+                 let cold = model.estimate(ctx, prompt, spec) + draft;
+[31m-                let charge =
+[m[31m-                    RequestCharge::from_physical_cost(cold as u64, ctx_cap, a, draft as u64, ctx_hat);
+[m[32m+                let charge = RequestCharge::from_physical_cost(
+[m[32m+                    cold as u64,
+[m[32m+                    ctx_cap,
+[m[32m+                    a,
+[m[32m+                    draft as u64,
+[m[32m+                    ctx_hat,
+[m[32m+                );
+[m                 assert_eq!(charge.context_hat_bytes, ctx_hat);
+                 assert_eq!(charge.activation_bytes, a);
+                 assert_eq!(
+Diff in /home/avifenesh/projects/wt-spill-b/crates/memra-server/src/worker.rs:35317:
+                 let after = model
+                     .cost_after_prefix_restore(cold, prompt, restored)
+                     .expect("restore plan");
+[31m-                let charge_r =
+[m[31m-                    RequestCharge::from_physical_cost(after as u64, ctx_cap, a, draft as u64, ctx_hat);
+[m[32m+                let charge_r = RequestCharge::from_physical_cost(
+[m[32m+                    after as u64,
+[m[32m+                    ctx_cap,
+[m[32m+                    a,
+[m[32m+                    draft as u64,
+[m[32m+                    ctx_hat,
+[m[32m+                );
+[m                 assert_eq!(
+                     charge_r.prefill_workspace_bytes,
+                     model.prefill_workspace_bytes(prompt - restored) as u64
+Diff in /home/avifenesh/projects/wt-spill-b/crates/memra-server/src/worker.rs:35326:
+                 assert_eq!(after as u64 - charge_r.total(), ctx_cap - ctx_hat);
+                 // eager arm: admitted without its captured draft state
+                 let eager = cold - draft;
+[31m-                let charge_e = RequestCharge::from_physical_cost(eager as u64, ctx_cap, a, 0, ctx_hat);
+[m[32m+                let charge_e =
+[m[32m+                    RequestCharge::from_physical_cost(eager as u64, ctx_cap, a, 0, ctx_hat);
+[m                 assert_eq!(charge_e.draft_state_bytes, 0);
+[31m-                assert_eq!(charge_e.prefill_workspace_bytes, charge.prefill_workspace_bytes);
+[m[32m+                assert_eq!(
+[m[32m+                    charge_e.prefill_workspace_bytes,
+[m[32m+                    charge.prefill_workspace_bytes
+[m[32m+                );
+[m                 assert_eq!(eager as u64 - charge_e.total(), ctx_cap - ctx_hat);
+             }
+         }
+Diff in /home/avifenesh/projects/wt-spill-b/crates/memra-server/src/worker.rs:35360:
+         assert_eq!(charge.prefill_workspace_bytes, 0);
+         assert_eq!(
+             charge.total(),
+[31m-            kv_hat_ring(prompt as u64, predicted, 9280, 0, 0, bare.activation_bytes as u64)
+[m[32m+            kv_hat_ring(
+[m[32m+                prompt as u64,
+[m[32m+                predicted,
+[m[32m+                9280,
+[m[32m+                0,
+[m[32m+                0,
+[m[32m+                bare.activation_bytes as u64
+[m[32m+            )
+[m         );
+     }
+ 
+Diff in /home/avifenesh/projects/wt-spill-b/crates/memra-server/src/worker.rs:36604:
+         let calibrate = body
+             .find("run_boot_calibration(&engine, &loaded, &dspark_drafts, &mut admission_costs);")
+             .expect("run calls the boot calibration probe");
+[31m-        let ready = body
+[m[31m-            .find("ready_tx.send(Ok(")
+[m[31m-            .expect("run sends readiness");
+[m[31m-        let mark = body.find("health.mark_ready();").expect("run marks health ready");
+[m[32m+        let ready = body.find("ready_tx.send(Ok(").expect("run sends readiness");
+[m[32m+        let mark = body
+[m[32m+            .find("health.mark_ready();")
+[m[32m+            .expect("run marks health ready");
+[m         assert!(
+             calibrate < ready && ready < mark,
+             "boot calibration ({calibrate}) must precede the readiness send ({ready}), which must \
+Diff in /home/avifenesh/projects/wt-spill-b/crates/memra-server/src/worker.rs:36617:
+         let probe_at = prod.find("fn run_boot_calibration(").expect("probe fn");
+         let probe = &prod[probe_at..];
+         assert!(
+[31m-            probe.contains("generate_spec_session_sampled(") && probe.contains("dspark_spec_session_burst("),
+[m[32m+            probe.contains("generate_spec_session_sampled(")
+[m[32m+                && probe.contains("dspark_spec_session_burst("),
+[m             "the calibration probe generates through the real serving routes"
+         );
+     }
