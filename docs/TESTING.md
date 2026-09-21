@@ -1050,6 +1050,47 @@ while it is non-empty; `decode_step_h` is unchanged and never sees a suspended l
 `resident_bindings.rs` (register passes, the taint-only gate is the red arm) and on the real
 `Cache` in `memra-kv` (`continuation_gate_tests`). Write-up:
 `research/spill-a-20260919/DAY11.md`.
+Day 12 (memra#384, host tier tenant-share cap): at the configured `MEMRA_KV_HOST_TENANT_PCT` cap a
+demotion evaporated before the D2H copy even while the pool had free space. The demote hook now
+runs `HostPrefixCache::tenant_share_reclaim_plan` before the copy (pure: infeasible demotions
+skip the PCIe trip, nothing evicted) and `reclaim_tenant_share` once the image is built and
+bound, right before `insert`: the demoting tenant's OWN unleased host entries go oldest first
+until the demotion fits its share, then the predicate is retried once. Another tenant's row is
+never read, a leased entry (`IdentitySlot::leased`, a live identity lease) is skipped, the
+exact-key twin is spared, and a row with no eligible space keeps the bounded refusal: today's
+`demote evaporated at the tenant share cap before the D2H copy` line plus what the plan found,
+nothing evicted. On the pageable tier a charge, digest or copy failure therefore costs the row
+nothing; on the fixed arena (`MEMRA_GLM5_TP_KV_HOST=1`) the reclaim runs at reservation inside
+`reserve_image`, before the copy, and a copy failure there is booked like a refused insert
+(integ15 review of PR #597, both rounds): `prefix_host_tenant_reclaims_wasted` with a `tenant
+share reclaim WASTED` line. `host_cache_tenant_share_reservation_evicts_nothing_without_an_arena_and_books_a_copy_failure_wasted`
+pins the pageable no-op and the booking shape; the arena eviction itself needs a CUDA context
+and is receipt-only. `insert`'s
+authoritative gate, the cap and the D2H bytes are unchanged; `/metrics` gains
+`prefix_host_tenant_reclaims` and `prefix_host_tenant_reclaims_wasted`. CPU cells
+(`cargo test -p memra-server --offline tenant_share`):
+`host_cache_tenant_share_reclaim_evicts_the_tenants_own_oldest_entries_only`,
+`host_cache_tenant_share_reclaim_spares_the_twin_and_refuses_an_image_above_the_share`,
+`host_cache_tenant_share_reclaim_skips_leased_entries_and_refuses_when_only_leased_remain`
+(binds a real `IdentitySlot` and holds its lease),
+`host_cache_tenant_share_plan_is_pure_and_a_reclaim_is_consumed_by_insert_or_booked_wasted`,
+`tenant_share_reclaim_is_wired_into_the_demote_hook_and_the_metrics` (plan before the copy,
+reclaim after bind and before insert, waste booked at every later exit);
+the pre-existing `host_cache_tenant_share_cap_evaporates_one_tenant_and_still_demotes_the_other`
+still pins `insert`'s gate. Target-card gate `tools/kv-host-tenant-reclaim-gate.sh <base|fix>`:
+two keyring tenants, a 1024 MiB pool, a 38 percent share (two ~161 MB entries, not three) and a
+two-entry device budget (`MEMRA_METRICS_TOKEN` for the scrape), so one tenant's third demotion
+hits the cap with the pool two-thirds empty; the `base` arm (origin/main) asserts the evaporation
+line and nothing of the tenant's own evicted, the `fix` arm the `[prefix-host] evict (tenant
+share):` line naming that tenant followed by its `[prefix-host] demote:` and the promote of the
+reclaimed admission, both arms the other tenant's promote, no LRU eviction, no device-tier
+promote-insert skip and eight 200s; the replay `research/spill-a-20260919/verify-day12.py` adds
+equal demote bytes across arms,
+byte-identical texts and the other tenant's row equal. Evidence:
+`research/spill-a-20260919/DAY12.md`, `pro-single-day12/` (one RTX PRO 6000 Blackwell at 600 W,
+N=1, `executed-not-qualified`). The memra#385 arena-startup measurement plan and the BOX3 harness
+receipt (`tools/pinned-host-reserve-bench.py`) are in
+`research/spill-a-20260919/HOST-ARENA-STARTUP.md`; no default moves.
 Linux cross-target check is compilation only, not Linux syscall execution.
 
 ### Native conformance: `tier-transfer-gate` (v1 through canonical v1.3)
