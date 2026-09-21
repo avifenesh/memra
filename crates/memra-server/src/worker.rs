@@ -22896,9 +22896,18 @@ fn admit(
                 // live generation header the client rewrites — the frozen-boundary defect,
                 // finding B4). Only a boundary AHEAD of the restored prefix is a legal feed
                 // stop.
+                // GRID LAW (memra#602, day 19): when no stable boundary lies ahead of the
+                // restored prefix, the republish lands on the seed's grid boundary instead of
+                // the prompt end (`seed_capture_boundary` with the restored length as the hit;
+                // `Covered` publishes nothing). The engine's prompt-end republish fires only
+                // when the prompt end itself is on the grid.
                 let republish_at =
                     plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
-                        .filter(|&b| b > fed_len);
+                        .filter(|&b| b > fed_len)
+                        .or_else(|| match seed_capture_boundary(prompt.len(), fed_len) {
+                            SeedCapture::AtBoundary(b) => Some(b),
+                            _ => None,
+                        });
                 match lm.model.spec_session_from_restored_deferred(
                     engine,
                     carrier_cache,
@@ -23859,10 +23868,39 @@ fn admit(
     if spec_resumed == 0
         && let Some(sp) = spec.as_mut()
     {
-        sp.capture_at = snapshot_at.or(if seed_prefix {
-            Some(prompt.len())
-        } else {
-            None
+        // GRID LAW ON THE SPEC CAPTURE (memra#602, day 19; the plain seed's law at
+        // `seed_capture_boundary`): the cold spec session's publication used to sit at the
+        // prompt end, an arbitrary position, so a later hit restored an off-grid entry and its
+        // suffix rode a different program than the cold prime (the #379 gate's r3/g2 read
+        // `cached_tokens` 106 of 119 on spec-on against 64 of 119 on spec-off once the plain
+        // seed was aligned). One capture law for every site the server captures at: the seed
+        // boundary is the largest grid-aligned length under the prompt end that leaves at least
+        // PRIME_MIN_T prompt tokens, it becomes the prime split below (the engine captures
+        // where a chunk ends on it), and an aligned length under the entry floor is a typed,
+        // counted refusal. A snapshot_at boundary (LCP, first message, stable) is already on
+        // the grid and keeps precedence.
+        sp.capture_at = snapshot_at.or_else(|| {
+            if !seed_prefix {
+                return None;
+            }
+            match seed_capture_boundary(prompt.len(), 0) {
+                SeedCapture::AtPromptEnd => Some(prompt.len()),
+                SeedCapture::AtBoundary(b) => Some(b),
+                SeedCapture::Covered => None,
+                SeedCapture::Refused { aligned } => {
+                    px.seed_grid_refusals += 1;
+                    eprintln!(
+                        "[prefix-cache] seed REFUSED (grid): spec prompt {} tokens is off the \
+                         {}-token prime grid and its aligned boundary {aligned} is under the {} \
+                         token entry floor; no entry published (model {})",
+                        prompt.len(),
+                        memra_engine::Engine::gdn_chunk_size(),
+                        PREFIX_CACHE_MIN_TOKENS,
+                        req.model
+                    );
+                    None
+                }
+            }
         });
     }
     // spec-resume: replay sampler penalty history over the resumed prefix; queue only the suffix.
@@ -26470,11 +26508,14 @@ fn step_session(
         // the min here no longer forfeits it — the engine stops at BOTH, exactly like the
         // plain prefill tick's snapshot_at/ckpt_at pair.)
         let prime_split = if cold {
-            match (prime_split, spec.capture_at.filter(|&b| b < suffix.len())) {
-                (Some(a), Some(c)) => Some(a.min(c)),
-                (None, Some(c)) => Some(c),
-                (a, None) => a,
-            }
+            // GRID-ALIGNED CAPTURE (memra#602, day 19): `capture_at` is the seed's grid
+            // boundary and may sit ABOVE the affinity boundary, so it is a prime stop of its
+            // own. `trunk_schedule` takes both `prime_split` and the checkpoint stop (the
+            // affinity boundary rides through `ckpt_at` above), and the engine captures where
+            // a chunk ends on `capture_at`; the old min() dropped whichever stop came later.
+            spec.capture_at
+                .filter(|&b| b < suffix.len())
+                .or(prime_split)
         } else {
             prime_split
         };

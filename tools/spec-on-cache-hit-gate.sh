@@ -57,6 +57,22 @@
 #     its whole spec route is greedy-only upstream of any cache question (worker.rs
 #     gspec_k). Sampled gemma hits serving plain is the documented route, not this lane.
 #
+# THE CAPTURE LAW (memra#602, 2026-09-21, research/spill-b-20260919/DAY18.md and DAY19.md): every
+# entry the prefix cache publishes lands on the 32-token GDN prime grid, the spec session's
+# `insert (spec-boundary)` included. A prompt of P tokens publishes capture_len(P) tokens (P when P
+# is a multiple of 32, else the largest multiple below P leaving at least PRIME_MIN_T=16 tokens,
+# never under the 64-token entry floor), a hit restores exactly that many and cold-primes the rest
+# from the grid, and `cached_tokens` reports the restored length. On this gate's 106-token PROMPT
+# that is 64 of 106 for the s/sp/np hits and 64 of 119 for r3/g2/sx1 (the day-18 blocker: with the
+# plain seed aligned and the spec capture still at the prompt end, r3 and g2 read 106 on spec-on
+# against 64 on spec-off and the identity law went red). A restored spec session republishes at
+# the render-stable boundary ahead of what it restored (the raw-completion guard window, grid-
+# aligned: 96 of 119 for g2), so g3 and g4 restore 96, never g2's whole 119. The identity law
+# (spec-on text == spec-off text) is unchanged and is the assertion; only the accounting numbers
+# moved, and the FULL-COVER shape (an empty suffix, the `restore-full-cover` boundary draw) is now
+# exercised by its own ON-GRID prompt: PROMPT padded with " ok" words until /v1/tokenize counts a
+# multiple of 32 (the `fc` cells), because an off-grid prompt can no longer be a full-cover hit.
+#
 # usage:
 #   spec-on-cache-hit-gate.sh qwen  <model.gguf>              <server_bin> <evidence_dir>
 #   spec-on-cache-hit-gate.sh gemma <model.gguf> <draft.gguf> <server_bin> <evidence_dir>
@@ -225,6 +241,36 @@ json.dump(resp, open(out, "w"), indent=1)
 PY
 }
 
+# /v1/tokenize count of a prompt (the model's default add_special mirrors /v1/completions).
+tokcount() { # $1 prompt
+    python3 - "$PORT" "$1" <<'PYT'
+import json, sys, urllib.request
+port, prompt = sys.argv[1], sys.argv[2]
+r = urllib.request.urlopen(urllib.request.Request(
+    f"http://127.0.0.1:{port}/v1/tokenize", data=json.dumps({"model": "gate", "prompt": prompt}).encode(),
+    headers={"Content-Type": "application/json"}), timeout=60)
+print(json.load(r)["count"])
+PYT
+}
+# The ON-GRID prompt for the full-cover cells: PROMPT plus " ok" words until the count is a
+# multiple of 32 (each " ok" is one token on the BPE tokenizers here; the loop re-reads the count
+# and corrects once or twice, and REFUSES rather than run a full-cover cell off the grid).
+ONGRID_PROMPT=""
+ongrid_prompt() {
+    local base=$1 count pad p tries
+    count=$(tokcount "$base")
+    pad=$(( (32 - count % 32) % 32 ))
+    for tries in 1 2 3; do
+        p=$base
+        [ "$pad" -gt 0 ] && p="$base$(printf ' ok%.0s' $(seq 1 "$pad"))"
+        count=$(tokcount "$p")
+        if [ $((count % 32)) = 0 ]; then ONGRID_PROMPT=$p; echo "  on-grid prompt: $count tokens ($pad filler words)"; return 0; fi
+        pad=$(( pad + (32 - count % 32) % 32 ))
+    done
+    echo "REFUSED: could not build an on-grid prompt (last count $count)" >&2
+    return 2
+}
+
 FAILS=0
 check() { # $1 name  $2 python-bool-expr over r1/r2/r3 (loaded json)
     local name=$1 expr=$2 arm=$3
@@ -331,12 +377,42 @@ def ok(name, cond):
         fails += 1
 
 
+# THE CAPTURE LAW's arithmetic (memra#602): the published length of a P-token prompt, and the
+# render-stable republish boundary of a raw completion (the 16-token guard window, grid-aligned).
+GRID, FLOOR, MIN, GUARD = 32, 16, 64, 16
+def cap(P):
+    if P % GRID == 0:
+        return P
+    b = P // GRID * GRID
+    while b >= GRID and P - b < FLOOR:
+        b -= GRID
+    return b if b >= MIN else None
+def stable(P):
+    if P <= MIN // 4 + GUARD:
+        return None
+    b = (P - GUARD) // GRID * GRID
+    while b >= GRID and P - b < FLOOR:
+        b -= GRID
+    return b if b > 16 else None
+def republish(P, restored):
+    st = stable(P)
+    if st is not None and st > restored:
+        return st
+    c = cap(P)
+    return c if c is not None and c > restored and c - restored >= FLOOR else None
+def ptoks(r):
+    return r["usage"]["prompt_tokens"]
+
+
 for s in seeds:
     cold, hit = load(f"qwen-on-s{s}-cold"), load(f"qwen-on-s{s}-hit")
     ok(f"s{s} sampled cold engages spec, zero cached",
        spec(cold) is not None and spec(cold)["drafted"] > 0 and cached(cold) == 0)
-    ok(f"s{s} sampled hit is a FULL-COVER cache hit",
-       cached(hit) > 0 and cached(hit) == hit["usage"]["prompt_tokens"])
+    # CAPTURE LAW: the leader published cap(P) (64 of 106 here), so the identical repeat restores
+    # exactly that and cold-primes the rest from the grid; it was a whole-prompt FULL-COVER hit
+    # until 2026-09-21. The full-cover shape has its own on-grid cells below (fc).
+    ok(f"s{s} sampled hit restores the whole published entry (cached == cap(prompt) == {cap(ptoks(hit))})",
+       cached(hit) > 0 and cached(hit) == cap(ptoks(hit)))
     if teeth:
         # ROLLBACK posture: the door must hold sampled hits on the plain path.
         ok(f"s{s} sampled hit stays PLAIN under MEMRA_SPEC_RESTORE_SAMPLED=0",
@@ -379,8 +455,8 @@ if teeth:
     ok("sp penalized sampled hit stays PLAIN under the burst-local window door",
        spec(phit) is None and cached(phit) > 0)
 else:
-    ok("sp penalized sampled hit is a FULL-COVER hit",
-       cached(phit) > 0 and cached(phit) == phit["usage"]["prompt_tokens"])
+    ok(f"sp penalized sampled hit restores the whole published entry (cached == cap(prompt) == {cap(ptoks(phit))})",
+       cached(phit) > 0 and cached(phit) == cap(ptoks(phit)))
     ok("sp penalized sampled hit SPEC ENGAGED (accepted > 0)",
        spec(phit) is not None and spec(phit)["accepted"] > 0)
     ok("sp penalized sampled hit bytes == cold leader bytes (same seed)",
@@ -400,6 +476,22 @@ ok("np greedy+penalized leader serves PLAIN (publishes a plane-less entry)",
    spec(nlead) is None and cached(nlead) == 0)
 ok("np sampled hit on a plane-less entry stays PLAIN (refusal is real)",
    spec(nhit) is None and cached(nhit) > 0)
+
+# --- FULL-COVER on the grid (memra#602, day 19): the same sampled prompt twice, its token count a
+# multiple of 32, so the repeat is a true full-cover hit (empty suffix) and the engine draws the
+# first token from the ENTRY's boundary logits at the `restore-full-cover` site. This is the
+# shape the s cells had before the capture law moved their entries under the prompt end.
+flead, fhit = load("qwen-on-fc-lead"), load("qwen-on-fc-hit")
+ok("fc on-grid prompt (tokens a multiple of 32)", ptoks(flead) % GRID == 0 and ptoks(fhit) == ptoks(flead))
+ok("fc sampled leader engages spec, zero cached", spec(flead) is not None and cached(flead) == 0)
+ok("fc sampled hit is a FULL-COVER cache hit (cached == prompt_tokens)", cached(fhit) > 0 and cached(fhit) == ptoks(fhit))
+if teeth:
+    ok("fc sampled full-cover hit stays PLAIN under MEMRA_SPEC_RESTORE_SAMPLED=0", spec(fhit) is None)
+else:
+    ok("fc sampled full-cover hit SPEC ENGAGED (accepted > 0)", spec(fhit) is not None and spec(fhit)["accepted"] > 0)
+    ok("fc sampled full-cover hit bytes == cold leader bytes (same seed)", text(fhit) == text(flead))
+    ok("fc sampled full-cover hit acceptance == cold acceptance exactly",
+       spec(fhit) is not None and (spec(fhit)["accepted"], spec(fhit)["drafted"]) == (spec(flead)["accepted"], spec(flead)["drafted"]))
 
 # --- ITEM 1, the CUSTOMER-VISIBLE probe. Pre-lane every sampled request's FIRST token was
 # `argmax(prime_logits)` — the same token the greedy request emits from the same row, for
@@ -472,7 +564,39 @@ def ok(name, cond):
         fails += 1
 
 
+# THE CAPTURE LAW's arithmetic (memra#602): the published length of a P-token prompt, and the
+# render-stable republish boundary of a raw completion (the 16-token guard window, grid-aligned).
+GRID, FLOOR, MIN, GUARD = 32, 16, 64, 16
+def cap(P):
+    if P % GRID == 0:
+        return P
+    b = P // GRID * GRID
+    while b >= GRID and P - b < FLOOR:
+        b -= GRID
+    return b if b >= MIN else None
+def stable(P):
+    if P <= MIN // 4 + GUARD:
+        return None
+    b = (P - GUARD) // GRID * GRID
+    while b >= GRID and P - b < FLOOR:
+        b -= GRID
+    return b if b > 16 else None
+def republish(P, restored):
+    st = stable(P)
+    if st is not None and st > restored:
+        return st
+    c = cap(P)
+    return c if c is not None and c > restored and c - restored >= FLOOR else None
+def ptoks(r):
+    return r["usage"]["prompt_tokens"]
+
+
 g1, g2, g3, g4 = (load(f"qwen-on-g{i}") for i in (1, 2, 3, 4))
+# CAPTURE LAW: g1 published cap(P1) (64 of 106); g2 restores it and republishes at the render-stable
+# boundary ahead of it (stable(P2) = 96 of 119, the grid-aligned guard window), or at cap(P2) when
+# no stable boundary lies ahead; g3 and g4 restore that republished length, never g2's whole prompt.
+REP = republish(ptoks(g2), cap(ptoks(g1)))
+ok(f"g2 restores g1's published entry (cached == cap(P1) == {cap(ptoks(g1))})", cached(g2) == cap(ptoks(g1)))
 ok("g1 turn 1 is cold and engages spec",
    cached(g1) == 0 and spec(g1) is not None and spec(g1)["drafted"] > 0)
 ok("g2 turn 2 restores turn 1's boundary (suffix-fed hit)",
@@ -489,10 +613,11 @@ else:
     # THE Item 3 assertion.
     ok("g3 turn 3 hits a STRICTLY LONGER prefix than turn 2 did",
        cached(g3) > cached(g2))
-    # ENTRY ACCOUNTING: the republished boundary is turn 2's own prompt END — whole-entry
-    # semantics, never mid-entry (the rolled-back partial-restore hazard stays closed).
-    ok("g3's restored prefix == turn 2's whole prompt (whole-entry boundary)",
-       cached(g3) == prompt_toks(g2))
+    # ENTRY ACCOUNTING: the republished boundary is turn 2's render-stable grid boundary (memra#602;
+    # it was turn 2's own prompt END until 2026-09-21), whole-entry semantics, never mid-entry (the
+    # rolled-back partial-restore hazard stays closed).
+    ok(f"g3's restored prefix == turn 2's republished boundary ({REP} of {prompt_toks(g2)})",
+       REP is not None and cached(g3) == REP)
     # STATE CORRECTNESS, and why it is THIS comparison. A republished entry is a snapshot of
     # g2's own live boundary state, so restoring it must reproduce g2's own continuation
     # byte-for-byte: both sides continue from the same boundary through the same program, so a
@@ -501,8 +626,10 @@ else:
     # publish an extended entry at all, so it restores a SHORTER boundary and primes a longer
     # suffix; comparing against it measures prefill segmentation (the banked r3 two-programs
     # class), not this mechanism. See SAMPLED-QUALITY.md for the measured consequence.
-    ok("g4 (full-cover hit on the REPUBLISHED entry) is a full-cover hit",
-       cached(g4) == prompt_toks(g4) and cached(g4) == prompt_toks(g2))
+    # g4 repeats turn 2 exactly and restores the whole REPUBLISHED entry (96 of 119), then cold-primes
+    # the rest from the grid; it was a whole-prompt full-cover hit until the capture law.
+    ok(f"g4 (repeat of turn 2) restores the whole REPUBLISHED entry (cached == {REP})",
+       REP is not None and cached(g4) == REP and cached(g4) == cached(g3))
     ok("g4 SPEC ENGAGED on the republished entry",
        spec(g4) is not None and spec(g4)["accepted"] > 0)
     ok("g4 reproduces its publisher's continuation byte-for-byte (snapshot round-trip)",
@@ -549,6 +676,10 @@ if [ "$ARM" = qwen ]; then
     # draft plane and the sampled repeat must refuse BY NAME (the live refusal cell).
     req "$PROMPT" 0 "$EV/qwen-on-np-lead.json" 7 samp-noplane 0.5
     req "$PROMPT" "$SAMPLED_TEMP" "$EV/qwen-on-np-hit.json" 7 samp-noplane
+    # fc cells: the ON-GRID full-cover pair (see the header; built through /v1/tokenize).
+    ongrid_prompt "$PROMPT" || exit 2
+    req "$ONGRID_PROMPT" "$SAMPLED_TEMP" "$EV/qwen-on-fc-lead.json" 7 samp-fullcover
+    req "$ONGRID_PROMPT" "$SAMPLED_TEMP" "$EV/qwen-on-fc-hit.json" 7 samp-fullcover
     # ONE-TOKEN boundary cells (Item 1's customer-visible probe): the response text IS the
     # boundary token. Own namespace per cell so none of them can hit another's entry.
     req "$PROMPT" 0 "$EV/qwen-on-bg.json" 7 bnd-g 0 1
@@ -604,7 +735,9 @@ if [ "$ARM" = qwen ]; then
         # silently: the cold prime's first token, a continuation burst's stashed token
         # (max_tokens 48 > MEMRA_SPEC_BURST 32, so every sampled cell crosses one boundary),
         # and a converted full-cover hit's seed.
-        for SITE in cold-prime burst-tail-commit restore-full-cover; do
+        # ... and a converted SUFFIX hit's first draw (the s/sp/sx cells since the capture law
+        # moved their entries under the prompt end; the fc cells keep the full-cover site lit).
+        for SITE in cold-prime burst-tail-commit restore-full-cover restore-suffix-feed; do
             if grep -q "\[spec-boundary\] site=$SITE " "$EV/qwen-on-server.log"; then
                 echo "  ok: boundary site $SITE fired"
             else
