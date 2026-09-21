@@ -684,8 +684,8 @@ development mode; the receipt is the release lane's to renew, nothing here claim
 - D's day-13 note (the docs-only classifier calls `research/**` documentation while crates include research files
   at compile time): `tools/ci-change-class.sh` now derives the included set from the head tree
   (`include_str!`/`include_bytes!` literals under `crates/`, resolved to repo paths) and classifies a change to one of
-  them as `compile-input:<path>`; any failure to derive the set is code. Real tree today: three included research
-  paths (the recompute-load fixture, the qwen38 chat template). Teeth arms 15 and 16 in `tools/test_ci_change_class.sh`.
+  them as `compile-input:<path>`; any failure to derive the set is code. Real tree today: four include sites, two
+  included research paths (the recompute-load fixture, the qwen38 chat template). Teeth arms 15 and 16 in `tools/test_ci_change_class.sh`.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
