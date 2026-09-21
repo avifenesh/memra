@@ -113,7 +113,10 @@ Batteries (`integration-day12/integ10-cpu-battery/`): fmt; tier+kv+gguf 600 test
 `-D warnings`; check-flags; publish census; docs registry census; collector pytest 85 (rerun; attempt 1 hit `REFUSED:
 [Errno 11] Resource temporarily unavailable` in 20 collector tests while the lead's serve-smoke held
 `/tmp/memra-5090.lock`, kept as `pytest-battery-attempt1-rig-lock-held-by-smoke.log`); perf board; diff-check: all
-rc=0. Local 5090 `tools/serve-smoke.sh` on the merged tree (`integ10-serve-smoke-5090/`): `serve-smoke: 0 failed`.
+rc=0. Local 5090 `tools/serve-smoke.sh` on the merged tree (`integ10-serve-smoke-5090/`): `serve-smoke: 0 failed`. Full
+`tools/local-ci.sh --perf` on the integ10 tree (`integ10-local-ci-perf/`): correctness GREEN, serve-smoke 0 failed,
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 3 pair-only skips, `perf stage: 0 fail, 0 warn`, rc=0; rows appended to
+`perf-ci.jsonl`, so this push needed no override.
 Lead finding: `crates/memra-engine/build.rs` read `DOCS_RS` without `cargo:rerun-if-env-changed=DOCS_RS`, so a
 `DOCS_RS=1` clippy pass left stub artifacts that the next `cargo test -p memra-server` linked against (`undefined
 symbol: memra_dsv4_c4_recent_write`); one line added in integ10, the two failed attempts kept. The lead's battery
@@ -126,7 +129,42 @@ script now sets `DOCS_RS=1` for clippy only.
 12. **Collector pytest lock path.** The tier battery's Python tests take the real rig lock path; they must take a
     private lock path under test (lane F or D, small), so a serving job on the rig cannot redden a CPU suite.
 
+## Lane C day 12 (`7efedd13d`, pushed by the lead with the logged override: `moe_cache.rs` after the row; #552 criterion 1)
+`research/spill-c-20260919/HOSTPREFIX-CONTRACT-CENSUS.md` (179 lines, every cell file:line). Bank owner: carried are the
+artifact digest on every `BankId` and lease, record identity validated against the semantic `RecordId`, byte-for-byte
+record check plus chained checksums, CUDA ownership typed as a `ThreadId` with `WrongOwner`, scale planes refused at
+three places; dropped were the identity across the proxy seam (two `u64`s), tenant (= artifact digest by
+construction), epoch (constant `{0,0,0}`), an owner-thread check at `install_banked`, a `TransferEngine` (completion is
+a compute-stream drain), GPU slots outside the governor, the positional MTP key `layer = u16::MAX`. HostPrefix owner,
+the decisive finding: `HostTierContext` (`worker.rs:7869`) has no constructor anywhere in the crate; B's sidecar route
+(`tier_charge`, `bind_tier_image`, insert/promote identity leases) is compiled and unit-tested but never executed in
+any boot; the server holds no `ProgramIdentity` for a loaded model; the D2H is `memcpy_dtoh` + `synchronize` or the
+arena's async copy + fence with no ticket, producer fence, epochs or `Completion`; `host_demote_prefix_ref(&PrefixEntry)`
+conflicts with `CudaTransfers::register_device`'s owned `KvPlane`; `PinnedHostBuf` is not `CudaPinnedLease`;
+`tier_charge` refuses whenever the startup arena exists; the contract checksum and the `MEMRA_KV_HOST_VERIFY` digest
+are two hash programs. Eight risks listed (host-destination conversion as a second byte owner; promote is the restore
+program; three copy programs in one entry; digest versus checksum boundary; one tenant derivation; epoch and
+generation checks are refusals; MTP key collision at depth > 0; scale planes payload-only would change dequant).
+Landed on the bank side (`69905776f`): `bank::dispatch_id(&RecordId)` as the single mapping; `ExpertLeaseToken` carries
+`owner, lease, record, artifact, epochs` (still `Send + Sync`); `demand` refuses a bank leasing another record
+(`ProgramMismatch`); `with_bytes`/`finish` refuse a foreign token; `admit_banked` asserts the record identity before
+the H2D; `slru-synthetic.json` re-pinned with 2013 identical rows; 6 new tests; tier 223 tests, clippy, fmt, flags,
+docs, diff-check clean. No byte or H2D program change; no server change.
+
+## Lead rulings, day 12 (continued)
+13. **Tenant salt has one owner.** `memra-kv` gets one helper deriving `tenant_salt` from the scope namespace string;
+    the server passes the same string it feeds `auth::meter_key`. No second derivation anywhere.
+14. **Borrow discipline for the contract-routed demote.** Planes move out of `PrefixEntry` as owned `KvPlane`s for the
+    D2H; no borrowed-source seam in `CudaTransfers` (that would be a second ownership program). No v1.4.
+15. **HostPrefix through the contracts, in C's order.** Option A first: construct `HostTierContext` behind a
+    default-OFF door with a decide-by (build `ProgramIdentity` at model load, salt per ruling 13, inject the server's
+    governor); OFF must be byte-identical by construction, ON must leave `serve-smoke.sh`, `cache-meter-gate.py`, B's
+    `prefix-evict-reclaim-gate.py` (`V1..V4 -> PASS`) and `kv-host-spill-{identity,failure}-gate.sh` lines unchanged,
+    with `MEMRA_KV_HOST_VERIFY=1` `verify ok` on every promote and equal `[prefix-host] demote:` byte counts. The
+    startup arena path is out of scope for the first two slices. Option B (D2H through `TransferEngine` on the
+    pageable path) only after A's receipts; C (promotion) after B's. C day 13 owns Option A.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
-- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 running (seams through the arms, native evidence). C day 12 running (#552 criterion 1 census). E, F idle.
+- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 running (seams through the arms, native evidence). C day 12 sealed and pushed (`7efedd13d`); C day 13 running (Option A, ruling 15). E, F idle.
