@@ -199,6 +199,16 @@ cell() { # $1 name $2 fault $3 refused-kind $4 expected next-receipt seq
     chk "$name: no host-tier refusal line beyond the injected one" no_extra_refusal "$log"
 }
 
+after_any() { # $1 literal $2 regex $3 log: SOME match of regex $2 comes after the first line containing literal $1
+    # (the promote cells have receipts before the refusal too, so `after`'s first-match rule would read the r2 receipt)
+    python3 - "$1" "$2" "$3" <<'PYEOF'
+import re, sys
+a, b, log = sys.argv[1], sys.argv[2], sys.argv[3]
+lines = open(log, errors="replace").read().splitlines()
+ia = next((i for i, l in enumerate(lines) if a in l), None)
+sys.exit(0 if ia is not None and any(re.search(b, l) for l in lines[ia + 1:]) else 1)
+PYEOF
+}
 one_refusal_only() { # $1 log $2 refusal: the only host-tier refusal line is the injected one
     python3 - "$1" "$2" <<'PYEOF'
 import re, sys
@@ -229,9 +239,9 @@ pcell() { # $1 name $2 fault $3 refused-kind
     chk "$name: four completions served" four_served "$EV/$name"
     chk "$name: door ON with the transfer engine on both sides" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine.*KV plane H2D through the same engine on promote" "$log"
     chk "$name: exactly one typed injected refusal, the $kind" count_eq "$refusal" "$log" 1
-    chk "$name: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)" after "$refusal" "contracts door D2H receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* require=ok" "$log"
-    chk "$name: the next promote completes with an H2D contract receipt after the refusal" after "$refusal" "contracts door H2D receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* require=ok .* published retired acknowledged" "$log"
-    chk "$name: the next promote publishes" after "$refusal" "\\[prefix-host\\] promote: " "$log"
+    chk "$name: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)" after_any "$refusal" "contracts door D2H receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* require=ok" "$log"
+    chk "$name: the next promote completes with an H2D contract receipt after the refusal" after_any "$refusal" "contracts door H2D receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* require=ok .* published retired acknowledged" "$log"
+    chk "$name: the next promote publishes" after_any "$refusal" "\\[prefix-host\\] promote: " "$log"
     chk "$name: the promote refusal kept the host entry" absent "host entry dropped" "$log"
     chk "$name: the tier never latched off" absent "TIER DISABLED" "$log"
     chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
