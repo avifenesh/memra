@@ -1,0 +1,20 @@
+Running as unit: run-p477060-i4703721.scope; invocation ID: 6e3ee61d6b714f94b774c8f90714ee47
+== teeth: tools/test_portable_suites.sh
+== teeth rc=0 elapsed=20s
+== gpu-ci-tests: python3 tools/test_gpu_ci.py
+== gpu-ci-tests rc=0 elapsed=0s
+== gpu-ci-floor: tools/unittest-floor.sh tools test_gpu_ci.py 9
+== gpu-ci-floor rc=0 elapsed=0s
+== yaml-load: python3 -c import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); yaml.safe_load(open('.github/workflows/gpu-ci.yml')); print('safe_load ok')
+== yaml-load rc=0 elapsed=0s
+== workflow-keys: python3 tools/check-workflow-keys.py
+== workflow-keys rc=0 elapsed=0s
+== workflow-keys-teeth: tools/test_workflow_keys.sh
+== workflow-keys-teeth rc=0 elapsed=0s
+== change-class-teeth: tools/test_ci_change_class.sh
+== change-class-teeth rc=0 elapsed=1s
+== docs-census: bash tools/docs-registry-census.sh
+== docs-census rc=0 elapsed=0s
+== diff-check: git diff --check
+== diff-check rc=0 elapsed=0s
+== rerun done

@@ -413,6 +413,36 @@ paragraph, the decision text untouched (target-card receipts). Lead reading: the
 5090 is a correctness question of its own (one numeric program per request), not a policy question; B day 17 probes it
 with the day-14 twin gate on that card. B also found two stale `|||||||` diff3 markers in `research/INDEX.md` on main
 (from another session's merge at #587); removed in integ18.
+## Main red since 09:47Z: the duplicate workflow key (fixed by #600)
+#590 (codex, merged by another session) and #592 (D day 13) each added a ci.yml job named `portable-suites`; a duplicate
+mapping key makes the workflow invalid, GitHub ran zero jobs (run 35585228365 on main, "workflow file issue"), and every
+push and PR since read as failure. PyYAML `safe_load` keeps the last key silently, so the day-13 YAML-load step could
+not have caught it; #590 was green because its merge ref predated #592 (the stale-merge-ref class is closed only by the
+branch-protection "require branch up to date" setting; owner decision). Lead hotfix #600 (`9ef2f04d6`): #590's
+duplicate block removed, its one unique step (the gpu-ci orchestration tests) kept in the surviving job under the
+unittest floor. CI green again on the first run after it.
+## Lane D day 14 (`2d2b70c55`, pushed by the lane; one entry point for the portable suites)
+Census (D's DAY14.md §1): `tools/portable-suites.sh` (#592: `--offline --no-fail-fast`, static and run-side skip census at
+budget 0, floor 300, banked raw log, teeth, `needs: changes`) versus `tools/ci-portable.sh` (#590: `cargo test --release
+--locked`, no census, no floor, no teeth, ungated); `gpu-ci.yml` runs no CPU suite, and its dispatch prerequisites are
+still in draft #566, so every dispatch refuses as unconfigured by design. Fold: `portable-suites.sh` is the one executor
+(`--locked` folded in), `ci-portable.sh` is a forward that nothing tracked calls, one ci.yml job, one `local-ci.sh`
+call (`CARGO_BUILD_JOBS=8 RUST_TEST_THREADS=8`), `gpu-ci.yml` untouched, `docs/CI.md` and TESTING name the one entry
+point. New guard: `tools/check-workflow-keys.py` (a strict loader that raises on duplicate mapping keys) in the `gates`
+job and as an unconditional pre-push arm with no skip switch (a ci.yml step cannot protect ci.yml from itself; the push
+can), teeth `tools/test_workflow_keys.sh`; proven on main's own broken file (`duplicate mapping key 'portable-suites' at
+line 401 column 3 (first at line 206)` while `safe_load` exits 0). Teeth verbatim: `test_portable_suites: 22 ok, 0 FAIL`
+(new arm 3: exactly one job, no live cargo test on the three crates outside the wrapper, the forward runs no cargo),
+`test_workflow_keys: 9 ok, 0 FAIL`, `check-workflow-keys: OK: 5 workflow files, no duplicate mapping keys`, wrapper
+`skip-census: 335 passed, 0 skipped (budget 0)`, `unittest-floor: OK: ran 11 tests (floor 9) for tools (test_gpu_ci.py)`,
+collector pytest 87 with both rig locks held. Post-hotfix merge clean (one job, one gpu-ci step). Findings kept:
+`research/**` read at test time versus the docs-only classifier (day 13); an untracked day-11 `build/` leftover in D's
+receipts (now un-ignored by the repo rule; left for D to add or remove).
+## integ18 (`lane/spill-integ18-20260921`): D day 14
+Batteries (`integration-day12/integ18-cpu-battery/`): fmt; `tools/portable-suites.sh`; memra-server suite; clippy
+`-D warnings`; check-flags; publish census; docs registry census; collector pytest; `check-workflow-keys.py`;
+`test_portable_suites.sh`; `test_workflow_keys.sh`; the gpu-ci tests under the floor; perf board; diff-check: all rc=0.
+Also in integ18: two stale `|||||||` diff3 markers removed from `research/INDEX.md` (left by another session's merge).
 ## Lane C day 15 (`8ed05bfc6`, pushed by the lane; ruling 15 Option B behind the door)
 Census before code (`HOSTPREFIX-DOOR.md` "Option B"): the pageable demote was twelve steps by reference with per-plane
 `memcpy_dtoh` plus `synchronize`, no ticket, fence or checksum; the single point where owned planes can leave the entry
