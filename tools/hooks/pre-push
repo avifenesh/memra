@@ -35,14 +35,16 @@ log_skip() {
     _skip_log="$(git rev-parse --git-common-dir)/memra-gate-skips.log"
     printf '%s\t%s\t%s\t%s\tremote=%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" "$push_remote" \
-        >> "$_skip_log" || true
+        >> "$_skip_log" || { echo "pre-push: cannot record unqualified/skip state" >&2; return 1; }
     echo "pre-push: skip recorded in $_skip_log" >&2
 }
 
 push_commits=$(mktemp "${TMPDIR:-/tmp}/memra-pre-push.XXXXXX")
-trap 'rm -f "$push_commits"' EXIT HUP INT TERM
+push_refs=$(mktemp "${TMPDIR:-/tmp}/memra-push-refs.XXXXXX")
+trap 'rm -f "$push_commits" "$push_refs"' EXIT HUP INT TERM
 while read -r _local_ref local_oid _remote_ref remote_oid
 do
+    printf '%s %s %s %s\n' "$_local_ref" "$local_oid" "$_remote_ref" "$remote_oid" >> "$push_refs"
     case "$local_oid" in
         *[!0]*) ;;
         *) continue ;; # Deleting a ref pushes no commits.
@@ -240,133 +242,42 @@ else
     printf '%s\n' "$docs_census_out" | sed 's/^docs-registry-census: /    /'
 fi
 
-# ---- target-aware hardware gate (2026-08-15) ----
-# Generic kernel/default changes retain the local perf-ci freshness gate. Step-specific
-# multi-card changes may instead use a hash-bound RTX PRO 6000 receipt:
-#
-#   MEMRA_HARDWARE_GATE=step-pro \
-#   MEMRA_STEP_PRO_RECEIPT=/absolute/path/to/receipt.json git push
-#
-# The receipt binds every changed engine source file and verifies the immutable kernel,
-# topology, and official-model evidence manifests. This is not an override: step-pro mode
-# rejects MEMRA_SKIP_PERF_CI and fails closed on an uncovered or changed source file.
-
-# ---- push range derivation (2026-08-19) ----
-# The base has to be the commit this branch actually FORKED FROM. It used to be, inline,
-#     range=$(git rev-parse '@{u}' 2>/dev/null || echo HEAD~20)
-# and `@{u}` is unset on a branch's FIRST push, so every fresh lane fell through to an
-# arbitrary depth of 20 commits — which on a busy day is OTHER LANES' work. Measured on this
-# tip 2026-08-19: HEAD~20..HEAD names 10 memra-engine files, and on the live
-# lane/gate-coverage-20260819 the fallback indicted 7 engine files where the branch adds 2.
-# Lanes that touch zero engine files got a red perf gate, verified by hand that it was
-# spurious, and pushed with MEMRA_SKIP_PERF_CI=1 — at least four times in one day. A gate
-# that is LOUDEST WHEN IT HAS LEAST INFORMATION trains everyone to override it, and the
-# trained habit is worse damage than the false positive.
-#
-# Now in tools/push-range.sh (upstream if set, else merge-base with <remote>/main, no
-# arbitrary fallback, informative exit when the fork point cannot be named) so that the
-# logic has a fixture: tools/test_push_range.sh drives all four arms in throwaway repos.
-# Diagnostics land on stderr; the base SHA on stdout.
-if ! range=$(tools/push-range.sh "$1"); then
-    echo "pre-push: refusing to guess the push range — see above." >&2
+# ---- content-bound native release qualification (#547) ----
+# A topic may be explicitly pushed as unqualified development. Main and tag refs
+# always require committed native evidence. File mtimes and model-directory presence
+# are not evidence, and the retired perf skip cannot authorize qualification.
+if [ "${MEMRA_SKIP_PERF_CI:-0}" = "1" ]; then
+    echo "pre-push: MEMRA_SKIP_PERF_CI is retired; it cannot waive GPU qualification." >&2
     exit 1
 fi
-base_ref=$(git rev-parse --symbolic-full-name '@{u}' 2>/dev/null || echo "<remote>/main")
-# The diff itself must fail CLOSED. This used to be one pipeline —
-#     engine_files=$(git diff --name-only "$range"..HEAD 2>/dev/null | grep -E ... || true)
-# — and this is #!/bin/sh with `set -e` and no pipefail, so a failing `git diff` had its stderr
-# discarded, the pipeline status came from grep, `|| true` erased even that, engine_files came
-# back empty and the ENTIRE hardware/perf block below was skipped with no output at all. Same
-# fail-open class as the 2026-08-06 empty-operand bug documented further down.
-if ! changed=$(git diff --name-only "$range"..HEAD); then
-    echo "pre-push: could not enumerate the files changed since $range." >&2
-    echo "    Refusing rather than treating an unreadable diff as 'no engine files'." >&2
-    exit 1
-fi
-engine_files=$(printf '%s\n' "$changed" | grep -E '^crates/memra-engine/(cu/|src/.*\.rs$)' || true)
-if [ -n "$engine_files" ]; then
-    hardware_gate=${MEMRA_HARDWARE_GATE:-generic}
-    if [ "$hardware_gate" = "step-pro" ]; then
-        if [ "${MEMRA_SKIP_PERF_CI:-0}" = "1" ]; then
-            echo "pre-push: MEMRA_SKIP_PERF_CI is incompatible with the Step PRO gate."
+qualification_mode=${MEMRA_RELEASE_QUALIFICATION_MODE:-qualified}
+case "$qualification_mode" in
+    development)
+        if [ "${MEMRA_HARDWARE_GATE:-generic}" != generic ]; then
+            echo "pre-push: development mode cannot claim a hardware gate." >&2
             exit 1
         fi
-        if [ -z "${MEMRA_STEP_PRO_RECEIPT:-}" ]; then
-            echo "pre-push: Step PRO gate requires MEMRA_STEP_PRO_RECEIPT."
-            exit 1
-        fi
-        python3 tools/check_hardware_gate.py \
-            --receipt "$MEMRA_STEP_PRO_RECEIPT" \
-            --repo-root "$(pwd)" \
-            --base "$range"
-    elif [ "$hardware_gate" != "generic" ]; then
-        echo "pre-push: unknown MEMRA_HARDWARE_GATE=$hardware_gate"
-        exit 1
-    elif [ "${MEMRA_SKIP_PERF_CI:-0}" = "1" ]; then
-        # ANNOUNCE + LOG (2026-08-23). This used to be the negative arm below
-        # (`elif [ ... != "1" ]`), so setting the variable took NO branch at all and the whole
-        # perf-ci block vanished in complete silence — the single most-used override in this
-        # repo (at least four uses in one day on 2026-08-19) left no output and no trace. A
-        # skip that says nothing is indistinguishable from a gate that never applied.
-        #
-        # The negative condition is now a plain `else`, which is exactly equivalent and leaves
-        # somewhere to hang this. It sits INSIDE `if [ -n "$engine_files" ]` deliberately: the
-        # variable does nothing when no engine file is touched, and logging a skip that had no
-        # effect would make the ledger lie in the other direction — every lane that happens to
-        # export it in a shell would accumulate rows for pushes it never gated. Owner-ruled.
-        echo "pre-push: perf-ci freshness gate SKIPPED for this push (MEMRA_SKIP_PERF_CI=1)." >&2
-        echo "          These engine files reach main unmeasured:" >&2
-        printf '%s\n' "$engine_files" | sed 's/^/            /' >&2
-        log_skip perf-ci MEMRA_SKIP_PERF_CI=1 \
-            "engine_files=$(printf '%s' "$engine_files" | tr '\n' ',')"
-    else
-        models="${MEMRA_MODELS_DIR:-/data/ai-ml/hf-models}"
-        ci=research/tune-data/perf-ci.jsonl
-        if [ ! -d "$models" ]; then
-            echo "pre-push: NOTE — engine files touched but no model dir; perf-ci not enforced here."
-        elif [ ! -f "$ci" ]; then
-            echo "pre-push: engine files touched but no perf-ci rows exist. Run: tools/local-ci.sh --perf"
-            exit 1
-        else
-            # `git log -1 --format=%ct <range> -- crates/` EXITS 0 WITH EMPTY OUTPUT when
-            # history simplification prunes the pathspec (e.g. the crates/ changes in the
-            # range arrived through a merge), so `|| echo 0` never fires and the comparison
-            # below got an empty operand: dash printed "[: Illegal number:" and — because the
-            # failing `[` is a condition, not a command — the gate SILENTLY SKIPPED instead of
-            # blocking. Fail-open in a push gate is the rot mode the H100 lane's law 3 warns
-            # about, so both operands are defaulted explicitly. (Found 2026-08-06 when a
-            # research-only push tripped the message; that push was correctly exempt anyway.)
-            #
-            # The pathspec is `crates/` on purpose — BROADER than the memra-engine regex that
-            # triggered this block. Narrowing it to $engine_files would make the gate quieter
-            # (a branch whose engine edit predates the battery but whose crates/ edit does not
-            # would stop reporting), and a gate that stops firing is worse than a loud one.
-            # Note the asymmetry when reading the message below: the TRIGGER is engine files,
-            # the TIMESTAMP can come from any crates/ commit.
-            newest_commit=$(git log -1 --format=%ct "$range"..HEAD -- crates/ 2>/dev/null || true)
-            # NOTE: git does not preserve mtimes, so in a FRESH clone or worktree this reads
-            # as "the battery ran at checkout time" no matter when it really ran. That makes
-            # the gate quiet for history it inherited, and loud only for commits made after
-            # the checkout — which is the direction that fails closed for your own work.
-            newest_row=$(stat -c %Y "$ci" 2>/dev/null || true)
-            newest_commit=${newest_commit:-0}
-            # An unreadable perf-ci row must not read as "infinitely fresh" -> 0 blocks.
-            newest_row=${newest_row:-0}
-            if [ "$newest_row" -lt "$newest_commit" ]; then
-                echo "pre-push: engine files touched after the last perf-ci battery."
-                # Name the evidence. The old HEAD~20 fallback made this message accuse other
-                # lanes' files with no way to tell from the message itself, which is how it
-                # trained the override. Print the base and the files so the claim is checkable.
-                echo "  base (merge-base with $base_ref): $range"
-                echo "  engine files this branch changes:"
-                echo "$engine_files" | sed 's/^/      /'
-                echo "Run: tools/local-ci.sh --perf   (or --perf-quick for the 31B subset)"
-                echo "Override knowingly with MEMRA_SKIP_PERF_CI=1."
-                exit 1
-            fi
-        fi
-    fi
-fi
+        python3 tools/release_qualification.py push --repo "$(pwd)" --refs-file "$push_refs" --development
+        log_skip release-qualification MEMRA_RELEASE_QUALIFICATION_MODE=development \
+            "UNQUALIFIED refs=$(tr '\n' ';' < "$push_refs")"
+        ;;
+    qualified)
+        python3 tools/release_qualification.py push --repo "$(pwd)" --refs-file "$push_refs"
+        case "${MEMRA_HARDWARE_GATE:-generic}" in
+            generic) ;;
+            step-pro)
+                # Existing Step proof remains an additional model/topology gate. It
+                # cannot replace the complete source/build/roster qualification above.
+                range=$(tools/push-range.sh "$1")
+                [ -n "${MEMRA_STEP_PRO_RECEIPT:-}" ] || { echo "Step PRO receipt required" >&2; exit 1; }
+                python3 tools/check_hardware_gate.py --receipt "$MEMRA_STEP_PRO_RECEIPT" \
+                    --repo-root "$(pwd)" --base "$range"
+                ;;
+            *) echo "unknown MEMRA_HARDWARE_GATE" >&2; exit 1 ;;
+        esac
+        ;;
+    *) echo "unknown MEMRA_RELEASE_QUALIFICATION_MODE" >&2; exit 1 ;;
+esac
 
 # ---- profile-blob / secret guard (2026-08-06) ----
 # nsys full profiles (.nsys-rep/.qdrep/.qdstrm) embed the ENTIRE process environment —

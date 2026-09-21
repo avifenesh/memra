@@ -21,8 +21,9 @@ repo_root=$(cd "$(dirname "$0")/.." && pwd)
 subject=${MEMRA_PUSH_RANGE:-$repo_root/tools/push-range.sh}
 hook="$repo_root/tools/hooks/pre-push"
 
-# The pre-push hook's engine-file trigger. Asserted below to be byte-present in the hook so
-# this fixture cannot drift away from the pattern it claims to exercise.
+# Engine paths are sample data for fork-point arithmetic, not the current hardware
+# applicability rule. Full dependency selection is tested by test_check_hardware_gate.py
+# and test_release_qualification.py; this helper remains in the additional Step hook arm.
 ENGINE_RE='^crates/memra-engine/(cu/|src/.*\.rs$)'
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/memra-push-range-test.XXXXXX")
@@ -79,12 +80,12 @@ engine_files_for() { # engine_files_for <base>  (run inside a repo)
     git diff --name-only "$1"..HEAD | grep -E "$ENGINE_RE" || true
 }
 
-# ---------------------------------------------------------------- arm 0: pattern is real
-if grep -qF "$ENGINE_RE" "$hook"; then
-    ok "engine-file trigger in this fixture is byte-present in tools/hooks/pre-push"
+# ---------------------------------------------------------------- arm 0: caller is live
+if grep -qE '^[[:space:]]*range=\$\(tools/push-range\.sh' "$hook"; then
+    ok "pre-push invokes the tested fork-point helper for the additional Step gate"
 else
-    bad "engine-file trigger drifted from tools/hooks/pre-push" \
-        "pattern not found in hook: $ENGINE_RE"
+    bad "push-range helper has no live pre-push caller" \
+        "expected the additional Step gate to invoke tools/push-range.sh"
 fi
 
 # ------------------------------------------------- arm 1: FIRST push, no upstream, no engine
@@ -106,7 +107,7 @@ wt=$(make_pair first-push-clean)
     check "arm1: base is the fork point (origin/main)" "$expect" "$base"
 
     n_new=$(engine_files_for "$base" | grep -c . || true)
-    check "arm1: engine files under the fix = 0 (gate stays quiet)" "0" "$n_new"
+    check "arm1: fork-point diff contains 0 unrelated engine samples" "0" "$n_new"
 
     # Negative control on the same fixture: the old fallback is loud here.
     n_old=$(engine_files_for "HEAD~20" 2>/dev/null | grep -c . || true)
