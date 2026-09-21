@@ -238,6 +238,24 @@ uniform drop across cells with correctness green in a contended window is machin
 (`window_clean:false`), so the freshness gate is satisfied honestly; a clean-window rerun of the two cells is owed when
 the card is free and is noted, not claimed. The co-resident was not touched (another session's lane).
 
+## Lane D day 13 (`e78bf933b`, pushed by the lead with the logged override; #545 and ruling 12)
+#545: hosted CI job `portable-suites` (no CUDA install) runs `tools/portable-suites.sh`: `skip-census.py verify` over
+memra-tier, memra-kv and memra-cli, then `cargo test -p memra-tier -p memra-kv -p memra-cli --offline --no-fail-fast`
+under `MEMRA_PORTABLE_SKIP_BUDGET=0` with `--min-passed 300` (325 passed, 0 skipped, 14 binaries, 22 s warm), then
+`tools/test_portable_suites.sh` (teeth: planted tier retirement, kv hierarchy and CLI onboarding-receipt failures in a
+temp copy red the wrapper and are named; an undeclared SKIP reds it before cargo runs; 15 ok), then the collector
+suite with both rig lock paths held. `tools/local-ci.sh` `cpu_chain()` runs the wrapper fatally. Step names and the
+wrapper's last line say "NOT GPU qualification". `fault.rs` committed-receipt replays are strict (no silent `.exists()`
+skip). Teeth finding: a shared target dir let cargo reuse the copy's planted test binary on the real tree; the copy
+now builds in `target/portable-suites-teeth`.
+Ruling 12: `MEMRA_TIER_BATTERY_LOCK_DIR` seam in `tools/tier-battery.py` and `tools/tier-rig-bootstrap.sh` (FLAGS row);
+`tests/battery/private_lock.py` `PrivateLockMixin` in every lock-taking class; with both rig locks held for the whole
+suite inside a private `/tmp` (`bwrap`): before `24 failed, 64 passed`, after `86 passed, 32 subtests passed`, rc=0; a
+receipt written under the seam refuses to validate without it (`REFUSED: missing/noncanonical collector lock`).
+Boundary: two raw cargo logs matched `live_fingerprint` on cargo's own test-binary path (`memra-<hash>`); pinned as
+false positives. D's note for the lead: `tools/ci-change-class.sh` classes `research/**` as docs-only while ten
+test-time `research/` reads now exist across lanes (list in D's DAY13.md); queued.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
