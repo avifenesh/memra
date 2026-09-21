@@ -6,9 +6,11 @@
 //! this module the boot consulted argv only for those tokens and ignored every other one, so a
 //! misspelled or retired flag on a launcher changed nothing and said nothing (lane C day 18,
 //! `research/spill-c-20260919/DAY18.md` item 6: `flag_silently_accepted=True` on both cards).
-//! [`validate`] runs first in `serve_with`, before the version print, before any environment
-//! read and before any device work: an unknown token is a refusal that names the token and
-//! lists what is accepted. The same posture memra#483 asks for unknown `MEMRA_*` names.
+//! [`validate`] runs first in the STOCK binary's `serve_main`, before the version print, before
+//! any environment read and before any device work: an unknown token is a refusal that names
+//! the token and lists what is accepted. The same posture memra#483 asks for unknown `MEMRA_*`
+//! names. `serve_with` stays argv-agnostic: a deployment-owned binary parses its own command
+//! line before delegating and may call [`validate`] itself for the stock set (revuto on #619).
 
 /// The accepted argument shapes, printed in every refusal. Kept in one place so the message
 /// and the tables below cannot drift apart.

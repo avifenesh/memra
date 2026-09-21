@@ -529,7 +529,8 @@ pub(crate) fn kv_hat_ring(
 
 /// memra#476: the predictive charge for one request, read from the SAME physical admission
 /// cost the VRAM gate just built (`AdmissionCostModel::estimate` plus the draft-state line,
-/// after any retained-prefix or eager-arm adjustment), with only its context term re-keyed
+/// after any retained-prefix adjustment; the eager arm keeps its draft-state line, conservative,
+/// matching the real book), with only its context term re-keyed
 /// from the request's cap to the predicted context `prompt + predicted + CTX_HAT_SLACK`.
 ///
 /// Before this the predictive book charged `ctx(P + L + 8) + activation` and the physical
@@ -556,7 +557,8 @@ impl RequestCharge {
     /// Derive the charge from the physical cost: `cost = ctx(C) + A + W + D` by construction
     /// of the admission block, so `W = cost - ctx(C) - A - D` is the workspace the cost
     /// actually carries (cold `W(P)`, or `W(P - R)` after a retained-prefix plan), and
-    /// `D` is 0 when the eager arm admitted without its captured draft state. Saturating:
+    /// `D` is whatever draft-state line the cost carries (today the eager arm keeps it, so the
+    /// book over-charges conservatively like the real book; revuto on #619). Saturating:
     /// a cost below its own components (impossible by construction, guarded here) books the
     /// remaining terms at zero rather than wrapping.
     pub(crate) fn from_physical_cost(
@@ -1031,8 +1033,11 @@ mod tests {
     }
 
     #[test]
-    fn request_charge_follows_the_restore_and_eager_adjusted_cost() {
-        // A retained-prefix plan replaces W(P) with W(P - R); the eager arm drops D. The
+    fn request_charge_follows_the_cost_it_is_given() {
+        // A retained-prefix plan replaces W(P) with W(P - R). A charge built with D = 0 models
+        // a cost with no draft state; today's worker books the eager arm WITH its draft state
+        // (the real book does too, conservative; revuto on #619), so the D = 0 arm here is
+        // the arithmetic, not the worker's current call. The
         // charge reads whatever the physical cost carries at the booking seam.
         let ctx_cap = 6_096_000u64;
         let ctx_hat = 6_104_000u64; // P + L + 8 may exceed C by the slack: still exact.

@@ -983,9 +983,11 @@ identity (new-flags law: the default is a written decision, and this one is "no 
 **Reading it without a GPU.** `memra-server --version` (also `-V`) prints the identity and
 exits before any engine, GPU, or model work, so a deployed artifact can be identified on any
 box and in the release container that produced it. That flag and the key-lifecycle commands
-under "API keys" are the whole command line: any other argument is refused at boot with the
-token named and exit 2, before any environment read or device work (memra#617; the unknown
-token used to be ignored):
+under "API keys" are the whole command line of the stock binary: any other argument is refused
+at boot with the token named and exit 2, before any environment read or device work (memra#617;
+the unknown token used to be ignored). The refusal lives in the stock `serve_main`; a
+deployment-owned binary that calls `serve_with` owns its own command line and may call
+`memra_server::argv::validate` for the stock set:
 
 ```
 $ memra-server --version

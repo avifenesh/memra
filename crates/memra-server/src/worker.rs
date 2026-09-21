@@ -19137,9 +19137,12 @@ pub fn run(
                         let (predicted, _) =
                             completion_history.lhat(&tenant_row, &s.model, max_tokens_bound);
                         s.shadow_pred_total = predicted;
-                        // memra#476: booked from the FINAL physical cost (restore- and
-                        // eager-adjusted, the same `cost` the real book takes on the line
-                        // above), re-keyed to the predicted context; see the verdict site.
+                        // memra#476: booked from the FINAL physical cost, the same `cost`
+                        // the real book takes on the line above (re-assigned for a
+                        // retained-prefix plan; on the eager arm it still carries the draft
+                        // state the session will not allocate, a conservative over-booking
+                        // that matches the real book; revuto on #619), re-keyed to the
+                        // predicted context; see the verdict site.
                         s.shadow_kv_hat = crate::admit_predict::RequestCharge::from_physical_cost(
                             cost as u64,
                             context_cap_bytes as u64,

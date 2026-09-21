@@ -1016,6 +1016,15 @@ collector pytest, engine CPU lib tests, server clippy `-D warnings`, marker cens
 `tools/serve-smoke.sh`: `serve-smoke: 0 failed`. The C-only tree's earlier run is kept under `-ctree` (all rc=0,
 smoke `0 failed`).
 
+Revuto round 1 on #619, both findings real, fixed by the lead in the integ: (1) the argv refusal sat in `serve_with`,
+the entrypoint deployment-owned binaries call with their own command line, so a deployment flag would have been
+`exit(2)` before wiring was consulted; the refusal now lives in the stock `serve_main` only, `serve_with` is
+argv-agnostic again, `argv::validate` stays public for a deployment binary that wants the stock set (module header,
+`docs/SERVING.md` say so); the 7 real-binary tests boot the stock binary and still hold. (2) The `RequestCharge` comment
+and test claimed the eager arm's cost is draft-adjusted; the worker never subtracts the draft state on that arm (it
+books it, conservative, as the real book does); the comment, the module docs and the test's name and note now say that.
+Server clippy `-D warnings` and the memra-server suite (773 passed, 7 boot tests) green on the round-1 tree.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

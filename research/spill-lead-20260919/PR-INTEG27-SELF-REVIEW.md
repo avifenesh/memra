@@ -35,6 +35,13 @@ Author's review of the full diff `main..lane/spill-integ27-20260922`, posted as 
   pytest, engine CPU lib tests, server clippy `-D warnings`, marker census, workflow keys, perf board, diff-check) and
   the local 5090 serve-smoke.
 
+## Review round 1 (revuto, addressed in the integ)
+- The refusal moved from `serve_with` to the stock `serve_main`: deployment-owned binaries that parse their own flags
+  before delegating boot as before; they may call the public `argv::validate` for the stock set. Docs and the module
+  header state the split. The 7 real-binary tests target the stock binary and pass unchanged.
+- "Eager-adjusted" was not true at the worker seam: the eager arm books the draft state it will not allocate
+  (conservative, as the real book). Comment, module docs and the test's name and note corrected; arithmetic unchanged.
+
 ## What I did not do
 - No target-card cell of my own; #617's refusal is argument admission before any device statement.
 - The arena lease handoff and the health fault gate stay scoped and pre-registered.
