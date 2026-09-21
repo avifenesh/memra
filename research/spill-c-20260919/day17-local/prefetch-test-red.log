@@ -1,0 +1,29 @@
+[memra-cpu] RAM headroom cap: requested=0.00 GiB available=52.64 GiB reserve=0.00 GiB effective=0.00 GiB
+[memra-cpu] normal-RAM expert cache: 0.00 GiB policy=lru io=direct
+[memra-cpu] mirrored direct I/O: 1 inode mappings
+FAIL: REGRESSION memra#586 at barrier: primaries complete, alternates held: inflight_signed=0 expected 3
+[memra-cpu-cache] hits=0 misses=0 hit_rate=0.00% read_GB=0.000 resident_GB=0.000
+[memra-cpu-profile] calls=0 prepare=0.000000s io=0.000000s insert=0.000000s compute=0.000000s read_projections=0 read_GB=0.000 stage_entry=0.000000s stage_cached=0.000000s stage_missing=0.000000s stage_accum=0.000000s prefetch_projections=3 prefetch_GB=0.000
+barrier: primary halves completed=3 alternate halves held=3
+barrier: primaries complete, alternates held: inflight_signed=0 expected=3
+FAIL: cell barrier exited non-zero
+FAIL: missing barrier:\ primaries\ complete\,\ alternates\ held:\ inflight_signed=3\ expected=3 in research/spill-c-20260919/day17-local/prefetch-red-logs/barrier.log
+FAIL: missing extra\ projection\ admitted=0\ expected=0 in research/spill-c-20260919/day17-local/prefetch-red-logs/barrier.log
+FAIL: missing barrier:\ drained\ after\ the\ retry\ landed:\ inflight_signed=0\ expected=0 in research/spill-c-20260919/day17-local/prefetch-red-logs/barrier.log
+FAIL: missing BARRIER_OK in research/spill-c-20260919/day17-local/prefetch-red-logs/barrier.log
+[memra-cpu] RAM headroom cap: requested=0.00 GiB available=52.64 GiB reserve=0.00 GiB effective=0.00 GiB
+[memra-cpu] normal-RAM expert cache: 0.00 GiB policy=lru io=direct
+[memra-cpu] mirrored direct I/O: 1 inode mappings
+FAIL: REGRESSION memra#586 at failure: primary half complete, alternate half held: inflight_signed=0 expected 1
+[memra-cpu-cache] hits=0 misses=0 hit_rate=0.00% read_GB=0.000 resident_GB=0.000
+[memra-cpu-profile] calls=0 prepare=0.000000s io=0.000000s insert=0.000000s compute=0.000000s read_projections=0 read_GB=0.000 stage_entry=0.000000s stage_cached=0.000000s stage_missing=0.000000s stage_accum=0.000000s prefetch_projections=1 prefetch_GB=0.000
+failure: primary half complete, alternate half held: inflight_signed=0 expected=1
+FAIL: cell failure exited non-zero
+FAIL: missing failure:\ alternate\ half\ failed\ with\ EIO\,\ sentinel\ read\ entered:\ inflight_signed=1\ expected=1 in research/spill-c-20260919/day17-local/prefetch-red-logs/failure.log
+FAIL: missing failure:\ drained\ after\ the\ retry\ landed:\ inflight_signed=0\ expected=0 in research/spill-c-20260919/day17-local/prefetch-red-logs/failure.log
+FAIL: missing FAILURE_PATH_OK in research/spill-c-20260919/day17-local/prefetch-red-logs/failure.log
+ok: parity
+ok: parity has parity: three single-job reads held: inflight_signed=3 expected=3
+ok: parity has parity: drained: inflight_signed=0 expected=0
+ok: parity has PARITY_OK
+cpu expert prefetch accounting tests: 9 FAILURE(S)

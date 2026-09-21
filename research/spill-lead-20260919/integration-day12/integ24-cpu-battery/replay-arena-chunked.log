@@ -1,0 +1,43 @@
+cell arena-chunked: arms single against chunked, bytes 56916705280 (53.01 GiB), basis admissible, pairs per order 5, chunks 8
+host: cpus 30, MemTotal 88.4 GiB, at start MemFree 28.0 GiB, MemAvailable 85.0 GiB, HugePages_Total 0, THP always [madvise] never, AnonHugePages at start 0 MiB, loadavg ['0.09', '0.46', '0.35'] -> ['1.09', '0.86', '0.57']
+gpu at start: 32, 35.65 W, 600.00 W, 180 MHz; at end: 36, 89.76 W, 600.00 W, 2347 MHz
+regime: 1122 samples at 250 ms, temp 32 to 36 C, power draw 32.0 to 106.2 W, limit 600 W, SM 180 to 2362 MHz
+
+correctness pass (per arm, full size, before the timed pairs):
+  single: byte_exact=True blocks=27140 mismatched=0 driver_flags=[(0, 3)] wc_bit_absent=True reserve_ms=9437.1 (not pooled) fill 1246 ms, H2D 985 ms (53.8 GiB/s), wipe 787 ms, D2H 1009 ms (52.6 GiB/s), compare 2314 ms
+  chunked: byte_exact=True blocks=27136 mismatched=0 driver_flags=[(0, 3)] wc_bit_absent=True reserve_ms=9525.1 (not pooled) fill 1039 ms, H2D 984 ms (53.9 GiB/s), wipe 712 ms, D2H 1007 ms (52.7 GiB/s), compare 2289 ms
+
+per pair (reserve ms):
+  AB pair 1: single 9261.329  chunked 9144.351  cand<single  MemFree before 56.3/57.0 GiB  chunk completions [1222.911, 2370.128, 3489.054, 4603.118, 5709.827, 6804.724, 7904.399, 9143.225]
+  AB pair 2: single 8877.996  chunked 8831.017  cand<single  MemFree before 58.3/58.3 GiB  chunk completions [1204.913, 2306.308, 3389.372, 4482.847, 5565.496, 6648.755, 7739.63, 8829.943]
+  AB pair 3: single 8786.797  chunked 8826.381  cand>=single  MemFree before 58.3/58.0 GiB  chunk completions [1206.296, 2310.533, 3392.897, 4471.736, 5551.242, 6636.524, 7733.751, 8825.611]
+  AB pair 4: single 8847.079  chunked 9025.955  cand>=single  MemFree before 58.3/58.0 GiB  chunk completions [1217.949, 2367.245, 3492.893, 4609.541, 5717.529, 6825.982, 7925.041, 9024.721]
+  AB pair 5: single 8828.417  chunked 8831.741  cand>=single  MemFree before 58.2/58.2 GiB  chunk completions [1207.008, 2311.612, 3397.787, 4483.456, 5570.904, 6658.938, 7747.819, 8830.888]
+  BA pair 1: single 8862.753  chunked 8839.646  cand<single  MemFree before 58.2/58.2 GiB  chunk completions [1205.481, 2310.304, 3393.482, 4481.789, 5575.543, 6663.272, 7751.593, 8838.82]
+  BA pair 2: single 8888.179  chunked 8835.071  cand<single  MemFree before 58.2/58.2 GiB  chunk completions [1201.845, 2305.763, 3380.42, 4468.173, 5555.907, 6645.307, 7751.472, 8834.23]
+  BA pair 3: single 8859.376  chunked 8824.031  cand<single  MemFree before 58.2/58.2 GiB  chunk completions [1209.15, 2309.035, 3391.926, 4473.647, 5552.921, 6635.874, 7726.652, 8823.208]
+  BA pair 4: single 8878.074  chunked 8830.772  cand<single  MemFree before 58.2/58.2 GiB  chunk completions [1212.985, 2321.76, 3412.171, 4493.791, 5577.129, 6661.421, 7743.132, 8829.488]
+  BA pair 5: single 8899.597  chunked 8804.635  cand<single  MemFree before 58.2/58.2 GiB  chunk completions [1209.293, 2313.578, 3395.17, 4480.712, 5561.477, 6645.139, 7721.565, 8803.544]
+
+per order and pooled:
+  single AB: median 8847.079 ms (N=5, min 8786.797, max 9261.329)
+  single BA: median 8878.074 ms (N=5, min 8859.376, max 8899.597)
+  single pooled: median 8870.374 ms (N=10, min 8786.797, max 9261.329); 5.98 GiB/s; free median 3561.4 ms
+  chunked AB: median 8831.741 ms (N=5, min 8826.381, max 9144.351)
+  chunked BA: median 8830.772 ms (N=5, min 8804.635, max 8839.646)
+  chunked pooled: median 8831.379 ms (N=10, min 8804.635, max 9144.351); 6.00 GiB/s; free median 3571.0 ms
+  MemFree before allocations: 56.3 to 58.3 GiB; MemAvailable 84.8 to 85.2 GiB; at end MemFree 58.2 GiB
+
+rule (pre-registered, DAY15.md):
+  ok   rule 1a: every allocation ok and freed, 10 complete pairs (10 seen)
+  ok   rule 1b: roundtrip byte exact, single
+  ok   rule 1c: roundtrip byte exact, chunked
+  ok   rule 1d: write-combined bit absent in every read-back, flags readable, PORTABLE set on cuMemHostAlloc arms
+  FAIL rule 2a: chunked below single at every pair: 7/10
+  ok   rule 2b: chunked below single in both orders' medians (AB 8831.741 vs 8847.079; BA 8830.772 vs 8878.074)
+  FAIL rule 3: pooled ratio single/chunked = 1.0044 >= floor 1.10
+candidate chunked on this card: INCONCLUSIVE
+ok   replay agrees with the harness's verdict: inconclusive
+ok   the collector's mirrored command.log carries the harness's rule line
+harness line, verbatim: ARENA-RESERVE rule cell=arena-chunked candidate=chunked bytes=56916705280 n_per_order=5 pooled=10 alloc_ok=true roundtrip_exact_single=true roundtrip_exact_candidate=true wc_bit_absent=true flags_read_ok=true portable_bit_set=true hugepage_fraction=na hugepage_ok=na cand_below_single_pairs=7/10 medians_both_orders=true pooled_single_ms=8870.374 pooled_candidate_ms=8831.379 ratio=1.0044 floor=1.10 materiality=false candidate_arm=inconclusive
+ARENA AB REPLAY: PASS (agreement ok, log ok; rule clauses failed: 2 of 7, which is the verdict restated, not an integrity failure)

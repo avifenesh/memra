@@ -471,6 +471,13 @@ jobs:
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
+      # ── CPU expert companion: prefetch accounting (memra#586) ──────────────────────────────
+      # Process-level cells over the production translation unit: a mirrored projection is two
+      # I/O jobs and ONE in-flight charge, released once with its final half. The mirror sits on
+      # a second filesystem (/dev/shm) and both are read O_DIRECT; the script refuses to run
+      # where either is unavailable rather than skipping (docs/TESTING.md, Fixtures).
+      - name: CPU expert companion prefetch accounting cells
+        run: tools/test_cpu_expert_prefetch.sh "$RUNNER_TEMP/cpu-prefetch-logs"
       # ── DSV4F door reach (memra #454, #458) ──────────────────────────────────────────────
       # Named so a failure reads as what it is: a door's declared default or served-path reach
       # stopped matching the admission code. The unfiltered suite below runs it too; this step

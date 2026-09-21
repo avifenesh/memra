@@ -1,0 +1,44 @@
+cell arena-thp: arms single against thp, bytes 56969134080 (53.06 GiB), basis admissible, pairs per order 5, chunks None
+host: cpus 30, MemTotal 88.4 GiB, at start MemFree 58.2 GiB, MemAvailable 85.1 GiB, HugePages_Total 0, THP always [madvise] never, AnonHugePages at start 0 MiB, loadavg ['1.09', '0.86', '0.57'] -> ['1.21', '1.01', '0.68']
+gpu at start: 36, 91.39 W, 600.00 W, 2347 MHz; at end: 36, 87.81 W, 600.00 W, 2347 MHz
+regime: 783 samples at 250 ms, temp 36 to 36 C, power draw 86.8 to 106.6 W, limit 600 W, SM 2347 to 2355 MHz
+
+correctness pass (per arm, full size, before the timed pairs):
+  single: byte_exact=True blocks=27165 mismatched=0 driver_flags=[(0, 3)] wc_bit_absent=True reserve_ms=8943.0 (not pooled) fill 1037 ms, H2D 986 ms (53.8 GiB/s), wipe 724 ms, D2H 1010 ms (52.5 GiB/s), compare 2323 ms
+  thp: byte_exact=True blocks=27165 mismatched=0 driver_flags=[(0, 3)] wc_bit_absent=True reserve_ms=18335.3 (not pooled) fill 1033 ms, H2D 986 ms (53.8 GiB/s), wipe 606 ms, D2H 1009 ms (52.6 GiB/s), compare 2301 ms, anon_huge_fraction=0.6361494570219032
+
+per pair (reserve ms):
+  AB pair 1: single 8875.271  thp 2875.962  cand<single  MemFree before 80.0/80.1 GiB  register 2875.932  huge 1.0000
+  AB pair 2: single 9012.341  thp 2877.137  cand<single  MemFree before 79.9/80.1 GiB  register 2877.102  huge 1.0000
+  AB pair 3: single 8909.944  thp 2900.193  cand<single  MemFree before 79.9/79.9 GiB  register 2900.163  huge 1.0000
+  AB pair 4: single 8878.534  thp 2905.274  cand<single  MemFree before 79.7/80.1 GiB  register 2905.246  huge 1.0000
+  AB pair 5: single 8924.322  thp 2897.929  cand<single  MemFree before 79.8/80.1 GiB  register 2897.902  huge 1.0000
+  BA pair 1: single 8887.340  thp 2894.138  cand<single  MemFree before 79.9/79.8 GiB  register 2894.107  huge 1.0000
+  BA pair 2: single 8824.353  thp 2869.960  cand<single  MemFree before 79.9/80.1 GiB  register 2869.931  huge 1.0000
+  BA pair 3: single 8866.670  thp 2874.502  cand<single  MemFree before 79.7/80.0 GiB  register 2874.472  huge 1.0000
+  BA pair 4: single 8811.930  thp 6629.635  cand<single  MemFree before 83.5/79.9 GiB  register 6629.607  huge 0.8435
+  BA pair 5: single 8772.534  thp 2869.277  cand<single  MemFree before 83.5/83.8 GiB  register 2869.249  huge 1.0000
+
+per order and pooled:
+  single AB: median 8909.944 ms (N=5, min 8875.271, max 9012.341)
+  single BA: median 8824.353 ms (N=5, min 8772.534, max 8887.340)
+  single pooled: median 8876.902 ms (N=10, min 8772.534, max 9012.341); 5.98 GiB/s; free median 3558.5 ms
+  thp AB: median 2897.929 ms (N=5, min 2875.962, max 2905.274)
+  thp BA: median 2874.502 ms (N=5, min 2869.277, max 6629.635)
+  thp pooled: median 2885.637 ms (N=10, min 2869.277, max 6629.635); 18.39 GiB/s; free median 562.5 ms
+  MemFree before allocations: 79.7 to 83.8 GiB; MemAvailable 84.7 to 85.2 GiB; at end MemFree 83.8 GiB
+
+rule (pre-registered, DAY15.md):
+  ok   rule 1a: every allocation ok and freed, 10 complete pairs (10 seen)
+  ok   rule 1b: roundtrip byte exact, single
+  ok   rule 1c: roundtrip byte exact, thp
+  ok   rule 1d: write-combined bit absent in every read-back, flags readable, PORTABLE set on cuMemHostAlloc arms
+  FAIL rule 1e: thp backed by huge pages at >= 0.9 (min seen 0.6361494570219032)
+  ok   rule 2a: thp below single at every pair: 10/10
+  ok   rule 2b: thp below single in both orders' medians (AB 2897.929 vs 8909.944; BA 2874.502 vs 8824.353)
+  ok   rule 3: pooled ratio single/thp = 3.0762 >= floor 1.10
+candidate thp on this card: VOID (HUGEPAGE-REQUESTED-NOT-GRANTED)
+ok   replay agrees with the harness's verdict: void (hugepage-requested-not-granted)
+ok   the collector's mirrored command.log carries the harness's rule line
+harness line, verbatim: ARENA-RESERVE rule cell=arena-thp candidate=thp bytes=56969134080 n_per_order=5 pooled=10 alloc_ok=true roundtrip_exact_single=true roundtrip_exact_candidate=true wc_bit_absent=true flags_read_ok=true portable_bit_set=true hugepage_fraction=0.6361 hugepage_ok=false cand_below_single_pairs=10/10 medians_both_orders=true pooled_single_ms=8876.902 pooled_candidate_ms=2885.637 ratio=3.0762 floor=1.10 materiality=true candidate_arm=void (hugepage-requested-not-granted)
+ARENA AB REPLAY: PASS (agreement ok, log ok; rule clauses failed: 1 of 8, which is the verdict restated, not an integrity failure)

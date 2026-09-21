@@ -92,6 +92,14 @@ parallel threads race each other (measured flake, `research/local-ci-one-card-20
 Pair-only tests announce `SKIP-PAIR` on a rig with fewer than two CUDA devices and run
 unchanged on the pair box.
 
+The prime continuation gate (`qwen-a4-continuation-gate`, in tier 2 after prime-gate on the
+9B NVFP4 GDN hybrid) primes a 9,296-token repo-text prompt once and as head + tail at the
+grid-aligned tails 16, 48 and 80, and requires the tail call's logits to be bitwise the one-call
+prime's. The 16-row tail is the shape memra#427 found non-bitwise: `matmul`/`matmul_pre` sent
+`m = 16` through the batched decode/verify mmvq tier (`2..=16`) while every longer prime rode
+the generic path; the tier now ends at `PRIME_MIN_T - 1` outside the verify-exact scope.
+`MEMRA_CI_CONTGATE=0` skips, `MEMRA_CI_CONT_MODEL` retargets.
+
 The docs-fit owner call is closed: tier 2 now runs the full `run-spec` K=1..8 sweep and requires
 eight per-K PASS lines plus the final `SELF-CONSISTENCY PASS` marker. The raw run is logged before
 parsing; a red quotes the failing K and `FIRST DIVERGENCE` index.
@@ -782,6 +790,34 @@ the whole tree evaluation) against a 0.69 s hook, which is the latency that gets
 The arms corrupt an entry and watch it go red, restore it and watch it go green, delete a pinned
 file, expire one rule of a two-rule grant, and assert the `ci.yml` invocation with comment lines
 stripped: a plain substring search is satisfied by the step's own rationale comment.
+
+`tools/test_cpu_expert_prefetch.sh [LOG_DIR] [SOURCE_DIR] [MIRROR_DIR]` (CPU-only, in `ci.yml`'s
+engine-tests job after `cpu_native_check`) is the accounting fixture for the CPU expert companion's
+speculative prefetch (memra#586). It compiles `tools/memra_cpu_expert_prefetch_test.cpp`, which
+includes the production translation unit (`tools/memra_cpu_experts.cpp`, the shm test's pattern) so
+it reads the SIGNED in-flight counter `prefetch_inflight()` directly and never the public stats
+function's clamp to zero, and renames the unit's one `pread` call so a cell can HOLD a read at its
+entry and FAIL one on demand. A worker that enters a held read has finished every job it took before
+it, so "every alternate half held, queue empty" is the deterministic point at which the projections'
+charge is read. Three cells: `barrier` (three mirrored projections under three I/O workers and a cap
+of three: the counter must still read 3, a fourth must be refused, the drain must reach exactly 0
+and admit the retry), `failure` (one mirrored projection whose alternate half fails with `EIO`, a
+single-job sentinel queued behind it on one worker: the charge is released once, the annex never
+publishes the failed buffer, the retry lands) and `parity` (the non-mirrored buffered control). It
+needs a source fixture and a byte-identical mirror on two different filesystems (the companion's
+mirror map refuses one device; defaults `<repo>/target` and `/dev/shm`), both opened `O_DIRECT`; it
+refuses to run where either is unavailable rather than skipping. Before the repair the first two
+cells read `inflight_signed=0` where 3 and 1 were charged (`research/spill-c-20260919/
+day17-local/prefetch-test-red.log`); every cell runs even after a failure and the summary line
+carries the count (`cpu expert prefetch accounting tests: N FAILURE(S)` or `ALL GREEN`). Two more
+cells cover the submit side of the same invariant. `submit-throw`: the second projection names an fd
+that is not open, so the submit loop throws after the first projection took its charge and annex
+claim and before any job reached the pool; the call must return -1 and release both (a guard in
+`memra_cpu_expert_prefetch_v2`, disarmed once the jobs are handed to the pool). `submit-throw-
+claim`: under O_DIRECT with a mirror map that does not list the source, the loop takes the
+projection's annex claim and then mirror resolve throws for that same projection, before a runtime
+or a charge exists; the key must be claimable again afterwards (the guard tracks claims the moment
+they are taken).
 
 ## Receipts
 
