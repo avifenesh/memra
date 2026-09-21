@@ -1,0 +1,42 @@
+ok   two orders: [1, 2]
+ok   warm-up: one per arm: ['write-combined', 'cached']
+ok   N >= 5 pairs per order: N=5
+ok   byte_exact in every roundtrip (warm-ups included): 22/22
+ok   driver flags carry the arm's write-combined bit in every roundtrip: [('cached', 2), ('write-combined', 6)]
+ok   one buffer size: {167772160}
+ok   rule 3: cached bind hash below write-combined at every pair: 10/10
+FAIL rule 4: cached D2H not above write-combined at every pair: 5/10
+FAIL rule 5: medians in both orders (bind below, D2H not above)
+per pair: bind 10/10 cached<wc; engine 10/10 cached<wc; d2h 5/10 cached<=wc, 5/10 cached<wc; h2d 6/10 cached<=wc
+cached arm on this card: INCONCLUSIVE (pre-registered rule); strict D2H reading: INCONCLUSIVE
+ok   binary rule line present
+ok   replay agrees with the binary's verdict: inconclusive
+ok   exactly one RESULT line: 1
+ok   RESULT medians agree with the replay (bind, cached, pooled)
+ok   RESULT sample count: 20 vs 20
+ok   collector status executed-not-qualified, exit 0: executed-not-qualified exit 0
+telemetry: 240 samples at 250 ms; temperature 55 to 57 C; power draw 28 to 29 W (limit [N/A]); SM clock 1590 to 1627 MHz
+
+| Phase (ms) | WC order 1 (N=5) | WC order 2 (N=5) | cached order 1 (N=5) | cached order 2 (N=5) | pooled WC (N=10) | pooled cached (N=10) |
+|---|---|---|---|---|---|---|
+| alloc | 31.09 | 32.74 | 42.65 | 38.94 | **31.91** (30.30 to 33.54) | **40.79** (36.85 to 44.97) |
+| D2H | 7.28 | 7.27 | 7.46 | 7.33 | **7.27** (7.17 to 7.78) | **7.34** (6.66 to 7.77) |
+| engine hash | 1443.67 | 1446.54 | 36.84 | 36.69 | **1446.33** (1441.60 to 1450.10) | **36.77** (36.07 to 38.57) |
+| bind hash (the host-read) | 1449.67 | 1447.83 | 36.57 | 38.28 | **1449.02** (1444.90 to 1455.39) | **37.53** (36.40 to 41.44) |
+| byte compare | 578.24 | 579.65 | 10.14 | 10.09 | **578.58** (570.87 to 580.08) | **10.12** (9.36 to 11.13) |
+| H2D | 6.04 | 6.04 | 6.04 | 6.04 | **6.04** (6.03 to 6.06) | **6.04** (6.03 to 6.04) |
+| H2D source hash | 1446.47 | 1448.25 | 36.66 | 36.79 | **1447.36** (1438.77 to 1450.85) | **36.73** (36.34 to 40.83) |
+
+| Order | Pair | WC bind hash | cached bind hash | WC D2H | cached D2H | WC engine hash | cached engine hash | WC H2D | cached H2D |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 1 | 1455.39 | 36.41 | 7.279 | 7.462 | 1443.67 | 36.84 | 6.050 | 6.044 |
+| 1 | 2 | 1449.67 | 36.57 | 7.551 | 6.661 | 1450.10 | 37.70 | 6.036 | 6.041 |
+| 1 | 3 | 1453.07 | 37.75 | 7.779 | 7.192 | 1441.60 | 36.26 | 6.030 | 6.045 |
+| 1 | 4 | 1449.54 | 39.17 | 7.223 | 7.540 | 1446.79 | 37.59 | 6.042 | 6.035 |
+| 1 | 5 | 1446.53 | 36.40 | 7.181 | 7.768 | 1443.21 | 36.65 | 6.063 | 6.034 |
+| 2 | 1 | 1447.83 | 41.44 | 7.270 | 7.357 | 1444.48 | 36.69 | 6.040 | 6.030 |
+| 2 | 2 | 1445.27 | 40.69 | 7.175 | 7.170 | 1446.54 | 37.04 | 6.046 | 6.036 |
+| 2 | 3 | 1444.90 | 37.32 | 7.609 | 7.239 | 1446.12 | 38.57 | 6.038 | 6.037 |
+| 2 | 4 | 1449.40 | 37.12 | 7.441 | 7.425 | 1448.38 | 36.07 | 6.027 | 6.030 |
+| 2 | 5 | 1448.64 | 38.28 | 7.201 | 7.327 | 1447.28 | 36.38 | 6.027 | 6.041 |
+WC AB REPLAY: FAIL (15 checks, 2 failed)

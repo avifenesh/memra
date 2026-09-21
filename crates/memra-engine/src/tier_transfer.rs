@@ -13,22 +13,42 @@ use std::{
 };
 
 /// The `cuMemHostAlloc` flags of a contract pinned host allocation (WP-A day 13,
-/// `research/spill-a-20260919/PINNED-FLAGS.md`). The default is exactly what cudarc's
-/// `alloc_pinned` passed before this seam existed: write-combined, the attribute that suits CPU
-/// stores and DMA in both directions but makes every CPU READ of the bytes uncached. The door's
-/// byte attestation reads every demoted plane on the CPU (the completion hash, the bind hash), so
-/// the arm is a measured question, not a default: it moves only on the balanced same-window A/B
-/// the owner law asks for, on the card class it applies to. No environment variable selects it;
-/// the transfer gate passes the arm it measures.
+/// `research/spill-a-20260919/PINNED-FLAGS.md`). Write-combined is what cudarc's `alloc_pinned`
+/// passed before this seam existed: the attribute that suits CPU stores and DMA in both directions
+/// but makes every CPU READ of the bytes uncached. The door's byte attestation reads every demoted
+/// plane on the CPU (the completion hash, the bind hash), so the arm is a measured question: it
+/// moves only on the balanced same-window A/B the owner law asks for, on the card class it applies
+/// to, and the production default is per device (`for_device`, WP-A day 14, lead ruling 22,
+/// `docs/decisions/PINNED-DESTINATIONS.md`). The enum's `Default` is the arm for a card class with
+/// no receipt. No environment variable selects it; the transfer gate passes the arm it measures.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PinnedKind {
-    /// `CU_MEMHOSTALLOC_WRITECOMBINED`: today's behaviour (cudarc `alloc_pinned`).
+    /// `CU_MEMHOSTALLOC_WRITECOMBINED`: cudarc `alloc_pinned`'s flag bits; the arm for every card
+    /// class without a receipt.
     #[default]
     WriteCombined,
     /// `cuMemHostAlloc(.., 0)`: cached, page-locked, the OFF tier's `PinnedHostBuf` attribute.
     Cached,
 }
 impl PinnedKind {
+    /// The production default for a device, by card class (WP-A day 14, lead ruling 22): `Cached`
+    /// where the class carries a receipt under the pre-registered rule of
+    /// `research/spill-a-20260919/DAY13.md`, `WriteCombined` everywhere else. Keyed on the device
+    /// name exactly as `parallel::HardwareTarget` keys the product shape (`"RTX PRO 6000"` with
+    /// `"Blackwell"`; `"RTX 5090"`); no environment read. Receipts: the RTX PRO 6000 Blackwell
+    /// class, `DAY13.md` `pro-single-day13/pinned-ab-160m-s2`, `cached_arm=wins-on-this-card`
+    /// (bind hash 77.6 against 1711 ms at 10/10 pairs, D2H 3.00 against 3.01 ms, byte exact 22/22);
+    /// the RTX 5090 class, `DAY14.md` `rtx5090-day14/pinned-ab-160m`, `cached_arm=inconclusive`
+    /// (bind hash 37.5 against 1449 ms at 10/10 pairs, but D2H cached not above write-combined at
+    /// 5/10 pairs and above in both orders' medians, 7.34 against 7.27 ms), so that class keeps
+    /// write-combined until a cell on it meets the rule or the lead rules on the D2H clause.
+    pub fn for_device(name: &str) -> PinnedKind {
+        use crate::parallel::HardwareTarget;
+        match HardwareTarget::from_device_name(name) {
+            Ok(HardwareTarget::RtxPro6000Blackwell) => PinnedKind::Cached,
+            Ok(HardwareTarget::Rtx5090) | Err(_) => PinnedKind::WriteCombined,
+        }
+    }
     /// The flag bits handed to `cuMemHostAlloc`. `WriteCombined` is the constant cudarc passes.
     pub const fn host_alloc_flags(self) -> u32 {
         match self {
@@ -318,6 +338,9 @@ pub struct GraphPin {
 pub struct CudaTransfers {
     stream: Arc<CudaStream>,
     governor: SharedBudget,
+    /// The pinned destination arm `alloc_host` takes on this device (`PinnedKind::for_device` of
+    /// the owner context's device name, resolved once at construction).
+    pinned_default: PinnedKind,
     owner: DeviceOwner,
     thread: std::thread::ThreadId,
     device: u32,
@@ -335,9 +358,11 @@ impl CudaTransfers {
             return Err(Error::WrongOwner);
         }
         cuda(owner.context().bind_to_thread())?;
+        let pinned_default = PinnedKind::for_device(&owner.context().name().unwrap_or_default());
         Ok(Self {
             stream: owner,
             governor,
+            pinned_default,
             owner: DeviceOwner::new(device),
             thread: std::thread::current().id(),
             device,
@@ -365,10 +390,15 @@ impl CudaTransfers {
             tenant: [0; 32],
         }
     }
+    /// The pinned destination arm this device's `alloc_host` allocates under.
+    pub fn pinned_default(&self) -> PinnedKind {
+        self.pinned_default
+    }
     /// Admission policy belongs to the caller; only the physical dimension is set here.
-    /// The allocation carries today's flag bits (`PinnedKind::default()`, write-combined).
+    /// The allocation carries the device's default flag bits (`pinned_default`: cached on a card
+    /// class with a receipt, write-combined elsewhere).
     pub fn alloc_host(&mut self, bytes: usize, request: BudgetRequest) -> Result<CudaPinnedLease> {
-        self.alloc_host_kind(bytes, request, PinnedKind::default())
+        self.alloc_host_kind(bytes, request, self.pinned_default)
     }
     /// `alloc_host` with the `cuMemHostAlloc` flag bits chosen by the caller (WP-A day 13). The
     /// transfer gate measures the arms with it; production callers take `alloc_host`.
@@ -1341,8 +1371,9 @@ impl TransferEngine for CudaTransfers {
 mod tests {
     use super::*;
 
-    /// WP-A day 13: the seam's default is exactly the flag bits cudarc's `alloc_pinned` passed
-    /// before it existed, and the other arm is the cached attribute the OFF tier allocates with.
+    /// WP-A day 13: the enum's `Default` (the arm for a card class with no receipt) is exactly
+    /// the flag bits cudarc's `alloc_pinned` passed before the seam existed, and the other arm is
+    /// the cached attribute the OFF tier allocates with. The bits per kind do not move.
     #[test]
     fn pinned_kind_default_is_todays_write_combined_flag_bits() {
         assert_eq!(PinnedKind::default(), PinnedKind::WriteCombined);
@@ -1363,8 +1394,47 @@ mod tests {
         assert_eq!(PinnedKind::parse(""), None);
     }
 
-    /// The production allocator takes the default arm and nothing in this file allocates
-    /// pinned memory any other way: a caller of `alloc_host` gets today's flag bits.
+    /// WP-A day 14, lead ruling 22: the per-device default resolves by card class. `Cached` for
+    /// the receipted RTX PRO 6000 Blackwell class (every edition name the fleet has shown),
+    /// `WriteCombined` for the RTX 5090 class (its cell was inconclusive on the D2H clause) and
+    /// for every class without a receipt (an unknown card, an empty name); the same names
+    /// `parallel::HardwareTarget` keys on, so the two tables cannot drift.
+    #[test]
+    fn pinned_kind_per_device_default_resolves_by_card_class() {
+        for name in [
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+        ] {
+            assert_eq!(PinnedKind::for_device(name), PinnedKind::Cached, "{name}");
+            assert_eq!(PinnedKind::for_device(name).host_alloc_flags(), 0, "{name}");
+        }
+        for name in [
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA H100 80GB HBM3",
+            "NVIDIA B200",
+            "NVIDIA RTX PRO 6000 Ada Generation",
+            "",
+        ] {
+            assert_eq!(
+                PinnedKind::for_device(name),
+                PinnedKind::WriteCombined,
+                "{name}"
+            );
+            assert_eq!(
+                PinnedKind::for_device(name).host_alloc_flags(),
+                sys::CU_MEMHOSTALLOC_WRITECOMBINED,
+                "{name}"
+            );
+        }
+        // The elsewhere arm IS the enum's default: a class with no receipt gets today's bits.
+        assert_eq!(PinnedKind::for_device("unknown"), PinnedKind::default());
+    }
+
+    /// The production allocator takes the device's resolved default and nothing in this file
+    /// allocates pinned memory any other way; the default is resolved from the device name once,
+    /// in the constructor, and no environment variable is read anywhere in the file.
     #[test]
     fn alloc_host_delegates_with_the_default_kind_and_no_other_pinned_allocation_remains() {
         let src = include_str!("tier_transfer.rs");
@@ -1372,9 +1442,26 @@ mod tests {
         let start = body.find("pub fn alloc_host(").unwrap();
         let end = body[start..].find("pub fn alloc_host_kind(").unwrap() + start;
         assert!(
-            body[start..end]
-                .contains("self.alloc_host_kind(bytes, request, PinnedKind::default())"),
-            "alloc_host must delegate with the default arm"
+            body[start..end].contains("self.alloc_host_kind(bytes, request, self.pinned_default)"),
+            "alloc_host must delegate with the device's resolved default"
+        );
+        assert_eq!(
+            body.matches("PinnedKind::for_device(").count(),
+            1,
+            "the default is resolved exactly once, in CudaTransfers::new"
+        );
+        assert!(body.contains(
+            "let pinned_default = PinnedKind::for_device(&owner.context().name().unwrap_or_default());"
+        ));
+        assert_eq!(
+            body.matches("std::env::").count(),
+            0,
+            "no environment read selects the arm"
+        );
+        assert_eq!(
+            body.matches("env::var").count(),
+            0,
+            "no environment read selects the arm"
         );
         assert_eq!(
             body.matches("result::malloc_host(").count(),
@@ -1422,16 +1509,36 @@ mod tests {
     }
 
     /// The arm is honoured by the driver, not just recorded: `cuMemHostGetFlags` on the lease's
-    /// pointer returns the arm's flag bits, the default lease reads back write-combined, and a
-    /// host write followed by a host read is exact under both arms.
+    /// pointer returns the arm's flag bits, the default lease reads back this device's resolved
+    /// default (the card class's arm, and the driver's record of it), and a host write followed
+    /// by a host read is exact under both arms.
     #[test]
     #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
     fn pinned_kind_arm_is_honoured_by_the_driver() {
-        let (mut t, _stream, gov) = native_fixture();
+        let (mut t, stream, gov) = native_fixture();
         let bytes = 1 << 20;
         let pattern: Vec<u8> = (0..bytes).map(|i| (i * 7 % 251) as u8).collect();
+        let name = stream.context().name().unwrap();
+        let resolved = PinnedKind::for_device(&name);
+        assert_eq!(t.pinned_default(), resolved, "{name}");
         let default = t.alloc_host(bytes, request()).unwrap();
-        assert_eq!(default.pinned_kind(), Some(PinnedKind::WriteCombined));
+        assert_eq!(default.pinned_kind(), Some(resolved), "{name}");
+        let mut default_flags: std::ffi::c_uint = u32::MAX;
+        // SAFETY: the pointer is a live cuMemHostAlloc allocation owned by `default` for the
+        // duration of the call; the query writes only `default_flags`.
+        unsafe {
+            sys::cuMemHostGetFlags(
+                &mut default_flags,
+                default.bytes().unwrap().as_ptr() as *mut _,
+            )
+            .result()
+            .unwrap()
+        };
+        assert_eq!(
+            default_flags & sys::CU_MEMHOSTALLOC_WRITECOMBINED,
+            resolved.host_alloc_flags(),
+            "{name}: default lease driver flags {default_flags}"
+        );
         drop(default);
         for kind in [PinnedKind::WriteCombined, PinnedKind::Cached] {
             let mut lease = t.alloc_host_kind(bytes, request(), kind).unwrap();
