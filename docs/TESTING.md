@@ -835,6 +835,42 @@ The 2026-09-20 PRO 6000 run passed all three synthetic stages. GPU KDA/lazy-inde
 allocation coverage, full-checkpoint serving and performance remain pending; these are
 not model-support or full release-battery receipts.
 
+### Prefix eviction must credit admission and the driver (`tools/prefix-evict-reclaim-gate.py`)
+
+memra#346, #445 and #523 item 4: the admission path evicts unleased prefix-cache entries when a
+request does not fit (`[admit-oom] reclaim-on-defer`) and re-reads headroom in the same tick.
+The planes drop as stream-ordered `cuMemFreeAsync` into the caching pool, so before the fix the
+tick credited nothing (`effective free 69204MB -> 69204MB` on a 43.5 GB eviction) and a busy box
+kept every later prefill deferred behind an entry that was already gone. The fix
+(`settle_reclaimed_prefix_bytes`, worker.rs) fences the model-owned streams and trims each device
+pool to `used + cached_before` before the re-read, printing one `[admit-oom] reclaim settle` line
+per device in bytes.
+
+```text
+prefix-evict-reclaim-gate.py [--external-lock FD] --model <gguf> --bin <memra-server> --out <new-dir>
+```
+
+- Serving shape, one card, the real `memra-server`, two boots per cell: a calibration boot
+  measures F0 (effective free at idle), E1 (the long prompt's entry bytes) and P2's admission
+  cost; the measured boot sets the documented teeth door `MEMRA_ADMIT_RESERVE_MB` so that P2
+  requires `F0 - margin`, and sends P2 while a short busy peer is still decoding so the idle-box
+  `admission-drain` arm cannot mask the tick. No other override; `MEMRA_SERVE_SPEC=0`.
+- Assertions, all in bytes from the server's own lines and `/metrics`: V1 the reclaim-on-defer
+  line credits at least E1; V2 P2 is admitted in that tick (no `VRAM defer` after the reclaim
+  line, no `reject averted`, HTTP 200); V3 the settle line moves driver free and
+  `trim_released_bytes` by at least E1 minus one 2 MiB granule with no `pool_retained_bytes`;
+  V4 the greedy texts of the two boots hash identical (pressure changes admission, never tokens).
+  The runner compares V4's digest across binaries (base vs fix) as the numeric-program receipt.
+- Verdict line: `PREFIX-EVICT-RECLAIM: entry_bytes=... reclaim_credit_bytes=... -> PASS|FAIL`;
+  exit 0 PASS, 1 FAIL, 2 `REFUSED: ...` (lock, port, busy-peer window, card too small). Red on
+  `main` at `ea08bc7f8` and green on the fix, same card, same artifact, same prompts:
+  [`research/spill-b-20260919/DAY13.md`](../research/spill-b-20260919/DAY13.md).
+- Canonical rig lock only, held for the whole cell; under the collector,
+  `tools/tier-battery.py --rig pro-single --external-lock --execute python3
+  tools/prefix-evict-reclaim-gate.py --external-lock @COLLECTOR_LOCK_FD@ ...` (lead ruling 5).
+  CPU arm: `worker::tests::reclaim_settle_returns_only_the_reclaims_gain` pins the keep
+  arithmetic.
+
 ## Generic spill / tiered KV (memra-tier)
 
 The shared contract is `crates/memra-tier/src/contracts.rs`. The conformance schedules are
