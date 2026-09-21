@@ -704,12 +704,7 @@ fn executor() -> Result<&'static CpuExecutor, String> {
 }
 
 pub(crate) fn submit(job: CpuExpertJob) -> Result<CpuExpertTicket, String> {
-    // kept for the sequential callers; lockstep goes through `submit_job`
     submit_any(CpuJob::Token(job))
-}
-
-pub(crate) fn submit_rows(job: CpuRowsJob) -> Result<CpuExpertTicket, String> {
-    submit_any(CpuJob::Rows(job))
 }
 
 fn submit_any(job: CpuJob) -> Result<CpuExpertTicket, String> {
