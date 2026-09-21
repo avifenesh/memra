@@ -19,7 +19,7 @@ the decide-by review still owes is the door's cost read again on the target card
 destinations: the same pair cell (demote and promote lines OFF against ON, N=5 per arm per order, both
 orders, one lock hold) on a binary carrying `for_device`, so the two SHA-256 passes at demote and the one
 at promote run over cacheable memory, and the hash-speed micro-cell that splits the remaining delta
-between the hashes and the ticket lifecycle. Day 17's arena cell (`DAY17.md`) is a separate item and
+between the hashes and the ticket lifecycle; both are banked (lane A day 15 and this lane's day 18) and listed with every other owed cell in the "Review table for the decide-by" section at the end of this file. Day 17's arena cell (`DAY17.md`) is a separate item and
 measured the arena against the pageable tier with the door OFF in both arms. Decide-by: **2026-10-05**
 (14 days after landing, 2026-09-21). Every cell behind it is `executed-not-qualified` development
 evidence on one card class;
@@ -551,3 +551,56 @@ boot wiring, `host_tier_context` and its helpers, the FLAGS.md row, this doc's s
 the tests; the verdict moves to the "Removed doors" ledger. The sidecar route it exercises
 (lane B's) is the lead's to keep or drop. If Option B lands and the door has served two weeks
 with no rollback, the seam is deleted and the constructor becomes the naked default.
+
+## Review table for the decide-by (2026-10-05), written day 18 (`DAY18.md`)
+
+Every row is `executed-not-qualified` development evidence; the target card is one RTX PRO 6000 Blackwell
+at 600 W unless the row says otherwise. "Banked" means the receipt and its replay are in this repository (or
+on lane A's branch where named). The door's decision is the review's; this table is its input list.
+
+| Owed cell | Receipt | Verdict line (verbatim) | State |
+|---|---|---|---|
+| Identity gate, default (spec) environment, OFF against ON | `pro-single-day14/`, `pro-single-day15/`, `pro-single-day16/hostgate-identity-{off,on}-default` (`verify-day16.py`: `DAY16 REPLAY: PASS`, 203 checks) | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` both arms, the same 13 verdict lines, equal demote bytes, ON D2H then H2D receipts `items=34 (16 KV planes, draft) complete=34 require=ok` | banked (day 13 finding 2, `5 FAILURE(S)` under ON on the spec surface, fixed day 14 by the draft-plane surface) |
+| Identity gate, plain environment, OFF against ON | `pro-single-day13/`, `-day15/`, `-day16/hostgate-identity-{off,on}-plain` | `ALL GREEN`, 13 lines, demotes `89 / 160.5MB`, `86 / 160.4MB`, 1 promote, 1 `verify ok`; ON receipts `items=32 (16 KV planes)` | banked |
+| Failure gate, default and plain, OFF against ON | `pro-single-day13/` to `-day16/hostgate-failure-{off,on}-default` | `KV-HOST-SPILL FAILURE GATE: 1 FAILURE(S)` both arms, the same 15 lines (`FAIL: pool-full refusal is LOUD and named`, pre-existing since day 13, in both arms); digest cell ON: receipt `seq=1`, `FAULT: flipped one demoted K byte`, the bind naming the injected difference, `VERIFY FAILED` at promote | banked; the pool-full line is the gate's open item in both arms, not the door's |
+| Contract fault gate, four cells (presubmit, postpublish, promote-presubmit, promote-postpublish, promote-reject, promote-readyview arms) | `pro-single-day16/faultgate-fix/` | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 40 `ok:` | banked |
+| Review-round cells (PR #599 findings 1 and 2; PR #605 findings 1 and 2) | `pro-single-day15-review/` (`verify-day15-review.py`), `pro-single-day16-review/` (`verify-day16-review.py`) | `DAY15 REVIEW REPLAY: PASS` (46 checks); `DAY16 REVIEW REPLAY: PASS` (42 checks) | banked |
+| Lane A's tenant reclaim fix arm, OFF against ON | `pro-single-day15/`, `pro-single-day16/tenant-{off,on}` | `PASS` both arms, eight receipts | banked |
+| Serve smoke and lane B's two gates, OFF against ON | `pro-single-day16/smoke-{off,on}`, `bevict-{off,on}`, `bnewest-{off,on}` | line-identical OFF against ON | banked |
+| The door's cost with WRITE-COMBINED destinations (the pre-`for_device` engine), N=5 per arm per order, both orders, one lock hold | `pro-single-day16/wc-pair2-retry3/` (`wc-pair.py`: `WC PAIR REPLAY: PASS`) | demote ON 169.2 ms pooled against OFF 38.6 (steady state 136 to 140 against 6 to 8); promote's own share 33.2 against 4.5 | banked as the record; SUPERSEDED on this card class by `PinnedKind::for_device` (`docs/decisions/PINNED-DESTINATIONS.md`, ruling 23) |
+| The door's cost with CACHED destinations (a `for_device` binary), same cell | lane A day 15, `research/spill-a-20260919/pro-single-day15/wc-pair/` on `origin/lane/spill-a-20260919` (`DAY15.md` there; replay with this lane's `wc-pair.py`: `WC PAIR REPLAY: PASS (12 checks)`) | demote pooled OFF **37.8** against ON **113.6** ms (steady state 6.1 to 6.9 against 81.8 to 83.0); promote 11.4 against 88.7; promote minus inline demote **4.4** against **5.8**; 36 to 51 C, 491 W peak under 600 W | banked on A's branch (the lead integrates) |
+| The hash micro-cell (the split of the delta into the hash and the ticket lifecycle), both cards | `pro-single-day18/hashmicro/`, `rtx5090-day18/hashmicro/` (`day18-replay.py`: `DAY18 REPLAY hashmicro: PASS (8 checks)` on both) | target card: `cached_ms=77.922 wc_ms=1698.063 heap_ms=77.990 ... cached_gbps=2.153 wc_gbps=0.099 ... wc_over_cached=21.792`; RTX 5090 Laptop host: `cached_ms=37.339 wc_ms=1431.613 heap_ms=37.480 ... cached_gbps=4.493 wc_gbps=0.117 ... wc_over_cached=38.340` (full lines in `DAY18.md`) | banked today |
+| The arena pair (door OFF both arms; whether the arena is the cheaper host shape at all) | `pro-single-day17/arena-pair/` (`arena-pair.py`: `ARENA PAIR REPLAY: PASS (18 checks)`) | `... -> arena_first_touch_absent; arena_not_slower` | banked; an input to the arena item, not the door's cost |
+
+**Arithmetic for the review (across sittings on the same box, not a same-window measurement).** On the
+target card one engine hash pass over 160 MiB of cached pinned memory is 77.9 ms (N=10, range 77.8 to
+78.0); lane A's steady-state demote delta with cached destinations is about 76 ms (82 against 6.1). The
+demote delta is therefore one hash pass, within 2 ms, and the ticket lifecycle's share is below the
+resolution of the two cells. Of the census's three hashes per plane (`progress` at completion, the
+server's at take, `bind_tier_image`'s), only the completion checksum is new under ON on the demote side
+(bind's checksum is code unchanged and runs in OFF as well), which is consistent with one pass. The
+promote side does not fit as simply: the census puts one completion checksum over the host source at
+promote (Option C), a 77.9 ms pass, but the measured promote-share delta is 1.4 ms (5.8 against 4.4);
+either that hash is not inside the promote's own window as paired, or it is not where the census puts it.
+Write-combined: one pass over 160 MiB of write-combined memory is 1698 ms here (lane A's day-13 harness
+read 1711 ms with another implementation), yet the day-16 pair with write-combined destinations read a
+demote delta of about 130 ms; the ON demote of day 16 cannot have hashed 160 MB of write-combined memory
+at this rate, so which bytes the completion checksum read on that binary is a census question, not
+settled here. Both are named as open for the review; nothing is inferred beyond the numbers.
+
+**Still missing at the decide-by, stated.**
+1. The arena under the door: `MEMRA_GLM5_TP_KV_HOST=1` is refused with the door at boot (its fixed backing
+   is not governor-charged and its slices are not leases); the lease handoff is engine work, not started;
+   day 17's pair says the arena removes the first-touch step (about 35 ms on the first three demotes per
+   boot) and is otherwise equal at steady state, which is what a pricing would weigh.
+2. The DFlash tail slice: no drafter artifact identity is derivable from a GGUF digest and no gate boots a
+   DFlash drafter on the card; no cell exists.
+3. Verify digest v3 (the draft plane inside `MEMRA_KV_HOST_VERIFY`): not landed; the day-14 finding 4 item.
+4. The pool-full failure-gate line: pre-existing in both arms since day 13; the gate reads `1 FAILURE(S)`
+   whatever the door does.
+5. The RTX 5090 class: every door cell above ran on the target card; `PinnedKind::for_device` leaves that
+   class write-combined, where today's micro-cell reads 1431.6 ms per 160 MiB hash pass (0.117 GB/s); the
+   door's demote cost on that class is unmeasured (no pair cell there) and, by the arithmetic above, would
+   be the write-combined pass unless the census question in the paragraph above resolves otherwise. The
+   per-hardware rule wants that pair before any default on that class.
+6. The promote-side census question and the day-16 write-combined contradiction named above.

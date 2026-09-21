@@ -83,6 +83,15 @@ jobs:
           tools/check-workflow-keys.py
           tools/test_workflow_keys.sh
 
+      # A hand-resolved merge left a diff3 base marker in research/INDEX.md on main twice on
+      # 2026-09-21 (#604, #614) and once in research/tune-data/perf-ci.jsonl; a union resolve
+      # then dropped the neighbouring INDEX row. git diff --check sees a marker only inside a
+      # diff; this census sees the tracked tree.
+      - name: Tracked source, docs and data carry no merge-conflict marker line
+        run: |
+          tools/check-conflict-markers.sh
+          tools/test_conflict_markers.sh
+
       - name: Content-bound release qualification controls (CPU-only)
         run: |
           python3 tools/test_release_qualification.py

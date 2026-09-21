@@ -1,0 +1,36 @@
+[server] build: memra-0.138.0-62f61e5a8145 (id: source-tree, git: e16bc69e8d34)
+[server] starting; models config = [("gate", "/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: /dev/kmsg
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[q8rp] split-plane decode mirrors built: 191 tensors
+[worker]   loaded "gate": 41 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] gate: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 284MB (283770880 B, derived: 2 x 141885440 B max entry for model "gate" at MEMRA_CTX=8192, requested 283770880 B; boot driver free 97462648832 B, post-reserve clamp 95852036096 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=mtp supported=true yield_door=false [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[spec] draft graph unavailable: non-resident MoE MTP head; eager draft chain engaged
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1308622848,"still_owned_bytes":80929324232,"pool_reserved_bytes":81168171008,"pool_cached_bytes":238846776,"driver_free_bytes":20184694784,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1248MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=mtp transient floor 1536MB (static was 1536MB; measured 1206MB; probe kv charge 41MB, draft-state 0MB, drafted 57 accepted 45; [dev0 peak-mapped 78656MB rest-mapped 77408MB charged 41MB -> 1206MB]; 4.4s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18141
+[meter] admit id=cmpl-0261a3fb8677bae928d895f14fc67d0e tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=88 path=spec = 10208 B/token x ctx + 3MB prefill-workspace + 0MB fixed = 4MB
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=8 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 129MB (observed 129MB at ctx 32 path=spec)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[spec-acc] ctx=8 burst=7/24 cum=7/24=0.292
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
