@@ -137,7 +137,7 @@ stop() {
 }
 trap stop EXIT
 
-# Five DISJOINT long prompts (each > PREFIX_CACHE_MIN_TOKENS=64 for every tokenizer here) so no
+# Six DISJOINT long prompts (each > PREFIX_CACHE_MIN_TOKENS=64 for every tokenizer here) so no
 # two share a 64-token prefix, plus one extension for the strict-prefix hit shape.
 P_A="You are indexing the survey logs of a coastal tide-gauge network. For each of the twelve \
 stations, ordered north to south, report the gauge type, the datum epoch, the sampling \
@@ -207,6 +207,10 @@ PY
 }
 
 FAILS=0
+# Matcher self-check (the attempt-2 lesson): the tag must match as a literal, never as a set.
+printf '%s\n' "[prefix-host] demote: 1 tokens, 1.0MB" > "$EV/.matcher-probe"
+grep -qE -- "\[prefix-host\] demote: " "$EV/.matcher-probe" || { echo "REFUSED: ERE matcher does not match the literal tag" >&2; exit 2; }
+rm -f "$EV/.matcher-probe"
 chk() {
     local name=$1
     shift
@@ -215,8 +219,10 @@ chk() {
         FAILS=$((FAILS + 1))
     fi
 }
-absent() { ! grep -q -- "$1" "$2"; }
-present() { grep -q -- "$1" "$2"; }
+# ERE on purpose: in basic regex `[prefix-host]` is a bracket expression and never matches the
+# literal tag (attempt 2 of the day-12 cell: two `present` FAILs and two vacuous `absent` passes).
+absent() { ! grep -qE -- "$1" "$2"; }
+present() { grep -qE -- "$1" "$2"; }
 jqpy() { # $1 file $2 python-expr over loaded json `r`
     python3 -c "
 import json, sys
@@ -246,10 +252,10 @@ done
 chk "/metrics scraped with the operator token (200, process-wide counters present)" jqpy "$EV/metrics.json" "r.get('_http_status') == 200 and 'prefix_host_tenant_rejects' in r"
 chk "no device-tier promote-insert skip (the device budget holds a promote beside a protected entry)" absent "skip pinned host-promote insert" "$LOG"
 chk "the tier is on with the configured share cap" present "tenant share cap $PCT% = " "$LOG"
-chk "the pool never filled: no LRU eviction" absent "[prefix-host] evict (LRU)" "$LOG"
+chk "the pool never filled: no LRU eviction" absent "\[prefix-host\] evict \(LRU\)" "$LOG"
 chk "no allocation refusal" absent "admission refused" "$LOG"
-chk "no host-tier refusal or failure line" absent "[prefix-host] REFUSED\|[prefix-host] demote failed\|[prefix-host] demote refused\|TIER DISABLED" "$LOG"
-chk "beta's first demote landed" present "[prefix-host] demote: .*t:beta" "$LOG"
+chk "no host-tier refusal or failure line" absent "\[prefix-host\] REFUSED|\[prefix-host\] demote failed|\[prefix-host\] demote refused|TIER DISABLED" "$LOG"
+chk "beta's first demote landed" present "\[prefix-host\] demote: .*t:beta" "$LOG"
 chk "acme's first two demotes landed (r3, r4)" python3 -c "
 import re, sys
 n = sum(1 for l in open('$LOG') if l.startswith('[prefix-host] demote: ') and 't:acme' in l)
@@ -259,8 +265,8 @@ import json, sys
 r1 = json.load(open('$EV/r1.json'))['usage']['prompt_tokens']
 r7 = json.load(open('$EV/r7.json'))['usage']['prompt_tokens_details']['cached_tokens']
 sys.exit(0 if r7 == r1 and r1 > 0 else 1)"
-chk "the r7 promote line names beta" present "[prefix-host] promote: .*t:beta" "$LOG"
-chk "no tenant-share eviction ever names beta" absent "evict (tenant share): .*t:beta" "$LOG"
+chk "the r7 promote line names beta" present "\[prefix-host\] promote: .*t:beta" "$LOG"
+chk "no tenant-share eviction ever names beta" absent "evict \(tenant share\): .*t:beta" "$LOG"
 chk "every tenant-share eviction names acme, in both the row and the namespace" python3 -c "
 import sys
 bad = [l for l in open('$LOG') if 'evict (tenant share): ' in l and not (\"tenant \\\"t:acme\\\"\" in l and 'ns \"t:acme' in l)]
@@ -268,7 +274,7 @@ sys.exit(1 if bad else 0)"
 
 echo "== $ARM arm: the verdict lines =="
 EVAP='demote evaporated at the tenant share cap before the D2H copy'
-RECLAIM='[prefix-host] evict (tenant share): '
+RECLAIM='\[prefix-host\] evict \(tenant share\): '
 if [ "$ARM" = base ]; then
     chk "base: acme's third demotion EVAPORATED at the cap (the pre-#384 line)" present "$EVAP: .*t:acme" "$LOG"
     chk "base: nothing of acme's own was evicted" absent "$RECLAIM" "$LOG"
@@ -294,7 +300,7 @@ import json, sys
 r6 = json.load(open('$EV/r6.json'))['usage']['prompt_tokens']
 r8 = json.load(open('$EV/r8.json'))['usage']['prompt_tokens_details']['cached_tokens']
 sys.exit(0 if r8 == r6 and r6 > 0 else 1)"
-    chk "fix: the r8 promote line names acme" present "[prefix-host] promote: .*t:acme" "$LOG"
+    chk "fix: the r8 promote line names acme" present "\[prefix-host\] promote: .*t:acme" "$LOG"
     chk "fix: /metrics counts the reclaims and no rejects" jqpy "$EV/metrics.json" "r.get('prefix_host_tenant_reclaims', 0) >= 1 and r.get('prefix_host_tenant_rejects', 0) == 0"
 fi
 
