@@ -7950,6 +7950,29 @@ impl HostPrefixCache {
     /// entry is the last-evicted device state: it may carry draft planes an older twin
     /// lacks, so it wins), then LRU-evict back under the host byte budget.
     fn insert(&mut self, key: &PoolKey, mut e: HostPrefixEntry) -> bool {
+        if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
+            eprintln!(
+                "[prefix-host] REFUSED demote insert: entry identity/version mismatch \
+                 (entry model {}{}, version {}; pool model {}{}, version {})",
+                e.pool_key.0,
+                ns_suffix(&e.pool_key.1),
+                e.layout_version,
+                key.0,
+                ns_suffix(&key.1),
+                PREFIX_ENTRY_LAYOUT_VERSION,
+            );
+            return false;
+        }
+        if e.bytes > self.budget {
+            eprintln!(
+                "[prefix-host] skip demote: entry {:.1}MB > host budget {:.0}MB",
+                e.bytes as f64 / 1e6,
+                self.budget as f64 / 1e6,
+            );
+            return false;
+        }
+        // Contracts door: after the whole-budget refusal so an over-budget image prints the
+        // same `skip demote` line in both arms; before residency so nothing unbound lands.
         if let Some(tier) = &self.tier {
             let Some((program, generation)) = tier.program(key) else {
                 eprintln!(
@@ -7971,27 +7994,6 @@ impl HostPrefixCache {
                 );
                 return false;
             }
-        }
-        if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
-            eprintln!(
-                "[prefix-host] REFUSED demote insert: entry identity/version mismatch \
-                 (entry model {}{}, version {}; pool model {}{}, version {})",
-                e.pool_key.0,
-                ns_suffix(&e.pool_key.1),
-                e.layout_version,
-                key.0,
-                ns_suffix(&key.1),
-                PREFIX_ENTRY_LAYOUT_VERSION,
-            );
-            return false;
-        }
-        if e.bytes > self.budget {
-            eprintln!(
-                "[prefix-host] skip demote: entry {:.1}MB > host budget {:.0}MB",
-                e.bytes as f64 / 1e6,
-                self.budget as f64 / 1e6,
-            );
-            return false;
         }
         // PER-TENANT SHARE CAP (MEMRA_KV_HOST_TENANT_PCT): a demotion that would push
         // this tenant's resident bytes past its share EVAPORATES (the entry drops,
@@ -8729,23 +8731,31 @@ fn host_demote_prefix_ref(
             );
             return HostDemoteOutcome::Failed;
         }
-        let pinned = dead.kv.iter().flatten().try_fold(0usize, |n, p| {
-            p.k_tok_bytes
-                .checked_add(p.v_tok_bytes)
-                .and_then(|row| p.len.checked_mul(row))
-                .and_then(|bytes| n.checked_add(bytes))
-        });
-        let Some(pinned) = pinned else {
-            return HostDemoteOutcome::Failed;
-        };
-        let Some(pageable) = host_bytes.checked_sub(pinned) else {
-            return HostDemoteOutcome::Failed;
-        };
-        match host.tier_charge(&dead.pool_key, pinned as u64, pageable as u64, false) {
-            Ok(charge) => charge,
-            Err(err) => {
-                eprintln!("[prefix-host] {err}");
+        if host_bytes > host.budget {
+            // An image above the whole budget is never resident: `insert` refuses it by name
+            // (`skip demote: entry > host budget`) after the copy, exactly as the OFF arm does,
+            // so the ledger takes no charge and the OFF line stays the line (a `Capacity`
+            // refusal here would replace it, which is the gate-line change ruling 15 forbids).
+            None
+        } else {
+            let pinned = dead.kv.iter().flatten().try_fold(0usize, |n, p| {
+                p.k_tok_bytes
+                    .checked_add(p.v_tok_bytes)
+                    .and_then(|row| p.len.checked_mul(row))
+                    .and_then(|bytes| n.checked_add(bytes))
+            });
+            let Some(pinned) = pinned else {
                 return HostDemoteOutcome::Failed;
+            };
+            let Some(pageable) = host_bytes.checked_sub(pinned) else {
+                return HostDemoteOutcome::Failed;
+            };
+            match host.tier_charge(&dead.pool_key, pinned as u64, pageable as u64, false) {
+                Ok(charge) => charge,
+                Err(err) => {
+                    eprintln!("[prefix-host] {err}");
+                    return HostDemoteOutcome::Failed;
+                }
             }
         }
     } else {
