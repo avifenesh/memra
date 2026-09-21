@@ -972,9 +972,13 @@ until the demotion fits its share, then the predicate is retried once. Another t
 never read, a leased entry (`IdentitySlot::leased`, a live identity lease) is skipped, the
 exact-key twin is spared, and a row with no eligible space keeps the bounded refusal: today's
 `demote evaporated at the tenant share cap before the D2H copy` line plus what the plan found,
-nothing evicted. A charge, digest or copy failure therefore costs the row nothing (integ15
-review of PR #597); a reclaim whose `insert` still refuses is booked in
-`prefix_host_tenant_reclaims_wasted` with a `tenant share reclaim WASTED` line. `insert`'s
+nothing evicted. On the pageable tier a charge, digest or copy failure therefore costs the row
+nothing; on the fixed arena (`MEMRA_GLM5_TP_KV_HOST=1`) the reclaim runs at reservation inside
+`reserve_image`, before the copy, and a copy failure there is booked like a refused insert
+(integ15 review of PR #597, both rounds): `prefix_host_tenant_reclaims_wasted` with a `tenant
+share reclaim WASTED` line. `host_cache_tenant_share_reservation_evicts_nothing_without_an_arena_and_books_a_copy_failure_wasted`
+pins the pageable no-op and the booking shape; the arena eviction itself needs a CUDA context
+and is receipt-only. `insert`'s
 authoritative gate, the cap and the D2H bytes are unchanged; `/metrics` gains
 `prefix_host_tenant_reclaims` and `prefix_host_tenant_reclaims_wasted`. CPU cells
 (`cargo test -p memra-server --offline tenant_share`):

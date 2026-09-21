@@ -8265,8 +8265,11 @@ impl HostPrefixCache {
     /// `Ok` with `need == 0` below the cap; `Err` with nothing evicted when the image alone
     /// exceeds the share (no eviction can help, into a full row or an empty one) or the row's
     /// unleased bytes cannot cover the shortfall. The demote hook runs this BEFORE the D2H copy
-    /// so an infeasible demotion skips the PCIe trip, and it mutates nothing: a copy, digest or
-    /// charge failure after it costs the row nothing (integ15 review of PR #597).
+    /// so an infeasible demotion skips the PCIe trip, and it mutates nothing. On the pageable
+    /// tier the evictions then wait for the built image, so a copy, digest or charge failure
+    /// costs the row nothing; on the fixed arena (`MEMRA_GLM5_TP_KV_HOST=1`) `reserve_image`
+    /// evicts at reservation, before the copy, and a copy failure there is booked as
+    /// `tenant_reclaims_wasted` (integ15 review of PR #597, both rounds).
     fn tenant_share_reclaim_plan(
         &self,
         key: &PoolKey,
@@ -9349,11 +9352,14 @@ fn host_demote_prefix_ref(
     // entries make room and the predicate is retried once. The PLAN runs here, before the copy,
     // and mutates nothing: an infeasible demotion (image above the share, or the row's unleased
     // bytes short of the shortfall) skips the PCIe trip with today's line plus what the plan
-    // found, and nothing is evicted for it. The evictions themselves run in the `Ok(mut e)` arm
-    // below, once the image is built and bound, right before `insert`: the charge, the digest and
-    // the copy can all still fail after this point, and none of them may cost the row its warm
-    // entries (integ15 review of PR #597). The cap, the lease protections and the D2H payload
-    // bytes are unchanged; no other tenant's row is touched.
+    // found, and nothing is evicted for it. On the pageable tier the evictions themselves run in
+    // the `Ok(mut e)` arm below, once the image is built and bound, right before `insert`: the
+    // charge, the digest and the copy can all still fail after this point, and none of them costs
+    // the row its warm entries. On the fixed arena (`MEMRA_GLM5_TP_KV_HOST=1`) the planes'
+    // backing is reserved before the copy, so `reserve_image` evicts at reservation and a copy
+    // that then fails is booked wasted in the `Err` arm (integ15 review of PR #597, both rounds).
+    // The cap, the lease protections and the D2H payload bytes are unchanged; no other tenant's
+    // row is touched.
     if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes)
         && let Err(refusal) = host.tenant_share_reclaim_plan(&dead.pool_key, &dead.toks, host_bytes)
     {
@@ -36399,6 +36405,50 @@ mod tests {
         assert_eq!(h.tenant_reclaims_wasted, 1);
     }
 
+    /// Second round of the integ15 review: the two tiers differ in WHEN they evict. Pageable
+    /// tier (no arena): `reserve_image` is a no-op even with `reclaim` set, so nothing is
+    /// evicted at reservation and the row is whole until the image is built. Fixed arena: the
+    /// eviction happens inside `reserve_image` before the copy, and a copy that then fails is
+    /// booked wasted through the same `reclaim_pending` ledger as an insert refusal; the ledger
+    /// half is pinned here, the arena eviction itself needs a CUDA context (`PinnedHostArena::
+    /// reserve`) and is receipt-only (`research/spill-a-20260919/DAY12.md`).
+    #[test]
+    fn host_cache_tenant_share_reservation_evicts_nothing_without_an_arena_and_books_a_copy_failure_wasted()
+     {
+        let mut h = HostPrefixCache::new(100);
+        h.tenant_pct = 50;
+        let t = tenant_toks;
+        let a = key(&crate::auth::scope_namespace("acme", "s1"));
+        assert!(h.insert(&a, host_entry(&a, t(1000), 20)));
+        assert!(h.insert(&a, host_entry(&a, t(2000), 30))); // at the 50-byte share
+        // Pageable tier: the reservation is a no-op lease even at the cap with `reclaim` set;
+        // the row is untouched and nothing is pending.
+        assert!(h.arena.is_none());
+        let leases = h
+            .reserve_image(&a, &t(3000), 20, &[8, 8], true)
+            .expect("no arena: the reservation is the OFF path");
+        assert!(leases.0.is_none(), "the OFF path hands out no arena planes");
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+        assert_eq!(
+            (h.n_entries(), h.tenant_reclaims, h.reclaim_pending),
+            (2, 0, 0)
+        );
+        // The import path (`reclaim` false) is the same no-op without an arena.
+        assert!(h.reserve_image(&a, &t(3000), 20, &[8, 8], false).is_ok());
+        assert_eq!((h.n_entries(), h.reclaim_pending), (2, 0));
+        // Fixed-arena booking shape: a reclaim at reservation, then a copy that fails before any
+        // insert; the hook's `Err` arm books the pending eviction wasted, exactly once.
+        let r = h.reclaim_tenant_share(&a, &t(3000), 20).unwrap();
+        assert_eq!((r.evicted, h.reclaim_pending, h.tenant_reclaims), (1, 1, 1));
+        assert_eq!(h.waste_pending_reclaim(&a, 64, "copy failed"), 1);
+        assert_eq!((h.reclaim_pending, h.tenant_reclaims_wasted), (0, 1));
+        assert_eq!(
+            h.tenant_bytes.get("t:acme").copied(),
+            Some(30),
+            "the row paid; the counter says so"
+        );
+    }
+
     /// The hook consults the PLAN before the copy and the RECLAIM only once the image is built,
     /// right before `insert`; every later exit books a pending reclaim wasted; both counters
     /// reach the published snapshot and the HTTP render.
@@ -36433,7 +36483,8 @@ mod tests {
         );
         assert!(
             !body[..copy].contains("host.reclaim_tenant_share("),
-            "no eviction before the D2H copy: a charge, digest or copy failure must cost nothing"
+            "the hook itself evicts nothing before the D2H copy (the fixed arena's reservation \
+             inside reserve_image is the one exception, booked wasted on a copy failure)"
         );
         assert!(
             body[..copy].contains("tier_charge(")

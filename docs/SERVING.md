@@ -1895,9 +1895,12 @@ tenant's row is never read, a leased entry is skipped, the exact-key twin is spa
 a tenant at its cap turns over its own row and one tenant still can never squeeze the
 others out of the pool. Only when the image alone exceeds the share, or the row's
 unleased bytes cannot cover the shortfall, does the demotion evaporate (checked before
-the D2H copy, so it also skips the PCIe trip), with nothing evicted for it. The reclaim
-runs once the image is built and ready to insert, so a copy, digest or charge failure
-costs the row nothing. `100` disarms the check for single-tenant deployments (the global
+the D2H copy, so it also skips the PCIe trip), with nothing evicted for it. On the
+pageable tier the reclaim runs once the image is built and ready to insert, so a copy,
+digest or charge failure costs the row nothing; on the fixed arena
+(`MEMRA_GLM5_TP_KV_HOST=1`) it runs at reservation, before the copy, because the planes'
+backing must exist first, and a copy failure there is booked as
+`prefix_host_tenant_reclaims_wasted`. `100` disarms the check for single-tenant deployments (the global
 byte-LRU then governs, exactly as before the flag). Receipts: `prefix_host_tenant_reclaims`
 (reclaims moving while `prefix_host_tenant_rejects` stays flat means the cap is being
 served, not refused), `prefix_host_tenant_reclaims_wasted` (a reclaim whose insert still

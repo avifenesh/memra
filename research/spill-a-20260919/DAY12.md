@@ -327,6 +327,25 @@ with `fix (fix2): source 8b29b2aa3… binary sha256 d47caec8…` (`day12/verify-
 `tier-battery.py --validate` exit 0 on `tenant-fix-r4` (`day12/collector-validate-r4.log`).
 The attempt-3 fix cell (`tenant-fix-r3/`, the pre-review build) stays as the record.
 
+Second round (revuto on PR #597): the sentence that nothing is evicted before the image exists
+was unconditional in `tenant_share_reclaim_plan`'s doc, the hook comment, `docs/SERVING.md`,
+the `MEMRA_KV_HOST_TENANT_PCT` row and `docs/TESTING.md`, while under `MEMRA_GLM5_TP_KV_HOST=1`
+the reclaim runs inside `reserve_image` before the D2H copy, so a copy failure there does cost
+the row its evicted entries (booked wasted). Lead decision: the arena path stays as it is
+(`reserve_image` needs backing before the copy by design; the wasted counter makes any loss
+legible) and the claim is scoped everywhere it is made: on the pageable tier the reclaim runs
+after the image is built and before `insert`; on the fixed arena it runs at reservation before
+the copy and a copy failure is booked as `prefix_host_tenant_reclaims_wasted`. New unit cell
+`host_cache_tenant_share_reservation_evicts_nothing_without_an_arena_and_books_a_copy_failure_wasted`:
+without an arena `reserve_image(.., reclaim: true)` at the cap is the OFF-path no-op (no plane
+leases, row whole, nothing pending; the import path the same), and the arena booking shape (a
+reclaim at reservation, then `waste_pending_reclaim(.., "copy failed")` with no insert) books
+exactly one wasted entry while the row stays paid. The arena eviction itself needs a CUDA
+context (`PinnedHostArena::reserve`) and is receipt-only: no CPU fixture builds an arena, and
+no target-card cell ran the fixed-arena tier today (the contracts door refuses the arena at
+boot, and the gates ran the pageable tier). Docs-only otherwise; the CPU battery reran under
+the quota; no GPU rerun.
+
 ## Scope
 
 Done: #384 code, unit cells, serving-shape gate on base and fix, `/metrics` counter; #385 plan
