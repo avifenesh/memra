@@ -1281,6 +1281,14 @@ impl Event {
     }
 }
 
+/// Why the worker must stop producing events. A queue overflow is not evidence
+/// that the HTTP client disconnected, even if the receiver subsequently drops.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EventCloseReason {
+    QueueOverflow,
+    ReceiverDropped,
+}
+
 #[derive(Debug)]
 struct EventQueueState {
     events: std::sync::atomic::AtomicUsize,
@@ -1363,10 +1371,21 @@ impl EventSender {
     }
 
     pub fn is_closed(&self) -> bool {
-        self.state
+        self.close_reason().is_some()
+    }
+
+    pub(crate) fn close_reason(&self) -> Option<EventCloseReason> {
+        if self
+            .state
             .overflowed
             .load(std::sync::atomic::Ordering::Acquire)
-            || self.inner.is_closed()
+        {
+            Some(EventCloseReason::QueueOverflow)
+        } else if self.inner.is_closed() {
+            Some(EventCloseReason::ReceiverDropped)
+        } else {
+            None
+        }
     }
 
     pub async fn closed(&self) {
@@ -20813,6 +20832,13 @@ pub fn run(
     };
     crate::affinity::apply_and_announce(&affinity);
 
+    // A supervisor respawn is a new owner even though its command receiver survives.
+    // External lifecycle captures also bind the process boot/start identity.
+    static NEXT_WORKER_GENERATION: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(1);
+    let worker_generation =
+        NEXT_WORKER_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
     // memra#187: validate deployment suitability for predictive admission enforcement before allocating CUDA engines
     let admit_predict_cfg = crate::admit_predict::ShadowConfig::from_env();
     if let Err(err_msg) =
@@ -22280,6 +22306,7 @@ pub fn run(
                         health.set_phase(crate::health::PHASE_BUSY);
                         handle_cmd(
                             cmd,
+                            worker_generation,
                             &loaded,
                             &dsv4_routes,
                             &order,
@@ -22310,6 +22337,7 @@ pub fn run(
                                 health.set_phase(crate::health::PHASE_BUSY);
                                 handle_cmd(
                                     cmd,
+                                    worker_generation,
                                     &loaded,
                                     &dsv4_routes,
                                     &order,
@@ -22346,6 +22374,7 @@ pub fn run(
                 match rx.recv_timeout(wait) {
                     Ok(cmd) => handle_cmd(
                         cmd,
+                        worker_generation,
                         &loaded,
                         &dsv4_routes,
                         &order,
@@ -22368,6 +22397,7 @@ pub fn run(
             match rx.try_recv() {
                 Ok(cmd) => handle_cmd(
                     cmd,
+                    worker_generation,
                     &loaded,
                     &dsv4_routes,
                     &order,
@@ -22544,11 +22574,17 @@ pub fn run(
             // up (receiver dropped) never reaches the GPU — dropped here, logged for the
             // metering record (0 generated; prompt never primed).
             if req.tx.is_closed() {
+                let trace = req.ttft.clone();
+                observe_receiver_close(trace.as_ref(), &req.tx);
                 eprintln!(
                     "[abort] client disconnected while queued (model {:?}); dropped",
                     req.model
                 );
                 release_admission_reservation(req.lane);
+                drop(req);
+                if let Some(trace) = trace {
+                    trace.mark_retired(crate::ttft::RetirementOutcome::Aborted);
+                }
                 continue;
             }
             // KV-FLEX SHED-ON-ARRIVAL (lane/kv-flex-20260831, tiering spec Arc G): a
@@ -25940,6 +25976,15 @@ pub fn run(
             );
         }
         for &i in finished.iter().rev() {
+            // Declaration order is intentional: every remaining Session field drops
+            // before this guard, including on an early continue. Replays and unwinding
+            // never produce a clean retirement observation.
+            let _retirement_trace =
+                AbortedRetirementTrace(if active[i].aborted && !active[i].oom_teardown {
+                    active[i].ttft.clone()
+                } else {
+                    None
+                });
             let mut s = active.remove(i);
             // One retirement receipt, never per-token logging or a sampler policy switch.
             if !s.oom_teardown {
@@ -26685,6 +26730,7 @@ fn fail_request(mut req: Box<Request>, error: EngineError) {
 #[allow(clippy::too_many_arguments)] // one parked-reply vec per admin command class
 fn handle_cmd(
     cmd: Cmd,
+    worker_generation: u64,
     loaded: &HashMap<String, LoadedModel>,
     dsv4_routes: &HashMap<String, std::sync::mpsc::Sender<Box<Request>>>,
     order: &[String],
@@ -26751,6 +26797,10 @@ fn handle_cmd(
                 ));
                 fail_request(req, error);
                 return;
+            }
+            if let Some(trace) = req.ttft.as_ref() {
+                trace.bind_worker(worker_generation, "shared_gpu_worker");
+                trace.mark_queued();
             }
             queue.push_back(req);
         }
@@ -27812,6 +27862,9 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         loaded.contains_key(&s.model),
         "parked session's model must still be loaded"
     );
+    if let Some(trace) = s.ttft.as_ref() {
+        trace.mark_requeued();
+    }
     Some(Box::new(Request {
         model: s.model.clone(),
         prompt_ids: p.prompt_ids.clone(),
@@ -34360,6 +34413,9 @@ fn glm5_prof_rounds_flush(s: &mut Session, force: bool) {
 }
 
 fn abort_log(s: &mut Session) {
+    if !s.aborted {
+        observe_receiver_close(s.ttft.as_ref(), &s.tx);
+    }
     s.aborted = true;
     eprintln!(
         "[abort] client disconnected: model {:?}, prompt {} ({} cached, {} fed), \
@@ -34396,6 +34452,30 @@ fn prime_cancelled_abort(s: &mut Session, err: &(dyn std::error::Error + 'static
     );
     abort_log(s);
     true
+}
+
+fn observe_receiver_close(trace: Option<&Arc<crate::ttft::Trace>>, tx: &EventSender) {
+    if let Some(trace) = trace
+        && let Some(reason) = tx.close_reason()
+    {
+        let cause = match reason {
+            EventCloseReason::QueueOverflow => crate::ttft::ReceiverCloseCause::EventQueueOverflow,
+            EventCloseReason::ReceiverDropped => crate::ttft::ReceiverCloseCause::ReceiverDropped,
+        };
+        trace.mark_receiver_closed(cause);
+    }
+}
+
+struct AbortedRetirementTrace(Option<Arc<crate::ttft::Trace>>);
+
+impl Drop for AbortedRetirementTrace {
+    fn drop(&mut self) {
+        if let Some(trace) = self.0.as_ref()
+            && !std::thread::panicking()
+        {
+            trace.mark_retired(crate::ttft::RetirementOutcome::Aborted);
+        }
+    }
 }
 
 fn retire_may_park(aborted: bool, oom_teardown: bool) -> bool {
@@ -35396,6 +35476,7 @@ mod tests {
     #[tokio::test]
     async fn slow_reader_queue_is_bounded_and_cancels_only_its_request() {
         let (tx, mut rx) = event_channel();
+        assert_eq!(tx.close_reason(), None);
         for id in 0..MAX_EVENT_QUEUE_EVENTS {
             tx.send(Event::Token {
                 id: id as u32,
@@ -35411,6 +35492,10 @@ mod tests {
             .is_err()
         );
         assert!(tx.is_closed(), "queue overflow must cancel the producer");
+        assert_eq!(
+            tx.close_reason(),
+            Some(super::EventCloseReason::QueueOverflow)
+        );
         let mut received = 0usize;
         while rx.recv().await.is_some() {
             received += 1;
@@ -35419,6 +35504,12 @@ mod tests {
             }
         }
         assert_eq!(received, MAX_EVENT_QUEUE_EVENTS);
+        drop(rx);
+        assert_eq!(
+            tx.close_reason(),
+            Some(super::EventCloseReason::QueueOverflow),
+            "dropping a failed stream must not relabel overflow as a client disconnect"
+        );
 
         let (healthy_tx, mut healthy_rx) = event_channel();
         healthy_tx
@@ -35431,6 +35522,12 @@ mod tests {
             healthy_rx.recv().await,
             Some(Event::Token { id: 7, .. })
         ));
+        assert_eq!(healthy_tx.close_reason(), None);
+        drop(healthy_rx);
+        assert_eq!(
+            healthy_tx.close_reason(),
+            Some(super::EventCloseReason::ReceiverDropped)
+        );
     }
 
     #[test]
