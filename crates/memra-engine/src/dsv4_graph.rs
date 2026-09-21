@@ -582,6 +582,11 @@ mod tests {
     #[test]
     #[ignore = "requires the exclusively locked development pair; runtime lifetime gate, not a model gate"]
     fn replay_rust_partial_submission_and_capture_cleanup() {
+        if crate::test_support::skip_unless_native_pair(
+            "dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup",
+        ) {
+            return;
+        }
         let contexts = [CudaContext::new(0).unwrap(), CudaContext::new(1).unwrap()];
         for ctx in &contexts {
             unsafe {

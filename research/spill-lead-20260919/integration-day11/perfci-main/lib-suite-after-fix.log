@@ -1,0 +1,42 @@
+lib-suite check on tree ea08bc7f8e03ed93d31a582973bfb8acd693404f (uncommitted fix) 2026-09-20T23:30:28Z
+EXACT matrix chain hidden=4096 inter=2048 rows=6 pattern=1 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=6 pattern=2 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=32 pattern=0 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=32 pattern=1 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=32 pattern=2 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+
+---- glm5_tp_sampler::tests::glm5_tp_device_sampler_gpu_oracles stdout ----
+GLM sampler oracle: T=1 top_p=0.95 top_k=0 nucleus=29136 distinct_draws=256 engagements=516
+GLM sampler oracle: T=0.7 top_p=0.8 top_k=40 nucleus=26 distinct_draws=26 engagements=516
+GLM sampler oracle: T=1.3 top_p=0.5 top_k=0 nucleus=8794 distinct_draws=255 engagements=516
+
+
+successes:
+    dsv4_attention_split::tests::cuda_attention_split_device_2d_pack_matches_host
+    dsv4_attention_split::tests::cuda_attention_split_existing_fp8_gemv_component_gate
+    dsv4_c4::tests::cuda_active_c4_gather_preserves_rows_and_reemissions
+    dsv4_c4::tests::cuda_direct_host_copy_preserves_bits_and_live_prefix
+    dsv4_c4::tests::cuda_recent_c4_preserves_hits_misses_wrap_and_rollback
+    dsv4_ep::tests::cuda_ep_partition_matches_original_full_bank
+    dsv4_ep::tests::cuda_tp_ep_local_only_clears_reused_contribution_and_rank_sums
+    dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue
+    dsv4_gpu::verify_topk_tests::cuda_numeric_topk_matches_host_ties_and_preserves_guards
+    dsv4_graph::tests::cuda_capture_runs_once_and_restores_scope_after_failure
+    dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup
+    dsv4_grouped::half2_chain_identity_tests::cuda_half2_chain_identity
+    dsv4_grouped::tests::cuda_gu_m1_matches_gu_reference
+    dsv4_grouped::tests::cuda_matrix_chain_full_bank_equals_two_partitions
+    dsv4_grouped::tests::cuda_matrix_mirrors_reuse_storage_and_clear_live_status
+    dsv4_grouped::tests::cuda_partition_routes_match_host_and_reject_global_ids
+    fused_gate_bounds_tests::q_gate_split_refuses_a_separate_gate_wq_instead_of_reading_past_it
+    glm5_tp_sampler::tests::glm5_tp_device_sampler_gpu_oracles
+    model_memory::native_tests::glm_indexed_mla_kda_state_materialization
+    model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill
+    model_memory::native_tests::glm_same_ordinal_owners_are_not_lost
+    qwen_prime_graph::tests::tap_replay_follows_relocated_destination_and_stride
+    spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read
+    vision::tests::a_foreign_context_overlay_is_refused_not_dereferenced
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 515 filtered out; finished in 4.55s
+
+lib rc=0
