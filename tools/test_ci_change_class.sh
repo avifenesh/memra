@@ -66,6 +66,25 @@ ok "arm12 missing args"
 out=$("$cls" push "" "$base" "$base" "$tmp") && printf '%s\n' "$out" | grep -qx 'code=true' || bad "arm13 non-repo: $out"
 ok "arm13 non-repo dir"
 
+# arm 15: a research file a crate includes at compile time is a compile input, not docs
+# (lane D day 13: four include_str! sites under crates/ read research/ files; the 2026-09-02
+# "zero research/ literals" note the docs-only class rested on was stale).
+g reset -q --hard "$base"
+mkdir -p "$repo/crates/memra-kv/src/tiered" "$repo/research/lane/fixtures"
+printf 'fn f() -> &%sstatic str { include_str!("../../../../research/lane/fixtures/load.csv") }\n' "'" > "$repo/crates/memra-kv/src/tiered/t.rs"
+echo "a,b" > "$repo/research/lane/fixtures/load.csv"
+g add -A; g commit -q -m include-site
+base2=$(g rev-parse HEAD)
+echo "a,b,c" >> "$repo/research/lane/fixtures/load.csv"
+g add -A; g commit -q -m fixture-only
+expect true "arm15 included research file" -- pull_request "$base2" "" "$(g rev-parse HEAD)"
+out=$("$cls" pull_request "$base2" "" "$(g rev-parse HEAD)" "$repo")
+printf '%s\n' "$out" | grep -qx 'reason=compile-input:research/lane/fixtures/load.csv' || bad "arm15 reason: $out"
+# arm 16: a sibling research file nobody includes is still docs-only, with the include present
+g reset -q --hard "$base2"; commit receipt research/lane/RESULTS.md
+expect false "arm16 non-included research file beside an include" -- pull_request "$base2" "" "$(g rev-parse HEAD)"
+g reset -q --hard "$base"
+
 # arm 14: ci.yml wiring, in the fail-closed form. Every compile job must gate on
 # `code != 'false'` (a missing output compiles) and none on `== 'true'` (a missing output
 # would skip the compile). Comment lines stripped so this cannot be satisfied by prose.

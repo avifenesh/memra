@@ -20,9 +20,14 @@
 # DOCUMENTATION PATHS (everything else is code):
 #   docs/**            registry text; docs/FLAGS.md and docs/KERNELS.md are read by the text
 #                      gates, which always run
-#   research/**        lane receipts and tune data; nothing under crates/ or tools/ reads them
-#                      at compile or test time (checked 2026-09-02: zero "research/" literals
-#                      in crates/*/src)
+#   research/**        lane receipts and tune data, EXCEPT a research file that a crate pulls in
+#                      with include_str!/include_bytes! (a compile input; the set is derived at
+#                      classify time from the head tree, so a new include is covered the commit it
+#                      lands). 2026-09-21: four such includes exist (memra-kv tests, memra-server,
+#                      memra-tokenizer); the 2026-09-02 "zero research/ literals" note was stale
+#                      (lane D day 13). Tools that read research/ at run time (check-flags,
+#                      update-perf-board, local-ci) are text gates or local batteries, not
+#                      compile jobs.
 #   agent-knowledge/** corpus text
 #   *.md               anywhere EXCEPT under crates/ (a crate README is a cargo package input)
 #   LICENSE, .github/ISSUE_TEMPLATE/**
@@ -67,11 +72,24 @@ esac
 
 [ -n "$files" ] || emit true "empty-diff"
 
+# research/ files a crate includes at compile time, as repo-relative paths, read from the head
+# tree. Any failure to derive the set is a doubt and classifies as code.
+included=$(git grep -n -oE 'include_(str|bytes)!\("[^"]*research/[^"]+"\)' "$head" -- crates 2>/dev/null \
+  | sed -E 's/^[^:]*:([^:]+):[0-9]+:include_(str|bytes)!\("([^"]+)"\)$/\1 \3/' \
+  | while read -r src lit; do
+      [ -n "$src" ] && [ -n "$lit" ] || { echo "?"; continue; }
+      realpath -m --relative-to=. "$(dirname "$src")/$lit" 2>/dev/null || echo "?"
+    done) || emit true "include-census-failed"
+case "$included" in *"?"*) emit true "include-census-unresolved" ;; esac
+
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   case "$f" in
     crates/*) emit true "code-path:$f" ;;
   esac
+  if [ -n "$included" ] && printf '%s\n' "$included" | grep -qxF "$f"; then
+    emit true "compile-input:$f"
+  fi
   if printf '%s\n' "$f" | grep -qE '^(docs/|research/|agent-knowledge/|\.github/ISSUE_TEMPLATE/)|\.md$|^LICENSE$'; then
     continue
   fi
