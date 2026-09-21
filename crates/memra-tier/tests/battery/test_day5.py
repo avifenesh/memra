@@ -28,7 +28,7 @@ import private_lock
 class Day5Tests(private_lock.PrivateLockMixin, unittest.TestCase):
     BATTERY = B
     def bootstrap(self, out, extra=(), source=None):
-        return subprocess.run(['bash', '-s', '--', '--dry-run', '--out', str(out), *extra],
+        return subprocess.run(['bash', '-s', '--', '--dry-run', private_lock.FLAG, '--out', str(out), *extra],
                               input=source or (ROOT/'tools/tier-rig-bootstrap.sh').read_text(),
                               text=True, cwd=ROOT, capture_output=True,
                               env={**os.environ, 'BRANCH': 'lane/spill-d-test'}, timeout=30)
@@ -130,7 +130,9 @@ class Day5Tests(private_lock.PrivateLockMixin, unittest.TestCase):
             self.assertEqual(record['elapsed_seconds'], rows[1]['duration_ns']/1e9)
             self.assertEqual(rows[1]['ended_utc'], record['ended_utc'])
             self.assertEqual(rows[0]['started_utc'], record['started_utc'])
-            (out/'lock.json').write_text(json.dumps({'rig':'rtx5090','lock':B.LOCKS['rtx5090'],'acquired':True}))
+            # A lock.json as the collector writes it under the seam: the seam field is part of it.
+            (out/'lock.json').write_text(json.dumps({'rig':'rtx5090','lock':B.LOCKS['rtx5090'],'acquired':True,
+                                                     'seam': str(self.lock_dir)}))
             result = B.validate_cell(out/'CELL.jsonl')
             self.assertEqual(result['status'], 'failed')
             self.assertFalse(result['qualification'])
@@ -145,7 +147,7 @@ class Day5Tests(private_lock.PrivateLockMixin, unittest.TestCase):
             fake = root/'storage-bench'
             fake.write_text('#!' + sys.executable + '\nprint("CPU stub, no storage performance")\n')
             fake.chmod(0o755)
-            argv = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090']
+            argv = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090', private_lock.FLAG]
             env = {**os.environ, 'PATH': str(root/'no-tools')}
             for mode, options, expected in [
                     ('unspecified', [], 2),

@@ -14,8 +14,11 @@
 #      -> the wrapper exits non-zero, cargo names all three targets as failed, and the banked
 #      raw log lists all three planted tests under `failures:` (so --no-fail-fast holds and every
 #      crate actually ran; a wrapper that stopped at the first red would name one)
-#   2. a planted #[test] that prints SKIP and returns (an artifact-gated test born undeclared) ->
-#      the wrapper exits non-zero from the STATIC skip census, naming the test, before cargo runs
+#   2. a planted #[test] that prints SKIP and returns (an artifact-gated test born undeclared),
+#      planted as a NEW integration-test file under crates/memra-cli/tests/ (2a) and inside
+#      crates/memra-cli/src (2b) -> the wrapper exits non-zero from the STATIC skip census,
+#      naming the test, before cargo runs. 2a exists because the census was src-only until
+#      2026-09-21 and a tests/** skip could be born undeclared (memra #545 review).
 #   3. wiring: .github/workflows/ci.yml runs the wrapper AND this fixture; tools/local-ci.sh
 #      runs the wrapper (a gate outside every battery rots silently, H100 lane law 3)
 #
@@ -138,35 +141,51 @@ fi
 rm -rf "$copy"
 
 # ---- arm 2: an undeclared skipping test reds the static census before cargo -----------------
-stage planted-skip
+skip_arm() {
+    # skip_arm <label> <expected libtest path>: the copy already carries the planted test.
+    local label=$1 expected=$2 log=$tmp/$1.log rc
+    run_wrapper "$log"
+    rc=$?
+    if [[ $rc -ne 0 ]]; then
+        ok "$label undeclared SKIP reds the wrapper (exit $rc)"
+    else
+        bad "$label wrapper exited 0 with an undeclared skipping test"
+    fi
+    if grep -q 'skip-census: FAIL' "$log" && grep -qF "memra-cli $expected (" "$log"; then
+        ok "$label the static census names the planted test ($expected)"
+    else
+        bad "$label refusal does not come from the static census naming $expected"
+    fi
+    if grep -q 'skip-census: running:' "$log"; then
+        bad "$label cargo ran although the static census should refuse first"
+    else
+        ok "$label refused before cargo ran"
+    fi
+}
+# 2a: a new integration-test binary. libtest prints its tests with no prefix.
+stage planted-skip-tests
+mkdir -p "$copy/crates/memra-cli/tests"
+cat > "$copy/crates/memra-cli/tests/planted_skip.rs" <<'EOF'
+#[test]
+fn planted_artifact_gated_integration_test() {
+    eprintln!("SKIP: planted artifact absent (tools/test_portable_suites.sh, tests/)");
+}
+EOF
+skip_arm arm2a planted_artifact_gated_integration_test
+rm -rf "$copy"
+# 2b: inside src, the shape the census was written for.
+stage planted-skip-src
 cat >> "$copy/crates/memra-cli/src/lib.rs" <<'EOF'
 
 #[cfg(test)]
 mod planted_skip {
     #[test]
     fn planted_artifact_gated_test() {
-        eprintln!("SKIP: planted artifact absent (tools/test_portable_suites.sh)");
+        eprintln!("SKIP: planted artifact absent (tools/test_portable_suites.sh, src/)");
     }
 }
 EOF
-log=$tmp/planted-skip.log
-run_wrapper "$log"
-rc=$?
-if [[ $rc -ne 0 ]]; then
-    ok "arm2 undeclared SKIP reds the wrapper (exit $rc)"
-else
-    bad "arm2 wrapper exited 0 with an undeclared skipping test"
-fi
-if grep -q 'skip-census: FAIL' "$log" && grep -q 'planted_skip::planted_artifact_gated_test' "$log"; then
-    ok "arm2 the static census names the planted test"
-else
-    bad "arm2 refusal does not come from the static census naming the test"
-fi
-if grep -q 'skip-census: running:' "$log"; then
-    bad "arm2 cargo ran although the static census should refuse first"
-else
-    ok "arm2 refused before cargo ran"
-fi
+skip_arm arm2b planted_skip::planted_artifact_gated_test
 rm -rf "$copy"
 
 # ---- arm 3: wiring --------------------------------------------------------------------------

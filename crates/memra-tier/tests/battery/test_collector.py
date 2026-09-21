@@ -49,19 +49,39 @@ class CollectorTests(private_lock.PrivateLockMixin, unittest.TestCase):
         # produce a receipt that reads as a rig-locked campaign.
         with tempfile.TemporaryDirectory(prefix='tier-seam-') as tmp:
             out = Path(tmp)/'cell'
-            proc = subprocess.run([sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090',
-                                   '--out', str(out), '--execute', sys.executable, '-c', "print('seam cell')"],
-                                  env={**os.environ, 'PATH': str(Path(tmp)/'no-tools')},
-                                  capture_output=True, text=True, timeout=30)
+            argv = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090']
+            env = {**os.environ, 'PATH': str(Path(tmp)/'no-tools')}
+            # The seam alone refuses to run a campaign: the explicit flag is the test's statement.
+            unflagged = subprocess.run([*argv, '--out', str(out), '--execute', sys.executable, '-c', 'pass'],
+                                       env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(unflagged.returncode, 2, unflagged.stderr)
+            self.assertIn('REFUSED: MEMRA_TIER_BATTERY_LOCK_DIR is set but --private-lock-dir-for-tests was not passed', unflagged.stderr)
+            self.assertFalse(out.exists())
+            proc = subprocess.run([*argv, private_lock.FLAG, '--out', str(out), '--execute', sys.executable, '-c', "print('seam cell')"],
+                                  env=env, capture_output=True, text=True, timeout=30)
             self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn(f'tier-battery: MEMRA_TIER_BATTERY_LOCK_DIR={self.lock_dir}: PRIVATE lock directory (test seam); the rig lock is NOT held by this process', proc.stderr)
             self.assertEqual(json.loads((out/'lock.json').read_text()),
-                             {'rig': 'rtx5090', 'lock': self.private('/tmp/memra-5090.lock'), 'acquired': True})
+                             {'rig': 'rtx5090', 'lock': self.private('/tmp/memra-5090.lock'), 'acquired': True,
+                              'seam': str(self.lock_dir)})
             validate = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--validate', str(out)]
             seamed = subprocess.run(validate, capture_output=True, text=True, timeout=30)
             self.assertEqual(seamed.returncode, 0, seamed.stderr)
             refused = subprocess.run(validate, env=self.canonical_env(), capture_output=True, text=True, timeout=30)
             self.assertEqual(refused.returncode, 2, refused.stderr)
-            self.assertIn('REFUSED: missing/noncanonical collector lock', refused.stderr)
+            self.assertIn(f"REFUSED: lock.json seam={str(self.lock_dir)!r} is not this process's MEMRA_TIER_BATTERY_LOCK_DIR=None", refused.stderr)
+            # A different seam is not this seam either.
+            with tempfile.TemporaryDirectory(prefix='tier-other-seam-') as other:
+                foreign = subprocess.run(validate, env={**os.environ, private_lock.SEAM: other}, capture_output=True, text=True, timeout=30)
+                self.assertEqual(foreign.returncode, 2, foreign.stderr)
+                self.assertIn('lock.json seam=', foreign.stderr)
+            # The in-process dry run records the seam in its manifest and validates only under it.
+            bundle = Path(tmp)/'dry'
+            B.run_dry_campaign(bundle, echo=False)
+            self.assertEqual(json.loads((bundle/'manifest.json').read_text())['seam'], str(self.lock_dir))
+            self.assertEqual(B.validate_campaign(bundle), 22)
+            with self.canonical_locks():
+                with self.assertRaises(ValueError): B.validate_campaign(bundle)
 
     def test_dry_runner_full_campaign_raw_hashes_failure_and_n(self):
         with tempfile.TemporaryDirectory(prefix='tier-collector-') as tmp:

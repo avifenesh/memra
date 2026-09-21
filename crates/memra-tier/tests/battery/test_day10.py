@@ -14,9 +14,13 @@ import private_lock
 
 
 class ProSingleTests(private_lock.PrivateLockMixin, unittest.TestCase):
-    def collector(self, *args, env=None):
+    def collector(self, *args, env=None, flag=True):
+        # The explicit flag accompanies the seam (and only the seam): a child that sees the
+        # canonical environment gets neither.
+        seamed = private_lock.SEAM in (os.environ if env is None else env)
+        opt = [private_lock.FLAG] if flag and seamed else []
         return subprocess.run([sys.executable, str(ROOT/'tools/tier-battery.py'),
-                               '--rig', 'pro-single', *args], cwd=ROOT, env=env,
+                               '--rig', 'pro-single', *opt, *args], cwd=ROOT, env=env,
                               capture_output=True, text=True, timeout=30)
 
     def test_plan_and_schema(self):
@@ -49,13 +53,49 @@ class ProSingleTests(private_lock.PrivateLockMixin, unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('CANONICAL LOCK HELD', (root/'accepted/command.log').read_text())
             self.assertEqual(json.loads((root/'accepted/lock.json').read_text()),
-                             {'rig': 'pro-single', 'lock': lock, 'acquired': True})
+                             {'rig': 'pro-single', 'lock': lock, 'acquired': True, 'seam': str(self.lock_dir)})
             self.assertEqual(self.collector('--validate', str(root/'accepted')).returncode, 0)
 
-    def bootstrap(self, out, source):
-        return subprocess.run(['bash', '-s', '--', '--dry-run', '--rig', 'pro-single', '--out', str(out)],
+    def bootstrap(self, out, source, flag=True, env=None):
+        opt = [private_lock.FLAG] if flag else []
+        return subprocess.run(['bash', '-s', '--', '--dry-run', *opt, '--rig', 'pro-single', '--out', str(out)],
                               input=source, cwd=ROOT, capture_output=True, text=True, timeout=30,
-                              env={**os.environ, 'BRANCH': 'lane/spill-d-test'})
+                              env={**(os.environ if env is None else env), 'BRANCH': 'lane/spill-d-test'})
+
+    def test_seam_without_the_explicit_flag_refuses_before_any_lock_or_receipt(self):
+        # An inherited MEMRA_TIER_BATTERY_LOCK_DIR alone never moves a campaign or a bootstrap
+        # off the canonical lock: without --private-lock-dir-for-tests both refuse before they
+        # create a directory or open a lock, and the flag without the seam refuses too.
+        lock = self.private(LOCK)
+        source = (ROOT/'tools/tier-rig-bootstrap.sh').read_text()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            refused = self.collector('--out', str(root/'cell'), '--execute', sys.executable, '-c',
+                                     'raise AssertionError("must not run")', flag=False)
+            self.assertEqual(refused.returncode, 2, refused.stderr)
+            self.assertIn('REFUSED: MEMRA_TIER_BATTERY_LOCK_DIR is set but --private-lock-dir-for-tests was not passed', refused.stderr)
+            self.assertIn('PRIVATE lock directory (test seam); the rig lock is NOT held', refused.stderr)
+            self.assertFalse((root/'cell').exists())
+            dry = self.collector('--dry-run', '--out', str(root/'dry'), flag=False)
+            self.assertEqual(dry.returncode, 2, dry.stderr)
+            self.assertFalse((root/'dry').exists())
+            with open(lock, 'a') as handle:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)  # nothing above took it
+            canonical = self.canonical_env()
+            flag_only = subprocess.run([sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'pro-single',
+                                        private_lock.FLAG, '--plan'], env=canonical, capture_output=True, text=True, timeout=30)
+            self.assertEqual(flag_only.returncode, 2, flag_only.stderr)
+            self.assertIn('REFUSED: --private-lock-dir-for-tests without MEMRA_TIER_BATTERY_LOCK_DIR', flag_only.stderr)
+            # --plan and --validate take no lock: they run under the seam without the flag.
+            self.assertEqual(self.collector('--plan', flag=False).returncode, 0)
+            boot = self.bootstrap(root/'boot', source, flag=False)
+            self.assertEqual(boot.returncode, 2, boot.stderr)
+            self.assertIn('REFUSED: MEMRA_TIER_BATTERY_LOCK_DIR is set but --private-lock-dir-for-tests was not passed', boot.stderr)
+            self.assertFalse((root/'boot').exists())
+            boot_flag_only = self.bootstrap(root/'boot-flag', source, env=self.canonical_env())
+            self.assertEqual(boot_flag_only.returncode, 2, boot_flag_only.stderr)
+            self.assertIn('REFUSED: --private-lock-dir-for-tests without MEMRA_TIER_BATTERY_LOCK_DIR', boot_flag_only.stderr)
+            self.assertFalse((root/'boot-flag').exists())
 
     def test_bootstrap_stub_memory_match_and_wrapper(self):
         source = (ROOT/'tools/tier-rig-bootstrap.sh').read_text()
@@ -69,6 +109,8 @@ class ProSingleTests(private_lock.PrivateLockMixin, unittest.TestCase):
             # wrapper carry the same name in this test's private directory.
             self.assertIn("'lock': '/tmp/memra-gpu.lock'", source)
             self.assertEqual(report['lock'], self.private(LOCK))
+            self.assertEqual(report['lock_seam'], str(self.lock_dir))
+            self.assertIn('PRIVATE lock directory (test seam); the rig lock is NOT held', result.stderr)
             self.assertEqual(Path(report['lock']).name, 'memra-gpu.lock')
             self.assertFalse(report['qualification'])
             self.assertEqual(report['status'], 'dry-run-complete-not-qualified')

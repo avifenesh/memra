@@ -37,7 +37,7 @@ for crate in "${crates[@]}"; do
     verify_args+=(--crate "$crate")
 done
 
-echo "portable-suites: static skip census over ${crates[*]} (an artifact-gated #[test] must be declared)"
+echo "portable-suites: static skip census over ${crates[*]}, src/ and tests/ (an artifact-gated #[test] must be declared)"
 python3 tools/skip-census.py verify "${verify_args[@]}"
 
 echo "portable-suites: cargo test -p memra-tier -p memra-kv -p memra-cli --offline --no-fail-fast"

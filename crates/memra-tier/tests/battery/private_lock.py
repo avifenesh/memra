@@ -19,6 +19,11 @@ fixture copy, and `substitute` rewrites the literal in that copy only.
 Every TestCase whose tests take a lock mixes this in. Tests that validate COMMITTED receipts
 (recorded under the canonical paths) run their validator under `canonical_locks()` or hand a
 child `canonical_env()`.
+
+The seam alone moves nothing (review of PR #592): a collector `--execute`/`--dry-run` and a
+bootstrap run refuse under the seam unless the process also passes FLAG, so an inherited
+environment variable can never move a real campaign off the canonical lock; every launch site
+in this suite passes FLAG, and `test_day10.py` / `test_collector.py` carry the red arms.
 """
 import contextlib
 import os
@@ -27,6 +32,7 @@ import tempfile
 from unittest import mock
 
 SEAM = 'MEMRA_TIER_BATTERY_LOCK_DIR'
+FLAG = '--private-lock-dir-for-tests'
 CANONICAL = ('/tmp/memra-5090.lock', '/tmp/memra-gpu.lock')
 ROOT = Path(__file__).resolve().parents[4]
 
