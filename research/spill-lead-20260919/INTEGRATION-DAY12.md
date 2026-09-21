@@ -164,7 +164,29 @@ docs, diff-check clean. No byte or H2D program change; no server change.
     startup arena path is out of scope for the first two slices. Option B (D2H through `TransferEngine` on the
     pageable path) only after A's receipts; C (promotion) after B's. C day 13 owns Option A.
 
+## Lane D day 12 (`b3324c262`, pushed by the lead with the logged override; the two refusals become PASS through A's seams)
+All seven fault arms now print `FAULT-ARM PASS <arm>` on the target card (N=1, 8k, pooled, gate source `55f242e98`,
+`pro-single-day12/`): `cancel-restore` through `recover_source` (`retire`/`retire_source` `Err(Busy)` first,
+`recover_source` `Ok(host)`, recovered checksum equal to the bundle's, `StateBundle::verify` `Ok(())`, second recover
+and post-recovery cancel `Err(AlreadyReleased)`, pinned 239,468,544 B held by the lease, then retire, restore,
+continue); `require-resident` through `suspend_layer`/`resume_layer` (`Err(ContinuationRefused { path: "kv-tier-gate
+continuation", layers: [3, 7, ..., 63] })` twice while suspended, `Ok(())` after the last resume). Root validation
+`cells 9, failed_commands 0, refused_commands 0, qualification false`; the five continuing arms match the frozen 8k
+bundle on all seven surfaces. First native run of A's rule lines (`tier-transfer-gate`, 13 PASS lines, exit 0):
+```text
+PASS rule cancelled-restore-recovers-source native CUDA
+PASS rule cancel-refused-after-source-consumed native CUDA
+```
+Contract vocabulary: `Arm::refusal` and the REFUSED branch are gone; a backend without a seam is a failed cell; rule-1
+rows are generic over `TransferEngine` and shared with a CPU binding (`tests/contracts/fault_arm_bindings.rs`, legacy
+fake = red arm); all arms detach through `suspend_layer`/`resume_layer`; `active::roundtrip` (B's series path) keeps
+raw `take()` because its frozen 32k receipts were produced that way. Replays: `verify-day12.py` MATCH, reclaim 32 and
+contracts 68 tests, clippy, fmt, flags, boundary, docs clean. Revuto on integ10 had found exactly this gap (A's `retire`
+refusal versus the day-11 `cancel-restore` sequence still on main); D's day 12 is the fix and rides in integ10.
+#552 criterion 2 is now met natively on the target card (fault arms with cancellation, corrupt and missing state,
+exhaustion, required state), still executed-not-qualified.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
-- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 running (seams through the arms, native evidence). C day 12 sealed and pushed (`7efedd13d`); C day 13 running (Option A, ruling 15). E, F idle.
+- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 running (Option A, ruling 15). E, F idle.

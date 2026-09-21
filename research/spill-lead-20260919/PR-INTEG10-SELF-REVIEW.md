@@ -1,6 +1,6 @@
 # integ10 self-review (lead, 2026-09-21)
 
-Read in full: B day 13 `crates/memra-server/src/worker.rs` diff (155 lines: `PoolReading`, `pool_readings`,
+Read in full: D day 12 `kv_tier_gate/fault.rs`, `fault_contract.rs` diffs (arms through the seams, REFUSED branch removed) and the reclaim/contract replay tests; B day 13 `crates/memra-server/src/worker.rs` diff (155 lines: `PoolReading`, `pool_readings`,
 `reclaim_settle_keep`, `settle_reclaimed_prefix_bytes`, the reclaim-on-defer call site, unit test) and
 `tools/prefix-evict-reclaim-gate.py` (697 lines, skimmed for the four verdict clauses); A day 11 `crates/memra-kv/src/lib.rs`
 (`SuspendedLayers`, `ContinuationRefused`, `SuspendError`, `suspend_layer`/`resume_layer`, `ensure_usable`),
@@ -40,6 +40,13 @@ guards), `crates/memra-tier/src/conformance/recovery.rs`, `contracts.rs`, the tr
    serving job holds `/tmp/memra-5090.lock` (attempt 1 here); it should take a private lock path under test. B's
    gate is a Python script under `tools/` with its own verdict clauses; a `--validate` receipt exists but the gate is
    N=1 and says so.
+
+7. **D day 12 closes the gap revuto found.** A's `retire`/`retire_source` `Busy` guard on a cancelled H2D with an
+   unrecovered source contradicted the day-11 `cancel-restore` sequence still shipped in `fault.rs` (`retire` expected
+   `Ok(())`). D's day 12, merged into this PR, rewrites that arm through `recover_source` and the `require-resident`
+   arm through `suspend_layer`/`resume_layer`; both print `FAULT-ARM PASS` natively, and A's two rule lines PASS
+   natively for the first time. The REFUSED branch of the arm vocabulary is removed: a backend without the seam is now
+   a failed cell, which is stricter.
 
 ## Verification this review relied on
 integ10 CPU battery (`integration-day12/integ10-cpu-battery/`): fmt, tier+kv+gguf 600 tests, memra-server 734 tests
