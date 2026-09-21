@@ -1,5 +1,8 @@
 target/
 build/
+# Lane receipts may bank a native build receipt under `build/` (source, binary hash, exit codes);
+# those are deliverables, not build output (2026-09-21: two lanes lost theirs to the rule above).
+!research/**/build/
 *.o
 *.so
 *.gguf
