@@ -20,8 +20,14 @@ ROOT = Path(__file__).resolve().parent / "pro-single-day12"
 # Attempt 1 (`tenant-base`, `tenant-fix`, `arena`) died on an unauthenticated /metrics scrape and a
 # stale harness; attempt 2 (`tenant-*-r2`) ran the whole cell but the gate's basic-regex matchers
 # never matched the `[prefix-host]` tag (two FAILs, two vacuous passes). Every attempt's dir stays
-# as the record. Attempt 3 is the gate evidence; the arena harness cell of attempt 2 stands.
-CELLS = {"base": "tenant-base-r3", "fix": "tenant-fix-r3", "arena": "arena-r2"}
+# as the record. Attempt 3 was the gate evidence for the day-12 code; after the integ15 review
+# (PR #597) moved the reclaim behind the built image and added the wasted counter, the fix arm
+# was rerun as attempt 4 on the new build against the unchanged base receipts (the base binary is
+# origin/main and did not change). The arena harness cell of attempt 2 stands.
+CELLS = {"base": "tenant-base-r3", "fix": "tenant-fix-r4", "arena": "arena-r2"}
+# The build receipt each arm's binary comes from: base is the day-12 base build; fix is the
+# integ15 rebuild (`build/*-fix2.*`); the day-12 fix build (`*-fix.*`) backed attempt 3.
+BUILD = {"base": "base", "fix": "fix2"}
 fails = []
 
 
@@ -52,12 +58,13 @@ def verdicts(cell):
 
 print("== build and card")
 for arm in ("base", "fix"):
-    src = (ROOT / "build" / f"source-{arm}.txt").read_text().strip()
-    exit_code = (ROOT / "build" / f"exit-{arm}").read_text().strip()
-    sha = (ROOT / "build" / f"binary-{arm}.sha256").read_text().split()[0]
-    print(f"  {arm}: source {src} exit {exit_code} binary sha256 {sha}")
+    b = BUILD[arm]
+    src = (ROOT / "build" / f"source-{b}.txt").read_text().strip()
+    exit_code = (ROOT / "build" / f"exit-{b}").read_text().strip()
+    sha = (ROOT / "build" / f"binary-{b}.sha256").read_text().split()[0]
+    print(f"  {arm} ({b}): source {src} exit {exit_code} binary sha256 {sha}")
     check(f"{arm} build exit 0", exit_code == "0")
-    check(f"{arm} tree clean at build", (ROOT / "build" / f"dirty-{arm}.txt").read_text().strip() == "")
+    check(f"{arm} tree clean at build", (ROOT / "build" / f"dirty-{b}.txt").read_text().strip() == "")
 base_src = (ROOT / "build" / "source-base.txt").read_text().strip()
 check("base is origin/main be07f2d36", base_src.startswith("be07f2d36"))
 card = (ROOT / "card.csv").read_text().splitlines()[1]
@@ -78,7 +85,7 @@ for arm in ("base", "fix"):
           lock.get("lock") == "/tmp/memra-gpu.lock" and lock.get("acquired") is True and "seam" not in lock)
     S[arm] = summary(CELLS[arm])
     check(f"tenant-{arm} SUMMARY names its arm and binary",
-          S[arm]["arm"] == arm and S[arm]["binary_sha256"] == (ROOT / "build" / f"binary-{arm}.sha256").read_text().split()[0])
+          S[arm]["arm"] == arm and S[arm]["binary_sha256"] == (ROOT / "build" / f"binary-{BUILD[arm]}.sha256").read_text().split()[0])
     v = verdicts(CELLS[arm])
     check(f"tenant-{arm} gate PASS line present and no FAIL line",
           any(l.startswith(f"GATE: kv-host-tenant-reclaim ({arm} arm) PASS") for l in v) and not any("FAIL" in l for l in v))
@@ -108,6 +115,8 @@ check("fix r8 promotes the reclaimed admission",
 check("no device-tier promote-insert skip in either arm", not b.get("device_promote_skips") and not f.get("device_promote_skips"))
 check("fix metrics: reclaims >= 1, rejects == 0",
       (f["metrics"]["prefix_host_tenant_reclaims"] or 0) >= 1 and (f["metrics"]["prefix_host_tenant_rejects"] or 0) == 0)
+check("fix metrics: no wasted reclaim, and no WASTED line",
+      (f["metrics"].get("prefix_host_tenant_reclaims_wasted") or 0) == 0 and not f.get("wasted_reclaims"))
 # The reclaim is an eviction, so the pool's entry count must not exceed base's at the end.
 check("fix ends with the pool no fuller than base (the cap held)",
       f["metrics"]["prefix_host_entries"] <= (b["metrics"]["prefix_host_entries"] or 0) + 1)

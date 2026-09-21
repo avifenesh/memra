@@ -1,8 +1,8 @@
 == build and card
-  base: source be07f2d36b66c89071433fb6d7d5a1fed3954f8b exit 0 binary sha256 b30ac09d04f4de309f6cb509054a2c87eb2d9252ab540e2c78604a0c802aaa0f
+  base (base): source be07f2d36b66c89071433fb6d7d5a1fed3954f8b exit 0 binary sha256 b30ac09d04f4de309f6cb509054a2c87eb2d9252ab540e2c78604a0c802aaa0f
   ok: base build exit 0
   ok: base tree clean at build
-  fix: source 405466cf745f36e24350c2692ebb443e02f7b3ce exit 0 binary sha256 d331909a7ef094f1aef88653d77884dc61cad066ab98f796c9f43f720ce9e5ae
+  fix (fix2): source 8b29b2aa3106225f08f30e20442cda6edec69aa0 exit 0 binary sha256 d47caec8d445d5fa96c512bd61dba463d609d9ecc2600777dbb184c840076ef4
   ok: fix build exit 0
   ok: fix tree clean at build
   ok: base is origin/main be07f2d36
@@ -71,6 +71,8 @@
       ok: fix: r8 promotes the reclaimed admission (cached_tokens == r6 prompt_tokens)
       ok: fix: the r8 promote line names acme
       ok: fix: /metrics counts the reclaims and no rejects
+      ok: fix: /metrics has no wasted reclaim (every reclaim's demotion inserted)
+      ok: fix: no WASTED line
     GATE: kv-host-tenant-reclaim (fix arm) PASS
 == base arm: the pre-#384 behavior
   ok: base printed the evaporation line
@@ -92,6 +94,7 @@
   ok: fix r8 promotes the reclaimed admission
   ok: no device-tier promote-insert skip in either arm
   ok: fix metrics: reclaims >= 1, rejects == 0
+  ok: fix metrics: no wasted reclaim, and no WASTED line
   ok: fix ends with the pool no fuller than base (the cap held)
 == across arms: same bytes, same texts, other tenant untouched
   ok: beta 83-token demote bytes equal across arms  {'base': '160.5', 'fix': '160.5'}

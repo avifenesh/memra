@@ -2071,6 +2071,10 @@ pub struct Metrics {
     /// share cap (memra#384, lane/spill-a-20260919 day 12). A moving count with
     /// `prefix_host_tenant_rejects` flat is the cap doing turnover instead of evaporation.
     pub prefix_host_tenant_reclaims: u64,
+    /// The subset of `prefix_host_tenant_reclaims` whose demotion then failed to insert (the
+    /// reclaim runs once the image is built and ready, so only `insert`'s own refusals, or a
+    /// fixed-arena copy failure, can reach here). Nonzero is a regression to read.
+    pub prefix_host_tenant_reclaims_wasted: u64,
     /// Agent-pause demotion (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, tiering
     /// spec Arc E): entries the pause sweep demoted to host (subset of
     /// prefix_host_demotions), and armed candidates that expired without demoting because
@@ -7972,6 +7976,28 @@ struct TenantShareReclaim {
     freed: usize,
 }
 
+/// The pure eligibility half of the reclaim: this tenant's row, the shortfall, what its unleased
+/// entries could give up, what was leased and skipped. `need == 0` means the cap does not bind.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct TenantSharePlan {
+    row: String,
+    need: usize,
+    eligible: usize,
+    leased_skipped: usize,
+    leased_bytes: usize,
+}
+impl TenantSharePlan {
+    fn refuse(&self, why: TenantShareRefusalWhy) -> TenantShareRefusal {
+        TenantShareRefusal {
+            why,
+            need: self.need,
+            eligible: self.eligible,
+            leased_skipped: self.leased_skipped,
+            leased_bytes: self.leased_bytes,
+        }
+    }
+}
+
 /// Why the tenant-share reclaim refused; every arm evicted NOTHING except `RetryStillShort`,
 /// which reports what it did evict (the single-owner invariant makes it unreachable, so a hit
 /// there is a bug report, not a policy).
@@ -8074,6 +8100,14 @@ struct HostPrefixCache {
     /// tenant's demotion fits its share (a subset of `evictions`; `telemetry_stamp` already
     /// moves with `evictions`). Never another tenant's entry, never a leased one.
     tenant_reclaims: u64,
+    /// The subset of `tenant_reclaims` whose demotion then never inserted (integ15 review of
+    /// PR #597): the reclaim runs once the image is built and ready, so only `insert`'s own
+    /// refusals, or a fixed-arena copy failure, can reach here. Nonzero is a regression to read.
+    tenant_reclaims_wasted: u64,
+    /// Entries a reclaim evicted for a demotion that has not inserted yet: consumed to zero by
+    /// the next successful `insert`, or moved into `tenant_reclaims_wasted` by
+    /// `waste_pending_reclaim` at every demote exit after the reclaim.
+    reclaim_pending: usize,
     /// AGENT-PAUSE DEMOTION (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, tiering
     /// spec Arc E). `pause_demotes` counts entries the pause sweep moved into this tier
     /// (a subset of `demotions`: park-boundary publishes plus resident device entries);
@@ -8131,12 +8165,23 @@ impl HostPrefixCache {
         toks: &[u32],
         bytes: usize,
         sizes: &[usize],
+        reclaim: bool,
     ) -> Result<HostPlaneLeases, String> {
         let Some(arena) = self.arena.clone() else {
             return Ok(HostPlaneLeases(None));
         };
-        if bytes > self.budget || self.tenant_cap_would_evaporate(key, toks, bytes) {
+        if bytes > self.budget || (!reclaim && self.tenant_cap_would_evaporate(key, toks, bytes)) {
             return Err("pinned arena admission refused: image exceeds host/tenant budget".into());
+        }
+        if reclaim && self.tenant_cap_would_evaporate(key, toks, bytes) {
+            // Fixed arena (memra#384): the planes' backing is reserved BEFORE the D2H copy, so
+            // the tenant-share reclaim cannot wait for the image here; it runs now, and a copy
+            // that then fails leaves its evictions booked as wasted by the demote hook. Only the
+            // demote hook passes `reclaim`; a handoff import keeps the refusal above.
+            self.reclaim_tenant_share(key, toks, bytes)
+                .map_err(|refusal| {
+                    format!("pinned arena admission refused at the tenant share cap: {refusal}")
+                })?;
         }
         // Credit and recycle the exact twin before reserving its replacement.
         if let Some(i) = self.key_index(key, toks) {
@@ -8210,29 +8255,26 @@ impl HostPrefixCache {
         resident.saturating_sub(twin) + bytes > self.tenant_budget()
     }
 
-    /// TENANT-SHARE RECLAIM (memra#384, lane/spill-a-20260919 day 12). At the share cap a
-    /// demotion used to EVAPORATE even while the pool had free space, because the cap is
-    /// per-row arithmetic and nothing of the row's own was ever evicted for it (the gates-3
-    /// run: three refusals at 152.7 GB resident of a 154.6 GB share, zero allocation
-    /// rejections). This evicts THIS tenant's own unleased entries, oldest first, until the
-    /// demotion fits its share, and nothing else: another tenant's row is never read, a
-    /// leased entry (`HostPrefixEntry::leased`, a live identity lease) is skipped, and the
-    /// exact-key twin is left alone because `tenant_cap_would_evaporate` already credits it
-    /// and `insert` replaces it. The refusal stays bounded: when the image alone exceeds the
-    /// share, or the row's unleased bytes cannot cover the shortfall, NOTHING is evicted and
-    /// the caller prints the same evaporation line as before plus what the reclaim found.
-    /// `tenant_budget()` is unchanged, so the row never exceeds its share after the retry
-    /// either. `Ok` means the predicate is now false (the one retry passed); the accounting
-    /// flows through `remove_at`, exactly like every other removal.
-    fn reclaim_tenant_share(
-        &mut self,
+    /// TENANT-SHARE RECLAIM (memra#384, lane/spill-a-20260919 day 12), the eligibility half,
+    /// PURE. At the share cap a demotion used to EVAPORATE even while the pool had free space,
+    /// because the cap is per-row arithmetic and nothing of the row's own was ever evicted for
+    /// it (the gates-3 run: three refusals at 152.7 GB resident of a 154.6 GB share, zero
+    /// allocation rejections). The plan names what THIS tenant's own unleased entries could give
+    /// up: this row only (`auth::meter_key`), never the exact-key twin (`tenant_cap_would_evaporate`
+    /// credits it and `insert` replaces it), never a leased entry (`HostPrefixEntry::leased`).
+    /// `Ok` with `need == 0` below the cap; `Err` with nothing evicted when the image alone
+    /// exceeds the share (no eviction can help, into a full row or an empty one) or the row's
+    /// unleased bytes cannot cover the shortfall. The demote hook runs this BEFORE the D2H copy
+    /// so an infeasible demotion skips the PCIe trip, and it mutates nothing: a copy, digest or
+    /// charge failure after it costs the row nothing (integ15 review of PR #597).
+    fn tenant_share_reclaim_plan(
+        &self,
         key: &PoolKey,
         toks: &[u32],
         bytes: usize,
-    ) -> Result<TenantShareReclaim, TenantShareRefusal> {
-        let mut reclaim = TenantShareReclaim::default();
+    ) -> Result<TenantSharePlan, TenantShareRefusal> {
         if !self.tenant_cap_would_evaporate(key, toks, bytes) {
-            return Ok(reclaim);
+            return Ok(TenantSharePlan::default());
         }
         let cap = self.tenant_budget();
         let row = crate::auth::meter_key(&key.1).to_string();
@@ -8242,7 +8284,6 @@ impl HostPrefixCache {
         let resident = self.tenant_bytes.get(&row).copied().unwrap_or(0);
         // The shortfall: what the row must give up before `resident - twin + bytes <= cap`.
         let need = (resident.saturating_sub(twin) + bytes).saturating_sub(cap);
-        // Eligibility pass, no mutation: this row's unleased entries other than the twin.
         let (mut eligible, mut leased_skipped, mut leased_bytes) = (0usize, 0usize, 0usize);
         for (k, i) in self.lru.values() {
             if crate::auth::meter_key(&k.1) != row {
@@ -8259,26 +8300,47 @@ impl HostPrefixCache {
                 eligible += e.bytes;
             }
         }
-        let refusal = |why: TenantShareRefusalWhy| TenantShareRefusal {
-            why,
+        let plan = TenantSharePlan {
+            row,
             need,
             eligible,
             leased_skipped,
             leased_bytes,
         };
         if bytes > cap {
-            return Err(refusal(TenantShareRefusalWhy::ImageExceedsShare {
+            return Err(plan.refuse(TenantShareRefusalWhy::ImageExceedsShare {
                 image: bytes,
                 share: cap,
             }));
         }
         if eligible < need {
-            return Err(refusal(TenantShareRefusalWhy::NoEligibleSpace));
+            return Err(plan.refuse(TenantShareRefusalWhy::NoEligibleSpace));
         }
-        // Eviction pass: oldest eligible first, re-resolved after every removal because
-        // `remove_at` swap-removes and shifts pool indexes.
+        Ok(plan)
+    }
+
+    /// The eviction half: the plan above, then this tenant's own unleased entries oldest first
+    /// (re-resolved after every removal because `remove_at` swap-removes) until the predicate is
+    /// false, which is the one retry; `Ok` means it passed. The accounting flows through
+    /// `remove_at` like every other removal; the evicted count is also parked in
+    /// `reclaim_pending` until `insert` consumes it or `waste_pending_reclaim` books it. The
+    /// demote hook calls this only once the image is built and bound, right before `insert`, so
+    /// the only refusal left after an eviction is `insert`'s own; the fixed-arena path calls it
+    /// from `reserve_image` because the planes' backing is reserved before the copy there.
+    fn reclaim_tenant_share(
+        &mut self,
+        key: &PoolKey,
+        toks: &[u32],
+        bytes: usize,
+    ) -> Result<TenantShareReclaim, TenantShareRefusal> {
+        let plan = self.tenant_share_reclaim_plan(key, toks, bytes)?;
+        let mut reclaim = TenantShareReclaim::default();
+        if plan.need == 0 {
+            return Ok(reclaim);
+        }
+        let cap = self.tenant_budget();
         while self.tenant_cap_would_evaporate(key, toks, bytes) {
-            let Some((victim_key, victim_i)) = self.oldest_reclaimable(&row, key, toks) else {
+            let Some((victim_key, victim_i)) = self.oldest_reclaimable(&plan.row, key, toks) else {
                 break;
             };
             let Some(dead) = self.remove_at(&victim_key, victim_i) else {
@@ -8289,13 +8351,14 @@ impl HostPrefixCache {
             reclaim.evicted += 1;
             reclaim.freed += dead.bytes;
             eprintln!(
-                "[prefix-host] evict (tenant share): {} tokens, {:.1}MB of tenant {row:?}'s own \
+                "[prefix-host] evict (tenant share): {} tokens, {:.1}MB of tenant {:?}'s own \
                  entries for its {:.1}MB demotion (row now {:.1}MB / {:.0}MB share = {}% of \
                  {:.0}MB, model {}{})",
                 dead.toks.len(),
                 dead.bytes as f64 / 1e6,
+                plan.row,
                 bytes as f64 / 1e6,
-                self.tenant_bytes.get(&row).copied().unwrap_or(0) as f64 / 1e6,
+                self.tenant_bytes.get(&plan.row).copied().unwrap_or(0) as f64 / 1e6,
                 cap as f64 / 1e6,
                 self.tenant_pct,
                 self.budget as f64 / 1e6,
@@ -8305,15 +8368,35 @@ impl HostPrefixCache {
             drop(dead);
             self.log_arena("tenant share eviction");
         }
-        // The one retry: the predicate must now be false. It cannot still hold after the
-        // eligibility pass on this single-threaded owner, but the answer fails closed.
+        self.reclaim_pending += reclaim.evicted;
+        // The one retry: the predicate must now be false. It cannot still hold after the plan on
+        // this single-threaded owner, but the answer fails closed.
         if self.tenant_cap_would_evaporate(key, toks, bytes) {
-            return Err(refusal(TenantShareRefusalWhy::RetryStillShort {
+            return Err(plan.refuse(TenantShareRefusalWhy::RetryStillShort {
                 evicted: reclaim.evicted,
                 freed: reclaim.freed,
             }));
         }
         Ok(reclaim)
+    }
+
+    /// Book every reclaim eviction whose demotion did not insert as wasted (integ15 review of
+    /// PR #597): called at each demote exit after a reclaim could have run. Returns the count
+    /// and prints one line when it is nonzero; a zero is silent (the common case, nothing
+    /// pending).
+    fn waste_pending_reclaim(&mut self, key: &PoolKey, toks: usize, why: &str) -> usize {
+        let n = self.reclaim_pending;
+        self.reclaim_pending = 0;
+        if n > 0 {
+            self.tenant_reclaims_wasted += n as u64;
+            eprintln!(
+                "[prefix-host] tenant share reclaim WASTED: {n} own entries evicted for a demotion \
+                 that did not insert ({why}; {toks} tokens, model {}{})",
+                key.0,
+                ns_suffix(&key.1)
+            );
+        }
+        n
     }
 
     /// Oldest entry in `row` that the tenant-share reclaim may evict: not the exact-key
@@ -8534,6 +8617,8 @@ impl HostPrefixCache {
             pool.len() - 1
         };
         self.lru.insert(lru_key, (key.clone(), idx));
+        // A tenant-share reclaim that made room for this insert has now paid off (memra#384).
+        self.reclaim_pending = 0;
         while self.total_bytes > self.budget {
             let Some((victim_key, victim_i)) = self.lru.values().next().cloned() else {
                 break;
@@ -9002,7 +9087,7 @@ fn host_entry_from_device(
     }
     sizes.extend([dead.last_logits.len() * 4, dead.last_h.len() * 4]);
     let bytes = host_image_bytes(dead.bytes, &dead.toks, &dead.last_logits)?;
-    let mut planes = host.reserve_image(&dead.pool_key, &dead.toks, bytes, &sizes)?;
+    let mut planes = host.reserve_image(&dead.pool_key, &dead.toks, bytes, &sizes, true)?;
     let glm = if is_glm {
         Some(host_glm::HostGlmState::down(engine, dead, &mut planes)?)
     } else {
@@ -9260,14 +9345,17 @@ fn host_demote_prefix_ref(
     // demotion that would evaporate at insert must skip the PCIe trip entirely, not
     // pay gigabytes of synchronous copy for an entry the pool then refuses.
     //
-    // TENANT-SHARE RECLAIM (memra#384): at the cap, first evict this tenant's OWN unleased
-    // LRU host entries until the demotion fits its share and retry the predicate once
-    // (`reclaim_tenant_share` answers `Ok` only when it does). The cap and the lease
-    // protections are unchanged and no other tenant's row is touched; when the row has no
-    // eligible space the refusal below is today's line plus what the reclaim found, and
-    // nothing was evicted for it. The D2H payload is the same bytes either way.
+    // TENANT-SHARE RECLAIM (memra#384): at the cap, this tenant's OWN unleased LRU host
+    // entries make room and the predicate is retried once. The PLAN runs here, before the copy,
+    // and mutates nothing: an infeasible demotion (image above the share, or the row's unleased
+    // bytes short of the shortfall) skips the PCIe trip with today's line plus what the plan
+    // found, and nothing is evicted for it. The evictions themselves run in the `Ok(mut e)` arm
+    // below, once the image is built and bound, right before `insert`: the charge, the digest and
+    // the copy can all still fail after this point, and none of them may cost the row its warm
+    // entries (integ15 review of PR #597). The cap, the lease protections and the D2H payload
+    // bytes are unchanged; no other tenant's row is touched.
     if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes)
-        && let Err(refusal) = host.reclaim_tenant_share(&dead.pool_key, &dead.toks, host_bytes)
+        && let Err(refusal) = host.tenant_share_reclaim_plan(&dead.pool_key, &dead.toks, host_bytes)
     {
         host.tenant_rejects += 1;
         eprintln!(
@@ -9357,7 +9445,28 @@ fn host_demote_prefix_ref(
             // Native D2H has completed and owns a distinct immutable image before bind.
             e._tier_charge = tier_charge;
             if let Err(err) = host.bind_tier_image(&mut e) {
+                host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "bind refused");
                 eprintln!("[prefix-host] demote failed ({err}); nothing published");
+                return HostDemoteOutcome::Failed;
+            }
+            // TENANT-SHARE RECLAIM (memra#384), the evictions: the image exists and is bound, so
+            // the only refusal left after an eviction is `insert`'s own (booked as wasted below).
+            // The plan passed before the copy and nothing since mutates the row on this
+            // single-owner worker, so a refusal here is unreachable; it fails closed and says so.
+            if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes)
+                && let Err(refusal) =
+                    host.reclaim_tenant_share(&dead.pool_key, &dead.toks, host_bytes)
+            {
+                host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "reclaim refused");
+                host.tenant_rejects += 1;
+                eprintln!(
+                    "[prefix-host] demote failed after the D2H copy: the tenant share reclaim \
+                     that was feasible before the copy refused ({refusal}); nothing published \
+                     ({} tokens, model {}{})",
+                    dead.toks.len(),
+                    dead.pool_key.0,
+                    ns_suffix(&dead.pool_key.1)
+                );
                 return HostDemoteOutcome::Failed;
             }
             let toks = e.toks.len();
@@ -9379,11 +9488,14 @@ fn host_demote_prefix_ref(
                 HostDemoteOutcome::Demoted
             } else {
                 // insert's own refusals (identity/version mismatch, entry > whole budget)
-                // already logged their reason.
+                // already logged their reason; a reclaim that paid for them is booked wasted.
+                host.waste_pending_reclaim(&dead.pool_key, toks, "insert refused");
                 HostDemoteOutcome::Failed
             }
         }
         Err(err) => {
+            // The fixed-arena path reclaims inside `reserve_image`, before a copy that can fail.
+            host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "copy failed");
             eprintln!("[prefix-host] demote failed ({err}); nothing demoted");
             HostDemoteOutcome::Failed
         }
@@ -10811,8 +10923,13 @@ fn host_entry_from_owned(
     }
     sizes.extend([e.last_logits.len() * 4, e.last_h.len() * 4]);
     let bytes = host_image_bytes(e.bytes, &e.toks, &e.last_logits)?;
-    let mut planes =
-        host.reserve_image(&(e.model.clone(), e.ns.clone()), &e.toks, bytes, &sizes)?;
+    let mut planes = host.reserve_image(
+        &(e.model.clone(), e.ns.clone()),
+        &e.toks,
+        bytes,
+        &sizes,
+        false,
+    )?;
     let mut kv = Vec::with_capacity(e.kv.len());
     for p in e.kv {
         kv.push(match p {
@@ -19340,6 +19457,7 @@ pub fn run(
             m.prefix_host_purged_bytes = hpx.purged_bytes;
             m.prefix_host_tenant_rejects = hpx.tenant_rejects;
             m.prefix_host_tenant_reclaims = hpx.tenant_reclaims;
+            m.prefix_host_tenant_reclaims_wasted = hpx.tenant_reclaims_wasted;
             m.prefix_host_pause_demotes = hpx.pause_demotes;
             m.prefix_host_pause_cancels = hpx.pause_cancels;
             m.prefix_host_handoff_exports = hpx.handoff_exports;
@@ -36224,8 +36342,66 @@ mod tests {
         assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
     }
 
-    /// The hook consults the reclaim before printing the evaporation line, and the counter
-    /// reaches the published snapshot and the HTTP render.
+    /// integ15 review of PR #597: the plan is pure (a copy, digest or charge failure after it
+    /// leaves the row untouched and counts no reclaim); the happy path reclaims exactly once and
+    /// the insert consumes it; a reclaim whose insert then refuses is booked wasted, once.
+    #[test]
+    fn host_cache_tenant_share_plan_is_pure_and_a_reclaim_is_consumed_by_insert_or_booked_wasted() {
+        let mut h = HostPrefixCache::new(100);
+        h.tenant_pct = 50;
+        let t = tenant_toks;
+        let a = key(&crate::auth::scope_namespace("acme", "s1"));
+        assert!(h.insert(&a, host_entry(&a, t(1000), 20)));
+        assert!(h.insert(&a, host_entry(&a, t(2000), 30))); // at the 50-byte share
+        // The plan at the cap: feasible, and NOTHING moved (this is the state a failing copy,
+        // digest or charge leaves behind: the row is whole, no reclaim counted).
+        let plan = h.tenant_share_reclaim_plan(&a, &t(3000), 20).unwrap();
+        assert_eq!(
+            (plan.row.as_str(), plan.need, plan.eligible),
+            ("t:acme", 20, 50)
+        );
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+        assert!(h.key_index(&a, &t(1000)).is_some() && h.key_index(&a, &t(2000)).is_some());
+        assert_eq!(
+            (
+                h.tenant_reclaims,
+                h.tenant_reclaims_wasted,
+                h.reclaim_pending
+            ),
+            (0, 0, 0)
+        );
+        // Below the cap the plan is the default (need 0) and equally pure.
+        let c = key(&crate::auth::scope_namespace("gamma", "s1"));
+        assert_eq!(
+            h.tenant_share_reclaim_plan(&c, &t(1000), 10),
+            Ok(super::TenantSharePlan::default())
+        );
+        // A refused plan evicts nothing either.
+        assert!(h.tenant_share_reclaim_plan(&a, &t(3000), 51).is_err());
+        assert_eq!((h.n_entries(), h.reclaim_pending), (2, 0));
+        // Happy path: the reclaim evicts exactly once and parks it; the insert consumes it.
+        let r = h.reclaim_tenant_share(&a, &t(3000), 20).unwrap();
+        assert_eq!((r.evicted, h.reclaim_pending, h.tenant_reclaims), (1, 1, 1));
+        assert!(h.insert(&a, host_entry(&a, t(3000), 20)));
+        assert_eq!((h.reclaim_pending, h.tenant_reclaims_wasted), (0, 0));
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+        // Wasted path: the reclaim evicts, then the insert refuses (a layout-version mismatch is
+        // `insert`'s own refusal) and the demote hook books the pending eviction wasted, once.
+        let r = h.reclaim_tenant_share(&a, &t(4000), 20).unwrap();
+        assert_eq!((r.evicted, h.reclaim_pending, h.tenant_reclaims), (1, 1, 2));
+        let mut stale = host_entry(&a, t(4000), 20);
+        stale.layout_version = PREFIX_ENTRY_LAYOUT_VERSION.wrapping_add(1);
+        assert!(!h.insert(&a, stale));
+        assert_eq!(h.waste_pending_reclaim(&a, 64, "test"), 1);
+        assert_eq!((h.reclaim_pending, h.tenant_reclaims_wasted), (0, 1));
+        // With nothing pending the waste call is a silent zero.
+        assert_eq!(h.waste_pending_reclaim(&a, 64, "test"), 0);
+        assert_eq!(h.tenant_reclaims_wasted, 1);
+    }
+
+    /// The hook consults the PLAN before the copy and the RECLAIM only once the image is built,
+    /// right before `insert`; every later exit books a pending reclaim wasted; both counters
+    /// reach the published snapshot and the HTTP render.
     #[test]
     fn tenant_share_reclaim_is_wired_into_the_demote_hook_and_the_metrics() {
         let strip = |src: &str| -> String {
@@ -36238,17 +36414,45 @@ mod tests {
         let hook = worker
             .find("fn host_demote_prefix_ref(")
             .expect("the demote hook exists");
-        let evaporation = worker[hook..]
-            .find("demote evaporated at the tenant share cap before the D2H")
-            .expect("the evaporation line exists in the hook");
-        let pre_copy = &worker[hook..hook + evaporation];
+        let body_end = hook + worker[hook..].find("\n}\n").expect("the hook ends");
+        let body = &worker[hook..body_end];
+        let at = |needle: &str| {
+            body.find(needle)
+                .unwrap_or_else(|| panic!("{needle} in the hook"))
+        };
+        let plan = at("host.tenant_share_reclaim_plan(&dead.pool_key, &dead.toks, host_bytes)");
+        let evaporation = at("demote evaporated at the tenant share cap before the D2H");
+        let copy = at("host_entry_from_device(engine, host, dead, verify_digest)");
+        let ok_arm = at("Ok(mut e) => {");
+        let bind = at("host.bind_tier_image(&mut e)");
+        let reclaim = at("host.reclaim_tenant_share(&dead.pool_key, &dead.toks, host_bytes)");
+        let insert = at("host.insert(&dead.pool_key, e)");
         assert!(
-            pre_copy.contains("host.reclaim_tenant_share(&dead.pool_key, &dead.toks, host_bytes)"),
-            "the hook must reclaim the tenant's own entries BEFORE the evaporation line"
+            plan < evaporation && evaporation < copy,
+            "the PLAN gates the pre-copy refusal"
         );
         assert!(
-            !pre_copy.contains("host_entry_from_device("),
-            "the reclaim and the refusal both sit BEFORE the D2H copy"
+            !body[..copy].contains("host.reclaim_tenant_share("),
+            "no eviction before the D2H copy: a charge, digest or copy failure must cost nothing"
+        );
+        assert!(
+            body[..copy].contains("tier_charge(")
+                && body[..copy].contains("host_roundtrip_digest("),
+            "the charge and the digest run before the copy, so before any eviction"
+        );
+        assert!(
+            copy < ok_arm && ok_arm < bind && bind < reclaim && reclaim < insert,
+            "the reclaim runs inside the Ok arm, after bind and right before insert"
+        );
+        assert_eq!(
+            body.matches("host.waste_pending_reclaim(").count(),
+            4,
+            "bind refused, reclaim refused, insert refused and copy failed each book the waste"
+        );
+        let insert_false = body[insert..].find("} else {").expect("insert's false arm") + insert;
+        assert!(
+            body[insert_false..]
+                .contains("host.waste_pending_reclaim(&dead.pool_key, toks, \"insert refused\")")
         );
         let publish = worker
             .find("m.prefix_host_tenant_rejects = hpx.tenant_rejects")
@@ -36257,11 +36461,16 @@ mod tests {
             worker[publish..publish + 400]
                 .contains("m.prefix_host_tenant_reclaims = hpx.tenant_reclaims")
         );
+        assert!(
+            worker[publish..publish + 400]
+                .contains("m.prefix_host_tenant_reclaims_wasted = hpx.tenant_reclaims_wasted")
+        );
         let lib = strip(include_str!("lib.rs"));
         let render = lib
             .find("body[\"prefix_host_tenant_rejects\"]")
             .expect("the host-tier /metrics render exists");
-        assert!(lib[render..render + 600].contains("prefix_host_tenant_reclaims"));
+        assert!(lib[render..render + 600].contains("prefix_host_tenant_reclaims\""));
+        assert!(lib[render..render + 600].contains("prefix_host_tenant_reclaims_wasted"));
     }
 
     /// PARK COMPACTION eligibility (MEMRA_KV_PARK_COMPACT, tiering spec Arc C1): the
