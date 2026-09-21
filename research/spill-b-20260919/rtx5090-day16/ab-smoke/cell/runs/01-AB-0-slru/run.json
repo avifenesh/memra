@@ -1,0 +1,2556 @@
+{
+  "run": 1,
+  "pair_id": "AB-0",
+  "order": "AB",
+  "position": 0,
+  "arm": "slru",
+  "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+  "wall_s": 55.5,
+  "gpu_start": {
+    "utc": "2026-09-21T10:13:27Z",
+    "temperature_c": 74.0,
+    "power_w": 42.14,
+    "power_limit_w": null,
+    "clocks_sm_mhz": 1582.0,
+    "clocks_mem_mhz": 14001.0,
+    "memory_used_mib": 15.0
+  },
+  "gpu_end": {
+    "utc": "2026-09-21T10:14:22Z",
+    "temperature_c": 71.0,
+    "power_w": 65.86,
+    "power_limit_w": null,
+    "clocks_sm_mhz": 1582.0,
+    "clocks_mem_mhz": 14001.0,
+    "memory_used_mib": 15.0
+  },
+  "computed_tokens": 31700,
+  "computed_tokens_loop": 13100,
+  "computed_tokens_returns": 13000,
+  "loop_cached": [
+    0,
+    11000,
+    11150,
+    11150,
+    11450,
+    11600,
+    11600,
+    11900,
+    12050,
+    12050,
+    12350,
+    12500
+  ],
+  "loop_cold_after_1": 0,
+  "return_cached": [
+    {
+      "role": "return",
+      "tenant": 1,
+      "after_turn": 3,
+      "prompt_tokens": 1400,
+      "cached_tokens": 0
+    },
+    {
+      "role": "return",
+      "tenant": 2,
+      "after_turn": 6,
+      "prompt_tokens": 1500,
+      "cached_tokens": 0
+    },
+    {
+      "role": "return",
+      "tenant": 3,
+      "after_turn": 9,
+      "prompt_tokens": 1600,
+      "cached_tokens": 0
+    },
+    {
+      "role": "return",
+      "tenant": 4,
+      "after_turn": 12,
+      "prompt_tokens": 1700,
+      "cached_tokens": 0
+    },
+    {
+      "role": "final",
+      "tenant": 1,
+      "after_turn": 12,
+      "prompt_tokens": 1550,
+      "cached_tokens": 0
+    },
+    {
+      "role": "final",
+      "tenant": 2,
+      "after_turn": 12,
+      "prompt_tokens": 1650,
+      "cached_tokens": 0
+    },
+    {
+      "role": "final",
+      "tenant": 3,
+      "after_turn": 12,
+      "prompt_tokens": 1750,
+      "cached_tokens": 0
+    },
+    {
+      "role": "final",
+      "tenant": 4,
+      "after_turn": 12,
+      "prompt_tokens": 1850,
+      "cached_tokens": 0
+    }
+  ],
+  "return_cached_sum": 0,
+  "evictions": 9,
+  "protected_evictions": 2,
+  "demotes": 8,
+  "refused_or_skipped": [],
+  "ttft_loop_ms": {
+    "n": 12,
+    "p50": 191.16,
+    "p95": 280.406
+  },
+  "ttft_all_ms": {
+    "n": 28,
+    "p50": 280.406,
+    "p95": 1274.931
+  },
+  "e2e_all_s": {
+    "n": 28,
+    "p50": 0.456,
+    "p95": 1.44
+  },
+  "digests_identical_to_cold": 27,
+  "final_metrics": {
+    "cuda_driver_free_bytes": 1400176640,
+    "cuda_pool_cached_bytes": 886898488,
+    "prefix_cache_bytes": 948785152,
+    "prefix_cache_entries": 3,
+    "prefix_cache_evictions": 21,
+    "prefix_cache_hits": 15,
+    "prefix_cache_misses": 13,
+    "prefix_cache_inserts": 24,
+    "prefix_cache_hit_tokens": 134400,
+    "prefix_cache_skips_budget": 0,
+    "prefix_cache_skips_pinned": 0,
+    "active_sessions": 0,
+    "queued_requests": 0
+  },
+  "rows": [
+    {
+      "idx": 0,
+      "role": "seed1",
+      "tenant": 1,
+      "salt": "cohort-1",
+      "turn": null,
+      "prompt_ids": 1250,
+      "prompt_tokens": 1250,
+      "cached_tokens": 0,
+      "computed_tokens": 1250,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 1.07,
+      "text_sha256": "035b948dc4d492de4b4f2ccc9599e490b478cc661325239657aaa657fe40b222",
+      "ttft_first_decode_ms": 870.92,
+      "prime_ms": 865.476,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 1250,
+            "mb": 194.0
+          }
+        ],
+        "hits": [],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1250 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] insert probation (seed): 1250 tokens, 194.0MB (resident 194.0MB / 1074MB, model gate, ns \"cohort-1\")"
+        ],
+        "route": [
+          {
+            "prompt": 1250,
+            "cached": 0,
+            "lcp": 0,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1250 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-3fd1a333de7b3933bbffba9172a86b21",
+          "prompt_tokens": 1250,
+          "outcome": "ended_without_sse",
+          "prime_ms": 865.476,
+          "first_decode_ms": 870.92,
+          "total_ms": 870.92
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 0,
+        "cuda_pool_cached_bytes": 0,
+        "prefix_cache_bytes": 0,
+        "prefix_cache_entries": 0,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 0,
+        "prefix_cache_misses": 0,
+        "prefix_cache_inserts": 0,
+        "prefix_cache_hit_tokens": 0,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 7641300992,
+        "cuda_pool_cached_bytes": 470566188,
+        "prefix_cache_bytes": 194013184,
+        "prefix_cache_entries": 1,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 0,
+        "prefix_cache_misses": 1,
+        "prefix_cache_inserts": 1,
+        "prefix_cache_hit_tokens": 0,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 1,
+      "role": "seed2",
+      "tenant": 1,
+      "salt": "cohort-1",
+      "turn": null,
+      "prompt_ids": 1250,
+      "prompt_tokens": 1250,
+      "cached_tokens": 1250,
+      "computed_tokens": 0,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 0.198,
+      "text_sha256": "035b948dc4d492de4b4f2ccc9599e490b478cc661325239657aaa657fe40b222",
+      "ttft_first_decode_ms": 1.82,
+      "prime_ms": 0.0,
+      "window": {
+        "inserts": [],
+        "hits": [
+          {
+            "hit": 1250,
+            "prompt": 1250
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[prefix-cache] hit: 1250 of 1250 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1250 cached=1250 lcp=1250 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 1250 tokens, model gate)"
+        ],
+        "route": [
+          {
+            "prompt": 1250,
+            "cached": 1250,
+            "lcp": 1250,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1250 cached=1250 lcp=1250 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-bf2b7fb3e00f619bad5700c7f87cc129",
+          "prompt_tokens": 1250,
+          "outcome": "ended_without_sse",
+          "prime_ms": 0.0,
+          "first_decode_ms": 1.82,
+          "total_ms": 1.82
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 7641300992,
+        "cuda_pool_cached_bytes": 470566188,
+        "prefix_cache_bytes": 194013184,
+        "prefix_cache_entries": 1,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 0,
+        "prefix_cache_misses": 1,
+        "prefix_cache_inserts": 1,
+        "prefix_cache_hit_tokens": 0,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 7641300992,
+        "cuda_pool_cached_bytes": 121739608,
+        "prefix_cache_bytes": 194013184,
+        "prefix_cache_entries": 1,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 1,
+        "prefix_cache_misses": 1,
+        "prefix_cache_inserts": 1,
+        "prefix_cache_hit_tokens": 1250,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 2,
+      "role": "seed1",
+      "tenant": 2,
+      "salt": "cohort-2",
+      "turn": null,
+      "prompt_ids": 1350,
+      "prompt_tokens": 1350,
+      "cached_tokens": 0,
+      "computed_tokens": 1350,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 1.114,
+      "text_sha256": "83f2152f545205ba6968bbbf17c669cf573671c0cabee20c87d55f3c33c8f85a",
+      "ttft_first_decode_ms": 932.844,
+      "prime_ms": 927.512,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 1350,
+            "mb": 197.0
+          }
+        ],
+        "hits": [],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1350 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] insert probation (seed): 1350 tokens, 197.0MB (resident 391.0MB / 1074MB, model gate, ns \"cohort-2\")"
+        ],
+        "route": [
+          {
+            "prompt": 1350,
+            "cached": 0,
+            "lcp": 0,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1350 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-9c501c0b56e27228c93d097cb34a866e",
+          "prompt_tokens": 1350,
+          "outcome": "ended_without_sse",
+          "prime_ms": 927.512,
+          "first_decode_ms": 932.844,
+          "total_ms": 932.844
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 7641300992,
+        "cuda_pool_cached_bytes": 121739608,
+        "prefix_cache_bytes": 194013184,
+        "prefix_cache_entries": 1,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 1,
+        "prefix_cache_misses": 1,
+        "prefix_cache_inserts": 1,
+        "prefix_cache_hit_tokens": 1250,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 6668222464,
+        "cuda_pool_cached_bytes": 507179652,
+        "prefix_cache_bytes": 390995968,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 1,
+        "prefix_cache_misses": 2,
+        "prefix_cache_inserts": 2,
+        "prefix_cache_hit_tokens": 1250,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 3,
+      "role": "seed2",
+      "tenant": 2,
+      "salt": "cohort-2",
+      "turn": null,
+      "prompt_ids": 1350,
+      "prompt_tokens": 1350,
+      "cached_tokens": 1350,
+      "computed_tokens": 0,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 0.164,
+      "text_sha256": "83f2152f545205ba6968bbbf17c669cf573671c0cabee20c87d55f3c33c8f85a",
+      "ttft_first_decode_ms": 1.455,
+      "prime_ms": 0.0,
+      "window": {
+        "inserts": [],
+        "hits": [
+          {
+            "hit": 1350,
+            "prompt": 1350
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[prefix-cache] hit: 1350 of 1350 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1350 cached=1350 lcp=1350 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 1350 tokens, model gate)"
+        ],
+        "route": [
+          {
+            "prompt": 1350,
+            "cached": 1350,
+            "lcp": 1350,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1350 cached=1350 lcp=1350 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-9ac087b7cd680e48a5d23440a54fb7cd",
+          "prompt_tokens": 1350,
+          "outcome": "ended_without_sse",
+          "prime_ms": 0.0,
+          "first_decode_ms": 1.455,
+          "total_ms": 1.455
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 6668222464,
+        "cuda_pool_cached_bytes": 507179652,
+        "prefix_cache_bytes": 390995968,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 1,
+        "prefix_cache_misses": 2,
+        "prefix_cache_inserts": 2,
+        "prefix_cache_hit_tokens": 1250,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 6668222464,
+        "cuda_pool_cached_bytes": 155197872,
+        "prefix_cache_bytes": 390995968,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 2,
+        "prefix_cache_misses": 2,
+        "prefix_cache_inserts": 2,
+        "prefix_cache_hit_tokens": 2600,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 4,
+      "role": "seed1",
+      "tenant": 3,
+      "salt": "cohort-3",
+      "turn": null,
+      "prompt_ids": 1450,
+      "prompt_tokens": 1450,
+      "cached_tokens": 0,
+      "computed_tokens": 1450,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 1.175,
+      "text_sha256": "f1d5e9804c3c21197dcbf92dff6b328a4fb2438ae80482e73133f3832a3c44f8",
+      "ttft_first_decode_ms": 1002.113,
+      "prime_ms": 996.761,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 1450,
+            "mb": 200.0
+          }
+        ],
+        "hits": [],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1450 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] insert probation (seed): 1450 tokens, 200.0MB (resident 590.9MB / 1074MB, model gate, ns \"cohort-3\")"
+        ],
+        "route": [
+          {
+            "prompt": 1450,
+            "cached": 0,
+            "lcp": 0,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1450 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-217a2ac2d44733e9f7abd57f466a9ef9",
+          "prompt_tokens": 1450,
+          "outcome": "ended_without_sse",
+          "prime_ms": 996.761,
+          "first_decode_ms": 1002.113,
+          "total_ms": 1002.113
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 6668222464,
+        "cuda_pool_cached_bytes": 155197872,
+        "prefix_cache_bytes": 390995968,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 2,
+        "prefix_cache_misses": 2,
+        "prefix_cache_inserts": 2,
+        "prefix_cache_hit_tokens": 2600,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 5661589504,
+        "cuda_pool_cached_bytes": 569058268,
+        "prefix_cache_bytes": 590948352,
+        "prefix_cache_entries": 3,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 2,
+        "prefix_cache_misses": 3,
+        "prefix_cache_inserts": 3,
+        "prefix_cache_hit_tokens": 2600,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 5,
+      "role": "seed2",
+      "tenant": 3,
+      "salt": "cohort-3",
+      "turn": null,
+      "prompt_ids": 1450,
+      "prompt_tokens": 1450,
+      "cached_tokens": 1450,
+      "computed_tokens": 0,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 0.201,
+      "text_sha256": "f1d5e9804c3c21197dcbf92dff6b328a4fb2438ae80482e73133f3832a3c44f8",
+      "ttft_first_decode_ms": 4.481,
+      "prime_ms": 0.0,
+      "window": {
+        "inserts": [],
+        "hits": [
+          {
+            "hit": 1450,
+            "prompt": 1450
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[prefix-cache] hit: 1450 of 1450 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1450 cached=1450 lcp=1450 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 1450 tokens, model gate)"
+        ],
+        "route": [
+          {
+            "prompt": 1450,
+            "cached": 1450,
+            "lcp": 1450,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1450 cached=1450 lcp=1450 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-9fff850f6d5bb830fba9e0eab3711664",
+          "prompt_tokens": 1450,
+          "outcome": "ended_without_sse",
+          "prime_ms": 0.0,
+          "first_decode_ms": 4.481,
+          "total_ms": 4.481
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 5661589504,
+        "cuda_pool_cached_bytes": 569058268,
+        "prefix_cache_bytes": 590948352,
+        "prefix_cache_entries": 3,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 2,
+        "prefix_cache_misses": 3,
+        "prefix_cache_inserts": 3,
+        "prefix_cache_hit_tokens": 2600,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 5661589504,
+        "cuda_pool_cached_bytes": 213921288,
+        "prefix_cache_bytes": 590948352,
+        "prefix_cache_entries": 3,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 3,
+        "prefix_cache_misses": 3,
+        "prefix_cache_inserts": 3,
+        "prefix_cache_hit_tokens": 4050,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 6,
+      "role": "seed1",
+      "tenant": 4,
+      "salt": "cohort-4",
+      "turn": null,
+      "prompt_ids": 1550,
+      "prompt_tokens": 1550,
+      "cached_tokens": 0,
+      "computed_tokens": 1550,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 1.266,
+      "text_sha256": "1aa4fad6f6cf0cf521a39ae2391f7b0b72205ddf56322c6af50812448ab2fc74",
+      "ttft_first_decode_ms": 1100.108,
+      "prime_ms": 1094.705,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 1550,
+            "mb": 202.9
+          }
+        ],
+        "hits": [],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1550 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] insert probation (seed): 1550 tokens, 202.9MB (resident 793.9MB / 1074MB, model gate, ns \"cohort-4\")"
+        ],
+        "route": [
+          {
+            "prompt": 1550,
+            "cached": 0,
+            "lcp": 0,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1550 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-5ed5eee3e553f5f149128bea2da8d276",
+          "prompt_tokens": 1550,
+          "outcome": "ended_without_sse",
+          "prime_ms": 1094.705,
+          "first_decode_ms": 1100.108,
+          "total_ms": 1100.108
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 5661589504,
+        "cuda_pool_cached_bytes": 213921288,
+        "prefix_cache_bytes": 590948352,
+        "prefix_cache_entries": 3,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 3,
+        "prefix_cache_misses": 3,
+        "prefix_cache_inserts": 3,
+        "prefix_cache_hit_tokens": 4050,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 4654956544,
+        "cuda_pool_cached_bytes": 621656884,
+        "prefix_cache_bytes": 793870336,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 3,
+        "prefix_cache_misses": 4,
+        "prefix_cache_inserts": 4,
+        "prefix_cache_hit_tokens": 4050,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 7,
+      "role": "seed2",
+      "tenant": 4,
+      "salt": "cohort-4",
+      "turn": null,
+      "prompt_ids": 1550,
+      "prompt_tokens": 1550,
+      "cached_tokens": 1550,
+      "computed_tokens": 0,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 0.165,
+      "text_sha256": "1aa4fad6f6cf0cf521a39ae2391f7b0b72205ddf56322c6af50812448ab2fc74",
+      "ttft_first_decode_ms": 1.536,
+      "prime_ms": 0.0,
+      "window": {
+        "inserts": [],
+        "hits": [
+          {
+            "hit": 1550,
+            "prompt": 1550
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[prefix-cache] hit: 1550 of 1550 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1550 cached=1550 lcp=1550 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 1550 tokens, model gate)"
+        ],
+        "route": [
+          {
+            "prompt": 1550,
+            "cached": 1550,
+            "lcp": 1550,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1550 cached=1550 lcp=1550 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-06a4d63d1d2bafe584400f4c2d6b9f47",
+          "prompt_tokens": 1550,
+          "outcome": "ended_without_sse",
+          "prime_ms": 0.0,
+          "first_decode_ms": 1.536,
+          "total_ms": 1.536
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 4654956544,
+        "cuda_pool_cached_bytes": 621656884,
+        "prefix_cache_bytes": 793870336,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 3,
+        "prefix_cache_misses": 4,
+        "prefix_cache_inserts": 4,
+        "prefix_cache_hit_tokens": 4050,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 4654956544,
+        "cuda_pool_cached_bytes": 263364704,
+        "prefix_cache_bytes": 793870336,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 4,
+        "prefix_cache_misses": 4,
+        "prefix_cache_inserts": 4,
+        "prefix_cache_hit_tokens": 5600,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 8,
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 1,
+      "prompt_ids": 11000,
+      "prompt_tokens": 11000,
+      "cached_tokens": 0,
+      "computed_tokens": 11000,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 8.016,
+      "text_sha256": "9745f43fe07640e1dcc08ec1ac17546724723e62110e502f6f60d33a807d81a5",
+      "ttft_first_decode_ms": 7834.217,
+      "prime_ms": 7827.501,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 11000,
+            "mb": 483.5
+          }
+        ],
+        "hits": [],
+        "evicts": [
+          {
+            "segment": "Protected",
+            "tokens": 1250,
+            "mb": 194.0
+          },
+          {
+            "segment": "Protected",
+            "tokens": 1350,
+            "mb": 197.0
+          }
+        ],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11000 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] evict (snapshot preflight, Protected LRU): 1250 tokens, 194.0MB (model gate, ns \"cohort-1\")",
+          "[prefix-cache] evict (snapshot preflight, Protected LRU): 1350 tokens, 197.0MB (model gate, ns \"cohort-2\")",
+          "[prefix-cache] insert probation (seed): 11000 tokens, 483.5MB (resident 886.4MB / 1074MB, model gate, ns \"grow\")"
+        ],
+        "route": [
+          {
+            "prompt": 11000,
+            "cached": 0,
+            "lcp": 0,
+            "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11000 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-74bb38bc02cb44bb8292e04e75373209",
+          "prompt_tokens": 11000,
+          "outcome": "ended_without_sse",
+          "prime_ms": 7827.501,
+          "first_decode_ms": 7834.217,
+          "total_ms": 7834.217
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 4654956544,
+        "cuda_pool_cached_bytes": 263364704,
+        "prefix_cache_bytes": 793870336,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 0,
+        "prefix_cache_hits": 4,
+        "prefix_cache_misses": 4,
+        "prefix_cache_inserts": 4,
+        "prefix_cache_hit_tokens": 5600,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 997523456,
+        "cuda_pool_cached_bytes": 2179832844,
+        "prefix_cache_bytes": 886423552,
+        "prefix_cache_entries": 3,
+        "prefix_cache_evictions": 2,
+        "prefix_cache_hits": 4,
+        "prefix_cache_misses": 5,
+        "prefix_cache_inserts": 5,
+        "prefix_cache_hit_tokens": 5600,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 9,
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 2,
+      "prompt_ids": 11150,
+      "prompt_tokens": 11150,
+      "cached_tokens": 11000,
+      "computed_tokens": 150,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 0.371,
+      "text_sha256": "66d394ced7203380d43dec1d58a7884c091387ccc18fb05653da503d74531bac",
+      "ttft_first_decode_ms": 194.566,
+      "prime_ms": 179.341,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 11150,
+            "mb": 488.0
+          }
+        ],
+        "hits": [
+          {
+            "hit": 11000,
+            "prompt": 11150
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 1,
+        "lines": [
+          "[prefix-cache] demote (protected bytes): 200.0MB to probation (model gate, ns \"cohort-3\")",
+          "[prefix-cache] hit: 11000 of 11150 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11150 cached=11000 lcp=11000 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 11000 tokens, model gate)",
+          "[prefix-cache] insert probation (seed): 11150 tokens, 488.0MB (resident 971.6MB / 1074MB, model gate, ns \"grow\")"
+        ],
+        "route": [
+          {
+            "prompt": 11150,
+            "cached": 11000,
+            "lcp": 11000,
+            "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11150 cached=11000 lcp=11000 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-6ae17c071fb573ce772f10740aa07eff",
+          "prompt_tokens": 11150,
+          "outcome": "ended_without_sse",
+          "prime_ms": 179.341,
+          "first_decode_ms": 194.566,
+          "total_ms": 194.566
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 997523456,
+        "cuda_pool_cached_bytes": 2179832844,
+        "prefix_cache_bytes": 886423552,
+        "prefix_cache_entries": 3,
+        "prefix_cache_evictions": 2,
+        "prefix_cache_hits": 4,
+        "prefix_cache_misses": 5,
+        "prefix_cache_inserts": 5,
+        "prefix_cache_hit_tokens": 5600,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 2138374144,
+        "cuda_pool_cached_bytes": 1333161908,
+        "prefix_cache_bytes": 971552768,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 4,
+        "prefix_cache_hits": 5,
+        "prefix_cache_misses": 5,
+        "prefix_cache_inserts": 6,
+        "prefix_cache_hit_tokens": 16600,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 10,
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 3,
+      "prompt_ids": 11300,
+      "prompt_tokens": 11300,
+      "cached_tokens": 11150,
+      "computed_tokens": 150,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 0.36,
+      "text_sha256": "24a97a2867768b2d1338cb591f7749f093767b6f3af95921b636b2c730e4e1bc",
+      "ttft_first_decode_ms": 183.847,
+      "prime_ms": 178.866,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 11300,
+            "mb": 492.5
+          }
+        ],
+        "hits": [
+          {
+            "hit": 11150,
+            "prompt": 11300
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 1,
+        "lines": [
+          "[prefix-cache] demote (protected bytes): 483.5MB to probation (model gate, ns \"grow\")",
+          "[prefix-cache] hit: 11150 of 11300 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11300 cached=11150 lcp=11150 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 11150 tokens, model gate)",
+          "[prefix-cache] insert probation (seed): 11300 tokens, 492.5MB (resident 980.5MB / 1074MB, model gate, ns \"grow\")"
+        ],
+        "route": [
+          {
+            "prompt": 11300,
+            "cached": 11150,
+            "lcp": 11150,
+            "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11300 cached=11150 lcp=11150 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-9dc6a2fae255deef2a28d34767d6d004",
+          "prompt_tokens": 11300,
+          "outcome": "ended_without_sse",
+          "prime_ms": 178.866,
+          "first_decode_ms": 183.847,
+          "total_ms": 183.847
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 2138374144,
+        "cuda_pool_cached_bytes": 1333161908,
+        "prefix_cache_bytes": 971552768,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 4,
+        "prefix_cache_hits": 5,
+        "prefix_cache_misses": 5,
+        "prefix_cache_inserts": 6,
+        "prefix_cache_hit_tokens": 16600,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 2608136192,
+        "cuda_pool_cached_bytes": 1551529820,
+        "prefix_cache_bytes": 980461568,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 5,
+        "prefix_cache_hits": 6,
+        "prefix_cache_misses": 5,
+        "prefix_cache_inserts": 7,
+        "prefix_cache_hit_tokens": 27750,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 11,
+      "role": "return",
+      "tenant": 1,
+      "salt": "cohort-1",
+      "turn": 3,
+      "prompt_ids": 1400,
+      "prompt_tokens": 1400,
+      "cached_tokens": 0,
+      "computed_tokens": 1400,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 1.123,
+      "text_sha256": "2ac0f4d0262cd82c69072999e895a88a4891970af03e47dfdaaa4c5c6bedfbe2",
+      "ttft_first_decode_ms": 942.439,
+      "prime_ms": 937.359,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 1400,
+            "mb": 198.5
+          }
+        ],
+        "hits": [],
+        "evicts": [
+          {
+            "segment": "Probation",
+            "tokens": 11300,
+            "mb": 492.5
+          }
+        ],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1400 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] evict (snapshot preflight, Probation LRU): 11300 tokens, 492.5MB (model gate, ns \"grow\")",
+          "[prefix-cache] insert probation (seed): 1400 tokens, 198.5MB (resident 686.5MB / 1074MB, model gate, ns \"cohort-1\")"
+        ],
+        "route": [
+          {
+            "prompt": 1400,
+            "cached": 0,
+            "lcp": 0,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1400 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-77dc3a3d2731d18544309718387db804",
+          "prompt_tokens": 1400,
+          "outcome": "ended_without_sse",
+          "prime_ms": 937.359,
+          "first_decode_ms": 942.439,
+          "total_ms": 942.439
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 2608136192,
+        "cuda_pool_cached_bytes": 1551529820,
+        "prefix_cache_bytes": 980461568,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 5,
+        "prefix_cache_hits": 6,
+        "prefix_cache_misses": 5,
+        "prefix_cache_inserts": 7,
+        "prefix_cache_hit_tokens": 27750,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 2608136192,
+        "cuda_pool_cached_bytes": 1491960840,
+        "prefix_cache_bytes": 686471168,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 6,
+        "prefix_cache_hits": 6,
+        "prefix_cache_misses": 6,
+        "prefix_cache_inserts": 8,
+        "prefix_cache_hit_tokens": 27750,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 12,
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 4,
+      "prompt_ids": 11450,
+      "prompt_tokens": 11450,
+      "cached_tokens": 11150,
+      "computed_tokens": 300,
+      "completion_tokens": 4,
+      "finish_reason": "stop",
+      "elapsed_s": 0.346,
+      "text_sha256": "876c0bf0f375834eaff940b0038d7936c0beda4560a9f3b566f98cc7f02a19a6",
+      "ttft_first_decode_ms": 279.144,
+      "prime_ms": 275.146,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 11450,
+            "mb": 496.9
+          }
+        ],
+        "hits": [
+          {
+            "hit": 11150,
+            "prompt": 11450
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[prefix-cache] hit: 11150 of 11450 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11450 cached=11150 lcp=11150 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 11150 tokens, model gate)",
+          "[prefix-cache] insert probation (seed): 11450 tokens, 496.9MB (resident 984.9MB / 1074MB, model gate, ns \"grow\")"
+        ],
+        "route": [
+          {
+            "prompt": 11450,
+            "cached": 11150,
+            "lcp": 11150,
+            "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11450 cached=11150 lcp=11150 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-f5a696d7e7cf06fe47d6226a01b45d6a",
+          "prompt_tokens": 11450,
+          "outcome": "ended_without_sse",
+          "prime_ms": 275.146,
+          "first_decode_ms": 279.144,
+          "total_ms": 279.144
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 2608136192,
+        "cuda_pool_cached_bytes": 1491960840,
+        "prefix_cache_bytes": 686471168,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 6,
+        "prefix_cache_hits": 6,
+        "prefix_cache_misses": 6,
+        "prefix_cache_inserts": 8,
+        "prefix_cache_hit_tokens": 27750,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 2775908352,
+        "cuda_pool_cached_bytes": 1370800860,
+        "prefix_cache_bytes": 984915968,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 7,
+        "prefix_cache_hits": 7,
+        "prefix_cache_misses": 6,
+        "prefix_cache_inserts": 9,
+        "prefix_cache_hit_tokens": 38900,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 13,
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 5,
+      "prompt_ids": 11600,
+      "prompt_tokens": 11600,
+      "cached_tokens": 11450,
+      "computed_tokens": 150,
+      "completion_tokens": 4,
+      "finish_reason": "stop",
+      "elapsed_s": 0.251,
+      "text_sha256": "7abc2552932a6a15c30591602086cc3f43027eddc520d86b06310d8c42622e86",
+      "ttft_first_decode_ms": 184.608,
+      "prime_ms": 179.9,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 11600,
+            "mb": 501.4
+          }
+        ],
+        "hits": [
+          {
+            "hit": 11450,
+            "prompt": 11600
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 1,
+        "lines": [
+          "[prefix-cache] demote (protected bytes): 488.0MB to probation (model gate, ns \"grow\")",
+          "[prefix-cache] hit: 11450 of 11600 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11600 cached=11450 lcp=11450 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 11450 tokens, model gate)",
+          "[prefix-cache] insert probation (seed): 11600 tokens, 501.4MB (resident 998.3MB / 1074MB, model gate, ns \"grow\")"
+        ],
+        "route": [
+          {
+            "prompt": 11600,
+            "cached": 11450,
+            "lcp": 11450,
+            "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11600 cached=11450 lcp=11450 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-5fdb85e53f52936480c7bed2f1062701",
+          "prompt_tokens": 11600,
+          "outcome": "ended_without_sse",
+          "prime_ms": 179.9,
+          "first_decode_ms": 184.608,
+          "total_ms": 184.608
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 2775908352,
+        "cuda_pool_cached_bytes": 1370800860,
+        "prefix_cache_bytes": 984915968,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 7,
+        "prefix_cache_hits": 7,
+        "prefix_cache_misses": 6,
+        "prefix_cache_inserts": 9,
+        "prefix_cache_hit_tokens": 38900,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 3245670400,
+        "cuda_pool_cached_bytes": 877595612,
+        "prefix_cache_bytes": 998279168,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 8,
+        "prefix_cache_hits": 8,
+        "prefix_cache_misses": 6,
+        "prefix_cache_inserts": 10,
+        "prefix_cache_hit_tokens": 50350,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 14,
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 6,
+      "prompt_ids": 11750,
+      "prompt_tokens": 11750,
+      "cached_tokens": 11600,
+      "computed_tokens": 150,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 0.361,
+      "text_sha256": "70efa8d085a5531aef77ae42952f3188a2319b83b6b66b48b47d5329201ddddb",
+      "ttft_first_decode_ms": 185.241,
+      "prime_ms": 180.227,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 11750,
+            "mb": 505.8
+          }
+        ],
+        "hits": [
+          {
+            "hit": 11600,
+            "prompt": 11750
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 1,
+        "lines": [
+          "[prefix-cache] demote (protected bytes): 496.9MB to probation (model gate, ns \"grow\")",
+          "[prefix-cache] hit: 11600 of 11750 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11750 cached=11600 lcp=11600 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 11600 tokens, model gate)",
+          "[prefix-cache] insert probation (seed): 11750 tokens, 505.8MB (resident 1007.2MB / 1074MB, model gate, ns \"grow\")"
+        ],
+        "route": [
+          {
+            "prompt": 11750,
+            "cached": 11600,
+            "lcp": 11600,
+            "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11750 cached=11600 lcp=11600 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-a88847b0c88e1f1671dd62f1267928cc",
+          "prompt_tokens": 11750,
+          "outcome": "ended_without_sse",
+          "prime_ms": 180.227,
+          "first_decode_ms": 185.241,
+          "total_ms": 185.241
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 3245670400,
+        "cuda_pool_cached_bytes": 877595612,
+        "prefix_cache_bytes": 998279168,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 8,
+        "prefix_cache_hits": 8,
+        "prefix_cache_misses": 6,
+        "prefix_cache_inserts": 10,
+        "prefix_cache_hit_tokens": 50350,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 3346333696,
+        "cuda_pool_cached_bytes": 757943516,
+        "prefix_cache_bytes": 1007187968,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 9,
+        "prefix_cache_hits": 9,
+        "prefix_cache_misses": 6,
+        "prefix_cache_inserts": 11,
+        "prefix_cache_hit_tokens": 61950,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 15,
+      "role": "return",
+      "tenant": 2,
+      "salt": "cohort-2",
+      "turn": 6,
+      "prompt_ids": 1500,
+      "prompt_tokens": 1500,
+      "cached_tokens": 0,
+      "computed_tokens": 1500,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 1.188,
+      "text_sha256": "606f05730107bce9f7d233f18477639894a56c909bb867bf891f9375abb645e5",
+      "ttft_first_decode_ms": 1014.016,
+      "prime_ms": 1008.951,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 1500,
+            "mb": 201.4
+          }
+        ],
+        "hits": [],
+        "evicts": [
+          {
+            "segment": "Probation",
+            "tokens": 11750,
+            "mb": 505.8
+          }
+        ],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1500 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] evict (snapshot preflight, Probation LRU): 11750 tokens, 505.8MB (model gate, ns \"grow\")",
+          "[prefix-cache] insert probation (seed): 1500 tokens, 201.4MB (resident 702.8MB / 1074MB, model gate, ns \"cohort-2\")"
+        ],
+        "route": [
+          {
+            "prompt": 1500,
+            "cached": 0,
+            "lcp": 0,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1500 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-ba67e43ec4fe32ab503acf414674a78c",
+          "prompt_tokens": 1500,
+          "outcome": "ended_without_sse",
+          "prime_ms": 1008.951,
+          "first_decode_ms": 1014.016,
+          "total_ms": 1014.016
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 3346333696,
+        "cuda_pool_cached_bytes": 757943516,
+        "prefix_cache_bytes": 1007187968,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 9,
+        "prefix_cache_hits": 9,
+        "prefix_cache_misses": 6,
+        "prefix_cache_inserts": 11,
+        "prefix_cache_hit_tokens": 61950,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 2876571648,
+        "cuda_pool_cached_bytes": 1175374984,
+        "prefix_cache_bytes": 702803968,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 10,
+        "prefix_cache_hits": 9,
+        "prefix_cache_misses": 7,
+        "prefix_cache_inserts": 12,
+        "prefix_cache_hit_tokens": 61950,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 16,
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 7,
+      "prompt_ids": 11900,
+      "prompt_tokens": 11900,
+      "cached_tokens": 11600,
+      "computed_tokens": 300,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 0.456,
+      "text_sha256": "22f023976ebc22fd5bfc9a699ff63056fb08186f1faec8429537e154a5e07f85",
+      "ttft_first_decode_ms": 277.957,
+      "prime_ms": 273.712,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 11900,
+            "mb": 510.3
+          }
+        ],
+        "hits": [
+          {
+            "hit": 11600,
+            "prompt": 11900
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[prefix-cache] hit: 11600 of 11900 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11900 cached=11600 lcp=11600 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 11600 tokens, model gate)",
+          "[prefix-cache] insert probation (seed): 11900 tokens, 510.3MB (resident 1011.6MB / 1074MB, model gate, ns \"grow\")"
+        ],
+        "route": [
+          {
+            "prompt": 11900,
+            "cached": 11600,
+            "lcp": 11600,
+            "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11900 cached=11600 lcp=11600 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-3297ffa8b9edab31a1f6dbb7e49bba4e",
+          "prompt_tokens": 11900,
+          "outcome": "ended_without_sse",
+          "prime_ms": 273.712,
+          "first_decode_ms": 277.957,
+          "total_ms": 277.957
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 2876571648,
+        "cuda_pool_cached_bytes": 1175374984,
+        "prefix_cache_bytes": 702803968,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 10,
+        "prefix_cache_hits": 9,
+        "prefix_cache_misses": 7,
+        "prefix_cache_inserts": 12,
+        "prefix_cache_hit_tokens": 61950,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 3077898240,
+        "cuda_pool_cached_bytes": 1013422172,
+        "prefix_cache_bytes": 1011642368,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 11,
+        "prefix_cache_hits": 10,
+        "prefix_cache_misses": 7,
+        "prefix_cache_inserts": 13,
+        "prefix_cache_hit_tokens": 73550,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 17,
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 8,
+      "prompt_ids": 12050,
+      "prompt_tokens": 12050,
+      "cached_tokens": 11900,
+      "computed_tokens": 150,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 0.365,
+      "text_sha256": "01062972f3feb195a29d3f1cc425c44aeddaae18173bed7c695bf583b59909b5",
+      "ttft_first_decode_ms": 186.786,
+      "prime_ms": 180.604,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12050,
+            "mb": 514.7
+          }
+        ],
+        "hits": [
+          {
+            "hit": 11900,
+            "prompt": 12050
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 1,
+        "lines": [
+          "[prefix-cache] demote (protected bytes): 501.4MB to probation (model gate, ns \"grow\")",
+          "[prefix-cache] hit: 11900 of 12050 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12050 cached=11900 lcp=11900 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 11900 tokens, model gate)",
+          "[prefix-cache] insert probation (seed): 12050 tokens, 514.7MB (resident 1025.0MB / 1074MB, model gate, ns \"grow\")"
+        ],
+        "route": [
+          {
+            "prompt": 12050,
+            "cached": 11900,
+            "lcp": 11900,
+            "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12050 cached=11900 lcp=11900 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-b104471be50ee8e769740d7137fc2b56",
+          "prompt_tokens": 12050,
+          "outcome": "ended_without_sse",
+          "prime_ms": 180.604,
+          "first_decode_ms": 186.786,
+          "total_ms": 186.786
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 3077898240,
+        "cuda_pool_cached_bytes": 1013422172,
+        "prefix_cache_bytes": 1011642368,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 11,
+        "prefix_cache_hits": 10,
+        "prefix_cache_misses": 7,
+        "prefix_cache_inserts": 13,
+        "prefix_cache_hit_tokens": 73550,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 3312779264,
+        "cuda_pool_cached_bytes": 755097948,
+        "prefix_cache_bytes": 1025005568,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 12,
+        "prefix_cache_hits": 11,
+        "prefix_cache_misses": 7,
+        "prefix_cache_inserts": 14,
+        "prefix_cache_hit_tokens": 85450,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 18,
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 9,
+      "prompt_ids": 12200,
+      "prompt_tokens": 12200,
+      "cached_tokens": 12050,
+      "computed_tokens": 150,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 0.369,
+      "text_sha256": "22f023976ebc22fd5bfc9a699ff63056fb08186f1faec8429537e154a5e07f85",
+      "ttft_first_decode_ms": 191.16,
+      "prime_ms": 186.151,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12200,
+            "mb": 519.2
+          }
+        ],
+        "hits": [
+          {
+            "hit": 12050,
+            "prompt": 12200
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 1,
+        "lines": [
+          "[prefix-cache] demote (protected bytes): 510.3MB to probation (model gate, ns \"grow\")",
+          "[prefix-cache] hit: 12050 of 12200 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12200 cached=12050 lcp=12050 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12050 tokens, model gate)",
+          "[prefix-cache] insert probation (seed): 12200 tokens, 519.2MB (resident 1033.9MB / 1074MB, model gate, ns \"grow\")"
+        ],
+        "route": [
+          {
+            "prompt": 12200,
+            "cached": 12050,
+            "lcp": 12050,
+            "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12200 cached=12050 lcp=12050 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-40e90fda6dd1c76f6f135fdbd6174cd5",
+          "prompt_tokens": 12200,
+          "outcome": "ended_without_sse",
+          "prime_ms": 186.151,
+          "first_decode_ms": 191.16,
+          "total_ms": 191.16
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 3312779264,
+        "cuda_pool_cached_bytes": 755097948,
+        "prefix_cache_bytes": 1025005568,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 12,
+        "prefix_cache_hits": 11,
+        "prefix_cache_misses": 7,
+        "prefix_cache_inserts": 14,
+        "prefix_cache_hit_tokens": 85450,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 3245670400,
+        "cuda_pool_cached_bytes": 803218012,
+        "prefix_cache_bytes": 1033914368,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 13,
+        "prefix_cache_hits": 12,
+        "prefix_cache_misses": 7,
+        "prefix_cache_inserts": 15,
+        "prefix_cache_hit_tokens": 97500,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 19,
+      "role": "return",
+      "tenant": 3,
+      "salt": "cohort-3",
+      "turn": 9,
+      "prompt_ids": 1600,
+      "prompt_tokens": 1600,
+      "cached_tokens": 0,
+      "computed_tokens": 1600,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 1.273,
+      "text_sha256": "adbf88716a2d1aefd26755713acb6292b338cbff20c871832086d08f8ccd1740",
+      "ttft_first_decode_ms": 1107.206,
+      "prime_ms": 1102.13,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 1600,
+            "mb": 204.4
+          }
+        ],
+        "hits": [],
+        "evicts": [
+          {
+            "segment": "Probation",
+            "tokens": 12200,
+            "mb": 519.2
+          }
+        ],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1600 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] evict (snapshot preflight, Probation LRU): 12200 tokens, 519.2MB (model gate, ns \"grow\")",
+          "[prefix-cache] insert probation (seed): 1600 tokens, 204.4MB (resident 719.1MB / 1074MB, model gate, ns \"cohort-3\")"
+        ],
+        "route": [
+          {
+            "prompt": 1600,
+            "cached": 0,
+            "lcp": 0,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1600 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-afbf80aefcc01341d9c4427fac82d451",
+          "prompt_tokens": 1600,
+          "outcome": "ended_without_sse",
+          "prime_ms": 1102.13,
+          "first_decode_ms": 1107.206,
+          "total_ms": 1107.206
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 3245670400,
+        "cuda_pool_cached_bytes": 803218012,
+        "prefix_cache_bytes": 1033914368,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 13,
+        "prefix_cache_hits": 12,
+        "prefix_cache_misses": 7,
+        "prefix_cache_inserts": 15,
+        "prefix_cache_hit_tokens": 97500,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 2809462784,
+        "cuda_pool_cached_bytes": 1194333448,
+        "prefix_cache_bytes": 719136768,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 14,
+        "prefix_cache_hits": 12,
+        "prefix_cache_misses": 8,
+        "prefix_cache_inserts": 16,
+        "prefix_cache_hit_tokens": 97500,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 20,
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 10,
+      "prompt_ids": 12350,
+      "prompt_tokens": 12350,
+      "cached_tokens": 12050,
+      "computed_tokens": 300,
+      "completion_tokens": 3,
+      "finish_reason": "stop",
+      "elapsed_s": 0.334,
+      "text_sha256": "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284",
+      "ttft_first_decode_ms": 280.406,
+      "prime_ms": 276.119,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12350,
+            "mb": 523.6
+          }
+        ],
+        "hits": [
+          {
+            "hit": 12050,
+            "prompt": 12350
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[prefix-cache] hit: 12050 of 12350 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12350 cached=12050 lcp=12050 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12050 tokens, model gate)",
+          "[prefix-cache] insert probation (seed): 12350 tokens, 523.6MB (resident 1038.4MB / 1074MB, model gate, ns \"grow\")"
+        ],
+        "route": [
+          {
+            "prompt": 12350,
+            "cached": 12050,
+            "lcp": 12050,
+            "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12350 cached=12050 lcp=12050 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-b638ac5fb1d8287dbd383f4476cb9104",
+          "prompt_tokens": 12350,
+          "outcome": "ended_without_sse",
+          "prime_ms": 276.119,
+          "first_decode_ms": 280.406,
+          "total_ms": 280.406
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 2809462784,
+        "cuda_pool_cached_bytes": 1194333448,
+        "prefix_cache_bytes": 719136768,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 14,
+        "prefix_cache_hits": 12,
+        "prefix_cache_misses": 8,
+        "prefix_cache_inserts": 16,
+        "prefix_cache_hit_tokens": 97500,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 3010789376,
+        "cuda_pool_cached_bytes": 1021987036,
+        "prefix_cache_bytes": 1038368768,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 15,
+        "prefix_cache_hits": 13,
+        "prefix_cache_misses": 8,
+        "prefix_cache_inserts": 17,
+        "prefix_cache_hit_tokens": 109550,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 21,
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 11,
+      "prompt_ids": 12500,
+      "prompt_tokens": 12500,
+      "cached_tokens": 12350,
+      "computed_tokens": 150,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 0.362,
+      "text_sha256": "b6b5b760960efe974f6a0d6bd1682894aa206a747d7499239ec7cc7bfcbd506a",
+      "ttft_first_decode_ms": 183.97,
+      "prime_ms": 178.464,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12500,
+            "mb": 528.1
+          }
+        ],
+        "hits": [
+          {
+            "hit": 12350,
+            "prompt": 12500
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 1,
+        "lines": [
+          "[prefix-cache] demote (protected bytes): 514.7MB to probation (model gate, ns \"grow\")",
+          "[prefix-cache] hit: 12350 of 12500 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12500 cached=12350 lcp=12350 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12350 tokens, model gate)",
+          "[prefix-cache] insert probation (seed): 12500 tokens, 528.1MB (resident 1051.7MB / 1074MB, model gate, ns \"grow\")"
+        ],
+        "route": [
+          {
+            "prompt": 12500,
+            "cached": 12350,
+            "lcp": 12350,
+            "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12500 cached=12350 lcp=12350 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-733c1f2cf41c795833cd2157e181330c",
+          "prompt_tokens": 12500,
+          "outcome": "ended_without_sse",
+          "prime_ms": 178.464,
+          "first_decode_ms": 183.97,
+          "total_ms": 183.97
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 3010789376,
+        "cuda_pool_cached_bytes": 1021987036,
+        "prefix_cache_bytes": 1038368768,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 15,
+        "prefix_cache_hits": 13,
+        "prefix_cache_misses": 8,
+        "prefix_cache_inserts": 17,
+        "prefix_cache_hit_tokens": 109550,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 3178561536,
+        "cuda_pool_cached_bytes": 830771676,
+        "prefix_cache_bytes": 1051731968,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 16,
+        "prefix_cache_hits": 14,
+        "prefix_cache_misses": 8,
+        "prefix_cache_inserts": 18,
+        "prefix_cache_hit_tokens": 121900,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 22,
+      "role": "loop",
+      "tenant": 0,
+      "salt": "grow",
+      "turn": 12,
+      "prompt_ids": 12650,
+      "prompt_tokens": 12650,
+      "cached_tokens": 12500,
+      "computed_tokens": 150,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 0.365,
+      "text_sha256": "a60e5ad8da5b048489a577e0fc53a3c126bc1b7fb5fb85d9e5c1a8dce6afe496",
+      "ttft_first_decode_ms": 185.738,
+      "prime_ms": 180.524,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12650,
+            "mb": 532.5
+          }
+        ],
+        "hits": [
+          {
+            "hit": 12500,
+            "prompt": 12650
+          }
+        ],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 1,
+        "lines": [
+          "[prefix-cache] demote (protected bytes): 523.6MB to probation (model gate, ns \"grow\")",
+          "[prefix-cache] hit: 12500 of 12650 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12650 cached=12500 lcp=12500 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12500 tokens, model gate)",
+          "[prefix-cache] insert probation (seed): 12650 tokens, 532.5MB (resident 1060.6MB / 1074MB, model gate, ns \"grow\")"
+        ],
+        "route": [
+          {
+            "prompt": 12650,
+            "cached": 12500,
+            "lcp": 12500,
+            "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12650 cached=12500 lcp=12500 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-245910de73b2ac964df2a034ccde06a9",
+          "prompt_tokens": 12650,
+          "outcome": "ended_without_sse",
+          "prime_ms": 180.524,
+          "first_decode_ms": 185.738,
+          "total_ms": 185.738
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 3178561536,
+        "cuda_pool_cached_bytes": 830771676,
+        "prefix_cache_bytes": 1051731968,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 16,
+        "prefix_cache_hits": 14,
+        "prefix_cache_misses": 8,
+        "prefix_cache_inserts": 18,
+        "prefix_cache_hit_tokens": 121900,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 3178561536,
+        "cuda_pool_cached_bytes": 811782876,
+        "prefix_cache_bytes": 1060640768,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 17,
+        "prefix_cache_hits": 15,
+        "prefix_cache_misses": 8,
+        "prefix_cache_inserts": 19,
+        "prefix_cache_hit_tokens": 134400,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 23,
+      "role": "return",
+      "tenant": 4,
+      "salt": "cohort-4",
+      "turn": 12,
+      "prompt_ids": 1700,
+      "prompt_tokens": 1700,
+      "cached_tokens": 0,
+      "computed_tokens": 1700,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 1.347,
+      "text_sha256": "d130dbcf85337f3dcd94726f66b74f379d009f907576b1c66347fcefc5223e87",
+      "ttft_first_decode_ms": 1181.588,
+      "prime_ms": 1176.403,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 1700,
+            "mb": 207.4
+          }
+        ],
+        "hits": [],
+        "evicts": [
+          {
+            "segment": "Probation",
+            "tokens": 12650,
+            "mb": 532.5
+          }
+        ],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1700 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] evict (snapshot preflight, Probation LRU): 12650 tokens, 532.5MB (model gate, ns \"grow\")",
+          "[prefix-cache] insert probation (seed): 1700 tokens, 207.4MB (resident 735.5MB / 1074MB, model gate, ns \"cohort-4\")"
+        ],
+        "route": [
+          {
+            "prompt": 1700,
+            "cached": 0,
+            "lcp": 0,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1700 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-625e6bf4c3a56a85622542bce62ae291",
+          "prompt_tokens": 1700,
+          "outcome": "ended_without_sse",
+          "prime_ms": 1176.403,
+          "first_decode_ms": 1181.588,
+          "total_ms": 1181.588
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 3178561536,
+        "cuda_pool_cached_bytes": 811782876,
+        "prefix_cache_bytes": 1060640768,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 17,
+        "prefix_cache_hits": 15,
+        "prefix_cache_misses": 8,
+        "prefix_cache_inserts": 19,
+        "prefix_cache_hit_tokens": 134400,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 2708799488,
+        "cuda_pool_cached_bytes": 1243691144,
+        "prefix_cache_bytes": 735469568,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 18,
+        "prefix_cache_hits": 15,
+        "prefix_cache_misses": 9,
+        "prefix_cache_inserts": 20,
+        "prefix_cache_hit_tokens": 134400,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 24,
+      "role": "final",
+      "tenant": 1,
+      "salt": "cohort-1",
+      "turn": 12,
+      "prompt_ids": 1550,
+      "prompt_tokens": 1550,
+      "cached_tokens": 0,
+      "computed_tokens": 1550,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 1.265,
+      "text_sha256": "f1a33345e94b7e622e18e50b2f8246a65d0e5f31da437a0176de15e7778c67b1",
+      "ttft_first_decode_ms": 1097.672,
+      "prime_ms": 1092.486,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 1550,
+            "mb": 202.9
+          }
+        ],
+        "hits": [],
+        "evicts": [],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1550 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] insert probation (seed): 1550 tokens, 202.9MB (resident 938.4MB / 1074MB, model gate, ns \"cohort-1\")"
+        ],
+        "route": [
+          {
+            "prompt": 1550,
+            "cached": 0,
+            "lcp": 0,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1550 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-c433b076fb5ab2074019b4b1c7f43f3a",
+          "prompt_tokens": 1550,
+          "outcome": "ended_without_sse",
+          "prime_ms": 1092.486,
+          "first_decode_ms": 1097.672,
+          "total_ms": 1097.672
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 2708799488,
+        "cuda_pool_cached_bytes": 1243691144,
+        "prefix_cache_bytes": 735469568,
+        "prefix_cache_entries": 2,
+        "prefix_cache_evictions": 18,
+        "prefix_cache_hits": 15,
+        "prefix_cache_misses": 9,
+        "prefix_cache_inserts": 20,
+        "prefix_cache_hit_tokens": 134400,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 2708799488,
+        "cuda_pool_cached_bytes": 682476980,
+        "prefix_cache_bytes": 938391552,
+        "prefix_cache_entries": 3,
+        "prefix_cache_evictions": 18,
+        "prefix_cache_hits": 15,
+        "prefix_cache_misses": 10,
+        "prefix_cache_inserts": 21,
+        "prefix_cache_hit_tokens": 134400,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 25,
+      "role": "final",
+      "tenant": 2,
+      "salt": "cohort-2",
+      "turn": 12,
+      "prompt_ids": 1650,
+      "prompt_tokens": 1650,
+      "cached_tokens": 0,
+      "computed_tokens": 1650,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 1.284,
+      "text_sha256": "3ca9a6e466c2dfb81b503a84c9ebd1055dbb1d148e56922d5ae3a4d8ef55b231",
+      "ttft_first_decode_ms": 1116.805,
+      "prime_ms": 1111.635,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 1650,
+            "mb": 205.9
+          }
+        ],
+        "hits": [],
+        "evicts": [
+          {
+            "segment": "Probation",
+            "tokens": 1700,
+            "mb": 207.4
+          }
+        ],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1650 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] evict (snapshot preflight, Probation LRU): 1700 tokens, 207.4MB (model gate, ns \"cohort-4\")",
+          "[prefix-cache] insert probation (seed): 1650 tokens, 205.9MB (resident 936.9MB / 1074MB, model gate, ns \"cohort-2\")"
+        ],
+        "route": [
+          {
+            "prompt": 1650,
+            "cached": 0,
+            "lcp": 0,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1650 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-d5af2aa1361419c2365259cc7eb3beff",
+          "prompt_tokens": 1650,
+          "outcome": "ended_without_sse",
+          "prime_ms": 1111.635,
+          "first_decode_ms": 1116.805,
+          "total_ms": 1116.805
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 2708799488,
+        "cuda_pool_cached_bytes": 682476980,
+        "prefix_cache_bytes": 938391552,
+        "prefix_cache_entries": 3,
+        "prefix_cache_evictions": 18,
+        "prefix_cache_hits": 15,
+        "prefix_cache_misses": 10,
+        "prefix_cache_inserts": 21,
+        "prefix_cache_hit_tokens": 134400,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 2138374144,
+        "cuda_pool_cached_bytes": 892939744,
+        "prefix_cache_bytes": 936906752,
+        "prefix_cache_entries": 3,
+        "prefix_cache_evictions": 19,
+        "prefix_cache_hits": 15,
+        "prefix_cache_misses": 11,
+        "prefix_cache_inserts": 22,
+        "prefix_cache_hit_tokens": 134400,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 26,
+      "role": "final",
+      "tenant": 3,
+      "salt": "cohort-3",
+      "turn": 12,
+      "prompt_ids": 1750,
+      "prompt_tokens": 1750,
+      "cached_tokens": 0,
+      "computed_tokens": 1750,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 1.359,
+      "text_sha256": "7f6850027a7580304892fab429ab49afe6c68a13cc4cd71f0605360f9699b294",
+      "ttft_first_decode_ms": 1192.803,
+      "prime_ms": 1187.333,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 1750,
+            "mb": 208.9
+          }
+        ],
+        "hits": [],
+        "evicts": [
+          {
+            "segment": "Probation",
+            "tokens": 1550,
+            "mb": 202.9
+          }
+        ],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1750 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] evict (snapshot preflight, Probation LRU): 1550 tokens, 202.9MB (model gate, ns \"cohort-1\")",
+          "[prefix-cache] insert probation (seed): 1750 tokens, 208.9MB (resident 942.8MB / 1074MB, model gate, ns \"cohort-3\")"
+        ],
+        "route": [
+          {
+            "prompt": 1750,
+            "cached": 0,
+            "lcp": 0,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1750 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-8f003fea79df07019c8eb9b747cb2350",
+          "prompt_tokens": 1750,
+          "outcome": "ended_without_sse",
+          "prime_ms": 1187.333,
+          "first_decode_ms": 1192.803,
+          "total_ms": 1192.803
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 2138374144,
+        "cuda_pool_cached_bytes": 892939744,
+        "prefix_cache_bytes": 936906752,
+        "prefix_cache_entries": 3,
+        "prefix_cache_evictions": 19,
+        "prefix_cache_hits": 15,
+        "prefix_cache_misses": 11,
+        "prefix_cache_inserts": 22,
+        "prefix_cache_hit_tokens": 134400,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 1802829824,
+        "cuda_pool_cached_bytes": 857942284,
+        "prefix_cache_bytes": 942845952,
+        "prefix_cache_entries": 3,
+        "prefix_cache_evictions": 20,
+        "prefix_cache_hits": 15,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 23,
+        "prefix_cache_hit_tokens": 134400,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "idx": 27,
+      "role": "final",
+      "tenant": 4,
+      "salt": "cohort-4",
+      "turn": 12,
+      "prompt_ids": 1850,
+      "prompt_tokens": 1850,
+      "cached_tokens": 0,
+      "computed_tokens": 1850,
+      "completion_tokens": 8,
+      "finish_reason": "length",
+      "elapsed_s": 1.44,
+      "text_sha256": "d130dbcf85337f3dcd94726f66b74f379d009f907576b1c66347fcefc5223e87",
+      "ttft_first_decode_ms": 1274.931,
+      "prime_ms": 1268.197,
+      "window": {
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 1850,
+            "mb": 211.8
+          }
+        ],
+        "hits": [],
+        "evicts": [
+          {
+            "segment": "Probation",
+            "tokens": 1650,
+            "mb": 205.9
+          }
+        ],
+        "refused": [],
+        "skipped": [],
+        "demotes": 0,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1850 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] evict (snapshot preflight, Probation LRU): 1650 tokens, 205.9MB (model gate, ns \"cohort-2\")",
+          "[prefix-cache] insert probation (seed): 1850 tokens, 211.8MB (resident 948.8MB / 1074MB, model gate, ns \"cohort-4\")"
+        ],
+        "route": [
+          {
+            "prompt": 1850,
+            "cached": 0,
+            "lcp": 0,
+            "line": "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1850 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+          }
+        ],
+        "ttft": {
+          "id": "cmpl-783616a1b878c3ca76b65a1bb1b3118b",
+          "prompt_tokens": 1850,
+          "outcome": "ended_without_sse",
+          "prime_ms": 1268.197,
+          "first_decode_ms": 1274.931,
+          "total_ms": 1274.931
+        }
+      },
+      "metrics_before": {
+        "cuda_driver_free_bytes": 1802829824,
+        "cuda_pool_cached_bytes": 857942284,
+        "prefix_cache_bytes": 942845952,
+        "prefix_cache_entries": 3,
+        "prefix_cache_evictions": 20,
+        "prefix_cache_hits": 15,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 23,
+        "prefix_cache_hit_tokens": 134400,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      },
+      "metrics_after": {
+        "cuda_driver_free_bytes": 1400176640,
+        "cuda_pool_cached_bytes": 886898488,
+        "prefix_cache_bytes": 948785152,
+        "prefix_cache_entries": 3,
+        "prefix_cache_evictions": 21,
+        "prefix_cache_hits": 15,
+        "prefix_cache_misses": 13,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 134400,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    }
+  ]
+}
