@@ -736,8 +736,16 @@ echo "== local-ci: memra-engine lib suite (GPU-only #[ignore] tests) =="
 LIB_LOG=$(mktemp -t memra-lib-gpu.XXXXXX)
 # `set -e` would exit on the failing pipeline before the accounting and the FAILED line below
 # (revuto finding on #583); the exit code is read from PIPESTATUS with errexit paused.
+# Serial on purpose (--test-threads=1): these tests set process-global gate doors
+# (`set_moe_f16g_*_for_gate`; `GateRestore`'s Drop clears all five) and share one device and
+# its stream-capture state, so the default parallel harness let one test's teardown land inside
+# another's chain. Measured 2026-09-21 on the local 5090 with the pair-only tests skipped:
+# parallel 6 green of 7 with a different victim each time (`cuda_half2_chain_identity`,
+# `cuda_capture_runs_once_and_restores_scope_after_failure`, `cuda_recent_c4_preserves_hits_
+# misses_wrap_and_rollback`), serial 7 of 7 green, 4.2 s instead of 1.1 s
+# (research/local-ci-one-card-20260921).
 set +e
-cargo test --release -p memra-engine --lib -j8 -- --ignored --show-output 2>&1 | tee "$LIB_LOG"
+cargo test --release -p memra-engine --lib -j8 -- --ignored --test-threads=1 --show-output 2>&1 | tee "$LIB_LOG"
 LIB_RC=${PIPESTATUS[0]}
 set -e
 PAIR_SKIPS=$(grep -c '^SKIP-PAIR ' "$LIB_LOG" || true)

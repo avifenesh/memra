@@ -1,0 +1,6 @@
+check	expected	observed	ok
+completion-checksum	producer_done=true checksum=1058a34a5f763dea085ce1aa280fabb82820006e6312111e38cad69413a3312e	producer_done=true checksum=1058a34a5f763dea085ce1aa280fabb82820006e6312111e38cad69413a3312e	true
+remove	retire=Ok(()) acknowledge=Ok(())	retire=Ok(()) acknowledge=Ok(())	true
+pinned-released	8773632	8773632	true
+retake-removed-copy	Err(UnknownTicket)	Err(UnknownTicket)	true
+budget-zero	true	true	true
