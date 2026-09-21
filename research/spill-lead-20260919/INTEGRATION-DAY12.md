@@ -70,7 +70,63 @@ fmt, `cargo test -p memra-tier -p memra-kv -p memra-gguf` (all rc=0), clippy `-D
 census, docs registry census, collector pytest, perf board, `git diff --check`: all rc=0. D's own: 30 Rust + 85 Python
 tests, native build receipts on BOX3 (clippy clean, 295 tests, binary hash bound), seven cells with `--validate`.
 
+## Lane B day 13 (`1fef60006`, pushed by the lead without an override once #583 landed; #445 §1, #346, #523 item 4)
+`tools/prefix-evict-reclaim-gate.py` (serving shape, real `memra-server`, plain path, 48k-token prompt seeds a
+1,592,160,256 B prefix entry, ballast child makes the card short, P2 arrives beside a busy peer). Target card, 600 W,
+N=1, verbatim:
+```text
+base main ea08bc7f8: [admit-oom] reclaim-on-defer: evicted 2 prefix entries + ... effective free 6603MB -> 6603MB
+                     PREFIX-EVICT-RECLAIM: entry_bytes=1592160256 reclaim_credit_bytes=0 driver_free_delta_bytes=none trim_released_bytes=none pool_retained_bytes=none p2=admit-same-tick busy_overlap_s=21.655 identity=aa6cc3291b981646 V1=FAIL V2=ok V3=FAIL V4=ok -> FAIL
+fix f4350c241:       [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1751161856 pool_cached_gain_bytes=1751161856 trim_released_bytes=1610612736 driver_free_bytes 4827971584 -> 6438584320 pool_reserved_bytes 21709717504 -> 20099104768 pool_used_bytes 21685840360 -> 19934678504 pool_retained_bytes=140549120 (...)
+                     effective free 4852MB -> 6603MB
+                     PREFIX-EVICT-RECLAIM: entry_bytes=1592160256 reclaim_credit_bytes=1751000000 driver_free_delta_bytes=1610612736 trim_released_bytes=1610612736 pool_retained_bytes=140549120 p2=admit-same-tick busy_overlap_s=21.659 identity=aa6cc3291b981646 V1=ok V2=ok V3=ok V4=ok -> PASS
+```
+Fix (`crates/memra-server/src/worker.rs`): `settle_reclaimed_prefix_bytes` after an eviction fences the model-owned
+streams, trims each pool to `used + cached_before` (only the eviction's gain leaves the pool), re-reads driver free;
+bytes the pool cannot release (a chunk shared with a live neighbour) are printed as `pool_retained_bytes` and count as
+pool-cached headroom, never as driver free. Tokens byte-identical across all four boots (`aa6cc3291b98...`). B's
+finding for the lead: on this card the pool `used` counter fell at the free call, so the pool-side gate admitted P2
+same-tick even on `main`; the #346 `X -> X` text is the line's capture point plus the driver never getting the bytes.
+Two refused calibration cells and one over-tight first V3 clause kept in the receipts. Target card `serve-smoke: 0
+failed`, `cache-meter-gate: 0 failed` on the fix. Issues #346, #445, #523 commented by the lane.
+
+## Lane A day 11 (`432816926`, pushed by the lead without an override; ruling 9)
+Rule 1 (verbatim): a restore (H2D) that is cancelled before its consumer event completes must either hand the
+untouched host source back to the caller as a typed lease (recoverable) or refuse the cancel with a typed error while
+the source is still intact; consuming the source and then cancelling is forbidden by the rule. Seam
+`TransferEngine::recover_source(ticket, item)`; `CudaTransfers` holds a cancelled H2D source for the caller,
+`retire`/`retire_source` answer `Busy` until recovered, once-only, `cancel` answers `AlreadyReleased` once a source left
+the ticket. Schedules `transfer_cancel_recovers_source`, `transfer_cancel_refused_after_source_consumed`
+(`conformance/recovery.rs`); red arm = the CPU fake with `legacy = true`, which replays D's finding literally. Frozen
+v1.1/v1.2/v1.3 blobs byte-identical (`cd144f3b`, `981bcc81`, `50928b75`). Native bindings added to
+`tier-transfer-gate`; not run natively today (D day 12).
+Rule 2 (verbatim): a continuation (decode or prime) over a cache with any suspended layer must be refused at
+`Cache::ensure_usable` with a typed error naming the suspended layers, unless the caller restores first;
+`decode_step_h` is NOT changed. Seam `Cache::suspend_layer(il)` / `resume_layer(il, layer)` over the typed
+`SuspendedLayers` register; `ensure_usable` returns `ContinuationRefused { path, layers }` while non-empty; signature
+unchanged, 30 callers compile, none in `memra-server` continues without the gate (caller census in A's DAY11.md;
+ungated paths are bins and the DSV4/qwen4exp `DecodeState` families, which do not use `memra_kv::Cache`). Gates:
+tier+kv 303 tests, clippy, fmt, flags, diff-check exit 0; BOX3 release builds of both gates exit 0.
+
+## integ10 (`lane/spill-integ10-20260921`): B day 13 + A day 11
+Batteries (`integration-day12/integ10-cpu-battery/`): fmt; tier+kv+gguf 600 tests; memra-server 734 tests; clippy
+`-D warnings`; check-flags; publish census; docs registry census; collector pytest 85 (rerun; attempt 1 hit `REFUSED:
+[Errno 11] Resource temporarily unavailable` in 20 collector tests while the lead's serve-smoke held
+`/tmp/memra-5090.lock`, kept as `pytest-battery-attempt1-rig-lock-held-by-smoke.log`); perf board; diff-check: all
+rc=0. Local 5090 `tools/serve-smoke.sh` on the merged tree (`integ10-serve-smoke-5090/`): `serve-smoke: 0 failed`.
+Lead finding: `crates/memra-engine/build.rs` read `DOCS_RS` without `cargo:rerun-if-env-changed=DOCS_RS`, so a
+`DOCS_RS=1` clippy pass left stub artifacts that the next `cargo test -p memra-server` linked against (`undefined
+symbol: memra_dsv4_c4_recent_write`); one line added in integ10, the two failed attempts kept. The lead's battery
+script now sets `DOCS_RS=1` for clippy only.
+
+## Lead rulings, day 12 (continued)
+11. **#346 closes with integ10; #445 and #523 stay open.** #346's shape (eviction leaves effective free unchanged) is
+    fixed and gated; #445 sections 2 and 3 (gemma spec-route prefix capture, spec under concurrency) and #523 items 1
+    to 3 (newest-turn invariant, policy re-decision, 8-turn twin gate) are separate work items in the queue.
+12. **Collector pytest lock path.** The tier battery's Python tests take the real rig lock path; they must take a
+    private lock path under test (lane F or D, small), so a serving job on the rig cannot redden a CPU suite.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
-- B day 13 running (#445/#346/#523.4), twice restarted after transient API errors; not in integ9.
-- A day 11 to be dispatched (ruling 9) when an agent slot frees. C idle (next: #552 criterion 1). E, F idle.
+- B day 13 sealed and pushed (`1fef60006`); merged into integ10.
+- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 running (seams through the arms, native evidence). C day 12 running (#552 criterion 1 census). E, F idle.
