@@ -8,9 +8,21 @@ on day 16 (`25891baa9`, `DAY16.md`): under the door the promote H2D of every con
 through the same engine, the sequence in the "Option C" section below. What remains before the decide-by:
 the arena path (`MEMRA_GLM5_TP_KV_HOST`, refused with the door at boot; its fixed backing is not
 governor-charged and its slices are not leases), the DFlash tail slice (no drafter artifact identity
-derivable from a GGUF digest; no gate boots a DFlash drafter on the card), and the write-combined
-destination decision (`WC-DESTINATIONS.md`: the engine's allocation flag, measured, both rigs). Decide-by: **2026-10-05** (14 days after landing,
-2026-09-21). Every cell behind it is `executed-not-qualified` development evidence on one card class;
+derivable from a GGUF digest; no gate boots a DFlash drafter on the card), and the door's cost on the
+target card with CACHED destinations. The write-combined destination decision itself is CLOSED BY POINTER
+(day 17): lane A decided it in `docs/decisions/PINNED-DESTINATIONS.md` (lead ruling 23, `PinnedKind::
+for_device` in `tier_transfer.rs`: `Cached` on the RTX PRO 6000 Blackwell class, `WriteCombined` on the RTX
+5090 class and every unrecognized name, resolved once in `CudaTransfers::new`, no environment variable),
+so this lane owns no allocation-flag item and adds no engine flag; the day-16 WC pair
+(`WC-DESTINATIONS.md`) measured write-combined destinations and is superseded on that card class. What
+the decide-by review still owes is the door's cost read again on the target card with cached
+destinations: the same pair cell (demote and promote lines OFF against ON, N=5 per arm per order, both
+orders, one lock hold) on a binary carrying `for_device`, so the two SHA-256 passes at demote and the one
+at promote run over cacheable memory, and the hash-speed micro-cell that splits the remaining delta
+between the hashes and the ticket lifecycle. Day 17's arena cell (`DAY17.md`) is a separate item and
+measured the arena against the pageable tier with the door OFF in both arms. Decide-by: **2026-10-05**
+(14 days after landing, 2026-09-21). Every cell behind it is `executed-not-qualified` development
+evidence on one card class;
 nothing here is a support state. Rulings applied: 13 (one `tenant_salt` owner in `memra-kv`), 14
 (planes leave `PrefixEntry` as owned `KvPlane`s, no borrowed-source seam in `CudaTransfers`, no v1.4:
 exercised by Option B), 15 (Option A first, OFF byte-identical by construction, ON leaves the gate lines

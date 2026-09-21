@@ -2386,8 +2386,13 @@ private:
                         PrefetchAnnex::instance().complete_read(
                             job.projection->cache_key, job.projection->weight_owner);
                     }
+                    // The in-flight charge is per PROJECTION (one fetch_add at submit), so it
+                    // is released exactly once, with the projection's final half, success or
+                    // failure. A mirrored projection is two jobs; releasing per job drove the
+                    // signed counter negative and let the admission cap admit excess work
+                    // (memra#586, tools/test_cpu_expert_prefetch.sh).
+                    prefetch_inflight().fetch_sub(1, std::memory_order_relaxed);
                 }
-                prefetch_inflight().fetch_sub(1, std::memory_order_relaxed);
                 if (state->outstanding.fetch_sub(1, std::memory_order_acq_rel) == 1) {
                     delete state;
                 }
@@ -3152,6 +3157,9 @@ extern "C" void memra_cpu_expert_prefetch_stats_v2(
         *submitted = cpu_profile().prefetch_projections.load(std::memory_order_relaxed);
     }
     if (inflight != nullptr) {
+        // The unsigned ABI field cannot carry a negative count; the clamp keeps the legacy
+        // signature and is NOT the balancing oracle. tools/test_cpu_expert_prefetch.sh reads
+        // the signed counter inside this translation unit (memra#586).
         *inflight = static_cast<std::uint64_t>(
             std::max(0, prefetch_inflight().load(std::memory_order_relaxed)));
     }
