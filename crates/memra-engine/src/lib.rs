@@ -1828,6 +1828,17 @@ pub struct Engine {
     /// class (the parity law). The t=16 dflash verify tripped the GEMM threshold — 770us/
     /// matmul (54% of the round) AND a different FP order than decode (issue-10 landmine).
     verify_exact: std::sync::atomic::AtomicBool,
+    /// PREFILL-ROWS scope (memra#427, lane/spill-b-20260919 day 22): armed by the prime
+    /// chunk's layer walk (`HybridModel::prime_layers`). While set, and `verify_exact` is
+    /// not, `matmul`/`matmul_pre` skip the batched weight-resident MMVQ tier (m = 2..=16),
+    /// so a 16-row prime chunk runs the `grid.y = m` dp4a program every wider chunk runs for
+    /// the `out_f < 128` projections (the GDN ssm_beta/ssm_alpha). Without it a chunk of
+    /// exactly PRIME_MIN_T rows (a restored suffix, or a cold prime whose schedule ends in
+    /// 16) was its own numeric program: the same rows, different bits
+    /// (`qwen-a4-width-walk`, `research/spill-b-20260919/DAY22.md`). The tier itself is
+    /// unchanged for decode and verify: the exact-16 batched-decode tier and the K = 15
+    /// verify ride it by the decode-parity law, and `verify_exact` keeps precedence.
+    prefill_rows: std::sync::atomic::AtomicBool,
     capture_keep: Mutex<Vec<Box<dyn std::any::Any + Send>>>,
     /// EDGE-1 §C.2: dedicated H2D copy stream for async prefetch (event-synced to the compute stream).
     pub copy_stream: Arc<CudaStream>,
@@ -3777,6 +3788,7 @@ impl Engine {
             copy_stream,
             capture_keep_on: std::sync::atomic::AtomicBool::new(false),
             verify_exact: std::sync::atomic::AtomicBool::new(false),
+            prefill_rows: std::sync::atomic::AtomicBool::new(false),
             capture_keep: Mutex::new(Vec::new()),
             argmax_partials: Mutex::new(None),
             prime_deqw_ws: Mutex::new(None),
@@ -4765,6 +4777,27 @@ impl Engine {
     /// exactly where the manual `set_verify_exact(false)` used to sit.
     pub fn exact_scope(&self, on: bool) -> ExactScope<'_> {
         ExactScope::set(&self.verify_exact, on)
+    }
+
+    pub(crate) fn prefill_rows_on(&self) -> bool {
+        self.prefill_rows.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// RAII scope over `prefill_rows` (see the field): the prime layer walk arms it for the
+    /// chunk it walks. Public so a diagnostic can run one projection under the prime's own
+    /// program (`qwen-a4-width-walk`). Same guard type and restore contract as `exact_scope`.
+    pub fn prefill_rows_scope(&self) -> ExactScope<'_> {
+        ExactScope::set(&self.prefill_rows, true)
+    }
+
+    /// Admission of the batched weight-resident MMVQ tier (m = 2..=16) in `matmul` and
+    /// `matmul_pre`. The tier is a DECODE/VERIFY class: bit-identical per (token, row) to the
+    /// m = 1 MMVQ warp reduce, which is the parity law those tiers need. A PREFILL chunk of
+    /// 16 rows must not take it: its wider siblings run the `grid.y = m` dp4a program, and the
+    /// same rows digested differently as a 16-row chunk (memra#427). Verify-exact wins over
+    /// prefill-rows: a t = 16 dflash verify is a verify wherever it is walked.
+    pub(crate) fn batched_tier_admits(&self) -> bool {
+        self.verify_exact_on() || !self.prefill_rows_on()
     }
 
     /// m=1 norm+rope+append fold seam (2026-07-23): MEMRA_QKV_APPEND=0 reverts to the
@@ -18040,8 +18073,11 @@ impl Engine {
         // a pure function of (dtype, env) equal to the m=1 class — batched iff MMVQ. Without MMVQ
         // the verify falls to the per-m grid.y=m dp4a path below (each column = the exact m=1
         // dp4a program). MEMRA_MMVQ=1 (the daily config) is dispatch-unchanged.
+        // PREFILL ROWS (memra#427): a 16-row prime chunk is not a verify; it takes the
+        // grid.y=m dp4a program its wider siblings take (`batched_tier_admits`).
         if (2..=16).contains(&m)
             && fast
+            && self.batched_tier_admits()
             && std::env::var("MEMRA_NO_BATCHED").is_err()
             && (m <= 4 || Self::b8_enabled())
         {
@@ -18429,7 +18465,10 @@ impl Engine {
         // DECODE-PARITY GATE (2026-07-07): batched iff mmvq_supports — see matmul's parity note.
         // Without MEMRA_MMVQ, m=1 decode rides dp4a (the arm below at m=1); the verify must ride
         // the SAME class per column (grid.y=m dp4a = the exact m=1 dp4a program per column).
+        // PREFILL ROWS (memra#427): see `batched_tier_admits`; a 16-row prime chunk falls
+        // through to the grid.y=m program below like every wider chunk.
         if (2..=16).contains(&m) && self.batched_supports(qtype) && self.mmvq_supports(qtype)
+            && self.batched_tier_admits()
             && std::env::var("MEMRA_NO_BATCHED").is_err()
             && (m <= 4 || Self::b8_enabled())
             // b16 tier: every class routed here now has base + _rp b16 kernels (Q4_0/Q6_K
