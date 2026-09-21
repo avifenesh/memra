@@ -1,0 +1,45 @@
+[server] build: memra-0.138.0-e26b970ff748 (id: source-tree, git: 87d9e5963c2f)
+[server] starting; models config = [("meter", "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: /dev/kmsg
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "meter" <- /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[worker]   loaded "meter": 65 layers, eos=248046, stop=[248046]
+[worker] meter: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] meter: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 800MB (800325632 B, derived: 2 x 400162816 B max entry for model "meter" at MEMRA_CTX=8192, requested 800325632 B; boot driver free 86519709696 B, post-reserve clamp 84909096960 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "meter": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["meter"]
+[server] listening on http://127.0.0.1:18151
+[meter] admit id=cmpl-49d9ba8053d172e1a0d75fa3ba7a36c6 tenant=default lane=interactive model="meter"
+[admission] request cost: model="meter" ctx=344 path=plain = 29696 B/token x ctx + 130MB prefill-workspace + 0MB fixed = 141MB
+[meter] admit id=cmpl-da243a0e546096ce40756289ce12819f tenant=default lane=interactive model="meter"
+[meter] admit id=cmpl-6db7016d986bb8e58759889b1d03f9e9 tenant=default lane=interactive model="meter"
+[meter] admit id=cmpl-31b9d13c4ac3184082f7179c750dc668 tenant=default lane=interactive model="meter"
+[spec-k] model="meter" tenant="meter-A" K=0 source=eligibility-fallback prompt=272 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="meter" 308MB (observed 317MB at ctx 288 path=plain)
+[admission] request cost: model="meter" ctx=344 path=plain = 29696 B/token x ctx + 130MB prefill-workspace + 308MB fixed = 449MB
+[meter] admit id=cmpl-38b004b7c351caf8b224661b562fdaea tenant=default lane=interactive model="meter"
+[meter] admit id=cmpl-6f42df4dfd6c8052cb0842544d78fdff tenant=default lane=interactive model="meter"
+[spec-k] model="meter" tenant="meter-B" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=2 wave=6 placement=single-or-non-pp2
+[spec-k] model="meter" tenant="meter-A" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=3 wave=6 placement=single-or-non-pp2
+[spec-k] model="meter" tenant="meter-A" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=4 wave=6 placement=single-or-non-pp2
+[prefix-cache] insert (in-batch fanout): 256 tokens, 164.5MB (resident 164.5MB / 800MB, model meter, ns "meter-A")
+[prefix-dedup] B=3 prefix=256 saved=512 hash=6f9cf1d9c04f1a45 in 132.1ms retained=true (model meter, ns "meter-A")
+[prefix-cache] insert (seed): 272 tokens, 165.0MB (resident 329.5MB / 800MB, model meter, ns "meter-B")
+[fa-pool] grow #0 dev=0 o_len 0 -> 110592 ml_len 0 -> 432 (retired kept, zero=false)
+[prefix-cache] hit: 256 of 272 prompt tokens from cache (model meter)
+[spec-k] model="meter" tenant="meter-A" K=0 source=concurrency prompt=272 cached=256 lcp=256 active=5 wave=6 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 256 tokens, model meter)
+[prefix-cache] hit: 256 of 272 prompt tokens from cache (model meter)
+[spec-k] model="meter" tenant="meter-A" K=0 source=concurrency prompt=272 cached=256 lcp=256 active=6 wave=6 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 256 tokens, model meter)
+[fa-pool] grow #1 dev=0 o_len 110592 -> 663552 ml_len 432 -> 2592 (retired kept, zero=false)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

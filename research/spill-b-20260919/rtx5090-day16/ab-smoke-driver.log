@@ -1,0 +1,130 @@
+run 01 AB-0 slru: computed=31700 loop_cold_after_1=0 return_cached=0 evictions=9 digests==cold 27/28 ttft_loop p50=191.16 p95=280.406 ms wall=55.5s temp 74.0->71.0 C
+run 02 AB-0 lru: computed=29550 loop_cold_after_1=0 return_cached=1700 evictions=7 digests==cold 27/28 ttft_loop p50=184.097 p95=187.013 ms wall=54.1s temp 71.0->69.0 C
+run 03 BA-0 lru: computed=29550 loop_cold_after_1=0 return_cached=1700 evictions=7 digests==cold 27/28 ttft_loop p50=193.092 p95=197.588 ms wall=57.9s temp 69.0->75.0 C
+run 04 BA-0 slru: computed=31700 loop_cold_after_1=0 return_cached=0 evictions=9 digests==cold 27/28 ttft_loop p50=188.215 p95=285.607 ms wall=60.2s temp 75.0->73.0 C
+| pair | order | slru computed | lru computed | slru - lru | better | slru return cached | lru return cached | slru loop cold | lru loop cold | slru ttft loop p50/p95 ms | lru ttft loop p50/p95 ms | slru temp C | lru temp C |
+| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |
+| AB-0 | AB | 31700 | 29550 | 2150 | lru | 0 | 1700 | 0 | 0 | 191.16/280.406 | 184.097/187.013 | 74.0->71.0 | 71.0->69.0 |
+| BA-0 | BA | 31700 | 29550 | 2150 | lru | 0 | 1700 | 0 | 0 | 188.215/285.607 | 193.092/197.588 | 75.0->73.0 | 69.0->75.0 |
+digest mismatch: {"idx": 14, "role": "loop", "salt": "grow", "digests": ["24a97a2867768b2d1338cb591f7749f093767b6f3af95921b636b2c730e4e1bc", "70efa8d085a5531aef77ae42952f3188a2319b83b6b66b48b47d5329201ddddb"]}
+digest mismatch: {"idx": 20, "role": "loop", "salt": "grow", "digests": ["22f023976ebc22fd5bfc9a699ff63056fb08186f1faec8429537e154a5e07f85", "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284"]}
+PREFIX-POLICY-AB: budget_bytes=1073741824 cohort_tenants=4 cohort_bytes=793870336 turns=12 start_tokens=11000 grow=150 return_every=3 pairs_per_order=1 runs=4 requests_per_run=28 digests_identical=26/28 computed_tokens slru_median=31700 lru_median=29550 (N=2 each) pairs_slru_better=0/2 pairs_lru_better=2/2 ties=0/2 return_cached slru_median=0 lru_median=1700 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=69.0..75.0 power_limit_w=None -> DIGEST-FAIL
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "python3",
+    "tools/prefix-policy-ab.py",
+    "--external-lock",
+    "3",
+    "--model",
+    "/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "--bin",
+    "/home/avifenesh/projects/wt-spill-b-ab/target/release/memra-server",
+    "--out",
+    "/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day16/ab-smoke/cell",
+    "--budget-mib",
+    "1024",
+    "--cohort-tokens",
+    "1250,1350,1450,1550",
+    "--turns",
+    "12",
+    "--start-tokens",
+    "11000",
+    "--grow-tokens",
+    "150",
+    "--return-every",
+    "3",
+    "--pairs",
+    "1",
+    "--ctx",
+    "16384",
+    "--max-tokens",
+    "8",
+    "--gpu-lock",
+    "/tmp/memra-5090.lock"
+  ],
+  "exit_code": 1,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "failed",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "[N/A]",
+      "power.max_limit": "175.00 W"
+    }
+  ],
+  "started_monotonic_ns": 89668194718458,
+  "ended_monotonic_ns": 90054917222138,
+  "started_utc": "2026-09-21T10:10:48.245176+00:00",
+  "ended_utc": "2026-09-21T10:17:14.967999+00:00",
+  "elapsed_seconds": 386.72250368,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 2131,
+    "sha256": "c8131147e4cf32804d40d313ad344ad77a82fef8fbc4e4cfdde24b5bd05702dd"
+  },
+  "failure_quote": "died, cause unknown \u2014 repro needed",
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 161427,
+      "sha256": "1849b301ef2813364a60d67bab5a370bc0b33ebc0b2e721b23541bb8fa4309d5"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "failure": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.failure.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 176,
+    "sha256": "dcb17b61c672c6c1abd4bc4e9c6a9c7ff69efc7ddf1d5cd8f9847e59430d9842"
+  }
+}
