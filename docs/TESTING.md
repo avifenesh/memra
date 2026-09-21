@@ -1525,6 +1525,51 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   the drain-then-retire order with no discarded result in the abort. Evidence:
   `research/spill-c-20260919/DAY15.md` (review section), `pro-single-day15-review/`, replay
   `verify-day15-review.py`.
+- Option C (day 16, lead ruling 15 after B's receipts): under the door the promote H2D of an entry whose KV
+  planes are contract destinations goes through the same `TransferEngine`, one batch per promote: fresh
+  device planes from the OFF allocator (`alloc_u8`) registered at the destination generation and retained;
+  the sources are TWINS of the entry's own leases (`CudaTransfers::retain_host`, the host mirror of
+  `retain_device`: the contract's H2D consumes the lease it is handed, and the promote keeps its host twin
+  resident exactly as OFF does, so the entry's handles never move); a producer fence, `submit_batch`,
+  `synchronize`, `poll`, `Completion::require` against each plane's D2H receipt BEFORE publication (the copy
+  read exactly the bytes the demote wrote), `ready_view` per item, a consumer fence, `retire_source`,
+  `release_producer`, `retire`, `acknowledge`, `take_plane` into the `PrefixPlane`s the caller publishes
+  through `insert_pinned_demoting`; the verify digest stays the OFF-path check. Typed
+  `HostPromoteFailure`: `Failed` (the OFF line), `Refused` (entry intact, ledger clean), `ReceiptMismatch`
+  (`cancel`, `recover_source` per source twin per lane A's rule 1 with the recovered pointer checked against
+  the entry's lease, `retire`, `acknowledge`; the caller drops the host entry as `VERIFY FAILED` does),
+  `Latched` (one `TIER DISABLED` line). The ledger's device dimension holds three device prefix budgets.
+  Receipt per ON promote: `[prefix-host] contracts door H2D receipt: ticket issuer=.. seq=.. epochs=0/1/1
+  items=N (.. KV planes[, draft]) complete=N require=ok checksums_sha256=.. published retired acknowledged`,
+  whose digest equals the D2H line's digest of the same entry. CPU cells (`worker::tests`):
+  `option_c_contract_route_is_door_only_and_keeps_the_frozen_promote_order` (the restore sequence in order,
+  the receipt check before the first `ready_view`, destinations allocated before any registration, the
+  planes leave only after acknowledgement, no `htod_u8_into`/`memcpy_htod`/`clone_dtoh`/`alloc_host` in the
+  route, `plane_up` keeps both `htod_u8_into` calls, the abort cancels then recovers then retires and
+  discards nothing, the caller drops on a mismatch and latches on a leak, the demote route takes only its
+  side of the fault cell, the device dimension at three budgets),
+  `host_contract_fault_sides_are_taken_by_their_own_route_only`, and
+  `host_tier_governor_ledger_admits_what_the_lru_would_and_binds_at_twice_the_budget` (now also: a third
+  whole-budget device charge admitted, a fourth refused). GPU cells (`#[ignore]` without a device, a real
+  `CudaTransfers` on the engine's stream, a host image built by the Option B route):
+  `option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin` (every fresh plane holds the
+  demoted bytes, the source device entry untouched, the host twin's leases readable and SOLE-OWNED again
+  (`flip_first_byte` succeeds twice), a demote-side fault left armed, ledger back to the image's leases),
+  `option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin`,
+  `option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin`,
+  `option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source` (one flipped host byte:
+  `ReceiptMismatch`, the twin recovered and dropped, the flip reverts, then a clean promote). Gate:
+  `tools/kv-host-contract-fault-gate.sh` gains the cells `promote-presubmit` and `promote-postpublish`
+  (`MEMRA_KV_HOST_FAULT=contract-promote-presubmit|contract-promote-postpublish`, one-shot: r1 seeds, r2
+  evicts into a clean demote, r3 re-asks r1 so the promote takes the injected refusal and the cold path
+  serves, r4 re-asks r2 so the next promote must complete with an H2D receipt and a `promote:` line; no
+  `TIER DISABLED`, no drop, no `Capacity`, no leaked wording, no refusal beyond the injected one). Target
+  card, door OFF then ON on one binary: the day-15 battery (identity default and plain, failure default,
+  lane A's tenant fix arm, serve-smoke, lane B's two gates) plus the six GPU cells, the four-cell fault gate,
+  and the WC pair cell (`research/spill-c-20260919/WC-DESTINATIONS.md`: OFF versus ON demote and promote
+  wall times, N=5 per arm in both orders, one lock hold, 250 ms telemetry; the first cell of the decide-by
+  review, not a verdict). Evidence: `research/spill-c-20260919/DAY16.md`, `pro-single-day16/`, replay
+  `verify-day16.py`.
 
 ### `h2d-probe --copies`
 

@@ -602,7 +602,7 @@ mod tests {
             (HostF32::Pinned(_), HostF32::Pinned(_))
         ));
         assert_eq!(
-            digest(&device_entry_from_host(&root, &host).unwrap()).unwrap(),
+            digest(&device_entry_from_host(&root, &host, None).unwrap()).unwrap(),
             want
         );
         let mut wire = Vec::new();
@@ -616,7 +616,7 @@ mod tests {
         let imported = host_entry_from_owned(parsed, &mut pool).unwrap();
         assert_eq!(arena.bytes().1, 80);
         assert_eq!(
-            digest(&device_entry_from_host(&root, &imported).unwrap()).unwrap(),
+            digest(&device_entry_from_host(&root, &imported, None).unwrap()).unwrap(),
             want
         );
         drop(imported);
@@ -632,7 +632,7 @@ mod tests {
         drop(poison);
         let recycled = host_entry_from_device(&root, &mut pool, &mut src, None).unwrap();
         assert_eq!(
-            digest(&device_entry_from_host(&root, &recycled).unwrap()).unwrap(),
+            digest(&device_entry_from_host(&root, &recycled, None).unwrap()).unwrap(),
             want
         );
         drop(recycled);
@@ -688,7 +688,7 @@ mod tests {
             host_entry_from_device(&root, &mut pool, &mut src, Some(want.clone())).unwrap();
         drop(src);
         // Host images retain streams/contexts, not source CUDA buffers.
-        let restored = device_entry_from_host(&root, &host).unwrap();
+        let restored = device_entry_from_host(&root, &host, None).unwrap();
         assert_eq!(digest(&restored).unwrap(), want);
         let tp = restored.tp.as_ref().unwrap();
         assert_eq!(tp.recur[0].as_ref().unwrap().len(), 2);
@@ -716,7 +716,7 @@ mod tests {
             .1
             .data
             .as_mut_slice()[0] ^= 1;
-        let bad = device_entry_from_host(&root, &host).unwrap();
+        let bad = device_entry_from_host(&root, &host, None).unwrap();
         assert_ne!(digest(&bad).unwrap(), want);
         drop(bad);
         host.glm.as_mut().unwrap().tp.as_mut().unwrap().recur[0]
@@ -726,13 +726,13 @@ mod tests {
             .data
             .as_mut_slice()[0] ^= 1;
         host.pool_key.1 = "tenant-b".into();
-        assert!(device_entry_from_host(&root, &host).is_err());
+        assert!(device_entry_from_host(&root, &host, None).is_err());
         host.pool_key.1 = "tenant-a\u{1f}ns".into();
         if let HostF32::Pinned(p) = &mut host.last_logits {
             p.as_mut_slice()[0] ^= 1;
         }
         assert_ne!(
-            digest(&device_entry_from_host(&root, &host).unwrap()).unwrap(),
+            digest(&device_entry_from_host(&root, &host, None).unwrap()).unwrap(),
             want
         );
         // Missing owner must fail after partial restoration without publishing
@@ -744,10 +744,10 @@ mod tests {
             &mut host.glm.as_mut().unwrap().ssm[0].as_mut().unwrap().data,
             memra_engine::PinnedHostBuf::new(3).unwrap(),
         );
-        assert!(device_entry_from_host(&root, &host).is_err());
+        assert!(device_entry_from_host(&root, &host, None).is_err());
         host.glm.as_mut().unwrap().ssm[0].as_mut().unwrap().data = data;
         assert_eq!(
-            digest(&device_entry_from_host(&root, &host).unwrap()).unwrap(),
+            digest(&device_entry_from_host(&root, &host, None).unwrap()).unwrap(),
             want
         );
         // Actual promote hook: unrelated namespace cannot probe this entry.
@@ -837,7 +837,7 @@ mod tests {
             host_entry_from_device(&root, &mut pool, &mut recycled, Some(want.clone())).unwrap();
         assert_eq!(arena.bytes().1, recycled.bytes + 8);
         assert_eq!(
-            digest(&device_entry_from_host(&root, &host).unwrap()).unwrap(),
+            digest(&device_entry_from_host(&root, &host, None).unwrap()).unwrap(),
             want
         );
         drop(host);
