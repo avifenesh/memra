@@ -4770,10 +4770,13 @@ impl Engine {
     /// t>=16 verify walk is the decode-exact batched class by law. `matmul_decode_exact*` keep
     /// their own `2..=16` tiers: they ARE that class.
     pub(crate) fn small_m_tier_max(&self) -> usize {
+        // `.min(16)`: the batched family only has `_b2/_b4/_b8/_b16` kernels and
+        // `batched_mcols` saturates at 16, so 16 is the hard stop whatever the prime floor
+        // becomes; the prime-floor term only ever lowers it (revuto finding on #614).
         if self.verify_exact_on() {
             16
         } else {
-            crate::hybrid_forward::PRIME_MIN_T - 1
+            crate::hybrid_forward::PRIME_MIN_T.saturating_sub(1).min(16)
         }
     }
 
@@ -23675,6 +23678,10 @@ impl Engine {
         scale: f32,
         rp: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        debug_assert!(
+            m <= mcols,
+            "batched mmvq tier: m={m} exceeds the kernel column width {mcols}"
+        );
         const ROWS_PER_BLOCK: u32 = 4;
         // TUNE SEAM (H100 lane): MEMRA_BVAR forces the batched-variant pick for the whole
         // process — the auto heuristics were tuned on sm_120 (82 SMs / 858 GB/s) and the
