@@ -25,9 +25,12 @@ only `provider_name_aws` and only the recorded SHA-256. They grant no exception
 for any other rule or a future archive version. Re-run:
 
 ```sh
-python3 research/mtp-continuing-session-20260921/verify_archives.py
+python3 research/mtp-continuing-session-20260921/verify_archives.py --check
 python3 tools/check-public-boundary.py check
 ```
 
-The first command writes the expanded-file evidence. The second applies the
+The first command verifies the six required archive paths, archive hashes and
+sizes, exact member lists and hashes, and the recorded file counts. It reproduces
+and compares the committed expanded-file evidence without rewriting it. The
+second applies the
 normal repository publication policy, including the outer archive hashes.

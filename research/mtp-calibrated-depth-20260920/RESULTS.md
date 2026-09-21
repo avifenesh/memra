@@ -27,6 +27,12 @@ separate protocol and runtime identity.
 - [Gemma result and scope](GEMMA-RESULTS.md)
 - [Continuing-session correction](CONTINUING-SESSION-CAVEAT.md)
 - [Receipt manifest](receipts/manifest.json)
+- [Shared expanded-archive boundary review](../mtp-continuing-session-20260921/ARCHIVE-BOUNDARY.md)
+
+Both cold archives are covered by the shared six-archive verification receipt in
+`../mtp-continuing-session-20260921/receipts/boundary-verification.json`. Its
+`verify_archives.py --check` mode verifies the committed evidence without
+regenerating it during CI.
 
 Keep the existing runtime policies. This follow-up supplies a stronger fixed
 control; it does not establish a serving default or explain the causal effect
