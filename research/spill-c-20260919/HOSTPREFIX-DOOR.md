@@ -700,21 +700,23 @@ attributed by any cell. Both are named as open for the review; nothing is inferr
    reading write-combined memory at that rate on this tree; which memory they read is item 6's question, not
    answered here. The per-hardware rule's pair on this class now exists as one cell with these N and this regime;
    no tenant-stall cell exists on this class.
-6. **The promote-side census question and the day-16 write-combined contradiction** named in the arithmetic. ANSWERED day 27 (A, `spill-a-20260919/DAY27.md` section 1, read from
-   the code on `cb9fa5ef3`, no cell): the two Move 1 receipt hashes (`progress` at the poll, `bind_tier_image`'s
-   per-plane check) cover the KV planes only, about 1.9 MB on the 27B's 64-token entry (a few MB on the 9B; not
-   split by any line), in the card's pinned kind (cached on the target, write-combined on the 5090); the demote's
-   `in - completion` (74.8 ms target, 21 to 23 ms 5090) is ONE SHA-256 pass of `bind_tier_image`'s `StateBundle`
-   checksum over the WHOLE image, about 157 MB of it the recurrent f32 state in pageable heap (`HostF32::Heap`,
-   `reserve_image` with no arena) that never crossed the contract and has no receipt partner, plus the pre-submit
-   f32 D2H and the insert. The write-combined pass of the micro-cell (1431.6 ms per 160 MiB) applies to the one
-   to two percent of the entry that lives in the write-combined leases, which is why the 5090 reads 21 to 23 and
-   not 490 per pass: one heap-rate pass (37.5 ms per 160 MiB here) over the entry plus a write-combined read of
-   the small KV share. The OFF arm never computes the bundle checksum (`hpx.tier` is `None` under OFF), so the
-   door's demote cost is that pass, not Move 1's copy. Day 16's write-combined delta on this card is the same
-   reading. The promote-side census question: the promote's `completion` figure contains the engine's hash 3 over
-   the KV source leases (1.9 MB), and the recurrent state is not receipted at promote (the restore copies it on
-   the owner stream; `MEMRA_KV_HOST_VERIFY=1` alone digests it).
+6. **The promote-side census question and the day-16 write-combined contradiction** named in the arithmetic.
+   The RTX 5090 measurement, day 33 (`DAY33.md`, `rtx5090-day33/hashwc/`; 9B pair-cell entry size 54,800,000 B and 160 MiB,
+   one collector hold, N=5 per kind per order, both orders, N=10 pooled, 56 to 58 C, premise `PINNED-DEFAULT ...
+   kind=write-combined flags=4` inside the hold; this card's figures, compared to nothing from the target card): the engine
+   hash over write-combined memory runs at 0.116 GB/s at BOTH sizes (`wc_ms=473.846` at 54.8 MB, `1450.827` at 160 MiB;
+   `wc_over_cached` 39.9 and 39.7), cached and heap at 4.6 GB/s (`cached_ms=11.862`, `heap_ms=11.939` at 54.8 MB); a
+   `memcpy` of the write-combined buffer into cached pinned memory plus the hash of the copy is 224.2 ms at 54.8 MB
+   (memcpy 212.3, hash 11.8; 0.474 of the single pass at both sizes). Against the day-31 ON demotes (`in` median 48.3, max
+   60.4, N=12; `in` minus `from submission to completion` median 21.6, min 21.2, max 23.0, N=12): verbatim `DAY33 HASH-WC
+   VERDICT: ... H1-single fits=False H1-twostep fits=False -> H1 refuted (no WC read route fits the ON demote's wall time; H2
+   or H3 stands, separated by the code census, not by this cell); pinned=write-combined; admissible=True`. Read: the two
+   demote-side hashes on this tree do not read the write-combined destination by any route measured (the fastest single
+   pass 468.8 ms is 7.8x the slowest ON demote, the fastest two-step 222.0 ms is 3.7x); the post-completion segment is
+   consistent with up to two hashes over cached or heap memory (`two_hashes_cached_ms=23.723` against 21.6, max 23.0).
+   Whether they read a cached copy, a staging buffer or a device digest (H2), or whether the door's leases are not the
+   printed arm (H3), is the code census; A day 27 reads it and its answer lands separately. The promote-side half of this
+   item is untouched by day 33.
 7. **The door gates on MAIN's tree after #627 on the target card.** RESOLVED day 23: twelve cells on `91b0d4e08` through the collector, all `ALL GREEN` (`pro-single-day23-gates/`, `DAY23.md`).
 8. **The 5090 door gates on the tree after #627.** RESOLVED day 23: ten cells on `91b0d4e08` (fault x2 65 ok, failure x4, identity x4) `ALL GREEN` (`rtx5090-day23/`, `DAY23.md`); the whole-budget arm excepted (item 9).
 9. **The whole-budget arm on the RTX 5090.** RESOLVED day 31: four cells (`failure-{default,plain}-pct100-{off,on}`,
