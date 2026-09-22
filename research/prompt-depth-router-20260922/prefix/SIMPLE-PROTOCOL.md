@@ -1,5 +1,11 @@
 # Simple-helper prompt-prefix comparison
 
+Status: completed. [VERDICT.md](VERDICT.md) states the scoped interpretation;
+[RESULTS.md](RESULTS.md) and [RESULTS.json](RESULTS.json) carry the complete
+hosted replay. Both models qualified an 8,192-token cap, and all 16
+model/format/length cells retained six format-covered pairs with zero loop
+exclusions. The frozen protocol follows.
+
 This is a versioned continuation of [PROTOCOL.md](PROTOCOL.md). The first
 qualification source and all of its records remain frozen. Its Qwen code
 requests produced no final answer at either the 8,192- or 12,288-token cap, so

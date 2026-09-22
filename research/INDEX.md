@@ -7,7 +7,7 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
-prompt-depth-router-20260922 | Bounded prompt routing did not beat fixed K. A shared 17-node output forecaster costs 1.873 us p99, but simple prefix rules are stronger overall. Qwen has no code-labelled evaluation windows at the 512-token cap; actual code/prose adaptation remains open. | prompt-depth-router-20260922/README.md
+prompt-depth-router-20260922 | Verdict: A bounded request-prefix K=2 prose/K=4 code rule did not transfer as a universal win: Qwen's short and mid-length cells lost, while Gemma's code cells gained 5.9%, 8.0% and 3.8% at 256, 1K and 4K prompt tokens with six of six paired wins each; Gemma prose lost. | prompt-depth-router-20260922/prefix/VERDICT.md
 
 mtp-continuing-session-20260921 | The cost learner did not beat the calibrated fixed-depth control on either artifact. | mtp-continuing-session-20260921/RESULTS.md
 

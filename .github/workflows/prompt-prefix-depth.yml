@@ -1,12 +1,6 @@
 name: Prompt prefix depth
 
 on:
-  pull_request:
-    paths:
-      - research/prompt-depth-router-20260922/prefix/**
-      - research/prompt-depth-router-20260922/router.rs
-      - research/prompt-depth-router-20260922/prepare_native.py
-      - .github/workflows/prompt-prefix-depth.yml
   workflow_dispatch:
     inputs:
       build_native:

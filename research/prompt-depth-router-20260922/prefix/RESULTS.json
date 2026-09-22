@@ -1,0 +1,4894 @@
+{
+  "status": "measured",
+  "models": {
+    "qwen": {
+      "selected_max_new": 8192,
+      "loop_exclusions": [],
+      "cells": {
+        "prose-256": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 10243,
+                "complete_request_seconds": 61.702030122,
+                "tokens_per_second": 166.00750380088118,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1655,
+                "nonfinal_tokens_with_bytes": 8582,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 15286,
+                "complete_request_seconds": 97.5188612,
+                "tokens_per_second": 156.74916433499124,
+                "pooled_gain_percent": -5.577060827921931,
+                "paired_gain_percent": [
+                  -5.5934290162605755,
+                  -1.2561534805207497,
+                  0.3030968485658647,
+                  -16.512619747452682,
+                  -3.084562440504124,
+                  -4.441058813714305
+                ],
+                "median_paired_gain_percent": -3.7628106271092143,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 1.5804805937046378,
+                "output_token_ratio_to_fixed3": 1.4923362296202285,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1663,
+                "nonfinal_tokens_with_bytes": 13617,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 27.9235,
+                  "p95": 30.728,
+                  "max": 31.289
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.65560917356678,
+                  -2.208266439429396
+                ]
+              },
+              "prefix128": {
+                "tokens": 15286,
+                "complete_request_seconds": 97.532313421,
+                "tokens_per_second": 156.7275445832778,
+                "pooled_gain_percent": -5.5900841860343276,
+                "paired_gain_percent": [
+                  -5.5945489113836455,
+                  -1.292363188740131,
+                  0.3314141588276476,
+                  -16.55516205394151,
+                  -3.1286418615539824,
+                  -4.388425198391932
+                ],
+                "median_paired_gain_percent": -3.758533529972957,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 1.5806986128034162,
+                "output_token_ratio_to_fixed3": 1.4923362296202285,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1663,
+                "nonfinal_tokens_with_bytes": 13617,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 37.1905,
+                  "p95": 44.12025,
+                  "max": 45.395
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.684129132700214,
+                  -2.2285414473105836
+                ]
+              },
+              "prefix256": {
+                "tokens": 15286,
+                "complete_request_seconds": 97.510099146,
+                "tokens_per_second": 156.76324948775374,
+                "pooled_gain_percent": -5.568576179674101,
+                "paired_gain_percent": [
+                  -5.547832378467632,
+                  -1.2585441160072208,
+                  0.28090400244729086,
+                  -16.47875501367765,
+                  -3.10462052992172,
+                  -4.459912398584875
+                ],
+                "median_paired_gain_percent": -3.782266464253298,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 1.580338587777399,
+                "output_token_ratio_to_fixed3": 1.4923362296202285,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1663,
+                "nonfinal_tokens_with_bytes": 13617,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 41.0375,
+                  "p95": 53.56175,
+                  "max": 53.712
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.630546107985428,
+                  -2.22091456251291
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 10243,
+                "complete_request_seconds": 61.702030122,
+                "tokens_per_second": 166.00750380088118,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1655,
+                "nonfinal_tokens_with_bytes": 8582,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 15286,
+                "complete_request_seconds": 97.5188612,
+                "tokens_per_second": 156.74916433499124,
+                "pooled_gain_percent": -5.577060827921931,
+                "paired_gain_percent": [
+                  -5.5934290162605755,
+                  -1.2561534805207497,
+                  0.3030968485658647,
+                  -16.512619747452682,
+                  -3.084562440504124,
+                  -4.441058813714305
+                ],
+                "median_paired_gain_percent": -3.7628106271092143,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 1.5804805937046378,
+                "output_token_ratio_to_fixed3": 1.4923362296202285,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1663,
+                "nonfinal_tokens_with_bytes": 13617,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 27.9235,
+                  "p95": 30.728,
+                  "max": 31.289
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.65560917356678,
+                  -2.208266439429396
+                ]
+              },
+              "prefix128": {
+                "tokens": 15286,
+                "complete_request_seconds": 97.532313421,
+                "tokens_per_second": 156.7275445832778,
+                "pooled_gain_percent": -5.5900841860343276,
+                "paired_gain_percent": [
+                  -5.5945489113836455,
+                  -1.292363188740131,
+                  0.3314141588276476,
+                  -16.55516205394151,
+                  -3.1286418615539824,
+                  -4.388425198391932
+                ],
+                "median_paired_gain_percent": -3.758533529972957,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 1.5806986128034162,
+                "output_token_ratio_to_fixed3": 1.4923362296202285,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1663,
+                "nonfinal_tokens_with_bytes": 13617,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 37.1905,
+                  "p95": 44.12025,
+                  "max": 45.395
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.684129132700214,
+                  -2.2285414473105836
+                ]
+              },
+              "prefix256": {
+                "tokens": 15286,
+                "complete_request_seconds": 97.510099146,
+                "tokens_per_second": 156.76324948775374,
+                "pooled_gain_percent": -5.568576179674101,
+                "paired_gain_percent": [
+                  -5.547832378467632,
+                  -1.2585441160072208,
+                  0.28090400244729086,
+                  -16.47875501367765,
+                  -3.10462052992172,
+                  -4.459912398584875
+                ],
+                "median_paired_gain_percent": -3.782266464253298,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 1.580338587777399,
+                "output_token_ratio_to_fixed3": 1.4923362296202285,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1663,
+                "nonfinal_tokens_with_bytes": 13617,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 41.0375,
+                  "p95": 53.56175,
+                  "max": 53.712
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.630546107985428,
+                  -2.22091456251291
+                ]
+              }
+            }
+          }
+        },
+        "prose-1024": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 11771,
+                "complete_request_seconds": 72.092225001,
+                "tokens_per_second": 163.27696918546656,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1705,
+                "nonfinal_tokens_with_bytes": 10060,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 10900,
+                "complete_request_seconds": 71.363190461,
+                "tokens_per_second": 152.73980786995295,
+                "pooled_gain_percent": -6.453550288249421,
+                "paired_gain_percent": [
+                  -5.6974362554585545,
+                  -5.359828367433217,
+                  -3.326091711226642,
+                  -7.545624067373147,
+                  -1.7857594722989312,
+                  -12.594107908220343
+                ],
+                "median_paired_gain_percent": -5.528632311445886,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 0.9898874734412776,
+                "output_token_ratio_to_fixed3": 0.9260045875456631,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1723,
+                "nonfinal_tokens_with_bytes": 9171,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 23.7355,
+                  "p95": 30.22475,
+                  "max": 31.209
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.651611105146184,
+                  -3.5256887394693903
+                ]
+              },
+              "prefix128": {
+                "tokens": 10900,
+                "complete_request_seconds": 71.339255749,
+                "tokens_per_second": 152.79105291412841,
+                "pooled_gain_percent": -6.422164940743835,
+                "paired_gain_percent": [
+                  -5.728785435451266,
+                  -5.297709123058125,
+                  -3.225958470516943,
+                  -7.482975309705497,
+                  -1.8028903588144796,
+                  -12.595604415664729
+                ],
+                "median_paired_gain_percent": -5.513247279254696,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 0.9895554721471066,
+                "output_token_ratio_to_fixed3": 0.9260045875456631,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1723,
+                "nonfinal_tokens_with_bytes": 9171,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 31.114,
+                  "p95": 37.00975,
+                  "max": 37.661
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.61925740327667,
+                  -3.490312972978471
+                ]
+              },
+              "prefix256": {
+                "tokens": 10900,
+                "complete_request_seconds": 71.35313631300001,
+                "tokens_per_second": 152.7613299601254,
+                "pooled_gain_percent": -6.440368949644338,
+                "paired_gain_percent": [
+                  -5.771029268015171,
+                  -5.340669458933012,
+                  -3.26740592450927,
+                  -7.50191245186993,
+                  -1.8425117414638148,
+                  -12.555599338590762
+                ],
+                "median_paired_gain_percent": -5.555849363474092,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 0.9897480111344914,
+                "output_token_ratio_to_fixed3": 0.9260045875456631,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1723,
+                "nonfinal_tokens_with_bytes": 9171,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 39.6705,
+                  "p95": 53.80975,
+                  "max": 54.614
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.608827716658686,
+                  -3.5313392158630164
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 11771,
+                "complete_request_seconds": 72.092225001,
+                "tokens_per_second": 163.27696918546656,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1705,
+                "nonfinal_tokens_with_bytes": 10060,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 10900,
+                "complete_request_seconds": 71.363190461,
+                "tokens_per_second": 152.73980786995295,
+                "pooled_gain_percent": -6.453550288249421,
+                "paired_gain_percent": [
+                  -5.6974362554585545,
+                  -5.359828367433217,
+                  -3.326091711226642,
+                  -7.545624067373147,
+                  -1.7857594722989312,
+                  -12.594107908220343
+                ],
+                "median_paired_gain_percent": -5.528632311445886,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 0.9898874734412776,
+                "output_token_ratio_to_fixed3": 0.9260045875456631,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1723,
+                "nonfinal_tokens_with_bytes": 9171,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 23.7355,
+                  "p95": 30.22475,
+                  "max": 31.209
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.651611105146184,
+                  -3.5256887394693903
+                ]
+              },
+              "prefix128": {
+                "tokens": 10900,
+                "complete_request_seconds": 71.339255749,
+                "tokens_per_second": 152.79105291412841,
+                "pooled_gain_percent": -6.422164940743835,
+                "paired_gain_percent": [
+                  -5.728785435451266,
+                  -5.297709123058125,
+                  -3.225958470516943,
+                  -7.482975309705497,
+                  -1.8028903588144796,
+                  -12.595604415664729
+                ],
+                "median_paired_gain_percent": -5.513247279254696,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 0.9895554721471066,
+                "output_token_ratio_to_fixed3": 0.9260045875456631,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1723,
+                "nonfinal_tokens_with_bytes": 9171,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 31.114,
+                  "p95": 37.00975,
+                  "max": 37.661
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.61925740327667,
+                  -3.490312972978471
+                ]
+              },
+              "prefix256": {
+                "tokens": 10900,
+                "complete_request_seconds": 71.35313631300001,
+                "tokens_per_second": 152.7613299601254,
+                "pooled_gain_percent": -6.440368949644338,
+                "paired_gain_percent": [
+                  -5.771029268015171,
+                  -5.340669458933012,
+                  -3.26740592450927,
+                  -7.50191245186993,
+                  -1.8425117414638148,
+                  -12.555599338590762
+                ],
+                "median_paired_gain_percent": -5.555849363474092,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 0.9897480111344914,
+                "output_token_ratio_to_fixed3": 0.9260045875456631,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1723,
+                "nonfinal_tokens_with_bytes": 9171,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 39.6705,
+                  "p95": 53.80975,
+                  "max": 54.614
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.608827716658686,
+                  -3.5313392158630164
+                ]
+              }
+            }
+          }
+        },
+        "prose-4096": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 13547,
+                "complete_request_seconds": 92.400310006,
+                "tokens_per_second": 146.61206222273853,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1582,
+                "nonfinal_tokens_with_bytes": 11959,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 10491,
+                "complete_request_seconds": 74.785874236,
+                "tokens_per_second": 140.28050226295144,
+                "pooled_gain_percent": -4.318580520453996,
+                "paired_gain_percent": [
+                  -2.0911130352009977,
+                  -3.030357126263039,
+                  -5.231139090831305,
+                  -7.428280335340731,
+                  -7.414797065067081,
+                  1.0385620765793746
+                ],
+                "median_paired_gain_percent": -4.130748108547172,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 0.8093682178246349,
+                "output_token_ratio_to_fixed3": 0.7744149996309146,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1900,
+                "nonfinal_tokens_with_bytes": 8585,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 23.4545,
+                  "p95": 28.64175,
+                  "max": 29.045
+                },
+                "paired_bootstrap_95_percent": [
+                  -6.950746572667288,
+                  -1.1189105787047904
+                ]
+              },
+              "prefix128": {
+                "tokens": 10491,
+                "complete_request_seconds": 74.7612122,
+                "tokens_per_second": 140.32677763349588,
+                "pooled_gain_percent": -4.287017380393854,
+                "paired_gain_percent": [
+                  -2.0207373372704174,
+                  -3.035127561559181,
+                  -5.137547886433447,
+                  -7.507282039033603,
+                  -7.356780774778282,
+                  1.0790207821157916
+                ],
+                "median_paired_gain_percent": -4.086337723996314,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 0.8091013135685952,
+                "output_token_ratio_to_fixed3": 0.7744149996309146,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1900,
+                "nonfinal_tokens_with_bytes": 8585,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 33.108,
+                  "p95": 41.23775,
+                  "max": 41.929
+                },
+                "paired_bootstrap_95_percent": [
+                  -6.921838372006399,
+                  -1.0606638903255416
+                ]
+              },
+              "prefix256": {
+                "tokens": 10491,
+                "complete_request_seconds": 74.760406787,
+                "tokens_per_second": 140.32828940979317,
+                "pooled_gain_percent": -4.285986239930805,
+                "paired_gain_percent": [
+                  -2.0884259536547156,
+                  -3.0305614115482826,
+                  -5.167865977840624,
+                  -7.51298277828295,
+                  -7.345752381877679,
+                  1.1247831517163798
+                ],
+                "median_paired_gain_percent": -4.099213694694454,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 0.8090925970069304,
+                "output_token_ratio_to_fixed3": 0.7744149996309146,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1900,
+                "nonfinal_tokens_with_bytes": 8585,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 44.815,
+                  "p95": 52.7575,
+                  "max": 53.131
+                },
+                "paired_bootstrap_95_percent": [
+                  -6.931033543834541,
+                  -1.0685910418525513
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 13547,
+                "complete_request_seconds": 92.400310006,
+                "tokens_per_second": 146.61206222273853,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1582,
+                "nonfinal_tokens_with_bytes": 11959,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 10491,
+                "complete_request_seconds": 74.785874236,
+                "tokens_per_second": 140.28050226295144,
+                "pooled_gain_percent": -4.318580520453996,
+                "paired_gain_percent": [
+                  -2.0911130352009977,
+                  -3.030357126263039,
+                  -5.231139090831305,
+                  -7.428280335340731,
+                  -7.414797065067081,
+                  1.0385620765793746
+                ],
+                "median_paired_gain_percent": -4.130748108547172,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 0.8093682178246349,
+                "output_token_ratio_to_fixed3": 0.7744149996309146,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1900,
+                "nonfinal_tokens_with_bytes": 8585,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 23.4545,
+                  "p95": 28.64175,
+                  "max": 29.045
+                },
+                "paired_bootstrap_95_percent": [
+                  -6.950746572667288,
+                  -1.1189105787047904
+                ]
+              },
+              "prefix128": {
+                "tokens": 10491,
+                "complete_request_seconds": 74.7612122,
+                "tokens_per_second": 140.32677763349588,
+                "pooled_gain_percent": -4.287017380393854,
+                "paired_gain_percent": [
+                  -2.0207373372704174,
+                  -3.035127561559181,
+                  -5.137547886433447,
+                  -7.507282039033603,
+                  -7.356780774778282,
+                  1.0790207821157916
+                ],
+                "median_paired_gain_percent": -4.086337723996314,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 0.8091013135685952,
+                "output_token_ratio_to_fixed3": 0.7744149996309146,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1900,
+                "nonfinal_tokens_with_bytes": 8585,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 33.108,
+                  "p95": 41.23775,
+                  "max": 41.929
+                },
+                "paired_bootstrap_95_percent": [
+                  -6.921838372006399,
+                  -1.0606638903255416
+                ]
+              },
+              "prefix256": {
+                "tokens": 10491,
+                "complete_request_seconds": 74.760406787,
+                "tokens_per_second": 140.32828940979317,
+                "pooled_gain_percent": -4.285986239930805,
+                "paired_gain_percent": [
+                  -2.0884259536547156,
+                  -3.0305614115482826,
+                  -5.167865977840624,
+                  -7.51298277828295,
+                  -7.345752381877679,
+                  1.1247831517163798
+                ],
+                "median_paired_gain_percent": -4.099213694694454,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 0.8090925970069304,
+                "output_token_ratio_to_fixed3": 0.7744149996309146,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1900,
+                "nonfinal_tokens_with_bytes": 8585,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 44.815,
+                  "p95": 52.7575,
+                  "max": 53.131
+                },
+                "paired_bootstrap_95_percent": [
+                  -6.931033543834541,
+                  -1.0685910418525513
+                ]
+              }
+            }
+          }
+        },
+        "prose-16384": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 9220,
+                "complete_request_seconds": 94.349596734,
+                "tokens_per_second": 97.72166833944149,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1560,
+                "nonfinal_tokens_with_bytes": 7654,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 10458,
+                "complete_request_seconds": 105.345297712,
+                "tokens_per_second": 99.27353405550932,
+                "pooled_gain_percent": 1.5880466865110465,
+                "paired_gain_percent": [
+                  -6.977359729427057,
+                  19.225754005925367,
+                  1.956033740885288,
+                  -11.993164053081484,
+                  24.330102580628534,
+                  7.5395687658597055
+                ],
+                "median_paired_gain_percent": 4.747801253372497,
+                "wins": 4,
+                "latency_ratio_to_fixed3": 1.1165421089080032,
+                "output_token_ratio_to_fixed3": 1.1342733188720173,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1534,
+                "nonfinal_tokens_with_bytes": 8918,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 26.9905,
+                  "p95": 27.89225,
+                  "max": 27.952
+                },
+                "paired_bootstrap_95_percent": [
+                  -7.288724678254043,
+                  13.437608757578445
+                ]
+              },
+              "prefix128": {
+                "tokens": 10458,
+                "complete_request_seconds": 105.342852288,
+                "tokens_per_second": 99.2758385866424,
+                "pooled_gain_percent": 1.5904049466310743,
+                "paired_gain_percent": [
+                  -6.932189032970526,
+                  19.112127921895606,
+                  2.0159643838344454,
+                  -12.020455741109748,
+                  24.26897049481451,
+                  7.613083251348729
+                ],
+                "median_paired_gain_percent": 4.814523817591587,
+                "wins": 4,
+                "latency_ratio_to_fixed3": 1.1165161901538732,
+                "output_token_ratio_to_fixed3": 1.1342733188720173,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1534,
+                "nonfinal_tokens_with_bytes": 8918,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 37.08,
+                  "p95": 38.766,
+                  "max": 39.014
+                },
+                "paired_bootstrap_95_percent": [
+                  -7.296900950726027,
+                  13.405966532556857
+                ]
+              },
+              "prefix256": {
+                "tokens": 10458,
+                "complete_request_seconds": 105.324610018,
+                "tokens_per_second": 99.29303320669999,
+                "pooled_gain_percent": 1.6080004506270562,
+                "paired_gain_percent": [
+                  -6.9104873761870245,
+                  19.19343039434276,
+                  2.1694029805216397,
+                  -12.016825586295898,
+                  24.274294437643572,
+                  7.525498865696556
+                ],
+                "median_paired_gain_percent": 4.847450923109098,
+                "wins": 4,
+                "latency_ratio_to_fixed3": 1.116322842533624,
+                "output_token_ratio_to_fixed3": 1.1342733188720173,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1534,
+                "nonfinal_tokens_with_bytes": 8918,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 43.998,
+                  "p95": 46.3425,
+                  "max": 46.698
+                },
+                "paired_bootstrap_95_percent": [
+                  -7.274957349303845,
+                  13.44531165068732
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 9220,
+                "complete_request_seconds": 94.349596734,
+                "tokens_per_second": 97.72166833944149,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1560,
+                "nonfinal_tokens_with_bytes": 7654,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 10458,
+                "complete_request_seconds": 105.345297712,
+                "tokens_per_second": 99.27353405550932,
+                "pooled_gain_percent": 1.5880466865110465,
+                "paired_gain_percent": [
+                  -6.977359729427057,
+                  19.225754005925367,
+                  1.956033740885288,
+                  -11.993164053081484,
+                  24.330102580628534,
+                  7.5395687658597055
+                ],
+                "median_paired_gain_percent": 4.747801253372497,
+                "wins": 4,
+                "latency_ratio_to_fixed3": 1.1165421089080032,
+                "output_token_ratio_to_fixed3": 1.1342733188720173,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1534,
+                "nonfinal_tokens_with_bytes": 8918,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 26.9905,
+                  "p95": 27.89225,
+                  "max": 27.952
+                },
+                "paired_bootstrap_95_percent": [
+                  -7.288724678254043,
+                  13.437608757578445
+                ]
+              },
+              "prefix128": {
+                "tokens": 10458,
+                "complete_request_seconds": 105.342852288,
+                "tokens_per_second": 99.2758385866424,
+                "pooled_gain_percent": 1.5904049466310743,
+                "paired_gain_percent": [
+                  -6.932189032970526,
+                  19.112127921895606,
+                  2.0159643838344454,
+                  -12.020455741109748,
+                  24.26897049481451,
+                  7.613083251348729
+                ],
+                "median_paired_gain_percent": 4.814523817591587,
+                "wins": 4,
+                "latency_ratio_to_fixed3": 1.1165161901538732,
+                "output_token_ratio_to_fixed3": 1.1342733188720173,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1534,
+                "nonfinal_tokens_with_bytes": 8918,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 37.08,
+                  "p95": 38.766,
+                  "max": 39.014
+                },
+                "paired_bootstrap_95_percent": [
+                  -7.296900950726027,
+                  13.405966532556857
+                ]
+              },
+              "prefix256": {
+                "tokens": 10458,
+                "complete_request_seconds": 105.324610018,
+                "tokens_per_second": 99.29303320669999,
+                "pooled_gain_percent": 1.6080004506270562,
+                "paired_gain_percent": [
+                  -6.9104873761870245,
+                  19.19343039434276,
+                  2.1694029805216397,
+                  -12.016825586295898,
+                  24.274294437643572,
+                  7.525498865696556
+                ],
+                "median_paired_gain_percent": 4.847450923109098,
+                "wins": 4,
+                "latency_ratio_to_fixed3": 1.116322842533624,
+                "output_token_ratio_to_fixed3": 1.1342733188720173,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1534,
+                "nonfinal_tokens_with_bytes": 8918,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 43.998,
+                  "p95": 46.3425,
+                  "max": 46.698
+                },
+                "paired_bootstrap_95_percent": [
+                  -7.274957349303845,
+                  13.44531165068732
+                ]
+              }
+            }
+          }
+        },
+        "code-256": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 1947,
+                "complete_request_seconds": 10.685720002,
+                "tokens_per_second": 182.20578488258988,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 534,
+                "nonfinal_tokens_with_bytes": 1407,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 1865,
+                "complete_request_seconds": 10.479293813,
+                "tokens_per_second": 177.97000764368204,
+                "pooled_gain_percent": -2.3247216007095006,
+                "paired_gain_percent": [
+                  2.286636516480245,
+                  -5.627156513340415,
+                  -16.3155033874266,
+                  6.444834934480226,
+                  -12.413291860611587,
+                  8.36463097487461
+                ],
+                "median_paired_gain_percent": -1.670259998430085,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.9806820514704331,
+                "output_token_ratio_to_fixed3": 0.957883923985619,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 564,
+                "nonfinal_tokens_with_bytes": 1295,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 25.558,
+                  "p95": 31.2745,
+                  "max": 32.612
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.590320184398426,
+                  3.179565855218991
+                ]
+              },
+              "prefix128": {
+                "tokens": 1865,
+                "complete_request_seconds": 10.478955964999999,
+                "tokens_per_second": 177.97574550643702,
+                "pooled_gain_percent": -2.321572489522561,
+                "paired_gain_percent": [
+                  2.236778679748297,
+                  -5.626478972398219,
+                  -16.35665817644871,
+                  6.3813266748678155,
+                  -12.325959278328401,
+                  8.442771487846912
+                ],
+                "median_paired_gain_percent": -1.6948501463249612,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.9806504346959024,
+                "output_token_ratio_to_fixed3": 0.957883923985619,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 564,
+                "nonfinal_tokens_with_bytes": 1295,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 40.592,
+                  "p95": 49.30075,
+                  "max": 51.247
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.56936251088627,
+                  3.2044984334072657
+                ]
+              },
+              "prefix256": {
+                "tokens": 1865,
+                "complete_request_seconds": 10.483297704,
+                "tokens_per_second": 177.9020354719481,
+                "pooled_gain_percent": -2.36202676738011,
+                "paired_gain_percent": [
+                  2.342323531663748,
+                  -5.662236590107961,
+                  -16.375773243322534,
+                  6.435697392059825,
+                  -12.553392131281383,
+                  8.303117360881874
+                ],
+                "median_paired_gain_percent": -1.6599565292221063,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.9810567469518092,
+                "output_token_ratio_to_fixed3": 0.957883923985619,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 564,
+                "nonfinal_tokens_with_bytes": 1295,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 55.921,
+                  "p95": 63.11175,
+                  "max": 65.173
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.661696706613165,
+                  3.1497647735920786
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 1947,
+                "complete_request_seconds": 10.685720002,
+                "tokens_per_second": 182.20578488258988,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 534,
+                "nonfinal_tokens_with_bytes": 1407,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 1865,
+                "complete_request_seconds": 10.479293813,
+                "tokens_per_second": 177.97000764368204,
+                "pooled_gain_percent": -2.3247216007095006,
+                "paired_gain_percent": [
+                  2.286636516480245,
+                  -5.627156513340415,
+                  -16.3155033874266,
+                  6.444834934480226,
+                  -12.413291860611587,
+                  8.36463097487461
+                ],
+                "median_paired_gain_percent": -1.670259998430085,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.9806820514704331,
+                "output_token_ratio_to_fixed3": 0.957883923985619,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 564,
+                "nonfinal_tokens_with_bytes": 1295,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 25.558,
+                  "p95": 31.2745,
+                  "max": 32.612
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.590320184398426,
+                  3.179565855218991
+                ]
+              },
+              "prefix128": {
+                "tokens": 1865,
+                "complete_request_seconds": 10.478955964999999,
+                "tokens_per_second": 177.97574550643702,
+                "pooled_gain_percent": -2.321572489522561,
+                "paired_gain_percent": [
+                  2.236778679748297,
+                  -5.626478972398219,
+                  -16.35665817644871,
+                  6.3813266748678155,
+                  -12.325959278328401,
+                  8.442771487846912
+                ],
+                "median_paired_gain_percent": -1.6948501463249612,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.9806504346959024,
+                "output_token_ratio_to_fixed3": 0.957883923985619,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 564,
+                "nonfinal_tokens_with_bytes": 1295,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 40.592,
+                  "p95": 49.30075,
+                  "max": 51.247
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.56936251088627,
+                  3.2044984334072657
+                ]
+              },
+              "prefix256": {
+                "tokens": 1865,
+                "complete_request_seconds": 10.483297704,
+                "tokens_per_second": 177.9020354719481,
+                "pooled_gain_percent": -2.36202676738011,
+                "paired_gain_percent": [
+                  2.342323531663748,
+                  -5.662236590107961,
+                  -16.375773243322534,
+                  6.435697392059825,
+                  -12.553392131281383,
+                  8.303117360881874
+                ],
+                "median_paired_gain_percent": -1.6599565292221063,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.9810567469518092,
+                "output_token_ratio_to_fixed3": 0.957883923985619,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 564,
+                "nonfinal_tokens_with_bytes": 1295,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 55.921,
+                  "p95": 63.11175,
+                  "max": 65.173
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.661696706613165,
+                  3.1497647735920786
+                ]
+              }
+            }
+          }
+        },
+        "code-1024": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 2551,
+                "complete_request_seconds": 15.620070627,
+                "tokens_per_second": 163.315522760216,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 550,
+                "nonfinal_tokens_with_bytes": 1995,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 1995,
+                "complete_request_seconds": 12.734035653,
+                "tokens_per_second": 156.6667515596283,
+                "pooled_gain_percent": -4.071120177810405,
+                "paired_gain_percent": [
+                  -9.039094162871264,
+                  13.58306049378768,
+                  -1.3956841858664637,
+                  0.34163284274015826,
+                  -15.790914282511604,
+                  2.4020536940236203
+                ],
+                "median_paired_gain_percent": -0.5270256715631527,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.8152354721744114,
+                "output_token_ratio_to_fixed3": 0.782046256370051,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 533,
+                "nonfinal_tokens_with_bytes": 1456,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 26.7755,
+                  "p95": 28.5685,
+                  "max": 28.834
+                },
+                "paired_bootstrap_95_percent": [
+                  -8.354291852166929,
+                  0.9624764413558973
+                ]
+              },
+              "prefix128": {
+                "tokens": 1995,
+                "complete_request_seconds": 12.731525821,
+                "tokens_per_second": 156.6976360923959,
+                "pooled_gain_percent": -4.052209218064751,
+                "paired_gain_percent": [
+                  -9.043574552213041,
+                  13.705921433219448,
+                  -1.406105608266972,
+                  0.3072798582795855,
+                  -15.872521581619715,
+                  2.5283170123460375
+                ],
+                "median_paired_gain_percent": -0.5494128749936933,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.8150747922351247,
+                "output_token_ratio_to_fixed3": 0.782046256370051,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 533,
+                "nonfinal_tokens_with_bytes": 1456,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 38.438,
+                  "p95": 45.311,
+                  "max": 45.316
+                },
+                "paired_bootstrap_95_percent": [
+                  -8.346178882343535,
+                  1.0267605346014008
+                ]
+              },
+              "prefix256": {
+                "tokens": 1995,
+                "complete_request_seconds": 12.729053922999999,
+                "tokens_per_second": 156.72806573591888,
+                "pooled_gain_percent": -4.0335767923107895,
+                "paired_gain_percent": [
+                  -9.016223840541471,
+                  13.696826586215249,
+                  -1.2695815592909332,
+                  0.3603490672171139,
+                  -15.901533776523024,
+                  2.4532105913809055
+                ],
+                "median_paired_gain_percent": -0.45461624603690964,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.8149165408379941,
+                "output_token_ratio_to_fixed3": 0.782046256370051,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 533,
+                "nonfinal_tokens_with_bytes": 1456,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 45.7365,
+                  "p95": 64.647,
+                  "max": 67.377
+                },
+                "paired_bootstrap_95_percent": [
+                  -8.330747716120223,
+                  1.0188688463075968
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 2551,
+                "complete_request_seconds": 15.620070627,
+                "tokens_per_second": 163.315522760216,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 550,
+                "nonfinal_tokens_with_bytes": 1995,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 1995,
+                "complete_request_seconds": 12.734035653,
+                "tokens_per_second": 156.6667515596283,
+                "pooled_gain_percent": -4.071120177810405,
+                "paired_gain_percent": [
+                  -9.039094162871264,
+                  13.58306049378768,
+                  -1.3956841858664637,
+                  0.34163284274015826,
+                  -15.790914282511604,
+                  2.4020536940236203
+                ],
+                "median_paired_gain_percent": -0.5270256715631527,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.8152354721744114,
+                "output_token_ratio_to_fixed3": 0.782046256370051,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 533,
+                "nonfinal_tokens_with_bytes": 1456,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 26.7755,
+                  "p95": 28.5685,
+                  "max": 28.834
+                },
+                "paired_bootstrap_95_percent": [
+                  -8.354291852166929,
+                  0.9624764413558973
+                ]
+              },
+              "prefix128": {
+                "tokens": 1995,
+                "complete_request_seconds": 12.731525821,
+                "tokens_per_second": 156.6976360923959,
+                "pooled_gain_percent": -4.052209218064751,
+                "paired_gain_percent": [
+                  -9.043574552213041,
+                  13.705921433219448,
+                  -1.406105608266972,
+                  0.3072798582795855,
+                  -15.872521581619715,
+                  2.5283170123460375
+                ],
+                "median_paired_gain_percent": -0.5494128749936933,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.8150747922351247,
+                "output_token_ratio_to_fixed3": 0.782046256370051,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 533,
+                "nonfinal_tokens_with_bytes": 1456,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 38.438,
+                  "p95": 45.311,
+                  "max": 45.316
+                },
+                "paired_bootstrap_95_percent": [
+                  -8.346178882343535,
+                  1.0267605346014008
+                ]
+              },
+              "prefix256": {
+                "tokens": 1995,
+                "complete_request_seconds": 12.729053922999999,
+                "tokens_per_second": 156.72806573591888,
+                "pooled_gain_percent": -4.0335767923107895,
+                "paired_gain_percent": [
+                  -9.016223840541471,
+                  13.696826586215249,
+                  -1.2695815592909332,
+                  0.3603490672171139,
+                  -15.901533776523024,
+                  2.4532105913809055
+                ],
+                "median_paired_gain_percent": -0.45461624603690964,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.8149165408379941,
+                "output_token_ratio_to_fixed3": 0.782046256370051,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 533,
+                "nonfinal_tokens_with_bytes": 1456,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 45.7365,
+                  "p95": 64.647,
+                  "max": 67.377
+                },
+                "paired_bootstrap_95_percent": [
+                  -8.330747716120223,
+                  1.0188688463075968
+                ]
+              }
+            }
+          }
+        },
+        "code-4096": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 2337,
+                "complete_request_seconds": 19.883699027,
+                "tokens_per_second": 117.53346280420945,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 575,
+                "nonfinal_tokens_with_bytes": 1756,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 2159,
+                "complete_request_seconds": 19.220953876,
+                "tokens_per_second": 112.32533067444733,
+                "pooled_gain_percent": -4.43119091831573,
+                "paired_gain_percent": [
+                  -15.60079227667659,
+                  -2.004614904163615,
+                  -0.019815886929697157,
+                  4.0788857717205085,
+                  4.60398098477488,
+                  -12.313986570565849
+                ],
+                "median_paired_gain_percent": -1.0122153955466562,
+                "wins": 2,
+                "latency_ratio_to_fixed3": 0.9666689206017421,
+                "output_token_ratio_to_fixed3": 0.9238339751818571,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 545,
+                "nonfinal_tokens_with_bytes": 1608,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 28.088,
+                  "p95": 29.59625,
+                  "max": 29.887
+                },
+                "paired_bootstrap_95_percent": [
+                  -11.551193412548798,
+                  2.5717501402671816
+                ]
+              },
+              "prefix128": {
+                "tokens": 2159,
+                "complete_request_seconds": 19.214471794,
+                "tokens_per_second": 112.36322409207102,
+                "pooled_gain_percent": -4.3989503829655385,
+                "paired_gain_percent": [
+                  -15.548262348872433,
+                  -1.8917206716451251,
+                  0.049923388893469145,
+                  4.0522871735303445,
+                  4.543399302779894,
+                  -12.278428330846225
+                ],
+                "median_paired_gain_percent": -0.920898641375828,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.9663429207970179,
+                "output_token_ratio_to_fixed3": 0.9238339751818571,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 545,
+                "nonfinal_tokens_with_bytes": 1608,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 44.4845,
+                  "p95": 45.436,
+                  "max": 45.546
+                },
+                "paired_bootstrap_95_percent": [
+                  -11.510915756321493,
+                  2.5718367245475715
+                ]
+              },
+              "prefix256": {
+                "tokens": 2159,
+                "complete_request_seconds": 19.214784616,
+                "tokens_per_second": 112.36139478775202,
+                "pooled_gain_percent": -4.400506794454961,
+                "paired_gain_percent": [
+                  -15.481491483817035,
+                  -2.0048793779295138,
+                  0.12899953051526136,
+                  4.048319639620979,
+                  4.44405267514032,
+                  -12.293498907809486
+                ],
+                "median_paired_gain_percent": -0.9379399237071262,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.9663586533827693,
+                "output_token_ratio_to_fixed3": 0.9238339751818571,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 545,
+                "nonfinal_tokens_with_bytes": 1608,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 59.838,
+                  "p95": 63.042,
+                  "max": 63.821
+                },
+                "paired_bootstrap_95_percent": [
+                  -11.514461105202855,
+                  2.528639601306315
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 2337,
+                "complete_request_seconds": 19.883699027,
+                "tokens_per_second": 117.53346280420945,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 575,
+                "nonfinal_tokens_with_bytes": 1756,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 2159,
+                "complete_request_seconds": 19.220953876,
+                "tokens_per_second": 112.32533067444733,
+                "pooled_gain_percent": -4.43119091831573,
+                "paired_gain_percent": [
+                  -15.60079227667659,
+                  -2.004614904163615,
+                  -0.019815886929697157,
+                  4.0788857717205085,
+                  4.60398098477488,
+                  -12.313986570565849
+                ],
+                "median_paired_gain_percent": -1.0122153955466562,
+                "wins": 2,
+                "latency_ratio_to_fixed3": 0.9666689206017421,
+                "output_token_ratio_to_fixed3": 0.9238339751818571,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 545,
+                "nonfinal_tokens_with_bytes": 1608,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 28.088,
+                  "p95": 29.59625,
+                  "max": 29.887
+                },
+                "paired_bootstrap_95_percent": [
+                  -11.551193412548798,
+                  2.5717501402671816
+                ]
+              },
+              "prefix128": {
+                "tokens": 2159,
+                "complete_request_seconds": 19.214471794,
+                "tokens_per_second": 112.36322409207102,
+                "pooled_gain_percent": -4.3989503829655385,
+                "paired_gain_percent": [
+                  -15.548262348872433,
+                  -1.8917206716451251,
+                  0.049923388893469145,
+                  4.0522871735303445,
+                  4.543399302779894,
+                  -12.278428330846225
+                ],
+                "median_paired_gain_percent": -0.920898641375828,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.9663429207970179,
+                "output_token_ratio_to_fixed3": 0.9238339751818571,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 545,
+                "nonfinal_tokens_with_bytes": 1608,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 44.4845,
+                  "p95": 45.436,
+                  "max": 45.546
+                },
+                "paired_bootstrap_95_percent": [
+                  -11.510915756321493,
+                  2.5718367245475715
+                ]
+              },
+              "prefix256": {
+                "tokens": 2159,
+                "complete_request_seconds": 19.214784616,
+                "tokens_per_second": 112.36139478775202,
+                "pooled_gain_percent": -4.400506794454961,
+                "paired_gain_percent": [
+                  -15.481491483817035,
+                  -2.0048793779295138,
+                  0.12899953051526136,
+                  4.048319639620979,
+                  4.44405267514032,
+                  -12.293498907809486
+                ],
+                "median_paired_gain_percent": -0.9379399237071262,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 0.9663586533827693,
+                "output_token_ratio_to_fixed3": 0.9238339751818571,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 545,
+                "nonfinal_tokens_with_bytes": 1608,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 59.838,
+                  "p95": 63.042,
+                  "max": 63.821
+                },
+                "paired_bootstrap_95_percent": [
+                  -11.514461105202855,
+                  2.528639601306315
+                ]
+              }
+            }
+          }
+        },
+        "code-16384": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 2270,
+                "complete_request_seconds": 43.782668244999996,
+                "tokens_per_second": 51.84699998861388,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 539,
+                "nonfinal_tokens_with_bytes": 1725,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 2371,
+                "complete_request_seconds": 44.277602153,
+                "tokens_per_second": 53.54851854459229,
+                "pooled_gain_percent": 3.2818071563486484,
+                "paired_gain_percent": [
+                  -6.494348963167873,
+                  4.190354700345944,
+                  -0.6040147889239234,
+                  8.068669779752025,
+                  -6.410282996724881,
+                  26.549468172729874
+                ],
+                "median_paired_gain_percent": 1.7931699557110103,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 1.0113043340627492,
+                "output_token_ratio_to_fixed3": 1.0444933920704846,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 584,
+                "nonfinal_tokens_with_bytes": 1781,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 22.628,
+                  "p95": 24.72725,
+                  "max": 25.018
+                },
+                "paired_bootstrap_95_percent": [
+                  -4.541727934859086,
+                  13.989007738186611
+                ]
+              },
+              "prefix128": {
+                "tokens": 2371,
+                "complete_request_seconds": 44.256173715,
+                "tokens_per_second": 53.57444625169625,
+                "pooled_gain_percent": 3.331815270819405,
+                "paired_gain_percent": [
+                  -6.478862656366758,
+                  4.17645196155263,
+                  -0.5720670947951145,
+                  8.138903964289646,
+                  -6.3952337794820675,
+                  26.75449538952648
+                ],
+                "median_paired_gain_percent": 1.8021924333787576,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 1.0108149066509686,
+                "output_token_ratio_to_fixed3": 1.0444933920704846,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 584,
+                "nonfinal_tokens_with_bytes": 1781,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 38.052,
+                  "p95": 40.13875,
+                  "max": 40.587
+                },
+                "paired_bootstrap_95_percent": [
+                  -4.52810977623942,
+                  14.076104662765818
+                ]
+              },
+              "prefix256": {
+                "tokens": 2371,
+                "complete_request_seconds": 44.249859172,
+                "tokens_per_second": 53.58209143183666,
+                "pooled_gain_percent": 3.346560926579789,
+                "paired_gain_percent": [
+                  -6.551752296292457,
+                  4.282661163293189,
+                  -0.5978484264028805,
+                  8.408658233359368,
+                  -6.365172601566371,
+                  26.551067866685973
+                ],
+                "median_paired_gain_percent": 1.8424063684451542,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 1.0106706819325328,
+                "output_token_ratio_to_fixed3": 1.0444933920704846,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 584,
+                "nonfinal_tokens_with_bytes": 1781,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 48.296,
+                  "p95": 49.66125,
+                  "max": 49.794
+                },
+                "paired_bootstrap_95_percent": [
+                  -4.533171311524276,
+                  14.134082547901421
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 2270,
+                "complete_request_seconds": 43.782668244999996,
+                "tokens_per_second": 51.84699998861388,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 539,
+                "nonfinal_tokens_with_bytes": 1725,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 2371,
+                "complete_request_seconds": 44.277602153,
+                "tokens_per_second": 53.54851854459229,
+                "pooled_gain_percent": 3.2818071563486484,
+                "paired_gain_percent": [
+                  -6.494348963167873,
+                  4.190354700345944,
+                  -0.6040147889239234,
+                  8.068669779752025,
+                  -6.410282996724881,
+                  26.549468172729874
+                ],
+                "median_paired_gain_percent": 1.7931699557110103,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 1.0113043340627492,
+                "output_token_ratio_to_fixed3": 1.0444933920704846,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 584,
+                "nonfinal_tokens_with_bytes": 1781,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 22.628,
+                  "p95": 24.72725,
+                  "max": 25.018
+                },
+                "paired_bootstrap_95_percent": [
+                  -4.541727934859086,
+                  13.989007738186611
+                ]
+              },
+              "prefix128": {
+                "tokens": 2371,
+                "complete_request_seconds": 44.256173715,
+                "tokens_per_second": 53.57444625169625,
+                "pooled_gain_percent": 3.331815270819405,
+                "paired_gain_percent": [
+                  -6.478862656366758,
+                  4.17645196155263,
+                  -0.5720670947951145,
+                  8.138903964289646,
+                  -6.3952337794820675,
+                  26.75449538952648
+                ],
+                "median_paired_gain_percent": 1.8021924333787576,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 1.0108149066509686,
+                "output_token_ratio_to_fixed3": 1.0444933920704846,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 584,
+                "nonfinal_tokens_with_bytes": 1781,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 38.052,
+                  "p95": 40.13875,
+                  "max": 40.587
+                },
+                "paired_bootstrap_95_percent": [
+                  -4.52810977623942,
+                  14.076104662765818
+                ]
+              },
+              "prefix256": {
+                "tokens": 2371,
+                "complete_request_seconds": 44.249859172,
+                "tokens_per_second": 53.58209143183666,
+                "pooled_gain_percent": 3.346560926579789,
+                "paired_gain_percent": [
+                  -6.551752296292457,
+                  4.282661163293189,
+                  -0.5978484264028805,
+                  8.408658233359368,
+                  -6.365172601566371,
+                  26.551067866685973
+                ],
+                "median_paired_gain_percent": 1.8424063684451542,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 1.0106706819325328,
+                "output_token_ratio_to_fixed3": 1.0444933920704846,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 584,
+                "nonfinal_tokens_with_bytes": 1781,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 48.296,
+                  "p95": 49.66125,
+                  "max": 49.794
+                },
+                "paired_bootstrap_95_percent": [
+                  -4.533171311524276,
+                  14.134082547901421
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "gemma": {
+      "selected_max_new": 8192,
+      "loop_exclusions": [],
+      "cells": {
+        "prose-256": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 1865,
+                "complete_request_seconds": 6.848483745999999,
+                "tokens_per_second": 272.32305268874916,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1859,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 2363,
+                "complete_request_seconds": 9.132474922,
+                "tokens_per_second": 258.7469464939419,
+                "pooled_gain_percent": -4.985294509871718,
+                "paired_gain_percent": [
+                  0.024473950619641194,
+                  -6.982120325873686,
+                  -4.646453532471262,
+                  -3.258923547588588,
+                  -7.819664135805448,
+                  -4.866159966334527
+                ],
+                "median_paired_gain_percent": -4.756306749402894,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 1.3335031900066951,
+                "output_token_ratio_to_fixed3": 1.267024128686327,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2357,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 14.472,
+                  "p95": 15.795,
+                  "max": 15.81
+                },
+                "paired_bootstrap_95_percent": [
+                  -6.747480758659597,
+                  -2.7351051639161628
+                ]
+              },
+              "prefix128": {
+                "tokens": 2363,
+                "complete_request_seconds": 9.1312409,
+                "tokens_per_second": 258.7819142960077,
+                "pooled_gain_percent": -4.972453950939759,
+                "paired_gain_percent": [
+                  -0.049949363674384184,
+                  -6.9224955161288015,
+                  -4.580153189571201,
+                  -3.2579472760527417,
+                  -7.947561601797437,
+                  -4.729274602973598
+                ],
+                "median_paired_gain_percent": -4.6547138962723995,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.3333230009245904,
+                "output_token_ratio_to_fixed3": 1.267024128686327,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2357,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 19.928,
+                  "p95": 21.2975,
+                  "max": 21.31
+                },
+                "paired_bootstrap_95_percent": [
+                  -6.750369895527553,
+                  -2.7509137957530183
+                ]
+              },
+              "prefix256": {
+                "tokens": 2363,
+                "complete_request_seconds": 9.13874144,
+                "tokens_per_second": 258.5695213628891,
+                "pooled_gain_percent": -5.050446956313914,
+                "paired_gain_percent": [
+                  -0.12736244807705077,
+                  -7.023723468358945,
+                  -4.6256275791888175,
+                  -3.1869822644044365,
+                  -7.8169135028627545,
+                  -5.086750064553003
+                ],
+                "median_paired_gain_percent": -4.85618882187091,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.3344182126938207,
+                "output_token_ratio_to_fixed3": 1.267024128686327,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2357,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 21.666,
+                  "p95": 24.3135,
+                  "max": 24.316
+                },
+                "paired_bootstrap_95_percent": [
+                  -6.804431455636861,
+                  -2.8466000247088674
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 1865,
+                "complete_request_seconds": 6.848483745999999,
+                "tokens_per_second": 272.32305268874916,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1859,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 2363,
+                "complete_request_seconds": 9.132474922,
+                "tokens_per_second": 258.7469464939419,
+                "pooled_gain_percent": -4.985294509871718,
+                "paired_gain_percent": [
+                  0.024473950619641194,
+                  -6.982120325873686,
+                  -4.646453532471262,
+                  -3.258923547588588,
+                  -7.819664135805448,
+                  -4.866159966334527
+                ],
+                "median_paired_gain_percent": -4.756306749402894,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 1.3335031900066951,
+                "output_token_ratio_to_fixed3": 1.267024128686327,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2357,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 14.472,
+                  "p95": 15.795,
+                  "max": 15.81
+                },
+                "paired_bootstrap_95_percent": [
+                  -6.747480758659597,
+                  -2.7351051639161628
+                ]
+              },
+              "prefix128": {
+                "tokens": 2363,
+                "complete_request_seconds": 9.1312409,
+                "tokens_per_second": 258.7819142960077,
+                "pooled_gain_percent": -4.972453950939759,
+                "paired_gain_percent": [
+                  -0.049949363674384184,
+                  -6.9224955161288015,
+                  -4.580153189571201,
+                  -3.2579472760527417,
+                  -7.947561601797437,
+                  -4.729274602973598
+                ],
+                "median_paired_gain_percent": -4.6547138962723995,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.3333230009245904,
+                "output_token_ratio_to_fixed3": 1.267024128686327,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2357,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 19.928,
+                  "p95": 21.2975,
+                  "max": 21.31
+                },
+                "paired_bootstrap_95_percent": [
+                  -6.750369895527553,
+                  -2.7509137957530183
+                ]
+              },
+              "prefix256": {
+                "tokens": 2363,
+                "complete_request_seconds": 9.13874144,
+                "tokens_per_second": 258.5695213628891,
+                "pooled_gain_percent": -5.050446956313914,
+                "paired_gain_percent": [
+                  -0.12736244807705077,
+                  -7.023723468358945,
+                  -4.6256275791888175,
+                  -3.1869822644044365,
+                  -7.8169135028627545,
+                  -5.086750064553003
+                ],
+                "median_paired_gain_percent": -4.85618882187091,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.3344182126938207,
+                "output_token_ratio_to_fixed3": 1.267024128686327,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2357,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 21.666,
+                  "p95": 24.3135,
+                  "max": 24.316
+                },
+                "paired_bootstrap_95_percent": [
+                  -6.804431455636861,
+                  -2.8466000247088674
+                ]
+              }
+            }
+          }
+        },
+        "prose-1024": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 2068,
+                "complete_request_seconds": 8.117480335,
+                "tokens_per_second": 254.75885553839166,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2062,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 2130,
+                "complete_request_seconds": 8.96472397,
+                "tokens_per_second": 237.59794580713677,
+                "pooled_gain_percent": -6.736138649621459,
+                "paired_gain_percent": [
+                  -4.2331396508465176,
+                  -6.848964542664748,
+                  -10.042221219740622,
+                  -9.608202628099505,
+                  -7.765594035085222,
+                  -3.5127405001994183
+                ],
+                "median_paired_gain_percent": -7.307279288874986,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.1043727363707867,
+                "output_token_ratio_to_fixed3": 1.0299806576402322,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2124,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 13.4605,
+                  "p95": 15.239,
+                  "max": 15.259
+                },
+                "paired_bootstrap_95_percent": [
+                  -8.845162168896136,
+                  -4.787558064436947
+                ]
+              },
+              "prefix128": {
+                "tokens": 2130,
+                "complete_request_seconds": 8.966389796,
+                "tokens_per_second": 237.55380353308033,
+                "pooled_gain_percent": -6.753465730936514,
+                "paired_gain_percent": [
+                  -4.312259800704599,
+                  -6.879815272228407,
+                  -10.134792478646414,
+                  -9.514897153189118,
+                  -7.833654075029706,
+                  -3.4365487611570433
+                ],
+                "median_paired_gain_percent": -7.356734673629056,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.1045779510348515,
+                "output_token_ratio_to_fixed3": 1.0299806576402322,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2124,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 16.902,
+                  "p95": 19.574,
+                  "max": 19.817
+                },
+                "paired_bootstrap_95_percent": [
+                  -8.88997280762095,
+                  -4.785752459297232
+                ]
+              },
+              "prefix256": {
+                "tokens": 2130,
+                "complete_request_seconds": 8.970193425,
+                "tokens_per_second": 237.45307364985834,
+                "pooled_gain_percent": -6.793005036845667,
+                "paired_gain_percent": [
+                  -4.377988121406151,
+                  -6.9338147412053575,
+                  -9.90720613117466,
+                  -9.796096908123564,
+                  -7.788495859774114,
+                  -3.5673235903618594
+                ],
+                "median_paired_gain_percent": -7.361155300489736,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.1050465236513567,
+                "output_token_ratio_to_fixed3": 1.0299806576402322,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2124,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 16.336,
+                  "p95": 19.617,
+                  "max": 19.617
+                },
+                "paired_bootstrap_95_percent": [
+                  -8.877206557568694,
+                  -4.892435336332146
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 2068,
+                "complete_request_seconds": 8.117480335,
+                "tokens_per_second": 254.75885553839166,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2062,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 2130,
+                "complete_request_seconds": 8.96472397,
+                "tokens_per_second": 237.59794580713677,
+                "pooled_gain_percent": -6.736138649621459,
+                "paired_gain_percent": [
+                  -4.2331396508465176,
+                  -6.848964542664748,
+                  -10.042221219740622,
+                  -9.608202628099505,
+                  -7.765594035085222,
+                  -3.5127405001994183
+                ],
+                "median_paired_gain_percent": -7.307279288874986,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.1043727363707867,
+                "output_token_ratio_to_fixed3": 1.0299806576402322,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2124,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 13.4605,
+                  "p95": 15.239,
+                  "max": 15.259
+                },
+                "paired_bootstrap_95_percent": [
+                  -8.845162168896136,
+                  -4.787558064436947
+                ]
+              },
+              "prefix128": {
+                "tokens": 2130,
+                "complete_request_seconds": 8.966389796,
+                "tokens_per_second": 237.55380353308033,
+                "pooled_gain_percent": -6.753465730936514,
+                "paired_gain_percent": [
+                  -4.312259800704599,
+                  -6.879815272228407,
+                  -10.134792478646414,
+                  -9.514897153189118,
+                  -7.833654075029706,
+                  -3.4365487611570433
+                ],
+                "median_paired_gain_percent": -7.356734673629056,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.1045779510348515,
+                "output_token_ratio_to_fixed3": 1.0299806576402322,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2124,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 16.902,
+                  "p95": 19.574,
+                  "max": 19.817
+                },
+                "paired_bootstrap_95_percent": [
+                  -8.88997280762095,
+                  -4.785752459297232
+                ]
+              },
+              "prefix256": {
+                "tokens": 2130,
+                "complete_request_seconds": 8.970193425,
+                "tokens_per_second": 237.45307364985834,
+                "pooled_gain_percent": -6.793005036845667,
+                "paired_gain_percent": [
+                  -4.377988121406151,
+                  -6.9338147412053575,
+                  -9.90720613117466,
+                  -9.796096908123564,
+                  -7.788495859774114,
+                  -3.5673235903618594
+                ],
+                "median_paired_gain_percent": -7.361155300489736,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.1050465236513567,
+                "output_token_ratio_to_fixed3": 1.0299806576402322,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 2124,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 16.336,
+                  "p95": 19.617,
+                  "max": 19.617
+                },
+                "paired_bootstrap_95_percent": [
+                  -8.877206557568694,
+                  -4.892435336332146
+                ]
+              }
+            }
+          }
+        },
+        "prose-4096": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 1717,
+                "complete_request_seconds": 8.888699751,
+                "tokens_per_second": 193.16661020154643,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1711,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 1754,
+                "complete_request_seconds": 9.629481778,
+                "tokens_per_second": 182.1489505289139,
+                "pooled_gain_percent": -5.703708141452046,
+                "paired_gain_percent": [
+                  -0.09934603865204839,
+                  -7.102473027178879,
+                  -7.04318716623945,
+                  6.217611068003204,
+                  -10.817381231745038,
+                  -10.179741804807751
+                ],
+                "median_paired_gain_percent": -7.072830096709165,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 1.0833397513417709,
+                "output_token_ratio_to_fixed3": 1.0215492137449038,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1748,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 16.466,
+                  "p95": 16.99525,
+                  "max": 17.043
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.575442568772353,
+                  -0.19402110542662276
+                ]
+              },
+              "prefix128": {
+                "tokens": 1754,
+                "complete_request_seconds": 9.616981678,
+                "tokens_per_second": 182.38570673504407,
+                "pooled_gain_percent": -5.581142338861655,
+                "paired_gain_percent": [
+                  0.0066886470322824465,
+                  -7.153042268766163,
+                  -6.977807108231115,
+                  6.0095167467391075,
+                  -10.698081567271078,
+                  -9.678608933602161
+                ],
+                "median_paired_gain_percent": -7.06542468849864,
+                "wins": 2,
+                "latency_ratio_to_fixed3": 1.0819334601686896,
+                "output_token_ratio_to_fixed3": 1.0215492137449038,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1748,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 20.339,
+                  "p95": 24.64175,
+                  "max": 25.328
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.33875885198523,
+                  -0.21830109560653232
+                ]
+              },
+              "prefix256": {
+                "tokens": 1754,
+                "complete_request_seconds": 9.615804187,
+                "tokens_per_second": 182.4080405434321,
+                "pooled_gain_percent": -5.569580398438967,
+                "paired_gain_percent": [
+                  -0.18691675510768002,
+                  -7.091634414698012,
+                  -6.951472400561498,
+                  6.168243384065697,
+                  -10.498795254274107,
+                  -9.84874275041937
+                ],
+                "median_paired_gain_percent": -7.021553407629755,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 1.0818009896124794,
+                "output_token_ratio_to_fixed3": 1.0215492137449038,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1748,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 17.298,
+                  "p95": 22.014,
+                  "max": 22.843
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.318836007631571,
+                  -0.22327269002885286
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 1717,
+                "complete_request_seconds": 8.888699751,
+                "tokens_per_second": 193.16661020154643,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1711,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 1754,
+                "complete_request_seconds": 9.629481778,
+                "tokens_per_second": 182.1489505289139,
+                "pooled_gain_percent": -5.703708141452046,
+                "paired_gain_percent": [
+                  -0.09934603865204839,
+                  -7.102473027178879,
+                  -7.04318716623945,
+                  6.217611068003204,
+                  -10.817381231745038,
+                  -10.179741804807751
+                ],
+                "median_paired_gain_percent": -7.072830096709165,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 1.0833397513417709,
+                "output_token_ratio_to_fixed3": 1.0215492137449038,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1748,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 16.466,
+                  "p95": 16.99525,
+                  "max": 17.043
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.575442568772353,
+                  -0.19402110542662276
+                ]
+              },
+              "prefix128": {
+                "tokens": 1754,
+                "complete_request_seconds": 9.616981678,
+                "tokens_per_second": 182.38570673504407,
+                "pooled_gain_percent": -5.581142338861655,
+                "paired_gain_percent": [
+                  0.0066886470322824465,
+                  -7.153042268766163,
+                  -6.977807108231115,
+                  6.0095167467391075,
+                  -10.698081567271078,
+                  -9.678608933602161
+                ],
+                "median_paired_gain_percent": -7.06542468849864,
+                "wins": 2,
+                "latency_ratio_to_fixed3": 1.0819334601686896,
+                "output_token_ratio_to_fixed3": 1.0215492137449038,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1748,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 20.339,
+                  "p95": 24.64175,
+                  "max": 25.328
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.33875885198523,
+                  -0.21830109560653232
+                ]
+              },
+              "prefix256": {
+                "tokens": 1754,
+                "complete_request_seconds": 9.615804187,
+                "tokens_per_second": 182.4080405434321,
+                "pooled_gain_percent": -5.569580398438967,
+                "paired_gain_percent": [
+                  -0.18691675510768002,
+                  -7.091634414698012,
+                  -6.951472400561498,
+                  6.168243384065697,
+                  -10.498795254274107,
+                  -9.84874275041937
+                ],
+                "median_paired_gain_percent": -7.021553407629755,
+                "wins": 1,
+                "latency_ratio_to_fixed3": 1.0818009896124794,
+                "output_token_ratio_to_fixed3": 1.0215492137449038,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1748,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 17.298,
+                  "p95": 22.014,
+                  "max": 22.843
+                },
+                "paired_bootstrap_95_percent": [
+                  -9.318836007631571,
+                  -0.22327269002885286
+                ]
+              }
+            }
+          }
+        },
+        "prose-16384": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 1750,
+                "complete_request_seconds": 19.358445275,
+                "tokens_per_second": 90.39982163546964,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1744,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 1758,
+                "complete_request_seconds": 19.787773695,
+                "tokens_per_second": 88.84273830381504,
+                "pooled_gain_percent": -1.7224407122542917,
+                "paired_gain_percent": [
+                  -5.293882478694978,
+                  3.3612014766414067,
+                  -12.440533955141852,
+                  8.667359264382313,
+                  9.008127080292061,
+                  -7.279714206196641
+                ],
+                "median_paired_gain_percent": -0.9663405010267856,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 1.0221778357663074,
+                "output_token_ratio_to_fixed3": 1.0045714285714287,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1752,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 16.486,
+                  "p95": 19.76725,
+                  "max": 19.807
+                },
+                "paired_bootstrap_95_percent": [
+                  -7.6468053813876224,
+                  5.033928620891544
+                ]
+              },
+              "prefix128": {
+                "tokens": 1758,
+                "complete_request_seconds": 19.782120864,
+                "tokens_per_second": 88.86812552031529,
+                "pooled_gain_percent": -1.6943574527511718,
+                "paired_gain_percent": [
+                  -5.264456191400358,
+                  3.318286517658864,
+                  -12.36040602090338,
+                  8.468539322347768,
+                  9.302986637942535,
+                  -7.283293287689718
+                ],
+                "median_paired_gain_percent": -0.973084836870747,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 1.0218858272439442,
+                "output_token_ratio_to_fixed3": 1.0045714285714287,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1752,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 23.249,
+                  "p95": 24.17825,
+                  "max": 24.196
+                },
+                "paired_bootstrap_95_percent": [
+                  -7.6320900516752666,
+                  5.113159356192052
+                ]
+              },
+              "prefix256": {
+                "tokens": 1758,
+                "complete_request_seconds": 19.784146028000002,
+                "tokens_per_second": 88.85902871480765,
+                "pooled_gain_percent": -1.704420310556709,
+                "paired_gain_percent": [
+                  -5.047997340588939,
+                  3.3487606605736353,
+                  -12.421899873493148,
+                  8.271833747894108,
+                  9.249398757474815,
+                  -7.290882205366877
+                ],
+                "median_paired_gain_percent": -0.8496183400076518,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 1.0219904412235916,
+                "output_token_ratio_to_fixed3": 1.0045714285714287,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1752,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 24.602,
+                  "p95": 26.39275,
+                  "max": 26.611
+                },
+                "paired_bootstrap_95_percent": [
+                  -7.6200265627952675,
+                  5.053160465727952
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 1750,
+                "complete_request_seconds": 19.358445275,
+                "tokens_per_second": 90.39982163546964,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1744,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 1758,
+                "complete_request_seconds": 19.787773695,
+                "tokens_per_second": 88.84273830381504,
+                "pooled_gain_percent": -1.7224407122542917,
+                "paired_gain_percent": [
+                  -5.293882478694978,
+                  3.3612014766414067,
+                  -12.440533955141852,
+                  8.667359264382313,
+                  9.008127080292061,
+                  -7.279714206196641
+                ],
+                "median_paired_gain_percent": -0.9663405010267856,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 1.0221778357663074,
+                "output_token_ratio_to_fixed3": 1.0045714285714287,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1752,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 16.486,
+                  "p95": 19.76725,
+                  "max": 19.807
+                },
+                "paired_bootstrap_95_percent": [
+                  -7.6468053813876224,
+                  5.033928620891544
+                ]
+              },
+              "prefix128": {
+                "tokens": 1758,
+                "complete_request_seconds": 19.782120864,
+                "tokens_per_second": 88.86812552031529,
+                "pooled_gain_percent": -1.6943574527511718,
+                "paired_gain_percent": [
+                  -5.264456191400358,
+                  3.318286517658864,
+                  -12.36040602090338,
+                  8.468539322347768,
+                  9.302986637942535,
+                  -7.283293287689718
+                ],
+                "median_paired_gain_percent": -0.973084836870747,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 1.0218858272439442,
+                "output_token_ratio_to_fixed3": 1.0045714285714287,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1752,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 23.249,
+                  "p95": 24.17825,
+                  "max": 24.196
+                },
+                "paired_bootstrap_95_percent": [
+                  -7.6320900516752666,
+                  5.113159356192052
+                ]
+              },
+              "prefix256": {
+                "tokens": 1758,
+                "complete_request_seconds": 19.784146028000002,
+                "tokens_per_second": 88.85902871480765,
+                "pooled_gain_percent": -1.704420310556709,
+                "paired_gain_percent": [
+                  -5.047997340588939,
+                  3.3487606605736353,
+                  -12.421899873493148,
+                  8.271833747894108,
+                  9.249398757474815,
+                  -7.290882205366877
+                ],
+                "median_paired_gain_percent": -0.8496183400076518,
+                "wins": 3,
+                "latency_ratio_to_fixed3": 1.0219904412235916,
+                "output_token_ratio_to_fixed3": 1.0045714285714287,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 1752,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "2": 6
+                },
+                "prediction_counts": {
+                  "prose": 6
+                },
+                "routing_us": {
+                  "median": 24.602,
+                  "p95": 26.39275,
+                  "max": 26.611
+                },
+                "paired_bootstrap_95_percent": [
+                  -7.6200265627952675,
+                  5.053160465727952
+                ]
+              }
+            }
+          }
+        },
+        "code-256": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 875,
+                "complete_request_seconds": 2.447278062,
+                "tokens_per_second": 357.5400824232126,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 869,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 893,
+                "complete_request_seconds": 2.35814648,
+                "tokens_per_second": 378.68724762169995,
+                "pooled_gain_percent": 5.914627824428331,
+                "paired_gain_percent": [
+                  3.159544463259678,
+                  5.306587272109131,
+                  7.499923514013518,
+                  6.560331881596304,
+                  8.952194346442766,
+                  6.09317292993905
+                ],
+                "median_paired_gain_percent": 6.326752405767677,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9635792992288098,
+                "output_token_ratio_to_fixed3": 1.0205714285714285,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 887,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 11.5315,
+                  "p95": 16.2455,
+                  "max": 17.042
+                },
+                "paired_bootstrap_95_percent": [
+                  4.3702942775944775,
+                  7.571149084326678
+                ]
+              },
+              "prefix128": {
+                "tokens": 893,
+                "complete_request_seconds": 2.35587354,
+                "tokens_per_second": 379.052603986545,
+                "pooled_gain_percent": 6.016813952028044,
+                "paired_gain_percent": [
+                  3.165434404548395,
+                  5.754401408401222,
+                  7.6014659208353486,
+                  6.660941520025632,
+                  8.944449473163507,
+                  6.117264420278334
+                ],
+                "median_paired_gain_percent": 6.389102970151983,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9626505367660179,
+                "output_token_ratio_to_fixed3": 1.0205714285714285,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 887,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 16.942,
+                  "p95": 19.89,
+                  "max": 20.759
+                },
+                "paired_bootstrap_95_percent": [
+                  4.402280271146197,
+                  7.658897667410547
+                ]
+              },
+              "prefix256": {
+                "tokens": 893,
+                "complete_request_seconds": 2.357201093,
+                "tokens_per_second": 378.83912520313766,
+                "pooled_gain_percent": 5.957106301361148,
+                "paired_gain_percent": [
+                  3.0462631458605394,
+                  5.746571023892488,
+                  7.533662393275842,
+                  6.623922786812364,
+                  8.975077754900651,
+                  5.998574448102834
+                ],
+                "median_paired_gain_percent": 6.311248617457599,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9631929978049221,
+                "output_token_ratio_to_fixed3": 1.0205714285714285,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 887,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 17.2525,
+                  "p95": 18.49725,
+                  "max": 18.685
+                },
+                "paired_bootstrap_95_percent": [
+                  4.321497431588384,
+                  7.642900566941391
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 875,
+                "complete_request_seconds": 2.447278062,
+                "tokens_per_second": 357.5400824232126,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 869,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 893,
+                "complete_request_seconds": 2.35814648,
+                "tokens_per_second": 378.68724762169995,
+                "pooled_gain_percent": 5.914627824428331,
+                "paired_gain_percent": [
+                  3.159544463259678,
+                  5.306587272109131,
+                  7.499923514013518,
+                  6.560331881596304,
+                  8.952194346442766,
+                  6.09317292993905
+                ],
+                "median_paired_gain_percent": 6.326752405767677,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9635792992288098,
+                "output_token_ratio_to_fixed3": 1.0205714285714285,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 887,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 11.5315,
+                  "p95": 16.2455,
+                  "max": 17.042
+                },
+                "paired_bootstrap_95_percent": [
+                  4.3702942775944775,
+                  7.571149084326678
+                ]
+              },
+              "prefix128": {
+                "tokens": 893,
+                "complete_request_seconds": 2.35587354,
+                "tokens_per_second": 379.052603986545,
+                "pooled_gain_percent": 6.016813952028044,
+                "paired_gain_percent": [
+                  3.165434404548395,
+                  5.754401408401222,
+                  7.6014659208353486,
+                  6.660941520025632,
+                  8.944449473163507,
+                  6.117264420278334
+                ],
+                "median_paired_gain_percent": 6.389102970151983,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9626505367660179,
+                "output_token_ratio_to_fixed3": 1.0205714285714285,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 887,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 16.942,
+                  "p95": 19.89,
+                  "max": 20.759
+                },
+                "paired_bootstrap_95_percent": [
+                  4.402280271146197,
+                  7.658897667410547
+                ]
+              },
+              "prefix256": {
+                "tokens": 893,
+                "complete_request_seconds": 2.357201093,
+                "tokens_per_second": 378.83912520313766,
+                "pooled_gain_percent": 5.957106301361148,
+                "paired_gain_percent": [
+                  3.0462631458605394,
+                  5.746571023892488,
+                  7.533662393275842,
+                  6.623922786812364,
+                  8.975077754900651,
+                  5.998574448102834
+                ],
+                "median_paired_gain_percent": 6.311248617457599,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9631929978049221,
+                "output_token_ratio_to_fixed3": 1.0205714285714285,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 887,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 17.2525,
+                  "p95": 18.49725,
+                  "max": 18.685
+                },
+                "paired_bootstrap_95_percent": [
+                  4.321497431588384,
+                  7.642900566941391
+                ]
+              }
+            }
+          }
+        },
+        "code-1024": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 886,
+                "complete_request_seconds": 2.9414793450000003,
+                "tokens_per_second": 301.20898231226573,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 880,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 885,
+                "complete_request_seconds": 2.720961999,
+                "tokens_per_second": 325.25261298219255,
+                "pooled_gain_percent": 7.98237505580115,
+                "paired_gain_percent": [
+                  6.284085089091551,
+                  8.601296650033019,
+                  8.570240232833237,
+                  8.786325224012682,
+                  9.692528501205256,
+                  6.735864358751487
+                ],
+                "median_paired_gain_percent": 8.585768441433128,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9250318223805171,
+                "output_token_ratio_to_fixed3": 0.9988713318284425,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 879,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 10.8205,
+                  "p95": 12.844,
+                  "max": 13.325
+                },
+                "paired_bootstrap_95_percent": [
+                  6.964487300499367,
+                  9.013664345474881
+                ]
+              },
+              "prefix128": {
+                "tokens": 885,
+                "complete_request_seconds": 2.720482925,
+                "tokens_per_second": 325.30988960351584,
+                "pooled_gain_percent": 8.001390631260952,
+                "paired_gain_percent": [
+                  6.48712730535892,
+                  8.566450381642765,
+                  8.578565396046711,
+                  8.677775220751993,
+                  9.617474730924735,
+                  6.800007834504385
+                ],
+                "median_paired_gain_percent": 8.572507888844738,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.924868953992264,
+                "output_token_ratio_to_fixed3": 0.9988713318284425,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 879,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 20.5685,
+                  "p95": 23.55925,
+                  "max": 23.915
+                },
+                "paired_bootstrap_95_percent": [
+                  7.077389628241271,
+                  8.94731064473171
+                ]
+              },
+              "prefix256": {
+                "tokens": 885,
+                "complete_request_seconds": 2.717759953,
+                "tokens_per_second": 325.63582336368324,
+                "pooled_gain_percent": 8.109599144056734,
+                "paired_gain_percent": [
+                  6.256848242101398,
+                  9.046798175685634,
+                  9.14775654276998,
+                  8.740107477488813,
+                  9.679381059389902,
+                  6.730952417697766
+                ],
+                "median_paired_gain_percent": 8.893452826587223,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9239432388399108,
+                "output_token_ratio_to_fixed3": 0.9988713318284425,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 879,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 22.2875,
+                  "p95": 25.71875,
+                  "max": 25.819
+                },
+                "paired_bootstrap_95_percent": [
+                  7.068191501635557,
+                  9.214532312110869
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 886,
+                "complete_request_seconds": 2.9414793450000003,
+                "tokens_per_second": 301.20898231226573,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 880,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 885,
+                "complete_request_seconds": 2.720961999,
+                "tokens_per_second": 325.25261298219255,
+                "pooled_gain_percent": 7.98237505580115,
+                "paired_gain_percent": [
+                  6.284085089091551,
+                  8.601296650033019,
+                  8.570240232833237,
+                  8.786325224012682,
+                  9.692528501205256,
+                  6.735864358751487
+                ],
+                "median_paired_gain_percent": 8.585768441433128,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9250318223805171,
+                "output_token_ratio_to_fixed3": 0.9988713318284425,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 879,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 10.8205,
+                  "p95": 12.844,
+                  "max": 13.325
+                },
+                "paired_bootstrap_95_percent": [
+                  6.964487300499367,
+                  9.013664345474881
+                ]
+              },
+              "prefix128": {
+                "tokens": 885,
+                "complete_request_seconds": 2.720482925,
+                "tokens_per_second": 325.30988960351584,
+                "pooled_gain_percent": 8.001390631260952,
+                "paired_gain_percent": [
+                  6.48712730535892,
+                  8.566450381642765,
+                  8.578565396046711,
+                  8.677775220751993,
+                  9.617474730924735,
+                  6.800007834504385
+                ],
+                "median_paired_gain_percent": 8.572507888844738,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.924868953992264,
+                "output_token_ratio_to_fixed3": 0.9988713318284425,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 879,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 20.5685,
+                  "p95": 23.55925,
+                  "max": 23.915
+                },
+                "paired_bootstrap_95_percent": [
+                  7.077389628241271,
+                  8.94731064473171
+                ]
+              },
+              "prefix256": {
+                "tokens": 885,
+                "complete_request_seconds": 2.717759953,
+                "tokens_per_second": 325.63582336368324,
+                "pooled_gain_percent": 8.109599144056734,
+                "paired_gain_percent": [
+                  6.256848242101398,
+                  9.046798175685634,
+                  9.14775654276998,
+                  8.740107477488813,
+                  9.679381059389902,
+                  6.730952417697766
+                ],
+                "median_paired_gain_percent": 8.893452826587223,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9239432388399108,
+                "output_token_ratio_to_fixed3": 0.9988713318284425,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 879,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 22.2875,
+                  "p95": 25.71875,
+                  "max": 25.819
+                },
+                "paired_bootstrap_95_percent": [
+                  7.068191501635557,
+                  9.214532312110869
+                ]
+              }
+            }
+          }
+        },
+        "code-4096": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 876,
+                "complete_request_seconds": 4.874346926,
+                "tokens_per_second": 179.71638319943415,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 870,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 871,
+                "complete_request_seconds": 4.667095566,
+                "tokens_per_second": 186.62570493419375,
+                "pooled_gain_percent": 3.844569766960104,
+                "paired_gain_percent": [
+                  0.856126112379707,
+                  5.2500119055524985,
+                  4.708470338055504,
+                  6.143750043177154,
+                  5.867740329576465,
+                  1.24933765673918
+                ],
+                "median_paired_gain_percent": 4.979241121804002,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.957481204529265,
+                "output_token_ratio_to_fixed3": 0.9942922374429224,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 865,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 11.988,
+                  "p95": 13.58075,
+                  "max": 13.736
+                },
+                "paired_bootstrap_95_percent": [
+                  2.079397222197854,
+                  5.614976619133216
+                ]
+              },
+              "prefix128": {
+                "tokens": 871,
+                "complete_request_seconds": 4.662001388,
+                "tokens_per_second": 186.82963120559242,
+                "pooled_gain_percent": 3.958040930672735,
+                "paired_gain_percent": [
+                  0.8822395839323649,
+                  5.276288850665933,
+                  4.778835271543658,
+                  6.198934036052983,
+                  5.385216123433767,
+                  2.165360478487721
+                ],
+                "median_paired_gain_percent": 5.0275620611047955,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9564361049339064,
+                "output_token_ratio_to_fixed3": 0.9942922374429224,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 865,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 20.639,
+                  "p95": 21.9915,
+                  "max": 22.242
+                },
+                "paired_bootstrap_95_percent": [
+                  2.2953919782550125,
+                  5.514354231414531
+                ]
+              },
+              "prefix256": {
+                "tokens": 871,
+                "complete_request_seconds": 4.65992166,
+                "tokens_per_second": 186.91301346898607,
+                "pooled_gain_percent": 4.004437515062675,
+                "paired_gain_percent": [
+                  1.2082885218742012,
+                  5.687919926053331,
+                  4.728804646499518,
+                  6.222669256313984,
+                  5.890340958159634,
+                  1.275715971439939
+                ],
+                "median_paired_gain_percent": 5.208362286276424,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9560094369039993,
+                "output_token_ratio_to_fixed3": 0.9942922374429224,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 865,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 22.718,
+                  "p95": 23.7,
+                  "max": 23.745
+                },
+                "paired_bootstrap_95_percent": [
+                  2.3436404876417463,
+                  5.748574940810602
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 876,
+                "complete_request_seconds": 4.874346926,
+                "tokens_per_second": 179.71638319943415,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 870,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 871,
+                "complete_request_seconds": 4.667095566,
+                "tokens_per_second": 186.62570493419375,
+                "pooled_gain_percent": 3.844569766960104,
+                "paired_gain_percent": [
+                  0.856126112379707,
+                  5.2500119055524985,
+                  4.708470338055504,
+                  6.143750043177154,
+                  5.867740329576465,
+                  1.24933765673918
+                ],
+                "median_paired_gain_percent": 4.979241121804002,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.957481204529265,
+                "output_token_ratio_to_fixed3": 0.9942922374429224,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 865,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 11.988,
+                  "p95": 13.58075,
+                  "max": 13.736
+                },
+                "paired_bootstrap_95_percent": [
+                  2.079397222197854,
+                  5.614976619133216
+                ]
+              },
+              "prefix128": {
+                "tokens": 871,
+                "complete_request_seconds": 4.662001388,
+                "tokens_per_second": 186.82963120559242,
+                "pooled_gain_percent": 3.958040930672735,
+                "paired_gain_percent": [
+                  0.8822395839323649,
+                  5.276288850665933,
+                  4.778835271543658,
+                  6.198934036052983,
+                  5.385216123433767,
+                  2.165360478487721
+                ],
+                "median_paired_gain_percent": 5.0275620611047955,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9564361049339064,
+                "output_token_ratio_to_fixed3": 0.9942922374429224,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 865,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 20.639,
+                  "p95": 21.9915,
+                  "max": 22.242
+                },
+                "paired_bootstrap_95_percent": [
+                  2.2953919782550125,
+                  5.514354231414531
+                ]
+              },
+              "prefix256": {
+                "tokens": 871,
+                "complete_request_seconds": 4.65992166,
+                "tokens_per_second": 186.91301346898607,
+                "pooled_gain_percent": 4.004437515062675,
+                "paired_gain_percent": [
+                  1.2082885218742012,
+                  5.687919926053331,
+                  4.728804646499518,
+                  6.222669256313984,
+                  5.890340958159634,
+                  1.275715971439939
+                ],
+                "median_paired_gain_percent": 5.208362286276424,
+                "wins": 6,
+                "latency_ratio_to_fixed3": 0.9560094369039993,
+                "output_token_ratio_to_fixed3": 0.9942922374429224,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 865,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 22.718,
+                  "p95": 23.7,
+                  "max": 23.745
+                },
+                "paired_bootstrap_95_percent": [
+                  2.3436404876417463,
+                  5.748574940810602
+                ]
+              }
+            }
+          }
+        },
+        "code-16384": {
+          "requested_format": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 891,
+                "complete_request_seconds": 14.25934146,
+                "tokens_per_second": 62.4853540746895,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 885,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 886,
+                "complete_request_seconds": 14.018401825,
+                "tokens_per_second": 63.2026397203092,
+                "pooled_gain_percent": 1.1479260320143458,
+                "paired_gain_percent": [
+                  -4.9130400093349795,
+                  8.227388043776585,
+                  1.033077161059337,
+                  1.7226884284628818,
+                  2.6014474237304075,
+                  1.3044868904732887
+                ],
+                "median_paired_gain_percent": 1.5135876594680853,
+                "wins": 5,
+                "latency_ratio_to_fixed3": 0.9831030320947234,
+                "output_token_ratio_to_fixed3": 0.9943883277216611,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 880,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 12.5885,
+                  "p95": 15.93725,
+                  "max": 16.581
+                },
+                "paired_bootstrap_95_percent": [
+                  -2.001088072548396,
+                  4.321769348233628
+                ]
+              },
+              "prefix128": {
+                "tokens": 886,
+                "complete_request_seconds": 14.011486422,
+                "tokens_per_second": 63.233833535952016,
+                "pooled_gain_percent": 1.1978478354589317,
+                "paired_gain_percent": [
+                  -4.802305640356652,
+                  8.548082084894615,
+                  0.8819685219603857,
+                  1.760973402482402,
+                  2.484645524373019,
+                  1.4054251344644886
+                ],
+                "median_paired_gain_percent": 1.5831992684734453,
+                "wins": 5,
+                "latency_ratio_to_fixed3": 0.9826180585761778,
+                "output_token_ratio_to_fixed3": 0.9943883277216611,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 880,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 20.654,
+                  "p95": 24.90925,
+                  "max": 25.117
+                },
+                "paired_bootstrap_95_percent": [
+                  -1.9116263380828373,
+                  4.45513974281775
+                ]
+              },
+              "prefix256": {
+                "tokens": 886,
+                "complete_request_seconds": 14.019723656,
+                "tokens_per_second": 63.196680743476705,
+                "pooled_gain_percent": 1.1383894343255818,
+                "paired_gain_percent": [
+                  -4.813914332005131,
+                  8.1987442872971,
+                  0.8692563277683307,
+                  1.76582599283297,
+                  2.5255722193667784,
+                  1.3485106152326898
+                ],
+                "median_paired_gain_percent": 1.55716830403283,
+                "wins": 5,
+                "latency_ratio_to_fixed3": 0.9831957313967008,
+                "output_token_ratio_to_fixed3": 0.9943883277216611,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 880,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 23.3895,
+                  "p95": 27.24925,
+                  "max": 27.382
+                },
+                "paired_bootstrap_95_percent": [
+                  -1.9439756987152264,
+                  4.282425719621153
+                ]
+              }
+            }
+          },
+          "all_arms_format_covered": {
+            "pairs": 6,
+            "arms": {
+              "fixed3": {
+                "tokens": 891,
+                "complete_request_seconds": 14.25934146,
+                "tokens_per_second": 62.4853540746895,
+                "pooled_gain_percent": 0.0,
+                "paired_gain_percent": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "median_paired_gain_percent": 0.0,
+                "wins": 0,
+                "latency_ratio_to_fixed3": 1.0,
+                "output_token_ratio_to_fixed3": 1.0,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 885,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "3": 6
+                },
+                "prediction_counts": {
+                  "not_run": 6
+                },
+                "routing_us": {
+                  "median": 0.0,
+                  "p95": 0.0,
+                  "max": 0.0
+                },
+                "paired_bootstrap_95_percent": null
+              },
+              "prefix64": {
+                "tokens": 886,
+                "complete_request_seconds": 14.018401825,
+                "tokens_per_second": 63.2026397203092,
+                "pooled_gain_percent": 1.1479260320143458,
+                "paired_gain_percent": [
+                  -4.9130400093349795,
+                  8.227388043776585,
+                  1.033077161059337,
+                  1.7226884284628818,
+                  2.6014474237304075,
+                  1.3044868904732887
+                ],
+                "median_paired_gain_percent": 1.5135876594680853,
+                "wins": 5,
+                "latency_ratio_to_fixed3": 0.9831030320947234,
+                "output_token_ratio_to_fixed3": 0.9943883277216611,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 880,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 12.5885,
+                  "p95": 15.93725,
+                  "max": 16.581
+                },
+                "paired_bootstrap_95_percent": [
+                  -2.001088072548396,
+                  4.321769348233628
+                ]
+              },
+              "prefix128": {
+                "tokens": 886,
+                "complete_request_seconds": 14.011486422,
+                "tokens_per_second": 63.233833535952016,
+                "pooled_gain_percent": 1.1978478354589317,
+                "paired_gain_percent": [
+                  -4.802305640356652,
+                  8.548082084894615,
+                  0.8819685219603857,
+                  1.760973402482402,
+                  2.484645524373019,
+                  1.4054251344644886
+                ],
+                "median_paired_gain_percent": 1.5831992684734453,
+                "wins": 5,
+                "latency_ratio_to_fixed3": 0.9826180585761778,
+                "output_token_ratio_to_fixed3": 0.9943883277216611,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 880,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 20.654,
+                  "p95": 24.90925,
+                  "max": 25.117
+                },
+                "paired_bootstrap_95_percent": [
+                  -1.9116263380828373,
+                  4.45513974281775
+                ]
+              },
+              "prefix256": {
+                "tokens": 886,
+                "complete_request_seconds": 14.019723656,
+                "tokens_per_second": 63.196680743476705,
+                "pooled_gain_percent": 1.1383894343255818,
+                "paired_gain_percent": [
+                  -4.813914332005131,
+                  8.1987442872971,
+                  0.8692563277683307,
+                  1.76582599283297,
+                  2.5255722193667784,
+                  1.3485106152326898
+                ],
+                "median_paired_gain_percent": 1.55716830403283,
+                "wins": 5,
+                "latency_ratio_to_fixed3": 0.9831957313967008,
+                "output_token_ratio_to_fixed3": 0.9943883277216611,
+                "format_covered": 6,
+                "final_tokens_with_bytes": 880,
+                "nonfinal_tokens_with_bytes": 0,
+                "k_counts": {
+                  "4": 6
+                },
+                "prediction_counts": {
+                  "code": 6
+                },
+                "routing_us": {
+                  "median": 23.3895,
+                  "p95": 27.24925,
+                  "max": 27.382
+                },
+                "paired_bootstrap_95_percent": [
+                  -1.9439756987152264,
+                  4.282425719621153
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "freeze": {
+    "schema": 1,
+    "workloads_sha256": "8b16db10f8eb574f2d9de276f688e72bb1da684adf8c98ae9a66f5844eff02ec",
+    "pipeline_sha256": "52a89c332707f2948d31660d77c6dc7f162cf6c4206a02ccec795731e647fb5b",
+    "source_sha256": "1c7ba26bd137bc0a1a049283c809696be0145e489f5c1e79fd0f95e886839c83",
+    "arms": {
+      "fixed3": "fixed:3",
+      "prefix64": "prefix:64",
+      "prefix128": "prefix:128",
+      "prefix256": "prefix:256"
+    },
+    "orders": [
+      [
+        "fixed3",
+        "prefix64",
+        "prefix128",
+        "prefix256"
+      ],
+      [
+        "prefix256",
+        "prefix128",
+        "prefix64",
+        "fixed3"
+      ],
+      [
+        "prefix64",
+        "prefix128",
+        "prefix256",
+        "fixed3"
+      ],
+      [
+        "fixed3",
+        "prefix256",
+        "prefix128",
+        "prefix64"
+      ],
+      [
+        "prefix128",
+        "prefix256",
+        "fixed3",
+        "prefix64"
+      ],
+      [
+        "prefix64",
+        "fixed3",
+        "prefix256",
+        "prefix128"
+      ]
+    ],
+    "scenarios": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "length_targets": [
+      256,
+      1024,
+      4096,
+      16384
+    ],
+    "prefix_budgets": [
+      64,
+      128,
+      256
+    ],
+    "ctx": 32768,
+    "temperature": 0.7,
+    "top_k": 20,
+    "top_p": 0.95,
+    "budget_candidates": [
+      8192,
+      12288
+    ],
+    "budget_rule": "first qualification budget with all eight requested final formats covered and no loops; never inspect scored outputs to select budget",
+    "loop_rule": "pinned loop_audit.py; any arm flags a request => exclude that scenario/type/length request from every arm",
+    "coverage_rule": "report failures and capped outputs in the primary requested-type table; add an all-arms-format-covered matched subset; no replacement seeds",
+    "minimum_pairs_for_promotion": 6,
+    "scope": "independent native sampled requests; default thinking; unchanged heads",
+    "status": "registered-before-generation"
+  },
+  "identity": {
+    "source": {
+      "kind": "composed immutable prefix study; CPU build source is retained separately",
+      "source_recipe_commit": "bdf9f4305b1093c4ac35a8e387c689047c938c5e",
+      "native_build_metadata_sha256": "62534b8ad4f21d54168ddd52da4e2f4a12cdc83c099b81bce2fa92429fbb2954",
+      "runtime_source_sha256": "53cfab8e8a4c4a01362d54d9d96fd69100f99ab445b62ba81be1c096a17634bf",
+      "binaries": {
+        "gemma-prefix-study": "fb5ddd6674083244a0c639ef02866dc3ae71d28757f164a0a04a2b26bef30c7b",
+        "qwen-prefix-study": "50cec1bcd077e4022be7e01ef7aeb84d7d4a8bf0f06e7f4cef0c266e107c90a4"
+      },
+      "harness_source_sha256": "ad0b2dd147023eaff86d12b8f4059da307ba491f7c354302209333edf5a55631",
+      "harness_files": {
+        "prefix/PROTOCOL.md": "7de191d9542f11e52251bb2cefc3acb5d28b7b60d171a77629e28ab882f8dbc6",
+        "prefix/native_io.rs": "968adcc06eddb302aa29a1065b2d8eb918c6acb9d15afe81b9939e62a143e017",
+        "prefix/audit.py": "8543931c9110d1f2fc7d6613b3a11fc2ca01c88d10f637b290faeffd2e9fc4de",
+        "prefix/build.py": "dd6b835db96666f386f2073fe3f5bef3da1e953b4c3a021257dcf5de90a2a045",
+        "prefix/prepare.py": "227b6eae2f32038c4cbd2b338795ce9e3a86ea4108c90bc2d0818b94fbc90057",
+        "prefix/pipeline.py": "52a89c332707f2948d31660d77c6dc7f162cf6c4206a02ccec795731e647fb5b",
+        "prefix/report.py": "d5a54d0fe5af93c1f7c41a7ba3c1296bd6e36f8a15e6c4878d9d9bfaea8dd8c3",
+        "prefix/workloads.py": "04ec4ce0d0927c78ebe1bee8cb4abc15f1469f30527e7a5fbd219d17dcce3e0d",
+        "prefix/replay.rs": "1e5453e0f4e7905853f06efb3e807ac4d5d533a2dfc25ec7d735f213ba888a2a",
+        "prefix/run.py": "b49879dad04c1426cf1b164ced5aefc7131be4b0f5ccdf4ba4985141a8663def",
+        "prefix/prefix_policy.rs": "34cccf119adfd1c353d5074c88a8ef1537b8f193b5bcf115d835a14b0da0f75e",
+        "prefix/test_audit.py": "fce81007fc890997d85034cf01311bc24c7a1eecee84a8a2e562b44ef2c1424c",
+        "prefix/reproduce.py": "e564580fcbfd1f54e156b2ca3582fdcdce9e11beb4683f4ca2f23c8c533dc9a1",
+        "prefix/check.rs": "02b28cdc4e03fd18efb47ffb865230cf7ef26cb02e110f700c55b5d90ae5fa1a",
+        "router.rs": "bd44b75e213e548fddc0a4fcbe8458430ccb8853055270f50ad22ab51f691eaf",
+        "archive_io.py": "8bd8c9d82f0b397d98ce5bc6e86451f66299adb3b36db9a6166e39bad68cb675"
+      },
+      "harness_commit": "bdf9f4305b1093c4ac35a8e387c689047c938c5e"
+    },
+    "artifacts": {
+      "qwen": [
+        {
+          "repo": "tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF",
+          "revision": "0f82b27dbb264b731e7d20f576582c871ef1969c",
+          "file": "Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+          "local_file": "target.gguf",
+          "bytes": 15705922304,
+          "sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a"
+        }
+      ],
+      "gemma": [
+        {
+          "local_file": "assistant.gguf",
+          "sha256": "f58dff98ecf17079c364b1205954ba85763a00ad076c5595040db0a828eaec1b",
+          "bytes": 465127936,
+          "repo": "unsloth/gemma-4-12B-it-qat-GGUF",
+          "revision": "980b060c40a8539ac159e0501a3e0f66a6365af3",
+          "file": "MTP/mtp-gemma-4-12B-it-Q8_0.gguf"
+        },
+        {
+          "local_file": "target.gguf",
+          "sha256": "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+          "bytes": 6975879296,
+          "repo": "google/gemma-4-12B-it-qat-q4_0-gguf",
+          "revision": "29d097773436b69ff9feafd636ab4cf873786537",
+          "file": "gemma-4-12b-it-qat-q4_0.gguf"
+        }
+      ]
+    },
+    "runtime_binding_sha256": "ece49514c64326258aa860340bb54bfce389c66dab9e5ce6fa08ba409394ea41",
+    "runner_sha256": "b49879dad04c1426cf1b164ced5aefc7131be4b0f5ccdf4ba4985141a8663def",
+    "context_auditor_sha256": "055feaa7a85566420adb84623936d2bb3fa72c249022ce80fbdea7e6c2449994",
+    "loop_auditor_sha256": "7b4963845b765fd2bd3659533fb58d0211f80339711181c1774942475c6cd7dd",
+    "gpu": "name, uuid, memory.total [MiB], driver_version, power.limit [W], power.max_limit [W]\nNVIDIA GeForce RTX 5090, GPU-c83170bf-4e36-92ed-df2c-7cafdecdd035, 32607 MiB, 595.91.07, 525.00 W, 600.00 W\n",
+    "clock": "native request: tokenization, forecast, cache allocation, prefill, sampled generation, detokenization; excludes model load, warmup and receipt I/O",
+    "cache": "fresh native cache and one user message for every request",
+    "heads": "full vocabulary, unchanged in every arm"
+  },
+  "scope": "single-GPU native independent requests; no HTTP/concurrency or continuous-session claim",
+  "interpretation": "primary requested-format rows keep capped/format-mismatched outputs; covered matched subset is separate; six scenarios per cell are exploratory",
+  "independent_replay": {
+    "runs": 60,
+    "prefixes": 304,
+    "raw_token_and_time_audits": "pass",
+    "compiled_forecaster_replay": "pass",
+    "same_depth_choices_across_budgets": true,
+    "reproducer_sha256": "cc51849b2424142e7e70ff84f4330912bae06d1fc47cb53dfec0520ae4c71896",
+    "first_attempt": {
+      "8192": {
+        "requested_code": 4,
+        "final_code_answers": 0
+      },
+      "12288": {
+        "requested_code": 4,
+        "final_code_answers": 0
+      }
+    }
+  }
+}

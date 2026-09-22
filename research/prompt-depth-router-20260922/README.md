@@ -7,7 +7,10 @@ Normal model tokenization is reused. No LLM or draft-head training is required.
 The first complex-contract qualification reached no Qwen final code at either
 8,192 or 12,288 output tokens. The versioned
 [`simple-helper protocol`](prefix/SIMPLE-PROTOCOL.md) retains that attempt
-and prepares a separate six-scenario corpus; no paired result is claimed yet.
+and measures a separate six-scenario corpus. The
+[scoped verdict](prefix/VERDICT.md) and [full result](prefix/RESULTS.md) show
+Gemma code gains against fixed K=3 at shorter prompts, losses on Gemma prose,
+and no transferable win on Qwen. No serving default is promoted.
 The earlier decoder-prefix tree in [`forecast/PROTOCOL.md`](forecast/PROTOCOL.md)
 is retained as a separate diagnostic.
 
@@ -17,7 +20,8 @@ The Qwen evaluation has no annotated code windows and all 12 requested-code
 final answers are empty at the 512-token cap. The earlier throughput rows below
 describe that capped workload; they do not settle actual prose/code adaptation.
 
-Fast lexical routing passed CPU checks, but request-level K did not beat calibrated fixed K on either model.
+In the earlier 512-token request-level study, fast lexical routing passed CPU
+checks but the selected K did not beat calibrated fixed K on either model.
 
 | Model | Fixed K=3 | Prompt routing | Change |
 |---|---:|---:|---:|
