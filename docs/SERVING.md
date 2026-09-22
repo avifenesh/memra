@@ -1554,8 +1554,17 @@ the instrumentation rather than a free knob). The design constraint: Blackwell's
 so the probe runs as a killed-on-deadline child and its own timeout
 (`MEMRA_GPU_PROBE_TIMEOUT_S`) is the alarm. Health reads only atomics, so a hung
 `nvidia-smi` can never block a health answer. A GPU fault survives a worker respawn: a new
-thread on a wedged card is not recovery.
-At startup only, the canary retries up to six consecutive timed-out probes (about 60 seconds with the default 10-second deadline) to allow VRAM teardown after a redeploy; an answer resumes the usual rich or minimal query path, while six hangs latch a fault and a single steady-state hang still latches immediately.
+thread on a wedged card is not recovery. Since memra#516 (2026-09-22) one steady-state probe past
+the deadline is a miss, not a wedge: the process is DEGRADED and stays live, `/health` publishes
+`worker.gpu_probe.{degraded, miss_streak, last_ok_age_ms, degraded_reason, latched_reason}`, and
+the fatal fault latches when the miss streak reaches `MEMRA_GPU_PROBE_MISSES` (default 3). An
+answering probe clears timeout-only degradation; it never clears a latched fault, and fatal Xid,
+ECC and row-remap findings latch on first sight regardless of the streak. Before #516 a single
+hang latched for the process's life: the 2026-09-13 B200 box answered 503 for 28 minutes while
+`nvidia-smi` answered in 40 ms from a shell, because NVML stalls past 10 s under graph capture
+and large allocations. A guard reading `/health` should restart on `latched_reason`, not on
+`degraded`.
+At startup only, the canary retries up to six consecutive timed-out probes (about 60 seconds with the default 10-second deadline) to allow VRAM teardown after a redeploy; an answer resumes the usual rich or minimal query path, six hangs latch a fault, and in steady state a hang is one miss of the `MEMRA_GPU_PROBE_MISSES` streak (degraded, still live) until the bound latches.
 
 **The supervision contract (`deploy/systemd/memra-server.service`) has three couplings you can
 break silently.** The unit is an example to copy, but these are not stylistic choices — each is
