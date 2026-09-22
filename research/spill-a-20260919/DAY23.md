@@ -132,3 +132,197 @@ on a hit the gate expected to route), the refusal is quoted and the day stops at
 
 5 agent-hours. If the slice cannot land whole, the tier conformance and the probe-side refactor land as a `wip:` with
 the gates green and the remainder stated.
+
+## Task 2, what landed (under `MEMRA_KV_HOST_CONTRACTS=1`, default OFF, decide-by 2026-10-05)
+
+Commits, in order: pre-registration `0717ab470`; the tier rule `d16cb66e9`; the engine seam and the worker
+`daf9c30fc`; the box scripts `01971da3d`; the clippy fix `2b850b2b0` (the tree the target card ran).
+
+**Tier crate** (`crates/memra-tier/src/conformance/d2d_restore.rs`, `tests/contracts/d2d_restore_bindings.rs`).
+`D2dDraftRestoreFixture` extends the restore fixture with the class of every item (`Role::Key`/`Role::Value` trunk
+rows, `Role::Draft` draft rows), the deferred prime's first draft-head read on the reader stream, and the witnessed
+receipt term per class. The schedule `d2d_restore_draft_ready`: one batch carries both classes under one ticket and
+one pin; landing is not readiness for either class; after the landing every item of both classes is witnessed
+(destination digest equal to the source digest) and the host-contract gate answers `NotReady` while unfenced and `Ok`
+once the wait is installed; the one install fences both classes; a prime and a draft-head read after it are ordered;
+retire, acknowledge, then the pin hand-over. The red arm `d2d_restore_draft_read_before_its_wait_is_unordered`: a
+draft-head read before the installed wait is unordered, landed copy or not, and a later wait does not order it. CPU
+bindings: a `witnessed` fixture mode (the modelled digest per item), 18- and 34-item batches (the 9B's and the 27B's
+`items=`), the red arm under `catch_unwind`, and the unwitnessed refusal (`Corrupt`). Contracts suite: `84 passed`
+(81 before).
+
+**Engine** (`crates/memra-engine/src/spec.rs`). `RestoredDraftScratch`: a pub value over the crate-private
+`MtpScratch` that a worker can own before a session exists; `HybridModel::alloc_restored_draft_scratch` runs the OFF
+constructor's geometry checks in the OFF order with the OFF messages verbatim (an MTP head, `MtpScratch::new` at
+`max_ctx`, a ring-backed scratch refused, the per-token layout, `pos <= cap`, the source lengths) and allocates;
+`destinations()` borrows exactly `pos x k_tok_bytes` and `pos x v_tok_bytes` as `CudaViewMut<u8>` (the slice-2 restore
+class, no new op shape); `set_len(e)` is the OFF `set_len(pos)` statement; `copy_from_entry` (private) is the OFF
+constructor's two `copy_u8_into` statements. `spec_session_from_restored_ready` builds the session over a READY
+scratch (the pre-checks, plus `scratch.kv.len == pos`), running no draft copy; `spec_session_from_restored_deferred`
+(the OFF constructor) now calls the same alloc, then `copy_from_entry`, then `set_len`, then the shared tail
+`spec_session_from_restored_scratch` (the suffix feed, the draft fill of the suffix rows, the boundary token, the
+session assembly: unchanged from the day-22 tree). A source census
+(`day23_restored_draft_census::the_ready_constructor_copies_nothing_and_both_constructors_share_the_tail`) pins the
+order, the two callers of the tail, the two copy statements in `copy_from_entry` alone, and the OFF messages. No
+`unsafe`, no new kernel, no new flag.
+
+**Worker** (`crates/memra-server/src/worker.rs`). The probe (`host_restore_park_probe`) no longer refuses
+`e.draft.is_some()` by name (DFlash-tail, TP, latent entries still are). On a draft-bearing entry, after the pin: the
+request's sampler is built from its config, `spec_restore_refusal` is evaluated with the whole-entry hit, the penalty
+window, the doors, the load guard over the loop's own `active` and `queue + requeue` counts (the same reading `admit`
+takes), `last_h` and `last_logits`; `host_restore_draft_decision` (pure) folds in the admission gate's spec estimate
+for this request (`estimate_spec`, the loop's own), an armed DFlash drafter for the model, and a grammar. `None`
+allocates the scratch (`alloc_restored_draft_scratch` at the request's `ctx_cap`) and sets its length on the owner
+stream BEFORE the producer fence; a refusal, a geometry failure or an alloc failure sets `draft_declined` with the
+reason and one typed line (`restore draft plane declined at the probe (..)`), never refusing the trunk route.
+`host_restore_submit` takes `Option<&mut RestoredDraftScratch>` and pushes the entry's `draft.k` and `draft.v` rows
+`[0..pos)` as two more `D2dRestore` items of the SAME batch after the trunk rows, under the same producer fence and
+the same pin; `bytes` and `sizes` count them; the receipt term covers them as it covers the trunk (`items=34` on the
+27B). The submitted line gains `; draft plane N rows (X KB) in the batch` or `; draft plane not submitted (<why>)`.
+`PendingRestore` owns `draft` and `draft_declined`: the settle's `Latched` arm forgets the scratch with the cache
+(never a free under a possibly running copy), the `ReceiptMismatch` arm drops it with the cache (the copy landed),
+the fail-closed arm drops it when the ticket's host wait settled and forgets it when it did not; every `Dropped`
+path drops it with the state; `host_restore_take_ready` hands it over with the cache and the pin, under `ready` only,
+and the landed line reads `; draft plane ready`. In `admit`, the ready scratch rides to the spec conversion:
+`spec_session_from_restored_ready` when present (no copy), otherwise the OFF constructor with the arm named when the
+probe had declined (`spec restore takes the draft the probe declined (<why>); the draft plane is copied on the owner
+stream (the OFF program) from the pinned entry`); a ready scratch no spec session consumed drops typed after the
+conversion block (`draft plane restored off the tick but the request serves plain (<why>); dropped`). CPU census
+`day23_draft_bearing_restore_paths_are_named` pins every path above by its source literal;
+`day23_draft_decision_submits_the_draft_only_for_a_request_that_reads_it` covers the pure decision. The day-22
+census's `ReceiptMismatch` window is bounded at the arm's end instead of 500 characters (its assertions are
+unchanged). `docs/FLAGS.md`: the door row's day-21 sentence names the MTP draft plane as routed since day 23 and a
+day-23 sentence states the mechanism and the lines. No new `MEMRA_*` read.
+
+**CPU battery on this tree** (local, under the 1200% CPU quota): `cargo fmt --all -- --check` clean; clippy
+`-D warnings` all targets on tier, engine and server `Finished`; the GPU-less pass (`DOCS_RS=1`, cross-target) `Finished`;
+server lib `808 passed; 0 failed; 14 ignored`; engine lib (CPU) `531 passed; 0 failed; 30 ignored`; tier suites all
+`ok` (`84 passed` contracts); `tools/check-flags.sh` `no uncovered runtime names`; `tools/check-conflict-markers.sh`
+OK; `git diff --check` clean.
+
+## Task 3, the target card (BOX3, one RTX PRO 6000 Blackwell, 600 W), one sitting
+
+Tree `2b850b2b0` on the box worktree `/root/wt-a` (branch `lane-a-day23`, clean), binary
+`8725826875750242e65fd436f6d8e83b…` (`pro-single-day23/box/gates/binary.sha256`). Every cell through the collector
+(`tools/tier-battery.py --rig pro-single --external-lock`, lock `/tmp/memra-gpu.lock`, `qualification: false`,
+`disposition: executed-not-qualified`) or, for the hit gate (no `--external-lock` arm), under its own `flock` on the
+same lock (`pro-single-day23/hitgate.sh`); zero lock retries (lane C's server left the lock before the driver
+started; no compute app on the card at launch). Driver `pro-single-day23/driver.sh`, 09:54Z to 10:08Z. Envelope
+(collector sampler, `command.gpu.csv`): gates 1964 samples, 31.97 to 507.02 W, 33 to 60 C; unit cells 15 samples,
+53.9 to 99.28 W, 40 to 41 C. Receipts mirrored to `pro-single-day23/box/` (bins not mirrored).
+
+Verdicts, verbatim, one per cell:
+
+| Cell | Verdict line |
+|---|---|
+| identity, default (spec) environment, door OFF | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` |
+| identity, default environment, door ON | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` |
+| identity, plain (`MEMRA_SERVE_SPEC=0`), door OFF | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` |
+| identity, plain, door ON | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` |
+| failure, door OFF | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` |
+| failure, door ON | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` |
+| contract fault gate, all cells (ON by construction) | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (93 `ok:`) |
+| twin gate (27B, 8 turns), door OFF | `... V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` |
+| twin gate, door ON | `... V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` (zero `REFUSED`) |
+| hit gate, door OFF | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 `ok:`, 0 `FAIL:`) |
+| hit gate, door ON, the tier ARMED (C day 27's arm) | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (68 `ok:`, 0 `FAIL:`) |
+| unit, server (`option_b_*`, `option_c_*`) | `test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.23s` |
+| unit, engine `d2d_*` | `test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 556 filtered out; finished in 3.17s` |
+
+### The acceptance clause, read against the receipts
+
+**The hit gate's ON arm (the spec-on boot, `pro-single-day23/box/gates/hitgate-on/qwen-on-server.log`).** Engagement:
+`[prefix-host] on: budget 8590MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, ...)`, `[prefix-host] contracts door ON
+(MEMRA_KV_HOST_CONTRACTS=1): 1 model program identities ...`; the gate's own lines `ok: door arm: the host tier is
+armed on the spec-on boot`, `ok: door arm: the contracts door is ON on the spec-on boot`, `ok: door arm: no latch line
+on the spec-on boot`, and across the two boots `ok: door arm: 19 route submission(s) across the two boots (capture,
+restore, demote or promote off the tick)` (C day 27 read 7 on this tree's predecessor: the 12 new ones are the
+draft-bearing restores). The census the gate prints: `census spec-on: entries published: 11 draft-bearing (insert
+(spec-boundary)), 1 plain (insert (seed)), 0 other` and `census spec-off: entries published: 0 draft-bearing (insert
+(spec-boundary)), 2 plain (insert (seed)), 0 other` (item 11's counts, unchanged). The spec-on boot's route lines,
+counted: 13 `restore submitted off the tick`, of which 12 carry the draft plane and 1 is the plain `np` hit; 0 `draft
+plane not submitted`; 12 `draft plane ready`; 13 `D2D restore receipt ... require=ok`; 12 `spec restore: N of M prompt
+tokens + draft plane from cache`; 0 `restore refused`, 0 `RESTORE OFF-TICK DISABLED`, 0 `TIER DISABLED`, 0 `restore
+draft plane declined at the probe`, 0 `draft plane restored off the tick but the request serves plain`, 0 `spec
+restore takes the draft the probe declined` (the two disagreement arms never fired). Verbatim (the ticket sequence
+elided), with the count of each shape:
+
+- 8 x `restore submitted off the tick: 64 tokens, 34 planes (158.9MB), ticket seq=N on the contracts door's copy stream;
+  recurrent state copied on the owner stream; request parked; draft plane 64 rows (118.8KB) in the batch`
+- 3 x `restore submitted off the tick: 96 tokens, 34 planes (159.9MB), ... request parked; draft plane 96 rows (178.2KB)
+  in the batch`
+- 1 x `restore submitted off the tick: 128 tokens, 34 planes (160.9MB), ... request parked; draft plane 128 rows
+  (237.6KB) in the batch`
+- 1 x `restore submitted off the tick: 64 tokens, 32 planes (158.8MB), ... request parked` (the plain `np` hit)
+- receipts: 8 x `items=34 bytes=2019328 require=ok`, 3 x `items=34 bytes=3028992 require=ok`, 1 x `items=34
+  bytes=4038656 require=ok`, 1 x `items=32 bytes=1900544 require=ok`
+- landed: 6 x `restore landed off the tick: 64 tokens (158.9MB) complete after 1 poll(s), 2.4ms from submission to
+  completion, ... (tick-top poll); draft plane ready`, 2 x the same at `2.3ms`, 3 x `96 tokens (159.9MB) ... 2.4ms ...;
+  draft plane ready`, 1 x `128 tokens (160.9MB) ... 2.4ms ...; draft plane ready`, 1 x `64 tokens (158.8MB) ... 2.3ms`
+  (plain)
+- sessions: 5 x `spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued]`, 3 x `64 of 119 ...
+  [suffix queued]`, 2 x `96 of 119 ... [suffix queued]`, 1 x `96 of 135 ... [suffix queued]`, 1 x `128 of 128 prompt
+  tokens + draft plane from cache [continuation]`
+
+The spec-off twin boot: 3 `restore submitted off the tick: 64 tokens, 32 planes (158.8MB)` (its r2, r3, g2 hits, as
+on day 27), 2 captures, 3 receipts `items=32 ... require=ok`, zero refused, disabled or draft lines.
+
+**The identity clause.** Every identity `ok:` of the ON arm holds with the spec side's draft-bearing rows now
+restored THROUGH THE ROUTE (the ready scratch, no draft copy) against the spec-off side's rows restored through the
+same route: `ok: r1 spec==plain byte identity`, `ok: r2 spec==plain byte identity`, `ok: r3 spec==plain byte
+identity`, `ok: g1 spec==plain byte identity`, `ok: g2 spec==plain byte identity`, `ok: fc sampled full-cover hit
+bytes == cold leader bytes (same seed)`, `ok: sx sampled suffix hit reproduces byte-for-byte at one seed`, `ok: sp
+penalized sampled hit bytes == cold leader bytes (same seed)`, `ok: s7 / s1234 / s99991 sampled hit bytes == cold
+leader bytes (same seed)`, `ok: g4 reproduces its publisher's continuation byte-for-byte (snapshot round-trip)`. The
+OFF arm reads the same `ALL GREEN (qwen)` with 61 `ok:` (its two boots have no `[prefix-host]` lines). This is the
+first hit-gate receipt on any card where the identity clause covers the route for the draft-bearing hits.
+
+**Identity gate, default environment, door ON** (`pro-single-day23/box/gates/identity-default-on/`): the route
+engaged on the draft-bearing entries of the spec environment too: 2 x `restore submitted off the tick: 64 tokens, 34
+planes (158.9MB), ticket seq=N ...; request parked; draft plane 64 rows (118.8KB) in the batch`, receipts `seq=4` and
+`seq=5` `items=34 bytes=2019328 ... require=ok` with equal source and destination digests
+(`1ef7121cc4e7f088434198c481650acd…`), `restore landed off the tick: 64 tokens (158.9MB) complete after 1 poll(s),
+2.2ms ...; draft plane ready` and one at `77.7ms` (the poll cadence), 2 x `spec restore: 64 of 102 prompt tokens +
+draft plane from cache`, zero declined, refused or disagreement lines, `ALL GREEN (teeth=0)`. The plain ON arm is
+the day-22 shape (2 restores of `32 planes`, receipts `seq=6`, `seq=7`, `items=32 ... require=ok`).
+
+**The fault gate's `d2d-restore` cell still refuses** (verbatim): `restore receipt refused:
+source_digests_sha256=d11e5c4b614f3a68.. destination_digests_sha256=1462aed093ef5fee..`; `ok: d2d-restore: exactly one
+refused D2D restore receipt naming two different digests`, `ok: d2d-restore: no restore receipt was accepted`, `ok:
+d2d-restore: the restore route latched typed on the mismatch`, `ok: d2d-restore: the tier latched off`, `ok:
+d2d-restore: nothing landed off the tick (nothing primed on the refused cache)`, `ok: d2d-restore: the tick program
+restored r2 after the refusal`, `ok: d2d-restore: r1's text equals r2's`, `ok: d2d-restore: no ticket leaked (no
+Capacity refusal, no leaked wording)`; the `d2d-capture` twin the same (`capture receipt refused: ...d11e5c4b614f3a68..
+... 1462aed093ef5fee..`). 93 `ok:` in the gate (67 on day 25's tree plus the day-22 D2D cells' clauses); the plain
+arm's entries carry no draft plane, so the draft route is not in this gate's reach (stated, not claimed).
+
+**Cell (v), re-read on this tree as the price cell ran in the unit battery** (not a decision cell today, recorded):
+`D2D-RECEIPT PRICE order=copy-first bytes=165675008 n_per_arm=5 ... copy_median=0.159 digest_median=0.168
+pair_median=0.336 pair_over_copy=2.11` and `order=digest-first ... copy_median=0.158 digest_median=0.169
+pair_median=0.337 pair_over_copy=2.13`: the day-22 reading (2.12x to 2.15x) reproduced within 0.02.
+
+### Findings
+
+1. **The draft route engaged on every draft-bearing hit the gate serves, with the identity clause holding.** 12 of
+   the spec-on boot's 13 routed hits carried the draft plane (item 11's 12 of 16 hits, exactly), each landed after one
+   poll with a witnessed receipt over 34 items, each built its session over the ready scratch, and every spec-against-
+   plain byte identity of the gate held. No line of either disagreement arm fired, so the probe's pre-decision and
+   the admission body agreed on every hit of both gates; the arms stay as typed census lines.
+2. **The receipt's byte counts name the draft plane's share.** On the 27B a 64-token draft-bearing entry's restore
+   batch is 2,019,328 B against the plain 1,900,544 B: 118,784 B for the draft plane (1,856 B per token, one layer's K
+   and V), the 1.9 KB per token census item 10 estimated. The recurrent f32 state (about 157 MB per entry, the
+   `158.9MB` of the submitted line) still rides the owner stream (Move 2 owed item 1).
+3. **No new finding against the engine or the gates.** First sitting green in every cell; the day-22 cudarc finding
+   did not recur (the fixture keeps tracking disabled); the unit cells' first-time green on this tree.
+
+### Budget
+
+About 1.6 agent-hours against 5 (the merge and pre-registration 09:20Z to 09:28Z; the tier, engine and worker
+commits by 09:52Z; the card 09:54Z to 10:08Z; records after). The slice landed whole: nothing is left as `wip:`.
+
+### Box state and cleanup
+
+`/root/wt-a` at `2b850b2b0` on `lane-a-day23` (clean); `/root/spill-receipts/a-day23/` kept on the box and mirrored
+here (bins not mirrored); the transfer bundles removed on both ends; no server of mine running at the end (the card
+idle, lock free); local `/tmp/spill-a-day23/` removed. The local RTX 5090 was not touched today (the door gates on this
+tree are owed there with the lock, as on days 18 to 22).
