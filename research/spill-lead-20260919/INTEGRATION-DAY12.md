@@ -2284,6 +2284,74 @@ route submission(s) across the two boots`, 11 spec-boundary captures, 13 restore
 disabled, trunk-only, dropped or skipped lines. C day 34 and #648 merged after the battery are docs only; the engine tree
 under test is `d06a9dd8c`'s, equal to this PR's.
 
+## integ44 (`lane/spill-integ44-20260922`): C day 35 (the 5090 tenant-stall cell); A day 28 held on the lane (option (a) landed, clause 2 red)
+Lane tip merged: C `48250588c` (day 35) on main `c5879a59e` (#649), clean. **A day 28 is NOT merged**: its code stays on
+`lane/spill-a-20260919` until ruling 40's 2a lands (below). This integ is docs and receipts only; the engine tree equals
+main's.
+
+**C day 35 (the 5090 tenant-stall cell; this card's own figures).** A day 16's five arms on the 9B (cache 64 MB, host 8192
+MB, `MEMRA_SERVE_SPEC=0`, tenant lengthened to 400 tokens so the 5120-token prime lands inside the window, pre-registered
+from the board's 7.3 ms tick; A's intruder shapes byte for byte through a harness copy, diff banked), six boots in one
+collector hold on `/tmp/memra-5090.lock` (16:18Z to 16:29Z after a bounded wait behind another session's gates), two
+passes in opposite order, N=5 per arm per order, 58 to 89 C, 30.6 to 175.3 W, 10 of 10 `STALL REPLAY: PASS`, verbatim:
+`DAY35 STALL VERDICT: prime pass1 10.5 (iqr 174.2) inadmissible; demote pass1 off 63.7 on 67.0 on-off +3.3 (unc 3.3)
+under_resolution; promote pass1 off 47.7 on 49.3 on-off +1.6 (unc 12.5) under_resolution; prime pass2 278.4 (iqr 6.6)
+admissible; demote pass2 off 63.0 on 63.2 on-off +0.3 (unc 2.7) under_resolution; promote pass2 off 47.5 on 50.1 on-off
++2.6 (unc 2.7) under_resolution; admissible=False`. `admissible=False` is the pass-1 prime arm alone: an unidentified
+co-tenant (card-wide `memory.used` 20.3 to 23.2 GB against 7.6 to 9.8 GB in the identical pass-2 boots, gone at
+16:22:57Z, not holding the lock) made the memory admission refuse 7 of 10 pass-1 prime intruders (`[admit-oom] capacity
+reject: ... does not fit an IDLE box (available 1794MB), HTTP 400`); pass 2 is clean and both passes give the same
+classes. All 160 tenant runs of the eight demote and promote receipts: errors 0, tenant text sha `5d59f3ddef257cfb`, every intruder inside the window,
+the ON boots' lines complete (21 demote triples, 10 promote triples, 10 `restore not routed (contracts door)`, 0 `restore
+submitted`, 43 of 43 `require=ok`, zero refused or latched). Attribution on this card: ON demote `in - completion` median
+21.6 (pass 2, N=9) / 23.8 (pass 1), about 1.8 to 2.0 of day 33's 11.9 ms heap pass at the entry size; post hoc and
+labelled (`gaps-posthoc.log`): both demote arms stretch two ticks, the worst tick is the same in both arms (about 70 ms,
+the intruder's prime plus insert) and the door's share sits on the SECOND tick (ON 69.4 / 70.9 against OFF 41.9 / 41.3),
+so the day-16 worst-tick rule under-reads the door's share on this card (a property of the metric; the verdict lines
+stand). Records: the per-card cost table B-5090 in `HOSTPREFIX-DOOR.md`, the packet's 5090 table and item 7. Owed and
+stated: a prime arm the admission admits in every run, the second-tick split, the 9B KV byte split. Budget 1.3 against 4.
+
+**A day 28 (option (a), ruling 39), held on the lane.** Landed on `lane/spill-a-20260919` (`45f824a75`, `feat:`):
+`HostHashWorker`, one long-lived helper per `HostTierContext`; `PendingDemote` gains a `Hashing` phase and an owner-thread
+ledger; every settle path meets `Hashing` through `host_demote_settle_with_deadline` before the contract step, a `Block`
+settle continuing into the hash wait and naming what it waits on; `bind_tier_image` consumes the handed-in digests after
+a byte-count check (same `checksum`, same bytes); `hash-helper-gone` / `hash-never-lands` on the existing
+`MEMRA_KV_HOST_FAULT` row (10 s wall deadline); `disable` and shutdown join the helper; two fault-gate cells; eight CPU
+cells including the bitwise digest cell and the source census; server lib 830 passed, every CPU check clean. Target card,
+one hold, twenty boots, 20 of 20 `STALL REPLAY: PASS`, 33 to 52 C, verbatim: `DAY28 CLAUSE 1a stall order=o1 ...
+on_cell_median=81.8 off_cell_median=85.2 rule on<=off+2.0 -> PASS` (o2 `81.9 / 85.2 -> PASS`); `DAY28 CLAUSE 1b e2e
+order=o1 ... on=132.3 off=115.4 on_minus_off=+16.9 rule <=+20.0 -> PASS` (o2 `+16.9 -> PASS`; day 27 read +91.3); `DAY28
+CLAUSE 1c owner in-completion N=100 median=7.40 min=7.17 max=45.01 runs_with_demote_without_ledger=0 rule <=12.0 -> PASS`
+(day 27: 74.8); `DAY28 VERDICT clauses_failed=0 -> ALL PASS`; the helper 73.2 ms per 157.9 MB (98 payloads), 100 of 100
+landings at the tick-top poll, the tenant's second gap 19.0 (was 92.4). Clause 3 PASS (`hash-helper-gone` 14 ok,
+`hash-never-lands` 14 ok, both cards); clause 4 PASS (`hash_helper_digests_equal_the_owner_thread_digests_bitwise ... ok`
+on both hosts; box GPU cells 8 and 5 passed); clause 5 PASS (no flag, no new name). **Clause 2 FAILS** on both cards in
+the default (spec) arm: `identity-default-on` `KV-HOST-SPILL IDENTITY GATE: 4 FAILURE(S) (teeth=0)`; `failure-on`
+`KV-HOST-SPILL FAILURE GATE: 1 FAILURE(S)` (the `digest` cell); `contract-fault` `KV-HOST-CONTRACT-FAULT GATE: 23
+FAILURE(S)` (the four promote cells; the two demote cells' `the next demote publishes`); 5090 `fault-default` `23
+FAILURE(S)` (same shape), `fault-plain` `ALL GREEN` (121 ok); green: identity x3, `failure-off`, twins, hit OFF and ON
+with the day-24 census on both cards, `d2d-capture` 12 ok, `d2d-restore` 14 ok. One cause for every red cell, not
+tuned: a hit that arrives inside the `Hashing` window (73 ms plus a tick) is a MISS, and the default arm's spec-boundary
+insert puts the next request there (on the day-26 tree the bind ran inside the completing tick top, before admission).
+Also found: the demote's remaining owner-thread cost is the pre-submit segment (32 pinned allocs plus the 100 f32 D2H
+copies), about 6 ms steady, 39 to 45 ms at first touch, 149 ms under the verify arm (Move 2 owed item 1 is now priced per
+demote by the ledger line); the printed `pre-submit` spans both sides of the `submitted` stamp, so the baseline's
+`completion` contained the f32 D2H and the comparison is conservative. Budget 4.9 against 5. **Ruling 40 (lead):** A's
+2a is approved for A day 29: a hit whose entry is `Hashing` PARKS the request one tick (the `Promoting` and `Restoring`
+pattern: requeue, typed line, tick-top poll lands the hash and publishes, re-admission to the device hit), never a
+refusal and never a synchronous settle at the probe; the parked-only bounded wait and the orphan grace gain their arm;
+every Block settle settles the hash first; the fault gate's demote cells await the boot's last publication before `stop`.
+Acceptance: clause 2 green in every arm on both cards, clauses 1a to 1c re-read and passing, a typed count of hits parked
+on a `Hashing` entry. Until then the day-28 code is not the door's serving path and is not integrated (A's own
+statement, adopted).
+
+**Battery (tree `f5bf3311d`, the engine tree equal to main's; receipts `integ44-cpu-battery/`, `integ44-serve-smoke-5090/`,
+`integ44-hit-gate-5090/`).** All fifteen CPU steps rc=0. Local RTX 5090: `serve-smoke: 0 failed` (gemma4 and Q35 arms SKIP,
+absent models), engine `d2d_*` GPU cells `5 passed` under the lock, the hit gate OFF and ON armed (9B), verbatim:
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 61 ok OFF, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 68 ok ON, `ok: door arm:
+30 route submission(s) across the two boots`, 11 spec-boundary captures, 13 restores, 0 `restore not routed`, 0 refused,
+disabled, trunk-only, dropped or skipped lines: main's own results, re-read.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

@@ -101,7 +101,7 @@ refused the day-16 ON receipts on the off-tick line census, which that tree's on
   ticket seq=N, 16 items on the contracts door's copy stream`, `contracts door D2H receipt: ... items=16 ... require=ok`,
   `demote published off the tick: ticket seq=N complete after P poll(s), X ms from submission to completion (tick-top
   poll)`. ON promote arm, every run exactly: one `promote submitted off the tick: ... request parked`, one `contracts
-  door H2D receipt: ... require=ok`, one `promote published off the tick`, one `request parked`, one `[prefix-cache]
+  door H2D receipt: ... require=ok`, one `promote published off the tick`, one `[prefix-cache]
   restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=P, 64 tokens, model
   gate); the tick program copies it` (A day 26's promoted-pin refusal on the promote-then-hit shape, on `main` since
   #647), zero `restore submitted off the tick`; plus the inline demote's three lines. Zero refused or latched lines in
@@ -126,21 +126,21 @@ plus six boots of the page-cached 9B: 12 to 16 minutes in the hold.
 **The hold.** `day35-local-run.sh` waited 7 x 120 s for the card (another session's `kernel-check`, `qwen-a4-continuation-gate`,
 `graph-warmup-stress` and three `memra-server` boots, listed in `stall/waits.log`, none touched), then ran the six boots in
 ONE collector hold on `/tmp/memra-5090.lock` (`stall/collector/lock.json` `acquired: true, owner: collector`, `ev/LOCK.json`
-the inherited flock; `CELL.jsonl` `status: executed-not-qualified`), 16:18:19Z to 16:29:16Z, `stall-day35 rc=0`, 11 of 11
+the inherited flock; `CELL.jsonl` `status: executed-not-qualified`), 16:18:19Z to 16:29:16Z, `stall-day35 rc=0`, 10 of 10
 receipts `STALL REPLAY: PASS (replay agrees with the harness's rule line)` (`ev/replays.log`). Binary `7ce7bf78b9...` (the
 build above; `[server] build: memra-0.138.0-813fc8cfe4de (id: source-tree, git: 091a931c023a)`), tree `091a931c0`, the 9B.
 Regime: the collector's 250 ms CSV 2603 samples, 58 to 89 C, 30.64 to 175.33 W, `power.limit [N/A]`; the cell's 1 s CSV
 655 samples, 58 to 89 C, 31.39 to 175.24 W; P0 at 58 C before and P0 at 77 C after; no compute app listed before or after.
 Per boot (the 1 s CSV): pass-1 prime 58 to 84 C, pass-1 off 75 to 87 C, pass-1 on 77 to 88 C, pass-2 on 76 to 87 C, pass-2 off
-78 to 87 C, pass-2 prime 78 to 89 C; power 31 to 175 W in every boot. The tenant emitted 400 tokens in all 120 runs, text
-sha `5d59f3ddef257cfb` in every run of every boot (`tenant_text_identical=True` x 11); its idle p50 7.3 to 7.5 ms, idle p99
+78 to 87 C, pass-2 prime 78 to 89 C; power 31 to 175 W in every boot. The tenant emitted 400 tokens in all 200 runs, text
+sha `5d59f3ddef257cfb` in every run of every boot (`tenant_text_identical=True` x 10); its idle p50 7.3 to 7.5 ms, idle p99
 8.0 to 9.0 ms; the intruder prompts tokenized as on the target card (prime 5120 to 5123, demote 95 to 99, promote 86 and
 89); every demote and promote intruder returned inside the tenant's window (`landed=10/10` in all eight arms; demote
 intruders 104 to 177 ms after firing, promote 63 to 127 ms). The ON boots' server lines, whole-boot census
 (`ev/pass{1,2}/on/server.log`, identical counts in both): `demote submitted off the tick` 21, `D2H receipt ... require=ok`
 21, `demote published off the tick` 21, `[prefix-host] demote:` 21 (the 9 demote-arm evictions, the promote arm's 2 seeds
 and its 10 inline demotes); `promote submitted off the tick ... request parked` 10, `H2D receipt ... require=ok` 10,
-`promote published off the tick` 10, `[prefix-host] promote:` 10, `request parked` 10, `restore not routed (contracts
+`promote published off the tick` 10, `[prefix-host] promote:` 10 (the `request parked` tail is on the 10 submitted lines, not a line of its own), `restore not routed (contracts
 door)` 10, `restore submitted off the tick` 0, `capture submitted off the tick (seed)` 12; every `require=` line `ok` (43 of
 43); zero `failed`, `refused`, `latched off` or `TIER DISABLED` lines. The OFF boots: 21 `[prefix-host] demote:` and 10
 `[prefix-host] promote:` lines, no `off the tick` line. The prime boots: no `[prefix-host]` line. The entries are the plain
