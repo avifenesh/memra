@@ -32,6 +32,9 @@ Author's review of the full diff `main..lane/spill-integ40-20260922`, posted as 
   tail and would have published trunk and draft without it for a DSPARK or GLM5 cache; the publisher now passes the
   tail's presence and the route refuses by name, census-pinned. The hit gate (qwen) never carries a tail, so its
   receipts are unchanged.
+- **Revuto round 2, fixed (the demotion settles' reasons):** the dspark demotion's settle is load-bearing because the
+  DSPARK publisher routes when its tail is absent (the default); the comment says so now, and the GLM5 demotion carries
+  the same settle with its own reason; census-pinned.
 - C's cell (i) is reported as C read it: the copy stream beats the owner stream by 43 ms (demote) and 13 ms (promote)
   in both orders, the pre-registered clause is not met, and the promote arm's 149.6 (against 81.9 on the tree before
   Move 2's restore route) is traced to a second park on the restore route; recorded as owed to A, nothing tuned.

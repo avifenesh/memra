@@ -23534,10 +23534,17 @@ pub fn run(
                                 );
                                 continue;
                             }
-                            // WP-A day 24: the DSPARK publisher never routes (its tail is
-                            // refused by name), and `into_demoted` moves its cache without a
-                            // free; the settle is here for the same reason, stated, so no
-                            // demotion consumes a session under a pending capture.
+                            // WP-A day 24, corrected by revuto on integ40 (#643): the DSPARK
+                            // publisher DOES route in the default configuration. Its tail is
+                            // `Some` only under `MEMRA_DSPARK_PREFIX_RESTORE=1` (default OFF);
+                            // with the tail absent a plain, non-latent, non-TP dspark cache
+                            // passes the route's by-name refusals and its trunk planes are the
+                            // borrowed source of a pending capture on the copy stream. This
+                            // settle is therefore LOAD-BEARING: `into_demoted` below moves the
+                            // session's cache, and a copy still reading it would read a moved
+                            // source. (The routed dspark capture carries no draft plane, so the
+                            // `release_capture_pin` after the publisher touches no in-flight
+                            // source.)
                             if hpx.capturing.is_some() {
                                 host_capture_settle_pending(
                                     &engine,
@@ -23610,6 +23617,21 @@ pub fn run(
                                     s.model
                                 );
                                 continue;
+                            }
+                            // Integ40 (revuto on #643): the same settle for the GLM5 demotion.
+                            // Today a GLM5 cache is refused by the route by name (latent planes
+                            // and tails, TP shards), so no pending capture borrows a GLM5
+                            // session's planes; the guard states the rule where the session is
+                            // consumed rather than relying on the refusal alone, and costs
+                            // nothing when no capture is pending.
+                            if hpx.capturing.is_some() {
+                                host_capture_settle_pending(
+                                    &engine,
+                                    &mut px,
+                                    &mut hpx,
+                                    ContractWait::Block,
+                                    "a glm5 demotion",
+                                );
                             }
                             let sess = s.glm5.take().unwrap();
                             let lm = &loaded[&s.model];
@@ -43225,6 +43247,16 @@ mod tests {
         let settle_dspark = body[..take_dspark].rfind("\"a dspark demotion\"").unwrap();
         assert!(take_dspark - settle_dspark < 400);
         assert!(body[settle_dspark - 300..settle_dspark].contains("ContractWait::Block"));
+        // Revuto on integ40 (#643): the dspark settle is load-bearing (the publisher routes when
+        // its tail is absent, the default), and the glm5 demotion carries the same settle.
+        assert!(
+            body[settle_dspark - 1200..settle_dspark].contains("LOAD-BEARING"),
+            "the dspark settle states that the publisher routes by default"
+        );
+        let take_glm5 = body.find("let sess = s.glm5.take().unwrap();").unwrap();
+        let settle_glm5 = body[..take_glm5].rfind("\"a glm5 demotion\"").unwrap();
+        assert!(take_glm5 - settle_glm5 < 400);
+        assert!(body[settle_glm5 - 300..settle_glm5].contains("ContractWait::Block"));
     }
 
     // ---- WP-A day 21: the `Restoring` request (memra#536 Move 2 slice 2) ----

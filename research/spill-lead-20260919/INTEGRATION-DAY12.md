@@ -2007,6 +2007,15 @@ own statement that the tail never reaches the route. The publisher now passes `d
 which refuses by name (`|| dspark_tail`) and hands the capture back for the OFF program whole, tail included; the census
 test pins both the refusal and the publisher's argument. Server lib suite green after the fix (count in the receipts).
 
+**Revuto round 2 on #643 (real, fixed).** The dspark demotion's comment claimed the DSPARK publisher never routes; it
+DOES in the default configuration (`MEMRA_DSPARK_PREFIX_RESTORE` is default OFF, so `dspark_draft` is `None` and a
+plain, non-latent, non-TP dspark cache passes the route's by-name refusals), which makes the settle before
+`into_demoted` load-bearing, not belt-and-braces: a reader trusting "never routes" could drop it and the demotion would
+move planes a copy is still reading. The comment now states the rule that applies; the GLM5 demotion gains the same
+settle (`"a glm5 demotion"`) with its own stated reason (a GLM5 cache is refused by name today; the guard states the
+rule where the session is consumed). Census test pins the load-bearing statement and the glm5 settle. Server lib 809
+passed after the fix.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
