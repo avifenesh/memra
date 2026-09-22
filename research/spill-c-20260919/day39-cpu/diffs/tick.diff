@@ -1,0 +1,299 @@
+--- day38-tick-split.py	2026-09-22 23:58:46.503566311 +0300
++++ day39-tick-split.py	2026-09-23 00:44:06.771677356 +0300
+@@ -1,55 +1,35 @@
+ #!/usr/bin/env python3
+-"""Day 38 per-tick split of day 37's two-binary tenant-stall cell on the RTX 5090 class (DAY38.md section 1, fixed
+-before this reader ran on the day-37 receipts).
++"""Day 39 per-tick split of the day-39 three-binary tenant-stall cell on the target card (DAY39.md section 1, fixed
++before the cell ran).
+ 
+-A POST-HOC READER OVER A COMPLETED CELL. The day-37 receipts were read on day 37 (the worst-tick stall and the two
+-largest gaps summed, `day37-stall-reading.py`); this reader splits the summed pair by position. It is evidence for
+-attribution, not a new cell. Day 37's reader with one change, the quantity: the tenant's two stretched ticks named by
+-POSITION relative to the intruder's fire, not by rank, each read under day 37's rule unchanged.
++Day 38's reader (day38-tick-split.py) moved to the day-39 layout; the tick identification, the quantities, the rule,
++the outcomes, the `not_defined` handling and the hypothesis line are day 38's, unchanged. Layout: <ev>/<program>/
++pass{1,2}/<kind>/, programs p1-b0, p2-b1, p3-b2, p4-b2, p5-b1, p6-b0; contrast b1-b0: o1 = p2-b1 against p1-b0,
++o2 = p5-b1 against p6-b0; contrast b2-b1: o1 = p3-b2 against p2-b1, o2 = p4-b2 against p5-b1.
++
++Admissibility is the day-39 reader's and is NOT recomputed: this reader requires day39-stall-reading.py's banked
++output to carry the line `DAY39 ADMISSIBLE: 60 of 60 receipts; all=True` and every one of the 60 receipts to exist;
++otherwise it refuses and prints why. Nothing is replayed.
+ 
+-Layout, programs, blocks and arms are day 37's: <ev>/<program>/pass{1,2}/<kind>/, programs p1-base, p2-opta, p3-opta,
+-p4-base; o1 = p2-opta against p1-base, o2 = p3-opta against p4-base.
+-
+-Admissibility is day 37's and is NOT recomputed: the reader requires day 37's banked `reading.log` to carry the line
+-`DAY37 ADMISSIBLE: 40 of 40 receipts; all=True` and every one of the 40 receipts to exist; nothing is replayed.
+-
+-Tick identification, per arm run (fixed now):
++Tick identification, per arm run (day 38's):
+   f          = the receipt's `fire_at` minus 1: the index in `itl_ms` of the gap from the tenant's 24th token to its
+-               25th, the gap in progress when the harness fired the intruder (`itl_ms[i]` spans token i+1 to i+2).
+-  stretched  = `itl_ms[i] > 3 * p50`, p50 the run's own median gap (day 35's descriptive term, A day 16's).
++               25th, the gap in progress when the harness fired the intruder.
++  stretched  = `itl_ms[i] > 3 * p50`, p50 the run's own median gap.
+   tick 1     = the first stretched gap at an index >= f, in time order.
+   tick 2     = the next stretched gap after tick 1, in time order.
+   A run with fewer than k stretched gaps at an index >= f has no tick k.
+-The quantities q=tick1 and q=tick2 are the per-run values of those gaps in ms (raw gaps, as day 37's `top1_plus_top2`
+-is raw gaps).
+-
+-Readings, day 37's rule unchanged, on q=tick1 and on q=tick2 separately:
+-  (ii)  per binary per arm, pooled over its four receipts (N=40): median, IQR, ON minus OFF per class with unc.
+-  (iii) option (a) minus base per arm per block, each side the program's two passes pooled (N=20):
+-        d = median(opta) - median(base), unc = sqrt(iqr_opta^2 + iqr_base^2), `isolated` when |d| > unc; per arm
+-        `moved` when both blocks are isolated with the same sign, `order_split` when both are isolated with opposite
+-        signs, `under_resolution` otherwise.
+-  (iv)  the DiD per class per block, (on - off)_opta - (on - off)_base, unc = sqrt of the four IQRs squared summed,
+-        the same outcomes.
+-  A tick-k quantity is defined for a program's arm only when every one of its 20 arm runs has tick k. Where it is
+-  not, the line prints `not_defined (R of N runs lack tick k)` and no outcome is read from it; a block or DiD that
+-  uses it, and the arm's outcome, print `not_defined`.
+-The hypothesis line (DAY38.md section 1), evaluated mechanically from the outcomes above:
+-  P1 demote-on q=tick2 `moved` with d < 0 in both blocks; P2 demote-on q=tick1 `under_resolution`;
+-  P3 did-demote q=tick2 `moved` with d < 0 in both blocks; P4 did-demote q=tick1 `under_resolution`;
+-  P5 (control) demote-off `under_resolution` on both ticks.
+-  Any of P1 to P4 not_defined: `H not readable`. P5 holds: `consistent with H` iff P1 to P4 hold, else `H refuted`
+-  naming the failed predictions. P5 fails: the demote-on lines are read through the DiD (day 37's rule), so
+-  `consistent with H` iff P3 and P4 hold, else `H refuted`.
+-  The promote class is read under the same rule with no prediction registered.
+-Descriptive (printed, not ruled): per run, f, p50 and the stretched gaps at and after f as (offset from f, ms), the
+-count of stretched gaps before f, tick 1 and tick 2 with their offsets; per program per arm, the stretched-count, the
+-offsets, the runs where tick 2 is the gap right after tick 1, the runs where {tick 1, tick 2} equals day 37's
+-{top1, top2}, and the fire check (the harness's `fired_at_ms` between the reconstructed arrivals of the 24th and 25th
+-tokens, `ttft_ms` plus the cumulative gaps, 0.05 ms slack for the gaps' 3-decimal rounding).
++Readings per contrast, day 38's rule unchanged, on q=tick1 and q=tick2 separately: (ii) per binary per arm (N=40),
++(iii) new minus old per arm per block (N=20 per side), (iv) the DiD per class per block. A tick-k quantity is defined
++for a program's arm only when every one of its 20 arm runs has tick k; otherwise `not_defined`.
++The hypothesis line, day 38's P1 to P5 unchanged, is evaluated on contrast b1-b0 (option (a) against the base tree,
++the contrast day 38 registered it on): P1 demote-on q=tick2 `moved` with d < 0 in both blocks; P2 demote-on q=tick1
++`under_resolution`; P3 did-demote q=tick2 `moved` with d < 0; P4 did-demote q=tick1 `under_resolution`; P5 (control)
++demote-off `under_resolution` on both ticks; the combination rule is day 38's. Contrast b2-b1 carries no registered
++prediction; its lines are read under the same rule and described.
++Descriptive lines per run and per program per arm are day 38's.
+ 
+-    day38-tick-split.py <ev_dir> <day37 reading.log>
+-    day38-tick-split.py --selftest
++    day39-tick-split.py <ev_dir> <day39 reading.log>
++    day39-tick-split.py --selftest
+ """
+ import json
+ import math
+@@ -58,11 +38,13 @@
+ import sys
+ 
+ ORDER = {1: ("prime", "off", "on"), 2: ("on", "off", "prime")}
+-PROGRAMS = (("p1-base", "base"), ("p2-opta", "opta"), ("p3-opta", "opta"), ("p4-base", "base"))
+-BLOCKS = (("o1", "p2-opta", "p1-base"), ("o2", "p3-opta", "p4-base"))
++PROGRAMS = (("p1-b0", "b0"), ("p2-b1", "b1"), ("p3-b2", "b2"), ("p4-b2", "b2"), ("p5-b1", "b1"), ("p6-b0", "b0"))
++TREE_PROGS = (("b0", ("p1-b0", "p6-b0")), ("b1", ("p2-b1", "p5-b1")), ("b2", ("p3-b2", "p4-b2")))
++CONTRASTS = (("b1-b0", (("o1", "p2-b1", "p1-b0"), ("o2", "p5-b1", "p6-b0"))),
++             ("b2-b1", (("o1", "p3-b2", "p2-b1"), ("o2", "p4-b2", "p5-b1"))))
+ ARMS = (("prime", "prime", "prime"), ("demote-off", "off", "demote"), ("demote-on", "on", "demote"),
+         ("promote-off", "off", "promote"), ("promote-on", "on", "promote"))
+-DAY37_ADMISSIBLE = "DAY37 ADMISSIBLE: 40 of 40 receipts; all=True"
++DAY39_ADMISSIBLE = "DAY39 ADMISSIBLE: 60 of 60 receipts; all=True"
+ STRETCH = 3.0
+ FIRE_SLACK_MS = 0.05
+ 
+@@ -135,8 +117,8 @@
+ 
+ def load(ev, reading_log):
+     txt = open(reading_log, errors="replace").read()
+-    if DAY37_ADMISSIBLE not in txt.splitlines():
+-        raise SystemExit(f"DAY38 REFUSED: {reading_log} does not carry `{DAY37_ADMISSIBLE}`")
++    if DAY39_ADMISSIBLE not in txt.splitlines():
++        raise SystemExit(f"DAY39 TICK REFUSED: {reading_log} does not carry `{DAY39_ADMISSIBLE}`")
+     recs = {}
+     for prog, _tree in PROGRAMS:
+         for p in (1, 2):
+@@ -144,16 +126,16 @@
+                 for mode in (("prime",) if kind == "prime" else ("demote", "promote")):
+                     path = os.path.join(ev, prog, f"pass{p}", kind, mode, "receipt.json")
+                     if not os.path.exists(path):
+-                        raise SystemExit(f"DAY38 REFUSED: {path} missing (day 37 admitted 40 of 40)")
++                        raise SystemExit(f"DAY39 TICK REFUSED: {path} missing (the day-39 reader admitted 60 of 60)")
+                     recs[(prog, p, kind, mode)] = json.load(open(path))
+-    if len(recs) != 40:
+-        raise SystemExit(f"DAY38 REFUSED: {len(recs)} receipts, day 37 admitted 40")
++    if len(recs) != 60:
++        raise SystemExit(f"DAY39 TICK REFUSED: {len(recs)} receipts, the day-39 reader admitted 60")
+     return recs
+ 
+ 
+ def main_read(ev, reading_log):
+     recs = load(ev, reading_log)
+-    print(f"DAY38 ADMISSIBILITY: day 37's, taken from {reading_log} (`{DAY37_ADMISSIBLE}`); 40 receipts loaded; "
++    print(f"DAY39 TICK ADMISSIBILITY: the day-39 reader's, taken from {reading_log} (`{DAY39_ADMISSIBLE}`); 60 receipts loaded; "
+           f"nothing replayed or re-admitted")
+ 
+     # Descriptive: per run, then per program per arm
+@@ -168,7 +150,7 @@
+                     s = split(r, rec["fire_at"])
+                     rows.append(s)
+                     fmt = lambda v: "none" if v is None else f"{v:.1f}"
+-                    print(f"  DAY38 RUN prog={prog} tree={tree} pass={p} arm={arm} run={r['run_id']} f={s['f']} p50={s['p50']:.2f} "
++                    print(f"  DAY39 TICK RUN prog={prog} tree={tree} pass={p} arm={arm} run={r['run_id']} f={s['f']} p50={s['p50']:.2f} "
+                           f"stretched_after_fire={[(o, round(x, 1)) for o, x in s['after']]} stretched_before_fire={s['before']} "
+                           f"tick1={fmt(s['tick1'])} (offset {s['off1']}) tick2={fmt(s['tick2'])} (offset {s['off2']}) "
+                           f"top2={[round(x, 1) for x in s['top2']]} fire_ok={s['fire_ok']}")
+@@ -178,7 +160,7 @@
+             adj = sum(1 for s in rows if s["off1"] is not None and s["off2"] is not None and s["off2"] == s["off1"] + 1)
+             pair = sum(1 for s in rows if s["tick2"] is not None and sorted([s["tick1"], s["tick2"]]) == sorted(s["top2"]))
+             mm = lambda xs: f"{statistics.median(xs):.0f} ({min(xs)} to {max(xs)})" if xs else "none"
+-            print(f"DAY38 SHAPE prog={prog} tree={tree} arm={arm} N={len(rows)} stretched_after_fire median={mm(cnt)} "
++            print(f"DAY39 TICK SHAPE prog={prog} tree={tree} arm={arm} N={len(rows)} stretched_after_fire median={mm(cnt)} "
+                   f"stretched_before_fire_sum={sum(s['before'] for s in rows)} tick1_offset={mm(o1)} tick2_offset={mm(o2)} "
+                   f"runs_with_tick1={len(o1)}/{len(rows)} runs_with_tick2={len(o2)}/{len(rows)} tick2_right_after_tick1={adj}/{len(rows)} "
+                   f"pair_equals_day37_top2={pair}/{len(rows)} fire_ok={sum(1 for s in rows if s['fire_ok'])}/{len(rows)}")
+@@ -193,73 +175,76 @@
+                 n += nn
+         return xs, missing, n
+ 
+-    verdicts = {}
++    all_verdicts = {}
+     for k in (1, 2):
+         qname = f"tick{k}"
+         # (ii) per binary per arm
+         per = {}
+-        for tree, progs in (("base", ("p1-base", "p4-base")), ("opta", ("p2-opta", "p3-opta"))):
++        for tree, progs in TREE_PROGS:
+             for arm, kind, mode in ARMS:
+                 xs, miss, n = pool(progs, kind, mode, k)
+                 if miss or not xs:
+                     per[(tree, arm)] = None
+-                    print(f"DAY38 BINARY q={qname} tree={tree} arm={arm} N={n} -> not_defined ({miss} of {n} runs lack tick {k})")
++                    print(f"DAY39 TICK BINARY q={qname} tree={tree} arm={arm} N={n} -> not_defined ({miss} of {n} runs lack tick {k})")
+                     continue
+                 m, u = med_iqr(xs)
+                 per[(tree, arm)] = (m, u)
+-                print(f"DAY38 BINARY q={qname} tree={tree} arm={arm} N={len(xs)} median={m:.1f} iqr={u:.1f} -> defined")
++                print(f"DAY39 TICK BINARY q={qname} tree={tree} arm={arm} N={len(xs)} median={m:.1f} iqr={u:.1f} -> defined")
+             for cls in ("demote", "promote"):
+                 on, off = per.get((tree, f"{cls}-on")), per.get((tree, f"{cls}-off"))
+                 if on and off:
+                     d, unc = on[0] - off[0], math.sqrt(on[1] ** 2 + off[1] ** 2)
+-                    print(f"DAY38 BINARY q={qname} tree={tree} class={cls} on_minus_off={d:+.1f} unc={unc:.1f} -> {classify(d, unc)}")
++                    print(f"DAY39 TICK BINARY q={qname} tree={tree} class={cls} on_minus_off={d:+.1f} unc={unc:.1f} -> {classify(d, unc)}")
+                 else:
+-                    print(f"DAY38 BINARY q={qname} tree={tree} class={cls} on_minus_off -> not_defined")
+-        # (iii) option (a) minus base per arm per block
+-        verdict, block_vals, outs = [], {}, {}
+-        for arm, kind, mode in ARMS:
+-            bl = []
+-            for bname, po, pb in BLOCKS:
+-                xo, mo_, no = pool((po,), kind, mode, k)
+-                xb, mb_, nb = pool((pb,), kind, mode, k)
+-                if mo_ or mb_ or not xo or not xb:
+-                    print(f"DAY38 OPTA-BASE q={qname} arm={arm} block={bname} ({po} against {pb}): not_defined "
+-                          f"({mo_} of {no} opta runs, {mb_} of {nb} base runs lack tick {k})")
+-                    bl.append((0.0, 0.0, "not_defined"))
+-                    continue
+-                mo, uo = med_iqr(xo)
+-                mb, ub = med_iqr(xb)
+-                block_vals[(arm, bname)] = (mo, uo, mb, ub)
+-                d, unc = mo - mb, math.sqrt(uo ** 2 + ub ** 2)
+-                bl.append((d, unc, True))
+-                print(f"DAY38 OPTA-BASE q={qname} arm={arm} block={bname} ({po} against {pb}): opta {mo:.1f} (iqr {uo:.1f}, N={len(xo)}) "
+-                      f"base {mb:.1f} (iqr {ub:.1f}, N={len(xb)}) d={d:+.1f} unc={unc:.1f} -> {classify(d, unc)}")
+-            o = outcome(bl)
+-            outs[arm] = (o, bl)
+-            verdict.append(f"{arm} " + " ".join(f"{b[0]}={'nd' if x[2] == 'not_defined' else format(x[0], '+.1f') + '/' + format(x[1], '.1f')}"
+-                                                for b, x in zip(BLOCKS, bl)) + f" {o}")
+-        # (iv) the DiD per class per block
+-        for cls in ("demote", "promote"):
+-            bl = []
+-            for bname, _po, _pb in BLOCKS:
+-                on, off = block_vals.get((f"{cls}-on", bname)), block_vals.get((f"{cls}-off", bname))
+-                if not on or not off:
+-                    print(f"DAY38 DID q={qname} class={cls} block={bname}: not_defined (an arm of the block is not_defined)")
+-                    bl.append((0.0, 0.0, "not_defined"))
+-                    continue
+-                d = (on[0] - off[0]) - (on[2] - off[2])
+-                unc = math.sqrt(on[1] ** 2 + off[1] ** 2 + on[3] ** 2 + off[3] ** 2)
+-                bl.append((d, unc, True))
+-                print(f"DAY38 DID q={qname} class={cls} block={bname}: (on-off)_opta {on[0] - off[0]:+.1f} (on-off)_base {on[2] - off[2]:+.1f} "
+-                      f"d={d:+.1f} unc={unc:.1f} -> {classify(d, unc)}")
+-            o = outcome(bl)
+-            outs[f"did-{cls}"] = (o, bl)
+-            verdict.append(f"did-{cls} " + " ".join(f"{b[0]}={'nd' if x[2] == 'not_defined' else format(x[0], '+.1f') + '/' + format(x[1], '.1f')}"
+-                                                    for b, x in zip(BLOCKS, bl)) + f" {o}")
+-        print(f"DAY38 VERDICT q={qname}: " + "; ".join(verdict))
+-        verdicts[k] = outs
++                    print(f"DAY39 TICK BINARY q={qname} tree={tree} class={cls} on_minus_off -> not_defined")
++        for cname, blocks in CONTRASTS:
++            # (iii) new minus old per arm per block
++            verdict, block_vals, outs = [], {}, {}
++            for arm, kind, mode in ARMS:
++                bl = []
++                for bname, pn, po in blocks:
++                    xn, mn_, nn = pool((pn,), kind, mode, k)
++                    xo, mo_, no = pool((po,), kind, mode, k)
++                    if mn_ or mo_ or not xn or not xo:
++                        print(f"DAY39 TICK CONTRAST contrast={cname} q={qname} arm={arm} block={bname} ({pn} against {po}): not_defined "
++                              f"({mn_} of {nn} new runs, {mo_} of {no} old runs lack tick {k})")
++                        bl.append((0.0, 0.0, "not_defined"))
++                        continue
++                    mn, un = med_iqr(xn)
++                    mo, uo = med_iqr(xo)
++                    block_vals[(arm, bname)] = (mn, un, mo, uo)
++                    d, unc = mn - mo, math.sqrt(un ** 2 + uo ** 2)
++                    bl.append((d, unc, True))
++                    print(f"DAY39 TICK CONTRAST contrast={cname} q={qname} arm={arm} block={bname} ({pn} against {po}): new {mn:.1f} (iqr {un:.1f}, N={len(xn)}) "
++                          f"old {mo:.1f} (iqr {uo:.1f}, N={len(xo)}) d={d:+.1f} unc={unc:.1f} -> {classify(d, unc)}")
++                o = outcome(bl)
++                outs[arm] = (o, bl)
++                verdict.append(f"{arm} " + " ".join(f"{b[0]}={'nd' if x[2] == 'not_defined' else format(x[0], '+.1f') + '/' + format(x[1], '.1f')}"
++                                                    for b, x in zip(blocks, bl)) + f" {o}")
++            # (iv) the DiD per class per block
++            for cls in ("demote", "promote"):
++                bl = []
++                for bname, _pn, _po in blocks:
++                    on, off = block_vals.get((f"{cls}-on", bname)), block_vals.get((f"{cls}-off", bname))
++                    if not on or not off:
++                        print(f"DAY39 TICK DID contrast={cname} q={qname} class={cls} block={bname}: not_defined (an arm of the block is not_defined)")
++                        bl.append((0.0, 0.0, "not_defined"))
++                        continue
++                    d = (on[0] - off[0]) - (on[2] - off[2])
++                    unc = math.sqrt(on[1] ** 2 + off[1] ** 2 + on[3] ** 2 + off[3] ** 2)
++                    bl.append((d, unc, True))
++                    print(f"DAY39 TICK DID contrast={cname} q={qname} class={cls} block={bname}: (on-off)_new {on[0] - off[0]:+.1f} (on-off)_old {on[2] - off[2]:+.1f} "
++                          f"d={d:+.1f} unc={unc:.1f} -> {classify(d, unc)}")
++                o = outcome(bl)
++                outs[f"did-{cls}"] = (o, bl)
++                verdict.append(f"did-{cls} " + " ".join(f"{b[0]}={'nd' if x[2] == 'not_defined' else format(x[0], '+.1f') + '/' + format(x[1], '.1f')}"
++                                                        for b, x in zip(blocks, bl)) + f" {o}")
++            print(f"DAY39 TICK VERDICT contrast={cname} q={qname}: " + "; ".join(verdict))
++            all_verdicts[(cname, k)] = outs
++
++    # The hypothesis line, day 38's, on contrast b1-b0 only
++    verdicts = {k: all_verdicts[("b1-b0", k)] for k in (1, 2)}
+ 
+-    # The hypothesis line (DAY38.md section 1), mechanical
+     def moved_neg(o):
+         return o[0] == "moved" and all(d < 0 for d, _, _ in o[1])
+ 
+@@ -283,12 +268,11 @@
+         h = "consistent with H" if not failed else f"H refuted ({', '.join(k + ' fails' for k in failed)})"
+         if p5 == "fails":
+             h += " (P5 fails: the demote-on lines read through the DiD)"
+-    print(f"DAY38 HYPOTHESIS P1 demote-on tick2 moved negative: {p['P1']}; P2 demote-on tick1 under_resolution: {p['P2']}; "
++    print(f"DAY39 TICK HYPOTHESIS contrast=b1-b0 P1 demote-on tick2 moved negative: {p['P1']}; P2 demote-on tick1 under_resolution: {p['P2']}; "
+           f"P3 did-demote tick2 moved negative: {p['P3']}; P4 did-demote tick1 under_resolution: {p['P4']}; "
+           f"P5 demote-off tick1 and tick2 under_resolution: {p5} (tick1 {c1}, tick2 {c2}) -> {h}")
+     return 0
+ 
+-
+ def selftest():
+     """Synthetic runs only (no receipt is read): the identification of the docstring on constructed gap series."""
+     base = [7.3] * 399
+@@ -326,7 +310,7 @@
+     good = (o, o2, o3, o4) == ("moved", "order_split", "under_resolution", "not_defined")
+     ok = ok and good
+     print(f"  selftest {'ok' if good else 'FAIL'}: outcomes {o}, {o2}, {o3}, {o4}")
+-    print(f"DAY38 SELFTEST: {'PASS' if ok else 'FAIL'}")
++    print(f"DAY39 TICK SELFTEST: {'PASS' if ok else 'FAIL'}")
+     return 0 if ok else 1
+ 
+ 

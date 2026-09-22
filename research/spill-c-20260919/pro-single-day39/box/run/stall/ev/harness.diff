@@ -1,0 +1,32 @@
+--- research/spill-a-20260919/stall_cell.py	2026-09-22 08:17:57.841822024 +0000
++++ research/spill-c-20260919/day35_stall_cell.py	2026-09-22 21:40:16.543937991 +0000
+@@ -21,6 +21,11 @@
+     earlier arms are byte-for-byte unchanged.)
+     stall_cell.py --replay DIR/receipt.json
+ 
++    (WP-C day 35, research/spill-c-20260919/DAY35.md: lane A's `stall_cell.py` with ONE added argument,
++    `--tenant-max-tokens` (default 160, A's constant), so the tenant's window can be sized for a card whose
++    tick is shorter than the target card's while every intruder shape stays byte-for-byte A's. The rule line,
++    the replay and the five arms are unchanged; the receipt records the value used.)
++
+ Client-side only: stdlib, no engine binary, no GPU access of its own.
+ """
+ import argparse
+@@ -291,6 +296,7 @@
+ 
+ 
+ def main():
++    global TENANT_MAX_TOKENS
+     ap = argparse.ArgumentParser()
+     ap.add_argument("--port", type=int)
+     ap.add_argument("--mode", choices=["prime", "demote", "promote", "capture", "restore"])
+@@ -299,7 +305,9 @@
+     ap.add_argument("--n", type=int, default=5)
+     ap.add_argument("--tag", default=None)
+     ap.add_argument("--replay")
++    ap.add_argument("--tenant-max-tokens", type=int, default=TENANT_MAX_TOKENS)
+     a = ap.parse_args()
++    TENANT_MAX_TOKENS = a.tenant_max_tokens
+     if a.replay:
+         rec = json.load(open(a.replay))
+         s = summarize(rec["runs"])
