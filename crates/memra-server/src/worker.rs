@@ -8863,10 +8863,11 @@ impl HostPrefixCache {
             );
         }
         self.disabled = true;
-        // WP-A day 28 (ruling 39): a latched tier hashes nothing more; the hash helper joins here
-        // (idempotent; it only ever blocks on its job channel, which the join closes first).
+        // WP-A day 28 (ruling 39): a latched tier hashes nothing more; the hash helper closes here
+        // (idempotent; bounded, so a helper still inside a job is detached, not waited for).
         if let Some(tier) = &self.tier {
-            tier.hasher.join("the tier latched off");
+            tier.hasher
+                .close("the tier latched off", HOST_HASH_LATCH_JOIN);
             // WP-A day 30: a latched tier demotes nothing more; its span staging set frees.
             tier.staging.borrow_mut().clear();
         }
@@ -10013,13 +10014,19 @@ impl HostHashFault {
 const HOST_HASH_DEADLINE: Duration = Duration::from_secs(10);
 
 /// One long-lived hash helper per `HostTierContext` (never a thread per demote): a job channel in,
-/// a reply channel out, the thread handle for the join. The helper only ever blocks on its job
-/// channel, so dropping the sender ends it and the join cannot hang.
+/// a reply channel out, the thread handle for the join. Between jobs the helper blocks only on its
+/// job channel; inside a job it is busy for as long as the hash takes, which is unbounded when the
+/// helper is starved or wedged (the deadline's cause), so `close` never waits past its bound.
 struct HostHashWorker {
     jobs: std::cell::RefCell<Option<std::sync::mpsc::Sender<HostHashJob>>>,
-    replies: std::sync::mpsc::Receiver<HostHashReply>,
+    replies: std::cell::RefCell<Option<std::sync::mpsc::Receiver<HostHashReply>>>,
     handle: std::cell::RefCell<Option<std::thread::JoinHandle<()>>>,
 }
+
+/// How long the tier's latch waits for the hash helper to exit before detaching it (revuto on
+/// #652): an idle helper exits within microseconds of its job channel closing; a helper still
+/// inside a job is the deadline's cause, and the owner thread must not wait for that job.
+const HOST_HASH_LATCH_JOIN: Duration = Duration::from_millis(50);
 impl HostHashWorker {
     fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {
         let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<HostHashJob>();
@@ -10066,7 +10073,7 @@ impl HostHashWorker {
             .map_err(|e| format!("hash helper thread refused to spawn: {e}"))?;
         Ok(Self {
             jobs: std::cell::RefCell::new(Some(jobs_tx)),
-            replies: reply_rx,
+            replies: std::cell::RefCell::new(Some(reply_rx)),
             handle: std::cell::RefCell::new(Some(handle)),
         })
     }
@@ -10078,22 +10085,38 @@ impl HostHashWorker {
     ) -> Self {
         Self {
             jobs: std::cell::RefCell::new(Some(jobs)),
-            replies,
+            replies: std::cell::RefCell::new(Some(replies)),
             handle: std::cell::RefCell::new(None),
         }
+    }
+    /// The same over a caller-owned thread (the wedged-helper cell: a job still in hand at the
+    /// latch).
+    #[cfg(test)]
+    fn from_thread(
+        jobs: std::sync::mpsc::Sender<HostHashJob>,
+        replies: std::sync::mpsc::Receiver<HostHashReply>,
+        handle: std::thread::JoinHandle<()>,
+    ) -> Self {
+        let worker = Self::from_channels(jobs, replies);
+        *worker.handle.borrow_mut() = Some(handle);
+        worker
     }
     fn submit(&self, job: HostHashJob) -> Result<(), String> {
         self.jobs
             .borrow()
             .as_ref()
-            .ok_or_else(|| "the hash helper was joined".to_string())?
+            .ok_or_else(|| "the hash helper was closed".to_string())?
             .send(job)
             .map_err(|_| "the job channel closed".to_string())
     }
     /// `Poll`: a landed reply, `None` while the helper still works, an error when the reply
     /// channel closed (the helper exited or panicked).
     fn try_reply(&self) -> Result<Option<HostHashReply>, String> {
-        match self.replies.try_recv() {
+        let replies = self.replies.borrow();
+        let replies = replies
+            .as_ref()
+            .ok_or_else(|| "the hash helper was closed".to_string())?;
+        match replies.try_recv() {
             Ok(r) => Ok(Some(r)),
             Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -10103,7 +10126,11 @@ impl HostHashWorker {
     }
     /// `Block`: the same with a bounded wait; `None` is the deadline.
     fn reply_within(&self, timeout: Duration) -> Result<Option<HostHashReply>, String> {
-        match self.replies.recv_timeout(timeout) {
+        let replies = self.replies.borrow();
+        let replies = replies
+            .as_ref()
+            .ok_or_else(|| "the hash helper was closed".to_string())?;
+        match replies.recv_timeout(timeout) {
             Ok(r) => Ok(Some(r)),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Ok(None),
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
@@ -10111,14 +10138,31 @@ impl HostHashWorker {
             }
         }
     }
-    /// Drop the job sender (the helper's loop ends) and join the thread. Idempotent; called at
-    /// shutdown and at the tier's latch, never inside a settle.
-    fn join(&self, why: &str) {
+    /// Drop both channel ends (the helper's loop ends after the job in hand, if any, whose reply
+    /// then finds no receiver and drops with its payloads) and join the thread within `bound`;
+    /// past it the thread is detached and ends on its own. Idempotent; called at shutdown and at
+    /// the tier's latch, never inside a settle. The latch passes `HOST_HASH_LATCH_JOIN` (revuto
+    /// on #652: a latch can fire because a job is still running, and the owner thread must not
+    /// wait for it); shutdown passes the hash deadline.
+    fn close(&self, why: &str, bound: Duration) {
         let Some(tx) = self.jobs.borrow_mut().take() else {
             return;
         };
         drop(tx);
+        drop(self.replies.borrow_mut().take());
         if let Some(handle) = self.handle.borrow_mut().take() {
+            let t = Instant::now();
+            while !handle.is_finished() && t.elapsed() < bound {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            if !handle.is_finished() {
+                eprintln!(
+                    "[prefix-host] hash helper detached ({why}): still inside a job after \
+                     {:.1}ms; it ends on its own and that job's reply drops with its payloads",
+                    t.elapsed().as_secs_f64() * 1e3
+                );
+                return;
+            }
             let panicked = handle.join().is_err();
             eprintln!(
                 "[prefix-host] hash helper joined ({why}){}",
@@ -13372,7 +13416,7 @@ fn host_demote_drain_at_shutdown(hpx: &mut HostPrefixCache) {
         );
     }
     if let Some(tier) = &hpx.tier {
-        tier.hasher.join("shutdown");
+        tier.hasher.close("shutdown", HOST_HASH_DEADLINE);
     }
 }
 
@@ -45406,9 +45450,11 @@ mod tests {
             staged: None,
         };
         assert!(super::host_hash_restore_payload(&mut e, out_of_range).is_err());
-        // The join is idempotent and the second call is a no-op.
-        worker.join("the cell");
-        worker.join("the cell again");
+        // The close is idempotent and the second call is a no-op; an idle helper joins well
+        // inside the bound.
+        worker.close("the cell", super::HOST_HASH_DEADLINE);
+        assert!(worker.handle.borrow().is_none());
+        worker.close("the cell again", super::HOST_HASH_DEADLINE);
         assert!(
             worker
                 .submit(super::HostHashJob {
@@ -45789,6 +45835,57 @@ mod tests {
     }
 
     #[test]
+    fn a_latch_with_the_helper_still_inside_a_job_detaches_it_within_the_bound() {
+        // Revuto on #652: a latch can fire because a job is still running (a starved or wedged
+        // helper is the deadline's cause), so the owner thread must not wait for that job. The
+        // stand-in helper holds its job until released, then tries to reply.
+        let (mut host, _key) = cpu_door_host();
+        let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<super::HostHashJob>();
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel::<super::HostHashReply>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let (sent_tx, sent_rx) = std::sync::mpsc::channel::<bool>();
+        let handle = std::thread::spawn(move || {
+            let _jobs = jobs_rx;
+            let _ = release_rx.recv();
+            let reply = super::HostHashReply {
+                seq: 1,
+                hashed: Vec::new(),
+                helper_ms: 0.0,
+            };
+            let _ = sent_tx.send(reply_tx.send(reply).is_ok());
+        });
+        host.tier.as_mut().unwrap().hasher =
+            super::HostHashWorker::from_thread(jobs_tx, reply_rx, handle);
+        let t = std::time::Instant::now();
+        host.disable("a latch with a job in hand");
+        let waited = t.elapsed();
+        assert!(
+            waited >= super::HOST_HASH_LATCH_JOIN,
+            "the latch gave the helper its bound: {waited:?}"
+        );
+        assert!(
+            waited < std::time::Duration::from_secs(2),
+            "and did not wait for the job: {waited:?}"
+        );
+        assert!(!host.armed());
+        let hasher = &host.tier.as_ref().unwrap().hasher;
+        assert!(
+            hasher.handle.borrow().is_none(),
+            "the latch detached the helper"
+        );
+        assert!(
+            hasher.try_reply().is_err(),
+            "a closed helper has no reply channel"
+        );
+        release_tx.send(()).unwrap();
+        assert_eq!(
+            sent_rx.recv_timeout(std::time::Duration::from_secs(10)),
+            Ok(false),
+            "the late reply finds no receiver and drops with its payloads"
+        );
+    }
+
+    #[test]
     fn hash_reply_that_does_not_describe_the_image_is_a_typed_refusal_that_latches() {
         // Each forged reply: a typed `Failed`, the state consumed, the tier latched.
         let forge = |mutate: &dyn Fn(&mut super::HostHashReply)| {
@@ -45917,12 +46014,13 @@ mod tests {
         assert!(hashing_fn.contains("host.disable(&err);"));
         assert!(hashing_fn.contains("Some(&digests),"));
         assert!(hashing_fn.contains("owner \\\n             in-completion {:.2}ms"));
-        // The latch joins the helper; shutdown drops and joins, after the restore drain.
+        // The latch closes the helper within its short bound; shutdown drops and closes within
+        // the hash deadline, after the restore drain.
         let disable = body("    fn disable(&mut self, why: &str) {");
-        assert!(disable.contains("tier.hasher.join(\"the tier latched off\");"));
+        assert!(disable.contains(".close(\"the tier latched off\", HOST_HASH_LATCH_JOIN);"));
         let drain = body("fn host_demote_drain_at_shutdown(");
         assert!(drain.contains("hpx.demoting.take()"));
-        assert!(drain.contains("tier.hasher.join(\"shutdown\");"));
+        assert!(drain.contains("tier.hasher.close(\"shutdown\", HOST_HASH_DEADLINE);"));
         let restore_drain = code
             .find("host_restore_drain_at_shutdown(&mut hpx);")
             .unwrap();
