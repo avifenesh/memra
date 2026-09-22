@@ -24270,7 +24270,7 @@ pub fn run(
                     &mut pending_handoffs,
                 ),
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,
             }
         }
 
@@ -44177,6 +44177,29 @@ mod tests {
             + run[drain..]
                 .find("\n        resolve_constraint_compiles(")
                 .unwrap();
+        let parked = run
+            .find("match rx.recv_timeout(Duration::from_millis(2))")
+            .unwrap();
+        let capture = run
+            .find("host_capture_drain_at_shutdown(&mut hpx);")
+            .unwrap();
+        let restore = run
+            .find("host_restore_drain_at_shutdown(&mut hpx);")
+            .unwrap();
+        let loop_body = &run[loop_start..capture];
+        // Inventory the whole command-channel receive surface, including the two idle
+        // exits before `timed` and the parked-only receive after `receive_end`.
+        assert_eq!(loop_body.matches("match rx.").count(), 5);
+        assert_eq!(loop_body.matches("rx.try_recv()").count(), 2);
+        assert_eq!(loop_body.matches("rx.recv()").count(), 1);
+        assert_eq!(loop_body.matches("rx.recv_timeout(").count(), 2);
+        assert!(
+            run[loop_start..timed].contains("Err(_) => break, // all senders dropped -> shutdown")
+        );
+        assert!(
+            run[loop_start..timed]
+                .contains("Err(std::sync::mpsc::TryRecvError::Disconnected) => break,")
+        );
         assert!(
             run[timed..drain]
                 .contains("Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,"),
@@ -44188,15 +44211,20 @@ mod tests {
             ),
             "empty-active disconnect must drain even with a queued pending restore"
         );
-        assert!(!run[timed..receive_end].contains("=> return"));
-        assert!(!run[timed..receive_end].contains("return;"));
-        let capture = run
-            .find("host_capture_drain_at_shutdown(&mut hpx);")
-            .unwrap();
-        let restore = run
-            .find("host_restore_drain_at_shutdown(&mut hpx);")
-            .unwrap();
-        assert!(receive_end < capture && capture < restore);
+        assert!(
+            run[parked..capture]
+                .contains("Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,"),
+            "parked-only disconnect must drain the pending restore"
+        );
+        assert_eq!(
+            loop_body
+                .matches("Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,")
+                .count(),
+            2
+        );
+        assert!(!loop_body.contains("=> return"));
+        assert!(!loop_body.contains("return;"));
+        assert!(receive_end < parked && parked < capture && capture < restore);
     }
 
     /// Every path that meets a `Capturing` entry does what the pre-registration says (a source
