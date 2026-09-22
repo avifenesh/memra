@@ -30,13 +30,16 @@ route pinned (`MEMRA_SPEC_GATE_LOW=64 HIGH=65`), one 131k cold prime beside two 
 4k cache hit, greedy, both arms interleaved by boot, three reps per rig. The first gate version sent
 synthetic token ids; review round 1 showed those prompts end at EOS almost at once, so the byte
 clause compared two characters. The gate now sends calibrated natural text (135,470 / 2,071 /
-2,140 / 4,111 tokens on the 9B) and refuses a run whose requests generate fewer than 16 tokens; the
-5090 cell was re-run on that version, the PRO 6000 cell below is the id version (its timing
+2,140 / 4,111 tokens on the 9B) whose tail asks each prompt for its own case number and plant word,
+refuses a run whose requests generate fewer than 16 tokens or whose three cold prompts do not produce
+three distinct outputs (round 2: a shared task line had made every request echo the same tokens);
+the 5090 cell was re-run on the final version, the PRO 6000 cell below is the id version (its timing
 clauses are unchanged by the prompt content; its byte clause compared the short outputs).
 
 | rig (3 reps, arms interleaved by boot) | peers p95 first event OFF / ON (s) | peers max OFF / ON (s) | `tick_max_ms` OFF / ON | long prime first event OFF / ON (s) | bytes identical | yields ON |
 |---|---|---|---|---|---|---|
-| local RTX 5090, natural-text gate (135,470-token prime; every request 32 tokens out) | 55.02 / 1.43 | 55.02 / 1.43 | 56479 / 2458 | 55.82 / 55.94 | yes (every request one sha across 6 boots, full outputs) | 426 |
+| local RTX 5090, prompt-derived gate (final; each request answers with its own case number and plant word) | 52.88 / 1.52 | 52.88 / 1.52 | 54375 / 2430 | 54.08 / 56.39 | yes (four distinct outputs, each one sha across 6 boots) | 426 |
+| local RTX 5090, shared-task text version (superseded: every request echoed the same 32 tokens, round 2) | 55.02 / 1.43 | 55.02 / 1.43 | 56479 / 2458 | 55.82 / 55.94 | yes (every request one sha across 6 boots, full outputs) | 426 |
 | local RTX 5090 (9950X host), id-prompt gate version | 49.64 / 1.87 | 49.64 / 1.87 | 51199 / 2309 | 50.77 / 52.45 | yes (every request one sha across 6 boots) | 189 |
 | rented RTX PRO 6000 Blackwell WS (Core Ultra 9 285K host, driver 595.71.05) | 14.51 / 0.53 | 14.51 / 0.53 | 16338 / 870 | 16.33 / 17.26 | yes (every request one sha across 6 boots) | 189 |
 

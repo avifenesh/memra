@@ -15,8 +15,10 @@ concurrency demotion pinned off (`MEMRA_SPEC_GATE_LOW=64 HIGH=65`, so both arms 
 the same way and the byte comparison measures the yield, not the route), greedy natural-text
 `prompt` requests on `/v1/completions` (the tokenizer is calibrated per boot through
 `usage.prompt_tokens`, so the token targets are met within 10%), streaming so first-token time is
-what a client sees. Natural text keeps greedy decode away from an immediate EOS; a request that
-generates fewer than `--min-tokens` (16) REFUSES the run because the byte clause would be vacuous.
+what a client sees. Each prompt opens with a case number and a plant word of its own and closes
+by asking for them back, so the greedy continuation is a function of the primed prompt; a request
+that generates fewer than `--min-tokens` (16) tokens, or a cell whose long prompt and two cold peers
+do not produce three distinct outputs, REFUSES the run because the byte clause would be vacuous.
   seed: a `--seed-tokens` (4,096) prompt completes cold, so its prefix entry exists (the cache hit).
   cell: at t=0 a `--long` token (default 131,072) cold prompt starts; at +2 s and every +3 s the
         peers start: two cold short prompts (`--peer` tokens) and the seeded prompt again (a cache
@@ -92,19 +94,24 @@ SENTENCE = (
     "The community garden has morning sunlight, two raised beds, a nearby water tap, compost, "
     "labels, gloves, and volunteers who can help each morning. "
 )
-TASK = "\n\nWrite a practical handbook for new volunteers, one numbered lesson per paragraph.\n"
 
 
 def text_for(target_tokens: int, tokens_per_sentence: float, seed: int) -> str:
-    """Natural repeated text of about `target_tokens` tokens (calibrated per boot), with a seeded
-    lead so distinct prompts never share a prefix. Natural text keeps greedy decode away from an
-    immediate EOS, so the byte clause compares `max_tokens` worth of output on every request."""
+    """Natural repeated text of about `target_tokens` tokens (calibrated per boot). The lead names
+    a case number and a plant word that appear nowhere else, and the tail asks for exactly those
+    two facts back, so the greedy continuation is a function of the primed prompt (the state this
+    door reorders) and differs between requests; a shared task line at the end made every request
+    echo the same 32 tokens (review round 2), which compared bytes without comparing the prime."""
     words = ["garden", "orchard", "nursery", "greenhouse", "allotment", "vineyard"]
     word = words[seed % len(words)]
     lead = f"Case {seed}: reference notes for planning a community {word}. "
     body = SENTENCE.replace("garden", word)
     n = max(1, int(target_tokens / tokens_per_sentence))
-    return lead + body * n + TASK
+    tail = (
+        f"\n\nQuestion for case {seed}: state the case number and the plant word from the first "
+        f"line of these notes, then give one sentence of advice for the {word}.\nAnswer: Case"
+    )
+    return lead + body * n + tail
 
 
 def pct(xs: list[float], q: float) -> float:
@@ -389,6 +396,16 @@ def main() -> int:
                     refuse(
                         f"{tag}: {[n for n, _ in short]} generated fewer than {a.min_tokens} tokens; "
                         "the byte clause would be vacuous"
+                    )
+                # The four prompts differ (case number, plant word, length), so their greedy
+                # continuations must differ; identical outputs mean the model collapsed onto a
+                # prompt-independent attractor and the byte clause would not see the prime.
+                distinct = {cell["requests"][n]["sha"] for n in ("long", "peer-cold-a", "peer-cold-b")}
+                if len(distinct) != 3:
+                    (out / f"{tag}-cell.json").write_text(json.dumps(cell, indent=2))
+                    refuse(
+                        f"{tag}: the long prompt and the two cold peers produced only {len(distinct)} "
+                        "distinct output(s); the byte clause would not depend on the primed prompt"
                     )
                 cell.update(arm=arm, rep=rep, log=log_facts(out / f"{tag}-server.log"))
                 (out / f"{tag}-cell.json").write_text(json.dumps(cell, indent=2))
