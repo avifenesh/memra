@@ -612,6 +612,42 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
 
 /// ModelCaps for the /v1/models surface + the HTTP layer's gates — the same
 /// template-string laws the hybrid caps block applies (shared functions, not copies).
+/// The route's policy contract (memra#504). Every surface the DSv4 thread does not write is
+/// refused here by name with the issue that owns it, so the registry can print it at boot and
+/// refuse an operator who arms one of those policies. Flipping a line from `refused` to
+/// `implemented` is the whole registration side of #500, #501, #503 and #449.
+pub fn contract(model: &str) -> crate::route_contract::RouteContract {
+    use crate::route_contract::{PolicySurface, RouteCapacity, RouteContract};
+    RouteContract::new(model, "dsv4-thread", "dsv4_serve.rs", RouteCapacity::Serial)
+        .implemented(PolicySurface::Capacity, "std::sync::mpsc::channel::<Box<Request>>()")
+        .refused(
+            PolicySurface::Occupancy,
+            "the FIFO channel is the queue and publishes no in-flight or queued count; the lane cap mirror reads 64 for a serial route (memra#501)",
+        )
+        .refused(
+            PolicySurface::Progress,
+            "the serving thread stamps neither the health beat nor the prime odometer, so /health reads the idle central worker (memra#500)",
+        )
+        .implemented(PolicySurface::FaultOwnership, "std::panic::catch_unwind(")
+        .implemented(PolicySurface::ShutdownOwnership, "while let Ok(mut req) = rx.recv()")
+        .refused(
+            PolicySurface::MemoryCost,
+            "requests reach allocation with a single-active-request reservation and no per-device feasibility, tier or defer decision (memra#503)",
+        )
+        .refused(
+            PolicySurface::RewriteQualification,
+            "the route consumes no MEMRA_REWRITE_BUNDLE and none of its programs is a plan rewrite (memra#449)",
+        )
+        .refused(
+            PolicySurface::PrimeFairness,
+            "no worker Session exists for a dsv4 request; the prime is one synchronous chunked call on the serving thread (memra#535 P4)",
+        )
+        .refused(
+            PolicySurface::ServiceMetrics,
+            "the thread publishes no worker::Metrics, so the queue estimator uses its static 2 s service time (memra#501)",
+        )
+}
+
 pub fn caps(m: &Dsv4Model) -> ModelCaps {
     let t = m.tok.chat_template();
     // The real dsv4 artifacts carry their dialect as encoding CODE, not a template

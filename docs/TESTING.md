@@ -137,6 +137,17 @@ token within the bar (8 s) and the peers' p95 at most half the non-yielding arm'
 `[prime-walk] supported=true yield_door=true` and at least one `[prime-yield]`. `--reps 3`
 interleaves the arms for a receipt. Receipts: `research/prime-fairness-default-20260922/`.
 
+Route policy contract (memra#504, `route_contract.rs`): every serve route declares each of the
+nine policy surfaces as implemented or refused by name; `RouteRegistry::check` runs before the
+ready handoff. CPU teeth in `route_contract::tests`: a stub route that declares nothing fails the
+same gate the production routes pass (the red arm), a partially declared route names exactly what
+it omitted, the hybrid worker implements every surface, the DSv4 contract refuses its six open gaps
+with their issues, `MEMRA_REWRITE_BUNDLE` beside a DSv4 route refuses at boot by name (#449's
+minimum), and the wiring gate: every `Implemented` declaration's evidence token must exist outside
+comments in the route's source file (`include_str!` over `worker.rs` and `dsv4_serve.rs`), the
+generalization of `progress::tests::the_prime_walks_actually_call_the_odometer` from one engine
+file to the registry. Receipt: `research/route-contract-20260922/`.
+
 Loader tensor-contract boundary (memra#541, `memra_gguf::checkpoint_binding`): both loaders
 bind the pack's tensor contract against the source census before any upload and refuse
 missing, unexpected, duplicate, ambiguous, wrong-shape and wrong-quant tensors and an undeclared

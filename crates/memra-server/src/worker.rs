@@ -20412,6 +20412,35 @@ pub fn run(
     let mut caps = caps;
     caps.extend(dsv4_caps.drain());
 
+    // ROUTE POLICY CONTRACT (memra#504): every route this process will serve is registered
+    // with an implemented-or-refused declaration for every policy surface, and checked HERE,
+    // before `ready_tx` fires. An undeclared surface or a refused policy the operator armed
+    // (MEMRA_REWRITE_BUNDLE beside a dsv4 route, memra#449) is `FATAL: worker init failed`,
+    // not a runtime no-op found weeks later.
+    let mut route_registry = crate::route_contract::RouteRegistry::default();
+    let hybrid_sessions = std::env::var("MEMRA_MAX_SESSIONS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(64)
+        .max(1);
+    for name in &order {
+        if dsv4_routes.contains_key(name) {
+            route_registry.register(crate::dsv4_serve::contract(name));
+        } else if loaded.contains_key(name) {
+            route_registry.register(crate::route_contract::RouteContract::hybrid_worker(
+                name,
+                hybrid_sessions,
+            ));
+        }
+    }
+    if let Err(error) = route_registry.check_process_env() {
+        let _ = ready_tx.send(Err(error.to_string()));
+        return;
+    }
+    for route in route_registry.routes() {
+        eprintln!("{}", route.describe());
+    }
+
     // Per-model decode scheduling policy: the model fixes the exact numeric width, while the
     // default-off dual PP door may combine two such waves into one worker tick.
     let chunk_policies: HashMap<String, DecodeChunkPolicy> = loaded

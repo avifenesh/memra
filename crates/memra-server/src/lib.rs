@@ -112,6 +112,7 @@ pub mod metering;
 mod prefill_receipt;
 pub mod prime_fairness;
 mod responses_api;
+pub mod route_contract;
 mod surfaces;
 mod toolcall;
 mod ttft;
