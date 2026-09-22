@@ -10,9 +10,10 @@ tick, the worker returns to drain arrivals and give each admitted peer one bound
 resumes. Both arms execute the same frozen range tape, so the bytes are the same; only the
 interleaving changes.
 
-Serving shape, one card, one boot per arm of the real `memra-server` on its default (spec) route,
-greedy `prompt_ids` requests on `/v1/completions`, streaming so first-token time is what a client
-sees:
+Serving shape, one card, one boot per arm of the real `memra-server` on its spec route with the
+concurrency demotion pinned off (`MEMRA_SPEC_GATE_LOW=64 HIGH=65`, so both arms route every request
+the same way and the byte comparison measures the yield, not the route), greedy `prompt_ids`
+requests on `/v1/completions`, streaming so first-token time is what a client sees:
   seed: a 4,096-id prompt completes cold, so its prefix entry exists (the cache-hit peer).
   cell: at t=0 a `--long` id (default 131,072) cold prompt starts; at +2 s and every +3 s the peers
         start: two cold short prompts (`--peer` ids) and the seeded prompt again (a cache hit).
@@ -112,6 +113,13 @@ class Server:
                 "MEMRA_TIMEOUT_MS_MAX": "600000",
                 "MEMRA_TICK_TRACE": "1",
                 "MEMRA_PRIME_YIELD": self.yield_value,
+                # Pin the peers' route. The spec gate demotes to plain decode by concurrency
+                # (LOW=2 HIGH=4 by default), and the two arms admit the peers at different
+                # active counts, so without the pin a peer takes K=3 on one arm and K=0 on the
+                # other and the byte comparison measures the route, not the yield. Both arms run
+                # every request on the spec route with these bounds.
+                "MEMRA_SPEC_GATE_LOW": "64",
+                "MEMRA_SPEC_GATE_HIGH": "65",
             }
         )
         self.logf = open(self.log, "w")
@@ -156,7 +164,18 @@ class Server:
             data=json.dumps(body).encode(),
             headers={"content-type": "application/json"},
         )
-        out = {"status": None, "text": "", "finish": None, "error": None, "ttft_s": None, "total_s": None}
+        # `ttft_s` is the first choice event (a token or an immediate finish): what a client sees
+        # as the response starting. `first_token_s` is the first non-empty piece, `None` when the
+        # model's first token is EOS (synthetic id prompts do that).
+        out = {
+            "status": None,
+            "text": "",
+            "finish": None,
+            "error": None,
+            "ttft_s": None,
+            "first_token_s": None,
+            "total_s": None,
+        }
         t0 = time.monotonic()
         try:
             with urllib.request.urlopen(req, timeout=900) as r:
@@ -176,12 +195,14 @@ class Server:
                         out["error"] = obj["error"]
                         continue
                     for ch in obj.get("choices", []):
+                        if out["ttft_s"] is None:
+                            out["ttft_s"] = time.monotonic() - t0
                         piece = ch.get("text")
                         if piece is None:
                             piece = (ch.get("delta") or {}).get("content")
                         if piece:
-                            if out["ttft_s"] is None:
-                                out["ttft_s"] = time.monotonic() - t0
+                            if out["first_token_s"] is None:
+                                out["first_token_s"] = time.monotonic() - t0
                             out["text"] += piece
                         if ch.get("finish_reason"):
                             out["finish"] = ch["finish_reason"]
