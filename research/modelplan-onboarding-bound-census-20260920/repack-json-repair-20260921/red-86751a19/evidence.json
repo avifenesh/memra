@@ -1,0 +1,78 @@
+{
+  "source_commit": "86751a19cd577058453cfe70024484d7d28f0883",
+  "source_GO": false,
+  "finding": "escaped JSON declaration bypass",
+  "raw": {
+    "escape-probe-initial-fixture.log.gz": {
+      "sha256": "d2fa6c22b141021e860b556a7d378893655e211bdcddeb00b64cbdab7e547dcd",
+      "uncompressed_sha256": "5292cd0246026a635d82393c62c95e94ab6628f6e4429cbfe7e9031869e1d21b",
+      "uncompressed_bytes": 1014
+    },
+    "escape-probe.log.gz": {
+      "sha256": "c62f42502ad376651bb36dfdb28d2f271791eb9f78d30b222893d1dd6a30306b",
+      "uncompressed_sha256": "794fcf992214d1c17a4b75284a3cc257e58b8213b53cff9f3fba3ce76e9ba74e",
+      "uncompressed_bytes": 1030
+    },
+    "fixtures/config.json.gz": {
+      "sha256": "80dfee4f8e9a9f510d33ee6bd0b757915dc91e52cb9e4b49ce936acfff4e7f2b",
+      "uncompressed_sha256": "ed494bb4a4edf8dbb4f03c84d882bdef0e254556e709b5337c6b0dc8d543c737",
+      "uncompressed_bytes": 261
+    },
+    "fixtures/duplicate_escaped_mask.manifest.json.gz": {
+      "sha256": "5131fc21f7c1c2c536f0784519c031701129dc0a66e93014e82df38148c1a467",
+      "uncompressed_sha256": "0bc3e1ce163e29c0e95e3b954bac7e1e6623f31ed92200d7eb21bc51945f0d60",
+      "uncompressed_bytes": 1421
+    },
+    "fixtures/escaped_mask_uniform_bank.manifest.json.gz": {
+      "sha256": "89ad1f2ecbb9caf04d8a07dd4892bce59bab424f15e61e0d744048149b3c4109",
+      "uncompressed_sha256": "181beba00ff1aba03637f884db40e8859eeaa9913c2cd05b2a7bc0b5f5b7caf6",
+      "uncompressed_bytes": 1400
+    },
+    "fixtures/escaped_overlay_missing_source.manifest.json.gz": {
+      "sha256": "1102259460bf67bab6ec96761cb90660985afe5329bde26915907b3108177f71",
+      "uncompressed_sha256": "7df138276619816d53f3da5b4d254650c25d4f69824e9185be11266dbf054320",
+      "uncompressed_bytes": 1378
+    },
+    "fixtures/literal_mask_uniform_bank.manifest.json.gz": {
+      "sha256": "b07817591029538355948f97267a4a9b7d57b3e8a331b4323716b804b3e52344",
+      "uncompressed_sha256": "73432fb73a67500923fda5a5296d24b4d68c5eadc0dd74f14061e25ed39dfdcb",
+      "uncompressed_bytes": 1395
+    },
+    "fixtures/literal_overlay_missing_source.manifest.json.gz": {
+      "sha256": "705a201fc3a3278115478df7ca832233a8fd9849975cf522d3f0fb774b811c28",
+      "uncompressed_sha256": "f501f1fbef250bec8a8ace29b899521d742ec5a6c84b4eddc9f6da283e5cc327",
+      "uncompressed_bytes": 1373
+    },
+    "fixtures/manifest.json.gz": {
+      "sha256": "1102259460bf67bab6ec96761cb90660985afe5329bde26915907b3108177f71",
+      "uncompressed_sha256": "7df138276619816d53f3da5b4d254650c25d4f69824e9185be11266dbf054320",
+      "uncompressed_bytes": 1378
+    },
+    "fixtures/ordinary_complete.manifest.json.gz": {
+      "sha256": "e2d6e0db0cf0d73a5eeefe96704dcf9002909eeb2448dc9fc95dba40727d259a",
+      "uncompressed_sha256": "915ac1e53f10188a1cb1edeb0ae8edc28bdcb70bd4b3eddbe819ecaa9b045666",
+      "uncompressed_bytes": 1365
+    },
+    "fixtures/weights.bin.gz": {
+      "sha256": "fc6f35b3c8d13ef8c0455df13f33ea8a857a89fd9c5ea09952895a16e55a7020",
+      "uncompressed_sha256": "36faf894356a6b96ad69c40f39a203a33538e9e8cbdf67a6f010b1668bfed935",
+      "uncompressed_bytes": 66432
+    },
+    "probe-Cargo.lock.gz": {
+      "sha256": "02ec08c94bdcb0392a8918ad9c9feeaa349cfdca03a6cc4732d242af35e0f70d",
+      "uncompressed_sha256": "e05aeea5d40e511ba0483e24f3dadce79652a3af91837e998c2a01390c6dedad",
+      "uncompressed_bytes": 2734
+    },
+    "probe-Cargo.toml.gz": {
+      "sha256": "b64842019091953ece81182ee22f69914f7917f228c7ce268e0f3f9bf851799c",
+      "uncompressed_sha256": "aa921365e0da5fa29be276b9ee1968bc5e2277b314fbd3a7e44bd8f94be953fe",
+      "uncompressed_bytes": 140
+    },
+    "probe-main.rs.gz": {
+      "sha256": "5138dade57b6968114b310f3ffbd49df238d7c9b36b5fd90342607c52139d6a5",
+      "uncompressed_sha256": "13f70adcf0ed30c6359ed46f28f45c36e95bfe3fbf271d29755094dea423cb59",
+      "uncompressed_bytes": 2721
+    }
+  },
+  "finding_id": "ARCH541-REPACK-JSON-01"
+}

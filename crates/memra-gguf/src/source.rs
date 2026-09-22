@@ -6,16 +6,21 @@
 //! (`GgmlType`, `ModelConfig`) and both readers live here. memra-engine already depends on
 //! memra-gguf, so `GpuTensor::load_from_source(&dyn TensorSource, ...)` introduces no new dep.
 
-use crate::config::{Arch, JsonObj, ModelConfig};
+mod bound;
+pub(crate) mod composite;
+
+use crate::config::{Arch, ModelConfig};
 use crate::safetensors::{StInfo, StModel};
 use crate::tensor_contract::{
     CheckpointDialect, FloatType, IntegerType, QuantLayout, StorageLayout, TensorCensusEntry,
 };
 use crate::{GgmlType, GgufFile};
 use memmap2::Mmap;
+use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
+use std::io::Read;
 // `as_raw_fd` is only used on the `/proc/self/fd` (Linux) branch below; gating the import the
 // same way keeps `clippy -D warnings` clean on macOS development boxes.
 #[cfg(target_os = "linux")]
@@ -331,16 +336,40 @@ pub struct DiskExtent {
 /// tensor contract models them as one storage layout; GGUF auxiliaries remain independent rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TensorCensusRecord {
+    pub auxiliaries: Vec<TensorAuxiliaryRecord>,
     pub physical_name: String,
     pub dtype: String,
     pub entry: TensorCensusEntry,
 }
 
-/// A complete source census and the naming dialect its semantic names use.
+/// Physical metadata for an auxiliary plane folded into a census row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TensorAuxiliaryRecord {
+    pub physical_name: String,
+    pub dtype: String,
+    pub shape: Vec<u64>,
+    pub physical_bytes: u64,
+}
+
+/// Tensor rows in the source's effective naming dialect. An overlay may shadow rows here;
+/// `physical_tensor_inventory` retains the separate physical components before that selection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TensorCensus {
     pub dialect: CheckpointDialect,
     pub tensors: Vec<TensorCensusRecord>,
+}
+
+/// Metadata-only provenance. The root component is []; fallback children append 0. These are
+/// component identifiers, not filesystem paths. Names may repeat across distinct components.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TensorComponentInventory {
+    pub component_path: Vec<u32>,
+    pub census: TensorCensus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhysicalTensorInventory {
+    pub components: Vec<TensorComponentInventory>,
 }
 
 fn info_physical_bytes(name: &str, info: &StInfo) -> Result<u64, String> {
@@ -369,6 +398,9 @@ fn ggml_storage(kind: GgmlType) -> StorageLayout {
         GgmlType::F32 => StorageLayout::Float(FloatType::F32),
         GgmlType::F16 => StorageLayout::Float(FloatType::F16),
         GgmlType::BF16 => StorageLayout::Float(FloatType::Bf16),
+        GgmlType::I8 => StorageLayout::Integer(IntegerType::I8),
+        GgmlType::I16 => StorageLayout::Integer(IntegerType::I16),
+        GgmlType::I32 => StorageLayout::Integer(IntegerType::I32),
         GgmlType::I64 => StorageLayout::Integer(IntegerType::I64),
         other => {
             let (block, _) = other.block_and_type_size();
@@ -392,9 +424,11 @@ pub fn census_from_views<'a>(
         tensors: views
             .into_iter()
             .map(|(name, ggml_type, ne, n_bytes)| TensorCensusRecord {
+                auxiliaries: Vec::new(),
                 physical_name: name.to_string(),
                 dtype: format!("{ggml_type:?}"),
                 entry: TensorCensusEntry {
+                    auxiliaries: Vec::new(),
                     name: name.to_string(),
                     shape: ne.to_vec(),
                     storage: ggml_storage(ggml_type),
@@ -413,9 +447,11 @@ pub fn census_from_gguf(gguf: &GgufFile) -> TensorCensus {
             .tensors
             .iter()
             .map(|tensor| TensorCensusRecord {
+                auxiliaries: Vec::new(),
                 physical_name: tensor.name.clone(),
                 dtype: format!("{:?}", tensor.ggml_type),
                 entry: TensorCensusEntry {
+                    auxiliaries: Vec::new(),
                     name: tensor.name.clone(),
                     shape: tensor.ne.clone(),
                     storage: ggml_storage(tensor.ggml_type),
@@ -558,10 +594,27 @@ pub fn census_from_safetensors_headers(
                     format!("safetensors tensor {physical_name} byte total overflows")
                 })?;
         }
+        let auxiliary_records = auxiliaries
+            .iter()
+            .map(|name| {
+                let info = &headers[name];
+                Ok(TensorAuxiliaryRecord {
+                    physical_name: name.clone(),
+                    dtype: info.dtype.clone(),
+                    shape: info.shape.clone(),
+                    physical_bytes: info_physical_bytes(name, info)?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         rows.push(TensorCensusRecord {
+            auxiliaries: auxiliary_records,
             physical_name: physical_name.clone(),
             dtype: info.dtype.clone(),
             entry: TensorCensusEntry {
+                auxiliaries: auxiliaries
+                    .iter()
+                    .map(|name| canonical_hf_name(name))
+                    .collect(),
                 name: canonical_hf_name(&semantic_physical_name),
                 shape,
                 storage,
@@ -620,8 +673,262 @@ fn expert_activation_precision_from_quant_algo(
     }
 }
 
+/// Source-declared interpretation retained at open time. This is separate from the opened-byte
+/// artifact identity and from the runtime environment guarded by rewrite identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoundSourceInterpretation {
+    Gguf,
+    /// Existing internal manifest repack, with complete GGUF-named tensors and no fallback/mask.
+    CompleteRepack {
+        expert_activation_precision: ExpertActivationPrecision,
+    },
+    /// Complete own tensor inventory with explicit original-ID masks; no fallback source.
+    RetainedRepack {
+        expert_activation_precision: ExpertActivationPrecision,
+        active_experts: BTreeMap<u32, Vec<bool>>,
+    },
+    Safetensors {
+        nvfp4_scale_layout: Nvfp4ScaleLayout,
+        expert_activation_precision: ExpertActivationPrecision,
+        quant_algo: Option<String>,
+        modules_to_not_convert: Vec<String>,
+        preserve_checkpoint_bf16: bool,
+    },
+}
+
+/// Handle-free interpretation needed by runtime identity. Scoped sources return the snapshot
+/// captured at binding; raw source implementations derive it from their opened interpretation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeSourceMetadata {
+    pub is_gguf: bool,
+    pub is_safetensors: bool,
+    pub expert_activation_precision: ExpertActivationPrecision,
+    pub preserve_expert_encodings: bool,
+    pub nvfp4_cache_tag: &'static str,
+}
+
+/// Read-only physical size accounting for a GGUF tensor, without a file or mapping handle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GgufTensorMetadata {
+    pub name: String,
+    pub physical_bytes: u64,
+}
+
+/// Compiler-bound physical charges for placement. Inventory-only vision still reserves bytes,
+/// but no pathname, materialization authority, or execution permission is conveyed here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundTensorCharge {
+    pub id: crate::tensor_contract::TensorId,
+    pub owner: crate::tensor_contract::TensorOwner,
+    pub physical_bytes: u64,
+    pub execution_selected: bool,
+}
+
 /// A weight source the engine can load from. GGUF and safetensors both implement it.
 pub trait TensorSource: Sync {
+    fn bound_tensor_charges(&self) -> Result<Option<Vec<BoundTensorCharge>>, String> {
+        Ok(None)
+    }
+    /// Only a concrete in-crate composite source can supply this unnameable input capability.
+    #[allow(private_interfaces)] // allow: prevents external adapters from substituting a different source at the root
+    fn composite_input(&self) -> Option<crate::bound_source::CompositeInput<'_>> {
+        None
+    }
+    /// Compiler-private output capability. External adapters cannot supply an arbitrary path
+    /// or forward output authority from another source under different metadata.
+    #[allow(private_interfaces)] // allow: unnameable capability seals output-root construction
+    fn bound_output_root(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<&crate::bound_output::RetainedOutputRoot>, String> {
+        self.validate_bound_metadata(request)?;
+        Ok(None)
+    }
+    /// Retain every component's declared physical tensors, including shadowed base rows and
+    /// folded auxiliaries. This is inventory, not a composite binding or execution approval.
+    fn physical_tensor_inventory(&self) -> Result<PhysicalTensorInventory, String> {
+        Ok(PhysicalTensorInventory {
+            components: vec![TensorComponentInventory {
+                component_path: Vec::new(),
+                census: self.tensor_census()?,
+            }],
+        })
+    }
+    /// GGUF-native physical byte accounting. Other formats need their own residency conversion
+    /// model; absence here is not absence of their tensor census. Scoped adapters restrict rows
+    /// to their selected, bound tensors.
+    fn gguf_tensor_metadata(&self) -> Result<Option<Vec<GgufTensorMetadata>>, String> {
+        Ok(self.gguf().map(|g| {
+            g.tensors
+                .iter()
+                .map(|t| GgufTensorMetadata {
+                    name: t.name.clone(),
+                    physical_bytes: t.n_bytes,
+                })
+                .collect()
+        }))
+    }
+
+    /// Compiler-only extension. Only the actual in-crate bound adapter overrides this; external
+    /// source implementations retain normal config, plan and source-factor validation.
+    #[doc(hidden)]
+    #[allow(private_interfaces)] // allow: the unnameable return type seals this hook against external overrides
+    fn bound_program(&self) -> Option<crate::bound_source::BoundProgramRef<'_>> {
+        None
+    }
+    fn runtime_metadata(&self) -> Result<RuntimeSourceMetadata, String> {
+        let interpretation = self.bound_interpretation()?;
+        Ok(RuntimeSourceMetadata {
+            is_gguf: matches!(interpretation, BoundSourceInterpretation::Gguf),
+            is_safetensors: matches!(
+                interpretation,
+                BoundSourceInterpretation::Safetensors { .. }
+            ),
+            expert_activation_precision: self.expert_activation_precision(),
+            preserve_expert_encodings: self.preserve_expert_encodings(),
+            nvfp4_cache_tag: self.nvfp4_cache_tag(),
+        })
+    }
+
+    /// Exact source declaration captured at open. Catalog compilation must never reopen a path.
+    fn raw_config_json(&self) -> Option<&str> {
+        None
+    }
+
+    fn bound_interpretation(&self) -> Result<BoundSourceInterpretation, String> {
+        Err("tensor source does not declare its bound interpretation".into())
+    }
+
+    /// Fallible loader entrypoints. Legacy raw sources retain their existing behavior;
+    /// compiler-bound adapters override these and propagate binding/materialization errors.
+    fn try_find(&self, name: &str) -> Result<Option<TensorView<'_>>, String> {
+        Ok(self.find(name))
+    }
+    fn try_find_first<'a>(&'a self, names: &[&str]) -> Result<Option<TensorView<'a>>, String> {
+        for name in names {
+            if let Some(tensor) = self.try_find(name)? {
+                return Ok(Some(tensor));
+            }
+        }
+        Ok(None)
+    }
+    fn try_has(&self, name: &str) -> Result<bool, String> {
+        Ok(self.has(name))
+    }
+    /// Resolve a runtime ABI name to its already-bound GGUF physical target before a byte/layout
+    /// helper uses the backing file. Raw GGUF sources have the identity mapping.
+    fn bound_gguf_name<'a>(&'a self, name: &'a str) -> Result<&'a str, String> {
+        Ok(name)
+    }
+    fn try_find_nvfp4_native(&self, name: &str) -> Result<Option<Nvfp4Native<'_>>, String> {
+        Ok(self.find_nvfp4_native(name))
+    }
+    fn try_find_fp8_native(&self, name: &str) -> Result<Option<Fp8Native<'_>>, String> {
+        Ok(self.find_fp8_native(name))
+    }
+    fn try_find_fp8_stacked_native(
+        &self,
+        name: &str,
+    ) -> Result<Option<Fp8StackedNative<'_>>, String> {
+        Ok(self.find_fp8_stacked_native(name))
+    }
+    fn try_find_nvfp4_stacked_native(
+        &self,
+        name: &str,
+    ) -> Result<Option<Nvfp4StackedNative<'_>>, String> {
+        Ok(self.find_nvfp4_stacked_native(name))
+    }
+    /// Optional source-bound canonical NVFP4 producer. Raw sources retain their legacy cache
+    /// path; bound adapters return an opaque source-derived view or propagate an output error.
+    fn try_canonical_nvfp4_bank(
+        &self,
+        _name: &str,
+    ) -> Result<Option<crate::bound_disk::BoundDiskView>, String> {
+        Ok(None)
+    }
+    fn try_find_expert_disk(
+        &self,
+        name: &str,
+    ) -> Result<Option<crate::bound_disk::ExpertDiskView>, String> {
+        Ok(self
+            .find_expert_disk(name)
+            .map(crate::bound_disk::ExpertDiskView::Unbound))
+    }
+    /// Explicit GGUF spill request. Separate from automatic disk-backed expert selection:
+    /// a raw GGUF's ordinary stacked load retains its historical pinned/pageable policy.
+    fn try_find_gguf_disk(
+        &self,
+        name: &str,
+    ) -> Result<Option<crate::bound_disk::ExpertDiskView>, String> {
+        Ok(self.gguf().and_then(|g| {
+            g.find(name)
+                .map(|t| crate::bound_disk::ExpertDiskView::Unbound(g.tensor_disk_extent(t)))
+        }))
+    }
+    /// Presence-only guard for old implementations lacking a retained file; never exports a map.
+    fn try_has_expert_mmap(&self, name: &str) -> Result<bool, String> {
+        Ok(self.find_expert_mmap(name).is_some())
+    }
+    /// Header-only storage/auxiliary validation for an already bound semantic target.
+    fn validate_bound_metadata(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<(), String> {
+        Err(request.error("source does not implement bound metadata validation"))
+    }
+
+    fn auxiliary_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+        _kind: crate::tensor_contract::QuantAuxTensor,
+    ) -> Result<Option<TensorView<'_>>, String> {
+        Err(request.error("source does not implement bound auxiliary access"))
+    }
+    /// Materialize a compiler-bound physical target, without resolving a legacy tensor name.
+    /// Sources opt in explicitly; a missing implementation is never an absent tensor.
+    fn read_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<TensorView<'_>, String> {
+        Err(request.error("source does not implement bound tensor materialization"))
+    }
+    fn nvfp4_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Nvfp4Native<'_>>, String> {
+        Err(request.error("source does not implement bound NVFP4 access"))
+    }
+    fn fp8_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Fp8Native<'_>>, String> {
+        Err(request.error("source does not implement bound FP8 access"))
+    }
+    fn fp8_stacked_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Fp8StackedNative<'_>>, String> {
+        Err(request.error("source does not implement bound stacked FP8 access"))
+    }
+    fn nvfp4_stacked_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Nvfp4StackedNative<'_>>, String> {
+        Err(request.error("source does not implement bound stacked NVFP4 access"))
+    }
+    fn disk_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<DiskExtent>, String> {
+        Err(request.error("source does not implement bound disk access"))
+    }
+    /// SHA-256 identity of the opened artifact bytes and the metadata used to interpret them.
+    /// This reads the retained mappings, never reopens a pathname or trusts a supplied receipt.
+    /// Sources without complete byte coverage must refuse strict rewrite qualification.
+    /// Like tensor access, this requires the mapped files to remain immutable while loaded.
+    fn artifact_sha256(&self) -> Result<String, String> {
+        Err("tensor source does not expose a trusted loaded-artifact identity".to_string())
+    }
     /// The model configuration (from GGUF metadata or config.json).
     fn config(&self) -> ModelConfig;
     /// Fallible configuration boundary for untrusted model artifacts. Legacy callers retain the
@@ -737,7 +1044,110 @@ pub trait TensorSource: Sync {
 /// GGUF-backed source (the existing path). Zero behavior change vs. direct GgufFile use.
 pub struct GgufSource<'g>(pub &'g GgufFile);
 
+/// Length-prefix every field (including its tag); concatenation cannot erase record boundaries.
+fn artifact_hash_field(hash: &mut Sha256, tag: &[u8], value: &[u8]) {
+    hash.update((tag.len() as u64).to_le_bytes());
+    hash.update(tag);
+    hash.update((value.len() as u64).to_le_bytes());
+    hash.update(value);
+}
+
+/// Hash every opened byte once, retaining only one digest/length per shard. Sorting the records
+/// makes safetensors index filename order irrelevant; tensor names and GGUF split numbers are
+/// already covered by the shard headers. Duplicate tensor owners are rejected by StModel::open.
+fn artifact_hash_shards<'a>(hash: &mut Sha256, shards: impl Iterator<Item = &'a [u8]>) {
+    let mut records: Vec<_> = shards
+        .map(|bytes| (bytes.len() as u64, <[u8; 32]>::from(Sha256::digest(bytes))))
+        .collect();
+    records.sort_unstable();
+    artifact_hash_field(hash, b"shard-count", &(records.len() as u64).to_le_bytes());
+    for (len, digest) in records {
+        artifact_hash_field(hash, b"shard-length", &len.to_le_bytes());
+        artifact_hash_field(hash, b"shard-sha256", &digest);
+    }
+}
+
 impl<'g> TensorSource for GgufSource<'g> {
+    fn bound_interpretation(&self) -> Result<BoundSourceInterpretation, String> {
+        Ok(BoundSourceInterpretation::Gguf)
+    }
+
+    fn auxiliary_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+        _kind: crate::tensor_contract::QuantAuxTensor,
+    ) -> Result<Option<TensorView<'_>>, String> {
+        self.validate_bound(r)?;
+        Ok(None)
+    }
+
+    fn validate_bound_metadata(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<(), String> {
+        self.validate_bound(r)
+    }
+    fn read_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<TensorView<'_>, String> {
+        self.materialize_bound(r)
+    }
+    fn nvfp4_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Nvfp4Native<'_>>, String> {
+        self.validate_bound(r)?;
+        Ok(None)
+    }
+    fn fp8_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Fp8Native<'_>>, String> {
+        self.validate_bound(r)?;
+        Ok(None)
+    }
+    fn fp8_stacked_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Fp8StackedNative<'_>>, String> {
+        self.validate_bound(r)?;
+        Ok(None)
+    }
+    fn nvfp4_stacked_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Nvfp4StackedNative<'_>>, String> {
+        self.validate_bound(r)?;
+        Ok(None)
+    }
+    fn disk_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<DiskExtent>, String> {
+        self.validate_bound(r)?;
+        if r.transform != crate::tensor_contract::TensorTransform::Identity
+            || !matches!(
+                r.view,
+                crate::bound_source::BoundTensorView::Whole
+                    | crate::bound_source::BoundTensorView::EncodedBank
+            )
+        {
+            return Err(r.error("GGUF disk access requires an identity physical tensor view"));
+        }
+        let tensor = self
+            .0
+            .find(&r.record.physical_name)
+            .ok_or_else(|| r.error("bound physical tensor is missing"))?;
+        Ok(Some(self.0.tensor_disk_extent(tensor)))
+    }
+
+    fn artifact_sha256(&self) -> Result<String, String> {
+        let mut hash = Sha256::new();
+        artifact_hash_field(&mut hash, b"domain", b"memra-loaded-gguf-v1");
+        artifact_hash_shards(&mut hash, self.0.opened_shard_bytes());
+        Ok(format!("{:x}", hash.finalize()))
+    }
     fn config(&self) -> ModelConfig {
         ModelConfig::from_gguf(self.0)
     }
@@ -781,6 +1191,12 @@ enum RepackFallback {
 }
 
 impl RepackFallback {
+    fn physical_tensor_inventory(&self) -> Result<PhysicalTensorInventory, String> {
+        match self {
+            Self::Safetensors(source) => source.physical_tensor_inventory(),
+            Self::Repack(source) => source.physical_tensor_inventory(),
+        }
+    }
     fn config(&self) -> ModelConfig {
         match self {
             Self::Safetensors(source) => source.config(),
@@ -856,6 +1272,8 @@ impl RepackFallback {
 /// historical Hy3 name for compatibility with existing callers.
 pub struct Hy3RepackSource {
     cfg: ModelConfig,
+    raw_manifest: String,
+    raw_config: Option<String>,
     expert_activation_precision: ExpertActivationPrecision,
     dir: PathBuf,
     source_dir: Option<PathBuf>,
@@ -869,167 +1287,320 @@ pub struct Hy3RepackSource {
     active_experts: BTreeMap<u32, Vec<bool>>,
 }
 
-impl Hy3RepackSource {
-    pub fn open(path: &Path) -> std::io::Result<Self> {
-        let manifest = if path.is_dir() {
-            path.join("manifest.json")
-        } else {
-            path.to_path_buf()
-        };
-        let dir = manifest
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .to_path_buf();
-        let txt = std::fs::read_to_string(&manifest)?;
-        let top = JsonObj::parse(&txt);
-        let tensors_obj = top
-            .object("tensors")
-            .ok_or_else(|| invalid_data("manifest missing tensors object"))?;
-        let mut tensors = BTreeMap::new();
-        for (name, raw) in tensors_obj.fields() {
-            let obj = JsonObj::parse(raw);
-            let file = obj
-                .string("file")
-                .ok_or_else(|| invalid_data(format!("manifest tensor {name} missing file")))?;
-            let file = validated_manifest_file(&file).map_err(|reason| {
-                invalid_data(format!(
-                    "manifest tensor {name} has invalid file path: {reason}"
-                ))
-            })?;
-            let qtype = obj
-                .string("qtype")
-                .ok_or_else(|| invalid_data(format!("manifest tensor {name} missing qtype")))?;
-            let ne = obj
-                .u64_array("ne")
-                .ok_or_else(|| invalid_data(format!("manifest tensor {name} missing ne")))?;
-            let raw_bytes = obj
-                .u64("bytes")
-                .ok_or_else(|| invalid_data(format!("manifest tensor {name} missing bytes")))?;
-            let bytes = usize::try_from(raw_bytes).map_err(|_| {
-                invalid_data(format!(
-                    "manifest tensor {name} bytes={raw_bytes} does not fit this platform"
-                ))
-            })?;
-            let raw_offset = obj.u64("offset").unwrap_or(0);
-            let offset = usize::try_from(raw_offset).map_err(|_| {
-                invalid_data(format!(
-                    "manifest tensor {name} offset={raw_offset} does not fit this platform"
-                ))
-            })?;
-            let ggml_type = manifest_qtype(&qtype).ok_or_else(|| {
-                invalid_data(format!("manifest tensor {name} unsupported qtype {qtype}"))
-            })?;
-            let expected = ggml_type.checked_nbytes(&ne).ok_or_else(|| {
-                invalid_data(format!(
-                    "manifest tensor {name} has invalid or overflowing {ggml_type:?} geometry {ne:?}"
-                ))
-            })?;
-            if expected != raw_bytes {
-                return Err(invalid_data(format!(
-                    "manifest tensor {name} declares {raw_bytes} bytes but {ggml_type:?} geometry {ne:?} encodes exactly {expected}"
-                )));
-            }
-            tensors.insert(
-                name.to_string(),
-                RepackTensor {
-                    file,
-                    offset,
-                    ggml_type,
-                    ne,
-                    bytes,
-                    expert_stride: obj.u64("expert_stride").map(|x| x as usize),
-                },
-            );
-        }
+#[cfg(unix)]
+#[derive(Clone, PartialEq, Eq)]
+struct ManifestContext {
+    directory: (u64, u64),
+    manifest: (u64, u64),
+}
 
-        let source_dir = top.string("source_dir").map(PathBuf::from).map(|path| {
+#[cfg(not(unix))]
+#[derive(Clone, PartialEq, Eq)]
+struct ManifestContext {
+    directory: PathBuf,
+    manifest: PathBuf,
+}
+
+#[cfg(unix)]
+fn manifest_context(
+    _manifest: &Path,
+    directory: &Path,
+    file: &File,
+) -> std::io::Result<ManifestContext> {
+    let directory = if directory.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        directory
+    };
+    let dir = std::fs::metadata(directory)?;
+    let metadata = file.metadata()?;
+    Ok(ManifestContext {
+        directory: (dir.dev(), dir.ino()),
+        manifest: (metadata.dev(), metadata.ino()),
+    })
+}
+
+#[cfg(not(unix))]
+fn manifest_context(
+    manifest: &Path,
+    directory: &Path,
+    _file: &File,
+) -> std::io::Result<ManifestContext> {
+    let directory = if directory.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        directory
+    };
+    Ok(ManifestContext {
+        directory: std::fs::canonicalize(directory)?,
+        manifest: std::fs::canonicalize(manifest)?,
+    })
+}
+
+struct RepackManifest {
+    dir: PathBuf,
+    source_dir: Option<PathBuf>,
+    tensors: BTreeMap<String, RepackTensor>,
+    raw: String,
+    declarations: serde_json::Map<String, serde_json::Value>,
+    is_overlay: bool,
+}
+
+fn read_repack_manifest(
+    path: &Path,
+    ancestry: &[ManifestContext],
+) -> std::io::Result<(ManifestContext, RepackManifest)> {
+    let manifest = if path.is_dir() {
+        path.join("manifest.json")
+    } else {
+        path.to_path_buf()
+    };
+    let dir = manifest
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NONBLOCK);
+    let mut file = options.open(&manifest)?;
+    if !file.metadata()?.is_file() {
+        return Err(invalid_data("repack manifest is not a regular file"));
+    }
+    let context = manifest_context(&manifest, &dir, &file)?;
+    if ancestry.contains(&context) {
+        return Err(invalid_data(format!(
+            "repack source cycle at {}",
+            manifest.display()
+        )));
+    }
+    let mut txt = String::new();
+    file.read_to_string(&mut txt)?;
+    let top = crate::strict_json::parse_object(&txt).map_err(invalid_data)?;
+    let tensors_obj = top
+        .get("tensors")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| invalid_data("manifest missing tensors object"))?;
+    let mut tensors = BTreeMap::new();
+    for (name, value) in tensors_obj {
+        let obj = value
+            .as_object()
+            .ok_or_else(|| invalid_data(format!("manifest tensor {name} must be an object")))?;
+        let file = crate::strict_json::optional_string(obj, "file")
+            .map_err(invalid_data)?
+            .ok_or_else(|| invalid_data(format!("manifest tensor {name} missing file")))?;
+        let file = validated_manifest_file(file).map_err(|reason| {
+            invalid_data(format!(
+                "manifest tensor {name} has invalid file path: {reason}"
+            ))
+        })?;
+        let qtype = crate::strict_json::optional_string(obj, "qtype")
+            .map_err(invalid_data)?
+            .ok_or_else(|| invalid_data(format!("manifest tensor {name} missing qtype")))?;
+        let ne = manifest_u64_array(
+            obj.get("ne")
+                .ok_or_else(|| invalid_data(format!("manifest tensor {name} missing ne")))?,
+            &format!("manifest tensor {name} ne"),
+        )?;
+        let raw_bytes = manifest_u64(
+            obj.get("bytes")
+                .ok_or_else(|| invalid_data(format!("manifest tensor {name} missing bytes")))?,
+            &format!("manifest tensor {name} bytes"),
+        )?;
+        let bytes = usize::try_from(raw_bytes).map_err(|_| {
+            invalid_data(format!(
+                "manifest tensor {name} bytes={raw_bytes} does not fit this platform"
+            ))
+        })?;
+        let raw_offset = obj
+            .get("offset")
+            .map(|v| manifest_u64(v, &format!("manifest tensor {name} offset")))
+            .transpose()?
+            .unwrap_or(0);
+        let offset = usize::try_from(raw_offset).map_err(|_| {
+            invalid_data(format!(
+                "manifest tensor {name} offset={raw_offset} does not fit this platform"
+            ))
+        })?;
+        let ggml_type = manifest_qtype(qtype).ok_or_else(|| {
+            invalid_data(format!("manifest tensor {name} unsupported qtype {qtype}"))
+        })?;
+        let expected = ggml_type.checked_nbytes(&ne).ok_or_else(|| {
+            invalid_data(format!(
+                "manifest tensor {name} has invalid or overflowing {ggml_type:?} geometry {ne:?}"
+            ))
+        })?;
+        if expected != raw_bytes {
+            return Err(invalid_data(format!(
+                "manifest tensor {name} declares {raw_bytes} bytes but {ggml_type:?} geometry {ne:?} encodes exactly {expected}"
+            )));
+        }
+        tensors.insert(
+            name.to_string(),
+            RepackTensor {
+                file,
+                offset,
+                ggml_type,
+                ne,
+                bytes,
+                expert_stride: obj
+                    .get("expert_stride")
+                    .map(|v| {
+                        let n = manifest_u64(v, &format!("manifest tensor {name} expert_stride"))?;
+                        usize::try_from(n).map_err(|_| {
+                            invalid_data(format!(
+                                "manifest tensor {name} expert_stride overflows usize"
+                            ))
+                        })
+                    })
+                    .transpose()?,
+            },
+        );
+    }
+
+    let source_dir = crate::strict_json::optional_string(&top, "source_dir")
+        .map_err(invalid_data)?
+        .map(PathBuf::from)
+        .map(|path| {
             if path.is_absolute() {
                 path
             } else {
                 dir.join(path)
             }
         });
-        let format = top.string("format");
-        // "bw24-*" is the pre-rename spelling: published overlay artifacts (e.g. the Hy3
-        // layer103.5 runtime manifest, sha-pinned on HF) carry it on disk and must keep
-        // loading byte-identical after the memra rename.
-        let is_overlay = matches!(
-            format.as_deref(),
-            Some(
-                "memra-expert-overlay-v1"
-                    | "memra-expert-overlay-v2"
-                    | "bw24-expert-overlay-v1"
-                    | "bw24-expert-overlay-v2"
-            )
-        );
-        let fallback = if is_overlay {
-            let source = source_dir
-                .as_deref()
-                .ok_or_else(|| invalid_data("expert overlay manifest missing source_dir"))?;
-            if source.join("manifest.json").exists() {
-                Some(RepackFallback::Repack(Box::new(Hy3RepackSource::open(
-                    source,
-                )?)))
-            } else {
-                Some(RepackFallback::Safetensors(SafetensorsSource::open(
-                    source,
-                )?))
+    let format = crate::strict_json::optional_string(&top, "format").map_err(invalid_data)?;
+    // "bw24-*" is the pre-rename spelling: published overlay artifacts (e.g. the Hy3
+    // layer103.5 runtime manifest, sha-pinned on HF) carry it on disk and must keep
+    // loading byte-identical after the memra rename.
+    let is_overlay = matches!(
+        format,
+        Some(
+            "memra-expert-overlay-v1"
+                | "memra-expert-overlay-v2"
+                | "bw24-expert-overlay-v1"
+                | "bw24-expert-overlay-v2"
+        )
+    );
+    Ok((
+        context,
+        RepackManifest {
+            dir,
+            source_dir,
+            tensors,
+            raw: txt,
+            declarations: top,
+            is_overlay,
+        },
+    ))
+}
+
+impl Hy3RepackSource {
+    pub fn open(path: &Path) -> std::io::Result<Self> {
+        let mut path = path.to_path_buf();
+        let mut ancestry = Vec::new();
+        let mut pending = Vec::new();
+        let fallback = loop {
+            if pending.len() >= 64 {
+                return Err(invalid_data(
+                    "repack source chain exceeds 64 manifest components",
+                ));
             }
-        } else {
-            None
+            let (context, manifest) = read_repack_manifest(&path, &ancestry)?;
+            ancestry.push(context);
+            if manifest.is_overlay {
+                let source = manifest
+                    .source_dir
+                    .as_ref()
+                    .ok_or_else(|| invalid_data("expert overlay manifest missing source_dir"))?
+                    .clone();
+                if source.join("manifest.json").exists() {
+                    pending.push(manifest);
+                    path = source;
+                    continue;
+                }
+                let fallback = RepackFallback::Safetensors(SafetensorsSource::open(&source)?);
+                pending.push(manifest);
+                break Some(fallback);
+            }
+            pending.push(manifest);
+            break None;
         };
-        let mut cfg = if let Some(source) = &fallback {
-            source.config()
+        // Construct the owned chain from the leaf upward; no model-sized stack frame recurses.
+        let mut source = Self::finish_open(pending.pop().unwrap(), fallback)?;
+        while let Some(manifest) = pending.pop() {
+            source = Self::finish_open(manifest, Some(RepackFallback::Repack(Box::new(source))))?;
+        }
+        Ok(source)
+    }
+
+    fn finish_open(
+        manifest: RepackManifest,
+        fallback: Option<RepackFallback>,
+    ) -> std::io::Result<Self> {
+        let RepackManifest {
+            dir,
+            source_dir,
+            tensors,
+            raw: txt,
+            declarations: top,
+            ..
+        } = manifest;
+        let (mut cfg, raw_config, expert_activation_precision) = if let Some(source) = &fallback {
+            (source.config(), None, source.expert_activation_precision())
         } else {
             let cfg_path = source_dir
                 .clone()
                 .map(|p| p.join("config.json"))
                 .filter(|p| p.exists())
                 .unwrap_or_else(|| dir.join("config.json"));
-            ModelConfig::from_config_json(&cfg_path)?
+            let raw = std::fs::read_to_string(&cfg_path)?;
+            let hf = crate::config::HfConfig::try_parse(&raw).map_err(invalid_data)?;
+            let cfg = ModelConfig::from_hf(&hf);
+            let precision = expert_activation_precision_from_quant_algo(hf.quant_algo.as_deref());
+            (cfg, Some(raw), precision)
         };
-        // A complete repack can intentionally omit the appended MTP block. An expert overlay is
-        // sparse by definition: tensors absent from its manifest resolve through the fallback, so
-        // its highest overridden block says nothing about whether the fallback still has MTP.
+        // Only a complete repack may declare that appended MTP weights were stripped.
         if fallback.is_none() {
             apply_stripped_mtp_override(&mut cfg, &tensors);
         }
-        let expert_activation_precision = fallback
-            .as_ref()
-            .map(RepackFallback::expert_activation_precision)
-            .unwrap_or_else(|| {
-                let cfg_path = source_dir
-                    .clone()
-                    .map(|path| path.join("config.json"))
-                    .filter(|path| path.exists())
-                    .unwrap_or_else(|| dir.join("config.json"));
-                let quant_algo = std::fs::read_to_string(cfg_path)
-                    .ok()
-                    .map(|json| crate::config::HfConfig::parse(&json))
-                    .and_then(|config| config.quant_algo);
-                expert_activation_precision_from_quant_algo(quant_algo.as_deref())
-            });
         let mut active_experts = BTreeMap::new();
-        if let Some(pruned) = top.object("pruned_experts") {
+        let pruned = top
+            .get("pruned_experts")
+            .map(|value| {
+                value
+                    .as_object()
+                    .ok_or_else(|| invalid_data("pruned_experts must be an object"))
+            })
+            .transpose()?;
+        if let Some(pruned) = pruned {
             let moe = cfg.moe.as_ref().ok_or_else(|| {
                 invalid_data("pruned_experts is present but the model config has no MoE")
             })?;
             let n_expert = moe.expert_count as usize;
             let n_used = moe.expert_used_count as usize;
-            for (layer, raw) in pruned.fields() {
+            for (layer, raw) in pruned {
                 let layer: u32 = layer.parse().map_err(|_| {
                     invalid_data(format!("invalid pruned_experts layer key {layer:?}"))
                 })?;
-                let wrapper = JsonObj::parse(&format!("{{\"v\":{raw}}}"));
-                let ids = wrapper.u64_array("v").ok_or_else(|| {
-                    invalid_data(format!("pruned_experts.{layer} must be an integer array"))
-                })?;
+                if layer >= cfg.n_layer_total {
+                    return Err(invalid_data(format!(
+                        "pruned_experts layer {layer} is outside the model's {} layers",
+                        cfg.n_layer_total
+                    )));
+                }
+                let ids = manifest_u64_array(raw, &format!("pruned_experts.{layer}"))?;
                 let mut mask = vec![true; n_expert];
                 for id in ids {
-                    let id = id as usize;
+                    let id = usize::try_from(id)
+                        .map_err(|_| invalid_data("pruned expert ID overflows usize"))?;
                     if id >= n_expert {
                         return Err(invalid_data(format!(
                             "pruned_experts.{layer} contains {id}, expert_count={n_expert}"
+                        )));
+                    }
+                    if !mask[id] {
+                        return Err(invalid_data(format!(
+                            "pruned_experts.{layer} repeats expert {id}"
                         )));
                     }
                     mask[id] = false;
@@ -1039,7 +1610,11 @@ impl Hy3RepackSource {
                         "pruned_experts.{layer} leaves fewer than top-k {n_used} experts"
                     )));
                 }
-                active_experts.insert(layer, mask);
+                if active_experts.insert(layer, mask).is_some() {
+                    return Err(invalid_data(format!(
+                        "pruned_experts repeats layer {layer}"
+                    )));
+                }
             }
         }
 
@@ -1092,6 +1667,8 @@ impl Hy3RepackSource {
 
         Ok(Self {
             cfg,
+            raw_manifest: txt,
+            raw_config,
             expert_activation_precision,
             dir,
             source_dir,
@@ -1123,9 +1700,213 @@ impl Hy3RepackSource {
     pub fn expert_stride(&self, ggml_name: &str) -> Option<usize> {
         self.tensors.get(ggml_name).and_then(|t| t.expert_stride)
     }
+
+    fn own_tensor_census(&self) -> Result<TensorCensus, String> {
+        let tensors = self
+            .tensors
+            .iter()
+            .map(|(name, tensor)| {
+                Ok(TensorCensusRecord {
+                    auxiliaries: Vec::new(),
+                    physical_name: name.clone(),
+                    dtype: format!("{:?}", tensor.ggml_type),
+                    entry: TensorCensusEntry {
+                        auxiliaries: Vec::new(),
+                        name: name.clone(),
+                        shape: tensor.ne.clone(),
+                        storage: ggml_storage(tensor.ggml_type),
+                        physical_bytes: u64::try_from(tensor.bytes).map_err(|_| {
+                            format!("manifest tensor {name} byte length overflows u64")
+                        })?,
+                    },
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(TensorCensus {
+            dialect: CheckpointDialect::Gguf,
+            tensors,
+        })
+    }
+}
+
+impl Hy3RepackSource {
+    pub(super) fn repack_artifact_sha256(&self, component: bool) -> Result<String, String> {
+        if !component {
+            self.validate_complete_bound_repack()?;
+        }
+        let config = self.raw_config.as_deref();
+        if !component && config.is_none() {
+            return Err("complete repack lacks its opened config snapshot".into());
+        }
+        let mut hash = Sha256::new();
+        artifact_hash_field(
+            &mut hash,
+            b"domain",
+            if component {
+                b"memra-loaded-repack-component-v1"
+            } else {
+                b"memra-loaded-complete-repack-v1"
+            },
+        );
+        // The manifest binds tensor names, shard names, offsets, encodings, shapes and strides.
+        // Retain its exact bytes: metadata edits (including renamed files) invalidate identity.
+        // Hash whole opened mappings, including padding, without reopening any pathname.
+        artifact_hash_field(&mut hash, b"manifest.json", self.raw_manifest.as_bytes());
+        if let Some(config) = config {
+            artifact_hash_field(&mut hash, b"config.json", config.as_bytes());
+        } else {
+            artifact_hash_field(&mut hash, b"config-source", b"opened-fallback");
+        }
+        artifact_hash_field(
+            &mut hash,
+            b"shard-count",
+            &(self.files.len() as u64).to_le_bytes(),
+        );
+        for (name, file) in &self.files {
+            // Repack payloads have no tensor-name headers. A multiset of shard hashes would
+            // miss two files swapping their contents while the manifest stayed unchanged.
+            let name = name.to_str().ok_or("repack shard name is not UTF-8")?;
+            artifact_hash_field(&mut hash, b"shard-name", name.as_bytes());
+            artifact_hash_field(
+                &mut hash,
+                b"shard-length",
+                &(file.map.len() as u64).to_le_bytes(),
+            );
+            artifact_hash_field(
+                &mut hash,
+                b"shard-sha256",
+                &Sha256::digest(file.map.as_ref()),
+            );
+        }
+        artifact_hash_field(
+            &mut hash,
+            b"effective-config-debug-v1",
+            format!("{:?}", self.cfg).as_bytes(),
+        );
+        if let Some(activation) = &self.cfg.prefill_activation {
+            for (name, scale) in activation.scales() {
+                artifact_hash_field(&mut hash, b"prefill-scale-name", name.as_bytes());
+                artifact_hash_field(
+                    &mut hash,
+                    b"prefill-scale-bits",
+                    &scale.to_bits().to_le_bytes(),
+                );
+            }
+        }
+        artifact_hash_field(
+            &mut hash,
+            b"expert-activation-precision",
+            format!("{:?}", self.expert_activation_precision).as_bytes(),
+        );
+        if !self.active_experts.is_empty() {
+            artifact_hash_field(
+                &mut hash,
+                b"active-experts",
+                format!("{:?}", self.active_experts).as_bytes(),
+            );
+        }
+        Ok(format!("{:x}", hash.finalize()))
+    }
 }
 
 impl TensorSource for Hy3RepackSource {
+    #[allow(private_interfaces)] // allow: the root compiler consumes this sealed composite input
+    fn composite_input(&self) -> Option<crate::bound_source::CompositeInput<'_>> {
+        self.fallback
+            .as_ref()
+            .map(|_| crate::bound_source::CompositeInput::new(self))
+    }
+    fn physical_tensor_inventory(&self) -> Result<PhysicalTensorInventory, String> {
+        let mut components = vec![TensorComponentInventory {
+            component_path: Vec::new(),
+            census: self.own_tensor_census()?,
+        }];
+        if let Some(fallback) = &self.fallback {
+            for mut component in fallback.physical_tensor_inventory()?.components {
+                component.component_path.insert(0, 0);
+                components.push(component);
+            }
+        }
+        Ok(PhysicalTensorInventory { components })
+    }
+    fn raw_config_json(&self) -> Option<&str> {
+        self.raw_config.as_deref()
+    }
+    fn bound_interpretation(&self) -> Result<BoundSourceInterpretation, String> {
+        self.validate_complete_bound_repack()?;
+        Ok(if self.active_experts.is_empty() {
+            BoundSourceInterpretation::CompleteRepack {
+                expert_activation_precision: self.expert_activation_precision,
+            }
+        } else {
+            BoundSourceInterpretation::RetainedRepack {
+                expert_activation_precision: self.expert_activation_precision,
+                active_experts: self.active_experts.clone(),
+            }
+        })
+    }
+    fn validate_bound_metadata(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<(), String> {
+        self.validate_bound_repack(r)
+    }
+    fn read_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<TensorView<'_>, String> {
+        self.validate_bound_repack(r)?;
+        self.find(&r.record.physical_name)
+            .ok_or_else(|| r.error("bound repack payload disappeared"))
+    }
+    fn auxiliary_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+        _: crate::tensor_contract::QuantAuxTensor,
+    ) -> Result<Option<TensorView<'_>>, String> {
+        self.validate_bound_repack(r)?;
+        // GGUF-dialect auxiliaries are independent contract rows, read through their own binding.
+        Ok(None)
+    }
+    fn nvfp4_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Nvfp4Native<'_>>, String> {
+        self.validate_bound_repack(r)?;
+        Ok(None) // Repack NVFP4 uses the GGUF block codec, not source-native packed planes.
+    }
+    fn fp8_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Fp8Native<'_>>, String> {
+        self.validate_bound_repack(r)?;
+        Ok(None)
+    }
+    fn fp8_stacked_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Fp8StackedNative<'_>>, String> {
+        self.validate_bound_repack(r)?;
+        Ok(None)
+    }
+    fn nvfp4_stacked_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Nvfp4StackedNative<'_>>, String> {
+        self.validate_bound_repack(r)?;
+        Ok(None)
+    }
+    fn disk_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<DiskExtent>, String> {
+        self.validate_bound_repack(r)?;
+        Ok(self.find_expert_disk(&r.record.physical_name))
+    }
+
+    fn artifact_sha256(&self) -> Result<String, String> {
+        self.repack_artifact_sha256(false)
+    }
     fn config(&self) -> ModelConfig {
         self.cfg.clone()
     }
@@ -1168,28 +1949,12 @@ impl TensorSource for Hy3RepackSource {
                 }
             }
         }
-        for (name, tensor) in &self.tensors {
-            let semantic = semantic_name(name);
-            let physical_bytes = u64::try_from(tensor.bytes)
-                .map_err(|_| format!("manifest tensor {name} byte length overflows u64"))?;
-            let shape = if dialect == CheckpointDialect::HfSafetensors {
-                tensor.ne.iter().rev().copied().collect()
-            } else {
-                tensor.ne.clone()
-            };
-            by_name.insert(
-                semantic.clone(),
-                TensorCensusRecord {
-                    physical_name: name.clone(),
-                    dtype: format!("{:?}", tensor.ggml_type),
-                    entry: TensorCensusEntry {
-                        name: semantic,
-                        shape,
-                        storage: ggml_storage(tensor.ggml_type),
-                        physical_bytes,
-                    },
-                },
-            );
+        for mut row in self.own_tensor_census()?.tensors {
+            row.entry.name = semantic_name(&row.physical_name);
+            if dialect == CheckpointDialect::HfSafetensors {
+                row.entry.shape.reverse();
+            }
+            by_name.insert(row.entry.name.clone(), row);
         }
         Ok(TensorCensus {
             dialect,
@@ -1273,7 +2038,7 @@ impl TensorSource for Hy3RepackSource {
     }
 
     fn preserve_expert_encodings(&self) -> bool {
-        self.fallback.is_some()
+        self.fallback.is_some() || !self.active_experts.is_empty()
     }
 
     fn active_experts(&self, layer: u32) -> Option<&[bool]> {
@@ -1311,6 +2076,21 @@ fn manifest_qtype(s: &str) -> Option<GgmlType> {
         "NVFP4" => GgmlType::NVFP4,
         _ => return None,
     })
+}
+
+fn manifest_u64(value: &serde_json::Value, label: &str) -> std::io::Result<u64> {
+    value
+        .as_u64()
+        .ok_or_else(|| invalid_data(format!("{label} must be an unsigned integer")))
+}
+
+fn manifest_u64_array(value: &serde_json::Value, label: &str) -> std::io::Result<Vec<u64>> {
+    value
+        .as_array()
+        .ok_or_else(|| invalid_data(format!("{label} must be an integer array")))?
+        .iter()
+        .map(|v| manifest_u64(v, label))
+        .collect()
 }
 
 fn apply_stripped_mtp_override(cfg: &mut ModelConfig, tensors: &BTreeMap<String, RepackTensor>) {
@@ -1499,19 +2279,24 @@ pub enum Nvfp4ScaleLayout {
 /// checkpoint minted before 2026-09-04). A PRESENT but unrecognised `nvfp4_scale` is an error:
 /// a future layout must not be read as linear just because this build has not learned it yet.
 fn read_nvfp4_scale_layout(dir: &std::path::Path) -> std::io::Result<Nvfp4ScaleLayout> {
-    let Ok(text) = std::fs::read_to_string(dir.join("LAYOUT.json")) else {
+    let text = match std::fs::read_to_string(dir.join("LAYOUT.json")) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Nvfp4ScaleLayout::Linear);
+        }
+        Err(error) => return Err(error),
+    };
+    let object = crate::strict_json::parse_object(&text).map_err(invalid_data)?;
+    let Some(value) =
+        crate::strict_json::optional_string(&object, "nvfp4_scale").map_err(invalid_data)?
+    else {
         return Ok(Nvfp4ScaleLayout::Linear);
     };
-    let Some(rest) = text.split("\"nvfp4_scale\"").nth(1) else {
-        return Ok(Nvfp4ScaleLayout::Linear);
-    };
-    let value = rest
-        .split_once(':')
-        .and_then(|(_, v)| v.trim_start().strip_prefix('"'))
-        .and_then(|v| v.split('"').next())
-        .unwrap_or("")
-        .trim();
-    if value.starts_with("Swizzle32x4x4") {
+    let value = value.trim();
+    if matches!(
+        value,
+        "Swizzle32x4x4" | "Swizzle32x4x4 float8_e4m3fn padded N%128 K%4"
+    ) {
         // LOAD-TIME ENGAGEMENT RECEIPT. Choosing this layout silently would leave "did the
         // unswizzle run?" answerable only by inference, and the failure it prevents is a model
         // that loads and speaks fluently on wrong weights. Announce it, once, at the only place
@@ -1522,7 +2307,7 @@ fn read_nvfp4_scale_layout(dir: &std::path::Path) -> std::io::Result<Nvfp4ScaleL
             dir.join("LAYOUT.json").display()
         );
         Ok(Nvfp4ScaleLayout::Swizzle32x4x4)
-    } else if value.eq_ignore_ascii_case("linear") || value.is_empty() {
+    } else if value.eq_ignore_ascii_case("linear") {
         Ok(Nvfp4ScaleLayout::Linear)
     } else {
         Err(invalid_data(format!(
@@ -1538,7 +2323,11 @@ fn read_nvfp4_scale_layout(dir: &std::path::Path) -> std::io::Result<Nvfp4ScaleL
 /// shape into ggml `ne` order.
 pub struct SafetensorsSource {
     model: StModel,
+    output_root: crate::bound_output::RetainedOutputRoot,
     cfg: ModelConfig,
+    /// The exact config read at open, including metadata outside ModelConfig. Never reread a
+    /// path for identity; open_with_config may have no accompanying config.json at all.
+    raw_config: Option<String>,
     dir: std::path::PathBuf,
     modules_to_not_convert: Vec<String>,
     preserve_checkpoint_bf16: bool,
@@ -1556,11 +2345,12 @@ impl SafetensorsSource {
         } else {
             path
         };
+        let output_root = crate::bound_output::RetainedOutputRoot::capture(dir);
         let config = std::fs::read_to_string(dir.join("config.json"))?;
         let (hf, cfg) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let hf = crate::config::HfConfig::parse(&config);
+            let hf = crate::config::HfConfig::try_parse(&config).map_err(invalid_data)?;
             let cfg = ModelConfig::from_hf(&hf);
-            (hf, cfg)
+            Ok::<_, std::io::Error>((hf, cfg))
         }))
         .map_err(|payload| {
             invalid_data(format!(
@@ -1571,12 +2361,14 @@ impl SafetensorsSource {
                     .or_else(|| payload.downcast_ref::<&str>().copied())
                     .unwrap_or("unknown panic")
             ))
-        })?;
+        })??;
         let model = StModel::open(path)?;
         let nvfp4_scale_layout = read_nvfp4_scale_layout(dir)?;
         Ok(Self {
             model,
             cfg,
+            raw_config: Some(config),
+            output_root,
             dir: dir.to_path_buf(),
             modules_to_not_convert: hf.modules_to_not_convert,
             preserve_checkpoint_bf16: hf.preserve_checkpoint_bf16,
@@ -1587,7 +2379,6 @@ impl SafetensorsSource {
 
     /// Open with an explicitly-provided config (e.g. tests, or config.json elsewhere).
     pub fn open_with_config(path: &std::path::Path, cfg: ModelConfig) -> std::io::Result<Self> {
-        let model = StModel::open(path)?;
         let dir = if path.is_file() {
             path.parent()
                 .unwrap_or(std::path::Path::new("."))
@@ -1595,9 +2386,17 @@ impl SafetensorsSource {
         } else {
             path.to_path_buf()
         };
-        let hf = std::fs::read_to_string(dir.join("config.json"))
-            .ok()
-            .map(|json| crate::config::HfConfig::parse(&json));
+        let output_root = crate::bound_output::RetainedOutputRoot::capture(&dir);
+        let raw_config = match std::fs::read_to_string(dir.join("config.json")) {
+            Ok(json) => Some(json),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
+        let hf = raw_config
+            .as_deref()
+            .map(crate::config::HfConfig::try_parse)
+            .transpose()
+            .map_err(invalid_data)?;
         let modules_to_not_convert = hf
             .as_ref()
             .map(|config| config.modules_to_not_convert.clone())
@@ -1607,9 +2406,12 @@ impl SafetensorsSource {
             .is_some_and(|config| config.preserve_checkpoint_bf16);
         let quant_algo = hf.as_ref().and_then(|config| config.quant_algo.clone());
         let nvfp4_scale_layout = read_nvfp4_scale_layout(&dir)?;
+        let model = StModel::open(path)?;
         Ok(Self {
             model,
             cfg,
+            raw_config,
+            output_root,
             dir,
             modules_to_not_convert,
             preserve_checkpoint_bf16,
@@ -2183,6 +2985,133 @@ fn hy3_modelopt_aliases(hf_name: &str) -> Vec<String> {
 }
 
 impl TensorSource for SafetensorsSource {
+    #[allow(private_interfaces)] // allow: only the concrete source supplies retained output authority
+    fn bound_output_root(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<&crate::bound_output::RetainedOutputRoot>, String> {
+        self.validate_bound(request)?;
+        Ok(Some(&self.output_root))
+    }
+    fn raw_config_json(&self) -> Option<&str> {
+        self.raw_config.as_deref()
+    }
+
+    fn bound_interpretation(&self) -> Result<BoundSourceInterpretation, String> {
+        let mut modules = self.modules_to_not_convert.clone();
+        modules.sort();
+        modules.dedup();
+        Ok(BoundSourceInterpretation::Safetensors {
+            nvfp4_scale_layout: self.nvfp4_scale_layout,
+            expert_activation_precision: self.expert_activation_precision(),
+            quant_algo: self.quant_algo.clone(),
+            modules_to_not_convert: modules,
+            preserve_checkpoint_bf16: self.preserve_checkpoint_bf16,
+        })
+    }
+
+    fn auxiliary_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+        kind: crate::tensor_contract::QuantAuxTensor,
+    ) -> Result<Option<TensorView<'_>>, String> {
+        self.materialize_bound_auxiliary(r, kind)
+    }
+
+    fn validate_bound_metadata(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<(), String> {
+        self.validate_bound(r)
+    }
+    fn read_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<TensorView<'_>, String> {
+        self.materialize_bound(r)
+    }
+    fn nvfp4_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Nvfp4Native<'_>>, String> {
+        self.bound_nvfp4(r)
+    }
+    fn fp8_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Fp8Native<'_>>, String> {
+        self.bound_fp8(r)
+    }
+    fn fp8_stacked_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Fp8StackedNative<'_>>, String> {
+        self.bound_fp8_stacked(r)
+    }
+    fn nvfp4_stacked_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Nvfp4StackedNative<'_>>, String> {
+        self.bound_nvfp4_stacked(r)
+    }
+    fn disk_bound(
+        &self,
+        r: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<DiskExtent>, String> {
+        self.bound_disk(r)
+    }
+
+    fn artifact_sha256(&self) -> Result<String, String> {
+        let mut hash = Sha256::new();
+        artifact_hash_field(&mut hash, b"domain", b"memra-loaded-safetensors-v1");
+        artifact_hash_shards(&mut hash, self.model.opened_shard_bytes());
+        if let Some(config) = &self.raw_config {
+            artifact_hash_field(&mut hash, b"config.json", config.as_bytes());
+        }
+        // ModelConfig has ordered fields/vectors and no paths or pointers. Include its full
+        // effective config so open_with_config overrides and future fields are covered. The
+        // prefill calibration's custom Debug abbreviates its map, so hash those bits below too.
+        // This encoding is build-scoped (qualification also binds the running implementation).
+        artifact_hash_field(
+            &mut hash,
+            b"effective-config-debug-v1",
+            format!("{:?}", self.cfg).as_bytes(),
+        );
+        if let Some(activation) = &self.cfg.prefill_activation {
+            for (name, scale) in activation.scales() {
+                artifact_hash_field(&mut hash, b"prefill-scale-name", name.as_bytes());
+                artifact_hash_field(
+                    &mut hash,
+                    b"prefill-scale-bits",
+                    &scale.to_bits().to_le_bytes(),
+                );
+            }
+        }
+        artifact_hash_field(
+            &mut hash,
+            b"modules-to-not-convert",
+            format!("{:?}", self.modules_to_not_convert).as_bytes(),
+        );
+        artifact_hash_field(
+            &mut hash,
+            b"preserve-checkpoint-bf16",
+            &[u8::from(self.preserve_checkpoint_bf16)],
+        );
+        artifact_hash_field(
+            &mut hash,
+            b"quant-algo",
+            format!("{:?}", self.quant_algo).as_bytes(),
+        );
+        artifact_hash_field(
+            &mut hash,
+            b"nvfp4-scale-layout",
+            match self.nvfp4_scale_layout {
+                Nvfp4ScaleLayout::Linear => b"linear",
+                Nvfp4ScaleLayout::Swizzle32x4x4 => b"swizzle32x4x4",
+            },
+        );
+        Ok(format!("{:x}", hash.finalize()))
+    }
     fn config(&self) -> ModelConfig {
         self.cfg.clone()
     }
@@ -2214,18 +3143,7 @@ impl TensorSource for SafetensorsSource {
     /// bytes so the engine repacks modelopt -> split-plane in ONE pass. Transform targets (the
     /// hybrid V-reorders) return None and keep the GGUF-block hop (`kind.apply_nvfp4`).
     fn find_nvfp4_native(&self, ggml_name: &str) -> Option<Nvfp4Native<'_>> {
-        use crate::hf_mapping::{HfTarget, resolve_ggml};
-        let hf = match resolve_ggml(ggml_name, &self.cfg)? {
-            HfTarget::Plain(hf) => hf,
-            HfTarget::Transform { .. } => return None,
-        };
-        let (out_f, in_f, wbytes, wscale, _macro) = self.nvfp4_quant(&hf)?;
-        Some(Nvfp4Native {
-            wbytes,
-            wscale,
-            out_f,
-            in_f,
-        })
+        self.find_nvfp4_native_target(crate::hf_mapping::resolve_ggml(ggml_name, &self.cfg)?)
     }
     /// FP8-E4M3-native access (MEMRA_PP_FP8 prefill operand / MEMRA_ST_E4M3 resident copy).
     /// Two arms, mirroring the Q8_0 re-encode arms in `find`:
@@ -2244,8 +3162,123 @@ impl TensorSource for SafetensorsSource {
     ///    Dim gates: 2D, in_f/out_f % 16 == 0 (cuBLASLt FP8 TN alignment), and the Transform arm
     ///    keeps the >=1M-element gate of its Q8_0 twin (small tensors stay F32 there).
     fn find_fp8_native(&self, ggml_name: &str) -> Option<Fp8Native<'_>> {
+        self.find_fp8_native_target(crate::hf_mapping::resolve_ggml(ggml_name, &self.cfg)?)
+    }
+
+    fn find_fp8_stacked_native(&self, ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
+        self.find_fp8_stacked_native_target(crate::hf_mapping::resolve_ggml(ggml_name, &self.cfg)?)
+    }
+
+    fn find_nvfp4_stacked_native(&self, ggml_name: &str) -> Option<Nvfp4StackedNative<'_>> {
+        self.find_nvfp4_stacked_native_target(crate::hf_mapping::resolve_ggml(
+            ggml_name, &self.cfg,
+        )?)
+    }
+
+    fn find_expert_disk(&self, ggml_name: &str) -> Option<DiskExtent> {
+        self.find_expert_disk_target(crate::hf_mapping::resolve_ggml(ggml_name, &self.cfg)?)
+    }
+    fn find(&self, ggml_name: &str) -> Option<TensorView<'_>> {
         use crate::hf_mapping::{HfTarget, resolve_ggml};
-        let (hf, kind) = match resolve_ggml(ggml_name, &self.cfg)? {
+        // Router weights feed a discontinuous top-k decision. Preserve their checkpoint dtype
+        // even outside Step's stricter whole-checkpoint BF16 contract.
+        let is_float_router = ggml_name.ends_with(".ffn_gate_inp.weight");
+        // MTP-block fused stacked experts (qwen3.6-35B-A3B ST class): mtp.layers.{k}.mlp.
+        // experts.{gate_up,down}_proj are 3D BF16 stacks; the engine asks per-expert 2D names.
+        if let Some(tv) = self.mtp_fused_expert_slice(ggml_name) {
+            return Some(tv);
+        }
+        // NVFP4 per-tensor macro-scale sibling: the engine asks for `<stem>.scale` (model.rs) and
+        // expects an F32 scalar. Map `<stem>.scale` -> modelopt `<hf>.weight_scale_2` OR
+        // compressed-tensors `<hf>.weight_global_scale`. Returns None for non-quantized weights
+        // (then the engine defaults the macro-scale to 1.0). Reza has no macro-scale at all.
+        // AWQ per-input-channel scale (memra#253). MUST be handled BEFORE the `.scale` stem
+        // stripper below, which would otherwise swallow `<stem>.pre_quant_scale` and try to
+        // resolve a weight called `<stem>.pre_quant.weight`.
+        if let Some(stem) = ggml_name.strip_suffix(".pre_quant_scale") {
+            let hf_weight = match resolve_ggml(&format!("{stem}.weight"), &self.cfg)? {
+                HfTarget::Plain(hf) | HfTarget::Transform { hf, .. } => hf,
+            };
+            let hf_stem = hf_weight.strip_suffix(".weight")?;
+            let (info, bytes) = self.lookup(&format!("{hf_stem}.pre_quant_scale"))?;
+            let n = info.shape.iter().product::<u64>();
+            return Some(TensorView {
+                bytes: Cow::Borrowed(bytes),
+                ggml_type: info.ggml_type().ok()?,
+                ne: vec![n],
+            });
+        }
+        if let Some(stem) = ggml_name.strip_suffix(".scale") {
+            let hf_weight = match resolve_ggml(&format!("{stem}.weight"), &self.cfg)? {
+                HfTarget::Plain(hf) | HfTarget::Transform { hf, .. } => hf,
+            };
+            let hf_stem = hf_weight.strip_suffix(".weight")?;
+            // Try modelopt `weight_scale_2` first (direct multiplier, borrow zero-copy).
+            if let Some((info, bytes)) = self.lookup(&format!("{hf_stem}.weight_scale_2")) {
+                return Some(TensorView {
+                    bytes: Cow::Borrowed(bytes),
+                    ggml_type: info.ggml_type().ok()?,
+                    ne: vec![1],
+                });
+            }
+            // compressed-tensors `weight_global_scale`: DIVISOR semantics, must INVERT to match
+            // the engine's multiplier convention (engine does: result *= macro_scale).
+            if let Some((info, bytes)) = self.lookup(&format!("{hf_stem}.weight_global_scale")) {
+                if info.dtype != "F32"
+                    || !(info.shape.is_empty() || info.shape == [1])
+                    || bytes.len() != 4
+                {
+                    return None;
+                }
+                let global = f32::from_le_bytes(bytes.try_into().ok()?);
+                if !global.is_finite() || global <= 0.0 {
+                    return None;
+                }
+                return Some(TensorView {
+                    bytes: Cow::Owned((1.0 / global).to_le_bytes().to_vec()),
+                    ggml_type: GgmlType::F32,
+                    ne: vec![1],
+                });
+            }
+            return None;
+        }
+        let mut target = resolve_ggml(ggml_name, &self.cfg)?;
+        if let HfTarget::Plain(ref mut hf) = target
+            && self.cfg.arch.is_hy3()
+            && ggml_name.ends_with(".exp_probs_b.bias")
+            && self.lookup(hf).is_none()
+        {
+            let legacy = hf.replace(".mlp.expert_bias", ".mlp.router.expert_bias");
+            if self.lookup(&legacy).is_some() {
+                *hf = legacy;
+            }
+        }
+        self.materialize_target(target, is_float_router, ggml_name == "output.weight")
+    }
+}
+
+impl SafetensorsSource {
+    fn find_nvfp4_native_target(
+        &self,
+        target: crate::hf_mapping::HfTarget,
+    ) -> Option<Nvfp4Native<'_>> {
+        use crate::hf_mapping::HfTarget;
+        let hf = match target {
+            HfTarget::Plain(hf) => hf,
+            HfTarget::Transform { .. } => return None,
+        };
+        let (out_f, in_f, wbytes, wscale, _macro) = self.nvfp4_quant(&hf)?;
+        Some(Nvfp4Native {
+            wbytes,
+            wscale,
+            out_f,
+            in_f,
+        })
+    }
+
+    fn find_fp8_native_target(&self, target: crate::hf_mapping::HfTarget) -> Option<Fp8Native<'_>> {
+        use crate::hf_mapping::HfTarget;
+        let (hf, kind) = match target {
             HfTarget::Plain(hf) => (hf, None),
             HfTarget::Transform { hf, kind } => (hf, Some(kind)),
         };
@@ -2375,9 +3408,12 @@ impl TensorSource for SafetensorsSource {
         }
     }
 
-    fn find_fp8_stacked_native(&self, ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
-        use crate::hf_mapping::{HfTarget, resolve_ggml};
-        let hf = match resolve_ggml(ggml_name, &self.cfg)? {
+    fn find_fp8_stacked_native_target(
+        &self,
+        target: crate::hf_mapping::HfTarget,
+    ) -> Option<Fp8StackedNative<'_>> {
+        use crate::hf_mapping::HfTarget;
+        let hf = match target {
             HfTarget::Plain(hf) => hf,
             HfTarget::Transform { .. } => return None,
         };
@@ -2428,9 +3464,12 @@ impl TensorSource for SafetensorsSource {
         })
     }
 
-    fn find_nvfp4_stacked_native(&self, ggml_name: &str) -> Option<Nvfp4StackedNative<'_>> {
-        use crate::hf_mapping::{HfTarget, resolve_ggml};
-        let hf = match resolve_ggml(ggml_name, &self.cfg)? {
+    fn find_nvfp4_stacked_native_target(
+        &self,
+        target: crate::hf_mapping::HfTarget,
+    ) -> Option<Nvfp4StackedNative<'_>> {
+        use crate::hf_mapping::HfTarget;
+        let hf = match target {
             HfTarget::Plain(hf) => hf,
             HfTarget::Transform { .. } => return None,
         };
@@ -2482,9 +3521,9 @@ impl TensorSource for SafetensorsSource {
         })
     }
 
-    fn find_expert_disk(&self, ggml_name: &str) -> Option<DiskExtent> {
-        use crate::hf_mapping::{HfTarget, resolve_ggml};
-        let hf = match resolve_ggml(ggml_name, &self.cfg)? {
+    fn find_expert_disk_target(&self, target: crate::hf_mapping::HfTarget) -> Option<DiskExtent> {
+        use crate::hf_mapping::HfTarget;
+        let hf = match target {
             HfTarget::Plain(hf) => hf,
             HfTarget::Transform { .. } => return None,
         };
@@ -2503,85 +3542,18 @@ impl TensorSource for SafetensorsSource {
             len,
         })
     }
-    fn find(&self, ggml_name: &str) -> Option<TensorView<'_>> {
-        use crate::hf_mapping::{HfTarget, resolve_ggml};
-        // Router weights feed a discontinuous top-k decision. Preserve their checkpoint dtype
-        // even outside Step's stricter whole-checkpoint BF16 contract.
-        let is_float_router = ggml_name.ends_with(".ffn_gate_inp.weight");
-        // MTP-block fused stacked experts (qwen3.6-35B-A3B ST class): mtp.layers.{k}.mlp.
-        // experts.{gate_up,down}_proj are 3D BF16 stacks; the engine asks per-expert 2D names.
-        if let Some(tv) = self.mtp_fused_expert_slice(ggml_name) {
-            return Some(tv);
-        }
-        // NVFP4 per-tensor macro-scale sibling: the engine asks for `<stem>.scale` (model.rs) and
-        // expects an F32 scalar. Map `<stem>.scale` -> modelopt `<hf>.weight_scale_2` OR
-        // compressed-tensors `<hf>.weight_global_scale`. Returns None for non-quantized weights
-        // (then the engine defaults the macro-scale to 1.0). Reza has no macro-scale at all.
-        // AWQ per-input-channel scale (memra#253). MUST be handled BEFORE the `.scale` stem
-        // stripper below, which would otherwise swallow `<stem>.pre_quant_scale` and try to
-        // resolve a weight called `<stem>.pre_quant.weight`.
-        if let Some(stem) = ggml_name.strip_suffix(".pre_quant_scale") {
-            let hf_weight = match resolve_ggml(&format!("{stem}.weight"), &self.cfg)? {
-                HfTarget::Plain(hf) | HfTarget::Transform { hf, .. } => hf,
-            };
-            let hf_stem = hf_weight.strip_suffix(".weight")?;
-            let (info, bytes) = self.lookup(&format!("{hf_stem}.pre_quant_scale"))?;
-            let n = info.shape.iter().product::<u64>();
-            return Some(TensorView {
-                bytes: Cow::Borrowed(bytes),
-                ggml_type: info.ggml_type().ok()?,
-                ne: vec![n],
-            });
-        }
-        if let Some(stem) = ggml_name.strip_suffix(".scale") {
-            let hf_weight = match resolve_ggml(&format!("{stem}.weight"), &self.cfg)? {
-                HfTarget::Plain(hf) | HfTarget::Transform { hf, .. } => hf,
-            };
-            let hf_stem = hf_weight.strip_suffix(".weight")?;
-            // Try modelopt `weight_scale_2` first (direct multiplier, borrow zero-copy).
-            if let Some((info, bytes)) = self.lookup(&format!("{hf_stem}.weight_scale_2")) {
-                return Some(TensorView {
-                    bytes: Cow::Borrowed(bytes),
-                    ggml_type: info.ggml_type().ok()?,
-                    ne: vec![1],
-                });
-            }
-            // compressed-tensors `weight_global_scale`: DIVISOR semantics, must INVERT to match
-            // the engine's multiplier convention (engine does: result *= macro_scale).
-            if let Some((info, bytes)) = self.lookup(&format!("{hf_stem}.weight_global_scale")) {
-                if info.dtype != "F32"
-                    || !(info.shape.is_empty() || info.shape == [1])
-                    || bytes.len() != 4
-                {
-                    return None;
-                }
-                let global = f32::from_le_bytes(bytes.try_into().ok()?);
-                if !global.is_finite() || global <= 0.0 {
-                    return None;
-                }
-                return Some(TensorView {
-                    bytes: Cow::Owned((1.0 / global).to_le_bytes().to_vec()),
-                    ggml_type: GgmlType::F32,
-                    ne: vec![1],
-                });
-            }
-            return None;
-        }
-        match resolve_ggml(ggml_name, &self.cfg)? {
+
+    fn materialize_target(
+        &self,
+        target: crate::hf_mapping::HfTarget,
+        is_float_router: bool,
+        is_output: bool,
+    ) -> Option<TensorView<'_>> {
+        use crate::hf_mapping::HfTarget;
+        match target {
             // Zero-copy: a plain rename (dense path + most SSM matrices), borrow the mmap directly.
             // NVFP4 modelopt weights take the repack arm (owned GGUF block bytes); else borrow.
-            HfTarget::Plain(mut hf) => {
-                // Hy3 changed the correction-bias key between the preview and current releases.
-                // Prefer the current mapper spelling, but keep old repacks/checkpoints loadable.
-                if self.cfg.arch.is_hy3()
-                    && ggml_name.ends_with(".exp_probs_b.bias")
-                    && self.lookup(&hf).is_none()
-                {
-                    let legacy = hf.replace(".mlp.expert_bias", ".mlp.router.expert_bias");
-                    if self.lookup(&legacy).is_some() {
-                        hf = legacy;
-                    }
-                }
+            HfTarget::Plain(hf) => {
                 // NVFP4 (modelopt OR Reza) -> repack to memra internal GGUF block_nvfp4 bytes (NO kernel
                 // change). `nvfp4_quant` returns the packed bytes directly (in Reza the packed tensor
                 // is `<hf>.nvfp4_packed`, not `<hf>` itself), so no second lookup.
@@ -2634,7 +3606,7 @@ impl TensorSource for SafetensorsSource {
                             // bytes as the single-threaded pass. The GLM-5.3-Flash head
                             // (154,880 x 4096 BF16) took 156 s of every boot on one core
                             // (2x B200 pair, 2026-09-07, `[load-trace] blk.0 output-head`).
-                            if ggml_name == "output.weight" && n_el.is_multiple_of(256) {
+                            if is_output && n_el.is_multiple_of(256) {
                                 let out =
                                     par_encode_bf16(bytes, 256, crate::nvfp4_repack::f32_to_q5_k);
                                 return Some(TensorView {
@@ -2768,6 +3740,345 @@ impl TensorSource for SafetensorsSource {
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod artifact_identity_tests {
+    use super::*;
+
+    const CONFIG: &str = r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":4,"num_attention_heads":2,"intermediate_size":8,"vocab_size":10,"max_position_embeddings":128}"#;
+
+    struct Fixture(PathBuf);
+
+    impl Fixture {
+        fn new(tag: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "memra-artifact-identity-{tag}-{}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("config.json"), CONFIG).unwrap();
+            Self(dir)
+        }
+
+        fn shard(&self, file: &str, name: &str, value: f32) {
+            let header =
+                format!(r#"{{"{name}":{{"dtype":"F32","shape":[1],"data_offsets":[0,4]}}}}"#);
+            let mut bytes = (header.len() as u64).to_le_bytes().to_vec();
+            bytes.extend_from_slice(header.as_bytes());
+            bytes.extend_from_slice(&value.to_le_bytes());
+            std::fs::write(self.0.join(file), bytes).unwrap();
+        }
+
+        fn replace(&self, file: &str, bytes: impl AsRef<[u8]>) {
+            let path = self.0.join(file);
+            if path.exists() {
+                std::fs::remove_file(&path).unwrap();
+            }
+            std::fs::write(path, bytes).unwrap();
+        }
+
+        fn repack(&self) {
+            self.replace("a.bin", 1.0f32.to_le_bytes().repeat(4));
+            self.replace("b.bin", 2.0f32.to_le_bytes().repeat(4));
+            self.replace("manifest.json", r#"{"format":"memra-repack-v1","tensors":{
+                "first.weight":{"file":"a.bin","offset":4,"qtype":"F32","ne":[1],"bytes":4,"expert_stride":4},
+                "second.weight":{"file":"b.bin","offset":4,"qtype":"F32","ne":[1],"bytes":4}
+            }}"#);
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    fn cfg() -> ModelConfig {
+        ModelConfig::from_hf(&crate::config::HfConfig::parse(CONFIG))
+    }
+
+    #[test]
+    fn artifact_sha256_synthetic_source_fails_closed() {
+        struct Synthetic;
+        impl TensorSource for Synthetic {
+            fn config(&self) -> ModelConfig {
+                cfg()
+            }
+            fn find(&self, _: &str) -> Option<TensorView<'_>> {
+                None
+            }
+        }
+        let source: &dyn TensorSource = &Synthetic;
+        assert!(source.artifact_sha256().unwrap_err().contains("identity"));
+    }
+
+    #[test]
+    fn artifact_sha256_safetensors_uses_opened_weights_after_path_replacement() {
+        let fixture = Fixture::new("pinned");
+        fixture.shard("model.safetensors", "model.norm.weight", 1.0);
+        let source = SafetensorsSource::open(&fixture.0).unwrap();
+        let identity = source.artifact_sha256().unwrap();
+        assert_eq!(identity.len(), 64);
+        assert!(identity.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        let renamed = fixture.0.join("renamed.safetensors");
+        std::fs::rename(fixture.0.join("model.safetensors"), &renamed).unwrap();
+        assert_eq!(
+            SafetensorsSource::open(&renamed)
+                .unwrap()
+                .artifact_sha256()
+                .unwrap(),
+            identity
+        );
+        fixture.shard("model.safetensors", "model.norm.weight", 2.0);
+        let replacement = SafetensorsSource::open(&fixture.0).unwrap();
+        assert_eq!(
+            format!("{:?}", source.cfg),
+            format!("{:?}", replacement.cfg)
+        );
+        assert_eq!(
+            source.raw_hf("model.norm.weight").unwrap().ne,
+            replacement.raw_hf("model.norm.weight").unwrap().ne
+        );
+        assert_ne!(replacement.artifact_sha256().unwrap(), identity);
+        std::fs::remove_file(renamed).unwrap();
+        assert_eq!(source.artifact_sha256().unwrap(), identity);
+        assert_eq!(
+            source.raw_hf("model.norm.weight").unwrap().bytes.as_ref(),
+            &1.0f32.to_le_bytes()
+        );
+    }
+
+    #[test]
+    fn artifact_sha256_safetensors_covers_all_shards_independent_of_filenames() {
+        let fixture = Fixture::new("shards");
+        fixture.shard("a.safetensors", "a", 1.0);
+        fixture.shard("z.safetensors", "z", 2.0);
+        let index = fixture.0.join("model.safetensors.index.json");
+        std::fs::write(
+            &index,
+            r#"{"weight_map":{"a":"a.safetensors","z":"z.safetensors"}}"#,
+        )
+        .unwrap();
+        let source = SafetensorsSource::open(&fixture.0).unwrap();
+        let identity = source.artifact_sha256().unwrap();
+        // Renaming a shard changes the reader's filename-sorted shard order, not its bytes.
+        std::fs::rename(
+            fixture.0.join("a.safetensors"),
+            fixture.0.join("zz.safetensors"),
+        )
+        .unwrap();
+        std::fs::write(
+            &index,
+            r#"{"weight_map":{"z":"z.safetensors","a":"zz.safetensors"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            SafetensorsSource::open(&fixture.0)
+                .unwrap()
+                .artifact_sha256()
+                .unwrap(),
+            identity
+        );
+        fixture.shard("replacement.safetensors", "z", 3.0);
+        std::fs::rename(
+            fixture.0.join("replacement.safetensors"),
+            fixture.0.join("z.safetensors"),
+        )
+        .unwrap();
+        assert_ne!(
+            SafetensorsSource::open(&fixture.0)
+                .unwrap()
+                .artifact_sha256()
+                .unwrap(),
+            identity
+        );
+        assert_eq!(source.artifact_sha256().unwrap(), identity);
+    }
+
+    #[test]
+    fn artifact_sha256_safetensors_binds_config_and_loaded_interpretation() {
+        let fixture = Fixture::new("metadata");
+        fixture.shard("model.safetensors", "model.norm.weight", 1.0);
+        let source = SafetensorsSource::open(&fixture.0).unwrap();
+        let identity = source.artifact_sha256().unwrap();
+        let config_path = fixture.0.join("config.json");
+        std::fs::write(&config_path, CONFIG.replace("128", "256")).unwrap();
+        assert_ne!(
+            SafetensorsSource::open(&fixture.0)
+                .unwrap()
+                .artifact_sha256()
+                .unwrap(),
+            identity
+        );
+        assert_eq!(source.artifact_sha256().unwrap(), identity);
+
+        // With identical explicit config, every separately consumed precision/layout field
+        // still belongs to the identity. Config comes from memory when no config.json exists.
+        std::fs::remove_file(config_path).unwrap();
+        let source = SafetensorsSource::open_with_config(&fixture.0, cfg()).unwrap();
+        let identity = source.artifact_sha256().unwrap();
+        let mut changed_cfg = cfg();
+        changed_cfg.rms_eps *= 2.0;
+        assert_ne!(
+            SafetensorsSource::open_with_config(&fixture.0, changed_cfg)
+                .unwrap()
+                .artifact_sha256()
+                .unwrap(),
+            identity
+        );
+        let mut changed = SafetensorsSource::open_with_config(&fixture.0, cfg()).unwrap();
+        changed.modules_to_not_convert.push("model.norm".into());
+        assert_ne!(changed.artifact_sha256().unwrap(), identity);
+        let mut changed = SafetensorsSource::open_with_config(&fixture.0, cfg()).unwrap();
+        changed.preserve_checkpoint_bf16 = true;
+        assert_ne!(changed.artifact_sha256().unwrap(), identity);
+        let mut changed = SafetensorsSource::open_with_config(&fixture.0, cfg()).unwrap();
+        changed.quant_algo = Some("W4A16_NVFP4".into());
+        assert_ne!(changed.artifact_sha256().unwrap(), identity);
+        std::fs::write(
+            fixture.0.join("LAYOUT.json"),
+            r#"{"nvfp4_scale":"Swizzle32x4x4"}"#,
+        )
+        .unwrap();
+        let changed = SafetensorsSource::open_with_config(&fixture.0, cfg()).unwrap();
+        assert_ne!(changed.artifact_sha256().unwrap(), identity);
+        std::fs::remove_file(fixture.0.join("LAYOUT.json")).unwrap();
+        assert_eq!(source.artifact_sha256().unwrap(), identity);
+        assert_eq!(changed.nvfp4_scale_layout, Nvfp4ScaleLayout::Swizzle32x4x4);
+        assert_ne!(changed.artifact_sha256().unwrap(), identity);
+    }
+
+    #[test]
+    fn artifact_sha256_repack_uses_opened_metadata_and_bytes_after_replacement() {
+        let fixture = Fixture::new("repack-opened");
+        fixture.repack();
+        let source = Hy3RepackSource::open(&fixture.0).unwrap();
+        let identity = source.artifact_sha256().unwrap();
+        assert_eq!(identity.len(), 64);
+        fixture.replace("a.bin", 3.0f32.to_le_bytes().repeat(4));
+        let replacement = Hy3RepackSource::open(&fixture.0).unwrap();
+        assert_ne!(replacement.artifact_sha256().unwrap(), identity);
+        fixture.replace("manifest.json", b"not the opened manifest");
+        fixture.replace("config.json", b"not the opened config");
+        std::fs::remove_file(fixture.0.join("a.bin")).unwrap();
+        std::fs::remove_file(fixture.0.join("b.bin")).unwrap();
+        assert_eq!(source.artifact_sha256().unwrap(), identity);
+        assert_eq!(source.raw_config_json(), Some(CONFIG));
+        assert_eq!(
+            source.find("first.weight").unwrap().bytes.as_ref(),
+            &1.0f32.to_le_bytes()
+        );
+        assert_eq!(
+            replacement.find("first.weight").unwrap().bytes.as_ref(),
+            &3.0f32.to_le_bytes()
+        );
+    }
+
+    #[test]
+    fn artifact_sha256_repack_binds_shard_owners_and_all_opened_bytes() {
+        let fixture = Fixture::new("repack-shards");
+        fixture.repack();
+        let source = Hy3RepackSource::open(&fixture.0).unwrap();
+        let identity = source.artifact_sha256().unwrap();
+        // Same shard multiset, different tensor ownership: a sorted content-only hash is wrong.
+        fixture.replace("a.bin", 2.0f32.to_le_bytes().repeat(4));
+        fixture.replace("b.bin", 1.0f32.to_le_bytes().repeat(4));
+        assert_ne!(
+            Hy3RepackSource::open(&fixture.0)
+                .unwrap()
+                .artifact_sha256()
+                .unwrap(),
+            identity
+        );
+        for file in ["a.bin", "b.bin"] {
+            fixture.repack();
+            let mut bytes = std::fs::read(fixture.0.join(file)).unwrap();
+            bytes[0] ^= 1; // Padding outside both declared tensor windows is still opened data.
+            fixture.replace(file, bytes);
+            let changed = Hy3RepackSource::open(&fixture.0).unwrap();
+            assert_eq!(
+                changed.find("first.weight").unwrap().bytes,
+                source.find("first.weight").unwrap().bytes
+            );
+            assert_eq!(
+                changed.find("second.weight").unwrap().bytes,
+                source.find("second.weight").unwrap().bytes
+            );
+            assert_ne!(changed.artifact_sha256().unwrap(), identity, "{file}");
+        }
+        assert_eq!(source.artifact_sha256().unwrap(), identity);
+    }
+
+    #[test]
+    fn artifact_sha256_repack_binds_manifest_config_and_effective_interpretation() {
+        let fixture = Fixture::new("repack-metadata");
+        fixture.repack();
+        let source = Hy3RepackSource::open(&fixture.0).unwrap();
+        let identity = source.artifact_sha256().unwrap();
+        let manifest = std::fs::read_to_string(fixture.0.join("manifest.json")).unwrap();
+        for (from, to) in [
+            ("first.weight", "renamed.weight"),
+            ("\"offset\":4", "\"offset\":8"),
+            ("\"expert_stride\":4", "\"expert_stride\":8"),
+            ("\"ne\":[1]", "\"ne\":[1,1]"),
+            (
+                "\"qtype\":\"F32\",\"ne\":[1]",
+                "\"qtype\":\"BF16\",\"ne\":[2]",
+            ),
+        ] {
+            fixture.replace("manifest.json", manifest.replacen(from, to, 1));
+            assert_ne!(
+                Hy3RepackSource::open(&fixture.0)
+                    .unwrap()
+                    .artifact_sha256()
+                    .unwrap(),
+                identity,
+                "{from}"
+            );
+        }
+        fixture.replace("manifest.json", &manifest);
+        let quant = CONFIG.replacen(
+            '{',
+            "{\"quantization_config\":{\"quant_algo\":\"W4A16_NVFP4\"},",
+            1,
+        );
+        fixture.replace("config.json", &quant);
+        let changed = Hy3RepackSource::open(&fixture.0).unwrap();
+        assert_eq!(changed.raw_config_json(), Some(quant.as_str()));
+        assert_eq!(
+            changed.expert_activation_precision(),
+            ExpertActivationPrecision::Bf16
+        );
+        assert_ne!(changed.artifact_sha256().unwrap(), identity);
+        fixture.replace("config.json", CONFIG);
+        let mut changed = Hy3RepackSource::open(&fixture.0).unwrap();
+        changed.cfg.context_length += 1;
+        assert_ne!(changed.artifact_sha256().unwrap(), identity);
+        let mut changed = Hy3RepackSource::open(&fixture.0).unwrap();
+        changed.expert_activation_precision = ExpertActivationPrecision::Bf16;
+        assert_ne!(changed.artifact_sha256().unwrap(), identity);
+        assert_eq!(source.artifact_sha256().unwrap(), identity);
+    }
+
+    #[test]
+    fn artifact_sha256_repack_binds_loaded_mask_and_refuses_fallbacks() {
+        let fixture = Fixture::new("repack-composite");
+        fixture.repack();
+        let mut source = Hy3RepackSource::open(&fixture.0).unwrap();
+        let original = source.artifact_sha256().unwrap();
+        source.active_experts.insert(0, vec![true, false]);
+        assert_ne!(source.artifact_sha256().unwrap(), original);
+        let overlay = fixture.0.join("overlay");
+        std::fs::create_dir(&overlay).unwrap();
+        std::fs::write(
+            overlay.join("manifest.json"),
+            r#"{"format":"memra-expert-overlay-v2","source_dir":"..","tensors":{}}"#,
+        )
+        .unwrap();
+        let source = Hy3RepackSource::open(&overlay).unwrap();
+        assert!(source.artifact_sha256().unwrap_err().contains("composite"));
     }
 }
 
@@ -4879,5 +6190,48 @@ mod pre_quant_scale_census_tests {
         );
         // 8 (weight) + 8 (weight_scale) + 16 (pre_quant_scale)
         assert_eq!(weight.physical_bytes, 32);
+    }
+}
+
+#[cfg(test)]
+mod canonical_layout_tests {
+    use super::*;
+    #[test]
+    fn layout_declarations_use_strict_decoded_keys_and_values() {
+        let dir = std::env::temp_dir().join(format!("memra-layout-json-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for text in [
+            r#"{"nvfp4_scale":"Swizzle32x4x4"}"#,
+            r#"{"nvfp4\u005fscale":"Swizzle32x4x\u0034"}"#,
+        ] {
+            std::fs::write(dir.join("LAYOUT.json"), text).unwrap();
+            assert_eq!(
+                read_nvfp4_scale_layout(&dir).unwrap(),
+                Nvfp4ScaleLayout::Swizzle32x4x4
+            );
+        }
+        for text in [
+            r#"{"nvfp4_scale":false}"#,
+            r#"{"nvfp4_scale":null}"#,
+            r#"{"nvfp4_scale":""}"#,
+            r#"{"nvfp4_scale":"linear","nvfp4\u005fscale":"Swizzle32x4x4"}"#,
+            r#"{"nvfp4\u005fscale":"SomeFutureOrder"}"#,
+            r#"{"nvfp4_scale":"Swizzle32x4x4OtherProgram"}"#,
+            r#"{"nvfp4_scale":"linear"} trailing"#,
+        ] {
+            std::fs::write(dir.join("LAYOUT.json"), text).unwrap();
+            assert!(read_nvfp4_scale_layout(&dir).is_err(), "{text}");
+        }
+        std::fs::write(dir.join("LAYOUT.json"), "{}").unwrap();
+        assert_eq!(
+            read_nvfp4_scale_layout(&dir).unwrap(),
+            Nvfp4ScaleLayout::Linear
+        );
+        std::fs::remove_file(dir.join("LAYOUT.json")).unwrap();
+        assert_eq!(
+            read_nvfp4_scale_layout(&dir).unwrap(),
+            Nvfp4ScaleLayout::Linear
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

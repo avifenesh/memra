@@ -687,6 +687,7 @@ fn glm5_dflash_tap_layers(draft: &DflashDraft, n_trunk: usize) -> Res<Vec<usize>
 /// `tp_kv` and GDN stashes have no arm here — growing one is a deliberate extension with
 /// its own gate, not a silent default.
 pub struct Glm5VerifyCkpt {
+    rewrite_execution: std::sync::Arc<crate::plan_backend::RewriteExecutionSnapshot>,
     pos: usize,
     latent_len: Vec<Option<usize>>,
     /// Per-row conv-ring clones, rows `0..t-1` except the last (doc above). PER-ROW walk
@@ -735,6 +736,8 @@ pub(crate) struct VerifyGraph {
 /// The session's captured verify walks and the warm-up bookkeeping in front of them.
 #[derive(Default)]
 pub struct VerifyGraphPool {
+    // Default is empty. Bind exactly once, before warming or capturing a model program.
+    rewrite_execution: Option<std::sync::Arc<crate::plan_backend::RewriteExecutionSnapshot>>,
     /// (lo, hi, t) ranges that ran one eager round on the live arm (the workspace pool and
     /// the kernel cache warm); the next call captures.
     warm: std::collections::HashSet<(usize, usize, usize)>,
@@ -772,6 +775,14 @@ impl VerifyGraphPool {
     /// other stash goes into the verify workspace pool, so the next capture body's takes are
     /// served by the pool (a stash allocated inside a capture would be graph-owned memory).
     pub fn reclaim_rows(&mut self, e: &Engine, ckpt: &mut Glm5VerifyCkpt) {
+        // A public caller may hand back a checkpoint from another pool. Only the pool
+        // that lent these graph-owned rows can reclaim them, and only while still current.
+        if !self.rewrite_execution.as_ref().is_some_and(|origin| {
+            std::sync::Arc::ptr_eq(origin, &ckpt.rewrite_execution)
+                && origin.allows(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)
+        }) {
+            return;
+        }
         for g in self.graphs.iter_mut() {
             for il in g.lo..g.hi.min(ckpt.kda_rows.len()) {
                 if ckpt.kda_rows[il].is_some() {
@@ -1178,6 +1189,12 @@ impl Glm5VerifyPos {
 impl Glm5VerifyCkpt {
     /// Hands the per-layer ssm snapshot buffers back (to seed the next round's checkpoint).
     pub fn kda_ssm_snap_buffers(&mut self) -> Vec<Option<CudaSlice<f32>>> {
+        if !self
+            .rewrite_execution
+            .allows(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)
+        {
+            return Vec::new();
+        }
         std::mem::take(&mut self.kda_ssm_snap)
     }
 }
@@ -1226,8 +1243,27 @@ impl HybridModel {
         tokens: &[u32],
         cache: &mut Cache,
         snap_pool: Vec<Option<CudaSlice<f32>>>,
-        graphs: Option<&mut VerifyGraphPool>,
+        mut graphs: Option<&mut VerifyGraphPool>,
     ) -> Res<(CudaSlice<f32>, CudaSlice<f32>, Glm5VerifyCkpt)> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
+        let rewrite_execution = match graphs.as_deref_mut() {
+            Some(pool) => {
+                if let Some(origin) = &pool.rewrite_execution {
+                    self.check_rewrite_execution(origin)?;
+                } else {
+                    pool.rewrite_execution = Some(std::sync::Arc::new(
+                        self.current_rewrite_execution_snapshot()?,
+                    ));
+                }
+                pool.rewrite_execution
+                    .as_ref()
+                    .expect("bound graph pool")
+                    .clone()
+            }
+            None => std::sync::Arc::new(self.current_rewrite_execution_snapshot()?),
+        };
+        let _origin = self.enter_rewrite_execution(&rewrite_execution)?;
         let topology = *self
             .hyper
             .as_ref()
@@ -1279,6 +1315,7 @@ impl HybridModel {
 
         // Ckpt BEFORE any state moves.
         let mut ckpt = Glm5VerifyCkpt {
+            rewrite_execution,
             pos: pos0,
             latent_len: cache
                 .latent
@@ -2028,6 +2065,9 @@ impl HybridModel {
         ckpt: &Glm5VerifyCkpt,
         keep: usize,
     ) -> Res<()> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        let _origin = self.enter_rewrite_execution(&ckpt.rewrite_execution)?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
         if keep == 0 || keep > ckpt.rows {
             return Err(format!(
                 "glm5_verify_rollback: keep={keep} outside 1..={} (the anchor row is always \
@@ -2230,6 +2270,8 @@ impl HybridModel {
         k: usize,
         mut knobs: Glm5SpecKnobs<'_>,
     ) -> Res<(Vec<u32>, usize, usize)> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
         let cap = Self::hyper_batch_cap();
         if k == 0 || k + 1 > cap {
             return Err(format!(
@@ -2394,6 +2436,8 @@ impl HybridModel {
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
     ) -> Res<Glm5SpecSession> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
         let mut state = Some(self.glm5_prime_start(e, prompt, ctx_cap, sampling)?);
         let mut walker = self.glm5_prime_walker(e, &mut state);
         crate::prime_walker::advance_prime(&mut walker, false, crate::prime_walker::trace_chunk)?;
@@ -2407,6 +2451,8 @@ impl HybridModel {
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
     ) -> Res<Glm5PrimeState> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
         if self.hyper.is_none() {
             return Err("generate_spec_glm5 requires a HyperConnections trunk".into());
         }
@@ -2892,6 +2938,8 @@ impl HybridModel {
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
     ) -> Res<Glm5SpecSession> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
         let mut state = Some(self.glm5_prime_restored_start(
             e,
             cache,
@@ -2922,6 +2970,8 @@ impl HybridModel {
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
     ) -> Res<Glm5PrimeState> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
         if self.hyper.is_none() {
             return Err("glm5_spec_session_from_restored requires a HyperConnections trunk".into());
         }
@@ -3231,6 +3281,9 @@ impl HybridModel {
         knobs: &mut Glm5SpecKnobs<'_>,
         mut on_commit: Option<CommitHook<'_>>,
     ) -> Res<(Vec<u32>, usize, usize)> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
+        let _origin = self.enter_rewrite_execution(&sess.rewrite_execution)?;
         let cap = Self::hyper_batch_cap();
         if k == 0 || k + 1 > cap {
             return Err(format!(
@@ -4360,6 +4413,8 @@ fn glm5_sampled_draft(
 /// basis, pinned by the tparallel gate), plus ONE emitted-but-uncommitted `anchor` token
 /// (the next round's verify row 0 — the dspark `last` convention).
 pub struct Glm5SpecSession {
+    // Origin of the retained predictions, draft state and verify graphs. Never refreshed.
+    rewrite_execution: crate::plan_backend::RewriteExecutionSnapshot,
     cache: Cache,
     /// Every token whose trunk state the cache holds, in order (prompt + committed
     /// generation). EXCLUDES the live `anchor`.
@@ -4451,6 +4506,12 @@ impl Glm5SpecSession {
         rows: usize,
         row_floats: usize,
     ) -> Option<(Vec<Vec<f32>>, Vec<Vec<f32>>)> {
+        if !self
+            .rewrite_execution
+            .allows(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)
+        {
+            return None;
+        }
         let Glm5DraftState::Dflash2 { kv, .. } = &self.draft else {
             return None;
         };
@@ -4475,6 +4536,12 @@ impl Glm5SpecSession {
     /// Drain the prompt-boundary capture (doc on the field; the dspark
     /// `take_prefix_capture` twin — the worker publishes it against `cache_ref`).
     pub fn take_prefix_capture(&mut self) -> Option<crate::spec::SpecBoundaryCapture> {
+        if !self
+            .rewrite_execution
+            .allows(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)
+        {
+            return None;
+        }
         self.prefix_capture.take()
     }
     /// True when the deferred prefix capture can publish NOW: a capture exists AND the
@@ -4483,6 +4550,12 @@ impl Glm5SpecSession {
     /// the first burst would export an empty tail and waste the capture — the worker's
     /// sweep polls this instead.
     pub fn prefix_capture_ready(&self) -> bool {
+        if !self
+            .rewrite_execution
+            .allows(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)
+        {
+            return false;
+        }
         self.prefix_capture
             .as_ref()
             .is_some_and(|c| match &self.draft {
@@ -4497,6 +4570,12 @@ impl Glm5SpecSession {
         e: &Engine,
         upto: usize,
     ) -> Option<crate::dflash::DflashKvTail> {
+        if !self
+            .rewrite_execution
+            .allows(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)
+        {
+            return None;
+        }
         match &self.draft {
             Glm5DraftState::Dflash2 { kv, .. } => kv.export_tail(e, upto),
             _ => None,
@@ -4559,6 +4638,9 @@ impl HybridModel {
         e: &Engine,
         mut sess: Glm5SpecSession,
     ) -> Res<(Cache, u32)> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        let _origin = self.enter_rewrite_execution(&sess.rewrite_execution)?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
         if !sess.demote_eligible() {
             let why = if sess.sampling.is_some() {
                 "sampled sessions stay on spec until they end (session-owned Philox vs the \

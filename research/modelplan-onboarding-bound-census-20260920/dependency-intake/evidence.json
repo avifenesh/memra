@@ -1,0 +1,109 @@
+{
+  "first_parent": "c3aaab083469d5cc2b102df6c8ed6779ad4dd407",
+  "reviewed_dependency": "8c514a910405d340dfb96d409a04f1974f2133d9",
+  "resolved_source_sha256": {
+    ".github/workflows/ci.yml": "387defca701905f56ac7d2ecad799d6ba03972822345616af54513dc93381dda",
+    "crates/memra-engine/src/model.rs": "afe177f0dbc888c7b833eb14d3be599a334f70a1c9c0c4f5481752bd86bd89dc",
+    "crates/memra-engine/src/model/repack.rs": "f1a8e9a94cbb54370139e65bb2945ebb5e1a67372278989b1cd24aee59451940",
+    "crates/memra-gguf/src/model_packs/step35/mod.rs": "4d6938e5e53640c54893be0bf9ba080023c4c860919072db47bdce5f8a2f6157",
+    "crates/memra-gguf/src/model_packs/step35/tensors.rs": "aaa4f00dd4d436d77bceea562b304f7944def8b3f72d2902c0aace9cd1f9d629",
+    "crates/memra-gguf/src/source.rs": "9318f99ce58f98527a7c0bcbf82f060c8a200b45b5d45a4957e5b90da6dc5cba",
+    "docs/decisions/README.md": "173b3a93d3936cef609bb08024c2b9dedd01e8cb2ea84c3414d4760d3ec523be",
+    "research/INDEX.md": "86505d3fc06d127534ee16ab53b7b30b80226d094a4b5f3e2c50b794987a0958"
+  },
+  "unchanged_dependency_raw_whitespace": {
+    "research/api-include-usage-20260920/cpu-macos/initial-fmt.log": "2a8d128a58d237728b016e1c9b305a0ddce6834d38be63d84c2ac806cd398bbb",
+    "research/api-include-usage-20260920/cuda-local-5090/test-null-shape.log": "eb6b513bee070d97ec8f7c586202c4b7b99cc84073f9028a7eeb3fdf52e73b94",
+    "research/api-include-usage-20260920/cuda/iu-live-initial-short/chat-absent.sse": "47d7c18d04e8afe2ddf2edfd1e79511c5b377cc7640d58cd5bbc0f5389cb65e4",
+    "research/api-include-usage-20260920/cuda/iu-live-initial-short/chat-false.sse": "3bba782d77c76dde854ee43d349d08ff8caa27aec489ab406a15328ef79aca77",
+    "research/api-include-usage-20260920/cuda/iu-live-initial-short/chat-true.sse": "904dc4d9bae3f7052ad9c4216eb8800223af610fa1fec8c0debc44de832d251e",
+    "research/api-include-usage-20260920/cuda/iu-live-initial-short/completions-absent.sse": "c98953415a93d3ce7019c9d08805ee7455c313fb65efac387e9b7da158a72164",
+    "research/api-include-usage-20260920/cuda/iu-live-initial-short/completions-false.sse": "b000ca6b7f9b509a44d463e06d825a8b1f562be85f65c0f97ad2d2a8ddb75481",
+    "research/api-include-usage-20260920/cuda/iu-live-initial-short/completions-true.sse": "1fd3621761146264ff6acdedff31ea88c9b086bc50a5b871bfd2381957fcd145",
+    "research/api-include-usage-20260920/cuda/iu-live/chat-cached-absent.sse": "42b5568f6761c77e57930a6606e9ab4508d496f1588a5ff86d5b6ad68777e3bc",
+    "research/api-include-usage-20260920/cuda/iu-live/chat-cached-false.sse": "10d2fed8cb7d9499da741775f5915bc432ff08702f86d296c88525f1fad42f9f",
+    "research/api-include-usage-20260920/cuda/iu-live/chat-cached-true.sse": "09ffce73eb69475d66b0195a44580320aa103203f5e56cb2a419281acf4ee972",
+    "research/api-include-usage-20260920/cuda/iu-live/chat-short-absent.sse": "0503a9e7a793517b0f98ba07201f17092ef1a0ceedeb9651c507a9e30b1758dd",
+    "research/api-include-usage-20260920/cuda/iu-live/chat-short-false.sse": "ff32f73bfc22e41597c9b1795b45dcc6aba4703d67caf30f1bf689bfd0a674ed",
+    "research/api-include-usage-20260920/cuda/iu-live/chat-short-true.sse": "4eca0219def967d488027402bdb39a0a2da3161aeebb214ae8fa46d407fc3800",
+    "research/api-include-usage-20260920/cuda/iu-live/completions-cached-absent.sse": "29d4ddc123566cc11205c2983e4d485c769b74b379c053a3ff70fb19e554831d",
+    "research/api-include-usage-20260920/cuda/iu-live/completions-cached-false.sse": "15c02880bfd66fca1f4650bd94bfa0ecb01edbe67bcf9f54d8728fc99087ed4f",
+    "research/api-include-usage-20260920/cuda/iu-live/completions-cached-true.sse": "1127497c2120d306f5d1e6c2470f3a16d824824584f93efc2b99f7b52e870a19",
+    "research/api-include-usage-20260920/cuda/iu-live/completions-short-absent.sse": "bfb9eec75a4d17671e97e8fad03d891b09bef902d4ed930c68671da8a392a74e",
+    "research/api-include-usage-20260920/cuda/iu-live/completions-short-false.sse": "199c5ea38f5c2e1caaa2fa21d417f9f15ea0c702729b4e163a9194bb79e159db",
+    "research/api-include-usage-20260920/cuda/iu-live/completions-short-true.sse": "3a9a565bc68d3abaa1559e6ed5b880a1ac31a3b9310f10d9299c8a8a27435e89",
+    "research/api-include-usage-20260920/cuda/iu.log": "b98956ed2e33400789ff07850a49e20538ddb9ab4095469be4df60eb37fa1cdf",
+    "research/api-include-usage-20260920/cuda/tests.log": "e711d53e5a270bacbef002a64d5b21515b76007e09e8a0e6d39b216aecc10465",
+    "research/api-stop-ids-20260920/cuda-local-5090/serve-check-gemma3-markup/openai-stream-stop.sse": "378104147e468537a743b5a875a446060f9ae22bd7fbf6d2015f0d9a1de334f5",
+    "research/api-stop-ids-20260920/cuda-local-5090/serve-check/openai-stream-stop.sse": "4f6324ba900ac81e3d902fc4915e9309fb6cf9df14157542163a8db8fe7e9970",
+    "research/spill-b-20260919/day9-checks/check-3.log": "fb95b4266e31a7e349b04c11366227faea181b757140f1cfb5b79d867c1d458a",
+    "research/spill-b-20260919/day9-residual-checks/check-10.log": "68cc3a31a68253661a0d6969076025bcaf124108551d6fa474ca1fa9e337b1ad",
+    "research/spill-b-20260919/day9-residual-checks/check-3.log": "eaa7e8bcf7f71615d7122c9239442ef4f8369f7db6b48845a6d1c1432433a217",
+    "research/spill-b-20260919/day9-residual-checks/check-8.log": "bb59aa5909cfca78e685c44d89f2c2d22d3deb7b05cbf0d98d019e213d773de6",
+    "research/spill-b-20260919/day9-vmm-checks/check-3.log": "f3088e2b20a5e6a5761bf7915eba39eee95a5354be36b32b1fae1b4a70bf17fb",
+    "research/spill-b-20260919/day9-vmm-checks/check-8.log": "0a7ba77d1a7674816ff1c09ffde5d9fc41d668e854f061f74eda2e9e96006464",
+    "research/spill-b-20260919/rented-5090-20260919/day8-build/test.log": "91f28f3ce57c740999cb1e3eceae80ad0fcda4b85a274a3039bb4ae363b24c75",
+    "research/spill-b-20260919/rented-5090-20260919/day9-vmm-build/tests-retry.log": "82febd6c390d92f58db03380af914504d75ddd7a5451ae49e03dabb58a763483",
+    "research/spill-c-20260919/DAY7-DEVICE-PUBLISH.diff": "6170f2e04effdbaa3b61486bd1abd23e720403360e8aa46b1f8de5c6cb7a88c7",
+    "research/spill-c-20260919/raw/day7-cpu/device-integrated-tier-tests.log": "483a12d7438b3e4ac1a0e3314bea4d09f36a49af42d43bdb1993522f937cf73a",
+    "research/spill-c-20260919/raw/day7-cpu/tier-handoff-tests.log": "f88ca1ce3539fd6ddeab347033b72a6739f2f339b89e770b8c9998ca3c8de6f1",
+    "research/spill-c-20260919/raw/day8-cpu/8g-pressure-replay.log": "25b31cd0edbf007ac47fbe1e08b0824d447dea30b1787186adbec109b3cca78e",
+    "research/spill-c-20260919/raw/day8-cpu/checkpoint/tests.log": "3188b660c76accd84def2d86915a194ea92bd1c08cfa3dda58d12c550292855b",
+    "research/spill-c-20260919/raw/day8-cpu/final/tests.log": "fe96e6bf82ef0c082cefe6a6b888286e814386c91ca27b53db6739d1b48847f6",
+    "research/spill-c-20260919/raw/day8-cpu/frozen-transfers.log": "ef4cf662372be2c12f302bd41c342ec462fff6258958a3d006f39dec5f572c80",
+    "research/spill-c-20260919/raw/day8-cpu/model-pressure-replay.log": "2cabcc0287e934dd4ed05c1b6015ebdb79aaf44952eee2e6e773f80ee8428e7e",
+    "research/spill-c-20260919/raw/day8-cpu/pressure-tests.log": "c667f58ab4af55717cc8854d8ddbbd12ecd925054aecfa3f80d1db692d53e57f",
+    "research/spill-c-20260919/raw/day8-cpu/recheck-20260920T081953398038Z/tests.log": "713058c077db2635ffb5824944f0da003c39962a4c8a6726b6337a854e7bf63d",
+    "research/spill-c-20260919/raw/day8-cpu/recheck-20260920T082556808337Z/tests.log": "ce025b592f3bd54f0fb51e705217c810c9b99bf6d7fff12a2516dfa5dc97807a",
+    "research/spill-d-20260919/day9/probe-tests.log": "8be5a4a00437135c32ce8cc642e230b39b88641e9df6cfdb0daee9f663c618b2",
+    "research/spill-f-20260919/h2d-copies/cpu/unit-tests.log": "8be5a4a00437135c32ce8cc642e230b39b88641e9df6cfdb0daee9f663c618b2",
+    "research/spill-lead-20260919/integration-day10/cpu-battery-remerge/SUMMARY.txt": "0460ccd6444e66c115e2fb9c335148f95f27fbfc47950d49267e3be64778276a",
+    "research/spill-lead-20260919/integration-day10/cpu-battery-remerge/driver.log": "f84f881d71eae92edad893791e7801ba4494297a0eae99d9ed5996934ed28e4c",
+    "research/spill-lead-20260919/integration-day10/cpu-battery-remerge/test-tier-kv.log": "c3dc436cbb656843c630c88e41d078b1b185199527633043f2d7cfe0d3165edc",
+    "research/spill-lead-20260919/integration-day10/cpu-battery/SUMMARY.txt": "660822e08b24d34f3e224de9f8b06260a33a009dddd8a1f440cfbbb66b3cab16",
+    "research/spill-lead-20260919/integration-day10/cpu-battery/driver.log": "6d008c560ca3a20a62c9f4f016413f5ad91c86455179ed5a4c824144bb6ace05",
+    "research/spill-lead-20260919/integration-day10/cpu-battery/test-tier-kv.log": "7074dd9324856fd0fec335484d84eb22007cf397c14152a5cb9f8576a10b9a9f"
+  },
+  "raw": {
+    "raw/clippy.log.gz": {
+      "sha256": "bc93bc1f646b71262588f1351ad3ca090dcb90b77ec75c2c24eecb221cc57889",
+      "uncompressed_sha256": "d4c1c74a9a6dd37b8d37b305955cee99ace9e64a5f04ff9be1e624591416669d",
+      "uncompressed_bytes": 1030
+    },
+    "raw/compiler.log.gz": {
+      "sha256": "2460cf7bb06636779000f67daf2663e67577fefd8aa1d4b4cda14394c3343e6b",
+      "uncompressed_sha256": "e53f83335b8461b62964b6ba3b091a0d67ab0d7063292cecba128b75013efb77",
+      "uncompressed_bytes": 35234
+    },
+    "raw/first-parent-diff-check.log.gz": {
+      "sha256": "7ceb37a0ebaf970548147e550fd109f9d3f361c6477e7e55f13b1c95cbe11c34",
+      "uncompressed_sha256": "b319da7831b17129512100f5830805ce3b8120b7bd66fb90e8fc67ca7d6f0b8f",
+      "uncompressed_bytes": 11899
+    },
+    "raw/format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/linux-check.log.gz": {
+      "sha256": "5a5990b24bf17d9b6c857cdecef312771ecf2e5f8f0fc5a6a66ebc507f680936",
+      "uncompressed_sha256": "20af70acd12b3e24816f2e1a867eae885458cc841863c8747cca1bb324daba21",
+      "uncompressed_bytes": 1629
+    },
+    "raw/net-diff-check.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/repack-host.log.gz": {
+      "sha256": "69b284f501e352f9a5e1e98f9a2d1254661c8ec3613066d62a4b651e06970fbf",
+      "uncompressed_sha256": "170e60b43942efb8afe23813d2b4ef37dacb7bf6ae51b110636737a75e733cc1",
+      "uncompressed_bytes": 1780
+    },
+    "raw/runtime-host.log.gz": {
+      "sha256": "477e1fde9ae04a3df9f5cf45056e81ac84fa5d2678b42774573430094d60e3bd",
+      "uncompressed_sha256": "293fd888e063a37dfa5052c5796d60f870eccb7533fd751e91d2bd9e09409d54",
+      "uncompressed_bytes": 3116
+    }
+  }
+}

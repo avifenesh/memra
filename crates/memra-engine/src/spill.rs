@@ -16,7 +16,10 @@
 
 use crate::Engine;
 use crate::model::HostBuf;
-use memmap2::Mmap;
+use memra_gguf::{
+    bound_disk::ExpertDiskView,
+    source::{GgufSource, TensorSource},
+};
 use std::sync::Arc;
 
 const DEFAULT_PINNED_FRAC: f64 = 0.60;
@@ -100,99 +103,75 @@ pub fn disk_tier_enabled() -> bool {
     std::env::var("MEMRA_SPILL_DISK").is_ok()
 }
 
-/// Shared load-time spill context (SPILLING-PLAN §2 step 4). Built ONCE per model load when the
-/// disk tier is on, then handed by `&mut` to each `HostExps::load` so all layers/projections share
-/// ONE file mmap PER SHARD and draw down a single running pinned-RAM budget. Greedy in load order:
-/// pin until `pinned_remaining` is exhausted, then spill every later expert to `Mmap`.
+/// One load's shared pinned-RAM budget. Sources own the parsed shard mappings; each placement
+/// requests its exact tensor window through the source instead of holding whole-shard handles.
 pub struct SpillCtx {
-    /// One `MAP_SHARED` mmap per physical GGUF shard, shared (`Arc`) across every spilled expert
-    /// block that lives in that shard. Index = `TensorInfo::shard`. Single-file models have len 1.
-    /// PER-SHARD, not one map: a split model's `tensor_file_range` offsets are relative to the
-    /// OWNING shard's file, so pairing them with shard 0's mmap would read the wrong bytes (and
-    /// would index out of bounds for any shard larger than shard 0).
-    pub file_maps: Vec<Arc<Mmap>>,
-    /// The opened inodes backing `file_maps`, same indexing, retained for positioned expert reads.
-    pub files: Vec<Arc<std::fs::File>>,
-    /// Pinned-RAM budget still available (bytes); decremented as experts are pinned.
     pub pinned_remaining: usize,
-    /// Diagnostics: how many experts landed pinned vs. mmap'd, and total disk-tier bytes.
     pub n_pinned: usize,
     pub n_mmap: usize,
     pub mmap_bytes: usize,
 }
 
 impl SpillCtx {
-    /// Clone each parsed shard's opened inode, create a `MAP_SHARED` mmap per shard, and seed the
-    /// pinned budget from a live `MemBudget` probe.
-    /// The whole-map expert advice defaults to random (the historical behavior); setting
-    /// `MEMRA_MOE_MMAP_ADVICE=normal` restores ordinary Linux readahead. SPILLING-PLAN §1.
     pub fn open(
         g: &memra_gguf::GgufFile,
         budget: &MemBudget,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut files = Vec::with_capacity(g.n_shards());
-        let mut file_maps = Vec::with_capacity(g.n_shards());
-        for i in 0..g.n_shards() {
-            let file = g.shard_file(i).clone();
-            // MAP_SHARED, no MAP_POPULATE (memmap2's default Mmap::map): zero upfront copy,
-            // demand-fault. This tier maps whole GGUF SHARDS, so its map length is not expert
-            // bytes — populating one would also read trunk weights the loader has already copied
-            // to VRAM. `populate_expert_slab` is therefore applied only to the `.memra-repack`
-            // tiers, whose files hold exactly one projection's expert slab.
-            let map = unsafe { Mmap::map(file.as_ref())? };
-            let _ = memra_gguf::source::apply_expert_mmap_advice(&map);
-            files.push(file);
-            file_maps.push(Arc::new(map));
+        Self::from_source(&GgufSource(g), budget)
+    }
+    pub(crate) fn from_source(
+        src: &dyn TensorSource,
+        budget: &MemBudget,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        if src.gguf_tensor_metadata()?.is_none() {
+            return Err("GGUF spill context requires a GGUF source".into());
         }
-        Ok(SpillCtx {
-            file_maps,
-            files,
+        Ok(Self {
             pinned_remaining: budget.free_pinnable_ram,
             n_pinned: 0,
             n_mmap: 0,
             mmap_bytes: 0,
         })
     }
+    pub(crate) fn tensor_view(
+        &self,
+        src: &dyn TensorSource,
+        name: &str,
+    ) -> Result<ExpertDiskView, Box<dyn std::error::Error>> {
+        let view = src
+            .try_find_gguf_disk(name)?
+            .ok_or_else(|| format!("missing GGUF spill extent {name}"))?;
+        // Same configured random/normal advice as the historical whole-shard spill maps.
+        // The owning source retains the parsed map; no alternate pathname or mapping is opened.
+        view.advise_expert_access();
+        Ok(view)
+    }
 }
 
-/// Build one expert's `HostBuf`, choosing its tier under the running budget (SPILLING-PLAN §1.1):
-/// pin (Tier 1) while `pinned_remaining` covers the block, else `Mmap` it (Tier 2). `file_off` is
-/// this expert's byte offset within ITS OWN SHARD's file
-/// (= `shards[t.shard].data_start + tensor.offset + e*stride`), and `shard` selects the matching
-/// mmap. Returns the chosen `HostBuf`; the bytes are bit-identical whichever tier is picked.
+/// Pin while the same running budget covers the expert; otherwise retain the exact disk window.
+/// Placement never widens a tensor window and both tiers copy/read the same encoded bytes.
 pub fn place_expert(
     ctx: &mut SpillCtx,
     e: &Engine,
-    raw: &[u8],
-    file_off: usize,
-    shard: usize,
+    view: ExpertDiskView,
 ) -> Result<HostBuf, Box<dyn std::error::Error>> {
-    let len = raw.len();
+    let len = view.len();
     if ctx.pinned_remaining >= len {
-        // Tier 1: pinned host memory — true async DMA at full PCIe (matches the no-spill path).
+        let mut p = unsafe { e.ctx().alloc_pinned::<u8>(len)? };
+        p.as_mut_slice()?.copy_from_slice(view.bytes());
+        let base = p.as_ptr()?;
         ctx.pinned_remaining -= len;
         ctx.n_pinned += 1;
-        let mut p = unsafe { e.ctx().alloc_pinned::<u8>(len)? };
-        {
-            let dst = p.as_mut_slice()?;
-            dst.copy_from_slice(raw);
-        }
-        let base = p.as_ptr()?;
         Ok(HostBuf::Pinned {
-            slice: std::sync::Arc::new(p),
+            slice: Arc::new(p),
             base,
             len,
         })
     } else {
-        // Tier 2: mmap the GGUF region — demand-faulted from NVMe on first H2D. Zero RAM cost.
+        let host = HostBuf::from_disk(view)?;
         ctx.n_mmap += 1;
         ctx.mmap_bytes += len;
-        Ok(HostBuf::Mmap {
-            map: ctx.file_maps[shard].clone(),
-            file: ctx.files[shard].clone(),
-            off: file_off,
-            len,
-        })
+        Ok(host)
     }
 }
 
@@ -232,7 +211,7 @@ mod tests {
         DEFAULT_PINNED_FRAC, MemBudget, SpillCtx, configured_pinned_frac, parse_pinned_frac,
     };
     use crate::spill_pread::config_fallbacks;
-    use memra_gguf::{GGUF_MAGIC, GgufFile};
+    use memra_gguf::{GgufFile, source::GgufSource};
 
     #[test]
     fn pinned_frac_accepts_only_finite_values_in_range() {
@@ -285,30 +264,25 @@ mod tests {
     fn spill_ctx_keeps_parsed_gguf_inode_after_path_replacement() {
         let path =
             std::env::temp_dir().join(format!("memra-spill-inode-{}.gguf", std::process::id()));
-        let mut original = Vec::new();
-        original.extend_from_slice(&GGUF_MAGIC.to_le_bytes());
-        original.extend_from_slice(&3u32.to_le_bytes());
-        original.extend_from_slice(&0i64.to_le_bytes());
-        original.extend_from_slice(&0i64.to_le_bytes());
-        original.resize(32, 0);
-        std::fs::write(&path, &original).unwrap();
-
+        memra_gguf::micro_gguf::write_glm_dsa_micro(&path, 541).unwrap();
+        let original = std::fs::read(&path).unwrap();
         let gguf = GgufFile::open(&path).unwrap();
+        let expected = gguf
+            .tensor_data(gguf.find("token_embd.weight").unwrap())
+            .to_vec();
         std::fs::remove_file(&path).unwrap();
         std::fs::write(&path, vec![0xA5u8; original.len()]).unwrap();
-
         let budget = MemBudget {
             free_vram: 0,
             free_pinnable_ram: 0,
         };
         let spill = SpillCtx::open(&gguf, &budget).unwrap();
-        assert_eq!(
-            spill.files.len(),
-            1,
-            "single-file GGUF must yield exactly one shard map"
-        );
-        assert!(std::sync::Arc::ptr_eq(&spill.files[0], gguf.opened_file()));
-        assert_eq!(&spill.file_maps[0][..], original.as_slice());
+        let view = spill
+            .tensor_view(&GgufSource(&gguf), "token_embd.weight")
+            .unwrap();
+        drop(gguf);
+        assert_eq!(view.bytes(), expected);
+        assert!(view.subrange(0..expected.len() + 1).is_err());
         assert_eq!(std::fs::read(&path).unwrap(), vec![0xA5u8; original.len()]);
 
         std::fs::remove_file(path).ok();

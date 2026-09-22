@@ -2,9 +2,12 @@
 //! layers + SwiGLU FFN. Loads weights, runs the forward, dual cache. Builds on the validated
 //! conv1d + gdn_scan kernels (M2/M3) and the dense full-attn path (M0).
 
+pub(crate) mod root_trim;
+
 use crate::Engine;
 use crate::model::{EmbedHost, GpuTensor, HostExps};
 use cudarc::driver::CudaSlice;
+use memra_gguf::bound_source::head_trim::{HeadChoice, PreparedHeadTrim, TrimPolicy};
 use memra_gguf::config::{ModelConfig, SwigluClamp};
 use memra_gguf::model_plan::{AttentionPlan, MlpPlan, TensorPresence};
 use memra_gguf::source::{GgufSource, TensorSource};
@@ -241,17 +244,17 @@ impl ResidentPlan {
         primary_device: usize,
         layer_devices: Vec<usize>,
         pp: bool,
-    ) -> Self {
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut layer_counts = HashMap::new();
         for &device in &layer_devices {
             *layer_counts.entry(device).or_default() += 1;
         }
-        let (exact_expert_bytes, trunk_bytes) = match src.gguf() {
-            Some(g) => {
+        let (exact_expert_bytes, trunk_bytes) = match src.gguf_tensor_metadata()? {
+            Some(metadata) => {
                 let bytes = residency_bytes_by_device(
-                    g.tensors
+                    metadata
                         .iter()
-                        .map(|t| (t.name.as_str(), t.n_bytes as usize)),
+                        .map(|t| (t.name.as_str(), t.physical_bytes as usize)),
                     &layer_devices,
                     primary_device,
                 );
@@ -263,7 +266,7 @@ impl ResidentPlan {
             }
             None => (None, 0),
         };
-        Self {
+        Ok(Self {
             primary_device,
             layer_devices,
             layer_counts,
@@ -271,10 +274,14 @@ impl ResidentPlan {
             trunk_bytes,
             decisions: HashMap::new(),
             pp,
-        }
+        })
     }
 
-    pub(crate) fn unsharded(e: &Engine, src: &dyn TensorSource, cfg: &ModelConfig) -> Self {
+    pub(crate) fn unsharded(
+        e: &Engine,
+        src: &dyn TensorSource,
+        cfg: &ModelConfig,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let device = e.ctx().ordinal();
         Self::from_layout(src, device, vec![device; cfg.n_layer as usize], false)
     }
@@ -287,13 +294,13 @@ impl ResidentPlan {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let primary = e.ctx().ordinal();
         let Some(_fence) = crate::pp::pp_cuts(n_trunk) else {
-            return Ok(Self::unsharded(e, src, cfg));
+            return Self::unsharded(e, src, cfg);
         };
         let mut layer_devices = vec![primary; cfg.n_layer as usize];
         for (il, device) in layer_devices.iter_mut().take(n_trunk).enumerate() {
             *device = crate::pp::layer_engine(e, n_trunk, il)?.ctx().ordinal();
         }
-        Ok(Self::from_layout(src, primary, layer_devices, true))
+        Self::from_layout(src, primary, layer_devices, true)
     }
 
     /// Distributed expert layers no longer consume the owning stage's local expert slab. Remove
@@ -463,7 +470,7 @@ pub(crate) fn load_ffn(
     cfg: &ModelConfig,
     mlp: &MlpPlan,
     il: u32,
-    spill: Option<(&GgufFile, &mut crate::spill::SpillCtx)>,
+    spill: Option<&mut crate::spill::SpillCtx>,
     resident: &mut ResidentPlan,
     step_runtimes: &mut StepParallelRuntimeRegistry,
 ) -> Result<Ffn, Box<dyn std::error::Error>> {
@@ -479,9 +486,9 @@ pub(crate) fn load_ffn(
     // does ship the dense projection loads DENSE, exactly as it did before the plan-driven
     // loader (the old load path keyed this on tensor presence, not hparams).
     let artifact_dense = matches!(mlp, MlpPlan::Moe(_))
-        && !src.has(&p("ffn_gate_exps.weight"))
-        && !src.has(&p("ffn_gate_up_exps.weight"))
-        && src.has(&p("ffn_gate.weight"));
+        && !src.try_has(&p("ffn_gate_exps.weight"))?
+        && !src.try_has(&p("ffn_gate_up_exps.weight"))?
+        && src.try_has(&p("ffn_gate.weight"))?;
     Ok(if artifact_dense {
         Ffn::Dense {
             ffn_gate: load_t(e, src, &p("ffn_gate.weight"))?,
@@ -492,20 +499,20 @@ pub(crate) fn load_ffn(
         }
     } else if let MlpPlan::Moe(moe) = mlp {
         let n_expert = moe.expert_count as usize;
-        // Expert loader. `spill` carries an optional (GgufFile, SpillCtx) — only the GGUF on-disk
-        // path can tier (it needs the file mmap); safetensors always gathers/stacks all-host.
+        // Explicit GGUF spill uses authorized source windows under the shared pinned budget.
+        // Other formats retain their own stacked/gather storage policy.
         //  - spill Some -> per-expert tier split (hottest pinned, rest mmap'd from the GGUF).
         //  - GGUF 3D stacked name resolves -> load_stacked_from_source (all-host).
         //  - else (safetensors) -> gather N separate 2D expert tensors.
         let (gate_exps, up_exps, down_exps) = match spill {
-            Some((g, ctx)) => (
-                HostExps::load_tiered(e, g, &p("ffn_gate_exps.weight"), ctx)?,
-                HostExps::load_tiered(e, g, &p("ffn_up_exps.weight"), ctx)?,
-                HostExps::load_tiered(e, g, &p("ffn_down_exps.weight"), ctx)?,
+            Some(ctx) => (
+                HostExps::load_tiered_from_source(e, src, &p("ffn_gate_exps.weight"), ctx)?,
+                HostExps::load_tiered_from_source(e, src, &p("ffn_up_exps.weight"), ctx)?,
+                HostExps::load_tiered_from_source(e, src, &p("ffn_down_exps.weight"), ctx)?,
             ),
             None => {
                 let exps = |e: &Engine, n: &str| -> Result<HostExps, Box<dyn std::error::Error>> {
-                    if src.has(n) {
+                    if src.try_has(n)? {
                         HostExps::load_stacked_from_source(e, src, n)
                     } else {
                         HostExps::load_from_source(e, src, n, n_expert)
@@ -513,7 +520,7 @@ pub(crate) fn load_ffn(
                 };
                 // gemma4: gate+up ship FUSED (ffn_gate_up_exps, gate rows first) — split at load.
                 let fused = p("ffn_gate_up_exps.weight");
-                if !src.has(&p("ffn_gate_exps.weight")) && src.has(&fused) {
+                if !src.try_has(&p("ffn_gate_exps.weight"))? && src.try_has(&fused)? {
                     let ff = moe.expert_intermediate_size as usize;
                     (
                         HostExps::load_stacked_split_from_source(e, src, &fused, 0, ff)?,
@@ -561,7 +568,7 @@ pub(crate) fn load_ffn(
         // e_score_correction_bias (sigmoid routing): retain the host oracle row and upload a
         // zero-filled device row when absent so the token loop never allocates or transfers it.
         let exp_probs_b = src
-            .find(&p("exp_probs_b.bias"))
+            .try_find(&p("exp_probs_b.bias"))?
             .map(|v| memra_gguf::dequant::dequantize(v.ggml_type, &v.bytes, n_expert));
         // A plan that DECLARES the selection bias may not fall back to zeros. The zero row is
         // for routers that have no bias at all; substituting it for a bias the plan declares
@@ -1276,7 +1283,7 @@ fn nvfp4_native_expert_bank<'a>(
     proj: &str,
 ) -> Result<memra_gguf::source::Nvfp4StackedNative<'a>, Box<dyn std::error::Error>> {
     let name = format!("blk.{layer}.ffn_{proj}_exps.weight");
-    src.find_nvfp4_stacked_native(&name)
+    src.try_find_nvfp4_stacked_native(&name)?
         .ok_or_else(|| format!("NVFP4 expert backend is missing native bank {name}").into())
 }
 
@@ -1601,7 +1608,7 @@ fn upload_step_bf16_column(
     f32_mirror: bool,
 ) -> Result<crate::tp::ResidentBf16ColumnParallel, Box<dyn std::error::Error>> {
     let tensor = src
-        .find(name)
+        .try_find(name)?
         .ok_or_else(|| format!("Step TP projection is missing {name}"))?;
     if tensor.ggml_type != GgmlType::BF16 {
         return Err(format!(
@@ -1646,7 +1653,7 @@ fn upload_step_bf16_row(
     f32_mirror: bool,
 ) -> Result<crate::tp::ResidentStepBf16RowParallel, Box<dyn std::error::Error>> {
     let tensor = src
-        .find(name)
+        .try_find(name)?
         .ok_or_else(|| format!("Step TP projection is missing {name}"))?;
     if tensor.ggml_type != GgmlType::BF16 {
         return Err(format!(
@@ -1689,7 +1696,7 @@ fn upload_step_tp_f32_copies(
     expected: usize,
 ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
     let tensor = src
-        .find(name)
+        .try_find(name)?
         .ok_or_else(|| format!("Step TP attention is missing {name}"))?;
     let values = memra_gguf::dequant::dequantize(
         tensor.ggml_type,
@@ -1727,7 +1734,7 @@ fn upload_step_tp_f32_row_shards(
     cols: usize,
 ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
     let tensor = src
-        .find(name)
+        .try_find(name)?
         .ok_or_else(|| format!("Step TP attention is missing {name}"))?;
     let values = memra_gguf::dequant::dequantize(
         tensor.ggml_type,
@@ -1766,7 +1773,7 @@ fn upload_step_tp_bf16_row_shards(
     cols: usize,
 ) -> Result<Vec<CudaSlice<u8>>, Box<dyn std::error::Error>> {
     let tensor = src
-        .find(name)
+        .try_find(name)?
         .ok_or_else(|| format!("Step TP attention is missing {name}"))?;
     if tensor.ggml_type != memra_gguf::GgmlType::BF16 || tensor.bytes.len() != rows * cols * 2 {
         return Err(format!(
@@ -1926,8 +1933,8 @@ fn build_step_tp_qkv(
         };
         // Gate row shards only load when the fused door will consume them: they duplicate
         // (rank-locally) a weight the owning-stage fallback also holds.
-        let gate_fused =
-            crate::tp::step_tp_qkv_fused_enabled()? && src.find(&p("attn_gate.weight")).is_some();
+        let gate_fused = crate::tp::step_tp_qkv_fused_enabled()?
+            && src.try_find(&p("attn_gate.weight"))?.is_some();
         let gate_shards = if gate_fused && f32_mirror {
             Some(upload_step_tp_f32_row_shards(
                 &runtime,
@@ -2242,7 +2249,7 @@ pub struct StepTpQkv {
 pub struct StepTpAttention {
     pub q_norm: Vec<CudaSlice<f32>>,
     pub k_norm: Vec<CudaSlice<f32>>,
-    pub decode_input: Option<std::sync::Mutex<crate::tp::ResidentReplicatedDeviceRows>>,
+    pub(crate) decode_input: Option<std::sync::Mutex<crate::tp::ResidentReplicatedDeviceRows>>,
     /// Per-rank attn_gate row shards (rank-local heads x hidden, f32) — the fused QKV+gate
     /// kernel's fourth weight. None when the layer has no separate head gate.
     pub gate_shards: Option<Vec<CudaSlice<f32>>>,
@@ -2569,7 +2576,7 @@ impl MlaAttnLayer {
         // why the load must stop.
         let need = |suffix: &str| -> Result<GpuTensor, Box<dyn std::error::Error>> {
             let name = format!("blk.{il}.{suffix}");
-            if !src.has(&name) {
+            if !src.try_has(&name)? {
                 return Err(format!(
                     "blk.{il}: the layer's ModelPlan declares a DSA k-pool indexer but the \
                      checkpoint has no `{name}`. This layer MUST NOT fall back to dense \
@@ -2798,7 +2805,7 @@ pub struct StepEpExps {
     pub nvfp4_device_routes: bool,
     /// Persistent one-token grouped projection/combine state for eager decode. Opt-in prefill
     /// uses the model-scoped executor instead of multiplying capacity workspaces per layer.
-    pub grouped_decode: Option<std::sync::Mutex<StepEpGroupedDecode>>,
+    pub(crate) grouped_decode: Option<std::sync::Mutex<StepEpGroupedDecode>>,
 }
 
 pub struct StepEpGroupedDecode {
@@ -3021,7 +3028,7 @@ pub struct Gemma4E4bLayer {
 pub struct Gemma4E4bModel {
     /// device copy of the per-layer token table, uploaded on first use (the 26B embd_gpu
     /// pattern — keeps the ~2.3GB off load-critical paths that never decode).
-    pub tok_tbl_gpu: std::sync::OnceLock<CudaSlice<u8>>,
+    pub(crate) tok_tbl_gpu: std::sync::OnceLock<CudaSlice<u8>>,
     pub tok_embd_bytes: Vec<u8>,
     pub tok_embd_qt: i32,
     pub tok_embd_row_bytes: usize,
@@ -3069,7 +3076,7 @@ fn load_mtp_head_maybe_nvfp4(
     } {
         return load_opt(e, src, name);
     }
-    let Some(v) = src.find(name) else {
+    let Some(v) = src.try_find(name)? else {
         return Ok(None);
     };
     if !matches!(v.ggml_type, GgmlType::BF16) || v.ne[0] % 64 != 0 {
@@ -3137,22 +3144,7 @@ pub(crate) fn sha256_file_hex(
 /// token and a sign the file was hand-edited). Pure: CPU-testable, red arms in
 /// `frspec_ranks_tests`.
 pub fn frspec_parse_ranks_txt_strict(text: &str, what: &str) -> Result<Vec<u32>, String> {
-    let mut out: Vec<u32> = Vec::new();
-    for (lineno, raw) in text.lines().enumerate() {
-        let line = raw.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let id = line.parse::<u32>().map_err(|_| {
-            format!(
-                "{what}: line {} is not a token id ({line:?}); a ranks .txt is one integer id \
-                 per line in rank order",
-                lineno + 1
-            )
-        })?;
-        out.push(id);
-    }
-    Ok(out)
+    memra_gguf::bound_source::ranks::parse_text_ranks(text, what)
 }
 
 /// Boot-time admission of a ranks list against the head it will index (lane/frspec-dflash2-
@@ -3161,35 +3153,7 @@ pub fn frspec_parse_ranks_txt_strict(text: &str, what: &str) -> Result<Vec<u32>,
 /// wrong-model file by construction). Refuses by name; the caller prints the file sha16 in
 /// its engagement line so the refused or admitted bytes are identifiable. Pure.
 pub fn frspec_validate_ranks(d2t: &[u32], n_vocab: usize, what: &str) -> Result<(), String> {
-    if d2t.is_empty() {
-        return Err(format!(
-            "{what}: the ranks artifact yields an EMPTY id list"
-        ));
-    }
-    if d2t.len() > n_vocab {
-        return Err(format!(
-            "{what}: {} ranks for a {n_vocab}-row head: a ranks list wider than the vocabulary \
-             was minted for a different model",
-            d2t.len()
-        ));
-    }
-    if let Some(&bad) = d2t.iter().find(|&&t| t as usize >= n_vocab) {
-        return Err(format!(
-            "{what}: token id {bad} >= head rows {n_vocab}: the ranks artifact was minted for a \
-             different vocabulary (wrong-model file refused at boot)"
-        ));
-    }
-    let mut seen = vec![false; n_vocab];
-    for &t in d2t {
-        if seen[t as usize] {
-            return Err(format!(
-                "{what}: token id {t} appears more than once: a ranks list is a set of distinct \
-                 ids in rank order"
-            ));
-        }
-        seen[t as usize] = true;
-    }
-    Ok(())
+    memra_gguf::bound_source::ranks::validate_ranks(d2t, n_vocab, what)
 }
 
 /// The row gather every FR-Spec trim arm runs, as PURE host bytes: `rows[t*row_bytes..]` for
@@ -3197,12 +3161,7 @@ pub fn frspec_validate_ranks(d2t: &[u32], n_vocab: usize, what: &str) -> Result<
 /// ("slab row r == head row d2t[r]") is a CPU-testable statement about this function, and
 /// the GPU gate only has to prove the upload preserved it.
 pub fn frspec_gather_rows(rows: &[u8], row_bytes: usize, d2t: &[u32]) -> Vec<u8> {
-    let mut gathered = Vec::with_capacity(d2t.len() * row_bytes);
-    for &t in d2t {
-        let off = t as usize * row_bytes;
-        gathered.extend_from_slice(&rows[off..off + row_bytes]);
-    }
-    gathered
+    crate::trim_ranks::gather_rows(rows, row_bytes, d2t)
 }
 
 #[cfg(test)]
@@ -3280,109 +3239,21 @@ pub struct DflashTrimHead {
     pub src_sha16: String,
 }
 
-/// Read a MEMRA_FRSPEC_TRIM d2t rank artifact (already `resolve_arg`-resolved): either the d2t
-/// GGUF container or a plain `.txt` (one token id per line, rank order — frspec-owngen writes
-/// both). Extracted verbatim from the trim arm of `load_from_source_impl` for the
-/// MEMRA_MTP_SKIP stub path, which needs the same list without a loaded MtpHead.
-/// The `.txt` arm is STRICT for every consumer (lane/frspec-dflash2-20260902, revuto finding
-/// on the re-land): a non-blank non-numeric line refuses by name instead of being dropped,
-/// so no trim arm can boot a silently shorter list. Every house writer emits exactly one
-/// integer per line (`memra_gguf::d2t::write_d2t`), so a refusal here is a broken file.
-fn frspec_read_d2t(path: &str) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
-    Ok(if path.ends_with(".txt") {
-        let text = std::fs::read_to_string(path)?;
-        frspec_parse_ranks_txt_strict(&text, &format!("MEMRA_FRSPEC_TRIM={path}"))?
+fn frspec_trim_policy() -> TrimPolicy {
+    if std::env::var("MEMRA_FRSPEC_TRIM_NVFP4").as_deref() == Ok("1") {
+        TrimPolicy::Nvfp4ForEligibleBf16
     } else {
-        let tg = GgufFile::open(path)?;
-        let d2t_t = tg
-            .find("d2t")
-            .expect("MEMRA_FRSPEC_TRIM file has no d2t tensor");
-        let d2t_bytes = tg.tensor_data(d2t_t);
-        match d2t_t.ggml_type {
-            GgmlType::I32 => d2t_bytes
-                .chunks_exact(4)
-                .map(|c| i32::from_le_bytes(c.try_into().unwrap()) as u32)
-                .collect(),
-            GgmlType::I64 => d2t_bytes
-                .chunks_exact(8)
-                .map(|c| i64::from_le_bytes(c.try_into().unwrap()) as u32)
-                .collect(),
-            other => panic!("d2t must be I32/I64, got {other:?}"),
-        }
-    })
-}
-
-/// Gather the FR-Spec trimmed head rows from a full head view and upload them. A byte-level row
-/// gather (quantized rows are independent — zero requant) unless `want_nvfp4_env` selects the
-/// MEMRA_FRSPEC_TRIM_NVFP4 re-encode (BF16 heads with ne0 % 64 == 0 only, same eligibility as
-/// the in-place trim arm). Returns the tensor plus `Some((nvfp4_bytes, gathered_bytes))` when
-/// the NVFP4 re-encode ran (the caller's receipt line quotes both sizes). Extracted verbatim
-/// from the trim arm of `load_from_source_impl` so the MEMRA_MTP_SKIP stub path shares one
-/// gather program with the MtpHead trim.
-#[allow(clippy::type_complexity)] // allow: one-shot composite return; naming it would hide the (tensor, nvfp4-size receipt) shape that matters at the call site
-fn frspec_gather_trimmed_head(
-    e: &Engine,
-    v: &memra_gguf::source::TensorView<'_>,
-    d2t: &[u32],
-    want_nvfp4_env: bool,
-    macro_scale: f32,
-) -> Result<(GpuTensor, Option<(usize, usize)>), Box<dyn std::error::Error>> {
-    let out_f = v.ne[1] as usize;
-    let row_bytes = v.bytes.len() / out_f;
-    assert!(
-        d2t.iter().all(|&t| (t as usize) < out_f),
-        "d2t token id >= lm_head rows {out_f}"
-    );
-    let gathered = frspec_gather_rows(&v.bytes, row_bytes, d2t);
-    let want_nvfp4 =
-        want_nvfp4_env && matches!(v.ggml_type, GgmlType::BF16) && v.ne[0].is_multiple_of(64);
-    if want_nvfp4 {
-        let in_f = v.ne[0] as usize;
-        let vals: Vec<f32> = gathered
-            .chunks_exact(2)
-            .map(|c| f32::from_bits((u16::from_le_bytes([c[0], c[1]]) as u32) << 16))
-            .collect();
-        debug_assert_eq!(vals.len(), d2t.len() * in_f);
-        let blocks = memra_gguf::nvfp4_repack::f32_to_nvfp4(&vals);
-        let sizes = (blocks.len(), gathered.len());
-        let trimmed = GpuTensor::from_quant_bytes(
-            e,
-            &blocks,
-            GgmlType::NVFP4,
-            v.ne[0],
-            d2t.len() as u64,
-            1.0,
-        )?;
-        Ok((trimmed, Some(sizes)))
-    } else {
-        let trimmed = match v.ggml_type {
-            GgmlType::BF16 => GpuTensor::FloatBf16 {
-                data: e.htod_bytes(&gathered)?,
-                ne: vec![v.ne[0], d2t.len() as u64],
-            },
-            GgmlType::F32 => GpuTensor::Float {
-                data: e.htod(
-                    &gathered
-                        .chunks_exact(4)
-                        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-                        .collect::<Vec<f32>>(),
-                )?,
-                ne: vec![v.ne[0], d2t.len() as u64],
-            },
-            _ => GpuTensor::from_quant_bytes(
-                e,
-                &gathered,
-                v.ggml_type,
-                v.ne[0],
-                d2t.len() as u64,
-                macro_scale,
-            )?,
-        };
-        Ok((trimmed, None))
+        TrimPolicy::Preserve
     }
 }
 
 pub struct MtpHead {
+    /// Retained opened draft identity for future target/draft composition. This does not admit
+    /// a rewrite: the existing composite-identity refusal remains authoritative.
+    external_source_identity: Option<memra_gguf::bound_source::BoundArtifactIdentity>,
+    // Source-owned block origin and a temporary private reservation during strict trim load.
+    embedded_block_index: Option<u32>,
+    pending_trim_slot: Option<root_trim::SlotReservation>,
     pub enorm: GpuTensor, // blk.N.nextn.enorm   — RMSNorm of the next-token embedding
     pub hnorm: GpuTensor, // blk.N.nextn.hnorm   — RMSNorm of the trunk hidden
     pub eh_proj: GpuTensor, // blk.N.nextn.eh_proj [2*n_embd, n_embd]: [e_norm; h_norm] -> n_embd
@@ -3447,7 +3318,7 @@ pub struct Step35MtpGeom {
 impl Step35MtpGeom {
     /// Resolve a tuned MTP attention geometry from the canonical block that owns it.
     pub fn from_plan(layer: &memra_gguf::model_plan::LayerPlan) -> Result<Self, String> {
-        use memra_gguf::model_plan::{ActivationPlan, AttentionPlan};
+        use memra_gguf::model_plan::AttentionPlan;
 
         let (attention, window) = match &layer.attention {
             AttentionPlan::Full(attention) => (attention, None),
@@ -3469,10 +3340,7 @@ impl Step35MtpGeom {
             MlpPlan::Dense(dense) => &dense.activation,
             MlpPlan::Moe(moe) => &moe.activation,
         };
-        let clamp_shexp = match activation {
-            ActivationPlan::SwiGluClamped { limit } if *limit > 0.0 => Some(*limit),
-            _ => None,
-        };
+        let clamp_shexp = memra_gguf::bound_source::consumer::step_mtp_clamp(activation);
         Ok(Step35MtpGeom {
             il: layer.index,
             n_head: attention.query_heads as usize,
@@ -3502,22 +3370,85 @@ pub struct DraftGeom {
 /// device and a multi-GB file, while the failure this guards is invisible to every exactness gate
 /// (a wrong head still produces CORRECT output — the verify arbitrates — it just accepts nothing).
 /// `has` is the tensor-presence predicate (`src.has`).
-pub fn draft_head_tensor(has: impl Fn(&str) -> bool, n: u32) -> String {
+pub fn try_draft_head_tensor(
+    has: impl Fn(&str) -> Result<bool, String>,
+    n: u32,
+) -> Result<String, String> {
     let own = format!("blk.{n}.nextn.shared_head_head.weight");
-    if has(&own) {
-        return own;
+    if has(&own)? {
+        return Ok(own);
     }
     // Legacy name kept as a probe so anything that ever matched it still does; no shipped
     // artifact or upstream mapping uses it (see the `load_draft` note).
     let legacy = format!("blk.{n}.nextn.shared_head.weight");
-    if has(&legacy) {
-        return legacy;
+    if has(&legacy)? {
+        return Ok(legacy);
     }
     // FR-Spec / tied-head drafts: the file-level head IS the draft head.
-    "output.weight".to_string()
+    Ok("output.weight".to_string())
+}
+
+pub fn draft_head_tensor(has: impl Fn(&str) -> bool, n: u32) -> String {
+    try_draft_head_tensor(|name| Ok(has(name)), n).unwrap()
 }
 
 impl MtpHead {
+    /// Opt-in paired source receipt; shared rewrite admission still refuses external drafts.
+    pub fn load_paired_draft(
+        e: &Engine,
+        target: &dyn TensorSource,
+        draft: &GgufFile,
+    ) -> Result<
+        (
+            Self,
+            memra_gguf::bound_source::draft_pair::DraftSourcePairIdentity,
+        ),
+        Box<dyn std::error::Error>,
+    > {
+        let target = memra_gguf::bound_source::draft_pair::PreparedDraftTarget::bind(target)?;
+        let (loaded, identity) = target.with_external(draft, |prepared, source| {
+            Self::load_prepared_draft(e, source, prepared, target.config())
+        })?;
+        Ok((loaded?, identity))
+    }
+
+    /// Ordered-component counterpart of load_paired_draft, with the same source-only scope.
+    pub fn load_paired_composite_draft(
+        e: &Engine,
+        target: &dyn TensorSource,
+        draft: &memra_gguf::bound_source::draft::composite::CompositeExternalDraftInput,
+    ) -> Result<
+        (
+            Self,
+            memra_gguf::bound_source::draft_pair::DraftSourcePairIdentity,
+        ),
+        Box<dyn std::error::Error>,
+    > {
+        let target = memra_gguf::bound_source::draft_pair::PreparedDraftTarget::bind(target)?;
+        let (loaded, identity) = target.with_composite_external(draft, |prepared, source| {
+            Self::load_prepared_draft(e, source, prepared, target.config())
+        })?;
+        Ok((loaded?, identity))
+    }
+
+    /// Typed composite intake; the existing prepared consumer retains the complete aggregate
+    /// source identity. This does not install paired rewrite or speculative admission.
+    pub fn load_composite_draft(
+        e: &Engine,
+        input: &memra_gguf::bound_source::draft::composite::CompositeExternalDraftInput,
+        main_cfg: &ModelConfig,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        input.with_runtime(main_cfg, |prepared, source| {
+            Self::load_prepared_draft(e, source, prepared, main_cfg)
+        })?
+    }
+
+    pub fn external_source_identity(
+        &self,
+    ) -> Option<&memra_gguf::bound_source::BoundArtifactIdentity> {
+        self.external_source_identity.as_ref()
+    }
+
     /// Load an MTP/NextN head from a STANDALONE draft GGUF (MEMRA_MTP_DRAFT override). The draft
     /// file carries ONLY the NextN block (blk.N.nextn.* glue + attn/ffn) plus its own lm_head
     /// (`output.weight`) — which for an FR-Spec draft is TRIMMED to the top-frequency rows, with
@@ -3529,44 +3460,29 @@ impl MtpHead {
         g: &GgufFile,
         main_cfg: &ModelConfig,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let src = GgufSource(g);
-        let dcfg = src.try_config().map_err(std::io::Error::other)?;
-        let draft_plan = match memra_gguf::model_packs::for_config(&dcfg) {
-            Some(pack) => pack.compile_plan(&dcfg)?,
-            None => memra_gguf::model_plan::ModelPlan::compile(&dcfg)?,
-        };
-        let main_plan = match memra_gguf::model_packs::for_config(main_cfg) {
-            Some(pack) => pack.compile_plan(main_cfg)?,
-            None => memra_gguf::model_plan::ModelPlan::compile(main_cfg)?,
-        };
-        // NextN block index INSIDE THE DRAFT FILE (its block_count includes the trunk numbering).
-        // Graceful error, not assert: the server's `+draft` attach path surfaces this to the
-        // user (a gemma-assistant draft or any non-NextN GGUF lands here; a panic killed the
-        // whole worker — serve-smoke find, 2026-07-30).
-        if dcfg.nextn_predict_layers == 0 {
-            return Err(format!(
-                "draft GGUF has no nextn_predict_layers (arch {:?}) — not a NextN/MTP regime \
-                 draft; gemma assistant drafters attach via MEMRA_DRAFT, not '+draft'",
-                g.arch()
-            )
-            .into());
-        }
-        let n = dcfg.n_layer - dcfg.nextn_predict_layers;
-        let draft_block = draft_plan
-            .mtp_blocks
-            .iter()
-            .find(|block| block.layer.index == n)
-            .ok_or_else(|| format!("draft ModelPlan has no MTP block {n}"))?;
-        let p = |s: &str| format!("blk.{n}.{s}");
+        let source = GgufSource(g);
+        let prepared = memra_gguf::bound_source::draft::PreparedExternalDraftSource::compile(
+            &source, main_cfg,
+        )?;
+        prepared.with_runtime(|src| Self::load_prepared_draft(e, src, &prepared, main_cfg))?
+    }
 
-        // Distilled student (narrow block + out_up) vs natural NextN clone. The interface dims
-        // (n_embd in/out, head_dim for the shared rope kernel) must match the main model; a
-        // student may shrink the inner width and head counts.
-        let student = src.has(&p("nextn.out_up.weight"));
-        assert_eq!(dcfg.n_embd, main_cfg.n_embd, "draft n_embd != model n_embd");
-        assert_eq!(
-            dcfg.head_dim_k, main_cfg.head_dim_k,
-            "draft head_dim != model head_dim"
+    fn load_prepared_draft(
+        e: &Engine,
+        src: &dyn TensorSource,
+        prepared: &memra_gguf::bound_source::draft::PreparedExternalDraftSource<'_>,
+        main_cfg: &ModelConfig,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let dcfg = prepared.config();
+        let external_source_identity = prepared.artifact_identity()?;
+        let draft_plan = prepared.declared_plan();
+        let main_plan = memra_gguf::model_packs::compile_for_load(main_cfg)?;
+        let draft_block = &prepared.blocks()[0].layer;
+        let n = draft_block.layer.index;
+        let p = |s: &str| format!("blk.{n}.{s}");
+        let student = matches!(
+            prepared.blocks()[0].geometry,
+            memra_gguf::bound_source::draft::DraftGeometry::Student { .. }
         );
         // step35: geometry is PER-LAYER, so "same shape as the trunk" is the wrong question — the
         // draft block at il=45 is an SWA-type block (96 q heads, 128 rotary dims, rope base 1e4)
@@ -3576,20 +3492,21 @@ impl MtpHead {
         // that must still agree with the trunk are the INTERFACE ones (n_embd, head_dim, KV width).
         let main_sliding_gated = crate::plan_backend::decode_batch_program(&main_plan)
             == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe;
-        let draft_sliding_gated = crate::plan_backend::decode_batch_program(&draft_plan)
+        let draft_sliding_gated = crate::plan_backend::decode_batch_program(draft_plan)
             == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe;
         let step35 = match (main_sliding_gated, draft_sliding_gated) {
             (true, true) => {
                 let g = Step35MtpGeom::from_plan(&draft_block.layer)?;
                 // ne is inner-fastest: ne[0] = in_features, ne[1] = out_features for a [in, out] 2D.
-                let out_f = |t: &str| -> Option<usize> {
-                    src.find(&p(t))
+                let out_f = |t: &str| -> Result<Option<usize>, String> {
+                    Ok(src
+                        .try_find(&p(t))?
                         .and_then(|v| v.ne.get(1).copied())
-                        .map(|x| x as usize)
+                        .map(|x| x as usize))
                 };
                 let hd = dcfg.head_dim_k as usize;
                 let wq_out =
-                    out_f("attn_q.weight").ok_or("step35 draft block has no attn_q.weight")?;
+                    out_f("attn_q.weight")?.ok_or("step35 draft block has no attn_q.weight")?;
                 assert_eq!(
                     wq_out,
                     g.n_head * hd,
@@ -3599,7 +3516,7 @@ impl MtpHead {
                 );
                 // The SEPARATE head-wise gate is [n_embd, n_head_l] — one scalar per head. Its
                 // width is the second independent witness of this block's head count.
-                let wg_out = out_f("attn_gate.weight")
+                let wg_out = out_f("attn_gate.weight")?
                     .ok_or("step35 draft block has no attn_gate.weight (head-wise gate)")?;
                 assert_eq!(
                     wg_out, g.n_head,
@@ -3627,7 +3544,7 @@ impl MtpHead {
                 return Err(format!(
                     "MEMRA_MTP_DRAFT operations are incompatible with the model's \
                      sliding-gated-MoE program (draft arch {:?})",
-                    g.arch()
+                    dcfg.arch
                 )
                 .into());
             }
@@ -3672,46 +3589,16 @@ impl MtpHead {
         // FR-Spec drafts (trimmed [n_embd, draft_vocab] + d2t) publish the trimmed head as the
         // file-level `output.weight` and carry no `nextn.shared_head_head`, so they keep the
         // fallback — hence preference, not replacement.
-        // Name choice is factored into `draft_head_tensor` so it is testable WITHOUT a GPU or a
-        // 3.5 GB artifact (this whole function needs both). Getting it wrong is invisible to
-        // every exactness gate, so the choice itself is pinned by a unit test.
-        let head_name = draft_head_tensor(|t| src.has(t), n);
-        let head = load_t(e, &src, &head_name)?;
-        let head_norm = match load_opt(e, &src, &p("nextn.shared_head_norm.weight"))? {
-            Some(t) => Some(t),
-            None => load_opt(e, &src, "output_norm.weight")?,
-        };
-
-        // d2t: draft-row -> target-token-id map (absolute ids, verified against the tokenizer).
-        let d2t: Option<Vec<u32>> = g.find("d2t").map(|t| {
-            let bytes = g.tensor_data(t);
-            match t.ggml_type {
-                GgmlType::I32 => bytes
-                    .chunks_exact(4)
-                    .map(|c| i32::from_le_bytes(c.try_into().unwrap()) as u32)
-                    .collect(),
-                GgmlType::I64 => bytes
-                    .chunks_exact(8)
-                    .map(|c| i64::from_le_bytes(c.try_into().unwrap()) as u32)
-                    .collect(),
-                other => panic!("d2t must be I32/I64, got {other:?}"),
-            }
-        });
-        if let Some(map) = &d2t {
-            assert_eq!(
-                map.len(),
-                head.out_features(),
-                "d2t len {} != draft head rows {}",
-                map.len(),
-                head.out_features()
-            );
-            let n_vocab = main_cfg.n_vocab as u64;
-            assert!(
-                map.iter().all(|&t| (t as u64) < n_vocab),
-                "d2t contains token id >= model n_vocab {n_vocab}"
-            );
-        }
-        let eh_proj = load_t(e, &src, &p("nextn.eh_proj.weight"))?;
+        // The sealed draft compiler resolves this ownership before allocation. Its real-file
+        // CPU controls cover private precedence, legacy alias ambiguity and trimmed file heads.
+        let head_name = prepared.head_name();
+        let head = load_t(e, src, head_name)?;
+        let head_norm = prepared
+            .norm_name()
+            .map(|name| load_t(e, src, name))
+            .transpose()?;
+        let d2t = prepared.token_map().map(<[u32]>::to_vec);
+        let eh_proj = load_t(e, src, &p("nextn.eh_proj.weight"))?;
         // defensive load gates (review feedback): a malformed student gguf fails HERE with a
         // named assert, not later as garbage drafts. eh_proj consumes concat(e_norm, h_norm).
         assert_eq!(
@@ -3719,39 +3606,24 @@ impl MtpHead {
             2 * main_cfg.n_embd as usize,
             "eh_proj in dim != 2*n_embd"
         );
-        let geom = if student {
-            let out_up = load_t(e, &src, &p("nextn.out_up.weight"))?;
-            let d_inner = eh_proj.out_features();
-            assert_eq!(
-                out_up.out_features(),
-                main_cfg.n_embd as usize,
-                "out_up out dim != n_embd"
-            );
-            assert_eq!(
-                out_up.in_features(),
-                d_inner,
-                "out_up in dim != eh_proj out dim (d_inner)"
-            );
-            assert!(
-                dcfg.n_head >= 1 && dcfg.n_head_kv >= 1 && dcfg.n_head % dcfg.n_head_kv == 0,
-                "student head counts malformed ({}/{})",
-                dcfg.n_head,
-                dcfg.n_head_kv
-            );
-            Some(DraftGeom {
-                d_inner,
-                n_head: dcfg.n_head as usize,
-                n_head_kv: dcfg.n_head_kv as usize,
-                out_up,
-            })
-        } else {
-            None
+        let geom = match prepared.blocks()[0].geometry {
+            memra_gguf::bound_source::draft::DraftGeometry::Natural => None,
+            memra_gguf::bound_source::draft::DraftGeometry::Student {
+                hidden_size,
+                query_heads,
+                kv_heads,
+            } => Some(DraftGeom {
+                d_inner: hidden_size as usize,
+                n_head: query_heads as usize,
+                n_head_kv: kv_heads as usize,
+                out_up: load_t(e, src, &p("nextn.out_up.weight"))?,
+            }),
         };
         // Log the name WITHOUT the blk.{n}. prefix (already printed) so the line reads
         // `source=nextn.shared_head_head` vs `source=output.weight` — the one-glance receipt
         // that the head choice went the right way on this artifact.
         let blk_prefix = format!("blk.{n}.");
-        let head_src = head_name.strip_prefix(&blk_prefix).unwrap_or(&head_name);
+        let head_src = head_name.strip_prefix(&blk_prefix).unwrap_or(head_name);
         eprintln!(
             "[mtp-draft] external draft head: blk.{n}, source={}, head_vocab={}{}{}",
             head_src,
@@ -3770,28 +3642,31 @@ impl MtpHead {
             }
         );
 
-        let mut resident = ResidentPlan::unsharded(e, &src, &dcfg);
+        let mut resident = ResidentPlan::unsharded(e, src, dcfg)?;
         let mut step_runtimes = StepParallelRuntimeRegistry::default();
         Ok(MtpHead {
-            enorm: load_t(e, &src, &p("nextn.enorm.weight"))?,
-            hnorm: load_t(e, &src, &p("nextn.hnorm.weight"))?,
+            external_source_identity: Some(external_source_identity),
+            embedded_block_index: None,
+            pending_trim_slot: None,
+            enorm: load_t(e, src, &p("nextn.enorm.weight"))?,
+            hnorm: load_t(e, src, &p("nextn.hnorm.weight"))?,
             eh_proj,
-            attn_norm: load_t(e, &src, &p("attn_norm.weight"))?,
-            post_attn_norm: load_opt(e, &src, &p("post_attention_norm.weight"))?
-                .or(load_opt(e, &src, &p("ffn_norm.weight"))?)
+            attn_norm: load_t(e, src, &p("attn_norm.weight"))?,
+            post_attn_norm: load_opt(e, src, &p("post_attention_norm.weight"))?
+                .or(load_opt(e, src, &p("ffn_norm.weight"))?)
                 .expect("draft NextN block needs post_attention_norm or ffn_norm"),
             mixer: load_mixer_kind(
                 e,
-                &src,
-                &dcfg,
+                src,
+                dcfg,
                 n,
                 &draft_block.layer.attention,
                 &mut step_runtimes,
             )?,
             ffn: load_ffn(
                 e,
-                &src,
-                &dcfg,
+                src,
+                dcfg,
                 &draft_block.layer.mlp,
                 n,
                 None,
@@ -3870,10 +3745,21 @@ impl Step35Aux {
     }
 }
 
+/// A loaded program whose mutable access revokes every issued execution snapshot.
+/// Read access keeps the existing field API; numerical edits require a fresh load
+/// before strict qualification can be installed again.
 pub struct HybridModel {
+    program: crate::plan_backend::TrackedProgram<HybridProgram>,
+    rewrite_admission: crate::plan_backend::RewriteAdmission,
+    pub(crate) rewrite_identity: Option<crate::plan_backend::RewriteIdentity>,
+    rewrite_load_state: Option<crate::plan_backend::RewriteLoadState>,
+    rewrite_generation: std::sync::Arc<crate::plan_backend::ProgramGeneration>,
+}
+
+/// Readable model fields, owned exclusively by `HybridModel`.
+pub struct HybridProgram {
     pub cfg: ModelConfig,
     pub plan: memra_gguf::model_plan::ModelPlan,
-    pub rewrite_qualifications: Option<memra_gguf::execution_manifest::RewriteQualifications>,
     pub embd: EmbedHost,
     pub output_norm: GpuTensor,
     pub output: GpuTensor,
@@ -3893,9 +3779,9 @@ pub struct HybridModel {
     pub frspec_src_sha16: Option<String>,
     /// Lazily-uploaded DEVICE copy of the raw embed table (spec/graph hot loops gather rows
     /// on-device instead of host-dequant + htod). ~0.5GB; uploaded once on first use.
-    pub embd_gpu: std::sync::OnceLock<cudarc::driver::CudaSlice<u8>>,
+    pub(crate) embd_gpu: std::sync::OnceLock<cudarc::driver::CudaSlice<u8>>,
     /// device copy of the drafter's d2t trim map (uploaded once; `MEMRA_GLM5_SPEC_DEV_IO`).
-    pub d2t_gpu: std::sync::OnceLock<cudarc::driver::CudaSlice<u32>>,
+    pub(crate) d2t_gpu: std::sync::OnceLock<cudarc::driver::CudaSlice<u32>>,
     pub gemma4_aux: Option<GemmaAux>,
     /// Sliding-gated-MoE tuned-program auxiliaries, selected from canonical operations.
     pub step35_aux: Option<Step35Aux>,
@@ -3906,7 +3792,7 @@ pub struct HybridModel {
     /// pointers stop moving). Sized on first prime to the largest T seen. The map lock covers
     /// lookup/grow only; each device owns a separate slab lock so PP stages on distinct
     /// devices can drive their host-synchronized layer walks concurrently.
-    pub prime_slabs: std::sync::Mutex<
+    pub(crate) prime_slabs: std::sync::Mutex<
         std::collections::HashMap<
             usize,
             std::sync::Arc<std::sync::Mutex<crate::hybrid_forward::PrimeSlabs>>,
@@ -3963,22 +3849,176 @@ pub struct HybridModel {
     pub test_extra_devices: Vec<usize>,
 }
 
+impl std::ops::Deref for HybridModel {
+    type Target = HybridProgram;
+    fn deref(&self) -> &Self::Target {
+        &self.program
+    }
+}
+
+impl std::ops::DerefMut for HybridModel {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.program
+    }
+}
+
 impl HybridModel {
+    pub(crate) fn rewrite_mutations(&self) -> u64 {
+        self.rewrite_generation.mutations()
+    }
+
     pub fn install_rewrite_bundle(
         &mut self,
         bundle: &std::path::Path,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.rewrite_qualifications = Some(
-            memra_gguf::execution_manifest::RewriteQualifications::load(bundle, &self.plan)
-                .map_err(|error| format!("rewrite qualification: {error}"))?,
-        );
+        // Reinstall is a boundary, even if validation fails or the bundle is identical.
+        self.rewrite_generation.revoke();
+        let identity = self.rewrite_identity().cloned();
+        crate::plan_backend::install_rewrite_admission(
+            &mut self.rewrite_admission,
+            bundle,
+            &self.program.plan,
+            identity.as_ref().map_err(Clone::clone),
+        )
+        .map_err(|error| format!("rewrite qualification: {error}"))?;
         Ok(())
     }
 
-    pub fn rewrite_allowed(&self, surface: memra_gguf::execution_manifest::RewriteSurface) -> bool {
-        self.rewrite_qualifications
+    /// Trusted loader identity. This explicit boundary checks external process state;
+    /// cached model/plan digests are valid only without intervening mutable access.
+    pub fn rewrite_identity(&self) -> Result<&crate::plan_backend::RewriteIdentity, String> {
+        let identity =
+            crate::plan_backend::checked_rewrite_identity(self.rewrite_identity.as_ref(), true)?;
+        let result = self
+            .rewrite_load_state
             .as_ref()
-            .is_none_or(|qualifications| qualifications.allows(surface))
+            .ok_or("rewrite load state missing")?
+            .validate(self);
+        if let Err(reason) = result {
+            self.rewrite_generation.revoke();
+            return Err(format!("rewrite identity is stale: {reason}"));
+        }
+        Ok(identity)
+    }
+
+    /// Begin/resume a request, after any process configuration or library changes.
+    /// The returned snapshot may span scheduler ticks. External process state must
+    /// stay fixed during the request; every new/resumed request validates it again.
+    pub fn rewrite_execution_snapshot(
+        &self,
+    ) -> Result<crate::plan_backend::RewriteExecutionSnapshot, String> {
+        crate::plan_backend::RewriteExecutionSnapshot::validated(
+            &self.rewrite_generation,
+            &self.rewrite_admission,
+            self.rewrite_load_state
+                .as_ref()
+                .is_some_and(|state| state.pipeline),
+            || self.validate_rewrite_boundary(),
+        )
+    }
+
+    fn validate_rewrite_boundary(&self) -> Result<(), String> {
+        match &self.rewrite_admission {
+            crate::plan_backend::RewriteAdmission::LegacyUnbundled => {
+                if std::env::var_os("MEMRA_REWRITE_BUNDLE").is_some() {
+                    Err("strict rewrite policy requested after an unqualified load".into())
+                } else {
+                    Ok(())
+                }
+            }
+            crate::plan_backend::RewriteAdmission::StrictPending => {
+                Err("decode-eager rewrite is not qualified: no installed baseline for this runtime identity".into())
+            }
+            crate::plan_backend::RewriteAdmission::Qualified(_) => self.rewrite_identity().map(|_| ()),
+        }
+    }
+
+    pub fn rewrite_allowed_in(
+        &self,
+        snapshot: &crate::plan_backend::RewriteExecutionSnapshot,
+        surface: memra_gguf::execution_manifest::RewriteSurface,
+    ) -> bool {
+        snapshot.current(&self.rewrite_generation) && snapshot.allows(surface)
+    }
+
+    pub fn check_rewrite_execution(
+        &self,
+        snapshot: &crate::plan_backend::RewriteExecutionSnapshot,
+    ) -> Result<(), String> {
+        if snapshot.current(&self.rewrite_generation) {
+            Ok(())
+        } else {
+            Err("rewrite execution snapshot was revoked".into())
+        }
+    }
+
+    pub(crate) fn current_rewrite_execution_snapshot(
+        &self,
+    ) -> Result<crate::plan_backend::RewriteExecutionSnapshot, String> {
+        if let Some(active) = crate::plan_backend::active_execution(&self.rewrite_generation) {
+            return Ok(crate::plan_backend::RewriteExecutionSnapshot::from_active(
+                &self.rewrite_generation,
+                active,
+            ));
+        }
+        self.rewrite_execution_snapshot()
+    }
+
+    /// Re-enter retained state with an immutable model borrow. Outermost calls check
+    /// current external state before activating the original model/generation. Nested
+    /// token calls share that validation and use only generation/surface-mask checks.
+    pub fn enter_rewrite_execution(
+        &self,
+        snapshot: &crate::plan_backend::RewriteExecutionSnapshot,
+    ) -> Result<crate::plan_backend::RewriteExecutionGuard<'_>, String> {
+        snapshot.enter(&self.rewrite_generation, self, || {
+            self.validate_rewrite_boundary()
+        })
+    }
+
+    /// Protect a complete synchronous execution. Nested entry points share this scope.
+    pub fn protect_rewrite_execution(
+        &self,
+    ) -> Result<crate::plan_backend::RewriteExecutionGuard<'_>, String> {
+        crate::plan_backend::RewriteExecutionSnapshot::protect(
+            &self.rewrite_generation,
+            &self.rewrite_admission,
+            self.rewrite_load_state
+                .as_ref()
+                .is_some_and(|state| state.pipeline),
+            self,
+            || self.validate_rewrite_boundary(),
+        )
+    }
+
+    pub fn rewrite_is_qualified(&self) -> bool {
+        if let Some(active) = crate::plan_backend::active_execution(&self.rewrite_generation) {
+            return active.qualified();
+        }
+        self.rewrite_admission.is_qualified() && self.rewrite_identity().is_ok()
+    }
+
+    pub fn rewrite_allowed(&self, surface: memra_gguf::execution_manifest::RewriteSurface) -> bool {
+        if let Some(active) = crate::plan_backend::active_execution(&self.rewrite_generation) {
+            return active.allows(surface);
+        }
+        self.rewrite_execution_snapshot()
+            .is_ok_and(|snapshot| snapshot.allows(surface))
+    }
+
+    /// Standalone direct calls validate a boundary. Within a protected execution the
+    /// surface and pipeline checks share one constant-time generation check.
+    pub(crate) fn require_rewrite(
+        &self,
+        surface: memra_gguf::execution_manifest::RewriteSurface,
+    ) -> Result<(), String> {
+        if self.rewrite_allowed(surface) {
+            return Ok(());
+        }
+        Err(format!(
+            "{} rewrite is not qualified for the current loaded runtime identity",
+            surface.as_str()
+        ))
     }
 
     /// Return the set of unique CUDA device ordinals touched by this model's resident
@@ -4229,6 +4269,30 @@ impl HybridModel {
         src: &dyn TensorSource,
         load_mtp: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        let prepared = memra_gguf::bound_source::PreparedModelSource::text(src)?;
+        prepared.with_runtime(|source| Self::load_prepared_source_impl(e, source, load_mtp))?
+    }
+
+    fn load_prepared_source_impl(
+        e: &Engine,
+        src: &dyn TensorSource,
+        load_mtp: bool,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let rewrite_bundle = std::env::var_os("MEMRA_REWRITE_BUNDLE");
+        let mut rank_input = crate::trim_ranks::RankInput::default();
+        let mut trim_load = root_trim::RootTrimLoad::begin(
+            src,
+            load_mtp,
+            crate::plan_backend::identity_requested(),
+            &mut rank_input,
+        )?;
+        if crate::plan_backend::identity_requested() && trim_load.is_none() {
+            crate::plan_backend::refuse_external_rewrite_artifacts()?;
+        }
+        let artifact_sha256 = crate::plan_backend::source_artifact_identity(
+            src,
+            crate::plan_backend::identity_requested(),
+        )?;
         // MEMRA_LOAD_TRACE=1: one line per phase and per layer with the wall it took, so a slow
         // boot is attributed from its own log (the pair's boots ran 12 minutes with ptrace
         // blocked in the container). `il` is 0 for the phases before the layer loop.
@@ -4246,21 +4310,18 @@ impl HybridModel {
                 load_prev = now;
             }
         };
-        let cfg = src.try_config().map_err(std::io::Error::other)?;
-        let plan = match memra_gguf::model_packs::for_config(&cfg) {
-            Some(pack) => pack.compile_plan(&cfg)?,
-            None => memra_gguf::model_plan::ModelPlan::compile(&cfg)?,
-        };
+        // Include source-backed preflight reads in the same consumption audit.
+        let recording = memra_gguf::checkpoint_binding::RecordingSource::new(src);
+        let src: &dyn TensorSource = &recording;
+        let (cfg, plan) = memra_gguf::model_packs::compile_for_source(src)?;
         // memra#541: the canonical tensor contract is bound against the checkpoint census HERE,
         // before any tensor upload. Missing, unexpected, duplicate, ambiguous, wrong-shape and
         // wrong-quant tensors and an undeclared tied head refuse the load with the pack and
         // dialect named. Every read below goes through a recording source so the bound tensors
         // the loader never consumed are named at the end (`settle_consumption`).
-        let binding = memra_gguf::checkpoint_binding::bind_source(src, &cfg, &plan)
+        let binding = memra_gguf::checkpoint_binding::bind_loader_source(src, &cfg, &plan)
             .map_err(|error| std::io::Error::other(error.to_string()))?;
-        eprintln!("{}", memra_gguf::checkpoint_binding::describe(&binding));
-        let recording = memra_gguf::checkpoint_binding::RecordingSource::new(src);
-        let src: &dyn TensorSource = &recording;
+        eprintln!("{}", binding.describe());
         let auto_parallel = prepare_auto_parallel(src, &cfg, &plan)?;
         let batch_program = crate::plan_backend::decode_batch_program(&plan);
         let gemma_program = batch_program == crate::plan_backend::DecodeBatchProgram::Gemma;
@@ -4353,16 +4414,16 @@ impl HybridModel {
         if mtp_skip_requested && cfg.nextn_predict_layers > 0 {
             // Loud skip receipt with the approximate weight bytes NOT loaded. For a GGUF source
             // the figure is the exact on-disk size of every blk.{n_trunk..} tensor (VRAM cost is
-            // approximately that, plus per-tensor upload overhead); a non-GGUF source has no
-            // cheap tensor enumeration, so the line still prints, without a byte figure.
+            // approximately that, plus per-tensor upload overhead). Other source formats have
+            // a census but need a format-specific residency conversion, so omit their byte figure.
             let prefixes: Vec<String> = (0..cfg.nextn_predict_layers)
                 .map(|off| format!("blk.{}.", n_trunk as u32 + off))
                 .collect();
-            let skipped_bytes: Option<u64> = src.gguf().map(|g| {
-                g.tensors
+            let skipped_bytes: Option<u64> = src.gguf_tensor_metadata()?.map(|metadata| {
+                metadata
                     .iter()
                     .filter(|t| prefixes.iter().any(|p| t.name.starts_with(p.as_str())))
-                    .map(|t| t.n_bytes)
+                    .map(|t| t.physical_bytes)
                     .sum()
             });
             eprintln!(
@@ -4398,10 +4459,8 @@ impl HybridModel {
         {
             match std::env::var("MEMRA_FRSPEC_TRIM") {
                 Ok(path) if !path.is_empty() => {
-                    let path = memra_gguf::hf::resolve_arg(&path)
-                        .map_err(|err| format!("MEMRA_FRSPEC_TRIM={path:?}: {err}"))?;
                     let own_head_name = frspec_trim_own_head_name(n_trunk);
-                    if src.has(&own_head_name) {
+                    if src.try_has(&own_head_name)? {
                         return Err(format!(
                             "MEMRA_MTP_SKIP=1 with MEMRA_FRSPEC_TRIM: this artifact ships its \
                              own MTP-block lm_head ({own_head_name}), so the trimmed draft rows \
@@ -4412,13 +4471,14 @@ impl HybridModel {
                         )
                         .into());
                     }
-                    if !src.has("output.weight") && !src.has("token_embd.weight") {
+                    if !src.try_has("output.weight")? && !src.try_has("token_embd.weight")? {
                         return Err("MEMRA_MTP_SKIP=1 with MEMRA_FRSPEC_TRIM: model has no \
                              output.weight (or tied token_embd.weight) to gather trimmed draft \
                              rows from"
                             .into());
                     }
-                    let d2t = frspec_read_d2t(&path)?;
+                    let captured = rank_input.capture(&path)?;
+                    let d2t = captured.artifact().ids().to_vec();
                     if d2t.is_empty() {
                         return Err(format!(
                             "MEMRA_MTP_SKIP=1 with MEMRA_FRSPEC_TRIM={path}: the rank artifact \
@@ -4427,7 +4487,7 @@ impl HybridModel {
                         )
                         .into());
                     }
-                    let sha16 = sha256_file_hex(std::path::Path::new(&path), 8)?;
+                    let sha16 = captured.sha16().to_owned();
                     Some((d2t, sha16))
                 }
                 _ => None,
@@ -4561,7 +4621,7 @@ impl HybridModel {
             None
         };
         load_mark("before-embd", 0);
-        let embd = EmbedHost::from_source(src, "token_embd.weight");
+        let embd = EmbedHost::try_from_source(src, "token_embd.weight")?;
         load_mark("embd", 0);
         // M2 increment 2 (weight sharding): output_norm + lm head upload through the LAST
         // stage's engine — the stage that runs them (outside the pp door / MEMRA_PP_SHARD=0
@@ -4593,8 +4653,7 @@ impl HybridModel {
         // + host RAM at runtime (never hardcoded) and opens one shared GGUF mmap; all expert tensors
         // draw down its single pinned-RAM budget (hottest pinned, the rest mmap'd from disk). When
         // unset/dense this stays `None` and the load takes the byte-identical all-host path.
-        // Disk spill is GGUF-only (needs the on-disk file mmap); src.gguf() is None for safetensors.
-        let gguf: Option<&GgufFile> = src.gguf();
+        // Preserve explicit GGUF-only admission without requesting an unrestricted file handle.
         // The normalized config carries `moe` only for a positive expert bank. Keep the explicit
         // count check as a fail-closed guard against hand-built configs.
         let mut spill: Option<crate::spill::SpillCtx> = if cfg
@@ -4602,12 +4661,10 @@ impl HybridModel {
             .as_ref()
             .is_some_and(|m| m.expert_count > 0)
             && crate::spill::disk_tier_enabled()
-            && gguf.is_some()
+            && src.gguf_tensor_metadata()?.is_some()
         {
             let budget = crate::spill::MemBudget::probe(e)?;
-            #[allow(clippy::unnecessary_unwrap)]
-            // allow: the Some-guard sits in a multi-clause regime gate; if-let would reshape the arm structure
-            let ctx = crate::spill::SpillCtx::open(gguf.unwrap(), &budget)?;
+            let ctx = crate::spill::SpillCtx::from_source(src, &budget)?;
             eprintln!(
                 "[spill] disk tier ON: free_vram={} MiB  free_pinnable_ram={} MiB (MemAvailable*resolved_frac)",
                 budget.free_vram >> 20,
@@ -4657,7 +4714,7 @@ impl HybridModel {
                     let kv_from = n_trunk as u32 - g4_shared;
                     if g4_shared > 0
                         && il >= kv_from
-                        && !src.has(&format!("blk.{il}.attn_k.weight"))
+                        && !src.try_has(&format!("blk.{il}.attn_k.weight"))?
                     {
                         let g4 = cfg.gemma4.as_ref().unwrap();
                         let swa = g4.swa_pattern.get(il as usize).copied().unwrap_or(true);
@@ -4693,24 +4750,28 @@ impl HybridModel {
                     &cfg,
                     &layer_plan.mlp,
                     il,
-                    spill.as_mut().map(|c| (gguf.unwrap(), c)),
+                    spill.as_mut(),
                     &mut resident,
                     &mut step_runtimes,
                 )?,
                 gemma4: if gemma_program {
-                    let scalar = |n: &str| -> f32 {
-                        let t = src.find(&p(n)).unwrap_or_else(|| panic!("missing {n}"));
-                        memra_gguf::dequant::dequantize(t.ggml_type, &t.bytes, 1)[0]
+                    let scalar = |n: &str| -> Result<f32, String> {
+                        let t = src
+                            .try_find(&p(n))?
+                            .unwrap_or_else(|| panic!("missing {n}"));
+                        Ok(memra_gguf::dequant::dequantize(t.ggml_type, &t.bytes, 1)[0])
                     };
-                    let vecf = |n: &str| -> Vec<f32> {
-                        let t = src.find(&p(n)).unwrap_or_else(|| panic!("missing {n}"));
-                        memra_gguf::dequant::dequantize(
+                    let vecf = |n: &str| -> Result<Vec<f32>, String> {
+                        let t = src
+                            .try_find(&p(n))?
+                            .unwrap_or_else(|| panic!("missing {n}"));
+                        Ok(memra_gguf::dequant::dequantize(
                             t.ggml_type,
                             &t.bytes,
                             t.ne.iter().product::<u64>() as usize,
-                        )
+                        ))
                     };
-                    let moe_bits = if src.find(&p("ffn_gate_inp.scale")).is_some() {
+                    let moe_bits = if src.try_find(&p("ffn_gate_inp.scale"))?.is_some() {
                         Some(crate::hybrid::Gemma4MoeBits {
                             post_ffw_norm_1: load_t(e, src, &p("post_ffw_norm_1.weight"))?,
                             pre_ffw_norm_2: load_t(e, src, &p("pre_ffw_norm_2.weight"))?,
@@ -4720,18 +4781,20 @@ impl HybridModel {
                             shared_down: load_t(e, src, &p("ffn_down.weight"))?,
                             router_scale_pre: {
                                 let inv = 1.0 / (cfg.n_embd as f32).sqrt();
-                                let v: Vec<f32> =
-                                    vecf("ffn_gate_inp.scale").iter().map(|x| x * inv).collect();
+                                let v: Vec<f32> = vecf("ffn_gate_inp.scale")?
+                                    .iter()
+                                    .map(|x| x * inv)
+                                    .collect();
                                 e.htod(&v)?
                             },
-                            per_expert_scale: vecf("ffn_down_exps.scale"),
-                            per_expert_scale_d: e.htod(&vecf("ffn_down_exps.scale"))?,
+                            per_expert_scale: vecf("ffn_down_exps.scale")?,
+                            per_expert_scale_d: e.htod(&vecf("ffn_down_exps.scale")?)?,
                         })
                     } else {
                         None
                     };
                     // E4B extras (tensor-presence: blk.N.inp_gate only exists on E4B)
-                    let e4b = if src.has(&p("inp_gate.weight")) {
+                    let e4b = if src.try_has(&p("inp_gate.weight"))? {
                         let g4 = cfg.gemma4.as_ref().unwrap();
                         let kv_from = n_trunk as u32 - g4.shared_kv_layers;
                         let kv_share = if g4.shared_kv_layers > 0 && il >= kv_from {
@@ -4754,7 +4817,7 @@ impl HybridModel {
                         ffn_norm: load_t(e, src, &p("ffn_norm.weight"))?,
                         post_ffw_norm: load_t(e, src, &p("post_ffw_norm.weight"))?,
                         moe_bits,
-                        layer_scale: scalar("layer_output_scale.weight"),
+                        layer_scale: scalar("layer_output_scale.weight")?,
                         e4b,
                     })
                 } else {
@@ -4987,7 +5050,7 @@ impl HybridModel {
                     .iter()
                     .find(|block| block.layer.index == n)
                     .ok_or_else(|| format!("ModelPlan has no embedded MTP block {n}"))?;
-                if !src.has(&p("nextn.eh_proj.weight")) {
+                if !src.try_has(&p("nextn.eh_proj.weight"))? {
                     if offset == 0 {
                         break;
                     }
@@ -4999,6 +5062,9 @@ impl HybridModel {
                     .into());
                 }
                 embedded_mtp.push(MtpHead {
+                    external_source_identity: None,
+                    embedded_block_index: Some(n),
+                    pending_trim_slot: None,
                     enorm: load_t(e, src, &p("nextn.enorm.weight"))?,
                     hnorm: load_t(e, src, &p("nextn.hnorm.weight"))?,
                     eh_proj: load_t(e, src, &p("nextn.eh_proj.weight"))?,
@@ -5020,7 +5086,7 @@ impl HybridModel {
                         &cfg,
                         &mtp_plan.layer.mlp,
                         n,
-                        spill.as_mut().map(|c| (gguf.unwrap(), c)),
+                        spill.as_mut(),
                         &mut resident,
                         &mut step_runtimes,
                     )?,
@@ -5049,6 +5115,9 @@ impl HybridModel {
                     },
                 });
             }
+        }
+        if let Some(pending) = &mut trim_load {
+            pending.note_loaded_heads(embedded_mtp.len())?;
         }
         let mut embedded_mtp = embedded_mtp.into_iter();
         let mut mtp = embedded_mtp.next();
@@ -5109,82 +5178,45 @@ impl HybridModel {
                 // Match model and external-draft paths: a rank artifact may be an `hf:` spec
                 // too. This keeps the q38 DFlash2 default copy-paste runnable without an
                 // untracked sidecar path; `resolve_arg` narrows the repo to its one d2t GGUF.
-                let path = memra_gguf::hf::resolve_arg(&path)
-                    .map_err(|err| format!("MEMRA_FRSPEC_TRIM={path:?}: {err}"))?;
+                let captured = rank_input.capture(&path)?;
+                let path = captured.path();
                 // Two artifact forms: the d2t GGUF container, or a plain `.txt` (one token id
                 // per line, rank order — frspec-owngen writes both). The text form keeps the
                 // fully-safetensors serving path free of GGUF entirely.
-                let d2t: Vec<u32> = frspec_read_d2t(&path)?;
-                frspec_src_sha16 = Some(sha256_file_hex(std::path::Path::new(&path), 8)?);
-                // WHICH HEAD DO THE ROWS COME FROM? For a tied-head family (qwen35) the MTP
-                // block reuses the trunk's `output.weight`, so gathering trunk rows is exact.
-                // The step-3.7-flash family does NOT: each nextn block ships its OWN lm_head,
-                // and this repo already paid for reading the trunk head there — acceptance
-                // 0/248 across K=1..8 with self-consistency PASS (the receipt lives at
-                // `draft_head_tensor`, hybrid.rs). So prefer the FIRST MTP block's own head
-                // whenever the artifact carries one, and fall back to the trunk head only for
-                // the tied families that genuinely share it.
-                let own_head_name = frspec_trim_own_head_name(n_trunk);
-                let own_head = src.find(&own_head_name);
-                let from_own_head = own_head.is_some();
-                let v = own_head
-                    .or_else(|| src.find("output.weight"))
-                    .or_else(|| src.find("token_embd.weight"))
-                    .expect("model has no output.weight for FR-Spec trim");
-                // BOOT ADMISSION on this arm too (revuto finding on the re-land of
-                // lane/frspec-dflash2-20260902): the same env var must refuse a wrong-model
-                // file by name with its sha16 whichever arm consumes it, never reach the
-                // gather's assert (a process abort) or boot a shorter list.
-                frspec_validate_ranks(
-                    &d2t,
-                    v.ne[1] as usize,
-                    &format!(
-                        "MEMRA_FRSPEC_TRIM={path} (sha16={}) on {}",
-                        frspec_src_sha16.as_deref().unwrap_or("unknown"),
-                        if from_own_head {
-                            own_head_name.as_str()
-                        } else {
-                            "main output.weight"
-                        }
-                    ),
-                )?;
-                // FLOAT HEADS ARE REAL: step-3.7-flash keeps both `lm_head.weight` and every
-                // `nextn.*.shared_head.output.weight` in BF16 [128896, 4096] even though its
-                // experts are NVFP4, and `from_quant_bytes` PANICS on BF16 ("unsupported
-                // dtype"). A row gather is dtype-agnostic — rows are independent and nothing is
-                // requantized — so the only thing that changes is which GpuTensor the rows land
-                // in. The draft head matmul already has a FloatBf16 arm.
-                // MEMRA_FRSPEC_TRIM_NVFP4=1: quantize the trimmed rows to NVFP4 instead of
-                // keeping them BF16. This is the repo's own draft-regime standard — tools/
-                // make-trimmed-draft.sh builds "block Q4_K_M + head NVFP4" and records "NVFP4
-                // head measured zero acceptance cost" — but that builder is a GGUF pipeline and
-                // this family is safetensors, so the quantization happens HERE instead.
-                // `f32_to_nvfp4` already emits the internal block layout the decode dp4a path
-                // consumes (QK=64, 36 B/block, 4 UE4M3 sub-scales + 32 interleaved code bytes),
-                // so no kernel changes. Macro scale is 1.0: unlike a modelopt tensor there is no
-                // sibling weight_scale_2 — the per-16 sub-block scales are self-contained.
-                // Worth it for RESIDENCY: a trimmed head goes 0.27 GB (BF16) -> 0.076 GB, and the
-                // full 3-head chain 3.18 -> 0.89 GB, which is what OOMs at the natural 262144
-                // context. Draft-head precision cannot change served output (verify arbitrates),
-                // so acceptance is the only thing to measure.
-                let (trimmed, nvfp4_sizes) = frspec_gather_trimmed_head(
-                    e,
-                    &v,
-                    &d2t,
-                    std::env::var("MEMRA_FRSPEC_TRIM_NVFP4").as_deref() == Ok("1"),
-                    /*nvfp4 macro-scale*/
-                    match src.find("output.scale") {
-                        Some(sv) => f32::from_le_bytes(sv.bytes[..4].try_into().unwrap()),
-                        None => 1.0,
-                    },
-                )?;
+                let d2t = captured.artifact().ids().to_vec();
+                frspec_src_sha16 = Some(captured.sha16().to_owned());
+                let info = if let Some(pending) = &mut trim_load {
+                    pending
+                        .stage(e, 0, &mut head)?
+                        .ok_or("paired first trim head is absent")?
+                } else {
+                    let trim = PreparedHeadTrim::prepare(
+                        src,
+                        captured.artifact(),
+                        HeadChoice::FirstMtpOrModel,
+                        frspec_trim_policy(),
+                    )
+                    .map_err(|error| format!("MEMRA_FRSPEC_TRIM={path}: {error}"))?
+                    .ok_or("target has no head for self-trim")?;
+                    let (trimmed, sizes) = crate::head_trim::load(e, &trim)?;
+                    head.shared_head_head = Some(trimmed);
+                    root_trim::StageInfo {
+                        name: trim.runtime_name().into(),
+                        dtype: trim.source_dtype(),
+                        from_model_output: trim.from_model_output(),
+                        sizes,
+                    }
+                };
+                let from_own_head = !info.from_model_output;
+                let own_head_name = info.name.as_str();
+                let nvfp4_sizes = info.sizes;
                 match nvfp4_sizes {
                     Some((nvfp4_bytes, gathered_bytes)) => eprintln!(
                         "[frspec-trim] self-trimmed head: {} rows of {} re-quantized BF16 -> NVFP4 \
                          ({} MiB, was {} MiB)",
                         d2t.len(),
                         if from_own_head {
-                            own_head_name.as_str()
+                            own_head_name
                         } else {
                             "main output.weight"
                         },
@@ -5195,14 +5227,13 @@ impl HybridModel {
                         "[frspec-trim] self-trimmed head: {} rows of {} ({:?})",
                         d2t.len(),
                         if from_own_head {
-                            own_head_name.as_str()
+                            own_head_name
                         } else {
                             "main output.weight"
                         },
-                        v.ggml_type
+                        info.dtype
                     ),
                 }
-                head.shared_head_head = Some(trimmed);
                 head.d2t = Some(d2t);
                 // The ids index the TARGET vocabulary either way (both heads are vocab-wide),
                 // so downstream remapping is unchanged by which matrix supplied the rows.
@@ -5223,25 +5254,21 @@ impl HybridModel {
         // shape already refused there.
         let mut dflash_trim: Option<DflashTrimHead> = match mtp_skip_trim_d2t {
             Some((d2t, src_sha16)) => {
-                let v = src
-                    .find("output.weight")
-                    .or_else(|| src.find("token_embd.weight"))
-                    .ok_or("model has no output.weight for FR-Spec trim")?;
-                frspec_validate_ranks(
-                    &d2t,
-                    v.ne[1] as usize,
-                    &format!("MEMRA_MTP_SKIP=1 with MEMRA_FRSPEC_TRIM (sha16={src_sha16})"),
-                )?;
-                let (head, nvfp4_sizes) = frspec_gather_trimmed_head(
-                    e,
-                    &v,
-                    &d2t,
-                    std::env::var("MEMRA_FRSPEC_TRIM_NVFP4").as_deref() == Ok("1"),
-                    match src.find("output.scale") {
-                        Some(sv) => f32::from_le_bytes(sv.bytes[..4].try_into().unwrap()),
-                        None => 1.0,
-                    },
-                )?;
+                let ranks = rank_input
+                    .captured()
+                    .ok_or("self-trim ranks were not captured")?
+                    .artifact();
+                if ranks.ids() != d2t {
+                    return Err("self-trim rank order changed before materialization".into());
+                }
+                let trim = PreparedHeadTrim::prepare(
+                    src,
+                    ranks,
+                    HeadChoice::ModelOutput,
+                    frspec_trim_policy(),
+                )?
+                .ok_or("target has no output head for self-trim")?;
+                let (head, nvfp4_sizes) = crate::head_trim::load(e, &trim)?;
                 eprintln!(
                     "[mtp-skip] FR-Spec stub draft head built: {} rows of main output.weight \
                      ({}); DFlash2 trim serves without the embedded MTP block",
@@ -5252,7 +5279,7 @@ impl HybridModel {
                             nvfp4_bytes >> 20,
                             gathered_bytes >> 20
                         ),
-                        None => format!("{:?}", v.ggml_type),
+                        None => format!("{:?}", trim.source_dtype()),
                     },
                 );
                 Some(DflashTrimHead {
@@ -5275,67 +5302,37 @@ impl HybridModel {
         // block's head. A block without its own head tensor ends the chain there — rows from
         // another block's head are exactly the wrong-head bug this row's receipt documents
         // (acceptance 0/248 with self-consistency still PASSING), never a fallback.
-        if let Some(d2t) = mtp.as_ref().and_then(|head| head.d2t.clone()) {
-            let want_nvfp4_env = std::env::var("MEMRA_FRSPEC_TRIM_NVFP4").as_deref() == Ok("1");
+        if let Some(ranks) = crate::head_trim::extra_head_ranks(
+            &rank_input,
+            mtp_extra.len(),
+            mtp.as_ref().and_then(|head| head.d2t.as_deref()),
+        )? {
+            let d2t = ranks.ids().to_vec();
+            let policy = frspec_trim_policy();
             let mut kept = 0usize;
             // Extra chain heads are trailing MTP blocks too — last-stage placement, same
             // as the first head's trim above.
             let e = crate::pp::layer_engine(e, n_trunk, n_trunk)?;
             for (i, head) in mtp_extra.iter_mut().enumerate() {
-                let name = frspec_trim_own_head_name(n_trunk + 1 + i);
-                let Some(v) = src.find(&name) else { break };
-                let out_f = v.ne[1] as usize;
-                let row_bytes = v.bytes.len() / out_f;
-                if d2t.iter().any(|&t| (t as usize) >= out_f) {
-                    break;
-                }
-                let mut gathered = Vec::with_capacity(d2t.len() * row_bytes);
-                for &t in &d2t {
-                    let off = t as usize * row_bytes;
-                    gathered.extend_from_slice(&v.bytes[off..off + row_bytes]);
-                }
-                let want_nvfp4 =
-                    want_nvfp4_env && matches!(v.ggml_type, GgmlType::BF16) && v.ne[0] % 64 == 0;
-                let trimmed = if want_nvfp4 {
-                    let vals: Vec<f32> = gathered
-                        .chunks_exact(2)
-                        .map(|c| f32::from_bits((u16::from_le_bytes([c[0], c[1]]) as u32) << 16))
-                        .collect();
-                    let blocks = memra_gguf::nvfp4_repack::f32_to_nvfp4(&vals);
-                    GpuTensor::from_quant_bytes(
-                        e,
-                        &blocks,
-                        GgmlType::NVFP4,
-                        v.ne[0],
-                        d2t.len() as u64,
-                        1.0,
-                    )?
-                } else {
-                    match v.ggml_type {
-                        GgmlType::BF16 => GpuTensor::FloatBf16 {
-                            data: e.htod_bytes(&gathered)?,
-                            ne: vec![v.ne[0], d2t.len() as u64],
-                        },
-                        GgmlType::F32 => GpuTensor::Float {
-                            data: e.htod(
-                                &gathered
-                                    .chunks_exact(4)
-                                    .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-                                    .collect::<Vec<f32>>(),
-                            )?,
-                            ne: vec![v.ne[0], d2t.len() as u64],
-                        },
-                        _ => GpuTensor::from_quant_bytes(
-                            e,
-                            &gathered,
-                            v.ggml_type,
-                            v.ne[0],
-                            d2t.len() as u64,
-                            1.0,
-                        )?,
+                let index = u32::try_from(n_trunk + 1 + i)
+                    .map_err(|_| "self-trim block index overflows u32")?;
+                if let Some(pending) = &mut trim_load {
+                    if pending.stage(e, i + 1, head)?.is_none() {
+                        break;
                     }
-                };
-                head.shared_head_head = Some(trimmed);
+                } else {
+                    let Some(trim) = PreparedHeadTrim::prepare(
+                        src,
+                        ranks,
+                        HeadChoice::MtpBlock { index },
+                        policy,
+                    )?
+                    else {
+                        break;
+                    };
+                    let (trimmed, _) = crate::head_trim::load(e, &trim)?;
+                    head.shared_head_head = Some(trimmed);
+                }
                 head.d2t = Some(d2t.clone());
                 head.d2t_from_target_head = false;
                 kept += 1;
@@ -5416,7 +5413,7 @@ impl HybridModel {
         // receipt said `draft head FULL target vocab` and the drafter projected every round
         // through the full 154,880-row head. SAME CONTRACT, no new flag: the ranks file named
         // by MEMRA_FRSPEC_TRIM is gathered ONCE here into an `[n_ranks x d]` slab of the
-        // trunk head's own rows (`frspec_gather_trimmed_head`, the one gather program every
+        // trunk head's own rows (`PreparedHeadTrim`, the bound materialization program every
         // trim arm shares; for glm5_next the trunk head is the draft head BY CONTRACT, the
         // NextN block ships no private lm_head) and parked in `dflash_trim`, which the
         // DFlash2 round consumes exactly as it consumes the MEMRA_MTP_SKIP stub: draft
@@ -5448,43 +5445,27 @@ impl HybridModel {
             && !spec.is_empty()
         {
             let what = "MEMRA_FRSPEC_TRIM on the glm5 DFlash2 draft head";
-            let path = memra_gguf::hf::resolve_arg(&spec)
-                .map_err(|err| format!("{what}: {spec:?}: {err}"))?;
-            let sha16 = sha256_file_hex(std::path::Path::new(&path), 8)?;
-            let d2t: Vec<u32> = if path.ends_with(".txt") {
-                let text = std::fs::read_to_string(&path)
-                    .map_err(|err| format!("{what}: {path}: {err}"))?;
-                frspec_parse_ranks_txt_strict(&text, &format!("{what} ({path}, sha16={sha16})"))?
-            } else {
-                frspec_read_d2t(&path)?
-            };
+            let captured = rank_input.capture(&spec)?;
+            let path = captured.path();
+            let sha16 = captured.sha16().to_owned();
+            let d2t = captured.artifact().ids().to_vec();
             let n_vocab = output.out_features();
-            frspec_validate_ranks(&d2t, n_vocab, &format!("{what} ({path}, sha16={sha16})"))?;
-            let v = src
-                .find("output.weight")
-                .or_else(|| src.find("token_embd.weight"))
-                .ok_or_else(|| {
-                    format!("{what}: model has no output.weight (or tied token_embd.weight)")
-                })?;
-            if v.ne[1] as usize != n_vocab {
+            let trim = PreparedHeadTrim::prepare(
+                src,
+                captured.artifact(),
+                HeadChoice::ModelOutput,
+                frspec_trim_policy(),
+            )?
+            .ok_or("target has no output head for self-trim")?;
+            if trim.source_shape()[1] as usize != n_vocab {
                 return Err(format!(
                     "{what}: source head rows {} != loaded head rows {n_vocab}",
-                    v.ne[1]
+                    trim.source_shape()[1]
                 )
                 .into());
             }
-            // The slab lives where the drafter and the trunk lm head live: the head engine.
             let de = crate::pp::layer_engine(e, n_trunk, n_trunk)?;
-            let (head, nvfp4_sizes) = frspec_gather_trimmed_head(
-                de,
-                &v,
-                &d2t,
-                std::env::var("MEMRA_FRSPEC_TRIM_NVFP4").as_deref() == Ok("1"),
-                match src.find("output.scale") {
-                    Some(sv) => f32::from_le_bytes(sv.bytes[..4].try_into().unwrap()),
-                    None => 1.0,
-                },
-            )?;
+            let (head, nvfp4_sizes) = crate::head_trim::load(de, &trim)?;
             eprintln!(
                 "[frspec-trim] glm5 DFlash2 draft-head slab: {} rows of {} gathered from main \
                  output.weight ({}) src={sha16} ({path})",
@@ -5498,8 +5479,8 @@ impl HybridModel {
                     ),
                     None => format!(
                         "{:?}, {} MiB",
-                        v.ggml_type,
-                        (d2t.len() * (v.bytes.len() / n_vocab)) >> 20
+                        trim.source_dtype(),
+                        trim.bytes().len() >> 20
                     ),
                 },
             );
@@ -5652,7 +5633,7 @@ impl HybridModel {
         // step — upload it AT LOAD (OnceLock init) so first-use cost never lands in a timed span.
         let force_embd_gpu = gemma_program;
         let gemma4_aux = if gemma_program {
-            let rope_freqs = match src.find("rope_freqs.weight") {
+            let rope_freqs = match src.try_find("rope_freqs.weight")? {
                 Some(t) => {
                     let host = memra_gguf::dequant::dequantize(
                         t.ggml_type,
@@ -5712,7 +5693,11 @@ impl HybridModel {
                 }
             };
             // E4B per-layer-embedding model tensors (tensor-presence gated).
-            let e4b = match src.find("per_layer_token_embd.weight") {
+            let e4b = match if cfg.gemma4.as_ref().is_some_and(|g| g.n_embd_per_layer > 0) {
+                src.try_find("per_layer_token_embd.weight")?
+            } else {
+                None
+            } {
                 Some(t) => {
                     let n_epl = cfg
                         .gemma4
@@ -5780,16 +5765,15 @@ impl HybridModel {
             None
         };
         // step35: rope_freqs.weight [n_rot_full/2] — FULL-attn layers only (SWA passes null).
-        // Loaded by tensor presence, not required: the key is absent on a sibling without
-        // llama3-style scaling, and `None` is the correct "no factors" signal for rope_neox2.
+        // GGUF carries the factor tensor; HF carries normalized factors in Step35Config.
+        // Preflight requires one when llama3 scaling is declared. Unscaled siblings keep None.
         let step35_aux = if sliding_gated_moe_program {
-            let rope_freqs = match src.find("rope_freqs.weight") {
-                Some(t) => {
-                    let host = memra_gguf::dequant::dequantize(
-                        t.ggml_type,
-                        &t.bytes,
-                        t.ne.iter().product::<u64>() as usize,
-                    );
+            let host = cfg
+                .step35
+                .as_ref()
+                .and_then(|step| step.rope_freq_factors.as_ref());
+            let rope_freqs = match host {
+                Some(host) => {
                     let mut copies = Vec::new();
                     if let Some(fence) = crate::pp::pp_cuts(n_trunk) {
                         #[allow(clippy::needless_range_loop)]
@@ -5798,11 +5782,11 @@ impl HybridModel {
                             let owner = crate::pp::layer_engine(e, n_trunk, fence[s])?;
                             let dev = owner.ctx().ordinal();
                             if copies.iter().all(|(d, _)| *d != dev) {
-                                copies.push((dev, owner.htod(&host)?));
+                                copies.push((dev, owner.htod(host)?));
                             }
                         }
                     } else {
-                        copies.push((e.ctx().ordinal(), e.htod(&host)?));
+                        copies.push((e.ctx().ordinal(), e.htod(host)?));
                     }
                     Some(copies)
                 }
@@ -6384,42 +6368,47 @@ impl HybridModel {
         // MTP blocks are skipped by what was actually loaded: none on the no-MTP entry points,
         // after MEMRA_MTP_SKIP, with an external MEMRA_MTP_DRAFT, or past a MEMRA_MTP_HEADS cap.
         let loaded_mtp_blocks = if load_mtp { embedded_head_count } else { 0 };
-        let unconsumed = binding.audit_consumption(&recording.requested(), &cfg, |id, tensor| {
-            memra_gguf::checkpoint_binding::unread_by_design(id)
-                || memra_gguf::checkpoint_binding::owned_by_vision(tensor)
-                || memra_gguf::checkpoint_binding::unloaded_mtp(
-                    tensor,
-                    n_trunk as u32,
-                    loaded_mtp_blocks,
-                )
-        });
-        memra_gguf::checkpoint_binding::settle_consumption(&binding, &unconsumed)
+        binding
+            .settle_consumption(&recording.requested(), n_trunk as u32, loaded_mtp_blocks)
             .map_err(std::io::Error::other)?;
-        let model = HybridModel {
-            cfg,
-            plan,
-            rewrite_qualifications: None,
-            embd,
-            output_norm,
-            output,
-            layers,
-            mtp,
-            mtp_extra,
-            dflash_trim,
-            frspec_src_sha16,
-            embd_gpu: std::sync::OnceLock::new(),
-            d2t_gpu: std::sync::OnceLock::new(),
-            gemma4_aux,
-            step35_aux,
-            prime_slabs: std::sync::Mutex::new(std::collections::HashMap::new()),
-            dspark_vgraphs: std::sync::Mutex::new(None),
-            step_grouped_prefill: std::sync::Mutex::new(StepEpGroupedPrefill::default()),
-            step35_token_graph: std::sync::Mutex::new(None),
-            hyper,
-            hyper_head,
-            glm5_dflash,
-            draft_state_bytes: std::sync::atomic::AtomicUsize::new(0),
-            test_extra_devices: Vec::new(),
+        let rewrite_generation = std::sync::Arc::default();
+        let mut model = HybridModel {
+            rewrite_admission: if rewrite_bundle.is_some() || trim_load.is_some() {
+                crate::plan_backend::RewriteAdmission::StrictPending
+            } else {
+                crate::plan_backend::RewriteAdmission::LegacyUnbundled
+            },
+            rewrite_identity: None,
+            rewrite_load_state: None,
+            rewrite_generation: std::sync::Arc::clone(&rewrite_generation),
+            program: crate::plan_backend::TrackedProgram::new(
+                HybridProgram {
+                    cfg,
+                    plan,
+                    embd,
+                    output_norm,
+                    output,
+                    layers,
+                    mtp,
+                    mtp_extra,
+                    dflash_trim,
+                    frspec_src_sha16,
+                    embd_gpu: std::sync::OnceLock::new(),
+                    d2t_gpu: std::sync::OnceLock::new(),
+                    gemma4_aux,
+                    step35_aux,
+                    prime_slabs: std::sync::Mutex::new(std::collections::HashMap::new()),
+                    dspark_vgraphs: std::sync::Mutex::new(None),
+                    step_grouped_prefill: std::sync::Mutex::new(StepEpGroupedPrefill::default()),
+                    step35_token_graph: std::sync::Mutex::new(None),
+                    hyper,
+                    hyper_head,
+                    glm5_dflash,
+                    draft_state_bytes: std::sync::atomic::AtomicUsize::new(0),
+                    test_extra_devices: Vec::new(),
+                },
+                rewrite_generation,
+            ),
         };
         e.configure_moe_cache_layout(model.moe_cache_block_sizes());
         if force_embd_gpu {
@@ -6432,7 +6421,43 @@ impl HybridModel {
         // streams with no event between them. Synchronize every stage context once so
         // no consumer can ever read a half-built tensor (the 2026-08-02 split5 ref=0.0
         // head-mirror find). No-op with the door shut.
-        crate::pp::sync_stages_after_load(e, n_trunk)?;
+        let trim_proof = if let Some(pending) = trim_load {
+            Some(
+                pending.complete(
+                    e,
+                    &mut model,
+                    artifact_sha256
+                        .as_deref()
+                        .ok_or("paired load has no target artifact identity")?,
+                    n_trunk,
+                )?,
+            )
+        } else {
+            crate::pp::sync_stages_after_load(e, n_trunk)?;
+            None
+        };
+        if let Some(artifact_sha256) = artifact_sha256 {
+            let (identity, state) = if let Some(proof) = trim_proof {
+                crate::plan_backend::capture_target_trim_rewrite_identity(
+                    &model,
+                    src,
+                    artifact_sha256,
+                    proof,
+                )?
+            } else {
+                crate::plan_backend::capture_rewrite_identity(
+                    &model,
+                    src,
+                    artifact_sha256,
+                    load_mtp,
+                )?
+            };
+            model.rewrite_identity = Some(identity);
+            model.rewrite_load_state = Some(state);
+        }
+        if let Some(bundle) = rewrite_bundle {
+            model.install_rewrite_bundle(std::path::Path::new(&bundle))?;
+        }
         Ok(model)
     }
 
@@ -6444,6 +6469,17 @@ impl HybridModel {
     /// The server calls this after each ladder landing so the biggest lazy
     /// transient surfaces as a catchable Err (shrink further / fall back) instead
     /// of a panic. No-op when the table is already resident.
+    pub fn resident_embed_table(
+        &self,
+        e: &Engine,
+    ) -> Result<&cudarc::driver::CudaSlice<u8>, Box<dyn std::error::Error>> {
+        self.ensure_embed_resident(e)?;
+        Ok(self
+            .embd_gpu
+            .get()
+            .expect("ensure_embed_resident initialized the table"))
+    }
+
     pub fn ensure_embed_resident(&self, e: &Engine) -> Result<(), Box<dyn std::error::Error>> {
         if self.embd_gpu.get().is_none() {
             let buf = e.upload_u8(&self.embd.raw)?;

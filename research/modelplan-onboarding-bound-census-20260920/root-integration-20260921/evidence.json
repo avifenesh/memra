@@ -1,0 +1,354 @@
+{
+  "base_commit": "725551d7bec6ce9c652296fc7fd89ebaed17b9e5",
+  "source_sha256": {
+    "crates/memra-engine/src/hybrid.rs": "08685fcf9d7cdce26b3795dbc7f25b3dc963db803e02f4e87452a7a79addedb8",
+    "crates/memra-engine/src/model.rs": "d888c65afa3121783e824f7e1e703a60412f5ac10116d25d5ef2a39db9d6f60b",
+    "crates/memra-engine/src/parallel.rs": "c4f52fae91fcefb21014524d3b51ae4348fe2c793692d8d18fdd1a71b7ada73e",
+    "crates/memra-engine/src/parallel/costs.rs": "389491c686876a732bf6580df460204f2eacc2c25338a06b066f4ecef4af197a",
+    "crates/memra-gguf/src/bound_source.rs": "668fff63bde073a30b66294229470ffb3c3e6a226bff719d0ee5c7c68b016b21",
+    "crates/memra-gguf/src/bound_source/abi.rs": "3490a084f7e851b5b1c27939d8db0bc9adbbd6cb1be76643c12f9c140bacb075",
+    "crates/memra-gguf/src/bound_source/composite.rs": "0bb9db5ecf1ac8f0aab92c8bbcafc7eb8f811e1a3c9c469911e820c5104015c6",
+    "crates/memra-gguf/src/bound_source/composite/access.rs": "1245c514604ada3717e99981fa9b45201de505ca1952f275e8410ea125664b5d",
+    "crates/memra-gguf/src/bound_source/composite/runtime.rs": "802234c14aeefe49d0016f6792d3e3dca6d9966826df0ae98e8df1df7c8fb03d",
+    "crates/memra-gguf/src/bound_source/prepare.rs": "537ae728e8e191c35666770e936505a17d87363efa0c27fa9217f671a6fbf124",
+    "crates/memra-gguf/src/bound_source/runtime.rs": "6a97d69b6a517e4cc5c354cc72ce3ec73c847908c0f8dfcef927acaf358c85bd",
+    "crates/memra-gguf/src/bound_source/tests.rs": "1e8d2c570ac77394b6ffdccab748ab39dcd8c96e0b02cf015459585eb7d39bfb",
+    "crates/memra-gguf/src/source.rs": "44340cbacd64d3f07b5f1603befc21c7ca7508278c68085b904ffde691f51104",
+    "crates/memra-gguf/src/source/composite.rs": "acef4512d4ac5eb31efc7d07a3f9bf50e8a03647efd82febfba9e3f99f1f05a6",
+    "crates/memra-reference/tests/composite_source.rs": "5c4e83428ab0a5b0c62ac9eba3d55dfb39d032e408b6456d767e30785c72c278",
+    ".github/workflows/ci.yml": "344e6814655adedf0c63000ba8848c5a953bde3e86caad2e4e00cd371a866a80"
+  },
+  "source_review": "pending",
+  "source_GO": false,
+  "root_adoption_implemented": true,
+  "native_gpu_execution": false,
+  "support_promotion": false,
+  "commands": [
+    {
+      "name": "gguf-cli",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target"
+      },
+      "exit_code": 0,
+      "wall_seconds": 32.87241433293093
+    },
+    {
+      "name": "reference-root",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-reference",
+        "--test",
+        "composite_source",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target"
+      },
+      "exit_code": 0,
+      "wall_seconds": 2.496711957966909
+    },
+    {
+      "name": "placement",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "target/541-root-placement-host/Cargo.toml",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target"
+      },
+      "exit_code": 0,
+      "wall_seconds": 6.57034241699148
+    },
+    {
+      "name": "repack-consumer",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "target/541-repack-consumer-host/Cargo.toml"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target"
+      },
+      "exit_code": 0,
+      "wall_seconds": 1.8507932079955935
+    },
+    {
+      "name": "source-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli",
+        "-p",
+        "memra-reference",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target"
+      },
+      "exit_code": 0,
+      "wall_seconds": 6.14467762503773
+    },
+    {
+      "name": "engine-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "--lib",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0,
+      "wall_seconds": 41.28991675004363
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target"
+      },
+      "exit_code": 0,
+      "wall_seconds": 3.9567806250415742
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.0875555839156732
+    }
+  ],
+  "raw": {
+    "raw/repack-consumer.log.gz": {
+      "sha256": "903bddb4e35589e1af3bb2ba82b062c91e66d46223f8008a32554811c9e3cc54",
+      "uncompressed_sha256": "f4ed7d93b53ff1786c10524aab188f024d04b99d3f682921f8197d6e65c1c15e",
+      "uncompressed_bytes": 1360
+    },
+    "raw/reference-root.log.gz": {
+      "sha256": "92fef0b2a684432e4cfb36ae5205722d59faaeb2c776ccc1a12680c333a9e80b",
+      "uncompressed_sha256": "e50f4633ef4b6d5a125b2281d10b0715415d879556ad052672969732033316ea",
+      "uncompressed_bytes": 488
+    },
+    "raw/format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/placement.log.gz": {
+      "sha256": "2d2b722895b860f649d0d5bd62e032be73e2c2eaa155f816ae6136f60b91c83b",
+      "uncompressed_sha256": "ba864a780b168e514985dc3e0b313e4cc865c914982b34e884fd02754d188979",
+      "uncompressed_bytes": 1128
+    },
+    "raw/source-clippy.log.gz": {
+      "sha256": "2da37cbff4f37a3067df100d137827164ff83fdcf3a114f15054d905d06badc6",
+      "uncompressed_sha256": "cf92e5e076d4c06e99180d2729f87e5ae72597f6da543fbac76d58c9ac2c99cf",
+      "uncompressed_bytes": 550
+    },
+    "raw/gguf-cli.log.gz": {
+      "sha256": "67a8c48ce8f50e018baeb31229567f05ba292955a51507e9edbfe69398f2ee5d",
+      "uncompressed_sha256": "9b6766e6de56584eb31237d45a179af12fb3f2fcfe31e95010bac35953da40e0",
+      "uncompressed_bytes": 44374
+    },
+    "raw/engine-clippy.log.gz": {
+      "sha256": "41b16f051567fb711c05c0521493a095ec108b9ec5fb442552dd4af802e61db6",
+      "uncompressed_sha256": "193a37c31bff19e918b7a2cb48d0c7facf09c63cd11df9cd226ad33715d313df",
+      "uncompressed_bytes": 789
+    },
+    "raw/diff.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/results.json.gz": {
+      "sha256": "83ef7fad3ce8a8729228db3f58ceb8dac4b71ad9881bb6e346267b3b70ba589a",
+      "uncompressed_sha256": "2f539aa36917beb77f0508fcc8609900c9cd5bc87748fcf8640a3c7867fcaf66",
+      "uncompressed_bytes": 3414
+    },
+    "raw/preservation.json.gz": {
+      "sha256": "211e8815169fec66a599f5bb5853e550e1e9b5e1c95516c534aa9c1aa995067d",
+      "uncompressed_sha256": "5afd4118dc71063cd6034372671cf9c6cfbe40979ab16f1e906a28234a2f9ac7",
+      "uncompressed_bytes": 1370
+    }
+  },
+  "development": {
+    "development/initial-repack-consumer.log.gz": {
+      "sha256": "63ee94880cc1b1dfa95cd99b09352b8d02b83d9f04fd13e2b4489868007e9497",
+      "uncompressed_sha256": "a29a44a21cbcb0f360ed16255f20629e65077efd280da05446e16d097b06aa73",
+      "uncompressed_bytes": 1360
+    },
+    "development/initial-reference-root.log.gz": {
+      "sha256": "bd14e46aa0a98f8870c0f4abd6e654bfcb9ec2d790e6755dc570001256426cb0",
+      "uncompressed_sha256": "d2a5e6439423b14c137bb1026aef9dae95d217111722a5acd91603f9870f7541",
+      "uncompressed_bytes": 363
+    },
+    "development/initial-results.json.gz": {
+      "sha256": "ba8014d6e8fcfe7a024f8bdb5174fd22beffe133177426fc300386974349a972",
+      "uncompressed_sha256": "0715ee8f53c934749fafea060613cc455255dbb78432ea466605020fe050dd1a",
+      "uncompressed_bytes": 2769
+    },
+    "development/initial-placement.log.gz": {
+      "sha256": "3fa2f86498c669b75e4fc455ffdbb5cc0395f06641d195499a96866eb41ffcd5",
+      "uncompressed_sha256": "18c69a9ad30ead7cb35c81423291cadf9bb1c78c9568374f9914810dde9cfde8",
+      "uncompressed_bytes": 872
+    },
+    "development/initial-source-clippy.log.gz": {
+      "sha256": "6897e1f954c08070911e64aae7714eede9a9d73853937f491ced6715d83eaec4",
+      "uncompressed_sha256": "448abe214902f4a5503b7d1dbf37dc4619c03f9763f241ece59f815199e40a0a",
+      "uncompressed_bytes": 550
+    },
+    "development/initial-gguf-cli.log.gz": {
+      "sha256": "a5f644b92516c5b6400cf5fc83c369d91a4b5bec2364412c915c734c211f0b08",
+      "uncompressed_sha256": "496f51fb2db18b35c15d239340a18fc670f39f5ade09e63d156c3c77d350ae3a",
+      "uncompressed_bytes": 43995
+    },
+    "development/initial-engine-clippy.log.gz": {
+      "sha256": "a3e53001bb01035b97220debf2f65a5caf8bac3f59d27b76f382b285c52f4a57",
+      "uncompressed_sha256": "47f969b0be70e98e1ec77d2a0b7fcf1f97600f1f13ac5560dc008d26ad784697",
+      "uncompressed_bytes": 1974
+    },
+    "development/541-root-adapter-check.log.gz": {
+      "sha256": "d01e1bebddf6f0bb64a5fdf2cd4c638c356041d9cc4b8e0fd7ef316a15dd8be7",
+      "uncompressed_sha256": "ed1cc6d53bef052799a3a3074f42488320bfaa6a02aa29e3437fa7284caf59b5",
+      "uncompressed_bytes": 1011
+    },
+    "development/541-root-focused.log.gz": {
+      "sha256": "b037a7dee6aadb63de7e0415cff0f2ac43b2d742b545d47754bafab501a0a5f4",
+      "uncompressed_sha256": "45494466c602f8452fc83cb648742aa45caccd8ad2f6626d1fb757bd13122c3d",
+      "uncompressed_bytes": 1031
+    },
+    "development/541-root-focused-2.log.gz": {
+      "sha256": "81fcba58a1591193c10e9ad09345934227e9b3cf7944dac771de0241602c9205",
+      "uncompressed_sha256": "ae4c3727db2996187703dabffb7703dd5be5969f870b7aa6df1f93268f959a2a",
+      "uncompressed_bytes": 963
+    },
+    "development/541-root-focused-3.log.gz": {
+      "sha256": "169c07a968d89d08f1d7d3be30b72ce49a7405a8619d643864e5b60eb54e6874",
+      "uncompressed_sha256": "b00f21349ee906ad7949480aa1ab838e4f3e6e3de6c958522989f62b880bba3b",
+      "uncompressed_bytes": 908
+    },
+    "development/541-root-engine-check.log.gz": {
+      "sha256": "2009fc348d3c7519092bcfeae95bdf41a25276f7502f6d7d865f5f961a750109",
+      "uncompressed_sha256": "7495f8f08cdf183984b8bf79a28327d76ec7e110b1ba9003d7d1f4c2959323aa",
+      "uncompressed_bytes": 789
+    },
+    "development/541-root-engine-clippy-repair.log.gz": {
+      "sha256": "78956014388dfd44ed74e8379a791edd29ef4b99abafd9b2d9e76cf639521d84",
+      "uncompressed_sha256": "ad09de37588647934076c704dc680a760db3cd0660451c7ecf5fd29a9b7f4a7d",
+      "uncompressed_bytes": 192
+    }
+  },
+  "harness": {
+    "harness/Cargo.toml.gz": {
+      "sha256": "f29090ad8cc01e711d87b6cd60d70962e9b06e68df007e467a853c12f80b34f0",
+      "uncompressed_sha256": "ba97782300d597e60a81b8d0603e9393fd18044186d8c235b06ef6fbdf14d3a0",
+      "uncompressed_bytes": 201
+    },
+    "harness/Cargo.lock.gz": {
+      "sha256": "0eb989501629cdbedc06f479c7521d3a6289fcf7b60411d8e35004bbf1612972",
+      "uncompressed_sha256": "89ec9400c1929c07d0ec07188696fd3f0deb8158c44c64b4e1ca014d71075998",
+      "uncompressed_bytes": 5215
+    },
+    "harness/src-lib.rs.gz": {
+      "sha256": "12ce45c966a8001df8b60760e723ce2627624200a2d836d014346fdbc33f646c",
+      "uncompressed_sha256": "c251bd63dad3aa36ac5a4ddd8b68d14ad4a90dd30b4d8779f7e12a9533fe0247",
+      "uncompressed_bytes": 146
+    }
+  },
+  "reviewed_input": {
+    "reviewed_input/issue-541-canonical-consumer-725551d7.json.gz": {
+      "sha256": "9a912c154c56ea0b3f4be8f1e14268c89da25d1047fe42058ea5e55764aeddae",
+      "uncompressed_sha256": "7cf208d3de2b4caa846539e4456892cae24762f07d6345291b83a7937946c2b4",
+      "uncompressed_bytes": 4543
+    }
+  },
+  "binaries": {
+    "placement": {
+      "sha256": "ae504153de6a6e154e9b5001bf1df8169465273504ebc5413c87c54cf0d268f3",
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/root-integration/placement-ae504153de6a6e154e9b5001bf1df8169465273504ebc5413c87c54cf0d268f3",
+      "bytes": 10027416,
+      "format": "macOS CPU Mach-O; not a native GPU binary"
+    },
+    "reference-root": {
+      "sha256": "d3b1555537f77e9b421644b2dfe5ac702811e86a8c5fa1d3f5d2e1929aa15cd3",
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/root-integration/reference-root-d3b1555537f77e9b421644b2dfe5ac702811e86a8c5fa1d3f5d2e1929aa15cd3",
+      "bytes": 10959328,
+      "format": "macOS CPU Mach-O; not a native GPU binary"
+    },
+    "repack-consumer": {
+      "sha256": "cc96490432488bab02fbe28b8eea6c26104efaaa3dd3825b858ecfb38905ad7d",
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/root-integration/repack-consumer-cc96490432488bab02fbe28b8eea6c26104efaaa3dd3825b858ecfb38905ad7d",
+      "bytes": 7712480,
+      "format": "macOS CPU Mach-O; not a native GPU binary"
+    }
+  },
+  "placement_proof": {
+    "selected_execution_bytes": 5676,
+    "inventory_vision_reservation_bytes": 6656,
+    "legacy_total_equal": true,
+    "ordinary_tied_separate_and_gguf_costs_equal": true,
+    "device_selection_algorithm_unchanged": true
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "base_commit": "3d1cd9ea631bb0b2ec016947142e078f8a88c346",
+  "source_sha256": {
+    ".github/workflows/ci.yml": "11b42ca9e1788ab9d9b3d4ad640f7338994b9f0a186c1b97ef8ff9535a1f8074",
+    "crates/memra-engine/src/bin/rewrite_identity_gate.rs": "f9673bf7e40e31d6e108003b076c9998b6d489b9c1ac1a633595d8fc32c4f05d",
+    "crates/memra-engine/src/bin/rewrite_identity_gate/retained.rs": "bfa3b3bb001dec6b5d73d784dd37d22ae520c11f0b4b98d30bf9ea2d5618d6e4",
+    "crates/memra-engine/src/bin/rewrite_identity_gate/capture.rs": "20663b0384065229217307971e72fca9d0cd88c1cc6e5c0726556a32bc13ba50",
+    "crates/memra-engine/src/bin/rewrite_identity_gate/selected.rs": "0b7dcba635a95f0cae708d85159723bedc6e006ffc130460492ba53d01e28c4a",
+    "research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py": "268d96530ced0117c696f64510aa047dd53ca7a27ea6814fb980af26c7aa6b1b"
+  },
+  "logs": {
+    "caller-controls.log": {
+      "file": "caller-controls.log.gz",
+      "raw_sha256": "7db2d3ac48f7119d920215a938e0da4742cfbd33c76f66b77e2177613d46fb45",
+      "archive_sha256": "f05146f57b89bde78ec8aa740b1a19c902baf2601880e23d468826f564b6073a"
+    },
+    "signal-controls.log": {
+      "file": "signal-controls.log.gz",
+      "raw_sha256": "ec62b466ad6ab2def7d7228222525c20aa5062fea12c634e613d8557f47b58a3",
+      "archive_sha256": "600d822d33a8adca0459fe0fe5d64b5877bcb70dce6f70974c4b25a30b5256d2"
+    },
+    "provenance-controls.log": {
+      "file": "provenance-controls.log.gz",
+      "raw_sha256": "b1ee2d0d6646c215d8e2a29961f4cc810ad7d04a290d99b662e6dc43bbfba0a6",
+      "archive_sha256": "f41559fa5ee0919ed1f7f4baca8a05b45dfd55631902da2d5beea50ba2f1519b"
+    },
+    "linux-clippy-initial-failure.log": {
+      "file": "linux-clippy-initial-failure.log.gz",
+      "raw_sha256": "d882a322db51566f4d65ab400d1a68b7dbebd3fa78cc5041b1fc2e4eb4527df2",
+      "archive_sha256": "9f2f5ec91edcab2f2da5e585a4b33fe9904f3d1f35ce9728d73385d04ce18013"
+    },
+    "linux-clippy-final.log": {
+      "file": "linux-clippy-final.log.gz",
+      "raw_sha256": "64a846600e0673c431c1725d21a1f68727127717448e7bd2a5deb9d3b55005c3",
+      "archive_sha256": "393935e7f8ba9fd398aa0590ad30be5d7a4228bf850af85634b110c70cd3749a"
+    }
+  },
+  "CPU_results": {
+    "caller_tests": 19,
+    "provenance_tests": 33,
+    "real_SIGTERM_scenarios": 15,
+    "Linux_target_clippy": "pass, DOCS_RS compile-only",
+    "Rust_selected_scope_tests": "compiled; execution registered in CI with minimum2; not run locally"
+  },
+  "native_status": "unrun; explicit new27case scope; original3d1 remains failed",
+  "initial_lint_failure": "test module order; corrected before final successful all-target run"
+}

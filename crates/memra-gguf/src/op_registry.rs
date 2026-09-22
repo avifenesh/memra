@@ -2,7 +2,7 @@
 //! operation, which tuned execution surfaces have an implementation.
 //!
 //! The execution manifests in [`crate::execution_manifest`] (`CARRIED_PRIME`, `NATIVE_EAGER`,
-//! `DECODE_BATCH`, `DECODE_GRAPH`, `MTP_SPEC`, `GLM5_SPEC`, `PIPELINE`) DERIVE their per-operation
+//! `NATIVE_GEMMA_EAGER`, `NATIVE_GDN_EAGER`, `DECODE_BATCH`, `DECODE_GRAPH`, `MTP_SPEC`, `GLM5_SPEC`, `PIPELINE`) DERIVE their per-operation
 //! support from this table. Before this module existed each manifest carried its own
 //! `matches!(operation, …)` allowlist, so the question "what can the engine do with operation X"
 //! had seven answers in seven places and no place said "nothing yet" out loud. Here it has one
@@ -37,6 +37,11 @@ pub struct Surfaces {
     pub carried_prime: bool,
     /// `NATIVE_EAGER`: the native eager decode program.
     pub decode_eager: bool,
+    /// `NATIVE_GEMMA_EAGER`: the canonical dense, non-PLE Gemma T1 program.
+    /// This is a separate implementation of DecodeEager, not fresh-KV coverage.
+    pub gemma_eager: bool,
+    /// `NATIVE_GDN_EAGER`: dense serial GatedDeltaNet/full-attention T1 program.
+    pub gdn_eager: bool,
     /// `DECODE_BATCH`: the batched decode trunk (`decode_step_batch*`).
     pub decode_batch: bool,
     /// `DECODE_GRAPH`: CUDA-graph captured decode.
@@ -71,6 +76,8 @@ impl Surfaces {
     pub const NONE: Self = Self {
         carried_prime: false,
         decode_eager: false,
+        gemma_eager: false,
+        gdn_eager: false,
         decode_batch: false,
         decode_graph: false,
         mtp_spec_draft: false,
@@ -96,6 +103,18 @@ impl Surfaces {
     pub const fn decode_batch(self) -> Self {
         Self {
             decode_batch: true,
+            ..self
+        }
+    }
+    pub const fn gemma_eager(self) -> Self {
+        Self {
+            gemma_eager: true,
+            ..self
+        }
+    }
+    pub const fn gdn_eager(self) -> Self {
+        Self {
+            gdn_eager: true,
             ..self
         }
     }
@@ -146,6 +165,8 @@ impl Surfaces {
     pub const fn is_none(self) -> bool {
         !(self.carried_prime
             || self.decode_eager
+            || self.gemma_eager
+            || self.gdn_eager
             || self.decode_batch
             || self.decode_graph
             || self.mtp_spec_draft
@@ -157,7 +178,7 @@ impl Surfaces {
     }
 
     /// Column order of the rendered table and of [`Surfaces::flags`].
-    pub const COLUMNS: [&'static str; 10] = [
+    pub const COLUMNS: [&'static str; 12] = [
         "carried_prime",
         "decode_eager",
         "decode_batch",
@@ -168,10 +189,12 @@ impl Surfaces {
         "glm5_spec_verify",
         "pipeline",
         "chunked_prime",
+        "gemma_eager",
+        "gdn_eager",
     ];
 
     /// The row as booleans in [`Surfaces::COLUMNS`] order.
-    pub const fn flags(self) -> [bool; 10] {
+    pub const fn flags(self) -> [bool; 12] {
         [
             self.carried_prime,
             self.decode_eager,
@@ -183,6 +206,8 @@ impl Surfaces {
             self.glm5_spec_verify,
             self.pipeline,
             self.chunked_prime,
+            self.gemma_eager,
+            self.gdn_eager,
         ]
     }
 }
@@ -196,6 +221,8 @@ impl Surfaces {
 pub const fn surfaces(operation: OperationKind) -> Surfaces {
     match operation {
         OperationKind::Embedding => Surfaces::NONE
+            .gdn_eager()
+            .gemma_eager()
             .carried_prime()
             .decode_eager()
             .decode_batch()
@@ -207,6 +234,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .pipeline()
             .chunked_prime(),
         OperationKind::RmsNorm => Surfaces::NONE
+            .gdn_eager()
+            .gemma_eager()
             .carried_prime()
             .decode_eager()
             .decode_batch()
@@ -218,6 +247,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .pipeline()
             .chunked_prime(),
         OperationKind::FullAttention => Surfaces::NONE
+            .gdn_eager()
+            .gemma_eager()
             .carried_prime()
             .decode_eager()
             .decode_batch()
@@ -227,6 +258,7 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .pipeline()
             .chunked_prime(),
         OperationKind::SlidingWindowAttention => Surfaces::NONE
+            .gemma_eager()
             .decode_batch()
             .mtp_spec_draft()
             .mtp_spec_verify()
@@ -242,6 +274,7 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .pipeline(),
         OperationKind::SharedSparseIndex => Surfaces::NONE.glm5_spec_draft().glm5_spec_verify(),
         OperationKind::GatedDeltaNet => Surfaces::NONE
+            .gdn_eager()
             .carried_prime()
             .decode_batch()
             .decode_graph()
@@ -253,6 +286,7 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .glm5_spec_verify()
             .pipeline(),
         OperationKind::FusedAttentionGate => Surfaces::NONE
+            .gdn_eager()
             .carried_prime()
             .decode_batch()
             .decode_graph()
@@ -266,6 +300,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .pipeline()
             .chunked_prime(),
         OperationKind::DenseMlp => Surfaces::NONE
+            .gdn_eager()
+            .gemma_eager()
             .carried_prime()
             .decode_eager()
             .decode_batch()
@@ -284,6 +320,7 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .glm5_spec_verify()
             .pipeline()
             .chunked_prime(),
+        OperationKind::RetainedExpertRouting => Surfaces::NONE,
         OperationKind::SoftmaxRouter => Surfaces::NONE
             .decode_batch()
             .decode_graph()
@@ -309,6 +346,7 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .pipeline()
             .chunked_prime(),
         OperationKind::SiluActivation => Surfaces::NONE
+            .gdn_eager()
             .carried_prime()
             .decode_eager()
             .decode_batch()
@@ -317,7 +355,9 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .mtp_spec_verify()
             .pipeline()
             .chunked_prime(),
-        OperationKind::GeluTanhActivation => Surfaces::NONE.decode_batch().chunked_prime(),
+        OperationKind::GeluTanhActivation => {
+            Surfaces::NONE.gemma_eager().decode_batch().chunked_prime()
+        }
         OperationKind::SwiGluClampedActivation => Surfaces::NONE
             .decode_batch()
             .mtp_spec_draft()
@@ -329,6 +369,7 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .glm5_spec_verify()
             .pipeline(),
         OperationKind::SerialResidual => Surfaces::NONE
+            .gdn_eager()
             .carried_prime()
             .decode_eager()
             .decode_batch()
@@ -338,10 +379,12 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .glm5_spec_draft()
             .pipeline()
             .chunked_prime(),
-        OperationKind::GemmaResidual => Surfaces::NONE.decode_batch().chunked_prime(),
+        OperationKind::GemmaResidual => Surfaces::NONE.gemma_eager().decode_batch().chunked_prime(),
         OperationKind::GemmaParallelMoeResidual => Surfaces::NONE.decode_batch().chunked_prime(),
         OperationKind::HyperConnections => Surfaces::NONE.glm5_spec_verify().pipeline(),
         OperationKind::KvState => Surfaces::NONE
+            .gdn_eager()
+            .gemma_eager()
             .carried_prime()
             .decode_eager()
             .decode_batch()
@@ -351,12 +394,14 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .pipeline()
             .chunked_prime(),
         OperationKind::SlidingKvState => Surfaces::NONE
+            .gemma_eager()
             .decode_batch()
             .mtp_spec_draft()
             .mtp_spec_verify()
             .pipeline()
             .chunked_prime(),
         OperationKind::RecurrentState => Surfaces::NONE
+            .gdn_eager()
             .carried_prime()
             .decode_batch()
             .decode_graph()
@@ -374,10 +419,13 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
         OperationKind::MtpFusion => Surfaces::NONE.mtp_spec_draft().glm5_spec_draft().pipeline(),
         OperationKind::MtpHead => Surfaces::NONE.mtp_spec_draft().glm5_spec_draft().pipeline(),
         OperationKind::PipelineBoundary => Surfaces::NONE.pipeline(),
-        OperationKind::LogitsSoftcap => {
-            Surfaces::NONE.decode_eager().decode_batch().chunked_prime()
-        }
+        OperationKind::LogitsSoftcap => Surfaces::NONE
+            .gemma_eager()
+            .decode_eager()
+            .decode_batch()
+            .chunked_prime(),
         OperationKind::LogitsMask => Surfaces::NONE
+            .gemma_eager()
             .carried_prime()
             .decode_eager()
             .decode_batch()
@@ -387,6 +435,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .pipeline()
             .chunked_prime(),
         OperationKind::OutputProjection => Surfaces::NONE
+            .gdn_eager()
+            .gemma_eager()
             .carried_prime()
             .decode_eager()
             .decode_batch()
@@ -471,6 +521,7 @@ pub const ALL_OPERATIONS: &[OperationKind] = &[
     OperationKind::SeparateAttentionGate,
     OperationKind::DenseMlp,
     OperationKind::MoeMlp,
+    OperationKind::RetainedExpertRouting,
     OperationKind::SoftmaxRouter,
     OperationKind::SigmoidRouter,
     OperationKind::SqrtSoftplusRouter,
@@ -552,7 +603,7 @@ mod tests {
         // follow. Bump it in the same commit as the variant.
         assert_eq!(
             ALL_OPERATIONS.len(),
-            67,
+            68,
             "OperationKind variant count moved; update ALL_OPERATIONS"
         );
     }
@@ -564,6 +615,75 @@ mod tests {
             if row.is_none() {
                 assert_eq!(row, Surfaces::NONE);
             }
+        }
+    }
+
+    #[test]
+    fn gemma_eager_declares_only_the_dense_t1_operations() {
+        let expected = [
+            OperationKind::Embedding,
+            OperationKind::RmsNorm,
+            OperationKind::FullAttention,
+            OperationKind::SlidingWindowAttention,
+            OperationKind::DenseMlp,
+            OperationKind::GeluTanhActivation,
+            OperationKind::GemmaResidual,
+            OperationKind::KvState,
+            OperationKind::SlidingKvState,
+            OperationKind::LogitsSoftcap,
+            OperationKind::LogitsMask,
+            OperationKind::OutputProjection,
+        ];
+        for &operation in ALL_OPERATIONS {
+            assert_eq!(
+                surfaces(operation).gemma_eager,
+                expected.contains(&operation),
+                "{operation:?}"
+            );
+        }
+        // No global change to the generic eager/fresh-KV support column.
+        for operation in [
+            OperationKind::SlidingWindowAttention,
+            OperationKind::SlidingKvState,
+            OperationKind::GeluTanhActivation,
+            OperationKind::GemmaResidual,
+        ] {
+            assert!(!surfaces(operation).decode_eager);
+        }
+    }
+
+    #[test]
+    fn gdn_eager_declares_only_the_dense_serial_t1_operations() {
+        let expected = [
+            OperationKind::Embedding,
+            OperationKind::RmsNorm,
+            OperationKind::FullAttention,
+            OperationKind::GatedDeltaNet,
+            OperationKind::FusedAttentionGate,
+            OperationKind::DenseMlp,
+            OperationKind::SiluActivation,
+            OperationKind::SerialResidual,
+            OperationKind::KvState,
+            OperationKind::RecurrentState,
+            OperationKind::OutputProjection,
+        ];
+        for &operation in ALL_OPERATIONS {
+            assert_eq!(
+                surfaces(operation).gdn_eager,
+                expected.contains(&operation),
+                "{operation:?}"
+            );
+        }
+        for operation in [
+            OperationKind::GatedDeltaNet,
+            OperationKind::RecurrentState,
+            OperationKind::FusedAttentionGate,
+        ] {
+            assert!(
+                !surfaces(operation).decode_eager,
+                "generic eager/fresh-KV widened"
+            );
+            assert!(!surfaces(operation).gemma_eager, "Gemma eager widened");
         }
     }
 

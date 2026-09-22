@@ -1,0 +1,11 @@
+SCOPE native-program-admission-only support_promotion=false performance=not-measured mode=library-drift artifact_lock_sha256=3d91ccb45bd39b446bb995630b628ba96e92a65c36bebbee519be647f8ce3be3
+[q8rp] split-plane decode mirrors built: 196 tensors
+LOADED artifact_sha256=6d4312dcfb019825ba279b31df909865454da0390634446b1b861f84254b2f37 implementation_sha256=c5b12e6f468bae01a230c8aeb8b093cbdf193f5cb009ccec16981f76d866c6dd numeric_program_sha256=b3903443c7c3ad02aa62f8af17b972d954b55dcf8f299b2bb603fdcf93041ea6
+[fa-pool] grow #0 dev=0 o_len 0 -> 2048 ml_len 0 -> 16 (retired kept, zero=false)
+RETAINED_NO_DRIFT_REENTRY_PASS nested_eager=true
+LIBRARY_DRIFT_MAPPING file=/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle/native-refusal-map-2231163/never-executed.bin bytes=4096 sha256=ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7 maps=["7b4091e77000-7b4091e78000 r-xs 00000000 fd:01 87560108                   /data/receipts/issue-542-33144df6-baseline-attempt-001/bundle/native-refusal-map-2231163/never-executed.bin"]
+RETAINED_LIBRARY_DRIFT_REFUSAL_PASS token_calls=0 reason=rewrite identity is stale: loaded executable mappings changed: added=["/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle/native-refusal-map-2231163/never-executed.bin"] removed=[] modified=[]
+RETAINED_LIBRARY_DRIFT_CACHE_PASS before_sha256=bbc963a6f1d0d28105fac4e4e56a8bd980d067ae9b575d25b661c4ba8dc7e43e after_sha256=bbc963a6f1d0d28105fac4e4e56a8bd980d067ae9b575d25b661c4ba8dc7e43e
+RETAINED_LIBRARY_DRIFT_UNMAP_PASS
+RETAINED_LIBRARY_DRIFT_REVOCATION_PASS restored_external_identity=true
+NATIVE_REFUSAL_GATE_PASS mode=library-drift scope=retained-eager-snapshot receipt_emitted=false support_promotion=false

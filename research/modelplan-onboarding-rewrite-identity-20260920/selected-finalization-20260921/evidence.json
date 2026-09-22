@@ -1,0 +1,51 @@
+{
+  "finding": "TC542-SELECTED-01",
+  "base_commit": "aa660a133de6cc85c6064616af46ce94c30235a5",
+  "scope": "selected-scope outer failure cleanup across case/finalization/publication",
+  "source_sha256": {
+    "native_finalization.py": "c73b5f4f23fc0bf84b25d054e5a09236f8b756042d49a382054e184ffd8dbfce",
+    "qualify-callers.py": "64549d5117cb67ab0525d7f11aafffd848b1dd0be61a52535935bca894ce09f4",
+    "test_qualify_callers.py": "b89a031a36810f6ffa923f47110eca555a5fa931bd9b43b5503bf9a524a38b75"
+  },
+  "red_controls": "same actual-index final-invariant/post-atomic-replace and real SIGTERM controls fail on immutable aa660; failed selected phase left installable index",
+  "green_controls": {
+    "caller_tests": 21,
+    "shared_finalization_tests": 7,
+    "real_SIGTERM_scenarios": 15,
+    "provenance_tests": 33
+  },
+  "logs": {
+    "old-late-failure.log": {
+      "file": "old-late-failure.log.gz",
+      "raw_sha256": "c9a2a3819e3ff5747ed120feb8ccbd4643043ad04e163c6d53ead038605f0283",
+      "compressed_sha256": "944dab187ca35edde313f3b820cca9d0046d499bd4bcd266c4b3d24003e068f3"
+    },
+    "old-real-signal.log": {
+      "file": "old-real-signal.log.gz",
+      "raw_sha256": "41c1118908dfc03d02b4004cb5e8cad40944db78e76e0a15b1da43ba42dede0a",
+      "compressed_sha256": "604c510a7e3a99a97f553eb045d5f43f5d2fcc900b86e28ffe73281fcf50c851"
+    },
+    "test_qualify_callers.py.log": {
+      "file": "test_qualify_callers.py.log.gz",
+      "raw_sha256": "9cc28d180a94c07b3f1539a9d7b59de3626808c5d1b9380485dead7b89f04048",
+      "compressed_sha256": "16b74d450361f900873baa0a06fa2a13e8d6f1d1dc385860e902bfece5c5e0c9"
+    },
+    "test_native_finalization.py.log": {
+      "file": "test_native_finalization.py.log.gz",
+      "raw_sha256": "b896ec92bef469338ebf5e6ce5c1d48adaac4acf693e80b6e5c5d8aef366f633",
+      "compressed_sha256": "44c186f2a09ef8f13673df6c4c455216618d636cdf97a2d09d292b3cf171a252"
+    },
+    "test_finalization_signals.py.log": {
+      "file": "test_finalization_signals.py.log.gz",
+      "raw_sha256": "f2d304437bf12fda2fe070829857cc866b974d05b44ef545c3c223bc062d1000",
+      "compressed_sha256": "b813690cef1c8cf9048f04a38be754cb8370d6139553663e63c87c9c140b4a49"
+    },
+    "test_qualify_native.py.log": {
+      "file": "test_qualify_native.py.log.gz",
+      "raw_sha256": "f036c8efefa01707e984ebe240628b545e5dd79e8461eada52c678ed9f4fcba1",
+      "compressed_sha256": "ea907d4b3e0259dcede23061f6bf45d1b098621daf0c3b0662ce0097fb92f74d"
+    }
+  },
+  "native_executed": false,
+  "Rust_runtime_and_math_unchanged": true
+}

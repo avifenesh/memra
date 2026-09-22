@@ -1,0 +1,33 @@
+{
+  "phase": "transfer",
+  "status": "passed",
+  "command": [
+    "/usr/local/bin/memra-gpu-run",
+    "--gpus",
+    "GPU-0ef61756-6a47-f49f-7c77-4ea56a37dd41",
+    "--receipt",
+    "/data/receipts/issue-542-33144df6-transfer-lease-attempt-001",
+    "--wait-seconds",
+    "3600",
+    "--max-run-seconds",
+    "1800",
+    "--",
+    "python3",
+    "-B",
+    "/home/memra-five/owners/issue-542/src-33144df6/research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py",
+    "--phase",
+    "transfer",
+    "--out",
+    "/data/receipts/issue-542-33144df6-transfer-attempt-001",
+    "--build-record",
+    "/home/memra-five/owners/issue-542/build-33144df6/build.json",
+    "--timeout-seconds",
+    "600"
+  ],
+  "startup_environment": {},
+  "build_record_sha256": "bcc67cf106dd9d8899bd3d807087df58375c2e6286df6ea93a32f2903e6d4349",
+  "source_commit": "33144df6d12c58a7821b351e18490cf8eff38f3e",
+  "wrapper_returncode": 0,
+  "lease_sha256": "c5370442847887d5b54d5bffce9e2944c4e6732593ce2a32e122b8afb8c8e092",
+  "runner_result_sha256": "5ea309079ca7e742aae203b569f10c5154e28e82bc16b5cdd4599706947487ec"
+}

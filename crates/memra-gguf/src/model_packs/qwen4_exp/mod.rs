@@ -29,6 +29,8 @@ use crate::tensor_contract::{
 };
 
 pub static PACK: ModelPack = ModelPack {
+    inventory_schema: None,
+    default_output_head: crate::tensor_contract::OutputHead::Separate,
     family: "qwen4_exp",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
@@ -1149,6 +1151,7 @@ mod tests {
         let census: Vec<TensorCensusEntry> = artifact
             .iter()
             .map(|(name, (dtype, shape))| TensorCensusEntry {
+                auxiliaries: Vec::new(),
                 name: name.clone(),
                 shape: shape.clone(),
                 storage: match dtype.as_str() {
@@ -1367,6 +1370,10 @@ mod tests {
                     other => panic!("unexpected NVFP4 artifact dtype {other}"),
                 };
                 TensorCensusEntry {
+                    auxiliaries: match &storage {
+                        StorageLayout::Quantized(layout) => layout.auxiliaries.clone(),
+                        _ => Vec::new(),
+                    },
                     name: name.clone(),
                     shape: shape.clone(),
                     storage,

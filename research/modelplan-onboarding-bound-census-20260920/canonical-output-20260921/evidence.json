@@ -1,0 +1,226 @@
+{
+  "base_commit": "5a805c39dd10d6c8858658ba27f6a0bdc8e40774",
+  "source_sha256": {
+    "crates/memra-gguf/src/bound_output.rs": "fc4601438ebc927a5b84cafb25e8f70cc5ea00727ab11b29254616fc7ef1f23a",
+    "crates/memra-gguf/src/bound_source.rs": "b39e18700c24685bbf6e8227efd82d02bc46e72be148da47482e88b19f3876c3",
+    "crates/memra-gguf/src/bound_source/canonical_output.rs": "b4325c293889cfd7df0af727bece3d6c370ff1cf0c35ea8247b23d856a4a6cf4",
+    "crates/memra-gguf/src/bound_source/composite/access.rs": "326f540d964ed0f5938010a9df221e5bc7a8552571f44807d09250630a05aed2",
+    "crates/memra-gguf/src/bound_source/tests.rs": "4b0205125e29bfa4f0b72edda3002d913ef039075fd874b1646695714a587db0",
+    "crates/memra-gguf/src/lib.rs": "7b98923263b898aad8f1c56b6939a7fa9c1444b4f7bc1969ff808f9085945ee6",
+    "crates/memra-gguf/src/source.rs": "3594e4840a3e84b0eaa7617a84b74aeaa40a74296fcc38212b61518bbe6d74d8",
+    "crates/memra-gguf/src/source/composite.rs": "38046ce1520a4ca204971a17bbe8a5998ace81bfdb1e15579d9d61c8afdda6e1"
+  },
+  "source_review": "pass",
+  "source_GO": true,
+  "commands": [
+    {
+      "name": "compiler-cli",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 31.332635250058956
+    },
+    {
+      "name": "reference-composite",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-reference",
+        "--test",
+        "composite_source"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 4.003863040939905
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli",
+        "-p",
+        "memra-reference",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 6.992774790967815
+    },
+    {
+      "name": "identity-host",
+      "command": [
+        "python3",
+        "research/modelplan-onboarding-rewrite-identity-20260920/run-host-tests.py",
+        "--offline"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 16.287472084048204
+    },
+    {
+      "name": "linux-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "-p",
+        "memra-server",
+        "--lib",
+        "--bins",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0,
+      "wall_seconds": 56.83311229199171
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 5.017093374975957
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 0.33906737505458295
+    }
+  ],
+  "root_adoption": false,
+  "native_gpu_execution": false,
+  "raw": {
+    "raw/result.json.gz": {
+      "sha256": "f476cb1e2884210894f4766feed8a14d774b4b63cd9b308f9e21df2b31feed19",
+      "uncompressed_sha256": "212b744374cfcef4f9f39089c4bf5716d94d5d26a1b9aeb26ea5698280fbee83",
+      "uncompressed_bytes": 2028
+    },
+    "raw/format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/clippy.log.gz": {
+      "sha256": "114f8d6161d8e53d0ecae89ddadbc0b5fc5928a7bdbcc995e72467777de4e3ba",
+      "uncompressed_sha256": "67b099889f5015c84461b790d88fc3281e8662a2c216148b1c2cc887c607b283",
+      "uncompressed_bytes": 550
+    },
+    "raw/linux-clippy.log.gz": {
+      "sha256": "081b88fbcc449f67d8aa7dffde67adfca2cc4274da9dcc0c0fb9cbbd17c70b05",
+      "uncompressed_sha256": "c2888c087ac37a8216f79639017cac6d533d72ebbe349d17d5168e1063b7f9ae",
+      "uncompressed_bytes": 908
+    },
+    "raw/identity-host.log.gz": {
+      "sha256": "dbca5ae23e6a9ee440480f0039dadf802bf25afef6cc1a5773922b247c1ce4a9",
+      "uncompressed_sha256": "5177408b5531c254cae622865031cbbf69319852c074bc93deb2a664a6963817",
+      "uncompressed_bytes": 3134
+    },
+    "raw/reference-composite.log.gz": {
+      "sha256": "b9b9af868a04adb272c9c2eaef55b6bb31b3812c57d241e961cd9bf533648455",
+      "uncompressed_sha256": "328e919a1df7660a1f320cb07b42c543a3104f22c327335eb75f0d1b2fbf4520",
+      "uncompressed_bytes": 488
+    },
+    "raw/compiler-cli.log.gz": {
+      "sha256": "660c85c174b042b087a4c7e54c7eacd756bf8430fb22b8923e06e42f4d482778",
+      "uncompressed_sha256": "ace4c458add8b9c32a76017cbdb8a141c4296156fca39698ac120f21c07bf6ee",
+      "uncompressed_bytes": 43116
+    },
+    "raw/diff.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/541-bound-output-unit.log.gz": {
+      "sha256": "337b00e4c96cefaf023583d1d367fa6bdc1e3708b6ed5bcd581240bfdb96deb0",
+      "uncompressed_sha256": "9a74bdaf3a34d797fd505d2d726a275277f60f579088fe5b8658b9aeadf6ec7e",
+      "uncompressed_bytes": 773
+    },
+    "raw/541-bound-output-source.log.gz": {
+      "sha256": "e86d8b798b3f893fb8c6560b1447e11a5de3f2eb6047123304db3138853432ad",
+      "uncompressed_sha256": "773670012266eedd7bd733e295287b590f39d8f2232d0a93c845a29d3c90168f",
+      "uncompressed_bytes": 1000
+    }
+  },
+  "development": {
+    "development/result.json.gz": {
+      "sha256": "0758763bdbd0c6eafc520936584a517c9dd1b5958e2cde8d1b6149e47dc33442",
+      "uncompressed_sha256": "85e01e2579ae43fb0ca1de189c92defa9b6638fd54a89ce372cdbbd90a113121",
+      "uncompressed_bytes": 276
+    },
+    "development/compiler-cli.log.gz": {
+      "sha256": "769c809968cf2a9c01a436a688858370f4ac9bcc3c23f8efafca0de74b1079ec",
+      "uncompressed_sha256": "edb03e8e370f1cea679d01652724ea7c19d90ec792dfab5549eb21a4da8df4c5",
+      "uncompressed_bytes": 2328
+    },
+    "development/541-bound-output-check.log.gz": {
+      "sha256": "9c23b4255937657d00e8b8213e592db599556fbe5df9bb2fcb996cbb5fefacdf",
+      "uncompressed_sha256": "08a6162a1fc494179995a8cac3d939c84cfc49c219c4f0cfc145d1887a6800af",
+      "uncompressed_bytes": 187
+    },
+    "development/541-incremental-cleanup.json.gz": {
+      "sha256": "ee83180d9bc94debdf56b01b3966c28a525aae149fbea6fc71e311d801869006",
+      "uncompressed_sha256": "f5af4142c432281ad2b7d7d56ece1f392f114110640f51255852bb4205cd83e1",
+      "uncompressed_bytes": 363
+    }
+  },
+  "reviewed_input": {
+    "reviewed_input/issue-541-composite-materialization-5a805c39.json.gz": {
+      "sha256": "ff64e9f8321f011d8db71b70ced7c3470b240195bcd2ca65fd2803d91f5a6bf0",
+      "uncompressed_sha256": "bc3fed14ce1f59ea7a7d8368a2e0a5880ff790db2badb7ea76173d6d37b45171",
+      "uncompressed_bytes": 5690
+    }
+  },
+  "identity_preservation": {
+    "existing_artifact_sha256_bodies_unchanged": 4,
+    "body_sha256": [
+      "c2e01de354c73795bc583b3350b92b086e8d9b2d0b16012bcbb8dc6a6d08c14f",
+      "2d4f0f8a445219960f321eff35a10da5482634a4d85b880b7c73425aec343eec",
+      "1422a0021d7e1c13a9b831bcefc6a5436e07b6405907cd2fbf0687de4d5eb123",
+      "bdb34621c653c643d060dcee89f7962304e6cbac294849547955d707e3793698"
+    ]
+  },
+  "source_commit": "853099a12231bd1bd4b4a9e65afee66a3fd86360",
+  "review_report": "../canonical-consumer-20260921/reviewed_input/issue-541-canonical-output-853099a1.json.gz"
+}

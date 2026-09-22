@@ -105,6 +105,7 @@ impl FixtureSource {
         self.tensors
             .iter()
             .map(|(name, tensor)| TensorCensusEntry {
+                auxiliaries: Vec::new(),
                 name: name.clone(),
                 shape: tensor.shape.clone(),
                 storage: StorageLayout::Float(FloatType::F32),

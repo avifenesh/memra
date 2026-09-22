@@ -1,0 +1,187 @@
+{
+  "base_commit": "3a0f1ed71c804410498c46a2420617fbb380ede6",
+  "source_sha256": {
+    "crates/memra-engine/src/hybrid.rs": "4d23d390482e6f899a84b86c3b762c3562e5bf34c8c4025f4bee877593ee6512",
+    "crates/memra-gguf/src/bound_source.rs": "c396d914ae1dbb044ecbd2833a99462b1d1cef5536c3d1a9034cfa0ff79d5346",
+    "crates/memra-gguf/src/bound_source/abi.rs": "f2c925f752391e7af07be642c660b327b813419a9fac08867a330b9653e00831",
+    "crates/memra-gguf/src/bound_source/prepare.rs": "d94ff206d14ef601049ac23b15670008c9d04e6f823600a8d8b83f91d455786d",
+    "crates/memra-gguf/src/bound_source/runtime.rs": "52087330cf0706710698b3996360fa0b4653bf4cd8b5a411ddca89caf8959fa1",
+    "crates/memra-gguf/src/source.rs": "d3cedb5004416d63f675384b1637a98fee007cc18290536e1030522367c0c368",
+    "crates/memra-gguf/src/tensor_contract.rs": "b88366b8b38436831326883f1f99f6d10bfda1c454993b3439231083eb818d94",
+    "crates/memra-gguf/src/bound_source/draft.rs": "0c1eac6f8d2287806f9c450b8d222b09c5fcdce16b9fe844d79710602a651d74",
+    "crates/memra-gguf/src/bound_source/draft/tests.rs": "c26ea79a0e0ff8259110ff7fd832c923de2072a0c42ed5b3189a47cdb2252817"
+  },
+  "source_review": "pending",
+  "source_GO": false,
+  "native_execution": false,
+  "support_promotion": false,
+  "draft_root_adoption_implemented": true,
+  "target_draft_rewrite_identity_composed": false,
+  "raw": {
+    "raw/draft-tests.log.gz": {
+      "sha256": "e894b932b8f420113a18e5d80ed35fc099428829c6da9210dbed149089f1902b",
+      "uncompressed_sha256": "3d578ecdc6a5ed76db4161b4bf96c655a38b28120fcd46701437c112c417f97a",
+      "uncompressed_bytes": 1683
+    },
+    "raw/diff.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/engine-clippy.log.gz": {
+      "sha256": "a627e2c9b52e06aa8a47a4d5a7868e6332b8dbc72174739d879c3686afbcf031",
+      "uncompressed_sha256": "3300ebe79952e0c3be0b0b20db7233a13d38d9331b658e4e7fdbe0cf18324e57",
+      "uncompressed_bytes": 789
+    },
+    "raw/format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/preservation.json.gz": {
+      "sha256": "c9594f3fa874763acfb73d954549948d599548399e2f810211b2594061378129",
+      "uncompressed_sha256": "9ddf678aafff51b82632dafe01d8d39aa0150d30c480bbed266f7bbe4afd70a2",
+      "uncompressed_bytes": 1779
+    },
+    "raw/source-clippy.log.gz": {
+      "sha256": "124fcdb182154a90abccfff9d028f2b38b0c5cdf0acae1c2b91cd61847e6604d",
+      "uncompressed_sha256": "aeb7c39c12cc7a1589839bd3e86983406f1e2457f63fc3debd26eca4abfbdb4f",
+      "uncompressed_bytes": 187
+    },
+    "raw/source-pin.json.gz": {
+      "sha256": "10de5ac80c4278539feef32fb45dfadc93de208d4f4687a9b737205eb7e22bfb",
+      "uncompressed_sha256": "7c2f268d04b323a2c9a6d85a5cb371ebdb595800a1bdc38e38e1f2032c41de7b",
+      "uncompressed_bytes": 1033
+    }
+  },
+  "development": {
+    "development/541-draft-engine-clippy-1.log.gz": {
+      "sha256": "4df8b83dce279fbbd75d9cdf2386de7b36ef3fc69b3d63f131a3ea35302806cf",
+      "uncompressed_sha256": "fbd7d937f44fa634cc0c1fc96c0f87637bf55fcbbf45d0179cc5fdd4a934b8fa",
+      "uncompressed_bytes": 1572
+    },
+    "development/541-draft-focused-1.log.gz": {
+      "sha256": "a5bcc74997dea9da56ef0e6cb9e138c1b9aa426d6bdfb059c3cf4aa836f0d9a7",
+      "uncompressed_sha256": "cdcf6be053339138dc0774be6774f8f49701f64f4fb4d2b955f1260da1da04b8",
+      "uncompressed_bytes": 3523
+    },
+    "development/541-draft-focused-2.log.gz": {
+      "sha256": "1e6e9e7b4d6b229152505c03fe7cf28d14151d62f2135cce476b78c57df6ce1a",
+      "uncompressed_sha256": "187d54b68f895f5c352a73f7f3a992910bc9dffc234585d6f68b3200f6cb157f",
+      "uncompressed_bytes": 1380
+    },
+    "development/541-draft-focused-3.log.gz": {
+      "sha256": "a3af770ffcc33eb5c5b2e70e2ab1945a9190ba37f5c0dcf330b2d8997b0f8e4e",
+      "uncompressed_sha256": "07dba8b500baeaaa567f4b36f17e51bb3b32b89a017df0098f4b631875ad14ae",
+      "uncompressed_bytes": 2308
+    },
+    "development/541-draft-focused-4.log.gz": {
+      "sha256": "7ad50a85132d2d370617e587a40cee4896fea7c1657808d3c40a207a3015fda3",
+      "uncompressed_sha256": "f9796c6ff8be0cb9608eefd44710c7d0a70f3db0ff113ad39e872549ece5feef",
+      "uncompressed_bytes": 2317
+    },
+    "development/541-draft-initial-check.log.gz": {
+      "sha256": "0cacc45be0b5a62255a7fe59f820b55bf7a47a67188168909a3c0c5ae03d1548",
+      "uncompressed_sha256": "2063129b1e71ec432027403bdc6def09115fe3274cf57b11267fc14f5ca3f0b7",
+      "uncompressed_bytes": 187
+    },
+    "development/541-draft-source-clippy-1.log.gz": {
+      "sha256": "52fa314cbe00f133d90a6300b22218f25819dec62d96e7760884185755e356b3",
+      "uncompressed_sha256": "4e2842277000bfe6ab74ca91c4153a5ebb3b70dae2f1bbf00135a600b4618508",
+      "uncompressed_bytes": 5898
+    }
+  },
+  "binary": {
+    "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/external-draft/gguf-draft-tests-262a25d39db182bb60cc8baeeca6698d23dab354327c6d370a4a70034f8a62dd",
+    "sha256": "262a25d39db182bb60cc8baeeca6698d23dab354327c6d370a4a70034f8a62dd",
+    "bytes": 19415912,
+    "format": "macOS CPU test executable; not a GPU runtime binary"
+  },
+  "commands": [
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "bound_source::draft::tests",
+        "--lib",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0"
+      },
+      "exit_code": 0,
+      "result": "12 passed; 0 failed; 0 ignored; 427 filtered out"
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0"
+      },
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "--lib",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "limits": [
+    "micro GGUF CPU controls only",
+    "no complete draft inference or checkpoint qualification",
+    "root suite not repeated",
+    "no remote dispatch",
+    "separate self-trim/ranks and composed rewrite identity remain pending"
+  ],
+  "target_directory": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target"
+}

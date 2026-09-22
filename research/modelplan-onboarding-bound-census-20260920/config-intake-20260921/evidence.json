@@ -1,0 +1,68 @@
+{
+  "base_commit": "36154128fc9f6d69717a31928d7b3266f4bb2a98",
+  "reviewed_dependency": "bb637184682216ea38cbb9eb79dab4841368eca1",
+  "method": "intake exact reviewed commit without unrelated ancestor lanes; resolve overlapping consumers",
+  "source_review": "pending composition review",
+  "unchanged_reviewed_helper": true,
+  "source_sha256": {
+    ".github/workflows/ci.yml": "5ddfe7a4473257f92f80c847b66c2bacf499977112bc10bb7d70ddd7bdfd8be5",
+    "crates/memra-cli/src/lib.rs": "070e0b6cc82f1651464abca3765a2484575f6cd7accd831da5920ae101ea3cbe",
+    "crates/memra-cli/tests/canonical_config.rs": "b8650ff22918263596b8a71a2133ae1447d4a0d98e3e4906db7820e4c7116b0d",
+    "crates/memra-engine/src/bin/modelplan_reference_gate.rs": "0cf11072deb5b3cb93a9a4463d6c0cd64b0e06f69d399d04319b99487eb5d31f",
+    "crates/memra-engine/src/qwen4exp_gpu.rs": "b0086e892c51650275556c85d361709e21f3bdc8e2bb6d9502d6832995386c4b",
+    "crates/memra-gguf/Cargo.toml": "a960bc2ad47fe61fbc025ee21acd2d3134095bdb0ee733f51028e1e71a41f290",
+    "crates/memra-gguf/src/bound_source/tests.rs": "af0d1ac4919a071d9cf10cd4a0bdd4c7c1c030bf8a650632565d1d51eb8e7938",
+    "crates/memra-gguf/src/config.rs": "32fac19f04681112cdcc7bcbf6cd97d489151413b1493b234456a3bc8d2f9d5f",
+    "crates/memra-gguf/src/config_json.rs": "99ce5129f8ca410aedfd9b7ec27d29569c97235106a2cb4ab47737d1aed16854",
+    "crates/memra-gguf/src/lib.rs": "4ebeacdec12a4f582f03831c7795a2e2736386c5dbd41fafaa8e718e9f2c6542",
+    "crates/memra-gguf/src/source.rs": "95841fafe0ba0f41896facb902aafb70cb7402c83778c194e37f03e706a2355d",
+    "crates/memra-gguf/src/strict_json.rs": "40b6fd05d9b243cf6e0fae658e39abe3a2fe05e31f3faedb82f0482987b95ee1",
+    "crates/memra-gguf/tests/canonical_config.rs": "ba52154e9bc30976af52c15004d2431953bd7690de698b452a734680f54bb61a",
+    "crates/memra-gguf/tests/fixtures/canonical-config-plans.tsv": "a7007fe474b28681d724f836c4a094224464159afd648f5e382e0c5c19220d09",
+    "crates/memra-reference/src/bin/glm5_checkpoint_runner.rs": "72260a80db27e24475fed989aebe63f8353914904b52ffb3923b2f12c8d0312b",
+    "crates/memra-reference/src/bin/llama_dense_checkpoint_runner.rs": "46696c76bcc22d405d8d39436b845b78c81e35bc3ac4e66a323b03b485eb07b3",
+    "crates/memra-reference/src/bin/qwen4exp_tiny_parity.rs": "0de8c12fd37247fa36f0b4b8de9a8d7199c6824457f457ba745d377a568a85bc"
+  },
+  "raw": {
+    "541-config-intake-tests.log.gz": {
+      "sha256": "9c0931172445053348e32823e69124d7f2ef982a19699dcc05aca7c2722f58b4",
+      "uncompressed_sha256": "5b56e77e9c961c43fc6f850792e3aaa341d1382c02d99265774e9b9929c4d0dd"
+    },
+    "541-config-intake-tests-2.log.gz": {
+      "sha256": "4ff0cacd1a94e6e1e351f037ae537212db997d42c1148d7b4f034afce74a96e7",
+      "uncompressed_sha256": "336ec7e8bb98a225bbcca523f20ad747d551b2454b3fd51ca22d8d69231b049c"
+    },
+    "541-config-intake-tests-3.log.gz": {
+      "sha256": "4923923da6d580d8a50f8d18dbf1310e4499a913fce03febb04d9410af60129f",
+      "uncompressed_sha256": "2fe628b09e5d5a910f6061d0899b15e1832962c3f7d6a92b26258cdb6a640a5f"
+    },
+    "541-config-intake-controls.log.gz": {
+      "sha256": "f2d336f259de5f0421334d51cdac8b1994352430234f442467c6737f47a007c8",
+      "uncompressed_sha256": "3e92ed4d03d42d7258d61d0d7baeb676d131e6bc1381b16d2d7f5c38cb4cb82c"
+    },
+    "541-config-intake-ordered.log.gz": {
+      "sha256": "1fb265f36c970d71a9ff992f136b7b70b4626d700ade1b54c05b899ac845452c",
+      "uncompressed_sha256": "7434fad83d62d93874d94675873c749475df41c8bb05530939ee44b623284013"
+    },
+    "541-config-intake-ordered-json.log.gz": {
+      "sha256": "dc4596622f165da9a240d989a40c3fd0ca37c32a91a634835713f8886ddc28c4",
+      "uncompressed_sha256": "01eae0a0d562b817597ecac57d694a32d574f1022a71cdf48da06ee6a9f89805"
+    },
+    "541-config-intake-conflicts.patch.gz": {
+      "sha256": "3cf88779595fb1f3d68d1a953125d8cd1cb1f46bb0dfbb54d99164c40eb0e27c",
+      "uncompressed_sha256": "87ac64a41bcf69cb2582372e4899f04d64a89f952f75a632068a405b965bc679"
+    },
+    "541-config-intake-resolution-error.patch.gz": {
+      "sha256": "870e95fe445707826517d4529a13f98924f685284dd521e9aa4b6707be4efb98",
+      "uncompressed_sha256": "14352cc03131689f6efe24d978e693ac71bac2a60381a99d32e694a6f95c7ebc"
+    },
+    "issue-541-composite-catalog-36154128.json.gz": {
+      "sha256": "4b6865e7da2a78c609fbe26c338093f119d001e68925ce69d61b714787389936",
+      "uncompressed_sha256": "4c98c2db6e4ba07816624ac3005751cfc3e3885525c21b27d55356374be0ed40"
+    },
+    "issue-537-canonical-config-bb637184.json.gz": {
+      "sha256": "d3d20da77546b189bde190de0d3acd9494c1076854b14d4766fcb25cf36c9b4a",
+      "uncompressed_sha256": "935a3e84bd6ec79c0885537ddff6a388af250713b920312883e4d781136e42b7"
+    }
+  }
+}

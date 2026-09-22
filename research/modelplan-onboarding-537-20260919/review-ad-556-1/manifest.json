@@ -1,0 +1,78 @@
+{
+  "finding": "AD-556-1",
+  "reviewed_head": "36019232d1479a81166a2fb51cb3d341562682f4",
+  "created_utc": "2026-09-20T06:53:33.608740+00:00",
+  "source_files": {
+    ".github/workflows/ci.yml": {
+      "bytes": 30736,
+      "sha256": "028c8524027a7996228c2f1bd40f00540c0b54c813e6f47e30f10ea220986773"
+    },
+    "crates/memra-gguf/src/config.rs": {
+      "bytes": 248381,
+      "sha256": "781b16f41dbecbaae69d9982c69cce062e71777ba01565ccac9e07d539e761a2"
+    },
+    "crates/memra-gguf/src/micro_gguf.rs": {
+      "bytes": 59747,
+      "sha256": "3c4263cac5e5ac8a77f2571a4096c5e4389cfba46be036f834445d582b12c13f"
+    },
+    "crates/memra-gguf/src/model_packs/step35/mod.rs": {
+      "bytes": 5382,
+      "sha256": "104bd430601329469686eaddb8980e3b47c28cde943cc013115cc67a55cd5b30"
+    },
+    "crates/memra-gguf/src/model_plan/semantics_tests.rs": {
+      "bytes": 20854,
+      "sha256": "b6da3e21dbf6d3eb1300a6496b2a514a1f87fded2d8b13acaa6e7e4321e6f836"
+    },
+    "crates/memra-engine/src/parallel.rs": {
+      "bytes": 89422,
+      "sha256": "ac457664d35c34ec9c73a2fb6b1d7d0c644474df7429c066200355d4dba5b4f2"
+    },
+    "crates/memra-cli/tests/step_rope_contract.rs": {
+      "bytes": 1996,
+      "sha256": "0b15401221234260256c0b7584009929060885fae1c8bf87f08ddd30ac604ece"
+    }
+  },
+  "logs": {
+    "after.log": {
+      "bytes": 889,
+      "sha256": "98d942c885dcf7414a83932048cd9ff8ee43cae4443b8f9137f4708dcad193cb"
+    },
+    "before.log": {
+      "bytes": 1521,
+      "sha256": "1537f521c73307c212834d96bcb24b5bc4ec3b4c554c3117608ee28f90a6c3fc"
+    },
+    "cli-after.log": {
+      "bytes": 712,
+      "sha256": "d4b1bbb2c185a27f85075de7be2c4cc3bc569cb032ea6031323cd73aacb5eb5a"
+    },
+    "clippy-before.log": {
+      "bytes": 2748,
+      "sha256": "0ecad10aaa757192ba7c4dabaffbca8d6cbc74d7ef1bead5e8fb8420267fca55"
+    },
+    "clippy-macos.log": {
+      "bytes": 470,
+      "sha256": "a45db403f1b88644cf07bc38dddea50ad31337385936ad3d29b87f31c1004555"
+    },
+    "clippy-strict.log": {
+      "bytes": 579,
+      "sha256": "e113cd7c653efd832ed73f80e7a04da4c989a4dab56d08db85a47c337c15c528"
+    },
+    "cpu-suites.log": {
+      "bytes": 28342,
+      "sha256": "3e5d47764e0effb636b173eb7954f24deedaed034a42b8fef7f8628d8b154acb"
+    },
+    "skip-census.log": {
+      "bytes": 1516,
+      "sha256": "a5f241f1e7e4744e4765f9f01f66df9cabe0a07135fc380444abc5eb3620bb0a"
+    }
+  },
+  "native_qualification": "pending on changed/integrated source and binaries",
+  "public_log_redactions": {
+    "cpu-suites.log": {
+      "original_bytes": 28343,
+      "original_sha256": "e92963bc1643372372a11a1190983f121c984164e6a566685d157c03d84b4485",
+      "replacements": 1,
+      "reason": "Rust-generated test executable basename matches the public-boundary build-fingerprint pattern; original log retained in private task evidence. Test output unchanged."
+    }
+  }
+}

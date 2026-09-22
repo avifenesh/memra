@@ -1,0 +1,70 @@
+{
+  "all_devices": [
+    {
+      "index": 0,
+      "memory_mib": 97887,
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "pci_bus_id": "00000000:55:00.0",
+      "uuid": "GPU-25877c8d-b222-b270-400d-aca5a809f23c"
+    },
+    {
+      "index": 1,
+      "memory_mib": 97887,
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "pci_bus_id": "00000000:83:00.0",
+      "uuid": "GPU-c2a89142-c177-b92a-1366-d58822694f0a"
+    },
+    {
+      "index": 2,
+      "memory_mib": 97887,
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "pci_bus_id": "00000000:84:00.0",
+      "uuid": "GPU-554f7aeb-578c-187f-4f29-af06f2170507"
+    },
+    {
+      "index": 3,
+      "memory_mib": 97887,
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "pci_bus_id": "00000000:D4:00.0",
+      "uuid": "GPU-f9f892ec-ab88-822a-0054-e9c2e7bf591f"
+    }
+  ],
+  "child_pid": 118454,
+  "command": [
+    "/root/miniconda3/bin/python3.13",
+    "research/modelplan-onboarding-rewrite-identity-20260920/qualify-native.py",
+    "--model",
+    "/scratch/memra-542/qwen3-0.6b",
+    "--out",
+    "/scratch/memra-542/server-admission-006"
+  ],
+  "devices": [
+    {
+      "index": 0,
+      "memory_mib": 97887,
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "pci_bus_id": "00000000:55:00.0",
+      "uuid": "GPU-25877c8d-b222-b270-400d-aca5a809f23c"
+    }
+  ],
+  "lock_files": {
+    "GPU-25877c8d-b222-b270-400d-aca5a809f23c": "/tmp/memra-gpu-locks/GPU-25877c8d-b222-b270-400d-aca5a809f23c.lock"
+  },
+  "lock_inodes": {
+    "GPU-25877c8d-b222-b270-400d-aca5a809f23c": {
+      "device_major": 0,
+      "device_minor": 51,
+      "inode": 1095814135
+    }
+  },
+  "lock_order": [
+    "GPU-25877c8d-b222-b270-400d-aca5a809f23c"
+  ],
+  "requested_uuids": [
+    "GPU-25877c8d-b222-b270-400d-aca5a809f23c"
+  ],
+  "schema_version": 1,
+  "started_unix": 1789873039.8176875,
+  "state": "running",
+  "wrapper_pid": 118449
+}

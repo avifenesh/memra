@@ -5,6 +5,7 @@ use crate::hybrid_forward::{Glm5TrunkPrime, PrimeEnvironment};
 use crate::prime_walker::{PrimeChunk, PrimeWalker};
 
 pub struct Glm5PrimeState {
+    rewrite_execution: crate::plan_backend::RewriteExecutionSnapshot,
     trunk: Option<Glm5TrunkPrime>,
     cache: Option<Cache>,
     session: Option<Glm5SpecSession>,
@@ -92,6 +93,8 @@ impl Glm5PrimeState {
         source: crate::spec::DraftSourceKind,
         prof: Option<SpecFirstTokenProf>,
     ) -> Res<Self> {
+        let rewrite_execution = m.current_rewrite_execution_snapshot()?;
+        let _origin = m.enter_rewrite_execution(&rewrite_execution)?;
         let n = m.cfg.n_embd as usize;
         let eh = m.glm5_head_engine(e)?;
         let taps = m
@@ -149,6 +152,7 @@ impl Glm5PrimeState {
         };
         let order = PreparationOrder::new(trunk.remaining(), draft_quanta);
         Ok(Self {
+            rewrite_execution,
             trunk: Some(trunk),
             cache: Some(cache),
             session: None,
@@ -182,6 +186,8 @@ impl Glm5PrimeState {
         sampling: Option<SpecSampling>,
         pen: Option<Glm5Penalty>,
     ) -> Res<Self> {
+        let rewrite_execution = m.current_rewrite_execution_snapshot()?;
+        let _origin = m.enter_rewrite_execution(&rewrite_execution)?;
         let dr = m
             .glm5_dflash
             .as_ref()
@@ -201,6 +207,7 @@ impl Glm5PrimeState {
         let committed = fed.iter().chain(suffix).copied().collect();
         let order = PreparationOrder::new(trunk.as_ref().map_or(0, |t| t.remaining()), 0);
         Ok(Self {
+            rewrite_execution,
             trunk,
             cache: Some(cache),
             session: None,
@@ -322,6 +329,7 @@ impl Glm5PrimeState {
         };
         let prof = self.prof.take();
         self.session = Some(Glm5SpecSession {
+            rewrite_execution: self.rewrite_execution.clone(),
             cache,
             committed: self.committed.clone(),
             anchor,
@@ -502,6 +510,13 @@ impl PrimeWalker for Glm5PrimeWalker<'_> {
         self.state.as_ref().map_or(0, |s| s.remaining())
     }
     fn advance_chunk(&mut self) -> Res<PrimeChunk> {
+        let _request = self.model.protect_rewrite_execution()?;
+        let origin = &self
+            .state
+            .as_ref()
+            .ok_or("GLM prime already finished")?
+            .rewrite_execution;
+        let _origin = self.model.enter_rewrite_execution(origin)?;
         let s = self.state.as_mut().ok_or("GLM5 prime already finished")?;
         s.environment.check()?;
         if let Some(t) = s.trunk.as_mut()
@@ -537,6 +552,13 @@ impl PrimeWalker for Glm5PrimeWalker<'_> {
         })
     }
     fn finish(self) -> Res<Self::Output> {
+        let _request = self.model.protect_rewrite_execution()?;
+        let origin = &self
+            .state
+            .as_ref()
+            .ok_or("GLM prime already finished")?
+            .rewrite_execution;
+        let _origin = self.model.enter_rewrite_execution(origin)?;
         let s = self.state.as_mut().ok_or("GLM5 prime already finished")?;
         s.environment.check()?;
         if s.remaining() != 0 {
@@ -569,6 +591,7 @@ impl PrimeWalker for Glm5PrimeWalker<'_> {
 /// Plain carried hyper segments retain the prefill tick's original range and
 /// queued_after. Ownership is identical to the speculative trunk adapter.
 pub struct Glm5PlainPrimeState {
+    rewrite_execution: crate::plan_backend::RewriteExecutionSnapshot,
     cache: Cache,
     trunk: Glm5TrunkPrime,
     environment: PrimeEnvironment,
@@ -591,8 +614,12 @@ impl HybridModel {
         tokens: &[u32],
         queued_after: usize,
     ) -> Res<Glm5PlainPrimeState> {
+        let rewrite_execution = self.current_rewrite_execution_snapshot()?;
+        let _origin = self.enter_rewrite_execution(&rewrite_execution)?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         let trunk = Glm5TrunkPrime::new(self, e, tokens, &cache)?.with_queued_after(queued_after);
         Ok(Glm5PlainPrimeState {
+            rewrite_execution,
             cache,
             trunk,
             environment: PrimeEnvironment::read(),
@@ -616,6 +643,13 @@ impl PrimeWalker for Glm5PlainPrimeWalker<'_> {
         self.state.as_ref().map_or(0, |s| s.trunk.remaining())
     }
     fn advance_chunk(&mut self) -> Res<PrimeChunk> {
+        let _request = self.model.protect_rewrite_execution()?;
+        let origin = &self
+            .state
+            .as_ref()
+            .ok_or("GLM prime already finished")?
+            .rewrite_execution;
+        let _origin = self.model.enter_rewrite_execution(origin)?;
         let s = self
             .state
             .as_mut()
@@ -628,6 +662,13 @@ impl PrimeWalker for Glm5PlainPrimeWalker<'_> {
         })
     }
     fn finish(self) -> Res<Self::Output> {
+        let _request = self.model.protect_rewrite_execution()?;
+        let origin = &self
+            .state
+            .as_ref()
+            .ok_or("GLM prime already finished")?
+            .rewrite_execution;
+        let _origin = self.model.enter_rewrite_execution(origin)?;
         let s = self
             .state
             .as_ref()

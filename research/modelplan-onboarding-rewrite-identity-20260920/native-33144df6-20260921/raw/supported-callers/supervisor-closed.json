@@ -1,0 +1,37 @@
+{
+  "phase": "supported-callers",
+  "status": "passed",
+  "command": [
+    "/usr/local/bin/memra-gpu-run",
+    "--gpus",
+    "GPU-9aac15ee-fcda-a1e3-367f-f9517f7376ff",
+    "--receipt",
+    "/data/receipts/issue-542-33144df6-supported-callers-lease-attempt-001",
+    "--wait-seconds",
+    "3600",
+    "--max-run-seconds",
+    "2400",
+    "--",
+    "python3",
+    "-B",
+    "/home/memra-five/owners/issue-542/src-33144df6/research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py",
+    "--phase",
+    "supported-callers",
+    "--model",
+    "/data/models/issue-542/qwen3-0.6b-c1899de",
+    "--out",
+    "/data/receipts/issue-542-33144df6-supported-callers-attempt-001",
+    "--build-record",
+    "/home/memra-five/owners/issue-542/build-33144df6/build.json",
+    "--timeout-seconds",
+    "600"
+  ],
+  "startup_environment": {
+    "CUDA_FORCE_PRELOAD_LIBRARIES": "1"
+  },
+  "build_record_sha256": "bcc67cf106dd9d8899bd3d807087df58375c2e6286df6ea93a32f2903e6d4349",
+  "source_commit": "33144df6d12c58a7821b351e18490cf8eff38f3e",
+  "wrapper_returncode": 0,
+  "lease_sha256": "9c8028e517f5802922c0e6b1cdb5f8c322ea06d75d3100b137d206a92a803108",
+  "runner_result_sha256": "e6e744ecb2148d3114fd82803486fc1905a6bbb688a54e41bfc614de10e97e1e"
+}

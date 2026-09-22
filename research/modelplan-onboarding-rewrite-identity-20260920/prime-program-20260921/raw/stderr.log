@@ -1,0 +1,11 @@
+[q8rp] split-plane decode mirrors built: 196 tensors
+[fa-pool] grow #0 dev=0 o_len 0 -> 2048 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 2048 -> 12288 ml_len 16 -> 96 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 12288 -> 24576 ml_len 96 -> 192 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 24576 -> 49152 ml_len 192 -> 384 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 49152 -> 100352 ml_len 384 -> 784 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): append_quantize_kv_q8_0_q5_1_rows
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_dequant_kv_ws_bf16
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_prefill_qw_db_hd128
+[func] CAPTURE-TIME kernel lookup (not warmed): row_gather_dev_f32
+REWRITE_IDENTITY_GATE_FAIL: NATIVE_MATH_FAILED prime-seed; no tolerance relaxation or receipt substitution

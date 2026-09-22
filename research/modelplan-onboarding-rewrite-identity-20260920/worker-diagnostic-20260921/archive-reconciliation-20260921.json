@@ -1,0 +1,45 @@
+{
+  "reconciled_at_utc": "2026-09-21T10:20:04.074548+00:00",
+  "archive_sha256": "ec1307fd614d0dcc89f92d747a0ef4e38b9ce9a3b4f5f902e07ebf4e4f7f60ba",
+  "archive_bytes": 69147896,
+  "source_commit": "0ea0aaa2fcad84139b7fc1f4c02882846ba7ff8d",
+  "archive_files_verified": 404,
+  "phases": {
+    "baseline": {
+      "status": "passed",
+      "payloads_verified": 60,
+      "lease_closed": true
+    },
+    "supported-callers": {
+      "status": "failed",
+      "payloads_verified": 243,
+      "lease_closed": true,
+      "cases_passed": 10,
+      "cases_failed": 1,
+      "cases_unrun": 16,
+      "index_quarantined": true,
+      "cache_and_state_unchanged": true
+    },
+    "transfer": {
+      "status": "passed",
+      "payloads_verified": 11,
+      "lease_closed": true
+    },
+    "battery": {
+      "status": "passed",
+      "payloads_verified": 9,
+      "lease_closed": true
+    },
+    "router": {
+      "status": "passed",
+      "payloads_verified": 8,
+      "lease_closed": true
+    },
+    "gemma-prime": {
+      "status": "passed",
+      "payloads_verified": 8,
+      "lease_closed": true
+    }
+  },
+  "mode": "read-only archive verification; original records unchanged"
+}

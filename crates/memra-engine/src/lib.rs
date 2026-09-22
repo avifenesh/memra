@@ -59,7 +59,9 @@ pub use memra_gguf;
 pub use memra_runtime;
 
 pub mod env_audit;
+mod ffn_activation;
 pub mod forward;
+mod head_trim;
 pub mod hybrid;
 pub mod hybrid_forward;
 pub mod hyper;
@@ -67,6 +69,7 @@ pub mod model;
 mod prime_receipt;
 pub mod prime_walker;
 pub mod sigrouter_contract;
+mod trim_ranks;
 pub mod vision;
 pub mod vision_gemma;
 pub mod vision_glm5;
@@ -18538,6 +18541,11 @@ impl Engine {
         m: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         use crate::model::GpuTensor;
+        // The non-fast fallback below also owes the T=1 arithmetic. At m>=16,
+        // ordinary matmul can otherwise select a prefill mirror/MMQ/GEMM before
+        // consulting MEMRA_FAST. Keep every fallback in this call decode-exact;
+        // the existing RAII guard restores an enclosing scope on return or error.
+        let _decode_exact = self.exact_scope(true);
         // FLOAT tensors (35B ssm_beta/ssm_alpha on every linear layer, F32 ne=[2048,32]): the
         // generic path is cuBLASLt, whose reduction splits are n-DEPENDENT — m=1 vs m=2 col-0
         // outputs differ in every bit (probe 2026-07-06: 32/32 bit-diff, maxdiff 3.5e-3), which

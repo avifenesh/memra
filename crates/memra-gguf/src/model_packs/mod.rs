@@ -6,7 +6,7 @@
 use crate::config::{Arch, ModelConfig};
 use crate::model_plan::{ModelPlan, PlanCompileError};
 use crate::tensor_contract::{
-    CheckpointDialect, ContractOptions, TensorContract, TensorContractError,
+    CheckpointDialect, ContractOptions, OutputHead, TensorContract, TensorContractError,
 };
 
 pub mod deepseek_v4;
@@ -16,8 +16,10 @@ pub mod glm5_next;
 pub mod glm_dsa;
 pub mod hy3;
 pub mod llama_dense;
+pub mod minimax_m3;
 /// Speech packs use their own config normalization until the CLI accepts audio artifacts.
 pub mod nemotron_rnnt;
+pub mod olmoe;
 pub mod qwen3;
 pub mod qwen35;
 pub mod qwen35_moe;
@@ -112,12 +114,23 @@ pub enum TensorConsumption {
     Refuse,
 }
 
+pub(crate) type InventorySchema =
+    fn(
+        &ModelConfig,
+        CheckpointDialect,
+        &str,
+    ) -> Result<Vec<crate::surface_catalog::InventorySurface>, String>;
+
 pub struct ModelPack {
     pub family: &'static str,
     /// Output-head ownership when the head tensor is absent.
     pub output_head: OutputHeadContract,
     /// Loader policy for bound tensors that were never consumed.
     pub tensor_consumption: TensorConsumption,
+    /// Exact inventory schemas for components not represented by the canonical executable plan.
+    /// Metadata validation does not grant reference/native support for those components.
+    pub(crate) inventory_schema: Option<InventorySchema>,
+    pub default_output_head: OutputHead,
     pub aliases: &'static [&'static str],
     pub config_layout: ConfigLayout,
     pub tokenizer_sources: &'static [TokenizerSource],
@@ -139,6 +152,27 @@ pub struct ModelPack {
 }
 
 impl ModelPack {
+    pub fn additional_inventory(
+        &self,
+        config: &ModelConfig,
+        dialect: CheckpointDialect,
+        raw_config: Option<&str>,
+    ) -> Result<Vec<crate::surface_catalog::InventorySurface>, String> {
+        match (self.inventory_schema, raw_config) {
+            (Some(schema), Some(raw)) => schema(config, dialect, raw),
+            _ => Ok(Vec::new()),
+        }
+    }
+    pub fn contract_options(&self, config: &ModelConfig) -> ContractOptions {
+        ContractOptions {
+            output_head: match config.tie_word_embeddings {
+                Some(true) => OutputHead::TiedToEmbedding,
+                Some(false) => OutputHead::Separate,
+                None => self.default_output_head,
+            },
+        }
+    }
+
     pub fn matches_config(&self, config: &ModelConfig) -> bool {
         (self.matches_config)(config)
     }
@@ -184,6 +218,8 @@ pub const PACKS: &[&ModelPack] = &[
     &qwen4_exp::PACK,
     &step35::PACK,
     &hy3::PACK,
+    &olmoe::PACK,
+    &minimax_m3::PACK,
     // Last: the plainest dense stack, so a family with its own pack is always matched first.
     &llama_dense::PACK,
 ];
@@ -205,6 +241,51 @@ pub fn for_config(config: &ModelConfig) -> Option<&'static ModelPack> {
         .iter()
         .copied()
         .find(|pack| pack.matches_config(config))
+}
+
+/// Shared load-time entry point. Pack refusal is final; the canonical compiler is not
+/// a compatibility fallback. Call this before reading or allocating model tensors.
+pub fn compile_for_load(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
+    config.validate_plan_semantics()?;
+    for_config(config)
+        .ok_or_else(|| PlanCompileError::NoMatchingModelPack {
+            arch: format!("{:?}", config.arch),
+        })?
+        .compile_plan(config)
+}
+
+/// Source-backed preflight shared by the eager loaders, before model-weight allocation.
+/// Source RoPE factors must have a planned consumer, and required factors must exist even
+/// when automatic placement (and its census) is disabled. HF Step factors are already
+/// derived during normalization.
+pub fn compile_for_source(
+    source: &dyn crate::source::TensorSource,
+) -> Result<(ModelConfig, ModelPlan), Box<dyn std::error::Error>> {
+    if let Some(program) = source.bound_program() {
+        return Ok(program.cloned_pair());
+    }
+    let mut config = source.try_config().map_err(std::io::Error::other)?;
+    let plan = compile_for_load(&config)?;
+    if crate::tensor_contract::rope_factor_width(&plan).unwrap_or(0) == 0
+        && source.find("rope_freqs.weight").is_some()
+    {
+        return Err(PlanCompileError::UnsupportedSemantics {
+            field: "rope_freqs.weight",
+            value: "source declares checkpoint factors that the compiled plan does not consume"
+                .into(),
+        }
+        .into());
+    }
+    step35::prepare_rope_factors(&mut config, &plan, source)?;
+    Ok((config, plan))
+}
+
+pub(crate) fn prepare_bound_rope_factors(
+    config: &mut ModelConfig,
+    plan: &ModelPlan,
+    source: &dyn crate::source::TensorSource,
+) -> Result<(), PlanCompileError> {
+    step35::prepare_rope_factors(config, plan, source)
 }
 
 pub(super) fn canonical_plan(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {

@@ -119,7 +119,7 @@ pub fn snapshot() -> Option<Progress> {
 // publish nothing from it; the worker retires the session as aborted (no park, the cache returns to
 // the pool at drop) and the capture sites, which run only after an `Ok` prime, are never reached.
 //
-// WHERE THE CHECK IS AND IS NOT (stated, not implied). It sits in the three sequential walks: the
+// WHERE THE CHECK IS AND IS NOT (stated, not implied). It sits in the tokenwise eager fallback at completed-row boundaries and the three sequential walks: the
 // serial chunk walk (`prime_cache_overlaid_inner`), the GEMM chunk loop (`step35_prime_cache_batch`
 // per chunk) and the single-engine hyper range walk. It is NOT in the pipelined walks (the PP-2 split
 // primes with a `next_slot` in flight, the ppN wave walk): returning at a wave boundary there would

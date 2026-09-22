@@ -29,7 +29,7 @@ pub struct ReferenceTensor {
 
 impl ReferenceTensor {
     pub fn new(shape: Vec<usize>, data: Vec<f32>) -> Result<Self, ReferenceError> {
-        let expected = shape.iter().product();
+        let expected: usize = shape.iter().product();
         if data.len() != expected {
             return Err(ReferenceError::TensorShape {
                 id: None,
@@ -45,7 +45,7 @@ impl ReferenceTensor {
     }
 
     pub fn new_i64(shape: Vec<usize>, ints: Vec<i64>) -> Result<Self, ReferenceError> {
-        let expected = shape.iter().product();
+        let expected: usize = shape.iter().product();
         if ints.len() != expected {
             return Err(ReferenceError::TensorShape {
                 id: None,
@@ -1807,7 +1807,13 @@ fn add_moe_fixture(
     hidden: usize,
     vocab: usize,
 ) -> Result<(), ReferenceError> {
+    moe.validate_expert_set()
+        .map_err(|reason| ReferenceError::InvalidPlan {
+            layer: Some(layer),
+            reason,
+        })?;
     let experts = moe.expert_count as usize;
+    let stored_experts = moe.stored_expert_count();
     let selected = moe.experts_per_token as usize;
     let intermediate = moe.expert_intermediate_size as usize;
     if matches!(
@@ -1817,7 +1823,12 @@ fn add_moe_fixture(
         let mut table = Vec::with_capacity(vocab * selected);
         for token in 0..vocab {
             for rank in 0..selected {
-                table.push(((token + rank) % experts) as f32);
+                let row = (token + rank) % stored_experts;
+                table.push(
+                    moe.retained_experts
+                        .as_ref()
+                        .map_or(row as u32, |ids| ids[row]) as f32,
+                );
             }
         }
         weights.insert(
@@ -1842,19 +1853,19 @@ fn add_moe_fixture(
     for (tensor, shape, input, salt) in [
         (
             LayerTensor::MoeExpertGateBank,
-            vec![experts, intermediate, hidden],
+            vec![stored_experts, intermediate, hidden],
             hidden,
             62,
         ),
         (
             LayerTensor::MoeExpertUpBank,
-            vec![experts, intermediate, hidden],
+            vec![stored_experts, intermediate, hidden],
             hidden,
             63,
         ),
         (
             LayerTensor::MoeExpertDownBank,
-            vec![experts, hidden, intermediate],
+            vec![stored_experts, hidden, intermediate],
             intermediate,
             64,
         ),
@@ -1900,6 +1911,12 @@ fn add_gemma_parallel_moe_fixture(
     moe: &memra_gguf::model_plan::MoeMlpPlan,
     hidden: usize,
 ) -> Result<(), ReferenceError> {
+    if moe.retained_experts.is_some() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: Some(layer),
+            operation: "retained experts with parallel routed-output scales",
+        });
+    }
     let experts = moe.expert_count as usize;
     let intermediate = moe.expert_intermediate_size as usize;
     weights.insert(
@@ -4247,6 +4264,12 @@ fn execute_gemma_parallel_moe_layer(
             reason: "gemma parallel MoE residual requires an MoE plan",
         });
     };
+    if moe.retained_experts.is_some() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: Some(layer.index),
+            operation: "retained experts with parallel routed-output scales",
+        });
+    }
     let shared_plan = moe.shared.as_ref().ok_or(ReferenceError::InvalidPlan {
         layer: Some(layer.index),
         reason: "gemma parallel MoE requires a shared MLP branch",
@@ -7365,12 +7388,12 @@ fn moe_mlp(
     let experts = plan.expert_count as usize;
     let selected = plan.experts_per_token as usize;
     let intermediate = plan.expert_intermediate_size as usize;
-    if selected == 0 || selected > experts {
-        return Err(ReferenceError::InvalidPlan {
+    plan.validate_expert_set()
+        .map_err(|reason| ReferenceError::InvalidPlan {
             layer: Some(layer),
-            reason: "MoE top-k must be in 1..=expert_count",
-        });
-    }
+            reason,
+        })?;
+    let stored_experts = plan.stored_expert_count();
     let router = tensor(
         weights,
         &layer_id(layer, LayerTensor::MoeRouter),
@@ -7401,17 +7424,17 @@ fn moe_mlp(
     let gate_bank = tensor(
         weights,
         &layer_id(layer, LayerTensor::MoeExpertGateBank),
-        &[experts, intermediate, hidden],
+        &[stored_experts, intermediate, hidden],
     )?;
     let up_bank = tensor(
         weights,
         &layer_id(layer, LayerTensor::MoeExpertUpBank),
-        &[experts, intermediate, hidden],
+        &[stored_experts, intermediate, hidden],
     )?;
     let down_bank = tensor(
         weights,
         &layer_id(layer, LayerTensor::MoeExpertDownBank),
-        &[experts, hidden, intermediate],
+        &[stored_experts, hidden, intermediate],
     )?;
     let mut output = vec![0.0; tokens * hidden];
     for token in 0..tokens {
@@ -7438,12 +7461,13 @@ fn moe_mlp(
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
-        let routes = route_experts(
+        let routes = route_experts_in_set(
             &plan.router,
             &logits[token * experts..(token + 1) * experts],
             bias,
             selected,
             forced_routes.as_deref(),
+            plan.retained_experts.as_deref(),
             layer,
         )?;
         if crate::hidden_trace::enabled() && token + 1 == tokens {
@@ -7463,8 +7487,14 @@ fn moe_mlp(
         }
         let input = &x[token * hidden..(token + 1) * hidden];
         for (expert, route_weight) in routes {
-            let gate_offset = expert * intermediate * hidden;
-            let down_offset = expert * hidden * intermediate;
+            let row = plan
+                .expert_bank_row(expert as u32)
+                .ok_or(ReferenceError::InvalidPlan {
+                    layer: Some(layer),
+                    reason: "router selected an expert absent from its retained bank",
+                })?;
+            let gate_offset = row * intermediate * hidden;
+            let down_offset = row * hidden * intermediate;
             let mut activated = vec![0.0; intermediate];
             for row in 0..intermediate {
                 let mut gate = 0.0;
@@ -7559,7 +7589,40 @@ fn route_experts(
     forced_indices: Option<&[usize]>,
     layer: u32,
 ) -> Result<Vec<(usize, f32)>, ReferenceError> {
+    route_experts_in_set(router, logits, bias, selected, forced_indices, None, layer)
+}
+
+fn route_experts_in_set(
+    router: &memra_gguf::model_plan::RouterPlan,
+    logits: &[f32],
+    bias: Option<&[f32]>,
+    selected: usize,
+    forced_indices: Option<&[usize]>,
+    retained: Option<&[u32]>,
+    layer: u32,
+) -> Result<Vec<(usize, f32)>, ReferenceError> {
     use memra_gguf::model_plan::{RouterPlan, RouterScorePlan};
+
+    let contains = |id: usize| retained.is_none_or(|ids| ids.binary_search(&(id as u32)).is_ok());
+    // Mask before softmax's maximum and denominator, not only before top-k. Otherwise a
+    // high pruned logit can underflow every retained probability and change normalization.
+    let masked;
+    let logits = if retained.is_some() {
+        masked = logits
+            .iter()
+            .enumerate()
+            .map(|(id, &value)| {
+                if contains(id) {
+                    value
+                } else {
+                    f32::NEG_INFINITY
+                }
+            })
+            .collect::<Vec<_>>();
+        masked.as_slice()
+    } else {
+        logits
+    };
 
     let mut weights = match router {
         RouterPlan::Softmax => {
@@ -7609,6 +7672,12 @@ fn route_experts(
                     reason: "token-id expert row contains an out-of-range or duplicate expert",
                 });
             }
+            if !contains(index) {
+                return Err(ReferenceError::InvalidPlan {
+                    layer: Some(layer),
+                    reason: "token-id expert row selects a pruned expert",
+                });
+            }
         }
         forced.to_vec()
     } else {
@@ -7618,7 +7687,7 @@ fn route_experts(
                 reason: "score-selected router received forced expert indices",
             });
         }
-        let mut indices: Vec<usize> = (0..logits.len()).collect();
+        let mut indices: Vec<usize> = (0..logits.len()).filter(|&id| contains(id)).collect();
         indices.sort_by(|&left, &right| {
             selection_scores[right]
                 .total_cmp(&selection_scores[left])
@@ -8262,6 +8331,135 @@ mod tests {
     }
 
     #[test]
+    fn retained_router_masks_before_softmax_and_keeps_selection_bias_separate() {
+        use memra_gguf::model_plan::{RouterPlan, RouterScorePlan};
+        let ids = [1, 3];
+        assert_eq!(
+            route_experts_in_set(
+                &RouterPlan::Softmax,
+                &[1000.0, 0.0, 1000.0, 0.0],
+                None,
+                2,
+                None,
+                Some(&ids),
+                0
+            )
+            .unwrap(),
+            vec![(1, 0.5), (3, 0.5)]
+        );
+        assert_eq!(
+            route_experts_in_set(
+                &RouterPlan::Sigmoid {
+                    normalize_selected: false,
+                    scaling_factor: 2.0,
+                    selection_bias: true
+                },
+                &[1000.0, 0.0, 1000.0, 0.0],
+                Some(&[1000.0, 0.0, 1000.0, 1.0]),
+                1,
+                None,
+                Some(&ids),
+                0
+            )
+            .unwrap(),
+            vec![(3, 1.0)]
+        );
+        let router = RouterPlan::TokenIdHash {
+            score: RouterScorePlan::SqrtSoftplus,
+            normalize_selected: true,
+            scaling_factor: 1.0,
+        };
+        assert!(matches!(
+            route_experts_in_set(&router, &[0.0; 4], None, 2, Some(&[0, 3]), Some(&ids), 0),
+            Err(ReferenceError::InvalidPlan {
+                reason: "token-id expert row selects a pruned expert",
+                ..
+            })
+        ));
+        assert_eq!(
+            route_experts_in_set(&router, &[0.0; 4], None, 2, Some(&[3, 1]), Some(&ids), 0)
+                .unwrap(),
+            vec![(3, 0.5), (1, 0.5)]
+        );
+    }
+
+    #[test]
+    fn retained_moe_reads_compact_rows_using_original_router_ids() {
+        use memra_gguf::model_plan::{MoeMlpPlan, RouterPlan};
+        let plan = MoeMlpPlan {
+            expert_count: 4,
+            retained_experts: Some(vec![1, 3]),
+            experts_per_token: 1,
+            expert_intermediate_size: 1,
+            router: RouterPlan::Softmax,
+            shared: None,
+            activation: ActivationPlan::Silu,
+        };
+        let mut weights = ReferenceWeights::new();
+        for (id, shape, values) in [
+            (
+                LayerTensor::MoeRouter,
+                vec![4, 1],
+                vec![1000.0, 0.0, 1000.0, 1.0],
+            ),
+            (
+                LayerTensor::MoeExpertGateBank,
+                vec![2, 1, 1],
+                vec![1.0, 1.0],
+            ),
+            (LayerTensor::MoeExpertUpBank, vec![2, 1, 1], vec![2.0, 3.0]),
+            (
+                LayerTensor::MoeExpertDownBank,
+                vec![2, 1, 1],
+                vec![5.0, 7.0],
+            ),
+        ] {
+            weights.insert(
+                layer_id(0, id),
+                ReferenceTensor::new(shape, values).unwrap(),
+            );
+        }
+        let result = moe_mlp(0, &plan, &weights, &[1.0], &[0], 1, 1, 1).unwrap();
+        // Only original expert 3 is selected; its stored row is 1, not 3 or original expert 1.
+        let expected = (1.0f32 / (1.0 + (-1.0f32).exp())) * 3.0 * 7.0;
+        assert_eq!(result[0].to_bits(), expected.to_bits());
+        weights.insert(
+            layer_id(0, LayerTensor::MoeExpertGateBank),
+            ReferenceTensor::new(vec![4, 1, 1], vec![1.0; 4]).unwrap(),
+        );
+        assert!(
+            moe_mlp(0, &plan, &weights, &[1.0], &[0], 1, 1, 1).is_err(),
+            "full uniform bank must not fabricate rows for pruned experts"
+        );
+        let mut invalid = plan.clone();
+        invalid.retained_experts = Some(vec![3, 1]);
+        assert!(matches!(
+            moe_mlp(0, &invalid, &weights, &[1.0], &[0], 1, 1, 1),
+            Err(ReferenceError::InvalidPlan { .. })
+        ));
+    }
+
+    #[test]
+    fn retained_moe_fixture_executes_a_complete_reference_plan() {
+        let cfg = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"qwen3_moe","num_hidden_layers":1,"hidden_size":8,"num_attention_heads":2,"num_key_value_heads":1,"head_dim":4,"intermediate_size":16,"vocab_size":32,"max_position_embeddings":32,"num_experts":4,"num_experts_per_tok":2,"moe_intermediate_size":8}"#,
+        ));
+        let mut plan = ModelPlan::compile(&cfg).unwrap();
+        let MlpPlan::Moe(moe) = &mut plan.layers[0].mlp else {
+            unreachable!()
+        };
+        moe.retained_experts = Some(vec![1, 3]);
+        let fixture = deterministic_fixture(&plan).unwrap();
+        assert_eq!(
+            fixture.weights[&layer_id(0, LayerTensor::MoeExpertGateBank)].shape,
+            vec![2, 8, 8]
+        );
+        let output = execute(&plan, &fixture.weights, &fixture.token_ids).unwrap();
+        assert!(output.logits.iter().all(|v| v.is_finite()));
+        assert_eq!(output.tokens, fixture.token_ids.len());
+    }
+
+    #[test]
     fn qwen3_moe_fixture_executes_routed_and_shared_branches() {
         let config = ModelConfig::from_hf(&HfConfig::parse(
             r#"{"model_type":"qwen3_moe","num_hidden_layers":2,"hidden_size":8,
@@ -8621,6 +8819,26 @@ mod tests {
             plan.operations()
                 .contains(&memra_gguf::model_plan::OperationKind::GemmaParallelMoeResidual)
         );
+
+        let mut masked = plan.clone();
+        let MlpPlan::Moe(moe) = &mut masked.layers[0].mlp else {
+            unreachable!()
+        };
+        moe.retained_experts = Some(vec![1, 3]);
+        assert!(matches!(
+            deterministic_fixture(&masked),
+            Err(ReferenceError::UnsupportedOperation {
+                operation: "retained experts with parallel routed-output scales",
+                ..
+            })
+        ));
+        assert!(matches!(
+            execute(&masked, &fixture.weights, &fixture.token_ids),
+            Err(ReferenceError::UnsupportedOperation {
+                operation: "retained experts with parallel routed-output scales",
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -9529,6 +9747,7 @@ mod tests {
         };
         plan.layers[1].mlp = MlpPlan::Moe(MoeMlpPlan {
             expert_count: 4,
+            retained_experts: None,
             experts_per_token: 2,
             expert_intermediate_size: 4,
             router: RouterPlan::Sigmoid {
