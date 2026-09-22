@@ -98,3 +98,51 @@ reconstructed arrivals of the 24th and 25th tokens, `ttft_ms` plus the cumulativ
 take-back tick is ruled only if it is tick 1 or tick 2. The ledger segments are not timed against tenant gaps; a
 segment is placed on a tick by the code path, not by a timestamp. No figure is compared with day 35's receipts or with
 the target card.
+
+## 2. The per-tick split (the reader run, after `1bb7f4dd7` was pushed)
+
+Command: `systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=20G python3
+research/spill-c-20260919/day38-tick-split.py research/spill-c-20260919/rtx5090-day37/stall/ev
+research/spill-c-20260919/rtx5090-day37/reading.log`, at `1bb7f4dd7`, into `day38-cpu/tick-split.log` (482 lines,
+`# exit=0`). `DAY38 ADMISSIBILITY: day 37's ... 40 receipts loaded; nothing replayed or re-admitted`.
+
+**The verdict lines, verbatim.**
+
+```
+DAY38 VERDICT q=tick1: prime o1=+5.8/18.2 o2=-8.9/13.0 under_resolution; demote-off o1=+1.4/4.1 o2=+2.6/5.5 under_resolution; demote-on o1=-1.0/4.2 o2=-3.9/5.4 under_resolution; promote-off o1=+0.5/7.7 o2=-2.1/3.4 under_resolution; promote-on o1=-1.4/4.5 o2=-1.3/7.5 under_resolution; did-demote o1=-2.3/5.9 o2=-6.5/7.7 under_resolution; did-promote o1=-1.8/8.9 o2=+0.7/8.2 under_resolution
+DAY38 VERDICT q=tick2: prime o1=+21.4/38.9 o2=-4.4/17.4 under_resolution; demote-off o1=+1.4/2.4 o2=+1.1/2.8 under_resolution; demote-on o1=-20.4/2.2 o2=-21.0/2.5 moved; promote-off o1=nd o2=nd not_defined; promote-on o1=nd o2=nd not_defined; did-demote o1=-21.7/3.2 o2=-22.0/3.8 moved; did-promote o1=nd o2=nd not_defined
+DAY38 HYPOTHESIS P1 demote-on tick2 moved negative: holds; P2 demote-on tick1 under_resolution: holds; P3 did-demote tick2 moved negative: holds; P4 did-demote tick1 under_resolution: holds; P5 demote-off tick1 and tick2 under_resolution: holds (tick1 under_resolution, tick2 under_resolution) -> consistent with H
+```
+
+**Read as registered.** All five predictions hold: the demote-class difference between the trees in day 37's summed
+pair sits on tick 2, the poll tick, and not on tick 1. Per block, demote-on tick 2 reads opta `49.8` against base
+`70.2` (o1) and `51.1` against `72.0` (o2); the demote DiD on tick 2 reads `-21.7/3.2` and `-22.0/3.8`, against day
+37's summed-pair DiD `-24.2/8.2` and `-29.0/12.7`. Within each binary (lines (ii), N=40), demote ON minus OFF on tick 2
+reads `+29.7 unc=3.8 -> isolated` on the base tree and `+7.0 unc=3.5 -> isolated` on the option (a) tree; on tick 1
+`+4.2 unc=5.5` and `+0.1 unc=5.7`, both `under_resolution`. The option (a) tree's remaining `+7.0` on tick 2 is the same
+size as its ledger's `copy_settle=8.48` / `8.30`, which the code places on the poll tick; this reading does not time the
+segment against the gap, so the match is stated, not attributed.
+
+**The promote class, no prediction registered.** Tick 1 reads `under_resolution` in both arms and in the DiD. Tick 2 is
+`not_defined` for promote-off on both trees (`39 of 40` base runs and `40 of 40` option (a) runs lack it) and for
+promote-on on the option (a) tree (`40 of 40 runs lack tick 2`); the base tree's promote-on has tick 2 in 40 of 40
+(`median=39.5 iqr=1.1`). So the promote DiD on tick 2 is `not_defined` and no promote tick-2 outcome is read.
+
+**The shape (descriptive, `DAY38 SHAPE` lines).**
+- Every demote arm on both trees stretches exactly two ticks at or after the fire (`stretched_after_fire median=2 (2 to
+  2)`), at offsets 1 and 2 from f, adjacent, in 20 of 20 runs per program, and {tick 1, tick 2} equals day 37's {top1,
+  top2} in 20 of 20. So on the demote arms day 37's `top1_plus_top2` is exactly tick 1 plus tick 2.
+- The promote-on arm stretches two ticks on the base programs (offsets 1 and 2, 20 of 20 each) and ONE on the option (a)
+  programs (offset 1, `runs_with_tick2=0/20` in p2-opta and p3-opta). Promote-off stretches one (offset 0) except one
+  p4-base run with a second at offset 251.
+- The prime arm stretches five, tick 1 at offset 1 or 2; its {tick 1, tick 2} is never day 37's {top1, top2} (0 of 20).
+- No stretched gap before the fire in any run (`stretched_before_fire_sum=0` in all 20 program-arm lines); the fire check
+  holds in every run (`fire_ok=20/20` in all 20 lines).
+- The fire's own gap (offset 0) is not stretched on the demote and promote-on arms: the intruder's first stretched tick
+  is the next gap.
+
+**What this reading does not say.** Post-hoc over a completed cell; day 37's rule and day 37's admissibility. The RTX
+5090 Laptop GPU, the 9B NVFP4 artifact, the plain 64-token class under `MEMRA_SERVE_SPEC=0`. No tick after tick 2
+is ruled; on the demote arms no third gap at or after the fire is stretched (`median=2 (2 to 2)`), so if the option
+(a) take-back lands after tick 2 it does not stretch its tick past 3 x p50. No figure is
+compared with day 35's receipts or with the target card. Not a qualification.
