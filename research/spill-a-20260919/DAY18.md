@@ -397,19 +397,52 @@ arm_max=163.5 stall_median=149.7` (day 17: 149.6; run 1: 149.4): the demote half
 `server_demote_ms` in the promote arm is back at 172 ms submission to publication, the day-17 off-tick
 figure. A same-box cross-sitting reading against day 16 and day 17, not a same-window A/B.
 
-### Local RTX 5090 Laptop GPU (`rtx5090-day18/`): not run
+### Local RTX 5090 Laptop GPU (`rtx5090-day18/`): the resume driver's receipts (settled day 19)
 
-The canonical lock `/tmp/memra-5090.lock` was held by another lane for the whole sitting (from 01:28 UTC
-through the close of this record, more than 75 minutes); my driver retried 15 x 120 s on its first cell
-(`identity-default-off rc=2`, no gate ran), never signalled the holder, and its run-1 instance then died
-on a mistake of mine: I edited the running driver script in place to add a resume guard, and bash, which
-reads a script incrementally, resumed at a shifted offset (`line 30: name: unbound variable`, `driver.log`).
-The resume variant (`resume.sh`, re-trying lock-busy cells only) was launched detached against the binary
-built from the fixed tree (`ccc1673e…`) and is waiting in its bounded retries as this record closes; the
-9B cells (identity x4, failure x2, fault, hit x2, twin) and the 27B twin cells are its list. No 5090 line is
-claimed today. The slice's identity and fault gates are green on the target card class in both runs, which
-the pre-registration names as the condition for the slice to stand; the 5090 receipt is owed and is not a
-qualification claim either way.
+The canonical lock `/tmp/memra-5090.lock` was held by another lane for the whole day-18 sitting (from 01:28 UTC,
+more than 75 minutes); my run-1 driver retried 15 x 120 s on its first cell (`identity-default-off rc=2`, no gate
+ran), never signalled the holder, and then died on a mistake of mine: I edited the running driver script in
+place to add a resume guard, and bash, which reads a script incrementally, resumed at a shifted offset
+(`line 30: name: unbound variable`, `driver.log`). The resume variant (`resume.sh`, re-trying lock-busy cells
+only) ran detached against the binary built from the fixed tree `3df0cb2b3` (`ccc1673e…`, `binary.sha256`); its
+first cell waited another 15 x 120 s on the lock (02:09 to 02:39 UTC, `identity-default-off rc=2` a second time,
+NOT RUN), the card freed at 03:03 UTC and every remaining cell ran (`driver.log`, `local-driver-done` at 03:13
+UTC). The Qwen3.5-9B NVFP4 MTP artifact, `MEMRA_HOSTGATE_CACHE_MB=64`; every cell `executed-not-qualified`, N=1,
+the laptop card's regime not recorded by the gates (no power limit reading, `power.limit [N/A]`).
+
+| cell | verdict line, verbatim | ok / fail |
+|---|---|---|
+| identity-default-off | `REFUSED: canonical GPU lock busy` (30 lock-busy retries over two driver instances; NOT RUN) | - |
+| identity-default-on | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-plain-off (`MEMRA_SERVE_SPEC=0`) | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-plain-on | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| failure-off | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| failure-on | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| contract-fault (ON by construction) | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` | 64 / 0 |
+| hitgate-off | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` | 61 / 0 |
+| hitgate-on | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` | 61 / 0 |
+| twin-off, twin-on (9B) | `REFUSED: cohort promotion did not happen for 2800 tokens: second send cached=2800 of 2800, published 2784` (the 9B refuses the gate's cohort shape, the day-17 gate shape fact; both arms) | - |
+| gpu-unit-cells (`option_b_*`, `option_c_*`) | `test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 792 filtered out; finished in 0.23s` | 8 / 0 |
+| twin27-off (the 27B artifact) | `PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=1 cohort_evictions=1 self_evictions=0 refused_or_skipped=0 effective_free_ok=2/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=FAIL V4=ok V5=ok V6=ok -> FAIL` | V3 FAIL |
+| twin27-on | the identical line, `-> FAIL` | V3 FAIL |
+
+Reading. The identity gate is green in the three arms that ran (default ON, plain OFF and ON); the default OFF arm
+never ran on this card and is owed. The failure, fault and hit gates are green in both arms; the GPU unit cells
+pass. The twin gate on the 27B reads `V3=FAIL` in BOTH arms with the identical line, so it is not a door delta
+(OFF fails the same way); V3 is the gate's effective-free accounting clause (calibration boot's effective free
+equals the measured boot's plus the cache's resident bytes, within 64 MiB). The turn table (`twin27-off/TURNS.md`)
+shows a constant V3 state error of `-410352980` bytes on turns 2 through 7 and `0` on turns 1 and 8, with
+`effective_free_ok=2/8`; the measured boot evicted once (turn 1, the cohort entry) and then held two `grow` entries
+resident (`resident 956.2MB / 1074MB` at turn 7) until turn 8's `[admit-oom] reclaim-on-defer` released one
+(`evicted 1 prefix entries + 1 plain`, `effective free 3824MB -> 4944MB`), where day 17's local run of the same
+cells (`rtx5090-day17/twin27-off/`, `-> PASS`, `evictions=9 cohort_evictions=3 effective_free_ok=8/8`) evicted
+the previous turn's entry on every turn. The eviction shape changed between the day-17 tree and this one (which
+carries `origin/main` `dc192cd95`, #621, and the integ30 fix); the cause is NOT established here: no process
+listing of the card exists for the window and the gate's calibration and measured boots are separate server
+instances, so a co-tenant on the card, a pool-accounting change in the merged tree, or a gate-shape change are
+all open. Recorded as a red 5090 line for lane B's gate and the lead; a repro on this card with `nvidia-smi
+--query-compute-apps` beside each boot is owed before any conclusion. The target-card twin lines of both runs
+(`-> PASS`, both arms) stand as recorded. No 5090 line is a qualification claim.
 
 ## Task 3: records
 

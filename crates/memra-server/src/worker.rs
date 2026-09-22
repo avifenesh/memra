@@ -11078,6 +11078,32 @@ fn host_kv_planes_settle_promote(
             submitted,
         }));
     }
+    // 6b. Rule 3 (WP-A day 19, `memra_tier::conformance::h2d_reader_fence`, the at-settle install):
+    //     the OWNER stream's wait on every item's completion event is installed here, after the
+    //     completion is observed and before the receipt check and `ready_view`, and only here for
+    //     an H2D on the copy stream; until it runs the items are not `consumer_fenced` and the
+    //     engine refuses publication. Day 18 installed the wait at submit, so every kernel the
+    //     tenant issued between submit and settle queued behind the copy's landing. The completion
+    //     is re-read so the receipt check below sees the fences.
+    if let Err(e) = t.install_consumer_wait(&ticket) {
+        return Err(host_promote_contract_abort(
+            &mut t,
+            registered,
+            Some(ticket),
+            Some(producer),
+            &sources,
+            &format!("tier H2D reader wait refused: {e:?}"),
+        ));
+    }
+    let completion = match t.poll(&ticket) {
+        Ok(completion) => completion,
+        Err(e) => {
+            return Err(Latched(format!(
+                "tier H2D completion unreadable after the reader wait ({e:?}); the transfer \
+                 engine keeps the destinations and the source twins"
+            )));
+        }
+    };
     // 7. The receipt check BEFORE publication: exact lengths from the server's own geometry and
     //    the checksum each plane's D2H delivered, so `require` holds only if the copy read exactly
     //    the bytes the demote wrote. A difference is a refusal with nothing published, EXCEPT under
@@ -41159,6 +41185,7 @@ mod tests {
             "submit_batch(",
             "synchronize(&ticket)",
             "poll(&ticket)",
+            "install_consumer_wait(&ticket)",
             ".require(&ticket, &receipts, true)",
             "ready_view(",
             "record_consumer(",
