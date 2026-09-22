@@ -88,18 +88,63 @@ def tokenize(port, prompt):
     return int(json.loads(data)["count"])
 
 
-def calibrate(port, make, target, guess):
-    """`make(n)` builds a prompt from n words; adjust n until `/v1/tokenize` counts exactly `target`."""
-    n = guess
+FILLERS = "a an of to in on it is at by or as be we he up so no do if my".split()
+
+
+def calibrate(port, make, target, guess, count=None):
+    """`make(n)` builds a prompt from n words (more words, more tokens). Bracket then bisect to the
+    largest n whose count is at or under `target`, then append single-token fillers one at a time
+    until the count is exactly `target`, skipping a filler the tokenizer makes two tokens of (the
+    27B's tokenizer makes about a quarter of the words two tokens, so a fixed step of one word can
+    straddle the target: day 25's first box attempt oscillated 5183/5185). `count` replaces
+    `/v1/tokenize` in the unit check."""
+    count = count or (lambda text: tokenize(port, text))
     tried = []
-    for _ in range(16):
-        c = tokenize(port, make(n))
+
+    def cnt(n):
+        c = count(make(n))
         tried.append((n, c))
-        if c == target:
-            return make(n), tried
-        n += target - c
-        if n < 1:
+        return c
+
+    lo = max(1, guess)
+    c = cnt(lo)
+    guard = 0
+    while c > target and guard < 64:
+        guard += 1
+        if lo == 1:
             raise RuntimeError(f"calibration underflow: {tried}")
+        lo = max(1, lo - max(1, c - target))
+        c = cnt(lo)
+    if c == target:
+        return make(lo), tried
+    hi = lo + max(1, target - c)
+    ch = cnt(hi)
+    while ch <= target and guard < 64:
+        guard += 1
+        lo, c = hi, ch
+        if c == target:
+            return make(lo), tried
+        hi = hi + max(1, target - c)
+        ch = cnt(hi)
+    while hi - lo > 1 and guard < 64:
+        guard += 1
+        mid = (lo + hi) // 2
+        cm = cnt(mid)
+        if cm == target:
+            return make(mid), tried
+        if cm < target:
+            lo, c = mid, cm
+        else:
+            hi = mid
+    text = make(lo)
+    for w in FILLERS * 3:
+        cand = f"{text} {w}"
+        cc = count(cand)
+        tried.append((f"+{w}", cc))
+        if cc == target:
+            return cand, tried
+        if cc < target:
+            text, c = cand, cc
     raise RuntimeError(f"calibration did not converge: {tried}")
 
 
