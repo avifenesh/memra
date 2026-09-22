@@ -2203,6 +2203,87 @@ cells `5 passed` under the lock, the hit gate OFF and ON armed (9B), verbatim: `
 A's refusal must not fire here), 0 refused, disabled, trunk-only, dropped or skipped lines. The day-24 census holds on
 this card after A day 26.
 
+## integ43 (`lane/spill-integ43-20260922`): A day 27 (the demote tick cost attributed; the three options for the bundle hash) and C day 33 (the 5090 write-combined hash rate: H1 refuted)
+Lane tips merged, in order: C `ab7ef9f18` (day 33), A `8bfd3d103` (day 27), on main `22f7489a3` (#647). One conflict,
+`HOSTPREFIX-DOOR.md` section D item 6, both lanes edited (A's code answer, C's measurement); merged three-way against the
+integ42 tip both had merged and both paragraphs kept, A's first. No engine path moved: the only code is C's opt-in
+`--two-step` arm of the `hash-micro` diagnostic bin (day-18 output unchanged without the flag).
+
+**A day 27 (Move 1 owed item 2, read before designing; no engine code).** Section 1's attribution corrects the owed-item
+text: Move 1's two receipt hashes (`progress` at the poll, `tier_transfer.rs:1710`; `bind_tier_image`'s per-plane check,
+`worker.rs:9344` over `9440-9451`) run over the KV planes only, about 1.9 MB on the 27B's 64-token entry, 0.9 ms each on
+the target host, in the card's `PinnedKind::for_device` (cached on the target, write-combined on the 5090); hash 1 sits
+inside `from submission to completion` because `copy_ms` is stamped after the whole settle. The 74.8 ms `in -
+completion` is ONE SHA-256 pass of `bind_tier_image`'s `StateBundle` checksum over the whole image: about 157 MB of it
+the recurrent f32 state in pageable heap (`HostF32::Heap`, `reserve_image` with no arena) that never crossed the contract
+and has no receipt partner, plus the pre-submit f32 D2H and the insert. Under OFF `hpx.tier` is `None`, so OFF never
+computes it: **the door's demote tick cost is the bundle checksum, not the copy Move 1 moved.** The 5090's 21 to 23 ms
+per 54.8 MB is the same pass at that host's heap rate (37.5 ms per 160 MiB) plus a write-combined read of the one to two
+percent KV share, which is why it is not 490 ms per pass; section D item 6 answered (the 9B entry's KV byte split is the
+one unmeasured term). Options, pre-registered, then measured where no engine code was needed: (a) a helper thread hashes
+the heap payloads (recurrent, logits, hidden) during a `Hashing` phase of `PendingDemote`; the owner thread keeps the two
+KV-plane hashes; receipt term unchanged (SHA-256, same bytes, same wire); fault arms `hash-helper-gone` and
+`hash-never-lands`; removes about 73 ms from the tick on the target card; **recommended**, acceptance gate in `DAY27.md`
+section 2 (`in - completion <= 12.0`, stall ON <= OFF + 2.0, e2e `on_minus_off <= +20.0`, every gate ALL GREEN both arms
+both cards, two fault cells, a bitwise digest unit cell, no flag). (b) the slice-3 four-lane program for the D2H receipt
+term: moves only the KV-plane hashes unless the bundle program changes too (b'), trading cryptographic naming of the
+bytes for transfer integrity; the digest micro-cell (`day27-digest-micro/`, both engine programs, heap, 160 MiB, N=5 per
+order, two orders, one hold per host), verbatim: target host `sha_ms=77.589 lanes_ms=70.737 lanes_over_sha=0.912`, 5090
+host `sha_ms=37.111 lanes_ms=55.078 lanes_over_sha=1.484`; both digests byte-identical for both programs on both hosts;
+no digest swap runs at memory speed, (b') is worth about 7 ms of the 74.8. (c) a GPU digest of the pinned bytes over
+PCIe: unmeasured (no engine path launches `d2d_receipt_digest` over a host pointer; the leases carry no `DEVICEMAP`);
+arithmetic about 6 ms on the copy stream; its stronger form (digest the source planes before the D2H) needs the recurrent
+state on the contract first (Move 2 owed item 1). Section 3, the baseline on the day-27 tree (the day-26 code), one
+hold, twenty boots, 20 of 20 replays PASS, 33 to 51 C: stall `on_minus_off=-3.4 / -3.5 unc=0.1 isolated` (81.9/81.8
+against 85.2/85.3), e2e `+91.3 / +91.3 isolated` (206.6 against 115.4), `demote_in-completion median=74.8`, gaps 95.3
+and 92.4; equal to day 26 within 0.1 ms. **Ruling 39 (lead): option (a) is approved for A day 28 as specified**, with the
+receipt term unchanged, `Hashing` as a `PendingDemote` state under the same fail-closed discipline, one long-lived helper
+per `HostTierContext` joined at shutdown and `host.disable`, the two fault values under the existing
+`MEMRA_KV_HOST_FAULT` row (no new `MEMRA_*` name), and a bitwise digest unit cell. Budget 2.5 against 4.
+
+**C day 33 (the 5090 measurement of section D item 6).** Pre-registered hypotheses (H1: the hash reads the write-combined
+destination and the micro-cell rate does not apply to its access pattern; H2: it reads a cached copy, staging buffer or
+device digest; H3: the destination is not write-combined despite the printed arm), then one collector hold on the 5090
+(14:49Z to 14:50Z, one lock refusal, 56 to 58 C, 9.5 to 31.7 W, premise `PINNED-DEFAULT device="NVIDIA GeForce RTX 5090
+Laptop GPU" kind=write-combined flags=4` inside the hold), N=5 per kind per order, both orders, at 54,800,000 B and 160
+MiB, 41 ok, 0 FAIL, verbatim: `DAY33 HASH-WC VERDICT: 54.8MB cached 11.9 wc 473.8 heap 11.9 wc_copy 224.2 (N=10 each);
+160MiB cached 36.6 wc 1450.8 heap 37.2 wc_copy 686.8 (N=10 each); day31 ON in median 48.3 max 60.4 (N=12)
+in_minus_completion median 21.6 (N=12); H1-single fits=False H1-twostep fits=False -> H1 refuted (no WC read route fits
+the ON demote's wall time; H2 or H3 stands, separated by the code census, not by this cell); pinned=write-combined;
+admissible=True`. The write-combined read rate is size-independent (0.116 GB/s) and the memcpy route reads the same
+memory at 0.258 GB/s; the fastest single-pass WC hash at the entry size (468.8 ms) is 7.8x the slowest ON demote (60.4),
+the fastest two-step (222.0) 3.7x. A's code census (above) resolves H2 against H3: the pass is over heap memory (H2's
+form), with the write-combined share the one to two percent of KV bytes. Two stated deviations (a reading-script field
+fix after the run with the first output kept verbatim, 40 ok and 1 FAIL on that check alone; the runner relaunched
+detached during a sleep, holding nothing), nothing tuned. Budget 2.4 against 3.
+
+**Lead reading, for the door review.** Sections B and E of the door doc and the packet now carry the attribution: under
+ON the demote's tick pays a SHA-256 pass over the whole bundle image that OFF never computes; Move 1's copies are off the
+tick and its receipt hashes are 1.8 ms. The 32 ms the cell (i) census could not attribute is this pass minus what OFF
+spends on the same tick. Option (a) is the arm that removes it; C day 34 carries the reading into the packet.
+
+**C day 34 (merged after the battery; docs only).** `DOOR-DECISION-PACKET.md` re-read against days 26, 27 and 33: section
+2 replaces the two-hashes sentence with A's attribution (file:line on `cb9fa5ef3`; the bundle pass 74.8 ms per 159.8 MB
+entry on the target card, 21 to 23 ms per 54.8 MB on the 5090, OFF never computes it; Move 1's two receipt hashes about
+1.8 ms over 1.9 MB); item 2 attributes the 32 ms cell (i) could not, and states option (a)'s acceptance gate (ruling 39)
+without predicting; item 7 drops the resolved items (5, 6, 9) and names what stays (the arena handoff, the DFlash tail
+slice, verify digest v3, the 9B's KV byte split, option (a)'s own receipt, a 5090 tenant-stall cell); section 6's
+naked-default bullet carries the bundle checksum on the tick until option (a) lands; section 4 gains five rows (A day 26,
+the day-27 baseline, both hosts' digest micro-cells, the day-33 verdict). Every added number regenerated from its receipt
+(the day-26 and day-25 readers re-run under the CPU quota, digests from `ev/digest-micro.log`, regimes from
+`command.gpu.csv`). `HOSTPREFIX-DOOR.md` item 6 RESOLVED day 27 and 33 with both pointers; section E's day-34 paragraph.
+Budget 1.7 against 3. #648 (lead, ruling 38): the `MEMRA_KV_PARK_COMPACT` row's value column reads `0 (default OFF),
+decide-by: 2026-10-06.`, the dated sentence names WP-B day 28 and the owner's verdict, the PENDING clause names the two
+gates still pending and the received park-time copy cost; merged before this integ.
+
+**Battery (tree `d06a9dd8c`, A day 27 + C day 33; receipts `integ43-cpu-battery/`, `integ43-serve-smoke-5090/`,
+`integ43-hit-gate-5090/`).** All fifteen CPU steps rc=0. Local RTX 5090: `serve-smoke: 0 failed` (gemma4 and Q35 arms SKIP,
+absent models), engine `d2d_*` GPU cells `5 passed` under the lock, the hit gate OFF and ON armed (9B), verbatim:
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 61 ok OFF, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 68 ok ON, `ok: door arm: 30
+route submission(s) across the two boots`, 11 spec-boundary captures, 13 restores, 0 `restore not routed`, 0 refused,
+disabled, trunk-only, dropped or skipped lines. C day 34 and #648 merged after the battery are docs only; the engine tree
+under test is `d06a9dd8c`'s, equal to this PR's.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
