@@ -343,7 +343,7 @@ def validate_build(build, source, source_reference, evidence):
         require(value.get("format") == "ELF-x86_64", f"non-native binary: {name}")
 
 
-def validate_record(record, evidence, repo, head, binaries=None, models=None, hardware=None):
+def validate_historical_record(record, evidence, repo, head, binaries=None, models=None, hardware=None):
     require(isinstance(record, dict), "record must be a JSON object")
     require(record.get("schema") == "memra-release-qualification-v1" and record.get("status") == "qualified",
             "UNQUALIFIED: absent, failed or unsupported qualification record")
@@ -375,7 +375,8 @@ def validate_record(record, evidence, repo, head, binaries=None, models=None, ha
     topology = evidence.bound(run["topology"])
     require(topology.strip(), "missing topology observation")
     require(run["hardware"]["topology_sha256"] == digest(topology), "topology hash mismatch")
-    require(run["command"] == ["bash", "tools/release-battery.sh", "--evidence-dir", "cells"],
+    require(run["command"] in (["bash", "tools/release-battery.sh", "--evidence-dir", "cells"],
+                               ["bash", "tools/release-battery.sh", "--generic-only", "--evidence-dir", "cells"]),
             "noncanonical battery command")
     evidence.bound(run["battery_log"])
     samples = evidence.bound(run["telemetry"]).decode().splitlines()
@@ -400,7 +401,47 @@ def validate_record(record, evidence, repo, head, binaries=None, models=None, ha
         require(hardware == run["hardware"], "stale rig/topology")
     return {**proof, "identity_sha256": record["identity_sha256"], "verdicts": verdicts,
             "binaries": build["binaries"], "build_profile": build["platform"]["profile"],
-            "qualification": "native-evidence-validated"}
+            "qualification": "historical-generic-only"}
+
+
+def validate_record(record, evidence, repo, head, binaries=None, models=None, hardware=None):
+    """Full release v2. A valid historical generic v1 is never a release waiver."""
+    import copy
+    from serving_run import validate_serving_run, tracked, MANIFEST
+    require(isinstance(record, dict) and record.get("schema") == "memra-release-qualification-v2"
+            and record.get("status") == "qualified", "UNQUALIFIED: full release requires sealed v2 serving evidence; v1 is generic-only")
+    require(set(record) == {"schema", "status", "source", "build", "generic", "serving", "payloads", "verdicts", "identity_sha256"},
+            "unknown or missing v2 release fields")
+    require(isinstance(record["payloads"], dict) and record["payloads"], "missing v2 evidence manifest")
+    evidence.payloads = record["payloads"]
+    for path, expected in record["payloads"].items():
+        require(isinstance(expected, str) and SHA.fullmatch(expected) and digest(evidence.read(path)) == expected,
+                "v2 evidence changed: " + path)
+    generic = evidence.obj(record["generic"])
+    require(generic.get("source") == record["source"] and generic.get("build") == record["build"], "generic and serving build/source differ")
+    proof = validate_historical_record(generic, copy.copy(evidence), repo, head, binaries, models, hardware)
+    source, build = evidence.obj(record["source"]), evidence.obj(record["build"])
+    serving = validate_serving_run(evidence.obj(record["serving"]), evidence, tracked(repo, head, MANIFEST),
+        {"repo": repo, "head": head, "source": source, "source_reference": record["source"],
+         "build": build, "build_reference": record["build"]})
+    generic_models = evidence.obj(generic["run"])["models_before"]
+    require(all(path not in generic_models or generic_models[path] == identity for path, identity in serving["models"].items()),
+            "generic and serving model artifacts differ")
+    verdicts = {"generic": proof["verdicts"], "serving": serving}
+    require(record["verdicts"] == verdicts, "v2 verdicts differ from raw required evidence")
+    identity = {"source": source["inputs_sha256"], "build": record["build"]["sha256"],
+                "generic": record["generic"]["sha256"], "serving": record["serving"]["sha256"], "verdicts": verdicts}
+    require(record["identity_sha256"] == object_digest(identity), "v2 release identity changed")
+    return {**proof, "identity_sha256": record["identity_sha256"], "verdicts": verdicts,
+            "qualification": "native-required-release-evidence-validated"}
+
+
+def verify_historical_published(repo, head):
+    """Read old raw records explicitly; never called by push, tag or release gates."""
+    results = [validate_historical_record(record, evidence, repo, resolved)
+               for record, evidence, resolved in published_records(repo, head)]
+    require(results, "missing historical generic evidence")
+    return results[0]
 
 
 def cell_verdicts(run, evidence, repo, head):

@@ -1939,3 +1939,27 @@ separate gates. No CPU result promotes model support or a runtime default. The
 io_uring proposal is deferred pending a measured positioned-read baseline; it is
 not an implemented comparator. The spill program's changes through #563 and #568 add
 **no `.cu` or FFI changes**, so they require no kernel-inventory amendment.
+
+
+## Required serving release replay (#526)
+
+`tools/serving-run.py capture` uses the existing owned-process collectors for one
+complete source-owned model/route scope. `seal`/`verify` replay all eleven required
+scenarios across the full roster policy and their closed physical-card leases.
+`tools/qualify-release.py seal --serving <stage>` combines this with the unchanged
+generic numerical battery in a v2 record. Generic-only v1 is historical evidence,
+not a current full-release pass. See [release qualification](RELEASE-QUALIFICATION.md#required-serving-stage-and-full-release-v2).
+
+Focused CPU checks:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s tools -p 'test_serving_run*.py'
+PYTHONDONTWRITEBYTECODE=1 python3 -B -O -m unittest discover -s tools -p 'test_serving_run*.py'
+PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s tools -p 'test_release_qualification.py'
+```
+
+These tests exercise source/policy/ELF/lease/denominator refusal and raw adapter
+fixture replay. Outer binding composition tests explicitly isolate adapter
+outcomes; they do not run a model or GPU. Actual Linux procfs/listener/HTTP tests
+and native execution remain separate gates. No missing/skipped/failed native cell
+can be supplied by a CPU fixture or by the generic battery alone.

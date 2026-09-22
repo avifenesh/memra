@@ -153,7 +153,7 @@ class Fixture:
         self.put("record.json", self.record)
 
     def verify(self, **kwargs):
-        return q.validate_record(self.record, q.Evidence(self.out), self.repo, "HEAD", **kwargs)
+        return q.validate_historical_record(self.record, q.Evidence(self.out), self.repo, "HEAD", **kwargs)
 
     def publish(self):
         target = self.repo / q.PUBLICATION / "cpu-fixture-do-not-qualify"
@@ -177,11 +177,19 @@ class QualificationTests(unittest.TestCase):
         self.f.commit("publication addition")
         self.assertEqual(self.f.verify()["publication_additions"], ["research/new-publication/RESULTS.md"])
         self.f.publish()
-        result = q.verify_published(self.f.repo, "HEAD")
+        result = q.verify_historical_published(self.f.repo, "HEAD")
         self.assertTrue(result["publication_equivalent"])
         self.assertEqual(result["tested_commit"], self.f.source["commit"])
-        with self.assertRaisesRegex(q.GateError, "no native build for profile"):
+        with self.assertRaisesRegex(q.GateError, "full release requires sealed v2"):
             q.verify_published(self.f.repo, "HEAD", profile="ubuntu-22.04")
+
+    def test_historical_v1_cannot_authorize_full_release(self):
+        self.assertEqual(self.f.verify()["qualification"], "historical-generic-only")
+        with self.assertRaisesRegex(q.GateError, "full release requires sealed v2"):
+            q.validate_record(self.f.record, q.Evidence(self.f.out), self.f.repo, "HEAD")
+        self.f.publish()
+        with self.assertRaisesRegex(q.GateError, "full release requires sealed v2"):
+            q.verify_published(self.f.repo, "HEAD")
 
     def test_every_runtime_dependency_and_nonpublication_research_invalidates(self):
         paths = [f"crates/memra-{crate}/src/lib.rs" for crate in ("engine", "kv", "tier", "tokenizer", "server")]
@@ -203,7 +211,7 @@ class QualificationTests(unittest.TestCase):
         self.f.publish()
         checkout = Path(self.tmp.name) / "fresh"
         subprocess.run(["git", "clone", "-q", str(self.f.repo), str(checkout)], check=True)
-        self.assertTrue(q.verify_published(checkout, "HEAD")["publication_equivalent"])
+        self.assertTrue(q.verify_historical_published(checkout, "HEAD")["publication_equivalent"])
         (checkout / "crates/memra-kv/src/lib.rs").write_text("stale source\n")
         subprocess.run(["git", "-C", str(checkout), "-c", "user.name=CPU", "-c", "user.email=cpu@example.invalid",
                         "commit", "-qam", "new runtime"], check=True)
@@ -211,7 +219,7 @@ class QualificationTests(unittest.TestCase):
         for p in checkout.rglob("*"):
             if p.is_file(): os.utime(p, None)
         with self.assertRaisesRegex(q.GateError, "source inputs changed"):
-            q.verify_published(checkout, "HEAD")
+            q.verify_historical_published(checkout, "HEAD")
 
     def test_unknown_tested_commit_is_not_an_accepted_source_label(self):
         self.f.source["commit"] = "f" * 40
@@ -352,17 +360,18 @@ class QualificationTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("is retired", result.stdout)
 
-    def test_bank_copies_only_manifested_evidence(self):
+    def test_bank_refuses_historical_generic_before_copying(self):
         import argparse
         spec = importlib.util.spec_from_file_location("qualification_bank", ROOT / "tools/qualify-release.py")
         capture = importlib.util.module_from_spec(spec); spec.loader.exec_module(capture)
         outside = Path(self.tmp.name) / "not-evidence.txt"
         outside.write_text("must not be published")
         (self.f.out / "unmanifested-link").symlink_to(outside)
-        capture.bank(argparse.Namespace(repo=self.f.repo, out=self.f.out, name="cpu-fixture-only", append=False))
+        with self.assertRaisesRegex(q.GateError, "full release requires sealed v2"):
+            capture.bank(argparse.Namespace(repo=self.f.repo, out=self.f.out, name="cpu-fixture-only", append=False))
         destination = self.f.repo / q.PUBLICATION / "cpu-fixture-only"
         self.assertFalse((destination / "unmanifested-link").exists())
-        self.assertTrue((destination / "record.json").is_file())
+        self.assertFalse(destination.exists())
 
     def test_release_and_push_wiring_and_retired_waiver(self):
         hook = (ROOT / "tools/hooks/pre-push").read_text()

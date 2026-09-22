@@ -1,5 +1,15 @@
 # Releasing
 
+
+Full releases require a sealed **v2** record containing the generic numerical
+battery and every source-owned serving model/route/scenario. Historical v1
+records remain generic-only and cannot authorize main or tags. See
+[the required serving stage](RELEASE-QUALIFICATION.md#required-serving-stage-and-full-release-v2)
+for the existing-build capture, closed-lease replay and seal commands. A missing
+reviewed `tools/serving-release.programs.json` or required cell refuses release;
+it is not a reason to infer a smaller supported scope. Development topic pushes
+retain the documented explicit UNQUALIFIED mode.
+
 Content-bound GPU evidence is now mandatory for main/tag publication; see
 [Release qualification](RELEASE-QUALIFICATION.md) for the native capture/seal flow,
 explicitly unqualified topic pushes, content-equivalent receipt publication and exact
@@ -19,7 +29,7 @@ GitHub CI is compile-only (no GPU). The release gate runs locally and must be gr
 
 ```bash
 cargo build --release --bins
-tools/release-battery.sh          # exit 0 = PASS; prints a receipt block for the tag message
+tools/release-battery.sh --serving-record "$SERVING_STAGE"  # replay serving + run generic components; seal v2 next
 ```
 
 The models are `tools/release-roster.tsv`, not a judgment call. **An `own` model — one we
