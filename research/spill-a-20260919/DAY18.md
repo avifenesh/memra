@@ -353,3 +353,79 @@ looked up again on the settled state; a hook that submits nothing waits on nothi
 only on `Submit`. The two source censuses that pinned the old order were moved with it (same commit), the CPU
 suite reads 786 passed, clippy clean. Run 2 below re-runs every gate and the stall cell on the fixed tree; the
 pre-registered rule is unchanged and both runs are recorded.
+
+### Target card, run 2 (BOX3, tree `3df0cb2b3`, binary `f67f763a…`; receipts `pro-single-day18/box/`)
+
+The same card, artifact, scripts and lock shape as run 1; the box worktree fast-forwarded to the fixed tree
+(`lane-a-day18`), the binary rebuilt there (`build.log`). Every cell `executed-not-qualified` (three
+`CELL.jsonl`); the stall cell's sampler 443 rows, 69.4 to 336.6 W under the 600 W limit, 43 to 55 C.
+Verbatim per arm (`ok:` counts; no `FAIL:` line anywhere):
+
+| gate | door OFF | door ON |
+|---|---|---|
+| identity default | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok) | `ALL GREEN (teeth=0)` (12 ok) |
+| identity plain (`MEMRA_SERVE_SPEC=0`) | `ALL GREEN (teeth=0)` (12 ok) | `ALL GREEN (teeth=0)` (12 ok) |
+| failure gate | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (15 ok) | `ALL GREEN` (15 ok) |
+| contract fault gate (ON by construction) | n/a | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (64 ok) |
+| hit gate `spec-on-cache-hit-gate.sh qwen` | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok) | `ALL GREEN (qwen)` (61 ok) |
+| twin gate | `PREFIX-NEWEST-TURN-FITS: .. V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` (the run-1 line, identical) | `-> PASS` |
+| GPU unit cells `option_b_*` (2), `option_c_*` (6) | `test result: ok. 8 passed; 0 failed; 0 ignored` | |
+
+### The stall cell, run 2, promote arm (the same pre-registered rule)
+
+One collector hold (`stall-on/`), N=5 per arm per order, both orders, `STALL REPLAY: PASS (replay agrees
+with the harness's rule line)` for both receipts (`box/replays.log`). Verbatim:
+
+`STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7
+idle_p99=14.8 idle_max=14.9 arm_runs=10 arm_p50=13.4 arm_p95=14.8 arm_p99=92.6 arm_max=131.1 stall_median=81.9
+stall_min=81.5 stall_max=117.7 server_demote_ms=[207.0, 208.1, 172.7, 172.0, 172.4, 172.1, 172.2, 172.1, 172.7,
+172.0] server_promote_ms=[60.8, 61.9, 26.4, 26.1, 26.1, 26.1, 25.9, 26.1, 26.0, 25.9] intruder_prompt_tokens=[89,
+86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0`
+
+Rule against day 16 (gap 77.8; ON `162.8`, OFF `85.0`): `81.9 <= 93.5` -> **`at_off`**, and 3.1 ms UNDER the
+OFF arm's median; the stretched tick `arm_max=131.1` against day 16's OFF `133.6` and ON `211.2`. Second
+reading against day 17's recorded `86.4`: `80.4 < 81.9 <= 92.4` -> **`promote_half_flat`** by the threshold I
+fixed before the run (six ms; the reading moved 4.5 ms). Stated as written: the promote half's own share is
+smaller than the six ms I pre-registered; what left the tick is the host wait on the copy and the hook's
+synchronous work, and what remains inside the intruder's tick is the restore and the prime, which the OFF arm
+also pays, plus the owner-stream wait on the copy's landing (the named follow-up). Admissibility held: replay
+PASS, `errors=0`, `tenant_text_identical=True`, 10 `promote submitted off the tick` lines, 10 `promote
+published off the tick` lines, 10 `contracts door H2D receipt` lines, every intruder `cached_tokens=64`, no
+`demote failed`, `promote failed`, `promote refused` or `TIER DISABLED` line, and ZERO `settled synchronously
+by a promote` lines (run 1: 10). The demote arm of the same boot, recorded not claimed: `stall-demote-on ..
+arm_max=163.5 stall_median=149.7` (day 17: 149.6; run 1: 149.4): the demote half is unchanged by this slice.
+`server_demote_ms` in the promote arm is back at 172 ms submission to publication, the day-17 off-tick
+figure. A same-box cross-sitting reading against day 16 and day 17, not a same-window A/B.
+
+### Local RTX 5090 Laptop GPU (`rtx5090-day18/`): not run
+
+The canonical lock `/tmp/memra-5090.lock` was held by another lane for the whole sitting (from 01:28 UTC
+through the close of this record, more than 75 minutes); my driver retried 15 x 120 s on its first cell
+(`identity-default-off rc=2`, no gate ran), never signalled the holder, and its run-1 instance then died
+on a mistake of mine: I edited the running driver script in place to add a resume guard, and bash, which
+reads a script incrementally, resumed at a shifted offset (`line 30: name: unbound variable`, `driver.log`).
+The resume variant (`resume.sh`, re-trying lock-busy cells only) was launched detached against the binary
+built from the fixed tree (`ccc1673e…`) and is waiting in its bounded retries as this record closes; the
+9B cells (identity x4, failure x2, fault, hit x2, twin) and the 27B twin cells are its list. No 5090 line is
+claimed today. The slice's identity and fault gates are green on the target card class in both runs, which
+the pre-registration names as the condition for the slice to stand; the 5090 receipt is owed and is not a
+qualification claim either way.
+
+## Task 3: records
+
+`STATE.md` rewritten (day 18), `OWNER-THREAD-OFFLOAD.md` carries "Move 1, second slice: the promote half"
+with the owed list (the settle-time owner wait first, then the receipt hashes, the by-reference routes, the
+same-window decision cell) and Move 2's turn, `research/INDEX.md` row `spill-a-20260919/day18`, `docs/FLAGS.md`
+door row (with the code, `f3e6be867`). The box worktree `/root/wt-a` is at `3df0cb2b3` on `lane-a-day18`;
+`/root/spill-receipts/a-day18-run1/` and `/root/spill-receipts/a-day18/` mirrored to `pro-single-day18/box-run1/`
+and `pro-single-day18/box/` (bins excluded); the shipped bundles removed on both ends; no server of mine left
+running on the box; `/tmp/spill-a-day18*.bundle` and the local build logs removed at close.
+
+## Budget
+
+About 4.0 agent-hours against 4: the three merges and the pre-registration 0.5, the engine and worker slice
+with its CPU tests and censuses 1.4, the gates and the stall cell on the target card twice with the diagnosis
+and the fix between them 1.6, records and the #536 comment 0.5. Blockers: the local RTX 5090 was held by
+another lane for the whole sitting, so no 5090 cell ran (stated above; the resume driver waits in bounded
+retries). Open for the lead: the settle-time owner wait for an H2D (the first owed item) needs the tier
+crate's conformance to speak before the engine's `consumer_fenced` semantics move.

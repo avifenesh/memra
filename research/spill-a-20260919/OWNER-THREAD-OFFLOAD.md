@@ -198,7 +198,13 @@ loop before `admit(..)` (`host_promote_park_probe`, sharing the body's predicate
 Every other path settles it first (the hook, a demote of any route, a tenant purge; contract-only where
 no device cache is in hand, the purged tenant's dropped); failures keep the day-16 typed outcomes and set a
 one-tick memo so the request serves cold once; the fail-closed arm mirrors the lead's #622 ruling. Item 4
-of the Move 1 list is done in this shape. Item 5 holds. The gates and the stall cell are in `DAY18.md`.
+of the Move 1 list is done in this shape. Item 5 holds. The gates and the stall cell are in `DAY18.md`:
+identity, failure, fault, hit and twin gates green on the target card in both door arms (two runs), and the
+promote arm of the stall cell `stall_median=81.9` against day 16's ON `162.8` and OFF `85.0` (`at_off`, 3.1 ms
+under OFF) and day 17's `86.4` (`promote_half_flat` by the pre-fixed six-ms threshold; moved 4.5 ms). Run 1
+before the hook fix read `157.8` (`flat`): the hook settled a pending demote on every admission, so the parked
+request's re-admission paid the demote copy synchronously; the settle-first now runs only before the hook's
+own submission, the day-17 pre-registered rule.
 
 What Move 1 still owes, in order:
 
