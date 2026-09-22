@@ -957,3 +957,20 @@ summed do; the reader does not split the sum per tick. The demote's owner-thread
 and `41.85` over the 4th on (N=12, N=24), `pre_submit=23.49` and `25.06`, `hashed_in=12.9` off the tick, 0 parked
 hits, 0 reparks, 0 detaches. The target card's demote class on the option (a) tree is measured by no line. The question
 of this section is unchanged and still not answered here.
+
+DAY 38: no card ran; day 37's cell is split per tick and the 9B entry's bytes are split from banked logs (`DAY38.md`,
+`day38-cpu/`). A post-hoc reader over day 37's 40 receipts, pre-registered at `1bb7f4dd7` before it ran, names the
+tenant's stretched ticks by position after the fire (tick 1 the first gap over 3 x p50 at or after the fire's gap, tick
+2 the next) and applies day 37's rule to each tick unchanged, with day 37's admissibility. On tick 2, the tick whose top
+polls the demote's ticket, the demote-on arm `moved` (`-20.4/2.2`, `-21.0/2.5`) and so did the demote DiD
+(`did-demote o1=-21.7/3.2 o2=-22.0/3.8 moved`); on tick 1 every arm and both DiDs read `under_resolution`
+(`did-demote o1=-2.3/5.9 o2=-6.5/7.7`); the demote OFF control reads `under_resolution` on both ticks; `DAY38
+HYPOTHESIS ... -> consistent with H`. Promote tick 2 is `not_defined`: option (a)'s promote-on stretches one tick in 40 of
+40 runs. Within each binary, demote ON minus OFF on tick 2 reads `+29.7 unc 3.8` on `091a931c0` and `+7.0 unc 3.5` on
+`8b889dcdf`, both isolated; the second is the size of the ledger's `copy_settle` (8.48 / 8.30 ms), a match, not a timed
+attribution. The 9B plain entry's 54.6 MB host image is 950,272 B of KV planes (exact, the D2D receipt, equal to 14848
+B/token x 64), 256 B of token ids and 53.7 MB of heap payloads: logits in (950,272, 1,099,744) B and conv + ssm + hidden
+in [52,599,728, 52,699,728) B by the one-decimal rounding of the printed figures. No banked line splits conv, ssm and
+hidden; a per-`HostHashSlot` tally on `demote copy complete off the tick` would, and it is engine code. The target
+card's demote class on the option (a) tree is still measured by no line. The question of this section is unchanged and
+still not answered here.
