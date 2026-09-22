@@ -83,6 +83,22 @@ verdict, none is relaxed for a binary):
                   near-tie that did not flip on one card is not identity).
   Recorded, not judged: the per-turn `[primeseg] call start=.. grid_off=..` receipts
   (MEMRA_DEBUG_PRIMESEG=1, an existing diagnostic) and the count of off-grid prime-call starts.
+  V3 premise:     V3 compares the two boots' states, so it presumes they retain the SAME
+                  non-prefix-cache device state after every send. The admission's
+                  `[admit-oom] reclaim-on-defer` releases parked plain/spec/dspark sessions when
+                  a request's cost plus the reserve floor exceeds effective free; when it fires
+                  in one boot's window and not in the other's (the cache-on boot carries the
+                  cache's resident bytes, so on a card close to the floor it crosses first), the
+                  premise does not hold and V3 cannot be decided. The gate then REFUSES (exit 2),
+                  typed `REFUSED: V3 premise: ...`, naming the windows, the released sessions
+                  per boot and the card at each boot (driver free, compute-apps); the verdict
+                  line V1..V6 would have printed is kept in summary.json under
+                  `verdict_under_broken_premise`, never printed as the verdict. Two boots that
+                  release identically keep V3 evaluated exactly as above; V3's clause, form and
+                  slack are unchanged (spill-b day 29: the local RTX 5090 read `V3=FAIL` in both
+                  door arms with a constant `-410352980` B error, one cohort-shaped parked plain
+                  session released by the cache-on boot's turn-2 reclaim beside a 1.4 GB
+                  co-tenant, while the 96 GB card read `-> PASS`).
 
 Exit 0 = every assertion held; 1 = a verdict failed (red on `main` before day 14: `cached_tokens=0`
 on every turn after the once-announced `snapshot skipped` line; red on `main` before day 18 on
@@ -139,6 +155,12 @@ RE_SEED_REFUSED = re.compile(r"\[prefix-cache\] seed REFUSED \(grid\): (.*)$")
 RE_PRIMESEG = re.compile(r"\[primeseg\] call start=(\d+) take=(\d+) grid_off=(\d+)")
 RE_DEMOTE = re.compile(r"\[prefix-cache\] demote \(protected bytes\): ([\d.]+)MB")
 RE_RECLAIM = re.compile(r"\[admit-oom\] reclaim-on-defer: ")
+# The same line, with its counts: parked sessions released per pool and the effective free it moved.
+RE_RECLAIM_PARKED = re.compile(
+    r"\[admit-oom\] reclaim-on-defer: evicted (\d+) prefix entries \+ (\d+) plain \+ (\d+) spec \+ (\d+) dspark "
+    r"parked sessions \(global LRU\); effective free (\d+)MB -> (\d+)MB"
+)
+PARKED_POOLS = ("plain", "spec", "dspark")
 # The per-request route receipt (`[glm5-spec] route=plain ... cold=1 restored=0 reason=...`) is
 # printed by draft-capable models on every request; it is recorded per turn so a cold turn can
 # be quoted from the receipt, never a verdict input (V1 reads `cached_tokens` from the response).
@@ -180,6 +202,7 @@ class Server:
         self.proc: subprocess.Popen | None = None
         self.base = f"http://127.0.0.1:{port}"
         self.offset = 0
+        self.card_at_boot: dict | None = None
 
     def boot(self) -> None:
         if self.probe():
@@ -206,6 +229,7 @@ class Server:
         env.pop("MEMRA_PREFIX_CACHE_POLICY", None)
         env.pop("MEMRA_PREFIX_CACHE_PROTECTED_PCT", None)
         self.log.parent.mkdir(parents=True, exist_ok=True)
+        self.card_at_boot = card_listing()
         with self.log.open("wb") as log:
             # Same process group as the gate: the collector's timeout reaps everything.
             self.proc = subprocess.Popen([self.binary], stdout=log, stderr=subprocess.STDOUT, env=env)
@@ -338,7 +362,7 @@ def effective_free(row: dict) -> int:
 
 
 def parse_window(lines: list[str]) -> dict:
-    ev: dict = {"inserts": [], "hits": [], "evicts": [], "refused": [], "skipped": [], "demotes": 0, "reclaims": 0, "lines": [], "route": [], "primeseg": []}
+    ev: dict = {"inserts": [], "hits": [], "evicts": [], "refused": [], "skipped": [], "demotes": 0, "reclaims": 0, "lines": [], "route": [], "primeseg": [], "parked_releases": []}
     for ln in lines:
         if "[prefix-cache]" in ln or "[admit-oom]" in ln or "[glm5-spec] route=" in ln or "[spec-k] model=" in ln or "[primeseg] call" in ln:
             ev["lines"].append(ln.strip())
@@ -383,7 +407,69 @@ def parse_window(lines: list[str]) -> dict:
             ev["demotes"] += 1
         if RE_RECLAIM.search(ln):
             ev["reclaims"] += 1
+            m = RE_RECLAIM_PARKED.search(ln)
+            if m:
+                ev["parked_releases"].append({
+                    "prefix": int(m.group(1)), "plain": int(m.group(2)), "spec": int(m.group(3)), "dspark": int(m.group(4)),
+                    "effective_free_before_mb": int(m.group(5)), "effective_free_after_mb": int(m.group(6)), "line": ln.strip(),
+                })
     return ev
+
+
+def parked_released(window: dict) -> tuple[int, int, int]:
+    """Parked sessions a window's reclaim-on-defer lines released, per pool (plain, spec, dspark)."""
+    return tuple(sum(r[pool] for r in window.get("parked_releases", [])) for pool in PARKED_POOLS)
+
+
+def v3_premise_rows(cal: dict, rec: dict) -> list[dict]:
+    """Window by window (each cohort send, then each turn), what each boot's reclaim released.
+
+    V3's state equation presumes the two boots retain the same parked sessions after every send;
+    a window whose releases differ between the boots breaks that premise for every later state.
+    """
+    rows = []
+    for c, m in zip(cal["cohort"], rec["cohort"]):
+        for j, (cw, mw) in enumerate(zip(c.get("windows", []), (m["window_first"], m["window_second"])), start=1):
+            rows.append({"who": f"cohort {c['tokens']} send {j}", "calibration": parked_released(cw), "measured": parked_released(mw)})
+    for ct, mt in zip(cal["turns"], rec["turns"]):
+        rows.append({"who": f"turn {mt['turn']}", "calibration": parked_released(ct["window"]), "measured": parked_released(mt["window"])})
+    for r in rows:
+        r["equal"] = tuple(r["calibration"]) == tuple(r["measured"])
+    return rows
+
+
+def card_listing() -> dict:
+    """The card right now: driver free of total (MiB) and the compute-apps listing (read only)."""
+    def q(*args: str) -> str:
+        return subprocess.run(["nvidia-smi", *args, "--format=csv,noheader,nounits"], capture_output=True, text=True).stdout.strip()
+    apps = [ln.strip() for ln in q("--query-compute-apps=pid,process_name,used_memory").splitlines() if ln.strip()]
+    return {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "memory_free_total_mib": q("--query-gpu=memory.free,memory.total"), "compute_apps": apps}
+
+
+def card_brief(card: dict | None) -> str:
+    if not card:
+        return "card not sampled"
+    apps = []
+    for a in card["compute_apps"]:
+        parts = [p.strip() for p in a.split(",")]
+        if len(parts) >= 3:
+            apps.append(f"{Path(parts[1]).name} {parts[2]} MiB")
+    return f"free/total MiB {card['memory_free_total_mib']}, compute-apps {len(apps)} [{'; '.join(apps)}]"
+
+
+def v3_premise_refusal(rows: list[dict], cal_card: dict | None, meas_card: dict | None, budget: int) -> str:
+    broken = [r for r in rows if not r["equal"]]
+    detail = "; ".join(
+        f"{r['who']}: calibration released plain/spec/dspark {'/'.join(map(str, r['calibration']))}, measured {'/'.join(map(str, r['measured']))}"
+        for r in broken
+    )
+    return (
+        f"V3 premise: `[admit-oom] reclaim-on-defer` released parked sessions in one boot without the counterpart "
+        f"in the other on {len(broken)} window(s) ({detail}); the state equation compares boots whose retained "
+        f"parked-session sets differ, so V3 is not decidable on this card shape (budget {budget} B, MEMRA_CTX 16384, "
+        f"MEMRA_MAX_SESSIONS 4); card at the calibration boot: {card_brief(cal_card)}; at the measured boot: "
+        f"{card_brief(meas_card)}; the clause verdicts are kept in summary.json (verdict_under_broken_premise), not printed as a verdict"
+    )
 
 
 def fit_bytes_per_token(points: list[tuple[int, float]]) -> tuple[float, float]:
@@ -426,7 +512,7 @@ def calibrate_footprint(args, cohort_tokens: list[int], prompts: list[list[int]]
     """The cache-off boot: the identical request sequence, no prefix cache, per-turn consumed bytes."""
     srv = Server(args.bin, args.model, args.port, args.out / "calibration" / "server.log", 0)
     srv.boot()
-    cal: dict = {"boot_lines": [], "cohort": [], "turns": []}
+    cal: dict = {"boot_lines": [], "cohort": [], "turns": [], "card_at_boot": srv.card_at_boot}
     try:
         boot_lines = srv.new_log_lines()
         cal["boot_lines"] = [ln.strip() for ln in boot_lines if "[prefix-cache]" in ln]
@@ -435,14 +521,15 @@ def calibrate_footprint(args, cohort_tokens: list[int], prompts: list[list[int]]
         for n in cohort_tokens:
             ids = cohort_ids(n)
             sends = []
+            windows = []
             for _ in range(2):
                 r = srv.complete(ids, "cohort")
                 time.sleep(0.5)
-                srv.new_log_lines()
+                windows.append(parse_window(srv.new_log_lines()))
                 if r["status"] != 200:
                     refuse(f"calibration: cohort prompt of {n} tokens was not served: {r['error']}")
                 sends.append(r)
-            cal["cohort"].append({"tokens": n, "first": sends[0], "second": sends[1], "metrics_after": srv.settled_metrics()})
+            cal["cohort"].append({"tokens": n, "first": sends[0], "second": sends[1], "windows": windows, "metrics_after": srv.settled_metrics()})
         for k, ids in enumerate(prompts, start=1):
             before = srv.settled_metrics()
             r = srv.complete(ids, "grow")
@@ -555,7 +642,7 @@ def main() -> None:
             refuse("no `[prefix-cache] on:` boot line; the cache did not arm")
         budget = int(on.group(1))
         policy = on.group(2).strip()
-        rec["boot"] = {"budget_bytes": budget, "policy": policy, "line": next(ln.strip() for ln in boot_lines if RE_ON.search(ln))}
+        rec["boot"] = {"budget_bytes": budget, "policy": policy, "line": next(ln.strip() for ln in boot_lines if RE_ON.search(ln)), "card_at_boot": srv.card_at_boot}
         if "PLAIN-LRU" not in policy.upper():
             refuse(f"the boot did not report the plain-LRU default (policy {policy!r}); the gate's subject is the default policy")
         if budget != args.budget_mib * MIB:
@@ -755,9 +842,14 @@ def main() -> None:
             f"{t['footprint_calibration_bytes']} | {t['prefix_bytes_grew']} | {derr} | {t['elapsed_s']} | {t['text_sha256'][:16]} | "
             f"{'yes' if t['text_identical_to_cold'] else 'NO'} |"
         )
+    premise_rows = v3_premise_rows(cal, rec)
+    premise_ok = all(r["equal"] for r in premise_rows)
+    refusal = None if premise_ok else v3_premise_refusal(premise_rows, cal.get("card_at_boot"), rec["boot"].get("card_at_boot"), rec["boot"]["budget_bytes"])
     summary = {
-        "verdict": verdict,
-        "pass": ok,
+        "verdict": verdict if premise_ok else f"REFUSED: {refusal}",
+        "verdict_under_broken_premise": None if premise_ok else verdict,
+        "pass": ok and premise_ok,
+        "v3_premise": {"holds": premise_ok, "rows": premise_rows},
         "binary_sha256": binsha,
         "rig": rig,
         "boot": rec["boot"],
@@ -776,7 +868,7 @@ def main() -> None:
     }
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     (args.out / "TURNS.md").write_text("\n".join(table) + "\n")
-    (args.out / "VERDICT.txt").write_text(verdict + "\n")
+    (args.out / "VERDICT.txt").write_text(summary["verdict"] + "\n")
     print(rec["boot"]["line"])
     print(f"calibration (cache off): footprint per turn {[footprint[t['turn']] for t in turns]} B; "
           f"measured completions identical to cold on {summary['turns_identical_to_cold']}/{len(turns)} turns")
@@ -786,6 +878,11 @@ def main() -> None:
         for ln in t["window"]["lines"]:
             print(f"turn {t['turn']}:", ln)
     print("\n".join(table))
+    for r in premise_rows:
+        if not r["equal"]:
+            print(f"premise: {r['who']}: calibration released plain/spec/dspark {r['calibration']}, measured {r['measured']}")
+    if not premise_ok:
+        refuse(refusal)
     print(verdict, flush=True)
     sys.exit(0 if ok else 1)
 
