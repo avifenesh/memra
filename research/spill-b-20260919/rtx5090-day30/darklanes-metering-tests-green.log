@@ -1,0 +1,103 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling darklanes-metering v0.1.0 (/home/avifenesh/projects/darklanes/wt-budget-journal-order-20260922/serving/darklanes-metering)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.71s
+     Running unittests src/lib.rs (target/debug/deps/darklanes_metering-82ceaff961abe3c1)
+
+running 92 tests
+test admin::tests::admin_auth_distinguishes_missing_and_invalid_bearers ... ok
+test admin::tests::admin_audit_rotates_before_crossing_its_active_file_limit ... ok
+test admin::tests::admin_listener_must_be_loopback ... ok
+test admin::tests::key_ownership_is_a_prefix_namespace_check ... ok
+test admin::tests::generated_key_display_prefix_contains_no_full_secret ... ok
+test admin::tests::admin_capture_endpoint_answers_503_when_not_configured ... ok
+test admin::tests::reload_ok_response_carries_both_receipts ... ok
+test admin::tests::admin_debit_endpoint_debits_audits_and_refuses_a_missing_reason ... ok
+test admin::tests::admin_key_create_is_visible_to_the_hot_reloading_keystore ... ok
+test admin::tests::reload_metadata_refuses_ledger_invalid_file_first ... ok
+test admin::tests::reload_metadata_answers_503_until_wired ... ok
+test admin::tests::boot_signal_reported_on_readiness_and_balance ... ok
+test admin::tests::admin_capture_endpoint_sets_clears_and_rejects_unknown_modes ... ok
+test capture::tests::corrupt_state_file_fails_loud_at_open ... ok
+test capture::tests::open_refuses_a_symlinked_capture_dir_and_never_chmods_through_it ... ok
+test admin::tests::admin_router_authenticates_before_durable_audit_io ... ok
+test admin::tests::reload_metadata_engine_failure_installs_nothing ... ok
+test capture::tests::a_dead_writer_is_visible_and_rotate_refuses ... ok
+test capture::tests::open_tightens_a_real_dir_to_0750 ... ok
+test capture::tests::unknown_mode_string_is_rejected_and_off_clears ... ok
+test capture::tests::rotate_on_an_empty_file_is_a_no_op ... ok
+test capture::tests::rotate_seals_the_live_file_and_splits_rows_at_the_call ... ok
+test ledger::tests::a_drain_deadline_kill_drop_settles_drain_killed_with_zero_debit ... ok
+test ledger::tests::a_debit_on_a_non_billable_outcome_is_refused_at_finalize ... ok
+test capture::tests::marks_persist_and_clear_across_reopen ... ok
+test capture::tests::rotate_syncs_before_it_seals ... ok
+test ledger::tests::abandoned_row_carries_partial_usage_and_cost ... ok
+test ledger::tests::admin_debit_may_take_the_balance_negative_and_admission_then_refuses ... ok
+test admin::tests::admin_key_rate_limit_backfills_idempotently_and_never_widens ... ok
+test ledger::tests::admin_debit_reduces_the_balance_journals_a_replayable_row_and_survives_restart ... ok
+test ledger::tests::admin_debit_refuses_bad_input_and_unenrolled_tenants ... ok
+test ledger::tests::admission_state_refuses_an_unenrolled_tenant_on_restart ... ok
+test ledger::tests::admin_debit_replay_is_tenant_bound_so_one_key_cannot_answer_for_another_tenant ... ok
+test ledger::tests::append_only_source_credit_hot_reloads ... ok
+test ledger::tests::a_panicking_handler_drop_settles_crashed_with_zero_debit ... ok
+test ledger::tests::cached_price_must_be_strictly_lower_than_prompt_price ... ok
+test ledger::tests::cached_tokens_cannot_exceed_prompt_tokens ... ok
+test ledger::tests::admission_modes_are_cas_guarded_durable_and_separate_from_the_budget_journal ... ok
+test ledger::tests::cancelled_fanout_sibling_is_billed_at_the_cached_rate_after_the_credit_re_emit ... ok
+test ledger::tests::decimal_math_is_exact_across_different_scales ... ok
+test ledger::tests::completed_and_rejected_rows_are_durable_jsonl ... ok
+test ledger::tests::deadline_exceeded_settles_with_zero_debit_and_full_refund ... ok
+test ledger::tests::cross_permit_duplicate_settle_refunds_the_unconsumed_hold ... ok
+test ledger::tests::budgeted_completion_debits_exact_cached_price_once ... ok
+test ledger::tests::guard_evict_pins_horizon_and_sheds_oldest_non_exempt_first ... ok
+test ledger::tests::g4_admission_columns_round_trip_as_trailing_columns ... ok
+test ledger::tests::deduped_permit_with_principal_releases_key_hold_on_drop ... ok
+test ledger::tests::credit_and_admin_debit_rows_stamp_the_settled_balance_while_a_hold_is_outstanding ... ok
+test ledger::tests::capture_children_each_debit_once_while_a_shared_id_stays_a_replay_guard ... ok
+test ledger::tests::idempotent_credit_replay_returns_original_result_before_and_after_restart ... ok
+test ledger::tests::capture_flush_honors_posture_balance_and_terminal_outcome ... ok
+test ledger::tests::jsonl_budget_source_adds_integer_rows_and_rejects_absent_tenants ... ok
+test ledger::tests::a_crash_inside_a_seal_loses_no_row_and_counts_none_twice ... ok
+test ledger::tests::ledger_open_does_not_follow_final_symlink ... ok
+test ledger::tests::ledger_open_accepts_0640_class_and_refuses_unsafe_modes ... ok
+test ledger::tests::journal_stamp_ignores_a_walk_away_hold ... ok
+test ledger::tests::journal_stamp_is_the_settled_balance_under_interleaved_holds ... ok
+test ledger::tests::key_caps_bound_prepaid_spend_and_survive_restart ... ok
+test admin::tests::admin_billing_costs_answers_exact_nano_costs_and_omits_unknowns ... ok
+test ledger::tests::nano_usd_conversion_is_exact_and_never_rounds_positive_cost_down ... ok
+test ledger::tests::outcome_census_is_disjoint ... ok
+test ledger::tests::prepaid_rounding_is_integer_micro_usd_and_never_rounds_positive_cost_down ... ok
+test ledger::tests::price_rebuild_rejects_like_boot ... ok
+test ledger::tests::recent_costs_answer_a_capture_parent_with_the_sum_of_its_children ... ok
+test ledger::tests::record_prompt_usage_sets_rather_than_accumulates_so_re_emit_is_idempotent ... ok
+test ledger::tests::price_reload_swaps_schedules_for_new_admissions ... ok
+test ledger::tests::pre_g4_short_rows_parse_alongside_new_rows ... ok
+test ledger::tests::rejected_settles_with_zero_debit_and_full_refund ... ok
+test capture::tests::submitted_rows_land_as_jsonl ... ok
+test ledger::tests::repeated_source_reload_failures_retry_then_fail_closed_and_recover ... ok
+test ledger::tests::settle_uses_admission_schedule_across_reload ... ok
+test ledger::tests::restart_refuses_a_source_that_forgets_a_previously_debited_tenant ... ok
+test ledger::tests::settled_costs_answer_exactly_survive_restart_and_age_out ... ok
+test ledger::tests::restart_keeps_exempt_guard_entry_and_dedups_late_retry ... ok
+test ledger::tests::only_an_exactly_five_digit_suffix_is_a_journal_segment ... ok
+test ledger::tests::request_ledger_repairs_missing_debit_without_double_charge ... ok
+test ledger::tests::startup_refuses_a_journal_already_past_its_total_ceiling ... ok
+test ledger::tests::shed_deadline_settles_with_zero_debit_and_full_refund ... ok
+test ledger::tests::settled_permit_settling_a_second_id_is_refused ... ok
+test ledger::tests::utc_day_bucket_conversion_is_stable ... ok
+test ledger::tests::replay_guard_refuses_duplicates_in_window_and_ages_out_old_ids ... ok
+test ledger::tests::shed_queue_settles_with_zero_debit_and_full_refund ... ok
+test ledger::tests::tenant_usage_aggregates_exact_cost_and_debits_by_utc_day ... ok
+test ledger::tests::budget_journal_seals_segments_and_replays_across_the_boundary_exactly_once ... ok
+test ledger::tests::restart_with_aged_id_in_both_ledgers_applies_once ... ok
+test ledger::tests::worst_case_reservation_refuses_overdraft_and_refunds_unused_hold ... ok
+test ledger::tests::freeze_delta_replay_finds_a_base_row_inside_a_sealed_segment ... ok
+test ledger::tests::jsonl_files_and_rows_have_hard_resource_caps ... ok
+test ledger::tests::zero_balance_is_denied_and_abandoned_usage_is_debited ... ok
+test ledger::tests::the_journal_total_still_fails_closed_when_every_segment_is_counted ... ok
+test ledger::tests::per_box_reconciliation_holds_across_a_rotation ... ok
+test ledger::tests::journal_chain_walks_under_threaded_reserve_settle_and_drop ... ok
+
+test result: ok. 92 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+EXIT=0
