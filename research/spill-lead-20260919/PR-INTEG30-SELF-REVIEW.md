@@ -37,6 +37,11 @@ Author's review of the full diff `main..lane/spill-integ30-20260922`, posted as 
   engine CPU lib tests, engine and server clippy `-D warnings`, marker census, workflow keys, perf board, diff-check)
   and the local 5090 serve-smoke (door OFF, the default).
 
+## Review round 1 (revuto, addressed in the integ)
+- The settle poll's missing-shell-or-ticket arm dropped a submitted ticket (fail open: the in-flight slot and the
+  registered planes leaked, no further demote possible). It now settles and retires the ticket's sources where the
+  engine is reachable and latches the tier off; a shell without a ticket drops whole. CPU test added for both arms.
+
 ## What I did not do
 - No GPU cell of my own beyond the smoke; the door stays OFF; its decide-by review (2026-10-05) reads the stall
   receipts with the rest of the door's table.

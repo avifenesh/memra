@@ -1168,6 +1168,15 @@ workflow keys, perf board, diff-check: 15 steps rc=0. Local 5090 `tools/serve-sm
 `serve-smoke: 0 failed`. C day 21 (running while this integ was built; lands as integ31) found both 5090 reds to be
 stale gates and re-read failure, fault and identity gates ALL GREEN on both cards with this slice merged.
 
+Revuto round 1 on #622, one finding, real, fixed by the lead in the integ: in `host_demote_settle_with` the arm for
+a pending demote missing its shell or its ticket took both fields before matching, so a SUBMITTED ticket without its
+shell was dropped without retire, acknowledge or abort: the ledger's one in-flight charge and the registered planes
+leaked silently and the tier would never demote again (fail open). The arm now fails closed: a submitted ticket is
+settled and its sources retired through the engine where it is reachable and the tier latches off
+(`SourceQuarantined`, the planes cannot come back without their shell); a shell without a ticket drops whole (`Failed`,
+nothing was submitted). New CPU test `a_pending_demote_missing_its_shell_or_ticket_fails_closed` (both arms); the
+six state-machine tests, the memra-server suite and server clippy `-D warnings` green on the round-1 tree.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
