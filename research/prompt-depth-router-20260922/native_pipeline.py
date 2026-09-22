@@ -3,6 +3,7 @@ import argparse
 import csv
 import hashlib
 import json
+import select
 from pathlib import Path
 import subprocess
 import sys
@@ -157,6 +158,8 @@ def main():
         if args.backup_checkpoints:
             sequence = len(state["completed_groups"])
             print(json.dumps({"backup_ready": sequence}), flush=True)
+            if not select.select([sys.stdin], [], [], 120)[0]:
+                raise RuntimeError("receipt backup timed out; no next GPU run started")
             if sys.stdin.readline().strip() != f"ACK {sequence}":
                 raise RuntimeError("receipt backup acknowledgement missing; no next GPU run started")
         return summary
