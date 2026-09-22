@@ -22570,12 +22570,13 @@ pub fn run(
         // inserts consult it. No-op (no driver call) while disarmed.
         kv_flex.refresh_grant(&engine);
         while let Some(mut req) = queue.pop_front() {
-            // DISCONNECT ABORT (gap-scan F8): a queued request whose client already hung
-            // up (receiver dropped) never reaches the GPU — dropped here, logged for the
-            // metering record (0 generated; prompt never primed).
+            // DISCONNECT ABORT (gap-scan F8): drop a closed queued request before
+            // admission. A parked request may still own an asynchronous restore;
+            // dropping its Box does not establish release of that cache/pin/ticket.
             if req.tx.is_closed() {
                 let trace = req.ttft.clone();
                 observe_receiver_close(trace.as_ref(), &req.tx);
+                let trace = queued_retirement_trace(trace, &req.request_id, hpx.restoring.as_ref());
                 eprintln!(
                     "[abort] client disconnected while queued (model {:?}); dropped",
                     req.model
@@ -23964,6 +23965,12 @@ pub fn run(
                     dspark_drafts.contains_key(&req.model),
                 )
             {
+                if let Some(trace) = req.ttft.as_ref() {
+                    // This is an actual requeue with separately owned restore resources.
+                    // Its single-attempt trace stays ineligible even if a later lost
+                    // observation quarantines the restore and clears hpx.restoring.
+                    trace.mark_requeued();
+                }
                 requeue.push_back(req); // waits (FIFO), never shed: its restore is in flight
                 parked_on_promote += 1;
                 continue;
@@ -24253,6 +24260,7 @@ pub fn run(
             match rx.recv_timeout(Duration::from_millis(2)) {
                 Ok(cmd) => handle_cmd(
                     cmd,
+                    worker_generation,
                     &loaded,
                     &dsv4_routes,
                     &order,
@@ -34515,6 +34523,17 @@ fn prime_cancelled_abort(s: &mut Session, err: &(dyn std::error::Error + 'static
     true
 }
 
+/// Only retain a queue-retirement observer when this request has no outstanding
+/// restore owner. This never settles or drops GPU resources; normal restore
+/// polling, expiry and quarantine keep their existing lifetime rules.
+fn queued_retirement_trace(
+    trace: Option<Arc<crate::ttft::Trace>>,
+    request_id: &str,
+    restoring: Option<&PendingRestore>,
+) -> Option<Arc<crate::ttft::Trace>> {
+    trace.filter(|_| restoring.is_none_or(|restore| restore.request_id != request_id))
+}
+
 fn observe_receiver_close(trace: Option<&Arc<crate::ttft::Trace>>, tx: &EventSender) {
     if let Some(trace) = trace
         && let Some(reason) = tx.close_reason()
@@ -44275,6 +44294,74 @@ mod tests {
     /// cache is dropped or parked (the capture's source is the live cache and the engine retains
     /// none of it); and a refused submission drains the owner stream before releasing the
     /// producer fence, latching the route off if the fence will not release.
+    #[test]
+    fn queued_retirement_does_not_claim_request_owned_restore_release() {
+        for (restore_id, ready, was_parked, expected_clean) in [
+            (None, false, false, true),
+            (Some("queued-request"), false, false, false),
+            (Some("queued-request"), true, false, false),
+            (Some("another-request"), false, false, true),
+            (None, false, true, false),
+        ] {
+            let restoring = restore_id.map(|request_id| super::PendingRestore {
+                request_id: request_id.to_string(),
+                pool_key: ("fixture".to_string(), "namespace".to_string()),
+                pin: None,
+                toks_len: 1,
+                bytes: 1,
+                cache: None,
+                draft: None,
+                draft_declined: None,
+                contract: None,
+                ready,
+                ready_ticks: 0,
+                t0: std::time::Instant::now(),
+                polls: 0,
+                copy_ms: 0.0,
+                settled_by: String::new(),
+            });
+            let trace = crate::ttft::Trace::for_test("/v1/completions");
+            trace.bind_request("queued-request", "fixture");
+            trace.bind_worker(1, "shared_gpu_worker");
+            trace.mark_queued();
+            if was_parked {
+                trace.mark_requeued();
+            }
+            trace.mark_http_pending_drop();
+            trace.mark_receiver_closed(crate::ttft::ReceiverCloseCause::ReceiverDropped);
+            let observer = trace.observe_for_test();
+            let retirement = super::queued_retirement_trace(
+                Some(trace.clone()),
+                "queued-request",
+                restoring.as_ref(),
+            );
+            drop(trace); // The queued Box<Request>'s trace reference has gone.
+            if let Some(trace) = retirement {
+                trace.mark_retired_at(
+                    crate::ttft::RetirementOutcome::Aborted,
+                    crate::ttft::RetirementSite::WorkerQueue,
+                );
+            }
+            let lines = observer.json_lines();
+            let clean = lines.iter().any(|line| {
+                line.contains("\"event\":\"retired\"")
+                    && line.contains("\"retirement_site\":\"WorkerQueue\"")
+                    && line.contains("\"sequence_valid\":true")
+            });
+            assert_eq!(clean, expected_clean);
+            if restore_id == Some("queued-request") {
+                assert!(
+                    !lines
+                        .iter()
+                        .any(|line| line.contains("\"event\":\"retired\""))
+                );
+            }
+            if was_parked {
+                assert!(lines.iter().any(|line| line.contains("request_requeued")));
+            }
+        }
+    }
+
     #[test]
     fn a_session_retire_settles_a_pending_capture_before_the_cache_moves_and_a_refused_submission_releases_its_fence()
      {
