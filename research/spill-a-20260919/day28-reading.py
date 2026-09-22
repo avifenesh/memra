@@ -35,14 +35,28 @@ def med(xs):
     return statistics.median(xs) if xs else float("nan")
 
 
+COPY_COMPLETE = re.compile(r"demote (?:copy complete|published) off the tick: ticket seq=(\d+) complete after (\d+) "
+                           r"poll\(s\), ([\d.]+)ms from submission to completion \(([^)]*)\)")
+
+
 def ledger(run):
+    """The ON run's ledger lines, each joined to its ticket's copy-complete line (`demote copy complete off the tick`
+    on this tree; `demote published off the tick` on the day-17 to day-27 trees, where the day-25 reader reads it)."""
+    completions = {}
+    for ln in run.get("server_log_lines", []):
+        m = COPY_COMPLETE.search(ln)
+        if m:
+            completions[int(m.group(1))] = {"copy_polls": int(m.group(2)), "completion": float(m.group(3)), "copy_mode": m.group(4)}
     out = []
     for ln in run.get("server_log_lines", []):
         m = LEDGER.search(ln)
         if m:
-            out.append({"seq": int(m.group(1)), "payloads": int(m.group(2)), "mb": float(m.group(3)),
-                        "helper_ms": float(m.group(4)), "hash_polls": int(m.group(5)), "mode": m.group(6),
-                        "owner_ic": float(m.group(7)), "wall": float(m.group(8))})
+            seq = int(m.group(1))
+            d = {"seq": seq, "payloads": int(m.group(2)), "mb": float(m.group(3)),
+                 "helper_ms": float(m.group(4)), "hash_polls": int(m.group(5)), "mode": m.group(6),
+                 "owner_ic": float(m.group(7)), "wall": float(m.group(8))}
+            d.update(completions.get(seq, {}))
+            out.append(d)
     return out
 
 
@@ -84,6 +98,10 @@ def main():
     wall_ic = [x["demote_in"] - x["demote_completion"] for x in decs
                if x.get("demote_in") is not None and x.get("demote_completion") is not None]
     completions = [x["demote_completion"] for x in decs if x.get("demote_completion") is not None]
+    if not wall_ic:
+        # This tree's copy-complete line is not the day-25 reader's needle: the wall figures come from the ledger.
+        wall_ic = [l["wall"] - l["completion"] for x in on_runs for l in ledger(x) if "completion" in l]
+        completions = [l["completion"] for x in on_runs for l in ledger(x) if "completion" in l]
     top1 = [x["top2"][0] for x in decs if len(x["top2"]) > 0]
     top2 = [x["top2"][1] for x in decs if len(x["top2"]) > 1]
     if ledgers:
