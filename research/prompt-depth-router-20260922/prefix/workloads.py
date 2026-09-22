@@ -93,8 +93,8 @@ def reference(seed, topic):
     return "".join(notes)
 
 
-def instruction(index, kind):
-    topic, contract = SCENARIOS[index]
+def instruction(index, kind, scenario=None):
+    topic, contract = scenario if scenario is not None else SCENARIOS[index]
     if kind == "code":
         return (
             f"{CODE_OPENINGS[index]} {topic}. "
@@ -195,9 +195,28 @@ def build(models, binaries, out):
                     path.write_text(prompt)
                     robustness.append({"file": path.name, "sha256": digest(path),
                                        "kind": kind, "length_target": length, **info})
+            qualification = []
+            qualification_prompts = []
+            probe = (
+                "versioned record validation",
+                "Validate records with stable names and integer versions, reject duplicates "
+                "and malformed fields, preserve input order, and return explicit errors.",
+            )
+            context = reference(960000, probe[0])
+            for length in LENGTHS:
+                for kind in ("prose", "code"):
+                    prompt, info = sized_prompt(counter, instruction(0, kind, probe), context, length)
+                    qualification_prompts.append(prompt)
+                    qualification.append({"kind": kind, "length_target": length, **info,
+                                          "user_sha256": hashlib.sha256(prompt.encode()).hexdigest()})
+            path = out / f"{family}-qualification.txt"
+            path.write_text("\n---TURN---\n".join(qualification_prompts) + "\n")
             manifest["families"][family] = {
                 "binary_sha256": digest(binary), "scenarios": groups,
                 "late_task_robustness": robustness,
+                "qualification": {"file": path.name, "sha256": digest(path),
+                                  "cells": qualification,
+                                  "seed": 20700001 if family == "qwen" else 20700002},
             }
         finally:
             counter.close()

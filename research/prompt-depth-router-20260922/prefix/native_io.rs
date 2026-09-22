@@ -239,69 +239,78 @@ impl Routing {
     }
 }
 
-pub fn write_record(
-    log: &mut std::fs::File,
-    turn: usize,
-    selected: Option<&Record>,
-    tok: &Tokenizer,
-    prompt: &[u32],
-    shape: &TemplateShape,
-    out: &Path,
-    fixed_k: usize,
-) -> io::Result<()> {
-    let span = match selected.and_then(|row| row.span) {
-        Some(span) => span,
-        None => shape.locate(tok, prompt).map_err(io::Error::other)?,
-    };
-    if let Some(row) = selected {
-        writeln!(
-            log,
-            "{turn}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            row.source,
-            row.budget,
-            row.kind.name(),
-            row.k,
-            row.tokens_read,
-            span.end - span.start,
-            prompt.len(),
-            row.decoded_bytes,
-            row.inspected_bytes,
-            span.header_tokens,
-            row.core_ns,
-            row.elapsed_ns
-        )?;
-        if row.source == "prefix" {
-            let mut ids = std::fs::File::create_new(out.join(format!("turn-{turn}.prefix.ids")))?;
-            let mut pieces =
-                std::fs::File::create_new(out.join(format!("turn-{turn}.prefix-bytes.tsv")))?;
-            writeln!(pieces, "id\thex")?;
-            for &id in &prompt[span.start..span.start + row.tokens_read] {
-                writeln!(ids, "{id}")?;
-                write!(pieces, "{id}\t")?;
-                for byte in tok.decode_bytes_special(&[id], false) {
-                    write!(pieces, "{byte:02x}")?;
+pub struct Recorder<'a> {
+    pub log: &'a mut std::fs::File,
+    pub out: &'a Path,
+}
+
+impl Recorder<'_> {
+    pub fn write(
+        &mut self,
+        turn: usize,
+        selected: Option<&Record>,
+        tok: &Tokenizer,
+        prompt: &[u32],
+        shape: &TemplateShape,
+        fixed_k: usize,
+    ) -> io::Result<()> {
+        let log = &mut self.log;
+        let out = self.out;
+        let span = match selected.and_then(|row| row.span) {
+            Some(span) => span,
+            None => shape.locate(tok, prompt).map_err(io::Error::other)?,
+        };
+        if let Some(row) = selected {
+            writeln!(
+                log,
+                "{turn}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                row.source,
+                row.budget,
+                row.kind.name(),
+                row.k,
+                row.tokens_read,
+                span.end - span.start,
+                prompt.len(),
+                row.decoded_bytes,
+                row.inspected_bytes,
+                span.header_tokens,
+                row.core_ns,
+                row.elapsed_ns
+            )?;
+            if row.source == "prefix" {
+                let mut ids =
+                    std::fs::File::create_new(out.join(format!("turn-{turn}.prefix.ids")))?;
+                let mut pieces =
+                    std::fs::File::create_new(out.join(format!("turn-{turn}.prefix-bytes.tsv")))?;
+                writeln!(pieces, "id\thex")?;
+                for &id in &prompt[span.start..span.start + row.tokens_read] {
+                    writeln!(ids, "{id}")?;
+                    write!(pieces, "{id}\t")?;
+                    for byte in tok.decode_bytes_special(&[id], false) {
+                        write!(pieces, "{byte:02x}")?;
+                    }
+                    writeln!(pieces)?;
                 }
-                writeln!(pieces)?;
+                std::fs::write(out.join(format!("turn-{turn}.prefix.bin")), &row.prefix)?;
+                std::fs::write(
+                    out.join(format!("turn-{turn}.prefix-span.tsv")),
+                    format!(
+                        "start\tend\tleading_skip\n{}\t{}\t{}\n",
+                        span.start, span.end, span.leading_skip
+                    ),
+                )?;
             }
-            std::fs::write(out.join(format!("turn-{turn}.prefix.bin")), &row.prefix)?;
-            std::fs::write(
-                out.join(format!("turn-{turn}.prefix-span.tsv")),
-                format!(
-                    "start\tend\tleading_skip\n{}\t{}\t{}\n",
-                    span.start, span.end, span.leading_skip
-                ),
+        } else {
+            writeln!(
+                log,
+                "{turn}\tfixed\t0\tnot_run\t{fixed_k}\t0\t{}\t{}\t0\t0\t{}\t0\t0",
+                span.end - span.start,
+                prompt.len(),
+                span.header_tokens
             )?;
         }
-    } else {
-        writeln!(
-            log,
-            "{turn}\tfixed\t0\tnot_run\t{fixed_k}\t0\t{}\t{}\t0\t0\t{}\t0\t0",
-            span.end - span.start,
-            prompt.len(),
-            span.header_tokens
-        )?;
+        log.flush()
     }
-    log.flush()
 }
 
 pub fn count_server(tok: &Tokenizer) -> Result<(), Box<dyn std::error::Error>> {

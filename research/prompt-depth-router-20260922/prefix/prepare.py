@@ -102,9 +102,11 @@ def build(source, out):
         text = replace_once(
             text,
             indent + "prefix_study_io::request_routing::write_record(&mut routing_log, turn, request_selection)?;",
-            indent + "prefix_study_io::native_prefix::write_record(\n"
-            + indent + "    &mut routing_log, turn, request_selection.as_ref(), &tok, &prompt,\n"
-            + indent + f'    &prefix_shape, {outvar}, arm.strip_prefix("fixed:").and_then(|k| k.parse().ok()).unwrap_or(3),\n'
+            indent + "prefix_study_io::native_prefix::Recorder {\n"
+            + indent + f"    log: &mut routing_log, out: {outvar},\n"
+            + indent + "}.write(\n"
+            + indent + "    turn, request_selection.as_ref(), &tok, &prompt, &prefix_shape,\n"
+            + indent + '    arm.strip_prefix("fixed:").and_then(|k| k.parse().ok()).unwrap_or(3),\n'
             + indent + ")?;")
         path = bins / destination
         path.write_text(text)
