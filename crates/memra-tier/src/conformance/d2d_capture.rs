@@ -119,3 +119,149 @@ pub fn d2d_capture_publish<F: D2dCaptureFixture>(f: &mut F) {
         "every destination comes back to its caller"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Day-24 rule (WP-A, memra#536 Move 2, owed item 2, the capture half): the DRAFT-BEARING capture.
+// A spec session's boundary publish carries, beside the trunk KV rows `[0..pos)` of its live cache,
+// the MTP draft plane: rows `[0..pos)` of its live draft scratch (`Role::Draft`, one K and one V
+// span), append-only below the boundary for the session's lifetime as the trunk rows are. Both
+// classes are borrowed live sources copied into fresh registered destinations behind ONE producer
+// event recorded on the owner stream after the boundary's last trunk and draft-head write; the
+// draft plane is two more items of the SAME batch: one ticket, one fence, one receipt, one
+// publication. The pending entry owns the fresh planes of both classes and publishes both or
+// neither. Nothing in the rule above changes for the trunk items.
+//
+// Rule, the draft-bearing capture publish:
+//
+// 1. One batch, both classes. The batch carries at least one `Role::Draft` item and at least one
+//    trunk item (`Role::Key` or `Role::Value`); every item has a class.
+// 2. Both or neither. The batch is `landed` only when EVERY item's completion event is observed
+//    complete: a batch whose trunk items landed while a draft item is still running is not landed,
+//    a publish then is refused `NotReady`, and `retire(ticket, None)` is `Busy`. A publish on the
+//    trunk's landing alone is a schedule failure, never a tolerance (this schedule's red arm).
+// 3. The receipt term covers both classes: after the landing every item, draft and trunk, carries
+//    a witnessed checksum (the destination digest equal to the source digest), and the host-contract
+//    gate admits the batch; an item of either class without its witness keeps the gate closed.
+// 4. Published once, then retire with no consumer fence, acknowledge, and every destination of
+//    both classes comes back to the caller (rule 2 above).
+
+/// The draft-bearing fixture: the capture fixture plus the class of every item, a per-class landing
+/// (`trunk_completes` fires the trunk items' events and leaves the draft items running) and the
+/// witnessed receipt term per class (`witnessed_classes`: the classes of the items whose landed
+/// completion carries a checksum equal to its expectation, in item order; empty before the landing).
+pub trait D2dDraftCaptureFixture: D2dCaptureFixture {
+    fn item_classes(&self) -> Vec<Role>;
+    fn trunk_completes(&mut self);
+    fn witnessed_classes(&mut self, ticket: &TransferTicket) -> Result<Vec<Role>>;
+}
+
+/// The schedule. The fixture starts before `submit`.
+pub fn d2d_capture_draft_publish<F: D2dDraftCaptureFixture>(f: &mut F) {
+    let ticket = f.submit();
+    let classes = f.item_classes();
+    let expected = f.submitted_bytes();
+    assert_eq!(classes.len(), expected.len(), "every item has a class");
+    assert!(
+        classes.contains(&Role::Draft),
+        "the batch carries the draft plane"
+    );
+    assert!(
+        classes.iter().any(|r| matches!(r, Role::Key | Role::Value)),
+        "and the trunk rows: one batch, one ticket, one receipt"
+    );
+    // 1. Running: not landed, not publishable, not retirable; nothing witnessed.
+    let c = f.poll(&ticket).unwrap();
+    assert!(!c.producer_done, "the copies have not landed at submit");
+    assert!(!f.landed(&ticket).unwrap());
+    assert!(matches!(f.publish(&ticket), Err(Error::NotReady)));
+    assert_eq!(f.retire(&ticket, None), Err(Error::Busy));
+    assert!(
+        f.witnessed_classes(&ticket).unwrap().is_empty(),
+        "no item is witnessed before its landing"
+    );
+    assert!(matches!(
+        f.require_receipt(&ticket),
+        Err(Error::NotReady | Error::Corrupt)
+    ));
+    // 2. The trunk landed, the draft still running: NOT landed, publish refused, retire Busy; the
+    //    witnessed classes are the trunk's alone.
+    f.trunk_completes();
+    let c = f.poll(&ticket).unwrap();
+    assert!(
+        !c.producer_done,
+        "a batch with a running draft item has not landed"
+    );
+    assert!(
+        !f.landed(&ticket).unwrap(),
+        "landing is every item's event: the trunk's alone is not it"
+    );
+    assert!(
+        matches!(f.publish(&ticket), Err(Error::NotReady)),
+        "a publish with the draft unlanded is refused: both or neither"
+    );
+    assert_eq!(f.retire(&ticket, None), Err(Error::Busy));
+    let witnessed = f.witnessed_classes(&ticket).unwrap();
+    assert!(
+        !witnessed.is_empty() && !witnessed.contains(&Role::Draft),
+        "the trunk items are witnessed, the draft items are not yet"
+    );
+    assert!(
+        matches!(
+            f.require_receipt(&ticket),
+            Err(Error::NotReady | Error::Corrupt)
+        ),
+        "an unwitnessed draft item keeps the host-contract gate closed"
+    );
+    // 3. Every event completes: landed, bytes exact, both classes witnessed, the gate admits.
+    f.copy_completes();
+    let c = f.poll(&ticket).unwrap();
+    assert!(c.producer_done);
+    assert!(f.landed(&ticket).unwrap(), "every event observed complete");
+    let delivered: Vec<u64> = c
+        .items
+        .iter()
+        .filter(|i| i.accepted)
+        .flat_map(|i| i.segments.iter().map(|s| s.valid_bytes))
+        .collect();
+    assert_eq!(delivered, expected, "each item delivered exactly its bytes");
+    assert_eq!(
+        f.witnessed_classes(&ticket).unwrap(),
+        classes,
+        "the receipt term is witnessed for every item of both classes"
+    );
+    assert_eq!(
+        f.require_receipt(&ticket),
+        Ok(()),
+        "witnessed for both classes: the host-contract gate admits the batch"
+    );
+    // 4. Published once; retire with no consumer fence; acknowledge; both classes come back.
+    f.publish(&ticket).unwrap();
+    assert!(
+        matches!(f.publish(&ticket), Err(Error::AlreadyReleased)),
+        "publication happens exactly once"
+    );
+    f.retire(&ticket, None).unwrap();
+    assert!(f.retired(&ticket).unwrap());
+    f.acknowledge(&ticket).unwrap();
+    assert_eq!(
+        f.destination_back(&ticket).unwrap(),
+        expected.len(),
+        "every destination of both classes comes back to its caller"
+    );
+}
+
+/// The forbidden order: a caller that publishes once the TRUNK items landed, with a draft item
+/// still running. The schedule fails; the binding must report the batch not landed and the
+/// publication already taken (the index names an entry whose draft plane is still being written).
+pub fn d2d_capture_draft_published_with_the_draft_unlanded_fails<F: D2dDraftCaptureFixture>(
+    f: &mut F,
+) {
+    let ticket = f.submit();
+    assert!(f.item_classes().contains(&Role::Draft));
+    f.trunk_completes();
+    assert!(!f.landed(&ticket).unwrap());
+    assert!(
+        matches!(f.publish(&ticket), Err(Error::NotReady)),
+        "the trunk's landing alone must not publish the entry"
+    );
+}

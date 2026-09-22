@@ -687,6 +687,23 @@ else
     echo "request-fault gate: SKIP (no 9B NVFP4 model at $FAULT_MODEL or MEMRA_CI_FAULTGATE=0)"
 fi
 
+# PRIME FAIRNESS (memra#521): one 131k cold prime beside three peers, both MEMRA_PRIME_YIELD
+# arms on the 9B's default spec route; bytes identical across arms, peers' first token bounded on
+# the yielding arm, tick_max_ms bounded, walker engaged. About 4 minutes. MEMRA_CI_FAIRGATE=0 skips.
+FAIR_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_FAIRGATE:-1}" = "1" ] && [ -f "$FAIR_MODEL" ]; then
+    echo "== local-ci: prime fairness gate (memra#521) =="
+    FAIR_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-fairgate.XXXXXX")
+    if python3 tools/prime-fairness-gate.py --model "$FAIR_MODEL" --bin target/release/memra-server \
+        --out "$FAIR_OUT" --port 18521; then
+        rm -rf "$FAIR_OUT"
+    else
+        echo "prime fairness gate FAIL (receipt kept at $FAIR_OUT)"; exit 1
+    fi
+else
+    echo "prime fairness gate: SKIP (no 9B NVFP4 model at $FAIR_MODEL or MEMRA_CI_FAIRGATE=0)"
+fi
+
 # SERVED-SPEC ACCEPTANCE + LONG-TEXT ASSERTION (lane/accept-gate, 2026-08-06): the arm that
 # closes a receipted blind spot in THIS battery. research/f8f4-flip-20260806 (merged c506317e)
 # showed a kernel arm move served greedy text in 4 of 6 regime cells at temperature 0 and move

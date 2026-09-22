@@ -112,6 +112,18 @@ engine's `build.rs`. Its red arm (a retired name refuses) and its non-vacuity ar
 name at once refuses nothing) are unit tests in `env_audit.rs`; `MEMRA_ENV_AUDIT=warn` downgrades,
 `=0` disables, both announced. Receipts: `research/env-audit-20260921/`.
 
+Prime fairness (memra#521, `tools/prime-fairness-gate.py`, in `tools/local-ci.sh`,
+`MEMRA_CI_FAIRGATE=0` skips): one boot per `MEMRA_PRIME_YIELD` arm on the 9B NVFP4's default
+(spec) route with the concurrency demotion pinned off, greedy natural-text `prompt` streams (the
+tokenizer is calibrated per boot through `usage.prompt_tokens`); a seeded 4,096-token prompt, then
+a 131,072-token cold prime with two cold 2,048-token peers and the seeded prompt again (a cache hit)
+started 2 and 3 seconds apart. A request that generates fewer than 16 tokens refuses the run, so the
+byte clause never compares an empty output. Verdicts: every request's text identical across arms; on the yielding arm every peer's first
+token within the bar (8 s) and the peers' p95 at most half the non-yielding arm's; `/health`
+`tick_max_ms` on the yielding arm at most 6,000 ms; every request finished; the yielding boot logs
+`[prime-walk] supported=true yield_door=true` and at least one `[prime-yield]`. `--reps 3`
+interleaves the arms for a receipt. Receipts: `research/prime-fairness-default-20260922/`.
+
 Loader tensor-contract boundary (memra#541, `memra_gguf::checkpoint_binding`): both loaders
 bind the pack's tensor contract against the source census before any upload and refuse
 missing, unexpected, duplicate, ambiguous, wrong-shape and wrong-quant tensors and an undeclared
