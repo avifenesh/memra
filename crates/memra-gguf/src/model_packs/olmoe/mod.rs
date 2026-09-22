@@ -4,6 +4,8 @@ use super::*;
 /// generic fallback. Registration preserves that program; it does not promote qualification.
 pub static PACK: ModelPack = ModelPack {
     family: "olmoe",
+    output_head: OutputHeadContract::TiedHeadAllowed,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &["olmoe"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[

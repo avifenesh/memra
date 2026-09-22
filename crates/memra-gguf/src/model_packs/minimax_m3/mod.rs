@@ -4,6 +4,8 @@ use super::*;
 /// loader's generic fallback. Native checkpoint/serving qualification remains separate.
 pub static PACK: ModelPack = ModelPack {
     family: "minimax_m3",
+    output_head: OutputHeadContract::TiedHeadAllowed,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &["minimax-m3", "minimax_m3_vl", "minimax_m3_text"],
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[
