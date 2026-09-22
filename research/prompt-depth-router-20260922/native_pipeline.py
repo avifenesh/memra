@@ -27,6 +27,7 @@ def main():
     parser = argparse.ArgumentParser()
     for name in ("repo", "models", "binaries", "workloads", "out", "recipe_commit"):
         parser.add_argument("--" + name.replace("_", "-"), required=True)
+    parser.add_argument("--backup-checkpoints", action="store_true")
     args = parser.parse_args()
     repo, models, binaries, workloads, out = (
         Path(getattr(args, key)).resolve()
@@ -56,6 +57,7 @@ def main():
         "loop_auditor_sha256": sha(base / "loop_audit.py"),
         "loop_rule": "period 1..128; at least four repeats and at least 256 tokens; overlapping end windows",
         "orders": [], "status": "registered_before_generation",
+        "backup_checkpoints": args.backup_checkpoints,
     }
     for i in range(6):
         order = ["native", "calibrated", "context", "routed"]
@@ -152,6 +154,11 @@ def main():
         state["completed_groups"].append({k: summary[k] for k in ("receipt_dir", "seed", "pool", "excluded")})
         save(out / "status.json", state)
         print(json.dumps({"completed": summary["receipt_dir"], "excluded": bool(loops)}), flush=True)
+        if args.backup_checkpoints:
+            sequence = len(state["completed_groups"])
+            print(json.dumps({"backup_ready": sequence}), flush=True)
+            if sys.stdin.readline().strip() != f"ACK {sequence}":
+                raise RuntimeError("receipt backup acknowledgement missing; no next GPU run started")
         return summary
 
     try:
