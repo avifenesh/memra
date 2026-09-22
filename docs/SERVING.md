@@ -1519,7 +1519,8 @@ loop was the only boundary, so a Rust panic in ONE request's step (a bad index, 
 request-shaped edge) unwound the whole loop: every in-flight `Session` was dropped, every peer
 stream ended truncated after a 200, health flipped dead, and the worker respawned (or exited 70)
 for a fault that was never the card's. Now each per-session decode step, spec step, prefill call,
-batched prime call and batched decode call runs under `request_fault_guard` (worker.rs). The classification happens
+constraint-mask staging, prefix-fanout leader prime, batched prime call (interactive and dark)
+and batched decode call runs under `request_fault_guard` (worker.rs). The classification happens
 at the catch site, once, from two facts: does the panic payload quote a driver or library error
 (`DriverError`, `CUDA_ERROR_*`, `CUBLAS_STATUS_*`, an OOM string), and does the CUDA context still
 answer a synchronize, a 16-float allocation and a readback right after the panic. Both clean is a
@@ -1530,7 +1531,8 @@ tick with its peers untouched. Either fact dirty is a **worker fault**: the pani
 into the ladder above unchanged (a CUDA error is sticky per process, so the respawn is the right
 answer there and only there). A batched prime or decode call is guarded as one unit: a panic inside it
 is one request fault line naming every id in the wave and retires the wave; peers outside the
-wave are untouched. `worker_respawns_total` counts the ladder; a rising `request_faults_total` with a
+wave are untouched. `request_faults_total` counts guarded calls that panicked, so a wave counts once while every request in
+it fails typed. `worker_respawns_total` counts the ladder; a rising `request_faults_total` with a
 flat `worker_respawns_total` is the signature of a request-shaped bug that needs a repro, not a
 card that needs a restart. `MEMRA_PANIC_AFTER` still panics at retire time, outside every guard,
 so it still exercises the worker ladder. The gate is `tools/request-fault-gate.py`

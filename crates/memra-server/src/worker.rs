@@ -6761,7 +6761,9 @@ fn is_cuda_oom(err: &str) -> bool {
 /// seam `is_cuda_oom` uses, so the 27 `EngineError::engine(format!(..{err}))` arms need no edit).
 pub const REQUEST_FAULT_PREFIX: &str = "request fault:";
 
-/// Request faults caught by the guard (the request failed, the worker kept running).
+/// Request faults caught by the guard (the request failed, the worker kept running). One per
+/// guarded call that panicked: a batched prime or decode wave counts ONCE while every request in
+/// the wave is retired with `worker_fault`; the wave's `[fault]` line names all of its ids.
 pub static REQUEST_FAULTS_TOTAL: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 /// Worker thread respawns the supervisor attempted (a worker fault reached the ladder).
@@ -6881,12 +6883,36 @@ mod request_fault_guard_tests {
     use super::*;
     use std::sync::atomic::Ordering;
 
+    /// The counter and the panic hook are process-global and `cargo test` runs this binary's
+    /// tests concurrently: every test here holds this lock for its whole body.
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn faults() -> u64 {
         REQUEST_FAULTS_TOTAL.load(Ordering::Relaxed)
     }
 
+    /// Silence the expected panics for the duration of one test and restore whatever hook was
+    /// installed before (libtest's), so an unrelated test's panic still prints.
+    type PanicHook = Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send + 'static>;
+    struct QuietPanics(Option<PanicHook>);
+    impl QuietPanics {
+        fn install() -> Self {
+            let saved = std::panic::take_hook();
+            std::panic::set_hook(Box::new(|_| {}));
+            QuietPanics(Some(saved))
+        }
+    }
+    impl Drop for QuietPanics {
+        fn drop(&mut self) {
+            if let Some(saved) = self.0.take() {
+                std::panic::set_hook(saved);
+            }
+        }
+    }
+
     #[test]
     fn ok_and_err_pass_through_untouched() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let before = faults();
         let ok = request_fault_guard(|| true, "r", "lane0/m", "site", || Ok::<u32, _>(7));
         assert_eq!(ok.unwrap(), 7);
@@ -6905,8 +6931,8 @@ mod request_fault_guard_tests {
 
     #[test]
     fn panic_with_healthy_context_is_a_request_fault() {
-        let _quiet = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|_| {}));
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let _quiet = QuietPanics::install();
         let before = faults();
         let r = request_fault_guard(
             || true,
@@ -6920,7 +6946,6 @@ mod request_fault_guard_tests {
                 Ok::<u32, Box<dyn std::error::Error>>(0)
             },
         );
-        let _ = std::panic::take_hook();
         let msg = r.unwrap_err().to_string();
         assert!(msg.starts_with(REQUEST_FAULT_PREFIX), "{msg}");
         assert!(msg.contains("decode step panicked"), "{msg}");
@@ -6936,8 +6961,8 @@ mod request_fault_guard_tests {
 
     #[test]
     fn panic_with_dead_context_reraises() {
-        let _quiet = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|_| {}));
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let _quiet = QuietPanics::install();
         let before = faults();
         let r = std::panic::catch_unwind(|| {
             request_fault_guard(
@@ -6953,7 +6978,6 @@ mod request_fault_guard_tests {
                 },
             )
         });
-        let _ = std::panic::take_hook();
         let payload = r.expect_err("a dead context re-raises the panic");
         assert_eq!(panic_payload_text(payload.as_ref()), "something ordinary");
         assert_eq!(
@@ -6965,8 +6989,8 @@ mod request_fault_guard_tests {
 
     #[test]
     fn driver_looking_panic_reraises_even_when_probe_is_healthy() {
-        let _quiet = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|_| {}));
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let _quiet = QuietPanics::install();
         let before = faults();
         let r = std::panic::catch_unwind(|| {
             request_fault_guard(
@@ -6984,7 +7008,6 @@ mod request_fault_guard_tests {
                 },
             )
         });
-        let _ = std::panic::take_hook();
         assert!(r.is_err());
         assert_eq!(faults(), before);
         assert!(looks_like_cuda_fault("CUBLAS_STATUS_EXECUTION_FAILED"));
@@ -22015,7 +22038,16 @@ pub fn run(
                         // token mask and H2D the packed bitset into the session's stable
                         // device buffer — the batched step bans on device BEFORE its device
                         // sampler, so this row rides the same lean tick as everyone else.
-                        if let Err(err) = stage_grammar_mask(&engine, &mut active[i]) {
+                        let (fault_id, fault_route) =
+                            (active[i].request_id.clone(), fault_route(&active[i]));
+                        let staged = guard_request(
+                            &engine,
+                            &fault_id,
+                            &fault_route,
+                            "constraint mask",
+                            || stage_grammar_mask(&engine, &mut active[i]).map_err(Into::into),
+                        );
+                        if let Err(err) = staged {
                             let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                                 "constraint mask: {err}"
                             ))));
@@ -22265,6 +22297,11 @@ pub fn run(
                         .map(|&i| active[i].prefill_queue.drain(..).collect())
                         .collect();
                     let prompt_refs: Vec<&[u32]> = prompts.iter().map(|p| p.as_slice()).collect();
+                    let batch_ids: String = dcand
+                        .iter()
+                        .map(|&i| active[i].request_id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(",");
                     let mut cache_refs: Vec<&mut memra_engine::cache::Cache> = active
                         .iter_mut()
                         .enumerate()
@@ -22272,10 +22309,10 @@ pub fn run(
                         .map(|(_, s)| s.cache.as_mut().unwrap())
                         .collect();
                     let lm = &loaded[dmodel.as_ref().unwrap()];
-                    match lm
-                        .model
-                        .prime_cache_batch(&engine, &prompt_refs, &mut cache_refs)
-                    {
+                    match guard_request(&engine, &batch_ids, "batch", "dark batched prime", || {
+                        lm.model
+                            .prime_cache_batch(&engine, &prompt_refs, &mut cache_refs)
+                    }) {
                         Ok(outs) => {
                             let ncar = dcand.iter().filter(|&&i| !active[i].fed.is_empty()).count();
                             eprintln!(
@@ -22295,9 +22332,11 @@ pub fn run(
                             }
                         }
                         Err(err) => {
+                            // a request fault (a panic the guard caught) retires the wave like a
+                            // tainted one; its caches are not handed back to the chunk path
                             let tainted = dcand.iter().any(|&i| {
                                 active[i].cache.as_ref().is_some_and(|cache| cache.tainted)
-                            });
+                            }) || err.to_string().contains(REQUEST_FAULT_PREFIX);
                             if tainted {
                                 eprintln!(
                                     "[prime-batch dark] failed after a partial pipeline wave ({err}); dropping tainted sessions"
@@ -27773,15 +27812,25 @@ fn dedup_interactive_prefixes(
         let model = active[leader_i].model.clone();
         let key = active[leader_i].pool_key();
         let t0 = Instant::now();
-        let leader_out = {
-            let s = &mut active[leader_i];
-            loaded[&model].model.prime_cache(
-                engine,
-                &prefix,
-                s.cache.as_mut().unwrap(),
-                queued_after,
-            )
-        };
+        let (fault_id, fault_route) = (
+            active[leader_i].request_id.clone(),
+            fault_route(&active[leader_i]),
+        );
+        let leader_out = guard_request(
+            engine,
+            &fault_id,
+            &fault_route,
+            "prefix fanout prime",
+            || {
+                let s = &mut active[leader_i];
+                loaded[&model].model.prime_cache(
+                    engine,
+                    &prefix,
+                    s.cache.as_mut().unwrap(),
+                    queued_after,
+                )
+            },
+        );
         let (leader_logits, _h, _x) = match leader_out {
             Ok(out) => out,
             Err(err) => {

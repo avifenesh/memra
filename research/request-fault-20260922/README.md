@@ -33,9 +33,14 @@ On a panic it classifies once, at the catch site:
 
 Guarded sites: the async-chain + `step_session` decode step, the spec-stepper chain
 (`step_dspark_spec` / `step_glm5_spec` / `step_gemma_spec` / `step_session`), the ready-loop
-`step_session`, both `prefill_tick` calls (interactive and dark-lane chunk), the batched prime
-call (`prime_cache_batch`, a request fault retires the wave like a tainted one; never handed to the
-single-prime path) and the batched decode call (retires the wave, ids joined in the route). A
+`step_session`, both `prefill_tick` calls (interactive and dark-lane chunk), constraint-mask
+staging (`stage_grammar_mask`), the prefix-fanout leader prime (`prime_cache` in
+`dedup_interactive_prefixes`), both batched prime calls (`prime_cache_batch`, interactive and
+dark; a request fault retires the wave like a tainted one, never handed to the single-prime or
+chunk path) and the batched decode call (retires the wave, ids joined in the route). The counter
+counts guarded calls that panicked: a wave counts once while every request in it fails typed.
+Review round 1 (revuto) named the three sites that were still bare and the test-global races;
+both fixed in the same PR. A
 dedicated `fault-inject` step at the top of the batched tick runs only when
 `MEMRA_FAULT_INJECT_CACHE_SALT` is set. The supervisor bumps `WORKER_RESPAWNS_TOTAL` at
 `attempt += 1`; both counters are on the operator `/metrics` body.
