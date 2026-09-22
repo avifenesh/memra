@@ -243,19 +243,14 @@ sys.exit(0 if seq == want else 1)
 PY
 }
 
-await_hashes() { # $1 log: every `handed to the hash helper` hand-off of the boot has resolved (its digests landed or a
-    # typed `demote failed (tier hash` line) before the boot stops. WP-A day 29 (ruling 40): r3 is the boot's LAST
-    # request, its eviction's demote hands its heap payloads to the hash helper at r3's boundary, and a `stop` inside the
-    # hash (day 28: 73 ms on the target card) read a log that ended at `demote copy complete`, so `the next demote
-    # publishes` failed on a publication that had not happened yet. Bounded: 150 x 100 ms = 15 s, above the helper's
-    # 10 s deadline, so a hand-off that never lands is read as its typed refusal, not as a timeout here.
+await_publication() { # $1 refusal literal $2 log: the boot's LAST publication, a `[prefix-host] demote: ` line after the injected
+    # refusal, has landed before the boot stops. WP-A day 29 (ruling 40): r3 is the boot's last request and its spec-boundary
+    # insert, the eviction and the demote's submission land as r3 completes, so a `stop` right after r3's return read a log
+    # that ended at `demote copy complete` (day 28: the 73 ms hash on the target card still on the helper) and `the next demote
+    # publishes` failed on a publication that had not happened yet. This waits for the check's own condition, bounded
+    # 150 x 100 ms = 15 s, above the helper's 10 s deadline, so a hand-off that never lands is read as its typed refusal.
     for _ in $(seq 1 150); do
-        local handed landed failed
-        # `grep -c` exits 1 on a zero count and this gate runs `set -e`: the `|| true` keeps the count.
-        handed=$(grep -c "handed to the hash helper" "$1" || true)
-        landed=$(grep -c "demote digests landed off the tick" "$1" || true)
-        failed=$(grep -c "demote failed (tier hash" "$1" || true)
-        [ "$handed" -le $((landed + failed)) ] && return 0
+        if after "$1" "\\[prefix-host\\] demote: " "$2"; then return 0; fi
         sleep 0.1
     done
     return 1
@@ -269,9 +264,9 @@ cell() { # $1 name $2 fault $3 refused-kind $4 expected next-receipt seq
     req "$P_C" "$EV/$name-r3.json"
     # WP-A day 29 (ruling 40): the demote cells await the boot's last publication before `stop`.
     local awaited=0
-    await_hashes "$log" || awaited=$?  # a timed-out wait is a failed check below, never an abort under set -e
+    await_publication "demote failed (tier D2H $kind refused: injected" "$log" || awaited=$?  # a timed-out wait is a failed check below, never an abort under set -e
     stop
-    chk "$name: the boot's last hand-off landed before stop (bounded 15 s wait)" test "$awaited" -eq 0
+    chk "$name: the boot's last publication landed before stop (bounded 15 s wait)" test "$awaited" -eq 0
     chk "$name: three completions served" three_served "$EV/$name"
     chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
     chk "$name: exactly one typed injected refusal, the $kind" count_eq "demote failed (tier D2H $kind refused: injected failure (MEMRA_KV_HOST_FAULT=$fault)); nothing demoted" "$log" 1
