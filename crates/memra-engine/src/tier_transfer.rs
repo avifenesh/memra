@@ -484,8 +484,9 @@ impl CudaTransfers {
         Ok(t)
     }
     /// The `MEMRA_KV_HOST_FAULT=d2d-delay-*` fault (WP-A day 22, the red arm of the receipt): the
-    /// NEXT D2D submit of either class runs `tier_delay_spin(delay_ns)` on the copy stream between
-    /// the producer wait and the copy, and takes its DESTINATION digest from an unordered early
+    /// NEXT D2D submit of either class runs `tier_delay_spin(delay_ns)` ONCE on the copy stream,
+    /// between the first item's producer wait and its copy (the stream is serial, so every item's
+    /// copy waits behind it), and takes each item's DESTINATION digest from an unordered early
     /// reader (the owner stream at submit, after the producer fence, with no wait on the copy's
     /// event: the read a publication or a first prime chunk issued before the completion event
     /// would make). The source digest stays on the copy stream behind the producer fence, so the
@@ -1252,7 +1253,13 @@ impl CudaTransfers {
                 // producer fence, the copy, then the DESTINATION digest after it, all on the copy
                 // stream; the fault's arm delays the copy and reads the destination early.
                 cuda(copy.wait(&scratch.zeroed))?;
-                if let Some(ns) = fault {
+                // Once per BATCH (revuto on integ38 #639): the copy stream is serial, so one spin
+                // ahead of the first item delays every item's copy; a spin per item multiplied
+                // the documented 200 ms by the item count (6.4 s on a 32-plane entry) and any
+                // Block settle of the ticket held the owner thread for that whole window.
+                if let Some(ns) = fault
+                    && i == 0
+                {
                     self.delay_on(&copy, ns)?;
                 }
                 self.digest_on(
@@ -1437,7 +1444,13 @@ impl CudaTransfers {
                 // WP-A day 22 (slice 3): source digest behind the fence, the copy, the destination
                 // digest after it, on the copy stream; the fault's arm as in the capture class.
                 cuda(copy.wait(&scratch.zeroed))?;
-                if let Some(ns) = fault {
+                // Once per BATCH (revuto on integ38 #639): the copy stream is serial, so one spin
+                // ahead of the first item delays every item's copy; a spin per item multiplied
+                // the documented 200 ms by the item count (6.4 s on a 32-plane entry) and any
+                // Block settle of the ticket held the owner thread for that whole window.
+                if let Some(ns) = fault
+                    && i == 0
+                {
                     self.delay_on(&copy, ns)?;
                 }
                 self.digest_on(
@@ -2436,6 +2449,20 @@ mod tests {
             assert!(
                 wait < zeroed && zeroed < delay,
                 "{class}: the lanes' zero-fill fence"
+            );
+            // Revuto on integ38 (#639): the spin is issued once per batch, at the first item; a
+            // spin per item multiplied the documented delay by the item count.
+            let once = class_body
+                .find("if let Some(ns) = fault\n                    && i == 0\n")
+                .expect("the delay is gated on the first item");
+            assert!(
+                once < delay && delay - once < 120,
+                "{class}: the gate wraps the spin"
+            );
+            assert_eq!(
+                class_body.matches("self.delay_on(&copy, ns)?;").count(),
+                1,
+                "{class}: one spin site"
             );
             let src_digest = class_body.find("self.digest_on(\n                    &copy,\n                    &op.source.slice(0..n),").unwrap();
             let copy_at = class_body.find(".memcpy_dtod(").unwrap();
