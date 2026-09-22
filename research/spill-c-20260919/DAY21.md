@@ -93,3 +93,88 @@ run against the binary built from A's slice.
 Both cards were held by other lanes when the batteries started (local: a lane B server on the card, seen by
 its cwd in `--query-compute-apps`, not touched; target card: the collector's `REFUSED: [Errno 11] Resource
 temporarily unavailable`); both drivers waited in their bounded retry loops.
+
+## Verdicts, verbatim (every cell `executed-not-qualified`; pass/fail gates, no timing claim)
+
+**Target card** (one RTX PRO 6000 Blackwell Server Edition, 600 W limit, collector rig `pro-single`, tree
+`9be3f7373`, server binary `6324b1d395c59a9c…`, the 27B NVFP4-Q5K MTP artifact, `MEMRA_HOSTGATE_CACHE_MB=256`;
+receipts `pro-single-day21/cells/<cell>/` and the collector's `pro-single-day21/collector/<cell>/` with
+`CELL.jsonl` `"status": "executed-not-qualified"`; the first cell waited one 120 s retry on another lane's lock
+hold; no foreign compute app in any before or after snapshot):
+
+| Cell | Environment | Verdict line | ok / FAIL |
+|---|---|---|---|
+| failure-default-off | default | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| failure-default-on | default, `MEMRA_KV_HOST_CONTRACTS=1` | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| failure-plain-off | `MEMRA_SERVE_SPEC=0` | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| failure-plain-on | `MEMRA_SERVE_SPEC=0`, door ON | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| fault-default | default (door ON by construction) | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` | 64 / 0 |
+| fault-plain | `MEMRA_SERVE_SPEC=0` (door ON by construction) | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` | 64 / 0 |
+| identity-default-off | default | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-default-on | default, door ON | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-plain-off | `MEMRA_SERVE_SPEC=0` | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-plain-on | `MEMRA_SERVE_SPEC=0`, door ON | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+
+All four failure cells printed `pool-full refusal arm: tenant share cap 50% (server default 50; pre-copy
+evaporation, the image alone exceeds the share)`; the server line asserted (default-off, verbatim):
+`[prefix-host] demote evaporated at the tenant share cap before the D2H copy: 64 tokens, 159.9MB (50% of 1MB,
+MEMRA_KV_HOST_TENANT_PCT; model gate); reclaim refused: the image alone exceeds the share (159.9MB > 1MB); nothing
+evicted`. The reject cell read `promote-reject: the entry's plane count from the server's r2 D2H receipt:
+items=34` in the default environment and `items=32` in the plain one (no draft planes), the refusal
+`tier H2D batch partially refused: 1 of 34 items (injected failure (MEMRA_KV_HOST_FAULT=contract-promote-reject))`
+and `1 of 32 items` respectively: the hardcoded 34 would have failed the plain arm on the 27B too.
+
+**Local RTX 5090 Laptop GPU** (`flock /tmp/memra-5090.lock` taken by each gate, tree `7efab005d` for the first
+cell and `9be3f7373` after the driver commit (bash and docs only between them), one server binary
+`35705538b322d2de…` built from `b4cb89cec`, the Qwen3.5-9B NVFP4 MTP artifact, `MEMRA_HOSTGATE_CACHE_MB=64`; lane B held
+the card for part of the sitting: 5, 6 and 6 lock retries of 120 s on three failure cells, its server visible only
+in the before/after snapshots that bracket my holds, never signalled; receipts `rtx5090-day21/<cell>/`,
+`battery.log`):
+
+| Cell | Verdict line | ok / FAIL |
+|---|---|---|
+| failure-default-off | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| failure-default-on | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| failure-plain-off | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| failure-plain-on | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| fault-default | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` | 64 / 0 |
+| fault-plain | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` | 64 / 0 |
+| identity-default-off | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-default-on | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-plain-off | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-plain-on | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+
+Same arm line in all four failure cells; server line (default-off): `[prefix-host] demote evaporated at the tenant
+share cap before the D2H copy: 64 tokens, 54.8MB (50% of 1MB, MEMRA_KV_HOST_TENANT_PCT; model gate); reclaim
+refused: the image alone exceeds the share (54.8MB > 1MB); nothing evicted`. Reject cell: `items=18` (default),
+`items=16` (plain), refusal `1 of 18 items` and `1 of 16 items`.
+
+Reading. The two red lines carried since day 13 (this lane) and day 17 (lane A) are gone on both cards and in
+every arm without a server change, so they were the gates', as the code said before any run. A's slice reads
+`ALL GREEN` on the identity gate in all four arms on both cards on this tree. The whole-budget arm of the
+failure gate (`MEMRA_KV_HOST_TENANT_PCT=100`) was not run today: it is asserted by pattern against D's banked
+day-8 log only; a run under 100 is a one-boot cell for whoever needs the insert-path line exercised again.
+
+## Hygiene on the final tree
+
+`cargo fmt --all -- --check` rc=0 and `cargo clippy --release -p memra-server -p memra-engine -- -D warnings` rc=0
+(`rtx5090-day21/fmt-clippy.log`, under `CPUQuota=1200%`; no crate of mine changed, the merged crates are A's
+and main's); `tools/check-flags.sh` no uncovered runtime names; `tools/check-conflict-markers.sh` OK;
+`python3 tools/check-public-boundary.py check` 0 new; `git diff --check` clean; shellcheck silent on the two
+gates and the two drivers. No new `MEMRA_*` read (the failure gate reads the existing
+`MEMRA_KV_HOST_TENANT_PCT`, which has its FLAGS.md row).
+
+## Pushes
+
+`b4cb89cec` (the two merges), `7efab005d` (the two gate fixes), `9be3f7373` (drivers), `d3d04bd64` (target-card
+receipts, this file's analysis), then this seal; each in `MEMRA_RELEASE_QUALIFICATION_MODE=development`
+(printed `UNQUALIFIED DEVELOPMENT ... no GPU qualification claimed`, logged in the clone's
+`.git/memra-gate-skips.log`). Not merged into main, no PR opened.
+
+## Left as it was, and cleanup
+
+Not touched: `/root/artifacts`, `/root/memra-spill`, other lanes' worktrees or processes. Cleaned: the shipped
+bundles on both ends, `/tmp/spill-c-day21` (its build, fmt/clippy and battery logs banked under
+`rtx5090-day21/`), no server of mine running on either card, both locks free at close. Open for the lead: whether
+`docs/TESTING.md` (lines 1654-1655, day-16 record) should carry a pointer to this day's resolution; the door's
+decide-by review items 1, 2, 3, 5 and 6 are unchanged (`HOSTPREFIX-DOOR.md`).
