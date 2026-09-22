@@ -338,11 +338,13 @@ pub struct GraphPin {
 pub struct CudaTransfers {
     stream: Arc<CudaStream>,
     /// WP-A day 17 (memra#536, Move 1 first slice): the COPY stream. `None` keeps every copy on
-    /// the owner stream (the day-16 program). `Some`: a D2H is issued on this stream behind the
-    /// producer fence's event (`copy.wait(producer)`), its completion event is recorded here, and
-    /// the owner stream is NOT made to wait on it at submit (a D2H destination's consumer is the
-    /// host, whose wait is `event_done` in `progress`); an H2D stays on the owner stream. Created
-    /// from the owner context on the owner thread; `check_thread` still pins every call.
+    /// the owner stream (the day-16 program). `Some`: a copy of either direction is issued on this
+    /// stream behind the producer fence's event (`copy.wait(producer)`) and its completion event
+    /// is recorded here. A D2H installs NO owner-stream wait at submit (its destination's consumer
+    /// is the host, whose wait is `event_done` in `progress`); an H2D KEEPS the submit-time
+    /// `owner.wait(item event)` (day 18: its destination's consumer is the owner stream, which
+    /// reads the fresh planes in the D2D restore and every kernel after it). Created from the
+    /// owner context on the owner thread; `check_thread` still pins every call.
     copy: Option<Arc<CudaStream>>,
     governor: SharedBudget,
     /// The pinned destination arm `alloc_host` takes on this device (`PinnedKind::for_device` of
@@ -381,9 +383,9 @@ impl CudaTransfers {
             entries: HashMap::new(),
         })
     }
-    /// `new`, plus a second stream of the same context for the D2H copies (WP-A day 17, Move 1
-    /// first slice). The stream is created on the owner thread; a failure to create it is a
-    /// construction refusal, never a silent fall back to the owner stream.
+    /// `new`, plus a second stream of the same context for the copies (WP-A day 17 for the D2H,
+    /// day 18 for the H2D; memra#536 Move 1). The stream is created on the owner thread; a failure
+    /// to create it is a construction refusal, never a silent fall back to the owner stream.
     pub fn new_with_copy_stream(owner: Arc<CudaStream>, governor: SharedBudget) -> Result<Self> {
         let mut t = Self::new(owner, governor)?;
         t.copy = Some(cuda(t.stream.context().new_stream())?);
@@ -1168,12 +1170,13 @@ impl TransferEngine for CudaTransfers {
                 };
                 // From this point any CUDA error may mean work was submitted:
                 // accept + quarantine, NEVER return potentially-live owned inputs.
-                // WP-A day 17: the stream this item's copy and completion event live on. A D2H
-                // takes the copy stream when one exists; an H2D and every copy under `new` take
-                // the owner stream (the day-16 program, statement for statement).
-                let issue: Arc<CudaStream> = match (&self.copy, direction) {
-                    (Some(copy), CopyDirection::DeviceToHost) => copy.clone(),
-                    _ => self.stream.clone(),
+                // WP-A day 17 and 18: the stream this item's copy and completion event live on.
+                // Both directions take the copy stream when one exists (the D2H since day 17, the
+                // H2D since day 18); every copy under `new` takes the owner stream (the day-16
+                // program, statement for statement).
+                let issue: Arc<CudaStream> = match &self.copy {
+                    Some(copy) => copy.clone(),
+                    None => self.stream.clone(),
                 };
                 let off_owner = !Arc::ptr_eq(&issue, &self.stream);
                 let submit = (|| {
@@ -1213,13 +1216,17 @@ impl TransferEngine for CudaTransfers {
                     }
                     drop(backing);
                     item.event = Some(cuda(issue.record_event(None))?);
-                    // Install the wait separately from observing producer completion. On the
-                    // owner stream this is the H2D destination's consumer ordering (and a no-op
-                    // for an owner-stream D2H). A D2H on the copy stream installs NO owner wait:
-                    // its destination's consumer is the host, which waits on `event_done` in
-                    // `progress` before the checksum; an owner wait here would queue the tick's
-                    // kernels behind the copy, the serialization Move 1 removes (day 17).
-                    if !off_owner {
+                    // Install the wait separately from observing producer completion. For an H2D
+                    // this is the destination's consumer ordering on the OWNER stream, kept on
+                    // both issue streams (day 18: no restore, prime or decode issued after this
+                    // submit can read a fresh plane before its copy landed; the DMA overlaps the
+                    // kernels already queued, only later ones queue behind its completion). On
+                    // the owner stream it is a no-op for a D2H. A D2H on the copy stream installs
+                    // NO owner wait: its destination's consumer is the host, which waits on
+                    // `event_done` in `progress` before the checksum; an owner wait there would
+                    // queue the tick's kernels behind the copy, the serialization Move 1 removes
+                    // (day 17).
+                    if !off_owner || direction == CopyDirection::HostToDevice {
                         cuda(self.stream.wait(item.event.as_ref().unwrap()))?;
                     }
                     s.consumer_fence = Some(self.next_fence(epochs.dst_gen)?);
@@ -1518,6 +1525,36 @@ mod tests {
         assert_eq!(body.matches("alloc_pinned::<").count(), 0);
         assert_eq!(body.matches(".alloc_pinned(").count(), 0);
         assert!(body.contains("result::malloc_host(bytes, kind.host_alloc_flags())"));
+    }
+
+    /// WP-A day 17 and 18 (memra#536 Move 1): under a copy stream every copy is issued there behind
+    /// the producer fence's event; a D2H installs no owner wait (its consumer is the host); an H2D
+    /// keeps the submit-time owner wait (its consumer is the owner stream). Source census, CPU.
+    #[test]
+    fn copy_stream_issue_and_owner_wait_rules_are_as_stated() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap()];
+        let submit = body.find("fn submit_batch(").unwrap();
+        let submit_body = &body[submit..body[submit..].find("\n    fn poll(").unwrap() + submit];
+        let issue = submit_body
+            .find("let issue: Arc<CudaStream> = match &self.copy {")
+            .expect("one issue-stream selection, on the copy stream's presence alone");
+        assert!(submit_body[issue..issue + 200].contains("Some(copy) => copy.clone(),"));
+        assert!(submit_body[issue..issue + 200].contains("None => self.stream.clone(),"));
+        let producer_wait = submit_body
+            .find("cuda(issue.wait(&self.producers[&f.sequence].1))?;")
+            .unwrap();
+        let copy_at = submit_body.find("issue.memcpy_htod(").unwrap();
+        let owner_wait = submit_body
+            .find("if !off_owner || direction == CopyDirection::HostToDevice {")
+            .expect("the owner wait is installed for every H2D and for an owner-stream D2H only");
+        assert!(producer_wait < copy_at && copy_at < owner_wait);
+        assert!(
+            submit_body[owner_wait..owner_wait + 200]
+                .contains("self.stream.wait(item.event.as_ref().unwrap())")
+        );
+        assert_eq!(submit_body.matches(".memcpy_htod(").count(), 1);
+        assert_eq!(submit_body.matches(".memcpy_dtoh(").count(), 1);
     }
 
     fn native_fixture() -> (CudaTransfers, Arc<CudaStream>, SharedBudget) {
