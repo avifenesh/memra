@@ -667,6 +667,36 @@ attributed by any cell. Both are named as open for the review; nothing is inferr
 7. **The door gates on MAIN's tree after #627 on the target card.** RESOLVED day 23: twelve cells on `91b0d4e08` through the collector, all `ALL GREEN` (`pro-single-day23-gates/`, `DAY23.md`).
 8. **The 5090 door gates on the tree after #627.** RESOLVED day 23: ten cells on `91b0d4e08` (fault x2 65 ok, failure x4, identity x4) `ALL GREEN` (`rtx5090-day23/`, `DAY23.md`); the whole-budget arm excepted (item 9).
 9. **The whole-budget arm on the RTX 5090** (never run there; the 27B receipt stands for the arm).
+10. **Slice 3 and the spec-boundary route: the publishes still on the tick after Move 2 slice 1 (day 24 census,
+    `DAY24.md`; no code).** Slice 1 (`prefix_capture_off_tick`, A day 20) routes only `prefix_insert_from_session`,
+    the `seed` and `lcp-split` publishes of a plain-primed session. Still on the tick program are: (a) every
+    `prefix_insert_from_spec_boundary` publish: the MTP drain sweep's `spec-boundary` capture (worker.rs, the tick
+    boundary after the burst, one capture per prime stop, `sp.draft_plane_ref()` as the draft source), the
+    `dspark-boundary` publish (with the exported drafter tail) and the `glm5-boundary` publish (latent tails); (b)
+    the fanout leader's snapshot and the pause sweep's boundary snapshot (`prefix_snapshot` direct, A's day-20
+    statement); (c) every `CaptureRoute::OnTick` refusal of slice 1 itself (TP shards, latent planes, an SWA ring, a
+    cache not at the boundary, the latch). On the 27B at the served context (`MEMRA_CTX=8192`, the spec default
+    boot) the spec-boundary publish moves per entry: the trunk KV planes `pos x 29.7 KB` (the receipts' slope,
+    308.0 MB at 5088 tokens against 158.8 MB at 64: 243 MB at 8192, 1.9 MB at the gates' 64-token entries), the MTP
+    draft plane K and V `pos x (k_tok_bytes + v_tok_bytes)` sliced from the spec session's persistent draft scratch
+    (a 64-token spec-boundary entry is 158.9 MB against the plain seed's 158.8 MB, so about 0.1 MB at 64 tokens,
+    about 1.9 KB per token, one layer's K and V, about 15 MB at 8192), the recurrent state and boundary logits from
+    the `SpecBoundaryCapture` the spec engine already owns (taken at the burst boundary; no copy at publish), the
+    f32 `last_h`, and on DSPARK the exported draft tail (a fixed about 85 MB per entry, `export_tail`). Each plane is
+    `alloc_u8` (`cuMemAllocAsync` plus a memset, stream-ordered) then `copy_u8_into` (`memcpy_dtod` on the owner
+    stream), then `insert_demoting` (whose eviction demote is Move 1's route). What an off-tick route would need: two
+    borrowed source spans instead of slice 1's one, the live trunk planes `[0..pos)` (slice 1's class, append-only
+    below the prime boundary) and the draft scratch `[0..pos)`, whose owner is `memra_engine::spec::SpecSession`
+    (`scratch: MtpScratch`, `draft_plane_ref`; append-only below the prompt end for the session's lifetime, the
+    true-hidden refresh rewrites generated positions only, `None` when ring-backed); a producer event recorded on
+    the owner stream at the drain sweep (by then the burst has committed past `pos`, so every kernel that wrote a
+    row below `pos` precedes the event); the borrow's lifetime, which is the open question: the sweep runs at the
+    tick boundary and the session may retire or park before the copy lands, so a retiring or parking spec session
+    with a `Capturing` entry must settle it first (slice 1's settle-before-drop, extended to the spec session's
+    scratch) or the publish refuses to the tick program; one `Capturing` entry per worker as today; and slice 3's
+    receipt term covering both plane classes (the draft plane binds as `Role::Draft`, `items=34` on the 27B). The
+    DSPARK tail is the drafter's own export (`dspark.draft_kv().export_tail`), owned and fenced by the drafter, and
+    stays outside that route unless the export becomes a capture item. Nothing here is built.
 
 ### E. The decision question, stated and not answered
 
