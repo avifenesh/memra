@@ -43375,7 +43375,7 @@ mod tests {
         eb.id = 13;
         px.entries.entry(beta.clone()).or_default().push(eb);
         let mut h = HostPrefixCache::new(1 << 20);
-        let table: [(Option<(&PoolKey, usize)>, [Option<u64>; 3]); 4] = [
+        let table = [
             // (the pin), then the answer for (acme, 0), (acme, 1), (beta, 0)
             (None, [None, None, None]),
             (Some((&acme, 0)), [Some(11), None, None]),
