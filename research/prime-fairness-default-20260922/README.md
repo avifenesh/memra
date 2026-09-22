@@ -1,6 +1,6 @@
 # Prime fairness default (memra#521): the decision cell
 
-Verdict: `MEMRA_PRIME_YIELD` ON by default. On the 9B NVFP4 MTP GGUF, one 131,072-id cold prime beside three peers, three interleaved reps per rig: peers' p95 first event 49.64 s OFF to 1.87 s ON on the local RTX 5090 and 14.51 s to 0.53 s on a rented RTX PRO 6000; `tick_max_ms` 51199 to 2309 and 16338 to 870; the long prime's first event +1.68 s and +0.93 s; every request's greedy bytes identical across all 12 boots.
+Verdict: `MEMRA_PRIME_YIELD` ON by default. On the 9B NVFP4 MTP GGUF, one 131k-token cold prime beside three peers, three interleaved reps per rig: peers' p95 first event 55.02 s OFF to 1.43 s ON on the local RTX 5090 (natural-text gate; 49.64 s to 1.87 s on the id version) and 14.51 s to 0.53 s on a rented RTX PRO 6000; `tick_max_ms` 51199 to 2309 and 16338 to 870; the long prime's first event +1.68 s and +0.93 s; every request's greedy bytes identical across all 12 boots.
 
 Decision record: `docs/decisions/PRIME-FAIRNESS-DEFAULT.md`. Door history and earlier receipts:
 `research/prefill-fairness-20260908/`.
@@ -9,9 +9,12 @@ Decision record: `docs/decisions/PRIME-FAIRNESS-DEFAULT.md`. Door history and ea
 
 One boot per `MEMRA_PRIME_YIELD` arm on the 9B NVFP4 MTP GGUF's spec route with the concurrency
 demotion pinned off (`MEMRA_SPEC_GATE_LOW=64 HIGH=65`), `MEMRA_MAX_SESSIONS=4`, `MEMRA_TICK_TRACE=1`.
-Greedy `prompt_ids` streams on `/v1/completions`: a seeded 4,096-id prompt, then at t=0 a 131,072-id
-cold prime, at +2 s and +3 s two cold 2,048-id peers, at +3 s more the seeded prompt again (a cache
-hit). Verdicts: bytes identical across arms; on the yielding arm every peer's first event within 8 s
+Greedy natural-text `prompt` streams on `/v1/completions` (tokenizer calibrated per boot through
+`usage.prompt_tokens`; on the 9B: seed 4,111, long 135,470, peers 2,071 and 2,140 tokens): a seeded
+prompt, then at t=0 the long cold prime, at +2 s and +3 s two cold short peers, at +3 s more the
+seeded prompt again (a cache hit). A request that generates fewer than 16 tokens refuses the run
+(review round 1: the first version's synthetic ids ended at EOS almost at once, so its byte clause
+compared two characters). Verdicts: bytes identical across arms; on the yielding arm every peer's first event within 8 s
 and the peers' p95 at most half the other arm's; `/health` `tick_max_ms` on the yielding arm at most
 6,000 ms; every request finished; `[prime-walk] supported=true yield_door=true` and `[prime-yield]`
 lines present on the yielding boot. `--reps 3` interleaves the arms by boot (OFF/ON, ON/OFF, OFF/ON).
@@ -20,14 +23,16 @@ lines present on the yielding boot. `--reps 3` interleaves the arms by boot (OFF
 
 | rig (3 reps, arms interleaved by boot) | peers p95 first event OFF / ON (s) | peers max OFF / ON (s) | `tick_max_ms` OFF / ON | long prime first event OFF / ON (s) | bytes identical | yields ON |
 |---|---|---|---|---|---|---|
-| local RTX 5090 (9950X host) | 49.64 / 1.87 | 49.64 / 1.87 | 51199 / 2309 | 50.77 / 52.45 | yes (every request one sha across 6 boots) | 189 |
+| local RTX 5090, natural-text gate (135,470-token prime; every request 32 tokens out) | 55.02 / 1.43 | 55.02 / 1.43 | 56479 / 2458 | 55.82 / 55.94 | yes (every request one sha across 6 boots, full outputs) | 426 |
+| local RTX 5090 (9950X host), id-prompt gate version | 49.64 / 1.87 | 49.64 / 1.87 | 51199 / 2309 | 50.77 / 52.45 | yes (every request one sha across 6 boots) | 189 |
 | rented RTX PRO 6000 Blackwell WS (Core Ultra 9 285K host, driver 595.71.05) | 14.51 / 0.53 | 14.51 / 0.53 | 16338 / 870 | 16.33 / 17.26 | yes (every request one sha across 6 boots) | 189 |
 
 | receipt | what |
 |---|---|
 | `raw/gate-5090-9b-run1/` | the first run, BEFORE the route pin: PASS on mechanism (peers 42.3/39.7 s OFF to 1.38/6.22 s ON, `tick_max_ms` 46098 to 2207) but bytes differed for one peer, see the findings below |
 | `raw/gate-5090-9b-run2/` | route pinned, one rep: PASS, bytes identical |
-| `raw/gate-5090-9b-reps3/` | the 5090 decision cell, three interleaved reps: PASS |
+| `raw/gate-5090-9b-reps3/` | the 5090 cell on the id version, three interleaved reps: PASS on timing; its byte clause compared short outputs (revuto round 1) |
+| `raw/gate-5090-9b-text-run1/`, `raw/gate-5090-9b-text-reps3/` | the 5090 decision cell on the natural-text version: full 32-token outputs on every request, bytes identical across arms, `calibration.json` carries the token counts |
 | `raw/pro6000/gate-pro6000-9b-run1/`, `raw/pro6000/gate-pro6000-9b-reps3/` | the PRO 6000 decision cell (one rep, then three): PASS; `raw/pro6000/box-identity.txt` names the card, driver, CUDA and host; the binary there was built from this lane's commit 5a9fd041 on the box |
 | `raw/spec-vs-plain-probe/` | the peer prompt solo on the spec route, solo on the plain route, and as four concurrent plain copies: all identical |
 | `raw/local-ci/local-ci.log` | the full battery on the final tree with the new stage inside it |

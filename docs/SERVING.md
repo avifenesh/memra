@@ -2518,7 +2518,7 @@ again at the long prime's expense). What this covers: the GDN MTP prime (`[prime
 supported=true` at boot), DFlash, GLM plain and spec. The serial plain-trunk prime is bounded per
 tick by `MEMRA_PREFILL_TICK` (1024) except the sole-request widening to 8192; E4B and dsv4 still
 prime monolithically and belong to memra#535 P3/P4. The serving-shape gate is
-`tools/prime-fairness-gate.py` (one 131k cold prime beside three peers, both arms, bytes identical,
+`tools/prime-fairness-gate.py` (one 131k-token cold prime beside three peers, both arms, bytes identical,
 peers' first token bounded, `/health` `tick_max_ms` bounded); receipts and the 2026-09-05 incident
 shape are in `research/prime-fairness-default-20260922/` and `research/prefill-fairness-20260908/`.
 

@@ -26,12 +26,18 @@ chunk 4096, 4.78/4.79 s at chunk 1024, long prime +54%). DFlash: exactness and a
 pass, mixed p95 60.452 s to 48.042 s, still admission-limited (`DFLASH.md`).
 
 The decision cell (this lane): `tools/prime-fairness-gate.py` on Qwen3.5-9B NVFP4 MTP GGUF, spec
-route pinned (`MEMRA_SPEC_GATE_LOW=64 HIGH=65`), one 131,072-id cold prime beside two cold 2,048-id
-peers and one 4,096-id cache hit, greedy, both arms interleaved by boot, three reps per rig.
+route pinned (`MEMRA_SPEC_GATE_LOW=64 HIGH=65`), one 131k cold prime beside two cold 2k peers and one
+4k cache hit, greedy, both arms interleaved by boot, three reps per rig. The first gate version sent
+synthetic token ids; review round 1 showed those prompts end at EOS almost at once, so the byte
+clause compared two characters. The gate now sends calibrated natural text (135,470 / 2,071 /
+2,140 / 4,111 tokens on the 9B) and refuses a run whose requests generate fewer than 16 tokens; the
+5090 cell was re-run on that version, the PRO 6000 cell below is the id version (its timing
+clauses are unchanged by the prompt content; its byte clause compared the short outputs).
 
 | rig (3 reps, arms interleaved by boot) | peers p95 first event OFF / ON (s) | peers max OFF / ON (s) | `tick_max_ms` OFF / ON | long prime first event OFF / ON (s) | bytes identical | yields ON |
 |---|---|---|---|---|---|---|
-| local RTX 5090 (9950X host) | 49.64 / 1.87 | 49.64 / 1.87 | 51199 / 2309 | 50.77 / 52.45 | yes (every request one sha across 6 boots) | 189 |
+| local RTX 5090, natural-text gate (135,470-token prime; every request 32 tokens out) | 55.02 / 1.43 | 55.02 / 1.43 | 56479 / 2458 | 55.82 / 55.94 | yes (every request one sha across 6 boots, full outputs) | 426 |
+| local RTX 5090 (9950X host), id-prompt gate version | 49.64 / 1.87 | 49.64 / 1.87 | 51199 / 2309 | 50.77 / 52.45 | yes (every request one sha across 6 boots) | 189 |
 | rented RTX PRO 6000 Blackwell WS (Core Ultra 9 285K host, driver 595.71.05) | 14.51 / 0.53 | 14.51 / 0.53 | 16338 / 870 | 16.33 / 17.26 | yes (every request one sha across 6 boots) | 189 |
 
 Both rigs: PASS on every clause. The long prime's own first event pays about 3% on the 5090 and
@@ -64,5 +70,5 @@ prime to about one chunk. `tick_max_ms` is the whole prime OFF and one chunk ON 
 A peer whose route differs between arms (spec K=3 on one arm, plain K=0 by concurrency demotion on
 the other) produced different greedy bytes on a synthetic near-tie prompt, while the same prompt
 solo on the spec route and solo on the plain route agree. The gate therefore pins the route, and the
-batched-plain-versus-solo divergence is recorded as its own finding in the lane README, not decided
+divergence is memra#641 with its raw receipts; it is recorded in the lane README, not decided
 here.

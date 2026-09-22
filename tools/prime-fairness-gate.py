@@ -12,12 +12,15 @@ interleaving changes.
 
 Serving shape, one card, one boot per arm of the real `memra-server` on its spec route with the
 concurrency demotion pinned off (`MEMRA_SPEC_GATE_LOW=64 HIGH=65`, so both arms route every request
-the same way and the byte comparison measures the yield, not the route), greedy `prompt_ids`
-requests on `/v1/completions`, streaming so first-token time is what a client sees:
-  seed: a 4,096-id prompt completes cold, so its prefix entry exists (the cache-hit peer).
-  cell: at t=0 a `--long` id (default 131,072) cold prompt starts; at +2 s and every +3 s the peers
-        start: two cold short prompts (`--peer` ids) and the seeded prompt again (a cache hit).
-        `MEMRA_MAX_SESSIONS=4` admits exactly the long prompt and its three peers.
+the same way and the byte comparison measures the yield, not the route), greedy natural-text
+`prompt` requests on `/v1/completions` (the tokenizer is calibrated per boot through
+`usage.prompt_tokens`, so the token targets are met within 10%), streaming so first-token time is
+what a client sees. Natural text keeps greedy decode away from an immediate EOS; a request that
+generates fewer than `--min-tokens` (16) REFUSES the run because the byte clause would be vacuous.
+  seed: a `--seed-tokens` (4,096) prompt completes cold, so its prefix entry exists (the cache hit).
+  cell: at t=0 a `--long` token (default 131,072) cold prompt starts; at +2 s and every +3 s the
+        peers start: two cold short prompts (`--peer` tokens) and the seeded prompt again (a cache
+        hit). `MEMRA_MAX_SESSIONS=4` admits exactly the long prompt and its three peers.
 Clauses, every one a verdict, on the `--yield-values` arms (default `0,1`; the gate is the same
 whatever the binary's default is, because the value is set explicitly):
   V1 bytes:      every request's greedy completion text is identical across the arms (the one
@@ -38,7 +41,7 @@ Verdict line:
 Exit 0 = PASS; 1 = a clause failed; 2 = REFUSED (lock, port, boot, an unserved seed).
 
 usage: prime-fairness-gate.py --model GGUF --bin memra-server --out NEW_DIR [--port N]
-           [--long 131072] [--peer 2048] [--seed-ids 4096] [--max-tokens 32]
+           [--long 131072] [--peer 2048] [--seed-tokens 4096] [--max-tokens 32] [--min-tokens 16]
            [--yield-values 0,1] [--reps 1] [--peer-ttft-bar 8] [--tick-bar-ms 6000]
 Lock: the canonical rig lock (`MEMRA_GPU_LOCK`, else `/tmp/memra-gpu.lock` or `/tmp/memra-5090.lock`)
 held for the whole gate; under local-ci (`MEMRA_CI_LOCK_HELD=1`) the run's own hold is honored.
@@ -85,10 +88,23 @@ def port_free(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) != 0
 
 
-def ids_for(n: int, seed: int) -> list[int]:
-    """Deterministic ids inside every served vocabulary's ordinary-token range."""
-    rng = random.Random(seed)
-    return [rng.randrange(1000, 100_000) for _ in range(n)]
+SENTENCE = (
+    "The community garden has morning sunlight, two raised beds, a nearby water tap, compost, "
+    "labels, gloves, and volunteers who can help each morning. "
+)
+TASK = "\n\nWrite a practical handbook for new volunteers, one numbered lesson per paragraph.\n"
+
+
+def text_for(target_tokens: int, tokens_per_sentence: float, seed: int) -> str:
+    """Natural repeated text of about `target_tokens` tokens (calibrated per boot), with a seeded
+    lead so distinct prompts never share a prefix. Natural text keeps greedy decode away from an
+    immediate EOS, so the byte clause compares `max_tokens` worth of output on every request."""
+    words = ["garden", "orchard", "nursery", "greenhouse", "allotment", "vineyard"]
+    word = words[seed % len(words)]
+    lead = f"Case {seed}: reference notes for planning a community {word}. "
+    body = SENTENCE.replace("garden", word)
+    n = max(1, int(target_tokens / tokens_per_sentence))
+    return lead + body * n + TASK
 
 
 def pct(xs: list[float], q: float) -> float:
@@ -127,10 +143,15 @@ class Server:
         deadline = time.time() + 900
         while time.time() < deadline:
             if self.proc.poll() is not None:
-                refuse(f"memra-server exited {self.proc.returncode} during load; see {self.log}")
+                code = self.proc.returncode
+                self.stop()
+                refuse(f"memra-server exited {code} during load; see {self.log}")
             if self.health() is not None:
                 return
             time.sleep(0.5)
+        # A refusal must not leave a loaded server on the card (and on the port) for the next
+        # stage of the battery: stop the child first, then refuse.
+        self.stop()
         refuse("memra-server did not become healthy in 900 s")
 
     def get(self, path: str):
@@ -149,13 +170,25 @@ class Server:
         st, body = self.get("/health")
         return body if st == 200 else None
 
-    def complete(self, ids: list[int], salt: str, max_tokens: int) -> dict:
+    def count_tokens(self, text: str) -> int:
+        """`usage.prompt_tokens` of a one-token completion: the server's own tokenizer count."""
+        body = {"model": "gate", "prompt": text, "max_tokens": 1, "temperature": 0, "stream": False}
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/v1/completions",
+            data=json.dumps(body).encode(),
+            headers={"content-type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=300) as r:
+            return int(json.load(r)["usage"]["prompt_tokens"])
+
+    def complete(self, prompt: str, salt: str, max_tokens: int) -> dict:
         body = {
             "model": "gate",
-            "prompt_ids": ids,
+            "prompt": prompt,
             "max_tokens": max_tokens,
             "temperature": 0,
             "stream": True,
+            "stream_options": {"include_usage": True},
             "cache_salt": salt,
             "timeout_ms": 600000,
         }
@@ -175,6 +208,7 @@ class Server:
             "ttft_s": None,
             "first_token_s": None,
             "total_s": None,
+            "usage": None,
         }
         t0 = time.monotonic()
         try:
@@ -194,6 +228,8 @@ class Server:
                     if "error" in obj:
                         out["error"] = obj["error"]
                         continue
+                    if obj.get("usage"):
+                        out["usage"] = obj["usage"]
                     for ch in obj.get("choices", []):
                         if out["ttft_s"] is None:
                             out["ttft_s"] = time.monotonic() - t0
@@ -228,26 +264,48 @@ class Server:
         self.logf.close()
 
 
-def run_cell(srv: Server, a, long_ids, peer_ids, seed_ids) -> dict:
+def prompts_for(srv: Server, a) -> dict:
+    """Calibrate the tokenizer once per boot, then build the four prompts to their token targets."""
+    probe = SENTENCE * 64
+    per_sentence = (srv.count_tokens(probe) - 1) / 64.0
+    if per_sentence <= 0:
+        refuse("tokenizer calibration returned no tokens")
+    prompts = {
+        "seed": text_for(a.seed_tokens, per_sentence, 5210),
+        "long": text_for(a.long, per_sentence, 521),
+        "peer-a": text_for(a.peer, per_sentence, 5211),
+        "peer-b": text_for(a.peer, per_sentence, 5212),
+    }
+    counts = {k: srv.count_tokens(v) for k, v in prompts.items()}
+    if counts["long"] < a.long * 0.9:
+        refuse(f"long prompt calibrated to {counts['long']} tokens, below 90% of {a.long}")
+    return {"prompts": prompts, "tokens": counts, "tokens_per_sentence": per_sentence}
+
+
+def run_cell(srv: Server, a, prompts: dict) -> dict:
     """Seed, then the long prime with its staggered peers; every request's timing and bytes."""
-    seed = srv.complete(seed_ids, "seed", a.max_tokens)
+    seed = srv.complete(prompts["seed"], "seed", a.max_tokens)
     if seed["finish"] is None or seed["error"]:
         refuse(f"seed request did not finish: {json.dumps(seed)[:300]}")
     results: dict[str, dict] = {}
     lock = threading.Lock()
 
-    def go(name, ids, salt):
-        r = srv.complete(ids, salt, a.max_tokens)
+    def go(name, prompt, salt):
+        r = srv.complete(prompt, salt, a.max_tokens)
         with lock:
             results[name] = r
 
     t_cell = time.monotonic()
-    threads = [threading.Thread(target=go, args=("long", long_ids, "long"))]
+    threads = [threading.Thread(target=go, args=("long", prompts["long"], "long"))]
     threads[0].start()
-    peers = [("peer-cold-a", peer_ids[0], "peer-a"), ("peer-cold-b", peer_ids[1], "peer-b"), ("peer-hit", seed_ids, "seed")]
-    for k, (name, ids, salt) in enumerate(peers):
+    peers = [
+        ("peer-cold-a", prompts["peer-a"], "peer-a"),
+        ("peer-cold-b", prompts["peer-b"], "peer-b"),
+        ("peer-hit", prompts["seed"], "seed"),
+    ]
+    for k, (name, prompt, salt) in enumerate(peers):
         time.sleep(2.0 if k == 0 else 3.0)
-        t = threading.Thread(target=go, args=(name, ids, salt))
+        t = threading.Thread(target=go, args=(name, prompt, salt))
         t.start()
         threads.append(t)
     for t in threads:
@@ -286,8 +344,9 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=18521)
     ap.add_argument("--long", type=int, default=131072)
     ap.add_argument("--peer", type=int, default=2048)
-    ap.add_argument("--seed-ids", type=int, default=4096)
+    ap.add_argument("--seed-tokens", type=int, default=4096)
     ap.add_argument("--max-tokens", type=int, default=32)
+    ap.add_argument("--min-tokens", type=int, default=16, help="REFUSE when a request generates fewer (the byte clause would be vacuous)")
     ap.add_argument("--yield-values", default="0,1")
     ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--peer-ttft-bar", type=float, default=8.0)
@@ -303,22 +362,34 @@ def main() -> int:
     arms = a.yield_values.split(",")
     if len(arms) != 2:
         refuse("--yield-values needs exactly two arms, e.g. 0,1")
-    long_ids = ids_for(a.long, 521)
-    peer_ids = [ids_for(a.peer, 5211), ids_for(a.peer, 5212)]
-    seed_ids = ids_for(a.seed_ids, 5210)
-
     runs: list[dict] = []
+    calibration = None
     try:
         for rep in range(a.reps):
             order = arms if rep % 2 == 0 else list(reversed(arms))
             for arm in order:
                 tag = f"rep{rep}-yield{arm}"
                 srv = Server(a.bin, a.model, a.port, out / f"{tag}-server.log", arm)
-                srv.boot()
                 try:
-                    cell = run_cell(srv, a, long_ids, peer_ids, seed_ids)
+                    srv.boot()
+                    prompts = prompts_for(srv, a)
+                    if calibration is None:
+                        calibration = {k: v for k, v in prompts.items() if k != "prompts"}
+                        (out / "calibration.json").write_text(json.dumps(calibration, indent=2))
+                    cell = run_cell(srv, a, prompts["prompts"])
+                    cell["prompt_tokens"] = prompts["tokens"]
                 finally:
                     srv.stop()
+                short = [
+                    (n, r) for n, r in cell["requests"].items()
+                    if (r.get("usage") or {}).get("completion_tokens", len(r["text"]) // 4) < a.min_tokens
+                ]
+                if short:
+                    (out / f"{tag}-cell.json").write_text(json.dumps(cell, indent=2))
+                    refuse(
+                        f"{tag}: {[n for n, _ in short]} generated fewer than {a.min_tokens} tokens; "
+                        "the byte clause would be vacuous"
+                    )
                 cell.update(arm=arm, rep=rep, log=log_facts(out / f"{tag}-server.log"))
                 (out / f"{tag}-cell.json").write_text(json.dumps(cell, indent=2))
                 runs.append(cell)
@@ -363,7 +434,9 @@ def main() -> int:
         "bin": a.bin,
         "long": a.long,
         "peer": a.peer,
-        "seed_ids": a.seed_ids,
+        "seed_tokens": a.seed_tokens,
+        "prompt_tokens": runs[0].get("prompt_tokens"),
+        "min_tokens": a.min_tokens,
         "max_tokens": a.max_tokens,
         "arms": arms,
         "reps": a.reps,
