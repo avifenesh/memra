@@ -126,14 +126,14 @@ plus six boots of the page-cached 9B: 12 to 16 minutes in the hold.
 **The hold.** `day35-local-run.sh` waited 7 x 120 s for the card (another session's `kernel-check`, `qwen-a4-continuation-gate`,
 `graph-warmup-stress` and three `memra-server` boots, listed in `stall/waits.log`, none touched), then ran the six boots in
 ONE collector hold on `/tmp/memra-5090.lock` (`stall/collector/lock.json` `acquired: true, owner: collector`, `ev/LOCK.json`
-the inherited flock; `CELL.jsonl` `status: executed-not-qualified`), 16:18:19Z to 16:29:16Z, `stall-day35 rc=0`, 11 of 11
+the inherited flock; `CELL.jsonl` `status: executed-not-qualified`), 16:18:19Z to 16:29:16Z, `stall-day35 rc=0`, 10 of 10
 receipts `STALL REPLAY: PASS (replay agrees with the harness's rule line)` (`ev/replays.log`). Binary `7ce7bf78b9...` (the
 build above; `[server] build: memra-0.138.0-813fc8cfe4de (id: source-tree, git: 091a931c023a)`), tree `091a931c0`, the 9B.
 Regime: the collector's 250 ms CSV 2603 samples, 58 to 89 C, 30.64 to 175.33 W, `power.limit [N/A]`; the cell's 1 s CSV
 655 samples, 58 to 89 C, 31.39 to 175.24 W; P0 at 58 C before and P0 at 77 C after; no compute app listed before or after.
 Per boot (the 1 s CSV): pass-1 prime 58 to 84 C, pass-1 off 75 to 87 C, pass-1 on 77 to 88 C, pass-2 on 76 to 87 C, pass-2 off
-78 to 87 C, pass-2 prime 78 to 89 C; power 31 to 175 W in every boot. The tenant emitted 400 tokens in all 120 runs, text
-sha `5d59f3ddef257cfb` in every run of every boot (`tenant_text_identical=True` x 11); its idle p50 7.3 to 7.5 ms, idle p99
+78 to 87 C, pass-2 prime 78 to 89 C; power 31 to 175 W in every boot. The tenant emitted 400 tokens in all 200 runs, text
+sha `5d59f3ddef257cfb` in every run of every boot (`tenant_text_identical=True` x 10); its idle p50 7.3 to 7.5 ms, idle p99
 8.0 to 9.0 ms; the intruder prompts tokenized as on the target card (prime 5120 to 5123, demote 95 to 99, promote 86 and
 89); every demote and promote intruder returned inside the tenant's window (`landed=10/10` in all eight arms; demote
 intruders 104 to 177 ms after firing, promote 63 to 127 ms). The ON boots' server lines, whole-boot census

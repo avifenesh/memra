@@ -2293,7 +2293,7 @@ main's.
 MB, `MEMRA_SERVE_SPEC=0`, tenant lengthened to 400 tokens so the 5120-token prime lands inside the window, pre-registered
 from the board's 7.3 ms tick; A's intruder shapes byte for byte through a harness copy, diff banked), six boots in one
 collector hold on `/tmp/memra-5090.lock` (16:18Z to 16:29Z after a bounded wait behind another session's gates), two
-passes in opposite order, N=5 per arm per order, 58 to 89 C, 30.6 to 175.3 W, 11 of 11 `STALL REPLAY: PASS`, verbatim:
+passes in opposite order, N=5 per arm per order, 58 to 89 C, 30.6 to 175.3 W, 10 of 10 `STALL REPLAY: PASS`, verbatim:
 `DAY35 STALL VERDICT: prime pass1 10.5 (iqr 174.2) inadmissible; demote pass1 off 63.7 on 67.0 on-off +3.3 (unc 3.3)
 under_resolution; promote pass1 off 47.7 on 49.3 on-off +1.6 (unc 12.5) under_resolution; prime pass2 278.4 (iqr 6.6)
 admissible; demote pass2 off 63.0 on 63.2 on-off +0.3 (unc 2.7) under_resolution; promote pass2 off 47.5 on 50.1 on-off
@@ -2301,7 +2301,7 @@ admissible; demote pass2 off 63.0 on 63.2 on-off +0.3 (unc 2.7) under_resolution
 co-tenant (card-wide `memory.used` 20.3 to 23.2 GB against 7.6 to 9.8 GB in the identical pass-2 boots, gone at
 16:22:57Z, not holding the lock) made the memory admission refuse 7 of 10 pass-1 prime intruders (`[admit-oom] capacity
 reject: ... does not fit an IDLE box (available 1794MB), HTTP 400`); pass 2 is clean and both passes give the same
-classes. All 120 demote and promote runs: errors 0, tenant text sha `5d59f3ddef257cfb`, every intruder inside the window,
+classes. All 160 tenant runs of the eight demote and promote receipts: errors 0, tenant text sha `5d59f3ddef257cfb`, every intruder inside the window,
 the ON boots' lines complete (21 demote triples, 10 promote triples, 10 `restore not routed (contracts door)`, 0 `restore
 submitted`, 43 of 43 `require=ok`, zero refused or latched). Attribution on this card: ON demote `in - completion` median
 21.6 (pass 2, N=9) / 23.8 (pass 1), about 1.8 to 2.0 of day 33's 11.9 ms heap pass at the entry size; post hoc and
