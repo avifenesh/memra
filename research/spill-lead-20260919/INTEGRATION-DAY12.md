@@ -2260,7 +2260,29 @@ detached during a sleep, holding nothing), nothing tuned. Budget 2.4 against 3.
 **Lead reading, for the door review.** Sections B and E of the door doc and the packet now carry the attribution: under
 ON the demote's tick pays a SHA-256 pass over the whole bundle image that OFF never computes; Move 1's copies are off the
 tick and its receipt hashes are 1.8 ms. The 32 ms the cell (i) census could not attribute is this pass minus what OFF
-spends on the same tick. Option (a) is the arm that removes it; C day 34 (running) carries the reading into the packet.
+spends on the same tick. Option (a) is the arm that removes it; C day 34 carries the reading into the packet.
+
+**C day 34 (merged after the battery; docs only).** `DOOR-DECISION-PACKET.md` re-read against days 26, 27 and 33: section
+2 replaces the two-hashes sentence with A's attribution (file:line on `cb9fa5ef3`; the bundle pass 74.8 ms per 159.8 MB
+entry on the target card, 21 to 23 ms per 54.8 MB on the 5090, OFF never computes it; Move 1's two receipt hashes about
+1.8 ms over 1.9 MB); item 2 attributes the 32 ms cell (i) could not, and states option (a)'s acceptance gate (ruling 39)
+without predicting; item 7 drops the resolved items (5, 6, 9) and names what stays (the arena handoff, the DFlash tail
+slice, verify digest v3, the 9B's KV byte split, option (a)'s own receipt, a 5090 tenant-stall cell); section 6's
+naked-default bullet carries the bundle checksum on the tick until option (a) lands; section 4 gains five rows (A day 26,
+the day-27 baseline, both hosts' digest micro-cells, the day-33 verdict). Every added number regenerated from its receipt
+(the day-26 and day-25 readers re-run under the CPU quota, digests from `ev/digest-micro.log`, regimes from
+`command.gpu.csv`). `HOSTPREFIX-DOOR.md` item 6 RESOLVED day 27 and 33 with both pointers; section E's day-34 paragraph.
+Budget 1.7 against 3. #648 (lead, ruling 38): the `MEMRA_KV_PARK_COMPACT` row's value column reads `0 (default OFF),
+decide-by: 2026-10-06.`, the dated sentence names WP-B day 28 and the owner's verdict, the PENDING clause names the two
+gates still pending and the received park-time copy cost; merged before this integ.
+
+**Battery (tree `d06a9dd8c`, A day 27 + C day 33; receipts `integ43-cpu-battery/`, `integ43-serve-smoke-5090/`,
+`integ43-hit-gate-5090/`).** All fifteen CPU steps rc=0. Local RTX 5090: `serve-smoke: 0 failed` (gemma4 and Q35 arms SKIP,
+absent models), engine `d2d_*` GPU cells `5 passed` under the lock, the hit gate OFF and ON armed (9B), verbatim:
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 61 ok OFF, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 68 ok ON, `ok: door arm: 30
+route submission(s) across the two boots`, 11 spec-boundary captures, 13 restores, 0 `restore not routed`, 0 refused,
+disabled, trunk-only, dropped or skipped lines. C day 34 and #648 merged after the battery are docs only; the engine tree
+under test is `d06a9dd8c`'s, equal to this PR's.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
