@@ -448,3 +448,22 @@ sweep (a by-reference demote) keep the tick program. No new flag, no new numeric
    cell's resolution (the intruder's prime dominates both arms); a cell that isolates the capture needs an intruder
    whose prime is not on the tick (a hit that re-captures a longer entry, or the twin gate's fitted shape with the
    prime subtracted). Recorded, not designed here.
+
+## Move 2, slice 2, day 21: the restore behind rule 3's reader fence (`DAY21.md`)
+
+**Pre-registration, committed before any slice-2 code (the full text is `DAY21.md` "Task 1").** The op shape
+decided: a restore's destination is the request's fresh session cache (owned by the session, never registered) and
+its source is a published entry's `PrefixPlane` (owned by the device LRU, not registered either; registering it
+would take the planes out of an entry that must stay servable), so the class is a same-device copy from a BORROWED
+source span into a BORROWED destination span, `D2dRestore` and `CudaTransfers::submit_d2d_restore`. The source's
+producer-side guarantee is the device LRU's pin (a pinned entry is out of the eviction index by construction; the pin
+is taken at submit and becomes the serving pin at re-admission). The reader fence is rule 3 re-bound to a D2D: the
+items are unfenced at submit and the owner stream's wait on each completion event is installed at the settle
+(`install_consumer_wait` over unfenced D2D items), before the parked request re-admits and issues its first prime
+chunk. `Restoring` is a state of the parked REQUEST (one per worker, `HostPrefixCache::restoring`), not of the entry;
+re-admission rides the promote's requeue path. The recurrent f32 state keeps the owner stream at submit in this
+slice. Failure paths: refusals drop the cache and release the pin with one typed line and a one-tick memo; a lost
+observation forgets the cache and keeps the pin (a leak by design, never a free under a running copy) and latches
+the tier and the restore path; an orphaned ready restore is dropped typed. Frozen schedule `d2d_restore_ready` with a
+red arm (a prime issued before the wait). Cells: the day-20 gate table plus the engine `d2d_restore_*` cell, and the
+restore stall cell (cell (ii)) with its rules fixed in `DAY21.md` before the run.
