@@ -11,8 +11,7 @@ use memra_gguf::{
     model_packs,
     source::census_from_gguf,
     tensor_contract::{
-        CheckpointDialect, ContractOptions, ExpertTensor, OutputHead, TensorCensusEntry,
-        TensorContract,
+        CheckpointDialect, ContractOptions, ExpertTensor, TensorCensusEntry, TensorContract,
     },
 };
 use memra_tier::{bank::*, contracts::*, tier::governor::Governor};
@@ -105,21 +104,21 @@ fn plan_catalog(
     model: &HybridModel,
     gguf: &GgufFile,
 ) -> std::result::Result<ExpertBankCatalog, Box<dyn std::error::Error>> {
-    let options = ContractOptions {
-        output_head: if gguf.find("output.weight").is_some() {
-            OutputHead::Separate
-        } else {
-            OutputHead::TiedToEmbedding
-        },
-    };
-    let contract = match model_packs::for_config(&model.cfg) {
+    let full_census = census_from_gguf(gguf);
+    let pack = model_packs::for_config(&model.cfg);
+    // Head ownership is the pack's declaration (memra#541), the same verdict the loader used.
+    let output_head =
+        memra_gguf::checkpoint_binding::output_head_for(pack, &model.cfg, &full_census)
+            .map_err(|err| catalog_refusal(err.to_string()))?;
+    let options = ContractOptions { output_head };
+    let contract = match pack {
         Some(pack) => {
             pack.compile_tensor_contract(&model.cfg, &model.plan, CheckpointDialect::Gguf, options)
         }
         None => TensorContract::for_plan(&model.plan, CheckpointDialect::Gguf, options),
     }
     .map_err(|err| catalog_refusal(format!("tensor contract did not compile: {err}")))?;
-    let census: Vec<TensorCensusEntry> = census_from_gguf(gguf)
+    let census: Vec<TensorCensusEntry> = full_census
         .tensors
         .into_iter()
         .map(|row| row.entry)

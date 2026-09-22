@@ -545,3 +545,50 @@ fault gate's cells `d2d-capture` and `d2d-restore`; `docs/FLAGS.md` and `docs/KE
    the `Unwitnessed` arm, was to be the receipt and (a) a diagnostic. Today's brief ordered (a); the reading is
    reported and nothing is relaxed. For the review: the cost sits on the copy stream, off the tick (the owner thread
    reads 2 KiB of pinned lanes at the settle), and (a) is what the fault gate's two red arms prove.
+
+## Move 2, owed item 2 (the restore half), day 23: the draft-bearing restore through the door (`DAY23.md`)
+
+**Pre-registration, committed before any day-23 code (`DAY23.md` "Task 1").** Census item 11 (lane C day 26,
+`HOSTPREFIX-DOOR.md`) is the design: the `MtpScratch` allocated at the probe and owned by the pending `Restoring`
+state, never by a session while the copy is in flight; a borrowed `CudaViewMut<u8>` destination of exactly
+`pos x k_tok_bytes` and one of `pos x v_tok_bytes`; the source borrowed from the pinned entry's `draft.k`/`draft.v`
+under the SAME pin the trunk restore takes; the producer fence recorded on the owner stream after the recurrent-state
+copies; rule 3's reader wait installed at the settle before the deferred prime's first draft-head read (the wait
+precedes session construction: the constructor takes a ready, pre-filled scratch); `spec_restore_refusal` evaluated at
+the probe before the submit (a request that would serve plain submits the trunk alone); the geometry checks moved to
+the probe; slice 3's receipt term over both plane classes (`Role::Draft`).
+
+**What landed (under `MEMRA_KV_HOST_CONTRACTS=1`, default OFF, decide-by 2026-10-05; `DAY23.md` "Task 2").** The
+tier rule `memra_tier::conformance::d2d_restore_draft_ready` (one batch carries both classes under one ticket and one
+pin; landing is not readiness for either class; the receipt term witnessed for both after the landing, `NotReady`
+while unfenced, admitted once the wait is installed; a draft-head read after the wait is ordered) with the red arm
+`d2d_restore_draft_read_before_its_wait_is_unordered` and CPU bindings (contracts 84 passed). The engine's
+`RestoredDraftScratch` (`alloc_restored_draft_scratch`: the OFF constructor's geometry checks verbatim; `destinations`;
+`set_len`) and `spec_session_from_restored_ready` over a READY scratch (no draft copy); the OFF constructor refactored
+onto the same alloc and a shared tail, its two owner-stream copies kept in `copy_from_entry`. The worker's probe takes
+the draft decision before the submit (`host_restore_draft_decision` over the gate's spec estimate, no DFlash drafter,
+no grammar, `spec_restore_refusal` with the loop's load reading), allocates the scratch and sets its length before the
+producer fence, and submits the draft K and V rows as two more items of the SAME batch under the same pin and receipt
+(`items=34` on the 27B); a draft refusal declines the draft, never the trunk; `PendingRestore` owns the scratch
+(dropped with the cache, forgotten under `Latched`, following the ticket in the fail-closed arm); `take_ready` hands it
+over under `ready` only; `admit` builds the session over the ready scratch or names the arm it takes instead, and drops
+an unconsumed scratch typed. No new flag, no new numeric program, no new `unsafe`, no new pending or ready state.
+
+**Target card receipts (`DAY23.md` "Task 3", `pro-single-day23/`; tree `2b850b2b0`, one sitting).** Identity `ALL GREEN (teeth=0)` default and plain, OFF and ON; failure `ALL GREEN` both arms; fault `ALL GREEN` (93 ok, the `d2d-restore` cell still refusing); twin `-> PASS` both arms; hit `ALL GREEN (qwen)` OFF (61 ok) and ON with the tier armed (68 ok): the spec-on boot's 12 draft-bearing hits routed (`restore submitted off the tick: 64 tokens, 34 planes (158.9MB), ...; draft plane 64 rows (118.8KB) in the batch` and the 96- and 128-token shapes), 13 receipts `items=34`/`32 ... require=ok`, 12 `draft plane ready`, 12 `spec restore: ... + draft plane from cache`, zero refused, latched, declined or disagreement lines, every `spec==plain byte identity` ok: the first hit-gate receipt on any card where the identity clause covers the route for the draft-bearing hits. Unit `8 passed` and `5 passed`. The draft plane's share of a 64-token entry's restore on the 27B: 118,784 B (1,856 B per token).
+
+**What Move 2 still owes, in order.**
+
+1. **The recurrent f32 state off the tick**: both classes keep `conv_state` and `ssm_state` on the owner stream (the
+   capture by law, at the boundary; the restore by the byte-span class's shape). On the 27B that is the fixed 157 MB of
+   every entry. A typed f32 span in the restore class moves the restore's share; the capture's cannot move. Its receipt
+   would be the same program over the f32 planes' bytes.
+2. **The spec-boundary capture route** (`prefix_insert_from_spec_boundary`, the MTP draft plane at publication): the
+   restore half of the draft plane landed today; the capture half keeps the tick program (two borrowed source spans, the
+   live trunk planes and the spec session's draft scratch `[0..pos)`, a producer event at the drain sweep, and the
+   borrow's lifetime across a retiring or parking spec session: census item 10).
+3. **A stall cell that isolates each class**: the day-20 and day-21 cells carry the intruder's prime (capture) or
+   suffix prime plus the fixed recurrent term (restore) in both arms; the moved share is under the cell's resolution
+   on the target card. An isolating cell needs an intruder with no on-tick compute of its own, or a subtraction
+   against a measured prime-only arm in the same hold.
+4. **The receipt's price, read by the door review**: cell (v) of day 22, verbatim, the pair 2.12x to 2.15x the copy;
+   reported, nothing relaxed.

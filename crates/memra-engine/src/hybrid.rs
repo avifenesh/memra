@@ -4251,6 +4251,16 @@ impl HybridModel {
             Some(pack) => pack.compile_plan(&cfg)?,
             None => memra_gguf::model_plan::ModelPlan::compile(&cfg)?,
         };
+        // memra#541: the canonical tensor contract is bound against the checkpoint census HERE,
+        // before any tensor upload. Missing, unexpected, duplicate, ambiguous, wrong-shape and
+        // wrong-quant tensors and an undeclared tied head refuse the load with the pack and
+        // dialect named. Every read below goes through a recording source so the bound tensors
+        // the loader never consumed are named at the end (`settle_consumption`).
+        let binding = memra_gguf::checkpoint_binding::bind_source(src, &cfg, &plan)
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        eprintln!("{}", memra_gguf::checkpoint_binding::describe(&binding));
+        let recording = memra_gguf::checkpoint_binding::RecordingSource::new(src);
+        let src: &dyn TensorSource = &recording;
         let auto_parallel = prepare_auto_parallel(src, &cfg, &plan)?;
         let batch_program = crate::plan_backend::decode_batch_program(&plan);
         let gemma_program = batch_program == crate::plan_backend::DecodeBatchProgram::Gemma;
@@ -4558,12 +4568,15 @@ impl HybridModel {
         // this is the primary engine, byte-identical to the M1 loader).
         let e_head = crate::pp::layer_engine(e, n_trunk, n_trunk - 1)?;
         let output_norm = load_t(e_head, src, "output_norm.weight")?;
-        // tied embeddings: fall back to tok_embd if output.weight absent.
-        let mut output = if src.has("output.weight") {
-            load_t(e_head, src, "output.weight")?
-        } else {
-            load_t(e_head, src, "token_embd.weight")?
-        };
+        // Output-head ownership is the binding's verdict (memra#541): the bound `OutputProjection`,
+        // or the token embedding only when the pack declares a tied head for this family.
+        let mut output = load_t(
+            e_head,
+            src,
+            &binding
+                .output_head_ggml_name()
+                .map_err(std::io::Error::other)?,
+        )?;
         load_mark("output-head", 0);
         let mut resident = ResidentPlan::pp(e, src, &cfg, n_trunk)?;
         resident.exclude_distributed_expert_layers(
@@ -6365,6 +6378,23 @@ impl HybridModel {
                 }
             }
         }
+        // memra#541: every bound tensor the loader never read is named; the pack's
+        // `tensor_consumption` decides whether that is a report or a refusal. Vision towers load
+        // through their own owner, and an MTP block the caller did not ask for stays unread.
+        // MTP blocks are skipped by what was actually loaded: none on the no-MTP entry points,
+        // after MEMRA_MTP_SKIP, with an external MEMRA_MTP_DRAFT, or past a MEMRA_MTP_HEADS cap.
+        let loaded_mtp_blocks = if load_mtp { embedded_head_count } else { 0 };
+        let unconsumed = binding.audit_consumption(&recording.requested(), &cfg, |id, tensor| {
+            memra_gguf::checkpoint_binding::unread_by_design(id)
+                || memra_gguf::checkpoint_binding::owned_by_vision(tensor)
+                || memra_gguf::checkpoint_binding::unloaded_mtp(
+                    tensor,
+                    n_trunk as u32,
+                    loaded_mtp_blocks,
+                )
+        });
+        memra_gguf::checkpoint_binding::settle_consumption(&binding, &unconsumed)
+            .map_err(std::io::Error::other)?;
         let model = HybridModel {
             cfg,
             plan,
