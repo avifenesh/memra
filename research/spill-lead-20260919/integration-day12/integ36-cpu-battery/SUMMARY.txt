@@ -45,3 +45,24 @@ tree bdd3b8993934ba263eb659bbca57fae7bb6bf30e started 2026-09-22T05:50:30Z host 
    | test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
    | 
 == clippy-engine: cargo clippy -p memra-engine -p memra-server -p memra-tier --offline --all-targets -- -D warnings
+   rc=0 (154s)
+   | warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   | warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 33s
+== conflict-markers: bash tools/check-conflict-markers.sh
+   rc=0 (1s)
+   | check-conflict-markers: OK (no conflict marker line in tracked source or docs)
+== workflow-keys: python3 tools/check-workflow-keys.py
+   rc=0 (0s)
+   | check-workflow-keys: .github/workflows/publish.yml: jobs publish
+   | check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+   | check-workflow-keys: OK: 6 workflow files, no duplicate mapping keys (stdlib walker)
+== perf-board: python3 tools/update-perf-board.py --check
+   rc=0 (0s)
+   | perf board is up to date
+== diff-check: git diff --check origin/main HEAD
+   rc=2 (0s)
+   | research/spill-lead-20260919/integration-day12/integ36-cpu-battery/test-engine-cpu.log:564: new blank line at EOF.
+   | research/spill-lead-20260919/integration-day12/integ36-cpu-battery/test-server.log:974: new blank line at EOF.
+   | research/spill-lead-20260919/integration-day12/integ36-cpu-battery/test-tier.log:305: new blank line at EOF.
+finished 2026-09-22T05:57:34Z
