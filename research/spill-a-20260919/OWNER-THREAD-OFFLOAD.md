@@ -467,3 +467,37 @@ observation forgets the cache and keeps the pin (a leak by design, never a free 
 the tier and the restore path; an orphaned ready restore is dropped typed. Frozen schedule `d2d_restore_ready` with a
 red arm (a prime issued before the wait). Cells: the day-20 gate table plus the engine `d2d_restore_*` cell, and the
 restore stall cell (cell (ii)) with its rules fixed in `DAY21.md` before the run.
+
+**What landed (under `MEMRA_KV_HOST_CONTRACTS=1`, default OFF, decide-by 2026-10-05; `DAY21.md` "Task 1, what
+landed").** The rule `memra_tier::conformance::d2d_restore_ready` (landed is not ready; ready is the landing plus the
+installed reader wait; a prime before the wait is unordered; the source pin from submit through acknowledge; no
+witnessed checksum) with CPU bindings and the `prime_early` red arm. The engine's restore class: `D2dRestore`, a
+borrowed pinned source span into a borrowed destination view, `submit_d2d_restore` on the copy stream behind the
+producer event with the items unfenced at submit, `install_consumer_wait` fencing every unfenced non-D2H item (rule 3
+over a D2D), `restore_landed`; a census and a GPU cell. The worker's one `Restoring` request: `host_restore_park_probe`
+in the admission loop right after the promote probe (the OFF validation split out as `prefix_restore_validate`; the
+fresh cache; the source pin; recurrent state, `len`, `len_d` on the owner stream; one restore batch; the park on the
+requeue), the tick-top poll that installs the owner-stream wait and marks `ready` (plus a three-tick expiry for an
+orphan), `host_restore_take_ready` at admit's hit site (the ready cache and the pin, under `ready` only, the OFF hit's
+accounting after it), settle-first at the reclaim, the trims, the purge (worker level, before either index purges)
+and shutdown; fail-closed arms; a `Latched` settle forgets the cache and keeps the pin; a refused submission drains
+the owner stream and releases its fence or latches typed (the #634 shape mirrored). The ledger's in-flight dimension
+carries one Move 1 batch, one capture batch and one restore batch. No new flag, no new numeric program, no new
+`unsafe`.
+
+**What Move 2 still owes, in order.**
+
+1. **Slice 3, the receipt**: the device digest or the `Unwitnessed` arm by the pre-registered rule (cell (v)), for
+   both D2D classes; until it lands neither a capture nor a restore item has a checksum term. The delayed-copy-stream
+   fault (cell (iii), `MEMRA_KV_HOST_FAULT=d2d-delay`) lands with slice 3's fault cells: it is the ordering proof under
+   a forced-slow copy stream and needs the fault gate's D2D cells to read it.
+2. **The recurrent f32 state off the tick**: both classes keep `conv_state` and `ssm_state` on the owner stream (the
+   capture by law, at the boundary; the restore by the byte-span class's shape). On the 27B that is the fixed 157 MB
+   of every entry. A typed f32 span in the restore class moves the restore's share; the capture's cannot move.
+3. **The spec-boundary capture route** (`prefix_insert_from_spec_boundary`, the MTP draft plane) and the draft-bearing
+   restore: both keep the tick program; the draft plane needs its own item class and the spec session's re-arm needs
+   the ready cache's draft rows.
+4. **A stall cell that isolates each class**: the day-20 and day-21 cells carry the intruder's prime (capture) or
+   suffix prime plus the fixed recurrent term (restore) in both arms; the moved share is under the cell's resolution on
+   the target card. An isolating cell needs an intruder with no on-tick compute of its own, or a subtraction against a
+   measured prime-only arm in the same hold.

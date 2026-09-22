@@ -124,6 +124,52 @@ same program. The hit gate's identity clause (`spec-on-cache-hit-gate.sh`, plain
 equal the cold bytes) and the identity gate are the proof; any digest difference is a FAIL of the slice, never a
 tolerance. The delayed-copy-stream fault (cell (iii)) is owed with slice 3's fault cells and not run today.
 
+## Task 1, what landed (commits `2e55f3a9f` tier, `d8e66af09` engine, `ce2089638`, `c2874bd42`, `1350f118b` worker)
+
+- `crates/memra-tier/src/conformance/d2d_restore.rs`: the schedule `d2d_restore_ready` over `D2dRestoreFixture`
+  (unversioned beside the frozen schedules; `WIRE_VERSION` 1): not landed is not ready; landed without the installed
+  reader wait is still not ready and a prime issued then is unordered; the install fences every item and makes it
+  ready; `retire(None)`, `acknowledge`; the source pin held from submit through acknowledge; no witnessed checksum
+  (the host-contract gate refuses). Plus `d2d_restore_primed_before_its_wait_is_unordered`. CPU bindings
+  `tests/contracts/d2d_restore_bindings.rs`: `day21_d2d_restore_is_ready_only_after_the_landing_and_the_installed_reader_wait`,
+  `day21_red_arm_prime_before_the_reader_wait_fails_the_schedule` (the red arm: a prime on issue; the schedule
+  fails), `day21_d2d_restore_item_without_a_witnessed_checksum_is_refused_by_the_host_contract_gate`. `memra-tier`
+  contracts `77 passed` (74 before).
+- Engine: `D2dRestore<'a>` (a borrowed `&CudaSlice<u8>` source, a borrowed `CudaViewMut<u8>` destination of exactly
+  the item's bytes, a producer fence), `CudaTransfers::submit_d2d_restore` (requires the copy stream, else
+  `Unsupported`; all-or-nothing validation; the copy stream waits on the producer event, `memcpy_dtod`, a completion
+  event on the copy stream; the items UNFENCED at submit; nothing registered; no owner-stream wait anywhere at
+  submit), `restore_landed`; `install_consumer_wait` now fences every unfenced item that is not a D2H (an H2D as on
+  day 19, a D2D restore now; a D2D capture, fenced at submit, is left alone). Census `d2d_restore_rules_are_as_stated`
+  (two `memcpy_dtod` statements in the body, the capture's and the restore's); GPU cell
+  `d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait` (ignored without a device).
+  Engine `tier_transfer` lib tests `6 passed; 3 ignored`.
+- Worker (`crates/memra-server/src/worker.rs`): `HostPrefixCache::restoring` (the one `Restoring` request),
+  `restore_off_tick_disabled`, `restores_landed`; `PendingRestore`, `PendingContractRestore`, `RestoreSettle`,
+  `HostRestoreFailure::Latched`, `RestoreSettled`, `HostRestoreOutcome`, `RestoreProbe`; `prefix_restore_validate`
+  (the OFF checks split out of `prefix_restore_at`, statements unchanged; `prefix_restore_at` calls it first);
+  `host_restore_park_probe` (the admission loop, right after the promote probe: the same predicates, a whole-entry
+  plain hit, the fresh cache, the OFF validation, the pin, `host_restore_submit`, the park), `host_restore_submit`
+  (recurrent state, `len`, `len_d` on the owner stream, then the producer fence and ONE restore batch; a refusal
+  drains the owner stream and releases the fence or latches typed), `host_kv_planes_settle_restore` (landed, then
+  `install_consumer_wait`, then `release_producer`, `retire(None)`, `acknowledge`), `host_restore_settle_with` (the
+  CPU-testable half: fail-closed arms; `Latched` forgets the cache and keeps the pin), `host_restore_settle_pending`,
+  `host_restore_drop`, `host_restore_expire_ready` (three tick tops), `host_restore_purge_tenant` (worker level, with
+  the device cache in hand, before either index purges), `host_restore_drain_at_shutdown`,
+  `host_restore_probe_decision`, `host_restore_take_ready` (admit's hit site: the ready cache and the pin, under
+  `ready` only; the pin carries over as the serving pin). Call sites: the tick top after the capture poll plus the
+  expiry; both idle waits; the admission loop's park (`requeue.push_back`, FIFO, never shed); the reclaim and the three
+  trims settle first; the purge; the run loop's exit. `host_tier_context`: the ledger's in-flight dimension gains the
+  restore term (`3 x (2 x max layers + 2)`). CPU tests: `restore_probe_decision_parks_its_own_request_and_names_an_orphan`,
+  `a_pending_restore_missing_its_cache_or_ticket_fails_closed`,
+  `every_path_that_meets_a_restoring_request_settles_or_ignores_it_as_stated` (the census); the day-20 census now
+  reads the restore drain after the capture drain. Server lib suite `803 passed; 14 ignored`; clippy `-D warnings`
+  clean on the three crates. `docs/FLAGS.md` door row day-21 sentence (in the worker commit). No new flag, no new
+  numeric program, no new `unsafe`, no external dependency.
+- What the CPU tests cannot reach: the pending-to-ready path needs a device cache (`Cache` holds `CudaSlice`s), so it
+  is exercised on the card only, by the hit gate's ON arm (every hit takes the route; the `restore landed off the
+  tick` line is the evidence) and the engine's GPU cell. Stated, not hidden.
+
 ### Cells (target card, BOX3, one RTX PRO 6000 Blackwell, 600 W; the collector; `executed-not-qualified`)
 
 Gates as on day 20: identity default and plain, OFF and ON; failure OFF and ON; the fault gate; the twin gate OFF and
