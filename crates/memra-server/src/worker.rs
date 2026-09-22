@@ -8735,6 +8735,16 @@ impl HostPrefixCache {
                 ns_suffix(&dropped.pool_key.1)
             );
         }
+        // The one-tick cold memo holds the entry's prompt token ids; a revoked tenant's must not
+        // outlive the purge (revuto on #627). The worker releases the one-tick insertion pin of a
+        // revoked tenant's device entry beside this call (`release_promoted_pin_for_tenant`).
+        if self
+            .promote_cold
+            .as_ref()
+            .is_some_and(|(k, _)| crate::auth::meter_key(&k.1) == row)
+        {
+            self.promote_cold = None;
+        }
         let victims: Vec<PoolKey> = self
             .entries
             .keys()
@@ -11483,9 +11493,8 @@ fn host_demote_prefix_ref(
     // cache in hand; the settled entry publishes at the next tick top).
     host_promote_settle_contract(host, ContractWait::Block, "a second demote");
     if !host.armed() {
-        // Either settle can latch the tier off (`SourceQuarantined`, `TicketLeaked`, the
-        // fail-closed arm); the gate above was passed before they ran (revuto round 2 on #622,
-        // kept after the day-18 promote settle in the same place).
+        // Either settle can latch the tier off (`SourceQuarantined`, `TicketLeaked`); the gate
+        // above was passed before they ran (revuto round 2 on #622).
         eprintln!(
             "[prefix-host] demote refused: the tier latched off while settling the pending demote"
         );
@@ -12319,10 +12328,9 @@ fn host_promote_prefix_hit(
     host_promote_settle_pending(engine, px, host, ContractWait::Block, "a promote");
     if !host.armed() {
         // Either settle can latch the tier off; a promote from a latched-off tier is the miss it
-        // would have been with the tier off (revuto round 2 on #622, kept behind the day-18
-        // candidate check: the re-lookup below would also miss, this names why).
+        // would have been with the tier off (revuto round 2 on #622, kept through day 18).
         eprintln!(
-            "[prefix-host] promote refused: the tier latched off while settling the pending demote"
+            "[prefix-host] promote refused: the tier latched off while settling a pending transfer"
         );
         return None;
     }
@@ -12463,6 +12471,28 @@ fn host_promote_memo_names(host: &HostPrefixCache, pool_key: &PoolKey, toks: &[u
     host.promote_cold
         .as_ref()
         .is_some_and(|(k, t)| k == pool_key && t.as_slice() == toks)
+}
+
+/// WP-A day 18, revuto on #627: the worker holds the insertion pin of a device entry it published
+/// off the tick until the next tick top. A tenant purge in between must release it first, or the
+/// revoked tenant's device bytes survive the purge as "pinned entries left to in-flight sessions"
+/// while the only lease is the worker's own. Returns true when a pin of that tenant was released.
+fn release_promoted_pin_for_tenant(
+    hpx: &mut HostPrefixCache,
+    px: &mut PrefixCache,
+    tenant: &str,
+) -> bool {
+    let row = crate::auth::meter_key(&crate::auth::scope_namespace(tenant, "")).to_string();
+    let names_tenant = hpx
+        .promoted_pin
+        .as_ref()
+        .is_some_and(|pin| crate::auth::meter_key(&pin.key.1) == row);
+    if !names_tenant {
+        return false;
+    }
+    let pin = hpx.promoted_pin.take().expect("checked");
+    px.unpin(&pin);
+    true
 }
 
 /// The day-16 failure arms of the promote hook, shared with the off-tick settle (WP-A day 18): the
@@ -12714,11 +12744,13 @@ fn host_promote_park_probe(
             }
         }
     };
+    // The memo must name the entry that was REFUSED: `host_promote_prepare`'s stale-generation
+    // arm `swap_remove`s the candidate, after which `entries[..][hi]` is a different, still
+    // promotable entry (revuto on #627). Capture its tokens before the call.
+    let refused_toks = host.entries[&pool_key][hi].toks.clone();
     let Some(prepared) = host_promote_prepare(host, &pool_key, hi) else {
         // The typed line was printed; the hook must not print it again in this admission.
-        if let Some(e) = host.entries.get(&pool_key).and_then(|p| p.get(hi)) {
-            host.promote_cold = Some((pool_key.clone(), e.toks.clone()));
-        }
+        host.promote_cold = Some((pool_key.clone(), refused_toks));
         return false;
     };
     let t0 = Instant::now();
@@ -18762,6 +18794,7 @@ pub fn run(
         // bytes straight back into host RAM. Worker-thread execution, same reason as
         // trim: the pools live in this scope and the sweep must not race a demote.
         for (tenant, tx) in pending_purges.drain(..) {
+            release_promoted_pin_for_tenant(&mut hpx, &mut px, &tenant);
             let (host_namespaces, host_entries, host_bytes) = hpx.purge_tenant(&tenant);
             let (device_entries, device_pinned_left) = px.purge_tenant(&tenant);
             eprintln!(
@@ -18858,6 +18891,10 @@ pub fn run(
             MAX_ACTIVE
         };
         let mut requeue: std::collections::VecDeque<Box<Request>> = Default::default();
+        // WP-A day 18, revuto round 2 on #627: requests parked on the in-flight promote this pass.
+        // When they are the whole queue and nothing is active, the loop waits on the transfer
+        // boundedly instead of spinning the owner thread through park-and-requeue ticks.
+        let mut parked_on_promote: usize = 0;
         // Per-tick count of requests the VRAM gate deferred (logged once per tick).
         let mut vram_defers = 0usize;
         // KV-FLEX GRANT REFRESH (lane/kv-flex-20260831): re-derive the borrowable slice
@@ -20196,6 +20233,7 @@ pub fn run(
                 )
             {
                 requeue.push_back(req); // waits (FIFO), never shed: its promote is in flight
+                parked_on_promote += 1;
                 continue;
             }
             // The request is admitted. Effective headroom (driver + pool-cached) said it
@@ -20465,6 +20503,32 @@ pub fn run(
             }
         }
         queue = requeue;
+        // PARKED-ONLY WAIT (WP-A day 18, revuto round 2 on #627): the off-tick promote keeps its
+        // parked request on the queue, so the idle block above (which needs an EMPTY queue) never
+        // reached its 2 ms cap and the loop spun the CUDA owner thread through park-and-requeue
+        // ticks for the whole copy. When nothing is active and every queued request is parked on
+        // the promote whose copy is still in flight, wait on the command channel for the same
+        // bounded 2 ms; the tick top then polls the transfer and the parked request re-admits.
+        if active.is_empty()
+            && parked_on_promote > 0
+            && parked_on_promote == queue.len()
+            && hpx.promoting.as_ref().is_some_and(|p| !p.ready)
+        {
+            match rx.recv_timeout(Duration::from_millis(2)) {
+                Ok(cmd) => handle_cmd(
+                    cmd,
+                    &loaded,
+                    &dsv4_routes,
+                    &order,
+                    &mut queue,
+                    &mut pending_trims,
+                    &mut pending_purges,
+                    &mut pending_handoffs,
+                ),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+            }
+        }
 
         // 3. The tick. Three phases (MEMRA_SERVE_BATCH=0 restores legacy round-robin):
         //    (a) spec sessions burst solo (spec x batch composition is a later step);
@@ -41552,6 +41616,86 @@ mod tests {
     /// the executed two-namespace cell: populate two tenants (two salts each) plus a
     /// raw-salt pool, purge one tenant, and prove the others SURVIVE while the gauges
     /// and cumulative purge counters both move by exactly the removed amount.
+    /// revuto on #627: a tenant purge clears the revoked tenant's one-tick cold memo and releases
+    /// the worker's one-tick insertion pin on its device entry; another tenant's memo and pin stay.
+    /// revuto round 2 on #627: a request parked on the in-flight promote keeps the queue
+    /// non-empty, so the idle block's 2 ms cap never fires for it. The run loop must carry a
+    /// bounded wait for the parked-only shape between the admission pass and the tick (source
+    /// census, comment-stripped): the counter is incremented at the park site and consumed by a
+    /// `recv_timeout` guarded on the not-ready `Promoting` entry.
+    #[test]
+    fn the_run_loop_waits_boundedly_when_the_queue_is_only_requests_parked_on_a_promote() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.trim_start())
+            .filter(|l| !l.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let park = code
+            .find("requeue.push_back(req); // waits (FIFO), never shed: its promote is in flight")
+            .expect("the park site");
+        let count = code[park..]
+            .find("parked_on_promote += 1;")
+            .expect("the park site counts the parked request");
+        assert!(count < 80, "the count sits at the park site");
+        let handoff = code
+            .find("queue = requeue;")
+            .expect("the admission pass hands the queue over");
+        let wait = code[handoff..]
+            .find("&& parked_on_promote == queue.len()")
+            .expect("the parked-only condition follows the handoff");
+        let guard = code[handoff + wait..]
+            .find("hpx.promoting.as_ref().is_some_and(|p| !p.ready)")
+            .expect("the wait is guarded on a not-ready Promoting entry");
+        let recv = code[handoff + wait + guard..]
+            .find("rx.recv_timeout(Duration::from_millis(2))")
+            .expect("the wait is the bounded 2 ms command receive");
+        let tick = code[handoff..].find("3. The tick.").unwrap_or(usize::MAX);
+        assert!(wait + guard + recv < tick, "the wait precedes the tick");
+    }
+
+    #[test]
+    fn host_purge_clears_the_tenants_cold_memo_and_releases_its_promoted_pin() {
+        let mut h = HostPrefixCache::new(1 << 20);
+        let min = super::PREFIX_CACHE_MIN_TOKENS;
+        let acme = key(&crate::auth::scope_namespace("acme", "s1"));
+        let beta = key(&crate::auth::scope_namespace("beta", "s1"));
+        // memo of the purged tenant goes, another tenant's stays
+        h.promote_cold = Some((acme.clone(), toks(min)));
+        let _ = h.purge_tenant("acme");
+        assert!(
+            h.promote_cold.is_none(),
+            "the revoked tenant's memo must not outlive the purge"
+        );
+        h.promote_cold = Some((beta.clone(), toks(min)));
+        let _ = h.purge_tenant("acme");
+        assert!(h.promote_cold.is_some(), "another tenant's memo stays");
+        // the one-tick pin of the purged tenant's device entry is released before the device purge
+        let mut px = PrefixCache::default();
+        let e = entry_b(&acme, 100, 8);
+        let id = e.id;
+        px.entries.entry(acme.clone()).or_default().push(e);
+        let pin = px.pin(&acme, 0).expect("the entry exists");
+        assert_eq!(px.entries[&acme][0].pins, 1);
+        h.promoted_pin = Some(pin);
+        assert!(super::release_promoted_pin_for_tenant(
+            &mut h, &mut px, "acme"
+        ));
+        assert_eq!(px.entries[&acme][0].pins, 0, "the worker's pin is released");
+        assert_eq!(px.entries[&acme][0].id, id);
+        assert!(h.promoted_pin.is_none());
+        // a pin of another tenant is left alone
+        let eb = entry_b(&beta, 101, 8);
+        px.entries.entry(beta.clone()).or_default().push(eb);
+        h.promoted_pin = px.pin(&beta, 0);
+        assert!(!super::release_promoted_pin_for_tenant(
+            &mut h, &mut px, "acme"
+        ));
+        assert!(h.promoted_pin.is_some());
+        assert_eq!(px.entries[&beta][0].pins, 1);
+    }
+
     #[test]
     fn host_purge_removes_one_tenants_namespaces_and_no_others() {
         let mut h = HostPrefixCache::new(1 << 20);
