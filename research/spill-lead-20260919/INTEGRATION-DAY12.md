@@ -1997,6 +1997,16 @@ ok ON, `ok: door arm: 30 route submission(s) across the two boots`; the spec-on 
 disabled, trunk-only, dropped or skipped lines. Both draft-bearing routes now carry the hit gate's identity clause on
 both cards.
 
+**Revuto round 1 on #643 (real, fixed).** `prefix_insert_from_spec_boundary` is also the DSPARK and GLM5 publishers'
+entry, called with `dspark_draft: Some(tail)` when `dspark_prefix_restore_on()` (or a GLM5 `export_draft_tail`); the
+route was installed ahead of that handling and never saw the tail, and its by-name refusals (TP shards, latent planes and
+tails, a foreign snapshot position, short or empty trunk layers) let a plain DSPARK or GLM5 cache through, so
+`host_capture_submit` would have built a shell with `dspark_draft: None` and the settle would have published trunk and
+draft and dropped the about 85 MB `DflashKvTail` silently, the regression `export_tail` exists to avoid, against DAY24's
+own statement that the tail never reaches the route. The publisher now passes `dspark_draft.is_some()` into the route,
+which refuses by name (`|| dspark_tail`) and hands the capture back for the OFF program whole, tail included; the census
+test pins both the refusal and the publisher's argument. Server lib suite green after the fix (count in the receipts).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

@@ -28,6 +28,10 @@ Author's review of the full diff `main..lane/spill-integ40-20260922`, posted as 
   and never rewritten below it by verification; the one in-tick free of a source (the MTP demotion dropping the
   scratch) settles first, as the session retire already did (integ37). Both-or-neither: the shell's draft slot is
   filled only from a landed batch; a refused registration or retention of a draft plane takes every fresh plane back.
+- **Revuto round 1, fixed (the DFlash tail refused by name):** the route never saw the publisher's `dspark_draft`
+  tail and would have published trunk and draft without it for a DSPARK or GLM5 cache; the publisher now passes the
+  tail's presence and the route refuses by name, census-pinned. The hit gate (qwen) never carries a tail, so its
+  receipts are unchanged.
 - C's cell (i) is reported as C read it: the copy stream beats the owner stream by 43 ms (demote) and 13 ms (promote)
   in both orders, the pre-registered clause is not met, and the promote arm's 149.6 (against 81.9 on the tree before
   Move 2's restore route) is traced to a second park on the restore route; recorded as owed to A, nothing tuned.

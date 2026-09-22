@@ -14161,6 +14161,7 @@ fn prefix_spec_capture_off_tick(
     pool_key: &PoolKey,
     committed: &[u32],
     draft_plane: Option<(&CudaSlice<u8>, &CudaSlice<u8>, usize, usize)>,
+    dspark_tail: bool,
     cap: memra_engine::spec::SpecBoundaryCapture,
     why: &str,
 ) -> SpecCaptureRoute {
@@ -14170,7 +14171,12 @@ fn prefix_spec_capture_off_tick(
     let pos = cap.pos;
     let tp_cache = cache.glm5_tp_recur.iter().any(Option::is_some)
         || cache.glm5_tp_latent_peer.iter().any(Option::is_some);
+    // The DFlash tail (`dspark-boundary`, `export_tail`) is the drafter's own export and has no
+    // item class in this route: a publisher carrying one keeps the OFF program whole, tail
+    // included (revuto on integ40 #643: the route was installed ahead of the tail and would have
+    // published trunk and draft and dropped the tail silently).
     if tp_cache
+        || dspark_tail
         || cache.latent.iter().any(Option::is_some)
         || cap.latent_tails.iter().any(Option::is_some)
         || cap.snap.pos != pos
@@ -17950,6 +17956,7 @@ fn prefix_insert_from_spec_boundary(
         pool_key,
         committed,
         draft_plane,
+        dspark_draft.is_some(),
         cap,
         why,
     ) {
@@ -43104,10 +43111,15 @@ mod tests {
             publisher_body.contains("SpecCaptureRoute::OnTick(cap) => *cap,"),
             "OnTick hands the capture back untouched for the OFF program"
         );
+        assert!(
+            publisher_body[route_call..].contains("dspark_draft.is_some(),"),
+            "the publisher tells the route whether it carries a DFlash tail (revuto, #643)"
+        );
         // The route.
         let route = body.find("fn prefix_spec_capture_off_tick(").unwrap();
         let route_body = &body[route..route + body[route..].find("\n}\n").unwrap()];
         for by_name in [
+            "|| dspark_tail",
             "cache.latent.iter().any(Option::is_some)",
             "cap.latent_tails.iter().any(Option::is_some)",
             "cap.snap.pos != pos",
