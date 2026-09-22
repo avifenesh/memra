@@ -1554,8 +1554,37 @@ the instrumentation rather than a free knob). The design constraint: Blackwell's
 so the probe runs as a killed-on-deadline child and its own timeout
 (`MEMRA_GPU_PROBE_TIMEOUT_S`) is the alarm. Health reads only atomics, so a hung
 `nvidia-smi` can never block a health answer. A GPU fault survives a worker respawn: a new
-thread on a wedged card is not recovery.
-At startup only, the canary retries up to six consecutive timed-out probes (about 60 seconds with the default 10-second deadline) to allow VRAM teardown after a redeploy; an answer resumes the usual rich or minimal query path, while six hangs latch a fault and a single steady-state hang still latches immediately.
+thread on a wedged card is not recovery. Since memra#516 (2026-09-22) one steady-state probe past
+the deadline is a miss, not a wedge: the process is DEGRADED and stays live, `/health` publishes
+`worker.gpu_probe.{degraded, miss_streak, last_ok_age_ms, degraded_reason, latched_reason}`, and
+the fatal fault latches when the miss streak reaches `MEMRA_GPU_PROBE_MISSES` (default 3). An
+answering probe clears timeout-only degradation; it never clears a latched fault, and fatal Xid,
+ECC and row-remap findings latch on first sight regardless of the streak. Before #516 a single
+hang latched for the process's life: the 2026-09-13 B200 box answered 503 for 28 minutes while
+`nvidia-smi` answered in 40 ms from a shell, because NVML stalls past 10 s under graph capture
+and large allocations. A guard reading `/health` should restart on `latched_reason`, not on
+`degraded`.
+At startup only, the canary retries up to six consecutive timed-out probes (about 60 seconds with the default 10-second deadline) to allow VRAM teardown after a redeploy; an answer resumes the usual rich or minimal query path, six hangs latch a fault, and in steady state a hang is one miss of the `MEMRA_GPU_PROBE_MISSES` streak (degraded, still live) until the bound latches.
+
+**Serve routes are registered policy contracts (memra#504).** The process has two serve routes:
+the central worker (`worker.rs` run loop) and the DSv4 thread (`dsv4_serve.rs`). The
+`Cmd::Generate -> Event` contract is shared and correct on both. Every policy that instead reads a
+side channel (`worker::Metrics`, the health beat and the prime odometer, memory admission, the
+rewrite bundle, prime fairness, the lane-cap mirror) has one writer, and a second route is not it;
+each such surface became a silent no-op on DSv4 and was found by accident, weeks apart (#449,
+#500, #501, #502, #503). Since 2026-09-22 every route registers a `RouteContract`
+(`route_contract.rs`) declaring each of the nine policy surfaces as implemented (with a call-site
+token a unit test greps in the route's source) or refused by name with the owning issue; the
+registry is checked before `ready_tx` fires, so an undeclared surface is `FATAL: worker init
+failed`, and a policy the operator armed that NO route in the process honors
+(`MEMRA_REWRITE_BUNDLE` in a DSv4-only process) refuses at boot with the refusing route named
+instead of no-oping; a mixed process keeps booting, the bundle governs the hybrid route and the
+DSv4 line names its refusal. The armed check runs before any weight loads (a DSv4 checkpoint is
+known from its path) and the full registry again before the ready handoff. Each boot prints one
+`[route-contract] model= route= capacity= implemented=[..] refused=[..]` line per route; the
+DSv4 line today refuses occupancy, progress, memory-cost, rewrite-qualification, prime-fairness
+and service-metrics, each with its issue. `RouteRegistry::capacity_for(model)` is the number the
+admission cap mirror should read (#501).
 
 **The supervision contract (`deploy/systemd/memra-server.service`) has three couplings you can
 break silently.** The unit is an example to copy, but these are not stylistic choices — each is

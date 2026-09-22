@@ -1,0 +1,24 @@
+2026-09-22T16:12:23Z wait 1 before hit-off: free=8632MiB apps=[3076629, target/release/memra-server, 15330 MiB]
+2026-09-22T16:14:23Z wait 2 before hit-off: free=7800MiB apps=[3082836, target/release/memra-server, 16162 MiB]
+2026-09-22T16:16:23Z wait 3 before hit-off: free=17400MiB apps=[3088851, target/release/memra-server, 6562 MiB]
+2026-09-22T16:18:23Z wait 4 before hit-off: free=14232MiB apps=[3096708, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 9730 MiB]
+2026-09-22T16:20:23Z wait 5 before hit-off: free=3699MiB apps=[3100972, /tmp/tmp.tE5VVI5HIf/hold, 12438 MiB; 3101197, /home/avifenesh/projects/wt-504/target/release/kernel-check, 1604 MiB; 3110576, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 6210 MiB]
+2026-09-22T16:22:23Z wait 6 before hit-off: free=3667MiB apps=[3100972, /tmp/tmp.tE5VVI5HIf/hold, 12438 MiB; 3101197, /home/avifenesh/projects/wt-504/target/release/kernel-check, 1604 MiB; 3116075, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 6242 MiB]
+2026-09-22T16:24:23Z wait 7 before hit-off: free=16312MiB apps=[3120554, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 7650 MiB]
+2026-09-22T16:26:23Z wait 8 before hit-off: free=16344MiB apps=[3125329, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 7618 MiB]
+2026-09-22T16:28:23Z wait 9 before hit-off: free=14232MiB apps=[3129269, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 9730 MiB]
+2026-09-22T16:30:23Z wait 10 before hit-off: free=22358MiB apps=[3132202, target/release/kernel-check, 1604 MiB]
+2026-09-22T16:32:23Z wait 11 before hit-off: free=22358MiB apps=[3132202, target/release/kernel-check, 1604 MiB]
+2026-09-22T16:34:23Z start hit-off tree=f9284a711dbc766876e9d8245a7c00d2c9363983 env=[]
+2026-09-22T16:39:26Z done hit-off rc=1 
+2026-09-22T16:39:26Z wait 1 before hit-on: free=15608MiB apps=[3160869, target/release/memra-server, 8354 MiB]
+2026-09-22T16:41:26Z wait 2 before hit-on: free=8632MiB apps=[3164986, target/release/memra-server, 15330 MiB]
+2026-09-22T16:43:27Z wait 3 before hit-on: free=8056MiB apps=[3170556, target/release/memra-server, 15906 MiB]
+2026-09-22T16:45:27Z wait 4 before hit-on: free=17400MiB apps=[3176351, target/release/memra-server, 6562 MiB]
+2026-09-22T16:47:27Z start hit-on tree=f9284a711dbc766876e9d8245a7c00d2c9363983 env=[MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-22T16:47:53Z done hit-on rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-22T16:47:53Z start fault-default tree=f9284a711dbc766876e9d8245a7c00d2c9363983 env=[MEMRA_HOSTGATE_CACHE_MB=64]
+2026-09-22T16:49:22Z done fault-default rc=1 KV-HOST-CONTRACT-FAULT GATE: 23 FAILURE(S)
+2026-09-22T16:49:22Z start fault-plain tree=f9284a711dbc766876e9d8245a7c00d2c9363983 env=[MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_SERVE_SPEC=0]
+2026-09-22T16:50:39Z done fault-plain rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-22T16:50:39Z LOCAL-BATTERY-DONE

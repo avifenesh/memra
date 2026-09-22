@@ -113,6 +113,7 @@ mod prefill_receipt;
 pub mod prime_fairness;
 mod prime_observation;
 mod responses_api;
+pub mod route_contract;
 mod surfaces;
 mod toolcall;
 mod ttft;
@@ -2549,23 +2550,15 @@ impl Drop for InflightGuard {
     }
 }
 
-/// The lane's configured admission cap — mirrors the worker's admission gate exactly
-/// (worker.rs step 2): interactive = MEMRA_MAX_SESSIONS (64) batched / MAX_ACTIVE legacy;
-/// judge/harvest = LanePolicy::from_env().max_sessions. Read once.
+/// The lane's configured admission cap. Interactive is `route_contract::interactive_cap`, the
+/// same derivation the worker's admission gate applies (memra#504; before that this was a second
+/// copy of the arithmetic, and #502 is what a second copy costs); judge/harvest =
+/// `LanePolicy::from_env().max_sessions`. Read once. Still lane-scoped: a per-model cap for the
+/// serial dsv4 route is #501 (`RouteRegistry::capacity_for`).
 fn lane_cap(lane: lanes::Lane) -> usize {
     static CAPS: std::sync::OnceLock<[usize; 3]> = std::sync::OnceLock::new();
     CAPS.get_or_init(|| {
-        let batching = std::env::var("MEMRA_SERVE_BATCH")
-            .map(|v| v != "0")
-            .unwrap_or(true);
-        let interactive = if batching {
-            std::env::var("MEMRA_MAX_SESSIONS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(64)
-        } else {
-            worker::MAX_ACTIVE
-        };
+        let interactive = route_contract::hybrid_interactive_cap();
         let p = lanes::LanePolicy::from_env();
         [interactive, p.max_sessions[1], p.max_sessions[2]]
     })[lane.idx()]
@@ -6490,6 +6483,15 @@ fn health_payload(st: &AppState, status: &str, detail: Option<&str>) -> serde_js
             })),
             "generation": s.generation,
             "xid_warnings": s.xid_warns,
+            // memra#516: the canary's own state, so a guard can tell "missed a probe just now"
+            // (degraded, still live) from "latched" (a fault this process never clears).
+            "gpu_probe": {
+                "degraded": s.gpu_probe.degraded(),
+                "miss_streak": s.gpu_probe.miss_streak,
+                "last_ok_age_ms": s.gpu_probe.last_ok_age_ms,
+                "degraded_reason": s.gpu_probe.degraded_reason,
+                "latched_reason": s.gpu_probe.latched_reason,
+            },
         },
     });
     if let Some(d) = detail {

@@ -1,0 +1,170 @@
+{
+  "policy_sha256": "ef9eebfc074f4b9db708682ec0ac99b3533fe6f4c4433490c3e1cb7fd7f8bd32",
+  "archives": [
+    {
+      "file": "research/mtp-calibrated-depth-20260920/receipts/gemma-records.tar.gz",
+      "sha256": "d5e16f3622c62bdae0780bb5981fd30f62a44bba254e706956001e7f45f0ea99",
+      "compressed_rules": [
+        "provider_name_aws"
+      ],
+      "expanded_files_checked": 4343,
+      "policy_bypass_files": 0,
+      "source_rule_pins": [],
+      "unresolved_expanded_matches": [],
+      "record_rule_pins": [
+        {
+          "file": "gemma-mtp-followup-calibration-0/20263000-k2/turn-7.answer.txt",
+          "sha256": "8ebaff29d51fb516486a97dbff12133f910b0e148a0334923bb591c9646d2c5c",
+          "rules": [
+            "provider_name_aws"
+          ],
+          "reason": "Generated hypothetical instance-type example; no deployment or account identity."
+        }
+      ]
+    },
+    {
+      "file": "research/mtp-calibrated-depth-20260920/receipts/qwen-records.tar.gz",
+      "sha256": "9f8f30e6f0e192f96d017ad42c71d9e70ebe278c6028058cf7018b41fc496519",
+      "compressed_rules": [
+        "provider_name_aws"
+      ],
+      "expanded_files_checked": 4033,
+      "policy_bypass_files": 0,
+      "source_rule_pins": [],
+      "unresolved_expanded_matches": [],
+      "record_rule_pins": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/receipts/common-records.tar.gz",
+      "sha256": "26c3684d1151ce951e147b28160514cfc71c8e3e6d6dbc5f895dcb18054ab8d2",
+      "compressed_rules": [],
+      "expanded_files_checked": 30,
+      "policy_bypass_files": 0,
+      "source_rule_pins": [],
+      "unresolved_expanded_matches": [],
+      "record_rule_pins": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/receipts/gemma-records.tar.gz",
+      "sha256": "bb5e398a2ed2c0b58e6ef791de65898978345ef6f3f49b9fb613f25561db94ce",
+      "compressed_rules": [
+        "provider_name_aws"
+      ],
+      "expanded_files_checked": 2493,
+      "policy_bypass_files": 0,
+      "source_rule_pins": [],
+      "unresolved_expanded_matches": [],
+      "record_rule_pins": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/receipts/qwen-records.tar.gz",
+      "sha256": "9a512da19e035d38f5a19263ec00961de0441f35f8e78dc4b548efcf39f54f19",
+      "compressed_rules": [
+        "provider_name_aws"
+      ],
+      "expanded_files_checked": 4140,
+      "policy_bypass_files": 0,
+      "source_rule_pins": [],
+      "unresolved_expanded_matches": [],
+      "record_rule_pins": []
+    },
+    {
+      "file": "research/mtp-continuing-session-20260921/receipts/runtime-source.tar.gz",
+      "sha256": "93a7d4131d0fbe9e503a8152f560d55e4a83fcce152d73032bc773188837b002",
+      "compressed_rules": [
+        "provider_name_aws"
+      ],
+      "expanded_files_checked": 1257,
+      "policy_bypass_files": 3,
+      "source_rule_pins": [
+        {
+          "file": "crates/memra-server/src/auth.rs",
+          "sha256": "1443d4222b483c154298289169251bd673e9fd0791c492b1d8b0e2c88949ca0f",
+          "rules": [
+            "minted_api_key",
+            "api_key_prefix"
+          ]
+        },
+        {
+          "file": "crates/memra-tokenizer/tests/fixtures/nfc/fixtures.json",
+          "sha256": "5aff55b286b60cbcf6f7ab470a6d0c3e53d2e7c1e5e5bf1e2705144735a2fe9b",
+          "rules": [
+            "runpod_pod_id_bare"
+          ]
+        },
+        {
+          "file": "tools/apikeys-gate.sh",
+          "sha256": "19865f2b3ad5e94f0e22e61860ba3ed79fa28f34487a1ac0c93932e780d58536",
+          "rules": [
+            "apikeys_gate"
+          ]
+        },
+        {
+          "file": "tools/cache-meter-gate.py",
+          "sha256": "9be02e7a3f6ed7f0092f95f7ac82a53115443596eb49dec8db910a1349597de1",
+          "rules": [
+            "cache_meter_gate"
+          ]
+        },
+        {
+          "file": "tools/fleet-meter.sh",
+          "sha256": "a033456066c9822614887e95b17daad678441bfe9e1d036e96eb053b1e290fcf",
+          "rules": [
+            "fleet_meter"
+          ]
+        },
+        {
+          "file": "tools/fleet-replay.py",
+          "sha256": "51cf211369b9a6288e6761595686186d132638754ba3a15e7ee5922580ee36f4",
+          "rules": [
+            "fleet_replay"
+          ]
+        },
+        {
+          "file": "tools/fleet-report.py",
+          "sha256": "7da139fe0801258ab3ea572a071d1f214c5067964608899144b8a6d3df02da9f",
+          "rules": [
+            "fleet_report"
+          ]
+        },
+        {
+          "file": "tools/load-serve.py",
+          "sha256": "11af715650c5ee04c8f9fd02cdfe4d5d2e905b28d19d77e3b95ada9a02a73cd4",
+          "rules": [
+            "load_serve"
+          ]
+        },
+        {
+          "file": "tools/serve-fleet.sh",
+          "sha256": "22951572072736db9628b0c713ab9efb591fbb7a172191b1dcc2670515b6091d",
+          "rules": [
+            "serve_fleet"
+          ]
+        },
+        {
+          "file": "tools/serve-proxy.py",
+          "sha256": "2a4755af6a919b189fe1a39eecf17b7bfc68e381b36c4253ef8ea950b1f3a397",
+          "rules": [
+            "serve_proxy"
+          ]
+        },
+        {
+          "file": "tools/test_fleet_replay.py",
+          "sha256": "679a817d35791cd715dd683088806ed4e32719def9d38bf4a3774949170d0c56",
+          "rules": [
+            "fleet_replay_test"
+          ]
+        },
+        {
+          "file": "tools/test_fleet_report.py",
+          "sha256": "d3f1c286ac2ec9d908f0a72a59b432e568f67312055b566cae0555e1f936ceb2",
+          "rules": [
+            "fleet_report_test"
+          ]
+        }
+      ],
+      "unresolved_expanded_matches": [],
+      "record_rule_pins": []
+    }
+  ]
+}

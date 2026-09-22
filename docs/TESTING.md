@@ -112,6 +112,19 @@ engine's `build.rs`. Its red arm (a retired name refuses) and its non-vacuity ar
 name at once refuses nothing) are unit tests in `env_audit.rs`; `MEMRA_ENV_AUDIT=warn` downgrades,
 `=0` disables, both announced. Receipts: `research/env-audit-20260921/`.
 
+GPU probe recovery (memra#516, `tools/gpu-probe-recovery-gate.py`, in `tools/local-ci.sh`,
+`MEMRA_CI_GPUPROBEGATE=0` skips): the real server boots with a fake `nvidia-smi` first on `PATH`
+that follows a script per boot, at a 2 s probe interval and deadline. Arm A (`MEMRA_GPU_PROBE_MISSES=3`):
+answers at startup, hangs two probes, answers again: `/health` stays 200 with `gpu_probe.degraded`
+true and `miss_streak` 1 then 2, then returns to degraded false, streak 0, `last_ok_age_ms` fresh.
+Arm B: hangs three probes: the third latches, `/health` 503 with the streak in `detail`, a later
+answering probe does not clear it, and a later hang never publishes `degraded` beside
+`latched_reason`. Arm C: answers with uncorrected ECC once: latches at once
+and a clean answer afterwards does not clear it. CPU teeth for the policy itself are
+`health::tests::{one_steady_state_hang_degrades_but_stays_live, an_answer_clears_timeout_only_degradation,
+the_miss_bound_latches_and_an_answer_does_not_unlatch, misses_policy_of_one_restores_the_single_hang_latch,
+fatal_faults_latch_regardless_of_probe_answers}`. Receipts: `research/gpu-probe-recovery-20260922/`.
+
 Prime fairness (memra#521, `tools/prime-fairness-gate.py`, in `tools/local-ci.sh`,
 `MEMRA_CI_FAIRGATE=0` skips): one boot per `MEMRA_PRIME_YIELD` arm on the 9B NVFP4's default
 (spec) route with the concurrency demotion pinned off, greedy natural-text `prompt` streams (the
@@ -123,6 +136,17 @@ token within the bar (8 s) and the peers' p95 at most half the non-yielding arm'
 `tick_max_ms` on the yielding arm at most 6,000 ms; every request finished; the yielding boot logs
 `[prime-walk] supported=true yield_door=true` and at least one `[prime-yield]`. `--reps 3`
 interleaves the arms for a receipt. Receipts: `research/prime-fairness-default-20260922/`.
+
+Route policy contract (memra#504, `route_contract.rs`): every serve route declares each of the
+nine policy surfaces as implemented or refused by name; `RouteRegistry::check` runs before the
+ready handoff. CPU teeth in `route_contract::tests`: a stub route that declares nothing fails the
+same gate the production routes pass (the red arm), a partially declared route names exactly what
+it omitted, the hybrid worker implements every surface, the DSv4 contract refuses its six open gaps
+with their issues, `MEMRA_REWRITE_BUNDLE` beside a DSv4 route refuses at boot by name (#449's
+minimum), and the wiring gate: every `Implemented` declaration's evidence token must exist outside
+comments in the route's source file (`include_str!` over `worker.rs` and `dsv4_serve.rs`), the
+generalization of `progress::tests::the_prime_walks_actually_call_the_odometer` from one engine
+file to the registry. Receipt: `research/route-contract-20260922/`.
 
 Loader tensor-contract boundary (memra#541, `memra_gguf::checkpoint_binding`): both loaders
 bind the pack's tensor contract against the source census before any upload and refuse

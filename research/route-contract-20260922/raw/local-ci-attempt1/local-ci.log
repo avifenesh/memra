@@ -1,0 +1,622 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-probe v0.0.0 (/home/avifenesh/projects/wt-504/crates/memra-probe)
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-504/crates/memra-server)
+   Compiling memra-cli v0.138.0 (/home/avifenesh/projects/wt-504/crates/memra-cli)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-504/crates/memra-engine)
+   Compiling memra-runtime v0.138.0 (/home/avifenesh/projects/wt-504/crates/memra-runtime)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/projects/wt-504/crates/memra-reference)
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/projects/wt-504/crates/memra-tokenizer)
+   Compiling memra-gguf v0.138.0 (/home/avifenesh/projects/wt-504/crates/memra-gguf)
+    Finished `release` profile [optimized] target(s) in 32.66s
+local-ci: CPU chain (clippy, memra-server suite, memra-engine lib suite, gguf census, tier/KV/CLI suites) running alongside the GPU gates; log /tmp/local-ci-cpu-chain.zp4T5V
+check-flags: runtime literal reads=869
+check-flags: no uncovered runtime names
+check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+check-no-remove-var-gates: OK (66 allowlisted unsets, 0 un-allowlisted across 12 target dirs)
+== drafter-attach wiring gate ==
+root: /home/avifenesh/projects/wt-504
+
+-- A. CENSUS: every call site under tools/ must be registered --
+  call sites found: btemp-power.sh sampled-restore-ab.sh spec-cache-gate.sh spec-cache-mixed-gate.sh spec-on-cache-hit-gate.sh
+  ok: no unregistered call sites
+  ok: every registered gate still calls it
+
+-- B. COUPLING: the asserted variable is the one handed to the engine --
+  ok: spec-on-cache-hit-gate.sh (qwen): asserts "$MTP_DRAFT"
+  ok: spec-on-cache-hit-gate.sh (qwen): boots with MEMRA_MTP_DRAFT=$MTP_DRAFT
+  ok: spec-on-cache-hit-gate.sh (gemma): asserts "$DRAFT"
+  ok: spec-on-cache-hit-gate.sh (gemma): boots with MEMRA_DRAFT=$DRAFT
+  ok: spec-cache-gate.sh (qwen): asserts "$MTP_DRAFT"
+  ok: spec-cache-gate.sh (qwen): boots with MEMRA_MTP_DRAFT=$MTP_DRAFT
+  ok: spec-cache-mixed-gate.sh (qwen): asserts "$MTP_DRAFT"
+  ok: spec-cache-mixed-gate.sh (qwen): boots with MEMRA_MTP_DRAFT=$MTP_DRAFT
+  ok: spec-cache-mixed-gate.sh (gemma): asserts "$DRAFT"
+  ok: spec-cache-mixed-gate.sh (gemma): boots with MEMRA_DRAFT=$DRAFT
+  ok: btemp-power.sh (qwen): asserts "$DRAFT"
+  ok: btemp-power.sh (qwen): boots with MEMRA_MTP_DRAFT=$DRAFT
+  ok: sampled-restore-ab.sh (qwen): asserts "$MTP_DRAFT"
+  ok: sampled-restore-ab.sh (qwen): boots with MEMRA_MTP_DRAFT=$MTP_DRAFT
+
+-- C. SATISFIABLE: each seam's engine log line interpolates its path --
+  ok: mtp: emit site at crates/memra-engine/src/hybrid.rs:5063 interpolates {path}
+  ok: regime: emit site at crates/memra-server/src/worker.rs:20206 interpolates {dpath}
+  ok: gemma: emit site at crates/memra-server/src/worker.rs:20565 interpolates {dpath}
+
+-- D. EXECUTED: the assertion runs per seam, both directions --
+  ok: mtp    attach present, path matches: rc=0 (expected 0)
+  ok: regime attach present, path matches: rc=0 (expected 0)
+  ok: gemma  attach present, path matches: rc=0 (expected 0)
+  ok: mtp    wrong artifact must FAIL: rc=1 (expected 1)
+  ok: gemma  wrong artifact must FAIL: rc=1 (expected 1)
+  ok: mtp    no attach line must FAIL: rc=1 (expected 1)
+  ok: gemma  no attach line must FAIL: rc=1 (expected 1)
+  ok: unreadable log must FAIL: rc=1 (expected 1)
+
+DRAFTER-ATTACH WIRING GATE: ALL GREEN
+== test A: two concurrent local-ci invocations serialize (second waits, both green) ==
+  ok: first run green (rc=0)
+  ok: second run green (rc=0)
+  ok: second run announced the wait loudly
+  ok: second run actually waited (6s; first held 6s from t+0s)
+== test B: killing local-ci mid-run releases the lock ==
+  ok: lock observed held mid-run
+  ok: SIGKILL released the lock (fd-based, kernel cleanup)
+== test C: caller-held pattern skips re-acquire AND redirects the inner seam ==
+  ok: MEMRA_CI_LOCK_HELD=1 ran immediately against a held lock (no second take, no deadlock)
+  ok: inner seam redirected off the held file (hit-gate cannot self-deadlock)
+== test D: an explicit caller MEMRA_GPU_LOCK is respected ==
+  ok: explicit private lock survived
+  ok: MEMRA_GPU_LOCK==whole-run lock is redirected (the self-deadlock value)
+== test E: spec-on-cache-hit-gate standalone still takes its own lock ==
+  ok: standalone hit-gate blocked on its own lock (no lock-less boot)
+test_local_ci_lock: ALL GREEN
+HELD
+PASS: the battery refuses a starved card and names what is holding it
+local-ci: GPU lock acquired (/tmp/memra-5090.lock) — held for the whole run
+local-ci: inner gate lock seam MEMRA_GPU_LOCK=/tmp/memra-5090.lock.inner
+== local-ci: correctness stage ==
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK
+SKIP sigrouter-served-replay (MEMRA_SIG_ROUTER_REPLAY is not set to a run-gen capture)
+SKIP dtype5-IQ3_S (missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP dtype5-IQ4_XS (missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP dtype5-Q3_K (missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP f16g-kq-direct-q35 (missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP q8mmq-gemm (missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 4 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP nvfp4-27b-shape (missing model Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP d2-cache-bit-identity (missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP fast-router-batch (missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 4 candidates tried; set MEMRA_KC_MODELS_DIR)
+kernel-check: ALL GREEN (109 cells, 10 skipped)
+sample-check: composed accept-walk output ~ p (20k draws, acc=0.114): maxabs=0.0032 tv=0.0184 OK
+prime-gate: SKIP (no q35 model at /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf)
+== local-ci: prime continuation gate (one call vs head + tail; tails 16/48/80) ==
+  9280 + 16: logits_sha=c94f247bc80e7cf5 ok
+  9248 + 48: logits_sha=c94f247bc80e7cf5 ok
+  9216 + 80: logits_sha=c94f247bc80e7cf5 ok
+prime continuation gate: PASS (16/48/80-row tails bitwise with the one-call prime)
+run-spec K=1..8: SKIP (no q35 model at /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf)
+run-gen/VERIFY-GATE/spec: SKIP (no 31B model at /data/ai-ml/hf-models/gemma4-31b-qat-gguf/gemma-4-31B_q4_0-it.gguf)
+12B run-gen/VERIFY-GATE: SKIP (no 12B model at /data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf)
+decode-batch-gate config B=8: ALL GREEN (9B NVFP4)
+decode-batch-gate strict B=4 equalized: ALL GREEN (9B NVFP4)
+decode-batch-gate config B=8: ALL GREEN (9B Q8_0)
+decode-batch-gate strict B=4 equalized: ALL GREEN (9B Q8_0)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-504/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 34.15s
+== graph-warmup-stress gate: /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf cycles=10 warmups=1 ==
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+model /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf arch qwen35 (32 layers) cycles=10 large=160tok/@4096 small=90tok/@96 MEMRA_GRAPH_WARMUPS=1 canary=false
+[pool] post-load: reserved 6048 MB used 6038 MB
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 49152 ml_len 16 -> 192 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[pool] post-eager-ref: reserved 6176 MB used 6040 MB
+[fa-pool] grow #4 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+cycle 1: OK  [pool after L-drop: 6816/6041 MB, after S: 6816/6041 MB rsv/used]
+cycle 2: OK  [pool after L-drop: 6816/6041 MB, after S: 6816/6041 MB rsv/used]
+cycle 3: OK  [pool after L-drop: 6816/6041 MB, after S: 6816/6041 MB rsv/used]
+cycle 4: OK  [pool after L-drop: 6816/6041 MB, after S: 6816/6041 MB rsv/used]
+cycle 5: OK  [pool after L-drop: 6816/6041 MB, after S: 6816/6041 MB rsv/used]
+cycle 6: OK  [pool after L-drop: 6816/6041 MB, after S: 6816/6041 MB rsv/used]
+cycle 7: OK  [pool after L-drop: 6848/6041 MB, after S: 6848/6041 MB rsv/used]
+cycle 8: OK  [pool after L-drop: 6848/6041 MB, after S: 6848/6041 MB rsv/used]
+cycle 9: OK  [pool after L-drop: 6848/6041 MB, after S: 6848/6041 MB rsv/used]
+cycle 10: OK  [pool after L-drop: 6848/6041 MB, after S: 6848/6041 MB rsv/used]
+overlap arm: OK (A survived B's pool growth; B survived A's free + recapture)
+[pool] end: reserved 7488 MB used 6041 MB
+ALL GREEN: graph-warmup-stress (10 cycles x 4 arms + overlap, bit-identical, no fault)
+== canary arm: injected graph-memory corruption must be CAUGHT ==
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+model /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf arch qwen35 (32 layers) cycles=1 large=160tok/@4096 small=90tok/@96 MEMRA_GRAPH_WARMUPS=1 canary=true
+[pool] post-load: reserved 6048 MB used 6038 MB
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 49152 ml_len 16 -> 192 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[pool] post-eager-ref: reserved 6176 MB used 6040 MB
+[fa-pool] grow #4 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+cycle 1 ->S: canary caught at token 30 (expected — comparator has teeth)
+cycle 1: OK  [pool after L-drop: 6816/6041 MB, after S: 6816/6041 MB rsv/used]
+overlap arm: OK (A survived B's pool growth; B survived A's free + recapture)
+[pool] end: reserved 7456 MB used 6041 MB
+CANARY GATE PASS: injected graph-memory corruption was detected; all clean arms held
+ALL GREEN: graph-warmup-stress gate (10 cycles + canary)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-504/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 0.87s
+decode-dc-gate: PASS
+graph-decode-gate: PASS
+graph-session-gate: ALL GREEN
+correctness stage: GREEN
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.08s
+== serve-smoke: plain serving ==
+  ok: /models lists the model
+  ok: chat non-stream (text + usage + finish_reason)
+  ok: chat stream (SSE chunks + [DONE])
+  ok: /v1/completions
+  ok: greedy determinism (2 runs identical)
+  ok: 3 concurrent chats
+  ok: long generation (>=100 tok)
+== serve-smoke: cache-metering exactness ==
+  ok: A fanout cached_tokens == [0] + [256]x4
+  ok: A-req1 prompt_tokens == 272
+  ok: A-req2 prompt_tokens == 272
+  ok: A-req3 prompt_tokens == 272
+  ok: A-req4 prompt_tokens == 272
+  ok: A-req5 prompt_tokens == 272
+  ok: B-req1 cached_tokens == 0 (cross-salt blindness)
+  ok: B-req1 prompt_tokens == 272
+  ok: prompt_tokens_in == 1632
+  ok: cached_tokens_in == 1024
+  ok: computed_tokens_in == prompt - cached
+  ok: cache_hit_token_ratio matches arithmetic
+  ok: prefix_cache_hits == N-1
+  ok: prefix_cache_misses == 2 (one A leader + cross-salt B)
+  ok: prefix_cache_inserts == 2 (shared A prefix + B seed)
+  ok: prefix_cache_hit_tokens == 1024
+  ok: lcp_histogram: 6 probes total
+  ok: lcp_histogram: 2 cold probes in bucket [0]
+  ok: lcp_histogram: 4 probes in K's bucket (edge 256)
+  ok: tick-seg [64,512) window carries the shared-prefix probes
+  ok: tenants[meter-A] split exact
+  ok: tenants[meter-B] split exact (0 cached)
+  ok: economics revenue_multiplier == 2.6842 (factor 1.0)
+cache-meter-gate: 0 failed
+  ok: cache-metering accounting exact (per-request + /metrics + economics)
+== serve-smoke: spec arm SKIP (no draft at /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+== serve-smoke: gemma4 arm SKIP (no model at /data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf)
+== serve-smoke: Q35 coldhol arm SKIP (no model at /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf)
+serve-smoke: 0 failed
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.05s
+== health-fault-gate: arms=a,b,c,d,e,f port=8189 out=/tmp/health-fault-gate-20260922T160927Z ==
+--- arm a/b: armed boot (default doors: the calibration probe runs before ready) ---
+  [ab] ready after 2987 ms (pid 3067859)
+HFG (a) readiness-before-probe: probe_done_line=33 listening_line=36 pre_ready_samples=27 pre_ready_codes={000:27,503:0} ready_samples_not_ready=0 ready_while_warming=0 first_ready_phase=idle -> PASS
+HFG (b) ready-then-first-request: readyz_before=200/ready request_http=200 finish_reason=length completion_tokens=32 request_ms=184 ready_to_completion_ms=298 readyz_after=200/ready (N=1, not a timing claim) -> PASS
+  [ab] exit 0
+--- arm c: the probe-skipped boots (documented behaviour, not a pass) ---
+  [c-calibrate0] ready after 1786 ms (pid 3068184)
+HFG (c) probe-skipped c-calibrate0 [MEMRA_ADMIT_CALIBRATE=0]: skip_line=19 probe_done_line=0 warming_samples=0 ready_ms=1786 first_request_http=200 first_request_ms=230 (N=1) -> DOCUMENTED (ready without warmup; the first request pays the cold route)
+  [c-calibrate0] exit 0
+  [c-spec0] ready after 1791 ms (pid 3068515)
+HFG (c) probe-skipped c-spec0 [MEMRA_SERVE_SPEC=0]: skip_line=19 probe_done_line=0 warming_samples=0 ready_ms=1791 first_request_http=200 first_request_ms=324 (N=1) -> DOCUMENTED (ready without warmup; the first request pays the cold route)
+  [c-spec0] exit 0
+  [c-reserve] ready after 1791 ms (pid 3068749)
+HFG (c) probe-skipped c-reserve [MEMRA_ADMIT_RESERVE_MB=1536]: skip_line=20 probe_done_line=0 warming_samples=0 ready_ms=1791 first_request_http=200 first_request_ms=232 (N=1) -> DOCUMENTED (ready without warmup; the first request pays the cold route)
+  [c-reserve] exit 0
+--- arm d: a request panics the worker (MEMRA_PANIC_AFTER=1), the respawn rule (MEMRA_WORKER_RESPAWN=1) ---
+  [d] ready after 3000 ms (pid 3068987)
+HFG (d) panic-respawn-truthful-health: trigger_http=200 health_503_quoted_after_ms=197 readyz_while_dead=503/not_ready/dead untruthful_samples=0 recovered_after_ms=4365 generation_after=1 request_after_http=200 health_after=200/ok log_panic_line=47 log_respawn_line=48 -> PASS
+HFG (a2) warming-phase-on-respawn: not_ready_phase_sequence=dead>loading>warming loading_samples=8 warming_samples=7 loading_then_warming=true -> PASS
+  [d] exit 0
+--- arm e: a hung nvidia-smi probe latches the gpu fault; answering again does not clear it ---
+  [e] ready after 2997 ms (pid 3069757)
+HFG (e) fatal-fault-not-cleared-by-timeout: watch_on_line=6 control_200_samples=3/3 latched_after_ms=11605 shim_answering_again_for_ms=8189 health_after=503/unhealthy readyz_after=503/not_ready health_200_after_clear=0 critical_lines=1 request_http_while_latched=200 (observed, bounded, not asserted) -> PASS
+  [e] exit 0
+--- arm f: SIGTERM with a stream open flips readiness first and drains ---
+  [f] ready after 2993 ms (pid 3071712)
+HFG (f) sigterm-drains-and-flips-readiness-first: stream_frames_at_sigterm=15 readyz_during_drain=503/not_ready retry_after_s=60 health_during_drain=200/draining new_request_http=503 new_request_code=draining new_request_retry_after_s=60 stream_curl_rc=0 stream_frames=258 stream_done=1 stream_finish_reason=length stream_finished_after_sigterm_ms=1257 exit_code=0 exit_after_sigterm_ms=1514 drain_complete_line=51 deadline_hit_line=0 -> PASS
+health-fault-gate: arms=a,b,c,d,e,f pass=6 documented=3 fail=0 receipts=/tmp/health-fault-gate-20260922T160927Z
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-504/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 16.34s
+== serve-stress-gate: c=64 staggered short streams (128-256 tok) ==
+completed 64/64; wall p50=23.2s p95=25.4s max=25.9s; ttfb p50=0.76s p95=16.71s  (informational)
+serve-stress-gate: ALL GREEN (c=64 complete, streams well-formed, worker alive, log clean)
+== local-ci: request-fault boundary gate (memra#525) ==
+  peer0: control=888d259f7d342ce6 fault=888d259f7d342ce6 finish=length identical=yes
+  peer1: control=8c59c1643b76d16f fault=8c59c1643b76d16f finish=length identical=yes
+  peer2: control=b5ed9ff85fe74a6c fault=b5ed9ff85fe74a6c finish=length identical=yes
+  salted: finish=None error={"message": "this request hit an internal fault and was retired; other requests were not affected. Report the request id", "type": "server_error", "param": null, "code": "worker_fault"}
+  [fault] request=chatcmpl-948a4187308ae6fd3be985ee988f11ac route=lane0/gate site=fault-inject panic=[fault-inject] MEMRA_FAULT_INJECT_CACHE_SALT matched request chatcmpl-948a4187308ae6fd3be985ee988f11ac; the CUDA context 
+REQUEST-FAULT: peers=3 typed=yes identical=3/3 faults=1 respawns=0 generation=0 log_ok=yes -> PASS
+== local-ci: prime fairness gate (memra#521) ==
+  rep0-yield0: long ttft=53.84s total=57.28s peers ttft=[52.33, 50.04, 48.17] tick_max_ms=53838 yields=0 chunks=156
+  rep0-yield1: long ttft=53.91s total=54.77s peers ttft=[1.3, 0.83, 0.12] tick_max_ms=2221 yields=142 chunks=153
+PRIME-FAIRNESS: long=131072 peers=3x1 bytes=yes peer_p95=52.33/1.30s peer_max=52.33/1.30s tick_max=53838/2221ms long_ttft=53.84/53.91s yields=142 engaged=yes -> PASS
+== local-ci: GPU probe recovery gate (memra#516) ==
+  A recover: streak_seen=[0, 1, 2] saw1=True saw2=True cleared=True never503=True
+  B latch: first503_at=10.29 names_streak=True stays_latched=True live_before=True never_degraded_beside_latched=True
+  C fatal: first503_at=0.25 names_ecc=True stays_latched=True
+GPU-PROBE-RECOVERY: recover=PASS latch=PASS fatal=PASS -> PASS
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.09s
+== accept-gate: served-spec acceptance + long-text assertion ==
+   cells: q27-p1 (smoke tier; --full for the matrix)
+   arm env: MEMRA_MMQ_F8F4=unset
+   logs: /tmp/accept-gate-20260922-191625
+  -- skipping (no model at /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf) — cells: q27-p1
+
+accept-gate: SKIP (no cell artifacts present on this rig: 1 cell(s))
+spec-on-cache-hit: WARNING — qwen external drafter absent (/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf).
+          The qwen drafter-attach assertion will NO-OP this run; in-battery
+          coverage falls back to the gemma arm alone.
+== qwen arm: spec-on boot ==
+  on-grid prompt: 128 tokens (22 filler words)
+  census spec-on: entries published: 11 draft-bearing (insert (spec-boundary)), 1 plain (insert (seed)), 0 other
+    hits x1: hit: 128 of 128 prompt tokens
+    hits x6: hit: 64 of 106 prompt tokens
+    hits x3: hit: 64 of 119 prompt tokens
+    hits x2: hit: 96 of 119 prompt tokens
+    hits x1: hit: 96 of 135 prompt tokens
+    identity clause namespaces (default, "grow") on the spec-on side: 4 draft-bearing, 0 plain -> its hits restored draft-bearing entries
+    door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+  ok: server log shows spec restore
+  ok: r1 cold has spec + zero cached
+  ok: r2 hit has cached tokens
+  ok: r2 hit SPEC ENGAGED (accepted > 0)
+  ok: r3 extended hit has cached tokens
+  ok: r3 extended hit SPEC ENGAGED (accepted > 0)
+  ok: r2 text == r1 text (deterministic repeat)
+-- sampled cells (temperature 0.8, seeds: 7 1234 99991, teeth=0) --
+  ok: s7 sampled cold engages spec, zero cached
+  ok: s7 sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: s7 sampled hit SPEC ENGAGED (accepted > 0)
+  ok: s7 sampled hit bytes == cold leader bytes (same seed)
+  ok: s7 sampled hit acceptance == cold acceptance exactly
+  ok: s1234 sampled cold engages spec, zero cached
+  ok: s1234 sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: s1234 sampled hit SPEC ENGAGED (accepted > 0)
+  ok: s1234 sampled hit bytes == cold leader bytes (same seed)
+  ok: s1234 sampled hit acceptance == cold acceptance exactly
+  ok: s99991 sampled cold engages spec, zero cached
+  ok: s99991 sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: s99991 sampled hit SPEC ENGAGED (accepted > 0)
+  ok: s99991 sampled hit bytes == cold leader bytes (same seed)
+  ok: s99991 sampled hit acceptance == cold acceptance exactly
+  ok: sx sampled leader engages spec, zero cached
+  ok: sx sampled SUFFIX hit restores a strict prefix
+  ok: sx sampled SUFFIX hit SPEC ENGAGED (accepted > 0)
+  ok: sx sampled suffix hit reproduces byte-for-byte at one seed
+  ok: sp penalized sampled leader engages spec (entry has a draft plane)
+  ok: sp penalized sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: sp penalized sampled hit SPEC ENGAGED (accepted > 0)
+  ok: sp penalized sampled hit bytes == cold leader bytes (same seed)
+  ok: sp penalized sampled hit acceptance == cold acceptance exactly
+  ok: np greedy+penalized leader serves PLAIN (publishes a plane-less entry)
+  ok: np sampled hit on a plane-less entry stays PLAIN (refusal is real)
+  ok: fc on-grid prompt (tokens a multiple of 32)
+  ok: fc sampled leader engages spec, zero cached
+  ok: fc sampled hit is a FULL-COVER cache hit (cached == prompt_tokens)
+  ok: fc sampled full-cover hit SPEC ENGAGED (accepted > 0)
+  ok: fc sampled full-cover hit bytes == cold leader bytes (same seed)
+  ok: fc sampled full-cover hit acceptance == cold acceptance exactly
+  ok: sampled FIRST token is drawn, not the greedy argmax (at least one seed differs)
+     first tokens: greedy='\n\n' sampled=['不解', '<k', '缴存']  (BTEMP=4.0, 3 distinct over 3 seeds)
+-- growth cells (Item 3: a growing conversation must learn a longer boundary) --
+  ok: g2 restores g1's published entry (cached == cap(P1) == 64)
+  ok: g1 turn 1 is cold and engages spec
+  ok: g2 turn 2 restores turn 1's boundary (suffix-fed hit)
+  ok: g3 turn 3 engages spec
+  ok: g3 turn 3 hits a STRICTLY LONGER prefix than turn 2 did
+  ok: g3's restored prefix == turn 2's republished boundary (96 of 119)
+  ok: g4 (repeat of turn 2) restores the whole REPUBLISHED entry (cached == 96)
+  ok: g4 SPEC ENGAGED on the republished entry
+  ok: g4 reproduces its publisher's continuation byte-for-byte (snapshot round-trip)
+  ok: g4 acceptance == its publisher's acceptance exactly
+-- boundary draws (Item 1) --
+  ok: boundary site cold-prime fired
+  ok: boundary site burst-tail-commit fired
+  ok: boundary site restore-full-cover fired
+  ok: 19 of 47 boundary draws deviated from the pre-lane argmax
+  ok: plane-less refusal names itself in the log
+== qwen arm: spec-off twin boot (identity reference) ==
+  census spec-off: entries published: 0 draft-bearing (insert (spec-boundary)), 2 plain (insert (seed)), 0 other
+    hits x1: hit: 64 of 106 prompt tokens
+    hits x2: hit: 64 of 119 prompt tokens
+    identity clause namespaces (default, "grow") on the spec-off side: 0 draft-bearing, 2 plain -> its hits restored plain entries
+    door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+  ok: off-boot rows carry no spec
+  ok: r1 spec==plain byte identity
+  ok: r2 spec==plain byte identity
+  ok: r3 spec==plain byte identity
+  ok: g1 spec==plain byte identity
+  ok: g2 spec==plain byte identity
+SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+== qwen arm: spec-on boot, TEETH/ROLLBACK posture (every door shut) ==
+  on-grid prompt: 128 tokens (22 filler words)
+  census spec-on: entries published: 8 draft-bearing (insert (spec-boundary)), 1 plain (insert (seed)), 0 other
+    hits x1: hit: 128 of 128 prompt tokens
+    hits x6: hit: 64 of 106 prompt tokens
+    hits x5: hit: 64 of 119 prompt tokens
+    hits x1: hit: 64 of 135 prompt tokens
+    identity clause namespaces (default, "grow") on the spec-on side: 2 draft-bearing, 0 plain -> its hits restored draft-bearing entries
+    door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+  ok: server log shows spec restore
+  ok: r1 cold has spec + zero cached
+  ok: r2 hit has cached tokens
+  ok: r2 hit SPEC ENGAGED (accepted > 0)
+  ok: r3 extended hit has cached tokens
+  ok: r3 extended hit SPEC ENGAGED (accepted > 0)
+  ok: r2 text == r1 text (deterministic repeat)
+-- sampled cells (temperature 0.8, seeds: 7 1234 99991, teeth=1) --
+  ok: s7 sampled cold engages spec, zero cached
+  ok: s7 sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: s7 sampled hit stays PLAIN under MEMRA_SPEC_RESTORE_SAMPLED=0
+  ok: s1234 sampled cold engages spec, zero cached
+  ok: s1234 sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: s1234 sampled hit stays PLAIN under MEMRA_SPEC_RESTORE_SAMPLED=0
+  ok: s99991 sampled cold engages spec, zero cached
+  ok: s99991 sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: s99991 sampled hit stays PLAIN under MEMRA_SPEC_RESTORE_SAMPLED=0
+  ok: sx sampled leader engages spec, zero cached
+  ok: sx sampled SUFFIX hit restores a strict prefix
+  ok: sx sampled suffix hit stays PLAIN under the rollback door
+  ok: sx sampled suffix hit reproduces byte-for-byte at one seed
+  ok: sp penalized sampled leader engages spec (entry has a draft plane)
+  ok: sp penalized sampled hit stays PLAIN under the burst-local window door
+  ok: np greedy+penalized leader serves PLAIN (publishes a plane-less entry)
+  ok: np sampled hit on a plane-less entry stays PLAIN (refusal is real)
+  ok: fc on-grid prompt (tokens a multiple of 32)
+  ok: fc sampled leader engages spec, zero cached
+  ok: fc sampled hit is a FULL-COVER cache hit (cached == prompt_tokens)
+  ok: fc sampled full-cover hit stays PLAIN under MEMRA_SPEC_RESTORE_SAMPLED=0
+  ok: teeth: every sampled FIRST token is the greedy argmax (the pre-lane defect)
+-- growth cells (Item 3: a growing conversation must learn a longer boundary) --
+  ok: g2 restores g1's published entry (cached == cap(P1) == 64)
+  ok: g1 turn 1 is cold and engages spec
+  ok: g2 turn 2 restores turn 1's boundary (suffix-fed hit)
+  ok: g3 turn 3 engages spec
+  ok: teeth: turn 3 hits the SAME boundary as turn 2 (no extended entry published)
+  ok: teeth: the turn-2 repeat is not a full-cover hit (nothing was republished)
+-- boundary draws (Item 1) --
+  ok: teeth: no boundary draw happened (MEMRA_SPEC_SAMPLED_BOUNDARY=0)
+  ok: plane-less refusal names itself in the log
+  ok: sampled-restore door names itself in the log
+  ok: burst-local-window door names itself in the log
+== qwen arm: spec-off twin boot (identity reference) ==
+  census spec-off: entries published: 0 draft-bearing (insert (spec-boundary)), 2 plain (insert (seed)), 0 other
+    hits x1: hit: 64 of 106 prompt tokens
+    hits x2: hit: 64 of 119 prompt tokens
+    identity clause namespaces (default, "grow") on the spec-off side: 0 draft-bearing, 2 plain -> its hits restored plain entries
+    door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+  ok: off-boot rows carry no spec
+  ok: r1 spec==plain byte identity
+  ok: r2 spec==plain byte identity
+  ok: r3 spec==plain byte identity
+  ok: g1 spec==plain byte identity
+  ok: g2 spec==plain byte identity
+SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+spec-on-cache-hit: SKIP gemma arm (artifact or MEMRA_CI_HITGATE_GEMMA=0)
+== local-ci: CPU chain joined: PASS ==
+    == local-ci: clippy gate (-D warnings) ==
+    == local-ci: memra-server HTTP-surface unit suite ==
+    test result: ok. 825 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out; finished in 5.53s
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    == local-ci: memra-engine lib suite (CPU-safe part) ==
+    test result: ok. 531 passed; 0 failed; 30 ignored; 0 measured; 0 filtered out; finished in 4.48s
+    == local-ci: memra-gguf artifact-present skip census ==
+    == local-ci: tier, KV and onboarding-CLI suites (tools/portable-suites.sh) ==
+== local-ci: memra-engine lib suite (GPU-only #[ignore] tests) ==
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running unittests src/lib.rs (target/release/deps/memra_engine-f0322ac70f8275b7)
+
+running 30 tests
+test dsv4_attention_split::tests::cuda_attention_split_device_2d_pack_matches_host ... ok
+test dsv4_attention_split::tests::cuda_attention_split_existing_fp8_gemv_component_gate ... ok
+test dsv4_c4::tests::cuda_active_c4_gather_preserves_rows_and_reemissions ... ok
+test dsv4_c4::tests::cuda_direct_host_copy_preserves_bits_and_live_prefix ... ok
+test dsv4_c4::tests::cuda_recent_c4_preserves_hits_misses_wrap_and_rollback ... ok
+test dsv4_ep::tests::cuda_ep_partition_matches_original_full_bank ... ok
+test dsv4_ep::tests::cuda_tp_ep_local_only_clears_reused_contribution_and_rank_sums ... [moe-sk-form] dev=0 qt=108 sms=82 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=2048 n_active=4 max_m=6
+ok
+test dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue ... ok
+test dsv4_gpu::verify_topk_tests::cuda_numeric_topk_matches_host_ties_and_preserves_guards ... ok
+test dsv4_graph::tests::cuda_capture_runs_once_and_restores_scope_after_failure ... ok
+test dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup ... ok
+test dsv4_grouped::half2_chain_identity_tests::cuda_half2_chain_identity ... ok
+test dsv4_grouped::tests::cuda_gu_m1_matches_gu_reference ... ok
+test dsv4_grouped::tests::cuda_matrix_chain_full_bank_equals_two_partitions ... ok
+test dsv4_grouped::tests::cuda_matrix_mirrors_reuse_storage_and_clear_live_status ... ok
+test dsv4_grouped::tests::cuda_partition_routes_match_host_and_reject_global_ids ... ok
+test fused_gate_bounds_tests::q_gate_split_refuses_a_separate_gate_wq_instead_of_reading_past_it ... ok
+test glm5_tp_sampler::tests::glm5_tp_device_sampler_gpu_oracles ... ok
+test model_memory::native_tests::glm_indexed_mla_kda_state_materialization ... ok
+test model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill ... ok
+test model_memory::native_tests::glm_same_ordinal_owners_are_not_lost ... ok
+test qwen_prime_graph::tests::tap_replay_follows_relocated_destination_and_stride ... ok
+test spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read ... ok
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ok
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ok
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... ok
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+test tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver ... ok
+test vision::tests::a_foreign_context_overlay_is_refused_not_dereferenced ... ok
+
+successes:
+
+---- dsv4_attention_split::tests::cuda_attention_split_existing_fp8_gemv_component_gate stdout ----
+PASS existing GEMV Q_b/wo_a exact row halves; wo_b host/device halves exact; class=dsv4_attention_wo_b_input_split_f32_rank_reduce; full_width_bit_equal_diagnostic=false; GPU join not exercised
+
+---- dsv4_c4::tests::cuda_active_c4_gather_preserves_rows_and_reemissions stdout ----
+PASS active C4 gather nq=1 live_rows=0 capacity=7 guards/pads/bit-identity/re-emission
+PASS active C4 gather nq=1 live_rows=1 capacity=8 guards/pads/bit-identity/re-emission
+PASS active C4 gather nq=6 live_rows=40 capacity=47 guards/pads/bit-identity/re-emission
+PASS active C4 gather nq=32 live_rows=1025 capacity=1032 guards/pads/bit-identity/re-emission
+PASS active C4 gather nq=1 live_rows=262144 capacity=262151 guards/pads/bit-identity/re-emission
+
+---- dsv4_c4::tests::cuda_direct_host_copy_preserves_bits_and_live_prefix stdout ----
+PASS direct host copy: exact bits, signed zero, zero/shrunk/grown live prefixes and bounds
+
+---- dsv4_c4::tests::cuda_recent_c4_preserves_hits_misses_wrap_and_rollback stdout ----
+PASS recent_rows=1 hit_red=true wrap=true rollback=true reemit=true graph_replays=4 reset=true
+PASS recent_rows=7 hit_red=true wrap=true rollback=true reemit=true graph_replays=4 reset=true
+PASS recent_rows=32 hit_red=true wrap=true rollback=true reemit=true graph_replays=4 reset=true
+PASS recent_rows=65 hit_red=true wrap=true rollback=true reemit=true graph_replays=4 reset=true
+
+---- dsv4_ep::tests::cuda_ep_partition_matches_original_full_bank stdout ----
+PASS EP projection partitions hidden=128 intermediate=256 rows=1 both reductions, global scales, masks, original-slot merge and guards
+PASS EP projection partitions hidden=128 intermediate=256 rows=6 both reductions, global scales, masks, original-slot merge and guards
+PASS EP projection partitions hidden=128 intermediate=256 rows=32 both reductions, global scales, masks, original-slot merge and guards
+PASS EP projection partitions hidden=4096 intermediate=2048 rows=1 both reductions, global scales, masks, original-slot merge and guards
+PASS EP projection partitions hidden=4096 intermediate=2048 rows=6 both reductions, global scales, masks, original-slot merge and guards
+PASS EP projection partitions hidden=4096 intermediate=2048 rows=32 both reductions, global scales, masks, original-slot merge and guards
+
+---- dsv4_ep::tests::cuda_tp_ep_local_only_clears_reused_contribution_and_rank_sums stdout ----
+PASS TP/EP local contribution clear+rank-order identity hidden=4096 inter=2048 global=8 rows=1 topk=6
+
+---- dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue stdout ----
+PASS grouped wo_a FP8: groups=8 rows/group=1024 k=4096 bit-exact, padding guarded, dispatch_delta=1, small=2x128, malformed strides refused
+
+---- dsv4_gpu::verify_topk_tests::cuda_numeric_topk_matches_host_ties_and_preserves_guards stdout ----
+PASS numeric top-k: 45 host-oracle cells, signed-zero control, duplicate/infinite scores, power-of-two boundaries, input/output guards
+
+---- dsv4_graph::tests::cuda_capture_runs_once_and_restores_scope_after_failure stdout ----
+PASS layer capture scope: tracking-on refusal, one execution, kernel census, body-error cleanup and subsequent capture
+
+---- dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup stdout ----
+SKIP-PAIR dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup needs 2 CUDA devices, found 1
+
+---- dsv4_grouped::half2_chain_identity_tests::cuda_half2_chain_identity stdout ----
+[dsv4-prefill-f16g] GU_FUSE ENGAGED: rows=1 live_slots=6 hidden=4096 inter=2048 ModelOpt NVFP4 f16-MMA class
+PASS GU/down half2 complete-chain identity: h_bits=12288 contribution_bits=24576 gu_half2_dispatches=1 down_m1_half2_dispatches=1
+
+---- dsv4_grouped::tests::cuda_gu_m1_matches_gu_reference stdout ----
+PASS GU-M1 component identity: h_bits=12288 contribution_bits=24576 engagement_delta=1
+
+---- dsv4_grouped::tests::cuda_matrix_chain_full_bank_equals_two_partitions stdout ----
+EXACT matrix chain hidden=4096 inter=2048 rows=32 pattern=0 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=32 pattern=1 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=32 pattern=2 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=1 pattern=0 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=1 pattern=1 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=1 pattern=2 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=6 pattern=0 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=6 pattern=1 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=6 pattern=2 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=32 pattern=0 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=32 pattern=1 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+EXACT matrix chain hidden=4096 inter=2048 rows=32 pattern=2 input/intermediate FP8, weighted SwiGLU, down, original slots and poisoned unused tails
+
+---- dsv4_grouped::tests::cuda_matrix_mirrors_reuse_storage_and_clear_live_status stdout ----
+PASS reusable matrix mirrors: shrink/grow, fresh equivalence, stable pointers, invalid/stale status and byte accounting
+
+---- dsv4_grouped::tests::cuda_partition_routes_match_host_and_reject_global_ids stdout ----
+PASS partitioned Rust routes: host/device bits, global-id guards, empty ranks and live-prefix shrink/grow
+
+---- glm5_tp_sampler::tests::glm5_tp_device_sampler_gpu_oracles stdout ----
+GLM sampler oracle: T=1 top_p=0.95 top_k=0 nucleus=29136 distinct_draws=256 engagements=516
+GLM sampler oracle: T=0.7 top_p=0.8 top_k=40 nucleus=26 distinct_draws=26 engagements=516
+GLM sampler oracle: T=1.3 top_p=0.5 top_k=0 nucleus=8794 distinct_draws=255 engagements=516
+
+---- model_memory::native_tests::glm_indexed_mla_kda_state_materialization stdout ----
+SKIP-PAIR model_memory::native_tests::glm_indexed_mla_kda_state_materialization needs 2 CUDA devices, found 1
+
+---- model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill stdout ----
+SKIP-PAIR model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill needs 2 CUDA devices, found 1
+
+---- model_memory::native_tests::glm_same_ordinal_owners_are_not_lost stdout ----
+[model-memory-544] fixture=glm-dsa-micro seed=544 bytes=627136 sha256=06fcb3c32d503a0d22125606bb4cf91871d53301a22437ec20e8ccb556f75c53
+[tensor-contract] bound 64 semantic tensors (pack glm_dsa, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[loader-law] WARNING: output.weight loads as 2D Float ne=[64, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q_a.weight loads as 2D Float ne=[64, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q_b.weight loads as 2D Float ne=[32, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_kv_a_mqa.weight loads as 2D Float ne=[64, 24] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_output.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[mla-absorb-bf16] attn_k_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[mla-absorb-bf16] attn_v_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[loader-law] WARNING: blk.*.ffn_gate.weight loads as 2D Float ne=[64, 96] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up.weight loads as 2D Float ne=[64, 96] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down.weight loads as 2D Float ne=[96, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[mla-absorb-bf16] attn_k_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[mla-absorb-bf16] attn_v_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.23GB (expert budget 22.23GB) -> RESIDENT
+[loader-law] WARNING: blk.*.ffn_gate_shexp.weight loads as 2D Float ne=[64, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up_shexp.weight loads as 2D Float ne=[64, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down_shexp.weight loads as 2D Float ne=[32, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.nextn.eh_proj.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[mla-absorb-bf16] attn_k_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[mla-absorb-bf16] attn_v_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[tensor-contract] 8 bound tensor(s) were not read by the loader (pack glm_dsa reports, does not refuse): Layer { index: 0, tensor: MlaKvSource } <- ["blk.0.attn_kv_b.weight"]; Layer { index: 0, tensor: SparseQuery } <- ["blk.0.indexer.attn_q_b.weight"]; Layer { index: 0, tensor: SparseKey } <- ["blk.0.indexer.attn_k.weight"]; Layer { index: 0, tensor: SparseKeyNorm } <- ["blk.0.indexer.k_norm.weight"]; Layer { index: 0, tensor: SparseKeyNormBias } <- ["blk.0.indexer.k_norm.bias"]; Layer { index: 0, tensor: SparseProjection } <- ["blk.0.indexer.proj.weight"]; Layer { index: 1, tensor: MlaKvSource } <- ["blk.1.attn_kv_b.weight"]; Layer { index: 2, tensor: MlaKvSource } <- ["blk.2.attn_kv_b.weight"]
+[glm5-tp-mla] head shard armed: ranks=2 heads_per_rank=2 kv_rank=16 latent=replicated indexer-state=replicated indexer=runtime-selected wo=column-over-gather transport=host-canonical performance_claim=false
+
+---- spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read stdout ----
+[spill-worker] WARNING: effective depth 2 < 6; grouped current+next overlap is degraded; continuing with projection concurrency and mmap fallback
+[spill-pread] enabled: depth=2 buffer_bytes=64 total_pinned_bytes=128 (bounded worker prefetch, caller-thread compute-stream H2D, mmap error fallback)
+[spill-pread] reads=8 bytes=175 errors=1 short_reads=1 fallbacks=0 buffer_waits=5 ring_full=7
+
+---- tier_transfer::tests::d2d_receipt_digest_price_against_the_copy stdout ----
+D2D-RECEIPT PRICE order=copy-first bytes=165675008 n_per_arm=5 copy_ms=[0.37904, 0.39616, 0.397152, 0.39664, 0.39712] copy_median=0.397 digest_ms=[0.224416, 0.222368, 0.224448, 0.223488, 0.220448] digest_median=0.223 pair_median=0.447 pair_over_copy=1.13
+D2D-RECEIPT PRICE order=digest-first bytes=165675008 n_per_arm=5 copy_ms=[0.378688, 0.39696, 0.397184, 0.396576, 0.397792] copy_median=0.397 digest_ms=[0.223104, 0.224704, 0.224544, 0.224448, 0.223232] digest_median=0.224 pair_median=0.449 pair_over_copy=1.13
+
+
+successes:
+    dsv4_attention_split::tests::cuda_attention_split_device_2d_pack_matches_host
+    dsv4_attention_split::tests::cuda_attention_split_existing_fp8_gemv_component_gate
+    dsv4_c4::tests::cuda_active_c4_gather_preserves_rows_and_reemissions
+    dsv4_c4::tests::cuda_direct_host_copy_preserves_bits_and_live_prefix
+    dsv4_c4::tests::cuda_recent_c4_preserves_hits_misses_wrap_and_rollback
+    dsv4_ep::tests::cuda_ep_partition_matches_original_full_bank
+    dsv4_ep::tests::cuda_tp_ep_local_only_clears_reused_contribution_and_rank_sums
+    dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue
+    dsv4_gpu::verify_topk_tests::cuda_numeric_topk_matches_host_ties_and_preserves_guards
+    dsv4_graph::tests::cuda_capture_runs_once_and_restores_scope_after_failure
+    dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup
+    dsv4_grouped::half2_chain_identity_tests::cuda_half2_chain_identity
+    dsv4_grouped::tests::cuda_gu_m1_matches_gu_reference
+    dsv4_grouped::tests::cuda_matrix_chain_full_bank_equals_two_partitions
+    dsv4_grouped::tests::cuda_matrix_mirrors_reuse_storage_and_clear_live_status
+    dsv4_grouped::tests::cuda_partition_routes_match_host_and_reject_global_ids
+    fused_gate_bounds_tests::q_gate_split_refuses_a_separate_gate_wq_instead_of_reading_past_it
+    glm5_tp_sampler::tests::glm5_tp_device_sampler_gpu_oracles
+    model_memory::native_tests::glm_indexed_mla_kda_state_materialization
+    model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill
+    model_memory::native_tests::glm_same_ordinal_owners_are_not_lost
+    qwen_prime_graph::tests::tap_replay_follows_relocated_destination_and_stride
+    spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read
+    tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event
+    tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt
+    tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle
+    tier_transfer::tests::d2d_receipt_digest_price_against_the_copy
+    tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait
+    tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver
+    vision::tests::a_foreign_context_overlay_is_refused_not_dereferenced
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 531 filtered out; finished in 4.91s
+
+local-ci: SKIP 3 pair-only GPU test(s) on this rig (need 2 CUDA devices):
+    SKIP-PAIR dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup needs 2 CUDA devices, found 1
+    SKIP-PAIR model_memory::native_tests::glm_indexed_mla_kda_state_materialization needs 2 CUDA devices, found 1
+    SKIP-PAIR model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill needs 2 CUDA devices, found 1
