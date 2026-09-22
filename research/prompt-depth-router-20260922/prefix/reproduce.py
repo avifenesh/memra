@@ -52,6 +52,15 @@ def reproduce(root, runtime_archive, expected_runtime_sha, out):
         raise ValueError("executed pipeline, runner or source identity changed")
     if state["status"] != "completed":
         raise ValueError("the matrix is not complete")
+    completed = state["completed"]
+    expected_scored = {
+        f"{family}/scored/{scenario:02}-{label}"
+        for family in ("qwen", "gemma")
+        for scenario in range(6)
+        for label in ("fixed3", "prefix64", "prefix128", "prefix256")
+    }
+    if len(completed) != len(set(completed)) or not expected_scored <= set(completed):
+        raise ValueError("the scored run inventory is incomplete or duplicated")
     with tempfile.TemporaryDirectory(prefix="prefix-replay-") as temporary:
         temp = Path(temporary)
         repo = temp / "repo"
@@ -73,6 +82,7 @@ def reproduce(root, runtime_archive, expected_runtime_sha, out):
                         "-o", str(binary)], check=True, capture_output=True)
         replayed, prefixes = [], 0
         paired_prompts = {}
+        prefix_choices = {}
         for relative in state["completed"]:
             run = root / "native" / relative
             saved = json.loads(run.with_name(run.name + ".audit.json").read_text())
@@ -117,6 +127,14 @@ def reproduce(root, runtime_archive, expected_runtime_sha, out):
             for key, value in audited.items():
                 if saved[key] != value:
                     raise ValueError("retained audit differs from independent raw replay: " + relative)
+            if phase == "scored" and saved["arm"].startswith("prefix:"):
+                budget = int(saved["arm"].split(":")[1])
+                for row in audited["requests"]:
+                    key = (family, scenario, row["turn"])
+                    choices = prefix_choices.setdefault(key, {})
+                    if budget in choices:
+                        raise ValueError("duplicate prefix budget at one scored request")
+                    choices[budget] = row["k"]
             for route in rows(run / "routing.tsv"):
                 if route["source"] != "prefix":
                     continue
@@ -134,10 +152,16 @@ def reproduce(root, runtime_archive, expected_runtime_sha, out):
             for k in (2, 4):
                 same_tapes(directory / "greedy-k3", directory / f"greedy-k{k}")
             same_tapes(directory / "sampled-prefix128", directory / "sampled-replay128")
+        if len(prefix_choices) != 2 * 6 * 8:
+            raise ValueError("prefix choice inventory is incomplete")
         result = report(root)
         result["independent_replay"] = {
             "runs": len(replayed), "prefixes": prefixes,
             "raw_token_and_time_audits": "pass", "compiled_forecaster_replay": "pass",
+            "same_depth_choices_across_budgets": all(
+                set(choices) == {64, 128, 256} and len(set(choices.values())) == 1
+                for choices in prefix_choices.values()
+            ),
             "reproducer_sha256": sha(Path(__file__)),
         }
         if workloads.get("schema") == 2:
