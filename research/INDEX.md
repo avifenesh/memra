@@ -7,7 +7,7 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
-prompt-depth-router-20260922 | Fast lexical routing passed CPU checks, but request-level K did not beat calibrated fixed K on either model. | prompt-depth-router-20260922/README.md
+prompt-depth-router-20260922 | Bounded prompt routing did not beat fixed K. A shared 17-node output forecaster costs 1.873 us p99, but simple prefix rules are stronger overall. Qwen has no code-labelled evaluation windows at the 512-token cap; actual code/prose adaptation remains open. | prompt-depth-router-20260922/README.md
 
 qwen-prefill-attn-20260909 | Exact launch diet: 131070 cold TTFT 68.267276 -> 66.496199 s, N=3; graph default has no runtime door. Attention numerical work remains separate. | qwen-prefill-attn-20260909/MECHANISM.md
 

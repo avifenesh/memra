@@ -7,6 +7,12 @@ The first stage measures forecasting, transfer between models, causal inputs
 and CPU cost on the archived conversations. Native throughput requires a
 subsequent executed policy comparison.
 
+The [forecast pilot and coverage audit](forecast/RESULTS.md) found that a shared
+17-node tree costs 1.873 us p99, but the existing prefix rule is stronger overall.
+The Qwen evaluation has no annotated code windows and all 12 requested-code
+final answers are empty at the 512-token cap. The earlier throughput rows below
+describe that capped workload; they do not settle actual prose/code adaptation.
+
 Fast lexical routing passed CPU checks, but request-level K did not beat calibrated fixed K on either model.
 
 | Model | Fixed K=3 | Prompt routing | Change |
