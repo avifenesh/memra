@@ -4,6 +4,7 @@ use memra_engine::dsv4_gpu::{
     dsv4_replay_cadence_default, restore_dense_exact_tail_default_for_gate,
 };
 use memra_engine::dsv4_sampler::{Dsv4Sampler, dsv4_sampler};
+use memra_engine::dsv4_source_tape::SourceTape;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -103,17 +104,9 @@ fn main() {
         assert_eq!(std::env::var(key).as_deref(), Ok(value));
     }
     let dir = Path::new(&args[1]);
-    let source = std::fs::read_to_string(&args[2]).unwrap();
-    assert_eq!(
-        format!("{:x}", Sha256::digest(source.as_bytes())),
-        "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded"
-    );
+    let tape = SourceTape::read(&args[2]).expect("source tape");
     let tokenizer = Tokenizer::from_hf_dir(dir).unwrap();
-    let prompt = tokenizer.encode(
-        &format!("Review this inference engine source:\n\n{source}"),
-        true,
-    );
-    assert!(prompt.len() >= 256);
+    let prompt = tape.prompt(&tokenizer, "Review this inference engine source:\n\n", 256);
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
     Dsv4Gpu::set_attention_tp_for_gate(true);
     // This instrument retains the sktail census and control program.
