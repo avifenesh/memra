@@ -1289,6 +1289,12 @@ move. Lead reading: Move 1 is whole under the door on the target card; the door'
 stall receipts (demote 193.5 to 149.6, promote 162.8 to 81.9 ms, both toward or at the OFF arm). The 5090 door gates on
 this tree are owed with the lock (C day 22 runs the door gates on main plus A's tip on the target card now).
 
+Battery (`integration-day12/integ32-cpu-battery/`, merged tree `aba193fc8`, CPUQuota 1200 percent): fmt, portable
+suites, memra-server suite (786 tests), clippy, censuses, collector pytest, engine CPU lib tests, engine and server
+clippy `-D warnings`, marker census, workflow keys, perf board: rc=0; `git diff --check` tripped on A's cargo receipt
+logs (blank line at EOF, marked `-whitespace`). Local 5090 `tools/serve-smoke.sh` (door OFF): `serve-smoke: 0 failed`,
+after waiting behind the `wt-525` session's server and then lane B's day-27 cell for the lock.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
