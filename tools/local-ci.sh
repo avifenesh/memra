@@ -641,6 +641,22 @@ if [ "${MEMRA_CI_SERVE:-1}" = "1" ] && [ -x tools/serve-smoke.sh ]; then
     tools/serve-smoke.sh || { echo "serve-smoke FAIL"; exit 1; }
 fi
 
+# HEALTH, READINESS AND LIFECYCLE FAULT GATE (memra#524, the fault/lifecycle half of #526;
+# lane/spill-b-20260919 day 25). Boots the real server on the default smoke model seven times
+# (about 2 min on the 9B) and asserts HTTP codes plus body fields on /readyz, /health and the
+# request path: readiness before and after the boot calibration probe (phase=warming on the
+# respawn window), the three probe-skipped boots recorded as documented behaviour, a worker
+# panic through MEMRA_PANIC_AFTER (503 with the quoted payload, respawn, generation 1), a
+# gpu-watch fault that stays latched after the shadowed nvidia-smi answers again, and SIGTERM
+# with a stream open (readiness flips first, the stream reaches [DONE], exit 0). Wired because
+# two consecutive runs on the local RTX 5090 read identically (run1, run2 under
+# research/spill-b-20260919/rtx5090-day25/); its arms are boots and injected faults with
+# fixed doors, not timings, so nothing in them depends on the rig's load. In-battery per the
+# H100 lane law: gates outside the battery rot silently. MEMRA_CI_HEALTH_FAULT=0 skips.
+if [ "${MEMRA_CI_HEALTH_FAULT:-1}" = "1" ] && [ -x tools/health-fault-gate.sh ]; then
+    tools/health-fault-gate.sh || { echo "health-fault-gate FAIL"; exit 1; }
+fi
+
 # c=64 CONCURRENCY STRESS (lane/admit-oom, 2026-08-06): 64 staggered streaming clients on a
 # 24GB card — the cell that was RED until the admission cost model charged the spec transient
 # reserve and step-OOM learned to park instead of kill. In-battery per the H100 lane law

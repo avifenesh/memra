@@ -1078,6 +1078,177 @@ perf board, diff-check: rc=0; C's replay first ran without its arguments (rc=1, 
 documented before and after evidence dirs and the five rung word counts: `DAY20 REPLAY tapladder20b: PASS (9 checks)
 -> identity; bounded`. Local 5090 `tools/serve-smoke.sh`: `serve-smoke: 0 failed`.
 
+## integ29 (`lane/spill-integ29-20260922`): B day 25, the health, readiness and lifecycle fault gate (memra#524, #526)
+Lane tip merged: B `fe622cb5b` on main `124dacc76` (#620), clean. Changes in `memra-server` (`health.rs`:
+`PHASE_WARMING` between LOADING and IDLE, `mark_warming()` by `compare_exchange` from LOADING only so a serving worker
+is never demoted, `live()` names it; `worker.rs`: `run_boot_calibration(.., &health)` marks warming after every skip
+return and before the probe generation, `mark_ready` ends it; a CPU test on the order and the day-24 source-order test
+extended), `tools/health-fault-gate.sh` (new), `tools/local-ci.sh` (the gate after the smoke, `MEMRA_CI_HEALTH_FAULT=0`
+skips), `docs/FLAGS.md` (the skip row; `MEMRA_PANIC_AFTER` and `MEMRA_ADMIT_CALIBRATE` rows say what the gate uses
+them for), `docs/SERVING.md` (phase table), `docs/TESTING.md`. No new fault hook anywhere: arm (d) uses the existing
+`MEMRA_PANIC_AFTER` door, (e) a PATH-shadowed `nvidia-smi` in the server's environment with the documented
+`MEMRA_GPU_WATCH_S` and `MEMRA_GPU_PROBE_TIMEOUT_S`, (f) SIGTERM. There is no `/healthz` route; the gate asserts
+`/health` (the same handler as `/livez`) and says so.
+
+**Verdicts, verbatim, target card** (one RTX PRO 6000 Blackwell, collector, 34.9 s; the two local 5090 runs read the
+same in every asserted field): `HFG (a) readiness-before-probe: probe_done_line=30 listening_line=33
+pre_ready_samples=17 pre_ready_codes={000:17,503:0} ready_samples_not_ready=0 ready_while_warming=0
+first_ready_phase=idle -> PASS`; `HFG (b) ready-then-first-request: readyz_before=200/ready request_http=200
+finish_reason=length completion_tokens=32 request_ms=143 ready_to_completion_ms=229 readyz_after=200/ready (N=1, not
+a timing claim) -> PASS`; `HFG (c) probe-skipped c-calibrate0 [MEMRA_ADMIT_CALIBRATE=0]: skip_line=16
+probe_done_line=0 warming_samples=0 ready_ms=1095 first_request_http=200 first_request_ms=166 (N=1) -> DOCUMENTED
+(ready without warmup; the first request pays the cold route)` (and the same DOCUMENTED reading for `c-spec0` and
+`c-reserve`); `HFG (d) panic-respawn-truthful-health: trigger_http=200 health_503_quoted_after_ms=192
+readyz_while_dead=503/not_ready/dead untruthful_samples=0 recovered_after_ms=3469 generation_after=1
+request_after_http=200 health_after=200/ok log_panic_line=44 log_respawn_line=45 -> PASS`; `HFG (a2)
+warming-phase-on-respawn: not_ready_phase_sequence=dead>loading>warming loading_samples=5 warming_samples=4
+loading_then_warming=true -> PASS`; `HFG (e) fatal-fault-not-cleared-by-timeout: watch_on_line=5
+control_200_samples=3/3 latched_after_ms=2727 shim_answering_again_for_ms=8157 health_after=503/unhealthy
+readyz_after=503/not_ready health_200_after_clear=0 critical_lines=1 request_http_while_latched=200 (observed, bounded,
+not asserted) -> PASS`; `HFG (f) sigterm-drains-and-flips-readiness-first: stream_frames_at_sigterm=5
+readyz_during_drain=503/not_ready retry_after_s=60 health_during_drain=200/draining new_request_http=503
+new_request_code=draining new_request_retry_after_s=60 stream_curl_rc=0 stream_frames=258 stream_done=1
+stream_finish_reason=length stream_finished_after_sigterm_ms=886 exit_code=0 exit_after_sigterm_ms=1074
+drain_complete_line=48 deadline_hit_line=0 -> PASS`; `health-fault-gate: arms=a,b,c,d,e,f pass=6 documented=3
+fail=0`. Two harness attempts kept as labelled failures (`attempt1-harness-clock-bug`: uutils `date +%s%3N` prints
+nanoseconds on this rig; `attempt2-harness-jget-bug`); no assertion changed after a result. Pre-registered only: the
+step-OOM arm (`MEMRA_STEP_OOM_FAULT`) and the client-disconnect arm. Owner question, recorded, not asserted: the request
+path under a latched gpu fault served 200. A first boot binds after the probe, so `warming` is observable over HTTP on
+the respawn window only (by design, unchanged). Comments on #524 and #526; both stay open (the release battery decides
+what it requires).
+
+Battery (`integration-day12/integ29-cpu-battery/`, CPUQuota 1200 percent): fmt, portable suites, memra-server suite,
+clippy, censuses, collector pytest, engine CPU lib tests, server clippy `-D warnings`, marker census, workflow keys,
+perf board: rc=0; `git diff --check` tripped on B's HTTP header receipts ending in the protocol blank line, marked
+`-whitespace` by a `.gitattributes` in the receipt dirs (the bytes stay). Local 5090 `tools/serve-smoke.sh`:
+`serve-smoke: 0 failed`; the health fault gate on this tree (`integ29-health-fault-gate-5090/`):
+`health-fault-gate: arms=a,b,c,d,e,f pass=6 documented=3 fail=0`, receipts copied in.
+Revuto round 1 on #621: the gate's default port 8186 was `serve-gemma4-batch-gate.sh`'s, the collision class the
+2026-08-19 gate-integrity audit removed; moved to 8189 after a census of every port literal under `tools/` (8189 unused),
+the port guard unchanged; the gate re-run on this tree at 8189 (`health-fault-gate-port8189.log`).
+
+## integ30 (`lane/spill-integ30-20260922`): A day 17, memra#536 Move 1 first slice under the host-contracts door
+Lane tip merged: A `b967b8d30` on main `dc192cd95` (#621); INDEX.md conflicted on the inherited stray marker, both rows
+kept, every parent row present, census clean. Engine and worker changes, all reachable only with
+`MEMRA_KV_HOST_CONTRACTS=1` (default OFF, decide-by 2026-10-05): `crates/memra-engine/src/tier_transfer.rs` (an
+optional second CUDA stream owned by the same owner thread, `new_with_copy_stream`, `copy_stream()`, the D2H items of a
+batch issued on it behind the producer fence's event with their completion event recorded there and no owner-stream
+wait installed at submit, `synchronize_copy_stream` in `release_device` and `take_plane`); `crates/memra-server/src/
+worker.rs` and `worker/host_glm.rs` (the demote route split into `host_kv_planes_submit_contract` and
+`host_kv_planes_settle_contract` with the blocking wrapper kept; `PendingContractDemote`, `HostDemoteOutcome::Demoting`,
+`host_demote_publish` at the tick-top poll as the run loop's first statement after `require`, planes back, retire,
+acknowledge and `bind_tier_image`; settle-first in `host_demote_prefix_ref`, `host_promote_prefix_hit` and
+`purge_tenant`; a hit on a `Demoting` entry is a cold prime; a tier latched off drops it unpublished; failures publish
+nothing with the day-15 typed outcomes; `apply_flip_demote_fault` for the fault gate); five CPU tests; `docs/FLAGS.md`
+door row describes the split. No new flag, no numeric change; `Promoting` named, not introduced.
+
+**Gate lines, verbatim.** Target card (binary `ceaf238f...`): `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`
+default and plain, door OFF and ON; `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (62 ok); `SPEC-ON-CACHE-HIT GATE: ALL GREEN
+(qwen)` OFF and ON; twin gate `... V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` OFF and ON; failure gate `KV-HOST-SPILL
+FAILURE GATE: 1 FAILURE(S)` both arms (the pre-existing `FAIL: pool-full refusal is LOUD and named`, carried since C's
+day 16); unit cells `8 passed`. Local RTX 5090 (9B, binary `3a92efab...`): identity `ALL GREEN (teeth=0)` x4; hit gate
+`ALL GREEN (qwen)` OFF and ON; failure gate `1 FAILURE(S)` x2 (the same line); fault gate `KV-HOST-CONTRACT-FAULT GATE: 5
+FAILURE(S)`, all in `promote-reject` (the gate hardcodes `1 of 34 items` from the 27B; the 9B prints 18; gate unchanged,
+stated); twin gate on the 9B `REFUSED: cohort promotion did not happen for 2800 tokens ...` both arms (the gate's cohort
+shape), on the 27B artifact `-> PASS` OFF and ON. Lead reading: both reds on the 5090 are gate-shape items of the 9B
+artifact and the pool-full line is a pre-existing red on both cards; neither is A's change; both are assigned to C
+day 21 (running) with the rule that a gate match may move only to follow a cited deliberate message change.
+
+**Stall verdict, verbatim** (one RTX PRO 6000 Blackwell, N=5 per arm per order, both orders, one lock hold, replay
+PASS): `STALL rule cell=stall-demote-on arm=demote n_per_order=5 pooled=10 ... arm_p99=130.9 arm_max=163.4
+stall_median=149.6 stall_min=75.9 stall_max=150.0 ... tenant_text_identical=True errors=0`; the pre-registered rule
+against day 16 (ON 193.5, OFF 117.5) reads `toward_off`: the stretched tick is 163 ms against 208 ON and 132 OFF, the
+copy time left the tick, the two receipt hashes remain. Two false starts A kept as receipts (a submission line carrying
+the door's refusal marker text, reworded; a driver misreading the twin gate's `REFUSED: --out must be a new directory`
+as a busy lock). #536 has A's receipt and correction comments; the issue stays open (the promote's turn and Move 2).
+
+Battery (`integration-day12/integ30-cpu-battery/`, CPUQuota 1200 percent): fmt, portable suites, memra-server suite,
+clippy, censuses, collector pytest, engine CPU lib tests, engine and server clippy `-D warnings`, marker census,
+workflow keys, perf board, diff-check: 15 steps rc=0. Local 5090 `tools/serve-smoke.sh` (door OFF, the default):
+`serve-smoke: 0 failed`. C day 21 (running while this integ was built; lands as integ31) found both 5090 reds to be
+stale gates and re-read failure, fault and identity gates ALL GREEN on both cards with this slice merged.
+
+Revuto round 1 on #622, one finding, real, fixed by the lead in the integ: in `host_demote_settle_with` the arm for
+a pending demote missing its shell or its ticket took both fields before matching, so a SUBMITTED ticket without its
+shell was dropped without retire, acknowledge or abort: the ledger's one in-flight charge and the registered planes
+leaked silently and the tier would never demote again (fail open). The arm now fails closed: a submitted ticket is
+settled and its sources retired through the engine where it is reachable and the tier latches off
+(`SourceQuarantined`, the planes cannot come back without their shell); a shell without a ticket drops whole (`Failed`,
+nothing was submitted). New CPU test `a_pending_demote_missing_its_shell_or_ticket_fails_closed` (both arms); the
+six state-machine tests, the memra-server suite and server clippy `-D warnings` green on the round-1 tree.
+Round 2, two findings, both real, fixed: (1) the settle-first call in `host_demote_prefix_ref` and in
+`host_promote_prefix_hit` can latch the tier off, and each function's `armed()` gate had already been passed, so a
+demote or a promote continued on a latched-off tier; both now re-check `armed()` after the settle (`Off` and a miss).
+(2) the latched-off drop exit, the flip-fault exit and the fail-closed arm returned without
+`waste_pending_reclaim(..)`, unlike every other demote exit, leaving a reclaim booked pending forever; all three book
+it wasted now (the image carries the key and tokens when the shell is gone); the CPU test asserts it. Server clippy
+`-D warnings` and the memra-server suite (780 passed) green, gated before the commit this time.
+## integ31 (`lane/spill-integ31-20260922`): C day 21 (two stale gates) and B day 26 (memra#539 census, cell, design)
+Lane tips merged: C `304e8235c` (carrying A's day 17, already in integ30), B `1ea29941e`. Non-research changes are
+the two gate scripts only: `tools/kv-host-spill-failure-gate.sh` and `tools/kv-host-contract-fault-gate.sh`.
+**C day 21, both reds were stale gates, not the server.** (1) The failure gate matched the insert-path line
+`[prefix-host] skip demote: entry X MB > host budget B MB` (`HostPrefixCache::insert`), reachable only at
+`MEMRA_KV_HOST_TENANT_PCT=100`; under the server default 50 (`49d1d6f65`, "50 BY DESIGN") the demote path refuses
+before the D2H copy with `demote evaporated at the tenant share cap before the D2H copy: N tokens, X MB (50% of B MB,
+...); reclaim refused: the image alone exceeds the share (X MB > B MB); nothing evicted` (memra#384, `405466cf7`);
+lane D's day 8 was green only with `TENANT_PCT=100` set out of band. The gate now mirrors the server's parse of
+`TENANT_PCT`, asserts the full anchored shape with bytes and budget for the arm in force, and adds
+`prefix_host_tenant_rejects >= 1` under the cap; stricter, not looser, verified against banked A and D logs before any
+run. (2) The fault gate hardcoded `1 of 34 items`; it now reads `items=N` from the server's first `contracts door D2H
+receipt` and asserts the refusal's `1 of M` equals N, all 12 prior assertions kept, two added; finding: the plain
+environment reads `items=32` on the 27B (no draft planes), so the hardcoded 34 would have failed the plain arm on the
+target card too. Verdicts, verbatim, tree `9be3f7373` (A's slice merged): target card `KV-HOST-SPILL FAILURE GATE: ALL
+GREEN` (default-off, default-on, plain-off, plain-on; 15 ok each), `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (default
+`items=34`, plain `items=32`; 64 ok each), `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (all four arms); local
+RTX 5090 (9B) identical verdict lines in all ten cells, reject cell `items=18` default and `items=16` plain. The
+whole-budget arm (`TENANT_PCT=100`) was asserted by pattern against D's banked log only, not run. `HOSTPREFIX-DOOR.md`
+review rows moved from pre-existing red to their verdicts. Ruling 29: a gate that reads red on both cards and both arms
+is a lane item the day it is seen, never a "pre-existing" note carried across days.
+**B day 26, memra#539.** Census (anchors on `1c66ff10e`): the cap rule at `worker.rs:21705-21745`: `max_tokens` bounded
+gives `prompt + max_tokens + 8`; omitted gives the server context (`MEMRA_CTX`, else the checkpoint's 262,144) unless
+`MEMRA_ADMIT_BY_MEMORY=1` (default OFF, decide-by 2026-09-23) gives `prompt + 8192 + 8`; registry deployments never
+reach the open arm. Every session cache is born at `ctx_cap` (`Cache::new_inner` allocates K and V planes of `max_ctx`
+rows per full-attention layer, never grown or trimmed); a hit D2D-copies `restore_len` rows into a fresh cap-sized cache
+and shares nothing; retired caches park in the reuse pools at `cache.max_ctx` with no TTL. Bytes per token: 1,856 B per
+full-attention layer (q8_0 K plus q5_1 V); Qwen3.5-9B 14,848 plain and 16,704 spec; the 27B mint 29,696 and 31,552,
+confirmed by the server's own `[admission] request cost` lines. Cell (N=5 per arm per order, both orders; P and G
+identical across orders on 44 of 45 requests per card), allocated over used, verbatim medians: target card (27B,
+`MEMRA_CTX` unset) arm (i) `max_tokens` omitted `median=129.26 / 71.90 / 41.61` (8,271,167,488 B allocated per
+request), arm (ii) bounded `1.00` on every row, arm (iii) warm `134.02 / 72.12 / 41.15` with `cached=0` in the
+deferred shape (43 of 45 spec-boundary entries LRU-evicted inside an 800 MB budget whose derivation prints
+`at MEMRA_CTX=8192`) and `cached=1440/3104/5760` in the warm cell; concurrency at 262,144 from 82.76 GB idle free: L0
+`8 -> 49`, L1 `7 -> 35`, L2 `7 -> 27`. Local RTX 5090 (9B, `MEMRA_CTX=65536`): (i) `11.30 / 10.73 / 6.62`, (ii) `1.00`,
+(iii) `11.79 / 10.62 / 6.35`; concurrency `8 -> 18`, `6 -> 11`, `5 -> 8`. Recorded, not fixed (B day 27, running):
+the prefix-cache budget derived at `MEMRA_CTX=8192` when unset; about 30 GB retained on the target card after 45
+sequential requests with none active (four parked whole-session entries at 8.27 GB). Design note
+`KV-RESIDENCY-DESIGN.md`: recommended order (a) the existing admission-by-memory door as the bounded open default (0.5
+agent-day, policy only), (b) grow-on-demand VMM planes (3 to 4 agent-days; receipts on both cards from the tier lane's
+day 10, addresses never move so the one-program law holds by construction), (c) paged KV (10 to 15), (d) copy-on-write
+sharing (3 to 5) only on shared-prefix workload evidence; reason: the open-arm ratio is the cap rule, removable with no
+numeric change, the bounded arm is already 1.00, layout options buy the prefix copy and preemption, not the ratio. B
+could not find G0 and G3 to G7 spelled out in any tracked doc and maps onto G1, G2 and #552 criterion 4, saying so.
+Owner decisions flagged: the `MEMRA_ADMIT_BY_MEMORY` door's decide-by is 2026-09-23 with B's receipt as its evidence;
+the park policy. Comments on #539 and #552; both open.
+Lead error, recorded: the integ30 round-1 commit (`913199b4b`) went out with server clippy `-D warnings` red on an
+unused import because the check's result was not gated before the commit (the same heredoc-chain trap as twice
+earlier today); the memra-server suite was green. Corrected in `340e8a474` with the note on the PR. Ruling 30: every
+gate in a lead chain runs in its own `if ! ...; then exit; fi` line before the commit; a chain never carries a gate's
+result across a heredoc.
+
+Battery (`integration-day12/integ31-cpu-battery/`, run on the pre-merge tree that carried A's day 17 through C, then the
+final-tree checks after merging main `a19631f9d`): fmt, portable suites, memra-server suite, clippy, censuses, collector
+pytest, engine CPU lib tests, engine and server clippy `-D warnings`, marker census, workflow keys, perf board: rc=0;
+shellcheck on the two gates clean once `SC1091` (the sourced port guard) is excluded; `git diff --check` tripped only
+on battery summary whitespace. The final tree's engine equals main (only the two gate scripts differ). Local 5090
+serve-smoke NOT RUN: the 5090 lock was held from 00:31Z by another session's `memra-server` (cwd `wt-525`, not a spill
+lane) for the whole window; integ30 smoked the identical engine minutes earlier (`serve-smoke: 0 failed`); my waiter
+was stopped (own process, identified by cwd), the other session's untouched. Lead error, recorded: the first attempt
+matched the waiter by name and killed my own shell (exit 144), the trap the memory already names.
+Revuto round 1 on #626, one finding, real: the fault gate's new self-consistency check (`1 of M` equals the
+receipt's `items=N`) had no floor, so a regression registering one plane would read `1 of 1 items` and pass a cell
+whose purpose is a partially accepted batch. Floor added: `items=N >= 2`. Every banked run reads far above it (27B 34
+default and 32 plain, 9B 18 and 16); a re-run of the fault gate with the floor on both cards is assigned to C day 22.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

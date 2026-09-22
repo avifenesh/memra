@@ -266,6 +266,12 @@ pcell() { # $1 name $2 fault $3 refused-kind-or-literal: a kind ("producer fence
                 test -n "$items"
             chk "$name: the injected refusal's \`1 of M items\` M equals that receipt's items=N" \
                 reject_total_matches_receipt "$log" "$items"
+            # FLOOR (revuto on #626): a PARTIAL reject needs at least one accepted plane beside the
+            # rejected one; items=1 would satisfy the self-consistency check while making the cell
+            # a whole-batch refusal. Every artifact class read here so far carries far more (27B
+            # 34 default / 32 plain, 9B 18 / 16).
+            chk "$name: the entry carries at least two planes, so the reject is partial (items=N >= 2)" \
+                test "${items:-0}" -ge 2
             reason="tier H2D batch partially refused: 1 of ${items:-0} items (injected failure (MEMRA_KV_HOST_FAULT=$fault))"
             ;;
         "tier H2D "*) reason="$kind" ;;
