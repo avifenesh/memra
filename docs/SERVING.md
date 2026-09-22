@@ -1564,7 +1564,7 @@ hang latched for the process's life: the 2026-09-13 B200 box answered 503 for 28
 `nvidia-smi` answered in 40 ms from a shell, because NVML stalls past 10 s under graph capture
 and large allocations. A guard reading `/health` should restart on `latched_reason`, not on
 `degraded`.
-At startup only, the canary retries up to six consecutive timed-out probes (about 60 seconds with the default 10-second deadline) to allow VRAM teardown after a redeploy; an answer resumes the usual rich or minimal query path, while six hangs latch a fault and a single steady-state hang still latches immediately.
+At startup only, the canary retries up to six consecutive timed-out probes (about 60 seconds with the default 10-second deadline) to allow VRAM teardown after a redeploy; an answer resumes the usual rich or minimal query path, six hangs latch a fault, and in steady state a hang is one miss of the `MEMRA_GPU_PROBE_MISSES` streak (degraded, still live) until the bound latches.
 
 **The supervision contract (`deploy/systemd/memra-server.service`) has three couplings you can
 break silently.** The unit is an example to copy, but these are not stylistic choices — each is

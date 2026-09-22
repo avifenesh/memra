@@ -43,6 +43,12 @@ an_answer_clears_timeout_only_degradation, the_miss_bound_latches_and_an_answer_
 misses_policy_of_one_restores_the_single_hang_latch, fatal_faults_latch_regardless_of_probe_answers}`.
 `raw/local-ci/local-ci.log`: the full battery on the lane tree with the new stage inside it.
 
+Review round 1 (revuto) found two gaps: after a latch, an answer reset the streak and a later miss
+republished `degraded` beside `latched_reason`; and one pre-#516 sentence survived in SERVING.md.
+Both fixed: no streak or degradation bookkeeping runs beside a latched fault (the answer time is
+still stamped), arm B of the gate now hangs again after the latch and asserts the two states are
+never published together, and the sentence names the miss streak.
+
 ## What stays open in #516
 
 The default deadline stays 10 s; the issue's ask to scale it with card or model size is not

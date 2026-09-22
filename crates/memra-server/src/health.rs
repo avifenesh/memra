@@ -463,6 +463,13 @@ impl WorkerHealth {
     /// stamps the answer time. Never touches the fatal latch: an answer after a latched fault is
     /// the case the latch exists for (a GSP hang that comes back is still a card that hung).
     pub fn note_probe_ok(&self) {
+        if self.gpu_faulted.load(Ordering::Acquire) {
+            // Latched is terminal for this process: keep the answer time honest for /health,
+            // but no streak or degradation bookkeeping runs beside a latched fault (the two
+            // published states stay disjoint).
+            self.probe_last_ok_ms.store(now_ms() + 1, Ordering::Release);
+            return;
+        }
         let streak = self.probe_miss_streak.swap(0, Ordering::AcqRel);
         // +1 so an answer in the process's first millisecond is not read as "never" (0).
         self.probe_last_ok_ms.store(now_ms() + 1, Ordering::Release);
@@ -480,6 +487,11 @@ impl WorkerHealth {
     /// process is degraded and stays live, at `misses` it is a fatal GPU fault with the streak
     /// in its reason. Returns true when this call latched.
     pub fn note_probe_hang(&self, deadline: Duration, misses: u64) -> bool {
+        if self.gpu_faulted.load(Ordering::Acquire) {
+            // Already latched: a further miss changes nothing and must not republish
+            // "degraded" beside "latched".
+            return true;
+        }
         let streak = self.probe_miss_streak.fetch_add(1, Ordering::AcqRel) + 1;
         let last_ok = self.probe_last_ok_age_ms();
         if streak >= misses.max(1) {
@@ -1170,9 +1182,18 @@ mod tests {
         let p = h.gpu_probe();
         assert!(p.latched_reason.is_some());
         assert_eq!(
-            p.miss_streak, 0,
-            "the streak bookkeeping resets; the latch does not"
+            p.miss_streak, 3,
+            "no streak bookkeeping runs beside a latched fault"
         );
+        assert!(p.last_ok_age_ms.is_some(), "the answer time stays honest");
+        // a further miss after the latch never republishes "degraded" beside "latched"
+        assert!(h.note_probe_hang(Duration::from_secs(10), 3));
+        let p = h.gpu_probe();
+        assert!(
+            !p.degraded(),
+            "latched and degraded are never both published"
+        );
+        assert!(p.latched_reason.is_some());
     }
 
     #[test]

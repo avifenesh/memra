@@ -19,8 +19,9 @@ with `MEMRA_GPU_WATCH_S=2 MEMRA_GPU_PROBE_TIMEOUT_S=2 MEMRA_GPU_PROBE_MISSES=3`;
 Arms, each its own boot:
   A recover:  script ok, hang, hang, ok...   -> 200 with degraded=true streak 1 then 2, then
               degraded=false streak 0 with a fresh last_ok_age_ms; latched_reason null throughout.
-  B latch:    script ok, hang, hang, hang, ok... -> 503 whose detail names 3 consecutive probes;
-              still 503 with latched_reason after later answering probes.
+  B latch:    script ok, hang, hang, hang, ok, hang, ok... -> 503 whose detail names 3 consecutive
+              probes; still 503 with latched_reason after later answers and a later hang, and
+              `degraded` is never published beside `latched_reason`.
   C fatal:    script ok, ecc, ok...          -> 503 naming ECC at once; later answers do not clear it.
 Verdict line:
   GPU-PROBE-RECOVERY: recover=PASS|FAIL latch=PASS|FAIL fatal=PASS|FAIL -> PASS|FAIL
@@ -230,13 +231,16 @@ def main() -> int:
         verdicts["recover"] = saw1 and saw2 and cleared and never503
         print(f"  A recover: streak_seen={sorted(set(x for x in streaks if x is not None))} saw1={saw1} saw2={saw2} cleared={cleared} never503={never503}", flush=True)
 
-        latch = run_arm(a, "B-latch", ["ok", "hang", "hang", "hang", "ok", "ok", "ok"], 30)
+        # after the latch: an answer, then another hang, then answers; "degraded" must never be
+        # published beside "latched" (review round 1)
+        latch = run_arm(a, "B-latch", ["ok", "hang", "hang", "hang", "ok", "hang", "ok", "ok"], 36)
         first503 = next((s for s in latch if s["status"] == 503), None)
         stays = latch[-1]["status"] == 503 and latch[-1]["latched"] is not None
         names = bool(first503 and first503["detail"] and "3 consecutive" in first503["detail"])
         before = all(s["status"] == 200 for s in latch[: latch.index(first503)]) if first503 else False
-        verdicts["latch"] = first503 is not None and names and stays and before
-        print(f"  B latch: first503_at={first503 and first503['t']} names_streak={names} stays_latched={stays} live_before={before}", flush=True)
+        disjoint = all(not (s["latched"] is not None and s["degraded"]) for s in latch)
+        verdicts["latch"] = first503 is not None and names and stays and before and disjoint
+        print(f"  B latch: first503_at={first503 and first503['t']} names_streak={names} stays_latched={stays} live_before={before} never_degraded_beside_latched={disjoint}", flush=True)
 
         fatal = run_arm(a, "C-fatal", ["ok", "ecc", "ok", "ok"], 14)
         f503 = next((s for s in fatal if s["status"] == 503), None)

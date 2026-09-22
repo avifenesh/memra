@@ -117,8 +117,9 @@ GPU probe recovery (memra#516, `tools/gpu-probe-recovery-gate.py`, in `tools/loc
 that follows a script per boot, at a 2 s probe interval and deadline. Arm A (`MEMRA_GPU_PROBE_MISSES=3`):
 answers at startup, hangs two probes, answers again: `/health` stays 200 with `gpu_probe.degraded`
 true and `miss_streak` 1 then 2, then returns to degraded false, streak 0, `last_ok_age_ms` fresh.
-Arm B: hangs three probes: the third latches, `/health` 503 with the streak in `detail`, and a
-later answering probe does not clear it. Arm C: answers with uncorrected ECC once: latches at once
+Arm B: hangs three probes: the third latches, `/health` 503 with the streak in `detail`, a later
+answering probe does not clear it, and a later hang never publishes `degraded` beside
+`latched_reason`. Arm C: answers with uncorrected ECC once: latches at once
 and a clean answer afterwards does not clear it. CPU teeth for the policy itself are
 `health::tests::{one_steady_state_hang_degrades_but_stays_live, an_answer_clears_timeout_only_degradation,
 the_miss_bound_latches_and_an_answer_does_not_unlatch, misses_policy_of_one_restores_the_single_hang_latch,
