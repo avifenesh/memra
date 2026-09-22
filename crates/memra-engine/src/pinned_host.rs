@@ -199,6 +199,65 @@ impl PinnedHostBuf {
             region: None,
         })
     }
+    /// WP-A day 30 (the demote's f32 span staging, `tier_transfer::D2hSpan`): `len` bytes of
+    /// cached pinned memory (`cuMemHostAlloc` flags 0) with NO zero fill, unreadable (every slice
+    /// access refused) until a full write lands. The caller binds the owning context first.
+    pub fn new_unwritten(len: usize) -> Result<Self, Error> {
+        if len > isize::MAX as usize {
+            return Err("pinned buffer exceeds slice limit".into());
+        }
+        let ptr = unsafe { cudarc::driver::result::malloc_host(len.max(1), 0)? }.cast::<u8>();
+        Ok(Self {
+            ptr,
+            len,
+            written: false,
+            region: None,
+        })
+    }
+    /// WP-A day 30: enqueue a full-length D2H of `src` into this buffer on `stream` with NO host
+    /// wait. The buffer is unreadable from here until `mark_landed`.
+    ///
+    /// # Safety
+    ///
+    /// `src` and `self` must stay alive, unmoved in memory and unaliased by any writer until an
+    /// event recorded on `stream` after this call is observed complete; `src`'s last writer must
+    /// be ordered before the copy on `stream` (the caller's stream wait). Only then may the
+    /// caller call `mark_landed`.
+    pub(crate) unsafe fn enqueue_from_device_f32(
+        &mut self,
+        src: &CudaSlice<f32>,
+        stream: &Arc<CudaStream>,
+    ) -> Result<(), Error> {
+        let n = src.len().checked_mul(4).ok_or("pinned f32 size overflow")?;
+        if n != self.len || n == 0 {
+            return Err("pinned f32 span length mismatch".into());
+        }
+        self.written = false;
+        let (device, _record_src) = src.device_ptr(stream);
+        // SAFETY: documented FFI (`cuMemcpyDtoHAsync_v2(dst, src, bytes, stream)`): this exclusive
+        // buffer owns `len` writable bytes and the source spans exactly them; the caller's
+        // contract above keeps both alive until the copy's event, and no host slice exists until
+        // `mark_landed`.
+        unsafe {
+            cudarc::driver::sys::cuMemcpyDtoHAsync_v2(
+                self.ptr.cast(),
+                device,
+                self.len,
+                stream.cu_stream(),
+            )
+            .result()?;
+        }
+        Ok(())
+    }
+    /// WP-A day 30: the span's copy landed; its bytes become readable.
+    ///
+    /// # Safety
+    ///
+    /// Only after an event recorded on the enqueue's stream after `enqueue_from_device_f32` was
+    /// observed complete: before that the bytes are being written by the device.
+    pub(crate) unsafe fn mark_landed(&mut self) {
+        self.written = true;
+    }
     pub fn from_device_f32(src: &CudaSlice<f32>) -> Result<Self, Error> {
         let n = src.len().checked_mul(4).ok_or("pinned f32 size overflow")?;
         src.context().bind_to_thread()?;

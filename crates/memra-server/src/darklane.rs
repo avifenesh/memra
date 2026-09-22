@@ -12,7 +12,10 @@
 //! queue.is_empty()` (worker.rs loop top) and `set_phase` stamps the beat on entry — so
 //! `phase == IDLE` + `beat_age_ms` IS the idle duration, to the millisecond, with zero new
 //! hot-path cost. `PENDING_ADMITS` closes the HTTP→worker handoff gap (a request the handler
-//! has submitted but the worker hasn't popped yet is traffic, not idleness).
+//! has submitted but the worker hasn't popped yet is traffic, not idleness). A dedicated serve
+//! route (the DSv4 thread) is not the scheduler, so the snapshot's `idle_for_ms` folds every
+//! registered route in: the process is idle only while the scheduler AND every route are idle
+//! with nothing queued, and for as long as the most recently idled of them (memra#500).
 //!
 //! THE LANE CLASS: below EVERY serving lane. Harvest is still a *request* class the engine
 //! admits and schedules; a background job is not a request at all — it runs only while the
@@ -55,7 +58,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
-use crate::health::{PHASE_IDLE, SharedHealth};
+use crate::health::SharedHealth;
 use crate::worker::PENDING_ADMITS;
 
 // ---------------------------------------------------------------------------
@@ -89,14 +92,14 @@ impl ValleySignal {
     }
 
     /// Seconds the worker has been completely idle; 0.0 the instant there is ANY work
-    /// (active/queued sessions => phase != IDLE; submitted-not-yet-popped requests =>
-    /// PENDING_ADMITS > 0; loading/dead phases are not idleness either).
+    /// (active/queued sessions => phase != IDLE; a busy or backlogged serve route => no
+    /// `idle_for_ms`; submitted-not-yet-popped requests => PENDING_ADMITS > 0; loading/dead
+    /// phases are not idleness either).
     pub fn idle_seconds(&self) -> f64 {
         let s = self.health.snapshot();
-        if s.phase == PHASE_IDLE && PENDING_ADMITS.load(Ordering::Acquire) == 0 {
-            s.beat_age_ms as f64 / 1000.0
-        } else {
-            0.0
+        match s.idle_for_ms {
+            Some(ms) if PENDING_ADMITS.load(Ordering::Acquire) == 0 => ms as f64 / 1000.0,
+            _ => 0.0,
         }
     }
 
@@ -577,6 +580,7 @@ fn preempt_wait(c: &mut std::process::Child, st: &BgJobState, grace_ms: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::health::PHASE_IDLE;
     use crate::health::WorkerHealth;
 
     /// /proc/<pid>/stat field 3 — 'T' is stopped, 'R'/'S' running/sleeping, gone = None.
@@ -650,6 +654,30 @@ mod tests {
         // BUSY: zero again.
         h.beat_busy();
         assert_eq!(v.idle_seconds(), 0.0);
+    }
+
+    /// memra#500: a DSv4 request runs on its own thread, so the scheduler sits IDLE through
+    /// it. Before routes published, the valley read that as quiet and resumed a background job
+    /// on top of a live request.
+    #[test]
+    fn a_busy_serve_route_is_not_a_valley() {
+        let h = WorkerHealth::new();
+        let v = ValleySignal::new(h.clone());
+        h.set_phase(PHASE_IDLE);
+        let load = crate::route_telemetry::RouteLoad::new("valley-route", 1);
+        let r = h.register_route("valley-route", load.clone());
+        r.set_idle();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        wait_for("idle age accrues", 2000, || v.idle_seconds() >= 0.02);
+        r.begin_request();
+        assert_eq!(v.idle_seconds(), 0.0, "the route is serving");
+        r.set_idle();
+        // idle again but with a request reserved on the route's queue: traffic
+        let ticket = load.try_reserve(0, 0).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        assert_eq!(v.idle_seconds(), 0.0, "a queued route request is traffic");
+        drop(ticket);
+        wait_for("idle age accrues again", 2000, || v.idle_seconds() >= 0.02);
     }
 
     #[test]

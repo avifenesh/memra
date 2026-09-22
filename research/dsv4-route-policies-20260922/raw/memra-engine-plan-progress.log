@@ -1,0 +1,21 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-dsv4/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.20s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-bedcf781fb9cea32)
+
+running 11 tests
+test dsv4_gpu::session_plan_tests::a_layer_shape_is_the_allocators_arithmetic ... ok
+test dsv4_gpu::session_plan_tests::effective_free_and_occupied_split_the_pools_mapped_unused_bytes ... ok
+test dsv4_gpu::session_plan_tests::gather_bytes_match_the_workspace_ensure ... ok
+test dsv4_gpu::session_plan_tests::the_plan_scales_with_capacity_and_the_transient_rows_do_not ... ok
+test progress::tests::a_progress_sink_scope_routes_this_threads_stamps_and_restores_on_drop ... ok
+test dsv4_gpu::session_plan_tests::the_plan_charges_each_stage_its_own_layers_and_the_tp_replica ... ok
+test progress::tests::prime_cancel_point_fires_only_under_an_installed_scope_and_never_at_the_end ... ok
+test progress::tests::snapshot_is_none_until_the_first_advance_then_counts ... ok
+test progress::tests::the_dsv4_prime_walks_actually_call_the_odometer ... ok
+test progress::tests::the_sequential_prime_walks_ask_the_cancellation_point ... ok
+test progress::tests::the_prime_walks_actually_call_the_odometer ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 557 filtered out; finished in 0.01s
+

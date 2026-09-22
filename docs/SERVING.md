@@ -1582,9 +1582,59 @@ instead of no-oping; a mixed process keeps booting, the bundle governs the hybri
 DSv4 line names its refusal. The armed check runs before any weight loads (a DSv4 checkpoint is
 known from its path) and the full registry again before the ready handoff. Each boot prints one
 `[route-contract] model= route= capacity= implemented=[..] refused=[..]` line per route; the
-DSv4 line today refuses occupancy, progress, memory-cost, rewrite-qualification, prime-fairness
-and service-metrics, each with its issue. `RouteRegistry::capacity_for(model)` is the number the
-admission cap mirror should read (#501).
+DSv4 line today refuses rewrite-qualification (#449) and prime-fairness (#535), each with its
+issue, and implements occupancy, progress and service-metrics (#500, #501) and memory-cost (#503)
+as below. `RouteRegistry::capacity_for(model)` is the number the admission cap mirror reads (#501).
+
+**A dedicated route owns its health, its admission and its memory door (#500, #501, #503,
+2026-09-22).** The DSv4 thread is the only dedicated route today. These are the code halves with
+CPU and fake-route teeth; the two-card receipt is pending, and the DSv4 serving bring-up stays
+paused (`docs/models/deepseek-v4-flash.md`).
+
+- **Health (#500, `health.rs::RouteHealth`).** Each route registers its own record beside the
+  central worker's, judged with the same stall bound and never mixed into its signals. Phase is
+  `loading` from registration to the thread's first idle, `idle` on `recv`, `busy` from dequeue
+  to the end of the request, `dead` once the thread exits. Forward progress is the thread's own
+  prime odometer (`ProgressSinkScope`, completed prime rows) plus a stamp per decode step or
+  speculative round. A busy route whose freshest signal is older than `MEMRA_HEALTH_STALL_S` is
+  stalled and `/health` goes red naming it; `/readyz` stays not-ready while any route is
+  `loading`. The top-level `phase` is the process aggregate (busy while any route serves),
+  `scheduler_phase` is the central worker's own, `routes` lists each route's record, and
+  `idle_for_ms` is set only when every thread is idle with nothing waiting. A caught
+  per-request panic counts `request_faults`; the thread keeps serving.
+- **Admission and telemetry (#501, `route_telemetry.rs`).** A model a dedicated route serves is
+  admitted against the route's own book, not the hybrid lane's 64 sessions. The queue bound is
+  `max_queue_depth(route capacity)` per lane over the route's reserved-not-dequeued count; the
+  wait estimate is the route's service p50 (the `MEMRA_RL_RESET_S` fallback until it has one)
+  times the waves ahead; `X-RateLimit-Limit` reads the route's capacity (1 for DSv4). The
+  reservation is a ticket that rides the request and releases at the route's dequeue. `/metrics`
+  folds route-served requests into the process totals and adds a `routes` array (`capacity`,
+  `waiting`, `inflight`, `running`, `admitted`, `completed`, `failed`, `cancelled`, `refused`,
+  token counters, `service_p50/p99_ms`, `round_p50/p99_ms`).
+- **Memory cost (#503, `dsv4_admit.rs`).** Before a parked prefix is consumed or any state is
+  allocated, the route charges each owning card for the session: the planned cache
+  (`plan_session_cache_bytes`), plus a fixed per-session term (the batched decode transaction,
+  chunked-prefill transients at the default chunk `min(512, ctx)`, the speculative verify state
+  and DSpark taps) measured once at boot as occupied-memory deltas at a 1024-token calibration
+  session, plus the lazily grown C4 gathers for widths 1, chunk and the verify width when the
+  host C4 tier is on. Stages on one card sum. The host tier charges the active host-C4 history
+  against `MemAvailable` plus what evicting parked entries returns. The decision is the shared
+  rule (`admit_memory::decide`): device first on every card, then the host tier with LRU
+  eviction of parked entries (never the entry the request would restore from, never for a
+  device shortfall), then a defer that re-reads every 50 ms. The budget is
+  `MEMRA_ADMIT_DEFER_BUDGET_MS`, read on this route whatever `MEMRA_ADMIT_BY_MEMORY` says,
+  clamped to half the stall bound. Past it the request is refused 429 `rate_limit_exceeded` with
+  `Retry-After: 5` and the shared memory refusal sentence. A session above what a card offers
+  with the route idle answers 400 `context_length_exceeded` naming the card, the bytes and the
+  largest session that fits; a host-C4 budget excess is the same 400 (it was a 503). A client
+  that leaves mid-defer is dropped and counted `cancelled`. Every decision prints
+  `[admit-mem] id= model= route=dsv4-thread verdict= capacity= spec= need= ceiling= host_need=
+  short= waited_ms= reclaimed= retry_after_s=`, and boot prints the calibrated `fixed_plain`,
+  `fixed_spec`, `ceiling` and `defer_budget_ms`. Limits: forward-time scratch and the
+  monolithic-prime scratch (chunk 0, or a prompt within one chunk) are not charged, so a driver
+  OOM there still answers 503 `overloaded`; the ceiling is effective free at boot, so a co-tenant
+  that arrives later reads as a defer rather than a never-fits; the gather terms are summed across
+  widths, an upper bound.
 
 **The supervision contract (`deploy/systemd/memra-server.service`) has three couplings you can
 break silently.** The unit is an example to copy, but these are not stylistic choices — each is
