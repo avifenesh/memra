@@ -218,3 +218,67 @@ and the D2D capture receipt `items=18 bytes=1069056`. The draft plane adds 1,069
 
 **What this does not say.** No per-class recurrent size, no vocabulary size, no hidden width, no K/V split. No timing.
 The 9B NVFP4 artifact and the RTX 5090 class receipts of days 31, 35 and 37.
+
+## 4. The counting rule, applied
+
+| Figure | Command | Output |
+|---|---|---|
+| Every tick-1 and tick-2 median, IQR, ON minus OFF, option (a) minus base, DiD, verdict, hypothesis and shape figure of section 2 | `python3 research/spill-c-20260919/day38-tick-split.py research/spill-c-20260919/rtx5090-day37/stall/ev research/spill-c-20260919/rtx5090-day37/reading.log` at `1bb7f4dd7` | `day38-cpu/tick-split.log` (482 lines) |
+| The self-test's PASS | `python3 research/spill-c-20260919/day38-tick-split.py --selftest` | `day38-cpu/selftest.log` |
+| The reader's diff against day 37's (631 lines) | `diff -u day37-stall-reading.py day38-tick-split.py`, `wc -l` | `day38-cpu/reader.diff`; its body equals a fresh `diff -u` at the records tree (0 lines differ below the header) |
+| The reader unchanged since the pre-registration | `git diff --stat 1bb7f4dd7 HEAD -- research/spill-c-20260919/day38-tick-split.py \| wc -l` | 0, stated here |
+| `worker.rs` identical on `8b889dcdf` and the lane tip | `git diff --stat 8b889dcdf HEAD -- crates/memra-server/src/worker.rs \| wc -l` | 0, stated here |
+| Every byte, count, interval and share of section 3 | `python3 research/spill-c-20260919/day38-9b-split.py research/spill-c-20260919/rtx5090-day31 research/spill-c-20260919/rtx5090-day35 research/spill-c-20260919/rtx5090-day37` | `day38-cpu/byte-split.log` (56 lines) |
+| Every `worker.rs:<line>`, `spec.rs:<line>` and `tier_transfer.rs:<line>` cite | `sed -n` over the named file at the lane tip (`worker.rs` at `091a931c0` for section 1's base-tree cites) | the source |
+
+Both readers were written today. `day38-tick-split.py` was committed with the pre-registration before it ran on a
+receipt; `day38-9b-split.py` was written after the logs were read by `grep` and is labelled here as a reading of banked
+text, not a rule.
+
+## 5. Commits
+
+- `1215dff35`: merge of `origin/main` `0c86309bd` (#652) into the lane.
+- `1bb7f4dd7`: the pre-registration (section 1), the reader, its diff against day 37's and its self-test; pushed
+  before the reader ran on the receipts.
+- `5746d9685`: the reader's run over day 37's 40 receipts (`day38-cpu/tick-split.log`) and section 2.
+- `f7c2c059c`: the 9B byte split (section 3, `day38-9b-split.py`, `day38-cpu/byte-split.log`).
+- `ac5caf53d`: `DOOR-DECISION-PACKET.md` (status, section 4 rows, item 7, section 6, appendix A day 38) and
+  `HOSTPREFIX-DOOR.md` section E DAY 38.
+- The records commit after `ac5caf53d`: this file's sections 4 to 8, `STATE.md` and the `research/INDEX.md` row.
+
+Every push ran as `MEMRA_RELEASE_QUALIFICATION_MODE=development git push origin lane/spill-c-20260919` (announced; the
+hook prints `UNQUALIFIED DEVELOPMENT` and logs the skip). No commit on `main`, no PR, no engine change, no `docs/`
+registry edit, no GPU run.
+
+## 6. Checks
+
+Each ran in its own `if ! ...; then exit; fi` line on the records tree before its commit:
+
+- `bash tools/check-flags.sh`: "check-flags: no uncovered runtime names" and "every runtime MEMRA_* name resolves
+  against 'docs/FLAGS.md' (no grandfather list)".
+- `bash tools/check-conflict-markers.sh`: "check-conflict-markers: OK (no conflict marker line in tracked source or
+  docs)".
+- `git diff --check`: clean.
+- Em dashes (U+2014) in added lines, `git diff 1215dff35 -- research/spill-c-20260919/ research/INDEX.md | grep '^+' |
+  grep -cP '\x{2014}'`: 0. No raw server log was added today, so no exclusion applies.
+- `python3 tools/check-public-boundary.py check`: "public-boundary: 604 matches (604 grandfathered, 0 new)."
+
+## 7. Owed and open
+
+- The target card's demote-class tenant-stall cell on the option (a) tree: no cell has run (the packet's item 2
+  scope, item 7 and section 6). Not this lane's card today; not touched.
+- The split of the door's second stretched tick into the owner thread's segments: day 38 places the option (a)
+  difference on tick 2, but no segment is timed against a gap. A timestamped segment line is engine code.
+- The 9B entry's conv, ssm and hidden by class: the line that would split them is named in section 3 (engine code);
+  the artifact's metadata was not read.
+- The promote class on tick 2: `not_defined` under the registered property; no promote tick-2 reading exists.
+- Unchanged: the owner's decisions at 2026-09-23 (admission door), 2026-10-04, 2026-10-05 (contracts door) and
+  2026-10-06; Move 2 owed item 1 (A day 30, running in A's lane); the double-park slice question; an always-admitted
+  prime arm on the RTX 5090 class (a new pre-registration, not run).
+
+## 8. Cleanup and budget
+
+- `/tmp/c38-base-worker.rs` (the `git show 091a931c0:crates/memra-server/src/worker.rs` scratch) removed. No worktree
+  or branch was created today.
+- At close: no server, lock or GPU process of this lane's. Lane A's worktree and processes were not touched.
+- Agent-hours: from the brief (20:51Z) to the records push, about 0.6 of the 2-hour budget.
