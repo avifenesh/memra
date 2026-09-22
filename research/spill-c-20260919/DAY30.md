@@ -104,3 +104,139 @@ failure, reported as an attempt. No harness change. No change to the two capture
 `/root/artifacts`, `/root/memra-spill` or other lanes' worktrees and processes; no third lock name; no bare GPU run;
 every boot inside the collector's one hold. Nothing here decides the door; the packet (Task 1) quotes this cell's
 verdict line verbatim once it exists, or records the cell as still unread.
+
+## Task 2, the run (target card, tree `55b8da077`, binary `16d8c4c72e780c9c...`; receipts `pro-single-day30/`)
+
+**Build and hold.** `/root/wt-c` detached at `55b8da077` (`crates/` = `main` `ebe3fe17d`, integ39) from a bundle of
+this lane's new commits (the bundle removed on both ends); `build.log` `rc=0` (11:37:13Z to 11:40:14Z, cargo 1.97.1,
+CUDA 13.2, `MEMRA_CUDA_ARCH auto-detected 120a`). One collector hold (`collector/stall-capture-share/`, `CELL.jsonl`
+`status: executed-not-qualified`, `exit_code 0`, `elapsed_seconds 588.0`; `tools/tier-battery.py --validate` rc=0 on
+the box), 11:40:14Z to 11:50:02Z, the lock free at launch (no `lock-retries.log`), eight boots in the pre-registered
+order, `LOCK.json` `{"owner": "collector", "lock": "/tmp/memra-gpu.lock", "mechanism":
+"inherited-flock-same-open-description", ...}`, `compute-apps.{before,after}.csv` empty, `0 MiB` on the card before
+every boot. Harness `day28_stall_cell.py` SHA-256 `d11785a80a030516...` (day 28's), A's `13867e77da40a9b5...`;
+`harness.diff` banked. Regime from the collector's `command.gpu.csv` (2345 samples at 250 ms): 33 to 61 C, 32.0 to
+501.4 W under the 600 W limit, 0 to 22005 MiB. `exit.txt` `stall-capture-share rc=0`; `replays.log` eight `STALL
+REPLAY: PASS`.
+
+**Admissibility (every clause of the pre-registration, `reading.log`).** All eight receipts `replay=PASS
+admissible=True`: `errors=0`, `tenant_text_identical=True`, zero `server_demote_ms` and `server_promote_ms`, zero
+`seed REFUSED (grid)`, zero `DISABLED` or `capture refused` lines. Refused arms: the typed line fired in every boot
+(`[prefix-cache] insert refused: entry 307986432 exceeds budget 134217728 (snapshot preflight, model gate)`, the
+announcer printing 3 of the 11 identical refusals per boot with `(previous shape: 7 identical refusals not printed)`;
+entries of 307,986,432 and 308,936,704 B against the 134,217,728 B budget), zero `insert (seed): 5088 tokens`, zero
+`capture submitted off the tick`, zero `hit: 5088 of` lines. Capture arms: ten `insert (seed): 5088 tokens` per boot,
+every re-post a grid hit; the ON arm 11 `capture submitted off the tick` (the calibration post and the ten timed
+intruders), the OFF arm 0.
+
+**Rule lines, verbatim (`reading.log`; the intruder token lists elided).**
+
+Pass 1:
+
+`STALL rule cell=stall-refused-off arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7 idle_p99=14.8 idle_max=15.0 arm_runs=10 arm_p50=13.4 arm_p95=14.9 arm_p99=295.7 arm_max=299.3 stall_median=283.1 stall_min=282.9 stall_max=285.8 server_demote_ms=[] server_promote_ms=[] ... tenant_text_identical=True errors=0`
+
+`STALL rule cell=stall-refused-on arm=prime ... arm_p99=295.7 arm_max=299.2 stall_median=283.1 stall_min=282.9 stall_max=285.8 server_demote_ms=[] server_promote_ms=[] ... tenant_text_identical=True errors=0`
+
+`STALL rule cell=stall-capture-off arm=capture ... arm_p99=295.8 arm_max=299.9 stall_median=283.7 stall_min=283.5 stall_max=286.5 server_demote_ms=[] server_promote_ms=[] ... tenant_text_identical=True errors=0`
+
+`STALL rule cell=stall-capture-on arm=capture ... arm_p99=295.9 arm_max=300.5 stall_median=284.4 stall_min=284.3 stall_max=287.0 server_demote_ms=[] server_promote_ms=[] ... tenant_text_identical=True errors=0`
+
+Pass 2:
+
+`STALL rule cell=stall-refused-off arm=prime ... arm_p99=295.8 arm_max=299.3 stall_median=283.2 stall_min=282.9 stall_max=285.9 ... errors=0`
+
+`STALL rule cell=stall-refused-on arm=prime ... arm_p99=295.7 arm_max=299.2 stall_median=283.1 stall_min=282.9 stall_max=285.8 ... errors=0`
+
+`STALL rule cell=stall-capture-off arm=capture ... arm_p99=295.8 arm_max=299.9 stall_median=283.7 stall_min=283.5 stall_max=286.5 ... errors=0`
+
+`STALL rule cell=stall-capture-on arm=capture ... arm_p99=295.9 arm_max=300.8 stall_median=284.4 stall_min=284.2 stall_max=287.3 ... errors=0`
+
+**The reading, by the pre-registered rules (`day30-stall-reading.py`, verbatim).**
+
+`DAY30 CAPTURE-SHARE pass=1 base=refused-off stall_median=283.1 iqr=0.1 arm_p99=295.7 arm_max=299.3 n_per_order=5 pooled=10`
+
+`DAY30 CAPTURE-SHARE pass=1 control refused on_minus_off=-0.1 unc=0.3 (refused-on 283.1 iqr 0.3) -> under_resolution`
+
+`DAY30 CAPTURE-SHARE pass=1 class=capture arm=off stall_median=283.7 iqr=0.3 share=+0.6 unc=0.3 arm_p99=295.8 arm_max=299.9 -> isolated`
+
+`DAY30 CAPTURE-SHARE pass=1 class=capture arm=on stall_median=284.4 iqr=0.1 share=+1.2 unc=0.2 arm_p99=295.9 arm_max=300.5 -> isolated`
+
+`DAY30 CAPTURE-SHARE pass=1 class=capture on_minus_off=+0.7 unc=0.3 -> isolated`
+
+`DAY30 CAPTURE-SHARE pass=2 base=refused-off stall_median=283.2 iqr=0.2 arm_p99=295.8 arm_max=299.3 n_per_order=5 pooled=10`
+
+`DAY30 CAPTURE-SHARE pass=2 control refused on_minus_off=-0.1 unc=0.3 (refused-on 283.1 iqr 0.2) -> under_resolution`
+
+`DAY30 CAPTURE-SHARE pass=2 class=capture arm=off stall_median=283.7 iqr=0.2 share=+0.5 unc=0.3 arm_p99=295.8 arm_max=299.9 -> isolated`
+
+`DAY30 CAPTURE-SHARE pass=2 class=capture arm=on stall_median=284.4 iqr=0.1 share=+1.2 unc=0.3 arm_p99=295.9 arm_max=300.8 -> isolated`
+
+`DAY30 CAPTURE-SHARE pass=2 class=capture on_minus_off=+0.7 unc=0.2 -> isolated`
+
+`DAY30 CAPTURE-SHARE VERDICT: pass1 refused on-off -0.1 (unc 0.3) under_resolution; pass1 share off +0.6 (unc 0.3) isolated; pass1 share on +1.2 (unc 0.2) isolated; pass1 capture on-off +0.7 (unc 0.3) isolated; pass2 refused on-off -0.1 (unc 0.3) under_resolution; pass2 share off +0.5 (unc 0.3) isolated; pass2 share on +1.2 (unc 0.3) isolated; pass2 capture on-off +0.7 (unc 0.2) isolated; admissible=True`
+
+**What the cell read (nothing tuned).** The split reading held: a cache-ON boot whose seed insert is refused before
+any copy stalls the tenant **283.1 / 283.2 ms** (IQR 0.1 / 0.2), the cache-on figure and not the cache-off boot's
+301.5, so day 28's 17 ms was the prime's tail chunk (the 32 to 35 tokens past the 5088 seed boundary) moved to a
+second tick, never a cost the capture removed. Against that base the capture arm's OWN share is **+0.6 / +0.5 ms
+door OFF** (unc 0.3, `isolated` at the rule's edge: the recurrent clone of about 157 MB, the KV rows of about
+154 MB and the allocation on the owner stream) and **+1.2 / +1.2 ms door ON** (unc 0.2 / 0.3, `isolated`: the
+recurrent clone, the submit and the ticket on the tick, the rows on the copy stream), with `on_minus_off` **+0.7 /
++0.7** (day 28's figure exactly, `isolated`) and the refused-on control **-0.1 / -0.1** (`under_resolution`: the door
+with nothing to route costs the tick nothing the cell resolves). `arm_p99` 295.7 to 295.9 and `arm_max` 299.2 to
+300.8 in every arm: no split signature; the intruder's prime dominates the worst tick in all four arms and the
+whole capture class sits inside about 1 ms of it on this card at this entry size. Move 2 owed item 3's capture half
+is READ: under a millisecond in both arms, the door's own share about 0.6 ms above the OFF program's, sign ON above
+OFF in both passes, on the target card, `executed-not-qualified`. Nothing here decides the door; the packet quotes
+the verdict line.
+
+## Task 1: the decision packet (`DOOR-DECISION-PACKET.md`)
+
+Written as one page plus an appendix: the question (section E, stated and not answered); what the door is today
+(Move 1 whole, Move 2 slices 1 to 3, the draft-bearing restore and capture routes, the receipt term, every
+fail-closed arm, what still runs on the tick); the correctness table (every gate, both arms, both cards, tree and
+receipt path, verbatim verdicts); the cost table per card (the on-tick door, the Move 1 halves, the same-window pairs
+of day 23 and day 29, the isolating cell of day 28, today's capture share, the receipt price on both cards, the
+cached and write-combined pairs, the hash micro-cell, the arena pair), each with N, order and regime; the open
+findings (cell (v)'s day-19 clause, cell (i)'s clause not met, the double park, A's day-24 retire settle, the capture
+share now read, the neighbouring doors' dates, what is unbuilt); the three outcomes with what each would require,
+without a recommendation. Every number was re-read today from the file named beside it: the stall rule lines from
+their `receipt.json` (day 28's lines regenerated with `day28-stall-reading.py` and equal to `pro-single-day28/reading.log`),
+the pairs regenerated with `wc-pair.py` and `arena-pair.py` (`REPLAY: PASS`), the gate `ok:` counts counted in the
+gate logs, the regimes computed from each cell's `command.gpu.csv` (the door table's day-16 regime "43 to 50 C, 88 to
+329 W" is replaced there by the three cells' own CSV range, 32 to 58 C, 32.6 to 492.7 W). Untraced: none; what was
+deliberately not carried is listed in the packet's appendix B. It is a draft for the owner and becomes a
+`docs/decisions/` record only after the owner decides; nothing was created under `docs/decisions/`.
+
+## Task 3: records and checks
+
+`STATE.md` rewritten; `research/INDEX.md` row `spill-c-20260919/day30`; `HOSTPREFIX-DOOR.md` section E gains the
+pointer to the packet, and the two capture rows (the owed-cell row of the isolating cell, the section B capture row)
+gain today's reading. Checks: `shellcheck -S warning` clean on the two drivers; `bash tools/check-flags.sh`;
+`bash tools/check-conflict-markers.sh`; `git diff --check`; `.gitattributes` `*.log -whitespace` and `*.diff
+-whitespace` in `pro-single-day30/`; zero em dashes in every file added or edited today (the results are quoted in
+the closing commit's message). `tools/public-boundary-check.sh` does not exist in this tree; the pre-push hook's
+boundary census ran on every push (`public-boundary: 0 matches`).
+
+## Pushes
+
+`24597453e` (the merge), `55b8da077` (the pre-registration, the drivers, the reading script), then the closing
+commit (this record's Task 2 run, Task 1 and Task 3 sections, the receipts, the packet, the door table, STATE, INDEX),
+each in `MEMRA_RELEASE_QUALIFICATION_MODE=development` (printed `UNQUALIFIED DEVELOPMENT ... no GPU qualification
+claimed`, logged in the clone's `.git/memra-gate-skips.log`). Not merged into main, no PR opened.
+
+## Left as it was, and cleanup
+
+BOX3 reached through the existing control socket only (`ssh -O check` first, `Master running`). `/root/wt-c` (mine)
+left detached at `55b8da077`, clean; the bundle removed on both ends; receipts under `/root/spill-receipts/day30`
+(mirrored here as `pro-single-day30/`); `/root/artifacts`, `/root/memra-spill`, other lanes' worktrees, receipts and
+processes not touched (the card was free when my hold began; lane A's `a-day25` server was on the card and the lock
+held when I left, seen in `nvidia-smi` and `pgrep` listings only). No server of mine on either card at close; no lock
+held by me; no `/tmp` scratch left on either end (the local bundle and the reading-script test tree removed).
+
+## Budget
+
+About 3.0 agent-hours against 4: reading and the merge 0.6, the Task 2 design and pre-registration 0.5, the box
+shipping, build and hold (10 minutes of boots, polled) 0.4, the packet and the receipt cross-check 1.1, the records
+and checks 0.4. Blockers: none (no integ40 branch existed, so the merge took `origin/main`; the lock was free at
+launch).
