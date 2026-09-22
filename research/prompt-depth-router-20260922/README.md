@@ -1,5 +1,12 @@
 # Fast per-request depth routing
 
+The continuation in [`forecast/PROTOCOL.md`](forecast/PROTOCOL.md) tests a shared
+shallow tree that predicts upcoming output format from a bounded committed
+prefix. It selects only K=2,3,4 and requires no LLM or draft-head training.
+The first stage measures forecasting, transfer between models, causal inputs
+and CPU cost on the archived conversations. Native throughput requires a
+subsequent executed policy comparison.
+
 Fast lexical routing passed CPU checks, but request-level K did not beat calibrated fixed K on either model.
 
 | Model | Fixed K=3 | Prompt routing | Change |
