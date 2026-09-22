@@ -1,0 +1,4 @@
+# command: for c in 45f824a75 867655368; do git merge-base --is-ancestor "$c" origin/main && echo "$c ancestor of origin/main" || echo "$c NOT ancestor"; done; git log --oneline -1 origin/main (cwd wt-spill-c; run 2026-09-22T20:42:24Z)
+45f824a75 ancestor of origin/main
+867655368 ancestor of origin/main
+0c86309bd Merge pull request #652 from avifenesh/lane/spill-integ45-20260922

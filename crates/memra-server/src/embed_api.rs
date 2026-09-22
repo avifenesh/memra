@@ -172,6 +172,7 @@ async fn run_capture(
         // Capture requests never enter the first-token deadline gate (their prime IS
         // the product), so no wire deadline is carried.
         wire_deadline: None,
+        route_ticket: None,
         ttft: None,
         tx,
     };
@@ -235,7 +236,7 @@ async fn run_capture(
         budget.reserved_ctx,
         budget.permit,
     );
-    let (guard, rl) = match crate::acquire_request_slot(st, lane, tenant, env) {
+    let (guard, rl) = match crate::acquire_request_slot(st, lane, None, tenant, env) {
         Ok(slot) => slot,
         Err(resp) => {
             return Err(crate::ledger_rejected(
@@ -249,7 +250,7 @@ async fn run_capture(
     if let Some(admission) = body_admission {
         admission.release();
     }
-    let pending_admit = match crate::reserve_pending_admit(st, lane, &rl, *deadline) {
+    let mut pending_admit = match crate::reserve_pending_admit(st, lane, &rl, *deadline) {
         Ok(guard) => guard,
         Err((resp, outcome)) => {
             return Err(crate::ledger_unbilled(
@@ -262,6 +263,7 @@ async fn run_capture(
         }
     };
     crate::meter_admit(env, tenant, model, lane);
+    pending_admit.bind(&mut request);
     if st.cmd_tx.send(Cmd::Generate(Box::new(request))).is_err() {
         drop(pending_admit);
         return Err(crate::ledger_rejected(

@@ -1,0 +1,11 @@
+tree=a50922b275f2c6fd06a955eadc4985b53da11f0b
+base_tree=091a931c023afb14811d34fe1f35fc7a2b16199d base_sha256=3278b2401b1ca4bae81e9ce3d82b73682150bb8bf93c2264fd32f6b0655f666c
+opta_tree=a50922b275f2c6fd06a955eadc4985b53da11f0b opta_sha256=f7ad8c607b047a3f7fd17ee6b0309156e682a4ecf89a8760f02db53ccc3da705
+harness_sha256=9c9b38782db8798d16fc9189bdeda9c4fe4742251584abedd55a261615ae0ccc
+a_harness_sha256=13867e77da40a9b570b19b0c0006a38355a081d4b12352697a81504d2ff91fad
+model=Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+gpu=NVIDIA GeForce RTX 5090 Laptop GPU, [N/A]
+cache_mb=64 host_mb=8192 port=18131 tenant_max_tokens=400 fire_at=24
+programs=p1-base,p2-opta,p3-opta,p4-base
+passes=2 boots_per_pass=3 n_per_arm_per_order=5 pass1=prime,off,on pass2=on,off,prime
+status=executed-not-qualified

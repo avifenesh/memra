@@ -1,0 +1,11 @@
+# command: systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=20G python3 research/spill-c-20260919/day38-tick-split.py --selftest
+  selftest ok: two adjacent, larger first: got tick1=70.0 off1=0 tick2=41.0 off2=1 before=0 fire_ok=True
+  selftest ok: two adjacent, larger SECOND: named by position: got tick1=62.8 off1=0 tick2=68.7 off2=1 before=0 fire_ok=True
+  selftest ok: one normal tick between: got tick1=70.0 off1=1 tick2=49.0 off2=3 before=0 fire_ok=True
+  selftest ok: a stretched gap before the fire is not a tick: got tick1=70.0 off1=0 tick2=41.0 off2=1 before=1 fire_ok=True
+  selftest ok: one stretched gap only: no tick 2: got tick1=56.0 off1=0 tick2=None off2=None before=0 fire_ok=True
+  selftest ok: a gap at exactly 3 x p50 is not stretched: got tick1=70.0 off1=0 tick2=None off2=None before=0 fire_ok=True
+  selftest ok: a fire time after the 25th token's arrival reads fire_ok=False
+  selftest ok: outcomes moved, order_split, under_resolution, not_defined
+DAY38 SELFTEST: PASS
+# exit=0

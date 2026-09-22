@@ -1691,6 +1691,11 @@ pub struct Request {
     /// None for internally-constructed requests (tests, embeddings/rerank capture routes),
     /// which the gate skips.
     pub wire_deadline: Option<std::time::Instant>,
+    /// The waiting slot a dedicated route's admission took for this request (memra#501). A
+    /// route-bound request holds this INSTEAD of a lane `ADMISSION_RESERVATIONS` slot; the route
+    /// drops it at dequeue, and a request dropped anywhere earlier (a failed send, a dead
+    /// thread's channel) frees it with itself. None on the central worker's requests.
+    pub(crate) route_ticket: Option<crate::route_telemetry::RouteTicket>,
     /// per-request stream back to the handler. tokio mpsc so the async side can await it.
     pub tx: EventSender,
 }
@@ -2013,6 +2018,14 @@ pub(crate) fn release_pending_admit() {
 /// path.
 pub(crate) fn release_admission_reservation(lane: Lane) {
     decrement_atomic(&ADMISSION_RESERVATIONS[lane.idx()]);
+}
+
+/// Release whichever hard reservation this request holds: its route ticket when a dedicated
+/// route admitted it (memra#501), else its lane slot. Exactly one of the two was taken.
+pub(crate) fn release_request_reservation(req: &mut Request) {
+    if req.route_ticket.take().is_none() {
+        release_admission_reservation(req.lane);
+    }
 }
 
 /// Requeue a worker-owned request after a bounded step-OOM park. It was released when the
@@ -4883,6 +4896,7 @@ fn host_tier_context(
         inflight,
         fault: std::cell::Cell::new(HostContractFault::from_door(kv_host_fault())),
         hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,
+        staging: std::cell::RefCell::new(Vec::new()),
     })
 }
 
@@ -4938,7 +4952,7 @@ fn clamp_kv_host_budget(requested: usize, mem_available: usize) -> (usize, bool)
 
 /// Parse `MemAvailable` (kB, NOT MemFree: same field the spill budget reads) out of
 /// /proc/meminfo content. None when absent or malformed.
-fn meminfo_available_bytes(meminfo: &str) -> Option<usize> {
+pub(crate) fn meminfo_available_bytes(meminfo: &str) -> Option<usize> {
     let line = meminfo.lines().find(|l| l.starts_with("MemAvailable:"))?;
     let kb = line.split_whitespace().nth(1)?.parse::<usize>().ok()?;
     Some(kb.saturating_mul(1024))
@@ -8867,6 +8881,8 @@ impl HostPrefixCache {
         if let Some(tier) = &self.tier {
             tier.hasher
                 .close("the tier latched off", HOST_HASH_LATCH_JOIN);
+            // WP-A day 30: a latched tier demotes nothing more; its span staging set frees.
+            tier.staging.borrow_mut().clear();
         }
     }
 
@@ -9192,6 +9208,12 @@ struct HostTierContext {
     /// of this context; the bundle checksum of an image's heap payloads runs there, never on the
     /// tick. Joined at shutdown and at the tier's latch (`HostPrefixCache::disable`).
     hasher: HostHashWorker,
+    /// WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half): the staging set of the demote's
+    /// f32 spans, cached pinned buffers (`PinnedHostBuf::new_unwritten`, no zero fill) keyed by
+    /// exact byte length, allocated by the first demote that needs one and returned with the
+    /// hash helper's reply. About one image's recurrent bytes per context; not charged to the
+    /// governor's pinned ledger (owed, DAY30). Freed at the tier's latch.
+    staging: std::cell::RefCell<Vec<memra_engine::PinnedHostBuf>>,
 }
 /// One loaded model's programs under the door: the plain program (day 13) and, for a model with
 /// an MTP head, the draft-bearing program (day 14, `host_tier_draft_program`).
@@ -9201,6 +9223,20 @@ struct HostTierPrograms {
     generation: Arc<()>,
 }
 impl HostTierContext {
+    /// WP-A day 30: one staging buffer of exactly `bytes`, from the set or freshly allocated
+    /// (unreadable until a span lands in it). The caller has bound the owner context.
+    fn staging_take(&self, bytes: usize) -> Result<memra_engine::PinnedHostBuf, String> {
+        let mut set = self.staging.borrow_mut();
+        if let Some(i) = set.iter().position(|b| b.len() == bytes) {
+            return Ok(set.swap_remove(i));
+        }
+        memra_engine::PinnedHostBuf::new_unwritten(bytes).map_err(|e| e.to_string())
+    }
+    /// WP-A day 30: a staging buffer back into the set (its bytes are never read again: the next
+    /// span that takes it overwrites the whole range before its landing makes it readable).
+    fn staging_put(&self, buf: memra_engine::PinnedHostBuf) {
+        self.staging.borrow_mut().push(buf);
+    }
     /// The program identity of one pool key and entry class: the model's base identity for that
     /// class with `tenant_salt` derived by the ONE memra-kv helper (lead ruling 13) from the pool
     /// namespace, the same string `auth::meter_key(&key.1)` reads for the share-cap row.
@@ -9756,6 +9792,9 @@ struct PendingContractDemote {
     sizes: Vec<u64>,
     fault: Option<HostContractFault>,
     submitted: Instant,
+    /// WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half): the image slots whose f32 spans
+    /// ride this ticket, in attach order (`host_spans_submit`); empty for a batch without spans.
+    spans: Vec<HostHashSlot>,
 }
 
 /// What one settle step of a contract-routed D2H produced.
@@ -9763,8 +9802,13 @@ enum ContractSettle {
     /// `Poll` found at least one item's event not yet complete: the ticket is handed back.
     Pending(PendingContractDemote),
     /// Every item complete, the receipt required, the planes back, the ticket retired and
-    /// acknowledged: the host planes, each carrying its receipt (trunk, then the draft).
-    Done(Vec<Option<HostPlane>>, Option<HostPlane>),
+    /// acknowledged: the host planes, each carrying its receipt (trunk, then the draft), and
+    /// (WP-A day 30) the landed staging of every f32 span by image slot, empty without spans.
+    Done(
+        Vec<Option<HostPlane>>,
+        Option<HostPlane>,
+        Vec<(HostHashSlot, memra_engine::PinnedHostBuf)>,
+    ),
 }
 
 /// The image `host_entry_from_device` built: whole (every plane on the host, the pre-door
@@ -9848,9 +9892,14 @@ enum HostHashSlot {
 }
 
 /// One heap payload on its way to the helper and back: the helper owns the `Vec` while it hashes.
+/// WP-A day 30: a payload whose plane rode the demote's ticket as an f32 span arrives with an
+/// empty `data` and its landed staging in `staged`; the helper copies the staging into `data`
+/// (the same resident form and SHA input as the synchronous copy's) and hashes that, and the
+/// staging comes back with the reply to the context's set.
 struct HostHashPayload {
     slot: HostHashSlot,
     data: Vec<f32>,
+    staged: Option<memra_engine::PinnedHostBuf>,
 }
 
 /// One demote's hash job; the ticket sequence names it in every line and in the reply.
@@ -9898,6 +9947,7 @@ fn host_hash_take_payloads(e: &mut HostPrefixEntry) -> Vec<HostHashPayload> {
             out.push(HostHashPayload {
                 slot: HostHashSlot::Conv(i),
                 data: std::mem::take(v),
+                staged: None,
             });
         }
     }
@@ -9906,6 +9956,7 @@ fn host_hash_take_payloads(e: &mut HostPrefixEntry) -> Vec<HostHashPayload> {
             out.push(HostHashPayload {
                 slot: HostHashSlot::Ssm(i),
                 data: std::mem::take(v),
+                staged: None,
             });
         }
     }
@@ -9913,12 +9964,14 @@ fn host_hash_take_payloads(e: &mut HostPrefixEntry) -> Vec<HostHashPayload> {
         out.push(HostHashPayload {
             slot: HostHashSlot::Logits,
             data: std::mem::take(v),
+            staged: None,
         });
     }
     if let HostF32::Heap(v) = &mut e.last_h {
         out.push(HostHashPayload {
             slot: HostHashSlot::Hidden,
             data: std::mem::take(v),
+            staged: None,
         });
     }
     out
@@ -10005,7 +10058,11 @@ impl HostHashWorker {
                     let hashed = job
                         .payloads
                         .into_iter()
-                        .map(|p| {
+                        .map(|mut p| {
+                            // WP-A day 30: a landed f32 span becomes the payload's heap `Vec`.
+                            if let Some(staged) = &p.staged {
+                                p.data = staged.as_f32_slice().to_vec();
+                            }
                             let (n, d) = host_hash_payload_digest(&p.data);
                             (p, n, d)
                         })
@@ -10448,7 +10505,8 @@ fn host_kv_planes_through_contract(
 ) -> Result<(Vec<Option<HostPlane>>, Option<HostPlane>), HostContractFailure> {
     let pending = host_kv_planes_submit_contract(engine, tier, dead, class)?;
     match host_kv_planes_settle_contract(tier, dead, pending, ContractWait::Block)? {
-        ContractSettle::Done(kv, draft) => Ok((kv, draft)),
+        // The blocking route attaches no span (`host_spans_submit` is the off-tick route's).
+        ContractSettle::Done(kv, draft, _no_spans) => Ok((kv, draft)),
         ContractSettle::Pending(_) => Err(HostContractFailure::SourceQuarantined(
             "tier D2H blocking settle returned a pending ticket".into(),
         )),
@@ -10760,7 +10818,97 @@ fn host_kv_planes_submit_contract(
         sizes,
         fault,
         submitted: Instant::now(),
+        spans: Vec::new(),
     })
+}
+
+/// WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half; DAY30 section 2): the evicted entry's
+/// recurrent f32 planes ride the KV batch's ticket as typed spans on the copy stream
+/// (`CudaTransfers::submit_d2h_spans`), not one synchronous owner-stream `clone_dtoh` each. Every
+/// non-empty conv and ssm plane of `dead` moves into the transfer engine with a cached pinned
+/// staging buffer of its length from the context's set; the settle takes them back after the
+/// landing. A refusal before any enqueue (or a staging allocation failure) hands every span
+/// back: the sources return to `dead`, the staging to the set, and the KV ticket unwinds through
+/// `host_contract_abort` with a typed `tier D2H spans refused` line; nothing is published.
+fn host_spans_submit(
+    tier: &HostTierContext,
+    dead: &mut PrefixEntry,
+    mut pending: PendingContractDemote,
+) -> Result<PendingContractDemote, HostContractFailure> {
+    use memra_engine::tier_transfer::D2hSpan;
+    let Some(transfers) = &tier.transfers else {
+        // Unreachable: the submission that issued `pending` required the engine.
+        return Err(HostContractFailure::SourceQuarantined(
+            "tier D2H transfer engine missing at the span attach".into(),
+        ));
+    };
+    let mut t = transfers.borrow_mut();
+    let mut slots = Vec::new();
+    let mut spans = Vec::new();
+    let mut refused = t
+        .owner_stream()
+        .context()
+        .bind_to_thread()
+        .err()
+        .map(|e| format!("the owner context did not bind ({e})"));
+    let planes = (dead.conv.iter_mut().enumerate())
+        .map(|(i, p)| (HostHashSlot::Conv(i), p))
+        .chain((dead.ssm.iter_mut().enumerate()).map(|(i, p)| (HostHashSlot::Ssm(i), p)));
+    for (slot, plane) in planes {
+        if refused.is_some() {
+            break;
+        }
+        let bytes = match plane {
+            Some(source) if !source.is_empty() => source.len() * 4,
+            _ => continue,
+        };
+        match tier.staging_take(bytes) {
+            Ok(destination) => {
+                let source = plane.take().expect("matched Some above");
+                spans.push(D2hSpan {
+                    source,
+                    destination,
+                });
+                slots.push(slot);
+            }
+            Err(e) => refused = Some(format!("a {bytes}-byte staging buffer: {e}")),
+        }
+    }
+    let attached = match refused {
+        Some(why) => Err((why, spans)),
+        None if spans.is_empty() => return Ok(pending),
+        None => t
+            .submit_d2h_spans(&pending.ticket, spans)
+            .map_err(|(e, back)| (format!("{e:?}"), back)),
+    };
+    let (why, back) = match attached {
+        Ok(()) => {
+            pending.spans = slots;
+            return Ok(pending);
+        }
+        Err(refusal) => refusal,
+    };
+    for (slot, span) in slots.iter().zip(back) {
+        let D2hSpan {
+            source,
+            destination,
+        } = span;
+        match *slot {
+            HostHashSlot::Conv(i) => dead.conv[i] = Some(source),
+            HostHashSlot::Ssm(i) => dead.ssm[i] = Some(source),
+            HostHashSlot::Logits | HostHashSlot::Hidden => {}
+        }
+        tier.staging_put(destination);
+    }
+    let n = slots.len();
+    Err(host_contract_abort(
+        &mut t,
+        dead,
+        pending.registered,
+        Some(pending.ticket),
+        Some(pending.producer),
+        &format!("tier D2H spans refused: {why} ({n} f32 spans handed back)"),
+    ))
 }
 
 /// The settle half (steps 6 to 9): completion, the receipt, the planes back, the ticket retired
@@ -10791,6 +10939,7 @@ fn host_kv_planes_settle_contract(
         sizes,
         fault,
         submitted,
+        spans,
     } = pending;
     // 6. Completion: the engine's event per item, then its status and its checksum of each
     //    destination (the receipt), then each destination taken exactly once. `Block` is the host
@@ -10820,6 +10969,7 @@ fn host_kv_planes_settle_contract(
                 sizes,
                 fault,
                 submitted,
+                spans,
             }));
         }
         return Err(SourceQuarantined(
@@ -10827,6 +10977,47 @@ fn host_kv_planes_settle_contract(
              planes"
                 .into(),
         ));
+    }
+    // WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half): `producer_done` covers the f32
+    // spans with the items. Take them back FIRST, so every source is in its slot of `dead`
+    // before any refusal below unwinds the entry, and the landed staging travels to the helper.
+    let mut staged = Vec::with_capacity(spans.len());
+    if !spans.is_empty() {
+        let landed = match t.take_d2h_spans(&ticket) {
+            Ok(landed) if landed.len() == spans.len() => landed,
+            Ok(landed) => {
+                return Err(SourceQuarantined(format!(
+                    "tier D2H spans came back {} of {}; the source shell is not whole",
+                    landed.len(),
+                    spans.len()
+                )));
+            }
+            Err(e) => {
+                return Err(SourceQuarantined(format!(
+                    "tier D2H spans not taken back ({e:?}); the transfer engine keeps the spans"
+                )));
+            }
+        };
+        for (slot, span) in spans.iter().zip(landed) {
+            let memra_engine::tier_transfer::D2hSpan {
+                source,
+                destination,
+            } = span;
+            let home = match *slot {
+                HostHashSlot::Conv(i) => dead.conv.get_mut(i),
+                HostHashSlot::Ssm(i) => dead.ssm.get_mut(i),
+                HostHashSlot::Logits | HostHashSlot::Hidden => None,
+            };
+            match home {
+                Some(home) if home.is_none() => *home = Some(source),
+                _ => {
+                    return Err(SourceQuarantined(format!(
+                        "tier D2H span {slot:?} has no emptied slot in the source shell"
+                    )));
+                }
+            }
+            staged.push((*slot, destination));
+        }
     }
     let mut destinations = Vec::with_capacity(sizes.len());
     for item in 0..sizes.len() {
@@ -10994,7 +11185,7 @@ fn host_kv_planes_settle_contract(
     eprintln!(
         "[prefix-host] contracts door D2H receipt: ticket issuer={} seq={} epochs={}/{}/{} \
          items={} ({kv_planes} KV planes{}) complete={complete} require=ok \
-         checksums_sha256={} retired acknowledged",
+         checksums_sha256={} retired acknowledged{}",
         ticket.issuer,
         ticket.sequence,
         ticket.epochs.state,
@@ -11003,8 +11194,16 @@ fn host_kv_planes_settle_contract(
         sizes.len(),
         if draft.is_some() { ", draft" } else { "" },
         digest_hex(&digest("host-prefix-d2h-receipt", &receipt)),
+        if staged.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; {} f32 spans landed under the ticket and taken back before the retire",
+                staged.len()
+            )
+        },
     );
-    Ok(ContractSettle::Done(kv, draft))
+    Ok(ContractSettle::Done(kv, draft, staged))
 }
 
 /// Take every registered plane back out of the transfer engine into its slot of `dead`. Every
@@ -12148,8 +12347,10 @@ fn host_entry_from_device(
                     .map_err(|why| format!("tier image {why}"))?;
             let routed = match route {
                 ContractD2h::OnTick => host_kv_planes_through_contract(engine, tier, dead, class)
-                    .map(|(kv, draft)| ContractSettle::Done(kv, draft)),
+                    .map(|(kv, draft)| ContractSettle::Done(kv, draft, Vec::new())),
+                // WP-A day 30: the recurrent f32 planes ride the same ticket as spans.
                 ContractD2h::OffTick => host_kv_planes_submit_contract(engine, tier, dead, class)
+                    .and_then(|pending| host_spans_submit(tier, dead, pending))
                     .map(ContractSettle::Pending),
             };
             match routed {
@@ -12175,7 +12376,7 @@ fn host_entry_from_device(
         _ => None,
     };
     let (mut kv, contract_draft, pending) = match contract_planes {
-        Some(ContractSettle::Done(kv, draft)) => (kv, Some(draft), None),
+        Some(ContractSettle::Done(kv, draft, _no_spans)) => (kv, Some(draft), None),
         // WP-A day 17: the KV planes are in flight on the copy stream; their slots fill at the
         // settle. `Some(None)` for the draft: the contract owns it, nothing is copied by reference.
         Some(ContractSettle::Pending(pending)) => (
@@ -12198,10 +12399,17 @@ fn host_entry_from_device(
     // digest was recorded, so the MEMRA_KV_HOST_VERIFY promote check has a real mismatch to
     // catch. Gate-box only. A `Demoting` image has no plane yet; the settle applies it.
     apply_flip_demote_fault(&mut kv)?;
+    // WP-A day 30: a plane that rides the ticket as a span holds an empty heap placeholder in the
+    // image; the settle hands its landed staging to the hash helper, which fills the placeholder.
+    let spanned: &[HostHashSlot] = pending.as_ref().map_or(&[], |p| p.spans.as_slice());
     let mut conv = Vec::with_capacity(dead.conv.len());
-    for c in &dead.conv {
+    for (i, c) in dead.conv.iter().enumerate() {
         if glm.is_some() {
             conv.push(None);
+            continue;
+        }
+        if spanned.contains(&HostHashSlot::Conv(i)) {
+            conv.push(Some(HostF32::Heap(Vec::new())));
             continue;
         }
         conv.push(match c {
@@ -12213,9 +12421,13 @@ fn host_entry_from_device(
         });
     }
     let mut ssm = Vec::with_capacity(dead.ssm.len());
-    for s in &dead.ssm {
+    for (i, s) in dead.ssm.iter().enumerate() {
         if glm.is_some() {
             ssm.push(None);
+            continue;
+        }
+        if spanned.contains(&HostHashSlot::Ssm(i)) {
+            ssm.push(Some(HostF32::Heap(Vec::new())));
             continue;
         }
         ssm.push(match s {
@@ -12838,6 +13050,8 @@ fn host_demote_settle_with_deadline(
     };
     let seq = contract.ticket.sequence;
     let submitted = contract.submitted;
+    // WP-A day 30: the batch's item census for the copy-complete line (KV items plus f32 spans).
+    let (kv_items, span_items) = (contract.sizes.len(), contract.spans.len());
     let settled = match &host.tier {
         Some(tier) => settle(tier, &mut dead, contract, wait),
         None => Err(HostContractFailure::SourceQuarantined(
@@ -12852,7 +13066,7 @@ fn host_demote_settle_with_deadline(
             host.demoting = Some(pending);
             Some(HostDemoteOutcome::Demoting)
         }
-        Ok(ContractSettle::Done(mut kv, draft)) => {
+        Ok(ContractSettle::Done(mut kv, draft, staged)) => {
             let copy_ms = submitted.elapsed().as_secs_f64() * 1e3;
             let mode = match wait {
                 ContractWait::Poll => "tick-top poll".to_string(),
@@ -12876,7 +13090,27 @@ fn host_demote_settle_with_deadline(
             // WP-A day 28 (ruling 39): the image's heap payloads go to the hash helper; the entry
             // stays `Demoting` (`Hashing`) until the digests land. An image with nothing to hand
             // off (every f32 payload pinned, which the door refuses) publishes here as on day 17.
-            let payloads = host_hash_take_payloads(&mut pending.image);
+            let mut payloads = host_hash_take_payloads(&mut pending.image);
+            // WP-A day 30: each landed f32 span's staging travels with its slot's (empty) payload.
+            for (slot, buf) in staged {
+                let Some(p) = payloads
+                    .iter_mut()
+                    .find(|p| p.slot == slot && p.data.is_empty() && p.staged.is_none())
+                else {
+                    let err = format!(
+                        "a landed f32 span of ticket seq={seq} has no heap placeholder for its \
+                         {slot:?} slot in the image"
+                    );
+                    eprintln!(
+                        "[prefix-host] demote failed ({err}); nothing published; the tier latches \
+                         off"
+                    );
+                    host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "span slot");
+                    host.disable(&err);
+                    return Some(HostDemoteOutcome::Failed);
+                };
+                p.staged = Some(buf);
+            }
             if payloads.is_empty() {
                 eprintln!(
                     "[prefix-host] demote published off the tick: ticket seq={seq} complete after {} \
@@ -12893,7 +13127,10 @@ fn host_demote_settle_with_deadline(
                 ));
             }
             let n = payloads.len();
-            let bytes: usize = payloads.iter().map(|p| p.data.len() * 4).sum();
+            let bytes: usize = payloads
+                .iter()
+                .map(|p| p.staged.as_ref().map_or(p.data.len() * 4, |s| s.len()))
+                .sum();
             let submitted = match host.tier.as_ref() {
                 Some(tier) => tier.hasher.submit(HostHashJob { seq, payloads }),
                 None => Err("tier context gone under a Demoting entry".to_string()),
@@ -12913,9 +13150,11 @@ fn host_demote_settle_with_deadline(
             }
             eprintln!(
                 "[prefix-host] demote copy complete off the tick: ticket seq={seq} complete after {} \
-                 poll(s), {copy_ms:.1}ms from submission to completion ({mode}); {n} heap payloads \
-                 ({:.1}MB) handed to the hash helper",
+                 poll(s), {copy_ms:.1}ms from submission to completion ({mode}); items={} \
+                 ({kv_items} KV, {span_items} f32 spans); {n} heap payloads ({:.1}MB) handed to \
+                 the hash helper",
                 pending.polls,
+                kv_items + span_items,
                 bytes as f64 / 1e6
             );
             pending.dead = Some(dead);
@@ -13121,8 +13360,12 @@ fn host_demote_settle_hashing(
     }
     let mut e = pending.image;
     let mut digests = HostHashDigests::default();
-    for (payload, hashed_bytes, digest) in reply.hashed {
+    for (mut payload, hashed_bytes, digest) in reply.hashed {
         digests.by_slot.push((payload.slot, hashed_bytes, digest));
+        // WP-A day 30: a span's staging goes back to the context's set; the heap copy stays.
+        if let (Some(staged), Some(tier)) = (payload.staged.take(), host.tier.as_ref()) {
+            tier.staging_put(staged);
+        }
         if let Err(what) = host_hash_restore_payload(&mut e, payload) {
             return latch(
                 host,
@@ -20863,7 +21106,16 @@ pub fn run(
                 }
             };
             dsv4_caps.insert(name.clone(), crate::dsv4_serve::caps(&dm));
-            dsv4_routes.insert(name.clone(), crate::dsv4_serve::spawn(name.clone(), dm));
+            // The route's own books (memra#500, #501): its load is get-or-create so tickets
+            // outstanding across a respawn stay counted; its health record is fresh per spawn
+            // so a predecessor's exit latch cannot mark this thread dead.
+            let cap = crate::dsv4_serve::contract(name).capacity.concurrency();
+            let load = crate::route_telemetry::register(name, cap);
+            let route_health = health.register_route(name, load.clone());
+            dsv4_routes.insert(
+                name.clone(),
+                crate::dsv4_serve::spawn(name.clone(), dm, route_health, load),
+            );
             order.push(name.clone());
             continue;
         }
@@ -26591,7 +26843,7 @@ pub fn run(
 }
 
 fn fail_request(mut req: Box<Request>, error: EngineError) {
-    release_admission_reservation(req.lane);
+    release_request_reservation(&mut req);
     if let Some(ready) = req.constraint_ready.take() {
         let _ = ready.send(Err(error));
     } else {
@@ -26659,6 +26911,20 @@ fn handle_cmd(
                         EngineError::engine("dsv4 serving thread is down (send failed)"),
                     );
                 }
+                return;
+            }
+            // A request the HTTP layer admitted against a dedicated route carries that route's
+            // ticket and no lane slot. Every central path below releases a lane slot, so one
+            // reaching them would free a reservation it never took. Fail it closed instead: its
+            // drop releases the ticket, the only reservation it holds.
+            if let Some(ticket) = req.route_ticket.as_ref() {
+                let error = EngineError::engine(format!(
+                    "model {:?} was admitted on dedicated route {:?}, which this worker does \
+                     not serve",
+                    req.model,
+                    ticket.route()
+                ));
+                fail_request(req, error);
                 return;
             }
             if !loaded.contains_key(&req.model) {
@@ -27758,6 +28024,7 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         constraint_ready: None,
         oom_retries: s.oom_retries,
         wire_deadline: s.wire_deadline,
+        route_ticket: None,
         spec_k_replay: Some(s.spec_k),
         prepared_prompt: None,
         images: Vec::new(),
@@ -35386,6 +35653,7 @@ mod tests {
             capture: None,
             vision_memory: None,
             wire_deadline: None,
+            route_ticket: None,
             tx,
         }
     }
@@ -35832,6 +36100,7 @@ mod tests {
             capture: None,
             vision_memory: None,
             wire_deadline: None,
+            route_ticket: None,
             ttft: None,
             tx: bad_tx,
         });
@@ -43129,6 +43398,7 @@ mod tests {
             inflight: 4,
             fault: std::cell::Cell::new(None),
             hasher: super::HostHashWorker::spawn(None).unwrap(),
+            staging: std::cell::RefCell::new(Vec::new()),
         }
     }
 
@@ -43162,6 +43432,7 @@ mod tests {
             sizes: vec![64, 64],
             fault: None,
             submitted: std::time::Instant::now(),
+            spans: Vec::new(),
         };
         host.demoting = Some(super::PendingDemote {
             dead: Some(dead),
@@ -43245,7 +43516,7 @@ mod tests {
                     64,
                     "the shell travels with the pending demote"
                 );
-                Ok(super::ContractSettle::Done(Vec::new(), None))
+                Ok(super::ContractSettle::Done(Vec::new(), None, Vec::new()))
             },
         );
         assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
@@ -45148,7 +45419,7 @@ mod tests {
             &mut host,
             super::ContractWait::Poll,
             "the tick top",
-            |_, _, _, _| Ok(super::ContractSettle::Done(Vec::new(), None)),
+            |_, _, _, _| Ok(super::ContractSettle::Done(Vec::new(), None, Vec::new())),
         );
         assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
         assert!(host.demoting.is_none());
@@ -45284,11 +45555,13 @@ mod tests {
         let stray = super::HostHashPayload {
             slot: super::HostHashSlot::Conv(0),
             data: vec![1.0],
+            staged: None,
         };
         assert!(super::host_hash_restore_payload(&mut e, stray).is_err());
         let out_of_range = super::HostHashPayload {
             slot: super::HostHashSlot::Ssm(7),
             data: vec![],
+            staged: None,
         };
         assert!(super::host_hash_restore_payload(&mut e, out_of_range).is_err());
         // The close is idempotent and the second call is a no-op; an idle helper joins well
@@ -45833,7 +46106,7 @@ mod tests {
         );
         // A Block settle of the copy continues into the hash wait; a Poll parks the state.
         let done = driver
-            .find("Ok(ContractSettle::Done(mut kv, draft)) => {")
+            .find("Ok(ContractSettle::Done(mut kv, draft, staged)) => {")
             .unwrap();
         let tail = &driver[done..];
         assert!(tail.contains("ContractWait::Block => Some(host_demote_settle_hashing("));
@@ -46017,12 +46290,102 @@ mod tests {
         // through `host_demote_settle_hashing`, itself through the shared publication function.)
         let driver = body("fn host_demote_settle_with_deadline(");
         let done = driver
-            .find("Ok(ContractSettle::Done(mut kv, draft)) => {")
+            .find("Ok(ContractSettle::Done(mut kv, draft, staged)) => {")
             .unwrap();
         let publish = driver.find("host_demote_publish(").unwrap();
         assert!(done < publish);
         assert!(driver[..done].find("host_demote_publish(").is_none());
         assert!(driver.contains("if !host.armed() {"));
+    }
+
+    /// WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half): the span route's order, by source.
+    /// The off-tick route attaches the recurrent planes to the KV ticket right after the
+    /// submission and the blocking route attaches none; the settle takes the spans back after the
+    /// landing and before any destination, refusal or retire; a refused attach hands every span
+    /// back into `dead` before the KV ticket unwinds; the image holds placeholders for the spanned
+    /// slots; the driver hands each landed staging to its slot's payload before the helper job; the
+    /// helper copies it before the digest (the one digest program); the staging goes back to the
+    /// set before the payload is restored; the latch frees the set.
+    #[test]
+    fn the_d2h_spans_ride_the_ticket_in_the_stated_order() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let body = |start: &str| {
+            let a = production
+                .find(start)
+                .unwrap_or_else(|| panic!("{start} missing"));
+            let b = a + production[a..].find("\n}\n").unwrap();
+            &production[a..b]
+        };
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let entry = body("fn host_entry_from_device(");
+        assert!(entry.contains(
+            ".and_then(|pending| host_spans_submit(tier, dead, pending))\n                    .map(ContractSettle::Pending),"
+        ));
+        assert!(entry.contains(".map(|(kv, draft)| ContractSettle::Done(kv, draft, Vec::new())),"));
+        assert!(
+            at(entry, "spanned.contains(&HostHashSlot::Conv(i))")
+                < at(entry, "HostF32::down(c, &mut planes)")
+        );
+        assert!(
+            at(entry, "spanned.contains(&HostHashSlot::Ssm(i))")
+                < at(entry, "HostF32::down(s, &mut planes)")
+        );
+        assert_eq!(
+            production
+                .matches("host_spans_submit(tier, dead, pending)")
+                .count(),
+            1
+        );
+        let submit = body("fn host_spans_submit(");
+        assert!(
+            at(submit, ".submit_d2h_spans(&pending.ticket, spans)")
+                < at(
+                    submit,
+                    "HostHashSlot::Conv(i) => dead.conv[i] = Some(source),"
+                )
+        );
+        assert!(
+            at(
+                submit,
+                "HostHashSlot::Conv(i) => dead.conv[i] = Some(source),"
+            ) < at(submit, "Err(host_contract_abort(")
+        );
+        assert!(
+            at(submit, "tier.staging_put(destination);") < at(submit, "Err(host_contract_abort(")
+        );
+        let settle = body("fn host_kv_planes_settle_contract(");
+        let take = at(settle, "t.take_d2h_spans(&ticket)");
+        assert!(at(settle, "if !completion.producer_done {") < take);
+        assert!(take < at(settle, "t.take_destination(&ticket"));
+        assert!(take < at(settle, "completion.require(&ticket"));
+        assert!(take < at(settle, "t.retire_source(&ticket)"));
+        assert!(take < at(settle, ".and_then(|_| t.retire(&ticket, Some(consumer)))"));
+        assert!(settle.contains("Ok(ContractSettle::Done(kv, draft, staged))"));
+        assert_eq!(production.matches(".take_d2h_spans(").count(), 1);
+        assert_eq!(production.matches(".submit_d2h_spans(").count(), 1);
+        let driver = body("fn host_demote_settle_with_deadline(");
+        assert!(
+            at(driver, "p.staged = Some(buf);")
+                < at(driver, "tier.hasher.submit(HostHashJob { seq, payloads })")
+        );
+        assert!(
+            driver
+                .contains("items={} \\\n                 ({kv_items} KV, {span_items} f32 spans)")
+        );
+        let helper = body("impl HostHashWorker {");
+        assert!(
+            at(helper, "p.data = staged.as_f32_slice().to_vec();")
+                < at(helper, "host_hash_payload_digest(&p.data)")
+        );
+        let hashing = body("fn host_demote_settle_hashing(");
+        assert!(
+            at(hashing, "tier.staging_put(staged);")
+                < at(hashing, "host_hash_restore_payload(&mut e, payload)")
+        );
+        let disable = body("    fn disable(&mut self, why: &str) {");
+        assert!(disable.contains("tier.staging.borrow_mut().clear();"));
     }
 
     /// GPU-only helper: a real `CudaTransfers` on the engine's owner stream over the server's
@@ -46068,6 +46431,7 @@ mod tests {
             inflight,
             fault: std::cell::Cell::new(None),
             hasher: super::HostHashWorker::spawn(None).unwrap(),
+            staging: std::cell::RefCell::new(Vec::new()),
         }
     }
 
@@ -46225,6 +46589,264 @@ mod tests {
             "six leases hold the pinned charge"
         );
         drop(image);
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// GPU-only (WP-A day 30): recurrent planes in slots 0 and 2 of `e` (conv and ssm each, on the
+    /// owner stream unless `stream` names another), with `e.bytes` grown to match, and the f32
+    /// pattern of each span slot in the order the demote attaches them (conv first, then ssm).
+    fn gpu_recurrent(
+        engine: &Engine,
+        e: &mut super::PrefixEntry,
+        stream: Option<&Arc<cudarc::driver::CudaStream>>,
+    ) -> Vec<(super::HostHashSlot, Vec<f32>)> {
+        let owner = engine.stream();
+        let on = stream.unwrap_or(&owner);
+        let mut out = Vec::new();
+        for (conv, n) in [(true, 3 * 4096 + 5), (false, 2 * 4096 + 9)] {
+            for i in [0usize, 2] {
+                let base = if conv { 1.0 } else { -1.0 } * (i as f32 + 1.0);
+                let pattern: Vec<f32> = (0..n).map(|j| base + j as f32 * 0.25).collect();
+                let plane = on.clone_htod(&pattern).unwrap();
+                if conv {
+                    e.conv[i] = Some(plane);
+                    out.push((super::HostHashSlot::Conv(i), pattern));
+                } else {
+                    e.ssm[i] = Some(plane);
+                    out.push((super::HostHashSlot::Ssm(i), pattern));
+                }
+                e.bytes += n * 4;
+            }
+        }
+        on.synchronize().unwrap();
+        out
+    }
+
+    fn f32_bits(v: &[f32]) -> Vec<u32> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    /// GPU-only (WP-A day 30): every recurrent plane of `e` is in its slot with its pattern.
+    fn gpu_recurrent_whole(
+        engine: &Engine,
+        e: &super::PrefixEntry,
+        want: &[(super::HostHashSlot, Vec<f32>)],
+    ) -> bool {
+        let stream = engine.stream();
+        want.iter().all(|(slot, pattern)| {
+            let plane = match *slot {
+                super::HostHashSlot::Conv(i) => e.conv[i].as_ref(),
+                super::HostHashSlot::Ssm(i) => e.ssm[i].as_ref(),
+                _ => None,
+            };
+            plane.is_some_and(|p| f32_bits(&stream.clone_dtoh(p).unwrap()) == f32_bits(pattern))
+        })
+    }
+
+    /// WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half; `d2h_span_batch` through the
+    /// server): an entry with recurrent planes demotes OFF the tick with every conv and ssm plane
+    /// as an f32 span on the KV ticket. While the copy runs the image holds empty heap
+    /// placeholders and the source shell holds none of the spanned planes; the blocking settle
+    /// puts every source back in its slot with its bytes, hands back the landed staging per slot
+    /// bit for bit, and the KV planes carry their receipts; the hash helper's digest of each landed
+    /// span equals the owner thread's digest of the same bytes (the day-28 program), its heap copy
+    /// is bitwise the source, and the staging comes back with the reply.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_spans_ride_the_ticket_and_land_bitwise() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let recur = gpu_recurrent(&engine, &mut entry, None);
+        let (image, pending) = match super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OffTick,
+        ) {
+            Ok(super::HostImage::Demoting(image, pending)) => (image, pending),
+            Ok(super::HostImage::Whole(_)) => panic!("an off-tick contract demote came back whole"),
+            Err(e) => panic!("the off-tick demote failed: {e:?}"),
+        };
+        let slots: Vec<super::HostHashSlot> = recur.iter().map(|(s, _)| *s).collect();
+        assert_eq!(
+            pending.spans, slots,
+            "every recurrent plane rides the ticket"
+        );
+        for slot in &slots {
+            let (shell, placeholder) = match *slot {
+                super::HostHashSlot::Conv(i) => (&entry.conv[i], &image.conv[i]),
+                super::HostHashSlot::Ssm(i) => (&entry.ssm[i], &image.ssm[i]),
+                _ => unreachable!(),
+            };
+            assert!(shell.is_none(), "{slot:?}: the engine owns the source");
+            assert!(
+                matches!(placeholder, Some(super::HostF32::Heap(v)) if v.is_empty()),
+                "{slot:?}: the image holds an empty heap placeholder"
+            );
+        }
+        let tier = host.tier.as_ref().unwrap();
+        let (kv, draft, staged) = match super::host_kv_planes_settle_contract(
+            tier,
+            &mut entry,
+            pending,
+            super::ContractWait::Block,
+        ) {
+            Ok(super::ContractSettle::Done(kv, draft, staged)) => (kv, draft, staged),
+            Ok(super::ContractSettle::Pending(_)) => panic!("a blocking settle came back pending"),
+            Err(
+                super::HostContractFailure::Alloc(why)
+                | super::HostContractFailure::Refused(why)
+                | super::HostContractFailure::SourceQuarantined(why)
+                | super::HostContractFailure::TicketLeaked(why),
+            ) => panic!("the settle failed: {why}"),
+        };
+        assert_eq!(staged.len(), recur.len());
+        for ((slot, buf), (want_slot, pattern)) in staged.iter().zip(&recur) {
+            assert_eq!(slot, want_slot);
+            assert_eq!(
+                f32_bits(buf.as_f32_slice()),
+                f32_bits(pattern),
+                "{slot:?}: the span landed bit for bit"
+            );
+        }
+        assert!(
+            gpu_recurrent_whole(&engine, &entry, &recur),
+            "every source back in its slot with its bytes"
+        );
+        assert!(gpu_entry_whole(&engine, &entry, &want));
+        assert!(
+            kv.iter()
+                .flatten()
+                .chain(draft.iter())
+                .all(|p| p.k.receipt().is_some() && p.v.receipt().is_some()),
+            "every KV plane crossed through the contract"
+        );
+        let payloads = staged
+            .into_iter()
+            .map(|(slot, buf)| super::HostHashPayload {
+                slot,
+                data: Vec::new(),
+                staged: Some(buf),
+            })
+            .collect();
+        tier.hasher
+            .submit(super::HostHashJob { seq: 1, payloads })
+            .unwrap();
+        let reply = tier
+            .hasher
+            .reply_within(std::time::Duration::from_secs(10))
+            .unwrap()
+            .expect("the helper replied");
+        assert_eq!(reply.hashed.len(), recur.len());
+        for ((p, n, d), (slot, pattern)) in reply.hashed.iter().zip(&recur) {
+            assert_eq!(p.slot, *slot);
+            assert_eq!(
+                (*n, *d),
+                super::host_hash_payload_digest(pattern),
+                "{slot:?}: the helper's digest of the landed span is the owner thread's"
+            );
+            assert_eq!(
+                f32_bits(&p.data),
+                f32_bits(pattern),
+                "{slot:?}: the heap copy"
+            );
+            assert!(p.staged.is_some(), "{slot:?}: the staging comes back");
+        }
+        drop((kv, draft, image, reply));
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// WP-A day 30 (rule 1 of `d2h_span_batch` through the server, the typed refusal arm): a
+    /// recurrent plane on a stream other than the owner's is refused before any span is enqueued
+    /// (`WrongOwner`). Every span comes back, every source is in its slot with its bytes, the KV
+    /// ticket unwinds through `host_contract_abort` as a typed `Failed` (never quarantine), the
+    /// tier stays on, the ledger is at zero, and the next demote on the same engine completes.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_span_refusal_returns_every_plane_and_keeps_the_tier_on() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let other = engine.ctx().new_stream().unwrap();
+        let recur = gpu_recurrent(&engine, &mut entry, Some(&other));
+        let why = match super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OffTick,
+        ) {
+            Err(super::HostImageFailure::Failed(why)) => why,
+            Err(super::HostImageFailure::SourceQuarantined(why)) => {
+                panic!("a span refusal before enqueue escalated to quarantine: {why}")
+            }
+            Ok(_) => panic!("a span on a foreign stream was accepted"),
+        };
+        assert!(
+            why.contains("tier D2H spans refused: WrongOwner (4 f32 spans handed back)"),
+            "{why}"
+        );
+        assert!(
+            !host.disabled,
+            "the tier stays on after a recoverable refusal"
+        );
+        assert!(
+            gpu_recurrent_whole(&engine, &entry, &recur),
+            "every source back"
+        );
+        assert!(
+            gpu_entry_whole(&engine, &entry, &want),
+            "every KV plane back"
+        );
+        assert_eq!(
+            gpu_used(&host),
+            (0, 0, 0),
+            "nothing charged after the unwind"
+        );
+        // The same planes on the owner stream: the next demote attaches and settles.
+        for (slot, pattern) in &recur {
+            let plane = Some(engine.stream().clone_htod(pattern).unwrap());
+            match *slot {
+                super::HostHashSlot::Conv(i) => entry.conv[i] = plane,
+                super::HostHashSlot::Ssm(i) => entry.ssm[i] = plane,
+                _ => unreachable!(),
+            }
+        }
+        let Ok(super::HostImage::Demoting(image, pending)) = super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OffTick,
+        ) else {
+            panic!("the demote after the refusal did not submit");
+        };
+        assert_eq!(pending.spans.len(), recur.len());
+        let tier = host.tier.as_ref().unwrap();
+        let Ok(super::ContractSettle::Done(kv, draft, staged)) =
+            super::host_kv_planes_settle_contract(
+                tier,
+                &mut entry,
+                pending,
+                super::ContractWait::Block,
+            )
+        else {
+            panic!("the settle after the refusal did not complete");
+        };
+        assert_eq!(staged.len(), recur.len());
+        assert!(gpu_recurrent_whole(&engine, &entry, &recur));
+        assert!(gpu_entry_whole(&engine, &entry, &want));
+        drop((kv, draft, staged, image));
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
 
@@ -48841,6 +49463,7 @@ mod tests {
             capture: None,
             vision_memory: None,
             wire_deadline: None,
+            route_ticket: None,
             ttft: None,
             tx,
         });
