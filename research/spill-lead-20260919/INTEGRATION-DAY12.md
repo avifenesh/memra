@@ -1295,6 +1295,17 @@ clippy `-D warnings`, marker census, workflow keys, perf board: rc=0; `git diff 
 logs (blank line at EOF, marked `-whitespace`). Local 5090 `tools/serve-smoke.sh` (door OFF): `serve-smoke: 0 failed`,
 after waiting behind the `wt-525` session's server and then lane B's day-27 cell for the lock.
 
+Revuto round 1 on #627, two findings, both real, fixed by the lead in the integ: (1) in `host_promote_park_probe` the
+cold memo written after `host_promote_prepare` refused was read at `entries[..][hi]`, but the stale-generation arm
+`swap_remove`s the candidate, so the memo could name an unrelated, still promotable entry and make every request whose
+candidate it is serve cold for the tick; the refused entry's tokens are captured before the call now. (2) a tenant
+purge dropped the revoked tenant's `Promoting` entry but left its one-tick cold memo (prompt token ids) and the
+worker's one-tick insertion pin on its just-published device entry, so the revoked tenant's device bytes would survive
+the purge as "pinned entries left to in-flight sessions" with the worker as the only lease; `purge_tenant` clears the
+memo when it names the tenant, and the worker releases the pin (`release_promoted_pin_for_tenant`) before the device
+purge. CPU test `host_purge_clears_the_tenants_cold_memo_and_releases_its_promoted_pin` (another tenant's memo and
+pin stay). Server clippy `-D warnings` and the memra-server suite (787 passed) green, gated before the commit.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

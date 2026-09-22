@@ -34,6 +34,12 @@ Author's review of the full diff `main..lane/spill-integ32-20260922`, posted as 
   engine CPU lib tests, engine and server clippy `-D warnings`, marker census, workflow keys, perf board, diff-check) and
   the local 5090 serve-smoke if the lock frees within the window (stated either way).
 
+## Review round 1 (revuto, addressed in the integ)
+- The probe's cold memo now names the entry that was refused (its tokens captured before `host_promote_prepare`,
+  whose stale-generation arm `swap_remove`s and shifts indexes).
+- A tenant purge clears the revoked tenant's cold memo and releases the worker's one-tick insertion pin on its
+  device entry before the device purge; another tenant's memo and pin stay (CPU test).
+
 ## What I did not do
 - No GPU cell of my own beyond the smoke; the door stays OFF; its decide-by review (2026-10-05) reads both halves'
   stall receipts.

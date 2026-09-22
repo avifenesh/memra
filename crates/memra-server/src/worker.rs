@@ -8735,6 +8735,16 @@ impl HostPrefixCache {
                 ns_suffix(&dropped.pool_key.1)
             );
         }
+        // The one-tick cold memo holds the entry's prompt token ids; a revoked tenant's must not
+        // outlive the purge (revuto on #627). The worker releases the one-tick insertion pin of a
+        // revoked tenant's device entry beside this call (`release_promoted_pin_for_tenant`).
+        if self
+            .promote_cold
+            .as_ref()
+            .is_some_and(|(k, _)| crate::auth::meter_key(&k.1) == row)
+        {
+            self.promote_cold = None;
+        }
         let victims: Vec<PoolKey> = self
             .entries
             .keys()
@@ -12463,6 +12473,28 @@ fn host_promote_memo_names(host: &HostPrefixCache, pool_key: &PoolKey, toks: &[u
         .is_some_and(|(k, t)| k == pool_key && t.as_slice() == toks)
 }
 
+/// WP-A day 18, revuto on #627: the worker holds the insertion pin of a device entry it published
+/// off the tick until the next tick top. A tenant purge in between must release it first, or the
+/// revoked tenant's device bytes survive the purge as "pinned entries left to in-flight sessions"
+/// while the only lease is the worker's own. Returns true when a pin of that tenant was released.
+fn release_promoted_pin_for_tenant(
+    hpx: &mut HostPrefixCache,
+    px: &mut PrefixCache,
+    tenant: &str,
+) -> bool {
+    let row = crate::auth::meter_key(&crate::auth::scope_namespace(tenant, "")).to_string();
+    let names_tenant = hpx
+        .promoted_pin
+        .as_ref()
+        .is_some_and(|pin| crate::auth::meter_key(&pin.key.1) == row);
+    if !names_tenant {
+        return false;
+    }
+    let pin = hpx.promoted_pin.take().expect("checked");
+    px.unpin(&pin);
+    true
+}
+
 /// The day-16 failure arms of the promote hook, shared with the off-tick settle (WP-A day 18): the
 /// same lines and counters; `memo` additionally records the one-tick memo so the parked request
 /// (or the hook in the same admission) serves cold without a second attempt or a second line.
@@ -12712,11 +12744,13 @@ fn host_promote_park_probe(
             }
         }
     };
+    // The memo must name the entry that was REFUSED: `host_promote_prepare`'s stale-generation
+    // arm `swap_remove`s the candidate, after which `entries[..][hi]` is a different, still
+    // promotable entry (revuto on #627). Capture its tokens before the call.
+    let refused_toks = host.entries[&pool_key][hi].toks.clone();
     let Some(prepared) = host_promote_prepare(host, &pool_key, hi) else {
         // The typed line was printed; the hook must not print it again in this admission.
-        if let Some(e) = host.entries.get(&pool_key).and_then(|p| p.get(hi)) {
-            host.promote_cold = Some((pool_key.clone(), e.toks.clone()));
-        }
+        host.promote_cold = Some((pool_key.clone(), refused_toks));
         return false;
     };
     let t0 = Instant::now();
@@ -18760,6 +18794,7 @@ pub fn run(
         // bytes straight back into host RAM. Worker-thread execution, same reason as
         // trim: the pools live in this scope and the sweep must not race a demote.
         for (tenant, tx) in pending_purges.drain(..) {
+            release_promoted_pin_for_tenant(&mut hpx, &mut px, &tenant);
             let (host_namespaces, host_entries, host_bytes) = hpx.purge_tenant(&tenant);
             let (device_entries, device_pinned_left) = px.purge_tenant(&tenant);
             eprintln!(
@@ -41550,6 +41585,49 @@ mod tests {
     /// the executed two-namespace cell: populate two tenants (two salts each) plus a
     /// raw-salt pool, purge one tenant, and prove the others SURVIVE while the gauges
     /// and cumulative purge counters both move by exactly the removed amount.
+    /// revuto on #627: a tenant purge clears the revoked tenant's one-tick cold memo and releases
+    /// the worker's one-tick insertion pin on its device entry; another tenant's memo and pin stay.
+    #[test]
+    fn host_purge_clears_the_tenants_cold_memo_and_releases_its_promoted_pin() {
+        let mut h = HostPrefixCache::new(1 << 20);
+        let min = super::PREFIX_CACHE_MIN_TOKENS;
+        let acme = key(&crate::auth::scope_namespace("acme", "s1"));
+        let beta = key(&crate::auth::scope_namespace("beta", "s1"));
+        // memo of the purged tenant goes, another tenant's stays
+        h.promote_cold = Some((acme.clone(), toks(min)));
+        let _ = h.purge_tenant("acme");
+        assert!(
+            h.promote_cold.is_none(),
+            "the revoked tenant's memo must not outlive the purge"
+        );
+        h.promote_cold = Some((beta.clone(), toks(min)));
+        let _ = h.purge_tenant("acme");
+        assert!(h.promote_cold.is_some(), "another tenant's memo stays");
+        // the one-tick pin of the purged tenant's device entry is released before the device purge
+        let mut px = PrefixCache::default();
+        let e = entry_b(&acme, 100, 8);
+        let id = e.id;
+        px.entries.entry(acme.clone()).or_default().push(e);
+        let pin = px.pin(&acme, 0).expect("the entry exists");
+        assert_eq!(px.entries[&acme][0].pins, 1);
+        h.promoted_pin = Some(pin);
+        assert!(super::release_promoted_pin_for_tenant(
+            &mut h, &mut px, "acme"
+        ));
+        assert_eq!(px.entries[&acme][0].pins, 0, "the worker's pin is released");
+        assert_eq!(px.entries[&acme][0].id, id);
+        assert!(h.promoted_pin.is_none());
+        // a pin of another tenant is left alone
+        let eb = entry_b(&beta, 101, 8);
+        px.entries.entry(beta.clone()).or_default().push(eb);
+        h.promoted_pin = px.pin(&beta, 0);
+        assert!(!super::release_promoted_pin_for_tenant(
+            &mut h, &mut px, "acme"
+        ));
+        assert!(h.promoted_pin.is_some());
+        assert_eq!(px.entries[&beta][0].pins, 1);
+    }
+
     #[test]
     fn host_purge_removes_one_tenants_namespaces_and_no_others() {
         let mut h = HostPrefixCache::new(1 << 20);
