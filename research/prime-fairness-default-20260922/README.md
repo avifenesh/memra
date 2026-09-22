@@ -49,7 +49,7 @@ were pulled. Vast offer 51720139, instance 52037661, 1.85 $/h, about 40 minutes.
   primed under `prefill_tick` beside a spec long request in the same ticks. Cause unknown; the raw
   cell JSONs and both server logs are kept for the repro. The gate pins the route
   (`MEMRA_SPEC_GATE_LOW=64 HIGH=65`) so it measures the yield; with the pin every one of the 12
-  decision boots agreed byte for byte. Filed as its own issue.
+  decision boots agreed byte for byte. Filed as memra#641.
 - **Synthetic-id prompts make the model's first token EOS sometimes** (`peer-cold-a` finishes with
   no text). The gate therefore measures the first choice event (a token or an immediate finish) as
   "first event" and keeps `first_token_s` separately; bytes are compared on whatever text arrived.
