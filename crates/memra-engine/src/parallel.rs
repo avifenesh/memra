@@ -12,9 +12,7 @@ use memra_gguf::config::ModelConfig;
 use memra_gguf::model_plan::{MlpPlan, ModelPlan};
 use memra_gguf::placement::{LayerPlacementCost, PlacementRequest, plan_contiguous_stages};
 use memra_gguf::source::{ExpertActivationPrecision, TensorSource};
-use memra_gguf::tensor_contract::{
-    ContractOptions, LayerTensor, OutputHead, TensorContract, TensorId, TensorOwner,
-};
+use memra_gguf::tensor_contract::{LayerTensor, TensorId, TensorOwner};
 
 /// The execution planner's supported rank envelope. Hardware qualification and tuned defaults
 /// remain model x rig evidence, but the placement/runtime contract must not stop at earlier
@@ -191,41 +189,15 @@ fn artifact_costs(
     cfg: &ModelConfig,
     plan: &ModelPlan,
 ) -> Result<AutoArtifactCosts, TopologyError> {
-    let census = src.tensor_census().map_err(|error| {
-        TopologyError::new(format!(
-            "automatic parallel placement requires a source tensor census: {error}"
-        ))
-    })?;
-    let output_head = if census
-        .tensors
-        .iter()
-        .any(|row| row.entry.name == "lm_head.weight" || row.entry.name == "output.weight")
-    {
-        OutputHead::Separate
-    } else {
-        OutputHead::TiedToEmbedding
-    };
-    let contract = match memra_gguf::model_packs::for_config(cfg) {
-        Some(pack) => {
-            pack.compile_tensor_contract(cfg, plan, census.dialect, ContractOptions { output_head })
-        }
-        None => TensorContract::for_plan(plan, census.dialect, ContractOptions { output_head }),
-    }
-    .map_err(|error| {
-        TopologyError::new(format!(
-            "cannot compile automatic parallel tensor contract: {error}"
-        ))
-    })?;
-    let entries = census
-        .tensors
-        .iter()
-        .map(|row| row.entry.clone())
-        .collect::<Vec<_>>();
-    let binding = contract.bind(&entries).map_err(|error| {
-        TopologyError::new(format!(
-            "cannot bind automatic parallel tensor census: {error}"
-        ))
-    })?;
+    // The same boundary the loaders bind (memra#541): census, pack-declared head ownership,
+    // contract, bind. A checkpoint the loader would refuse is refused here with the same text.
+    let binding = memra_gguf::checkpoint_binding::bind_source(src, cfg, plan)
+        .map_err(|error| {
+            TopologyError::new(format!(
+                "automatic parallel placement cannot bind the tensor contract: {error}"
+            ))
+        })?
+        .bound;
 
     let mut layers = vec![LayerPlacementCost::default(); plan.layers.len()];
     let mut first_fixed_bytes = 0u64;
@@ -1623,6 +1595,7 @@ mod tests {
         ModelConfig {
             arch: Arch::Step35,
             prefill_activation: None,
+            tie_word_embeddings: None,
             // step35 parses its own window into `step35.sliding_window`; the hints are for
             // packs whose plan does not consume one (see ModelConfig::window_hint).
             window_hint: None,

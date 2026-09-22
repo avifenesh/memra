@@ -1,0 +1,11 @@
+# local-ci attempt 1 on this lane (before owned_by_mtp became index-aware), decode-batch-gate stage.
+# The gate loads the 9B WITHOUT its MTP block; the Refuse policy named the appended block's tensors.
+# Quoted from the attempt-1 battery log (first 900 bytes of the error line; the log file itself was
+# replaced by the attempt-2 run in raw/local-ci/).
+
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+Error: Custom { kind: Other, error: "checkpoint refused after load (pack qwen35, Gguf): 11 bound tensor(s) were never read by the loader, so their semantics would be silently dropped: Layer { index: 32, tensor: PreAttentionNorm } <- [\"blk.32.attn_norm.weight\"]; Layer { index: 32, tensor: Query } <- [\"blk.32.attn_q.weight\"]; Layer { index: 32, tensor: Key } <- [\"blk.32.attn_k.weight\"]; Layer { index: 32, tensor: Value } <- [\"blk.32.attn_v.weight\"]; Layer { index: 32, tensor: AttentionOutput } <- [\"blk.32.attn_output.weight\"]; Layer { index: 32, tensor: QueryNorm } <- [\"blk.32.attn_q_norm.weight\"]; Layer { index: 32, tensor: KeyNorm } <- [\"blk.32.attn_k_norm.weight\"]; Layer { index: 32, tensor: PreMlpNorm } <- [\"blk.32.post_attention_norm.weight\"]; Layer { index: 32, tensor: MlpGate } <- [\"blk.32.ffn_gate.weight\"]; Layer { index: 32, tensor: MlpUp } <- [\"blk.32.ffn_up.we...
+decode-batch-gate FAIL (NVFP4 config B=8)
+
+# All 11 ids carried `index: 32` (the 9B has 32 trunk layers; blk.32 is the appended NextN block).
