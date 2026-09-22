@@ -68,3 +68,8 @@ tree 92407aa306dfb00422b1c15b9ce20a02940d1362 started 2026-09-22T00:29:11Z host 
 finished 2026-09-22T00:36:07Z
 == shellcheck-gates (rerun, -x follows the sourced port-guard; the first run's rc=1 was SC1091 info only)
    rc=0
+== final-tree checks after merging main a19631f9d (engine equals main; only the two gate scripts differ)
+   rc=2 git diff --check origin/main HEAD
+   rc=0 bash tools/check-conflict-markers.sh
+   rc=0 shellcheck -e SC1091 tools/kv-host-spill-failure-gate.sh tools/kv-host-contract-fault-gate.sh
+   rc=0 python3 tools/update-perf-board.py --check
