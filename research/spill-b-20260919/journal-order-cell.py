@@ -161,6 +161,12 @@ def main():
         f'completion = "0.0000015"\n',
     )
     write_private(token_path, admin_token + "\n")
+    # The admin listener requires a FILE-backed keyring (inline keys cannot be provisioned).
+    keys_path = os.path.join(scratch, "keys.toml")
+    write_private(
+        keys_path,
+        f'[[keys]]\nprefix = "cell"\nsha256 = "{key_sha}"\ntenant = "{TENANT}"\nenabled = true\n',
+    )
 
     base = f"http://127.0.0.1:{args.port}"
     admin = f"http://127.0.0.1:{args.admin_port}"
@@ -175,7 +181,7 @@ def main():
             "MEMRA_MODEL_METADATA": metadata_path,
             "MEMRA_ADMIN_ADDR": f"127.0.0.1:{args.admin_port}",
             "MEMRA_ADMIN_TOKEN_FILE": token_path,
-            "MEMRA_API_KEYS": f"{TENANT}:{key_sha}",
+            "MEMRA_API_KEYS": keys_path,
         }
     )
     summary = {
