@@ -196,3 +196,88 @@ sessions on one 84k prefix hold one copy.
 
 The owner decides. The before receipt for whichever order is chosen is `DAY26.md` section 2 (both cards, N=5 per arm
 per order, both orders, `executed-not-qualified`).
+
+## Day 27 addendum: two findings from the census, one fixed, one for the owner (2026-09-22)
+
+Both receipts are in `DAY27.md`; every cell is `executed-not-qualified`.
+
+**Finding 1, fixed: the prefix-cache budget's context term.** The derived budget `min(2 x entry(ctx), boot_free - 1.5
+GiB)` read `ctx` as `MEMRA_CTX` when set and a literal 8192 when unset, while the cap rule (`request_ctx_cap` through
+`resolve_env_ctx`) reads the checkpoint's context when unset. On the target card (27B, `MEMRA_CTX` unset) that was
+`2 x 400,162,816 = 800,325,632 B` of budget beside `262,144 x 31,552 = 8,271,167,488 B` sessions, and the day-26
+deferred shape evicted 43 of 45 spec-boundary entries before their continuation (`cached=0` on 15 of 15). The fix
+(`crates/memra-server/src/worker.rs`, `prefix_budget_ctx` = `resolve_ctx` per loaded model inside
+`init_prefix_cache_budget`, tree `de2c781e6`) moves only the context term: the entry is `262,144 x 29,696 +
+156,893,184 = 7,941,521,408 B`, the budget `15,883,042,816 B` under the unchanged clamp `84,909,096,960 B`. After cell
+on the target card: 15 of 15 continuations hit (`cached_tokens` 1440 / 3104 / 5760), P and G equal to day 26 on 45 of
+45, 45 entries resident at 11,986,255,872 B, 0 evictions; idle retention rose from 30.1 GB to 39.1 GB because the
+entries now stay (that is the budget's purpose; they yield to sessions through `alloc_with_single_reclaim_retry`).
+Consequence for the options above: (a) and (b) are unchanged; the shared-prefix argument for (c)/(d) now has a
+prefix cache that actually retains on the target card at the served context, so the `c=16` cell of #539 can be run
+against a working cache rather than a starved one.
+
+**Finding 2, for the owner: what the 30 GB at idle is, and what the park door can reach.** Day 26 attributed the
+retention to four parked whole-session entries across two pools. The gauges say `continuation_pool_entries=0` in every
+target-card cell and `spec_pool_entries=2`: the mix is spec-path and a spec session parks in the spec pool only
+(`worker.rs:20880-20925`). The 30 GB is pool reserved minus the post-warmup used (about 30.6 GB): two parked spec
+sessions at `ctx_cap` (up to 2 x 8.27 GB when the last requests were open, 2 x 183 MB when they were bounded), the
+prefix entries, and the CUDA pool's cached free blocks (12 GB or 29 GB, the complement of the parked bytes). What the
+parked sessions bought on days 20 and 26: `continuation_pool_hits=0`, `spec_pool_hits=0`, every `prompt_ids` replay
+`plain-affinity: declined (no checkpoint retained ...)`, every chat continuation `spec-affinity: declined (history
+diverged at 48 of checkpoint ...)`. `MEMRA_KV_PARK_COMPACT` (`0 = OFF by design`, no `decide-by:` in its row) compacts
+plain-pool parks only; by design it cannot touch the spec pool that holds the bytes here. The pre-registered park
+cell (`DAY27.md` 2.4, 2.5) measures the door against the default on both cards; the pool's cached blocks are the
+`--kv-allocator vmm` door's subject (decide-by 2026-10-04), not the park door's. Owner's decision, recorded on #539:
+the park policy (TTL, per-pool caps at the served context, the spec pool's scope) is a product switch, not a lane's.
+
+## Day 28 addendum: the park door's decide-by and the cell that decides it (2026-09-22)
+
+`MEMRA_KV_PARK_COMPACT` (default OFF) had no `decide-by:` date; the door-hygiene rule wants one on every default-OFF
+door. Set 2026-09-22 in `docs/FLAGS.md`: **decide-by 2026-10-06**, 14 days after the door's first serving receipt
+(`DAY27.md` 2.6). The date is the lane's; the verdict is the owner's. No default changes.
+
+**Decision input, from the day-27 receipts (both `executed-not-qualified`, N=5 per arm per length, both orders).**
+On the served spec path the door writes nothing (`park-compact lines: 0` in every arm on both cards; a spec session
+parks whole in the spec pool, `worker.rs:20880-20925`, and the door acts at a plain-pool park only); retained bytes at
+idle are identical across arms (39,090,913,280 B target, 7,449,083,904 B local), `continuation_pool_hits=0` and
+`spec_pool_hits=0` everywhere, digests equal 45 of 45. On the plain path (`MEMRA_SERVE_SPEC=0`, target card) the door
+engages on every retirement (46 `[kv-reuse] park-compact:` lines, `2071 of 262144 rows retained in 2.1ms` at L0 up to
+`6459 of 262144` at L2, 1.7 to 2.1 ms each), idle retention falls 39,191,576,576 -> 22,649,241,600 B (the two parked
+262,144-row plain caches, 2 x 7,784,628,224 B, plus pool rounding), pools still 0 hits, digests equal 45 of 45 across
+arms and, across paths, plain vs spec 45 of 45.
+
+**What a promotion would change.** Only the plain pool's retained bytes and the plain resume path: a parked plain cache
+goes from `cache.max_ctx x bpt` (7,784,628,224 B per entry on the 27B at the served context; 2 per (model, namespace),
+16 global, no TTL) to `fed x bpt` (about 61 MB at 2071 rows), and a plain-pool resume becomes a D2D copy of the fed rows
+into a cache allocated at the REQUEST's charged cap (the plain-affinity grow machinery, `compact_parked_plain_cache`
+`worker.rs:2976`) instead of adopting the parked cache in place. Numerically nothing moves: the copy is a byte copy of
+rows `[0, fed)`, the day-27 digests are equal across arms, and the row's own gate (i) below is what proves it on the
+resume shape the day-27 mix never exercised (0 hits). Deployments on the spec path see no change at all.
+
+**What a deletion would lose.** The only mechanism that bounds a parked plain cache below the served context. Nothing
+measured: every plain-pool tape this lane holds (days 14, 20, 26, 27) reads `continuation_pool_hits=0` and
+`plain-affinity: declined` on every replay and continuation, so the parked bytes bought nothing on these mixes; the
+pool's pressure path (`alloc_with_single_reclaim_retry`, LRU on a later park) is what reclaims them today. Deleting the
+door leaves that path as the whole policy.
+
+**What the spec-pool equivalent would need.** The bytes on the served spec path sit in the spec pool (two parked spec
+sessions at `ctx_cap`, up to 2 x 8,271,167,488 B on the 27B) and the CUDA pool's cached blocks. A spec session parks
+live engine state, not a lone `Cache`: draft scratch, sampler state, and captured draft-chain graphs whose nodes BAKE the
+cache's plane addresses (`fa_part_pool` retire-on-grow exists for the same reason, `lib.rs:32331`). Compacting a spec
+session therefore means copying the trunk rows AND dropping every captured graph and its keeper, with a recapture on
+resume (one `D`-class capture, 41 to 44 MB and its capture time on the 9B); the alternative policies that move no address
+are a TTL on `parked_at` (recorded today, expires nothing) or a per-pool byte cap at the served context. That is a
+product switch on the pool the bytes are in, and it is the owner's call on memra#539, separate from this door.
+
+**The cell that decides the door (pre-registered here, the row points at it).** Plain path (`MEMRA_SERVE_SPEC=0`), both
+cards, default vs `=1`, both orders, N>=5 per arm per length, one binary, every completion digested: (i) the
+compacted-park resume byte-identity gate on both resume shapes: an exact-extension continuation that resumes a
+compacted entry (the `plain_resume_cap_admits` probe admits it, the request-cap re-allocation restores the rows, the
+suffix primes) against the same continuation resuming a plain-parked entry and against a cold prime of the
+concatenation; digests equal on every request, `plain-affinity` hit lines present on the resumed arms (the day-26/27
+mix produced 0 hits because a chat continuation re-renders the prompt; the cell must send the continuation as the
+parked session's committed sequence plus the suffix, the shape `DAY20.md` names); (ii) the step-OOM adjacency replay:
+a step-OOM teardown during a park-eligible retirement refuses the park (`retire_may_park(_, true)`), writes no
+`park-compact` line and leaves no entry; (iii) the park-time copy cost per park at the served context on both cards
+(the local 9B pair is owed; the target card reads 1.7 to 2.1 ms). Cost: 1 agent-day (the harness exists in
+`run-day26-cell.sh` and `day27-compare.py`; the continuation shape and the fault arm are the new work).

@@ -1,0 +1,133 @@
+usage: prefix-newest-turn-fits-gate.py [-h] --model MODEL --bin BIN --out OUT
+                                       [--port PORT] [--budget-mib BUDGET_MIB]
+                                       [--cohort-tokens COHORT_TOKENS]
+                                       [--turns TURNS]
+                                       [--start-tokens START_TOKENS]
+                                       [--grow-tokens GROW_TOKENS]
+                                       [--grid GRID] [--gpu-lock GPU_LOCK]
+
+prefix-newest-turn-fits-gate.py: a growing conversation's newest turn fits the prefix cache.
+
+The defect (memra#523 items 1 and 3): under the segmented policy that was the default until
+2026-09-21 a newly published entry could be its own eviction victim, or the snapshot preflight
+could refuse it outright, whenever the free share beside a PROMOTED cohort was smaller than the
+entry. A growing long-context conversation then ran cold on every turn (`cached_tokens=0`, a full
+re-prefill, the incident's 90-130 s ticks and 408s) while other tenants' entries sat protected,
+and the only trace was one once-announced `snapshot skipped` line. `cached_tokens` decides the
+customer's bill and whether the cache engaged at all, so the gate reads it from the response.
+Since memra#523 item 2 (`docs/decisions/PREFIX-CACHE-POLICY.md`) the only policy is plain LRU:
+the gate's subject is the DEFAULT policy, whatever it is, and the boot line must report it.
+
+Serving shape, one card, two boots of the real `memra-server` per cell, plain path
+(`MEMRA_SERVE_SPEC=0`), a SMALL explicit prefix budget, default policy. The CALIBRATION boot
+runs with the prefix cache OFF (`MEMRA_PREFIX_CACHE_MB=0`) and replays the identical request
+sequence, so each twin turn's own retained footprint (the bytes a request of that length
+keeps after it retires, with no cache activity at all) is measured on the same binary and the
+same card; the MEASURED boot then arms the cache with the small budget:
+
+  1. cohort: a second tenant (`cache_salt=cohort`) sends three prompts of different lengths, each
+     twice; the second send is a whole-entry hit (asserted: `cached_tokens == prompt_tokens` on
+     the second send), so the cohort is a reused, recently touched set when the growth starts.
+  2. twin: the growing tenant (`cache_salt=grow`) replays an 8-turn conversation, turn k+1 =
+     turn k's prompt ids plus a fixed number of new ids (a real conversation appends the answer
+     and the next message; the cache mechanics are the same, and exact ids make
+     `cached_tokens` a closed-form expectation).
+
+  The pressure arithmetic is checked from the server's own lines, not assumed: the cohort's
+  `insert` lines give a bytes(tokens) fit for this artifact, and the gate REFUSES (exit 2)
+  unless cohort <= 80 % of the budget, cohort + turn-1 entry > budget, and every turn's entry
+  <= budget. That is exactly the incident's shape scaled to a small budget.
+
+THE CAPTURE LAW (memra#602, research/spill-b-20260919/DAY17.md, fixed 2026-09-21): every entry the
+prefix cache publishes lands on the GDN prime grid. The cold prime's `prime_cache` calls all start
+on the 32-token WY-chunk grid; a restore at an OFF-grid entry end followed by one off-grid suffix
+prime call is a second numeric program (`align_prime_ranges_to_gdn`, hybrid_forward.rs), and on
+this gate's day-16 shape it flipped a greedy near-tie at turn 10 (restored `"_          "               "       "`,
+cold `"_
+"`, generated token 2) while the mechanics passed. The prompt-end seed now publishes at
+the largest grid-aligned length not exceeding the prompt end that leaves at least PRIME_MIN_T (16)
+prompt tokens behind it (`seed_capture_boundary`, worker.rs; the LCP and message-boundary captures
+already did), so the published entry of a prompt of P tokens has `capture_len(P)` tokens, a hit
+restores exactly that many, and `cached_tokens` reports the restored (aligned) length, never P.
+`--grid` names the grid (the engine's `gdn_chunk_size()` default, 32); a server on another grid
+fails V6 loudly instead of passing by accident.
+
+Assertions (bytes from the server's `[prefix-cache]` lines and `/metrics`; every clause is a
+verdict, none is relaxed for a binary):
+  V1 cached:      every turn k >= 2 reports `usage.prompt_tokens_details.cached_tokens` EQUAL to
+                  the entry turn k-1 published (its `insert (seed): N tokens` line): the previous
+                  turn's entry was restored, whole, and billed as restored. (Until day 18 this read
+                  `>= turn k-1's prompt_tokens`, which only an off-grid prompt-end entry satisfies.)
+  V2 lines:       turn 1 publishes exactly one `insert (seed)` (no `insert refused`, no
+                  `snapshot skipped`, no `seed REFUSED`); every turn k >= 2 has exactly one
+                  `[prefix-cache] hit:` line whose restored length is turn k-1's published length
+                  AND publishes exactly one entry of its own; no turn of the growing tenant is
+                  refused or skipped.
+  V3 effective:   after EVERY turn, the calibration boot's effective free
+                  (`cuda_driver_free_bytes + cuda_pool_cached_bytes`) equals the measured boot's
+                  effective free plus the cache's resident bytes (`prefix_cache_bytes`), within a
+                  slack: the cache's only cost to effective free is what it holds, so every
+                  evicted byte came back. An eviction that did not return its bytes would leave
+                  the measured boot short by the evicted entry. This is #523 item 4's honesty (the
+                  day-13 gate's V3) under the capacity-eviction shape, stated on states, not on
+                  per-turn deltas: round 1 of day 14 asserted `consumed == grew` and failed on the
+                  fix by exactly the base's cache-free consumption (1,111,666,004 B on turn 1);
+                  round 2 subtracted the calibration turn's consumed bytes and failed only on turn
+                  1 by 149,094,400 B, the amount by which the cache-off cohort phase (six cold
+                  sends) had already grown the retained footprint that the cache-on cohort (three
+                  cold, three restored) had not. The per-turn deltas stay in the table as report.
+  V4 cohort:      at least one eviction of a cohort entry (`ns "cohort"`) during the growing
+                  tenant's turns, and no turn evicts the entry it just published: the room came
+                  from the reused cohort, never from the entry itself.
+  V5 identity:    EVERY turn's completion text (sha256) equals the calibration boot's cold
+                  completion of the same prompt: the restored render is the cold render. Until
+                  day 18 this was a recorded column, not a verdict; on the day-16 lru shape
+                  (`--cohort-tokens 1250,1350,1450,1550 --turns 12 --start-tokens 11000
+                  --grow-tokens 150`) it read 11/12 on `main` (turn 10) while V1..V4 passed.
+  V6 grid:        every `insert (seed)` of the measured boot (cohort and turns) has exactly
+                  `capture_len(prompt_tokens)` tokens, and every hit's restored length is a
+                  multiple of `--grid`: the capture law above, checked on the server's own
+                  lines. Red on an off-grid prompt-end seed even when V5 happens to hold (a
+                  near-tie that did not flip on one card is not identity).
+  Recorded, not judged: the per-turn `[primeseg] call start=.. grid_off=..` receipts
+  (MEMRA_DEBUG_PRIMESEG=1, an existing diagnostic) and the count of off-grid prime-call starts.
+  V3 premise:     V3 compares the two boots' states, so it presumes they retain the SAME
+                  non-prefix-cache device state after every send. The admission's
+                  `[admit-oom] reclaim-on-defer` releases parked plain/spec/dspark sessions when
+                  a request's cost plus the reserve floor exceeds effective free; when it fires
+                  in one boot's window and not in the other's (the cache-on boot carries the
+                  cache's resident bytes, so on a card close to the floor it crosses first), the
+                  premise does not hold and V3 cannot be decided. The gate then REFUSES (exit 2),
+                  typed `REFUSED: V3 premise: ...`, naming the windows, the released sessions
+                  per boot and the card at each boot (driver free, compute-apps); the verdict
+                  line V1..V6 would have printed is kept in summary.json under
+                  `verdict_under_broken_premise`, never printed as the verdict. Two boots that
+                  release identically keep V3 evaluated exactly as above; V3's clause, form and
+                  slack are unchanged (spill-b day 29: the local RTX 5090 read `V3=FAIL` in both
+                  door arms with a constant `-410352980` B error, one cohort-shaped parked plain
+                  session released by the cache-on boot's turn-2 reclaim beside a 1.4 GB
+                  co-tenant, while the 96 GB card read `-> PASS`).
+
+Exit 0 = every assertion held; 1 = a verdict failed (red on `main` before day 14: `cached_tokens=0`
+on every turn after the once-announced `snapshot skipped` line; red on `main` before day 18 on
+V5 and V6: the off-grid prompt-end seed); 2 = REFUSED (lock, port, shape).
+
+usage: prefix-newest-turn-fits-gate.py [--external-lock FD] --model GGUF --bin memra-server            --out NEW_DIR [--port N] [--budget-mib 1024] [--cohort-tokens 2800,3000,3200]            [--turns 8] [--start-tokens 9200] [--grow-tokens 300] [--grid 32]
+Lock: the canonical rig lock only (`/tmp/memra-gpu.lock` or `/tmp/memra-5090.lock`), held for
+the whole cell; `--external-lock FD` inherits the collector's FD (lead ruling 5) and is verified
+with tools/tier-lock-proof.py before anything binds a port or boots a server.
+
+options:
+  -h, --help            show this help message and exit
+  --model MODEL
+  --bin BIN
+  --out OUT
+  --port PORT
+  --budget-mib BUDGET_MIB
+  --cohort-tokens COHORT_TOKENS
+  --turns TURNS
+  --start-tokens START_TOKENS
+  --grow-tokens GROW_TOKENS
+  --grid GRID           the GDN prime grid (Engine::gdn_chunk_size(), 32
+                        shipped)
+  --gpu-lock GPU_LOCK
