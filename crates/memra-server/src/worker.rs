@@ -14372,6 +14372,15 @@ struct PendingRestore {
     toks_len: usize,
     bytes: usize,
     cache: Option<Cache>,
+    /// WP-A day 23 (the draft-bearing restore): the request's fresh draft scratch, allocated at the
+    /// probe and written by the copy stream as items of the same batch as `cache`'s rows; owned
+    /// HERE, never by a session, until the request re-admits under `ready`. Travels with `cache`:
+    /// dropped where it drops, forgotten where it is forgotten. `None` on a plain entry, and on a
+    /// draft-bearing entry whose request will serve plain (`draft_declined` names why).
+    draft: Option<memra_engine::spec::RestoredDraftScratch>,
+    /// WP-A day 23: why the probe submitted the trunk restore alone on a draft-bearing entry (the
+    /// request would serve plain), for the admission body's census line if it decides otherwise.
+    draft_declined: Option<&'static str>,
     contract: Option<PendingContractRestore>,
     ready: bool,
     /// Tick tops seen since `ready`; a ready restore its request never consumed is dropped after
@@ -14608,6 +14617,13 @@ fn host_restore_settle_with(
                         }
                         None => Err("tier transfer engine missing".to_string()),
                     };
+                    // Day 23: a draft scratch beside the missing cache follows the ticket's fate:
+                    // dropped once the host wait settled it, forgotten when it did not.
+                    match (&settled, pending.draft.take()) {
+                        (Ok(()), Some(draft)) => drop(draft),
+                        (Err(_), Some(draft)) => std::mem::forget(draft),
+                        (_, None) => {}
+                    }
                     let err = match settled {
                         Ok(()) => format!(
                             "a Restoring request has {what}; ticket seq={seq} settled and retired"
@@ -14647,14 +14663,20 @@ fn host_restore_settle_with(
         Err(HostRestoreFailure::ReceiptMismatch(err)) => {
             // The copy landed and the ticket left cleanly: the cache drops here (nothing was primed
             // on it) and the pin goes back to the caller; the tier and the restore route latch.
+            // Day 23: the draft scratch landed with it and drops with it.
             drop(pending.cache.take());
+            drop(pending.draft.take());
             host_restore_latch_landed(host, &err);
             Some(RestoreSettled::Dropped(pending.pin.take()))
         }
         Err(HostRestoreFailure::Latched(err)) => {
-            // Never a free under a running copy: the cache is forgotten, the pin is kept.
+            // Never a free under a running copy: the cache is forgotten, the pin is kept. Day 23:
+            // the draft scratch is the same batch's destination and is forgotten with it.
             if let Some(cache) = pending.cache.take() {
                 std::mem::forget(cache);
+            }
+            if let Some(draft) = pending.draft.take() {
+                std::mem::forget(draft);
             }
             host_restore_latch(host, &err);
             Some(RestoreSettled::Dropped(None))
@@ -14794,6 +14816,7 @@ fn host_restore_submit(
     engine: &Engine,
     e: &PrefixEntry,
     cache: &mut Cache,
+    draft: Option<&mut memra_engine::spec::RestoredDraftScratch>,
     hpx: &mut HostPrefixCache,
 ) -> Result<(PendingContractRestore, usize), String> {
     use memra_engine::tier_transfer::D2dRestore;
@@ -14846,6 +14869,34 @@ fn host_restore_submit(
             ops.push(D2dRestore {
                 source: &src.v,
                 destination: dst.v.slice_mut(..vb),
+                bytes: vb as u64,
+                producer_fence: producer,
+            });
+            sizes.push(vb as u64);
+        }
+        bytes += kb + vb;
+    }
+    // WP-A day 23 (the draft-bearing restore, `d2d_restore_draft_ready` rule 1): the entry's
+    // draft plane rows `[0..pos)` into the request's fresh draft scratch (allocated at the probe,
+    // its `len` set there on the owner stream, before the fence above), two more items of the SAME
+    // batch under the SAME pin and producer fence; the receipt term covers them as it covers the
+    // trunk rows. A draft-bearing entry restored for a request that serves plain passes `None`.
+    if let (Some(scratch), Some(plane)) = (draft, e.draft.as_ref()) {
+        let (kb, vb) = (scratch.k_bytes(), scratch.v_bytes());
+        let (dst_k, dst_v) = scratch.destinations();
+        if kb > 0 {
+            ops.push(D2dRestore {
+                source: &plane.k,
+                destination: dst_k,
+                bytes: kb as u64,
+                producer_fence: producer,
+            });
+            sizes.push(kb as u64);
+        }
+        if vb > 0 {
+            ops.push(D2dRestore {
+                source: &plane.v,
+                destination: dst_v,
                 bytes: vb as u64,
                 producer_fence: producer,
             });
@@ -14957,6 +15008,12 @@ fn host_restore_park_probe(
     lm: &LoadedModel,
     req: &Request,
     ctx_cap: usize,
+    // WP-A day 23: the draft pre-decision's inputs, the admission loop's own (the same counts
+    // `admit(..)` receives, the gate's spec estimate for this request, the model's DFlash drafter).
+    n_active: usize,
+    n_pending: usize,
+    estimate_spec: bool,
+    dspark_armed: bool,
 ) -> bool {
     match host_restore_probe_decision(hpx, &req.request_id) {
         RestoreProbe::ParkAgain => return true,
@@ -15007,12 +15064,11 @@ fn host_restore_park_probe(
         return false;
     };
     {
-        // The route's class: a plain whole entry on one device. Draft-bearing (spec or DFlash),
-        // TP and latent entries keep the tick program by name.
+        // The route's class: a whole entry on one device, plain or MTP draft-bearing (day 23).
+        // DFlash-tail, TP and latent entries keep the tick program by name.
         let e = &px.entries[&pool_key][i];
         if e.tp.is_some()
             || e.latent.iter().any(Option::is_some)
-            || e.draft.is_some()
             || e.dspark_draft.is_some()
             || e.pos != e.toks.len()
             || e.last_logits.is_empty()
@@ -15042,15 +15098,97 @@ fn host_restore_park_probe(
         return refuse("the entry vanished before its pin".to_string());
     };
     let e = &px.entries[&pool_key][i];
-    match host_restore_submit(engine, e, &mut cache, hpx) {
+    // WP-A day 23 (the draft-bearing restore, census item 11): on a draft-bearing entry the
+    // request's draft decision is taken HERE, before the submit, with the admission body's own
+    // inputs (`spec_restore_refusal`, the gate's spec estimate, the load reading), so a request
+    // that would serve plain submits the trunk restore alone and never a draft plane it will not
+    // read; the geometry checks and the allocation of the fresh scratch are the OFF constructor's
+    // (`alloc_restored_draft_scratch`), moved to the probe; a draft refusal never refuses the
+    // TRUNK route (the OFF program serves that hit plain on the restored trunk, as it does when
+    // its own constructor fails the same check). The scratch's `len` is set on the owner stream
+    // before the producer fence `host_restore_submit` records.
+    let mut draft: Option<memra_engine::spec::RestoredDraftScratch> = None;
+    let mut draft_declined: Option<&'static str> = None;
+    if let Some(plane) = e.draft.as_ref() {
+        let sampler = Sampler::new(req.sampler_cfg.clone());
+        let penalty_window_active = sampler.penalty_last_n() > 0
+            && (sampler.penalty_repeat() != 1.0
+                || sampler.penalty_freq() != 0.0
+                || sampler.penalty_present() != 0.0);
+        let load_admits = sampled_restore_load_admits(
+            spec_restore_load_guard_on(),
+            spec_k_pin(),
+            spec_gate_on(),
+            *spec_gate_thresholds(),
+            spec_load_demand(n_active + 1 + n_pending),
+        );
+        let refusal = spec_restore_refusal(
+            true,
+            e.pos,
+            e.toks.len(),
+            prompt.len(),
+            sampler.is_greedy(),
+            penalty_window_active,
+            spec_restore_sampled_on(),
+            memra_engine::spec::spec_pen_session_on(),
+            load_admits,
+            !e.last_h.is_empty(),
+            !e.last_logits.is_empty(),
+        );
+        match host_restore_draft_decision(
+            estimate_spec,
+            dspark_armed,
+            req.grammar.is_some(),
+            refusal,
+        ) {
+            Some(why) => draft_declined = Some(why),
+            None => match lm.model.alloc_restored_draft_scratch(
+                engine,
+                ctx_cap,
+                e.pos,
+                plane.k_tok_bytes,
+                plane.v_tok_bytes,
+                plane.k.len(),
+                plane.v.len(),
+            ) {
+                Ok(mut scratch) => match scratch.set_len(engine) {
+                    Ok(()) => draft = Some(scratch),
+                    Err(err) => {
+                        eprintln!(
+                            "[prefix-cache] restore draft plane declined at the probe ({err}); the \
+                             trunk restores through the door and the hit serves plain"
+                        );
+                        draft_declined = Some("draft scratch len set failed at the probe");
+                    }
+                },
+                Err(err) => {
+                    eprintln!(
+                        "[prefix-cache] restore draft plane declined at the probe ({err}); the \
+                         trunk restores through the door and the hit serves plain"
+                    );
+                    draft_declined = Some("draft scratch geometry or alloc refused at the probe");
+                }
+            },
+        }
+    }
+    match host_restore_submit(engine, e, &mut cache, draft.as_mut(), hpx) {
         Ok((contract, bytes)) => {
             let seq = contract.ticket.sequence;
             let items = contract.sizes.len();
             let toks_len = e.toks.len();
+            let draft_note = match (&draft, draft_declined) {
+                (Some(d), _) => format!(
+                    "; draft plane {} rows ({:.1}KB) in the batch",
+                    d.pos(),
+                    (d.k_bytes() + d.v_bytes()) as f64 / 1e3
+                ),
+                (None, Some(why)) => format!("; draft plane not submitted ({why})"),
+                (None, None) => String::new(),
+            };
             eprintln!(
                 "[prefix-cache] restore submitted off the tick: {toks_len} tokens, {items} planes \
                  ({:.1}MB), ticket seq={seq} on the contracts door's copy stream; recurrent state \
-                 copied on the owner stream; request parked",
+                 copied on the owner stream; request parked{draft_note}",
                 bytes as f64 / 1e6,
             );
             hpx.restoring = Some(PendingRestore {
@@ -15060,6 +15198,8 @@ fn host_restore_park_probe(
                 toks_len,
                 bytes,
                 cache: Some(cache),
+                draft,
+                draft_declined,
                 contract: Some(contract),
                 ready: false,
                 ready_ticks: 0,
@@ -15071,26 +15211,56 @@ fn host_restore_park_probe(
             true
         }
         Err(why) => {
-            // Nothing was submitted (a refusal releases its producer fence): the cache drops
-            // unprimed, the pin goes back, the OFF program serves this admission.
+            // Nothing was submitted (a refusal releases its producer fence): the cache and the
+            // draft scratch drop unprimed, the pin goes back, the OFF program serves this admission.
             drop(cache);
+            drop(draft);
             px.unpin(&pin);
             refuse(why)
         }
     }
 }
 
+/// WP-A day 23: the probe's draft pre-decision on a draft-bearing entry, pure. `None` submits the
+/// draft plane with the trunk rows; `Some(why)` submits the trunk alone. The admission body's
+/// `spec_eligible` conjunction stays authoritative; this reads the inputs both sides share (the
+/// gate's spec estimate over the projected wave, the model's DFlash drafter which owns the spec
+/// program when armed, a grammar which keeps the plain path, and `spec_restore_refusal`).
+fn host_restore_draft_decision(
+    estimate_spec: bool,
+    dspark_armed: bool,
+    grammar: bool,
+    refusal: Option<&'static str>,
+) -> Option<&'static str> {
+    if !estimate_spec {
+        return Some("the admission estimate does not spec this request");
+    }
+    if dspark_armed {
+        return Some("a DFlash drafter owns the spec program for this model");
+    }
+    if grammar {
+        return Some("constrained request (grammar owns generation)");
+    }
+    refusal
+}
+
 /// The hit site's consumption (inside `admit`, WP-A day 21): a ready restore for THIS request whose
 /// pin names the hit's entry hands over its cache and its pin; the hit accounting is the OFF hit's.
 /// `None` when no ready restore names this request (a ready one for it that names another entry is
 /// dropped typed here).
+#[allow(clippy::type_complexity)]
 fn host_restore_take_ready(
     px: &mut PrefixCache,
     hpx: &mut HostPrefixCache,
     request_id: &str,
     pool_key: &PoolKey,
     i: usize,
-) -> Option<(Cache, PrefixPin)> {
+) -> Option<(
+    Cache,
+    PrefixPin,
+    Option<memra_engine::spec::RestoredDraftScratch>,
+    Option<&'static str>,
+)> {
     {
         let r = hpx.restoring.as_ref()?;
         if !r.ready
@@ -15122,18 +15292,26 @@ fn host_restore_take_ready(
     }
     let cache = r.cache.take().expect("checked");
     let pin = r.pin.take().expect("checked");
+    // Day 23: the ready draft scratch leaves with the cache, under the same `ready` (the wait was
+    // installed at the settle); the session that reads it is built after this hand-over.
+    let draft = r.draft.take();
     eprintln!(
         "[prefix-cache] restore landed off the tick: {} tokens ({:.1}MB) complete after {} \
-         poll(s), {:.1}ms from submission to completion, {:.1}ms to re-admission ({})",
+         poll(s), {:.1}ms from submission to completion, {:.1}ms to re-admission ({}){}",
         r.toks_len,
         r.bytes as f64 / 1e6,
         r.polls,
         r.copy_ms,
         r.t0.elapsed().as_secs_f64() * 1e3,
         r.settled_by,
+        if draft.is_some() {
+            "; draft plane ready"
+        } else {
+            ""
+        },
     );
     hpx.restores_landed += 1;
-    Some((cache, pin))
+    Some((cache, pin, draft, r.draft_declined))
 }
 
 // ---------------------------------------------------------------------------
@@ -22440,6 +22618,10 @@ pub fn run(
                     &loaded[&model_key],
                     &req,
                     shape.ctx_cap,
+                    active.len(),
+                    queue.len() + requeue.len(),
+                    estimate_spec,
+                    dspark_drafts.contains_key(&req.model),
                 )
             {
                 requeue.push_back(req); // waits (FIFO), never shed: its restore is in flight
@@ -27107,6 +27289,11 @@ fn admit(
         }
         consumable_hit = px.id_index(&plan.pin);
     }
+    // WP-A day 23: a draft scratch restored off the tick for THIS request (ready behind the
+    // installed wait), or the probe's reason for submitting the trunk alone on a draft-bearing
+    // entry; consumed by the spec conversion below, dropped typed when the request serves plain.
+    let mut off_tick_draft: Option<memra_engine::spec::RestoredDraftScratch> = None;
+    let mut off_tick_draft_declined: Option<&'static str> = None;
     if should_probe_prefix_cache(
         prefix_on,
         reused.is_some(),
@@ -27120,12 +27307,16 @@ fn admit(
             // cache (complete behind the installed owner-stream wait) and its pin; everything
             // after this point is the OFF hit's program on that cache.
             let mut off_tick_pin: Option<PrefixPin> = None;
-            let restored = if let Some((c, pin)) =
+            let restored = if let Some((c, pin, draft, declined)) =
                 host_restore_take_ready(px, hpx, &req.request_id, &pool_key, i)
             {
                 let e = &px.entries[&pool_key][i];
                 kvprobe(engine, &c, &e.last_logits, "prefix-restored");
                 off_tick_pin = Some(pin);
+                // Day 23: the ready draft scratch (or the probe's reason for none) rides to the
+                // spec conversion below.
+                off_tick_draft = draft;
+                off_tick_draft_declined = declined;
                 Ok(ReuseEntry {
                     fed: e.toks.clone(),
                     cache: c,
@@ -27613,24 +27804,57 @@ fn admit(
                             SeedCapture::AtBoundary(b) => Some(b),
                             _ => None,
                         });
-                match lm.model.spec_session_from_restored_deferred(
-                    engine,
-                    carrier_cache,
-                    fed.clone(),
-                    &prompt[fed.len()..],
-                    &draft.k,
-                    &draft.v,
-                    draft.k_tok_bytes,
-                    draft.v_tok_bytes,
-                    draft.len,
-                    &entry.last_h,
-                    &entry.last_logits,
-                    spec_sampling_for(&sampler),
-                    full_cover,
-                    cap,
-                    republish_at,
-                    lm.model.mtp_prime_walk_supported(),
-                ) {
+                // WP-A day 23: a draft scratch restored off the tick (ready behind the installed
+                // owner-stream wait) builds the session with no draft copy
+                // (`spec_session_from_restored_ready`); otherwise the OFF constructor allocates
+                // and copies on the owner stream as before. When the probe declined the draft and
+                // this body takes it (the load reading moved while the request was parked), the
+                // OFF copy runs from the still-pinned entry and the arm is named.
+                let conversion = match off_tick_draft.take() {
+                    Some(ready) => lm.model.spec_session_from_restored_ready(
+                        engine,
+                        carrier_cache,
+                        fed.clone(),
+                        &prompt[fed.len()..],
+                        ready,
+                        &entry.last_h,
+                        &entry.last_logits,
+                        spec_sampling_for(&sampler),
+                        full_cover,
+                        cap,
+                        republish_at,
+                        lm.model.mtp_prime_walk_supported(),
+                    ),
+                    None => {
+                        if let Some(why) = off_tick_draft_declined.take() {
+                            eprintln!(
+                                "[prefix-cache] spec restore takes the draft the probe declined \
+                                 ({why}); the draft plane is copied on the owner stream (the OFF \
+                                 program) from the pinned entry (model {})",
+                                req.model,
+                            );
+                        }
+                        lm.model.spec_session_from_restored_deferred(
+                            engine,
+                            carrier_cache,
+                            fed.clone(),
+                            &prompt[fed.len()..],
+                            &draft.k,
+                            &draft.v,
+                            draft.k_tok_bytes,
+                            draft.v_tok_bytes,
+                            draft.len,
+                            &entry.last_h,
+                            &entry.last_logits,
+                            spec_sampling_for(&sampler),
+                            full_cover,
+                            cap,
+                            republish_at,
+                            lm.model.mtp_prime_walk_supported(),
+                        )
+                    }
+                };
+                match conversion {
                     Ok(sess) => {
                         eprintln!(
                             "[prefix-cache] spec restore: {} of {} prompt tokens + draft \
@@ -27697,6 +27921,19 @@ fn admit(
         } else {
             spec_restore_declined = Some("pinned entry vanished before conversion");
         }
+    }
+    // WP-A day 23: a draft scratch restored off the tick that no spec session consumed (the request
+    // serves plain: a clause the probe could not read, or this body's own refusal) drops here,
+    // typed; the trunk cache it rode with serves the hit as OFF does. The count of these lines on
+    // the gates is a census, never a clause.
+    if let Some(unused) = off_tick_draft.take() {
+        eprintln!(
+            "[prefix-cache] draft plane restored off the tick but the request serves plain ({}); \
+             dropped (model {})",
+            spec_restore_declined.unwrap_or("not spec-eligible at admission"),
+            req.model,
+        );
+        drop(unused);
     }
     // DSPARK RESTORE (lane/dspark-draft-plane-20260827): the long-answer half. A hit whose
     // entry carries the drafter's readable KV tail can re-arm a dspark session instead of
@@ -42033,7 +42270,12 @@ mod tests {
         let arm = machine_body
             .find("Err(HostRestoreFailure::ReceiptMismatch(err)) => {")
             .unwrap();
-        let arm_body = &machine_body[arm..arm + 500];
+        // The arm ends where the `Latched` arm begins (day 23 added the draft scratch's drop to it).
+        let arm_end = arm
+            + machine_body[arm..]
+                .find("Err(HostRestoreFailure::Latched(err)) => {")
+                .unwrap();
+        let arm_body = &machine_body[arm..arm_end];
         assert!(arm_body.contains("drop(pending.cache.take());"));
         assert!(arm_body.contains("host_restore_latch_landed(host, &err);"));
         assert!(arm_body.contains("Some(RestoreSettled::Dropped(pending.pin.take()))"));
@@ -42108,6 +42350,196 @@ mod tests {
         tier.fault.set(Some(F::PostPublish));
         assert!(!tier.take_d2d_fault(true) && !tier.take_d2d_fault(false));
         assert_eq!(tier.take_fault(true), Some(F::PostPublish));
+    }
+
+    /// WP-A day 23 (the draft-bearing restore, census item 11, `d2d_restore_draft_ready`): every
+    /// path of the draft plane through the door is named in the source. The probe no longer refuses
+    /// `e.draft` by name; its draft decision (`host_restore_draft_decision` over
+    /// `spec_restore_refusal`) precedes the allocation, the allocation and `set_len` precede the
+    /// submit (so the scratch's `len_d` write is ordered before the producer fence), a refused
+    /// submission drops the scratch with the cache; the submit pushes the draft items after the
+    /// trunk rows and before the one batch; the settle's `Latched` arm forgets the scratch and the
+    /// `ReceiptMismatch` arm drops it; the fail-closed arm follows the ticket's fate; the hand-over
+    /// leaves only under `ready`; the admission body builds the session over the ready scratch with
+    /// `spec_session_from_restored_ready` (no draft copy) or names the arm it takes instead, and
+    /// drops an unconsumed scratch typed.
+    #[test]
+    fn day23_draft_bearing_restore_paths_are_named() {
+        let src = include_str!("worker.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests {").unwrap()];
+        // The probe.
+        let probe = body.find("fn host_restore_park_probe(").unwrap();
+        let probe_body = &body[probe..probe + body[probe..].find("\n}\n").unwrap()];
+        let class = probe_body.find("// The route's class:").unwrap();
+        let class_block =
+            &probe_body[class..class + probe_body[class..].find("return false;").unwrap()];
+        assert!(
+            !class_block.contains("e.draft.is_some()"),
+            "the class check no longer refuses the MTP draft plane by name"
+        );
+        assert!(
+            class_block.contains("e.dspark_draft.is_some()"),
+            "the DFlash tail is still refused by name"
+        );
+        let decision = probe_body.find("host_restore_draft_decision(").unwrap();
+        let refusal = probe_body.find("spec_restore_refusal(").unwrap();
+        let alloc = probe_body.find(".alloc_restored_draft_scratch(").unwrap();
+        let set_len = probe_body.find("scratch.set_len(engine)").unwrap();
+        let submit = probe_body
+            .find("host_restore_submit(engine, e, &mut cache, draft.as_mut(), hpx)")
+            .unwrap();
+        let pin = probe_body.find("px.pin(&pool_key, i)").unwrap();
+        assert!(
+            pin < refusal
+                && refusal < decision
+                && decision < alloc
+                && alloc < set_len
+                && set_len < submit,
+            "pin, then the draft decision, then the allocation and set_len, then the one submit"
+        );
+        assert!(
+            probe_body[submit..].contains("drop(draft);")
+                && probe_body[submit..].contains("px.unpin(&pin);"),
+            "a refused submission drops the scratch with the cache and releases the pin"
+        );
+        assert!(probe_body.contains("draft plane not submitted ({why})"));
+        // The submit: the draft items after the trunk rows, before the one batch, under the same fence.
+        let submit_fn = body.find("fn host_restore_submit(").unwrap();
+        let submit_body = &body[submit_fn..submit_fn + body[submit_fn..].find("\n}\n").unwrap()];
+        let trunk = submit_body
+            .find("for (il, dst) in cache.kv.iter_mut().enumerate()")
+            .unwrap();
+        let draft_ops = submit_body
+            .find("if let (Some(scratch), Some(plane)) = (draft, e.draft.as_ref())")
+            .unwrap();
+        let destinations = submit_body.find("scratch.destinations()").unwrap();
+        let batch = submit_body
+            .find("t.submit_d2d_restore(ops, HOST_TIER_TRANSFER_EPOCHS)")
+            .unwrap();
+        let fence = submit_body.find(".record_producer(generation)").unwrap();
+        assert!(
+            fence < trunk && trunk < draft_ops && draft_ops < destinations && destinations < batch
+        );
+        assert_eq!(
+            submit_body[draft_ops..batch]
+                .matches("producer_fence: producer,")
+                .count(),
+            2,
+            "the draft K and V items ride the trunk's producer fence"
+        );
+        assert_eq!(
+            body.matches("t.submit_d2d_restore(").count(),
+            1,
+            "one batch, one submit site"
+        );
+        // The settle machine.
+        let machine = body.find("fn host_restore_settle_with(").unwrap();
+        let machine_body = &body[machine..machine + body[machine..].find("\n}\n").unwrap()];
+        let latched = machine_body
+            .find("Err(HostRestoreFailure::Latched(err)) => {")
+            .unwrap();
+        assert!(machine_body[latched..].contains("std::mem::forget(draft);"));
+        let mismatch = machine_body
+            .find("Err(HostRestoreFailure::ReceiptMismatch(err)) => {")
+            .unwrap();
+        assert!(machine_body[mismatch..latched].contains("drop(pending.draft.take());"));
+        assert!(
+            machine_body.contains("(Ok(()), Some(draft)) => drop(draft),")
+                && machine_body.contains("(Err(_), Some(draft)) => std::mem::forget(draft),"),
+            "the fail-closed arm's scratch follows the ticket's fate"
+        );
+        // The hand-over: under ready only, once.
+        let take = body.find("fn host_restore_take_ready(").unwrap();
+        let take_body = &body[take..take + body[take..].find("\n}\n").unwrap()];
+        let ready_check = take_body.find("if !r.ready").unwrap();
+        let hand = take_body.find("r.draft.take()").unwrap();
+        assert!(ready_check < hand, "the scratch leaves only under ready");
+        assert_eq!(body.matches("r.draft.take()").count(), 1);
+        // The admission body: the ready constructor once, the OFF constructor once, the two arms named.
+        assert_eq!(
+            body.matches(".spec_session_from_restored_ready(").count(),
+            1
+        );
+        assert_eq!(
+            body.matches(".spec_session_from_restored_deferred(")
+                .count(),
+            1
+        );
+        let admit = body.find("fn admit(").unwrap();
+        let admit_body = &body[admit..];
+        let ready_call = admit_body
+            .find(".spec_session_from_restored_ready(")
+            .unwrap();
+        let off_call = admit_body
+            .find(".spec_session_from_restored_deferred(")
+            .unwrap();
+        assert!(
+            ready_call < off_call,
+            "the ready scratch is consumed before the OFF constructor is reached"
+        );
+        assert!(
+            admit_body[ready_call..off_call]
+                .contains("spec restore takes the draft the probe declined")
+        );
+        assert!(
+            admit_body.contains("draft plane restored off the tick but the request serves plain")
+        );
+        assert_eq!(
+            admit_body.matches("off_tick_draft.take()").count(),
+            2,
+            "consumed by the conversion or dropped typed"
+        );
+        // The loop passes the gate's own estimate into the probe.
+        let probe_call = body.find("&& host_restore_park_probe(").unwrap();
+        assert!(body[probe_call..probe_call + 600].contains("estimate_spec,"));
+        assert!(
+            body[probe_call..probe_call + 600].contains("dspark_drafts.contains_key(&req.model),")
+        );
+    }
+
+    /// WP-A day 23: the probe's draft pre-decision, pure: the trunk alone when the gate's estimate
+    /// does not spec the request, when a DFlash drafter owns the model's spec program, when a
+    /// grammar owns generation, or when `spec_restore_refusal` names a reason; the draft plane
+    /// otherwise.
+    #[test]
+    fn day23_draft_decision_submits_the_draft_only_for_a_request_that_reads_it() {
+        use super::host_restore_draft_decision as d;
+        assert_eq!(d(true, false, false, None), None);
+        assert_eq!(
+            d(false, false, false, None),
+            Some("the admission estimate does not spec this request")
+        );
+        assert_eq!(
+            d(true, true, false, None),
+            Some("a DFlash drafter owns the spec program for this model")
+        );
+        assert_eq!(
+            d(true, false, true, None),
+            Some("constrained request (grammar owns generation)")
+        );
+        assert_eq!(
+            d(true, false, false, Some("partial (mid-entry) restore")),
+            Some("partial (mid-entry) restore")
+        );
+        // The refusal function's own clauses over the probe's inputs (a whole-entry hit).
+        assert_eq!(
+            super::spec_restore_refusal(
+                true, 64, 64, 80, true, false, true, true, true, true, true
+            ),
+            None
+        );
+        assert_eq!(
+            super::spec_restore_refusal(
+                true, 64, 64, 64, true, false, true, true, true, false, true
+            ),
+            Some("full-cover hit without the entry's boundary hidden + logits")
+        );
+        assert!(
+            super::spec_restore_refusal(
+                true, 64, 64, 80, false, false, true, true, false, true, true
+            )
+            .is_some_and(|why| why.contains("LOAD GUARD"))
+        );
     }
 
     /// A tenant purge settles the `Capturing` entry first and drops the purged tenant's
@@ -42273,6 +42705,8 @@ mod tests {
             toks_len: 64,
             bytes: 4096,
             cache: None,
+            draft: None,
+            draft_declined: None,
             contract: with_ticket.then(|| super::PendingContractRestore {
                 ticket: memra_engine::cache::tiered::TransferTicket {
                     issuer: 7,
@@ -42545,7 +42979,7 @@ mod tests {
             .unwrap();
         let pin = probe_body.find("px.pin(&pool_key, i)").unwrap();
         let submit = probe_body
-            .find("host_restore_submit(engine, e, &mut cache, hpx)")
+            .find("host_restore_submit(engine, e, &mut cache, draft.as_mut(), hpx)")
             .unwrap();
         assert!(validate < pin && pin < submit);
         assert!(
