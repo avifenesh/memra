@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "archives": [
+    {
+      "file": "qwen-records.tar.gz",
+      "bytes": 13131856,
+      "sha256": "2fdbe5ec3dbb138adebc492b9e72a1f9a8728ec05d02dea3086b9fd015802b50",
+      "files": 3691,
+      "file_manifest_sha256": "ab060c87b75d635f204fa3c46f4a9bb95bd9441616165b199286c4206c207e98"
+    },
+    {
+      "file": "gemma-records.tar.gz",
+      "bytes": 6190612,
+      "sha256": "7fe1f0de87ba511049e15d7ca20a9cdceb448f24f1b6df59aba185e23b73ac55",
+      "files": 2069,
+      "file_manifest_sha256": "d47603d81f8a293eab85b71a082813841106aa5c35d2ed78585232406f7a0911"
+    },
+    {
+      "file": "common-records.tar.gz",
+      "bytes": 86377,
+      "sha256": "61b96fa695ea0a6542553cea53390480b0775bb28a7bda686282be345151bb52",
+      "files": 49,
+      "file_manifest_sha256": "1870f333414e9359eb7d8e0dee2904abb52b956a57bdc9e72bf37f81cb3e4ffb"
+    }
+  ],
+  "runtime_source": {
+    "source_commit": "e1cd38a47c8c36aeef75860f4cc623d5203188fc",
+    "runtime_archive_sha256": "d313e757edbb3b469890526e75522fd7f9893a74d990e9c5c5345bb50b9cd7f0",
+    "archive_bytes": 8160878,
+    "compile_time_fixtures": [
+      "research/ep-placement-map-20260831/example-map-coactivation.json",
+      "research/reasoning-schema-20260823/goldens",
+      "research/reasoning-schema-20260823/ornith15.chat_template.jinja",
+      "research/reasoning-schema-20260823/qwen38-27b.chat_template.jinja",
+      "research/spill-b-20260919/fixtures/recompute-load.csv",
+      "research/spill-c-20260919/fixtures/ple-ngram-synthetic.json",
+      "research/spill-c-20260919/fixtures/slru-synthetic.json"
+    ]
+  },
+  "scope": "First-iteration calibration, correctness and two complete development sets per model",
+  "unused_heldout_outputs_included": false
+}
