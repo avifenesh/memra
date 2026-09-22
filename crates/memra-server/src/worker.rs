@@ -6854,6 +6854,18 @@ fn fault_route(s: &Session) -> String {
     format!("lane{}/{}", s.lane.idx(), s.model)
 }
 
+/// A guard `Err` that carries `REQUEST_FAULT_PREFIX` leaves the session's device state as the
+/// unwound frames left it (KV written for a token whose `fed.push` never ran, or the reverse).
+/// Mark the session aborted so `retire_may_park` refuses it: its cache must never be parked into
+/// the shared reuse pools where a later prefix match would resume from that residue, and it is
+/// not a completion for the admission history. Every single-session error arm after a guard
+/// calls this; the wave arms set `aborted` for the whole wave already.
+fn quarantine_request_fault(s: &mut Session, err: &(dyn std::error::Error + 'static)) {
+    if err.to_string().contains(REQUEST_FAULT_PREFIX) {
+        s.aborted = true;
+    }
+}
+
 /// MEMRA_FAULT_INJECT_CACHE_SALT (fault-injection door, memra#525): a request whose
 /// `cache_salt` equals the value panics inside its own guarded `fault-inject` step at the top of
 /// the tick, deterministically, so a
@@ -20881,6 +20893,7 @@ pub fn run(
                     Ok(true) => {}
                     Ok(false) => finished.push(i),
                     Err(err) => {
+                        quarantine_request_fault(&mut active[i], err.as_ref());
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -21500,6 +21513,7 @@ pub fn run(
                                 active[i].tokens_emitted
                             );
                         }
+                        quarantine_request_fault(&mut active[i], err.as_ref());
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -21935,6 +21949,7 @@ pub fn run(
                     }
                     Err(err) if prime_cancelled_abort(s, err.as_ref()) => finished.push(i),
                     Err(err) => {
+                        quarantine_request_fault(s, err.as_ref());
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
                         ))));
@@ -21997,6 +22012,7 @@ pub fn run(
                     Ok(true) => {}
                     Ok(false) => finished.push(i),
                     Err(err) => {
+                        quarantine_request_fault(&mut active[i], err.as_ref());
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -22048,6 +22064,7 @@ pub fn run(
                             || stage_grammar_mask(&engine, &mut active[i]).map_err(Into::into),
                         );
                         if let Err(err) = staged {
+                            quarantine_request_fault(&mut active[i], err.as_ref());
                             let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                                 "constraint mask: {err}"
                             ))));
@@ -22398,6 +22415,7 @@ pub fn run(
                     )
                 }) {
                     if !prime_cancelled_abort(s, err.as_ref()) {
+                        quarantine_request_fault(s, err.as_ref());
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
                         ))));
@@ -27834,6 +27852,7 @@ fn dedup_interactive_prefixes(
         let (leader_logits, _h, _x) = match leader_out {
             Ok(out) => out,
             Err(err) => {
+                quarantine_request_fault(&mut active[leader_i], err.as_ref());
                 let _ = active[leader_i]
                     .tx
                     .send(Event::Error(EngineError::engine(format!(

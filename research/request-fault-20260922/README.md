@@ -40,7 +40,11 @@ dark; a request fault retires the wave like a tainted one, never handed to the s
 chunk path) and the batched decode call (retires the wave, ids joined in the route). The counter
 counts guarded calls that panicked: a wave counts once while every request in it fails typed.
 Review round 1 (revuto) named the three sites that were still bare and the test-global races;
-both fixed in the same PR. A
+round 2 named the park: a single-session request fault used to retire through `finished` alone,
+leaving `aborted` false, so `retire_may_park` would have parked the half-updated KV into the
+shared reuse pool for a later prefix match to resume from. `quarantine_request_fault` now marks
+every such session aborted at all seven single-session arms (the wave arms already did). All
+fixed in the same PR. A
 dedicated `fault-inject` step at the top of the batched tick runs only when
 `MEMRA_FAULT_INJECT_CACHE_SALT` is set. The supervisor bumps `WORKER_RESPAWNS_TOTAL` at
 `attempt += 1`; both counters are on the operator `/metrics` body.

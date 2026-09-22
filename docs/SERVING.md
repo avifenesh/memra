@@ -1526,7 +1526,9 @@ at the catch site, once, from two facts: does the panic payload quote a driver o
 answer a synchronize, a 16-float allocation and a readback right after the panic. Both clean is a
 **request fault**: one `[fault] request=<id> route=lane<n>/<model> site=<site> panic=<msg>` line,
 `request_faults_total` += 1, and exactly that request ends with `code: worker_fault` (500 before
-the first byte; the stream's error object after it, then close). The worker continues the same
+the first byte; the stream's error object after it, then close). The faulted session is marked aborted, so the retire sweep never parks its KV into the shared
+reuse pools where a later prefix match would resume from the residue, and it is not a completion
+for the admission history. The worker continues the same
 tick with its peers untouched. Either fact dirty is a **worker fault**: the panic is re-raised
 into the ladder above unchanged (a CUDA error is sticky per process, so the respawn is the right
 answer there and only there). A batched prime or decode call is guarded as one unit: a panic inside it
