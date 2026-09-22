@@ -73,3 +73,41 @@ jobs:
             ${{ runner.temp }}/prompt-depth-native/binaries
           if-no-files-found: error
           retention-days: 7
+
+  native-receipts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Locate completed native receipt bundle
+        id: receipts
+        run: |
+          if [[ -f research/prompt-depth-router-20260922/native-receipts/manifest.json ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Native measurement is still in progress; no completed bundle to reproduce."
+          fi
+      - name: Reconstruct every native record and comparison
+        if: steps.receipts.outputs.present == 'true'
+        run: |
+          lane=research/prompt-depth-router-20260922
+          pin=$(cut -d ' ' -f 1 "$lane/native-receipts/manifest.sha256")
+          check=()
+          if [[ -f "$lane/NATIVE-RESULTS.md" ]]; then
+            check=(--check "$lane/NATIVE-RESULTS.md")
+          fi
+          python3 "$lane/reproduce_native.py" \
+            --receipts "$lane/native-receipts" --manifest-sha256 "$pin" \
+            --parent-archive research/mtp-context-depth-20260921/latest-receipts/runtime-source.tar.gz \
+            --out "$RUNNER_TEMP/prompt-depth-native-reproduction" "${check[@]}"
+      - name: Retain independently reconstructed reports
+        if: ${{ always() && steps.receipts.outputs.present == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: prompt-depth-reproduction-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/prompt-depth-native-reproduction
+          if-no-files-found: error
+          retention-days: 7

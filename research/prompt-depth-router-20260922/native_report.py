@@ -15,7 +15,6 @@ import tempfile
 from fit_profile import fit_profile
 
 PARENT_SHA = "943d165b80f268ffacc63e78191c669ed4bda562b3151d45758876321e3f6dc8"
-HARNESS_SHA = "4562c8bd92166c39720ba82bacc4d42c539e09492b4ab1f2342d01ed44020262"
 MODELS = {
     "qwen": ("Qwen3.8-27B NVFP4+Q5_K, embedded MTP", 7),
     "gemma": ("Gemma 4 12B QAT Q4_0, Q8_0 assistant", 5),
@@ -52,8 +51,8 @@ def auditors(parent_archive):
         yield modules
 
 
-def verify_request_predictions(root, harness_archive, source, workloads):
-    if digest(harness_archive) != HARNESS_SHA or source["harness_source_sha256"] != HARNESS_SHA:
+def verify_request_predictions(root, harness_archive, expected_harness_sha, source, workloads):
+    if digest(harness_archive) != expected_harness_sha or source["harness_source_sha256"] != expected_harness_sha:
         raise ValueError("unrecognized routing source; no classifier compiled")
     with tempfile.TemporaryDirectory(prefix="prompt-depth-classifier-") as directory:
         destination = Path(directory)
@@ -88,19 +87,41 @@ def verify_request_predictions(root, harness_archive, source, workloads):
                     raise ValueError("pre-generation classes differ from the exact classifier")
 
 
-def inspect(root, parent_archive, harness_archive):
+def inspect(root, parent_archive, harness_archive, expected_harness_sha):
     native = root / "native"
     freeze = json.loads((native / "FREEZE.json").read_text())
     state = json.loads((native / "status.json").read_text())
     if state["status"] != "completed":
         raise ValueError("native sequence is incomplete or failed")
+    expected_orders = []
+    for index in range(6):
+        order = ["native", "calibrated", "context", "routed"]
+        offset = index // 2
+        order = order[offset:] + order[:offset]
+        expected_orders.append(order[::-1] if index % 2 else order)
+    expected_seeds = {
+        "qwen": {"calibration": [20311000 + i for i in range(3)],
+                 "heldout": [20312000 + i for i in range(6)], "qualification": 20313000},
+        "gemma": {"calibration": [20321000 + i for i in range(3)],
+                  "heldout": [20322000 + i for i in range(6)], "qualification": 20323000},
+    }
+    if (freeze["calibration_pools"] != ["cal-a", "cal-b", "cal-c"]
+            or freeze["heldout_pools"] != [f"held-{c}" for c in "abcdef"]
+            or freeze["orders"] != expected_orders
+            or freeze["seeds"] != expected_seeds
+            or freeze["max_new"] != 512 or freeze["ctx"] != 49152
+            or freeze["temperature"] != 0.7):
+        raise ValueError("registered native comparison changed")
+    if (len(state["completed_groups"]) != 24
+            or len({g["receipt_dir"] for g in state["completed_groups"]}) != 24):
+        raise ValueError("native completion coverage changed")
     workloads = json.loads((root / "workloads/manifest.json").read_text())
     if digest(root / "workloads/manifest.json") != freeze["workload_manifest_sha256"]:
         raise ValueError("workload freeze changed")
     source = json.loads((root / "source.json").read_text())
     if source["source_recipe_commit"] != freeze["recipe_commit"]:
         raise ValueError("native source recipe changed")
-    verify_request_predictions(root, harness_archive, source, workloads)
+    verify_request_predictions(root, harness_archive, expected_harness_sha, source, workloads)
     output = {"models": {}, "source": source, "freeze": freeze}
     gpu_identity = set()
     with auditors(parent_archive) as audit:
@@ -132,6 +153,12 @@ def inspect(root, parent_archive, harness_archive):
                     arm = record["arm"]
                     run = directory / f"{seed}-{arm}"
                     command = json.loads((directory / f"{seed}-{arm}.command.json").read_text())
+                    runtime_arm = identity["request_depths"].get(
+                        arm, f'fixed:{identity["fixed_depths"][arm]}'
+                        if arm in identity["fixed_depths"] else arm
+                    )
+                    if command[5] != runtime_arm:
+                        raise ValueError("executed policy differs from its frozen mapping")
                     if (int(command[6]) != seed or int(command[7]) != max_new
                             or int(command[8]) != 49152 or float(command[9]) != temperature):
                         raise ValueError("request shape differs from the registered comparison")
@@ -175,6 +202,18 @@ def inspect(root, parent_archive, harness_archive):
                     routing = read_rows(run / "routing.tsv")
                     if len(routing) != 8:
                         raise ValueError("routing receipt coverage changed")
+                    for turn, route in enumerate(routing, 1):
+                        if int(route["turn"]) != turn:
+                            raise ValueError("routing sequence changed")
+                        if runtime_arm.startswith("prompt:"):
+                            if route["source"] != "prompt":
+                                raise ValueError("prompt classifier was not invoked")
+                        elif runtime_arm.startswith("schedule:"):
+                            schedule = [int(k) for k in runtime_arm.split(":", 1)[1].split(",")]
+                            if route["source"] != "schedule" or int(route["k"]) != schedule[turn - 1]:
+                                raise ValueError("fixed replay schedule was not applied")
+                        elif route["source"] != "control" or route["k"] != "-" or int(route["routing_ns"]) != 0:
+                            raise ValueError("a control unexpectedly used prompt routing")
                     records[(phase, pool, arm)] = {
                         "record": record, "turns": turns, "routing": routing,
                         "run": run, "command": command, "spans": read_rows(run / "spans.tsv"),
@@ -266,6 +305,8 @@ def inspect(root, parent_archive, harness_archive):
                       freeze["orders"][i], 0.7, 512)
                 for i, pool in enumerate(freeze["heldout_pools"])
             ]
+            if json.loads((native / f"{family}-HELDOUT.json").read_text()) != heldout:
+                raise ValueError("held-out summary omitted or changed recorded sets")
             clean_held = [g for g in heldout if not g["excluded"]]
             arms = ("native", "calibrated", "context", "routed")
             pooled = {
@@ -402,10 +443,11 @@ if __name__ == "__main__":
     parser.add_argument("--records", type=Path, required=True)
     parser.add_argument("--parent-archive", type=Path, required=True)
     parser.add_argument("--harness-archive", type=Path, required=True)
+    parser.add_argument("--harness-sha256", required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--check", type=Path)
     args = parser.parse_args()
-    result = inspect(args.records, args.parent_archive, args.harness_archive)
+    result = inspect(args.records, args.parent_archive, args.harness_archive, args.harness_sha256)
     args.out.mkdir(parents=True, exist_ok=False)
     (args.out / "RESULTS.json").write_text(json.dumps(result, indent=2) + "\n")
     text = markdown(result)

@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
-import tarfile
+from archive_io import write_archive
 
 
 def sha(path):
@@ -33,12 +33,11 @@ def main():
     # This file has only OS/GPU/CUDA-version metadata, no provider or location.
     selected["hardware.json"] = args.records / "hardware.private.json"
     members = []
-    with tarfile.open(args.out / "native-data.tar.gz", "w:gz") as archive:
-        for name, path in sorted(selected.items()):
-            if not path.is_file() or path.is_symlink():
-                raise ValueError("missing or non-regular receipt: " + name)
-            members.append({"file": name, "bytes": path.stat().st_size, "sha256": sha(path)})
-            archive.add(path, arcname=name, recursive=False)
+    for name, path in sorted(selected.items()):
+        if not path.is_file() or path.is_symlink():
+            raise ValueError("missing or non-regular receipt: " + name)
+        members.append({"file": name, "bytes": path.stat().st_size, "sha256": sha(path)})
+    write_archive(args.out / "native-data.tar.gz", selected)
     inventory = args.out / "native-data.members.jsonl"
     inventory.write_text("".join(json.dumps(row, separators=(",", ":")) + "\n" for row in members))
     shutil.copyfile(args.runtime_artifact / "runtime-source.tar.gz", args.out / "runtime-source.tar.gz")

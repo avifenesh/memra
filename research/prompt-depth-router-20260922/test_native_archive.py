@@ -6,6 +6,8 @@ import tarfile
 import tempfile
 import unittest
 
+from archive_io import write_archive
+from native_report import verify_request_predictions
 from reproduce_native import unpack
 
 
@@ -67,6 +69,31 @@ class NativeArchiveTests(unittest.TestCase):
             receipts, pin = self.bundle(root, omit=True)
             with self.assertRaises(ValueError):
                 unpack(receipts, pin, root / "out")
+
+    def test_source_container_identity_ignores_mtime_and_output_filename(self):
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.rs"
+            source.write_text("fn main() {}\n")
+            os.utime(source, (1, 1))
+            write_archive(root / "first.tar.gz", {"source.rs": source})
+            os.utime(source, (90000, 90000))
+            write_archive(root / "another-name.tar.gz", {"source.rs": source})
+            self.assertEqual((root / "first.tar.gz").read_bytes(),
+                             (root / "another-name.tar.gz").read_bytes())
+
+    def test_archive_does_not_supply_its_own_compilation_authority(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "harness.tar.gz"
+            source.write_bytes(b"not trusted Rust source")
+            actual = hashlib.sha256(source.read_bytes()).hexdigest()
+            with self.assertRaises(ValueError):
+                verify_request_predictions(
+                    root, source, "0" * 64,
+                    {"harness_source_sha256": actual}, {},
+                )
 
 
 if __name__ == "__main__":

@@ -9,6 +9,11 @@ The [CPU result](CPU-RESULTS.md) records 95/95 expected fixture outcomes and a
 0.179 us median / 0.298 us p99 complete routing call on the measured Xeon CPU.
 Native decoding is evaluated separately under [NATIVE-PROTOCOL.md](NATIVE-PROTOCOL.md).
 
+Source containers produced by the current builders use deterministic gzip/tar
+metadata. A measured archive is verified against a digest supplied by the
+separately pinned receipt manifest, never a digest defined inside that archive.
+Earlier executed archives keep their exact recorded bytes and artifact identities.
+
 The input is the **latest user instruction**, not the complete chat transcript.
 Prose, code and numerical requests get separate labels. Mixed and unsupported
 requests use the caller's fixed-depth fallback. Quoted text, Markdown fences,

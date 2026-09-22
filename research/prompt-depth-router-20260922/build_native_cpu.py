@@ -6,10 +6,10 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import tarfile
 import time
 
 from prepare_native import prepare
+from archive_io import write_archive
 
 HERE = Path(__file__).resolve().parent
 
@@ -50,17 +50,13 @@ def main():
             for p in sorted(source.rglob("*")) if p.is_file()
         }
         source_tar = out / "runtime-source.tar.gz"
-        with tarfile.open(source_tar, "w:gz") as archive:
-            for name in inputs:
-                archive.add(source / name, arcname=name, recursive=False)
+        write_archive(source_tar, {name: source / name for name in inputs})
         harness_files = {
             p.name: sha(p) for p in sorted(HERE.iterdir())
             if p.is_file() and p.suffix in (".rs", ".py", ".tsv", ".md")
         }
         harness_tar = out / "harness-source.tar.gz"
-        with tarfile.open(harness_tar, "w:gz") as archive:
-            for name in harness_files:
-                archive.add(HERE / name, arcname=name, recursive=False)
+        write_archive(harness_tar, {name: HERE / name for name in harness_files})
         metadata = {
             "source_recipe_commit": subprocess.check_output(
                 ["git", "rev-parse", "HEAD"], cwd=HERE, text=True).strip(),

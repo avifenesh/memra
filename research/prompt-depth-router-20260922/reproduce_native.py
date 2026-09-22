@@ -59,6 +59,7 @@ def unpack(receipts, expected_pin, destination):
             seen.add(member.name)
     if seen != set(expected):
         raise ValueError("native archive is incomplete")
+    return manifest
 
 
 def main():
@@ -72,7 +73,7 @@ def main():
     args.out.mkdir(parents=True, exist_ok=False)
     with tempfile.TemporaryDirectory(prefix="prompt-depth-native-replay-") as directory:
         root = Path(directory)
-        unpack(args.receipts, args.manifest_sha256, root)
+        manifest = unpack(args.receipts, args.manifest_sha256, root)
         source = json.loads((root / "source.json").read_text())
         build = json.loads((root / "native-build-source.json").read_text())
         if (sha(root / "native-build-source.json") != source["native_build_metadata_sha256"]
@@ -103,7 +104,10 @@ def main():
             path = "crates/memra-engine/src/bin/depth_study_io/" + name
             if build["source_files"][path]["sha256"] != source["harness_files"][name]:
                 raise ValueError("native and CPU routing source differ")
-        result = inspect(root, args.parent_archive, args.receipts / "harness-source.tar.gz")
+        result = inspect(
+            root, args.parent_archive, args.receipts / "harness-source.tar.gz",
+            manifest["files"]["harness-source.tar.gz"]["sha256"],
+        )
         text = markdown(result)
         (args.out / "RESULTS.json").write_text(json.dumps(result, indent=2) + "\n")
         (args.out / "RESULTS.md").write_text(text)
