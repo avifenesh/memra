@@ -1,0 +1,9 @@
+cell=hit-on gate=tools/spec-on-cache-hit-gate.sh
+env=MEMRA_KV_HOST_CONTRACTS=1
+lock=/tmp/memra-gpu.lock owner=gate-internal-canonical (flock -w 300 per boot inside the gate)
+tree=c1454a5a42a090c727f08ff433ae157d0b04368c
+binary_sha256=39c6f8f2a17d9dbc88e79ed679358261d62676bd308c1500438ce06b6109de00
+model=Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+gpu=NVIDIA RTX PRO 6000 Blackwell Server Edition, 600.00 W
+status=executed-not-qualified
+door_lines=18 restore_route_lines=8
