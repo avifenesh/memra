@@ -1476,6 +1476,13 @@ Battery (`integration-day12/integ35-cpu-battery/`, docs and tool): the gate's `p
 `test-day29.py` (`OK`), flags census, marker census, public-boundary `check` (0 new), perf board, workflow keys, em-dash
 scan: rc=0; `git diff --check` tripped on a raw cargo receipt log's blank line at EOF (marked `-whitespace`). No engine
 change, no smoke.
+Revuto round 1 on #633, two findings, both real, fixed by the lead: (1) the refusal was unconditional, so a broken
+premise would have masked a real V1, V2, V4, V5 or V6 failure as exit 2; the exit rule is now `gate_outcome`: a failed
+non-V3 clause is the verdict FAIL (exit 1) with a premise note beside it, and a broken or unreadable premise refuses
+(exit 2) only when every other clause holds. (2) a reclaim line the detailed shape did not parse read as "released
+nothing" and let the premise hold falsely (engine wording drift would have reprinted the unclassified FAIL); such a
+line now makes the premise unreadable and the gate refuses typed (`REFUSED: V3 premise unreadable: ...`). Two CPU tests
+added to `test-day29.py` (15 ok); `docs/TESTING.md` carries the exit rule.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.

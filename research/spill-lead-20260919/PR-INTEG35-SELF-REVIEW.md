@@ -24,6 +24,12 @@ Author's review of the full diff `main..lane/spill-integ35-20260922`, posted as 
 - Battery: the gate compiles and prints its help, B's CPU test passes, censuses and the boundary scan are clean; no
   smoke (no engine change).
 
+## Review round 1 (revuto, addressed in the integ)
+- The refusal no longer masks other clauses: `gate_outcome` makes a failed V1/V2/V4/V5/V6 a verdict FAIL (exit 1)
+  whatever the premise says, and refuses (exit 2) only with every other clause holding.
+- A reclaim line the detailed shape does not parse marks the premise unreadable (typed refusal), never "released
+  nothing". Two CPU tests added; `docs/TESTING.md` documents the exit rule.
+
 ## What I did not do
 - No GPU cell of my own; B's receipts are the evidence. The 9B twin's `REFUSED: cohort promotion did not happen` stays
   a gate-shape fact for that artifact, unchanged.

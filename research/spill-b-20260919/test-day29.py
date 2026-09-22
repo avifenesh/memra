@@ -137,6 +137,26 @@ class Arithmetic(unittest.TestCase):
         self.assertLessEqual(abs(plain_released - (-V3_ERROR_DAY18)), gate.V3_SLACK)
         self.assertLess(abs(plain_released - (-V3_ERROR_DAY18)), 1_000_000)  # the MB rounding of the log line
 
+    def test_an_unparsed_reclaim_line_makes_the_premise_unreadable_not_released_nothing(self):
+        # revuto on #633: a reclaim line the detailed shape does not parse must not read as (0,0,0)
+        w = gate.parse_window(["[admit-oom] reclaim-on-defer: evicted 2 prefix entries; effective free 3744MB -> 4651MB (new wording)"])
+        self.assertEqual(w["reclaims"], 1)
+        self.assertEqual(w.get("parked_releases", []), [])
+        bad = gate.window_reclaims_unparsed(w)
+        self.assertEqual(len(bad), 1)
+        self.assertIn("new wording", bad[0])
+        good = gate.parse_window(["[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3744MB -> 4651MB"])
+        self.assertEqual(gate.window_reclaims_unparsed(good), [])
+
+    def test_exit_rule_a_failed_non_v3_clause_is_a_verdict_fail_not_a_refusal(self):
+        # revuto on #633: the premise only makes V3 undecidable; V1/V2/V4/V5/V6 keep their exit 1
+        self.assertEqual(gate.gate_outcome(others_ok=False, v3=True, premise_ok=False, premise_readable=True), ("verdict", 1))
+        self.assertEqual(gate.gate_outcome(others_ok=False, v3=False, premise_ok=True, premise_readable=False), ("verdict", 1))
+        self.assertEqual(gate.gate_outcome(others_ok=True, v3=False, premise_ok=False, premise_readable=True), ("refuse", 2))
+        self.assertEqual(gate.gate_outcome(others_ok=True, v3=True, premise_ok=True, premise_readable=False), ("refuse", 2))
+        self.assertEqual(gate.gate_outcome(others_ok=True, v3=True, premise_ok=True, premise_readable=True), ("verdict", 0))
+        self.assertEqual(gate.gate_outcome(others_ok=True, v3=False, premise_ok=True, premise_readable=True), ("verdict", 1))
+
     def test_v3_slack_unchanged(self):
         self.assertEqual(gate.V3_SLACK, 64 * MIB)
 
