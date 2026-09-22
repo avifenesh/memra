@@ -1,0 +1,9 @@
+# command: systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=20G cargo build --release -p memra-server (cwd /home/avifenesh/projects/wt-spill-c, tree 8b889dcdf53ee7f00996e52a6e9903921914af28); free -g available=51G at start 2026-09-22T19:36:35Z
+Running as unit: run-p3777984-i12163533.scope; invocation ID: e32df254ed104a408960fbe285220d71
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-c/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-c/crates/memra-server)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 51s
+rc=0 wall_s=171 end 2026-09-22T19:39:26Z
+f7ad8c607b047a3f7fd17ee6b0309156e682a4ecf89a8760f02db53ccc3da705  target/release/memra-server
