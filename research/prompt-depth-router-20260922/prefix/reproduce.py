@@ -8,8 +8,29 @@ import sys
 import tarfile
 import tempfile
 
-from audit import audit_run, rows, same_tapes, save, sha
+from audit import audit_run, coverage, rows, same_tapes, save, sha
 from report import report
+
+
+def failed_qualification(root):
+    earlier = root / "failed-qualification"
+    freeze = json.loads((earlier / "native/FREEZE.json").read_text())
+    if sha(earlier / "workloads/manifest.json") != freeze["workloads_sha256"]:
+        raise ValueError("first qualification workload identity changed")
+    code_requests = {}
+    for cap in (8192, 12288):
+        base = earlier / "qwen" / f"coverage-{cap}"
+        saved = json.loads(base.with_name(base.name + ".audit.json").read_text())
+        if saved["max_new"] != cap or len(saved["requests"]) != 8:
+            raise ValueError("first qualification coverage record changed")
+        for turn in (2, 4, 6, 8):
+            row = saved["requests"][turn - 1]
+            found = coverage(base, turn, "code")
+            if (row["format"] != found or row["output_tokens"] != cap
+                    or row["finish_reason"] != "length" or found["answer_bytes"]):
+                raise ValueError("first qualification code absence does not replay")
+        code_requests[str(cap)] = {"requested_code": 4, "final_code_answers": 0}
+    return code_requests
 
 
 def reproduce(root, runtime_archive, expected_runtime_sha, out):
@@ -119,6 +140,8 @@ def reproduce(root, runtime_archive, expected_runtime_sha, out):
             "raw_token_and_time_audits": "pass", "compiled_forecaster_replay": "pass",
             "reproducer_sha256": sha(Path(__file__)),
         }
+        if workloads.get("schema") == 2:
+            result["independent_replay"]["first_attempt"] = failed_qualification(root)
         save(out, result)
         return result
 
