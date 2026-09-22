@@ -1,0 +1,30 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling serde_core v1.0.228
+   Compiling memchr v2.8.2
+   Compiling serde_json v1.0.150
+   Compiling smallvec v1.15.2
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling aho-corasick v1.1.4
+   Compiling syn v2.0.118
+   Compiling serde_derive v1.0.228
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/projects/wt-spill-integ42/crates/memra-tokenizer)
+   Compiling serde v1.0.228
+   Compiling memra-tier v0.138.0 (/home/avifenesh/projects/wt-spill-integ42/crates/memra-tier)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/projects/wt-spill-integ42/crates/memra-reference)
+   Compiling memra-kv v0.138.0 (/home/avifenesh/projects/wt-spill-integ42/crates/memra-kv)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-integ42/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 23.31s
+     Running unittests src/lib.rs (target/release/deps/memra_engine-f0322ac70f8275b7)
+
+running 5 tests
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ok
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ok
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... ok
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 556 filtered out; finished in 1.49s
+

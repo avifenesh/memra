@@ -147,6 +147,7 @@ impl TensorSource for FixtureSource {
                 .census()
                 .into_iter()
                 .map(|entry| memra_gguf::source::TensorCensusRecord {
+                    auxiliaries: Vec::new(),
                     physical_name: entry.name.clone(),
                     dtype: "F32".to_string(),
                     entry,

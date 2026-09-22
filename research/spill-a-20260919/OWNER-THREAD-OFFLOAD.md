@@ -695,5 +695,209 @@ and record 0.4 ms as the price.
    subtraction for the capture arm's own share came out with the wrong sign; the capture share stays unread. Day 25
    settled the retire seam's part of it: 0.4 ms, not a copy wait.
 4. **The receipt's price, read by the door review**: cell (v) and its 5090 twin, verbatim; reported, nothing relaxed.
-5. **The lead's rulings on proposals 1 and 2 above**; proposal 1 removes an unearned park worth 90 ms of request
-   latency on the promote-then-hit shape and nothing of the tenant's stall.
+
+## Move 2, day 26: proposal 1 landed (ruling 36) and priced on the target card (`DAY26.md`)
+
+**The refusal.** `host_restore_promoted_this_admission(px, hpx, pool_key, i)`: when the one-tick insertion pin of
+the promote published at this tick top (`promoted_pin`) names the entry the lookup found, `host_restore_park_probe`
+prints `[prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin
+id=P, N tokens, model M); the tick program copies it` and returns `false`; the request takes the tick program's
+device-hit copy in the same admission. Between the lookup and the class check; no flag, no new state, no numeric
+change; the line is outside the hit gate's `refused (contracts door)` and `restore refused` counters; the promote's
+ticket seq is not on the pin and is not printed. Table test over the promoted-pin shapes plus a source census.
+
+**The acceptance gate (DAY25 proposal 1, verbatim; target card, one sitting, `pro-single-day26/box/`).** (1) PASS:
+100 of 100 ON promote runs `request parked` 1, `restore submitted` 0, the typed line 1. (2) FAIL: the request's e2e
+fell 221.4 to 206.8 (14.6), not by the re-admission median 90.1; `on_minus_off=+91.4 unc=1.2` against the expected
++15.8. Read from the code after the result: `advance_sample_emit` samples a session's token from the logits the
+previous step produced, so a one-token request whose prime ran in tick A gets its token in tick B's host half, after
+tick B's top polled the demote and ran its two hashes (74.8); the hashes stay in the request's path, and the refusal
+removed only tick A's decode plus the slack. (3) FINDING: the tenant's stall fell 149.4 to 81.8 (IQR 0.0), 3.4 BELOW
+OFF's 85.3 (`isolated`, both orders); the two stretched ticks now read 92.4 (decode, publish, copy, the hit's prime)
+and 95.3 (decode, the hashes, the finished request's token and retire), sum 187.8 against day 25's 185.4: the same
+work split across two ticks instead of the prime stacked on the hash tick. Day 25's "the second park cost the tenant
+nothing" is refuted: the park decided which tick the prime landed on. The demote's `in` 97.2 to 172.3 is its poll
+waiting tick A's longer step (`in - completion` 74.9 to 74.8 unchanged). (4) PASS: the day-21 restore arm, 100 of
+100, parked once and landed. (5) PASS: hit OFF 61 ok and ON 68 ok `ALL GREEN (qwen)`, the ON census equal to day
+24's exactly (12/12/13/13, 2/2/3/3, 30 route submissions, 11 draft-plane captures, zero typed refusals) on the target
+card AND on the local RTX 5090 (`rtx5090-day26/`, OFF 61 ok, ON 68 ok, the same census); identity x4
+and failure x2 `ALL GREEN`, fault `ALL GREEN` (93 ok), twin x2 PASS, unit cells 8 + 5 passed. Nothing tuned; the code
+stays on the branch; keeping it with clause 2 re-derived from the token-emission reading is the lead's ruling.
+
+**What Move 2 still owes, in order.** Item 3 (the capture share and the retire seam's part of it) closed on ruling 36:
+the seam stays, 0.4 ms is the recorded price (day 25), and C day 30 read the capture class at about a millisecond of
+the tenant's tick, the door's part about 0.6 ms. Item 5 (the rulings) closed on ruling 36.
+
+1. **The recurrent f32 state off the tick**: the restore keeps `conv_state` and `ssm_state` on the owner stream (the
+   byte-span class's shape); on the 27B that is the fixed 157 MB of every restored entry. A typed f32 span in the
+   restore class moves the restore's share; its receipt would be the same program over the f32 planes' bytes.
+2. **The publishes still on the tick**, by name: the fanout leader's snapshot and the pause sweep's boundary snapshot
+   (`prefix_snapshot` direct); the `dspark-boundary` publish; the `glm5-boundary` publish; every `OnTick` refusal.
+3. **The receipt's price, read by the door review**: cell (v) and its 5090 twin, verbatim; reported, nothing relaxed.
+4. **The lead's ruling on day 26's clause 2**: the refusal removes a park and 14.6 ms of request latency and moves the
+   tenant's stall from 149.4 to 81.8 on the promote-then-hit shape; the remaining 74.8 in the request's path is the
+   token emitted a tick after the prime, a scheduler shape outside Move 2 (named in `DAY26.md`, not proposed).
+
+## Move 1, day 27: owed item 2 read from the code, the three options pre-registered, the digest cell (`DAY27.md`)
+
+**The item's premise was wrong about the bytes.** The two Move 1 receipt hashes (`progress` at the poll, tier_transfer.rs
+1710; `bind_tier_image`'s per-plane check against the receipt, worker.rs 9344 over 9440 to 9451) run over the KV planes
+only: 32 items, about 1.9 MB on the 27B's 64-token entry, 0.9 ms each on the target host; hash 1 sits inside the demote's
+`from submission to completion` figure (the stamp at 12416 follows the whole settle), hash 2 inside `demote: ... in`. The
+74.8 ms `in - completion` is `bind_tier_image`'s ONE SHA-256 pass over the whole image (`Role::Recurrent` 9453,
+`Logits`, `Hidden`, the KV planes, the draft), about 157 MB of it the recurrent f32 state in pageable heap
+(`HostF32::Heap`, `reserve_image` returns no leases without an arena, 8594) that never crossed the contract and has no
+receipt to agree with, plus the pre-submit f32 D2H on the owner stream and the insert. The OFF arm never computes that
+checksum (`hpx.tier` is `None`, 20963 to 20978): the door's demote cost on the tick is the bundle checksum, not the copy
+Move 1 moved. The 5090's 21 to 23 ms per 54.8 MB is the same pass at that host's heap rate plus a write-combined read of
+the one-to-two-percent KV share; C's section D item 6 is answered in `HOSTPREFIX-DOOR.md`.
+
+**Options, pre-registered in `DAY27.md` section 2 before the cell.** (a) the bundle hash of the heap payloads on a helper
+thread, the entry `Demoting` (a `Hashing` phase) until the digests land, the owner thread keeping the two KV-plane hashes
+(the leases hold an `Rc` and a CUDA event and cannot move); receipt term unchanged (SHA-256, same bytes, same wire);
+fail-closed arms `hash-helper-gone` and `hash-never-lands` (typed line, nothing published, the tier latched); about 73 ms
+off the tick on the target card. (b) the D2H receipt term as the slice-3 four-lane program: moves hash 1 and hash 3 (1.9
+MB each) and the 5090's write-combined KV share, none of the 74.8 unless the bundle checksum's program changes too (b');
+the receipt stops naming the bytes cryptographically and keeps proving transfer integrity. (c) a GPU digest of the pinned
+host bytes over PCIe on the copy stream: unmeasured (no engine code launches the digest over a host pointer; the leases
+carry no `DEVICEMAP`); its device-side form (digest the source planes before the D2H) needs the recurrent state on the
+contract first (Move 2 owed item 1).
+
+**The digest cell (target host, `pro-single-day27/box/digest-micro/`, one collector hold, heap, 160 MiB, N=5 per order,
+two orders, pooled N=10, load 0.06 before):** `DIGEST-MICRO rule ... sha_ms=77.589 lanes_ms=70.737 sha_range=77.538..77.877
+lanes_range=70.662..71.044 sha_gbps=2.162 lanes_gbps=2.372 lanes_over_sha=0.912 sha_stable=true lanes_stable=true`. By the
+pre-registered rule the four-lane program is cheaper than SHA-256 on this host (disjoint ranges, 9 percent), and both
+are compute-bound near 2.2 to 2.4 GB/s: (b') would take about 7 ms off the 74.8, not the 74.8. The SHA figure repeats
+C's day 18 (77.9 cached, 78.0 heap) within 0.5 percent. **Local RTX 5090 rig's host (`rtx5090-day27/digest-micro/`, one
+collector hold, the same shape):** `sha_ms=37.111 lanes_ms=55.078 sha_range=36.837..40.676 lanes_range=54.490..56.115
+lanes_over_sha=1.484`: the four-lane program is 48 percent SLOWER than SHA-NI there; (b') would add about 18 ms per 160
+MiB on that class. Both hosts' digests byte-identical for both programs. Per host, no cross-card claim: no digest swap
+runs at memory speed on either host, so no digest change reaches the tick's cost; only (a) removes it.
+
+**Recommendation (for the lead's ruling; nothing implemented):** (a), scoped to the heap payloads, with (b) held as the
+5090 write-combined follow-up and (c)'s device-side form behind Move 2 owed item 1; acceptance gate in `DAY27.md` section
+2 (the double-park cell with `in - completion <= 12.0`, `stall_median(ON) <= OFF + 2.0`, e2e `on_minus_off <= +20.0`;
+the gates ALL GREEN both arms both cards; the two fault cells; the bitwise digest unit cell; no flag). **The baseline banked today** (the day-26 double-park cell on the
+day-27 tree, one hold, twenty boots, 20 of 20 replays PASS, `pro-single-day27/box/double-park/`): stall
+`on_minus_off=-3.4 / -3.5 unc=0.1 isolated` (81.9/81.8 against 85.2/85.3), e2e `+91.3 / +91.3 isolated`,
+`demote_in-completion median=74.8`, the tenant's gaps 95.3 and 92.4; equal to day 26 within 0.1 ms.
+
+**What Move 1 still owes, in order (restated).**
+
+1. **The settle-time owner wait for an H2D** (unchanged from day 18).
+2. **The bundle hash off the tick**: not "the receipt hashes"; `bind_tier_image`'s SHA-256 pass over the heap payloads
+   (about 157 MB on the 27B), option (a) above pending the lead's ruling; the two KV-plane receipt hashes (1.9 MB) stay
+   on the owner thread under (a) and are the object of (b) at most.
+3. **The by-reference demote routes** (unchanged).
+4. **The decision cell (i)** (unchanged).
+
+## Move 1, day 28: owed item 2 landed under ruling 39, the bundle hash off the tick (`DAY28.md`)
+
+**What landed (`45f824a75`).** One long-lived `HostHashWorker` per `HostTierContext` (never a thread per demote). After the
+KV copy settles, the image's heap payloads (`HostF32::Heap`: the 98 recurrent f32 planes, the logits, the hidden row;
+157.9 MB on the 27B) are MOVED to the helper, the entry stays `Demoting` in a `Hashing` phase of `PendingDemote`, and the
+tick-top poll takes the payloads and digests back and publishes through `host_demote_publish` with the digests handed to
+`bind_tier_image`, which consumes each after a byte-count check. The program is unchanged (`checksum`, SHA-256 with the
+`valid-bytes` frame, over `f32s_as_bytes(payload)`); the KV planes' checksums stay on the owner thread. Every path that
+settles a `Demoting` entry meets `Hashing` through `host_demote_settle_with_deadline` before the contract step (tick-top
+`Poll`; the `Block` waits of a second demote, a promote, a tenant purge; a `Block` settle of the copy continues into the
+hash wait in the same call and names what it waits on). Fail-closed: `hash-helper-gone`, `hash-never-lands` (10 s wall
+deadline after the hand-off) and a reply that does not describe the image each end typed, nothing published, the tier
+latched, the helper joined; shutdown drops a pending demote typed and joins the helper. The two fault values sit on the
+existing `MEMRA_KV_HOST_FAULT` row. CPU cells: the helper's digests equal the owner thread's bitwise over a fixture image;
+the state machine's arms under `Poll` and `Block`; the forged replies; the door table; the source census.
+
+**The tick's cost, target card (the day-26 double-park cell byte-for-byte on this tree, one hold, twenty boots, N=5 per
+arm per order, both orders, 20 of 20 replays PASS; `pro-single-day28/box/`).** The demote's owner-thread `in -
+completion`: **74.8 (day 27) to 7.40 median** (N=100, min 7.17, max 45.01: the first two demotes of each boot, the pinned
+first touch); the helper hashes the 157.9 MB in 73.2 ms (73.0 to 73.4) off the tick; the take-back, bind and publish 1.08
+to 1.13 ms; the hashing polls 0.01 ms. The request's e2e `on_minus_off` **+91.3 to +16.9 / +16.9** (132.3 against 115.4,
+`isolated`; the +15.8 the token-emission reading predicted). The tenant's stall `81.8 / 81.9 against 85.2`, `-3.4 unc 0.1
+isolated`, unchanged; the tenant's second-largest gap **92.4 to 19.0** (the demote's tick is the decode plus the
+pre-submit segment); the largest 95.3 is the intruder's own prime, present in both arms (OFF 98.6). Wall `in - completion`
+74.8 to 86.5 (the publication waits for the helper and a tick top: 6 polls median); every landing a tick-top poll, no
+`Block` wait met a `Hashing` entry in this cell. `DAY28 VERDICT clauses_failed=0 -> ALL PASS`.
+
+**The finding that keeps the door's default arm red (`DAY28.md` section 5).** A hit that arrives inside the `Hashing`
+window is a miss (the day-17 rule "a `Demoting` entry is a miss", harmless while the window was one copy and one tick, now
+covers 73 ms plus a tick on this host, about 12 ms plus a tick on the 5090's). The default (spec) arm inserts at the
+boundary, so its eviction demote hands off as the request ends and the next request's admission lands in the window: on
+the target card `identity-default-on` `4 FAILURE(S)`, `failure-on` `1 FAILURE(S)` (the `digest` cell), `contract-fault`
+`23 FAILURE(S)` (the four promote cells; the demote cells' `the next demote publishes`, the boot's last hand-off cut by
+`stop`); on the 5090 `fault-default` `23 FAILURE(S)`. Every plain-arm cell, both hit gates (census equal to day 24), both
+twins, both d2d cells and both hash cells are green on both cards. On the day-26 tree the bind ran inside the tick top
+that observed the copy complete, before admission, so the window did not exist. Not tuned today.
+
+**What Move 1 still owes, in order (restated).**
+
+1. **The settle-time owner wait for an H2D** (unchanged from day 18).
+2. **The bundle hash off the tick**: LANDED as code and priced (above); its gate is red on one shape, item 2a.
+   2a. **A hit on the one `Hashing` entry's own prompt must not miss** (new, for the lead's ruling): park the request one
+   tick as the promote does, re-admitted when the digests land (recommended: nothing on the owner thread; the request's
+   e2e grows by the remainder of the hash only when it arrives inside the window), or settle the `Hashing` demote
+   synchronously at the probe (the `Block` shape, at most the hash's remainder on the tick). Same gate set, plus the fault
+   gate's demote cells awaiting the boot's last publication before `stop`. Until it lands, the day-28 code is not the
+   door's serving path.
+3. **The by-reference demote routes** (unchanged).
+4. **The decision cell (i)** (unchanged).
+
+**What Move 2 still owes (restated).** Item 1, **the recurrent f32 state off the tick**, is now the demote's whole
+remaining owner-thread cost and is priced per demote by the ledger line: the pre-submit segment (32 pinned lease
+allocations and registrations, the fence and the submission, then the 100 f32 D2H copies one `synchronize` at a time
+into pageable `Vec`s) reads about 6 ms at steady state, 39 to 45 ms on the first two demotes of a boot (first touch), 149
+to 151 ms under the verify arm (whose digest precedes it). Items 2 to 4 unchanged.
+
+## Move 1, day 29: owed item 2a landed under ruling 40, a hit on the `Hashing` entry parks one tick (`DAY29.md`)
+
+**What landed (`867655368`).** The admission probe decides, before the promote decision and with the request in hand,
+whether the request's prompt hits the one `Demoting` entry in its `Hashing` phase (`host_hashing_hit`: `hashing` is
+`Some`, the pool key, the host `lookup` rules, deeper than the device hit). A hit PARKS the request (`host_hashing_park`:
+the id recorded once on `PendingHashing.parked` with the typed line `hit parked on a Hashing entry: request <id> ...
+(ticket seq=S, N payloads, M MB on the hash helper for X ms); the request waits one tick for the digests`, re-parks
+counted silently); the caller's existing requeue arm takes it (`parked_on_promote += 1`); the parked-only bounded wait's
+guard covers a `Hashing` entry; the tick-top poll lands the digests and publishes; the re-admitted request finds the
+published entry, submits its promote and parks on the `Promoting` entry, then re-admits to the unmodified device hit
+path: one numeric program (the request generated nothing before the park). A copy-phase `Demoting` entry keeps the
+day-17 rule (a cold prime). The ledger line ends `; H hit(s) parked on the Hashing entry (R re-park(s))`; a latch with
+parked requests prints `H request(s) parked on the Hashing entry re-admit to a cold prime (the tier latched off)`. No
+new state the request owns (the orphan grace has nothing to expire), no hash and no wait on the owner thread, no flag,
+no new `MEMRA_*` name. CPU cells: the decision and its misses, once per id, the ids ride the polls and are consumed at
+publication and at the latch; the census and the parked-only wait test extended. The fault gate's demote cells wait for
+the boot's last publication before `stop` (bounded 15 s, its own check).
+
+**The gates, target card (one sitting, `pro-single-day29/box/`).** Identity x4 `KV-HOST-SPILL IDENTITY GATE: ALL GREEN
+(teeth=0)` (12 ok each; day 28's default ON `4 FAILURE(S)`), failure x2 `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (15 ok,
+the `digest` cell in; day 28's ON `1 FAILURE(S)`), `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (123 ok, ten cells; day 28
+`23 FAILURE(S)`), twin x2 `-> PASS`, hit OFF/ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 / 68 ok, the ON census
+equal to day 24's), unit 8 + 5 + 10. Local RTX 5090: identity default ON `ALL GREEN (teeth=0)`, fault default and plain
+`ALL GREEN` (123 ok each, on the fixed gate), hit OFF/ON `ALL GREEN (qwen)` with the day-24 census. Clauses 1a to 1c
+re-read on the new tree, the day-26 double-park cell byte-for-byte (twenty boots, N=5 per arm per order, both orders,
+20 of 20 replays PASS, 33 to 50 C): stall `81.7 / 81.8 against 85.4 / 85.1`, `-3.6 / -3.3 unc=0.1 isolated`; e2e
+`+16.8 / +16.9`; `owner in-completion median=7.39 min=7.20 max=45.18` (N=100); the helper 73.1 ms per 157.9 MB;
+`DAY28 VERDICT clauses_failed=0 -> ALL PASS`: unchanged from day 28 within 0.1 ms (this cell's promotes are spaced
+further than one hash; no hit fell in the window there). **The count**: 1 hit parked on a `Hashing` entry per identity
+default-ON boot on both cards (target card `35 re-park(s)` across the 73.2 ms hash at the 2 ms cadence, the 5090 `5`
+across 12.9 ms), the request arriving 0.3 to 0.4 ms after the hand-off; r3 and r4 `cached=64 lcp=64`; the `digest` cell
+1; the fault gate's four promote cells 2 each; every plain-arm, demote, d2d and hash cell 0; zero hits on a copy-phase
+`Demoting` entry. **Every arm of DAY28's clause 2 is green on both cards: the day-28 and day-29 code is integrable.**
+
+**The gate fix's two wrong shapes, in the history (`DAY29.md` section 2).** `grep -c` exits 1 on a zero count and the
+gate runs `set -euo pipefail`, so the first wait aborted the gate at its first cell (no verdict line); the second waited
+on a hand-off count that read 0 when r3 returned, because the spec-boundary insert, the eviction and the demote's
+submission land as r3 completes. The landed wait is the check's own condition, a publication after the injected
+refusal. Both caught on the local RTX 5090 before the target card's fault cell ran; no assertion moved.
+
+**What Move 1 still owes, in order (restated).**
+
+1. **The settle-time owner wait for an H2D** (unchanged from day 18).
+2. **The bundle hash off the tick**: LANDED and green on both cards (days 28 and 29). Item 2a CLOSED. One question for
+   the lead, not owed as work: a hit inside the COPY window (a `Demoting` entry with its ticket in flight, about 54 ms
+   on the target card) keeps the day-17 rule, a cold prime; zero observed in every ON boot on both cards today; if it
+   ever fires in a gate the same park would cover it with one predicate change (`hashing` optional).
+3. **The by-reference demote routes** (unchanged).
+4. **The decision cell (i)** (unchanged).
+
+**What Move 2 still owes (restated).** Item 1, **the recurrent f32 state off the tick**: the pre-submit segment is the
+demote's whole remaining owner-thread cost, priced per demote by the ledger line: about 6 ms at steady state (today's
+`owner in-completion` median 7.39), 40 to 45 ms on the first two demotes of a boot (first touch), 149 to 152 ms under
+the verify arm (the identity gate's `pre-submit 148.52` today). Items 2 to 4 unchanged.

@@ -146,8 +146,8 @@ def _census_tree(crate: str, root: Path, integration: bool) -> list[dict[str, st
     rows: list[dict[str, str]] = []
     for path in sorted(root.rglob("*.rs")):
         # The file's own module path, so the census reports the EXACT string libtest prints
-        # (`source::hy3_repack_probe::hy3_manifest_offset_roundtrip`) and the run-side match can
-        # be an equality. A suffix match would work today and would quietly accept the wrong
+        # (`source::artifact_identity_tests::hy3_repack_probe::hy3_manifest_offset_roundtrip`)
+        # and the run-side match can be an equality. A suffix match would work today and would quietly accept the wrong
         # test the day two modules share a function name.
         file_mods = file_module_path(path.relative_to(root), integration)
         lines = path.read_text(encoding="utf-8").splitlines()

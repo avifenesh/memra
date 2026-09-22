@@ -1,0 +1,14 @@
+# command: git merge-base --is-ancestor 45f824a75 934a6da3a -> ancestor=no
+# command: git merge-base --is-ancestor 867655368 934a6da3a -> ancestor=no
+# command: git merge-base --is-ancestor 45f824a75 091a931c0 -> ancestor=no
+# command: git merge-base --is-ancestor 867655368 091a931c0 -> ancestor=no
+# command: git merge-base --is-ancestor 45f824a75 origin/main -> ancestor=no
+# command: git merge-base --is-ancestor 867655368 origin/main -> ancestor=no
+# command: git merge-base --is-ancestor 45f824a75 1c540e050 -> ancestor=yes
+# command: git merge-base --is-ancestor 867655368 1c540e050 -> ancestor=yes
+# command: git merge-base --is-ancestor 45f824a75 aeefd9233 -> ancestor=yes
+# command: git merge-base --is-ancestor 867655368 aeefd9233 -> ancestor=yes
+# command: git rev-parse --short origin/main -> ca5a90e2a
+# command: git merge-base --is-ancestor 45f824a75 189c91b15 -> ancestor=no
+# command: git merge-base --is-ancestor 867655368 189c91b15 -> ancestor=no
+# command: git rev-parse --short origin/main (after the 22:05 +0300 fetch) -> 189c91b15

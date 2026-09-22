@@ -2099,7 +2099,6 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use memra_gguf::tensor_contract::{ContractOptions, OutputHead};
 
     #[test]
     fn gguf_tokenizer_identity_binds_validated_input_program() {

@@ -1,0 +1,162 @@
+{
+  "family": "qwen",
+  "selected_k": 2,
+  "pooled_calibration_tok_s": {
+    "1": 94.68035684455916,
+    "2": 102.38745888780069,
+    "3": 100.38257154565436,
+    "4": 92.63537036485897,
+    "5": 89.11684751920963,
+    "6": 80.9143788043663,
+    "7": 73.63199348086117
+  },
+  "selected_at_utc": "2026-09-20T17:39:07.525384+00:00",
+  "rule": "Highest pooled output tokens / request E2E seconds; exact ties select smaller K",
+  "calibration": [
+    {
+      "cycle": 0,
+      "seed": 20262000,
+      "receipt_dir": "qwen-mtp-followup-calibration-0",
+      "records": [
+        {
+          "seed": 20262000,
+          "arm": "k1",
+          "tokens": 8192,
+          "elapsed_s": 88.549365185,
+          "e2e_tok_s": 92.513367915,
+          "turns": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20262000,
+          "arm": "k2",
+          "tokens": 8192,
+          "elapsed_s": 83.22707995,
+          "e2e_tok_s": 98.429501611,
+          "turns": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20262000,
+          "arm": "k3",
+          "tokens": 8192,
+          "elapsed_s": 84.477853051,
+          "e2e_tok_s": 96.972161391,
+          "turns": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20262000,
+          "arm": "k4",
+          "tokens": 8192,
+          "elapsed_s": 91.303378294,
+          "e2e_tok_s": 89.722857501,
+          "turns": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20262000,
+          "arm": "k5",
+          "tokens": 8192,
+          "elapsed_s": 94.934060266,
+          "e2e_tok_s": 86.291474072,
+          "turns": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20262000,
+          "arm": "k6",
+          "tokens": 8192,
+          "elapsed_s": 104.962139262,
+          "e2e_tok_s": 78.047189754,
+          "turns": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20262000,
+          "arm": "k7",
+          "tokens": 8192,
+          "elapsed_s": 115.141178768,
+          "e2e_tok_s": 71.147439063,
+          "turns": 8,
+          "correctness_only": false
+        }
+      ]
+    },
+    {
+      "cycle": 1,
+      "seed": 20262001,
+      "receipt_dir": "qwen-mtp-followup-calibration-1",
+      "records": [
+        {
+          "seed": 20262001,
+          "arm": "k7",
+          "tokens": 8192,
+          "elapsed_s": 107.370792258,
+          "e2e_tok_s": 76.296354229,
+          "turns": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20262001,
+          "arm": "k6",
+          "tokens": 8192,
+          "elapsed_s": 97.523503489,
+          "e2e_tok_s": 84.000263597,
+          "turns": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20262001,
+          "arm": "k5",
+          "tokens": 8192,
+          "elapsed_s": 88.91445386,
+          "e2e_tok_s": 92.133501859,
+          "turns": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20262001,
+          "arm": "k4",
+          "tokens": 8192,
+          "elapsed_s": 85.562109861,
+          "e2e_tok_s": 95.743314574,
+          "turns": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20262001,
+          "arm": "k3",
+          "tokens": 8192,
+          "elapsed_s": 78.737730568,
+          "e2e_tok_s": 104.041606748,
+          "turns": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20262001,
+          "arm": "k2",
+          "tokens": 8192,
+          "elapsed_s": 76.792517938,
+          "e2e_tok_s": 106.677059432,
+          "turns": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20262001,
+          "arm": "k1",
+          "tokens": 8192,
+          "elapsed_s": 84.496032467,
+          "e2e_tok_s": 96.951297722,
+          "turns": 8,
+          "correctness_only": false
+        }
+      ]
+    }
+  ],
+  "calibration_runs_sha256": {
+    "qwen-mtp-followup-calibration-0": "658f7d1c266d9c247ef9d7ddf8f1835857097f373b27590554181e482ee3b628",
+    "qwen-mtp-followup-calibration-1": "94529211ae84001c69d3dd641d507daf47a594a997519a5d8b8ecdc9e6125642"
+  },
+  "workloads_lock_sha256": "fd3a9d32c967c7abdb2325ba5da4c3367d0efa22213852f6a49c597afd4cec8e"
+}

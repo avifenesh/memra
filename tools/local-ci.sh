@@ -704,6 +704,24 @@ else
     echo "prime fairness gate: SKIP (no 9B NVFP4 model at $FAIR_MODEL or MEMRA_CI_FAIRGATE=0)"
 fi
 
+# GPU PROBE RECOVERY (memra#516): a fake nvidia-smi on PATH hangs the canary for a scripted
+# number of probes; /health must degrade (200) below the miss bound, recover on an answer, latch
+# (503) at the bound, and never clear a fatal ECC latch. Three boots of the 9B on the plain route,
+# about 3 minutes. MEMRA_CI_GPUPROBEGATE=0 skips.
+PROBE_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_GPUPROBEGATE:-1}" = "1" ] && [ -f "$PROBE_MODEL" ]; then
+    echo "== local-ci: GPU probe recovery gate (memra#516) =="
+    PROBE_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-gpuprobegate.XXXXXX")
+    if python3 tools/gpu-probe-recovery-gate.py --model "$PROBE_MODEL" --bin target/release/memra-server \
+        --out "$PROBE_OUT" --port 18516; then
+        rm -rf "$PROBE_OUT"
+    else
+        echo "GPU probe recovery gate FAIL (receipt kept at $PROBE_OUT)"; exit 1
+    fi
+else
+    echo "GPU probe recovery gate: SKIP (no 9B NVFP4 model at $PROBE_MODEL or MEMRA_CI_GPUPROBEGATE=0)"
+fi
+
 # SERVED-SPEC ACCEPTANCE + LONG-TEXT ASSERTION (lane/accept-gate, 2026-08-06): the arm that
 # closes a receipted blind spot in THIS battery. research/f8f4-flip-20260806 (merged c506317e)
 # showed a kernel arm move served greedy text in 4 of 6 regime cells at temperature 0 and move
