@@ -263,7 +263,33 @@ the bounded arm's booked cost is the prefill workspace (1.5 GB at 5.7k prompt ro
 (96 MB at L2), so bounding `max_tokens` buys 8 -> 18 sessions at L0 and 5 -> 8 at L2, where on the target card the
 KV term dominates and the same change buys 8 -> 49 (or 69) at L0.
 
-Order BA: PENDING-BA
+Order BA (`ba/`, `ba.exit` 0, 46 requests, `non-200=0`, rig before `62 C, 17.85 W` / after `75 C, 29.25 W`; 2,813
+samples). P and G identical to AB on 44 of 45 requests; the one difference is `iii-L2-r3`, G 17,815 (AB) against
+18,314 (BA): both runs of that request took exactly 90,003 ms submit-to-done and the server lines inside the window
+are identical (`[worker] spec-affinity: declined (history diverged at 6 of checkpoint 5792; 2 parked, 5821 prompt
+tokens; model q9)`, `[spec-k] ... K=3 source=cold-long prompt=5821 cached=0 lcp=6`), so the runaway generation was
+cut by the 90 s request deadline at whatever token the clock reached; tokens per second differed, the program did
+not. Verbatim:
+
+```text
+BA arm=i L0 ... ratios=[12.23, 11.3, 11.78, 10.57, 10.1] min=10.10 median=11.30 max=12.23 alloc_B=1094713344 used_B_median=96916608 booked_MB=[1721, 1839, 1840, 1840, 1840] inherited=1
+BA arm=i L1 ... ratios=[10.73, 9.5, 11.89, 11.05, 9.98] min=9.50 median=10.73 max=11.89 alloc_B=1094713344 used_B_median=101977920 booked_MB=[2436, 2436, 2437, 2436, 2436] inherited=1
+BA arm=i L2 ... ratios=[6.2, 6.92, 6.62, 6.33, 7.27] min=6.20 median=6.62 max=7.27 alloc_B=1094713344 used_B_median=165319488 booked_MB=[2824, 2824, 2824, 2824, 2824] inherited=0
+BA arm=ii L0 ... ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=29683008 used_B_median=29515968 booked_MB=[737, 740, 739, 739, 738] inherited=1
+BA arm=ii L1 ... ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=51147648 used_B_median=50997312 booked_MB=[1343, 1344, 1343, 1340, 1340] inherited=0
+BA arm=ii L2 ... ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=96348672 used_B_median=96031296 booked_MB=[1824, 1824, 1824, 1824, 1823] inherited=0
+BA arm=iii L0 ... cached=[0, 0, 0, 0, 0] ratios=[17.91, 10.54, 11.79, 15.97, 10.99] min=10.54 median=11.79 max=17.91 alloc_B=1094713344 used_B_median=92824128 booked_MB=[1856, 1861, 1868, 1860, 1858] inherited=0
+BA arm=iii L1 ... cached=[0, 0, 0, 0, 0] ratios=[11.62, 8.78, 10.62, 11.46, 10.07] min=8.78 median=10.62 max=11.62 alloc_B=1094713344 used_B_median=103063680 booked_MB=[2457, 2457, 2464, 2456, 2456] inherited=2
+BA arm=iii L2 N=5 P=[5803, 5815, 5822, 5821, 5812] G=[4511, 4564, 3246, 18314, 3724] cached=[0, 0, 0, 0, 0] ratios=[6.35, 6.31, 7.23, 2.72, 6.87] min=2.72 median=6.35 max=7.23 alloc_B=1094713344 used_B_median=172285056 booked_MB=[2825, 2825, 2825, 2825, 2825] inherited=0
+BA L0: P~1441 open booked_MB=1840 -> 8 sessions; bounded booked_MB=739 -> 21 sessions (free_ready=16029908992)
+BA L1: P~3096 open booked_MB=2436 -> 6 sessions; bounded booked_MB=1343 -> 11 sessions (free_ready=16029908992)
+BA L2: P~5761 open booked_MB=2824 -> 5 sessions; bounded booked_MB=1824 -> 8 sessions (free_ready=16029908992)
+```
+
+`prefix-cache hit lines: 0` (60 inserts, 45 LRU evictions); `pool_used max=14534983212 last=13121243464`; driver free
+`last=8513716224`. The `[worker] spec-affinity: declined (... 2 parked ...)` line on every continuation is the
+whole-session reuse pool at its default cap of 2 per namespace: with fifteen conversations interleaved, the parked
+sessions a continuation finds are never its own.
 
 ### 2.4 The hit shape (`warm` cells, (iii) right after its (i))
 
@@ -293,7 +319,26 @@ The hit changes the prefill (a 1,440-row restore instead of a 1,481-row prime; `
 copy of the same rows inside 8.27 GB, and the ratio is the open arm's. `pool_used max=45779546572`, `last=19336305864`;
 driver free `last=53063843840` from the same idle 82,759,516,160.
 
-Local RTX 5090 Laptop GPU: PENDING-WARM-LOCAL
+Local RTX 5090 Laptop GPU (`rtx5090-day26/warm`, `warm.exit` 0, 46 requests, `non-200=0`, rig `68 C, 34.04 W` before /
+`76 C, 29.72 W` after, 2,811 samples): the same shape, `15 [prefix-cache] hit` and `15 [prefix-cache] spec` lines
+(first: `[prefix-cache] hit: 1408 of 1486 prompt tokens from cache (model q9)`), `cached_tokens` equal to the entry
+rows on all 15 (`1408`, `3072`, `5728`), `45 [prefix-cache] insert (spec-boundary)`, `32 [prefix-cache] evict (LRU)`.
+Same allocation as (i) (1,094,713,344 B); `iii-L0-r0` moved `pool_used` from 10,009,861,704 to 11,461,794,604 for
+61,119,936 B of used KV. Verbatim:
+
+```text
+warm arm=iii L0 N=5 P=[1486, 1500, 1519, 1498, 1492] G=[2173, 4715, 4038, 2606, 4473] cached=[1408, 1408, 1408, 1408, 1408] ratios=[17.91, 10.54, 11.79, 15.97, 10.99] min=10.54 median=11.79 max=17.91 alloc_B=1094713344 used_B_median=92824128 booked_MB=[1856, 1861, 1868, 1860, 1858] inherited=0
+warm arm=iii L1 N=5 P=[3152, 3152, 3173, 3151, 3151] G=[2490, 4315, 2997, 2567, 3359] cached=[3072, 3072, 3072, 3072, 3072] ratios=[11.62, 8.78, 10.62, 11.46, 10.07] min=8.78 median=10.62 max=11.62 alloc_B=1094713344 used_B_median=103063680 booked_MB=[2457, 2457, 2464, 2456, 2456] inherited=0
+warm arm=iii L2 N=5 P=[5803, 5815, 5822, 5821, 5812] G=[4511, 4564, 3246, 16378, 3724] cached=[5728, 5728, 5728, 5728, 5728] ratios=[6.35, 6.31, 7.23, 2.95, 6.87] min=2.95 median=6.35 max=7.23 alloc_B=1094713344 used_B_median=172285056 booked_MB=[2825, 2825, 2825, 2825, 2825] inherited=0
+```
+
+(The (i) rows of this cell equal the AB and BA rows to the token; `iii-L2-r3` is again the 90 s deadline cut, here at
+16,378 tokens.) `pool_used max=14527258156 last=10815941064`; driver free `last=8478064640`.
+
+Reading the two shapes together: a warm continuation on these hybrid classes hits only when its whole spec-boundary
+entry is still resident, and a hit changes the prefill cost and nothing about residency. The restore's carrier is
+allocated at `ctx_cap` exactly like a cold session, the entry stays resident beside it, and the ratio is the open
+arm's on both cards.
 
 ## 3. Design note
 
@@ -316,10 +361,10 @@ already 1.00, so the layout options buy the prefix copy and preemption, not the 
 | `git merge --no-ff origin/main` (`8e94a480b`) | one INDEX.md conflict, resolved by hand (both rows kept), `check-conflict-markers: OK` |
 | `cargo build --release -p memra-server --offline` on `1c66ff10e`, local (CPU quota) and target card | `exit=0` both (`rtx5090-day26/build-local.log`, `pro-single-day26/build.log`) |
 | `python3 -m py_compile` on the two clients and the parser; `bash -n` on the driver | OK |
-| Target-card cells through the collector (`cell-ab`, `cell-ba`) | `status executed-not-qualified`, `qualification false`, `exit_code 0`; 45 of 45 requests 200 per order |
-| Local cells under `flock /tmp/memra-5090.lock` (`ab`, `ba`) | `ab.exit` 0, 45 of 45 requests 200; BA: PENDING-BA-CHECK |
+| Target-card cells through the collector (`cell-ab`, `cell-ba`, `cell-warm`) | `status executed-not-qualified`, `qualification false`, `exit_code 0` in all three; 45 of 45 requests 200 in each |
+| Local cells under `flock /tmp/memra-5090.lock` (`ab`, `ba`, `warm`) | `ab.exit` 0, `ba.exit` 0, `warm.exit` 0; 45 of 45 requests 200 in each |
 | Full GPU exactness battery (`kernel-check`, `run-gen`, `run-spec`) | NOT RUN (no kernel or numeric change; nothing to qualify) |
-| `cargo fmt --all -- --check`, `git diff --check`, `tools/check-flags.sh`, `tools/check-conflict-markers.sh`, `python3 tools/check-public-boundary.py check` | PENDING-FINAL |
+| `cargo fmt --all -- --check`, `git diff --check`, `tools/check-flags.sh`, `tools/check-conflict-markers.sh`, `python3 tools/check-public-boundary.py check` | `fmt: PASS`; `diff --check: PASS`; `check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)`; `check-conflict-markers: OK`; `public-boundary: 582 matches (582 grandfathered, 0 new)` |
 
 ## 5. Boundaries and record
 
