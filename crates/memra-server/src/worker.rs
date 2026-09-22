@@ -4818,8 +4818,8 @@ fn host_tier_context(
             )
         })?;
     eprintln!(
-        "[prefix-host] contracts door: D2H demotes ride the transfer engine's copy stream and \
-         publish at the tick top (memra#536 Move 1, first slice)"
+        "[prefix-host] contracts door: D2H demotes and H2D promotes ride the transfer engine's \
+         copy stream and publish at the tick top (memra#536 Move 1)"
     );
     Ok(HostTierContext {
         governor,
@@ -8100,6 +8100,18 @@ struct HostPrefixCache {
     /// WP-A day 17: the one `Demoting` entry, if a contract-routed demote is in flight on the copy
     /// stream. Declared before `tier` so its retained twins drop before the transfer engine.
     demoting: Option<PendingDemote>,
+    /// WP-A day 18: the one `Promoting` entry, if a contract-routed promote is in flight on the
+    /// copy stream (or settled and waiting for a tick top to publish). Declared before `tier` for
+    /// the same drop order.
+    promoting: Option<PendingPromote>,
+    /// WP-A day 18: the insertion pin of the last published promote, held from publication until
+    /// the next tick top so a trim or an insert in between cannot evict the entry before the
+    /// parked request takes its own serving pin.
+    promoted_pin: Option<PrefixPin>,
+    /// WP-A day 18: the one-tick memo of a promote that failed (at submit or at settle): the pool
+    /// key and the host entry's tokens. The body's hook serves a request that would promote this
+    /// entry cold instead of retrying synchronously; cleared at the next tick top.
+    promote_cold: Option<(PoolKey, Vec<u32>)>,
     tier: Option<HostTierContext>,
     arena: Option<memra_engine::PinnedHostArena>,
     arena_reserve_ms: f64,
@@ -8705,6 +8717,24 @@ impl HostPrefixCache {
         // cannot land after the purge's receipt.
         host_demote_settle_pending(self, ContractWait::Block, "a tenant purge");
         let row = crate::auth::meter_key(&crate::auth::scope_namespace(tenant, "")).to_string();
+        // WP-A day 18: a `Promoting` entry settles its contract first; if it is the purged tenant's
+        // it is DROPPED unpublished (the fresh planes back to the pool), so a revoked tenant's bytes
+        // never land in the device cache after the purge's receipt. Another tenant's stays ready.
+        host_promote_settle_contract(self, ContractWait::Block, "a tenant purge");
+        if self
+            .promoting
+            .as_ref()
+            .is_some_and(|p| crate::auth::meter_key(&p.pool_key.1) == row)
+        {
+            let dropped = self.promoting.take().expect("checked");
+            eprintln!(
+                "[prefix-host] promote dropped: the tenant purge revoked the Promoting entry \
+                 ({} tokens, model {}{}); nothing published",
+                dropped.host_len,
+                dropped.pool_key.0,
+                ns_suffix(&dropped.pool_key.1)
+            );
+        }
         let victims: Vec<PoolKey> = self
             .entries
             .keys()
@@ -9288,6 +9318,105 @@ struct PendingDemote {
     host_bytes: usize,
     t0: Instant,
     polls: u32,
+}
+
+/// Which program the door's H2D takes (WP-A day 18, memra#536 Move 1, the promote half). `OnTick`:
+/// the day-16 program, the route blocks the owner thread on the copy's events and returns a whole
+/// entry (the body's hook, the GPU unit cells). `OffTick`: the admission probe's route, the H2D is
+/// issued on the transfer engine's copy stream, the request parks, and the entry is `Promoting`
+/// until a tick-top poll observes every item complete and publishes it into the device cache.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ContractH2d {
+    OnTick,
+    OffTick,
+}
+
+/// One destination plane of a contract-routed promote as planned before submission: slot, byte
+/// counts and the D2H receipt of each side (owned; no borrow of the host entry). Geometry travels
+/// on the registered `PromotePlane`.
+struct PromotePlanned {
+    slot: ContractSlot,
+    kb: usize,
+    vb: usize,
+    ck: memra_engine::cache::tiered::Digest,
+    cv: memra_engine::cache::tiered::Digest,
+}
+
+/// A contract-routed H2D that was submitted and not yet settled (WP-A day 18): the ticket, its
+/// producer fence, the registered fresh planes (their retained twins take them back), the plan,
+/// the accepted sources (item index and the entry's own lease pointer, for the unwind), the
+/// per-item sizes, the one-shot fault the submission took, and when it was submitted.
+struct PendingContractPromote {
+    ticket: memra_engine::cache::tiered::TransferTicket,
+    producer: memra_engine::cache::tiered::FenceId,
+    registered: Vec<PromotePlane>,
+    planned: Vec<PromotePlanned>,
+    sources: Vec<(u32, *const u8)>,
+    sizes: Vec<u64>,
+    /// The entry's trunk plane slot count (the `kv` vector the settle fills).
+    kv_slots: usize,
+    fault: Option<HostContractFault>,
+    submitted: Instant,
+}
+
+/// What one settle step of a contract-routed H2D produced.
+enum PromoteSettle {
+    /// `Poll` found at least one item's event not yet complete: the ticket is handed back.
+    Pending(PendingContractPromote),
+    /// Every item complete, the receipt required, every destination published, the ticket retired
+    /// and acknowledged, the fresh planes back: the device planes in their slots (trunk, draft).
+    Done(Vec<Option<PrefixPlane>>, Option<PrefixPlane>),
+}
+
+/// The one `Promoting` entry of the worker (WP-A day 18): a host entry whose H2D is in flight on
+/// the copy stream (`contract` is `Some`, `ready` false) or already settled into a whole device
+/// entry that waits for a tick top to publish (`ready` true). `shell` is the device entry built at
+/// submission with every plane but the KV planes; `host_id` finds the source entry again for the
+/// recency touch or the drop; the identity lease and the residency charge are held here until
+/// publication. Exactly one exists per worker; every other submit path settles it first.
+struct PendingPromote {
+    pool_key: PoolKey,
+    host_toks: Vec<u32>,
+    host_id: u64,
+    host_len: usize,
+    shell: Option<PrefixEntry>,
+    contract: Option<PendingContractPromote>,
+    ready: bool,
+    tier_identity: Option<(
+        memra_engine::cache::tiered::hostprefix::IdentityLease,
+        memra_engine::cache::record::ProgramIdentity,
+        Arc<()>,
+    )>,
+    tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
+    expected_digest: Option<String>,
+    t0: Instant,
+    polls: u32,
+    /// Filled when the contract settled: submission-to-completion time and the settle mode, for
+    /// the `promote published off the tick` line at publication.
+    copy_ms: f64,
+    settled_by: String,
+}
+
+/// What one settle step of the `Promoting` entry produced (the CPU-testable half).
+enum PromoteSettled {
+    /// Still copying: the state was kept and the poll counted.
+    Pending,
+    /// A typed failure: nothing published, the memo set, the state consumed.
+    Failed,
+    /// The contract settled into a whole device entry: publication is the caller's (it needs the
+    /// device cache), or the state goes back as `ready` when the caller has none in hand.
+    Ready(Box<PendingPromote>),
+}
+
+/// What the promote side of the door answered (WP-A day 18).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostPromoteOutcome {
+    /// The H2D is in flight (or settled, unpublished); the request that asked is parked.
+    Promoting,
+    /// The device entry is in the device cache, pinned until the next tick top.
+    Published,
+    /// A typed failure; nothing published; the memo makes the asking request serve cold.
+    Failed,
 }
 
 /// One-shot injected fault for the contract routes: `MEMRA_KV_HOST_FAULT=contract-presubmit` or
@@ -10114,7 +10243,26 @@ fn host_kv_planes_from_contract(
     src: &HostPrefixEntry,
     class: HostTierEntryClass,
 ) -> Result<(Vec<Option<PrefixPlane>>, Option<PrefixPlane>), HostPromoteFailure> {
-    use HostPromoteFailure::{Failed, Latched, ReceiptMismatch, Refused};
+    let pending = host_kv_planes_submit_promote(engine, tier, src, class)?;
+    match host_kv_planes_settle_promote(tier, pending, ContractWait::Block)? {
+        PromoteSettle::Done(kv, draft) => Ok((kv, draft)),
+        PromoteSettle::Pending(_) => Err(HostPromoteFailure::Latched(
+            "tier H2D blocking settle returned a pending ticket".into(),
+        )),
+    }
+}
+
+/// The submit half (steps 1 to 5 of the frozen restore sequence): the plane list, fresh destination
+/// planes from the OFF allocator, their registration with retained twins, the source twins, the
+/// producer fence and ONE batch. Returns the pending ticket; every refusal unwinds as before, with
+/// the host entry intact.
+fn host_kv_planes_submit_promote(
+    engine: &Engine,
+    tier: &HostTierContext,
+    src: &HostPrefixEntry,
+    class: HostTierEntryClass,
+) -> Result<PendingContractPromote, HostPromoteFailure> {
+    use HostPromoteFailure::{Failed, Refused};
     use memra_engine::cache::tiered::*;
     let fault = tier.take_fault(false);
     let Some(transfers) = &tier.transfers else {
@@ -10490,9 +10638,66 @@ fn host_kv_planes_from_contract(
             ));
         }
     };
+    Ok(PendingContractPromote {
+        ticket,
+        producer,
+        registered,
+        planned: planned
+            .into_iter()
+            .map(|p| PromotePlanned {
+                slot: p.slot,
+                kb: p.kb,
+                vb: p.vb,
+                ck: p.ck,
+                cv: p.cv,
+            })
+            .collect(),
+        sources,
+        sizes,
+        kv_slots: src.kv.len(),
+        fault,
+        submitted: Instant::now(),
+    })
+}
+
+/// The settle half (steps 6 to 11): completion (a host wait on every item's event under
+/// `ContractWait::Block`, the day-16 program; under `Poll` the events are read and the ticket is
+/// handed back while one is still running), the receipt check BEFORE publication, `ready_view` per
+/// item, the consumer fence observed by an owner drain (at the tick top the owner stream is idle, so
+/// the drain is cheap), the source twins retired, the producer fence released, the ticket retired
+/// and acknowledged, the fresh planes back into `PrefixPlane`s, the receipt line.
+fn host_kv_planes_settle_promote(
+    tier: &HostTierContext,
+    pending: PendingContractPromote,
+    wait: ContractWait,
+) -> Result<PromoteSettle, HostPromoteFailure> {
+    use HostPromoteFailure::{Latched, ReceiptMismatch};
+    use memra_engine::cache::tiered::*;
+    let PendingContractPromote {
+        ticket,
+        producer,
+        registered,
+        planned,
+        sources,
+        sizes,
+        kv_slots,
+        fault,
+        submitted,
+    } = pending;
+    let Some(transfers) = &tier.transfers else {
+        return Err(Latched(
+            "tier H2D transfer engine missing under a submitted ticket".into(),
+        ));
+    };
+    let mut t = transfers.borrow_mut();
     // 6. Completion: the engine's event per item, then its status and its checksum of each
     //    SOURCE after the copy (for an H2D the completion checksum is the host bytes the DMA read).
-    if let Err(e) = t.synchronize(&ticket) {
+    //    `Block`: a host wait on every item's event (the day-16 program). `Poll` (WP-A day 18, the
+    //    tick top): the events are read; while one is still running the ticket is handed back and
+    //    nothing below runs.
+    if wait == ContractWait::Block
+        && let Err(e) = t.synchronize(&ticket)
+    {
         return Err(Latched(format!(
             "tier H2D completion unknown ({e:?}); the transfer engine keeps the destinations \
              and the source twins"
@@ -10507,6 +10712,19 @@ fn host_kv_planes_from_contract(
             )));
         }
     };
+    if wait == ContractWait::Poll && !completion.producer_done {
+        return Ok(PromoteSettle::Pending(PendingContractPromote {
+            ticket,
+            producer,
+            registered,
+            planned,
+            sources,
+            sizes,
+            kv_slots,
+            fault,
+            submitted,
+        }));
+    }
     // 7. The receipt check BEFORE publication: exact lengths from the server's own geometry and
     //    the checksum each plane's D2H delivered, so `require` holds only if the copy read exactly
     //    the bytes the demote wrote. A difference is a refusal with nothing published, EXCEPT under
@@ -10656,7 +10874,7 @@ fn host_kv_planes_from_contract(
         )));
     }
     // 10. The fresh planes leave the engine into `PrefixPlane`s, in their slots.
-    let mut kv: Vec<Option<PrefixPlane>> = (0..src.kv.len()).map(|_| None).collect();
+    let mut kv: Vec<Option<PrefixPlane>> = (0..kv_slots).map(|_| None).collect();
     let mut draft = None;
     let mut kv_planes = 0usize;
     for p in registered {
@@ -10732,9 +10950,8 @@ fn host_kv_planes_from_contract(
         if draft.is_some() { ", draft" } else { "" },
         digest_hex(&digest("host-prefix-d2h-receipt", &receipt)),
     );
-    Ok((kv, draft))
+    Ok(PromoteSettle::Done(kv, draft))
 }
-
 /// Take every fresh destination plane back out of the transfer engine through its retained twin
 /// and drop it (the planes are fresh allocations, nothing of the entry's). A refusal is a leak the
 /// caller latches on.
@@ -11262,9 +11479,12 @@ fn host_demote_prefix_ref(
     // ledger's one-batch in-flight dimension is never raced and no demotable entry is dropped
     // to a `Capacity` refusal.
     host_demote_settle_pending(host, ContractWait::Block, "a second demote");
+    // WP-A day 18: the same for a `Promoting` entry, its contract half (this route has no device
+    // cache in hand; the settled entry publishes at the next tick top).
+    host_promote_settle_contract(host, ContractWait::Block, "a second demote");
     if !host.armed() {
-        // The settle can latch the tier off (`SourceQuarantined`, `TicketLeaked`); the gate
-        // above was passed before it ran (revuto round 2 on #622).
+        // Either settle can latch the tier off (`SourceQuarantined`, `TicketLeaked`); the gate
+        // above was passed before they ran (revuto round 2 on #622).
         eprintln!(
             "[prefix-host] demote refused: the tier latched off while settling the pending demote"
         );
@@ -11861,6 +12081,25 @@ fn device_entry_from_host(
     src: &HostPrefixEntry,
     tier: Option<(&HostTierContext, HostTierEntryClass)>,
 ) -> Result<PrefixEntry, HostPromoteFailure> {
+    let (entry, pending) = device_entry_from_host_parts(engine, src, tier, ContractH2d::OnTick)?;
+    debug_assert!(
+        pending.is_none(),
+        "the OnTick route settles inside the call"
+    );
+    Ok(entry)
+}
+
+/// `device_entry_from_host` with the door's H2D route chosen (WP-A day 18): `OnTick` returns a whole
+/// entry; `OffTick` returns the entry with EMPTY `kv` and `draft` slots plus the pending contract
+/// ticket whose settle fills them (the f32 planes and metadata are copied synchronously here, as
+/// today). Without a contract route (tier off, GLM entry, no contract plane) the pre-door program
+/// runs whole whatever the route asks, and `None` comes back for the ticket.
+fn device_entry_from_host_parts(
+    engine: &Engine,
+    src: &HostPrefixEntry,
+    tier: Option<(&HostTierContext, HostTierEntryClass)>,
+    route: ContractH2d,
+) -> Result<(PrefixEntry, Option<PendingContractPromote>), HostPromoteFailure> {
     if src.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
         return Err(format!(
             "host entry layout version {} != runtime {}: promote refused",
@@ -11905,15 +12144,33 @@ fn device_entry_from_host(
     // destination, and the H2D of all of them is one transfer-engine batch. An all-pinned entry
     // keeps the OFF program (none exists under the door today); a mixed entry is refused by name
     // inside the route.
+    enum ContractKv {
+        Whole(Vec<Option<PrefixPlane>>, Option<PrefixPlane>),
+        Deferred(PendingContractPromote),
+        None,
+    }
     let contract_planes = match tier {
         Some((tier, class)) if src.glm.is_none() && host_entry_has_contract_plane(src) => {
-            Some(host_kv_planes_from_contract(engine, tier, src, class)?)
+            match route {
+                ContractH2d::OnTick => {
+                    let (kv, draft) = host_kv_planes_from_contract(engine, tier, src, class)?;
+                    ContractKv::Whole(kv, draft)
+                }
+                ContractH2d::OffTick => {
+                    ContractKv::Deferred(host_kv_planes_submit_promote(engine, tier, src, class)?)
+                }
+            }
         }
-        _ => None,
+        _ => ContractKv::None,
     };
+    let mut pending = None;
     let (kv, contract_draft) = match contract_planes {
-        Some((kv, draft)) => (kv, Some(draft)),
-        None => {
+        ContractKv::Whole(kv, draft) => (kv, Some(draft)),
+        ContractKv::Deferred(contract) => {
+            pending = Some(contract);
+            ((0..src.kv.len()).map(|_| None).collect(), Some(None))
+        }
+        ContractKv::None => {
             let mut kv = Vec::with_capacity(src.kv.len());
             for plane in &src.kv {
                 kv.push(match plane {
@@ -11965,7 +12222,7 @@ fn device_entry_from_host(
         }
         None => None,
     };
-    Ok(PrefixEntry {
+    let entry = PrefixEntry {
         _tier_charge: None,
         layout_version: src.layout_version,
         pool_key: src.pool_key.clone(),
@@ -12000,7 +12257,8 @@ fn device_entry_from_host(
         last_use: Instant::now(),
         id: 0, // recency identity assigned by PrefixCache::insert
         pins: 0,
-    })
+    };
+    Ok((entry, pending))
 }
 
 /// Pure admit-time probe-order decision (the unit-tested half of `host_promote_prefix_hit`):
@@ -12039,19 +12297,76 @@ fn host_promote_prefix_hit(
     prompt: &[u32],
     device_best_len: usize,
 ) -> Option<(usize, PrefixPin)> {
+    let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
+    // WP-A day 18: under the door the admission probe owns the promote decision and this hook is
+    // reached only after it declined; a memo naming this entry means "serve cold, the typed line
+    // was printed": no synchronous retry, no second line.
+    if host_promote_memo_names(host, pool_key, &host.entries[pool_key][hi].toks) {
+        return None;
+    }
     // WP-A day 17: a promote never races the `Demoting` entry for the ledger's one-batch
-    // in-flight dimension; the pending demote settles first (and a hit on ITS prompt then finds
-    // it published rather than priming cold).
+    // in-flight dimension: the pending demote settles BEFORE THIS HOOK'S OWN SUBMISSION. Day 18
+    // moved the settle behind the candidate check: the day-17 shape settled on every admission,
+    // so a request with a plain device hit (the parked request re-admitting after its promote
+    // published, whose insert had just submitted a demote) paid that demote's copy synchronously
+    // inside its tick (the day-18 stall receipt, run 1: `server_demote_ms` back at the day-16
+    // figure). A request that submits nothing waits on nothing; a hit on the Demoting prompt is a
+    // cold prime, the pre-registered rule.
     host_demote_settle_pending(host, ContractWait::Block, "a promote");
+    // WP-A day 18: the same for a `Promoting` entry (this hook has the device cache in hand, so a
+    // settled one publishes here).
+    host_promote_settle_pending(engine, px, host, ContractWait::Block, "a promote");
     if !host.armed() {
-        // The settle can latch the tier off; a promote from a latched-off tier is the miss it
-        // would have been with the tier off (revuto round 2 on #622).
+        // Either settle can latch the tier off; a promote from a latched-off tier is the miss it
+        // would have been with the tier off (revuto round 2 on #622, kept through day 18).
         eprintln!(
-            "[prefix-host] promote refused: the tier latched off while settling the pending demote"
+            "[prefix-host] promote refused: the tier latched off while settling a pending transfer"
         );
         return None;
     }
+    // The settles may have moved host indexes (a publication touches, a failure removes): look the
+    // candidate up again on the settled state.
     let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
+    let prepared = host_promote_prepare(host, pool_key, hi)?;
+    let t0 = Instant::now();
+    let tier_route = match (&host.tier, prepared.class) {
+        (Some(tier), Some(class)) => Some((tier, class)),
+        _ => None,
+    };
+    let e = match device_entry_from_host(engine, &host.entries[pool_key][hi], tier_route) {
+        Ok(e) => e,
+        Err(failure) => {
+            host_promote_report_failure(host, pool_key, prepared.host_id, failure, false);
+            return None;
+        }
+    };
+    let pin = host_promote_finish(engine, px, host, pool_key, prepared, e, t0, false, None)?;
+    let i = px.id_index(&pin)?;
+    Some((i, pin))
+}
+
+/// The candidate checks shared by the hook and the admission probe (WP-A day 18): model generation,
+/// door class, program and identity lease, residency charge; the day-16 lines, once. `None` after a
+/// typed line (the caller serves cold).
+struct PromotePrepared {
+    class: Option<HostTierEntryClass>,
+    identity: Option<(
+        memra_engine::cache::tiered::hostprefix::IdentityLease,
+        memra_engine::cache::record::ProgramIdentity,
+        Arc<()>,
+    )>,
+    charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
+    host_len: usize,
+    host_id: u64,
+    host_toks: Vec<u32>,
+    expected_digest: Option<String>,
+}
+
+fn host_promote_prepare(
+    host: &mut HostPrefixCache,
+    pool_key: &PoolKey,
+    hi: usize,
+) -> Option<PromotePrepared> {
     let candidate = &host.entries[pool_key][hi];
     if !host.generation_current(candidate) {
         drop(host.remove_at(pool_key, hi));
@@ -12059,7 +12374,6 @@ fn host_promote_prefix_hit(
         eprintln!("[prefix-host] promote refused: stale GLM model/artifact instance");
         return None;
     }
-
     // Under the door the candidate's class (plain or MTP draft-bearing) names its program; the
     // same class the demote charged and the insert leased, computed from the same fields.
     let tier_class = if host.tier.is_some() {
@@ -12125,44 +12439,102 @@ fn host_promote_prefix_hit(
     } else {
         None
     };
-    let (host_len, expected_digest) = {
-        let e = &host.entries[pool_key][hi];
-        (e.toks.len(), e.verify_digest.clone())
-    };
-    let t0 = Instant::now();
-    let tier_route = match (&host.tier, tier_class) {
-        (Some(tier), Some(class)) => Some((tier, class)),
-        _ => None,
-    };
-    let mut e = match device_entry_from_host(engine, &host.entries[pool_key][hi], tier_route) {
-        Ok(e) => e,
-        Err(HostPromoteFailure::Failed(err)) => {
+    let e = &host.entries[pool_key][hi];
+    Some(PromotePrepared {
+        class: tier_class,
+        identity: tier_identity,
+        charge: tier_charge,
+        host_len: e.toks.len(),
+        host_id: e.id,
+        host_toks: e.toks.clone(),
+        expected_digest: e.verify_digest.clone(),
+    })
+}
+
+/// The host entry's current index by its recency id (indexes shift on `remove_at`).
+fn host_entry_index_by_id(host: &HostPrefixCache, pool_key: &PoolKey, id: u64) -> Option<usize> {
+    host.entries.get(pool_key)?.iter().position(|e| e.id == id)
+}
+
+/// Whether the one-tick memo names this entry (WP-A day 18).
+fn host_promote_memo_names(host: &HostPrefixCache, pool_key: &PoolKey, toks: &[u32]) -> bool {
+    host.promote_cold
+        .as_ref()
+        .is_some_and(|(k, t)| k == pool_key && t.as_slice() == toks)
+}
+
+/// The day-16 failure arms of the promote hook, shared with the off-tick settle (WP-A day 18): the
+/// same lines and counters; `memo` additionally records the one-tick memo so the parked request
+/// (or the hook in the same admission) serves cold without a second attempt or a second line.
+fn host_promote_report_failure(
+    host: &mut HostPrefixCache,
+    pool_key: &PoolKey,
+    host_id: u64,
+    failure: HostPromoteFailure,
+    memo: bool,
+) {
+    if memo && let Some(hi) = host_entry_index_by_id(host, pool_key, host_id) {
+        host.promote_cold = Some((pool_key.clone(), host.entries[pool_key][hi].toks.clone()));
+    }
+    match failure {
+        HostPromoteFailure::Failed(err) => {
             host.rejected_allocs += 1;
             eprintln!("[prefix-host] promote failed ({err}); serving without the host entry");
-            return None;
         }
-        Err(HostPromoteFailure::Refused(why)) => {
+        HostPromoteFailure::Refused(why) => {
             eprintln!(
                 "[prefix-host] promote refused (contracts door): {why}; serving without the \
                  host entry"
             );
-            return None;
         }
-        Err(HostPromoteFailure::ReceiptMismatch(why)) => {
+        HostPromoteFailure::ReceiptMismatch(why) => {
             // The host bytes no longer match what the D2H wrote: the entry leaves, as it does
             // when the verify arm catches a mismatch after the copy.
             host.digest_mismatches += 1;
-            host.remove_at(pool_key, hi);
+            if let Some(hi) = host_entry_index_by_id(host, pool_key, host_id) {
+                host.remove_at(pool_key, hi);
+            }
             eprintln!(
                 "[prefix-host] promote refused (contracts door): {why}; host entry dropped, \
                  cold path serves"
             );
-            return None;
         }
-        Err(HostPromoteFailure::Latched(why)) => {
+        HostPromoteFailure::Latched(why) => {
             // The entry is intact, the ledger is not: the tier latches off with the one typed line.
             host.disable(&why);
-            return None;
+        }
+    }
+}
+
+/// The publication tail shared by the hook and the off-tick settle (WP-A day 18): the
+/// `MEMRA_KV_HOST_VERIFY` digest, the identity lease's `require`, the residency charge, the recency
+/// touch, `insert_pinned_demoting`, the counters and the `promote:` line (with the `promote
+/// published off the tick` line before it when `off_tick` names the poll count and copy time).
+/// `Some(pin)` on publication; `None` after a typed line (with the memo when asked).
+#[allow(clippy::too_many_arguments)]
+fn host_promote_finish(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    host: &mut HostPrefixCache,
+    pool_key: &PoolKey,
+    prepared: PromotePrepared,
+    mut e: PrefixEntry,
+    t0: Instant,
+    memo: bool,
+    off_tick: Option<(u32, f64, String)>,
+) -> Option<PrefixPin> {
+    let PromotePrepared {
+        identity,
+        charge,
+        host_len,
+        host_id,
+        host_toks,
+        expected_digest,
+        ..
+    } = prepared;
+    let set_memo = |host: &mut HostPrefixCache| {
+        if memo {
+            host.promote_cold = Some((pool_key.clone(), host_toks.clone()));
         }
     };
     if let Some(expected) = expected_digest {
@@ -12175,48 +12547,463 @@ fn host_promote_prefix_hit(
             }
             Ok(actual) => {
                 host.digest_mismatches += 1;
-                host.remove_at(pool_key, hi);
+                if let Some(hi) = host_entry_index_by_id(host, pool_key, host_id) {
+                    host.remove_at(pool_key, hi);
+                }
                 eprintln!(
                     "[prefix-host] VERIFY FAILED: promoted digest {actual} != demote digest \
                      {expected} ({host_len} tokens); host entry dropped, cold path serves"
                 );
+                set_memo(host);
                 return None;
             }
             Err(err) => {
                 eprintln!("[prefix-host] verify digest failed ({err}); promote refused");
+                set_memo(host);
                 return None;
             }
         }
     }
-    if let Some((identity, program, generation)) = &tier_identity
+    if let Some((identity, program, generation)) = &identity
         && let Err(err) = identity.require(program, generation)
     {
         eprintln!(
             "[prefix-host] promote refused (contracts door): image identity lease no \
              longer holds after the H2D ({err:?}); serving without the host entry"
         );
+        set_memo(host);
         return None;
     }
     // Keep destination residency charged until this PrefixEntry is actually destroyed;
     // the retained host twin keeps its independent source charge.
-    e._tier_charge = tier_charge;
+    e._tier_charge = charge;
     // Recency BEFORE the device insert: its demote sink can evict/replace host entries and
-    // shift pool indexes, so `hi` must not be used past this point.
-    host.touch(pool_key, hi);
+    // shift pool indexes, so no index is used past this point.
+    if let Some(hi) = host_entry_index_by_id(host, pool_key, host_id) {
+        host.touch(pool_key, hi);
+    }
     let bytes = e.bytes;
-    let pin = px.insert_pinned_demoting(pool_key, e, "host-promote", 1, engine, host)?;
-    let i = px.id_index(&pin)?;
+    let Some(pin) = px.insert_pinned_demoting(pool_key, e, "host-promote", 1, engine, host) else {
+        set_memo(host);
+        return None;
+    };
     let ms = t0.elapsed().as_secs_f64() * 1e3;
     host.log_arena("promotion");
     host.promotions += 1;
     host.promote_ms_total += ms;
+    if let Some((polls, copy_ms, mode)) = off_tick {
+        eprintln!(
+            "[prefix-host] promote published off the tick: ticket complete after {polls} poll(s), \
+             {copy_ms:.1}ms from submission to completion ({mode})"
+        );
+    }
     eprintln!(
         "[prefix-host] promote: {host_len} tokens, {:.1}MB in {ms:.1}ms (model {}{})",
         bytes as f64 / 1e6,
         pool_key.0,
         ns_suffix(&pool_key.1)
     );
-    Some((i, pin))
+    Some(pin)
+}
+
+/// What the admission probe decides about the host tier for one request (WP-A day 18), pure over
+/// the host state: no candidate; park again (the pending promote IS this request's candidate); cold
+/// (the memo names the candidate); or submit, after settling a pending promote of another entry.
+#[derive(Debug, PartialEq, Eq)]
+enum PromoteProbe {
+    NoCandidate,
+    ParkAgain,
+    Cold,
+    Submit { hi: usize, settle_first: bool },
+}
+
+fn host_promote_probe_decision(
+    host: &HostPrefixCache,
+    pool_key: &PoolKey,
+    prompt: &[u32],
+    device_best_len: usize,
+) -> PromoteProbe {
+    let Some(hi) = host_promote_candidate(host, pool_key, prompt, device_best_len) else {
+        return PromoteProbe::NoCandidate;
+    };
+    let candidate = &host.entries[pool_key][hi];
+    if let Some(pending) = &host.promoting
+        && pending.pool_key == *pool_key
+        && pending.host_id == candidate.id
+    {
+        return PromoteProbe::ParkAgain;
+    }
+    if host_promote_memo_names(host, pool_key, &candidate.toks) {
+        return PromoteProbe::Cold;
+    }
+    PromoteProbe::Submit {
+        hi,
+        settle_first: host.promoting.is_some(),
+    }
+}
+
+/// WP-A day 18 (memra#536 Move 1, the promote half): the door's promote decision, taken in the
+/// admission loop immediately before `admit(..)` with the request still in hand. Under the door a
+/// host hit SUBMITS the H2D on the transfer engine's copy stream and the request PARKS (the caller
+/// requeues it; it re-admits after a tick-top poll published the entry and takes the unmodified
+/// device hit path). Returns `true` when the request was parked. The predicates are the admission
+/// body's own (`request_reuse_on`, `request_prefix_on`, `continuation_reuse_index`), so the two
+/// sites agree by construction; the body's hook is reached only after this probe declined.
+#[allow(clippy::too_many_arguments)]
+fn host_promote_park_probe(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    host: &mut HostPrefixCache,
+    reuse: &HashMap<PoolKey, Vec<ReuseEntry>>,
+    plan: &memra_gguf::model_plan::ModelPlan,
+    req: &Request,
+    ctx_cap: usize,
+) -> bool {
+    if host.tier.is_none() || !host.armed() {
+        return false;
+    }
+    let Some(prompt) = req.prepared_prompt.as_ref() else {
+        return false;
+    };
+    let vision_req = request_has_images(req);
+    let capture_req = req.capture.is_some();
+    let reuse_on = request_reuse_on(vision_req, capture_req);
+    if !request_prefix_on(reuse_on, plan) {
+        return false;
+    }
+    let pool_key: PoolKey = (req.model.clone(), req.cache_ns.clone());
+    if reuse
+        .get(&pool_key)
+        .is_some_and(|pool| continuation_reuse_index(pool, prompt, ctx_cap).is_some())
+    {
+        return false;
+    }
+    // A settled promote waiting for a device cache publishes here (the probe has one in hand).
+    if host.promoting.as_ref().is_some_and(|p| p.ready) {
+        host_promote_settle_pending(engine, px, host, ContractWait::Block, "the admission probe");
+    }
+    let device_best_len = px
+        .lookup(&pool_key, prompt)
+        .map(|i| px.entries[&pool_key][i].toks.len())
+        .unwrap_or(0);
+    let hi = match host_promote_probe_decision(host, &pool_key, prompt, device_best_len) {
+        PromoteProbe::NoCandidate | PromoteProbe::Cold => return false,
+        PromoteProbe::ParkAgain => return true,
+        PromoteProbe::Submit {
+            hi: _,
+            settle_first,
+        } => {
+            if settle_first {
+                // Never two tickets in flight: the other entry's promote settles and publishes.
+                host_promote_settle_pending(
+                    engine,
+                    px,
+                    host,
+                    ContractWait::Block,
+                    "a second promote",
+                );
+            }
+            host_demote_settle_pending(host, ContractWait::Block, "a promote");
+            // Indexes may have shifted under the settles; decide again on the settled state.
+            match host_promote_probe_decision(host, &pool_key, prompt, device_best_len) {
+                PromoteProbe::Submit { hi, .. } => hi,
+                PromoteProbe::ParkAgain => return true,
+                PromoteProbe::NoCandidate | PromoteProbe::Cold => return false,
+            }
+        }
+    };
+    let Some(prepared) = host_promote_prepare(host, &pool_key, hi) else {
+        // The typed line was printed; the hook must not print it again in this admission.
+        if let Some(e) = host.entries.get(&pool_key).and_then(|p| p.get(hi)) {
+            host.promote_cold = Some((pool_key.clone(), e.toks.clone()));
+        }
+        return false;
+    };
+    let t0 = Instant::now();
+    let tier_route = match (&host.tier, prepared.class) {
+        (Some(tier), Some(class)) => Some((tier, class)),
+        _ => None,
+    };
+    match device_entry_from_host_parts(
+        engine,
+        &host.entries[&pool_key][hi],
+        tier_route,
+        ContractH2d::OffTick,
+    ) {
+        Err(failure) => {
+            host_promote_report_failure(host, &pool_key, prepared.host_id, failure, true);
+            false
+        }
+        Ok((entry, None)) => {
+            // No contract route for this entry: the pre-door program ran whole, synchronously;
+            // publish now and let admission find the device hit. The insertion pin is held until
+            // the next tick top, as for an off-tick publication.
+            if let Some(pin) =
+                host_promote_finish(engine, px, host, &pool_key, prepared, entry, t0, true, None)
+                && let Some(old) = host.promoted_pin.replace(pin)
+            {
+                px.unpin(&old);
+            }
+            false
+        }
+        Ok((shell, Some(contract))) => {
+            let seq = contract.ticket.sequence;
+            let items = contract.sizes.len();
+            let bytes = shell.bytes;
+            let host_len = prepared.host_len;
+            host.promoting = Some(PendingPromote {
+                pool_key: pool_key.clone(),
+                host_toks: prepared.host_toks,
+                host_id: prepared.host_id,
+                host_len,
+                shell: Some(shell),
+                contract: Some(contract),
+                ready: false,
+                tier_identity: prepared.identity,
+                tier_charge: prepared.charge,
+                expected_digest: prepared.expected_digest,
+                t0,
+                polls: 0,
+                copy_ms: 0.0,
+                settled_by: String::new(),
+            });
+            eprintln!(
+                "[prefix-host] promote submitted off the tick: {host_len} tokens, {:.1}MB, ticket \
+                 seq={seq}, {items} items on the contracts door's copy stream; request parked",
+                bytes as f64 / 1e6
+            );
+            true
+        }
+    }
+}
+
+/// WP-A day 18: one settle step of the `Promoting` entry, the contract half. `Poll` at the tick top;
+/// `Block` (with `why` naming the path) where a second promote, a demote or a purge meets it. The
+/// state machine takes the contract step as a closure so the CPU conformance tests drive every arm
+/// without a device. `Ready` hands the whole entry to the caller: publication needs the device
+/// cache (`host_promote_publish`); a caller without one puts it back as `ready`.
+fn host_promote_settle_with(
+    host: &mut HostPrefixCache,
+    wait: ContractWait,
+    why: &str,
+    settle: impl FnOnce(
+        &HostTierContext,
+        PendingContractPromote,
+        ContractWait,
+    ) -> Result<PromoteSettle, HostPromoteFailure>,
+) -> Option<PromoteSettled> {
+    let mut pending = host.promoting.take()?;
+    if pending.ready {
+        if pending.shell.is_some() {
+            return Some(PromoteSettled::Ready(Box::new(pending)));
+        }
+        // FAIL CLOSED: a ready entry without its shell has nothing to publish (unreachable by
+        // construction; the settle fills the shell before marking ready). Nothing was left in the
+        // engine (`ready` means the ticket retired and acknowledged), so it drops whole.
+        eprintln!(
+            "[prefix-host] promote failed (a Promoting entry is ready with no device shell); \
+             serving without the host entry"
+        );
+        host.promote_cold = Some((pending.pool_key.clone(), pending.host_toks.clone()));
+        return Some(PromoteSettled::Failed);
+    }
+    pending.polls += 1;
+    let contract = match (pending.shell.is_some(), pending.contract.take()) {
+        (true, Some(contract)) => contract,
+        (has_shell, contract) => {
+            // FAIL CLOSED (the lead's ruling on #622, mirrored from the Demoting arm). Unreachable
+            // by construction (the probe sets the shell and the ticket in the same step), but a
+            // pending promote missing one of them cannot settle: dropping a SUBMITTED ticket here
+            // would leak the ledger's one in-flight charge, the source twins and the fresh planes
+            // without a word, and the tier would never promote or demote again. So: a submitted
+            // ticket is settled and its sources retired through the engine where reachable and
+            // the tier latches off (the fresh planes cannot be published without their shell); a
+            // shell without a ticket drops whole (its planes return to the pool at drop), nothing
+            // was submitted.
+            let what = match (has_shell, contract.is_some()) {
+                (false, true) => "no device shell for its submitted ticket",
+                (true, false) => "no ticket for its device shell",
+                _ => "neither device shell nor ticket",
+            };
+            let why = format!("a Promoting entry has {what}; nothing published");
+            host.promote_cold = Some((pending.pool_key.clone(), pending.host_toks.clone()));
+            return Some(match contract {
+                None => {
+                    eprintln!(
+                        "[prefix-host] promote failed ({why}); serving without the host entry"
+                    );
+                    PromoteSettled::Failed
+                }
+                Some(contract) => {
+                    let seq = contract.ticket.sequence;
+                    let settled = match host.tier.as_ref().and_then(|t| t.transfers.as_ref()) {
+                        Some(transfers) => {
+                            let mut t = transfers.borrow_mut();
+                            t.synchronize(&contract.ticket)
+                                .and_then(|_| t.retire_source(&contract.ticket))
+                                .map_err(|e| format!("{e:?}"))
+                        }
+                        None => Err("tier H2D transfer engine missing".to_string()),
+                    };
+                    let err = match settled {
+                        Ok(()) => format!(
+                            "{why}; ticket seq={seq} settled and its sources retired, its fresh \
+                             planes stay registered with the transfer engine"
+                        ),
+                        Err(e) => format!("{why}; ticket seq={seq} did not settle ({e})"),
+                    };
+                    eprintln!("[prefix-host] promote failed ({err}); the tier latches off");
+                    host.disable(&err);
+                    PromoteSettled::Failed
+                }
+            });
+        }
+    };
+    let seq = contract.ticket.sequence;
+    let submitted = contract.submitted;
+    let settled = match &host.tier {
+        Some(tier) => settle(tier, contract, wait),
+        None => Err(HostPromoteFailure::Latched(
+            "tier context gone under a Promoting entry".into(),
+        )),
+    };
+    match settled {
+        Ok(PromoteSettle::Pending(contract)) => {
+            pending.contract = Some(contract);
+            host.promoting = Some(pending);
+            Some(PromoteSettled::Pending)
+        }
+        Ok(PromoteSettle::Done(kv, draft)) => {
+            pending.copy_ms = submitted.elapsed().as_secs_f64() * 1e3;
+            pending.settled_by = match wait {
+                ContractWait::Poll => "tick-top poll".to_string(),
+                ContractWait::Block => format!("settled synchronously by {why}"),
+            };
+            if !host.armed() {
+                eprintln!(
+                    "[prefix-host] promote dropped: the tier latched off while ticket seq={seq} was \
+                     Promoting ({}); nothing published",
+                    pending.settled_by
+                );
+                host.promote_cold = Some((pending.pool_key.clone(), pending.host_toks.clone()));
+                return Some(PromoteSettled::Failed);
+            }
+            let shell = pending.shell.as_mut().expect("checked above");
+            shell.kv = kv;
+            shell.draft = draft;
+            pending.ready = true;
+            Some(PromoteSettled::Ready(Box::new(pending)))
+        }
+        Err(failure) => {
+            host_promote_report_failure(host, &pending.pool_key, pending.host_id, failure, true);
+            Some(PromoteSettled::Failed)
+        }
+    }
+}
+
+/// The contract half alone, for paths without a device cache in hand (a demote route, a tenant
+/// purge): a settled entry goes back as `ready` for the next tick top.
+fn host_promote_settle_contract(
+    host: &mut HostPrefixCache,
+    wait: ContractWait,
+    why: &str,
+) -> Option<HostPromoteOutcome> {
+    Some(
+        match host_promote_settle_with(host, wait, why, host_kv_planes_settle_promote)? {
+            PromoteSettled::Pending => HostPromoteOutcome::Promoting,
+            PromoteSettled::Failed => HostPromoteOutcome::Failed,
+            PromoteSettled::Ready(pending) => {
+                host.promoting = Some(*pending);
+                HostPromoteOutcome::Promoting
+            }
+        },
+    )
+}
+
+/// The whole settle: the contract half, then publication into the device cache.
+fn host_promote_settle_pending(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    host: &mut HostPrefixCache,
+    wait: ContractWait,
+    why: &str,
+) -> Option<HostPromoteOutcome> {
+    Some(
+        match host_promote_settle_with(host, wait, why, host_kv_planes_settle_promote)? {
+            PromoteSettled::Pending => HostPromoteOutcome::Promoting,
+            PromoteSettled::Failed => HostPromoteOutcome::Failed,
+            PromoteSettled::Ready(pending) => host_promote_publish(engine, px, host, *pending),
+        },
+    )
+}
+
+/// Publication of a settled promote (WP-A day 18): the day-16 tail (`host_promote_finish`) with the
+/// insertion pin held by the worker until the next tick top.
+fn host_promote_publish(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    host: &mut HostPrefixCache,
+    pending: PendingPromote,
+) -> HostPromoteOutcome {
+    let PendingPromote {
+        pool_key,
+        host_toks,
+        host_id,
+        host_len,
+        shell,
+        tier_identity,
+        tier_charge,
+        expected_digest,
+        t0,
+        polls,
+        copy_ms,
+        settled_by,
+        ..
+    } = pending;
+    let Some(e) = shell else {
+        eprintln!(
+            "[prefix-host] promote failed (a Promoting entry is ready with no device shell); \
+             serving without the host entry"
+        );
+        host.promote_cold = Some((pool_key, host_toks));
+        return HostPromoteOutcome::Failed;
+    };
+    if !host.armed() {
+        eprintln!(
+            "[prefix-host] promote dropped: the tier latched off before a settled promote \
+             published ({settled_by}); nothing published"
+        );
+        host.promote_cold = Some((pool_key, host_toks));
+        return HostPromoteOutcome::Failed;
+    }
+    let prepared = PromotePrepared {
+        class: None,
+        identity: tier_identity,
+        charge: tier_charge,
+        host_len,
+        host_id,
+        host_toks,
+        expected_digest,
+    };
+    match host_promote_finish(
+        engine,
+        px,
+        host,
+        &pool_key,
+        prepared,
+        e,
+        t0,
+        true,
+        Some((polls, copy_ms, settled_by)),
+    ) {
+        Some(pin) => {
+            if let Some(old) = host.promoted_pin.replace(pin) {
+                px.unpin(&old);
+            }
+            HostPromoteOutcome::Published
+        }
+        None => HostPromoteOutcome::Failed,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -17779,6 +18566,22 @@ pub fn run(
         // HERE, on the owner thread, once every item's event has completed, before admission so
         // a request admitted this tick can hit what just published.
         host_demote_settle_pending(&mut hpx, ContractWait::Poll, "the tick top");
+        // WP-A day 18 (the promote half): the insertion pin of the last published promote is
+        // released (one tick of protection is what the parked request needed), the one-tick memo of
+        // a failed promote is cleared, and the one `Promoting` entry is polled; its H2D rides the
+        // copy stream and publication into the DEVICE prefix index happens HERE, before admission,
+        // so the parked request admitted this tick finds its device hit.
+        if let Some(pin) = hpx.promoted_pin.take() {
+            px.unpin(&pin);
+        }
+        hpx.promote_cold = None;
+        host_promote_settle_pending(
+            &engine,
+            &mut px,
+            &mut hpx,
+            ContractWait::Poll,
+            "the tick top",
+        );
         // Cheap runtime peer validation stays on its copy-count cadence here, between scheduler
         // ticks on the CUDA owner thread. Idle-only rungs remain pending. A mismatch continues on
         // validated host bounce; only inability to arm that staging reaches the panic ladder.
@@ -17806,6 +18609,7 @@ pub fn run(
                 && pause_pending.is_empty()
                 && handoff_import.is_none()
                 && hpx.demoting.is_none()
+                && hpx.promoting.is_none()
             {
                 // Do not let an already-arrived request sit behind an idle-only probe. Once the
                 // channel is observed empty, one pending expensive rung may run before the worker
@@ -17868,9 +18672,10 @@ pub fn run(
                 if handoff_import.is_some() {
                     wait = wait.min(Duration::from_millis(1));
                 }
-                // WP-A day 17: a `Demoting` entry is tick work on an idle box too: keep the poll
-                // running so the entry publishes without waiting for the next request.
-                if hpx.demoting.is_some() {
+                // WP-A day 17 and 18: a `Demoting` or `Promoting` entry is tick work on an idle
+                // box too: keep the poll running so the entry publishes without waiting for the
+                // next request.
+                if hpx.demoting.is_some() || hpx.promoting.is_some() {
                     wait = wait.min(Duration::from_millis(2));
                 }
                 match rx.recv_timeout(wait) {
@@ -19370,6 +20175,26 @@ pub fn run(
                         continue;
                     }
                 }
+            }
+            // WP-A day 18 (memra#536 Move 1, the promote half): under the host-contracts door a
+            // host-tier hit SUBMITS its H2D on the transfer engine's copy stream here, with the
+            // request still in hand, and the request PARKS on the requeue (FIFO, never shed, the
+            // step-OOM park's shape); a tick-top poll publishes the entry and the re-admission takes
+            // the unmodified device hit path. A retained admission plan already holds a device pin
+            // and skips the host probe, as the admission body does.
+            if admission_restore.is_none()
+                && host_promote_park_probe(
+                    &engine,
+                    &mut px,
+                    &mut hpx,
+                    &reuse,
+                    &loaded[&model_key].model.plan,
+                    &req,
+                    shape.ctx_cap,
+                )
+            {
+                requeue.push_back(req); // waits (FIFO), never shed: its promote is in flight
+                continue;
             }
             // The request is admitted. Effective headroom (driver + pool-cached) said it
             // fits; make sure the DRIVER itself has room for the prime's own allocations
@@ -22977,6 +23802,52 @@ fn step_oom_parkable(
     max_retries > 0 && generated_len == 0 && tokens_emitted == 0 && oom_retries < max_retries
 }
 
+/// The admission body's request-shape predicates, shared with the door's admission probe (WP-A
+/// day 18, `host_promote_park_probe`) so the two sites cannot drift: whether the request carries
+/// images, whether the token-keyed reuse tiers are consulted at all, whether the prefix cache is
+/// probed for this model, and the continuation-pool match.
+fn request_has_images(req: &Request) -> bool {
+    !req.images.is_empty()
+        || !req.gemma_images.is_empty()
+        || !req.glm5_images.is_empty()
+        || !req.step_images.is_empty()
+}
+
+/// DEFAULT-ON (2026-07-05): the identity gate exists at the engine level; `MEMRA_KV_REUSE=0`
+/// disables. Vision and capture requests bypass every token-keyed reuse tier (a token match is not
+/// a state match; a cache hit would skip the forward a capture reads from).
+fn request_reuse_on(vision_req: bool, capture_req: bool) -> bool {
+    !confidence_trace_enabled()
+        && !vision_req
+        && !capture_req
+        && std::env::var("MEMRA_KV_REUSE")
+            .map(|v| v != "0")
+            .unwrap_or(true)
+}
+
+/// MEMRA_SWA_RING=1 Step35 sessions are excluded from the prefix cache (flat-history snapshots
+/// and restores are excluded).
+fn ring_prefix_excluded(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
+    memra_engine::cache::swa_ring_on()
+        && memra_engine::plan_backend::decode_batch_program(plan)
+            == memra_engine::plan_backend::DecodeBatchProgram::SlidingGatedMoe
+}
+
+fn request_prefix_on(reuse_on: bool, plan: &memra_gguf::model_plan::ModelPlan) -> bool {
+    reuse_on && serve_batching() && prefix_cache_budget_bytes() > 0 && !ring_prefix_excluded(plan)
+}
+
+/// The continuation pool's match: the newest parked plain session whose fed tokens prefix the
+/// prompt at or above `REUSE_MIN_PREFIX`, with a capacity this request's cap admits.
+fn continuation_reuse_index(pool: &[ReuseEntry], prompt: &[u32], ctx_cap: usize) -> Option<usize> {
+    pool.iter().rposition(|e| {
+        e.fed.len() >= REUSE_MIN_PREFIX
+            && plain_resume_cap_admits(e.cap, ctx_cap, kv_park_compact_on())
+            && prompt.len() >= e.fed.len()
+            && prompt.starts_with(&e.fed)
+    })
+}
+
 fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Box<Request>> {
     // A plan with no prompt source at all would re-admit into "empty prompt after
     // tokenization" — report the OOM honestly instead of laundering it into a 400.
@@ -23093,10 +23964,7 @@ fn admit(
     // there would see the drained Vec and never fire; caught live 2026-08-15: a public
     // vision request served through the SPEC path, whose turn-1 burst primes inside
     // generate_spec_session with no overlay seam — pads primed as pad embeddings).
-    let vision_req = !req.images.is_empty()
-        || !req.gemma_images.is_empty()
-        || !req.glm5_images.is_empty()
-        || !req.step_images.is_empty();
+    let vision_req = request_has_images(&req);
     // Capture requests (embeddings/rerank) must run the real prime that produces the
     // hidden stack: every reuse tier and the spec path are bypassed below, exactly like
     // vision (a cache hit would skip the forward the capture reads from).
@@ -23299,21 +24167,12 @@ fn admit(
     // exactly what it validates. MEMRA_KV_REUSE=0 disables.
     // Vision requests bypass every token-keyed reuse tier: pad runs are byte-identical
     // across DIFFERENT images, so a token match is not a state match (lane/vision).
-    let reuse_on = !confidence_trace_enabled()
-        && !vision_req
-        && !capture_req
-        && std::env::var("MEMRA_KV_REUSE")
-            .map(|v| v != "0")
-            .unwrap_or(true);
+    let reuse_on = request_reuse_on(vision_req, capture_req);
     if let (true, Some(pool)) = (
         reuse_on && admission_restore.is_none(),
         reuse.get_mut(&pool_key),
-    ) && let Some(idx) = pool.iter().rposition(|e| {
-        e.fed.len() >= REUSE_MIN_PREFIX
-            && plain_resume_cap_admits(e.cap, ctx_cap, kv_park_compact_on())
-            && prompt.len() >= e.fed.len()
-            && prompt.starts_with(&e.fed)
-    }) {
+    ) && let Some(idx) = continuation_reuse_index(pool, &prompt, ctx_cap)
+    {
         reused = Some(pool.remove(idx));
     }
     // PARK-COMPACT GROW (MEMRA_KV_PARK_COMPACT, Arc C1): a compacted entry parked at
@@ -23631,9 +24490,7 @@ fn admit(
     // union), and the session NEVER rides spec (see the spec_eligible conjunction).
     let postthink = constraint.is_some() && !lm.postthink_close.is_empty();
     let prefix_requested = reuse_on && serve_batching() && prefix_cache_budget_bytes() > 0;
-    let ring_prefix_excluded = memra_engine::cache::swa_ring_on()
-        && memra_engine::plan_backend::decode_batch_program(&lm.model.plan)
-            == memra_engine::plan_backend::DecodeBatchProgram::SlidingGatedMoe;
+    let ring_prefix_excluded = ring_prefix_excluded(&lm.model.plan);
     if prefix_requested && ring_prefix_excluded {
         eprintln!(
             "[prefix-cache] refused for MEMRA_SWA_RING=1 Step35 session (flat-history \
@@ -23641,6 +24498,7 @@ fn admit(
         );
     }
     let prefix_on = prefix_requested && !ring_prefix_excluded;
+    debug_assert_eq!(prefix_on, request_prefix_on(reuse_on, &lm.model.plan));
     let policy_lcp = if prefix_on {
         px.best_lcp(&pool_key, &prompt)
     } else {
@@ -38478,6 +39336,471 @@ mod tests {
         assert_eq!(host.entries.len(), 0, "nothing published");
     }
 
+    // ---- WP-A day 18: the `Promoting` state machine (memra#536 Move 1, the promote half) ----
+    // CPU halves: the admission probe's decision, what a settle step does with a pending promote
+    // given the contract's answer (`host_promote_settle_with` takes the contract step as a closure),
+    // the fail-closed arm, and what every other path does when it meets a `Promoting` entry. The
+    // copy, the receipt and the publication of a real entry are the gates' on a card.
+
+    /// A host entry of 64 tokens inserted BEFORE the door context is attached (the door's insert
+    /// refuses an unbound identity), then a `Promoting` state on it with a shell and a ticket that
+    /// are plain data; the engine never sees them. Returns the host entry's id.
+    fn cpu_pending_promote(host: &mut HostPrefixCache, pool_key: &PoolKey) -> u64 {
+        let toks: Vec<u32> = (100..164).collect();
+        let tier = host.tier.take();
+        assert!(host.insert(pool_key, host_entry(pool_key, toks.clone(), 4096)));
+        host.tier = tier;
+        let id = host.entries[pool_key][0].id;
+        let mut shell = entry_b(pool_key, 100, 4096);
+        shell.toks = toks.clone();
+        shell.kv = Vec::new();
+        let contract = super::PendingContractPromote {
+            ticket: memra_engine::cache::tiered::TransferTicket {
+                issuer: 7,
+                sequence: 3,
+                epochs: super::HOST_TIER_TRANSFER_EPOCHS,
+            },
+            producer: memra_engine::cache::tiered::FenceId {
+                issuer: 7,
+                owner: 0,
+                generation: 1,
+                sequence: 2,
+            },
+            registered: Vec::new(),
+            planned: Vec::new(),
+            sources: Vec::new(),
+            sizes: vec![64, 64],
+            kv_slots: 2,
+            fault: None,
+            submitted: std::time::Instant::now(),
+        };
+        host.promoting = Some(super::PendingPromote {
+            pool_key: pool_key.clone(),
+            host_toks: toks,
+            host_id: id,
+            host_len: 64,
+            shell: Some(shell),
+            contract: Some(contract),
+            ready: false,
+            tier_identity: None,
+            tier_charge: None,
+            expected_digest: None,
+            t0: std::time::Instant::now(),
+            polls: 0,
+            copy_ms: 0.0,
+            settled_by: String::new(),
+        });
+        id
+    }
+
+    #[test]
+    fn promoting_entry_parks_its_prompt_again_and_a_memo_serves_it_cold() {
+        use super::PromoteProbe;
+        let (mut host, key) = cpu_door_host();
+        let prompt: Vec<u32> = (100..170).collect();
+        // No host entry: nothing to promote.
+        assert_eq!(
+            super::host_promote_probe_decision(&host, &key, &prompt, 0),
+            PromoteProbe::NoCandidate
+        );
+        let id = cpu_pending_promote(&mut host, &key);
+        // The pending promote IS this prompt's candidate: park again, never a second submission.
+        assert_eq!(
+            super::host_promote_probe_decision(&host, &key, &prompt, 0),
+            PromoteProbe::ParkAgain
+        );
+        // A device entry at least as deep as the host entry: no host candidate at all.
+        assert_eq!(
+            super::host_promote_probe_decision(&host, &key, &prompt, 64),
+            PromoteProbe::NoCandidate
+        );
+        // Another entry's prompt while this one is pending: submit after settling it first.
+        let tier = host.tier.take();
+        assert!(host.insert(&key, host_entry(&key, (500..564).collect(), 4096)));
+        host.tier = tier;
+        let other: Vec<u32> = (500..570).collect();
+        assert!(matches!(
+            super::host_promote_probe_decision(&host, &key, &other, 0),
+            PromoteProbe::Submit {
+                settle_first: true,
+                ..
+            }
+        ));
+        // Nothing pending: submit without a settle.
+        host.promoting = None;
+        assert!(matches!(
+            super::host_promote_probe_decision(&host, &key, &other, 0),
+            PromoteProbe::Submit {
+                settle_first: false,
+                ..
+            }
+        ));
+        // The memo names the entry: cold, no submission (the hook declines the same way).
+        host.promote_cold = Some((key.clone(), (100..164).collect()));
+        assert_eq!(
+            super::host_promote_probe_decision(&host, &key, &prompt, 0),
+            PromoteProbe::Cold
+        );
+        assert!(super::host_promote_memo_names(
+            &host,
+            &key,
+            &host.entries[&key][super::host_entry_index_by_id(&host, &key, id).unwrap()].toks
+        ));
+        assert!(!super::host_promote_memo_names(&host, &key, &other[..64]));
+        // The other entry is not named by the memo: it submits.
+        assert!(matches!(
+            super::host_promote_probe_decision(&host, &key, &other, 0),
+            PromoteProbe::Submit { .. }
+        ));
+    }
+
+    #[test]
+    fn a_pending_promote_poll_keeps_the_state_and_done_reaches_ready_once() {
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_promote(&mut host, &key);
+        // Three tick-top polls that find an item still running: the state is kept, nothing is
+        // published, the poll count advances, the host entry stays, the tier stays armed.
+        for expected_polls in 1..=3u32 {
+            let outcome = super::host_promote_settle_with(
+                &mut host,
+                super::ContractWait::Poll,
+                "the tick top",
+                |_, contract, wait| {
+                    assert_eq!(wait, super::ContractWait::Poll);
+                    Ok(super::PromoteSettle::Pending(contract))
+                },
+            );
+            assert!(matches!(outcome, Some(super::PromoteSettled::Pending)));
+            let pending = host.promoting.as_ref().unwrap();
+            assert_eq!(pending.polls, expected_polls);
+            assert!(pending.shell.is_some() && pending.contract.is_some() && !pending.ready);
+            assert_eq!(host.n_entries(), 1, "the host entry is untouched");
+            assert!(host.armed());
+            assert_eq!(host.promotions, 0);
+            assert!(host.promote_cold.is_none());
+        }
+        // `Done` fills the shell and hands a READY entry to the caller; the state is consumed
+        // (a caller without a device cache puts it back as ready, `host_promote_settle_contract`).
+        let outcome = super::host_promote_settle_with(
+            &mut host,
+            super::ContractWait::Block,
+            "a second demote",
+            |_, _, wait| {
+                assert_eq!(wait, super::ContractWait::Block);
+                Ok(super::PromoteSettle::Done(vec![None, None], None))
+            },
+        );
+        let Some(super::PromoteSettled::Ready(pending)) = outcome else {
+            panic!("Done must reach Ready");
+        };
+        assert!(host.promoting.is_none(), "the state left the host");
+        assert!(pending.ready);
+        assert_eq!(pending.polls, 4);
+        assert_eq!(pending.shell.as_ref().unwrap().kv.len(), 2);
+        assert!(
+            pending.contract.is_none(),
+            "the ticket retired inside the settle"
+        );
+        assert_eq!(
+            pending.settled_by,
+            "settled synchronously by a second demote"
+        );
+        assert_eq!(
+            host.promotions, 0,
+            "publication is the caller's, not the settle's"
+        );
+        // A ready state put back is handed straight out again, without a contract step.
+        host.promoting = Some(*pending);
+        let again = super::host_promote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            |_, _, _| panic!("a ready entry has no contract step left"),
+        );
+        assert!(matches!(again, Some(super::PromoteSettled::Ready(_))));
+        // Nothing pending answers None and touches nothing.
+        assert!(
+            super::host_promote_settle_with(
+                &mut host,
+                super::ContractWait::Poll,
+                "x",
+                |_, _, _| { panic!("the contract step must not run with nothing pending") }
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn a_failing_promote_never_publishes_and_keeps_the_day16_typed_outcomes() {
+        use super::HostPromoteFailure::*;
+        // Refused: the host entry stays, the tier stays on, the memo names the entry.
+        let (mut host, key) = cpu_door_host();
+        let id = cpu_pending_promote(&mut host, &key);
+        let outcome = super::host_promote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            |_, _, _| Err(Refused("tier H2D publication refused: injected".into())),
+        );
+        assert!(matches!(outcome, Some(super::PromoteSettled::Failed)));
+        assert!(host.promoting.is_none());
+        assert_eq!(host.n_entries(), 1, "Refused keeps the host entry");
+        assert!(super::host_entry_index_by_id(&host, &key, id).is_some());
+        assert!(host.armed());
+        assert_eq!(host.promotions, 0);
+        assert_eq!(
+            host.promote_cold,
+            Some((key.clone(), (100..164).collect::<Vec<u32>>())),
+            "the memo serves the parked request cold"
+        );
+        // ReceiptMismatch: the host entry drops (as VERIFY FAILED does), the tier stays on.
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_promote(&mut host, &key);
+        let outcome = super::host_promote_settle_with(
+            &mut host,
+            super::ContractWait::Block,
+            "a promote",
+            |_, _, _| Err(ReceiptMismatch("tier H2D receipt refused".into())),
+        );
+        assert!(matches!(outcome, Some(super::PromoteSettled::Failed)));
+        assert_eq!(host.n_entries(), 0, "the host entry dropped");
+        assert_eq!(host.digest_mismatches, 1);
+        assert!(host.armed());
+        assert!(host.promote_cold.is_some());
+        // Latched: the entry stays, the tier latches off, nothing published.
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_promote(&mut host, &key);
+        let outcome = super::host_promote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            |_, _, _| Err(Latched("tier H2D ticket did not retire".into())),
+        );
+        assert!(matches!(outcome, Some(super::PromoteSettled::Failed)));
+        assert_eq!(host.n_entries(), 1);
+        assert!(!host.armed());
+        assert_eq!(host.promotions, 0);
+        // Failed (the pre-door meaning): rejected_allocs counts, the entry stays, tier on.
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_promote(&mut host, &key);
+        let outcome = super::host_promote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            |_, _, _| Err(Failed("device alloc of 64 B failed".into())),
+        );
+        assert!(matches!(outcome, Some(super::PromoteSettled::Failed)));
+        assert_eq!(host.rejected_allocs, 1);
+        assert_eq!(host.n_entries(), 1);
+        assert!(host.armed());
+        // On the CPU the real contract step has no transfer engine: a submitted ticket cannot be
+        // settled, so the contract-only settle latches the tier off, typed, and publishes nothing.
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_promote(&mut host, &key);
+        assert_eq!(
+            super::host_promote_settle_contract(&mut host, super::ContractWait::Block, "a purge"),
+            Some(super::HostPromoteOutcome::Failed)
+        );
+        assert!(!host.armed());
+        assert!(host.promoting.is_none());
+    }
+
+    /// FAIL CLOSED (the lead's ruling on #622, mirrored for the promote): a pending promote missing
+    /// its shell or its ticket never publishes; with a submitted ticket and no shell the tier
+    /// latches off (the fresh planes cannot be published), with a shell and no ticket the entry
+    /// drops whole and the tier stays armed; a ready state with no shell drops whole too.
+    #[test]
+    fn a_pending_promote_missing_its_shell_or_ticket_fails_closed() {
+        // (a) ticket without shell: latch off, nothing published, the memo set.
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_promote(&mut host, &key);
+        host.promoting.as_mut().unwrap().shell = None;
+        let outcome = super::host_promote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "test",
+            |_, _, _| panic!("the contract step must not run without a shell"),
+        );
+        assert!(matches!(outcome, Some(super::PromoteSettled::Failed)));
+        assert!(
+            !host.armed(),
+            "a leaked submitted ticket latches the tier off"
+        );
+        assert!(host.promoting.is_none());
+        assert_eq!(host.promotions, 0, "nothing published");
+        assert!(host.promote_cold.is_some());
+        // (b) shell without ticket: nothing was submitted, the entry drops whole, tier armed.
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_promote(&mut host, &key);
+        host.promoting.as_mut().unwrap().contract = None;
+        let outcome = super::host_promote_settle_with(
+            &mut host,
+            super::ContractWait::Block,
+            "test",
+            |_, _, _| panic!("the contract step must not run without a ticket"),
+        );
+        assert!(matches!(outcome, Some(super::PromoteSettled::Failed)));
+        assert!(host.armed(), "no ticket was submitted, so nothing leaked");
+        assert!(host.promoting.is_none());
+        assert_eq!(host.promotions, 0);
+        // (c) ready without shell: nothing to publish, drops whole, tier armed.
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_promote(&mut host, &key);
+        {
+            let p = host.promoting.as_mut().unwrap();
+            p.ready = true;
+            p.contract = None;
+            p.shell = None;
+        }
+        let outcome = super::host_promote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "test",
+            |_, _, _| panic!("a ready entry has no contract step"),
+        );
+        assert!(matches!(outcome, Some(super::PromoteSettled::Failed)));
+        assert!(host.armed());
+        assert!(host.promoting.is_none());
+    }
+
+    #[test]
+    fn a_tier_latched_off_under_a_promoting_entry_drops_it_unpublished() {
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_promote(&mut host, &key);
+        host.disable("test latch");
+        let outcome = super::host_promote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            |_, _, _| Ok(super::PromoteSettle::Done(vec![None, None], None)),
+        );
+        assert!(matches!(outcome, Some(super::PromoteSettled::Failed)));
+        assert!(host.promoting.is_none());
+        assert_eq!(host.promotions, 0);
+        assert!(
+            host.promote_cold.is_some(),
+            "the parked request serves cold"
+        );
+    }
+
+    /// Source census: every path that meets a `Promoting` entry settles it first; the admission
+    /// probe precedes `admit(..)` and shares the body's predicates; the tick top releases the pin,
+    /// clears the memo and polls; `OffTick` is the probe's route and nobody else's; publication
+    /// happens only in `host_promote_publish` through the shared tail.
+    #[test]
+    fn every_path_that_meets_a_promoting_entry_settles_it_first() {
+        let worker = include_str!("worker.rs");
+        let body = |start: &str| {
+            let a = worker
+                .find(start)
+                .unwrap_or_else(|| panic!("{start} missing"));
+            let b = a + worker[a..].find("\n}\n").unwrap();
+            &worker[a..b]
+        };
+        let hook = body("fn host_promote_prefix_hit(");
+        let settle = hook
+            .find(
+                "host_promote_settle_pending(engine, px, host, ContractWait::Block, \"a promote\")",
+            )
+            .expect("the hook settles a pending promote before its own");
+        // After the candidate and memo checks (a hook that submits nothing waits on nothing), before
+        // the submission; the candidate is looked up again on the settled state.
+        assert!(hook.find("host_promote_candidate(").unwrap() < settle);
+        assert!(settle < hook.find("host_promote_prepare(").unwrap());
+        assert_eq!(hook.matches("host_promote_candidate(").count(), 2);
+        assert!(hook.contains("host_promote_memo_names(host, pool_key,"));
+        let demote = body("fn host_demote_prefix_ref(");
+        let settle = demote
+            .find("host_promote_settle_contract(host, ContractWait::Block, \"a second demote\")")
+            .expect("a demote route settles a pending promote's contract first");
+        assert!(settle < demote.find("host_entry_from_device(").unwrap());
+        let purge = body("    fn purge_tenant(&mut self, tenant: &str) -> (usize, usize, usize) {");
+        let settle = purge
+            .find("host_promote_settle_contract(self, ContractWait::Block, \"a tenant purge\")")
+            .unwrap();
+        let drop_at = purge
+            .find("crate::auth::meter_key(&p.pool_key.1) == row")
+            .expect("the purged tenant's pending promote is dropped");
+        assert!(settle < drop_at);
+        // The run loop: pin release, memo clear and the promote poll follow the demote poll at the
+        // tick top; the idle block requires no Promoting entry.
+        let run = worker.find("pub fn run(").unwrap();
+        let loop_at = run + worker[run..].find("\n    loop {\n").unwrap();
+        let top = &worker[loop_at..loop_at + 2500];
+        let demote_poll = top
+            .find("host_demote_settle_pending(&mut hpx, ContractWait::Poll, \"the tick top\")")
+            .unwrap();
+        let pin = top.find("hpx.promoted_pin.take()").unwrap();
+        let memo = top.find("hpx.promote_cold = None;").unwrap();
+        let poll = top.find("host_promote_settle_pending(").unwrap();
+        assert!(top[poll..poll + 200].contains("&engine,"));
+        assert!(top[poll..poll + 200].contains("ContractWait::Poll,"));
+        assert!(top[poll..poll + 200].contains("\"the tick top\","));
+        assert!(demote_poll < pin && pin < memo && memo < poll);
+        assert!(worker[loop_at..loop_at + 4500].contains("&& hpx.promoting.is_none()"));
+        // The admission loop: the probe runs after every defer gate and before `admit(`, with the
+        // request still in hand, and a parked request goes on the requeue.
+        let admission = worker[run..]
+            .find("while let Some(mut req) = queue.pop_front() {")
+            .unwrap()
+            + run;
+        let admit_call = worker[admission..].find("let admitted = admit(").unwrap() + admission;
+        let probe = worker[admission..admit_call]
+            .find("&& host_promote_park_probe(")
+            .expect("the probe precedes admit");
+        assert!(worker[admission + probe..admit_call].contains("requeue.push_back(req);"));
+        assert!(
+            worker[admission + probe - 120..admit_call].contains("admission_restore.is_none()")
+        );
+        // Shared predicates: the body and the probe call the same helpers.
+        let admit = body("fn admit(");
+        for needle in [
+            "request_has_images(&req)",
+            "request_reuse_on(vision_req, capture_req)",
+            "continuation_reuse_index(pool, &prompt, ctx_cap)",
+            "ring_prefix_excluded(&lm.model.plan)",
+        ] {
+            assert!(admit.contains(needle), "admit lacks {needle}");
+        }
+        let probe = body("fn host_promote_park_probe(");
+        for needle in [
+            "request_has_images(req)",
+            "request_reuse_on(vision_req, capture_req)",
+            "request_prefix_on(reuse_on, plan)",
+            "continuation_reuse_index(pool, prompt, ctx_cap)",
+            "host_promote_settle_pending(",
+            "host_demote_settle_pending(host, ContractWait::Block, \"a promote\")",
+            "ContractH2d::OffTick",
+            "promote submitted off the tick:",
+        ] {
+            assert!(probe.contains(needle), "the probe lacks {needle}");
+        }
+        // OffTick: the probe and the route selector in device_entry_from_host_parts, nobody else.
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let code: Vec<&str> = production
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect();
+        assert_eq!(code.join("\n").matches("ContractH2d::OffTick").count(), 2);
+        // Publication: only `host_promote_publish` and the hook reach the shared tail, and the
+        // settle machine never inserts.
+        let machine = body("fn host_promote_settle_with(");
+        assert!(!machine.contains("insert_pinned_demoting("));
+        assert!(machine.contains("if !host.armed() {"));
+        let publish = body("fn host_promote_publish(");
+        assert!(publish.contains("host_promote_finish("));
+        assert!(publish.contains("host.promoted_pin.replace(pin)"));
+        assert_eq!(
+            code.join("\n").matches("host_promote_finish(").count(),
+            4,
+            "definition, the hook, the probe's whole-entry arm, the publish"
+        );
+        let finish = body("fn host_promote_finish(");
+        let insert = finish.find("insert_pinned_demoting(").unwrap();
+        assert!(finish.find("promote published off the tick").unwrap() > insert);
+        assert!(finish.find("[prefix-host] promote: ").unwrap() > insert);
+    }
+
     #[test]
     fn a_tier_latched_off_under_a_demoting_entry_drops_it_unpublished() {
         let (mut host, key) = cpu_door_host();
@@ -38517,8 +39840,11 @@ mod tests {
         let promote = body("fn host_promote_prefix_hit(");
         let settle = promote
             .find("host_demote_settle_pending(host, ContractWait::Block, \"a promote\")")
-            .expect("the promote hook settles first");
-        assert!(settle < promote.find("host_promote_candidate(").unwrap());
+            .expect("the promote hook settles before its own submission");
+        // Day 18: after the candidate check (a hook that submits nothing waits on nothing), before
+        // anything of the submission (`host_promote_prepare` takes the identity lease and charge).
+        assert!(promote.find("host_promote_candidate(").unwrap() < settle);
+        assert!(settle < promote.find("host_promote_prepare(").unwrap());
         let purge = body("    fn purge_tenant(&mut self, tenant: &str) -> (usize, usize, usize) {");
         assert!(
             purge.contains(
@@ -38533,8 +39859,11 @@ mod tests {
             .find("host_demote_settle_pending(&mut hpx, ContractWait::Poll, \"the tick top\")")
             .unwrap();
         assert!(poll < 700, "the poll is the loop body's first statement");
-        assert!(worker[loop_at..loop_at + 3000].contains("&& hpx.demoting.is_none()"));
-        assert!(worker[loop_at..loop_at + 8000].contains("if hpx.demoting.is_some() {"));
+        assert!(worker[loop_at..loop_at + 4500].contains("&& hpx.demoting.is_none()"));
+        assert!(
+            worker[loop_at..loop_at + 9000]
+                .contains("if hpx.demoting.is_some() || hpx.promoting.is_some() {")
+        );
         // OffTick is the eviction sink's route and nobody else's.
         let sink = body("fn host_demote_prefix_entry(");
         assert!(sink.contains("ContractD2h::OffTick"));
@@ -39369,18 +40698,25 @@ mod tests {
             "no transfer-engine result is discarded in the abort"
         );
         assert!(abort_body.contains("HostPromoteFailure::Latched("));
-        // The caller: a receipt mismatch drops the host entry; a leak latches the tier.
+        // The caller: a receipt mismatch drops the host entry; a leak latches the tier. Since WP-A
+        // day 18 the arms are one function shared by the hook and the off-tick settle.
         let hook = worker.find("fn host_promote_prefix_hit(").unwrap();
         let hook_body = &worker[hook..hook + worker[hook..].find("\n}\n").unwrap()];
-        let mismatch = hook_body
-            .find("Err(HostPromoteFailure::ReceiptMismatch(why)) =>")
+        assert!(hook_body.contains(
+            "host_promote_report_failure(host, pool_key, prepared.host_id, failure, false)"
+        ));
+        let report = worker.find("fn host_promote_report_failure(").unwrap();
+        let report_body = &worker[report..report + worker[report..].find("\n}\n").unwrap()];
+        let mismatch = report_body
+            .find("HostPromoteFailure::ReceiptMismatch(why) =>")
             .unwrap();
-        assert!(hook_body[mismatch..mismatch + 700].contains("host.remove_at(pool_key, hi);"));
-        assert!(hook_body[mismatch..mismatch + 700].contains("host.digest_mismatches += 1;"));
-        let latched = hook_body
-            .find("Err(HostPromoteFailure::Latched(why)) =>")
+        assert!(report_body[mismatch..].contains("host.remove_at(pool_key, hi);"));
+        assert!(report_body[mismatch..].contains("host.digest_mismatches += 1;"));
+        let latched = report_body
+            .find("HostPromoteFailure::Latched(why) =>")
             .unwrap();
-        assert!(hook_body[latched..latched + 400].contains("host.disable(&why);"));
+        assert!(mismatch < latched);
+        assert!(report_body[latched..].contains("host.disable(&why);"));
         // The ledger's device dimension holds three budgets under Option C.
         let governor = worker.find("fn host_tier_governor(").unwrap();
         assert!(
@@ -40034,8 +41370,10 @@ mod tests {
         // it (definition + the one call site).
         assert_eq!(
             prod.matches("host_promote_candidate(").count(),
-            2,
-            "definition + the promote hook's consult, nothing else"
+            4,
+            "definition + the promote hook's two consults (before and after its settle-first) + \
+             the admission probe's decision (WP-A day 18, `host_promote_probe_decision`), nothing \
+             else"
         );
         let hook = prod
             .find("fn host_promote_prefix_hit(")
@@ -40044,9 +41382,13 @@ mod tests {
             .find("host_promote_candidate(")
             .expect("the hook consults the candidate rule");
         assert!(
-            consult < 900,
-            "the candidate consult must be the promote hook's first act"
+            consult < 1100,
+            "the candidate consult must be the promote hook's first act after the two settles"
         );
+        let decision = prod
+            .find("fn host_promote_probe_decision(")
+            .expect("the probe decision exists");
+        assert!(prod[decision..decision + 400].contains("host_promote_candidate("));
 
         // Both plain capture paths arm through the flag + the stable-boundary derivation:
         // the shallow-hit arm and the miss-path arm.
