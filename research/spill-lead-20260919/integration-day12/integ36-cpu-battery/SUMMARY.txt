@@ -8,9 +8,9 @@ tree bdd3b8993934ba263eb659bbca57fae7bb6bf30e started 2026-09-22T05:50:30Z host 
    | portable-suites: PASS (tier, KV and onboarding CLI suites executed on CPU; skips 0 of budget 0; NOT GPU qualification)
 == test-server: cargo test -p memra-server --offline --no-fail-fast
    rc=0 (163s)
-   | 
+   |
    | test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-   | 
+   |
 == clippy: env DOCS_RS=1 cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf -p memra-cli --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
    rc=0 (32s)
    |     Checking hyper-util v0.1.20
@@ -36,14 +36,14 @@ tree bdd3b8993934ba263eb659bbca57fae7bb6bf30e started 2026-09-22T05:50:30Z host 
    | 87 passed, 32 subtests passed in 17.76s
 == test-engine-cpu: cargo test -p memra-engine --lib --offline --no-fail-fast
    rc=0 (24s)
-   | 
+   |
    | test result: ok. 528 passed; 0 failed; 26 ignored; 0 measured; 0 filtered out; finished in 9.07s
-   | 
+   |
 == test-tier: cargo test -p memra-tier --offline --no-fail-fast
    rc=0 (7s)
-   | 
+   |
    | test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
-   | 
+   |
 == clippy-engine: cargo clippy -p memra-engine -p memra-server -p memra-tier --offline --all-targets -- -D warnings
    rc=0 (154s)
    | warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc

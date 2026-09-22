@@ -1547,6 +1547,13 @@ owner. In memra: the stale `metering.rs` header now says the stock binary wires 
 moved out on 2026-08-29). Ruling 32: a lane brief that names a memra seam checks first where the implementation lives
 today (the 2026-08-29 extraction moved billing to darklanes); fixes to darklanes go through their own PR under the
 owner's merge law, never through a memra integ.
+The darklanes PR for B's journal fix is avifenesh/darklanes#1093 (lead-opened, self-review comment posted; merges under
+the owner's merge law there).
+
+Battery (`integration-day12/integ36-cpu-battery/`, merged tree `bdd3b8993`, CPUQuota 1200 percent): fmt, portable
+suites, memra-server suite, clippy, censuses, collector pytest, engine CPU lib tests, tier tests, engine, server and tier
+clippy `-D warnings`, marker census, workflow keys, perf board: rc=0; `git diff --check` tripped on receipt logs (marked
+`-whitespace`). Local 5090 `tools/serve-smoke.sh` (door OFF): `serve-smoke: 0 failed`.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
