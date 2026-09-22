@@ -12,6 +12,17 @@ t=16..1039 on the 170-SM sm_120a target with `MEMRA_PRIME_CHUNK=1024`.
 | `fa_prefill_qw_fa2` | Six query heads share three rotating BF16 KV staging planes; FP32 direct PV and online softmax | BF16 KV, f32 Q/O | sm_120a, 170 SM | `MEMRA_PRIME_ATTN_FA2`, default OFF, decide-by 2026-09-23 | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_fa2_prime_table` | Same numerical body with true causal depth from replay table slot 7 | BF16 KV, f32 Q/O | sm_120a, 170 SM | Same door; the carried graph reuse key includes the attention class | `Engine::fa_prefill_view_ws`, `qwen_prime_graph::run` |
 
+## Host-tier D2D receipt kernels, 2026-09-22 (memra#536 Move 2 slice 3, WP-A day 22)
+
+Receipts over KV bytes, never a numeric program over tokens. `cu/tier_receipt.cu` is its own
+fatbin (`MEMRA_TIER_RECEIPT_FATBIN`), loaded only by `tier_transfer::CudaTransfers::new_with_copy_stream`
+(the copy-stream engine under `MEMRA_KV_HOST_CONTRACTS=1`); the naked engine never loads it.
+
+| Symbol | Purpose | Types | Architecture | Door | Binding |
+| --- | --- | --- | --- | --- | --- |
+| `d2d_receipt_digest` | Four wrapping u64 lane sums of `mix64(w_j + (j + 1) * C_l)` over a byte span read as LE words (order-independent, so the block and atomic order cannot move the value); the host folds the byte count. CPU oracle `memra_tier::conformance::receipt_digest`. Issued on the copy stream for the source (behind the producer fence) and the destination (after the copy) of every D2D capture and restore item | u8 span, u64 lanes | any (no arch-specific instruction) | `MEMRA_KV_HOST_CONTRACTS=1` (the door's D2D classes; no flag of its own) | `CudaTransfers::digest_on`, read by `progress` and `d2d_receipt` |
+| `tier_delay_spin` | One thread spinning on `%globaltimer` for `ns` nanoseconds; the `MEMRA_KV_HOST_FAULT=d2d-delay-capture` / `d2d-delay-restore` fault's delay ahead of the copy so the early reader deterministically sees the fresh destination | u64 scalar | any | fault values only (diagnostics; `docs/FLAGS.md` `MEMRA_KV_HOST_FAULT`) | `CudaTransfers::delay_on`, armed by `inject_d2d_early_reader` |
+
 ## DSV4 dense wide-prefill tiling, 2026-09-10 (memra #463, #468, #471)
 
 No new kernel and no changed kernel body. Above `DSV4_TMAX` the dense entry

@@ -1,0 +1,33 @@
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-kv v0.138.0 (/root/wt-a/crates/memra-kv)
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.18s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-bedcf781fb9cea32)
+
+running 5 tests
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... 
+thread 'tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt' (189412) panicked at crates/memra-engine/src/tier_transfer.rs:2849:17:
+assertion `left == right` failed: the early reader saw the fresh plane
+  left: Some([239, 249, 211, 71, 148, 246, 61, 204, 33, 188, 55, 57, 151, 67, 81, 46, 124, 217, 6, 151, 172, 116, 199, 46, 116, 206, 3, 251, 176, 109, 99, 75])
+ right: Some([57, 65, 21, 254, 204, 134, 148, 234, 188, 149, 110, 3, 245, 18, 143, 76, 212, 24, 148, 48, 84, 54, 109, 189, 174, 133, 31, 68, 18, 50, 154, 234])
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ok
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... 
+thread 'tier_transfer::tests::d2d_receipt_digest_price_against_the_copy' (189415) panicked at crates/memra-engine/src/tier_transfer.rs:2893:30:
+called `Result::unwrap()` on an `Err` value: DriverError(CUDA_ERROR_INVALID_HANDLE, "invalid resource handle")
+FAILED
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+
+failures:
+
+failures:
+    tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt
+    tier_transfer::tests::d2d_receipt_digest_price_against_the_copy
+
+test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 554 filtered out; finished in 2.77s
+
+error: test failed, to rerun pass `-p memra-engine --lib`

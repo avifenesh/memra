@@ -39,6 +39,16 @@
 # serves (its insert evicts E_B into a clean demote); r4 P_B: host hit, the promote must complete
 # (an H2D receipt, then `[prefix-host] promote:`). Four 200s.
 #
+# Day 22 (WP-A, memra#536 Move 2 slice 3) adds the D2D receipt's red arm, two cells, one boot each, plain arm:
+#   d2d-capture   MEMRA_KV_HOST_FAULT=d2d-delay-capture: the first capture's copy is delayed and its destination
+#                 digest read early; the receipt must name two different digests and refuse (require=Corrupt),
+#                 nothing publishes, the capture route and the tier latch, r2 is served by the tick program with
+#                 r1's bytes.
+#   d2d-restore   MEMRA_KV_HOST_FAULT=d2d-delay-restore: r1 seeds through the route (its receipt accepted), r2's
+#                 whole-entry hit restores through the route with the fault; the receipt refuses, nothing is primed
+#                 on the destination, the cache drops and the pin is released, the route and the tier latch, the
+#                 tick program restores r2 with r1's bytes.
+#
 # usage: kv-host-contract-fault-gate.sh [--external-lock FD] <model.gguf> <server_bin> <evidence_dir>
 # env:   MEMRA_HOSTGATE_CACHE_MB (default 256)  device prefix budget; must hold ONE seed entry but not two
 #        MEMRA_HOSTGATE_HOST_MB  (default 8192) host tier budget
@@ -329,6 +339,85 @@ pcell() { # $1 name $2 fault $3 refused-kind-or-literal: a kind ("producer fence
     chk "$name: no host-tier refusal line beyond the injected one" one_refusal_only "$log" "$refusal"
 }
 
+two_served() { # $1 evidence prefix: r1 and r2 each carry a non-empty completion
+    python3 - "$1" <<'PYEOF'
+import json, sys
+p = sys.argv[1]
+sys.exit(0 if all(json.load(open(f"{p}-r{i}.json"))["choices"][0]["text"] for i in (1, 2)) else 1)
+PYEOF
+}
+texts_equal() { # $1 evidence prefix: r1's text is byte-equal to r2's (the tick program served both)
+    python3 - "$1" <<'PYEOF'
+import json, sys
+p = sys.argv[1]
+a = json.load(open(f"{p}-r1.json"))["choices"][0]["text"]
+b = json.load(open(f"{p}-r2.json"))["choices"][0]["text"]
+sys.exit(0 if a == b else 1)
+PYEOF
+}
+receipt_digests_differ() { # $1 log $2 class: the ONE `require=Corrupt` receipt line of $2 names two DIFFERENT digests
+    python3 - "$1" "$2" <<'PYEOF'
+import re, sys
+log, cls = sys.argv[1], sys.argv[2]
+rx = re.compile(rf"contracts door D2D {cls} receipt: .* source_digests_sha256=([0-9a-f]+) destination_digests_sha256=([0-9a-f]+) require=Corrupt")
+hits = [m for l in open(log, errors="replace") if (m := rx.search(l))]
+if len(hits) != 1:
+    print(f"{len(hits)} refused {cls} receipt line(s), expected 1"); sys.exit(1)
+src, dst = hits[0].group(1), hits[0].group(2)
+print(f"{cls} receipt refused: source_digests_sha256={src[:16]}.. destination_digests_sha256={dst[:16]}..")
+sys.exit(0 if src != dst else 1)
+PYEOF
+}
+# WP-A day 22 (memra#536 Move 2 slice 3, research/spill-a-20260919/DAY22.md): the D2D receipt's red arm. The
+# plain arm (MEMRA_SERVE_SPEC=0) so the seeds capture through the copy-stream route (the spec arm's seeds publish
+# through prefix_insert_from_spec_boundary on the tick and never reach the receipt: a cell that took the fault
+# nowhere must fail loudly, which the `exactly one refused receipt` clause does).
+dcell_capture() { # MEMRA_KV_HOST_FAULT=d2d-delay-capture: r1 P_A (the capture's early reader reads the fresh plane;
+                  # the receipt refuses; nothing published; tier and route latch), r2 P_A (cold; on-tick capture)
+    local name=d2d-capture fault=d2d-delay-capture log="$EV/d2d-capture-server.log"
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, the D2D capture receipt's red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault MEMRA_SERVE_SPEC=0" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_A" "$EV/$name-r2.json"
+    stop
+    chk "$name: two completions served" two_served "$EV/$name"
+    chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
+    chk "$name: the fault was armed on the first capture" count_eq "capture fault armed (MEMRA_KV_HOST_FAULT=$fault)" "$log" 1
+    chk "$name: exactly one refused D2D capture receipt naming two different digests" receipt_digests_differ "$log" capture
+    chk "$name: no capture receipt was accepted (the route latched on the first)" absent "D2D capture receipt: .* require=ok" "$log"
+    chk "$name: the capture route latched typed on the mismatch" count_eq "CAPTURE OFF-TICK DISABLED: D2D capture receipt mismatch" "$log" 1
+    chk "$name: the tier latched off" count_eq "TIER DISABLED" "$log" 1
+    chk "$name: nothing was published off the tick" absent "capture published off the tick" "$log"
+    chk "$name: nothing was hit (no entry existed before r2)" absent "\[prefix-cache\] hit: " "$log"
+    chk "$name: r2's capture ran on the tick after the latch (an insert follows the refusal)" after "CAPTURE OFF-TICK DISABLED: D2D capture receipt mismatch" "\[prefix-cache\] insert \(seed\)" "$log"
+    chk "$name: r1's text equals r2's (the tick program served both)" texts_equal "$EV/$name"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+}
+dcell_restore() { # MEMRA_KV_HOST_FAULT=d2d-delay-restore: r1 P_A (a clean capture with its receipt, published), r2 P_A
+                  # (a whole-entry hit; the restore's early reader reads the fresh cache; the receipt refuses; nothing
+                  # primed on it; the cache drops, the pin is released; tier and route latch; the tick program restores)
+    local name=d2d-restore fault=d2d-delay-restore log="$EV/d2d-restore-server.log"
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, the D2D restore receipt's red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault MEMRA_SERVE_SPEC=0" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_A" "$EV/$name-r2.json"
+    stop
+    chk "$name: two completions served" two_served "$EV/$name"
+    chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
+    chk "$name: r1's capture receipt was accepted (the green arm, live)" count_eq "D2D capture receipt: .* require=ok" "$log" 1
+    chk "$name: r1's capture published off the tick" count_eq "capture published off the tick" "$log" 1
+    chk "$name: the fault was armed on the first restore" count_eq "restore fault armed (MEMRA_KV_HOST_FAULT=$fault)" "$log" 1
+    chk "$name: exactly one restore was submitted off the tick" count_eq "restore submitted off the tick" "$log" 1
+    chk "$name: exactly one refused D2D restore receipt naming two different digests" receipt_digests_differ "$log" restore
+    chk "$name: no restore receipt was accepted" absent "D2D restore receipt: .* require=ok" "$log"
+    chk "$name: the restore route latched typed on the mismatch" count_eq "RESTORE OFF-TICK DISABLED: D2D restore receipt mismatch" "$log" 1
+    chk "$name: the tier latched off" count_eq "TIER DISABLED" "$log" 1
+    chk "$name: nothing landed off the tick (nothing primed on the refused cache)" absent "restore landed off the tick" "$log"
+    chk "$name: the tick program restored r2 after the refusal" after "RESTORE OFF-TICK DISABLED: D2D restore receipt mismatch" "\[prefix-cache\] hit: " "$log"
+    chk "$name: r1's text equals r2's" texts_equal "$EV/$name"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+}
+
 cell presubmit contract-presubmit "producer fence" 1
 cell postpublish contract-postpublish receipt 2
 pcell promote-presubmit contract-promote-presubmit "producer fence"
@@ -337,6 +426,9 @@ pcell promote-postpublish contract-promote-postpublish publication
 # while the engine has published; both must end as plain refusals with the ticket retired and acknowledged.
 pcell promote-reject contract-promote-reject partial-reject
 pcell promote-readyview contract-promote-readyview "tier H2D destination 0 not publishable: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-readyview)"
+# WP-A day 22: the D2D receipt's red arm, one cell per class.
+dcell_capture
+dcell_restore
 
 if [ "$FAILS" -eq 0 ]; then
     echo "KV-HOST-CONTRACT-FAULT GATE: ALL GREEN"
