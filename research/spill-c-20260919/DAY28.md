@@ -145,3 +145,133 @@ copy's own time") the pair exceeds the copy on this card too, the single digest 
 into the cell (the first `digest-first` copy sample 0.369 is the ramp), a single sitting, laptop power envelope. A
 reading for the door review, per card; A's target-card numbers (`DAY22.md` cell (v)) sit in their own row of the
 door table's cost section and the two cards' figures are never compared to each other. Not a verdict on the door.
+
+## Task 2, the run (target card, tree `61dc1a52a`, binary `02b0a4f384babbf5...` equal to the build of `8803f4b6c`: `crates/` unchanged between them; receipts `pro-single-day28/box/`)
+
+One collector hold (`box/collector/stall-isolating/`, `LOCK.json` owner `collector`, `CELL.jsonl`), 09:35:09Z to
+09:46:15Z, no lock retry (the card was free; lane A's slice was not on it in this window), ten boots in the
+pre-registered order, no compute app before or after the hold (`stall/ev/compute-apps.{before,after}.csv`), `0 MiB`
+on the card before every boot; the collector's `command.gpu.csv` (2658 samples at 250 ms across the hold): 33 to 60 C,
+33 to 501 W under the 600 W cap, 0 to 22005 MiB, utilization 0 to 100%; per-boot `card.before.csv` 33 to 47 C.
+`exit.txt` `stall-isolating rc=0`; `replays.log` ten `STALL REPLAY: PASS`; `harness.diff` banked (A's harness
+`13867e77...`, mine `d11785a8...`). Every receipt admissible by the pre-registered rules: `errors=0`,
+`tenant_text_identical=True`, every capture re-post `repost_cached_tokens=5088` against 5120 to 5123 (the grid
+seed hit), every exact intruder `cached_tokens=5152 == prompt_tokens=5152` (the on-grid seed: 31 ` ok` filler
+words, `hit: 5152 of 5152 prompt tokens from cache` on every timed run in both arms), ZERO `server_demote_ms` and
+ZERO `server_promote_ms` lines in every cache-on arm (the 8192 MB cache held every entry). Rule lines, verbatim
+(`reading.log`; each boot's `run/receipt.json` `rule_line`):
+
+Pass 1:
+
+`STALL rule cell=stall-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.5 idle_p95=14.7 idle_p99=14.8 idle_max=15.0 arm_runs=10 arm_p50=13.4 arm_p95=14.8 arm_p99=295.7 arm_max=315.9 stall_median=301.5 stall_min=285.6 stall_max=302.5 server_demote_ms=[] server_promote_ms=[] intruder_prompt_tokens=[5123, 5122, 5123, 5121, 5123, 5122, 5123, 5120, 5122, 5122] tenant_text_identical=True errors=0`
+
+`STALL rule cell=stall-capture-off arm=capture n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7 idle_p99=14.8 idle_max=14.8 arm_runs=10 arm_p50=13.4 arm_p95=14.9 arm_p99=295.8 arm_max=299.9 stall_median=283.7 stall_min=283.6 stall_max=286.5 server_demote_ms=[] server_promote_ms=[] intruder_prompt_tokens=[5123, 5122, 5123, 5121, 5123, 5122, 5123, 5120, 5122, 5122] tenant_text_identical=True errors=0`
+
+`STALL rule cell=stall-capture-on arm=capture n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.5 idle_p95=14.8 idle_p99=14.9 idle_max=14.9 arm_runs=10 arm_p50=13.5 arm_p95=14.9 arm_p99=295.9 arm_max=300.6 stall_median=284.4 stall_min=284.3 stall_max=287.1 server_demote_ms=[] server_promote_ms=[] intruder_prompt_tokens=[5123, 5122, 5123, 5121, 5123, 5122, 5123, 5120, 5122, 5122] tenant_text_identical=True errors=0`
+
+`STALL rule cell=stall-exact-off arm=restore-exact n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7 idle_p99=14.8 idle_max=14.9 arm_runs=10 arm_p50=13.4 arm_p95=14.7 arm_p99=15.6 arm_max=22.5 stall_median=8.9 stall_min=8.8 stall_max=9.1 server_demote_ms=[] server_promote_ms=[] server_restore_ms=[] intruder_cached_tokens=[5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152] intruder_prompt_tokens=[5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152] tenant_text_identical=True errors=0`
+
+`STALL rule cell=stall-exact-on arm=restore-exact n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.5 idle_p95=14.8 idle_p99=14.9 idle_max=15.0 arm_runs=10 arm_p50=13.5 arm_p95=14.8 arm_p99=15.6 arm_max=22.7 stall_median=9.1 stall_min=9.0 stall_max=9.2 server_demote_ms=[] server_promote_ms=[] server_restore_ms=[14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5] intruder_cached_tokens=[5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152] intruder_prompt_tokens=[5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152] tenant_text_identical=True errors=0`
+
+Pass 2:
+
+`STALL rule cell=stall-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7 idle_p99=14.8 idle_max=14.9 arm_runs=10 arm_p50=13.4 arm_p95=14.8 arm_p99=295.7 arm_max=316.0 stall_median=301.5 stall_min=285.6 stall_max=302.6 server_demote_ms=[] server_promote_ms=[] intruder_prompt_tokens=[5123, 5122, 5123, 5121, 5123, 5122, 5123, 5120, 5122, 5122] tenant_text_identical=True errors=0`
+
+`STALL rule cell=stall-capture-off arm=capture n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7 idle_p99=14.8 idle_max=14.9 arm_runs=10 arm_p50=13.4 arm_p95=14.9 arm_p99=295.8 arm_max=299.9 stall_median=283.7 stall_min=283.5 stall_max=286.5 server_demote_ms=[] server_promote_ms=[] intruder_prompt_tokens=[5123, 5122, 5123, 5121, 5123, 5122, 5123, 5120, 5122, 5122] tenant_text_identical=True errors=0`
+
+`STALL rule cell=stall-capture-on arm=capture n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.5 idle_p95=14.8 idle_p99=14.9 idle_max=14.9 arm_runs=10 arm_p50=13.5 arm_p95=15.0 arm_p99=295.9 arm_max=300.9 stall_median=284.4 stall_min=284.3 stall_max=287.4 server_demote_ms=[] server_promote_ms=[] intruder_prompt_tokens=[5123, 5122, 5123, 5121, 5123, 5122, 5123, 5120, 5122, 5122] tenant_text_identical=True errors=0`
+
+`STALL rule cell=stall-exact-off arm=restore-exact n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7 idle_p99=14.8 idle_max=14.9 arm_runs=10 arm_p50=13.4 arm_p95=14.7 arm_p99=15.6 arm_max=22.5 stall_median=9.0 stall_min=8.9 stall_max=9.1 server_demote_ms=[] server_promote_ms=[] server_restore_ms=[] intruder_cached_tokens=[5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152] intruder_prompt_tokens=[5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152] tenant_text_identical=True errors=0`
+
+`STALL rule cell=stall-exact-on arm=restore-exact n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.5 idle_p95=14.8 idle_p99=14.9 idle_max=14.9 arm_runs=10 arm_p50=13.5 arm_p95=14.8 arm_p99=15.6 arm_max=22.8 stall_median=9.1 stall_min=8.9 stall_max=9.3 server_demote_ms=[] server_promote_ms=[] server_restore_ms=[14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5] intruder_cached_tokens=[5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152] intruder_prompt_tokens=[5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152, 5152] tenant_text_identical=True errors=0`
+
+**The door's engagement in the ON arms (server logs).** Both `capture-on` boots: `[prefix-host] on: budget` and
+`[prefix-host] contracts door ON` once each, 11 `capture submitted off the tick (seed): 5088 tokens, 32 planes
+(308.0MB) on the contracts door's copy stream; recurrent state cloned at the boundary on the owner stream` (the
+calibration post and the ten timed intruders) and 11 `capture published off the tick`, 10 `restore submitted off the
+tick` and 10 `restore landed off the tick` (the untimed re-posts after each tenant stream, a 5088-of-5123 hit each,
+outside the timed window by construction); both `exact-on` boots: the arming and door lines, 1 capture (the seed),
+11 `restore submitted off the tick: 5152 tokens, 32 planes (309.9MB), ticket seq=N on the contracts door's copy
+stream; recurrent state copied on the owner stream; request parked` and 11 `restore landed off the tick: 5152 tokens
+(309.9MB) complete after 1 poll(s), ...` (the confirm post, `2.3ms from submission to completion, 2.4ms to
+re-admission`, and the ten timed intruders, each observed at the next tick top: the harness's `server_restore_ms`
+14.5 x10 is the tick period, as A read on day 21). Zero `refused`, `dropped`, `DISABLED` or `[kv-host-contracts]`
+lines in any log. The OFF arms: the tier armed (`[prefix-host] on: budget`), no door line, no route line. The
+prime arm: neither (no cache, no tier).
+
+**The reading, by the pre-registered rules (`day28-stall-reading.py`, verbatim).**
+
+`DAY28 ISOLATION pass=1 prime stall_median=301.5 iqr=1.5 n_per_order=5 pooled=10`  
+`DAY28 ISOLATION pass=1 class=capture arm=off stall_median=283.7 iqr=0.2 share=-17.8 unc=1.6 -> isolated`  
+`DAY28 ISOLATION pass=1 class=capture arm=on stall_median=284.4 iqr=0.1 share=-17.1 unc=1.6 -> isolated`  
+`DAY28 ISOLATION pass=1 class=capture on_minus_off=+0.7 unc=0.2 -> isolated`  
+`DAY28 ISOLATION pass=1 class=restore arm=off stall_median=8.9 iqr=0.1 share=+8.9 unc=0.1 arm_p99=15.6 arm_max=22.5 server_restore_ms=[] -> isolated`  
+`DAY28 ISOLATION pass=1 class=restore arm=on stall_median=9.1 iqr=0.1 share=+9.1 unc=0.1 arm_p99=15.6 arm_max=22.7 server_restore_ms=[14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5] -> isolated`  
+`DAY28 ISOLATION pass=1 class=restore on_minus_off=+0.2 unc=0.2 -> isolated`  
+`DAY28 ISOLATION pass=2 prime stall_median=301.5 iqr=1.5 n_per_order=5 pooled=10`  
+`DAY28 ISOLATION pass=2 class=capture arm=off stall_median=283.7 iqr=0.2 share=-17.8 unc=1.5 -> isolated`  
+`DAY28 ISOLATION pass=2 class=capture arm=on stall_median=284.4 iqr=0.1 share=-17.1 unc=1.5 -> isolated`  
+`DAY28 ISOLATION pass=2 class=capture on_minus_off=+0.7 unc=0.2 -> isolated`  
+`DAY28 ISOLATION pass=2 class=restore arm=off stall_median=9.0 iqr=0.1 share=+9.0 unc=0.1 arm_p99=15.6 arm_max=22.5 server_restore_ms=[] -> isolated`  
+`DAY28 ISOLATION pass=2 class=restore arm=on stall_median=9.1 iqr=0.1 share=+9.1 unc=0.1 arm_p99=15.6 arm_max=22.8 server_restore_ms=[14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5] -> isolated`  
+`DAY28 ISOLATION pass=2 class=restore on_minus_off=+0.2 unc=0.1 -> isolated`  
+`DAY28 ISOLATION VERDICT: capture pass1 on-off +0.7 (unc 0.2) isolated; restore pass1 on-off +0.2 (unc 0.2) isolated; capture pass2 on-off +0.7 (unc 0.2) isolated; restore pass2 on-off +0.2 (unc 0.1) isolated; admissible=True`  
+
+**What the cell isolated, and what it did not.** Restore class, isolated in both arms and both passes: a
+whole-entry hit of a 5152-token plain entry (309.9 MB: the fixed recurrent state of about 157 MB plus about 153 MB
+of KV rows) with no prime of its own costs the tenant a stall of **8.9 / 9.0 ms door OFF** (IQR 0.1) and **9.1 ms
+door ON** (IQR 0.1), `on_minus_off` **+0.2 ms** (unc 0.2 and 0.1; at the rule's edge, `isolated` by its letter in
+both passes, the sign ON above OFF). So the restore class's whole on-tick share is about 9 ms in both arms and the
+KV rows' move to the copy stream changed the tenant's stall by nothing the cell resolves: what stays on the tick in
+both arms (the session cache's allocation, the recurrent f32 copies on the owner stream, Move 2 owed item 1) is the
+9 ms, and the ON arm's submit, park and re-admission cost 0.2 ms more than the rows' own D2D did. No split signature
+this time (`arm_p99` 15.6 in both arms, `arm_max` 22.5 against 22.7 / 22.8): A's day-21 split was the suffix prime's
+tick, which this intruder does not have. Capture class: `on_minus_off` **+0.7 ms** (unc 0.2) in both passes, the
+same sign: under the door the seed's on-tick remainder (the recurrent clone on the owner stream in both arms, the
+submit and the ticket) costs 0.7 ms more than the OFF arm's on-tick rows copy; the rows' D2D itself is under that
+figure and is not separately resolved. **The subtraction arm did not read as pre-registered:** the prime-only boot
+(`MEMRA_PREFIX_CACHE_MB=0`) stalls the tenant **301.5 ms** (IQR 1.5, `stall_min=285.6 stall_max=302.5`, both passes)
+while the same prompt's prime inside the cache-on boots stalls **283.7 / 284.4 ms** (IQR 0.2 / 0.1), so `share`
+reads -17.8 / -17.1 `isolated` with the wrong sign: a cache-off boot's prime is not the cache-on boot's prime (the
+prime arm's spread reaches down to 285.6, the cache-on arms' figure, so the extra 16 to 18 ms is a shape the
+cache-off boot takes on most runs, not a constant), and a subtraction across the two boot shapes cannot read the
+capture's own share. Stated, not tuned: the `on_minus_off` inside the cache-on pair is the clean quantity of the
+capture class, and the arm's own share stays unread by this cell. Both classes' door deltas are positive and under
+a millisecond on this card at this entry size; the day-24 arithmetic (153 MB of rows at this card's D2D bandwidth,
+well under a millisecond) is consistent with both. Same window, one hold, N=5 per arm per order, both orders, two
+passes in opposite order; `executed-not-qualified`; nothing here decides the door.
+
+## Task 4: records and checks
+
+`HOSTPREFIX-DOOR.md`: the hit-gate owed-cell row carries the day-28 `--external-lock` note; new section-A rows for
+the receipt's price (both cards, per card) and the isolating stall cell; section B gains the two price rows (the
+target card's from A's `DAY22.md` cell (v), the RTX 5090's from Task 3) and the isolating cell's two class rows;
+section E names the receipt's pair cost and the isolated restore class. `STATE.md` rewritten; `research/INDEX.md` row
+`spill-c-20260919/day28`; `docs/TESTING.md` lock-arms bullet (Task 1). No Rust moved (`cargo fmt` not owed);
+`shellcheck -S warning` on the gate (the pre-existing SC2034 only), the fixture and the two drivers clean;
+`bash tools/check-flags.sh` no uncovered runtime names; `bash tools/check-conflict-markers.sh` OK; `git diff
+--check` clean; `.gitattributes` `*.log -whitespace` in `rtx5090-day28/` and `pro-single-day28/`; no em dash in
+any line added today.
+
+## Pushes
+
+`8803f4b6c` (the merge), `002507b4b` (the gate's lock arms, the fixture, TESTING, the CI line), `61dc1a52a` (the
+pre-registration, the harness, the drivers, the reading script, the 5090 price receipts), then the closing commit
+(this record's Task 2 run and Task 4 sections, the box receipts, the door table, STATE, INDEX), each in
+`MEMRA_RELEASE_QUALIFICATION_MODE=development` (printed `UNQUALIFIED DEVELOPMENT ... no GPU qualification claimed`,
+logged in the clone's `.git/memra-gate-skips.log`). Not merged into main, no PR opened.
+
+## Left as it was, and cleanup
+
+BOX3 reached through the existing control socket only (`ssh -O check` first, `Master running`); `/root/wt-c`
+(mine) left detached at `61dc1a52a`, clean; the two bundles removed on both ends; receipts under
+`/root/spill-receipts/day28` (mirrored here); `/root/artifacts`, `/root/memra-spill` and other lanes' worktrees and
+processes not touched; no server of mine on either card at close (the box: none; the local card: other sessions'
+`memra-server` processes seen in `pgrep` only, never inspected or signalled, the 5090 lock free at my last probe).
+Local: the price cell took and released the canonical lock once; no `/tmp` scratch left.
+
+## Budget
+
+About 2.9 agent-hours against 4: reading and the merge 0.6, the gate's lock arms, teeth and TESTING 0.4, the harness,
+drivers and reading script 0.5, the pre-registration 0.3, the 5090 price cell 0.1, the box shipping, build, run and
+its census 0.5, the records and checks 0.5. Blockers: none (the box was free, no lock retry on either card).
