@@ -1,0 +1,5 @@
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 2s, probe deadline 2s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[gpu-watch] DEGRADED: nvidia-smi did not answer within 2s (1 of 3 consecutive misses before a fault latches); last answer 4s ago
+[gpu-watch] DEGRADED: nvidia-smi did not answer within 2s (2 of 3 consecutive misses before a fault latches); last answer 8s ago
+[gpu-watch] canary answered again after 2 missed probe(s); degradation cleared
