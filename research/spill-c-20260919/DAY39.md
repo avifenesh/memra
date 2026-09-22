@@ -2,7 +2,9 @@
 
 Lane `lane/spill-c-20260919`. Start tip `18c900fc7`; `origin/lane/spill-integ47-20260923` (`160929a92`, A day 30
 and C day 38) merged as `a20e4990d`; the packet status fix is `d036db237` (A day 30 landed on integ47, not on
-`origin/main` `9717e8d57`; `day39-cpu/ancestry.log`). Every cell here is `executed-not-qualified` development
+`origin/main` `9717e8d57` at that time; `day39-cpu/ancestry.log`). `origin/main` took integ47 during the hold: #656
+(`5f1b0eda4`) merged at 22:01:33Z, and the post-run re-check in the same log reads `160929a92` an ancestor of it; the
+packet's "not on main" sites now read "on `main` since #656". Every cell here is `executed-not-qualified` development
 evidence. No number here is compared across cards or boxes; the RTX 5090 figures of days 35, 37 and 38 are context
 only and never a denominator. No recommendation.
 
@@ -130,3 +132,142 @@ between its two trees (b1-b0: `091a931c0` to `9717e8d57`, route-contract and lat
 day 30's two commits only); only the DiD and the controls separate the door from the rest, and only as far as the rule
 resolves. The tenant's gaps are client-side. Nothing here is compared to the RTX 5090 figures of days 35, 37 and 38,
 or to any other day on this card. `executed-not-qualified`; not a qualification.
+
+## 2. The run
+
+- Pre-registration `89c2cd521`, committed at 21:57:26Z and pushed before the first boot (21:58:02Z); the box worktree was detached at that commit
+  (`stall/provenance.log`: `tree=89c2cd52112bb1bc9b70118c4cab8b6dff975e85`, `host_utc_offset=+0000`, `model sha256
+  MATCH`).
+- Builds (section 0), one after the other on the box, `rc=0` each: B0 21:37:08Z to 21:40:16Z, B1 to 21:43:24Z, B2 to
+  21:44:10Z (`box/build-B{0,1,2}.log`, `box/builds.log`). The cell's `binary.sha256` matches all three build receipts.
+- ONE collector hold on `/tmp/memra-gpu.lock` (`LOCK.json`: owner `collector`, `inherited-flock-same-open-description`),
+  no wait and no lock refusal (no `waits.log`). First mark 21:58:02Z, last mark 22:54:04Z: 36 boots, 56.0 minutes, inside
+  the 90-minute limit. `stall-day39 rc=0`, the collector's exit 0, `CELL.jsonl` status `executed-not-qualified`.
+- 60 receipts, `STALL REPLAY: PASS` on 60 of 60. The compute-apps list before the hold was empty; nothing else ran on
+  the card inside it. Lane A's day-31 collector took the lock after the hold ended; it was not touched.
+- Receipts: `pro-single-day39/box/` (the builds, the runner and collector logs, `ev/` with per-boot `server.log`,
+  `receipt.json`, harness logs, `marks.tsv`, `card.during.csv`, and `collector/command.gpu.csv` at 250 ms).
+
+## 3. The reading (pre-registered readers; every verdict verbatim)
+
+`python3 day39-stall-reading.py pro-single-day39/box/run/stall/ev | tee pro-single-day39/reading.log`, exit 0:
+
+```
+DAY39 VERDICT contrast=b1-b0 q=stall: prime o1=-0.1/2.3 o2=+0.0/2.3 under_resolution; demote-off o1=-0.6/2.0 o2=-0.5/1.5 under_resolution; demote-on o1=-31.8/0.8 o2=-31.1/1.2 moved; promote-off o1=-0.3/4.0 o2=-0.3/1.4 under_resolution; promote-on o1=-0.1/0.9 o2=-0.0/0.9 under_resolution; did-demote o1=-31.2/2.1 o2=-30.6/2.0 moved; did-promote o1=+0.3/4.0 o2=+0.3/1.7 under_resolution
+DAY39 VERDICT contrast=b2-b1 q=stall: prime o1=+0.0/2.4 o2=-0.0/2.3 under_resolution; demote-off o1=+0.3/1.4 o2=+0.3/1.4 under_resolution; demote-on o1=-41.2/0.7 o2=-41.8/1.2 moved; promote-off o1=-0.0/1.9 o2=+0.2/1.7 under_resolution; promote-on o1=-5.0/0.8 o2=-5.1/0.8 moved; did-demote o1=-41.5/1.6 o2=-42.1/1.9 moved; did-promote o1=-4.9/2.1 o2=-5.3/1.9 moved
+DAY39 VERDICT contrast=b1-b0 q=top1_plus_top2: prime o1=-0.1/2.3 o2=-0.0/2.2 under_resolution; demote-off o1=-0.5/1.8 o2=-0.5/1.4 under_resolution; demote-on o1=-75.2/1.7 o2=-73.5/1.5 moved; promote-off o1=-0.3/4.3 o2=-0.3/1.4 under_resolution; promote-on o1=-74.2/0.9 o2=-73.8/2.9 moved; did-demote o1=-74.7/2.5 o2=-73.0/2.1 moved; did-promote o1=-73.9/4.4 o2=-73.5/3.2 moved
+DAY39 VERDICT contrast=b2-b1 q=top1_plus_top2: prime o1=+0.1/2.3 o2=+0.0/2.1 under_resolution; demote-off o1=+0.3/1.3 o2=+0.3/1.4 under_resolution; demote-on o1=-41.2/0.7 o2=-41.8/1.2 moved; promote-off o1=-0.0/1.6 o2=+0.2/1.7 under_resolution; promote-on o1=-4.9/0.7 o2=-5.0/2.8 moved; did-demote o1=-41.5/1.5 o2=-42.1/1.8 moved; did-promote o1=-4.9/1.7 o2=-5.2/3.3 moved
+DAY39 ADMISSIBLE: 60 of 60 receipts; all=True
+```
+
+Per binary, pooled N=40 (`DAY39 BINARY` lines), stall medians (IQR): demote OFF `117.9` (1.3), `117.4` (1.0), `117.7`
+(0.9) on b0, b1, b2; demote ON `150.1` (0.3), `118.6` (1.4), `77.1` (0.2); promote OFF `85.3` (3.2), `85.1` (1.3),
+`85.2` (1.1); promote ON `82.1` (0.6), `82.0` (0.6), `77.0` (0.5); prime `301.6` on all three. ON minus OFF per tree:
+demote `+32.1 unc=1.4 -> isolated` (b0), `+1.2 unc=1.7 -> under_resolution` (b1), `-40.6 unc=1.0 -> isolated` (b2);
+promote `-3.3 unc=3.2`, `-3.1 unc=1.4`, `-8.2 unc=1.3`, each `isolated`.
+
+`python3 day39-tick-split.py pro-single-day39/box/run/stall/ev pro-single-day39/reading.log | tee
+pro-single-day39/tick-split.log`, exit 0:
+
+```
+DAY39 TICK VERDICT contrast=b1-b0 q=tick1: prime o1=-0.0/0.3 o2=-0.0/0.3 under_resolution; demote-off o1=-0.6/2.0 o2=-0.5/1.5 under_resolution; demote-on o1=-0.8/1.7 o2=+0.7/1.6 under_resolution; promote-off o1=-0.3/4.1 o2=-0.3/1.4 under_resolution; promote-on o1=-0.1/0.9 o2=+0.0/0.9 under_resolution; did-demote o1=-0.2/2.6 o2=+1.2/2.2 under_resolution; did-promote o1=+0.2/4.2 o2=+0.3/1.6 under_resolution
+DAY39 TICK VERDICT contrast=b2-b1 q=tick1: prime o1=-0.0/0.2 o2=+0.0/0.3 under_resolution; demote-off o1=+0.2/1.4 o2=+0.3/1.5 under_resolution; demote-on o1=-41.2/0.7 o2=-41.8/1.2 moved; promote-off o1=-0.0/1.9 o2=+0.2/1.7 under_resolution; promote-on o1=-4.9/0.8 o2=-5.1/0.8 moved; did-demote o1=-41.5/1.6 o2=-42.1/1.9 moved; did-promote o1=-4.9/2.0 o2=-5.3/1.9 moved
+DAY39 TICK VERDICT contrast=b1-b0 q=tick2: prime o1=-0.0/0.2 o2=+0.0/0.2 under_resolution; demote-off o1=+0.0/0.3 o2=-0.1/0.3 under_resolution; demote-on o1=-74.3/0.3 o2=-74.2/0.3 moved; promote-off o1=nd o2=nd not_defined; promote-on o1=nd o2=nd not_defined; did-demote o1=-74.4/0.4 o2=-74.1/0.4 moved; did-promote o1=nd o2=nd not_defined
+DAY39 TICK VERDICT contrast=b2-b1 q=tick2: prime o1=+0.0/0.2 o2=-0.0/0.2 under_resolution; demote-off o1=-0.0/0.2 o2=+0.1/0.2 under_resolution; demote-on o1=+0.0/0.2 o2=+0.2/0.3 under_resolution; promote-off o1=nd o2=nd not_defined; promote-on o1=nd o2=nd not_defined; did-demote o1=+0.0/0.3 o2=+0.1/0.4 under_resolution; did-promote o1=nd o2=nd not_defined
+DAY39 TICK HYPOTHESIS contrast=b1-b0 P1 demote-on tick2 moved negative: holds; P2 demote-on tick1 under_resolution: holds; P3 did-demote tick2 moved negative: holds; P4 did-demote tick1 under_resolution: holds; P5 demote-off tick1 and tick2 under_resolution: holds (tick1 under_resolution, tick2 under_resolution) -> consistent with H
+```
+
+Per tree, demote tick medians (N=40, `DAY39 TICK BINARY`): tick 1 OFF `131.3`, `130.8`, `131.1` and ON `132.0`,
+`132.1`, `90.5` (b0, b1, b2); tick 2 OFF `87.7` on all three and ON `163.5`, `89.2`, `89.3`. Promote tick 2 is
+`not_defined` because the arm stretches one tick (`40 of 40 runs lack tick 2` for promote OFF on all three trees and
+promote ON on b1 and b2; b0's promote ON has tick 2, median `92.8`).
+
+**Described, not ruled on.**
+
+- The ledger (`DAY39 LEDGER`, medians over the ON demote arms' runs, first three demotes N=12, 4th on N=24): b1
+  `pre_submit=43.71` / `42.44`, `copy_settle=1.21` / `1.28`, `take_back_publish=1.08` / `1.08`,
+  `owner_in_completion=44.81` / `43.53`, `owner_held=46.03` / `44.80`, `hashed_in=73.3` / `73.2`; b2
+  `pre_submit=1.17` / `1.15`, `copy_settle=1.29` / `1.36`, `take_back_publish=1.08` / `1.08`,
+  `owner_in_completion=2.25` / `2.25`, `owner_held=3.55` / `3.59`, `hashed_in=107.3` / `104.8`,
+  `landed_polls_median=3` (b1 1). `parked_hits_sum=0` and `reparks_sum=0` on both; `payloads=[98]` on both. b0 prints
+  no ledger line (0 in all four ON boots; `demote_published_lines=21` in each).
+- The b2 spans (`pro-single-day39/spans-census.log`): every one of the 84 copy-complete lines of the four b2 ON boots
+  carries `items=128 (32 KV, 96 f32 spans)`, and each boot has 21 D2H receipt lines ending `96 f32 spans landed under
+  the ticket and taken back before the retire`; b1's 84 copy-complete lines carry no spans term and no such tail.
+- Sizes side by side, not timed against a gap: b2-b1's demote-on tick-1 move (`-41.2` / `-41.8`) and b1's pre-submit
+  minus b2's (42.44 minus 1.15 = 41.29 on the 4th on); b1's remaining tick-2 ON minus OFF (`+1.6 unc=0.3`) and its
+  `copy_settle` 1.28. Within this cell b1's pre-submit shows no first-touch step: `43.71` on the first three demotes
+  and `42.44` from the 4th on. The packet's section 4 ledger row records such a step in the day-28 double-park cell's
+  ON boots (a different cell shape, and this record does not assert the same box); the two are named, not compared as
+  timings, and what separates them is owed (section 7).
+- Attribution (`DAY39 ATTRIBUTION`, ON demote, N=9 per pass): `demote_in` medians 132.4 to 134.0 (b0), 148.8 to 149.6
+  (b1), 135.8 to 136.2 (b2); completion 57.5 to 58.8 (b0), 57.8 to 58.4 (b1), 16.8 to 16.9 (b2); OFF `demote_in` 41.6
+  to 42.7 on all three.
+
+**The regime** (`python3 day39-regime.py pro-single-day39/box/run/stall/collector pro-single-day39/box/run/stall/ev
++0000 | tee pro-single-day39/regime.log`, 13,410 samples at 250 ms over the hold):
+
+```
+DAY39 REGIME hold: samples=13410 temp_c=33..59 (median 50) power_w=33.50..499.83 (median 317.76) clocks_sm_mhz=180..2422 (median 2422) mem_used_mib=0..19573 power_limit=['600.00 W']
+```
+
+Per program: 2227 to 2245 samples, temperature median 50 C in all six (range 33..59 in p1-b0, the hold's cold start;
+40 or 41..59 in the other five), power median 317.67 to 317.98 W, SM clock median 2422 MHz in all six (minimum 180 in
+p1-b0 at idle before the first boot, 2340 to 2355 elsewhere). No program's regime differs from its block partner's on
+these figures.
+
+**One reader fix after the run, a parse, not a rule.** `day39-regime.py` failed on its first run over the box's
+`marks.tsv`: `ValueError: unconverted data remains: Z`. The box's `date` writes 3 fraction digits where the local
+rig's writes 9, and the day-37 parser cut at a fixed 26 characters. The fix pads or cuts the fraction to 6 digits
+(`day39-cpu/diffs/regime-postrun-parse-fix.diff`); the dry check over day 37's hold still reproduces day 37's hold and
+marks lines. The regime reader decides nothing; no rule, quantity, reader or admissibility clause of the stall or tick
+readers changed after the run.
+
+## 4. What the cell cannot say
+
+One card, one model (the 27B), the plain 64-token class under `MEMRA_SERVE_SPEC=0`, this card's cache and host
+budgets. Each contrast is the whole `crates/` difference between its two trees (b1-b0 includes route-contract and
+latch-close commits; b2-b1 is A day 30's two commits only); the DiD and the controls separate the door from the rest
+only as far as the rule resolves, and here every control (prime, demote OFF, promote OFF) is `under_resolution` in
+both contrasts on both quantities. b2-b1 carried no prediction; its lines are measurements under the rule, not a
+tested hypothesis. The tenant's gaps are client-side; the ledger and attribution segments are the server's lines and
+are not timed against a gap. No figure here is compared to the RTX 5090 cells of days 35, 37 and 38 or to earlier days
+on this card. `executed-not-qualified`; not a qualification.
+
+## 5. Commits
+
+- `a20e4990d` merge of integ47; `d036db237` the packet status fix; `04584a2a5` section 0 and the build script;
+  `89c2cd521` the pre-registration (pushed before the first boot); the receipts and records commit follows.
+
+## 6. Checks
+
+`bash tools/check-flags.sh`, `bash tools/check-conflict-markers.sh`, `git diff --check`, `python3
+tools/check-public-boundary.py check`, zero em dashes in added lines: run before each push (section 5), and all pass
+on the records commit's staged tree.
+
+## 7. Owed and open
+
+- The target card's promote class on tick 2: `not_defined` on b1 and b2 (the arm stretches one tick).
+- Why b1's pre-submit shows no first-touch step in this cell (42 to 44 ms on every demote, the 4th on included) where
+  the day-28 double-park cell's ledger row shows one: not separated (different cell shapes, no same-box claim; a
+  per-demote allocation line would name it, and that is engine code, lane A's).
+- The b2 `hashed_in` of 104.8 to 107.3 ms against b1's 73.2 to 73.3 (the helper's time per 157.9 MB, off the tick):
+  described, not attributed.
+- Unchanged: the H2D and D2D halves of Move 2 owed item 1, the governor charge of the 157.9 MB staging, the
+  strong-form receipt, the span-refusal fault cell and returning the staging after a refused receipt (`A/DAY30.md`
+  section 9); the owner's decisions at 2026-09-23, 2026-10-04, 2026-10-05 (contracts door) and 2026-10-06; the
+  double-park slice question; the 9B entry's conv, ssm and hidden split (engine line); an always-admitted prime arm
+  on the RTX 5090 class.
+
+## 8. Cleanup and budget
+
+- The box: before removal, a SHA-256 manifest of the box's run directory and build logs (339 files) matched the banked
+  copy under `pro-single-day39/box/` file for file. Then this lane's box scratch was removed whole: the transfer
+  bundle, the run directory, the build logs and the three binary copies (their SHA-256s stay in `box/builds.log`;
+  each is rebuildable from its SHA by `day39-box-build.sh`); the four temporary refs in the lane's box worktree were
+  deleted (0 left). The lane's box worktree stays, detached at `89c2cd521`, clean. No server, collector or lock of
+  this lane is left on the box. Lane A's day-31 server on the card was not inspected beyond `nvidia-smi`'s listing,
+  and not touched.
+- Local: the scratch directory, the bundle, the check script and its logs under `/tmp`, and the four temporary refs
+  are removed at close. No worktree was created.
+- Budget: started 21:24Z, the records commit about 23:10Z; about 1.8 agent-hours of the 4.

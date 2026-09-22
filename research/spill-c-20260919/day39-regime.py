@@ -41,7 +41,9 @@ def load_marks(path):
     with open(path) as f:
         for ln in f:
             ts, name = ln.rstrip("\n").split("\t")
-            out.append((dt.datetime.strptime(ts[:26] + "Z", "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=dt.timezone.utc), name))
+            # the mark stamp carries 3 (the box's date) or 9 (the local rig's) fraction digits: pad or cut to 6
+            base, frac = ts.rstrip("Z").split(".")
+            out.append((dt.datetime.strptime(base + "." + (frac + "000000")[:6], "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=dt.timezone.utc), name))
     return out
 
 
