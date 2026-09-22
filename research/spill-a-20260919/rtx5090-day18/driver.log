@@ -16,3 +16,48 @@
 2026-09-22T01:56:18Z identity-default-off lock busy, retry 15/15 in 120 s
 2026-09-22T01:58:18Z identity-default-off rc=2
 research/spill-a-20260919/rtx5090-day18/driver.sh: line 30: name: unbound variable
+=== resume 2026-09-22T02:09:06Z: binary rebuilt with the hook fix (3df0cb2b3); run 1's identity-default-off rc=2 was 15 lock-busy retries, and the run-1 driver died on my live edit of its file (line 30: name: unbound variable), a driver mistake of mine
+ccc1673e20cb9cd74ecedad8cd2976412bfe796499dffb42e9d14649acaa3dc8  /home/avifenesh/projects/wt-spill-a/target/release/memra-server
+2026-09-22T02:09:06Z identity-default-off re-tried (earlier exit 2: lock busy or a refusal)
+2026-09-22T02:09:06Z identity-default-off lock busy, retry 1/15 in 120 s
+2026-09-22T02:11:06Z identity-default-off lock busy, retry 2/15 in 120 s
+2026-09-22T02:13:06Z identity-default-off lock busy, retry 3/15 in 120 s
+2026-09-22T02:15:06Z identity-default-off lock busy, retry 4/15 in 120 s
+2026-09-22T02:17:06Z identity-default-off lock busy, retry 5/15 in 120 s
+2026-09-22T02:19:06Z identity-default-off lock busy, retry 6/15 in 120 s
+2026-09-22T02:21:06Z identity-default-off lock busy, retry 7/15 in 120 s
+2026-09-22T02:23:06Z identity-default-off lock busy, retry 8/15 in 120 s
+2026-09-22T02:25:06Z identity-default-off lock busy, retry 9/15 in 120 s
+2026-09-22T02:27:06Z identity-default-off lock busy, retry 10/15 in 120 s
+2026-09-22T02:29:06Z identity-default-off lock busy, retry 11/15 in 120 s
+2026-09-22T02:31:06Z identity-default-off lock busy, retry 12/15 in 120 s
+2026-09-22T02:33:06Z identity-default-off lock busy, retry 13/15 in 120 s
+2026-09-22T02:35:06Z identity-default-off lock busy, retry 14/15 in 120 s
+2026-09-22T02:37:06Z identity-default-off lock busy, retry 15/15 in 120 s
+2026-09-22T02:39:06Z identity-default-off rc=2
+2026-09-22T02:39:06Z identity-default-on lock busy, retry 1/15 in 120 s
+2026-09-22T02:41:06Z identity-default-on lock busy, retry 2/15 in 120 s
+2026-09-22T02:43:06Z identity-default-on lock busy, retry 3/15 in 120 s
+2026-09-22T02:45:06Z identity-default-on lock busy, retry 4/15 in 120 s
+2026-09-22T02:47:06Z identity-default-on lock busy, retry 5/15 in 120 s
+2026-09-22T02:49:06Z identity-default-on lock busy, retry 6/15 in 120 s
+2026-09-22T02:51:06Z identity-default-on lock busy, retry 7/15 in 120 s
+2026-09-22T02:53:06Z identity-default-on lock busy, retry 8/15 in 120 s
+2026-09-22T02:55:06Z identity-default-on lock busy, retry 9/15 in 120 s
+2026-09-22T02:57:06Z identity-default-on lock busy, retry 10/15 in 120 s
+2026-09-22T02:59:06Z identity-default-on lock busy, retry 11/15 in 120 s
+2026-09-22T03:01:06Z identity-default-on lock busy, retry 12/15 in 120 s
+2026-09-22T03:03:21Z identity-default-on rc=0
+2026-09-22T03:03:35Z identity-plain-off rc=0
+2026-09-22T03:03:49Z identity-plain-on rc=0
+2026-09-22T03:04:07Z failure-off rc=0
+2026-09-22T03:04:33Z failure-on rc=0
+2026-09-22T03:05:45Z contract-fault rc=0
+2026-09-22T03:06:28Z hitgate-off rc=0
+2026-09-22T03:07:02Z hitgate-on rc=0
+2026-09-22T03:07:48Z twin-off rc=2
+2026-09-22T03:08:32Z twin-on rc=2
+2026-09-22T03:08:38Z gpu-unit-cells rc=0
+2026-09-22T03:11:08Z twin27-off rc=1
+2026-09-22T03:13:30Z twin27-on rc=1
+local-driver-done
