@@ -1816,6 +1816,23 @@ green 4 of 4 on the 5090 under the lock. The 5090 serve-smoke on the attempt-1 t
 Q35 arms SKIP for absent models, as on every rig receipt). The final battery on `cc754b476` is in
 `integ38-cpu-battery/` and `integ38-serve-smoke-5090/` (its window and rc lines quoted in the self-review).
 
+**Revuto round 1 on #639 (real, fixed).** The `d2d-delay-*` fault's spin was launched inside the per-item loop of both
+D2D submits, so the documented 200 ms multiplied by the item count (`items=32` on the refused capture in A's target-card
+receipt: 6.4 s of copy-stream spin, linear in the layer count) and any Block settle of that ticket held the owner thread
+for the whole window. The spin is now issued once per batch, gated on the first item (the copy stream is serial, so
+every item's copy waits behind it; the owner-stream early readers still win); the contract doc says "ONCE"; the census
+test pins the gate and one spin site per class. Re-run on the local 5090 under the lock: engine `d2d_*` cells `5 passed`;
+`tools/kv-host-contract-fault-gate.sh` with the door ON (`MEMRA_HOSTGATE_CACHE_MB=64`, 9B) `KV-HOST-CONTRACT-FAULT GATE:
+ALL GREEN`, both D2D cells refusing by receipt (`integ38-fault-gate-5090-revuto/`).
+
+**Revuto round 2 on #639 (real, fixed).** The engine took its one-shot `early_reader` arm AFTER every fallible admission
+step of both D2D submits (empty batch, overflow, per-op layout/epoch/owner/fence checks, `receipt_scratch`), while the
+worker had already spent its door value at the arming site; a refused submit left the engine's class-agnostic arm live for
+the next batch of either class, so a refused capture submit could refuse the next restore's receipt and latch the restore
+route, contradicting the "taken by their own class only" invariant and mis-attributing a gate cell's refusal. The arm is
+now taken first, right after the thread check, in both submits; the census test pins the take ahead of the first refusal
+per class. Engine `d2d_*` GPU cells `5 passed` on the 5090 under the lock.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

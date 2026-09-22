@@ -43,6 +43,12 @@ Author's review of the full diff `main..lane/spill-integ38-20260922`, posted as 
 - **Finding, fixed here (`cc754b476`):** the oracle GPU cell raced its owner-stream upload against the copy-stream
   digest and lost on the local 5090 at 8 MiB (green on the target card twice); the test now orders its producer as the
   engine does. The kernel and the oracle agree on both cards (5090: 4 of 4 under the lock).
+- **Revuto round 1, fixed (`d2d-delay-*` spin once per batch):** the fault's spin sat inside the per-item loop and
+  multiplied by the item count (6.4 s on a 32-plane entry); it is gated on the first item now, the doc says once, the
+  census test pins it; fault gate ALL GREEN on the 5090 with both D2D cells refusing, engine cells 5 passed.
+- **Revuto round 2, fixed (the arm is spent by the submit that takes it):** the engine's `early_reader.take()` sat after
+  the fallible admission steps, so a refused submit left the arm live for the next batch of either class; it is taken
+  first now in both submits, census-pinned.
 - Fail-closed arms mirror the #638 rules: the capture mismatch retires the ticket before touching planes and counts any
   plane that did not come back; the restore mismatch frees the cache only because the copy landed (never a free under a
   running copy; the `Latched` arm still forgets) and hands the pin back through `RestoreSettled::Dropped(pin)`.
