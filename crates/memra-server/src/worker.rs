@@ -14909,9 +14909,10 @@ fn host_restore_take_ready(
         return None;
     };
     eprintln!(
-        "[prefix-cache] restore landed off the tick: {} tokens complete after {} poll(s), {:.1}ms \
-         from submission to completion, {:.1}ms to re-admission ({})",
+        "[prefix-cache] restore landed off the tick: {} tokens ({:.1}MB) complete after {} \
+         poll(s), {:.1}ms from submission to completion, {:.1}ms to re-admission ({})",
         r.toks_len,
+        r.bytes as f64 / 1e6,
         r.polls,
         r.copy_ms,
         r.t0.elapsed().as_secs_f64() * 1e3,
