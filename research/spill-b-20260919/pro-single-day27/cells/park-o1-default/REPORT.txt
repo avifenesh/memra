@@ -5,8 +5,8 @@ order=AB n=5 model_key=q38 ctx=unset lock=none warm=deferred park_compact=unset 
 [admit-predict] shadow armed: budget_bytes=65881157328 budget_src=derived(effective_free_bytes=84065415872 - prefix_cache_budget_bytes=15883042816 - admission_reserve_bytes=2301215728) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
 == rig
-NVIDIA RTX PRO 6000 Blackwell Server Edition, 0 MiB, 97887 MiB, 32, 33.43 W, 600.00 W
-NVIDIA RTX PRO 6000 Blackwell Server Edition, 0 MiB, 97887 MiB, 47, 90.02 W, 600.00 W
+NVIDIA RTX PRO 6000 Blackwell Server Edition, 0 MiB, 97887 MiB, 42, 36.31 W, 600.00 W
+NVIDIA RTX PRO 6000 Blackwell Server Edition, 0 MiB, 97887 MiB, 47, 91.07 W, 600.00 W
 ready: cuda_driver_free_bytes=0 cuda_pool_used_bytes=0 cuda_pool_reserved_bytes=0 prefix_cache_bytes=0
 == request-cost lines (verbatim, in log order)
 [admission] request cost: model="q38" ctx=228 path=spec = 31552 B/token x ctx + 63MB prefill-workspace + 0MB fixed = 70MB
@@ -54,51 +54,51 @@ ready: cuda_driver_free_bytes=0 cuda_pool_used_bytes=0 cuda_pool_reserved_bytes=
 == open-arm booked ctx (admission_cap) from the lines: 262208; allocated ctx_cap = 262144
 == per-request rows
 tag | arm | P | G | cached | path | B/token | ctx_booked | ctx_alloc | allocated_kv_B | used_kv_B | alloc/used | booked_MB | drv_free_before | drv_free_after | pool_used_before | pool_used_after | ms | line
-i-L0-r0 | i | 1481 | 591 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 65375744 | 126.52 | 9291 | 82759516160 | 82759516160 | 17914203332 | 17914203332 | 5014 | own
+i-L0-r0 | i | 1481 | 591 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 65375744 | 126.52 | 9291 | 82759516160 | 82759516160 | 17914203332 | 17914203332 | 4942 | own
 i-L0-r1 | i | 1481 | 369 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 58371200 | 141.70 | 9777 | 82759516160 | 73263611904 | 17914203332 | 27443996232 | 3131 | own
 i-L0-r2 | i | 1484 | 589 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 65407296 | 126.46 | 9779 | 73263611904 | 55010000896 | 27443996232 | 45669734860 | 4768 | own
 i-L0-r3 | i | 1484 | 457 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 61242432 | 135.06 | 9779 | 55010000896 | 55010000896 | 45669734860 | 36392994888 | 4295 | inherited
-i-L0-r4 | i | 1483 | 545 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 63987456 | 129.26 | 9778 | 55010000896 | 54875783168 | 36392994888 | 36595322952 | 4556 | own
-ii-L0-r0 | ii | 1715 | 96 | 0 | spec | 31552 | 1875 | 1819 | 57393088 | 57140672 | 1.00 | 1675 | 54875783168 | 54674456576 | 36595322952 | 36797651016 | 1315 | own
-ii-L0-r1 | ii | 1714 | 96 | 0 | spec | 31552 | 1874 | 1818 | 57361536 | 57109120 | 1.00 | 1675 | 54674456576 | 54674456576 | 36797651016 | 28311118792 | 1373 | own
+i-L0-r4 | i | 1483 | 545 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 63987456 | 129.26 | 9778 | 55010000896 | 54875783168 | 36392994888 | 36595322952 | 4554 | own
+ii-L0-r0 | ii | 1715 | 96 | 0 | spec | 31552 | 1875 | 1819 | 57393088 | 57140672 | 1.00 | 1675 | 54875783168 | 54674456576 | 36595322952 | 36797651016 | 1314 | own
+ii-L0-r1 | ii | 1714 | 96 | 0 | spec | 31552 | 1874 | 1818 | 57361536 | 57109120 | 1.00 | 1675 | 54674456576 | 54674456576 | 36797651016 | 28311118792 | 1372 | own
 ii-L0-r2 | ii | 1713 | 96 | 0 | spec | 31552 | 1873 | 1817 | 57329984 | 57077568 | 1.00 | 1674 | 54674456576 | 54674456576 | 28311118792 | 19824553160 | 1295 | own
 ii-L0-r3 | ii | 1713 | 96 | 0 | spec | 31552 | 1873 | 1817 | 57329984 | 57077568 | 1.00 | 1674 | 54674456576 | 54674456576 | 19824553160 | 20034891720 | 1295 | inherited
-ii-L0-r4 | ii | 1710 | 96 | 0 | spec | 31552 | 1870 | 1814 | 57235328 | 56982912 | 1.00 | 1673 | 54674456576 | 54674456576 | 20034891720 | 20245263688 | 1337 | own
-i-L1-r0 | i | 3138 | 478 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 114092032 | 72.50 | 10571 | 54674456576 | 54674456576 | 20454559176 | 20454559176 | 4568 | own
+ii-L0-r4 | ii | 1710 | 96 | 0 | spec | 31552 | 1870 | 1814 | 57235328 | 56982912 | 1.00 | 1673 | 54674456576 | 54674456576 | 20034891720 | 20245263688 | 1336 | own
+i-L1-r0 | i | 3138 | 478 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 114092032 | 72.50 | 10571 | 54674456576 | 54674456576 | 20454559176 | 20454559176 | 4566 | own
 i-L1-r1 | i | 3138 | 954 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 129110784 | 64.06 | 10571 | 54674456576 | 54674456576 | 20454559176 | 38887239884 | 8373 | inherited
 i-L1-r2 | i | 3139 | 673 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 120276224 | 68.77 | 10572 | 54674456576 | 52325646336 | 38887239884 | 47839175116 | 5969 | own
 i-L1-r3 | i | 3138 | 508 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 115038592 | 71.90 | 10571 | 52325646336 | 52325646336 | 47839175116 | 38613160008 | 4829 | own
-i-L1-r4 | i | 3136 | 494 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 114533760 | 72.22 | 10570 | 52325646336 | 52057210880 | 38613160008 | 38867990600 | 4705 | own
+i-L1-r4 | i | 3136 | 494 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 114533760 | 72.22 | 10570 | 52325646336 | 52057210880 | 38613160008 | 38867990600 | 4706 | own
 ii-L1-r0 | ii | 3000 | 96 | 0 | spec | 31552 | 3160 | 3104 | 97937408 | 97684992 | 1.00 | 2332 | 52057210880 | 51755220992 | 38867990600 | 39122821192 | 1688 | own
-ii-L1-r1 | ii | 3003 | 96 | 0 | spec | 31552 | 3163 | 3107 | 98032064 | 97779648 | 1.00 | 2333 | 51755220992 | 51755220992 | 39122821192 | 30719604808 | 1687 | own
-ii-L1-r2 | ii | 2999 | 96 | 0 | spec | 31552 | 3159 | 3103 | 97905856 | 97653440 | 1.00 | 2331 | 51755220992 | 51755220992 | 30719604808 | 22316488648 | 1729 | own
+ii-L1-r1 | ii | 3003 | 96 | 0 | spec | 31552 | 3163 | 3107 | 98032064 | 97779648 | 1.00 | 2333 | 51755220992 | 51755220992 | 39122821192 | 30719604808 | 1689 | own
+ii-L1-r2 | ii | 2999 | 96 | 0 | spec | 31552 | 3159 | 3103 | 97905856 | 97653440 | 1.00 | 2331 | 51755220992 | 51755220992 | 30719604808 | 22316488648 | 1730 | own
 ii-L1-r3 | ii | 2992 | 96 | 0 | spec | 31552 | 3152 | 3096 | 97684992 | 97432576 | 1.00 | 2328 | 51755220992 | 51755220992 | 22316488648 | 22567247176 | 1746 | own
-ii-L1-r4 | ii | 2991 | 96 | 0 | spec | 31552 | 3151 | 3095 | 97653440 | 97401024 | 1.00 | 2327 | 51755220992 | 51755220992 | 22567247176 | 22817671624 | 1664 | own
-i-L2-r0 | i | 5797 | 629 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 202753152 | 40.79 | 11065 | 51755220992 | 51755220992 | 23067186632 | 32638801740 | 7095 | own
-i-L2-r1 | i | 5803 | 497 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 198777600 | 41.61 | 11066 | 51755220992 | 51755220992 | 32638801740 | 32067062216 | 5489 | own
-i-L2-r2 | i | 5802 | 505 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 198998464 | 41.56 | 11065 | 51755220992 | 49003757568 | 32067062216 | 50624676300 | 5797 | own
+ii-L1-r4 | ii | 2991 | 96 | 0 | spec | 31552 | 3151 | 3095 | 97653440 | 97401024 | 1.00 | 2327 | 51755220992 | 51755220992 | 22567247176 | 22817671624 | 1663 | own
+i-L2-r0 | i | 5797 | 629 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 202753152 | 40.79 | 11065 | 51755220992 | 51755220992 | 23067186632 | 32638801740 | 7092 | own
+i-L2-r1 | i | 5803 | 497 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 198777600 | 41.61 | 11066 | 51755220992 | 51755220992 | 32638801740 | 32067062216 | 5487 | own
+i-L2-r2 | i | 5802 | 505 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 198998464 | 41.56 | 11065 | 51755220992 | 49003757568 | 32067062216 | 50624676300 | 5796 | own
 i-L2-r3 | i | 5805 | 443 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 197136896 | 41.96 | 11066 | 49003757568 | 49003757568 | 50624676300 | 41398661192 | 5344 | own
 i-L2-r4 | i | 5803 | 354 | 0 | spec | 31552 | 262208 | 262144 | 8271167488 | 194265664 | 42.58 | 11066 | 49003757568 | 48735322112 | 41398661192 | 41737302088 | 4553 | own
 ii-L2-r0 | ii | 5706 | 96 | 0 | spec | 31552 | 5866 | 5810 | 183317120 | 183064704 | 1.00 | 2975 | 48735322112 | 48299114496 | 41737302088 | 42075934792 | 2487 | own
 ii-L2-r1 | ii | 5702 | 96 | 0 | spec | 31552 | 5862 | 5806 | 183190912 | 182938496 | 1.00 | 2975 | 48299114496 | 48299114496 | 42075934792 | 34845811148 | 2406 | own
-ii-L2-r2 | ii | 5695 | 96 | 0 | spec | 31552 | 5855 | 5799 | 182970048 | 182717632 | 1.00 | 2975 | 48299114496 | 48299114496 | 34845811148 | 25619796040 | 2444 | own
-ii-L2-r3 | ii | 5692 | 96 | 0 | spec | 31552 | 5852 | 5796 | 182875392 | 182622976 | 1.00 | 2975 | 48299114496 | 48299114496 | 25619796040 | 25955032264 | 2465 | own
+ii-L2-r2 | ii | 5695 | 96 | 0 | spec | 31552 | 5855 | 5799 | 182970048 | 182717632 | 1.00 | 2975 | 48299114496 | 48299114496 | 34845811148 | 25619796040 | 2447 | own
+ii-L2-r3 | ii | 5692 | 96 | 0 | spec | 31552 | 5852 | 5796 | 182875392 | 182622976 | 1.00 | 2975 | 48299114496 | 48299114496 | 25619796040 | 25955032264 | 2468 | own
 ii-L2-r4 | ii | 5689 | 96 | 0 | spec | 31552 | 5849 | 5793 | 182780736 | 182528320 | 1.00 | 2975 | 48299114496 | 48299114496 | 25955032264 | 26290301896 | 2545 | own
-iii-L0-r0 | iii | 1572 | 384 | 1440 | spec | 31552 | 262208 | 262144 | 8271167488 | 61715712 | 134.02 | 9821 | 48299114496 | 48299114496 | 26625705160 | 26625705160 | 2991 | own
+iii-L0-r0 | iii | 1572 | 384 | 1440 | spec | 31552 | 262208 | 262144 | 8271167488 | 61715712 | 134.02 | 9821 | 48299114496 | 48299114496 | 26625705160 | 26625705160 | 2990 | own
 iii-L0-r1 | iii | 1565 | 239 | 1440 | spec | 31552 | 262208 | 262144 | 8271167488 | 56919808 | 145.31 | 9818 | 48299114496 | 48299114496 | 26625705160 | 35395136200 | 2150 | own
-iii-L0-r2 | iii | 1595 | 227 | 1440 | spec | 31552 | 262208 | 262144 | 8271167488 | 57487744 | 143.88 | 9832 | 48299114496 | 47091154944 | 35395136200 | 53597049292 | 1923 | own
-iii-L0-r3 | iii | 1563 | 484 | 1440 | spec | 31552 | 262208 | 262144 | 8271167488 | 64586944 | 128.06 | 9817 | 47091154944 | 47091154944 | 53597049292 | 44371034184 | 3692 | own
+iii-L0-r2 | iii | 1595 | 227 | 1440 | spec | 31552 | 262208 | 262144 | 8271167488 | 57487744 | 143.88 | 9832 | 48299114496 | 47091154944 | 35395136200 | 53597049292 | 1922 | own
+iii-L0-r3 | iii | 1563 | 484 | 1440 | spec | 31552 | 262208 | 262144 | 8271167488 | 64586944 | 128.06 | 9817 | 47091154944 | 47091154944 | 53597049292 | 44371034184 | 3693 | own
 iii-L0-r4 | iii | 1580 | 561 | 1440 | spec | 31552 | 262208 | 262144 | 8271167488 | 67552832 | 122.44 | 9825 | 47091154944 | 46688501760 | 44371034184 | 54007763404 | 4174 | own
-iii-L1-r0 | iii | 3236 | 564 | 3104 | spec | 31552 | 262208 | 262144 | 8271167488 | 119897600 | 68.99 | 10618 | 46688501760 | 46688501760 | 54007763404 | 44781748296 | 4561 | own
+iii-L1-r0 | iii | 3236 | 564 | 3104 | spec | 31552 | 262208 | 262144 | 8271167488 | 119897600 | 68.99 | 10618 | 46688501760 | 46688501760 | 54007763404 | 44781748296 | 4560 | own
 iii-L1-r1 | iii | 3220 | 621 | 3104 | spec | 31552 | 262208 | 262144 | 8271167488 | 121191232 | 68.25 | 10611 | 46688501760 | 46185185280 | 44781748296 | 54523482572 | 4823 | own
 iii-L1-r2 | iii | 3228 | 407 | 3104 | spec | 31552 | 262208 | 262144 | 8271167488 | 114691520 | 72.12 | 10615 | 46185185280 | 46185185280 | 54523482572 | 45297467464 | 3462 | own
 iii-L1-r3 | iii | 3234 | 319 | 3104 | spec | 31552 | 262208 | 262144 | 8271167488 | 112104256 | 73.78 | 10617 | 46185185280 | 45648314368 | 45297467464 | 55039201740 | 2752 | own
-iii-L1-r4 | iii | 3223 | 211 | 3104 | spec | 31552 | 262208 | 262144 | 8271167488 | 108349568 | 76.34 | 10612 | 45648314368 | 45648314368 | 55039201740 | 45813186632 | 1999 | own
+iii-L1-r4 | iii | 3223 | 211 | 3104 | spec | 31552 | 262208 | 262144 | 8271167488 | 108349568 | 76.34 | 10612 | 45648314368 | 45648314368 | 55039201740 | 45813186632 | 1998 | own
 iii-L2-r0 | iii | 5887 | 345 | 5760 | spec | 31552 | 262208 | 262144 | 8271167488 | 196632064 | 42.06 | 11067 | 45648314368 | 45413433344 | 45813186632 | 46071046216 | 3221 | own
-iii-L2-r1 | iii | 5884 | 487 | 5760 | spec | 31552 | 262208 | 262144 | 8271167488 | 201017792 | 41.15 | 11067 | 45413433344 | 44708790272 | 46071046216 | 55980720588 | 3891 | own
-iii-L2-r2 | iii | 5884 | 576 | 5760 | spec | 31552 | 262208 | 262144 | 8271167488 | 203825920 | 40.58 | 11067 | 44708790272 | 44708790272 | 55980720588 | 46754705480 | 4782 | inherited
-iii-L2-r3 | iii | 5868 | 354 | 5760 | spec | 31552 | 262208 | 262144 | 8271167488 | 196316544 | 42.13 | 11067 | 44708790272 | 44373245952 | 46754705480 | 47096367176 | 2940 | own
-iii-L2-r4 | iii | 5885 | 539 | 5760 | spec | 31552 | 262208 | 262144 | 8271167488 | 202690048 | 40.81 | 11067 | 44373245952 | 43869929472 | 47096367176 | 56819927500 | 4387 | own
+iii-L2-r1 | iii | 5884 | 487 | 5760 | spec | 31552 | 262208 | 262144 | 8271167488 | 201017792 | 41.15 | 11067 | 45413433344 | 44708790272 | 46071046216 | 55980720588 | 3890 | own
+iii-L2-r2 | iii | 5884 | 576 | 5760 | spec | 31552 | 262208 | 262144 | 8271167488 | 203825920 | 40.58 | 11067 | 44708790272 | 44708790272 | 55980720588 | 46754705480 | 4780 | inherited
+iii-L2-r3 | iii | 5868 | 354 | 5760 | spec | 31552 | 262208 | 262144 | 8271167488 | 196316544 | 42.13 | 11067 | 44708790272 | 44373245952 | 46754705480 | 47096367176 | 2938 | own
+iii-L2-r4 | iii | 5885 | 539 | 5760 | spec | 31552 | 262208 | 262144 | 8271167488 | 202690048 | 40.81 | 11067 | 44373245952 | 43869929472 | 47096367176 | 56819927500 | 4385 | own
 == per-arm allocated over used (verbatim per row, then N, min, median, max)
 arm=i L0 N=5 P=[1481, 1481, 1484, 1484, 1483] G=[591, 369, 589, 457, 545] cached=[0, 0, 0, 0, 0] ratios=[126.52, 141.7, 126.46, 135.06, 129.26] min=126.46 median=129.26 max=141.70 alloc_B=8271167488 used_B_median=63987456 booked_MB=[9291, 9777, 9779, 9779, 9778] inherited=1
 arm=i L1 N=5 P=[3138, 3138, 3139, 3138, 3136] G=[478, 954, 673, 508, 494] cached=[0, 0, 0, 0, 0] ratios=[72.5, 64.06, 68.77, 71.9, 72.22] min=64.06 median=71.90 max=72.50 alloc_B=8271167488 used_B_median=115038592 booked_MB=[10571, 10571, 10572, 10571, 10570] inherited=1
@@ -110,7 +110,7 @@ arm=iii L0 N=5 P=[1572, 1565, 1595, 1563, 1580] G=[384, 239, 227, 484, 561] cach
 arm=iii L1 N=5 P=[3236, 3220, 3228, 3234, 3223] G=[564, 621, 407, 319, 211] cached=[3104, 3104, 3104, 3104, 3104] ratios=[68.99, 68.25, 72.12, 73.78, 76.34] min=68.25 median=72.12 max=76.34 alloc_B=8271167488 used_B_median=114691520 booked_MB=[10618, 10611, 10615, 10617, 10612] inherited=0
 arm=iii L2 N=5 P=[5887, 5884, 5884, 5868, 5885] G=[345, 487, 576, 354, 539] cached=[5760, 5760, 5760, 5760, 5760] ratios=[42.06, 41.15, 40.58, 42.13, 40.81] min=40.58 median=41.15 max=42.13 alloc_B=8271167488 used_B_median=201017792 booked_MB=[11067, 11067, 11067, 11067, 11067] inherited=1
 == driver free (bytes) across the run
-samples=665 driver_free first=0 min=0 last=43668602880; pool_used first=0 max=56819927500 last=47778680904
+samples=664 driver_free first=0 min=0 last=43668602880; pool_used first=0 max=56819927500 last=47778680904
 == concurrency arithmetic at the served context (idle free at ready divided by the booked cost; not an admission run)
 idle driver free before the first request (max of 8 nonzero samples; the ready-time gauges read 0 until the first tick): 82759516160
 L0: P~1483 open booked_MB=9778 -> 8 sessions; bounded booked_MB=1674 -> 49 sessions (free_ready=82759516160)
@@ -123,18 +123,18 @@ L2: P~5803 open booked_MB=11066 -> 7 sessions; bounded booked_MB=2975 -> 27 sess
     1  [prefix-cache] on  first: [prefix-cache] on: budget 15883MB (15883042816 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), requested 15883042816 B; boot driver free
 prefix-cache hit lines: 15
 == admit-predict lines (verbatim, first 6 and last 3)
-[admit-predict] id=chatcmpl-266b16c29bf80d54a69ca2f26c888716 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=132 predicted_completion=32 kv_hat=117222160 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
-[admit-predict] id=chatcmpl-b4f68c97480850e4f428954340426c2f tenant="" model="q38" verdict=admit reason=global-p95 prompt=1481 predicted_completion=32 kv_hat=1114477480 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
-[admit-predict] id=chatcmpl-8fbc9c70a10e2fe319e33c734a9c8c9f tenant="" model="q38" verdict=admit reason=global-p95 prompt=1481 predicted_completion=591 kv_hat=1675978712 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
-[admit-predict] id=chatcmpl-cec5945d0ba7bb2bf65afbaa2cb20cba tenant="" model="q38" verdict=admit reason=global-p95 prompt=1484 predicted_completion=591 kv_hat=1677511064 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
-[admit-predict] id=chatcmpl-6541e476ba177d1402e2f14f6d63b563 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1484 predicted_completion=591 kv_hat=1677511064 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
-[admit-predict] id=chatcmpl-df44f7d6b1120beacdf90c5456f694f4 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1483 predicted_completion=591 kv_hat=1677000280 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
-[admit-predict] id=chatcmpl-7f77b3fa6753fcc34f63b9558d29c692 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5884 predicted_completion=629 kv_hat=3105931544 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
-[admit-predict] id=chatcmpl-3979befaaac17635a9d9f4600ed27fd9 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5868 predicted_completion=629 kv_hat=3105099032 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
-[admit-predict] id=chatcmpl-022ea729f1028e05cc7f3de37b104e58 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5885 predicted_completion=629 kv_hat=3105983576 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-6f36ff57330c48cf00afac5bd7ca0d0a tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=132 predicted_completion=32 kv_hat=117222160 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-3117ddb5a26116c9f710005d4e4e46cd tenant="" model="q38" verdict=admit reason=global-p95 prompt=1481 predicted_completion=32 kv_hat=1114477480 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-d4574da72a2876b63081d6037b5c6d41 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1481 predicted_completion=591 kv_hat=1675978712 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-13439a5001fac63a8125b9f3d401c73b tenant="" model="q38" verdict=admit reason=global-p95 prompt=1484 predicted_completion=591 kv_hat=1677511064 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-3dc2f52dce208cbe6ea9d0a33783931f tenant="" model="q38" verdict=admit reason=global-p95 prompt=1484 predicted_completion=591 kv_hat=1677511064 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-fdf86080c8d8123e9346f89689bc0da7 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1483 predicted_completion=591 kv_hat=1677000280 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-01d06041366c5482ef3db4fad4f0c0cb tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5884 predicted_completion=629 kv_hat=3105931544 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-bda1b21756661503a516c58325dd9c86 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5868 predicted_completion=629 kv_hat=3105099032 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-83018e21a8b24a7979a0e00ba638f630 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5885 predicted_completion=629 kv_hat=3105983576 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65881157328 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
 == day 27: retained at idle, pools and the park door (metrics-end.json, the last sample, the server lines)
 idle driver free before the first request=82759516160 last sample=43668602880 retained_by_process=39090913280
-pool used after warmup=0 last=47778680904 delta=47778680904; pool reserved last=57680068608 cached last=9901387704
+pool used after warmup=17914203332 last=47778680904 delta=29864477572; pool reserved last=57680068608 cached last=9901387704
 continuation_pool_entries=0
 continuation_pool_hits=0
 continuation_pool_evictions=0

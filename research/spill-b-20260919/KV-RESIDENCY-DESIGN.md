@@ -196,3 +196,36 @@ sessions on one 84k prefix hold one copy.
 
 The owner decides. The before receipt for whichever order is chosen is `DAY26.md` section 2 (both cards, N=5 per arm
 per order, both orders, `executed-not-qualified`).
+
+## Day 27 addendum: two findings from the census, one fixed, one for the owner (2026-09-22)
+
+Both receipts are in `DAY27.md`; every cell is `executed-not-qualified`.
+
+**Finding 1, fixed: the prefix-cache budget's context term.** The derived budget `min(2 x entry(ctx), boot_free - 1.5
+GiB)` read `ctx` as `MEMRA_CTX` when set and a literal 8192 when unset, while the cap rule (`request_ctx_cap` through
+`resolve_env_ctx`) reads the checkpoint's context when unset. On the target card (27B, `MEMRA_CTX` unset) that was
+`2 x 400,162,816 = 800,325,632 B` of budget beside `262,144 x 31,552 = 8,271,167,488 B` sessions, and the day-26
+deferred shape evicted 43 of 45 spec-boundary entries before their continuation (`cached=0` on 15 of 15). The fix
+(`crates/memra-server/src/worker.rs`, `prefix_budget_ctx` = `resolve_ctx` per loaded model inside
+`init_prefix_cache_budget`, tree `de2c781e6`) moves only the context term: the entry is `262,144 x 29,696 +
+156,893,184 = 7,941,521,408 B`, the budget `15,883,042,816 B` under the unchanged clamp `84,909,096,960 B`. After cell
+on the target card: 15 of 15 continuations hit (`cached_tokens` 1440 / 3104 / 5760), P and G equal to day 26 on 45 of
+45, 45 entries resident at 11,986,255,872 B, 0 evictions; idle retention rose from 30.1 GB to 39.1 GB because the
+entries now stay (that is the budget's purpose; they yield to sessions through `alloc_with_single_reclaim_retry`).
+Consequence for the options above: (a) and (b) are unchanged; the shared-prefix argument for (c)/(d) now has a
+prefix cache that actually retains on the target card at the served context, so the `c=16` cell of #539 can be run
+against a working cache rather than a starved one.
+
+**Finding 2, for the owner: what the 30 GB at idle is, and what the park door can reach.** Day 26 attributed the
+retention to four parked whole-session entries across two pools. The gauges say `continuation_pool_entries=0` in every
+target-card cell and `spec_pool_entries=2`: the mix is spec-path and a spec session parks in the spec pool only
+(`worker.rs:20880-20925`). The 30 GB is pool reserved minus the post-warmup used (about 30.6 GB): two parked spec
+sessions at `ctx_cap` (up to 2 x 8.27 GB when the last requests were open, 2 x 183 MB when they were bounded), the
+prefix entries, and the CUDA pool's cached free blocks (12 GB or 29 GB, the complement of the parked bytes). What the
+parked sessions bought on days 20 and 26: `continuation_pool_hits=0`, `spec_pool_hits=0`, every `prompt_ids` replay
+`plain-affinity: declined (no checkpoint retained ...)`, every chat continuation `spec-affinity: declined (history
+diverged at 48 of checkpoint ...)`. `MEMRA_KV_PARK_COMPACT` (`0 = OFF by design`, no `decide-by:` in its row) compacts
+plain-pool parks only; by design it cannot touch the spec pool that holds the bytes here. The pre-registered park
+cell (`DAY27.md` 2.4, 2.5) measures the door against the default on both cards; the pool's cached blocks are the
+`--kv-allocator vmm` door's subject (decide-by 2026-10-04), not the park door's. Owner's decision, recorded on #539:
+the park policy (TTL, per-pool caps at the served context, the spec pool's scope) is a product switch, not a lane's.

@@ -221,3 +221,57 @@ gives the door a plain pool to act on; it is labelled as such and is outside the
 
 No default change today; the receipt goes to the door's `docs/FLAGS.md` row and to #539 for the owner's decision on
 the park policy.
+
+### 2.5 The park cell: target card, one RTX PRO 6000 Blackwell, 27B, `MEMRA_CTX` unset (`pro-single-day27/cell-park-*`)
+
+Four collector cells, each `status executed-not-qualified`, `qualification false`, `exit_code 0`, tree `de2c781e6`, the
+same binary (`binary.sha256`), 46 requests each, `non-200=0`, `compute-apps` empty before and after; regime lines
+(before / after): `park-o1-default` `42 C, 36.31 W` / `47 C, 91.07 W`; `park-o1-compact` `42 C, 34.54 W` / `47 C,
+57.36 W`; `park-o2-compact` `43 C, 35.32 W` / `47 C, 89.13 W`; `park-o2-default` `42 C, 36.36 W` / `47 C, 89.15 W`;
+`power.limit 600.00 W`; elapsed 183.4 to 183.6 s each; `shape.txt` records `park_compact=unset` or `park_compact=1`.
+The per-arm ratio rows equal section 1.4's to the token in all four cells (`REPORT.txt`; regenerated locally from the
+same inputs with the parser's pool-baseline fix, `python3 day26-parse.py <cell>`). The day-27 summary block reads the
+same in all four, verbatim:
+
+```text
+idle driver free before the first request=82759516160 last sample=43668602880 retained_by_process=39090913280
+pool used after warmup=17914203332 last=47778680904 delta=29864477572; pool reserved last=57680068608 cached last=9901387704
+continuation_pool_entries=0
+continuation_pool_hits=0
+continuation_pool_evictions=0
+spec_pool_entries=2
+spec_pool_hits=0
+spec_pool_evictions=44
+spec_pool_misses=31
+prefix_cache_entries=45
+prefix_cache_bytes=11986255872
+prefix_cache_hits=15
+prefix_cache_hit_tokens=51520
+prefix_cache_inserts=45
+prefix_cache_evictions=0
+prefix_cache_misses=31
+step_oom_parks=0
+admission_vram_defers=0
+park-compact lines: 0
+affinity lines: spec-affinity: declined=30
+```
+
+`cached_tokens` on the 15 continuations: `[1440, 1440, 1440, 1440, 1440, 3104, 3104, 3104, 3104, 3104, 5760, 5760, 5760,
+5760, 5760]` in every cell. Digests (`day27-compare.py`): order 1 `default` against `compact` `tags=45 digest_equal=45
+digest_differs=0 missing=0 rows_with_both_digests=45 ... P_G_chars_equal=45`; order 2 `compact` against `default` the
+same line; across boots `after-ab` against `park-o1-default`, `park-o1-default` against `park-o2-default`, and
+`park-o1-compact` against `park-o2-compact` each `digest_equal=45 digest_differs=0`. The (ii) digests are the empty
+content's on both arms (section 1.4).
+
+Reading, against the pre-registration in 2.4: exactly as predicted from the code. `MEMRA_KV_PARK_COMPACT=1` wrote no
+`[kv-reuse] park-compact` line in either order (the door acts at a plain-pool park; `continuation_pool_entries=0`
+because every session here is a spec session and parks in the spec pool), retained bytes at idle are the same
+39,090,913,280 B in both arms, both pools hit nothing (`continuation_pool_hits=0`, `spec_pool_hits=0`,
+`spec-affinity: declined` on all 30 continuations and cold second turns), and every completion is byte-identical
+across arms and boots. On this mix the door cannot touch what is retained: the two parked spec sessions of the last
+open requests (2 x 8,271,167,488 B at the served context) and the pool's cached blocks (9,901,387,704 B) sit outside
+its scope, and the 11,986,255,872 B of prefix entries are the budget's purpose. Executed, not qualified. The receipt for
+the owner: the park policy on the spec pool (TTL, a cap at the served context, or compaction in scope) is where the
+bytes are; the plain-pool door, as written, is not. A labelled extra pair on the plain path (`MEMRA_SERVE_SPEC=0`,
+`pro-single-day27/cell-plain-*`) follows in 2.6 to give the door a plain pool to act on; it is outside the
+pre-registered comparison.
