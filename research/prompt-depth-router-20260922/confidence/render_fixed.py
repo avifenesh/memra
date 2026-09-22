@@ -91,8 +91,9 @@ def render(report, identity):
         f"- Original sealed runtime SHA-256: `{source['base_runtime_source_sha256']}`.",
         "- Sampler: temperature 0.7, top-k 20, top-p 0.95; default thinking.",
         "- Cache: fresh native cache for every request; no HTTP or concurrency claim.",
-        "- Correctness: target-only greedy oracle passed for C=0 and C=0.30",
-        "  with and without zero-draft rounds, followed by matched driver tapes.",
+        "- Correctness: target-only greedy oracle passed for every C setting,",
+        "  followed by matched driver tapes and seeded sampled reruns at the",
+        "  study's 0.7/20/0.95 decode shape.",
         "- Format coverage checks fenced Python syntax, not functional correctness.",
         "",
     ]

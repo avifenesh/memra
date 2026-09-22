@@ -21,6 +21,8 @@ HARNESS = {
     "harness/confidence/patch_source.py",
     "harness/confidence/prepare_patched.py",
     "harness/confidence/remote_job_v2.sh",
+    "harness/confidence/offline_adaptive.py",
+    "harness/confidence/sampled_gate.sh",
 }
 SCIENCE = {
     "fixed-grid-v2-report.json",
@@ -28,10 +30,17 @@ SCIENCE = {
     "oracle-v2-off.log",
     "oracle-v2-c030.log",
     "oracle-v2-c030zero.log",
+    "oracle-v2-c015.log",
     "source-confidence.json",
     "source-patch.json",
     "models/qwen/artifacts.lock.json",
     "workloads/manifest.json",
+    "offline-adaptive.json",
+    "sampled-gate.exit",
+    "sampled-oracle-off.log",
+    "sampled-oracle-c015.log",
+    "sampled-oracle-c030.log",
+    "sampled-oracle-c030zero.log",
 }
 SOURCE = "runtime-source-confidence.tar.gz"
 
@@ -81,6 +90,8 @@ def main():
             raise ValueError("operator bundle lacks source, records or reporting code")
         if not (root / "job-v2.exit").read_text().startswith("exit=0 "):
             raise ValueError("operator study did not close successfully")
+        if not (root / "sampled-gate.exit").read_text().startswith("exit=0 "):
+            raise ValueError("sampled cutoff gate did not close successfully")
         native = {
             name: root / name for name in seen
             if name.startswith(("fixed-grid-v2/", "workloads/")) or name in SCIENCE

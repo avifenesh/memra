@@ -130,6 +130,7 @@ jobs:
         run: |
           lane=research/prompt-depth-router-20260922/confidence
           python3 -m compileall -q "$lane"
+          python3 -m unittest discover -s "$lane" -p 'test_*.py' -v
           pin=$(cut -d ' ' -f 1 "$lane/receipts-v1/manifest.sha256")
           python3 "$lane/reproduce.py" \
             --candidate "$lane/receipts-v1" \
@@ -138,6 +139,7 @@ jobs:
             --out "$RUNNER_TEMP/confidence-replay"
           cmp "$RUNNER_TEMP/confidence-replay/RESULTS.json" "$lane/RESULTS.json"
           cmp "$RUNNER_TEMP/confidence-replay/RESULTS.md" "$lane/RESULTS.md"
+          cmp "$RUNNER_TEMP/confidence-replay/OFFLINE-RESULTS.json" "$lane/OFFLINE-RESULTS.json"
       - name: Retain exact replay receipt
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -146,5 +148,6 @@ jobs:
             ${{ runner.temp }}/confidence-replay/REPLAY.json
             ${{ runner.temp }}/confidence-replay/RESULTS.json
             ${{ runner.temp }}/confidence-replay/RESULTS.md
+            ${{ runner.temp }}/confidence-replay/OFFLINE-RESULTS.json
           if-no-files-found: error
           retention-days: 7

@@ -104,11 +104,18 @@ def reproduce(candidate, manifest_sha256, base, out):
     from loop_audit import loop_candidate  # noqa: PLC0415
     from run_study import metrics_from_log  # noqa: PLC0415
     from report_fixed import report  # noqa: PLC0415
+    from offline_adaptive import replay as offline_replay  # noqa: PLC0415
 
     root = data / "fixed-grid-v2"
     status = json.loads((root / "status.json").read_text())
+    freeze = json.loads((root / "FREEZE.json").read_text())
     workloads = json.loads((data / "workloads/manifest.json").read_text())
+    if sha(data / "workloads/manifest.json") != freeze["workloads_sha256"]:
+        raise ValueError("registered workload manifest differs")
     qwen = workloads["families"]["qwen"]
+    for entry in (qwen["qualification"], *qwen["scenarios"].values()):
+        if sha(data / "workloads" / entry["file"]) != entry["sha256"]:
+            raise ValueError("registered workload text differs: " + entry["file"])
     checked = 0
     for relative in status["completed"]:
         family, phase, label = relative.split("/")
@@ -118,6 +125,21 @@ def reproduce(candidate, manifest_sha256, base, out):
                  else qwen["scenarios"][str(int(label.split("-")[0]))])
         run = root / relative
         saved = json.loads(run.with_name(run.name + ".audit.json").read_text())
+        command = json.loads(run.with_name(run.name + ".command.json").read_text())
+        exit_row = json.loads(run.with_name(run.name + ".exit.json").read_text())
+        settings = command["settings"]
+        cutoff = freeze["arms"][label.split("-")[-1]]
+        if (float(settings["MEMRA_SPEC_PMIN"]) != cutoff["pmin"]
+                or settings["MEMRA_SPEC_PMIN0"] != ("1" if cutoff["pmin0"] else "0")
+                or settings["MEMRA_SPEC_ADAPT"] != "0"
+                or settings["MEMRA_SPEC_STATS"] != "1"
+                or settings["MEMRA_SPEC_PMIN_INROUND"] != "0"
+                or command["binary_sha256"] != source["binaries"]["qwen-prefix-study"]
+                or command["workload_sha256"] != entry["sha256"]
+                or command["seed"] != entry["seed"]
+                or exit_row["returncode"] != 0 or exit_row["contamination"]
+                or run.with_name(run.name + ".gpu.csv").stat().st_size == 0):
+            raise ValueError("native arm settings or execution differ: " + relative)
         text = run.with_name(run.name + ".log").read_text()
         metrics = metrics_from_log(text)["fixed:3"]
         independent = audit_run(
@@ -128,9 +150,20 @@ def reproduce(candidate, manifest_sha256, base, out):
                 or saved["metrics"] != metrics):
             raise ValueError("native request audit differs: " + relative)
         checked += 1
-    for name in ("oracle-v2-off.log", "oracle-v2-c030.log", "oracle-v2-c030zero.log"):
+    for name in (
+        "oracle-v2-off.log", "oracle-v2-c015.log",
+        "oracle-v2-c030.log", "oracle-v2-c030zero.log",
+    ):
         if "=== SELF-CONSISTENCY PASS ===" not in (data / name).read_text():
             raise ValueError("target oracle failed: " + name)
+    if not (data / "sampled-gate.exit").read_text().startswith("exit=0 "):
+        raise ValueError("sampled cutoff gate did not complete")
+    for label in ("off", "c015", "c030", "c030zero"):
+        name = f"sampled-oracle-{label}.log"
+        text = (data / name).read_text()
+        if ("=== SELF-CONSISTENCY PASS ===" not in text
+                or "PASS (seeded rerun identical)" not in text):
+            raise ValueError("sampled cutoff reproducibility failed: " + name)
     result = report(root)
     recorded = json.loads((data / "fixed-grid-v2-report.json").read_text())
     if result != recorded:
@@ -138,6 +171,10 @@ def reproduce(candidate, manifest_sha256, base, out):
     (out / "RESULTS.json").write_text(json.dumps(result, indent=2) + "\n")
     identity = json.loads((root / "identity.json").read_text())
     (out / "RESULTS.md").write_text(render_fixed(result, identity))
+    offline = offline_replay(root)
+    if json.loads(json.dumps(offline)) != json.loads((data / "offline-adaptive.json").read_text()):
+        raise ValueError("offline adaptive-C replay differs from its recorded outcome")
+    (out / "OFFLINE-RESULTS.json").write_text(json.dumps(offline, indent=2) + "\n")
     receipt = {
         "status": "replayed-without-GPU",
         "native_runs": checked,
@@ -145,6 +182,7 @@ def reproduce(candidate, manifest_sha256, base, out):
         "source": source_receipt,
         "results_sha256": sha(out / "RESULTS.json"),
         "markdown_sha256": sha(out / "RESULTS.md"),
+        "offline_results_sha256": sha(out / "OFFLINE-RESULTS.json"),
     }
     (out / "REPLAY.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt

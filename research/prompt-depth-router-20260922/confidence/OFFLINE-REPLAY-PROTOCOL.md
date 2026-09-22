@@ -21,7 +21,9 @@ ladder `off, c015, c030, c030zero`. Recent selected-arm acceptance below
 alternates, reversing at an edge. Adopt a probed C if its chosen request's
 length-normalized output tok/s exceeds the incumbent's recent mean by more
 than 2%. This intentionally simple rule uses actual cycle yield for the
-decision; acceptance only chooses which direction to probe. All probe
+decision; aggregate accepted/drafted, censored by the first rejection,
+only chooses which direction to probe. It is not a calibration label for
+later draft positions. All probe
 requests count in the evaluation.
 
 Compare pooled **native request** output tok/s with C=0 and the one
