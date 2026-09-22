@@ -668,6 +668,25 @@ if [ "${MEMRA_CI_STRESS:-1}" = "1" ] && [ -x tools/serve-stress-gate.sh ]; then
     tools/serve-stress-gate.sh || { echo "serve-stress FAIL"; exit 1; }
 fi
 
+# REQUEST-FAULT BOUNDARY (memra#525): one of four concurrent streams panics inside its guarded
+# step (MEMRA_FAULT_INJECT_CACHE_SALT door); it must fail typed (code worker_fault), its three
+# peers must finish byte-identical to the same streams without it, request_faults_total reads 1
+# and no respawn happens. Before this boundary a per-request panic truncated every peer after a
+# 200 and respawned the worker. About 60 s on the 9B NVFP4. MEMRA_CI_FAULTGATE=0 skips.
+FAULT_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_FAULTGATE:-1}" = "1" ] && [ -f "$FAULT_MODEL" ]; then
+    echo "== local-ci: request-fault boundary gate (memra#525) =="
+    FAULT_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-faultgate.XXXXXX")
+    if python3 tools/request-fault-gate.py --model "$FAULT_MODEL" --bin target/release/memra-server \
+        --out "$FAULT_OUT" --port 18525; then
+        rm -rf "$FAULT_OUT"
+    else
+        echo "request-fault gate FAIL (receipt kept at $FAULT_OUT)"; exit 1
+    fi
+else
+    echo "request-fault gate: SKIP (no 9B NVFP4 model at $FAULT_MODEL or MEMRA_CI_FAULTGATE=0)"
+fi
+
 # SERVED-SPEC ACCEPTANCE + LONG-TEXT ASSERTION (lane/accept-gate, 2026-08-06): the arm that
 # closes a receipted blind spot in THIS battery. research/f8f4-flip-20260806 (merged c506317e)
 # showed a kernel arm move served greedy text in 4 of 6 regime cells at temperature 0 and move

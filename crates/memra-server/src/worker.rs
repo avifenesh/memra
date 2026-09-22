@@ -1431,6 +1431,11 @@ pub enum ErrClass {
     /// couple of seconds will work. -> 429 + Retry-After. Uptime-neutral at OpenRouter, and
     /// their own guidance prefers an early 429 to queueing.
     RateLimit,
+    /// A Rust panic inside THIS request's step while the CUDA context still answered
+    /// (memra#525): the request fails with `code: worker_fault`, the worker keeps serving its
+    /// peers. Only a driver error or a failed post-panic probe reaches the supervisor's
+    /// respawn/exit ladder. -> 500 + `code: worker_fault`.
+    WorkerFault,
     /// The BOX is out of capacity (VRAM exhausted, step OOM past its park budget). -> 503,
     /// not 429: "a 429 that a client cannot fix by waiting should not be a 429", and OpenAI
     /// itself serves overload as 503. This one honestly counts against uptime, because it is
@@ -1533,6 +1538,8 @@ impl EngineError {
         let message = message.into();
         let class = if is_cuda_oom(&message) {
             ErrClass::Overloaded
+        } else if message.contains(REQUEST_FAULT_PREFIX) {
+            ErrClass::WorkerFault
         } else {
             ErrClass::Engine
         };
@@ -6736,6 +6743,9 @@ pub(crate) fn engine_client_message(class: ErrClass) -> &'static str {
         ErrClass::Overloaded => {
             "the model is temporarily at capacity; retry after the Retry-After delay"
         }
+        ErrClass::WorkerFault => {
+            "this request hit an internal fault and was retired; other requests were not affected. Report the request id"
+        }
         _ => {
             "the engine could not complete this request; retry, and report the request id if it persists"
         }
@@ -6744,6 +6754,255 @@ pub(crate) fn engine_client_message(class: ErrClass) -> &'static str {
 
 fn is_cuda_oom(err: &str) -> bool {
     err.contains("CUDA_ERROR_OUT_OF_MEMORY") || err.contains("out of memory")
+}
+
+/// Marker the request-fault guard writes into the error it returns; `EngineError::engine`
+/// classifies any message carrying it as `ErrClass::WorkerFault` (the same text-classification
+/// seam `is_cuda_oom` uses, so the 27 `EngineError::engine(format!(..{err}))` arms need no edit).
+pub const REQUEST_FAULT_PREFIX: &str = "request fault:";
+
+/// Request faults caught by the guard (the request failed, the worker kept running).
+pub static REQUEST_FAULTS_TOTAL: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// Worker thread respawns the supervisor attempted (a worker fault reached the ladder).
+pub static WORKER_RESPAWNS_TOTAL: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+pub fn request_faults_total() -> u64 {
+    REQUEST_FAULTS_TOTAL.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn worker_respawns_total() -> u64 {
+    WORKER_RESPAWNS_TOTAL.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn panic_payload_text(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+        .unwrap_or_else(|| "non-string panic payload".into())
+}
+
+/// A panic whose message quotes a driver or library error is a worker fault whatever the probe
+/// says afterwards: the state that produced it is not this request's alone.
+fn looks_like_cuda_fault(msg: &str) -> bool {
+    msg.contains("DriverError")
+        || msg.contains("CUDA_ERROR_")
+        || msg.contains("CUBLAS_STATUS")
+        || msg.contains("cuBLAS")
+        || is_cuda_oom(msg)
+}
+
+/// Post-panic probe: the context must still take a synchronize, a small allocation and a
+/// readback. A sticky CUDA error fails the first call; a healthy context passes all three.
+fn cuda_context_healthy(e: &Engine) -> bool {
+    e.stream().synchronize().is_ok() && e.zeros(16).and_then(|z| e.dtoh(&z)).is_ok()
+}
+
+/// The per-request fault boundary (memra#525). Runs `f` under `catch_unwind`; on a panic it
+/// classifies at the catch site: a driver-looking payload or a failed `context_healthy` probe is
+/// a WORKER fault and the panic is re-raised into the supervisor's respawn/exit ladder; anything
+/// else is a REQUEST fault: one `[fault]` line, `REQUEST_FAULTS_TOTAL` bumped, and an `Err`
+/// carrying `REQUEST_FAULT_PREFIX` so the existing error arms retire exactly this session with a
+/// typed `worker_fault` and the worker goes on serving its peers. `context_healthy` is a
+/// parameter so the classification has CPU-only teeth (`request_fault_guard_tests`).
+pub(crate) fn request_fault_guard<T>(
+    context_healthy: impl FnOnce() -> bool,
+    request_id: &str,
+    route: &str,
+    site: &str,
+    f: impl FnOnce() -> Result<T, Box<dyn std::error::Error>>,
+) -> Result<T, Box<dyn std::error::Error>> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(result) => result,
+        Err(payload) => {
+            let msg = panic_payload_text(payload.as_ref());
+            if looks_like_cuda_fault(&msg) || !context_healthy() {
+                eprintln!(
+                    "[fault] request={request_id} route={route} site={site} WORKER FAULT: {msg} \
+                     (driver error in the panic or the CUDA context no longer answers); \
+                     re-raising to the supervisor"
+                );
+                std::panic::resume_unwind(payload);
+            }
+            REQUEST_FAULTS_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            eprintln!(
+                "[fault] request={request_id} route={route} site={site} panic={msg}; the CUDA \
+                 context answers, this request is retired with worker_fault and the worker \
+                 continues"
+            );
+            Err(format!("{REQUEST_FAULT_PREFIX} {site} panicked: {msg}").into())
+        }
+    }
+}
+
+/// `request_fault_guard` with the live CUDA probe.
+fn guard_request<T>(
+    e: &Engine,
+    request_id: &str,
+    route: &str,
+    site: &str,
+    f: impl FnOnce() -> Result<T, Box<dyn std::error::Error>>,
+) -> Result<T, Box<dyn std::error::Error>> {
+    request_fault_guard(|| cuda_context_healthy(e), request_id, route, site, f)
+}
+
+fn fault_route(s: &Session) -> String {
+    format!("lane{}/{}", s.lane.idx(), s.model)
+}
+
+/// MEMRA_FAULT_INJECT_CACHE_SALT (fault-injection door, memra#525): a request whose
+/// `cache_salt` equals the value panics inside its first guarded step, deterministically, so a
+/// gate can prove the boundary on the wire: that request fails typed, its peers finish byte-
+/// identical to a run without it, and the worker generation does not move.
+fn fault_inject_salt() -> Option<&'static str> {
+    static SALT: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    SALT.get_or_init(|| {
+        std::env::var("MEMRA_FAULT_INJECT_CACHE_SALT")
+            .ok()
+            .filter(|v| !v.is_empty())
+    })
+    .as_deref()
+}
+
+#[cfg(test)]
+mod request_fault_guard_tests {
+    //! CPU-only teeth for the memra#525 boundary: the probe is a closure, so every branch of the
+    //! classification runs without a card.
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    fn faults() -> u64 {
+        REQUEST_FAULTS_TOTAL.load(Ordering::Relaxed)
+    }
+
+    #[test]
+    fn ok_and_err_pass_through_untouched() {
+        let before = faults();
+        let ok = request_fault_guard(|| true, "r", "lane0/m", "site", || Ok::<u32, _>(7));
+        assert_eq!(ok.unwrap(), 7);
+        let err = request_fault_guard(
+            || true,
+            "r",
+            "lane0/m",
+            "site",
+            || Err::<u32, Box<dyn std::error::Error>>("plain engine error".into()),
+        );
+        let msg = err.unwrap_err().to_string();
+        assert_eq!(msg, "plain engine error");
+        assert!(!msg.contains(REQUEST_FAULT_PREFIX));
+        assert_eq!(faults(), before, "a returned Err is not a fault");
+    }
+
+    #[test]
+    fn panic_with_healthy_context_is_a_request_fault() {
+        let _quiet = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let before = faults();
+        let r = request_fault_guard(
+            || true,
+            "req-1",
+            "lane1/qwen",
+            "decode step",
+            || {
+                if faults() < u64::MAX {
+                    panic!("index out of bounds: the len is 3 but the index is 9");
+                }
+                Ok::<u32, Box<dyn std::error::Error>>(0)
+            },
+        );
+        let _ = std::panic::take_hook();
+        let msg = r.unwrap_err().to_string();
+        assert!(msg.starts_with(REQUEST_FAULT_PREFIX), "{msg}");
+        assert!(msg.contains("decode step panicked"), "{msg}");
+        assert!(msg.contains("index out of bounds"), "{msg}");
+        assert_eq!(faults(), before + 1);
+        let e = EngineError::engine(format!("prefill error: {msg}"));
+        assert_eq!(e.class, ErrClass::WorkerFault);
+        assert!(
+            engine_client_message(ErrClass::WorkerFault)
+                .contains("other requests were not affected")
+        );
+    }
+
+    #[test]
+    fn panic_with_dead_context_reraises() {
+        let _quiet = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let before = faults();
+        let r = std::panic::catch_unwind(|| {
+            request_fault_guard(
+                || false,
+                "req-2",
+                "lane0/m",
+                "decode step",
+                || {
+                    if faults() < u64::MAX {
+                        panic!("something ordinary");
+                    }
+                    Ok::<u32, Box<dyn std::error::Error>>(0)
+                },
+            )
+        });
+        let _ = std::panic::take_hook();
+        let payload = r.expect_err("a dead context re-raises the panic");
+        assert_eq!(panic_payload_text(payload.as_ref()), "something ordinary");
+        assert_eq!(
+            faults(),
+            before,
+            "a worker fault is not counted as a request fault"
+        );
+    }
+
+    #[test]
+    fn driver_looking_panic_reraises_even_when_probe_is_healthy() {
+        let _quiet = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let before = faults();
+        let r = std::panic::catch_unwind(|| {
+            request_fault_guard(
+                || true,
+                "req-3",
+                "lane0/m",
+                "spec step",
+                || {
+                    if faults() < u64::MAX {
+                        panic!(
+                            "called `Result::unwrap()` on an `Err` value: DriverError(CUDA_ERROR_ILLEGAL_ADDRESS)"
+                        );
+                    }
+                    Ok::<u32, Box<dyn std::error::Error>>(0)
+                },
+            )
+        });
+        let _ = std::panic::take_hook();
+        assert!(r.is_err());
+        assert_eq!(faults(), before);
+        assert!(looks_like_cuda_fault("CUBLAS_STATUS_EXECUTION_FAILED"));
+        assert!(looks_like_cuda_fault("CUDA_ERROR_OUT_OF_MEMORY"));
+        assert!(!looks_like_cuda_fault("attempt to subtract with overflow"));
+    }
+
+    #[test]
+    fn plain_engine_message_stays_engine_class() {
+        assert_eq!(
+            EngineError::engine("batch step: shape mismatch".to_string()).class,
+            ErrClass::Engine
+        );
+        assert_eq!(
+            EngineError::engine("CUDA_ERROR_OUT_OF_MEMORY".to_string()).class,
+            ErrClass::Overloaded
+        );
+    }
+}
+
+fn maybe_inject_fault(cache_ns: &str, request_id: &str) {
+    if let Some(salt) = fault_inject_salt()
+        && salt == cache_ns
+    {
+        panic!("[fault-inject] MEMRA_FAULT_INJECT_CACHE_SALT matched request {request_id}");
+    }
 }
 
 /// The error the MEMRA_STEP_OOM_FAULT door forges: a QUOTED CUDA OOM (so `is_cuda_oom`
@@ -20565,11 +20824,19 @@ pub fn run(
                 let generated_before = active[i].generated.len();
                 let lane = active[i].lane;
                 let step_started = Instant::now();
-                let step_result = match step_session_async_chain(&engine, &loaded, &mut active[i]) {
-                    Ok(Some(keep)) => Ok(keep),
-                    Ok(None) => step_session(&engine, &loaded, &mut active[i], &mut spec_metrics),
-                    Err(err) => Err(err),
-                };
+                let (fault_id, fault_route) =
+                    (active[i].request_id.clone(), fault_route(&active[i]));
+                let step_result =
+                    guard_request(&engine, &fault_id, &fault_route, "decode step", || {
+                        maybe_inject_fault(&active[i].cache_ns, &active[i].request_id);
+                        match step_session_async_chain(&engine, &loaded, &mut active[i]) {
+                            Ok(Some(keep)) => Ok(keep),
+                            Ok(None) => {
+                                step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
+                            }
+                            Err(err) => Err(err),
+                        }
+                    });
                 record_output_progress(
                     generated_before,
                     active[i].generated.len(),
@@ -21033,25 +21300,31 @@ pub fn run(
                 // pretending is full); the match below (park-vs-honest-error, the
                 // teardown fence, park_requeue, the retry budget) is production logic,
                 // un-doctored. This is the ONLY injection point of the door.
-                let step_result = if step_oom_fault_fire() {
-                    eprintln!(
-                        "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this step reports a \
-                         synthetic CUDA OOM (model {}, generated {}, oom_retries {}/{})",
-                        active[i].model,
-                        active[i].generated.len(),
-                        active[i].oom_retries,
-                        step_oom_retries(),
-                    );
-                    Err(STEP_OOM_FAULT_MSG.into())
-                } else if was_dspark_step {
-                    step_dspark_spec(&engine, &loaded, &mut dspark_drafts, &mut active[i])
-                } else if active[i].glm5_on {
-                    step_glm5_spec(&engine, &loaded, &mut active[i])
-                } else if active[i].gspec_k > 0 {
-                    step_gemma_spec(&engine, &loaded, &mut gemma_drafts, &mut active[i])
-                } else {
-                    step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
-                };
+                let (fault_id, fault_route) =
+                    (active[i].request_id.clone(), fault_route(&active[i]));
+                let step_result =
+                    guard_request(&engine, &fault_id, &fault_route, "spec step", || {
+                        maybe_inject_fault(&active[i].cache_ns, &active[i].request_id);
+                        if step_oom_fault_fire() {
+                            eprintln!(
+                                "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this step reports a \
+                             synthetic CUDA OOM (model {}, generated {}, oom_retries {}/{})",
+                                active[i].model,
+                                active[i].generated.len(),
+                                active[i].oom_retries,
+                                step_oom_retries(),
+                            );
+                            Err(STEP_OOM_FAULT_MSG.into())
+                        } else if was_dspark_step {
+                            step_dspark_spec(&engine, &loaded, &mut dspark_drafts, &mut active[i])
+                        } else if active[i].glm5_on {
+                            step_glm5_spec(&engine, &loaded, &mut active[i])
+                        } else if active[i].gspec_k > 0 {
+                            step_gemma_spec(&engine, &loaded, &mut gemma_drafts, &mut active[i])
+                        } else {
+                            step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
+                        }
+                    });
                 let step_elapsed_ms = step_started.elapsed().as_secs_f32() * 1000.0;
                 if let Some((
                     start_ms,
@@ -21572,19 +21845,23 @@ pub fn run(
                         budget
                     );
                 }
-                match prefill_tick(
-                    &engine,
-                    &loaded,
-                    &mut px,
-                    &mut hpx,
-                    s,
-                    budget,
-                    vision_tower.as_ref(),
-                    gemma_tower.as_ref(),
-                    glm5_tower.as_ref(),
-                    step_tower.as_ref(),
-                    overlay_publish,
-                ) {
+                let (fault_id, fault_route) = (s.request_id.clone(), fault_route(s));
+                match guard_request(&engine, &fault_id, &fault_route, "prefill", || {
+                    maybe_inject_fault(&s.cache_ns, &s.request_id);
+                    prefill_tick(
+                        &engine,
+                        &loaded,
+                        &mut px,
+                        &mut hpx,
+                        s,
+                        budget,
+                        vision_tower.as_ref(),
+                        gemma_tower.as_ref(),
+                        glm5_tower.as_ref(),
+                        step_tower.as_ref(),
+                        overlay_publish,
+                    )
+                }) {
                     Ok(consumed) => {
                         if consumed > 0 {
                             prefill_single_calls += 1;
@@ -21635,7 +21912,13 @@ pub fn run(
                 }
                 let generated_before = active[i].generated.len();
                 let lane = active[i].lane;
-                let step_result = step_session(&engine, &loaded, &mut active[i], &mut spec_metrics);
+                let (fault_id, fault_route) =
+                    (active[i].request_id.clone(), fault_route(&active[i]));
+                let step_result =
+                    guard_request(&engine, &fault_id, &fault_route, "decode step", || {
+                        maybe_inject_fault(&active[i].cache_ns, &active[i].request_id);
+                        step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
+                    });
                 let emitted = record_output_tokens(
                     generated_before,
                     active[i].generated.len(),
@@ -21754,7 +22037,12 @@ pub fn run(
                         }
                     })
                     .collect();
-                let logits = {
+                let batch_ids: String = idxs
+                    .iter()
+                    .map(|&i| active[i].request_id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let logits = guard_request(&engine, &batch_ids, "batch", "batched decode", || {
                     // split-borrow: pull the caches out via split_at_mut-style indexing
                     let mut caches: Vec<&mut Cache> = Vec::with_capacity(idxs.len());
                     // SAFETY: idxs are unique indices into `active`; we take disjoint &mut.
@@ -21792,7 +22080,7 @@ pub fn run(
                             true,
                         ),
                     }
-                };
+                });
                 match logits {
                     Ok((rows, next_toks)) => {
                         for (k, &i) in idxs.iter().enumerate() {
@@ -22013,19 +22301,23 @@ pub fn run(
                 if chunk < memra_engine::hybrid_forward::PRIME_MIN_T {
                     break;
                 }
-                if let Err(err) = prefill_tick(
-                    &engine,
-                    &loaded,
-                    &mut px,
-                    &mut hpx,
-                    s,
-                    chunk,
-                    vision_tower.as_ref(),
-                    gemma_tower.as_ref(),
-                    glm5_tower.as_ref(),
-                    step_tower.as_ref(),
-                    overlay_publish,
-                ) {
+                let (fault_id, fault_route) = (s.request_id.clone(), fault_route(s));
+                if let Err(err) = guard_request(&engine, &fault_id, &fault_route, "prefill", || {
+                    maybe_inject_fault(&s.cache_ns, &s.request_id);
+                    prefill_tick(
+                        &engine,
+                        &loaded,
+                        &mut px,
+                        &mut hpx,
+                        s,
+                        chunk,
+                        vision_tower.as_ref(),
+                        gemma_tower.as_ref(),
+                        glm5_tower.as_ref(),
+                        step_tower.as_ref(),
+                        overlay_publish,
+                    )
+                }) {
                     if !prime_cancelled_abort(s, err.as_ref()) {
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
@@ -31146,6 +31438,7 @@ pub fn spawn(
                             .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
                             .unwrap_or_else(|| "non-string panic payload".into());
                         attempt += 1;
+                        WORKER_RESPAWNS_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         h2.mark_dead(format!("worker thread panicked: {why}"));
                         eprintln!("[worker] PANIC in the GPU worker thread: {why}");
                         if attempt > worker_respawn_max() {
