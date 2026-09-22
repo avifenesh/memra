@@ -1,5 +1,11 @@
 # Next native comparison: output-aware K without head training
 
+The owner's latest steering makes
+[`../prefix/PROTOCOL.md`](../prefix/PROTOCOL.md) the primary experiment:
+multiple prompt lengths, a hard first-X-user-token input bound, and fixed K=3
+for both prose and code against adaptation. The decoder-prefix variants below
+remain separate diagnostics, not substitutes for that requested comparison.
+
 Owner and scope: continuation of memra issue #635. The research hypothesis is
 that inexpensive prediction of upcoming prose/code/numeric output can choose
 K from {2,3,4} across models without model-specific neural training. LLM and

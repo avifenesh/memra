@@ -1,11 +1,11 @@
 # Fast per-request depth routing
 
-The continuation in [`forecast/PROTOCOL.md`](forecast/PROTOCOL.md) tests a shared
-shallow tree that predicts upcoming output format from a bounded committed
-prefix. It selects only K=2,3,4 and requires no LLM or draft-head training.
-The first stage measures forecasting, transfer between models, causal inputs
-and CPU cost on the archived conversations. Native throughput requires a
-subsequent executed policy comparison.
+The primary continuation is [`prefix/PROTOCOL.md`](prefix/PROTOCOL.md):
+forecasters read only the first X user-prompt tokens, with X=64,128,256; compare
+fixed K=3 against adaptation on prose and code at 256/1K/4K/16K prompt lengths.
+Normal model tokenization is reused. No LLM or draft-head training is required.
+The earlier decoder-prefix tree in [`forecast/PROTOCOL.md`](forecast/PROTOCOL.md)
+is retained as a separate diagnostic.
 
 The [forecast pilot and coverage audit](forecast/RESULTS.md) found that a shared
 17-node tree costs 1.873 us p99, but the existing prefix rule is stronger overall.

@@ -1,0 +1,73 @@
+name: Prompt prefix depth
+
+on:
+  pull_request:
+    paths:
+      - research/prompt-depth-router-20260922/prefix/**
+      - research/prompt-depth-router-20260922/router.rs
+      - research/prompt-depth-router-20260922/prepare_native.py
+      - .github/workflows/prompt-prefix-depth.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prompt-prefix-depth-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  prefix-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: "1.97.1"
+      - name: Verify prefix limits and unseen-tail invariance
+        run: |
+          rustc --edition=2024 --test research/prompt-depth-router-20260922/prefix/check.rs \
+            -o "$RUNNER_TEMP/prefix-policy-tests"
+          "$RUNNER_TEMP/prefix-policy-tests"
+      - name: Verify preparation against the pinned native source
+        run: |
+          python3 research/prompt-depth-router-20260922/prefix/prepare.py \
+            --source-archive research/mtp-context-depth-20260921/latest-receipts/runtime-source.tar.gz \
+            --out "$RUNNER_TEMP/prefix-source"
+
+  native-build:
+    needs: prefix-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install CUDA compiler without allocating a GPU
+        run: tools/install-cuda-ci.sh
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: "1.97.1"
+          components: clippy
+      - name: Build native drivers for the bounded-prefix comparison
+        run: |
+          python3 research/prompt-depth-router-20260922/prefix/build.py \
+            --source-archive research/mtp-context-depth-20260921/latest-receipts/runtime-source.tar.gz \
+            --out "$RUNNER_TEMP/prompt-prefix-native"
+      - name: Retain source, programs and complete command records
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: prompt-prefix-native-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/prompt-prefix-native/*.json
+            ${{ runner.temp }}/prompt-prefix-native/*.stdout
+            ${{ runner.temp }}/prompt-prefix-native/*.stderr
+            ${{ runner.temp }}/prompt-prefix-native/*.tar.gz
+            ${{ runner.temp }}/prompt-prefix-native/binaries
+            ${{ runner.temp }}/prompt-prefix-native/prefix-tests
+          if-no-files-found: error
+          retention-days: 7
