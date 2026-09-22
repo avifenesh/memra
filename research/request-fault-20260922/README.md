@@ -72,6 +72,7 @@ retire time, outside every guard, so it still exercises the worker ladder.
 |---|---|---|---|---|---|---|
 | `raw/gate-5090-run1` | yes | 3/3 | 1 | 0 | 0 | one `[fault]` line, site=fault-inject |
 | `raw/gate-5090-run2` | yes | 3/3 | 1 | 0 | 0 | one `[fault]` line, site=fault-inject |
+| `raw/gate-5090-run3-final` (final binary after both review rounds; an unrelated 1.4 GB process was on the card, `raw/gpu-cotenants-at-run3.txt`) | yes | 3/3 | 1 | 0 | 0 | one `[fault]` line, site=fault-inject |
 
 Peer text hashes were the same across both runs and both rounds (`888d259f…`, `8c59c164…`,
 `b5ed9ff8…`). The salted stream's error object:
@@ -84,6 +85,13 @@ request never met an injection point (that is why injection is its own guarded s
 the batched prime call is guarded); (2) the gate collected only `delta.content`, and the 9B
 streams thinking first, so every text hashed empty (it now disables thinking and collects both).
 
-`raw/ladder-control-panic-after/` (if present): the same server with `MEMRA_PANIC_AFTER=1`, the
-worker-fault control: `[worker] PANIC`, generation 0 -> 1, `worker_respawns_total` 1,
-`request_faults_total` 0.
+`raw/local-ci/local-ci.log`: the full `tools/local-ci.sh` battery on the final tree, exit 0, with
+the new request-fault stage inside it (`REQUEST-FAULT: ... -> PASS`). SKIPs are this rig's usual
+absent-model cells (gemma 12B/31B, Q35 MoE, the 9B draft, accept-gate cells) and the three
+pair-only GPU tests; the local 5090 is the development-iteration gate, per docs/TESTING.md.
+
+`raw/ladder-control-panic-after/`: the same server with `MEMRA_PANIC_AFTER=1`, the worker-fault
+control. One request completed (200), then `[worker] PANIC in the GPU worker thread`, `/health`
+503 `phase=dead` with the quoted payload in `detail`, `respawn attempt 1/1 in 2s`, then `/health`
+200 with generation 1; `/metrics` read `worker_respawns_total` 1 and `request_faults_total` 0. The
+ladder is intact and the two counters separate the two classes.
