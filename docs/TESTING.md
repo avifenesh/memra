@@ -84,7 +84,7 @@ or nonempty receipt namespace before launching the synthetic NVFP4/FP8/kernel-ch
 |---|---|---|---|
 | 0 | seconds (~2 s kernel-check scoped + build) | workspace compile + kernel-check scoped to the touched sections | every edit-compile loop |
 | 1 | ~1–2 min | tier 0 + golden-token argmax probe on ONE model per affected kernel class (+ one single-K spec probe when the diff touches the spec pipeline) | before every dev-loop commit |
-| 2 | tens of minutes | the full battery, `tools/local-ci.sh`: kernel-check ALL GREEN (~4.5 min), prime-gate, run-gen argmax per model, VERIFY-GATE, `run-spec` K=1..8 self-consistency on the Qwen 35B target + external MTP draft (`MEMRA_CI_RUNSPEC=0` skips), Gemma-4 31B stream agreement 64/64, decode-batch-gate (config + Q8_0 strict, the serving tick's exactness, wired in 2026-08-05), graph-warmup stress (`tools/graph-warmup-stress-gate.sh`, pool-growth adversarial bit-identity behind the `MEMRA_GRAPH_WARMUPS=1` default, wired 2026-08-05), serve-smoke, serve-stress (`tools/serve-stress-gate.sh`, the c=64 concurrency contract behind the admission spec-headroom fix, wired 2026-08-06; `MEMRA_CI_STRESS=0` skips), accept-gate (`tools/accept-gate.sh`, exact served-spec acceptance counts + a 128-token text sha at the production drafter/K, wired 2026-08-06; smoke cell by default, `--full` for the 6-cell matrix, `MEMRA_CI_ACCEPT=0` skips) | **every merge, every tag** (unchanged) |
+| 2 | tens of minutes | the full battery, `tools/local-ci.sh`: kernel-check ALL GREEN (~4.5 min), prime-gate, run-gen argmax per model, VERIFY-GATE, `run-spec` K=1..8 self-consistency on the Qwen 35B target + external MTP draft (`MEMRA_CI_RUNSPEC=0` skips), Gemma-4 31B stream agreement 64/64, decode-batch-gate (config + Q8_0 strict, the serving tick's exactness, wired in 2026-08-05), graph-warmup stress (`tools/graph-warmup-stress-gate.sh`, pool-growth adversarial bit-identity behind the `MEMRA_GRAPH_WARMUPS=1` default, wired 2026-08-05), serve-smoke, health-fault-gate (`tools/health-fault-gate.sh`, readiness, panic-respawn, gpu-watch latch and drain arms on the real server, wired 2026-09-22; `MEMRA_CI_HEALTH_FAULT=0` skips), serve-stress (`tools/serve-stress-gate.sh`, the c=64 concurrency contract behind the admission spec-headroom fix, wired 2026-08-06; `MEMRA_CI_STRESS=0` skips), accept-gate (`tools/accept-gate.sh`, exact served-spec acceptance counts + a 128-token text sha at the production drafter/K, wired 2026-08-06; smoke cell by default, `--full` for the 6-cell matrix, `MEMRA_CI_ACCEPT=0` skips) | **every merge, every tag** (unchanged) |
 
 The battery's last correctness stage runs every memra-engine `#[ignore]` GPU test serially
 (`--test-threads=1`): the tests flip process-global gate doors and share one device, so
@@ -104,6 +104,13 @@ question is `qwen-a4-width-walk <model.gguf> [ref_width] [widths...]` (a `memra-
 on the shared rows; the summary line `WIDTH WALK width 16 vs 17: 0 of N tensors differ` is the
 verdict, and a nonzero count names the tensors whose dispatch is keyed on the call width
 (`research/spill-b-20260919/DAY22.md` for the run that named `ssm_beta`/`ssm_alpha`).
+
+Boot-time environment audit (memra#483, `memra_engine::env_audit`): the server refuses a
+retired `MEMRA_*` door or an unknown name inside an owned family before any door is read,
+naming the FLAGS.md "Removed" ledger; the registry is generated from `docs/FLAGS.md` by the
+engine's `build.rs`. Its red arm (a retired name refuses) and its non-vacuity arm (every legal
+name at once refuses nothing) are unit tests in `env_audit.rs`; `MEMRA_ENV_AUDIT=warn` downgrades,
+`=0` disables, both announced. Receipts: `research/env-audit-20260921/`.
 
 The docs-fit owner call is closed: tier 2 now runs the full `run-spec` K=1..8 sweep and requires
 eight per-K PASS lines plus the final `SELF-CONSISTENCY PASS` marker. The raw run is logged before
@@ -417,8 +424,16 @@ Two holes in this stage were closed by that same red (2026-08-06):
 ## What fast-gate does NOT cover
 
 - **Serving surface** (`crates/memra-server/`): run `tools/serve-smoke.sh` (fast-gate prints
-  the pointer when the diff touches it). Three more serving gates exist and are **not** wired
-  into fast-gate or `local-ci.sh`: invoke them by hand for any diff in their area:
+  the pointer when the diff touches it) and, for any diff in `health.rs`, the worker
+  supervisor, the boot calibration probe or the drain path, `tools/health-fault-gate.sh`
+  (memra#524; in `local-ci.sh` since 2026-09-22, `MEMRA_CI_HEALTH_FAULT=0` skips): seven boots
+  of the real server asserting `/readyz`, `/health` and the request path across readiness
+  before and after the boot probe (`phase=warming` on the respawn window), the three
+  probe-skipped boots (recorded as DOCUMENTED, ready without warmup), a `MEMRA_PANIC_AFTER`
+  worker panic and respawn, a latched gpu-watch fault, and a SIGTERM drain with a stream open;
+  `HFG_ARMS=d,f` runs a subset, `HFG_OUT` names the receipt dir. Three more serving gates exist
+  and are **not** wired into fast-gate or `local-ci.sh`: invoke them by hand for any diff in
+  their area:
   - `tools/serve-st-gate.sh [st_dir]`: an HF **safetensors dir** served end-to-end: `/models`
     lists it, `/v1/chat/completions` returns coherent text through the checkpoint's *own* chat
     template, and the CLI-vs-server exactness contract (same checkpoint, same prompt, same

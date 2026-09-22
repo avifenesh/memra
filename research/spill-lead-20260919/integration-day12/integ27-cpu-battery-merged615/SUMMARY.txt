@@ -1,0 +1,18 @@
+tree ea09a61b4c46018ebc1ac8751f059cd3eb618256 started 2026-09-21T22:18:43Z (after merging main 81d75c457, #615)
+== fmt: cargo fmt --all -- --check
+   rc=0 (3s)
+== test-server: cargo test -p memra-server --offline --no-fail-fast
+   rc=0 (158s)
+== clippy-server: cargo clippy -p memra-server --offline --all-targets -- -D warnings
+   rc=0 (144s)
+== test-engine-cpu: cargo test -p memra-engine --lib --offline --no-fail-fast
+   rc=0 (22s)
+== check-flags: bash tools/check-flags.sh
+   rc=0 (1s)
+== conflict-markers: bash tools/check-conflict-markers.sh
+   rc=0 (1s)
+== portable-suites: bash tools/portable-suites.sh
+   rc=0 (16s)
+== diff-check: git diff --check origin/main HEAD
+   rc=2 (0s)
+finished 2026-09-21T22:24:28Z

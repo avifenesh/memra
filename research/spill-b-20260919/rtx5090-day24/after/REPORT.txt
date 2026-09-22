@@ -1,0 +1,85 @@
+== boot
+[admit-predict] shadow armed: budget_bytes=14534558848 budget_src=derived(effective_free_bytes=16493823104 - prefix_cache_budget_bytes=348651520 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+floor=1610612736
+== request-cost lines (verbatim, one per distinct (ctx, path, cost))
+[admission] request cost: model="q9" ctx=194 path=spec = 16704 B/token x ctx + 24MB prefill-workspace + 0MB fixed = 27MB
+[admission] request cost: model="q9" ctx=6166 path=plain = 14848 B/token x ctx + 1508MB prefill-workspace + 128MB fixed = 1727MB
+[admission] request cost: model="q9" ctx=6455 path=plain = 14848 B/token x ctx + 1512MB prefill-workspace + 128MB fixed = 1736MB
+[admission] request cost: model="q9" ctx=6724 path=plain = 14848 B/token x ctx + 1517MB prefill-workspace + 128MB fixed = 1745MB
+[admission] request cost: model="q9" ctx=6997 path=plain = 14848 B/token x ctx + 1521MB prefill-workspace + 128MB fixed = 1753MB
+[admission] request cost: model="q9" ctx=13522 path=spec = 16704 B/token x ctx + 1628MB prefill-workspace + 116MB fixed = 1970MB
+[admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+[admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+== admit-predict lines (verbatim)
+[admit-predict] id=chatcmpl-daf2b2fd3b40b36910a286b218a1f4ed tenant="" model="q9" verdict=admit reason=maxtok-fallback prompt=66 predicted_completion=64 kv_hat=69999504 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=14534558848 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-df011e15f9dc6ea313517411e6b73c01 tenant="" model="q9" verdict=admit reason=global-p95 prompt=6006 predicted_completion=64 kv_hat=1701213496 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=14534558848 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-c79a2ceb8594d01a2a94dc738f3232ef tenant="" model="q9" verdict=admit reason=global-p95 prompt=6295 predicted_completion=64 kv_hat=1721323572 booked_bytes=1701213496 booked_real=1702520120 inflight=1 cap=64 budget_bytes=14534558848 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-1df0bb510685bb86b0730107a613a832 tenant="" model="q9" verdict=admit reason=global-p95 prompt=6564 predicted_completion=64 kv_hat=1730261364 booked_bytes=3422537068 booked_real=3425150316 inflight=2 cap=64 budget_bytes=14534558848 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-9ac3c30ea08a24c890d461c019b79b35 tenant="" model="q9" verdict=admit reason=global-p95 prompt=6837 predicted_completion=64 kv_hat=1739286964 booked_bytes=5152798432 booked_real=5156718304 inflight=3 cap=64 budget_bytes=14534558848 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-9ac7250593ac2e8651baa8eb75218db7 tenant="" model="q9" verdict=admit reason=global-p95 prompt=13362 predicted_completion=96 kv_hat=2012955268 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=14534558848 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-b6f6f5c2875ac03ced77bd2d24268edb tenant="" model="q9" verdict=admit reason=global-p95 prompt=6006 predicted_completion=96 kv_hat=1726425400 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=14534558848 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-42f8d53c2974a0df2b35c8ad58bb20f7 tenant="" model="q9" verdict=admit reason=global-p95 prompt=6295 predicted_completion=96 kv_hat=1735451448 booked_bytes=1726425400 booked_real=1727256888 inflight=1 cap=64 budget_bytes=14534558848 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-71e3d0f53858df0e247a09d846eb7363 tenant="" model="q9" verdict=admit reason=global-p95 prompt=6564 predicted_completion=96 kv_hat=1743852856 booked_bytes=3461876848 booked_real=3463539824 inflight=2 cap=64 budget_bytes=14534558848 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-fd3ac62893a56e5941139c78a521f008 tenant="" model="q9" verdict=admit reason=global-p95 prompt=6837 predicted_completion=96 kv_hat=1752379192 booked_bytes=5205729704 booked_real=5208224168 inflight=3 cap=64 budget_bytes=14534558848 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+== idle baseline mem.used MiB: n=8 min=8697 max=8697
+== samples (epoch_ms, mem_used_mib, delta_bytes, real_book(reconstructed), shadow_book(reconstructed), under_real, under_shadow, inflight); every 4th sample printed, all kept in samples.csv
+1790025825342 8697 0 0 0 0 0 0
+1790025826342 8697 0 0 0 0 0 0
+1790025827342 9593 939524096 6897718304 6892085396 -5958194208 -5952561300 4
+1790025828342 9593 939524096 6897718304 6892085396 -5958194208 -5952561300 4
+1790025829342 9593 939524096 6897718304 6892085396 -5958194208 -5952561300 4
+1790025830342 9593 939524096 6897718304 6892085396 -5958194208 -5952561300 4
+1790025831342 9817 1174405120 6897718304 6892085396 -5723313184 -5717680276 4
+1790025832342 9913 1275068416 6897718304 6892085396 -5622649888 -5617016980 4
+1790025833342 9913 1275068416 0 0 1275068416 1275068416 0
+1790025834342 9913 1275068416 0 0 1275068416 1275068416 0
+1790025835342 10969 2382364672 2014000000 2012955268 368364672 369409404 1
+1790025836342 11097 2516582400 2014000000 2012955268 502582400 503627132 1
+1790025837342 11129 2550136832 2014000000 2012955268 536136832 537181564 1
+1790025838342 11129 2550136832 2014000000 2012955268 536136832 537181564 1
+1790025839342 11129 2550136832 0 0 2550136832 2550136832 0
+1790025840342 11129 2550136832 0 0 2550136832 2550136832 0
+1790025841342 11129 2550136832 6961224168 6958108896 -4411087336 -4407972064 4
+1790025842342 11129 2550136832 6961224168 6958108896 -4411087336 -4407972064 4
+1790025843342 11129 2550136832 6961224168 6958108896 -4411087336 -4407972064 4
+1790025844342 11129 2550136832 6961224168 6958108896 -4411087336 -4407972064 4
+1790025845342 11129 2550136832 6961224168 6958108896 -4411087336 -4407972064 4
+1790025846342 11129 2550136832 6961224168 6958108896 -4411087336 -4407972064 4
+1790025847342 11129 2550136832 0 0 2550136832 2550136832 0
+1790025848342 11129 2550136832 0 0 2550136832 2550136832 0
+== peak mem.used MiB=11129 at 1790025836842
+max_underbook_real  = (2550136832, 1790025838842, 11129, 0)   (bytes, epoch_ms, mem_used_mib, real_book)
+max_underbook_shadow = (2550136832, 1790025838842, 11129, 0)   (bytes, epoch_ms, mem_used_mib, shadow_book)
+(second, labeled row, not the pre-registered headline) while inflight > 0: max_underbook_real=(822879944, 1790025840842, 11129, 1727256888) max_underbook_shadow=(823711432, 1790025840842, 11129, 1726425400)
+== per-request physical cost: exact from the next admit line's booked_real delta where available, else the MB-rounded line (~)
+warm P=66 cost_exact=None cost_used=71000000 kv_hat=69999504 real/shadow=1.01x
+a0 P=6006 cost_exact=1702520120 cost_used=1702520120 kv_hat=1701213496 real/shadow=1.00x
+a1 P=6295 cost_exact=1722630196 cost_used=1722630196 kv_hat=1721323572 real/shadow=1.00x
+a2 P=6564 cost_exact=1731567988 cost_used=1731567988 kv_hat=1730261364 real/shadow=1.00x
+a3 P=6837 cost_exact=None cost_used=1741000000 kv_hat=1739286964 real/shadow=1.00x
+b0 P=13362 cost_exact=None cost_used=2014000000 kv_hat=2012955268 real/shadow=1.00x
+c0 P=6006 cost_exact=1727256888 cost_used=1727256888 kv_hat=1726425400 real/shadow=1.00x
+c1 P=6295 cost_exact=1736282936 cost_used=1736282936 kv_hat=1735451448 real/shadow=1.00x
+c2 P=6564 cost_exact=1744684344 cost_used=1744684344 kv_hat=1743852856 real/shadow=1.00x
+c3 P=6837 cost_exact=None cost_used=1753000000 kv_hat=1752379192 real/shadow=1.00x
+== A: per request (tag, P, L, C, kv_hat, cost~, gap~, bracket=bpt*(C-(P+L+8)), residual~ = gap - bracket, W~+D~ from line)
+warm P=66 L=64 C=194 path=spec bpt=16704 kv_hat=69999504 cost~=71000000 gap~=1000496 bracket=935424 residual~=65072 W~=24000000 A~=0 D~=44000000 flat_geometry=True
+a0 P=6006 L=64 C=6166 path=plain bpt=14848 kv_hat=1701213496 cost~=1703000000 gap~=1786504 bracket=1306624 residual~=479880 W~=1508000000 A~=103000000 D~=0 flat_geometry=True
+a1 P=6295 L=64 C=6455 path=plain bpt=14848 kv_hat=1721323572 cost~=1723000000 gap~=1676428 bracket=1306624 residual~=369804 W~=1512000000 A~=114000000 D~=0 flat_geometry=True
+a2 P=6564 L=64 C=6724 path=plain bpt=14848 kv_hat=1730261364 cost~=1732000000 gap~=1738636 bracket=1306624 residual~=432012 W~=1517000000 A~=115000000 D~=0 flat_geometry=True
+a3 P=6837 L=64 C=6997 path=plain bpt=14848 kv_hat=1739286964 cost~=1741000000 gap~=1713036 bracket=1306624 residual~=406412 W~=1521000000 A~=115000000 D~=0 flat_geometry=True
+b0 P=13362 L=96 C=13522 path=spec bpt=16704 kv_hat=2012955268 cost~=2014000000 gap~=1044732 bracket=935424 residual~=109308 W~=1628000000 A~=116000000 D~=44000000 flat_geometry=True
+c0 P=6006 L=96 C=6166 path=plain bpt=14848 kv_hat=1726425400 cost~=1727000000 gap~=574600 bracket=831488 residual~=-256888 W~=1508000000 A~=128000000 D~=0 flat_geometry=True
+c1 P=6295 L=96 C=6455 path=plain bpt=14848 kv_hat=1735451448 cost~=1736000000 gap~=548552 bracket=831488 residual~=-282936 W~=1512000000 A~=128000000 D~=0 flat_geometry=True
+c2 P=6564 L=96 C=6724 path=plain bpt=14848 kv_hat=1743852856 cost~=1745000000 gap~=1147144 bracket=831488 residual~=315656 W~=1517000000 A~=128000000 D~=0 flat_geometry=True
+c3 P=6837 L=96 C=6997 path=plain bpt=14848 kv_hat=1752379192 cost~=1753000000 gap~=620808 bracket=831488 residual~=-210680 W~=1521000000 A~=128000000 D~=0 flat_geometry=True
+A: max |residual~| = 479880 bytes (tolerance 0 at the line's 1 MB grain, so |residual~| <= 2e6 passes)
+B: max_underbook_real=2550136832 <= floor=1610612736: FAIL
+C: Overloaded/OOM lines = 0: PASS
+== readiness (memra#524): /readyz first 200 versus the warm request; boot calibration line; warm [ttft] line
+[admit-cal] boot calibration done: model="q9" route=mtp transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9440MB rest-mapped 8064MB charged 109MB -> 1266MB]; 1.2s)
+1790025819968 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790025823221 [server] listening on http://127.0.0.1:18476
+ready_ms=1790025823280 warm_submit_ms=1790025824342 warm_done_ms=1790025824706 ready_to_first_completion_ms=1426 (poll grain 500 ms)
+warm ttft: prime_wait_ms=0.679 prime_ms=76.002 decode_wait_ms=0.001 first_decode_ms=77.187 total_ms=77.187
+requests=10 non-200=0 admits=10 ready_ms=1790025823280

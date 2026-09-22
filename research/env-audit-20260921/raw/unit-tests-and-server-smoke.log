@@ -1,0 +1,21 @@
+    Finished `release` profile [optimized] target(s) in 2m 54s
+BUILD_DONE
+test env_audit::tests::a_retired_door_refuses_with_its_ledger ... ok
+test env_audit::tests::unknown_names_refuse_inside_owned_families_and_warn_outside ... ok
+test env_audit::tests::registry_is_populated_sorted_and_disjoint ... ok
+test env_audit::tests::every_legal_name_passes ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 543 filtered out; finished in 0.00s
+TEST_DONE
+972
+110
+== retired (dsv4, wildcard-covered)
+Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_DSV4_MOE_PROGRAM: retired. See docs/FLAGS.md 'Removed doors, 2026-09-11 (the matrix expert program is the default; split-K goes with the flip)'. The value parses into nothing now; unset it, and if the arm it selected is the one you need, the ledger names what replaced it.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time."
+== dsv4 typo (wildcard makes it legal: expect NO refusal, boot proceeds)
+[server] starting; models config = [("main", "/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", None), ("judge", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+== retired prefix-cache policy
+Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_PREFIX_CACHE_POLICY: retired. See docs/FLAGS.md 'Removed doors, 2026-09-21 (the prefix-cache policy door: decided on the incident's shape, the segmented arm deleted)'. The value parses into nothing now; unset it, and if the arm it selected is the one you need, the ledger names what replaced it.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time."
+== bank v2 (worker refusal class)
+Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_NVFP4_BANK_V2: retired. See docs/FLAGS.md 'Removed doors, 2026-09-05 door sweep (memra #212; owner order \"every door that is not in use, not needed, removed\")'. The value parses into nothing now; unset it, and if the arm it selected is the one you need, the ledger names what replaced it.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time."
+== unknown in a defined family w/o wildcard
+Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_PRIME_NOPE: unknown MEMRA_PRIME_* name (31 documented names in that family, none is this one). Not in docs/FLAGS.md and not in its Removed ledgers: a typo or a name from another tree. It would be read by nothing.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time."
+SMOKE2_DONE
