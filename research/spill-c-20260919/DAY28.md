@@ -281,7 +281,7 @@ BOX3 reached through the existing control socket only (`ssh -O check` first, `Ma
 (mine) left detached at `61dc1a52a`, clean; the two bundles removed on both ends; receipts under
 `/root/spill-receipts/day28` (mirrored here); `/root/artifacts`, `/root/memra-spill` and other lanes' worktrees and
 processes not touched; no server of mine on either card at close (the box: none; the local card: other sessions'
-`memra-server` processes seen in `pgrep` only, never inspected or signalled, the 5090 lock free at my last probe).
+`memra-server` processes seen in `pgrep` only, never inspected or signalled; at close the 5090 lock was held by another session's `kernel-check`, seen in nvidia-smi's listing only).
 Local: the price cell took and released the canonical lock once; no `/tmp` scratch left.
 
 ## Budget
