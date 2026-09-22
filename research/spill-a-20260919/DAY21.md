@@ -75,6 +75,23 @@ pool key, the source pin, the entry's tokens and boundary logits, the destinatio
 | the tier latched off, the capture or Move 1 paths | independent: a restore reads device memory only; a `Latched` restore settle latches the tier off (below) |
 | a second restore while one is pending | never submitted: the probe answers "through" and the request takes the tick program |
 
+### The retire seam (the lead's note on revuto #634, received mid-day, after the first worker commit)
+
+Slice 1's finding: a capture's source is a live session's plane and the engine retains none of it, so the lead
+now settles a pending `Capturing` entry `Block` before any session leaves `active` (integ36, `bd6584f9b`, merged
+into this lane as `14b2d7b0f` before the refusal-path mirror and the census below). The restore's mirror is built into its ownership rather than added at
+the seam: its DESTINATION cache is owned by the pending state (`HostPrefixCache::restoring`) and never by a
+session while the copy is in flight; the request that will own it is parked on the requeue, not in `active`, so
+no retire, park, rewind or prime can meet the cache before `host_restore_take_ready` hands it over, and that
+hand-over requires `ready` (every completion event observed complete, the owner-stream wait installed). Its
+SOURCE is pinned from submit through the hand-over or the typed drop (a drop with a pending contract settles
+`Block` first), and a pinned entry is out of every eviction index by construction. The census
+`every_path_that_meets_a_restoring_request_settles_or_ignores_it_as_stated` pins both: the cache leaves the
+pending state exactly once, under the `ready` check, and the pin is taken before the submit and carried to the
+serving session. The lead's second item, a refused submission whose producer event is still pending, is mirrored
+verbatim: the restore's refusal path drains the owner stream, releases the fence, and latches the route off typed
+if it still will not release (never `let _`); the same census pins drain, then release, then latch.
+
 ### Failure paths, typed, one line each
 
 - A refusal before or at submit (the fresh cache's allocation, the OFF validation, the producer fence, the engine's
