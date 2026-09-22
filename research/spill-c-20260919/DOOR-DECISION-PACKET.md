@@ -33,6 +33,10 @@ against it. Every figure added on day 37 comes from a command in appendix A. Day
 and the 9B entry's byte split was read from the banked server logs of days 31, 35 and 37 and the source (`C/DAY38.md`
 section 3). Section 4's RTX 5090 table gains their rows; item 7 and section 6 were re-read where they change them.
 Every figure added on day 38 comes from a command in appendix A.
+Day 39 update: A day 30 landed (Move 2 owed item 1's D2H half, `A/DAY30.md`) on integ47 (`160929a92`), merged into
+this lane as `a20e4990d` and not on `origin/main` `9717e8d57` at the time of writing (`C/day39-cpu/ancestry.log`); every
+"A day 30 running" site outside ruling 41's verbatim quote in item 2 now carries A's two verdict lines verbatim, and the
+quote itself keeps its words with the landed result stated after it.
 
 ## The one page
 
@@ -97,8 +101,8 @@ Under `MEMRA_KV_HOST_CONTRACTS=1` with a host tier armed (`MEMRA_KV_HOST_MB > 0`
   `hash-helper-gone` and `hash-never-lands` cells (a 10 s deadline) latch the tier with the parked requests named, on
   the existing `MEMRA_KV_HOST_FAULT` row; no new `MEMRA_*` read.
 - **What still runs on the tick under ON.** The recurrent f32 state (`conv_state`, `ssm_state`, about 157 MB of
-  every 27B entry) is copied on the owner stream by both D2D classes (Move 2 owed item 1). On A's branch (A day 30,
-  `A/DAY30.md`; the lead integrates) the demote's recurrent planes ride the KV ticket as D2H spans into a cached
+  every 27B entry) is copied on the owner stream by both D2D classes (Move 2 owed item 1). On integ47 (A day 30,
+  `A/DAY30.md`; `160929a92`, not on `origin/main` `9717e8d57` at the time of writing) the demote's recurrent planes ride the KV ticket as D2H spans into a cached
   pinned staging set, so the demote's steady pre-submit reads 0.62 ms on the target card (day 29: 6.05, N=80 each),
   while the promote's H2D and both D2D recurrent copies stay on the owner stream. The by-reference
   demote routes (the admission reclaim flush, the pause sweep, the handoff) keep the day-16 synchronous program
@@ -257,7 +261,7 @@ RTX 5090 Laptop GPU, the 9B (this card's own figures):
    **The receipt (A days 28 and 29; day 36 update).** Option (a) landed on A day 28 and option 2a (the parked hit on a
    `Hashing` entry, ruling 40) on A day 29; ruling 41 on integ45, verbatim: "the day-28 and day-29 code is the door's
    serving path; Move 1 owed item 2 (the bundle hash off the tick) closes on these receipts; item 2a closes; the
-   remaining owner-thread cost of a demote is the pre-submit segment (Move 2 owed item 1, A day 30 running)." Clause 1,
+   remaining owner-thread cost of a demote is the pre-submit segment (Move 2 owed item 1, A day 30 running)." (Day 39 status, outside the quote: A day 30 landed on integ47 (`origin/lane/spill-integ47-20260923` at `160929a92`), not on `origin/main` `9717e8d57` at the time of writing; its D2H half puts the demote's recurrent planes on the KV ticket as D2H spans, `DAY30 A2 pre-submit steady N=80 median=0.62 min=0.58 max=1.10 boots_on=10 demotes_per_boot=[11] rule N>=80 median<=1.5 max<=3.0 -> PASS` (`A/pro-single-day30/box/reading-day30-doublepark.log`) and `DAY28 VERDICT clauses_failed=0 -> ALL PASS` (`A/pro-single-day30/box/reading-day28.log`); the H2D and D2D halves stay owed, `A/DAY30.md` section 9.) Clause 1,
    verbatim from each sitting's `box/reading-day28.log`, day 28 first:
    `DAY28 CLAUSE 1a stall order=o1 N_boots_on=5 N_boots_off=5 on_cell_median=81.8 off_cell_median=85.2 rule on<=off+2.0 -> PASS`,
    `DAY28 CLAUSE 1b e2e order=o1 N_runs_on=50 N_runs_off=50 on=132.3 off=115.4 on_minus_off=+16.9 rule <=+20.0 -> PASS`,
@@ -366,7 +370,7 @@ RTX 5090 Laptop GPU, the 9B (this card's own figures):
    (`MEMRA_GLM5_TP_KV_HOST=1`) is refused with the door until the lease handoff is built (ruling 28).
 7. **Still unbuilt or unmeasured (section D of the door table), after days 31, 33, A day 27, A days 28 and 29, and C day 38.**
    Move 2 owed item 1, the recurrent f32 state on the contract (the demote's pre-submit segment, section 2: about 6 ms
-   steady and 37 to 44 ms at first touch on the target card; A day 30 running, no receipt at the time of writing); the
+   steady and 37 to 44 ms at first touch on the target card before A day 30; the D2H half landed on A day 30, on integ47 (`origin/lane/spill-integ47-20260923` at `160929a92`), not on `origin/main` `9717e8d57` at the time of writing: `DAY30 A2 pre-submit steady N=80 median=0.62 min=0.58 max=1.10 boots_on=10 demotes_per_boot=[11] rule N>=80 median<=1.5 max<=3.0 -> PASS`, `DAY28 VERDICT clauses_failed=0 -> ALL PASS`; the H2D half, the D2D half, the governor charge of the staging (157.9 MB per context on the 27B), the strong-form receipt, a span-refusal fault cell and returning the staging to the pool after a refused receipt stay owed, `A/DAY30.md` section 9); the
    arena's lease handoff (item 1; refused with the door, ruling 28); the DFlash tail slice (item 2; no drafter artifact
    identity, no gate boots a drafter); verify digest v3 (item 3); the 9B entry's recurrent state and hidden row split by
    class (day 38 read the rest of the 54.6 MB from the banked logs: KV planes 950,272 B exactly, 256 B of token ids,
@@ -428,7 +432,7 @@ RTX 5090 Laptop GPU, the 9B (this card's own figures):
   seam unused, the seam is deleted.
 - **A longer door with a new date and the missing gate named.** Requires the `docs/FLAGS.md` row to carry the new
   `decide-by:` and the row's reason ("pending its X row" is a date, not a state): the candidates the receipts
-  name are Move 2 owed item 1 (the recurrent f32 state, the pre-submit segment; A day 30 running), a demote-class
+  name are Move 2 owed item 1 (the recurrent f32 state; its D2H half landed on A day 30, on integ47 `160929a92`, not on `origin/main` `9717e8d57`, `DAY30 A2 pre-submit steady N=80 median=0.62 min=0.58 max=1.10 boots_on=10 demotes_per_boot=[11] rule N>=80 median<=1.5 max<=3.0 -> PASS`, `DAY28 VERDICT clauses_failed=0 -> ALL PASS`; the H2D and D2D halves stay owed), a demote-class
   tenant-stall cell on the target card on the option (a) code (item 2's scope: none has run there; the RTX 5090
   class's ran on day 37), the double-park slice (which slice
   moved the demote's landing), and the 9B entry's split of its recurrent state and hidden row by class (day 38 read
