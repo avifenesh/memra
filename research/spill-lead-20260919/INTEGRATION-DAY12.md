@@ -1372,6 +1372,10 @@ pool-full demote runs the whole Move 1 contract (a 160 MB copy) and only then re
 15, reachable only with the share cap disarmed. Review table rows updated; the DFlash tail slice question survives day
 20 (the standalone tap sink is bounded; the host tier's draft-tail image identity input is unbound).
 
+Battery (`integration-day12/integ33-cpu-battery/`, merged tree `be554e587`, CPUQuota 1200 percent): fmt, portable suites,
+memra-server suite, clippy, censuses, collector pytest, engine CPU lib tests, server clippy `-D warnings`, marker census,
+workflow keys, perf board, diff-check: 13 steps rc=0. Local 5090 `tools/serve-smoke.sh`: `serve-smoke: 0 failed`.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
