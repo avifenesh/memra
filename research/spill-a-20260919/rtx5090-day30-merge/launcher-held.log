@@ -1,0 +1,12 @@
+2026-09-22T21:05:31Z collector hold taken on /tmp/memra-5090.lock (fd 9)
+2026-09-22T21:05:31Z start identity-default-on-held tree=2a83224ab3ac7eef1a8cd4d98d85ad244c7142f6 env=[MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-22T21:05:46Z done identity-default-on-held rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-22T21:05:46Z start fault-default-held tree=2a83224ab3ac7eef1a8cd4d98d85ad244c7142f6 env=[MEMRA_HOSTGATE_CACHE_MB=64]
+2026-09-22T21:07:16Z done fault-default-held rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-22T21:07:16Z start fault-plain-held tree=2a83224ab3ac7eef1a8cd4d98d85ad244c7142f6 env=[MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_SERVE_SPEC=0]
+2026-09-22T21:08:33Z done fault-plain-held rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-22T21:08:33Z start hit-off-held tree=2a83224ab3ac7eef1a8cd4d98d85ad244c7142f6 env=[]
+2026-09-22T21:08:55Z done hit-off-held rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-22T21:08:55Z start hit-on-held tree=2a83224ab3ac7eef1a8cd4d98d85ad244c7142f6 env=[MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-22T21:09:21Z done hit-on-held rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-22T21:09:21Z collector hold released; LOCAL-HELD-RERUN-DONE
