@@ -1403,7 +1403,8 @@ The remaining gateway controls are battery-gated (`research/serve-tail-20260804/
   Health below) and `/readyz` to **503**, new completion requests get `503 + Retry-After`,
   in-flight requests — streams included — run to `[DONE]` within the `MEMRA_DRAIN_S`
   deadline (default 30s), then the process exits 0. Live receipt: a 1024-token stream
-  completed mid-drain.
+  completed mid-drain. Re-runnable gate: `tools/health-fault-gate.sh` arm f (memra#524,
+  #526; receipts `research/spill-b-20260919/rtx5090-day25/`).
 
 ## Health, readiness, and fault handling (serve-hardening lane, 2026-08-06)
 
@@ -1463,6 +1464,7 @@ every iteration, plus a phase:
 | worker phase | `/health` | why |
 |---|---|---|
 | `loading` | 503 | weights are not resident; the process answers nothing yet. On a FIRST load the port is not bound yet (bind follows the load), so a probe sees connection-refused — the same verdict for k8s and `serve-fleet.sh`. This state is reached over HTTP during a **respawn**, which is the case that matters |
+| `warming` | 503 | weights resident, the boot calibration probe in flight (memra#524, 2026-09-22): the one warmup the server itself runs, one spec-shaped generation through the real serving route, so the first request does not pay it. Entered only when a probe actually runs; the probe-skipped boots (`MEMRA_ADMIT_CALIBRATE=0`, `MEMRA_SERVE_SPEC=0`, `MEMRA_ADMIT_RESERVE_MB`) go from `loading` straight to `idle` and are ready with a cold route. Like `loading`, observable over HTTP during a respawn; on a first boot the bind follows it. Gate: `tools/health-fault-gate.sh` arms a, a2 and c |
 | `idle` | 200 at any beat age | the worker blocks in `rx.recv()` — an idle server legitimately stamps nothing for hours, and a naive age check would call every quiet server dead |
 | `busy` | 200 while FORWARD PROGRESS advances, 503 past `MEMRA_HEALTH_STALL_S` (120s) | work in flight must make progress. Two signals attest it and the verdict takes the fresher: the scheduler heartbeat (one loop pass) and the engine's prime odometer (one completed prime chunk, stamped where the chunk's logits are already host-side). A long monolithic prefill therefore reads BUSY-and-healthy while it is genuinely progressing; a wedged worker advances neither signal and still 503s within the bound (memra#50, 2026-09-03; `MEMRA_HEALTH_PROGRESS=0` restores beat-age-only semantics). What it does NOT catch: a hang inside ONE chunk (same detection time as before), a livelock that keeps completing chunks without finishing requests, and per-session starvation (the odometer is process-global) |
 | `dead` / fault latched | 503 immediately | worker panic or fatal Xid — a latch, not a timeout, so the flip is instant |

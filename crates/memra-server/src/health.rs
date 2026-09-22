@@ -8,8 +8,18 @@
 //! health check in front of a box answering nothing (`<80%` uptime = fallback-only routing).
 //!
 //! THE MECHANISM: the worker's scheduler loop stamps a monotonic HEARTBEAT every iteration,
-//! together with a PHASE (loading / idle / busy / dead). `/health` is then inference liveness:
+//! together with a PHASE (loading / warming / idle / busy / dead). `/health` is then inference
+//! liveness:
 //!
+//!   * `PHASE_LOADING` — weights are not resident. On a first load the port is not bound yet, so
+//!     a probe sees connection-refused; over HTTP this phase is reached during a RESPAWN.
+//!   * `PHASE_WARMING` (memra#524, lane/spill-b-20260919 day 25) — the weights are resident and
+//!     the boot calibration probe (the one warmup the server itself runs: one spec-shaped
+//!     generation through the real serving route, `worker::run_boot_calibration`) is in flight.
+//!     Not live, not ready: the first request must not pay the warmup. Entered only when a probe
+//!     actually runs; the probe-skipped paths (`MEMRA_ADMIT_CALIBRATE=0`, plain-only serving,
+//!     `MEMRA_ADMIT_RESERVE_MB`) go straight from loading to idle and are ready with a cold route,
+//!     which is what those doors document.
 //!   * `PHASE_IDLE` — the worker is blocked on `rx.recv()` with no work at all. Staleness is
 //!     MEANINGLESS here (an idle server legitimately stamps nothing for hours), so idle is
 //!     unconditionally healthy. This distinction is load-bearing: a naive "beat age" check
@@ -102,6 +112,9 @@ pub const PHASE_IDLE: u8 = 1;
 pub const PHASE_BUSY: u8 = 2;
 /// The worker thread is gone (panic caught, or `run()` returned).
 pub const PHASE_DEAD: u8 = 3;
+/// Weights resident, boot calibration probe in flight (the probe window between loading and
+/// ready on the armed path; memra#524). Never entered on a probe-skipped boot.
+pub const PHASE_WARMING: u8 = 4;
 
 /// Advisory runtime peer-probe coverage surfaced by `/readyz`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -126,6 +139,7 @@ pub fn phase_name(p: u8) -> &'static str {
         PHASE_LOADING => "loading",
         PHASE_IDLE => "idle",
         PHASE_BUSY => "busy",
+        PHASE_WARMING => "warming",
         _ => "dead",
     }
 }
@@ -347,6 +361,20 @@ impl WorkerHealth {
         self.phase.store(PHASE_DEAD, Ordering::Release);
     }
 
+    /// The boot calibration probe is about to run (memra#524): weights resident, the one warmup
+    /// the server runs is in flight, readiness follows its completion. Only a LOADING worker
+    /// enters WARMING: the order is loading -> warming -> idle (`mark_ready`), and a call from
+    /// any other phase is a no-op so a late or repeated call can never demote a serving worker.
+    pub fn mark_warming(&self) {
+        let _ = self.phase.compare_exchange(
+            PHASE_LOADING,
+            PHASE_WARMING,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+        self.beat_ms.store(now_ms(), Ordering::Release);
+    }
+
     /// A respawn attempt is loading weights: not dead, not ready — `/readyz` 503s, `/health`
     /// stays down until the load lands (the process IS currently answering nothing).
     pub fn mark_respawning(&self) {
@@ -477,6 +505,9 @@ impl WorkerHealth {
         match self.phase.load(Ordering::Acquire) {
             PHASE_DEAD => Err("worker thread is gone".into()),
             PHASE_LOADING => Err("worker is (re)loading weights".into()),
+            PHASE_WARMING => Err("worker is warming: boot calibration probe in flight \
+                                  (readiness follows its completion)"
+                .into()),
             _ => match self.stalled_for_ms() {
                 Some(age) => Err(format!(
                     "worker stalled: no forward progress for {age} ms (beat age {} ms, \
@@ -1263,6 +1294,40 @@ mod tests {
         assert!(h.live().is_ok());
         h.mark_respawning();
         assert!(h.live().is_err(), "a respawn load answers nothing");
+        assert_eq!(h.generation(), 1);
+    }
+
+    /// memra#524 (day 25): the state order on the armed boot path is loading -> warming -> idle,
+    /// warming is neither live nor ready and names itself, and `mark_warming` cannot demote a
+    /// worker that is already serving (a late or repeated call is a no-op). A respawn walks the
+    /// same order with the generation bumped.
+    #[test]
+    fn warming_sits_between_loading_and_ready() {
+        let h = WorkerHealth::new();
+        assert_eq!(h.snapshot().phase, PHASE_LOADING);
+        h.mark_warming();
+        assert_eq!(h.snapshot().phase, PHASE_WARMING);
+        assert_eq!(phase_name(PHASE_WARMING), "warming");
+        let why = h.live().expect_err("warming is not live");
+        assert!(why.contains("warming"), "{why}");
+        assert!(h.ready(false).is_err(), "warming is not ready");
+        h.mark_ready();
+        assert_eq!(h.snapshot().phase, PHASE_IDLE);
+        assert!(h.live().is_ok() && h.ready(false).is_ok());
+        // A late call never demotes a serving worker.
+        h.mark_warming();
+        assert_eq!(h.snapshot().phase, PHASE_IDLE);
+        h.beat_busy();
+        h.mark_warming();
+        assert_eq!(h.snapshot().phase, PHASE_BUSY);
+        // The respawn walks the same order.
+        h.mark_respawning();
+        assert_eq!(h.snapshot().phase, PHASE_LOADING);
+        h.mark_warming();
+        assert_eq!(h.snapshot().phase, PHASE_WARMING);
+        assert!(h.live().is_err());
+        h.mark_ready();
+        assert_eq!(h.snapshot().phase, PHASE_IDLE);
         assert_eq!(h.generation(), 1);
     }
 

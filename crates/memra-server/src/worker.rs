@@ -17169,7 +17169,13 @@ pub fn run(
     // The probe rides the SERVED route per model (lane/graph-launch-guard-sweep-20260831):
     // a dspark-armed model is probed through the dspark session, never the MTP spec arm
     // it has disabled — the receipt names the route it measured.
-    run_boot_calibration(&engine, &loaded, &dspark_drafts, &mut admission_costs);
+    run_boot_calibration(
+        &engine,
+        &loaded,
+        &dspark_drafts,
+        &mut admission_costs,
+        &health,
+    );
     let mut prime_policy = crate::prime_fairness::PrimePolicy::default();
 
     // ---- serving counters + engine-truth step stats (30s percentile window) ----
@@ -29180,6 +29186,7 @@ fn run_boot_calibration(
     loaded: &HashMap<String, LoadedModel>,
     dspark_drafts: &HashMap<String, memra_engine::dflash::DflashDraft>,
     admission_costs: &mut HashMap<String, AdmissionCostModel>,
+    health: &crate::health::SharedHealth,
 ) {
     if !admit_calibrate_on() {
         eprintln!(
@@ -29240,6 +29247,12 @@ fn run_boot_calibration(
                     .join(" "),
             );
         }
+        // PHASE_WARMING (memra#524, lane/spill-b-20260919 day 25): the weights are resident
+        // and the one warmup the server runs is now in flight. Set here, after every skip
+        // return and the per-model `continue`, so the phase is entered only when a probe
+        // actually runs; `health.mark_ready()` in `run` ends it. Observable over HTTP during
+        // a respawn (a first boot binds the listener after this function returns).
+        health.mark_warming();
         let t0 = Instant::now();
         // Synthetic one-chunk prompt: this is a MEMORY-SHAPE probe (the transient classes
         // scale with chunk geometry and capture shapes, not with prompt semantics).
@@ -36665,7 +36678,7 @@ mod tests {
         let run_at = prod.find("pub fn run(").expect("worker::run exists");
         let body = &prod[run_at..];
         let calibrate = body
-            .find("run_boot_calibration(&engine, &loaded, &dspark_drafts, &mut admission_costs);")
+            .find("run_boot_calibration(")
             .expect("run calls the boot calibration probe");
         let ready = body.find("ready_tx.send(Ok(").expect("run sends readiness");
         let mark = body
@@ -36683,6 +36696,29 @@ mod tests {
             probe.contains("generate_spec_session_sampled(")
                 && probe.contains("dspark_spec_session_burst("),
             "the calibration probe generates through the real serving routes"
+        );
+        // Day 25: PHASE_WARMING is entered inside the probe, after every skip return (so a
+        // probe-skipped boot never reports warming) and before the generation; `mark_ready`
+        // in `run` ends it. The order on the armed path is loading -> warming -> idle.
+        let probe_body = &probe[..probe.find("\n}\n").expect("probe fn ends")];
+        let warming = probe_body
+            .find("health.mark_warming();")
+            .expect("the probe marks the warming phase");
+        let last_skip = probe_body
+            .rfind("return;")
+            .expect("the probe has skip returns");
+        let generate = probe_body
+            .find("dspark_spec_session_burst(")
+            .expect("probe generates");
+        assert!(
+            last_skip < warming && warming < generate,
+            "mark_warming ({warming}) must follow the last skip return ({last_skip}) and precede \
+             the probe generation ({generate})"
+        );
+        assert_eq!(
+            probe_body.matches("health.mark_warming();").count(),
+            1,
+            "one warming site, inside the per-model probe loop"
         );
     }
 

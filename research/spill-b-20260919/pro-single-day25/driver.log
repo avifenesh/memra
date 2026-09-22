@@ -1,0 +1,111 @@
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.06s
+== health-fault-gate: arms=a,b,c,d,e,f port=8186 out=/root/spill-receipts/b-day25/gate ==
+--- arm a/b: armed boot (default doors: the calibration probe runs before ready) ---
+  [ab] ready after 1829 ms (pid 112461)
+HFG (a) readiness-before-probe: probe_done_line=30 listening_line=33 pre_ready_samples=17 pre_ready_codes={000:17,503:0} ready_samples_not_ready=0 ready_while_warming=0 first_ready_phase=idle -> PASS
+HFG (b) ready-then-first-request: readyz_before=200/ready request_http=200 finish_reason=length completion_tokens=32 request_ms=143 ready_to_completion_ms=229 readyz_after=200/ready (N=1, not a timing claim) -> PASS
+  [ab] exit 0
+--- arm c: the probe-skipped boots (documented behaviour, not a pass) ---
+  [c-calibrate0] ready after 1095 ms (pid 112670)
+HFG (c) probe-skipped c-calibrate0 [MEMRA_ADMIT_CALIBRATE=0]: skip_line=16 probe_done_line=0 warming_samples=0 ready_ms=1095 first_request_http=200 first_request_ms=166 (N=1) -> DOCUMENTED (ready without warmup; the first request pays the cold route)
+  [c-calibrate0] exit 0
+  [c-spec0] ready after 1102 ms (pid 112807)
+HFG (c) probe-skipped c-spec0 [MEMRA_SERVE_SPEC=0]: skip_line=16 probe_done_line=0 warming_samples=0 ready_ms=1102 first_request_http=200 first_request_ms=232 (N=1) -> DOCUMENTED (ready without warmup; the first request pays the cold route)
+  [c-spec0] exit 0
+  [c-reserve] ready after 1102 ms (pid 112944)
+HFG (c) probe-skipped c-reserve [MEMRA_ADMIT_RESERVE_MB=1536]: skip_line=17 probe_done_line=0 warming_samples=0 ready_ms=1102 first_request_http=200 first_request_ms=166 (N=1) -> DOCUMENTED (ready without warmup; the first request pays the cold route)
+  [c-reserve] exit 0
+--- arm d: a request panics the worker (MEMRA_PANIC_AFTER=1), the respawn rule (MEMRA_WORKER_RESPAWN=1) ---
+  [d] ready after 1719 ms (pid 113081)
+HFG (d) panic-respawn-truthful-health: trigger_http=200 health_503_quoted_after_ms=192 readyz_while_dead=503/not_ready/dead untruthful_samples=0 recovered_after_ms=3469 generation_after=1 request_after_http=200 health_after=200/ok log_panic_line=44 log_respawn_line=45 -> PASS
+HFG (a2) warming-phase-on-respawn: not_ready_phase_sequence=dead>loading>warming loading_samples=5 warming_samples=4 loading_then_warming=true -> PASS
+  [d] exit 0
+--- arm e: a hung nvidia-smi probe latches the gpu fault; answering again does not clear it ---
+  [e] ready after 1720 ms (pid 113568)
+HFG (e) fatal-fault-not-cleared-by-timeout: watch_on_line=5 control_200_samples=3/3 latched_after_ms=2727 shim_answering_again_for_ms=8157 health_after=503/unhealthy readyz_after=503/not_ready health_200_after_clear=0 critical_lines=1 request_http_while_latched=200 (observed, bounded, not asserted) -> PASS
+  [e] exit 0
+--- arm f: SIGTERM with a stream open flips readiness first and drains ---
+  [f] ready after 1716 ms (pid 113933)
+HFG (f) sigterm-drains-and-flips-readiness-first: stream_frames_at_sigterm=5 readyz_during_drain=503/not_ready retry_after_s=60 health_during_drain=200/draining new_request_http=503 new_request_code=draining new_request_retry_after_s=60 stream_curl_rc=0 stream_frames=258 stream_done=1 stream_finish_reason=length stream_finished_after_sigterm_ms=886 exit_code=0 exit_after_sigterm_ms=1074 drain_complete_line=48 deadline_hit_line=0 -> PASS
+health-fault-gate: arms=a,b,c,d,e,f pass=6 documented=3 fail=0 receipts=/root/spill-receipts/b-day25/gate
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "env",
+    "HFG_OUT=/root/spill-receipts/b-day25/gate",
+    "tools/health-fault-gate.sh",
+    "/root/spill-receipts/b-day23/models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 116216070918732,
+  "ended_monotonic_ns": 116250981439291,
+  "started_utc": "2026-09-21T23:08:51.064776+00:00",
+  "ended_utc": "2026-09-21T23:09:25.975298+00:00",
+  "elapsed_seconds": 34.910520559,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 3647,
+    "sha256": "a2319bbd253e89c95cbf54f839fc3219fbb54116a94cdc954a8ef812fec8801d"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 15187,
+      "sha256": "87dba26d518139fd26abd29eac518e62f5c0eefae78c1f9f7d95cf6cbf193d2e"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}
