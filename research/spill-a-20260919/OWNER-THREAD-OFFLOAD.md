@@ -719,7 +719,8 @@ work split across two ticks instead of the prime stacked on the hash tick. Day 2
 nothing" is refuted: the park decided which tick the prime landed on. The demote's `in` 97.2 to 172.3 is its poll
 waiting tick A's longer step (`in - completion` 74.9 to 74.8 unchanged). (4) PASS: the day-21 restore arm, 100 of
 100, parked once and landed. (5) PASS: hit OFF 61 ok and ON 68 ok `ALL GREEN (qwen)`, the ON census equal to day
-24's exactly (12/12/13/13, 2/2/3/3, 30 route submissions, 11 draft-plane captures, zero typed refusals); identity x4
+24's exactly (12/12/13/13, 2/2/3/3, 30 route submissions, 11 draft-plane captures, zero typed refusals) on the target
+card AND on the local RTX 5090 (`rtx5090-day26/`, OFF 61 ok, ON 68 ok, the same census); identity x4
 and failure x2 `ALL GREEN`, fault `ALL GREEN` (93 ok), twin x2 PASS, unit cells 8 + 5 passed. Nothing tuned; the code
 stays on the branch; keeping it with clause 2 re-derived from the token-emission reading is the lead's ruling.
 

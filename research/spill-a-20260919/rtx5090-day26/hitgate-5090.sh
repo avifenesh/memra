@@ -7,7 +7,7 @@
 # frees, the arm is recorded NOT RUN. Executed-not-qualified. usage: hitgate-5090.sh <out_root> <model.gguf> <bin>
 set -uo pipefail
 ROOT=$1; MODEL=$2; BIN=$3
-HERE=$(cd "$(dirname "$0")/../.." && pwd)
+HERE=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$HERE" || exit 1
 export MEMRA_GPU_LOCK=/tmp/memra-5090.lock
 TREE=$(git rev-parse HEAD)

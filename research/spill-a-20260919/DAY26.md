@@ -264,4 +264,22 @@ artifact under the gate's own `flock /tmp/memra-5090.lock`, after a bounded idle
 and lane C use the card today; the holder is read from `nvidia-smi` only, never signalled). Outcome: see
 `rtx5090-day26/battery.log` and the sentence below (filled when the arm lands or is recorded NOT RUN).
 
-5090 OUTCOME: pending at the time of this section's first commit.
+Outcome (`rtx5090-day26/`, RTX 5090 Laptop GPU, `power.limit [N/A]`, the 9B NVFP4 MTP artifact, the local release
+binary `978506b2…` built from `cd57afeec`, whose release source equals `e008bf502`: `55c56e8ee` and `cd57afeec`
+touch tests and records only). The launcher's first pass returned `rc=127` on both arms within one second: my
+`HERE` climbed two directory levels from a dir three deep, so `tools/spec-on-cache-hit-gate.sh` resolved under
+`research/` (`gate.log`: `No such file or directory`); no gate ran, the card was not touched, the two empty arm dirs
+were removed, the `battery.log` keeps the record, the path was fixed and the launcher relaunched 14:01Z. The card
+carried another lane's `hold`, `kernel-check`, `graph-warmup-stress` and `memra-server` processes through 14:19Z
+(nine waits in the second pass, seven in the first, every one logged with `nvidia-smi`'s own listing; nothing
+signalled); the OFF arm ran 14:19:26Z to 14:19:51Z and the ON arm 14:19:51Z to 14:20:17Z under the gate's own `flock
+/tmp/memra-5090.lock`. Verbatim: OFF `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok, 0 FAIL; `door lines: armed=0
+door_on=0`); ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (68 ok, 0 FAIL); the ON census `armed=1 door_on=1
+capture_submitted=12 capture_published=12 restore_submitted=13 restore_landed=13 demote_submitted=0
+promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0` (spec-on) and `capture_submitted=2
+capture_published=2 restore_submitted=3 restore_landed=3` (spec-off), `ok: door arm: 30 route submission(s) across
+the two boots`, 11 spec-boundary captures with the draft plane, zero `[prefix-host] promote` lines and zero `restore
+not routed` lines in both server logs. Ruling 36's clause holds on this card too: the counts equal day 24's exactly
+(day 24 ran on the target card; the 5090 reads the same 12/12/13/13, 2/2/3/3 and 30 on this tree). C's day-27 5090
+ON census (`1/1/1/1`, `2/2/3/3`, 7 route submissions) was read on a tree before the draft-bearing routes of A days
+23 and 24; the difference is the tree, not the card, and no timing is compared across the two cards.
