@@ -1297,6 +1297,10 @@ pub struct CopyOp<H> {
 pub enum CopyDirection {
     HostToDevice,
     DeviceToHost,
+    /// Day-20 (WP-A, memra#536 Move 2 slice 1): a same-device copy of the capture class, issued
+    /// off the owner stream into an owned registered destination from a borrowed live source.
+    /// Never a `CopyOp` (that pairs a host lease with a device lease): `validate` refuses it.
+    DeviceToDevice,
 }
 impl<H: PinnedLease> CopyOp<H> {
     pub fn validate(&self, direction: CopyDirection, current: Epochs) -> Result<()> {
@@ -1310,6 +1314,7 @@ impl<H: PinnedLease> CopyOp<H> {
         let generation = match direction {
             CopyDirection::HostToDevice => current.dst_gen,
             CopyDirection::DeviceToHost => current.src_gen,
+            CopyDirection::DeviceToDevice => return Err(Error::Unsupported),
         };
         if self.device.generation() != generation {
             return Err(Error::StaleEpoch);
@@ -1318,6 +1323,7 @@ impl<H: PinnedLease> CopyOp<H> {
             CopyDirection::HostToDevice => {
                 self.host.bytes()?;
             }
+            CopyDirection::DeviceToDevice => return Err(Error::Unsupported),
             CopyDirection::DeviceToHost => {
                 let f = self.producer_fence.ok_or(Error::NotReady)?;
                 if f.issuer != self.device.allocation.issuer

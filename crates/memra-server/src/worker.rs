@@ -4846,10 +4846,14 @@ fn host_tier_context(
         .map(|lm| lm.model.layers.len())
         .max()
         .unwrap_or(0);
+    // WP-A day 20 (memra#536 Move 2 slice 1): one more term, a capture batch (K and V per KV
+    // plane) beside the one Move 1 batch (demote or promote; they settle each other first), so a
+    // capture in flight never refuses a demote `Capacity` and a demote never refuses a capture.
     let inflight = u64::try_from(max_layers)
         .ok()
         .and_then(|n| n.checked_mul(2))
         .and_then(|n| n.checked_add(2))
+        .and_then(|n| n.checked_mul(2))
         .ok_or("MEMRA_KV_HOST_CONTRACTS=1: in-flight bound overflow")?;
     let governor = host_tier_governor(device, hpx.budget, prefix_cache_budget_bytes(), inflight)?;
     let ledger: std::rc::Rc<std::cell::RefCell<dyn memra_engine::cache::tiered::BudgetGovernor>> =
@@ -8447,6 +8451,16 @@ struct HostPrefixCache {
     /// copy stream (or settled and waiting for a tick top to publish). Declared before `tier` for
     /// the same drop order.
     promoting: Option<PendingPromote>,
+    /// WP-A day 20 (memra#536 Move 2 slice 1): the one `Capturing` entry, if a prefix snapshot's
+    /// KV plane copies are in flight on the copy stream (or settled and waiting for a caller with
+    /// the device cache in hand to publish). Declared before `tier` for the same drop order.
+    capturing: Option<PendingCapture>,
+    /// WP-A day 20: the capture path's own latch. Set when a capture's completion could not be
+    /// observed or its ticket did not retire (`[prefix-cache] CAPTURE OFF-TICK DISABLED`); every
+    /// later capture of the boot takes the tick program (`prefix_snapshot` on the owner stream).
+    capture_off_tick_disabled: bool,
+    /// WP-A day 20: captures published off the tick (this boot).
+    captures_published: u64,
     /// WP-A day 18: the insertion pin of the last published promote, held from publication until
     /// the next tick top so a trim or an insert in between cannot evict the entry before the
     /// parked request takes its own serving pin.
@@ -9074,6 +9088,24 @@ impl HostPrefixCache {
                 "[prefix-host] promote dropped: the tenant purge revoked the Promoting entry \
                  ({} tokens, model {}{}); nothing published",
                 dropped.host_len,
+                dropped.pool_key.0,
+                ns_suffix(&dropped.pool_key.1)
+            );
+        }
+        // WP-A day 20: a `Capturing` entry settles its contract first (a host wait on its events);
+        // if it is the purged tenant's it is DROPPED unpublished (its planes free at drop), so a
+        // revoked tenant's bytes never enter the device cache after the purge's receipt.
+        host_capture_settle_contract(self, ContractWait::Block, "a tenant purge");
+        if self
+            .capturing
+            .as_ref()
+            .is_some_and(|c| crate::auth::meter_key(&c.pool_key.1) == row)
+        {
+            let dropped = self.capturing.take().expect("checked");
+            eprintln!(
+                "[prefix-cache] capture dropped: the tenant purge revoked the Capturing entry \
+                 ({} tokens, model {}{}); nothing published",
+                dropped.shell.as_ref().map_or(0, |e| e.toks.len()),
                 dropped.pool_key.0,
                 ns_suffix(&dropped.pool_key.1)
             );
@@ -9759,6 +9791,98 @@ enum PromoteSettled {
     /// The contract settled into a whole device entry: publication is the caller's (it needs the
     /// device cache), or the state goes back as `ready` when the caller has none in hand.
     Ready(Box<PendingPromote>),
+}
+
+/// One destination plane of a capture (WP-A day 20, memra#536 Move 2 slice 1): the trunk KV slot,
+/// its geometry, and the retained twins of the two registered fresh planes, which take them back
+/// after the ticket retires.
+struct CapturePlane {
+    slot: usize,
+    len: usize,
+    k_tok_bytes: usize,
+    v_tok_bytes: usize,
+    k: memra_engine::cache::tiered::DeviceLease,
+    v: memra_engine::cache::tiered::DeviceLease,
+}
+
+/// A capture batch that was submitted on the copy stream and not yet settled (WP-A day 20): the
+/// ticket, its producer fence (an owner-stream event recorded after the boundary chunk and the
+/// recurrent-state clones), the registered planes, the per-item sizes, and when it was submitted.
+struct PendingContractCapture {
+    ticket: memra_engine::cache::tiered::TransferTicket,
+    producer: memra_engine::cache::tiered::FenceId,
+    registered: Vec<CapturePlane>,
+    sizes: Vec<u64>,
+    submitted: Instant,
+}
+
+/// The one `Capturing` entry of the worker (WP-A day 20, memra#536 Move 2 slice 1,
+/// `memra_tier::conformance::d2d_capture_publish`): a device entry whose recurrent state was
+/// cloned at the boundary on the owner stream (exact by stream position: the next decode step
+/// overwrites it) and whose KV rows `0..boundary` the copy stream is writing into fresh planes
+/// behind the producer event (stable by the append-only law). It is NOT in the device LRU until
+/// every copy's completion event is observed complete at a tick top: a hit on its prompt is a
+/// miss (cold prime), an eviction, a trim and the admission reclaim do not count it, a demote
+/// cannot take it. Exactly one per worker: a second capture settles it first. `shell` carries
+/// everything but the KV planes; `contract` the ticket; `ready` means the contract settled into
+/// whole planes and the entry waits for a caller with the device cache in hand.
+struct PendingCapture {
+    pool_key: PoolKey,
+    why: String,
+    shell: Option<PrefixEntry>,
+    contract: Option<PendingContractCapture>,
+    ready: bool,
+    t0: Instant,
+    polls: u32,
+    copy_ms: f64,
+    settled_by: String,
+}
+
+/// What one settle step of a capture batch produced.
+enum CaptureSettle {
+    /// `Poll` found at least one item's event not yet complete: the ticket is handed back.
+    Pending(PendingContractCapture),
+    /// Every item landed, the ticket retired and acknowledged, the fresh planes back in their
+    /// trunk slots.
+    Done(Vec<Option<PrefixPlane>>),
+}
+
+/// A typed failure of a capture settle. There is no `Refused` at settle: a submitted capture
+/// either lands or its observation is lost, and a lost observation leaks the ticket's in-flight
+/// charge and its registered planes inside the engine, so the tier latches off (the #622 ruling).
+enum HostCaptureFailure {
+    Latched(String),
+}
+
+/// What one settle step of the `Capturing` entry produced (the CPU-testable half).
+enum CaptureSettled {
+    /// Still copying: the state was kept and the poll counted.
+    Pending,
+    /// Dropped unpublished: a typed line was printed; the state is consumed.
+    Dropped,
+    /// The contract settled into whole planes: publication is the caller's (it needs the device
+    /// cache), or the state goes back as `ready` when the caller has none in hand.
+    Ready(Box<PendingCapture>),
+}
+
+/// What the capture route answered (WP-A day 20).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CaptureRoute {
+    /// The copies are in flight on the copy stream; the entry is the worker's `Capturing` entry.
+    Submitted,
+    /// A typed refusal before or at submission: no entry is created, the tick continues.
+    Refused,
+    /// The route does not apply (door OFF, no transfer engine, the capture path latched, or a
+    /// plane class the route refuses by name): the caller runs the tick program.
+    OnTick,
+}
+
+/// What the tick-top settle of a `Capturing` entry answered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostCaptureOutcome {
+    Capturing,
+    Published,
+    Dropped,
 }
 
 /// What the promote side of the door answered (WP-A day 18).
@@ -13410,6 +13534,637 @@ fn host_promote_publish(
 }
 
 // ---------------------------------------------------------------------------
+// WP-A day 20 (memra#536 Move 2 slice 1): the prefix snapshot's KV plane copies off the tick.
+// `memra_tier::conformance::d2d_capture_publish` is the rule; `OWNER-THREAD-OFFLOAD.md` the
+// pre-registration. The recurrent state (`conv_state`, `ssm_state`) is cloned on the OWNER stream
+// at the boundary inside the route (the next decode step overwrites it; a copy-stream read would
+// race it); the KV rows `0..boundary` are append-only per position and ride the copy stream behind
+// a producer event recorded after the clones. The entry is published into the device prefix index
+// only at a tick top after every item's completion event is observed complete.
+
+/// The capture route under the door: `Submitted` (the entry is the worker's `Capturing` entry),
+/// `Refused` (a typed line, no entry, the tick continues), or `OnTick` (the caller runs
+/// `prefix_snapshot`). Applies only with the door's transfer engine present and the capture path
+/// not latched; entries with TP shards or latent planes, an SWA ring, or a cache whose layers are
+/// not at the boundary keep the tick program (its own typed refusals). A pending capture settles
+/// first (never two in flight; a demote or promote in flight is unaffected: the ledger's in-flight
+/// dimension carries one Move 1 batch and one capture batch).
+#[allow(clippy::too_many_arguments)]
+fn prefix_capture_off_tick(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    cache: &Cache,
+    pool_key: &PoolKey,
+    toks: &[u32],
+    last_logits: &[f32],
+    model: Option<&HybridModel>,
+    why: &str,
+) -> CaptureRoute {
+    use memra_engine::cache::tiered::*;
+    use memra_engine::tier_transfer::D2dCapture;
+    if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
+        return CaptureRoute::OnTick;
+    }
+    let tp_cache = cache.glm5_tp_recur.iter().any(Option::is_some)
+        || cache.glm5_tp_latent_peer.iter().any(Option::is_some);
+    if cache.has_swa_ring()
+        || tp_cache
+        || model.is_none()
+        || cache.latent.iter().any(Option::is_some)
+        || cache.pos != toks.len()
+        || last_logits.is_empty()
+        || cache
+            .kv
+            .iter()
+            .flatten()
+            .any(|l| l.len != cache.pos && !(l.len == 0 && cache.pos > 0))
+    {
+        return CaptureRoute::OnTick;
+    }
+    // Never two captures in flight: the pending one settles (and publishes) first.
+    host_capture_settle_pending(engine, px, hpx, ContractWait::Block, "a second capture");
+    if hpx.capture_off_tick_disabled {
+        return CaptureRoute::OnTick;
+    }
+    let Some(tier) = hpx.tier.as_ref() else {
+        return CaptureRoute::OnTick;
+    };
+    let Some(transfers) = tier.transfers.as_ref() else {
+        return CaptureRoute::OnTick;
+    };
+    let tenant = tier
+        .program(pool_key, HostTierEntryClass::Plain)
+        .map(|(p, _)| p.tenant_salt)
+        .unwrap_or([0; 32]);
+    let mut t = transfers.borrow_mut();
+    let dimensions = t.used().device.len();
+    let request = move || BudgetRequest {
+        bytes: TierBudget::zero(dimensions),
+        priority: Priority::Demand,
+        deadline: Deadline(u64::MAX),
+        tenant,
+    };
+    let n = cache.kv.len();
+    let mut conv = Vec::with_capacity(n);
+    let mut ssm = Vec::with_capacity(n);
+    let mut bytes = 0usize;
+    // 1. The recurrent state, on the OWNER stream at the boundary (the day-16 statements).
+    for il in 0..n {
+        match &cache.recur[il] {
+            Some(r) => {
+                let (c, s) = match (
+                    engine.clone_dtod(&r.conv_state),
+                    engine.clone_dtod(&r.ssm_state),
+                ) {
+                    (Ok(c), Ok(s)) => (c, s),
+                    (Err(err), _) | (_, Err(err)) => {
+                        eprintln!(
+                            "[prefix-cache] capture refused: recurrent state clone of layer {il} \
+                             failed ({err}); prefix not cached"
+                        );
+                        return CaptureRoute::Refused;
+                    }
+                };
+                bytes += (r.conv_state.len() + r.ssm_state.len()) * 4;
+                conv.push(Some(c));
+                ssm.push(Some(s));
+            }
+            None => {
+                conv.push(None);
+                ssm.push(None);
+            }
+        }
+    }
+    // 2. Fresh KV planes from the OFF allocator, registered at the destination generation with
+    //    retained twins that take them back. A refusal unwinds every registered plane through
+    //    its twin (originals dropped first) and creates no entry.
+    let generation = HOST_TIER_TRANSFER_EPOCHS.dst_gen;
+    let mut registered: Vec<CapturePlane> = Vec::new();
+    let mut originals: Vec<DeviceLease> = Vec::new();
+    let mut sources: Vec<(&CudaSlice<u8>, u64)> = Vec::new();
+    let refuse = |t: &mut memra_engine::tier_transfer::CudaTransfers,
+                  registered: Vec<CapturePlane>,
+                  originals: Vec<DeviceLease>,
+                  why: String|
+     -> CaptureRoute {
+        drop(originals);
+        let mut leaks = 0usize;
+        for p in registered {
+            for lease in [p.k, p.v] {
+                if t.take_plane(&lease).is_err() {
+                    leaks += 1;
+                }
+            }
+        }
+        if leaks == 0 {
+            eprintln!("[prefix-cache] capture refused (contracts door): {why}; prefix not cached");
+        } else {
+            eprintln!(
+                "[prefix-cache] capture refused (contracts door): {why}; {leaks} fresh plane(s) \
+                 did not come back and stay registered with the transfer engine"
+            );
+        }
+        CaptureRoute::Refused
+    };
+    for il in 0..n {
+        let Some(l) = &cache.kv[il] else {
+            continue;
+        };
+        if l.len == 0 && cache.pos > 0 {
+            continue; // an MTP head layer: absent at capture, absent at restore
+        }
+        let kb = l.len * l.k_tok_bytes;
+        let vb = l.len * l.v_tok_bytes;
+        if kb == 0 || vb == 0 {
+            return refuse(
+                &mut t,
+                registered,
+                originals,
+                format!("layer {il} has an empty KV plane at the boundary"),
+            );
+        }
+        let (k, v) = match (engine.alloc_u8(kb), engine.alloc_u8(vb)) {
+            (Ok(k), Ok(v)) => (k, v),
+            (Err(err), _) | (_, Err(err)) => {
+                let n = kb.max(vb);
+                return refuse(
+                    &mut t,
+                    registered,
+                    originals,
+                    format!("device alloc of {n} B failed: {err}"),
+                );
+            }
+        };
+        let k = match t.register_device(k, generation, request()) {
+            Ok(lease) => lease,
+            Err(e) => {
+                return refuse(
+                    &mut t,
+                    registered,
+                    originals,
+                    format!("register_device refused for the K plane of layer {il} ({e:?})"),
+                );
+            }
+        };
+        let v = match t.register_device(v, generation, request()) {
+            Ok(lease) => lease,
+            Err(e) => {
+                originals.push(k);
+                return refuse(
+                    &mut t,
+                    registered,
+                    originals,
+                    format!("register_device refused for the V plane of layer {il} ({e:?})"),
+                );
+            }
+        };
+        let (keep_k, keep_v) = match (t.retain_device(&k), t.retain_device(&v)) {
+            (Ok(a), Ok(b)) => (a, b),
+            (Err(e), _) | (_, Err(e)) => {
+                // This layer's planes have no twin yet: they come back through their originals.
+                let mut leaks = 0usize;
+                for lease in [k, v] {
+                    if t.take_plane(&lease).is_err() {
+                        leaks += 1;
+                    }
+                }
+                let tail = if leaks > 0 {
+                    format!("; {leaks} fresh plane(s) of that layer did not come back")
+                } else {
+                    String::new()
+                };
+                return refuse(
+                    &mut t,
+                    registered,
+                    originals,
+                    format!("retain_device refused for layer {il} ({e:?}){tail}"),
+                );
+            }
+        };
+        sources.push((&*l.k, kb as u64));
+        sources.push((&*l.v, vb as u64));
+        originals.push(k);
+        originals.push(v);
+        registered.push(CapturePlane {
+            slot: il,
+            len: l.len,
+            k_tok_bytes: l.k_tok_bytes,
+            v_tok_bytes: l.v_tok_bytes,
+            k: keep_k,
+            v: keep_v,
+        });
+        bytes += kb + vb;
+    }
+    if registered.is_empty() {
+        return refuse(
+            &mut t,
+            registered,
+            originals,
+            "the cache carries no KV plane at the boundary".to_string(),
+        );
+    }
+    // 3. The producer fence: an owner-stream event after the boundary chunk and the clones.
+    let producer = match t.record_producer(generation) {
+        Ok(fence) => fence,
+        Err(e) => {
+            return refuse(
+                &mut t,
+                registered,
+                originals,
+                format!("producer fence refused: {e:?}"),
+            );
+        }
+    };
+    // 4. ONE batch on the copy stream behind the producer event; each item fenced at submit.
+    let sizes: Vec<u64> = sources.iter().map(|(_, b)| *b).collect();
+    let ops: Vec<D2dCapture<'_>> = originals
+        .into_iter()
+        .zip(sources)
+        .map(|(destination, (source, bytes))| D2dCapture {
+            source,
+            destination,
+            bytes,
+            producer_fence: producer,
+        })
+        .collect();
+    let ticket = match t.submit_d2d_capture(ops, HOST_TIER_TRANSFER_EPOCHS) {
+        Ok(ticket) => ticket,
+        Err(e) => {
+            let _ = t.release_producer(producer);
+            return refuse(
+                &mut t,
+                registered,
+                Vec::new(),
+                format!("submission refused: {e:?}"),
+            );
+        }
+    };
+    drop(t);
+    let items = sizes.len();
+    let shell = PrefixEntry {
+        _tier_charge: None,
+        layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
+        pool_key: pool_key.clone(),
+        toks: toks.to_vec(),
+        kv: (0..n).map(|_| None).collect(),
+        conv,
+        ssm,
+        latent: (0..n).map(|_| None).collect(),
+        tp: None,
+        pos: cache.pos,
+        last_logits: last_logits.to_vec(),
+        draft: None,
+        dspark_draft: None,
+        last_h: Vec::new(),
+        bytes,
+        last_use: Instant::now(),
+        id: 0,
+        pins: 0,
+    };
+    eprintln!(
+        "[prefix-cache] capture submitted off the tick ({why}): {} tokens, {items} planes \
+         ({:.1}MB) on the contracts door's copy stream; recurrent state cloned at the boundary \
+         on the owner stream",
+        toks.len(),
+        bytes as f64 / 1e6,
+    );
+    hpx.capturing = Some(PendingCapture {
+        pool_key: pool_key.clone(),
+        why: why.to_string(),
+        shell: Some(shell),
+        contract: Some(PendingContractCapture {
+            ticket,
+            producer,
+            registered,
+            sizes,
+            submitted: Instant::now(),
+        }),
+        ready: false,
+        t0: Instant::now(),
+        polls: 0,
+        copy_ms: 0.0,
+        settled_by: String::new(),
+    });
+    CaptureRoute::Submitted
+}
+
+/// The settle half of a capture: `Block` waits on every item's event (a host wait), `Poll`
+/// reads them and hands the ticket back while one is running; then `capture_landed` is the
+/// publication predicate, the producer fence releases, the ticket retires with no consumer fence
+/// (`d2d_capture_publish` rule 2) and is acknowledged, and the fresh planes come back through
+/// their twins into their trunk slots. Nothing here publishes: the caller does, with the cache.
+fn host_kv_planes_settle_capture(
+    tier: &HostTierContext,
+    pending: PendingContractCapture,
+    wait: ContractWait,
+) -> Result<CaptureSettle, HostCaptureFailure> {
+    use HostCaptureFailure::Latched;
+    use memra_engine::cache::tiered::TransferEngine;
+    let PendingContractCapture {
+        ticket,
+        producer,
+        registered,
+        sizes,
+        submitted,
+    } = pending;
+    let Some(transfers) = &tier.transfers else {
+        return Err(Latched(
+            "tier transfer engine missing under a submitted capture ticket".into(),
+        ));
+    };
+    let mut t = transfers.borrow_mut();
+    if wait == ContractWait::Block
+        && let Err(e) = t.synchronize(&ticket)
+    {
+        return Err(Latched(format!(
+            "capture completion unknown ({e:?}); the transfer engine keeps the fresh planes"
+        )));
+    }
+    let landed = match t.capture_landed(&ticket) {
+        Ok(landed) => landed,
+        Err(e) => {
+            return Err(Latched(format!(
+                "capture completion unreadable ({e:?}); the transfer engine keeps the fresh planes"
+            )));
+        }
+    };
+    if !landed {
+        if wait == ContractWait::Poll {
+            return Ok(CaptureSettle::Pending(PendingContractCapture {
+                ticket,
+                producer,
+                registered,
+                sizes,
+                submitted,
+            }));
+        }
+        return Err(Latched(
+            "capture did not land after a host wait on every item's event".into(),
+        ));
+    }
+    let settled = t
+        .release_producer(producer)
+        .and_then(|_| t.retire(&ticket, None))
+        .and_then(|_| t.acknowledge(&ticket));
+    if let Err(e) = settled {
+        return Err(Latched(format!(
+            "capture ticket did not retire ({e:?}); its in-flight charge or its fresh planes are \
+             leaked inside the transfer engine"
+        )));
+    }
+    let slots = registered.iter().map(|p| p.slot + 1).max().unwrap_or(0);
+    let mut kv: Vec<Option<PrefixPlane>> = (0..slots).map(|_| None).collect();
+    for p in registered {
+        let back = |lease: &memra_engine::cache::tiered::DeviceLease,
+                    what: &str,
+                    t: &mut memra_engine::tier_transfer::CudaTransfers| {
+            t.take_plane(lease)
+                .map_err(|e| {
+                    format!(
+                        "fresh {what} plane of layer {} did not come back ({e:?})",
+                        p.slot
+                    )
+                })?
+                .into_pooled()
+                .map_err(|e| {
+                    format!(
+                        "fresh {what} plane of layer {} is not pooled storage ({e})",
+                        p.slot
+                    )
+                })
+        };
+        let (k, v) = match (back(&p.k, "K", &mut t), back(&p.v, "V", &mut t)) {
+            (Ok(k), Ok(v)) => (k, v),
+            (Err(why), _) | (_, Err(why)) => {
+                return Err(Latched(format!(
+                    "capture {why}; the transfer engine holds a fresh plane and its charge"
+                )));
+            }
+        };
+        kv[p.slot] = Some(PrefixPlane {
+            k,
+            v,
+            len: p.len,
+            k_tok_bytes: p.k_tok_bytes,
+            v_tok_bytes: p.v_tok_bytes,
+        });
+    }
+    Ok(CaptureSettle::Done(kv))
+}
+
+/// One settle step of the `Capturing` entry (the CPU-testable half): the fail-closed arm (a
+/// pending capture missing its shell or its ticket, the #622 ruling mirrored), the contract step
+/// as a closure, and what a `Latched` answer does (the entry drops unpublished, the tier latches
+/// off, the capture path latches to the tick program for the boot).
+fn host_capture_settle_with(
+    host: &mut HostPrefixCache,
+    wait: ContractWait,
+    why: &str,
+    settle: impl FnOnce(
+        &HostTierContext,
+        PendingContractCapture,
+        ContractWait,
+    ) -> Result<CaptureSettle, HostCaptureFailure>,
+) -> Option<CaptureSettled> {
+    use memra_engine::cache::tiered::TransferEngine;
+    let mut pending = host.capturing.take()?;
+    if pending.ready {
+        if pending.shell.is_some() {
+            return Some(CaptureSettled::Ready(Box::new(pending)));
+        }
+        eprintln!(
+            "[prefix-cache] capture dropped (a Capturing entry is ready with no shell); prefix \
+             not cached"
+        );
+        return Some(CaptureSettled::Dropped);
+    }
+    pending.polls += 1;
+    let contract = match (pending.shell.is_some(), pending.contract.take()) {
+        (true, Some(contract)) => contract,
+        (has_shell, contract) => {
+            // FAIL CLOSED (the #622 ruling): a submitted ticket without its shell cannot publish
+            // and must not be dropped silently (its in-flight charge and its fresh planes would
+            // leak without a word): it is settled and retired through the engine where reachable,
+            // and the tier and the capture path latch off. A shell without a ticket drops whole
+            // (its recurrent clones free at drop); nothing was submitted.
+            let what = match (has_shell, contract.is_some()) {
+                (false, true) => "no shell for its submitted ticket",
+                (true, false) => "no ticket for its shell",
+                _ => "neither shell nor ticket",
+            };
+            return Some(match contract {
+                None => {
+                    eprintln!(
+                        "[prefix-cache] capture dropped (a Capturing entry has {what}); prefix \
+                         not cached"
+                    );
+                    CaptureSettled::Dropped
+                }
+                Some(contract) => {
+                    let seq = contract.ticket.sequence;
+                    let settled = match host.tier.as_ref().and_then(|t| t.transfers.as_ref()) {
+                        Some(transfers) => {
+                            let mut t = transfers.borrow_mut();
+                            t.synchronize(&contract.ticket)
+                                .and_then(|_| t.retire(&contract.ticket, None))
+                                .and_then(|_| t.acknowledge(&contract.ticket))
+                                .map_err(|e| format!("{e:?}"))
+                        }
+                        None => Err("tier transfer engine missing".to_string()),
+                    };
+                    let err = match settled {
+                        Ok(()) => format!(
+                            "a Capturing entry has {what}; ticket seq={seq} settled and retired, \
+                             its fresh planes stay registered with the transfer engine"
+                        ),
+                        Err(e) => format!(
+                            "a Capturing entry has {what}; ticket seq={seq} did not settle ({e})"
+                        ),
+                    };
+                    host_capture_latch(host, &err);
+                    CaptureSettled::Dropped
+                }
+            });
+        }
+    };
+    let submitted = contract.submitted;
+    let settled = match &host.tier {
+        Some(tier) => settle(tier, contract, wait),
+        None => Err(HostCaptureFailure::Latched(
+            "tier context gone under a Capturing entry".into(),
+        )),
+    };
+    match settled {
+        Ok(CaptureSettle::Pending(contract)) => {
+            pending.contract = Some(contract);
+            host.capturing = Some(pending);
+            Some(CaptureSettled::Pending)
+        }
+        Ok(CaptureSettle::Done(kv)) => {
+            pending.copy_ms = submitted.elapsed().as_secs_f64() * 1e3;
+            pending.settled_by = match wait {
+                ContractWait::Poll => "tick-top poll".to_string(),
+                ContractWait::Block => format!("settled synchronously by {why}"),
+            };
+            let shell = pending.shell.as_mut().expect("checked above");
+            for (i, plane) in kv.into_iter().enumerate() {
+                if let Some(slot) = shell.kv.get_mut(i) {
+                    *slot = plane;
+                }
+            }
+            pending.ready = true;
+            Some(CaptureSettled::Ready(Box::new(pending)))
+        }
+        Err(HostCaptureFailure::Latched(err)) => {
+            host_capture_latch(host, &err);
+            Some(CaptureSettled::Dropped)
+        }
+    }
+}
+
+/// A capture whose observation was lost: the tier latches off (the ticket's charge or planes are
+/// leaked inside the engine) and the capture path takes the tick program for the rest of the boot.
+fn host_capture_latch(host: &mut HostPrefixCache, why: &str) {
+    eprintln!(
+        "[prefix-cache] CAPTURE OFF-TICK DISABLED: {why}; every later capture runs on the tick"
+    );
+    host.capture_off_tick_disabled = true;
+    host.disable(why);
+}
+
+/// The contract half alone, for paths without a device cache in hand (a tenant purge): a settled
+/// entry goes back as `ready` for the next tick top.
+fn host_capture_settle_contract(
+    host: &mut HostPrefixCache,
+    wait: ContractWait,
+    why: &str,
+) -> Option<HostCaptureOutcome> {
+    Some(
+        match host_capture_settle_with(host, wait, why, host_kv_planes_settle_capture)? {
+            CaptureSettled::Pending => HostCaptureOutcome::Capturing,
+            CaptureSettled::Dropped => HostCaptureOutcome::Dropped,
+            CaptureSettled::Ready(pending) => {
+                host.capturing = Some(*pending);
+                HostCaptureOutcome::Capturing
+            }
+        },
+    )
+}
+
+/// The whole settle: the contract half, then publication into the device cache through the same
+/// `insert_demoting` every on-tick publish uses (its eviction sink demotes as before).
+fn host_capture_settle_pending(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    wait: ContractWait,
+    why: &str,
+) -> Option<HostCaptureOutcome> {
+    Some(
+        match host_capture_settle_with(hpx, wait, why, host_kv_planes_settle_capture)? {
+            CaptureSettled::Pending => HostCaptureOutcome::Capturing,
+            CaptureSettled::Dropped => HostCaptureOutcome::Dropped,
+            CaptureSettled::Ready(pending) => host_capture_publish(engine, px, hpx, *pending),
+        },
+    )
+}
+
+/// Publication of a settled capture (`d2d_capture_publish` rule 2): exactly once, after every
+/// item's event was observed complete, through the ordinary insert.
+fn host_capture_publish(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    pending: PendingCapture,
+) -> HostCaptureOutcome {
+    let PendingCapture {
+        pool_key,
+        why,
+        shell,
+        t0,
+        polls,
+        copy_ms,
+        settled_by,
+        ..
+    } = pending;
+    let Some(e) = shell else {
+        eprintln!(
+            "[prefix-cache] capture dropped (a Capturing entry is ready with no shell); prefix \
+             not cached"
+        );
+        return HostCaptureOutcome::Dropped;
+    };
+    eprintln!(
+        "[prefix-cache] capture published off the tick ({why}): {} tokens complete after {polls} \
+         poll(s), {copy_ms:.1}ms from submission to completion, {:.1}ms to publication ({settled_by})",
+        e.toks.len(),
+        t0.elapsed().as_secs_f64() * 1e3,
+    );
+    hpx.captures_published += 1;
+    trace_prefix_entry_state(engine, &e, e.pos, "snapshot", &why);
+    px.insert_demoting(&pool_key, e, &why, engine, hpx);
+    HostCaptureOutcome::Published
+}
+
+/// Shutdown (the run loop's exit): a host wait on the pending capture's events, then DROP; no
+/// publication after a stop.
+fn host_capture_drain_at_shutdown(hpx: &mut HostPrefixCache) {
+    if hpx.capturing.is_none() {
+        return;
+    }
+    host_capture_settle_contract(hpx, ContractWait::Block, "shutdown");
+    if let Some(dropped) = hpx.capturing.take() {
+        eprintln!(
+            "[prefix-cache] capture dropped at shutdown ({} tokens, model {}{}); nothing published",
+            dropped.shell.as_ref().map_or(0, |e| e.toks.len()),
+            dropped.pool_key.0,
+            ns_suffix(&dropped.pool_key.1),
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // HOST-TIER DEPLOY HANDOFF (lane/host-tier-deploy-warmth-20260901).
 //
 // The tier is process-lifetime pinned memory, so every blue/green flip booted a fresh-empty
@@ -15954,6 +16709,23 @@ fn prefix_insert_from_session(
         // The preflight printed its typed `[prefix-cache] insert refused:` line in bytes
         // (memra#523 item 1: never a silent cold turn); the request continues unpublished.
         return;
+    }
+    // WP-A day 20 (memra#536 Move 2 slice 1): under the door the KV plane copies ride the copy
+    // stream and the entry publishes at a tick top; the budget was asked above, BEFORE any copy
+    // (lane C's day-22 observation). `OnTick` runs the day-16 statements below unchanged.
+    match prefix_capture_off_tick(
+        engine,
+        px,
+        hpx,
+        cache,
+        &pool_key,
+        &s.fed,
+        &s.last_logits,
+        model,
+        why,
+    ) {
+        CaptureRoute::Submitted | CaptureRoute::Refused => return,
+        CaptureRoute::OnTick => {}
     }
     match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits, model) {
         Ok(e) => {
@@ -18992,6 +19764,16 @@ pub fn run(
             ContractWait::Poll,
             "the tick top",
         );
+        // WP-A day 20 (memra#536 Move 2 slice 1): the one `Capturing` entry is polled; its KV
+        // plane copies ride the copy stream and publication into the DEVICE prefix index happens
+        // HERE, before admission, once every item's completion event is observed complete.
+        host_capture_settle_pending(
+            &engine,
+            &mut px,
+            &mut hpx,
+            ContractWait::Poll,
+            "the tick top",
+        );
         // Cheap runtime peer validation stays on its copy-count cadence here, between scheduler
         // ticks on the CUDA owner thread. Idle-only rungs remain pending. A mismatch continues on
         // validated host bounce; only inability to arm that staging reaches the panic ladder.
@@ -19020,6 +19802,7 @@ pub fn run(
                 && handoff_import.is_none()
                 && hpx.demoting.is_none()
                 && hpx.promoting.is_none()
+                && hpx.capturing.is_none()
             {
                 // Do not let an already-arrived request sit behind an idle-only probe. Once the
                 // channel is observed empty, one pending expensive rung may run before the worker
@@ -19085,7 +19868,7 @@ pub fn run(
                 // WP-A day 17 and 18: a `Demoting` or `Promoting` entry is tick work on an idle
                 // box too: keep the poll running so the entry publishes without waiting for the
                 // next request.
-                if hpx.demoting.is_some() || hpx.promoting.is_some() {
+                if hpx.demoting.is_some() || hpx.promoting.is_some() || hpx.capturing.is_some() {
                     wait = wait.min(Duration::from_millis(2));
                 }
                 match rx.recv_timeout(wait) {
@@ -19153,6 +19936,9 @@ pub fn run(
             // RELEASE_THRESHOLD=MAX for graph-launch speed) — invisible to a green
             // process. Hand the cached blocks back to the driver so nvidia-smi free
             // actually rises (measured: 8GB of dropped pools, 0MiB visible until this).
+            // WP-A day 20: trim needs a quiescent pool; a `Capturing` entry's planes are live
+            // until it settles (publish or drop) first.
+            host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, "a trim");
             report.devices = trim_model_device_pools(&engine, &loaded, "admin-trim");
             eprintln!(
                 "[trim] pools dropped: reuse={} spec={} dspark={} prefix={}",
@@ -20074,6 +20860,16 @@ pub fn run(
                                         admit_memory_cfg.defer_budget_ms,
                                     ),
                                 );
+                                // WP-A day 20: a `Capturing` entry settles first (publish or
+                                // drop), so the reclaim's accounting never meets a half-written
+                                // entry; then the reclaim runs over the published set.
+                                host_capture_settle_pending(
+                                    &engine,
+                                    &mut px,
+                                    &mut hpx,
+                                    ContractWait::Block,
+                                    "the admission reclaim",
+                                );
                                 evict_all_demoting(&engine, &mut px, &mut hpx, budget)
                             } else {
                                 (px.evict_all(), 0, 0)
@@ -20321,6 +21117,13 @@ pub fn run(
                         // fence every device, hand cached pool blocks back to the
                         // driver, and re-read before declaring headroom unattainable.
                         oom_teardown_fence(&engine, &loaded);
+                        host_capture_settle_pending(
+                            &engine,
+                            &mut px,
+                            &mut hpx,
+                            ContractWait::Block,
+                            "a trim",
+                        );
                         trim_model_device_pools(&engine, &loaded, "admission-drain");
                         // The captured-arm and eager-arm device plans DIFFER, and the
                         // Devices-variant sufficiency check reads its per-device
@@ -22924,6 +23727,7 @@ pub fn run(
             // bytes would starve it (the owner's card sat at 5 MiB driver-free while the
             // pool held the room).
             oom_teardown_fence(&engine, &loaded);
+            host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, "a trim");
             let reports = trim_model_device_pools(&engine, &loaded, "oom-teardown");
             let trimmed_total = reports.iter().fold(0usize, |total, report| {
                 total.saturating_add(report.reclaimed_bytes)
@@ -23253,6 +24057,9 @@ pub fn run(
             eprintln!("[moe-fused-epi] snapshot dispatches={fused_epi}");
         }
     }
+    // WP-A day 20: shutdown drains the one `Capturing` entry (a host wait on its events, then
+    // drop; no publication after a stop).
+    host_capture_drain_at_shutdown(&mut hpx);
 }
 
 fn fail_request(mut req: Box<Request>, error: EngineError) {
@@ -39942,6 +40749,292 @@ mod tests {
         assert_eq!(host.entries.len(), 0, "nothing published");
     }
 
+    // ---- WP-A day 20: the `Capturing` state machine (memra#536 Move 2, slice 1) ----
+    // CPU halves (`memra_tier::conformance::d2d_capture_publish` is the rule): what a settle step
+    // does with a pending capture given the contract's answer (`host_capture_settle_with` takes
+    // the contract step as a closure), the fail-closed arm, the latch, the purge, and what every
+    // other path does when it meets a `Capturing` entry (a source census). The copies, the landing
+    // and the publication of a real entry are the gates' on a card.
+
+    /// A `Capturing` state with a shell (two trunk slots, no KV planes) and a ticket that are plain
+    /// data; the engine never sees them.
+    fn cpu_pending_capture(host: &mut HostPrefixCache, pool_key: &PoolKey, ready: bool) {
+        let toks: Vec<u32> = (300..364).collect();
+        let mut shell = entry_b(pool_key, 300, 4096);
+        shell.toks = toks;
+        shell.kv = vec![None, None];
+        host.capturing = Some(super::PendingCapture {
+            pool_key: pool_key.clone(),
+            why: "seed".to_string(),
+            shell: Some(shell),
+            contract: (!ready).then(|| super::PendingContractCapture {
+                ticket: memra_engine::cache::tiered::TransferTicket {
+                    issuer: 7,
+                    sequence: 5,
+                    epochs: super::HOST_TIER_TRANSFER_EPOCHS,
+                },
+                producer: memra_engine::cache::tiered::FenceId {
+                    issuer: 7,
+                    owner: 0,
+                    generation: 1,
+                    sequence: 4,
+                },
+                registered: Vec::new(),
+                sizes: vec![64, 64, 64, 64],
+                submitted: std::time::Instant::now(),
+            }),
+            ready,
+            t0: std::time::Instant::now(),
+            polls: 0,
+            copy_ms: 0.0,
+            settled_by: String::new(),
+        });
+    }
+
+    #[test]
+    fn a_pending_capture_poll_keeps_the_state_and_done_reaches_ready_once() {
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_capture(&mut host, &key, false);
+        let px = PrefixCache::default();
+        let prompt: Vec<u32> = (300..370).collect();
+        // A hit on the Capturing prompt is a miss: the entry is in neither index, counts nowhere.
+        assert_eq!(px.lookup(&key, &prompt), None);
+        assert_eq!(px.n_entries(), 0);
+        assert_eq!(px.evictable_bytes(), 0);
+        for expected_polls in 1..=3u32 {
+            let outcome = super::host_capture_settle_with(
+                &mut host,
+                super::ContractWait::Poll,
+                "the tick top",
+                |_, contract, wait| {
+                    assert_eq!(wait, super::ContractWait::Poll);
+                    Ok(super::CaptureSettle::Pending(contract))
+                },
+            );
+            assert!(matches!(outcome, Some(super::CaptureSettled::Pending)));
+            let pending = host.capturing.as_ref().unwrap();
+            assert_eq!(pending.polls, expected_polls);
+            assert!(pending.shell.is_some() && pending.contract.is_some() && !pending.ready);
+            assert!(host.armed());
+            assert!(!host.capture_off_tick_disabled);
+            assert_eq!(host.captures_published, 0);
+        }
+        // `Done` fills the shell's KV slots and hands a READY entry to the caller.
+        let outcome = super::host_capture_settle_with(
+            &mut host,
+            super::ContractWait::Block,
+            "a second capture",
+            |_, _, wait| {
+                assert_eq!(wait, super::ContractWait::Block);
+                Ok(super::CaptureSettle::Done(vec![None, None]))
+            },
+        );
+        let Some(super::CaptureSettled::Ready(pending)) = outcome else {
+            panic!("Done must reach Ready");
+        };
+        assert!(host.capturing.is_none(), "the state left the host");
+        assert!(pending.ready && pending.contract.is_none());
+        assert_eq!(pending.polls, 4);
+        assert_eq!(pending.shell.as_ref().unwrap().kv.len(), 2);
+        assert_eq!(
+            pending.settled_by,
+            "settled synchronously by a second capture"
+        );
+        assert_eq!(
+            host.captures_published, 0,
+            "publication is the caller's, not the settle's"
+        );
+        // A ready state put back is handed straight out again, without a contract step.
+        host.capturing = Some(*pending);
+        let again = super::host_capture_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            |_, _, _| panic!("a ready entry has no contract step left"),
+        );
+        assert!(matches!(again, Some(super::CaptureSettled::Ready(_))));
+        assert!(
+            super::host_capture_settle_with(
+                &mut host,
+                super::ContractWait::Poll,
+                "x",
+                |_, _, _| { panic!("the contract step must not run with nothing pending") }
+            )
+            .is_none()
+        );
+    }
+
+    /// FAIL CLOSED (the #622 ruling mirrored): a pending capture missing its shell or its ticket
+    /// never publishes; with a submitted ticket and no shell the tier latches off and the capture
+    /// path takes the tick program for the boot, with a shell and no ticket the entry drops whole
+    /// and nothing latches.
+    #[test]
+    fn a_pending_capture_missing_its_shell_or_ticket_fails_closed() {
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_capture(&mut host, &key, false);
+        host.capturing.as_mut().unwrap().shell = None;
+        let outcome = super::host_capture_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "test",
+            |_, _, _| panic!("the contract step must not run without a shell"),
+        );
+        assert!(matches!(outcome, Some(super::CaptureSettled::Dropped)));
+        assert!(
+            !host.armed(),
+            "a leaked submitted ticket latches the tier off"
+        );
+        assert!(host.capture_off_tick_disabled, "and the capture path");
+        assert!(host.capturing.is_none());
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_capture(&mut host, &key, false);
+        host.capturing.as_mut().unwrap().contract = None;
+        let outcome = super::host_capture_settle_with(
+            &mut host,
+            super::ContractWait::Block,
+            "test",
+            |_, _, _| panic!("the contract step must not run without a ticket"),
+        );
+        assert!(matches!(outcome, Some(super::CaptureSettled::Dropped)));
+        assert!(host.armed(), "no ticket was submitted, so nothing leaked");
+        assert!(!host.capture_off_tick_disabled);
+        assert!(host.capturing.is_none());
+    }
+
+    /// A lost observation (`Latched`): the entry drops unpublished, the tier latches off, and the
+    /// capture path latches to the tick program for the boot.
+    #[test]
+    fn a_latched_capture_settle_drops_the_entry_and_takes_the_tick_program() {
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_capture(&mut host, &key, false);
+        let outcome = super::host_capture_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            |_, _, _| {
+                Err(super::HostCaptureFailure::Latched(
+                    "capture completion unknown (test)".into(),
+                ))
+            },
+        );
+        assert!(matches!(outcome, Some(super::CaptureSettled::Dropped)));
+        assert!(host.capturing.is_none());
+        assert!(!host.armed());
+        assert!(host.capture_off_tick_disabled);
+        assert_eq!(host.captures_published, 0);
+    }
+
+    /// A tenant purge settles the `Capturing` entry first and drops the purged tenant's
+    /// unpublished; another tenant's stays (ready for the next tick top).
+    #[test]
+    fn host_purge_drops_the_purged_tenants_capturing_entry_and_keeps_anothers() {
+        let (mut host, _key) = cpu_door_host();
+        let a: PoolKey = ("m".to_string(), crate::auth::scope_namespace("org-a", "s1"));
+        cpu_pending_capture(&mut host, &a, true);
+        host.purge_tenant("org-a");
+        assert!(
+            host.capturing.is_none(),
+            "the purged tenant's capture dropped"
+        );
+        assert!(host.armed());
+        let (mut host, _key) = cpu_door_host();
+        let b: PoolKey = ("m".to_string(), crate::auth::scope_namespace("org-b", "s1"));
+        cpu_pending_capture(&mut host, &b, true);
+        host.purge_tenant("org-a");
+        let kept = host.capturing.as_ref().expect("another tenant's stays");
+        assert!(kept.ready && kept.pool_key == b);
+    }
+
+    /// Every path that meets a `Capturing` entry does what the pre-registration says (a source
+    /// census over the run loop and the route): the tick top polls it after the demote and promote
+    /// polls; the idle waits count it; a tenant purge settles it and drops the revoked tenant's; the
+    /// admission reclaim and every trim settle it first; shutdown drains and drops it; a second
+    /// capture settles it first; the route runs after the budget preflight and before the tick
+    /// program; the recurrent clones precede the producer fence, which precedes the batch.
+    #[test]
+    fn every_path_that_meets_a_capturing_entry_settles_or_ignores_it_as_stated() {
+        let worker = include_str!("worker.rs");
+        let body = &worker[..worker.find("#[cfg(test)]\nmod tests").unwrap()];
+        let top = body
+            .find("host_demote_settle_pending(&mut hpx, ContractWait::Poll, \"the tick top\")")
+            .unwrap();
+        let promote = top + body[top..].find("host_promote_settle_pending(").unwrap();
+        let capture = top + body[top..].find("host_capture_settle_pending(").unwrap();
+        assert!(
+            promote < capture,
+            "the capture poll follows the promote poll"
+        );
+        assert!(body[capture..capture + 200].contains("ContractWait::Poll,"));
+        assert!(body.contains("&& hpx.capturing.is_none()"));
+        assert!(body.contains(
+            "if hpx.demoting.is_some() || hpx.promoting.is_some() || hpx.capturing.is_some()"
+        ));
+        let purge = body
+            .find("    fn purge_tenant(&mut self, tenant: &str) -> (usize, usize, usize) {")
+            .unwrap();
+        let purge_body = &body[purge..purge + body[purge..].find("\n    }\n").unwrap()];
+        let settle = purge_body
+            .find("host_capture_settle_contract(self, ContractWait::Block, \"a tenant purge\")")
+            .unwrap();
+        let drop_at = purge_body
+            .find("the tenant purge revoked the Capturing entry")
+            .unwrap();
+        let victims = purge_body.find("let victims: Vec<PoolKey>").unwrap();
+        assert!(settle < drop_at && drop_at < victims);
+        let reclaim = body
+            .find("evict_all_demoting(&engine, &mut px, &mut hpx, budget)")
+            .unwrap();
+        assert!(
+            body[reclaim - 600..reclaim].contains("\"the admission reclaim\","),
+            "the reclaim settles the capture first"
+        );
+        for trim in [
+            "trim_model_device_pools(&engine, &loaded, \"admin-trim\")",
+            "trim_model_device_pools(&engine, &loaded, \"admission-drain\")",
+            "trim_model_device_pools(&engine, &loaded, \"oom-teardown\")",
+        ] {
+            let at = body.find(trim).unwrap();
+            assert!(
+                body[at - 400..at].contains("\"a trim\""),
+                "{trim} settles the capture first"
+            );
+        }
+        let drain = body
+            .find("host_capture_drain_at_shutdown(&mut hpx);")
+            .unwrap();
+        assert!(
+            body[drain..drain + 60].contains("\n}\n"),
+            "the drain is the run loop's last statement"
+        );
+        let route = body.find("fn prefix_capture_off_tick(").unwrap();
+        let route_end = route
+            + body[route..]
+                .find("\nfn host_kv_planes_settle_capture(")
+                .unwrap();
+        let route_body = &body[route..route_end];
+        let second = route_body
+            .find("host_capture_settle_pending(engine, px, hpx, ContractWait::Block, \"a second capture\")")
+            .unwrap();
+        let clones = route_body.find("engine.clone_dtod(&r.conv_state)").unwrap();
+        let fence = route_body.find("t.record_producer(generation)").unwrap();
+        let batch = route_body
+            .find("t.submit_d2d_capture(ops, HOST_TIER_TRANSFER_EPOCHS)")
+            .unwrap();
+        assert!(second < clones && clones < fence && fence < batch);
+        assert!(route_body.contains("if hpx.capture_off_tick_disabled"));
+        assert!(route_body.contains(".is_none_or(|t| t.transfers.is_none())"));
+        let insert = body.find("fn prefix_insert_from_session(").unwrap();
+        let insert_body = &body[insert..insert + body[insert..].find("\n}\n").unwrap()];
+        let preflight = insert_body.find("px.prepare_snapshot(").unwrap();
+        let route_call = insert_body.find("prefix_capture_off_tick(").unwrap();
+        let on_tick = insert_body.find("match prefix_snapshot(").unwrap();
+        assert!(preflight < route_call && route_call < on_tick);
+        assert!(insert_body.contains("CaptureRoute::Submitted | CaptureRoute::Refused => return,"));
+        // The other capture sites keep the tick program: the fanout leader (its siblings restore
+        // from the entry in the same tick) and the pause sweep (a by-reference demote).
+        assert_eq!(body.matches("prefix_capture_off_tick(").count(), 2);
+    }
+
     // ---- WP-A day 18: the `Promoting` state machine (memra#536 Move 1, the promote half) ----
     // CPU halves: the admission probe's decision, what a settle step does with a pending promote
     // given the contract's answer (`host_promote_settle_with` takes the contract step as a closure),
@@ -40466,10 +41559,10 @@ mod tests {
             .unwrap();
         assert!(poll < 700, "the poll is the loop body's first statement");
         assert!(worker[loop_at..loop_at + 4500].contains("&& hpx.demoting.is_none()"));
-        assert!(
-            worker[loop_at..loop_at + 9000]
-                .contains("if hpx.demoting.is_some() || hpx.promoting.is_some() {")
-        );
+        // (Day 20 extended the cap to the `Capturing` entry; the statement is one `if`.)
+        assert!(worker[loop_at..loop_at + 9000].contains(
+            "if hpx.demoting.is_some() || hpx.promoting.is_some() || hpx.capturing.is_some()"
+        ));
         // OffTick is the eviction sink's route and nobody else's.
         let sink = body("fn host_demote_prefix_entry(");
         assert!(sink.contains("ContractD2h::OffTick"));
