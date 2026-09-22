@@ -1235,6 +1235,16 @@ earlier today); the memra-server suite was green. Corrected in `340e8a474` with 
 gate in a lead chain runs in its own `if ! ...; then exit; fi` line before the commit; a chain never carries a gate's
 result across a heredoc.
 
+Battery (`integration-day12/integ31-cpu-battery/`, run on the pre-merge tree that carried A's day 17 through C, then the
+final-tree checks after merging main `a19631f9d`): fmt, portable suites, memra-server suite, clippy, censuses, collector
+pytest, engine CPU lib tests, engine and server clippy `-D warnings`, marker census, workflow keys, perf board: rc=0;
+shellcheck on the two gates clean once `SC1091` (the sourced port guard) is excluded; `git diff --check` tripped only
+on battery summary whitespace. The final tree's engine equals main (only the two gate scripts differ). Local 5090
+serve-smoke NOT RUN: the 5090 lock was held from 00:31Z by another session's `memra-server` (cwd `wt-525`, not a spill
+lane) for the whole window; integ30 smoked the identical engine minutes earlier (`serve-smoke: 0 failed`); my waiter
+was stopped (own process, identified by cwd), the other session's untouched. Lead error, recorded: the first attempt
+matched the waiter by name and killed my own shell (exit 144), the trap the memory already names.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
