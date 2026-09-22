@@ -1,6 +1,7 @@
 //! Route-independent policy around the worker's existing tick-top drain/admission.
-//! Saved primes yield at their frozen numerical boundaries. An expensive chunk
-//! grants ready decode peers a recovery interval across ordinary worker ticks;
+//! Saved primes yield at their frozen numerical boundaries. A chunk costing more
+//! than the service goal grants ready decode peers one worker-wide recovery
+//! interval across ordinary worker ticks, whatever the number of saved primes;
 //! arrivals and cancellation are still drained at every tick.
 
 use memra_engine::prime_walker::{PrimeProgress, PrimeYieldMode};
@@ -185,25 +186,63 @@ impl PrimePolicy {
     }
 
     /// A chunk of cost C above service goal S permits ready peers to run for
-    /// C-S before this owner advances again. Each peer still takes one public
-    /// progress quantum per worker tick, so this never introduces a long burst.
-    /// The deadline belongs to the owner's last advance: other requests cannot
-    /// renew it. No ready peer means no delay (including after peer cancellation).
+    /// C-S before any saved prime advances again. `primes` is every live row of
+    /// the worker; only pending ones count. The interval is worker-wide: with m
+    /// saved primes, one chunk runs per interval instead of m chunks per tick,
+    /// so peers keep C-S of service after every chunk and the primes together
+    /// keep at least C of every 2C. Each peer still takes one public progress
+    /// quantum per worker tick, so this never introduces a long burst.
+    ///
+    /// When the interval closes, the least recently served pending prime has the
+    /// first claim for one further S. A claimant whose route does not run in that
+    /// window (another phase, a held batch) delays the others by at most S; after
+    /// it any pending prime may advance, so no prime waits on another forever.
+    /// Only a prime's own advance opens an interval: arrivals and peer steps never
+    /// renew it. A newly admitted prime is not pending before its first chunk (its
+    /// walker does not exist yet), so each admission may run that one chunk inside
+    /// an open interval; the chunk then opens its own. No ready peer means no delay
+    /// (including after peer cancellation),
+    /// and chunks within S keep the per-advance program: every prime, every tick.
     ///
     /// This is service sharing, not a hard ITL bound: a frozen chunk cannot be
     /// preempted and its cost may exceed S. Native gates must measure that cost,
     /// peer gaps and the admitted prime's progress separately.
-    pub fn defer_for_peer(
+    pub fn defer_for_peer<'a>(
         &self,
-        service: &PrimeService,
+        owner: usize,
+        primes: impl IntoIterator<Item = (usize, &'a PrimeService)>,
         has_ready_peer: bool,
         now: Instant,
     ) -> bool {
-        service.pending
-            && has_ready_peer
-            && service.last_advance.is_some_and(|(completed_at, wall)| {
-                now.saturating_duration_since(completed_at) < wall.saturating_sub(self.service_goal)
-            })
+        if !has_ready_peer {
+            return false;
+        }
+        let mut owner_pending = false;
+        let mut recovery_end: Option<Instant> = None;
+        let mut first_claim: Option<(Option<Instant>, usize)> = None;
+        for (row, service) in primes {
+            if !service.pending {
+                continue;
+            }
+            owner_pending |= row == owner;
+            let claim = (
+                service.last_advance.map(|(completed_at, _)| completed_at),
+                row,
+            );
+            if first_claim.is_none_or(|best| claim < best) {
+                first_claim = Some(claim);
+            }
+            if let Some((completed_at, wall)) = service.last_advance
+                && wall > self.service_goal
+            {
+                recovery_end = recovery_end.max(Some(completed_at + (wall - self.service_goal)));
+            }
+        }
+        let Some(end) = recovery_end.filter(|_| owner_pending) else {
+            return false;
+        };
+        now < end
+            || (now < end + self.service_goal && first_claim.is_some_and(|(_, row)| row != owner))
     }
 
     /// A stream of cache hits must not continuously renew the first-token fence
@@ -231,7 +270,8 @@ impl PrimePolicy {
 
     /// Reorders only already-selected spec rows, never changes a batch partition.
     /// Every row occurs once. New arrivals were admitted at tick top. A pending
-    /// prime can defer only until its own fixed recovery interval expires.
+    /// prime defers only inside the worker-wide recovery interval and its first
+    /// claim window; `defer_for_peer` owns that choice, not this order.
     pub fn order(&mut self, order: &mut [usize], pending: impl Fn(usize) -> bool) {
         if !order.iter().copied().any(&pending) {
             return;
@@ -252,6 +292,14 @@ impl PrimePolicy {
 mod tests {
     use super::*;
 
+    fn defers(policy: &PrimePolicy, service: &PrimeService, ready: bool, now: Instant) -> bool {
+        policy.defer_for_peer(0, [(0, service)], ready, now)
+    }
+
+    fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
     fn measured_chunk(service: &mut PrimeService, at: Instant, ms: u64, remaining: usize) {
         service.record_at(
             PrimeProgress {
@@ -271,12 +319,27 @@ mod tests {
         measured_chunk(&mut long, now, 500, 10);
         let tight = PrimePolicy::from_slo_ms(50.0).unwrap();
         let loose = PrimePolicy::from_slo_ms(200.0).unwrap();
-        assert!(tight.defer_for_peer(&long, true, now + Duration::from_millis(449)));
-        assert!(!tight.defer_for_peer(&long, true, now + Duration::from_millis(450)));
-        assert!(!loose.defer_for_peer(&long, true, now + Duration::from_millis(300)));
+        assert!(defers(
+            &tight,
+            &long,
+            true,
+            now + Duration::from_millis(449)
+        ));
+        assert!(!defers(
+            &tight,
+            &long,
+            true,
+            now + Duration::from_millis(450)
+        ));
+        assert!(!defers(
+            &loose,
+            &long,
+            true,
+            now + Duration::from_millis(300)
+        ));
 
         measured_chunk(&mut long, now, 20, 9);
-        assert!(!tight.defer_for_peer(&long, true, now));
+        assert!(!defers(&tight, &long, true, now));
     }
 
     #[test]
@@ -284,13 +347,13 @@ mod tests {
         let now = Instant::now();
         let policy = PrimePolicy::default();
         let mut long = PrimeService::default();
-        assert!(!policy.defer_for_peer(&long, true, now));
+        assert!(!defers(&policy, &long, true, now));
         measured_chunk(&mut long, now, 1000, 2);
         // Includes solo work, all peers still priming, and a decode peer that
         // disconnected or exhausted its output budget between ticks.
-        assert!(!policy.defer_for_peer(&long, false, now));
+        assert!(!defers(&policy, &long, false, now));
         measured_chunk(&mut long, now, 1000, 0);
-        assert!(!policy.defer_for_peer(&long, true, now));
+        assert!(!defers(&policy, &long, true, now));
     }
 
     #[test]
@@ -306,7 +369,7 @@ mod tests {
             channel_open: true,
             output_ready: true,
         };
-        assert!(policy.defer_for_peer(&long, ready().can_advance(), now));
+        assert!(defers(&policy, &long, ready().can_advance(), now));
         let peers = [
             DecodeReadiness {
                 channel_open: false,
@@ -329,7 +392,12 @@ mod tests {
                 ..ready()
             },
         ];
-        assert!(!policy.defer_for_peer(&long, peers.iter().any(DecodeReadiness::can_advance), now));
+        assert!(!defers(
+            &policy,
+            &long,
+            peers.iter().any(DecodeReadiness::can_advance),
+            now
+        ));
     }
 
     #[test]
@@ -344,7 +412,7 @@ mod tests {
         for remaining in (1..128).rev() {
             measured_chunk(&mut long, now, 500, remaining);
             let deadline = now + Duration::from_millis(450);
-            while policy.defer_for_peer(&long, true, now) {
+            while defers(&policy, &long, true, now) {
                 // Each tick may contain a different newly arrived ready peer.
                 peer_quanta += 1;
                 now += Duration::from_millis(10);
@@ -354,6 +422,113 @@ mod tests {
         assert_eq!(peer_quanta, 127 * 45);
         // Repeated readiness checks never rewrite last_advance.
         assert_eq!(now.duration_since(start), Duration::from_millis(127 * 450));
+    }
+
+    #[test]
+    fn concurrent_primes_share_one_recovery_interval() {
+        let policy = PrimePolicy::default();
+        let t0 = Instant::now();
+        let (mut a, mut b) = (PrimeService::default(), PrimeService::default());
+        // One tick advanced A (done at 500ms) and then B (done at 1000ms). B's chunk
+        // already spent A's own interval, yet peers are still owed C-S after it.
+        measured_chunk(&mut a, t0 + ms(500), 500, 10);
+        measured_chunk(&mut b, t0 + ms(1000), 500, 10);
+        let rows = || [(0, &a), (1, &b)];
+        for now in [t0 + ms(1000), t0 + ms(1449)] {
+            assert!(policy.defer_for_peer(0, rows(), true, now));
+            assert!(policy.defer_for_peer(1, rows(), true, now));
+        }
+        // A was served least recently, so it has the first claim; B waits one goal.
+        let closed = t0 + ms(1450);
+        assert!(!policy.defer_for_peer(0, rows(), true, closed));
+        assert!(policy.defer_for_peer(1, rows(), true, closed));
+        assert!(!policy.defer_for_peer(1, rows(), true, closed + ms(50)));
+        // Without a ready peer both keep the per-advance program.
+        assert!(!policy.defer_for_peer(0, rows(), false, t0 + ms(1000)));
+        assert!(!policy.defer_for_peer(1, rows(), false, t0 + ms(1000)));
+    }
+
+    #[test]
+    fn many_primes_alternate_with_peers_and_take_turns() {
+        // Scheduling simulation, not GPU speed: chunks cost 500ms and a tick of
+        // ready peers costs 10ms. Peers run first in a tick, then every prime row.
+        let policy = PrimePolicy::default();
+        let start = Instant::now();
+        let mut now = start;
+        let mut primes: Vec<PrimeService> = (0..3).map(|_| PrimeService::default()).collect();
+        for prime in &mut primes {
+            prime.pending = true;
+        }
+        let mut chunks = [0usize; 3];
+        let mut peer_service: Option<Duration> = None;
+        for _ in 0..20_000 {
+            now += ms(10);
+            if let Some(service) = peer_service.as_mut() {
+                *service += ms(10);
+            }
+            for row in 0..3 {
+                let rows: Vec<(usize, &PrimeService)> = primes.iter().enumerate().collect();
+                if policy.defer_for_peer(row, rows, true, now) {
+                    continue;
+                }
+                // Peers received C-S of service since the previous chunk, even though
+                // three primes are pending and each would otherwise advance this tick.
+                assert!(peer_service.is_none_or(|service| service >= ms(450)));
+                now += ms(500);
+                chunks[row] += 1;
+                measured_chunk(&mut primes[row], now, 500, 1_000_000);
+                peer_service = Some(Duration::ZERO);
+            }
+        }
+        let (fewest, most) = (chunks.iter().min().unwrap(), chunks.iter().max().unwrap());
+        assert!(most - fewest <= 1, "turns must rotate: {chunks:?}");
+        // The primes together keep more than half of the worker.
+        let prime_time = ms(500) * chunks.iter().sum::<usize>() as u32;
+        assert!(prime_time * 2 > now.duration_since(start));
+    }
+
+    #[test]
+    fn an_absent_first_claimant_delays_other_primes_by_at_most_one_goal() {
+        let policy = PrimePolicy::default();
+        let t0 = Instant::now();
+        let (mut held, mut runnable) = (PrimeService::default(), PrimeService::default());
+        measured_chunk(&mut held, t0, 500, 5);
+        measured_chunk(&mut runnable, t0 + ms(500), 500, 5);
+        let rows = || [(0, &held), (1, &runnable)];
+        // Row 0 has the first claim but its route does not run (for example a held
+        // dark batch). Row 1 is delayed by one service goal, never indefinitely.
+        let closed = t0 + ms(950);
+        assert!(policy.defer_for_peer(1, rows(), true, closed));
+        assert!(policy.defer_for_peer(1, rows(), true, closed + ms(49)));
+        assert!(!policy.defer_for_peer(1, rows(), true, closed + ms(50)));
+    }
+
+    #[test]
+    fn chunks_within_the_goal_keep_the_per_advance_program() {
+        let policy = PrimePolicy::default();
+        let t0 = Instant::now();
+        let (mut a, mut b) = (PrimeService::default(), PrimeService::default());
+        measured_chunk(&mut a, t0, 50, 3);
+        measured_chunk(&mut b, t0, 30, 3);
+        let rows = || [(0, &a), (1, &b)];
+        assert!(!policy.defer_for_peer(0, rows(), true, t0));
+        assert!(!policy.defer_for_peer(1, rows(), true, t0));
+    }
+
+    #[test]
+    fn retired_or_completed_primes_release_the_interval() {
+        let policy = PrimePolicy::default();
+        let t0 = Instant::now();
+        let mut long = PrimeService::default();
+        let mut other = PrimeService::default();
+        other.pending = true;
+        measured_chunk(&mut long, t0, 1000, 3);
+        assert!(policy.defer_for_peer(1, [(0, &long), (1, &other)], true, t0));
+        // The worker leaves finished rows out, so a cancelled owner holds nothing.
+        assert!(!policy.defer_for_peer(1, [(1, &other)], true, t0));
+        // A prime that ingested its last chunk no longer holds an interval either.
+        measured_chunk(&mut long, t0, 1000, 0);
+        assert!(!policy.defer_for_peer(1, [(0, &long), (1, &other)], true, t0));
     }
 
     #[test]

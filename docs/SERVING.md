@@ -315,7 +315,9 @@ ends after the hit's first token, and cold-only traffic retains dense continuati
 With cooperative prefill enabled on an eligible route, this preference yields an ordinary prefill phase after
 at most the configured `MEMRA_SLO_P99_MS` interval of preference, so an endless
 stream of cached arrivals cannot keep an admitted prime waiting indefinitely.
-Saved primes also share service using their measured chunk cost. These local
+Saved primes also share service using their measured chunk cost: a chunk above that interval opens
+one worker-wide recovery window for ready decode peers, however many saved primes are pending,
+and the least recently served prime takes the next turn. These local
 scheduling intervals are not latency guarantees; see
 [PREFILL-FAIRNESS.md](PREFILL-FAIRNESS.md) for route scope and required measurements.
 Historical box1 N=5 measured the earlier cache-hit preference: Q27 mixed-c4 hit TTFT is p50 18.497 / p95 19.820 ms
@@ -2599,7 +2601,10 @@ ON) advances one frozen chunk per tick, the worker drains arrivals and gives eac
 bounded quantum (a prime chunk, a committed spec round or a plain decode step), then resumes. Both
 arms execute the same frozen range program, so a yield changes interleaving, never bytes; `=0` is
 the rollback seam. The quantum is `MEMRA_PRIME_CHUNK` (4096 default; 1024 halves the peers' wait
-again at the long prime's expense). What this covers: the GDN MTP prime (`[prime-walk]
+again at the long prime's expense). A saved chunk whose measured wall C exceeds S =
+`MEMRA_SLO_P99_MS` then holds every saved prime for one shared C-S window while a decode peer is
+ready, so peers keep at least C-S of service per chunk and a lone prime pays at most C-S plus one
+tick per chunk (bounds and route matrix in [PREFILL-FAIRNESS.md](PREFILL-FAIRNESS.md)). What this covers: the GDN MTP prime (`[prime-walk]
 supported=true` at boot), DFlash, GLM plain and spec. The serial plain-trunk prime is bounded per
 tick by `MEMRA_PREFILL_TICK` (1024) except the sole-request widening to 8192; E4B and dsv4 still
 prime monolithically and belong to memra#535 P3/P4. An implicit setting retains the existing

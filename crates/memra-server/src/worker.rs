@@ -21015,7 +21015,14 @@ fn defer_saved_prime(
         .iter()
         .enumerate()
         .any(|(i, s)| i != owner && !finished.contains(&i) && ready_prime_decode_peer(s));
-    policy.defer_for_peer(&active[owner].prime_service, ready_peer, Instant::now())
+    // Every live saved prime shares one recovery interval; a retired or cancelled
+    // row can neither hold it open nor keep the first claim.
+    let primes = active
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !finished.contains(i))
+        .map(|(i, s)| (i, &s.prime_service));
+    policy.defer_for_peer(owner, primes, ready_peer, Instant::now())
 }
 
 /// The worker entry point. Runs on its OWN std::thread. Builds the Engine + loads every model on

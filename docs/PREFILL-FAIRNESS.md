@@ -13,13 +13,31 @@ The ON policy preserves the saved walker's frozen chunk tape, capture boundaries
 draft ingestion carry and committed speculative-round surplus. It does not change
 chunk sizes, kernels, request admission, reservations or batch construction.
 
-After a saved prime returns a chunk of measured wall time C, a ready decode peer
-can receive ordinary worker ticks for `max(C - S, 0)`, where S is the configured
-`MEMRA_SLO_P99_MS` interval (default 50 ms). Each tick retains one public decode
-quantum per speculative peer and the normal plain decode phase. The deadline is
-fixed to this prime's last successful advance. New arrivals cannot extend it.
-With no ready peer, the prime proceeds immediately: closed streams, exhausted
-output budgets, unfinished priming and absent output state do not buy a delay.
+After a saved prime returns a chunk of measured wall time C above S, the
+configured `MEMRA_SLO_P99_MS` interval (default 50 ms), ready decode peers
+receive ordinary worker ticks for `C - S` before any saved prime advances again.
+The interval is worker-wide: it is the latest `completed + C - S` over every live
+pending prime, so with m saved primes one chunk runs per interval, not m chunks
+per tick. Each tick retains one public decode quantum per speculative peer and
+the normal plain decode phase. When the interval closes, the least recently
+served pending prime has the first claim for one further S; if its route does
+not run in that window, any other pending prime may advance after it. Only a
+prime's own advance opens an interval. New arrivals and peer steps cannot extend
+it, and a retired or completed prime releases it. With no ready peer, the primes
+proceed immediately: closed streams, exhausted output budgets, unfinished priming
+and absent output state do not buy a delay. Chunks at or under S keep the
+per-advance program: every pending prime advances every tick.
+
+With ready peers, the resulting bounds are structural: peers get at least `C - S`
+of service after every saved-prime chunk, and the primes together keep one chunk
+per at most `2C` plus one worker tick, taking turns in least-recently-served
+order. A lone long prime therefore pays at most `C - S` plus one tick per chunk
+over its per-advance TTFT. The one exception is admission: a new prime is not
+pending before its first chunk, because its walker does not exist yet, so each
+admitted prime may run that first chunk inside an open interval, and the chunk
+then opens its own. Admission (`MEMRA_MAX_SESSIONS`) bounds that to one chunk
+per admitted prime. Tick-bounded plain prefill never sets a saved-prime state
+and is never deferred.
 
 The cached-first-token/refill preference reserves at most S of elapsed time while
 interactive prefill is waiting. It then permits one normal prefill phase even if
@@ -61,8 +79,9 @@ question. Refusal is an explicit policy limitation, not a model-format rejection
 
 Run `python3 tools/test_prime_fairness.py` for the actual std-only engine walker
 and scheduler, quantum observer and Trace modules. It tests frozen tapes, failed ownership/finalization,
-elapsed recovery, continuous arrivals, initial-prefill starvation, non-runnable
-peers and invalid service intervals. It does not type-check the complete server.
+elapsed recovery, one interval shared by concurrent primes, least-recently-served
+turns, an absent first claimant, continuous arrivals, initial-prefill starvation,
+non-runnable peers and invalid service intervals. It does not type-check the complete server.
 Linux server compilation and affected CPU tests remain separate prerequisites.
 
 The diagnostic wiring follows [REQUEST-LIFECYCLE.md](REQUEST-LIFECYCLE.md): actual
@@ -93,6 +112,13 @@ On a parent-allocated PRO 6000 physical-card lease, the serving gate must includ
 - Source/binary/model hashes before and after, actual route engagement, all child
   and lease exits, wrapper identity and 250 ms hardware telemetry. Default or
   performance decisions require balanced interleaved A/B in both orders, N>=5.
+
+The service-interval A/B is `tools/prime-fairness-gate.py --shape service`: the
+previous binary against the candidate, `--reps 6` (six boots per arm, the order
+alternating each rep), decoders already streaming when a 131k prime and a second
+32k prime arrive. It records the decoders' rate and ITL inside each prime's
+window and each prime's TTFT, so the interval's price to the long prime is
+measured beside what it buys the peers.
 
 The 5090 compatibility follow-up cannot alter unrelated serving or replace the
 blocking PRO 6000 evidence. Fresh qualification of the changed source awaits
