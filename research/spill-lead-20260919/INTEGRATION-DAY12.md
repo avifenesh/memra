@@ -1687,6 +1687,36 @@ an earlier admission gate without reaching the probe); the probe now drops it on
 grace it goes through and the state waits for its owner; the CPU test covers both readings. Server clippy `-D warnings`
 and the memra-server suite (804 passed) green, gated before the commit.
 
+## integ38 (`lane/spill-integ38-20260922`): C day 26 (5090 door gates on the slice-2 tree; the hit gate's unarmed ON arm) and A day 22 when it lands
+Lane tip merged: C `a76d669e4` on main `58b814abe` (#638), docs, drivers and receipts only.
+
+**C day 26.** The 5090 door gates on the slice-2 tree (9B, 27B for the twin), attempt 1 lost twelve cells to a
+foreign 22 GB hold outside the canonical lock (`[server] FATAL: worker init failed: load gate:
+DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")`, kept as `attempt1-oom/`, cause quoted with the card's
+snapshot; nothing foreign touched), then the battery waited bounded for an idle card and ran 07:51 to 08:01Z, verbatim:
+fault-default `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (67 ok, `receipt seq=1 expected 1 + 0 ... = 1`, `seq=2 ... = 2`);
+fault-plain `ALL GREEN` (67 ok, `seq=3 expected 1 + 2 ... = 3`, `seq=4 expected 2 + 2 ... = 4`); failure x4 `ALL GREEN`;
+identity x4 `ALL GREEN (teeth=0)`; hit OFF and ON `ALL GREEN (qwen)`; twin27 OFF and ON `... -> PASS` (no `REFUSED`
+line); unit cells `8 passed`, engine D2D cells `2 passed`. The restore route engaged on this card in two arms
+(`identity-plain-on`: `restore submitted off the tick: 64 tokens, 16 planes (53.6MB), ticket seq=6 on the contracts
+door's copy stream; recurrent state copied on the owner stream; request parked` then `restore landed off the tick: 64
+tokens (53.6MB) complete after 1 poll(s) ...`, and `seq=7`; `fault-plain`: one restore per promote cell), zero refused,
+dropped or disabled lines. The restore-exercising cell was skipped by its pre-registered condition (the identity gate's
+plain arm is the smallest engaging shape: a 64-token promoted entry, the `lookup` floor is 64 on every model). Census
+item 11 (`HOSTPREFIX-DOOR.md`): the restore route reaches its class check past six silent gates and then refuses by
+name and silently (TP shards, latent planes, `e.draft` for every `insert (spec-boundary)` entry, `e.dspark_draft`,
+`pos != toks.len()`, empty boundary logits, no KV plane); a draft plane's off-tick restore needs the `MtpScratch`
+allocated at the probe and owned by the `Restoring` state, a borrowed destination view, the source under the trunk's
+pin, the producer fence on the owner stream, rule 3's wait before the deferred prime's first draft-head read, the
+geometry checks moved to the probe, and slice 3's receipt term over the draft role; 11 of 14 hit-gate entries and 12 of
+16 hits are draft-bearing on both rigs. **Finding, lead-confirmed from the receipts:** `tools/spec-on-cache-hit-gate.sh`
+boots with no `MEMRA_KV_HOST_MB` (zero `[prefix-host]` lines), so the door is off at `hpx.armed()` before any class
+check and every "hit gate ALL GREEN OFF and ON" line from A's days 17 to 21 and C's days 22 to 26 exercised the same
+unarmed program in both arms; the identity clause it carries is the spec-on-hit identity with the tier off. Ruling 33:
+a gate's "door ON" arm asserts that the door engaged (an arming line and, where the entries allow, a route line) or it
+is not a door arm; C day 27 (running) arms the hit gate's ON arm and re-reads it on both cards, and the review table
+marks the earlier lines as unarmed receipts.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
