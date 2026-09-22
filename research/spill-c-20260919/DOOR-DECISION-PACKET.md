@@ -9,7 +9,10 @@ Cards: the target card is one RTX PRO 6000 Blackwell at its 600 W limit under th
 artifact; the RTX 5090 rows are the local RTX 5090 Laptop GPU with the Qwen3.5-9B NVFP4 MTP artifact under
 `flock /tmp/memra-5090.lock`. Paths are relative to `research/`; `A` = `spill-a-20260919`, `C` =
 `spill-c-20260919`, `lead` = `spill-lead-20260919`. Rows marked "A's branch" are on
-`origin/lane/spill-a-20260919` and not yet on `main` at the time of writing.
+`origin/lane/spill-a-20260919` and not yet on `main` at the time of writing. Day 31 update: A day 24 is on `main`
+since #643 (integ40); A day 25 (`483425d83`) is on the lead's integ41 branch, merged into this lane as `5cef58f09`;
+the two RTX 5090 rows this packet listed as "not run" on day 30 were run on day 31 (`C/rtx5090-day31/`, `C/DAY31.md`)
+and are filled in below.
 
 ## The one page
 
@@ -70,7 +73,9 @@ Under `MEMRA_KV_HOST_CONTRACTS=1` with a host tier armed (`MEMRA_KV_HOST_MB > 0`
   tick program orders behind the landing at the settle. The Move 1 demote's two host hashes stay on the owner
   thread inside the tick: `progress`'s completion checksum at the poll and `bind_tier_image`'s bundle checksum at
   publication (Move 1 owed item 2; the hash micro-cell below prices one pass). On the hit gate's shape every
-  spec-boundary capture settles synchronously at the session retire, not at a tick-top poll (A day 24 finding 2).
+  spec-boundary capture settles synchronously at the session retire, not at a tick-top poll (A day 24 finding 2);
+  the settle's own span on the owner thread is a fixed 0.4 ms (A day 25, `held_ms N=11 min=0.37 median=0.41
+  max=0.44`, the copy already landed), stated here and not carried as a cost of the door.
   The publishes still on the tick by name: the fanout leader's and the pause sweep's snapshots, the
   `dspark-boundary` and `glm5-boundary` publishes, and every `OnTick` refusal.
 
@@ -84,7 +89,7 @@ Under `MEMRA_KV_HOST_CONTRACTS=1` with a host tier armed (`MEMRA_KV_HOST_MB > 0`
 | Failure, share-cap arm, default and plain | PRO 6000 | `91b0d4e08` (day 23) | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (15 `ok:`) | same, 15 `ok:` | `C/pro-single-day23-gates/cells/failure-{default,plain}-{off,on}/gate.log` |
 | Failure, whole-budget arm (`MEMRA_KV_HOST_TENANT_PCT=100`) | PRO 6000 | `91b0d4e08` (day 23); `98170f182` (day 22) | `ALL GREEN` (14 `ok:`), server line `skip demote: entry 159.9MB > host budget 1MB` | `ALL GREEN` (14 `ok:`), the same refusal after the whole Move 1 contract ran | `C/pro-single-day23-gates/cells/failure-default-pct100-{off,on}/gate.log`; `C/pro-single-day22/cells/failure-default-pct100-on/` |
 | Failure, share-cap arm | RTX 5090 | `91b0d4e08` (day 23) | `ALL GREEN` x2 (15 `ok:`) | `ALL GREEN` x2 (15 `ok:`) | `C/rtx5090-day23/failure-*/gate.log` |
-| Failure, whole-budget arm | RTX 5090 | none | not run | not run | stated missing |
+| Failure, whole-budget arm (`MEMRA_KV_HOST_TENANT_PCT=100`), default and plain | RTX 5090 | `934a6da3a` (day 31; binary built at `5cef58f09`, `crates/` equal) | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` x2 (14 `ok:`, 0 `FAIL:`), server line `[prefix-host] skip demote: entry 54.8MB > host budget 1MB` (default) and `... entry 54.6MB > host budget 1MB` (plain), twice per boot | `ALL GREEN` x2 (14 `ok:`), the same two refusal lines, each preceded in the boot by `demote submitted off the tick: 64 tokens, 54.8MB, ticket seq=3, 18 items ...` (plain: `54.6MB ... 16 items`), `contracts door D2H receipt ... require=ok` and `demote published off the tick: ticket seq=3 complete after 1 poll(s), 36.2ms from submission to completion (tick-top poll)` (plain seq=2: `24.9ms`), the refusal after the whole Move 1 contract ran, as on the target card | `C/rtx5090-day31/gates/failure-{default,plain}-pct100-{off,on}/{gate.log,verdict.txt,poolfull-demote-lines.txt}` |
 | Contract fault, six Move 1 cells plus the ticket accounting clause | PRO 6000 | `913095404` (day 25) | n/a (ON by construction) | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (67 `ok:` default and plain); accounting lines `receipt seq=1 expected 1 + 0 capture ticket(s) submitted before it = 1`, `seq=2 expected 2 + 0 ... = 2` (default), `seq=3 expected 1 + 2 ... = 3`, `seq=4 expected 2 + 2 ... = 4` (plain) | `C/pro-single-day25/cells/fault-{default,plain}/gate.log` |
 | Contract fault | RTX 5090 | `913095404` (day 25) | n/a | `ALL GREEN` (67 `ok:` default and plain), the same four accounting lines | `C/rtx5090-day25/fault-{default,plain}/gate.log` |
 | Contract fault with the two D2D cells (`d2d-capture`, `d2d-restore` refusing by receipt) | PRO 6000 | `2b850b2b0` (A day 23) | n/a | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` | `A/pro-single-day23/box/gates/` (the fault log) |
@@ -132,7 +137,9 @@ RTX 5090 Laptop GPU, the 9B (this card's own figures):
 |---|---|---|---|---|
 | The D2D receipt's price, one 158 MiB span (cell (v)'s twin) | copy `copy_median=0.394` (copy-first), `0.395` (digest-first) | digest `digest_median=0.221` / `0.221`; pair `pair_median=0.442` / `0.441`; `pair_over_copy=1.12` / `1.12` | C day 28, `8803f4b6c`, N=5 per order, both orders, one sitting under `flock`; 58 C before and after, P8 before, no compute app, `power.limit [N/A]` | `C/rtx5090-day28/price/test.log`, `card.{before,after}.csv` |
 | One SHA-256 pass over 160 MiB on this host | n/a | `cached_ms=37.339 wc_ms=1431.613 heap_ms=37.480` | C day 18, two orders; 58 to 59 C, 28.3 to 54.0 W | `C/rtx5090-day18/hashmicro/` |
-| The door's demote and promote cost as a pair (this class stays write-combined under `PinnedKind::for_device`) | not run | not run | stated missing (section D item 5 of the door table) | none |
+| The door's demote and promote cost as a PAIR on this card (the day-16 `wc-cell` shape adapted to the 9B: cache 64 MB, host tier 8192 MB, the default spec boot, 64-token draft-bearing entries of 54.8 MB demoted as `18 items`; the server's own `demote: ... in Y ms` and `promote: ... in Y ms` lines; this class's destinations write-combined, printed inside the same hold by `tier-transfer-gate roundtrip`: `PINNED-DEFAULT device="NVIDIA GeForce RTX 5090 Laptop GPU" kind=write-combined flags=4`, `driver_flags=6` at six sizes): demote pooled | `median 20.0 (N=10, min 4.8, max 24.1, IQR 18.0)`; per boot `[23.1, 23.8, 21.8, 5.1, 4.8, 5.3]` and `[18.2, 24.1, 22.6, 5.4, 6.5, 17.6]` (r2 to r7) | `median 57.3 (N=10, min 38.5, max 60.4, IQR 19.3)`; per boot `[57.8, 60.4, 58.9, 39.7, 39.5, 39.7]` and `[57.7, 58.8, 56.9, 39.4, 38.5, 38.7]`; the door's own `demote published off the tick ... from submission to completion` `median 26.5 (N=12, min 17.3, max 37.4, IQR 18.1)` | C day 31, tree `934a6da3a` (binary built at `5cef58f09`), four boots `o1-off, o1-on, o2-on, o2-off` in ONE collector hold on the `rtx5090` rig (35 s, 12:47:30Z to 12:48:06Z), N=5 per arm per order, both orders, pooled N=10; the collector's 250 ms CSV 192 samples 54 to 74 C, 9.5 to 169.9 W, the cell's 1 s CSV 36 samples 55 to 74 C, 27.7 to 169.3 W, `power.limit [N/A]`, P8 at 54 C before and P0 at 62 C after, no compute app before or after; `demote off 20.0 (N=10) on 57.3 (N=10) on_minus_off +37.3 unc 26.4 isolated` | `C/rtx5090-day31/pair/wc-pair/ev/{o1,o2}-{off,on}-server.log`, `C/rtx5090-day31/pair/reading.log`, `wc-pair-replay.log` (`WC PAIR REPLAY: PASS (12 checks)`), `pair/wc-pair/ev/pinned-default.log` |
+| The same pair: promote pooled, and promote minus its inline demote | promote `median 15.6 (N=10, min 8.6, max 27.7, IQR 17.6)`, per boot `[27.6, 25.3, 8.6, 8.7, 8.8]` and `[27.7, 26.0, 9.5, 9.9, 21.3]` (r3 to r7); promote minus inline demote `median 3.5 (N=10, min 3.4, max 4.1, IQR 0.4)` | promote `median 21.1 (N=10, min 20.1, max 42.4, IQR 18.5)`, per boot `[42.4, 38.4, 21.5, 20.5, 20.1]` and `[40.2, 38.1, 20.6, 20.4, 20.1]`; promote minus inline demote `median -19.3 (N=10, min -37.4, max -15.4, IQR 7.4)` (negative on this tree because the inline demote is submitted inside the promote's window and published at a LATER tick top than the promote, so day 16's subtraction does not isolate the ON promote; the log order per hit is `demote submitted`, `promote published`, `D2H receipt`, `demote published`); the door's own `promote published off the tick ... from submission to completion` `median 14.9 (N=10, min 14.6, max 15.9, IQR 0.7)` | as above; `promote off 15.6 (N=10) on 21.1 (N=10) on_minus_off +5.4 unc 25.6 under_resolution; promote_minus_inline off 3.5 (N=10) on -19.3 (N=10) on_minus_off -22.9 unc 7.4 isolated`; every ON boot `parked=10` and `restore_submitted=5` for its 5 promotes (the day-29 double park, on this card, on draft-bearing entries: each hit parks for the promote and again for Move 2's restore, `restore landed ... 33.1ms to 33.4ms to re-admission`) | as above |
+| The same pair, read as a whole (the verdict line of the pre-registered reading, verbatim) | | `DAY31 PAIR VERDICT: demote off 20.0 (N=10) on 57.3 (N=10) on_minus_off +37.3 unc 26.4 isolated; promote off 15.6 (N=10) on 21.1 (N=10) on_minus_off +5.4 unc 25.6 under_resolution; promote_minus_inline off 3.5 (N=10) on -19.3 (N=10) on_minus_off -22.9 unc 7.4 isolated; parked per boot [0, 10, 10, 0]; pinned=write-combined; admissible=True` | The pooled medians straddle a step the raw lists show in both arms: the first three demotes of every boot read 18 to 24 (OFF) and 57 to 60 (ON), the later ones 5 to 7 (OFF; o2-off's r7 17.6 excepted) and 38 to 40 (ON), the first-touch step of A day 17's pair on this card too; hence the IQRs of 18 to 20 and the `unc` of 26. Stated, not tuned: the cell reads what day 16's shape reads. | `C/rtx5090-day31/pair/reading.log` |
 
 ### 5. Open findings the review must weigh (each with its receipt)
 
@@ -154,12 +161,39 @@ RTX 5090 Laptop GPU, the 9B (this card's own figures):
    promote arm's tenant stall reads `149.6` where the trees of A day 18 and C day 23 read `81.9`. Which slice
    between `0713c1a79` and the integ38 tip moved the copy's landing is not determined.
    `C/pro-single-day29/stall/ev/o1/b01-x/promote/receipt.json` (`server_log_lines`), `C/DAY29.md`.
-4. **A's day-24 retire-settle share.** All 11 spec-boundary captures of the hit gate's spec-on boot published
-   `settled synchronously by a session retire`, `106.3` to `204.6` ms from submission to completion: on a session
-   that retires in the tick of its prime stop the owner thread pays a host wait for the copy at the retire, so the
-   moved share is not the copy's full cost on that shape; pricing it is Move 2 owed item 3.
-   `A/pro-single-day24/box/gates/hitgate-on/qwen-on-server.log` on A's branch; A day 25 (`DAY25 RETIRE VERDICT
-   ... -> HOLDS`) priced the SEED capture's retire settle at R1 to R3 within 3.0 ms, not the spec-boundary one.
+   A day 25 priced it on the target card (one hold, twenty interleaved boots, N=5 boots per arm per order, both
+   orders, 20 of 20 replays PASS, 33 to 52 C), verbatim (`A/DAY25.md`, `A/pro-single-day25/box/double-park/`):
+   `DAY25 DOUBLE-PARK stall order=o1 on_minus_off=+64.0 unc=0.1 -> isolated (on 149.4, off 85.4)`;
+   `DAY25 DOUBLE-PARK e2e order=o1 on_minus_off=+105.8 unc=1.2 -> isolated (on 221.4, off 115.5)`;
+   `DAY25 DOUBLE-PARK stall order=o2 on_minus_off=+64.2 unc=0.1 -> isolated (on 149.4, off 85.3)`;
+   `DAY25 DOUBLE-PARK e2e order=o2 on_minus_off=+105.9 unc=1.1 -> isolated (on 221.4, off 115.4)`;
+   `DAY25 DECOMPOSITION arm=on N_runs=100 parked_per_run=[2] restore_readmission median=90.1 range=89.7..91.5 restore_completion median=90.1 slack(readmission-completion) median=0.10 max=0.20 promote_completion median=19.6 promote_in median=26.1 demote_completion median=22.3 demote_in median=97.2 demote_in-completion median=74.9 idle_p50(tick)=13.46 residual median=+1.8 range=+1.1..+3.1 | tenant top gaps: largest median=162.8 second median=22.6 sum median=185.7`;
+   `DAY25 DECOMPOSITION arm=off N_runs=100 parked_per_run=[0] promote_in median=10.8 demote_in median=6.2 | tenant top gaps: largest median=98.7 second median=16.6`.
+   A's reading: the re-admission wait is one tick (13.46) plus the inline demote's two on-tick hashes (74.9) plus
+   1.8 residual; the copy itself about 0.5 ms; by construction the restore route parks a whole-entry device hit whose
+   planes the same request's promote just landed; the tenant's +64 is the demote's hashes on one tick, not the second
+   park. A's proposal 1: in `host_restore_park_probe`, refuse the route by shape when `hpx.promoted_pin` names the hit
+   entry (one typed line, the OFF device-hit copy on the tick, no flag, no new state). Lead ruling 36 (integ41):
+   proposal 1 APPROVED for A day 26 as specified, with the refusal's typed line naming the pin and the entry so the
+   gate can count it, and the hit gate's ON-arm route counts on both cards unmoved. Which slice moved the demote's
+   landing (this lane's question) is not determined. Day 31 on the RTX 5090: every ON boot of the pair cell reads
+   `parked=10, restore_submitted=5` for its 5 promotes, the same double park on draft-bearing entries (row above).
+4. **A's day-24 retire-settle share, priced on A day 25 (Move 2 owed item 3, closed by ruling 36).** All 11
+   spec-boundary captures of the hit gate's spec-on boot published `settled synchronously by a session retire`,
+   `106.3` to `204.6` ms from submission to completion (`A/pro-single-day24/box/gates/hitgate-on/qwen-on-server.log`);
+   day 24 read that as "the owner thread pays a host wait for the copy at the retire". A day 25 put a typed clause on
+   the capture publish line (`; the settle held the owner thread H ms, entered A ms after submission`;
+   `PendingCapture.settle_after_ms` / `settle_held_ms`, no new `MEMRA_*` read) and ran the hit gate ON on the target
+   card on the same binary (`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 68 `ok:`, day 24's census counts exactly),
+   verbatim (`A/DAY25.md`, `A/pro-single-day25/box/gates/`):
+   `DAY25 RETIRE-SETTLE settled_by='settled synchronously by a session retire' N=11 whys=['spec-boundary'] toks=[64, 96, 128] | held_ms N=11 min=0.37 median=0.41 max=0.44 | entered_after_ms N=11 min=106.10 median=150.50 max=204.50 | completion_ms N=11 min=106.50 median=151.00 max=205.00 | share_held_over_completion N=11 min=0.00 median=0.00 max=0.00`;
+   `DAY25 RETIRE-SETTLE settled_by='tick-top poll' N=3 whys=['seed'] toks=[64] | held_ms N=3 min=0.37 median=0.37 max=0.38 | entered_after_ms N=3 min=87.30 median=87.60 max=87.70 | completion_ms N=3 min=87.60 median=88.00 max=88.00 | share_held_over_completion N=3 min=0.00 median=0.00 max=0.00`.
+   Day 24's "host wait for the 159 MB copy at the retire" is refuted by its own typed figure: the copy had landed
+   (`share_held_over_completion` 0.00), and the 0.4 ms is the settle's fixed cost, the same at the retire and at the
+   tick-top poll. A's proposal 2: no reordering earned, leave the seam. Lead ruling 36: proposal 2 ACCEPTED, the seam
+   stays, 0.4 ms is the recorded price, Move 2 owed item 3 closes on this receipt. The C day-25 retire cell
+   (`DAY25 RETIRE VERDICT ... -> HOLDS`, R1 to R3 within 3.0 ms) priced the SEED capture's retire settle on #634's
+   `Block` arm; it stands beside A's, not in place of it.
 5. **The capture share, read on day 30.** Day 28's subtraction arm was a cache-OFF boot whose prime is not split at
    the 5088 seed boundary (hence its 301.5 against 283.7). Against a cache-ON boot whose insert is refused before
    any copy the capture arm's own share is `+0.6` / `+0.5` ms door OFF and `+1.2` / `+1.2` ms door ON (`isolated`,
@@ -174,21 +208,24 @@ RTX 5090 Laptop GPU, the 9B (this card's own figures):
    the MoE slot cache door (decide-by 2026-10-04, `C/MOE-SLOT-CACHE-DOOR.md`). The arena path
    (`MEMRA_GLM5_TP_KV_HOST=1`) is refused with the door until the lease handoff is built (ruling 28).
 7. **Still unbuilt or unmeasured (section D of the door table).** The arena's lease handoff; the DFlash tail slice
-   (no drafter artifact identity, no gate boots a drafter); verify digest v3; the RTX 5090 class's demote and
-   promote PAIR (write-combined destinations, 1431.6 ms per 160 MiB hash pass on that host); the whole-budget
-   failure arm on the 5090; the promote-side census question (the census puts a 77.9 ms pass at promote, the pair
-   reads 5.8 against 4.4).
+   (no drafter artifact identity, no gate boots a drafter); verify digest v3; the promote-side census question (the
+   census puts a 77.9 ms pass at promote, the pair reads 5.8 against 4.4 on the target card; on the RTX 5090 the
+   day-31 pair's ON demote reads `in` 38.5 to 60.4 against a 1431.6 ms micro-cell pass per 160 MiB over
+   write-combined memory, so the two hashes over 54.8 MB cannot be reading that memory at that rate on this tree;
+   which memory they read is not attributed by any cell). Run on day 31 and no longer missing: the RTX 5090
+   class's demote and promote PAIR and the whole-budget failure arm on the 5090 (sections 3 and 4).
 
 ### 6. The three outcomes the door hygiene rule allows, and what each would require (not recommended)
 
 - **A naked default per card class.** On the target card class: delete the env read, `host_tier_context`'s
   door plumbing and the OFF program's demote, promote, capture and restore statements; the six fault cells and
   the D2D fault cells stay as the red arms of the check; the identity, failure, hit and twin gates keep their
-  single arm. It requires a per-card decision (the per-hardware rule): the RTX 5090 class has no pair
-  measurement and its host hashes write-combined memory at 1431.6 ms per pass, so a default there would rest on
-  no receipt; the arena would have to take the lease handoff or stay refused; the spec-boundary capture (A day
-  24) would have to land on `main` first; the same-program law wants the double-park finding (item 3) placed
-  before the promote path is the only path. The hygiene rule's winner clause: once a default has served two weeks
+  single arm. It requires a per-card decision (the per-hardware rule): the RTX 5090 class has one pair cell
+  (day 31, N=10 per arm, one hold: demote `on_minus_off +37.3 unc 26.4 isolated`, promote `+5.4 unc 25.6
+  under_resolution`) and no tenant-stall cell, and its destinations are write-combined; the arena would have to
+  take the lease handoff or stay refused; the spec-boundary capture (A day 24) is on `main` since #643; the
+  same-program law wants the double-park finding (item 3) placed before the promote path is the only path (A day
+  26's approved proposal 1 is the named change). The hygiene rule's winner clause: once a default has served two weeks
   with its rollback seam unused, the seam is deleted.
 - **A longer door with a new date and the missing gate named.** Requires the `docs/FLAGS.md` row to carry the new
   `decide-by:` and the row's reason ("pending its X row" is a date, not a state): the candidates the receipts
