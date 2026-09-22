@@ -289,3 +289,67 @@ bounded by the copy time and is what the stall cell reads; a settle-time install
 two receipt hashes stay on the owner thread inside the tick (`progress` at the poll, `bind_tier_image` at a
 demote's publication). The by-reference demote routes keep the blocking program. The hook keeps the day-16
 synchronous program as its fallback.
+
+## Task 2: gates on both cards, then the stall cell (every cell `executed-not-qualified`)
+
+### Target card, run 1 (BOX3, tree `f3e6be867`, binary `4d5a9e3b…`; receipts `pro-single-day18/box-run1/`)
+
+One RTX PRO 6000 Blackwell Server Edition at its 600 W limit; the Qwen3.8-27B NVFP4-Q5K MTP artifact;
+`MEMRA_HOSTGATE_CACHE_MB=256`; the nine door gates under one collector hold (`gates/`, `--external-lock`,
+`CELL.jsonl` `status: executed-not-qualified`, the sampler idle at 33 W before the first boot), the hit
+gate under its own `flock` on the canonical lock, the GPU unit cells and the stall cell each under one
+collector hold. Verbatim per arm (`ok` counts are the gates' own `ok:` lines; no `FAIL:` line anywhere):
+
+| gate | door OFF | door ON |
+|---|---|---|
+| identity default | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok) | the same (12 ok); server: `promote submitted off the tick: 64 tokens, 158.9MB, ticket seq=2, 34 items on the contracts door's copy stream; request parked`, `contracts door H2D receipt: .. items=34 (16 KV planes, draft) complete=34 require=ok .. published retired acknowledged`, `verify ok: promoted state digest matches demote digest (64 tokens)`, `promote published off the tick: ticket complete after 1 poll(s), 5.7ms from submission to completion (tick-top poll)`, `promote: 64 tokens, 158.9MB in 269.7ms` (the 270 ms is the verify arm's sha256 over the whole entry, run under `MEMRA_KV_HOST_VERIFY=1` by this gate; the copy is the 5.7 ms) |
+| identity plain (`MEMRA_SERVE_SPEC=0`) | `ALL GREEN (teeth=0)` (12 ok) | `ALL GREEN (teeth=0)` (12 ok) |
+| failure gate (C's day-21 fix) | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (15 ok) | `ALL GREEN` (15 ok) |
+| contract fault gate (C's day-21 fix; ON by construction) | n/a | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (64 ok); the promote cells now refuse at the SETTLE for `postpublish` and `readyview` (`promote refused (contracts door): tier H2D publication refused: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-postpublish); serving without the host entry` after `promote submitted off the tick: .. ticket seq=2 ..`) and at SUBMIT for `presubmit` and `reject`; in every cell the next promote reads `promote submitted .. seq=4`, `promote published off the tick: ticket complete after 1 poll(s), 5.5ms ..`, `promote: 64 tokens, 158.9MB in 48.6ms`; six `submitted` lines across the six cells' logs |
+| hit gate `spec-on-cache-hit-gate.sh qwen` | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok) | `ALL GREEN (qwen)` (61 ok) |
+| twin gate | `PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` | the identical line, `-> PASS` |
+| GPU unit cells `option_b_*` (2), `option_c_*` (6) on the copy-stream engine (`unit/cargo-test.log`) | `test result: ok. 8 passed; 0 failed; 0 ignored` | |
+
+Reading: the identity gate and the fault gate are green on the target card class with the door ON and the
+promote on the copy stream, so the slice's bytes stand on that card; the failure gate reads `ALL GREEN` in
+both arms for the first time on this lane (C's day-21 gate fix, not a server change).
+
+### The stall cell, run 1, promote arm (the pre-registered rule applied as written)
+
+Boot `on` of `pro-single-day18/stall-cell.sh` (the day-16 script with the receipts root moved), one collector
+hold (`stall-on/`, `executed-not-qualified`), harness `stall_cell.py` unchanged, N=5 per arm per order, both
+orders, `STALL REPLAY: PASS (replay agrees with the harness's rule line)` for both receipts
+(`box-run1/replays.log`). Verbatim:
+
+`STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7
+idle_p99=14.8 idle_max=14.9 arm_runs=10 arm_p50=13.4 arm_p95=14.8 arm_p99=18.6 arm_max=206.8 stall_median=157.8
+stall_min=157.3 stall_max=193.4 server_demote_ms=[116.3, 117.8, 82.4, 81.8, 81.8, 81.9, 81.8, 81.8, 81.8, 81.9]
+server_promote_ms=[60.8, 61.8, 26.5, 25.8, 25.9, 25.9, 25.8, 25.8, 25.9, 26.0] intruder_prompt_tokens=[89, 86,
+89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0`
+
+Rule against day 16 (gap 77.8): `143.4 < 157.8 <= 172.8` -> **`flat`**. Second reading against day 17's
+recorded `86.4`: `157.8 > 92.4` -> **`promote_half_worse`**. Admissibility held: replay PASS, `errors=0`,
+`tenant_text_identical=True`, 10 `promote submitted off the tick` lines, 10 `promote published off the tick`
+lines, 10 `contracts door H2D receipt` lines, every intruder `cached_tokens=64` (the promoted entry hit, no cold
+prime), no `demote failed`, `promote failed`, `promote refused` or `TIER DISABLED` line. The demote arm of the
+same boot, recorded not claimed: `stall-demote-on .. arm_max=164.5 stall_median=149.4` (day 17: 149.6).
+
+What the receipt says, read before any code moved: `server_demote_ms` is back at the day-16 synchronous
+figure (82 ms; day 17's promote arm read 172 ms spanning submission to publication OFF the tick), and the
+boot's server log carries 10 `demote published off the tick: .. (settled synchronously by a promote)` lines
+against 21 `(tick-top poll)`. The promote itself is 26 ms submission to publication (5.5 ms copy). So the
+promote half worked as designed and the regression is a settle-first that fired where no submission
+followed: the promote publishes at the tick top, its insert evicts the other entry into an off-tick demote,
+the PARKED request re-admits in the same tick with a plain device hit, and the admission body's hook
+(`host_promote_prefix_hit`) ran `host_demote_settle_pending(.., Block, "a promote")` as its FIRST statement
+(the day-17 shape: on every admission under the door), blocking the tick on that demote's copy. Day 17 never
+saw it because its promote ran inside the hook synchronously and the demote its insert submitted settled at the
+next tick top. The day-17 pre-registration already said the hook settles "before its own submission" and a
+hit on the Demoting prompt "is a COLD PRIME, never a wait on the copy"; the code over-applied it.
+
+Fix (`3df0cb2b3`, the mechanism, not the rule): the hook's two settle-first calls moved behind the candidate
+check and the memo check, before `host_promote_prepare` (the first act of a submission), with the candidate
+looked up again on the settled state; a hook that submits nothing waits on nothing. The probe already settled
+only on `Submit`. The two source censuses that pinned the old order were moved with it (same commit), the CPU
+suite reads 786 passed, clippy clean. Run 2 below re-runs every gate and the stall cell on the fixed tree; the
+pre-registered rule is unchanged and both runs are recorded.
