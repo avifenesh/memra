@@ -6,7 +6,7 @@
 # The lead's battery shares the card: before each cell wait, bounded (15 x 120 s), until the card carries no compute
 # app and reports at least 20000 MiB free, logging each wait with nvidia-smi's own listing; the holder is never
 # inspected beyond that listing and never signalled. A cell whose wait runs out is recorded NOT RUN.
-# Executed-not-qualified. usage: battery-5090.sh <out_root> <model.gguf> <bin>
+# Executed-not-qualified. usage: battery-5090.sh <out_root> <model.gguf> <bin> [identity-rerun]
 set -uo pipefail
 ROOT=$1; MODEL=$2; BIN=$3
 HERE=$(cd "$(dirname "$0")/../../.." && pwd)
@@ -46,6 +46,10 @@ cell() { # $1 name $2 env-string $3.. command (the gate; $OUT/ev is its evidence
     } > "$OUT/CELL.txt"
     echo "$(date -u +%FT%TZ) done $name rc=$rc $(grep -hE 'GATE: ' "$OUT/gate.log" | tail -1)" | tee -a "$ROOT/battery.log"
 }
+if [ "${4:-}" = identity-rerun ]; then # the one cell whose wait ran out in the first pass, same gate, env and binary
+    cell identity-default-on-rerun "MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1" bash tools/kv-host-spill-identity-gate.sh "$MODEL" "$BIN"
+    echo "$(date -u +%FT%TZ) LOCAL-RERUN-DONE" | tee -a "$ROOT/battery.log"; exit 0
+fi
 cell identity-default-on "MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1" bash tools/kv-host-spill-identity-gate.sh "$MODEL" "$BIN"
 cell fault-default "MEMRA_HOSTGATE_CACHE_MB=64" bash tools/kv-host-contract-fault-gate.sh "$MODEL" "$BIN"
 cell fault-plain "MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_SERVE_SPEC=0" bash tools/kv-host-contract-fault-gate.sh "$MODEL" "$BIN"

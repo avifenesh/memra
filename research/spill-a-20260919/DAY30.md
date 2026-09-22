@@ -215,3 +215,236 @@ The reader against day 29's receipts (the baseline, same command): `DAY30 A2 pre
 min=5.92 max=6.61 boots_on=10 demotes_per_boot=[11] ... -> FAIL`; demotes 1 to 3 of a boot `median=37.93`, `42.89`,
 `42.27`; `helper hashed_in_ms N=110 median=73.1`; A3 `copy_complete_lines=0 ... -> FAIL` (the day-29 lines carry no
 `items=` term).
+
+## 4. The sitting (target card, BOX3, one RTX PRO 6000 Blackwell, 600 W; `pro-single-day30/box/`)
+
+Every number in sections 4 to 7 comes from a command over the receipt files, banked beside it:
+`bash pro-single-day30/counts.sh <root>` (output `pro-single-day30/box/counts.log`, `rtx5090-day30/counts.log`; the
+day-29 baseline by the same command, `pro-single-day30/box/baseline-day29-counts.log`), the day-30 reader
+(`python3 day30-reading.py --double-park pro-single-day30/box/double-park/ev --spans 96 --kv 32,34`,
+`box/reading-day30-doublepark.log`; `--spans 96 --kv 32,34 --a3-root pro-single-day30/box`, `box/reading-day30-a3.log`;
+the same reader over day 29, `box/baseline-day29-reading-day30.log`), and the earlier readers unchanged
+(`python3 day28-reading.py pro-single-day30/box/double-park/ev`, `python3 day25-double-park-reading.py
+pro-single-day30/box/double-park/ev`, `python3 day26-reading.py pro-single-day30/box`, logs `box/reading-day28.log`,
+`box/reading-day25.log`, `box/reading-day26.log`).
+
+One binary for every cell, `0f54219982c5c79c3ee94d74b0d1d0274cd21ad21231c33a068f943ee5afdfea` (`bins/memra-server.sha256`),
+built on `/root/wt-a` at `a8d6b1df5` (`tree.sha`, `unit/tree.sha`; the three day-30 code and script commits). Three
+collector holds on `/tmp/memra-gpu.lock` and the hit gate's own `flock` in one sitting, 19:54:01Z to 20:27:01Z; zero lock
+retries (`lock retries: 0 file(s)`); no compute app before or after (`compute apps before/after (data rows): 0/0`);
+every `CELL.jsonl` closing row `executed-not-qualified False 0`. Telemetry at 250 ms (`command.gpu.csv`):
+
+| cell | window (Z) | samples | temp | power | memory |
+|---|---|---|---|---|---|
+| double-park | 19:54:01 to 20:13:22 | 4,633 | 33 to 50 C | 33.0 to 361.9 W | 0 to 17,109 MiB |
+| gates | 20:13:23 to 20:22:14 | 2,123 | 37 to 60 C | 87.6 to 506.9 W | 0 to 21,939 MiB |
+| hit gate (own flock) | 20:22:15 to 20:23:45 | (no collector) | | | |
+| unit-cell | 20:23:45 to 20:27:01 | 781 | 33 to 39 C | 31.8 to 97.7 W | 0 to 881 MiB |
+
+The double-park cell is day 26's `pro-single-day26/double-park.sh` byte for byte (one hold, twenty boots, N=5 per arm
+per order, both orders): `replays.log STALL REPLAY: PASS lines: 20`, `20 errors=0`, `DAY26 DOUBLE-PARK ADMISSIBLE
+all_receipts=True`.
+
+## 5. The reading, verbatim
+
+**A2, the pre-submit census** (`box/reading-day30-doublepark.log`):
+
+- `DAY30 A2 pre-submit steady N=80 median=0.62 min=0.58 max=1.10 boots_on=10 demotes_per_boot=[11] rule N>=80
+  median<=1.5 max<=3.0 -> PASS`
+- `DAY30 READING pre-submit demote 1 of its boot N=10 median=29.69 min=29.38 max=30.00`
+- `DAY30 READING pre-submit demote 2 of its boot N=10 median=1.26 min=1.23 max=1.67`
+- `DAY30 READING pre-submit demote 3 of its boot N=10 median=1.27 min=1.22 max=1.72`
+- `DAY30 READING helper hashed_in_ms N=110 median=79.9 min=79.5 max=107.7; copy submission-to-completion N=110
+  median=92.5`
+- Day 29, the same reader (`box/baseline-day29-reading-day30.log`): `DAY30 A2 pre-submit steady N=80 median=6.05
+  min=5.92 max=6.61 ... -> FAIL`; demotes 1 to 3 `median=37.93`, `42.89`, `42.27`; `helper hashed_in_ms N=110
+  median=73.1`.
+- By demote index of the boot (`counts.log`, readings): day 30 `helper: demote 1 N=10 median=106.20; demote 2 N=10
+  median=105.45; demote 3 N=10 median=105.80; steady (4+) N=80 median=79.80`, `copy: demote 1 N=10 median=120.60; demote
+  2 N=10 median=93.00; demote 3 N=10 median=92.15; steady (4+) N=80 median=92.35`, `wall: demote 1 N=10 median=241.20;
+  demote 2 N=10 median=208.15; demote 3 N=10 median=207.60; steady (4+) N=80 median=179.00`. Day 29: `helper: ... steady
+  (4+) N=80 median=73.10` (73.10 to 73.15 at every index), `copy: demote 1 N=10 median=39.40; demote 2 N=10
+  median=135.30; demote 3 N=10 median=133.05; steady (4+) N=80 median=97.35`, `wall: ... steady (4+) N=80
+  median=183.80`.
+
+**A3, the completion lines** (`box/reading-day30-a3.log`, over every server log of the sitting):
+
+- `DAY30 A3 logs=92 copy_complete_lines=132 receipts_paired=132 receipts_without_copy_line(on-tick)=0 bad=0 rule
+  items==KV+spans, spans=96, KV in [32, 34], receipt items==KV and suffix==spans -> PASS`
+- `counts.log`: `112 items=128 (32 KV, 96 f32 spans)`, `20 items=130 (34 KV, 96 f32 spans)`; the receipt lines
+  `112 items=32 (16 KV planes)`, `20 items=34 (16 KV planes, draft)`; `132 ; 96 f32 spans landed under the ticket and
+  taken back before the retire`. Submissions `112 ... 64 tokens, 159.8MB, 32 items`, `21 ... 64 tokens, 159.9MB, 34
+  items`: the one submission without a copy-complete line is the injected receipt refusal
+  (`gates/contract-fault/postpublish-server.log submitted=2 copy_complete=1`, `demote failed (tier D2H receipt refused:
+  injected failure (MEMRA_KV_HOST_FAULT=contract-postpublish)); nothing demoted`). Span refusals in the sitting: `0`.
+
+**A4, DAY28 clauses 1a to 1c** (`box/reading-day28.log`):
+
+- `DAY28 CLAUSE 1a stall order=o1 N_boots_on=5 N_boots_off=5 on_cell_median=76.9 off_cell_median=85.2 rule
+  on<=off+2.0 -> PASS`; `order=o2 ... on_cell_median=76.9 off_cell_median=85.5 ... -> PASS`
+- `DAY28 CLAUSE 1b e2e order=o1 N_runs_on=50 N_runs_off=50 on=127.5 off=115.5 on_minus_off=+12.0 rule <=+20.0 ->
+  PASS`; `order=o2 ... on=127.2 off=115.6 on_minus_off=+11.7 ... -> PASS`
+- `DAY28 CLAUSE 1c owner in-completion N=100 median=1.96 min=1.83 max=3.03 runs_with_demote_without_ledger=0 rule
+  <=12.0 -> PASS`
+- `DAY28 REPORTED wall in-completion median=86.7 (N=100); demote_completion median=92.5; helper hashed_in_ms
+  median=79.8 min=79.5 max=106.6; payloads=[98] mb=[157.9]; hash_polls median=6 max=8; settle modes={'tick-top poll':
+  100}; tenant top gaps: largest median=90.3 second median=19.0`
+- `DAY28 VERDICT clauses_failed=0 -> ALL PASS`
+
+**Day 25's reader** (`box/reading-day25.log`): `DAY25 DOUBLE-PARK stall order=o1 on_minus_off=-8.3 unc=0.2 ->
+isolated (on 76.9, off 85.2)`; `stall order=o2 on_minus_off=-8.6 unc=0.1 -> isolated (on 76.9, off 85.5)`; `e2e
+order=o1 on_minus_off=+12.0 unc=1.1 -> isolated (on 127.5, off 115.5)`; `e2e order=o2 on_minus_off=+11.7 unc=1.0 ->
+isolated (on 127.2, off 115.6)`; `DECOMPOSITION arm=on N_runs=100 parked_per_run=[1] ... promote_completion
+median=19.6 promote_in median=20.6 ... demote_in median=179.1 ... idle_p50(tick)=13.47 ... | tenant top gaps: largest
+median=90.3 ...`; `arm=off N_runs=100 parked_per_run=[0] promote_in median=10.8 demote_in median=6.2 | tenant top gaps:
+largest median=98.8 second median=16.7`.
+
+**Day 26's reader** (its own day-26 clauses, not today's acceptance; `box/reading-day26.log`): `DAY26 CLAUSE 1 arm=on
+N_runs=100 ... runs_with_parked_1_submitted_0_not_routed_1=100 -> PASS`; `DAY26 CLAUSE 2 e2e order=o1 on_median=127.5
+off_median=115.5 on_minus_off=+12.0 unc=1.1 expected=+15.8 (day 25: +105.85 minus 90.1) |d-expected|=3.8 -> FAIL`;
+`order=o2 ... on_minus_off=+11.7 unc=1.0 expected=+15.8 ... |d-expected|=4.1 -> FAIL`; `CLAUSE 3 ... -> FINDING`
+both orders; clauses 4 and 5 `NO RECEIPT` / `NO VERDICT LINE` (the restore arm is not part of this cell and the reader
+looks for the hit gate under a `cells/` layout this sitting does not use; the hit-gate verdicts are below).
+
+## 6. Verdicts against the acceptance of section 2
+
+**A1, every arm on the target card** (`counts.log`, verdict lines per gate log, verbatim):
+
+- `identity-default-off`, `identity-default-on`, `identity-plain-off`, `identity-plain-on`: `KV-HOST-SPILL IDENTITY
+  GATE: ALL GREEN (teeth=0)` (12 ok each).
+- `failure-off`, `failure-on`: `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (15 ok each).
+- `contract-fault`: `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (123 ok, 0 FAIL): `presubmit` 11, `postpublish` 11,
+  `promote-presubmit` 11, `promote-postpublish` 11, `promote-readyview` 11, `promote-reject` 14, `d2d-capture` 12,
+  `d2d-restore` 14, `hash-helper-gone` 14, `hash-never-lands` 14; both hash cells `hand-off ticket(s) ['3'], refusal
+  ticket(s) ['3']` and `the tier latched off exactly once`.
+- `twin-off`, `twin-on`: `PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8
+  cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0
+  effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok ->
+  PASS`.
+- `hitgate-off`: `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok; `armed=0 door_on=0`). `hitgate-on`:
+  `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (68 ok), the census equal to day 24's: `armed=1 door_on=1
+  capture_submitted=12 capture_published=12 restore_submitted=13 restore_landed=13 demote_submitted=0
+  promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0` (spec-on), `capture_submitted=2
+  capture_published=2 restore_submitted=3 restore_landed=3` (spec-off), `ok: door arm: 30 route submission(s) across the
+  two boots (capture, restore, demote or promote off the tick)`.
+- Unit cells on the box (`unit/`): server `option_b_`/`option_c_` `test result: ok. 10 passed; 0 failed` (day 29's 8
+  plus `option_b_spans_ride_the_ticket_and_land_bitwise` and `option_b_span_refusal_returns_every_plane_and_keeps_the_tier_on`);
+  engine `ok. 6 passed; 0 failed` (the five `d2d_` cells and `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream`);
+  CPU hash cells `ok. 11 passed; 0 failed` (with `the_d2h_spans_ride_the_ticket_in_the_stated_order` and
+  `hash_helper_digests_equal_the_owner_thread_digests_bitwise`); tier contracts `ok. 3 passed; 0 failed`.
+- The day-28 double-park cell: `DAY26 DOUBLE-PARK ADMISSIBLE all_receipts=True`, 20 of 20 replays `PASS`.
+
+**A1 PASSES on the target card.**
+
+**A2 PASSES.** Steady pre-submit **6.05 ms (N=80, 5.92 to 6.61) before, 0.62 ms (N=80, 0.58 to 1.10) after**, against
+the predicted 1.0 ms and the rule `median<=1.5 max<=3.0`.
+
+**A3 PASSES** on both cards (the 5090's in section 7).
+
+**A4 PASSES**: 1a 76.9 against 85.2 and 76.9 against 85.5; 1b +12.0 and +11.7; 1c **1.96** (day 29: 7.39, max 45.18;
+today max 3.03). `DAY28 VERDICT clauses_failed=0 -> ALL PASS`.
+
+**A5 PASSES**: the identity gate's four arms green with `teeth=0` and the MEMRA_KV_HOST_VERIFY round trip matched in
+the verify arms (the resident form and the bundle program are unchanged: the helper copies the landed staging into the
+same heap `Vec` and hashes it with the same `host_hash_payload_digest`); `bash tools/check-flags.sh` clean, no new
+`MEMRA_*` name.
+
+**Readings.** Demote 1 of a boot 29.69 ms (predicted at most 75; day 29: 37.93): the staging allocation, 157.9 MB of
+cached pinned memory in one lazy set per context. **Demotes 2 and 3 read 1.26 and 1.27 ms (day 29: 42.89 and 42.27):
+inside the pre-registered "at most 3 ms" branch, so DAY28's first-touch cost was the heap `Vec` pages the synchronous
+`clone_dtoh` wrote, not the pinned KV lease.** It moved with the pages to the helper: the helper reads 106.20, 105.45,
+105.80 ms on demotes 1 to 3 and 79.80 ms at steady state (day 29: 73.1 at every index), so steady helper time grew by
+6.7 ms for the staging copy (predicted at most 95). The copy's submission-to-completion is 92.35 ms steady (day 29:
+97.35), one poll, tick-quantized: the copy now carries the 157.9 MB the owner thread used to pull, and still lands
+inside one tenant tick. Wall t0 to publication steady 179.00 ms (day 29: 183.80).
+
+## 7. Local RTX 5090 (`rtx5090-day30/`)
+
+`battery-5090.sh` with the tree's release binary (`build.log` `rc=0` under the CPU quota, `binary.sha256`
+`e9263537139c020dd8bb3ab6a0cc1f3c641acc106fd90313c4fe480fe760b66e`) and the 9B NVFP4 MTP artifact; each cell after a
+bounded idle wait (15 x 120 s, no compute app and at least 20000 MiB free) and under the gate's own `flock
+/tmp/memra-5090.lock`. Lane C's day-37 servers held the card for the first pass's first cell: `2026-09-22T20:24:48Z
+identity-default-on NOT RUN: the card never freed in 15 waits` (each wait logged with nvidia-smi's own listing; the
+holder was never inspected beyond it and never signalled). The card freed at wait 5 of the next cell. RTX 5090 Laptop
+GPU; card before and after every cell 15 MiB used, 55 to 67 C, 9.9 to 43.0 W (`card.before.csv`, `card.after.csv`).
+Verbatim (`battery.log`, each `gate.log`):
+
+- `fault-default` (20:32:49Z to 20:34:18Z): `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (123 ok, 0 FAIL).
+- `fault-plain` (20:34:18Z to 20:35:35Z): `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (123 ok, 0 FAIL).
+- `hit-off` (20:35:35Z to 20:35:57Z): `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok; `armed=0 door_on=0`).
+- `hit-on` (20:35:57Z to 20:36:23Z): `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (68 ok), census `armed=1 door_on=1
+  capture_submitted=12 capture_published=12 restore_submitted=13 restore_landed=13 demote_submitted=0
+  promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0` (spec-on), `capture_submitted=2
+  capture_published=2 restore_submitted=3 restore_landed=3` (spec-off), `ok: door arm: 30 route submission(s) across the
+  two boots`: equal to day 24's.
+- `identity-default-on-rerun` (20:37:36Z to 20:37:51Z; the same gate, env and binary through the script's
+  `identity-rerun` arm, added after the first pass; the tree under the gate script is `39378d6e4`, which moved no
+  `crates/` or `tools/` file since `a8d6b1df5`): `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok); one hit
+  parked on the `Hashing` entry (`... (ticket seq=3, 50 payloads, 53.7MB on the hash helper for 0.4ms) ...`), r3 and r4
+  `prompt=102 cached=64 lcp=64`.
+- A3 on this card (`rtx5090-day30/reading-day30-a3.log`, `--spans 48 --kv 16,18 --a3-root rtx5090-day30`): `DAY30 A3
+  logs=35 copy_complete_lines=34 receipts_paired=34 receipts_without_copy_line(on-tick)=0 bad=0 rule items==KV+spans,
+  spans=48, KV in [16, 18], receipt items==KV and suffix==spans -> PASS`; `16 items=64 (16 KV, 48 f32 spans)`, `18
+  items=66 (18 KV, 48 f32 spans)`.
+- The demote ledger lines per cell dir (`counts.log`, section `demote ledger lines per top-level cell dir`; day 29 by
+  the same command, `baseline-day29-counts.log`), recorded as this card's gate traffic, not a cost cell:
+  `fault-default: N=14 pre-submit median=3.77 min=0.44 max=18.62; helper median=30.35 ...; owner in-completion
+  median=13.21`, `fault-plain: N=14 pre-submit median=2.17 ...; helper median=30.00 ...; owner in-completion
+  median=10.57`, `identity-default-on-rerun: N=2 pre-submit median=43.91 min=37.53 max=50.28` (the verify arm, finding
+  5); day 29 `fault-default-rerun2: N=14 pre-submit median=20.38 ...; helper median=12.90 ...; owner in-completion
+  median=29.82`, `fault-plain-rerun2: N=14 pre-submit median=20.77 ...; helper median=12.90 ...; owner in-completion
+  median=29.73`. The identity rerun's parked hit re-parked 13 times across the 30.7 ms hash (day 29: 5 across 12.9).
+
+**A1 on the 5090 (identity default ON, fault default and plain, hit OFF/ON): ALL GREEN.** No number from this card is
+compared to the target card's.
+
+## 8. Findings
+
+1. **The pre-submit segment is the allocation now.** 6.05 to 0.62 ms steady on the target card: the synchronous
+   owner-stream `clone_dtoh` of 96 recurrent planes is off the owner thread. The owner thread's whole demote
+   (`owner in-completion`) is 1.96 ms median, max 3.03.
+2. **DAY28's first-touch attribution is settled**: the heap `Vec` pages (section 6, readings). The helper now pays that
+   first touch (about +26 ms on demotes 1 to 3 of a boot) off the tick.
+3. **The e2e cost of the double-park moved in the good direction**: +16.8 / +16.9 (day 29) to +12.0 / +11.7, and the
+   stall ON against OFF from -3.6 / -3.3 to -8.3 / -8.6. Day 26's reader reads `|d-expected|=3.8 / 4.1 -> FAIL` against
+   its day-26 expectation of +15.8; that is a day-26 clause, stated, not tuned, and not part of today's acceptance.
+4. **A refused receipt frees the staging.** After the injected `contract-postpublish` refusal, the boot's next demote
+   re-allocated its staging (`pre-submit 28.71`, `gates/contract-fault/postpublish-server.log`): the abort after the
+   take drops the landed staging instead of returning it to the pool. Fail-closed and correct; the cost is one
+   allocation after a refusal. Returning it on that path is a small owed item, not a defect.
+5. **The verify arm keeps its owner-stream digest.** The identity gate's default ON arm (MEMRA_KV_HOST_VERIFY on)
+   reads `pre-submit 140.78` and `111.58` on the target card (day 29: 148.52, 151.21) and `50.28`, `37.53` on the 5090
+   (day 29: 51.56, 53.55): `host_roundtrip_digest` runs after the demote's `t0` and before the submission, reads the
+   entry's device state with owner-stream copies and hashes it on the owner thread (section 2 item 7). It is a
+   diagnostic arm, not the door's serving route, and it stays as it was.
+
+## 9. What is owed, and integrability
+
+Owed on Move 2 item 1 after today: **the H2D half** (the promote's recurrent `engine.htod` onto the copy stream under
+the ticket), **the D2D half** (capture and restore recurrent copies), **the governor charge of the staging** (one
+image's recurrent bytes per context, 157.9 MB on the 27B, outside the tier governor's pinned ledger today),
+**the strong-form receipt** (the device four-lane digest of each span source plus the CPU oracle over the landed
+bytes; about +71 ms on the target card's helper), **a span-refusal cell in the fault gate** (the refusal is covered by
+the GPU unit cell `option_b_span_refusal_returns_every_plane_and_keeps_the_tier_on`, not by a serving-shape fault
+cell), and returning the staging to the pool on the post-take abort (finding 4).
+
+**Integrability**: the D2H half meets its pre-registered acceptance on the target card (A1 to A5, one sitting) and the
+5090 half is ALL GREEN (identity default ON on the rerun). It is integrable as a complete D2H half; the H2D and D2D
+halves remain owed and nothing here claims them. Every cell `executed-not-qualified`; no qualification claimed.
+
+## 10. Checks, budget, cleanup
+
+On the records commit: `cargo fmt --all -- --check` clean; clippy `-D warnings` all targets on tier, engine and
+server `Finished` (`rc=0`); the GPU-less `DOCS_RS=1 --target x86_64-unknown-linux-gnu` clippy pass `Finished`
+(`rc=0`), both under the CPU quota (no Rust moved after `fc637d26a`); `check-flags: every runtime MEMRA_* name resolves
+against 'docs/FLAGS.md' (no grandfather list)`; `check-conflict-markers: OK`; `git diff --check` clean;
+`.gitattributes` (`*.log -whitespace`, `SUMMARY.txt -whitespace`) in `pro-single-day30/box/` and `rtx5090-day30/`; zero
+em dashes in the day's own lines. Every count in sections 4 to 7 and in the door's rows comes from `counts.sh`, the
+day-30 reader or the earlier readers named in section 4, run over the banked files. Every push in the announced
+`MEMRA_RELEASE_QUALIFICATION_MODE=development` mode, logged to the gate-skips ledger; no qualification claimed.
+Budget: about 2 agent-hours of 5 from the restart to the records commit. Box: `/root/wt-a` at `a8d6b1df5` on
+`lane-a-day30`, clean; `/root/spill-receipts/a-day30/` mirrored to `pro-single-day30/box/` (the binary excluded, its
+sha256 kept); the bundles that carried the tree removed on both ends; no server or process of mine left running;
+nothing of other lanes touched. Local: the release build and the battery under the CPU quota; the 5090 held only
+through the gates' own `flock`, after the bounded idle wait; the staged binary directory removed; no scratch of this
+run left in `/tmp`.
