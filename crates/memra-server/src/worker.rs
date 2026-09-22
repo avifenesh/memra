@@ -4849,11 +4849,12 @@ fn host_tier_context(
     // WP-A day 20 (memra#536 Move 2 slice 1): one more term, a capture batch (K and V per KV
     // plane) beside the one Move 1 batch (demote or promote; they settle each other first), so a
     // capture in flight never refuses a demote `Capacity` and a demote never refuses a capture.
+    // Day 21 (slice 2): a third term, a restore batch (K and V per KV plane), for the same reason.
     let inflight = u64::try_from(max_layers)
         .ok()
         .and_then(|n| n.checked_mul(2))
         .and_then(|n| n.checked_add(2))
-        .and_then(|n| n.checked_mul(2))
+        .and_then(|n| n.checked_mul(3))
         .ok_or("MEMRA_KV_HOST_CONTRACTS=1: in-flight bound overflow")?;
     let governor = host_tier_governor(device, hpx.budget, prefix_cache_budget_bytes(), inflight)?;
     let ledger: std::rc::Rc<std::cell::RefCell<dyn memra_engine::cache::tiered::BudgetGovernor>> =
@@ -8461,6 +8462,16 @@ struct HostPrefixCache {
     capture_off_tick_disabled: bool,
     /// WP-A day 20: captures published off the tick (this boot).
     captures_published: u64,
+    /// WP-A day 21 (memra#536 Move 2 slice 2): the one `Restoring` request, if a whole-entry hit's
+    /// KV row copies are in flight on the copy stream (or landed behind the installed owner-stream
+    /// wait and waiting for the request to re-admit). Declared before `tier` for the same drop
+    /// order.
+    restoring: Option<PendingRestore>,
+    /// WP-A day 21: the restore path's own latch (`[prefix-cache] RESTORE OFF-TICK DISABLED`);
+    /// every later hit of the boot restores on the tick (`prefix_restore` in `admit`).
+    restore_off_tick_disabled: bool,
+    /// WP-A day 21: restores landed off the tick and consumed by their request (this boot).
+    restores_landed: u64,
     /// WP-A day 18: the insertion pin of the last published promote, held from publication until
     /// the next tick top so a trim or an insert in between cannot evict the entry before the
     /// parked request takes its own serving pin.
@@ -14165,6 +14176,708 @@ fn host_capture_drain_at_shutdown(hpx: &mut HostPrefixCache) {
 }
 
 // ---------------------------------------------------------------------------
+// WP-A day 21 (memra#536 Move 2 slice 2, `memra_tier::conformance::d2d_restore_ready`): the
+// whole-entry hit restore off the tick. Under `MEMRA_KV_HOST_CONTRACTS=1` the admission loop's
+// probe (`host_restore_park_probe`, immediately after the promote probe and before `admit(..)`)
+// allocates the request's fresh session cache, runs the OFF validation, PINS the source entry,
+// copies the recurrent state, `len`, `len_d` and `pos` on the owner stream (the OFF statements),
+// and submits the KV rows as ONE restore batch on the transfer engine's copy stream
+// (`CudaTransfers::submit_d2d_restore`: a borrowed pinned source into a borrowed destination,
+// unfenced at submit); the request PARKS on the requeue (the promote's path). The tick top polls
+// the ticket; once every completion event is observed complete the OWNER stream's wait on each
+// event is installed (`install_consumer_wait`, rule 3) and the state is `ready`; the re-admitted
+// request's hit site takes the ready cache and the restore's pin instead of allocating and
+// copying, and primes its suffix behind the installed wait. `Restoring` is a state of the parked
+// REQUEST (one per worker), never of the entry, which stays published, servable and pinned.
+
+/// A restore batch submitted on the copy stream and not yet settled (WP-A day 21): the ticket,
+/// its producer fence (an owner-stream event recorded after the recurrent-state copies), the
+/// per-item sizes, and when it was submitted.
+struct PendingContractRestore {
+    ticket: memra_engine::cache::tiered::TransferTicket,
+    producer: memra_engine::cache::tiered::FenceId,
+    sizes: Vec<u64>,
+    submitted: Instant,
+}
+
+/// The one `Restoring` request of the worker (WP-A day 21): identified by its HTTP request id;
+/// `pin` is the source entry's serving pin (taken at submit, handed to the session at
+/// re-admission); `cache` is the request's fresh session cache, being written by the copy stream
+/// (`contract` is `Some`, `ready` false) or complete behind the installed owner-stream wait
+/// (`ready` true, waiting for its request to re-admit). Exactly one per worker: another request's
+/// whole-entry hit takes the tick program while one is pending.
+struct PendingRestore {
+    request_id: String,
+    pool_key: PoolKey,
+    pin: Option<PrefixPin>,
+    toks_len: usize,
+    bytes: usize,
+    cache: Option<Cache>,
+    contract: Option<PendingContractRestore>,
+    ready: bool,
+    /// Tick tops seen since `ready`; a ready restore its request never consumed is dropped after
+    /// `RESTORE_READY_TICKS`.
+    ready_ticks: u32,
+    t0: Instant,
+    polls: u32,
+    copy_ms: f64,
+    settled_by: String,
+}
+
+/// A ready restore whose request has not re-admitted within this many tick tops is an orphan.
+const RESTORE_READY_TICKS: u32 = 3;
+
+/// What one settle step of a restore batch produced.
+enum RestoreSettle {
+    /// `Poll` found at least one item's event not yet complete: the ticket is handed back.
+    Pending(PendingContractRestore),
+    /// Every item landed, the owner-stream wait installed on every event (fenced), the producer
+    /// fence released, the ticket retired and acknowledged.
+    Landed,
+}
+
+/// A typed failure of a restore settle. A lost observation may leave the copy still writing the
+/// destination and reading the source, so neither is freed (the frozen `Entry::drop` rule
+/// mirrored): the tier and the restore path latch off.
+enum HostRestoreFailure {
+    Latched(String),
+}
+
+/// What one settle step of the `Restoring` request produced (the CPU-testable half).
+enum RestoreSettled {
+    /// Still copying: the state was kept and the poll counted.
+    Pending,
+    /// Dropped: a typed line was printed; the state is consumed; the caller releases the pin when
+    /// one is handed back (`None` under `Latched`: the pin is kept by design).
+    Dropped(Option<PrefixPin>),
+    /// The contract settled behind the installed wait: the state goes back as `ready` for the
+    /// request's re-admission.
+    Ready(Box<PendingRestore>),
+}
+
+/// What the tick-top settle of a `Restoring` request answered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostRestoreOutcome {
+    Restoring,
+    Ready,
+    Dropped,
+}
+
+/// The settle half of a restore: `Block` waits on every item's event (a host wait), `Poll` reads
+/// them and hands the ticket back while one is running; then rule 3's install (the owner stream
+/// waits on every item's event; every item fenced), the producer fence releases, the ticket
+/// retires with no consumer fence and is acknowledged. Nothing here re-admits: the request does.
+fn host_kv_planes_settle_restore(
+    tier: &HostTierContext,
+    pending: PendingContractRestore,
+    wait: ContractWait,
+) -> Result<RestoreSettle, HostRestoreFailure> {
+    use HostRestoreFailure::Latched;
+    use memra_engine::cache::tiered::TransferEngine;
+    let PendingContractRestore {
+        ticket,
+        producer,
+        sizes,
+        submitted,
+    } = pending;
+    let Some(transfers) = &tier.transfers else {
+        return Err(Latched(
+            "tier transfer engine missing under a submitted restore ticket".into(),
+        ));
+    };
+    let mut t = transfers.borrow_mut();
+    if wait == ContractWait::Block
+        && let Err(e) = t.synchronize(&ticket)
+    {
+        return Err(Latched(format!(
+            "restore completion unknown ({e:?}); the destination cache and the source pin are kept"
+        )));
+    }
+    let landed = match t.restore_landed(&ticket) {
+        Ok(landed) => landed,
+        Err(e) => {
+            return Err(Latched(format!(
+                "restore completion unreadable ({e:?}); the destination cache and the source pin \
+                 are kept"
+            )));
+        }
+    };
+    if !landed {
+        if wait == ContractWait::Poll {
+            return Ok(RestoreSettle::Pending(PendingContractRestore {
+                ticket,
+                producer,
+                sizes,
+                submitted,
+            }));
+        }
+        return Err(Latched(
+            "restore did not land after a host wait on every item's event".into(),
+        ));
+    }
+    // Rule 3: the owner stream waits on every item's completion event BEFORE anything reads the
+    // destination; the items are fenced by that install and by nothing else.
+    if let Err(e) = t.install_consumer_wait(&ticket) {
+        return Err(Latched(format!(
+            "restore reader wait refused ({e:?}); the destination cache and the source pin are kept"
+        )));
+    }
+    match t.poll(&ticket) {
+        Ok(c) if c.producer_done && c.consumer_fenced => {}
+        Ok(_) => {
+            return Err(Latched(
+                "restore landed but is not fenced after the reader wait install".into(),
+            ));
+        }
+        Err(e) => {
+            return Err(Latched(format!(
+                "restore completion unreadable after the install ({e:?})"
+            )));
+        }
+    }
+    let settled = t
+        .release_producer(producer)
+        .and_then(|_| t.retire(&ticket, None))
+        .and_then(|_| t.acknowledge(&ticket));
+    if let Err(e) = settled {
+        return Err(Latched(format!(
+            "restore ticket did not retire ({e:?}); its in-flight charge is leaked inside the \
+             transfer engine"
+        )));
+    }
+    Ok(RestoreSettle::Landed)
+}
+
+/// One settle step of the `Restoring` request (the CPU-testable half): the fail-closed arm (a
+/// pending restore missing its cache or its ticket, the #622 ruling mirrored), the contract step as
+/// a closure, and what a `Latched` answer does (the destination cache is FORGOTTEN and the source
+/// pin KEPT, never a free under a possibly running copy; the tier latches off; the restore path
+/// latches to the tick program for the boot).
+fn host_restore_settle_with(
+    host: &mut HostPrefixCache,
+    wait: ContractWait,
+    why: &str,
+    settle: impl FnOnce(
+        &HostTierContext,
+        PendingContractRestore,
+        ContractWait,
+    ) -> Result<RestoreSettle, HostRestoreFailure>,
+) -> Option<RestoreSettled> {
+    use memra_engine::cache::tiered::TransferEngine;
+    let mut pending = host.restoring.take()?;
+    if pending.ready {
+        if pending.cache.is_some() && pending.pin.is_some() {
+            return Some(RestoreSettled::Ready(Box::new(pending)));
+        }
+        eprintln!(
+            "[prefix-cache] restore dropped (a Restoring request is ready with no cache or no pin); \
+             the tick program serves"
+        );
+        return Some(RestoreSettled::Dropped(pending.pin.take()));
+    }
+    pending.polls += 1;
+    let contract = match (pending.cache.is_some(), pending.contract.take()) {
+        (true, Some(contract)) => contract,
+        (has_cache, contract) => {
+            // FAIL CLOSED (the #622 ruling): a submitted ticket without its cache cannot be waited
+            // for by anyone and must not be dropped silently: it is settled and retired through the
+            // engine where reachable, and the tier and the restore path latch off (the pin is kept).
+            // A cache without a ticket drops whole (nothing was submitted); its pin goes back.
+            let what = match (has_cache, contract.is_some()) {
+                (false, true) => "no cache for its submitted ticket",
+                (true, false) => "no ticket for its cache",
+                _ => "neither cache nor ticket",
+            };
+            return Some(match contract {
+                None => {
+                    eprintln!(
+                        "[prefix-cache] restore dropped (a Restoring request has {what}); the tick \
+                         program serves"
+                    );
+                    RestoreSettled::Dropped(pending.pin.take())
+                }
+                Some(contract) => {
+                    let seq = contract.ticket.sequence;
+                    let settled = match host.tier.as_ref().and_then(|t| t.transfers.as_ref()) {
+                        Some(transfers) => {
+                            let mut t = transfers.borrow_mut();
+                            t.synchronize(&contract.ticket)
+                                .and_then(|_| t.retire(&contract.ticket, None))
+                                .and_then(|_| t.acknowledge(&contract.ticket))
+                                .map_err(|e| format!("{e:?}"))
+                        }
+                        None => Err("tier transfer engine missing".to_string()),
+                    };
+                    let err = match settled {
+                        Ok(()) => format!(
+                            "a Restoring request has {what}; ticket seq={seq} settled and retired"
+                        ),
+                        Err(e) => format!(
+                            "a Restoring request has {what}; ticket seq={seq} did not settle ({e})"
+                        ),
+                    };
+                    host_restore_latch(host, &err);
+                    RestoreSettled::Dropped(None)
+                }
+            });
+        }
+    };
+    let submitted = contract.submitted;
+    let settled = match &host.tier {
+        Some(tier) => settle(tier, contract, wait),
+        None => Err(HostRestoreFailure::Latched(
+            "tier context gone under a Restoring request".into(),
+        )),
+    };
+    match settled {
+        Ok(RestoreSettle::Pending(contract)) => {
+            pending.contract = Some(contract);
+            host.restoring = Some(pending);
+            Some(RestoreSettled::Pending)
+        }
+        Ok(RestoreSettle::Landed) => {
+            pending.copy_ms = submitted.elapsed().as_secs_f64() * 1e3;
+            pending.settled_by = match wait {
+                ContractWait::Poll => "tick-top poll".to_string(),
+                ContractWait::Block => format!("settled synchronously by {why}"),
+            };
+            pending.ready = true;
+            Some(RestoreSettled::Ready(Box::new(pending)))
+        }
+        Err(HostRestoreFailure::Latched(err)) => {
+            // Never a free under a running copy: the cache is forgotten, the pin is kept.
+            if let Some(cache) = pending.cache.take() {
+                std::mem::forget(cache);
+            }
+            host_restore_latch(host, &err);
+            Some(RestoreSettled::Dropped(None))
+        }
+    }
+}
+
+/// A restore whose observation was lost: the tier latches off and the restore path takes the tick
+/// program for the rest of the boot; the destination cache and the source pin are leaked by design.
+fn host_restore_latch(host: &mut HostPrefixCache, why: &str) {
+    eprintln!(
+        "[prefix-cache] RESTORE OFF-TICK DISABLED: {why}; the destination cache and the source pin \
+         are kept, never freed under a possibly running copy; every later hit restores on the tick"
+    );
+    host.restore_off_tick_disabled = true;
+    host.disable(why);
+}
+
+/// The whole settle step with the device cache in hand: a dropped state's pin is released here; a
+/// ready state goes back and waits for its request.
+fn host_restore_settle_pending(
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    wait: ContractWait,
+    why: &str,
+) -> Option<HostRestoreOutcome> {
+    Some(
+        match host_restore_settle_with(hpx, wait, why, host_kv_planes_settle_restore)? {
+            RestoreSettled::Pending => HostRestoreOutcome::Restoring,
+            RestoreSettled::Dropped(pin) => {
+                if let Some(pin) = pin {
+                    px.unpin(&pin);
+                }
+                HostRestoreOutcome::Dropped
+            }
+            RestoreSettled::Ready(pending) => {
+                hpx.restoring = Some(*pending);
+                HostRestoreOutcome::Ready
+            }
+        },
+    )
+}
+
+/// Drop the `Restoring` state typed: a pending contract settles first (`Block`), then the cache
+/// drops and the pin is released. Used for an orphan (its request never re-admitted), a stale
+/// match (the entry no longer serves the prompt) and a tenant purge.
+fn host_restore_drop(px: &mut PrefixCache, hpx: &mut HostPrefixCache, why: &str) {
+    if hpx.restoring.as_ref().is_some_and(|r| r.contract.is_some()) {
+        host_restore_settle_pending(px, hpx, ContractWait::Block, why);
+    }
+    let Some(mut dropped) = hpx.restoring.take() else {
+        return;
+    };
+    if let Some(pin) = dropped.pin.take() {
+        px.unpin(&pin);
+    }
+    eprintln!(
+        "[prefix-cache] restore dropped ({why}): {} tokens for request {} (model {}{}); the tick \
+         program serves",
+        dropped.toks_len,
+        dropped.request_id,
+        dropped.pool_key.0,
+        ns_suffix(&dropped.pool_key.1),
+    );
+}
+
+/// The tick top after the poll: a ready restore counts the tick; past `RESTORE_READY_TICKS` its
+/// request is gone and the state is dropped typed.
+fn host_restore_expire_ready(px: &mut PrefixCache, hpx: &mut HostPrefixCache) {
+    let expired = match hpx.restoring.as_mut() {
+        Some(r) if r.ready => {
+            r.ready_ticks += 1;
+            r.ready_ticks > RESTORE_READY_TICKS
+        }
+        _ => false,
+    };
+    if expired {
+        host_restore_drop(px, hpx, "its request did not re-admit");
+    }
+}
+
+/// The purge (worker level, with the device cache in hand): the `Restoring` request settles first;
+/// the purged tenant's is dropped (cache freed, pin released) so a revoked tenant's bytes are never
+/// primed on after the purge's receipt; another tenant's stays.
+fn host_restore_purge_tenant(px: &mut PrefixCache, hpx: &mut HostPrefixCache, tenant: &str) {
+    if hpx.restoring.is_none() {
+        return;
+    }
+    host_restore_settle_pending(px, hpx, ContractWait::Block, "a tenant purge");
+    let row = crate::auth::meter_key(&crate::auth::scope_namespace(tenant, "")).to_string();
+    if hpx
+        .restoring
+        .as_ref()
+        .is_some_and(|r| crate::auth::meter_key(&r.pool_key.1) == row)
+    {
+        host_restore_drop(px, hpx, "the tenant purge revoked the Restoring request");
+    }
+}
+
+/// Shutdown (the run loop's exit): a host wait on the pending restore's events, then DROP; nothing
+/// is primed after a stop.
+fn host_restore_drain_at_shutdown(hpx: &mut HostPrefixCache) {
+    if hpx.restoring.is_none() {
+        return;
+    }
+    if let Some(RestoreSettled::Ready(pending)) = host_restore_settle_with(
+        hpx,
+        ContractWait::Block,
+        "shutdown",
+        host_kv_planes_settle_restore,
+    ) {
+        eprintln!(
+            "[prefix-cache] restore dropped at shutdown ({} tokens, request {}); nothing primed",
+            pending.toks_len, pending.request_id,
+        );
+    }
+    hpx.restoring = None;
+}
+
+/// The owner-stream half and the submit (WP-A day 21): the recurrent state, `len`, `len_d` on the
+/// owner stream (the OFF statements, stream-ordered before the producer fence), then ONE restore
+/// batch of the KV rows on the copy stream. The caller validated the pair (`prefix_restore_validate`)
+/// and pinned the source. `Err` leaves a cache the caller drops unprimed.
+fn host_restore_submit(
+    engine: &Engine,
+    e: &PrefixEntry,
+    cache: &mut Cache,
+    hpx: &HostPrefixCache,
+) -> Result<(PendingContractRestore, usize), String> {
+    use memra_engine::tier_transfer::D2dRestore;
+    let tier = hpx.tier.as_ref().ok_or("tier context missing")?;
+    let transfers = tier.transfers.as_ref().ok_or("transfer engine missing")?;
+    let restore_len = e.pos;
+    let mut bytes = 0usize;
+    // 1. The recurrent state, `len` and `len_d` on the OWNER stream (the OFF statements).
+    for il in 0..cache.kv.len() {
+        if let (Some(dst), Some(c), Some(s)) = (cache.recur[il].as_mut(), &e.conv[il], &e.ssm[il]) {
+            engine
+                .copy_into(&mut dst.conv_state, 0, c, c.len())
+                .map_err(|err| format!("recurrent conv copy of layer {il} failed: {err}"))?;
+            engine
+                .copy_into(&mut dst.ssm_state, 0, s, s.len())
+                .map_err(|err| format!("recurrent ssm copy of layer {il} failed: {err}"))?;
+            bytes += (c.len() + s.len()) * 4;
+        }
+        if let (Some(dst), Some(_)) = (cache.kv[il].as_mut(), &e.kv[il]) {
+            dst.len = restore_len;
+            engine
+                .set_i32_one(&mut dst.len_d, restore_len as i32)
+                .map_err(|err| format!("len mirror of layer {il} failed: {err}"))?;
+        }
+    }
+    // 2. The producer fence, then the KV rows as one batch on the copy stream.
+    let mut t = transfers.borrow_mut();
+    let generation = HOST_TIER_TRANSFER_EPOCHS.dst_gen;
+    let producer = t
+        .record_producer(generation)
+        .map_err(|err| format!("producer fence refused: {err:?}"))?;
+    let mut ops: Vec<D2dRestore<'_>> = Vec::new();
+    let mut sizes: Vec<u64> = Vec::new();
+    for (il, dst) in cache.kv.iter_mut().enumerate() {
+        let (Some(dst), Some(src)) = (dst.as_mut(), &e.kv[il]) else {
+            continue;
+        };
+        let kb = restore_len * dst.k_tok_bytes;
+        let vb = restore_len * dst.v_tok_bytes;
+        if kb > 0 {
+            ops.push(D2dRestore {
+                source: &src.k,
+                destination: dst.k.slice_mut(..kb),
+                bytes: kb as u64,
+                producer_fence: producer,
+            });
+            sizes.push(kb as u64);
+        }
+        if vb > 0 {
+            ops.push(D2dRestore {
+                source: &src.v,
+                destination: dst.v.slice_mut(..vb),
+                bytes: vb as u64,
+                producer_fence: producer,
+            });
+            sizes.push(vb as u64);
+        }
+        bytes += kb + vb;
+    }
+    if ops.is_empty() {
+        let _ = t.release_producer(producer);
+        return Err("the entry carries no KV rows".to_string());
+    }
+    let ticket = match t.submit_d2d_restore(ops, HOST_TIER_TRANSFER_EPOCHS) {
+        Ok(ticket) => ticket,
+        Err(err) => {
+            let _ = t.release_producer(producer);
+            return Err(format!("submission refused: {err:?}"));
+        }
+    };
+    drop(t);
+    cache.pos = restore_len;
+    Ok((
+        PendingContractRestore {
+            ticket,
+            producer,
+            sizes,
+            submitted: Instant::now(),
+        },
+        bytes,
+    ))
+}
+
+/// The admission probe's decision, pure over the request and the pending state (WP-A day 21).
+#[derive(Debug, PartialEq, Eq)]
+enum RestoreProbe {
+    /// No `Restoring` request, or another request's is in flight: this request goes through.
+    Through,
+    /// The pending restore is this request's and not ready: park again.
+    ParkAgain,
+    /// The pending restore is this request's and ready: go through, the hit site consumes it.
+    Consume,
+    /// Another request's restore is ready and unconsumed: an orphan to drop, then go through.
+    DropOrphan,
+}
+
+fn host_restore_probe_decision(host: &HostPrefixCache, request_id: &str) -> RestoreProbe {
+    match host.restoring.as_ref() {
+        None => RestoreProbe::Through,
+        Some(r) if !request_id.is_empty() && r.request_id == request_id => {
+            if r.ready {
+                RestoreProbe::Consume
+            } else {
+                RestoreProbe::ParkAgain
+            }
+        }
+        Some(r) if r.ready => RestoreProbe::DropOrphan,
+        Some(_) => RestoreProbe::Through,
+    }
+}
+
+/// WP-A day 21 (memra#536 Move 2 slice 2): the door's restore decision, taken in the admission loop
+/// immediately after the promote probe and before `admit(..)` with the request still in hand.
+/// Under the door a whole-entry device hit SUBMITS its restore on the transfer engine's copy stream
+/// and the request PARKS (the caller requeues it; it re-admits after a tick-top poll installed the
+/// owner-stream wait, and its hit site takes the ready cache). Returns `true` when the request was
+/// parked. The predicates are the admission body's own (`request_reuse_on`, `request_prefix_on`,
+/// `continuation_reuse_index`, `PrefixCache::lookup`), so the two sites agree by construction; a
+/// refusal at any step prints one typed line and the request takes the OFF program in this same
+/// admission (no memo is needed: the probe is the only submit site and admit never retries).
+#[allow(clippy::too_many_arguments)]
+fn host_restore_park_probe(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    reuse: &HashMap<PoolKey, Vec<ReuseEntry>>,
+    lm: &LoadedModel,
+    req: &Request,
+    ctx_cap: usize,
+) -> bool {
+    match host_restore_probe_decision(hpx, &req.request_id) {
+        RestoreProbe::ParkAgain => return true,
+        RestoreProbe::Consume => {
+            // The hit site consumes it only if the pinned entry still serves this prompt whole.
+            let still_hits = req.prepared_prompt.as_ref().is_some_and(|prompt| {
+                let r = hpx.restoring.as_ref().expect("decided above");
+                r.pin
+                    .as_ref()
+                    .and_then(|pin| px.id_index(pin))
+                    .is_some_and(|i| px.lookup(&r.pool_key, prompt) == Some(i))
+            });
+            if !still_hits {
+                host_restore_drop(px, hpx, "its entry no longer serves its prompt whole");
+            }
+            return false;
+        }
+        RestoreProbe::DropOrphan => {
+            host_restore_drop(px, hpx, "its request did not re-admit");
+        }
+        RestoreProbe::Through => {}
+    }
+    if hpx.restoring.is_some()
+        || hpx.restore_off_tick_disabled
+        || !hpx.armed()
+        || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none())
+        || req.request_id.is_empty()
+    {
+        return false;
+    }
+    let Some(prompt) = req.prepared_prompt.as_ref() else {
+        return false;
+    };
+    let vision_req = request_has_images(req);
+    let capture_req = req.capture.is_some();
+    let reuse_on = request_reuse_on(vision_req, capture_req);
+    if !request_prefix_on(reuse_on, &lm.model.plan) {
+        return false;
+    }
+    let pool_key: PoolKey = (req.model.clone(), req.cache_ns.clone());
+    if reuse
+        .get(&pool_key)
+        .is_some_and(|pool| continuation_reuse_index(pool, prompt, ctx_cap).is_some())
+    {
+        return false;
+    }
+    let Some(i) = px.lookup(&pool_key, prompt) else {
+        return false;
+    };
+    {
+        // The route's class: a plain whole entry on one device. Draft-bearing (spec or DFlash),
+        // TP and latent entries keep the tick program by name.
+        let e = &px.entries[&pool_key][i];
+        if e.tp.is_some()
+            || e.latent.iter().any(Option::is_some)
+            || e.draft.is_some()
+            || e.dspark_draft.is_some()
+            || e.pos != e.toks.len()
+            || e.last_logits.is_empty()
+            || e.kv.iter().all(Option::is_none)
+        {
+            return false;
+        }
+    }
+    let refuse = |why: String| {
+        eprintln!(
+            "[prefix-cache] restore refused (contracts door): {why}; the tick program serves"
+        );
+        false
+    };
+    let mut cache =
+        match memra_engine::pp::new_cache_planned(engine, &lm.model.cfg, &lm.model.plan, ctx_cap) {
+            Ok(c) => c,
+            Err(err) => return refuse(format!("session cache alloc failed: {err}")),
+        };
+    {
+        let e = &px.entries[&pool_key][i];
+        if let Err(err) = prefix_restore_validate(&cache, e, &pool_key, e.pos, Some(&lm.model)) {
+            return refuse(format!("validation failed: {err}"));
+        }
+    }
+    let Some(pin) = px.pin(&pool_key, i) else {
+        return refuse("the entry vanished before its pin".to_string());
+    };
+    let e = &px.entries[&pool_key][i];
+    match host_restore_submit(engine, e, &mut cache, hpx) {
+        Ok((contract, bytes)) => {
+            let seq = contract.ticket.sequence;
+            let items = contract.sizes.len();
+            let toks_len = e.toks.len();
+            eprintln!(
+                "[prefix-cache] restore submitted off the tick: {toks_len} tokens, {items} planes \
+                 ({:.1}MB), ticket seq={seq} on the contracts door's copy stream; recurrent state \
+                 copied on the owner stream; request parked",
+                bytes as f64 / 1e6,
+            );
+            hpx.restoring = Some(PendingRestore {
+                request_id: req.request_id.clone(),
+                pool_key,
+                pin: Some(pin),
+                toks_len,
+                bytes,
+                cache: Some(cache),
+                contract: Some(contract),
+                ready: false,
+                ready_ticks: 0,
+                t0: Instant::now(),
+                polls: 0,
+                copy_ms: 0.0,
+                settled_by: String::new(),
+            });
+            true
+        }
+        Err(why) => {
+            // Nothing was submitted (a refusal releases its producer fence): the cache drops
+            // unprimed, the pin goes back, the OFF program serves this admission.
+            drop(cache);
+            px.unpin(&pin);
+            refuse(why)
+        }
+    }
+}
+
+/// The hit site's consumption (inside `admit`, WP-A day 21): a ready restore for THIS request whose
+/// pin names the hit's entry hands over its cache and its pin; the hit accounting is the OFF hit's.
+/// `None` when no ready restore names this request (a ready one for it that names another entry is
+/// dropped typed here).
+fn host_restore_take_ready(
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    request_id: &str,
+    pool_key: &PoolKey,
+    i: usize,
+) -> Option<(Cache, PrefixPin)> {
+    {
+        let r = hpx.restoring.as_ref()?;
+        if !r.ready
+            || request_id.is_empty()
+            || r.request_id != request_id
+            || r.pool_key != *pool_key
+        {
+            return None;
+        }
+        let pinned = r.pin.as_ref().and_then(|pin| px.id_index(pin));
+        if pinned != Some(i) {
+            host_restore_drop(px, hpx, "its entry is not the hit's");
+            return None;
+        }
+    }
+    let mut r = hpx.restoring.take()?;
+    let (Some(cache), Some(pin)) = (r.cache.take(), r.pin.take()) else {
+        eprintln!(
+            "[prefix-cache] restore dropped (a ready Restoring request has no cache or no pin); the \
+             tick program serves"
+        );
+        if let Some(pin) = r.pin.take() {
+            px.unpin(&pin);
+        }
+        return None;
+    };
+    eprintln!(
+        "[prefix-cache] restore landed off the tick: {} tokens complete after {} poll(s), {:.1}ms \
+         from submission to completion, {:.1}ms to re-admission ({})",
+        r.toks_len,
+        r.polls,
+        r.copy_ms,
+        r.t0.elapsed().as_secs_f64() * 1e3,
+        r.settled_by,
+    );
+    hpx.restores_landed += 1;
+    Some((cache, pin))
+}
+
+// ---------------------------------------------------------------------------
 // HOST-TIER DEPLOY HANDOFF (lane/host-tier-deploy-warmth-20260901).
 //
 // The tier is process-lifetime pinned memory, so every blue/green flip booted a fresh-empty
@@ -15762,9 +16475,11 @@ fn finish_planned_dflash_conversion(
 /// copied only at the entry's captured endpoint; a mid-entry recurrent split fails closed.
 /// The ssm ping-pong spare and last_logits_dev stay as allocated (scratch — overwritten before
 /// any read). All identity/shape/bounds checks precede the first device copy.
-fn prefix_restore_at(
-    engine: &Engine,
-    cache: &mut Cache,
+/// Every identity, shape and bounds check of a prefix restore, with no device copy (WP-A day 21
+/// split it out of `prefix_restore_at` so the off-tick route runs exactly the OFF checks before
+/// it submits; the statements are the OFF path's, unchanged).
+fn prefix_restore_validate(
+    cache: &Cache,
     e: &PrefixEntry,
     expected_key: &PoolKey,
     restore_len: usize,
@@ -15937,7 +16652,18 @@ fn prefix_restore_at(
             _ => return Err(format!("prefix entry latent {il} kind mismatch").into()),
         }
     }
+    Ok(())
+}
 
+fn prefix_restore_at(
+    engine: &Engine,
+    cache: &mut Cache,
+    e: &PrefixEntry,
+    expected_key: &PoolKey,
+    restore_len: usize,
+    model: Option<&HybridModel>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    prefix_restore_validate(cache, e, expected_key, restore_len, model)?;
     let max_ctx = cache.max_ctx;
     for il in 0..cache.kv.len() {
         if let (Some(dst), Some(src)) = (cache.kv[il].as_mut(), &e.kv[il]) {
@@ -19774,6 +20500,12 @@ pub fn run(
             ContractWait::Poll,
             "the tick top",
         );
+        // WP-A day 21 (memra#536 Move 2 slice 2): the one `Restoring` request is polled; once every
+        // item's completion event is observed complete the OWNER stream's wait on each event is
+        // installed HERE (rule 3), before admission, so the parked request re-admitted this tick
+        // primes behind it; a ready restore its request never consumed expires typed.
+        host_restore_settle_pending(&mut px, &mut hpx, ContractWait::Poll, "the tick top");
+        host_restore_expire_ready(&mut px, &mut hpx);
         // Cheap runtime peer validation stays on its copy-count cadence here, between scheduler
         // ticks on the CUDA owner thread. Idle-only rungs remain pending. A mismatch continues on
         // validated host bounce; only inability to arm that staging reaches the panic ladder.
@@ -19803,6 +20535,7 @@ pub fn run(
                 && hpx.demoting.is_none()
                 && hpx.promoting.is_none()
                 && hpx.capturing.is_none()
+                && hpx.restoring.is_none()
             {
                 // Do not let an already-arrived request sit behind an idle-only probe. Once the
                 // channel is observed empty, one pending expensive rung may run before the worker
@@ -19868,7 +20601,11 @@ pub fn run(
                 // WP-A day 17 and 18: a `Demoting` or `Promoting` entry is tick work on an idle
                 // box too: keep the poll running so the entry publishes without waiting for the
                 // next request.
-                if hpx.demoting.is_some() || hpx.promoting.is_some() || hpx.capturing.is_some() {
+                if hpx.demoting.is_some()
+                    || hpx.promoting.is_some()
+                    || hpx.capturing.is_some()
+                    || hpx.restoring.is_some()
+                {
                     wait = wait.min(Duration::from_millis(2));
                 }
                 match rx.recv_timeout(wait) {
@@ -19939,6 +20676,7 @@ pub fn run(
             // WP-A day 20: trim needs a quiescent pool; a `Capturing` entry's planes are live
             // until it settles (publish or drop) first.
             host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, "a trim");
+            host_restore_settle_pending(&mut px, &mut hpx, ContractWait::Block, "a trim");
             report.devices = trim_model_device_pools(&engine, &loaded, "admin-trim");
             eprintln!(
                 "[trim] pools dropped: reuse={} spec={} dspark={} prefix={}",
@@ -19957,6 +20695,9 @@ pub fn run(
         // trim: the pools live in this scope and the sweep must not race a demote.
         for (tenant, tx) in pending_purges.drain(..) {
             release_promoted_pin_for_tenant(&mut hpx, &mut px, &tenant);
+            // WP-A day 21: the `Restoring` request settles first and the purged tenant's is dropped
+            // (cache freed, pin released) before either index purges.
+            host_restore_purge_tenant(&mut px, &mut hpx, &tenant);
             let (host_namespaces, host_entries, host_bytes) = hpx.purge_tenant(&tenant);
             let (device_entries, device_pinned_left) = px.purge_tenant(&tenant);
             eprintln!(
@@ -20870,6 +21611,12 @@ pub fn run(
                                     ContractWait::Block,
                                     "the admission reclaim",
                                 );
+                                host_restore_settle_pending(
+                                    &mut px,
+                                    &mut hpx,
+                                    ContractWait::Block,
+                                    "the admission reclaim",
+                                );
                                 evict_all_demoting(&engine, &mut px, &mut hpx, budget)
                             } else {
                                 (px.evict_all(), 0, 0)
@@ -21119,6 +21866,12 @@ pub fn run(
                         oom_teardown_fence(&engine, &loaded);
                         host_capture_settle_pending(
                             &engine,
+                            &mut px,
+                            &mut hpx,
+                            ContractWait::Block,
+                            "a trim",
+                        );
+                        host_restore_settle_pending(
                             &mut px,
                             &mut hpx,
                             ContractWait::Block,
@@ -21412,6 +22165,25 @@ pub fn run(
                 )
             {
                 requeue.push_back(req); // waits (FIFO), never shed: its promote is in flight
+                parked_on_promote += 1;
+                continue;
+            }
+            // WP-A day 21 (memra#536 Move 2 slice 2): under the same door a whole-entry device hit
+            // SUBMITS its restore on the copy stream here and the request PARKS the same way; the
+            // tick-top poll installs the owner-stream wait and the re-admission's hit site takes
+            // the ready cache. A retained admission plan already holds its pin and skips the probe.
+            if admission_restore.is_none()
+                && host_restore_park_probe(
+                    &engine,
+                    &mut px,
+                    &mut hpx,
+                    &reuse,
+                    &loaded[&model_key],
+                    &req,
+                    shape.ctx_cap,
+                )
+            {
+                requeue.push_back(req); // waits (FIFO), never shed: its restore is in flight
                 parked_on_promote += 1;
                 continue;
             }
@@ -23728,6 +24500,7 @@ pub fn run(
             // pool held the room).
             oom_teardown_fence(&engine, &loaded);
             host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, "a trim");
+            host_restore_settle_pending(&mut px, &mut hpx, ContractWait::Block, "a trim");
             let reports = trim_model_device_pools(&engine, &loaded, "oom-teardown");
             let trimmed_total = reports.iter().fold(0usize, |total, report| {
                 total.saturating_add(report.reclaimed_bytes)
@@ -24060,6 +24833,8 @@ pub fn run(
     // WP-A day 20: shutdown drains the one `Capturing` entry (a host wait on its events, then
     // drop; no publication after a stop).
     host_capture_drain_at_shutdown(&mut hpx);
+    // WP-A day 21: and the one `Restoring` request (a host wait on its events, then drop).
+    host_restore_drain_at_shutdown(&mut hpx);
 }
 
 fn fail_request(mut req: Box<Request>, error: EngineError) {
@@ -26067,7 +26842,27 @@ fn admit(
         // `consumable_hit`, not a second lookup: the decision above and the restore here must
         // agree by construction about whether a hit exists.
         if let Some(i) = consumable_hit {
-            let restored = {
+            // WP-A day 21: a ready off-tick restore for THIS request on THIS entry hands over its
+            // cache (complete behind the installed owner-stream wait) and its pin; everything
+            // after this point is the OFF hit's program on that cache.
+            let mut off_tick_pin: Option<PrefixPin> = None;
+            let restored = if let Some((c, pin)) =
+                host_restore_take_ready(px, hpx, &req.request_id, &pool_key, i)
+            {
+                let e = &px.entries[&pool_key][i];
+                kvprobe(engine, &c, &e.last_logits, "prefix-restored");
+                off_tick_pin = Some(pin);
+                Ok(ReuseEntry {
+                    fed: e.toks.clone(),
+                    cache: c,
+                    last_logits: e.last_logits.clone(),
+                    cap: ctx_cap,
+                    ckpt: None,
+                    affinity: None,
+                    fingerprint: Vec::new(),
+                    parked_at: Instant::now(),
+                })
+            } else {
                 let e = &px.entries[&pool_key][i];
                 // `pp::new_cache`, not `Cache::new` — stage-owned KV under an open ppN door
                 // (see the session-cache site below for the full reason). `prefix_restore`
@@ -26104,7 +26899,8 @@ fn admit(
             };
             match restored {
                 Ok(entry) => {
-                    prefix_pin = px.pin(&pool_key, i);
+                    // The off-tick restore's pin carries over as the serving pin (the pin count).
+                    prefix_pin = off_tick_pin.or_else(|| px.pin(&pool_key, i));
                     debug_assert!(prefix_pin.is_some(), "lookup entry vanished before pin");
                     px.hits += 1;
                     px.hit_tokens += entry.fed.len() as u64;
@@ -40967,7 +41763,7 @@ mod tests {
         assert!(body[capture..capture + 200].contains("ContractWait::Poll,"));
         assert!(body.contains("&& hpx.capturing.is_none()"));
         assert!(body.contains(
-            "if hpx.demoting.is_some() || hpx.promoting.is_some() || hpx.capturing.is_some()"
+            "if hpx.demoting.is_some()\n                    || hpx.promoting.is_some()\n                    || hpx.capturing.is_some()\n                    || hpx.restoring.is_some()\n                {"
         ));
         let purge = body
             .find("    fn purge_tenant(&mut self, tenant: &str) -> (usize, usize, usize) {")
@@ -41561,7 +42357,7 @@ mod tests {
         assert!(worker[loop_at..loop_at + 4500].contains("&& hpx.demoting.is_none()"));
         // (Day 20 extended the cap to the `Capturing` entry; the statement is one `if`.)
         assert!(worker[loop_at..loop_at + 9000].contains(
-            "if hpx.demoting.is_some() || hpx.promoting.is_some() || hpx.capturing.is_some()"
+            "if hpx.demoting.is_some()\n                    || hpx.promoting.is_some()\n                    || hpx.capturing.is_some()\n                    || hpx.restoring.is_some()\n                {"
         ));
         // OffTick is the eviction sink's route and nobody else's.
         let sink = body("fn host_demote_prefix_entry(");
