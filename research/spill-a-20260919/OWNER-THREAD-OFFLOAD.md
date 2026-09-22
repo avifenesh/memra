@@ -576,7 +576,7 @@ an unconsumed scratch typed. No new flag, no new numeric program, no new `unsafe
 
 **Target card receipts (`DAY23.md` "Task 3", `pro-single-day23/`; tree `2b850b2b0`, one sitting).** Identity `ALL GREEN (teeth=0)` default and plain, OFF and ON; failure `ALL GREEN` both arms; fault `ALL GREEN` (93 ok, the `d2d-restore` cell still refusing); twin `-> PASS` both arms; hit `ALL GREEN (qwen)` OFF (61 ok) and ON with the tier armed (68 ok): the spec-on boot's 12 draft-bearing hits routed (`restore submitted off the tick: 64 tokens, 34 planes (158.9MB), ...; draft plane 64 rows (118.8KB) in the batch` and the 96- and 128-token shapes), 13 receipts `items=34`/`32 ... require=ok`, 12 `draft plane ready`, 12 `spec restore: ... + draft plane from cache`, zero refused, latched, declined or disagreement lines, every `spec==plain byte identity` ok: the first hit-gate receipt on any card where the identity clause covers the route for the draft-bearing hits. Unit `8 passed` and `5 passed`. The draft plane's share of a 64-token entry's restore on the 27B: 118,784 B (1,856 B per token).
 
-**What Move 2 still owes, in order.**
+**What Move 2 still owed after day 23, in order.**
 
 1. **The recurrent f32 state off the tick**: both classes keep `conv_state` and `ssm_state` on the owner stream (the
    capture by law, at the boundary; the restore by the byte-span class's shape). On the 27B that is the fixed 157 MB of
@@ -592,3 +592,52 @@ an unconsumed scratch typed. No new flag, no new numeric program, no new `unsafe
    against a measured prime-only arm in the same hold.
 4. **The receipt's price, read by the door review**: cell (v) of day 22, verbatim, the pair 2.12x to 2.15x the copy;
    reported, nothing relaxed.
+
+## Move 2, owed item 2 (the capture half), day 24: the spec-boundary capture through the door (`DAY24.md`)
+
+**Pre-registration, committed before any day-24 code (`DAY24.md` "Task 1").** Census item 10 (lane C,
+`HOSTPREFIX-DOOR.md`) is the design: slice 1's submit half factored into one core both capture publishers call; the
+spec-boundary publisher's route reading the LIVE session's trunk planes and its draft scratch as TWO borrowed source
+spans, rows `[0..pos)` of each, as ONE batch of slice 1's class (no new engine op shape); one producer event recorded on
+the owner stream at the drain sweep, after the burst committed past `pos`, so every kernel that wrote a trunk row or a
+draft-head row below `pos` precedes it; the recurrent state, boundary logits and `last_h` already OWNED by the
+`SpecBoundaryCapture` (taken by the spec engine at the prime stop, no copy at publish); the `Capturing` entry owning the
+fresh planes of BOTH classes and publishing both or neither; slice 3's receipt term over both classes; publication the
+slice-1 tick-top publication (`insert_demoting`, `why = spec-boundary`, the OFF trace role `spec-snapshot`). Item 10's
+open question, the borrow's lifetime, answered by naming the one path that frees a source inside the tick: the MTP
+demotion (`s.spec.take()` then `into_demoted`, which drops the `MtpScratch`), which now settles a pending capture
+`Block` before it consumes the session; the retire, park and shutdown seams already settled it since slice 1.
+
+**What landed (under `MEMRA_KV_HOST_CONTRACTS=1`, default OFF, decide-by 2026-10-05; `DAY24.md` "Task 2").** The tier
+rule `memra_tier::conformance::d2d_capture_draft_publish` (one batch carries `Role::Draft` beside the trunk classes;
+landing is EVERY item's event, so a publish with the trunk landed and a draft item running is refused `NotReady`, both
+or neither; the receipt term witnessed per class; published once, retired without a consumer fence, every destination of
+both classes back) with the red arm `d2d_capture_draft_published_with_the_draft_unlanded_fails` and CPU bindings
+(34- and 18-item batches; contracts 87 passed, 84 before). The worker: `host_capture_submit` over a `CaptureSubmit`
+description is the submit half both publishers call (the seed route's admission, recurrent clones and lines unchanged);
+`prefix_spec_capture_off_tick` is the spec-boundary route, asked after the publisher's early returns and before the
+latent arm, answering `OnTick` with the capture handed back untouched for the OFF program; it refuses BY NAME to that
+program (latent planes or capture tails, a TP cache, a trunk layer with `0 < len < pos`, a capture whose snapshot is not
+at `pos`, a cache with no KV plane) and reads the draft source exactly as the OFF program does (a source shorter than
+the boundary prints the OFF line and the trunk is routed alone). `CapturePlane` carries its class
+(`CapturePlaneClass::Trunk` or `Draft`), the settle answers `Done { kv, draft }` and the landing fills `shell.draft`
+beside the trunk slots, and a plane of either class that does not come back latches (nothing published). The trace role
+rides the pending state, so publication prints the OFF publisher's own role. Stated difference from OFF: an alloc or
+registration failure of a draft destination refuses the WHOLE capture where OFF publishes trunk-only; no token moves (a
+missing entry is a cold prime). No new flag, no new numeric program, no new `unsafe`, no new pending or ready state.
+
+**What Move 2 still owes, in order.**
+
+1. **The recurrent f32 state off the tick**: the restore keeps `conv_state` and `ssm_state` on the owner stream (the
+   byte-span class's shape); the spec-boundary capture never copies them (the spec engine took them at the prime stop)
+   and the seed capture clones them at the boundary by law. On the 27B that is the fixed 157 MB of every restored entry.
+   A typed f32 span in the restore class moves the restore's share. Its receipt would be the same program over the f32
+   planes' bytes.
+2. **The publishes still on the tick after this slice**, by name: the fanout leader's snapshot and the pause sweep's
+   boundary snapshot (`prefix_snapshot` direct); the `dspark-boundary` publish (the drafter's `export_tail`, owned and
+   fenced by the drafter); the `glm5-boundary` publish (latent tails); and every `OnTick` refusal of either route.
+3. **A stall cell that isolates each class**: C day 28 isolated the restore class at about 9 ms in both arms and read
+   the capture class's door delta at +0.7 ms, but the pre-registered subtraction for the capture arm's own share came
+   out with the wrong sign (a cache-off boot's prime is not a cache-on boot's prime); the capture share stays unread.
+4. **The receipt's price, read by the door review**: cell (v) of day 22 and its 5090 twin (C day 28), verbatim, the
+   pair 2.11x to 2.15x the copy on the target card and 1.12x on the 5090; reported, nothing relaxed.
