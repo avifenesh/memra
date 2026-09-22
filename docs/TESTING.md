@@ -998,6 +998,15 @@ refusals are typed and in bytes:
 `[prefix-cache] insert refused: entry N exceeds budget M (...)` and
 `[prefix-cache] insert refused: entry N cannot fit beside L leased bytes (budget M, ...)`.
 Victim selection and accounting only: captured and restored bytes are unchanged.
+Exit rule (spill-b day 29, review round on #633): V3 compares the cache-on and cache-off boots'
+device state, so it presumes both boots retain the same parked sessions after every send. The gate
+parses every `[admit-oom] reclaim-on-defer` line per window; when the two boots' parked-session
+releases differ, or a reclaim line does not parse into its released counts, V3 is undecided. A
+failed V1, V2, V4, V5 or V6 is still the verdict `FAIL` (exit 1) with a premise note beside it; with
+every other clause holding, a broken or unreadable premise is `REFUSED: V3 premise: ...` (exit 2),
+naming the windows, the releases per boot and the card at each boot (driver free and compute-apps
+sampled into the receipts), and the would-be verdict is kept in `summary.json` as
+`verdict_under_broken_premise`. V3's clause, form and slack are unchanged.
 
 ```text
 prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra-server> --out <new-dir> \
