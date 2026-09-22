@@ -777,7 +777,10 @@ runs at memory speed on either host, so no digest change reaches the tick's cost
 **Recommendation (for the lead's ruling; nothing implemented):** (a), scoped to the heap payloads, with (b) held as the
 5090 write-combined follow-up and (c)'s device-side form behind Move 2 owed item 1; acceptance gate in `DAY27.md` section
 2 (the double-park cell with `in - completion <= 12.0`, `stall_median(ON) <= OFF + 2.0`, e2e `on_minus_off <= +20.0`;
-the gates ALL GREEN both arms both cards; the two fault cells; the bitwise digest unit cell; no flag).
+the gates ALL GREEN both arms both cards; the two fault cells; the bitwise digest unit cell; no flag). **The baseline banked today** (the day-26 double-park cell on the
+day-27 tree, one hold, twenty boots, 20 of 20 replays PASS, `pro-single-day27/box/double-park/`): stall
+`on_minus_off=-3.4 / -3.5 unc=0.1 isolated` (81.9/81.8 against 85.2/85.3), e2e `+91.3 / +91.3 isolated`,
+`demote_in-completion median=74.8`, the tenant's gaps 95.3 and 92.4; equal to day 26 within 0.1 ms.
 
 **What Move 1 still owes, in order (restated).**
 

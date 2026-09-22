@@ -212,3 +212,44 @@ same two programs over the same bytes. `executed-not-qualified`.
 would ADD about 18 ms per 160 MiB on the 5090 class's host; under the per-hardware rule that is a per-host default at
 most, and on neither host does the four-lane program run at memory speed, so no digest swap reaches the tick's cost. The
 only option that removes the 74.8 from the owner thread without a new program is (a).
+
+## 3. The baseline the chosen option is measured against: the day-26 double-park cell on the day-27 tree
+
+Shape byte-for-byte the day-26 cell (`pro-single-day26/double-park.sh`, harness `stall_cell.py`
+`13867e77da40a9b5...`, `--mode promote --n 5`): the day-16 script's `off` boot plus `MEMRA_KV_HOST_CONTRACTS=1` on the
+ON boots, twenty interleaved boots (order 1 ON OFF x5, order 2 OFF ON x5), N=5 boots per arm per order, one collector
+hold on the target card, 15:06:12Z to 15:25:43Z, zero lock retries, no compute app before or after, 33 to 51 C, 33 to
+360 W under the 600 W limit; tree `ad4f229e0` (the day-26 code, `crates/` differing from `e008bf502` by one doc comment
+and one test-only line), binary `2396b7d37c760541...` (rebuilt on the box at the tip; day 26's read `ca81aa7a...`);
+`pro-single-day27/box/double-park/`, replays 20 of 20 `STALL REPLAY: PASS`, `ADMISSIBLE all_receipts=True`. Read by
+`day25-double-park-reading.py` and `day26-reading.py`, verbatim, banked as `reading-day25.log` and `reading-day26.log`:
+
+- `DAY25 DOUBLE-PARK stall order=o1 on_minus_off=-3.4 unc=0.1 -> isolated (on 81.9, off 85.2)`;
+  `order=o2 on_minus_off=-3.5 unc=0.1 -> isolated (on 81.8, off 85.3)`.
+- `DAY25 DOUBLE-PARK e2e order=o1 on_minus_off=+91.3 unc=0.9 -> isolated (on 206.6, off 115.4)`;
+  `order=o2 on_minus_off=+91.3 unc=1.0 -> isolated (on 206.7, off 115.5)`.
+- `DAY25 DECOMPOSITION arm=on N_runs=100 parked_per_run=[1] ... promote_completion median=19.6 promote_in median=26.0
+  demote_completion median=97.5 demote_in median=172.2 demote_in-completion median=74.8 idle_p50(tick)=13.47 | tenant
+  top gaps: largest median=95.3 second median=92.4 sum median=187.8`; `arm=off N_runs=100 parked_per_run=[0] promote_in
+  median=10.7 demote_in median=6.2 | tenant top gaps: largest median=98.6 second median=16.6`.
+- `DAY26 CLAUSE 1 ... runs_with_parked_1_submitted_0_not_routed_1=100 -> PASS`; `CLAUSE 2 ... on_minus_off=+91.3 ...
+  -> FAIL` (both orders; the day-26 reading, re-derived by ruling 37); `CLAUSE 3 ... on_cell_median=81.9 IQR=0.0
+  off_cell_median=85.2 on_minus_off=-3.4 unc=0.1 -> isolated` and `81.8 / 85.3 / -3.5`. Clauses 4 and 5 read `NO
+  RECEIPT` by construction: the restore arm and the hit gate were not part of today's cell.
+
+Every figure equals day 26's within 0.1 ms (day 26: stall 81.8 against 85.3, e2e +91.4, `in - completion` 74.8, gaps
+92.4 and 95.3): the baseline is stable across two sittings and a rebuild, and the number option (a) must move is the
+`demote_in-completion median=74.8` (to at most 12.0 by the pre-registered gate), with the tenant's largest gap 95.3
+expected to fall to about the decode plus the KV part of the bind (about 21 ms) and the request's e2e `on_minus_off` from
++91.3 to at most +20.0. `executed-not-qualified`.
+
+## Checks, budget, cleanup
+
+No Rust moved in `crates/` (fmt and clippy not owed); the micro-cell is a detached research project (built release, ran,
+its `target/` removed both ends). `tools/check-flags.sh`: no uncovered runtime names; `check-conflict-markers`: OK; `git
+diff --check`: clean (no `.gitattributes` rule needed for the day's logs); zero em dashes in every file touched today.
+Every push in the announced `MEMRA_RELEASE_QUALIFICATION_MODE=development` mode, logged to the gate-skips ledger; no
+qualification claimed. Budget: about 2.4 agent-hours of 4. Box: `/root/wt-a` at the day's tip on `lane-a-day27`, clean;
+`/root/spill-receipts/a-day27/` mirrored to `pro-single-day27/box/` (bins not mirrored); the bundle and the tarball
+removed both ends; no server or process of mine left running; nothing of other lanes touched. Local: the collector's
+`rtx5090-day27/` receipts in the tree; the 5090 lock never held by me outside the collector's one cell.
