@@ -856,7 +856,7 @@ def main() -> None:
         "shape": shape,
         "cohort": rec["cohort"],
         "turns": turns,
-        "calibration": {"cohort": cal["cohort"], "turns": cal["turns"], "boot_lines": cal["boot_lines"]},
+        "calibration": {"cohort": cal["cohort"], "turns": cal["turns"], "boot_lines": cal["boot_lines"], "card_at_boot": cal.get("card_at_boot")},
         "turns_identical_to_cold": sum(1 for t in turns if t["text_identical_to_cold"]),
         "final_metrics": rec.get("final_metrics"),
         "refused_or_skipped_lines": refused_lines,
