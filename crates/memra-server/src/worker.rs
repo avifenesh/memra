@@ -44396,11 +44396,15 @@ mod tests {
         let worker = include_str!("worker.rs");
         let body = &worker[..worker.find("#[cfg(test)]\nmod tests").unwrap()];
         let remove = body.find("let mut s = active.remove(i);").unwrap();
+        let retire_loop = body[..remove]
+            .rfind("for &i in finished.iter().rev() {")
+            .expect("session removal is inside the retirement loop");
         let settle = body[..remove]
             .rfind("host_capture_settle_pending(")
             .expect("a pending capture settles before any session leaves active");
+        // Diagnostic guards inside the loop do not move the settlement boundary.
         assert!(
-            remove - settle < 400,
+            settle < retire_loop && retire_loop - settle < 400,
             "the settle sits right before the retire loop"
         );
         assert!(body[settle..settle + 200].contains("ContractWait::Block"));
