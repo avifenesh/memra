@@ -2489,6 +2489,104 @@ in the range, so no GPU battery and no release tag.
 `C/ADMIT-BY-MEMORY-DECISION-PACKET.md`, on main since integ42; it recommends nothing). The others are unchanged: 2026-10-04 (MoE slot cache, VMM), 2026-10-05 (the
 contracts door), 2026-10-06 (the park door).
 
+## integ47 (`lane/spill-integ47-20260923`): A day 30 (the recurrent f32 state rides the demote's copy stream, the D2H half of Move 2 owed item 1) and C day 38 (the per-tick split of day 37's cell; the 9B entry's byte split)
+Lane tips merged: A `0e555c1f7` (day 30) on main `9717e8d57` (#653) as `539936c4c`, then C `18c900fc7` (day 38) as
+`160929a92`, both clean. Engine change under the door: `crates/memra-engine/src/pinned_host.rs` (+59),
+`crates/memra-engine/src/tier_transfer.rs` (+447), `crates/memra-server/src/worker.rs` (+623),
+`crates/memra-tier/src/conformance/d2h_span.rs` (+153, new) and its CPU binding `tests/contracts/d2h_span_bindings.rs`
+(+190, new). No new `MEMRA_*` name, no flag, `WIRE_VERSION` stays 1. New `unsafe`: the cached pinned allocation, the
+`cuMemcpyDtoHAsync` enqueue and `mark_landed` in `pinned_host.rs`, their two call sites and one byte view in
+`tier_transfer.rs`. C day 38 is receipts and readers only.
+
+**A day 30 (Move 2 owed item 1, the D2H half).** The demote's recurrent conv and ssm f32 planes leave the owner thread:
+each non-empty plane becomes a typed `D2hSpan` on the KV D2H ticket (`CudaTransfers::submit_d2h_spans`: admission
+first, the owner-stream fence and the copy-stream wait, one enqueue and one event per span; an error from the first
+enqueue on sets the ticket `unknown`), into a per-context pool of cached pinned staging buffers
+(`PinnedHostBuf::new_unwritten`, unreadable until landed). The settle takes the spans after the landing and before the
+retire (`retire` is `Busy` while spans are untaken), puts each source plane back into `dead`, and the driver attaches
+each staging buffer to its empty heap placeholder; the hash helper copies the landed staging into the payload's heap
+`Vec` and hashes that with the same `host_hash_payload_digest` program, and the landed path returns the staging to the
+pool. A span refusal hands every span back, returns the sources and the staging and unwinds the ticket through
+`host_contract_abort` (`tier D2H spans refused: <error> (<n> f32 spans handed back)`). Tier conformance rules 1 to 5
+with three schedules (the red arm `d2h_span_taken_on_the_items_landing_fails`), the CPU census and two native cells, all
+committed before the run. Target card (BOX3, one sitting on `a8d6b1df5`), verbatim: `DAY30 A2 pre-submit steady N=80
+median=0.62 min=0.58 max=1.10 boots_on=10 demotes_per_boot=[11] rule N>=80 median<=1.5 max<=3.0 -> PASS` (the same
+reader on day 29's receipts: `median=6.05 min=5.92 max=6.61 ... -> FAIL`); `DAY30 A3 logs=92 copy_complete_lines=132
+receipts_paired=132 receipts_without_copy_line(on-tick)=0 bad=0 rule items==KV+spans, spans=96, KV in [32, 34], receipt
+items==KV and suffix==spans -> PASS`; `DAY28 CLAUSE 1c owner in-completion N=100 median=1.96 min=1.83 max=3.03
+runs_with_demote_without_ledger=0 rule <=12.0 -> PASS` (day 29: 7.39); clause 1a `76.9` against `85.2` and `85.5`,
+clause 1b `+12.0` and `+11.7` (day 29: +16.8 and +16.9); `DAY28 VERDICT clauses_failed=0 -> ALL PASS`; A1 to A5 PASS.
+Gates on the same tree: identity x4 `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok each), failure x2 `ALL
+GREEN` (15 ok), contract fault `ALL GREEN` (123 ok), twin OFF and ON `-> PASS`, hit OFF and ON `ALL GREEN (qwen)` 61 /
+68 ok with the day-24 census, unit cells 10 + 6 + 11 + 3 passed, double-park 20 of 20. The helper reads `79.8` ms steady
+(day 29: 73.1): it now pays the heap `Vec` first touch (about +26 ms on demotes 1 to 3 of a boot) that DAY28 had
+attributed to the owner thread, off the tick. Local RTX 5090 half on the merged tree `2a83224ab`: ALL GREEN. Findings
+(A's section 8): the steady pre-submit segment is the staging allocation now; a post-take abort (the injected
+`contract-postpublish` refusal) frees the landed staging instead of pooling it, so the boot's next demote re-allocates
+(`pre-submit 28.71`), fail-closed and owed; the verify arm (`MEMRA_KV_HOST_VERIFY`, a diagnostic) keeps its owner-stream
+digest. **Integrable: yes, as the complete D2H half** (A's statement, adopted after the lead's review). Owed on Move 2
+item 1: the H2D half (the promote's recurrent `engine.htod`), the D2D half (capture and restore), the governor charge of
+the staging (157.9 MB per context on the 27B, outside the tier governor's pinned ledger today), the strong-form receipt,
+a serving-shape span-refusal cell in the fault gate, and the staging return on the post-take abort. Budget about 2.5 of 5
+agent-hours.
+
+**C day 38 (no card; a pre-registered post-hoc reader over day 37's 40 receipts).** The tick rule was committed before
+the reader saw a day-37 per-run gap position; day 37's admissibility line is required, nothing re-admitted. Verbatim
+(`C/day38-cpu/tick-split.log`): `DAY38 VERDICT q=tick1: ... demote-on o1=-1.0/4.2 o2=-3.9/5.4 under_resolution; ...
+did-demote o1=-2.3/5.9 o2=-6.5/7.7 under_resolution; ...` (every arm `under_resolution`); `DAY38 VERDICT q=tick2: prime
+o1=+21.4/38.9 o2=-4.4/17.4 under_resolution; demote-off o1=+1.4/2.4 o2=+1.1/2.8 under_resolution; demote-on
+o1=-20.4/2.2 o2=-21.0/2.5 moved; promote-off o1=nd o2=nd not_defined; promote-on o1=nd o2=nd not_defined; did-demote
+o1=-21.7/3.2 o2=-22.0/3.8 moved; did-promote o1=nd o2=nd not_defined`; `DAY38 HYPOTHESIS P1 ... P5 ... -> consistent
+with H`. So the demote-class difference between the two binaries in day 37's summed pair sits on tick 2, the poll tick.
+Within each binary, demote ON minus OFF on tick 2: `+29.7 unc=3.8 -> isolated` (base) and `+7.0 unc=3.5 -> isolated`
+(option (a)); the remaining `+7.0` matches the size of the ledger's `copy_settle` (8.48 / 8.30), stated, not attributed.
+Every demote arm stretches exactly ticks 1 and 2 after the fire (20 of 20 per program), so day 37's `top1_plus_top2` is
+exactly tick 1 plus tick 2 there; promote-on stretches one tick on option (a), so its tick 2 is `not_defined`. The 9B
+byte split (packet item 7, `C/day38-cpu/byte-split.log`): the 54.6 MB host image is KV planes 950,272 B exactly
+(= 64 x 14,848, the admission plain coefficient), token ids 256 B, logits in (950,272, 1,099,744) B, and conv + ssm +
+hidden in [52,599,728, 52,699,728) B; no banked line separates conv, ssm and hidden, and DAY38 names the three engine
+lines that would. No recommendation, no engine change.
+
+**Lead review of A day 30.** Read the staging lifecycle (taken by exact length or allocated unwritten; unreadable until
+`mark_landed`; returned on the landed path and on a refusal before submission; dropped, so freed, on a post-take abort;
+cleared at `disable` after the hash helper closes; the set grows only by distinct plane sizes and one demote is in
+flight at a time), the ticket rules (a span refusal before the first enqueue is whole; an enqueue error from the first
+on quarantines the ticket; the take refuses `NotReady` before the landing; `retire` is `Busy` while spans are untaken;
+an unretired entry's drop forgets its spans), the settle order (spans taken before destinations, retire and require;
+a `SourceQuarantined` return after the take drops the staging), and the driver (a staging buffer with no heap
+placeholder latches with `has no heap placeholder`). The contract route stays guarded off the arena and off Glm. One
+numeric program per request holds: the spans are a byte copy of the same planes and the helper hashes the same bytes
+with the same program (the bitwise GPU cell `option_b_spans_ride_the_ticket_and_land_bitwise`). No finding beyond A's
+own owed list. Noted, not owed today: `PinnedHostBuf`'s drop does not bind a CUDA context (as before this change).
+**Ruling 42:** the day-30 D2H spans are the door's serving path; the D2H half of Move 2 owed item 1 closes on these
+receipts; the H2D half, the D2D half, the governor charge of the staging, the strong-form receipt, the span-refusal
+fault cell and the staging return on a post-take abort remain owed (A day 31 running). C day 38 is read as registered:
+the option (a) move is on the poll tick.
+
+**Battery (tree `160929a92`; receipts `integration-day12/integ47-cpu-battery/` and `integration-day12/integ47-5090/`).**
+Fifteen of fifteen CPU steps rc=0 (fmt, portable suites `357 passed, 0 skipped (budget 0), 0 failed`, memra-server
+suite `836 passed; 0 failed; 16 ignored`, cross-target `DOCS_RS=1` clippy, `check-flags`, publish census, docs registry,
+collector pytest `87 passed`, engine CPU lib `532 passed; 0 failed; 31 ignored`, tier suite with the contracts binding
+`90 passed`, engine/server/tier clippy `-D warnings`, marker census, workflow keys, perf board, `git diff --check
+origin/main HEAD`). Local RTX 5090, one collector hold on `/tmp/memra-5090.lock` (`run-held.sh`, 21:35:47Z to
+21:39:56Z, zero lock retries, the card idle before the first cell), verbatim from `battery.log`: `serve-smoke: 0 failed`
+(31 ok; spec, gemma4 and Q35 arms SKIP, absent draft and models); engine `d2d_*` and `d2h_span` GPU cells `6 passed`;
+the worker's `option_b_span*` cells `2 passed`; identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`
+(12 ok; two copy-complete lines `items=66 (18 KV, 48 f32 spans)`; one hit parked on a `Hashing` entry); contract fault
+default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (123 ok each, 16 span copy-complete lines each); hit OFF and
+ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 61 / 68 ok, the day-24 census (`capture_submitted=12
+capture_published=12 restore_submitted=13 restore_landed=13`, `30 route submission(s)`). The identity arm's verify
+`pre-submit` reads 51.51 and 33.18 (A's 5090 day 30: 50.28, 37.53; finding 5, the diagnostic arm). BOX3 not rerun on
+the merged tree: A's target-card receipts are on `a8d6b1df5`, before the lane merged #652's bounded latch close
+(`c26255bc7`, one resolved hunk in `disable`, A's section 11); the merged tree's engine equals A's tip `0e555c1f7`, which
+the 5090 carried ALL GREEN on `2a83224ab` and again here. The
+engine's `[gpu-watch]` startup line and the publish census's `OK` line carry an em dash, so each raw `server.log` and
+the battery `SUMMARY.txt` hold one; banked as written.
+
+**Owner decisions flagged.** `MEMRA_ADMIT_BY_MEMORY` reaches its decide-by today, 2026-09-23 (packet
+`C/ADMIT-BY-MEMORY-DECISION-PACKET.md`; it recommends nothing). The others are unchanged: 2026-10-04 (MoE slot cache,
+VMM), 2026-10-05 (the contracts door), 2026-10-06 (the park door).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
