@@ -8,9 +8,9 @@ tree 83f9be5e5ceca1d5ebbc162889a9ba76430d3598 started 2026-09-22T07:10:51Z host 
    | portable-suites: PASS (tier, KV and onboarding CLI suites executed on CPU; skips 0 of budget 0; NOT GPU qualification)
 == test-server: cargo test -p memra-server --offline --no-fail-fast
    rc=0 (171s)
-   | 
+   |
    | test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-   | 
+   |
 == clippy: env DOCS_RS=1 cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf -p memra-cli --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
    rc=0 (34s)
    |     Checking hyper-util v0.1.20
@@ -36,12 +36,33 @@ tree 83f9be5e5ceca1d5ebbc162889a9ba76430d3598 started 2026-09-22T07:10:51Z host 
    | 87 passed, 32 subtests passed in 17.88s
 == test-engine-cpu: cargo test -p memra-engine --lib --offline --no-fail-fast
    rc=0 (24s)
-   | 
+   |
    | test result: ok. 529 passed; 0 failed; 27 ignored; 0 measured; 0 filtered out; finished in 9.12s
-   | 
+   |
 == test-tier: cargo test -p memra-tier --offline --no-fail-fast
    rc=0 (7s)
-   | 
+   |
    | test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
-   | 
+   |
 == clippy-engine: cargo clippy -p memra-engine -p memra-server -p memra-tier --offline --all-targets -- -D warnings
+   rc=0 (152s)
+   | warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   | warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 31s
+== conflict-markers: bash tools/check-conflict-markers.sh
+   rc=0 (1s)
+   | check-conflict-markers: OK (no conflict marker line in tracked source or docs)
+== workflow-keys: python3 tools/check-workflow-keys.py
+   rc=0 (0s)
+   | check-workflow-keys: .github/workflows/publish.yml: jobs publish
+   | check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+   | check-workflow-keys: OK: 6 workflow files, no duplicate mapping keys (stdlib walker)
+== perf-board: python3 tools/update-perf-board.py --check
+   rc=0 (0s)
+   | perf board is up to date
+== diff-check: git diff --check origin/main HEAD
+   rc=2 (0s)
+   | research/spill-lead-20260919/integration-day12/integ37-cpu-battery/test-engine-cpu.log:566: new blank line at EOF.
+   | research/spill-lead-20260919/integration-day12/integ37-cpu-battery/test-server.log:978: new blank line at EOF.
+   | research/spill-lead-20260919/integration-day12/integ37-cpu-battery/test-tier.log:308: new blank line at EOF.
+finished 2026-09-22T07:18:04Z
