@@ -362,6 +362,11 @@ struct ReceiptKernels {
 struct ReceiptScratch {
     lanes: CudaSlice<u8>,
     pinned: PinnedBacking,
+    /// The lanes' zero-fill, recorded on the OWNER stream at allocation; every writer of the lanes
+    /// is ordered behind it explicitly (the copy stream waits on it before its first digest; the
+    /// fault's owner-stream reader follows it in stream order). Nothing here relies on cudarc's
+    /// implicit event tracking: the engine's context disables it (`Engine::new`).
+    zeroed: CudaEvent,
     event: Option<CudaEvent>,
 }
 /// The engine's receipt of a landed D2D batch (`CudaTransfers::d2d_receipt`): per item the source
@@ -491,9 +496,12 @@ impl CudaTransfers {
     /// One batch's receipt scratch: zeroed device lanes (64 bytes per item) and a zeroed pinned
     /// twin of the same size. Allocated before the batch is charged, so a refusal here submits
     /// nothing.
-    fn receipt_scratch(&self, copy: &Arc<CudaStream>, items: usize) -> Result<ReceiptScratch> {
+    fn receipt_scratch(&self, items: usize) -> Result<ReceiptScratch> {
         let bytes = items.checked_mul(64).ok_or(Error::Overflow)?;
-        let lanes = cuda(copy.alloc_zeros::<u8>(bytes))?;
+        // Zeroed on the OWNER stream and fenced by `zeroed`: the copy stream waits on it before
+        // its first digest, and the fault's early reader (owner stream) follows it in order.
+        let lanes = cuda(self.stream.alloc_zeros::<u8>(bytes))?;
+        let zeroed = cuda(self.stream.record_event(None))?;
         // SAFETY: every byte is zero-filled through `as_mut_slice` before the backing is used.
         let mut pinned = cuda(unsafe {
             PinnedBacking::alloc(self.stream.context(), bytes, PinnedKind::Cached)
@@ -502,6 +510,7 @@ impl CudaTransfers {
         Ok(ReceiptScratch {
             lanes,
             pinned,
+            zeroed,
             event: None,
         })
     }
@@ -1176,7 +1185,7 @@ impl CudaTransfers {
             }
         }
         // WP-A day 22 (slice 3): the receipt's lanes and the one-shot fault, before the charge.
-        let mut scratch = self.receipt_scratch(&copy, ops.len())?;
+        let mut scratch = self.receipt_scratch(ops.len())?;
         let fault = self.early_reader.take();
         let mut request = self.request();
         request.bytes.inflight = ops.len() as u64;
@@ -1242,6 +1251,7 @@ impl CudaTransfers {
                 // WP-A day 22 (slice 3, `d2d_receipt_witnessed`): the SOURCE digest behind the
                 // producer fence, the copy, then the DESTINATION digest after it, all on the copy
                 // stream; the fault's arm delays the copy and reads the destination early.
+                cuda(copy.wait(&scratch.zeroed))?;
                 if let Some(ns) = fault {
                     self.delay_on(&copy, ns)?;
                 }
@@ -1363,7 +1373,7 @@ impl CudaTransfers {
             }
         }
         // WP-A day 22 (slice 3): the receipt's lanes and the one-shot fault, before the charge.
-        let mut scratch = self.receipt_scratch(&copy, ops.len())?;
+        let mut scratch = self.receipt_scratch(ops.len())?;
         let fault = self.early_reader.take();
         let mut request = self.request();
         request.bytes.inflight = ops.len() as u64;
@@ -1426,6 +1436,7 @@ impl CudaTransfers {
                 let n = op.bytes as usize;
                 // WP-A day 22 (slice 3): source digest behind the fence, the copy, the destination
                 // digest after it, on the copy stream; the fault's arm as in the capture class.
+                cuda(copy.wait(&scratch.zeroed))?;
                 if let Some(ns) = fault {
                     self.delay_on(&copy, ns)?;
                 }
@@ -2410,7 +2421,14 @@ mod tests {
             let wait = class_body
                 .find("cuda(copy.wait(&self.producers[&op.producer_fence.sequence].1))?;")
                 .unwrap();
+            let zeroed = class_body
+                .find("cuda(copy.wait(&scratch.zeroed))?;")
+                .unwrap();
             let delay = class_body.find("self.delay_on(&copy, ns)?;").unwrap();
+            assert!(
+                wait < zeroed && zeroed < delay,
+                "{class}: the lanes' zero-fill fence"
+            );
             let src_digest = class_body.find("self.digest_on(\n                    &copy,\n                    &op.source.slice(0..n),").unwrap();
             let copy_at = class_body.find(".memcpy_dtod(").unwrap();
             let dst_digest = class_body.find("if fault.is_none() {").unwrap();
@@ -2425,7 +2443,7 @@ mod tests {
             );
             assert!(class_body.contains("Self::seal_receipt(&copy, &mut entry, scratch);"));
             let scratch = class_body
-                .find("self.receipt_scratch(&copy, ops.len())?;")
+                .find("self.receipt_scratch(ops.len())?;")
                 .unwrap();
             let charge = class_body.find(".reserve(&request)?;").unwrap();
             assert!(
@@ -2730,9 +2748,18 @@ mod tests {
         }
     }
 
+    /// The receipt cells' fixture. The engine's context runs with cudarc's event tracking DISABLED
+    /// (`Engine::new`, `gpu.ctx.disable_event_tracking()`), so no slice carries implicit
+    /// cross-stream waits and the receipt's ordering is the explicit fences alone; the fixture
+    /// matches (day 22, first sitting: with tracking on, cudarc made the fault's owner-stream
+    /// reader wait on the copy-stream memcpy's write event, so the "early" reader read the landed
+    /// copy and the cell could not show the fault the server shows).
     fn receipt_fixture() -> (CudaTransfers, Arc<CudaStream>) {
         use memra_tier::tier::governor::Governor;
         let ctx = CudaContext::new(0).unwrap();
+        // SAFETY: no slice of this context exists yet; every slice below is created untracked,
+        // exactly as the engine's are.
+        unsafe { ctx.disable_event_tracking() };
         let stream = ctx.new_stream().unwrap();
         let cap = TierBudget {
             version: 1,
@@ -2885,12 +2912,14 @@ mod tests {
         let mut dst = stream.alloc_zeros::<u8>(n).unwrap();
         let mut lanes = copy.alloc_zeros::<u8>(32).unwrap();
         stream.synchronize().unwrap();
+        // cudarc's default event flags disable timing; the cell needs `CU_EVENT_DEFAULT`.
+        let timing = Some(sys::CUevent_flags::CU_EVENT_DEFAULT);
         let timed = |f: &mut dyn FnMut()| -> f32 {
-            let a = copy.record_event(None).unwrap();
+            let a = copy.record_event(timing).unwrap();
             f();
-            let b = copy.record_event(None).unwrap();
+            let b = copy.record_event(timing).unwrap();
             b.synchronize().unwrap();
-            b.elapsed_ms(&a).unwrap()
+            a.elapsed_ms(&b).unwrap()
         };
         let median = |v: &mut Vec<f32>| -> f32 {
             v.sort_by(|a, b| a.partial_cmp(b).unwrap());
