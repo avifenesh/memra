@@ -1687,8 +1687,8 @@ an earlier admission gate without reaching the probe); the probe now drops it on
 grace it goes through and the state waits for its owner; the CPU test covers both readings. Server clippy `-D warnings`
 and the memra-server suite (804 passed) green, gated before the commit.
 
-## integ38 (`lane/spill-integ38-20260922`): C day 26 (5090 door gates on the slice-2 tree; the hit gate's unarmed ON arm) and A day 22 when it lands
-Lane tip merged: C `a76d669e4` on main `58b814abe` (#638), docs, drivers and receipts only.
+## integ38 (`lane/spill-integ38-20260922`): A day 22 (Move 2 slice 3, the D2D receipt term), C day 26 (5090 door gates on the slice-2 tree; the hit gate's unarmed ON arm) and C day 27 (the hit gate's ON arm armed), plus one lead fix
+Lane tips merged, in order: C `a76d669e4` (day 26), C `24bd36edf` (day 27), A `b94bee809` (day 22), all on main `58b814abe` (#638); no conflicts. Lead fixes on top: `269ef2cec` (the Block wait covers the receipt event), `9d4b17761` (the DOCS_RS stub emits the receipt fatbin; receipt-log attributes), `cc754b476` (the oracle cell orders its upload).
 
 **C day 26.** The 5090 door gates on the slice-2 tree (9B, 27B for the twin), attempt 1 lost twelve cells to a
 foreign 22 GB hold outside the canonical lock (`[server] FATAL: worker init failed: load gate:
@@ -1716,6 +1716,105 @@ unarmed program in both arms; the identity clause it carries is the spec-on-hit 
 a gate's "door ON" arm asserts that the door engaged (an arming line and, where the entries allow, a route line) or it
 is not a door arm; C day 27 (running) arms the hit gate's ON arm and re-reads it on both cards, and the review table
 marks the earlier lines as unarmed receipts.
+
+**C day 27.** `tools/spec-on-cache-hit-gate.sh` with `MEMRA_KV_HOST_CONTRACTS=1` in its environment now exports
+`MEMRA_KV_HOST_MB=8192` (the identity gate's budget; an exported value is respected) to both boots and asserts per boot
+`[prefix-host] on: budget`, `[prefix-host] contracts door ON`, none of `TIER DISABLED` / `CAPTURE OFF-TICK DISABLED` /
+`RESTORE OFF-TICK DISABLED`, and across the two boots at least one `(capture|restore|demote|promote) submitted off the
+tick`; both arms print an entry-class census (`insert (spec-boundary)` against `insert (seed)`, hit shapes, the class of
+the identity clause's own namespaces). The door arm is qwen-only (gemma refuses, exit 2); OFF arm and identity clause
+unchanged; no new `MEMRA_*` read. Dry-run before the commit: the day-26 hit-on log reads two FAILs under the new
+assertions. Runs on tree `b1e9c75b6`, verbatim: local RTX 5090, 9B, `hit-off` `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`
+61 ok, `hit-on` `ALL GREEN (qwen)` 68 ok; target card, 27B, the identical two lines, 61 and 68 ok. ON-arm engagement on
+both cards and both boots: `[prefix-host] on: budget 8590MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, startup budget
+policy)`, `[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): 1 model program identities ... host tier armed`,
+`ok: door arm: 7 route submission(s) across the two boots`; the spec-off twin `capture submitted off the tick (seed): 64
+tokens, 32 planes (158.8MB)` x2 and `restore submitted off the tick: 64 tokens, 32 planes (158.8MB), ticket seq=2` /
+`seq=3` / `seq=5` (its r2, r3, g2 hits), each `restore landed ... after 1 poll(s), 2.1ms`; the spec-on boot one capture and
+one restore (the np hit); the 9B the same at `16 planes (53.6MB)`; zero refused, dropped or latched lines. What the identity
+clause covered: spec-on side rows on draft-bearing entries under the tick program against spec-off side rows restored
+through the door's off-tick route, byte-identical: the first hit-gate receipt on any card where the clause covers the
+route (plain hits; the draft-bearing restore stays owed). Review-table corrections (`HOSTPREFIX-DOOR.md`): every earlier
+door-ON hit-gate log on both lanes has zero `[prefix-host]` lines and the server's own `[kv-host-contracts]
+MEMRA_KV_HOST_CONTRACTS=1 with no host tier on this boot (MEMRA_KV_HOST_MB=0): nothing to route, no program identity
+built` line (A target card days 17, 18 twice, 19, 20, 21 and 5090 days 17 twice, 18; C 5090 days 24 and 26); the
+day-26 row carries the note, two new rows carry the armed runs per card, section A gains an owed-cell row. Extra finding
+fixed by C: the gate's `stop()` was a blanket `pkill -x memra-server` and its EXIT trap ran after the lock was released;
+on the shared box A's day-22 server appeared right after C's cells (C's after-snapshot shows `0 MiB`, so nothing was on
+the card when the trap fired); `stop()` now kills only the child of its own `flock` wrapper (`c1454a5a4`), re-run ALL
+GREEN on both cards. Owed and stated: the hit gate has no `--external-lock`.
+
+**A day 22 (Move 2 slice 3, the receipt term; memra#536 comment posted, issue open).** Under the door:
+`memra_tier::conformance::d2d_receipt_witnessed` (rules 1 and 2) and `d2d_receipt_refused` (rules 3 and 4) over
+`D2dReceiptFixture`, with the program `receipt_digest` (four wrapping u64 lanes of `mix64(w_j + (j + 1) * C_l)` over LE
+words, byte count folded; order-independent, so block and atomic order cannot move the value); four bindings, contracts
+81 passed (77 before). Engine: `cu/tier_receipt.cu` (`d2d_receipt_digest`, `tier_delay_spin`) as its own fatbin
+(`MEMRA_TIER_RECEIPT_FATBIN`), loaded only by `new_with_copy_stream`; per D2D batch a fenced `ReceiptScratch` (lanes
+zero-filled on the owner stream, the copy stream waits on that event); on the copy stream, behind the producer fence:
+source digest, the copy, destination digest, one D2H of the lanes, the receipt event; `progress` lands a D2D item only
+with its lanes (destination digest = checksum, source digest = expectation; `Completion::require`'s clause compares);
+`d2d_receipt`, `inject_d2d_early_reader`. Worker: receipt lines naming both digests for both classes
+(`contracts door D2D capture receipt: ... source_digests_sha256=... destination_digests_sha256=... require=ok`);
+`ReceiptMismatch` arms: capture retires and acknowledges the ticket, takes every fresh plane back and drops it, publishes
+nothing, latches the tier and the capture route; restore drops the destination cache (the copy landed, so the free is
+safe), releases the source pin, primes nothing, latches the tier and the restore route (`host_restore_latch_landed`).
+Fault values `d2d-delay-capture` / `d2d-delay-restore` (one-shot, taken by their own class only; a Move 1 `take_fault`
+leaves them armed): the first capture or restore of the boot delays its copy 200 ms on the copy stream and takes its
+destination digest from an unordered early reader on the owner stream. Two CPU tests (the settle arm, the fault
+classes), FLAGS.md rows (fault values, door sentence, fatbin plumbing), KERNELS.md section. No new numeric program for the
+KV bytes; `unsafe` at the two documented launches and the pinned zero-fill. Fault gate's new cells, verbatim: `capture
+receipt refused: source_digests_sha256=d11e5c4b614f3a68.. destination_digests_sha256=1462aed093ef5fee..`, `restore
+receipt refused: source_digests_sha256=d11e5c4b614f3a68.. destination_digests_sha256=1462aed093ef5fee..`, every clause of
+`d2d-capture` and `d2d-restore` `ok`, `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`. Target card, final tree `bb1a2b212`,
+verbatim per arm: identity `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` default and plain, OFF and ON; failure
+`KV-HOST-SPILL FAILURE GATE: ALL GREEN` both arms; twin `V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` both arms; hit
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` both arms (A's runs predate C day 27: unarmed, marked so in the table); unit
+`8 passed` (server), `5 passed` (engine `d2d_*`); the green arm live in plain identity ON: 4 receipts `require=ok`, equal
+digests. Finding 1 (first sitting, tree `ac1ac91c5`): engine cells `3 passed; 2 failed`; cudarc's implicit per-slice
+event tracking, which the engine disables at `Engine::new` (`MEMRA_EVT=1` keeps it), stayed on in the plain test context
+and ordered the fault's early reader behind the memcpy; the price cell failed on timing-disabled default events; fixed in
+`bb1a2b212` (lanes zero-fill fenced explicitly, fixture disables tracking as the engine does, timing events), every gate
+re-run. Finding 2, cell (v), verbatim: `copy_median=0.158 digest_median=0.168 pair_median=0.335 pair_over_copy=2.12` and
+`copy_median=0.156 digest_median=0.167 pair_median=0.335 pair_over_copy=2.15` (one 158 MiB span, N=5 per order, both
+orders, event-timed on the copy stream). By the day-19 rule ("unless the digest's cost on the copy stream exceeds the
+copy's own time") the pair exceeds the copy, the clause under which the `Unwitnessed` arm was to be the receipt; A
+reports it for the door review and relaxes nothing: the receipt as landed proves the bytes (the two red arms are the
+evidence `Unwitnessed` could not give), the cost sits on the copy stream off the tick, 0.34 ms against a 14 ms tick.
+**Lead reading, for the door review and not decided here:** the day-19 rule compared digest to copy without weighing the
+stream; the review weighs (a) as landed against (b) with that number, and the 5090 price cell (this battery's GPU step)
+joins it. Finding 3: the #638 take-and-match audit found one instance (the lead's); slice 3 adds no pending or ready
+state. Budget 4.6 agent-hours against 4 (the second card sitting after the cudarc finding).
+
+**Lead review of A day 22 (finding, fixed in this integ, `269ef2cec`).** `CudaTransfers::synchronize`, the host wait
+behind every `ContractWait::Block` settle (the retire seam, a session retire, shutdown), waited on the items' events and
+returned; the receipt's D2H is recorded on the copy stream AFTER the last item's event, and `progress` lands a D2D item
+only with its lanes. In that window `capture_landed` reads false on a landed copy and the settle's Block arm reports
+`capture did not land after a host wait on every item's event` (or the restore twin) and latches the tier for the boot:
+a spurious fail-closed. The wait now covers the receipt event (between the item waits and the `unknown` reset, the same
+`Quarantined` reading when the seal failed); the census test
+`integ38_synchronize_waits_on_the_receipt_event_after_the_items` pins the order and that exactly two recorded-event
+waits exist. Nothing else in the diff moved; A's arms and receipts read as stated (the mismatch arms, the pin release, the
+fresh-plane take-back, the one-shot fault classes, the oracle against the kernel, the zero-fill fence). Ruling 34: a
+batch's landing includes every event the settle reads, and a host wait that claims "every event" names all of them; a
+schedule that adds an event to the landing adds it to the Block wait in the same commit.
+
+**Battery attempt 1 (tree `269ef2cec`, receipts `integ38-cpu-battery-attempt1/`, `integ38-serve-smoke-5090-attempt1/`)
+read two CPU reds and one GPU red, all three fixed in this integ.** (1) The cross-target GPU-less clippy
+(`DOCS_RS=1`, the pass CI's runners take) failed with `environment variable MEMRA_TIER_RECEIPT_FATBIN not defined at
+compile time`: `build.rs` added `cu/tier_receipt.cu` to the nvcc table but not to the DOCS_RS branch that writes an
+empty placeholder per fatbin; `9d4b17761` adds the stem and the env row, the pass is `Finished` on the fixed tree. Every
+other CPU step was rc=0 (fmt, portable suites, memra-server suite, censuses, collector pytest, engine CPU lib, tier
+suite, engine/server/tier clippy `-D warnings` in 156 s, markers, workflow keys, perf board). (2) `git diff --check
+origin/main HEAD` rc=2 on the lanes' raw cargo-test logs (trailing whitespace after `... ` in a test name line, blank
+line at EOF): `.gitattributes` `*.log -whitespace` in `pro-single-day22/` and `rtx5090-day26/`, as every earlier receipt
+dir. (3) The engine GPU cells under the 5090 lock: `d2d_receipt_digest_matches_the_cpu_oracle ... FAILED` at
+`n=8388608: the device digest is the oracle's` (four of five cells ok, the price cell included). Not the kernel: the
+test uploaded the pattern on the owner stream and digested it on the copy stream with nothing between them, and with
+cudarc's tracking off (as the engine runs) the 8 MiB span read mid-upload; the target card's upload won the race in
+both of A's sittings. `cc754b476` synchronizes the upload (the engine's route waits on the producer fence); the cell is
+green 4 of 4 on the 5090 under the lock. The 5090 serve-smoke on the attempt-1 tree: `serve-smoke: 0 failed` (gemma4 and
+Q35 arms SKIP for absent models, as on every rig receipt). The final battery on `cc754b476` is in
+`integ38-cpu-battery/` and `integ38-serve-smoke-5090/` (its window and rc lines quoted in the self-review).
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
