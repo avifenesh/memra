@@ -23,12 +23,13 @@
 //!    like a D2H's host consumer; no reader wait on the owner stream is installed at publish and
 //!    the ticket retires with `retire(ticket, None)` (the unpublished-in-the-engine's-sense,
 //!    landed ticket), then acknowledges, then every destination comes back to its caller.
-//! 3. The receipt term. Slice 1 carries the byte count, the epochs and the completion event; the
-//!    checksum term is slice 3's decision (a device digest or an `Unwitnessed` arm, by the
-//!    pre-registered rule). Until it exists a D2D item has NO witnessed checksum, so
-//!    `Completion::require` (the H2D and D2H publication gate) refuses it `Corrupt`: no path can
-//!    publish a capture through the host-contract gate ahead of its receipt. Slice 3 revises this
-//!    clause by name when the term lands.
+//! 3. The receipt term. Slice 1 carries the byte count, the epochs and the completion event and
+//!    NO witnessed checksum, so `Completion::require` (the H2D and D2H publication gate) refuses
+//!    such an item `Corrupt`: no path can publish a capture through the host-contract gate ahead of
+//!    its receipt. Slice 3 (day 22, `d2d_receipt_witnessed`) added the witness: a destination
+//!    digest taken on the copy stream after the copy against a source digest taken behind the
+//!    producer fence. This schedule's fixture stays receipt-less, so the clause here remains the
+//!    receipt-less refusal by name; the witnessed arm is `d2d_receipt.rs`.
 //!
 //! Finding (lane A, day 20, recorded before any code): the pre-registered op shape
 //! `TransferOp::D2d(ContiguousCopy)` takes owned `DeviceLease`s on BOTH sides and the engine's
@@ -80,13 +81,13 @@ pub fn d2d_capture_publish<F: D2dCaptureFixture>(f: &mut F) {
     );
     assert_eq!(f.retire(&ticket, None), Err(Error::Busy));
     assert!(!f.retired(&ticket).unwrap());
-    // 3. The receipt term is not witnessed in slice 1: the host-contract gate refuses the item.
+    // 3. The receipt term is not witnessed in this fixture: the host-contract gate refuses the item.
     assert!(
         matches!(
             f.require_receipt(&ticket),
             Err(Error::Corrupt | Error::NotReady)
         ),
-        "a D2D item has no witnessed checksum before slice 3; require must refuse"
+        "a D2D item without a witnessed checksum is refused by require (day 22: d2d_receipt_witnessed)"
     );
     // 2. Every event completes: landed, bytes exact, published once, retired, acknowledged.
     f.copy_completes();
