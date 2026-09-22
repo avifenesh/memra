@@ -43,8 +43,8 @@ against the cards before allocating, so a session that did not fit died as a dri
 
 ## Receipts (`raw/`, tree in `raw/tree.sha`, rebased on main 0c86309bd)
 
-- `memra-server-lib.log`: the full `memra-server` lib suite after the self-review fixes below,
-  869 passed, 0 failed, 14 ignored.
+- `memra-server-lib.log`: the full `memra-server` lib suite after the review fixes below,
+  870 passed, 0 failed, 14 ignored.
   Includes `dsv4_admit::tests` (12), `route_telemetry::tests`, `health::tests` route cases,
   `route_contract::tests` (the DSv4 contract refuses only #449 and #535; the wiring gate finds
   `load.begin()`, the progress sink, `run.finish(stats)` and `dsv4_admit::admit_session(` in
@@ -78,7 +78,7 @@ against the cards before allocating, so a session that did not fit died as a dri
   `/tmp/memra-5090.lock`, 30 passed, 3 pair-only tests skipped with `SKIP-PAIR` (one card).
   The fix touches a comment only, so run 1's GPU and server results carry to the fixed tree.
 
-## Self-review fixes (`raw/self-review/`)
+## Review fixes (`raw/self-review/`)
 
 - **Route shed text.** The three route shed messages in `reserve_route_admit` had lost their
   `\` line continuations, so each client-visible message carried a 22-space run mid-sentence.
@@ -92,7 +92,16 @@ against the cards before allocating, so a session that did not fit died as a dri
   close both. `a_route_book_this_state_does_not_serve_is_not_its_traffic` is red with both
   scopings reverted (`foreign-book-red-both-unscoped.log`: a foreign model selected the route),
   red with only the netting reverted (`foreign-book-red-netting-unscoped.log`: remaining 64,
-  expected 63), and green on the fix. `clippy-memra-server.log`: `-D warnings`, clean.
+  expected 63), and green on the fix.
+- **One calibration delta per card** (revuto round 2). `stage_memory()` reads each stage's card
+  whole, so two stages on one card each carried the card's full delta and the card was charged
+  once per stage. `fixed_delta` now gives the card's delta, net of every co-located stage's
+  cache, to the card's first stage and 0 to the rest; the DSpark tap goes on that same stage,
+  so the spec term stays `max(prefill + tap, verify)` per card.
+  `co_located_stages_share_one_card_delta` (two stages on card 0, one on card 1): the old fold
+  gives `[200, 250, 20]`, card 0 charged 600 for a 300 delta
+  (`calibration-shared-card-red.log`); the fix gives `[150, 0, 20]`, card 0 charged 300.
+- `clippy-memra-server.log`: `-D warnings`, clean after all three.
 
 ## Limits (stated, not hidden)
 

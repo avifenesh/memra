@@ -839,13 +839,34 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
 const CALIBRATION_CAPACITY: usize = 1024;
 
 /// Per-stage bytes the readings `now` hold beyond `base`, less the layer caches the plan
-/// already prices.
+/// already prices. A reading is device-wide, so stages sharing a card share one delta: the
+/// card's first stage (its `carrier`) holds it, net of every co-located stage's cache, and
+/// the others hold 0, so `dsv4_admit::per_device` sums the card back to one delta.
 fn fixed_delta(now: &[StageMemory], base: &[StageMemory], cache: &[u64]) -> Vec<u64> {
-    now.iter()
-        .zip(base)
-        .zip(cache)
-        .map(|((n, b), c)| n.occupied().saturating_sub(b.occupied()).saturating_sub(*c))
-        .collect()
+    let mut out = vec![0; now.len()];
+    for (i, (n, b)) in now.iter().zip(base).enumerate() {
+        if carrier(now, i) != i {
+            continue;
+        }
+        let card_cache = now
+            .iter()
+            .zip(cache)
+            .filter(|(s, _)| s.dev == n.dev)
+            .fold(0u64, |acc, (_, c)| acc.saturating_add(*c));
+        out[i] = n
+            .occupied()
+            .saturating_sub(b.occupied())
+            .saturating_sub(card_cache);
+    }
+    out
+}
+
+/// The first stage on stage `i`'s card: the one whose fixed term carries the card's delta.
+fn carrier(stages: &[StageMemory], i: usize) -> usize {
+    stages
+        .iter()
+        .position(|s| s.dev == stages[i].dev)
+        .unwrap_or(i)
 }
 
 /// Measure the route's fixed per-session cost and its idle ceiling (memra#503). Allocates, in
@@ -874,9 +895,12 @@ fn calibrate_memory(m: &Dsv4Model) -> Result<Dsv4Memory, String> {
     let fixed_spec = if m.spec {
         let dstate = gpu.dspark_alloc_state()?;
         let mut with_prefill = fixed_delta(&gpu.stage_memory()?, &base, &cache);
-        if transactions && let Some(last) = with_prefill.last_mut() {
-            // the continuation's tap capture, allocated inside the chunk loop
-            *last = last.saturating_add(gpu.dspark_prefill_tap_bytes(m.prefill_chunk));
+        if transactions && !base.is_empty() {
+            // the continuation's tap capture, allocated inside the chunk loop on the last
+            // stage's card, booked on that card's carrier with the rest of its delta
+            let at = carrier(&base, base.len() - 1);
+            with_prefill[at] =
+                with_prefill[at].saturating_add(gpu.dspark_prefill_tap_bytes(m.prefill_chunk));
         }
         drop(prefill);
         let verify = gpu.alloc_verify_state_for(cap)?;
@@ -2047,6 +2071,43 @@ fn argmax(v: &[f32]) -> u32 {
         }
     }
     best as u32
+}
+
+#[cfg(test)]
+mod calibration_tests {
+    use super::{carrier, fixed_delta};
+    use crate::dsv4_admit::per_device;
+    use memra_engine::dsv4_gpu::StageMemory;
+
+    fn reading(dev: usize, occupied: u64) -> StageMemory {
+        StageMemory {
+            dev,
+            driver_free: 1000 - occupied,
+            total: 1000,
+            pool_reserved: 0,
+            pool_used: 0,
+        }
+    }
+
+    /// Two stages on card 0 and one on card 1. Each reading is device-wide, so card 0's delta
+    /// (300) covers both of its stages' caches (100 + 50) and one fixed term: the card is
+    /// charged its delta once, not once per stage.
+    #[test]
+    fn co_located_stages_share_one_card_delta() {
+        let base = [reading(0, 100), reading(0, 100), reading(1, 40)];
+        let now = [reading(0, 400), reading(0, 400), reading(1, 120)];
+        let cache = [100, 50, 60];
+        let fixed = fixed_delta(&now, &base, &cache);
+        assert_eq!(fixed, vec![150, 0, 20]);
+        assert_eq!((carrier(&now, 1), carrier(&now, 2)), (0, 2));
+        let need: Vec<u64> = cache.iter().zip(&fixed).map(|(c, f)| c + f).collect();
+        let cards = per_device(&[0, 0, 1], &need, &[900, 900, 880]);
+        assert_eq!(
+            cards.iter().map(|d| (d.dev, d.need)).collect::<Vec<_>>(),
+            vec![(0, 300), (1, 80)],
+            "each card's charge is its measured delta"
+        );
+    }
 }
 
 #[cfg(test)]
