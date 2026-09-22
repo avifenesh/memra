@@ -120,3 +120,8 @@ pub use revision_v13::*;
 // restore recovers its source; a continuation over a suspended layer is refused.
 mod recovery;
 pub use recovery::*;
+
+// Day-19 rule (WP-A, memra#536 Move 1): the reader fence of an H2D issued off the owner stream,
+// beside the frozen schedules, unversioned: `consumer_fenced` is the installed reader wait.
+mod reader_fence;
+pub use reader_fence::*;

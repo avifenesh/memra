@@ -3996,6 +3996,11 @@ fn class_http(class: worker::ErrClass) -> (StatusCode, &'static str, Option<&'st
             "server_error",
             Some("engine_error"),
         ),
+        C::WorkerFault => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "server_error",
+            Some("worker_fault"),
+        ),
     }
 }
 
@@ -4008,7 +4013,9 @@ fn class_retry_after_s(class: worker::ErrClass) -> Option<u64> {
         // An engine fault is not time-bounded: this process may need to be restarted. Say
         // nothing rather than promise a window we cannot honor — the SDK's own exponential
         // backoff (500s are retryable by default) is the honest behavior here.
-        C::Engine | C::InvalidRequest | C::ContextLength | C::ModelNotFound => None,
+        C::Engine | C::WorkerFault | C::InvalidRequest | C::ContextLength | C::ModelNotFound => {
+            None
+        }
     }
 }
 
@@ -6522,6 +6529,10 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         body["prefix_cache_evictions"] = json!(m.prefix_evictions);
         body["prefix_cache_skips_budget"] = json!(m.prefix_skips_budget);
         body["prefix_cache_skips_pinned"] = json!(m.prefix_skips_pinned);
+        // memra#525 fault policy: request faults retire one request and keep the worker;
+        // worker respawns are the supervisor's ladder. A truncated-200 class shows up here.
+        body["request_faults_total"] = json!(worker::request_faults_total());
+        body["worker_respawns_total"] = json!(worker::worker_respawns_total());
         body["prefix_cache_seed_grid_refusals"] = json!(m.prefix_seed_grid_refusals);
         body["prefix_cache_hit_tokens"] = json!(m.prefix_hit_tokens);
         // Pinned-host spill tier behind the prefix cache (lane/kv-host-spill-20260830;
@@ -9122,6 +9133,7 @@ fn engine_error_code(class: worker::ErrClass) -> &'static str {
         C::RateLimit => "rate_limit_exceeded",
         C::Overloaded => "overloaded",
         C::Engine => "engine_error",
+        C::WorkerFault => "worker_fault",
     }
 }
 
@@ -18214,6 +18226,7 @@ default_reasoning_effort = "always"
             C::RateLimit,
             C::Overloaded,
             C::Engine,
+            C::WorkerFault,
         ] {
             let (s, t, _) = class_http(c);
             assert!(s.is_client_error() || s.is_server_error(), "{c:?} -> {s}");

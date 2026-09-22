@@ -341,10 +341,12 @@ pub struct CudaTransfers {
     /// the owner stream (the day-16 program). `Some`: a copy of either direction is issued on this
     /// stream behind the producer fence's event (`copy.wait(producer)`) and its completion event
     /// is recorded here. A D2H installs NO owner-stream wait at submit (its destination's consumer
-    /// is the host, whose wait is `event_done` in `progress`); an H2D KEEPS the submit-time
-    /// `owner.wait(item event)` (day 18: its destination's consumer is the owner stream, which
-    /// reads the fresh planes in the D2D restore and every kernel after it). Created from the
-    /// owner context on the owner thread; `check_thread` still pins every call.
+    /// is the host, whose wait is `event_done` in `progress`). An H2D on the copy stream installs
+    /// its owner-stream wait at the SETTLE (day 19, rule 3 of the tier crate's conformance,
+    /// `install_consumer_wait`): until then the item is not `consumer_fenced`, so it is not
+    /// publishable; day 18 installed that wait at submit, which queued every kernel the tenant
+    /// issued after the submit behind the copy's landing. Created from the owner context on the
+    /// owner thread; `check_thread` still pins every call.
     copy: Option<Arc<CudaStream>>,
     governor: SharedBudget,
     /// The pinned destination arm `alloc_host` takes on this device (`PinnedKind::for_device` of
@@ -838,6 +840,75 @@ impl CudaTransfers {
             .consumer_event = Some((f, event));
         Ok(f)
     }
+    /// Rule 3 (WP-A day 19, `memra_tier::conformance::h2d_reader_fence` under
+    /// `ReaderWaitInstall::AtSettle`): install the OWNER stream's wait on every H2D item's
+    /// completion event that is not yet fenced, then fence it. The destination's consumer is the
+    /// owner stream (the D2D restore and every kernel after it); until this runs an off-owner H2D
+    /// is not `consumer_fenced` and `ready_view` refuses it `NotReady`. Idempotent: an item fenced
+    /// at submit (the owner-stream program, every D2H) is left alone. Recorded strictly before
+    /// `ready_view` and before `record_consumer`, whose event then orders behind the copy. A CUDA
+    /// error here leaves the ticket unpublished with its destinations bound; the caller unwinds
+    /// through `cancel` as for any pre-publication refusal.
+    pub fn install_consumer_wait(&mut self, ticket: &TransferTicket) -> Result<()> {
+        self.check_thread()?;
+        let e = self.entries.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        if e.unknown {
+            return Err(Error::Quarantined);
+        }
+        if e.cancelled || e.retired {
+            return Err(Error::NotReady);
+        }
+        let dst_gen = ticket.epochs.dst_gen;
+        let mut fences = 0u64;
+        for (i, item) in e.items.iter().enumerate() {
+            let Some(item) = item else {
+                continue;
+            };
+            let s = &e.completion.items[i].segments[0];
+            if s.consumer_fenced || item.direction != CopyDirection::HostToDevice {
+                continue;
+            }
+            if s.status == ItemStatus::Quarantined {
+                return Err(Error::Quarantined);
+            }
+            fences += 1;
+        }
+        if self.fence_sequence.checked_add(fences).is_none() {
+            return Err(Error::Overflow);
+        }
+        let stream = self.stream.clone();
+        for i in 0..e.items.len() {
+            let Some(item) = e.items[i].as_ref() else {
+                continue;
+            };
+            let s = &e.completion.items[i].segments[0];
+            if s.consumer_fenced || item.direction != CopyDirection::HostToDevice {
+                continue;
+            }
+            let event = item.event.as_ref().ok_or(Error::Quarantined)?;
+            if let Err(err) = cuda(stream.wait(event)) {
+                e.unknown = true;
+                return Err(err);
+            }
+            self.fence_sequence += 1;
+            let fence = FenceId {
+                issuer: self.owner.issuer(),
+                owner: self.device,
+                generation: dst_gen,
+                sequence: self.fence_sequence,
+            };
+            let s = &mut e.completion.items[i].segments[0];
+            s.consumer_fence = Some(fence);
+            s.consumer_fenced = true;
+        }
+        e.completion.consumer_fenced = e
+            .completion
+            .items
+            .iter()
+            .filter(|i| i.accepted)
+            .all(|i| i.segments.iter().all(|s| s.consumer_fenced));
+        Ok(())
+    }
     /// Retain both sides for legacy whole-transfer graph users.
     pub fn pin_graph(&mut self, ticket: &TransferTicket) -> Result<GraphPin> {
         let source = self.pin_source_graph(ticket)?;
@@ -1216,21 +1287,26 @@ impl TransferEngine for CudaTransfers {
                     }
                     drop(backing);
                     item.event = Some(cuda(issue.record_event(None))?);
-                    // Install the wait separately from observing producer completion. For an H2D
-                    // this is the destination's consumer ordering on the OWNER stream, kept on
-                    // both issue streams (day 18: no restore, prime or decode issued after this
-                    // submit can read a fresh plane before its copy landed; the DMA overlaps the
-                    // kernels already queued, only later ones queue behind its completion). On
-                    // the owner stream it is a no-op for a D2H. A D2H on the copy stream installs
-                    // NO owner wait: its destination's consumer is the host, which waits on
-                    // `event_done` in `progress` before the checksum; an owner wait there would
-                    // queue the tick's kernels behind the copy, the serialization Move 1 removes
-                    // (day 17).
-                    if !off_owner || direction == CopyDirection::HostToDevice {
+                    // Install the wait separately from observing producer completion. On the
+                    // owner stream (`new`, the day-16 program) the wait is a same-stream no-op and
+                    // the item is fenced at submit, statement for statement. Off the owner stream:
+                    // a D2H installs NO owner wait and is fenced at submit (its destination's
+                    // consumer is the host, which waits on `event_done` in `progress` before the
+                    // checksum; an owner wait would queue the tick's kernels behind the copy, the
+                    // serialization Move 1 removed on day 17); an H2D is NOT fenced at submit
+                    // (rule 3, day 19: `consumer_fenced` is the installed reader wait, never the
+                    // copy's landing), its owner-stream wait is installed by
+                    // `install_consumer_wait` at the settle, after the completion is observed and
+                    // before `ready_view`, so the kernels the tenant issues between submit and
+                    // settle do not queue behind the copy (day 18 installed the wait here and
+                    // they did). The engine keeps the destination bound and unpublished until then.
+                    if !off_owner {
                         cuda(self.stream.wait(item.event.as_ref().unwrap()))?;
                     }
-                    s.consumer_fence = Some(self.next_fence(epochs.dst_gen)?);
-                    s.consumer_fenced = true;
+                    if !off_owner || direction == CopyDirection::DeviceToHost {
+                        s.consumer_fence = Some(self.next_fence(epochs.dst_gen)?);
+                        s.consumer_fenced = true;
+                    }
                     s.io_bytes = item.bytes;
                     Ok(())
                 })();
@@ -1527,9 +1603,11 @@ mod tests {
         assert!(body.contains("result::malloc_host(bytes, kind.host_alloc_flags())"));
     }
 
-    /// WP-A day 17 and 18 (memra#536 Move 1): under a copy stream every copy is issued there behind
-    /// the producer fence's event; a D2H installs no owner wait (its consumer is the host); an H2D
-    /// keeps the submit-time owner wait (its consumer is the owner stream). Source census, CPU.
+    /// WP-A day 17, 18 and 19 (memra#536 Move 1): under a copy stream every copy is issued there
+    /// behind the producer fence's event; the submit-time owner wait exists on the owner stream
+    /// only; an off-owner D2H is fenced at submit with no owner wait (its consumer is the host);
+    /// an off-owner H2D is fenced by `install_consumer_wait` at the settle (rule 3), never at
+    /// submit. Source census, CPU.
     #[test]
     fn copy_stream_issue_and_owner_wait_rules_are_as_stated() {
         let src = include_str!("tier_transfer.rs");
@@ -1546,15 +1624,33 @@ mod tests {
             .unwrap();
         let copy_at = submit_body.find("issue.memcpy_htod(").unwrap();
         let owner_wait = submit_body
-            .find("if !off_owner || direction == CopyDirection::HostToDevice {")
-            .expect("the owner wait is installed for every H2D and for an owner-stream D2H only");
+            .find("if !off_owner {")
+            .expect("the submit-time owner wait exists on the owner stream only");
         assert!(producer_wait < copy_at && copy_at < owner_wait);
         assert!(
-            submit_body[owner_wait..owner_wait + 200]
+            submit_body[owner_wait..owner_wait + 120]
                 .contains("self.stream.wait(item.event.as_ref().unwrap())")
         );
+        let fenced_at_submit = submit_body
+            .find("if !off_owner || direction == CopyDirection::DeviceToHost {")
+            .expect("fenced at submit: the owner-stream program and an off-owner D2H only");
+        assert!(owner_wait < fenced_at_submit);
+        assert!(
+            submit_body[fenced_at_submit..fenced_at_submit + 200]
+                .contains("s.consumer_fenced = true;")
+        );
+        assert_eq!(submit_body.matches("s.consumer_fenced = true;").count(), 1);
         assert_eq!(submit_body.matches(".memcpy_htod(").count(), 1);
         assert_eq!(submit_body.matches(".memcpy_dtoh(").count(), 1);
+        // Rule 3's install: the owner stream waits on each unfenced H2D item's event, then fences
+        // it; nothing else in the engine fences an item after submit.
+        let install = body.find("pub fn install_consumer_wait(").unwrap();
+        let install_body = &body[install..body[install..].find("\n    pub fn ").unwrap() + install];
+        let wait = install_body.find("cuda(stream.wait(event))").unwrap();
+        let fence = install_body.find("s.consumer_fenced = true;").unwrap();
+        assert!(wait < fence);
+        assert!(install_body.contains("item.direction != CopyDirection::HostToDevice"));
+        assert_eq!(body.matches("s.consumer_fenced = true;").count(), 2);
     }
 
     fn native_fixture() -> (CudaTransfers, Arc<CudaStream>, SharedBudget) {
