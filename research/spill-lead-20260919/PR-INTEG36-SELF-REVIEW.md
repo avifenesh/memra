@@ -48,5 +48,11 @@ Author's review of the full diff `main..lane/spill-integ36-20260922`, posted as 
   typed if the fence will not release, instead of dropping a `Busy` and leaking the fence for the boot.
 - Both pinned by a source census test; the admission-book lock test still holds.
 
+## Lane C day 24 folded in (the gate clause the slice broke)
+- The fault gate's receipt clause hardcoded the ticket sequence; on the slice-1 tree capture tickets consume sequences
+  on the same issuer, so the plain arm read `2 FAILURE(S)` on the 5090. The clause now matches any sequence and a new
+  clause keeps the accounting (`expected + capture tickets submitted before the demote's own submission`); replayed
+  green on the banked slice-1 plain and default logs and on a pre-slice tree. A live rerun of the plain arm is owed.
+
 ## What I did not do
 - No GPU cell of my own beyond the smoke; the door stays OFF; the 5090 door gates on this tree are C day 24's.
