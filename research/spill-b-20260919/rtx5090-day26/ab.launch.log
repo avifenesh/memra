@@ -1,0 +1,42 @@
+2026-09-21T23:39:19Z waiting for /tmp/memra-5090.lock (flock -w 3600)
+2026-09-21T23:39:19Z lock acquired
+iii-L1-r3 | iii | 3151 | 2567 | 0 | spec | 16704 | 65600 | 65536 | 1094713344 | 95513472 | 11.46 | 2456 | 8815706112 | 8815706112 | 14466188844 | 14527966764 | 14281 | own
+iii-L1-r4 | iii | 3151 | 3359 | 0 | spec | 16704 | 65600 | 65536 | 1094713344 | 108743040 | 10.07 | 2456 | 8815706112 | 8815706112 | 14527966764 | 14442976812 | 18122 | inherited
+iii-L2-r0 | iii | 5803 | 4511 | 0 | spec | 16704 | 65600 | 65536 | 1094713344 | 172285056 | 6.35 | 2825 | 8815706112 | 8681488384 | 14442976812 | 14517974572 | 26493 | own
+iii-L2-r1 | iii | 5815 | 4564 | 0 | spec | 16704 | 65600 | 65536 | 1094713344 | 173370816 | 6.31 | 2825 | 8681488384 | 8647933952 | 14517974572 | 14509391404 | 27444 | own
+iii-L2-r2 | iii | 5822 | 3246 | 0 | spec | 16704 | 65600 | 65536 | 1094713344 | 151471872 | 7.23 | 2825 | 8647933952 | 8580825088 | 14509391404 | 14500253228 | 19761 | own
+iii-L2-r3 | iii | 5821 | 17815 | 0 | spec | 16704 | 65600 | 65536 | 1094713344 | 394815744 | 2.77 | 2825 | 8580825088 | 8580825088 | 14500253228 | 14511705644 | 90003 | own
+iii-L2-r4 | iii | 5812 | 3724 | 0 | spec | 16704 | 65600 | 65536 | 1094713344 | 159289344 | 6.87 | 2825 | 8580825088 | 8580825088 | 14511705644 | 14496431660 | 22208 | own
+== per-arm allocated over used (verbatim per row, then N, min, median, max)
+arm=i L0 N=5 P=[1439, 1439, 1442, 1442, 1441] G=[3921, 4363, 4123, 4761, 5048] cached=[0, 0, 0, 0, 0] ratios=[12.23, 11.3, 11.78, 10.57, 10.1] min=10.10 median=11.30 max=12.23 alloc_B=1094713344 used_B_median=96916608 booked_MB=[1718, 1839, 1840, 1840, 1840] inherited=1
+arm=i L1 N=5 P=[3096, 3096, 3097, 3096, 3094] G=[3009, 3799, 2413, 2833, 3476] cached=[0, 0, 0, 0, 0] ratios=[10.73, 9.5, 11.89, 11.05, 9.98] min=9.50 median=10.73 max=11.89 alloc_B=1094713344 used_B_median=101977920 booked_MB=[2436, 2436, 2437, 2436, 2436] inherited=1
+arm=i L2 N=5 P=[5755, 5761, 5760, 5763, 5761] G=[4817, 3715, 4137, 4584, 3248] cached=[0, 0, 0, 0, 0] ratios=[6.2, 6.92, 6.62, 6.33, 7.27] min=6.20 median=6.62 max=7.27 alloc_B=1094713344 used_B_median=165319488 booked_MB=[2824, 2824, 2824, 2824, 2824] inherited=0
+arm=ii L0 N=5 P=[1673, 1672, 1671, 1671, 1668] G=[96, 96, 96, 96, 96] cached=[0, 0, 0, 0, 0] ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=29683008 used_B_median=29515968 booked_MB=[858, 858, 858, 858, 856] inherited=1
+arm=ii L1 N=5 P=[2958, 2961, 2957, 2950, 2949] G=[96, 96, 96, 96, 96] cached=[0, 0, 0, 0, 0] ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=51147648 used_B_median=50997312 booked_MB=[1343, 1344, 1343, 1340, 1340] inherited=0
+arm=ii L2 N=5 P=[5664, 5660, 5653, 5650, 5647] G=[96, 96, 96, 96, 96] cached=[0, 0, 0, 0, 0] ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=96348672 used_B_median=96031296 booked_MB=[1824, 1824, 1824, 1824, 1823] inherited=0
+arm=iii L0 N=5 P=[1486, 1500, 1519, 1498, 1492] G=[2173, 4715, 4038, 2606, 4473] cached=[0, 0, 0, 0, 0] ratios=[17.91, 10.54, 11.79, 15.97, 10.99] min=10.54 median=11.79 max=17.91 alloc_B=1094713344 used_B_median=92824128 booked_MB=[1856, 1861, 1868, 1860, 1858] inherited=0
+arm=iii L1 N=5 P=[3152, 3152, 3173, 3151, 3151] G=[2490, 4315, 2997, 2567, 3359] cached=[0, 0, 0, 0, 0] ratios=[11.62, 8.78, 10.62, 11.46, 10.07] min=8.78 median=10.62 max=11.62 alloc_B=1094713344 used_B_median=103063680 booked_MB=[2457, 2457, 2464, 2456, 2456] inherited=2
+arm=iii L2 N=5 P=[5803, 5815, 5822, 5821, 5812] G=[4511, 4564, 3246, 17815, 3724] cached=[0, 0, 0, 0, 0] ratios=[6.35, 6.31, 7.23, 2.77, 6.87] min=2.77 median=6.35 max=7.23 alloc_B=1094713344 used_B_median=172285056 booked_MB=[2825, 2825, 2825, 2825, 2825] inherited=0
+== driver free (bytes) across the run
+samples=2789 driver_free first=0 min=0 last=8580825088; pool_used first=0 max=14527966764 last=13121243464
+== concurrency arithmetic at the served context (idle free at ready divided by the booked cost; not an admission run)
+idle driver free before the first request (max of 8 nonzero samples; the ready-time gauges read 0 until the first tick): 16029908992
+L0: P~1441 open booked_MB=1840 -> 8 sessions; bounded booked_MB=858 -> 18 sessions (free_ready=16029908992)
+L1: P~3096 open booked_MB=2436 -> 6 sessions; bounded booked_MB=1343 -> 11 sessions (free_ready=16029908992)
+L2: P~5761 open booked_MB=2824 -> 5 sessions; bounded booked_MB=1824 -> 8 sessions (free_ready=16029908992)
+== prefix-cache and park lines (census by kind, verbatim first of each)
+   60  [prefix-cache] insert (spec-boundary)  first: [prefix-cache] insert (spec-boundary): 1408 tokens, 76.2MB (resident 76.2MB / 2052MB, model q9)
+   45  [prefix-cache] evict (LRU)  first: [prefix-cache] evict (LRU): 1408 tokens, 76.2MB (model q9)
+    1  [prefix-cache] on  first: [prefix-cache] on: budget 2052MB (2051538944 B, derived: 2 x 1025769472 B max entry for model "q9" at MEMRA_CTX=65536, requested 2051538944 B; boot driver free 18244501504 B, post-reserve clamp 166338
+prefix-cache hit lines: 0
+== admit-predict lines (verbatim, first 6 and last 3)
+[admit-predict] id=chatcmpl-a7d50ce62d3c2737ef1fa2d5bd7ff972 tenant="" model="q9" verdict=admit reason=maxtok-fallback prompt=90 predicted_completion=32 kv_hat=78516624 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-2d880fd74c8cb79bd639104555b47d88 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1439 predicted_completion=32 kv_hat=690558728 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-4bcd72b7821fe3583dcc343eff6aa687 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1439 predicted_completion=3921 kv_hat=876914120 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-4dc99921c2a7c49ea1d5cb0bf9e15d87 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1442 predicted_completion=4363 kv_hat=885428744 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-f86e26820533b2cc767bf946aa71badd tenant="" model="q9" verdict=admit reason=global-p95 prompt=1442 predicted_completion=4363 kv_hat=885428744 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-36235a319ce608c546c6024506f34c6e tenant="" model="q9" verdict=admit reason=global-p95 prompt=1441 predicted_completion=4761 kv_hat=891699784 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-6e2ed989886aba3ffb00a7a54337caac tenant="" model="q9" verdict=admit reason=tenant-p95 prompt=5822 predicted_completion=4761 kv_hat=1950148232 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-e49dbc5135093e73d156e7e9832316f2 tenant="" model="q9" verdict=admit reason=tenant-p95 prompt=5821 predicted_completion=4761 kv_hat=1950115144 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-23b5f059d0359da9cb46182a2a6efbba tenant="" model="q9" verdict=admit reason=tenant-p95 prompt=5812 predicted_completion=4761 kv_hat=1949817352 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+requests_ok=45 non200=0

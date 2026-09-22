@@ -1176,6 +1176,144 @@ settled and its sources retired through the engine where it is reachable and the
 (`SourceQuarantined`, the planes cannot come back without their shell); a shell without a ticket drops whole (`Failed`,
 nothing was submitted). New CPU test `a_pending_demote_missing_its_shell_or_ticket_fails_closed` (both arms); the
 six state-machine tests, the memra-server suite and server clippy `-D warnings` green on the round-1 tree.
+Round 2, two findings, both real, fixed: (1) the settle-first call in `host_demote_prefix_ref` and in
+`host_promote_prefix_hit` can latch the tier off, and each function's `armed()` gate had already been passed, so a
+demote or a promote continued on a latched-off tier; both now re-check `armed()` after the settle (`Off` and a miss).
+(2) the latched-off drop exit, the flip-fault exit and the fail-closed arm returned without
+`waste_pending_reclaim(..)`, unlike every other demote exit, leaving a reclaim booked pending forever; all three book
+it wasted now (the image carries the key and tokens when the shell is gone); the CPU test asserts it. Server clippy
+`-D warnings` and the memra-server suite (780 passed) green, gated before the commit this time.
+## integ31 (`lane/spill-integ31-20260922`): C day 21 (two stale gates) and B day 26 (memra#539 census, cell, design)
+Lane tips merged: C `304e8235c` (carrying A's day 17, already in integ30), B `1ea29941e`. Non-research changes are
+the two gate scripts only: `tools/kv-host-spill-failure-gate.sh` and `tools/kv-host-contract-fault-gate.sh`.
+**C day 21, both reds were stale gates, not the server.** (1) The failure gate matched the insert-path line
+`[prefix-host] skip demote: entry X MB > host budget B MB` (`HostPrefixCache::insert`), reachable only at
+`MEMRA_KV_HOST_TENANT_PCT=100`; under the server default 50 (`49d1d6f65`, "50 BY DESIGN") the demote path refuses
+before the D2H copy with `demote evaporated at the tenant share cap before the D2H copy: N tokens, X MB (50% of B MB,
+...); reclaim refused: the image alone exceeds the share (X MB > B MB); nothing evicted` (memra#384, `405466cf7`);
+lane D's day 8 was green only with `TENANT_PCT=100` set out of band. The gate now mirrors the server's parse of
+`TENANT_PCT`, asserts the full anchored shape with bytes and budget for the arm in force, and adds
+`prefix_host_tenant_rejects >= 1` under the cap; stricter, not looser, verified against banked A and D logs before any
+run. (2) The fault gate hardcoded `1 of 34 items`; it now reads `items=N` from the server's first `contracts door D2H
+receipt` and asserts the refusal's `1 of M` equals N, all 12 prior assertions kept, two added; finding: the plain
+environment reads `items=32` on the 27B (no draft planes), so the hardcoded 34 would have failed the plain arm on the
+target card too. Verdicts, verbatim, tree `9be3f7373` (A's slice merged): target card `KV-HOST-SPILL FAILURE GATE: ALL
+GREEN` (default-off, default-on, plain-off, plain-on; 15 ok each), `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (default
+`items=34`, plain `items=32`; 64 ok each), `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (all four arms); local
+RTX 5090 (9B) identical verdict lines in all ten cells, reject cell `items=18` default and `items=16` plain. The
+whole-budget arm (`TENANT_PCT=100`) was asserted by pattern against D's banked log only, not run. `HOSTPREFIX-DOOR.md`
+review rows moved from pre-existing red to their verdicts. Ruling 29: a gate that reads red on both cards and both arms
+is a lane item the day it is seen, never a "pre-existing" note carried across days.
+**B day 26, memra#539.** Census (anchors on `1c66ff10e`): the cap rule at `worker.rs:21705-21745`: `max_tokens` bounded
+gives `prompt + max_tokens + 8`; omitted gives the server context (`MEMRA_CTX`, else the checkpoint's 262,144) unless
+`MEMRA_ADMIT_BY_MEMORY=1` (default OFF, decide-by 2026-09-23) gives `prompt + 8192 + 8`; registry deployments never
+reach the open arm. Every session cache is born at `ctx_cap` (`Cache::new_inner` allocates K and V planes of `max_ctx`
+rows per full-attention layer, never grown or trimmed); a hit D2D-copies `restore_len` rows into a fresh cap-sized cache
+and shares nothing; retired caches park in the reuse pools at `cache.max_ctx` with no TTL. Bytes per token: 1,856 B per
+full-attention layer (q8_0 K plus q5_1 V); Qwen3.5-9B 14,848 plain and 16,704 spec; the 27B mint 29,696 and 31,552,
+confirmed by the server's own `[admission] request cost` lines. Cell (N=5 per arm per order, both orders; P and G
+identical across orders on 44 of 45 requests per card), allocated over used, verbatim medians: target card (27B,
+`MEMRA_CTX` unset) arm (i) `max_tokens` omitted `median=129.26 / 71.90 / 41.61` (8,271,167,488 B allocated per
+request), arm (ii) bounded `1.00` on every row, arm (iii) warm `134.02 / 72.12 / 41.15` with `cached=0` in the
+deferred shape (43 of 45 spec-boundary entries LRU-evicted inside an 800 MB budget whose derivation prints
+`at MEMRA_CTX=8192`) and `cached=1440/3104/5760` in the warm cell; concurrency at 262,144 from 82.76 GB idle free: L0
+`8 -> 49`, L1 `7 -> 35`, L2 `7 -> 27`. Local RTX 5090 (9B, `MEMRA_CTX=65536`): (i) `11.30 / 10.73 / 6.62`, (ii) `1.00`,
+(iii) `11.79 / 10.62 / 6.35`; concurrency `8 -> 18`, `6 -> 11`, `5 -> 8`. Recorded, not fixed (B day 27, running):
+the prefix-cache budget derived at `MEMRA_CTX=8192` when unset; about 30 GB retained on the target card after 45
+sequential requests with none active (four parked whole-session entries at 8.27 GB). Design note
+`KV-RESIDENCY-DESIGN.md`: recommended order (a) the existing admission-by-memory door as the bounded open default (0.5
+agent-day, policy only), (b) grow-on-demand VMM planes (3 to 4 agent-days; receipts on both cards from the tier lane's
+day 10, addresses never move so the one-program law holds by construction), (c) paged KV (10 to 15), (d) copy-on-write
+sharing (3 to 5) only on shared-prefix workload evidence; reason: the open-arm ratio is the cap rule, removable with no
+numeric change, the bounded arm is already 1.00, layout options buy the prefix copy and preemption, not the ratio. B
+could not find G0 and G3 to G7 spelled out in any tracked doc and maps onto G1, G2 and #552 criterion 4, saying so.
+Owner decisions flagged: the `MEMRA_ADMIT_BY_MEMORY` door's decide-by is 2026-09-23 with B's receipt as its evidence;
+the park policy. Comments on #539 and #552; both open.
+Lead error, recorded: the integ30 round-1 commit (`913199b4b`) went out with server clippy `-D warnings` red on an
+unused import because the check's result was not gated before the commit (the same heredoc-chain trap as twice
+earlier today); the memra-server suite was green. Corrected in `340e8a474` with the note on the PR. Ruling 30: every
+gate in a lead chain runs in its own `if ! ...; then exit; fi` line before the commit; a chain never carries a gate's
+result across a heredoc.
+
+Battery (`integration-day12/integ31-cpu-battery/`, run on the pre-merge tree that carried A's day 17 through C, then the
+final-tree checks after merging main `a19631f9d`): fmt, portable suites, memra-server suite, clippy, censuses, collector
+pytest, engine CPU lib tests, engine and server clippy `-D warnings`, marker census, workflow keys, perf board: rc=0;
+shellcheck on the two gates clean once `SC1091` (the sourced port guard) is excluded; `git diff --check` tripped only
+on battery summary whitespace. The final tree's engine equals main (only the two gate scripts differ). Local 5090
+serve-smoke NOT RUN: the 5090 lock was held from 00:31Z by another session's `memra-server` (cwd `wt-525`, not a spill
+lane) for the whole window; integ30 smoked the identical engine minutes earlier (`serve-smoke: 0 failed`); my waiter
+was stopped (own process, identified by cwd), the other session's untouched. Lead error, recorded: the first attempt
+matched the waiter by name and killed my own shell (exit 144), the trap the memory already names.
+Revuto round 1 on #626, one finding, real: the fault gate's new self-consistency check (`1 of M` equals the
+receipt's `items=N`) had no floor, so a regression registering one plane would read `1 of 1 items` and pass a cell
+whose purpose is a partially accepted batch. Floor added: `items=N >= 2`. Every banked run reads far above it (27B 34
+default and 32 plain, 9B 18 and 16); a re-run of the fault gate with the floor on both cards is assigned to C day 22.
+
+## integ32 (`lane/spill-integ32-20260922`): A day 18, memra#536 Move 1 promote half under the host-contracts door
+Lane tip merged: A `614c53f71` on main `3df055601` (#626). `worker.rs` conflicted at the two sites where the round-2
+armed re-checks (#622) met A's day 18: at the demote site both settle-firsts (the `Demoting` entry, then the
+`Promoting` entry's contract half) now precede the armed re-check; the promote hook keeps A's day-18 shape (the settles
+moved behind the candidate check, so a request that submits nothing waits on nothing) and the armed re-check sits right
+after its two settles; A's admission probe re-decides through `host_promote_probe_decision`, which gates on `armed()`,
+after its own settles. INDEX.md both rows. Every new path is behind `MEMRA_KV_HOST_CONTRACTS=1` (default OFF, decide-by
+2026-10-05); no new flag, no numeric change.
+
+**Contract in brief (A's pre-registration).** The H2D promote issues on the day-17 copy stream behind the producer
+fence's event; the engine keeps the submit-time owner-stream wait for an H2D (its consumer is the owner stream, so no
+restore, prime or decode issued after the submit reads a fresh plane before its copy landed). The promote decision moved
+from the admission body to the admission loop before `admit(..)`, sharing the body's predicates; a host hit submits and
+the request parks on the requeue; one `Promoting` entry per worker; a tick-top poll requires the receipt, publishes
+through the day-16 tail and holds the insertion pin one tick; the parked request re-admits to a device hit; the same
+prompt parks again; another promote, any demote route and a tenant purge settle it first; failures keep the day-16
+typed lines and set a one-tick memo so the request serves cold once; a pending promote missing its shell or ticket
+fails closed (the #622 ruling mirrored). Six CPU tests, three censuses moved; `docs/FLAGS.md` door row updated.
+
+**Gate lines, target card** (one RTX PRO 6000 Blackwell, run 2 on A's fixed tree, door OFF and ON, verbatim):
+`KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` default and plain (12 ok each arm); `KV-HOST-SPILL FAILURE GATE: ALL
+GREEN` (15 ok each arm); `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (64 ok); `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61
+ok each arm); `PREFIX-NEWEST-TURN-FITS: ... V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` both arms; unit cells `8 passed`.
+Local RTX 5090: not run, the canonical lock held by another session's server (`wt-525`) for the whole sitting; A's
+resume driver waits detached in bounded retries and its receipts land uncommitted in A's worktree when the card frees
+(stated in A's DAY18 and STATE). **Stall verdict, verbatim (run 2):** `STALL rule cell=stall-promote-on arm=promote
+n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7 idle_p99=14.8 idle_max=14.9 arm_runs=10 arm_p50=13.4
+arm_p95=14.8 arm_p99=92.6 arm_max=131.1 stall_median=81.9 stall_min=81.5 stall_max=117.7 server_demote_ms=[207.0,
+208.1, 172.7, 172.0, 172.4, 172.1, 172.2, 172.1, 172.7, 172.0] server_promote_ms=[60.8, 61.9, 26.4, 26.1, 26.1, 26.1,
+25.9, 26.1, 26.0, 25.9] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True
+errors=0`; against day 16 (ON 162.8, OFF 85.0) the pre-registered rule reads `at_off` (3.1 ms under OFF); against day
+17's 86.4 `promote_half_flat`. Run 1 (before A's hook fix) read `stall_median=157.8`: the hook settled a pending demote
+on every admission, so the parked request's re-admission paid the demote copy synchronously (ten `settled
+synchronously by a promote` lines); fixed to settle only before its own submission; run 2 has none. Demote arm
+unchanged (149.7). Same-box cross-sitting reading, not a same-window A/B. Open for the lead (A): the settle-time owner
+wait for an H2D (first owed item) needs the tier crate's conformance before the engine's `consumer_fenced` semantics
+move. Lead reading: Move 1 is whole under the door on the target card; the door's 2026-10-05 review now has both halves'
+stall receipts (demote 193.5 to 149.6, promote 162.8 to 81.9 ms, both toward or at the OFF arm). The 5090 door gates on
+this tree are owed with the lock (C day 22 runs the door gates on main plus A's tip on the target card now).
+
+Battery (`integration-day12/integ32-cpu-battery/`, merged tree `aba193fc8`, CPUQuota 1200 percent): fmt, portable
+suites, memra-server suite (786 tests), clippy, censuses, collector pytest, engine CPU lib tests, engine and server
+clippy `-D warnings`, marker census, workflow keys, perf board: rc=0; `git diff --check` tripped on A's cargo receipt
+logs (blank line at EOF, marked `-whitespace`). Local 5090 `tools/serve-smoke.sh` (door OFF): `serve-smoke: 0 failed`,
+after waiting behind the `wt-525` session's server and then lane B's day-27 cell for the lock.
+
+Revuto round 1 on #627, two findings, both real, fixed by the lead in the integ: (1) in `host_promote_park_probe` the
+cold memo written after `host_promote_prepare` refused was read at `entries[..][hi]`, but the stale-generation arm
+`swap_remove`s the candidate, so the memo could name an unrelated, still promotable entry and make every request whose
+candidate it is serve cold for the tick; the refused entry's tokens are captured before the call now. (2) a tenant
+purge dropped the revoked tenant's `Promoting` entry but left its one-tick cold memo (prompt token ids) and the
+worker's one-tick insertion pin on its just-published device entry, so the revoked tenant's device bytes would survive
+the purge as "pinned entries left to in-flight sessions" with the worker as the only lease; `purge_tenant` clears the
+memo when it names the tenant, and the worker releases the pin (`release_promoted_pin_for_tenant`) before the device
+purge. CPU test `host_purge_clears_the_tenants_cold_memo_and_releases_its_promoted_pin` (another tenant's memo and
+pin stay). Server clippy `-D warnings` and the memra-server suite (787 passed) green, gated before the commit.
+Round 2, one finding, real, fixed: the idle block's 2 ms cap for a `Promoting` entry sits inside `active.is_empty()
+&& queue.is_empty()`, but the off-tick promote keeps its parked request on the queue, so the cap never fired and the
+loop spun the CUDA owner thread through park-and-requeue ticks for the whole copy (about 26 ms per promote in A's
+receipt). The admission pass now counts the requests it parks on the promote; when nothing is active, every queued
+request is parked and the `Promoting` entry is not ready, the loop waits on the command channel for the same bounded
+2 ms before the tick (commands stay responsive; the tick top then polls the transfer). Source census test
+`the_run_loop_waits_boundedly_when_the_queue_is_only_requests_parked_on_a_promote`. Server clippy `-D warnings` and the
+memra-server suite (788 passed) green, gated before the commit. Owed to the door review: the promote stall cell on
+this tree (A's day-18 receipt was taken with the spin; the wait changes timing, not bytes).
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
