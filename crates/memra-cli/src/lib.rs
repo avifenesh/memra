@@ -11,9 +11,7 @@ use memra_gguf::source::{
     Hy3RepackSource, TensorCensusRecord, TensorSource, census_from_gguf,
     census_from_safetensors_headers,
 };
-use memra_gguf::tensor_contract::{
-    BoundTensorContract, CheckpointDialect, ContractOptions, OutputHead, TensorId, TensorOwner,
-};
+use memra_gguf::tensor_contract::{BoundTensorContract, CheckpointDialect, TensorId, TensorOwner};
 use memra_reference::{deterministic_fixture, execute, execute_multimodal, execute_vision};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -940,16 +938,12 @@ pub fn inspect_model(
         .ok_or_else(|| format!("unknown model pack {:?}", request.against))?;
     let source = load_source(&request.source)?;
     let plan = pack.compile_plan(&source.config)?;
-    let output_head = if source
-        .tensors
-        .iter()
-        .any(|row| row.entry.name == "lm_head.weight" || row.entry.name == "output.weight")
-    {
-        OutputHead::Separate
-    } else {
-        OutputHead::TiedToEmbedding
+    // Head ownership and the bind are the loader's own boundary (memra#541): what inspection
+    // refuses here, `memra-server` refuses before upload with the same text.
+    let source_census = memra_gguf::source::TensorCensus {
+        dialect: source.dialect,
+        tensors: source.tensors.clone(),
     };
-    let entries: Vec<_> = source.tensors.iter().map(|row| row.entry.clone()).collect();
     std::fs::create_dir_all(&request.out_dir)?;
     // A reused inspection directory must never retain a valid-looking placement from an older
     // checkpoint/plan when the current tensor contract cannot bind or has fewer legal stages.
@@ -988,16 +982,13 @@ pub fn inspect_model(
         &request.out_dir.join("execution-rewrites.tsv"),
         rewrite_manifest.as_bytes(),
     )?;
-    let (binding, binding_error) = match pack.compile_tensor_contract(
+    let (binding, binding_error) = match memra_gguf::checkpoint_binding::bind_census(
+        Some(pack),
         &source.config,
         &plan,
-        source.dialect,
-        ContractOptions { output_head },
+        &source_census,
     ) {
-        Ok(contract) => match contract.bind(&entries) {
-            Ok(binding) => (Some(binding), None),
-            Err(error) => (None, Some(error.to_string())),
-        },
+        Ok(binding) => (Some(binding.bound), None),
         Err(error) => (None, Some(error.to_string())),
     };
     if let Some(binding) = binding.as_ref() {
@@ -2338,7 +2329,7 @@ mod tests {
 
     #[test]
     fn local_repack_inspect_routes_metadata_census_into_placement() {
-        use memra_gguf::tensor_contract::TensorMatch;
+        use memra_gguf::tensor_contract::{ContractOptions, OutputHead, TensorMatch};
 
         let root =
             std::env::temp_dir().join(format!("memra-cli-repack-inspect-{}", std::process::id()));

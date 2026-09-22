@@ -112,6 +112,16 @@ engine's `build.rs`. Its red arm (a retired name refuses) and its non-vacuity ar
 name at once refuses nothing) are unit tests in `env_audit.rs`; `MEMRA_ENV_AUDIT=warn` downgrades,
 `=0` disables, both announced. Receipts: `research/env-audit-20260921/`.
 
+Loader tensor-contract boundary (memra#541, `memra_gguf::checkpoint_binding`): both loaders
+bind the pack's tensor contract against the source census before any upload and refuse
+missing, unexpected, duplicate, ambiguous, wrong-shape and wrong-quant tensors and an undeclared
+tied head with the pack and dialect named. CPU teeth: `checkpoint_binding::tests` (the glm-dsa
+micro fixture clean, byte-renamed trunk tensor, headless copy under a `SeparateHead` pack, the
+head-ownership matrix, the recording source and the consumption audit, a census-less source).
+Device arm: `crates/memra-engine/tests/checkpoint_contract_refusal_gpu.rs` (`#[ignore]`, run
+under the rig lock): the renamed and the headless tampered copies refuse before upload through
+`HybridModel::load`, the clean fixture loads. Receipts: `research/loader-census-20260922/`.
+
 Request-fault boundary (memra#525, `tools/request-fault-gate.py`, in `tools/local-ci.sh`,
 `MEMRA_CI_FAULTGATE=0` skips): one boot of the real server with the `MEMRA_FAULT_INJECT_CACHE_SALT`
 door, a control round of three concurrent greedy streams, then the same three plus a salted stream
@@ -1794,10 +1804,24 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   and the class of the identity clause's own namespaces) so a reader knows which class each side of the
   clause hit: the spec-on side's rows hit draft-bearing entries (the route refuses them by name, tick
   program), the spec-off twin's rows hit plain entries (the route's whole-entry restore). The door arm is
-  defined for the qwen arm only. The gate has no `--external-lock` and takes the canonical lock itself per
-  boot, so under the collector's hold it would block: the door batteries run it under its own `flock`
-  (lane A day 21, C days 26 and 27). Evidence: `research/spill-c-20260919/DAY27.md`, `rtx5090-day27/`
+  defined for the qwen arm only. Evidence: `research/spill-c-20260919/DAY27.md`, `rtx5090-day27/`
   (9B), `pro-single-day27/` (27B), both arms, N=1, `executed-not-qualified`.
+- The hit gate's lock arms (C day 28, the `kv-host-spill-identity-gate.sh` shape). Without a flag every
+  boot runs under the gate's own `flock -w 300` on the canonical lock, as before. With
+  `--external-lock FD` (the collector's `tools/tier-battery.py --rig <rig> --external-lock --execute
+  tools/spec-on-cache-hit-gate.sh --external-lock @COLLECTOR_LOCK_FD@ qwen ...`) the gate takes no lock
+  of its own: the collector's inherited FD carries the exclusion for the whole gate, verified by
+  `tools/tier-lock-proof.py` (owner `collector`) into `<evidence_dir>/LOCK.json` before any boot; a
+  second `flock` on the same inode would deadlock behind the collector and a `-w` timeout would boot
+  unlocked, so the wrapper is simply absent, and `stop()` then addresses `$SERVER_PID` itself (no
+  wrapper: `env` execs the binary in place; the pid is signalled only while its comm reads
+  `memra-server`). Until day 28 the gate could not run under the collector's hold (lane A day 21, C days
+  26 and 27 ran it under its own `flock`). Teeth: `tools/test_spec_on_cache_hit_gate_lock.sh` (CI, the
+  gate-teeth step) drives the gate's GPU-less `--lock-self-test FILE` arm, which boots nothing and runs
+  the arm's launch wrapper around a probe that asks whether FILE is locked while the wrapper runs: the
+  default arm must read `probe=held`, the external arm `probe=free` with FILE's inode and mtime
+  unchanged, and a non-numeric FD is `REFUSED` with exit 2 before anything runs (7 assertions; fewer
+  recorded is a broken fixture). No new `MEMRA_*` read.
 
 ### `h2d-probe --copies`
 

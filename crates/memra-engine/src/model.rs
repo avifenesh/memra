@@ -1584,21 +1584,33 @@ impl Model {
         }) {
             return Err("plain executor requires full-attention ModelPlan layers".into());
         }
-        let embd = EmbedHost::from_source(src, "token_embd.weight");
-        let output_norm = GpuTensor::load_from_source(e, src, "output_norm.weight")?;
-        // tied embeddings: fall back to tok_embd if output.weight absent (OLMoE has untied output).
-        let output = if src.has("output.weight") {
-            GpuTensor::load_from_source(e, src, "output.weight")?
-        } else {
-            GpuTensor::load_from_source(e, src, "token_embd.weight")?
-        };
+        // memra#541: bind the canonical tensor contract against the checkpoint census BEFORE any
+        // byte is uploaded, then address every trunk tensor by its semantic id. Output-head
+        // ownership comes from the binding (the pack declares whether an absent head may be the
+        // embedding), never from a `has("output.weight")` probe.
+        use memra_gguf::checkpoint_binding::{self, RecordingSource};
+        use memra_gguf::tensor_contract::{LayerTensor, TensorId};
+        let binding = checkpoint_binding::bind_source(src, &cfg, &plan)
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        eprintln!("{}", checkpoint_binding::describe(&binding));
+        let recording = RecordingSource::new(src);
+        let src: &dyn TensorSource = &recording;
+        let name = |id: TensorId| binding.require_ggml(&id).map_err(std::io::Error::other);
+        let embd = EmbedHost::from_source(src, &name(TensorId::TokenEmbedding)?);
+        let output_norm = GpuTensor::load_from_source(e, src, &name(TensorId::OutputNorm)?)?;
+        let output = GpuTensor::load_from_source(
+            e,
+            src,
+            &binding
+                .output_head_ggml_name()
+                .map_err(std::io::Error::other)?,
+        )?;
         let mut resident = crate::hybrid::ResidentPlan::unsharded(e, src, &cfg);
         let mut step_runtimes = crate::hybrid::StepParallelRuntimeRegistry::default();
 
         let mut layers = Vec::with_capacity(plan.layers.len());
         for (il, layer_plan) in plan.layers.iter().enumerate() {
             let il = il as u32;
-            let p = |s: &str| format!("blk.{il}.{s}");
             let ffn = crate::hybrid::load_ffn(
                 e,
                 src,
@@ -1609,18 +1621,43 @@ impl Model {
                 &mut resident,
                 &mut step_runtimes,
             )?;
+            let lid = |tensor: LayerTensor| TensorId::Layer { index: il, tensor };
+            // Optional QK norms: the contract binds them only when the plan declares them and the
+            // checkpoint carries them; an unbound id is `None`, never a substitute.
+            let optional =
+                |tensor: LayerTensor| -> Result<Option<GpuTensor>, Box<dyn std::error::Error>> {
+                    match binding.ggml_name(&lid(tensor)) {
+                        Some(n) => GpuTensor::load_opt_from_source(e, src, n),
+                        None => Ok(None),
+                    }
+                };
             layers.push(Layer {
-                attn_norm: GpuTensor::load_from_source(e, src, &p("attn_norm.weight"))?,
-                wq: GpuTensor::load_from_source(e, src, &p("attn_q.weight"))?,
-                wk: GpuTensor::load_from_source(e, src, &p("attn_k.weight"))?,
-                wv: GpuTensor::load_from_source(e, src, &p("attn_v.weight"))?,
-                wo: GpuTensor::load_from_source(e, src, &p("attn_output.weight"))?,
-                q_norm: GpuTensor::load_opt_from_source(e, src, &p("attn_q_norm.weight"))?,
-                k_norm: GpuTensor::load_opt_from_source(e, src, &p("attn_k_norm.weight"))?,
-                ffn_norm: GpuTensor::load_from_source(e, src, &p("ffn_norm.weight"))?,
+                attn_norm: GpuTensor::load_from_source(
+                    e,
+                    src,
+                    &name(lid(LayerTensor::PreAttentionNorm))?,
+                )?,
+                wq: GpuTensor::load_from_source(e, src, &name(lid(LayerTensor::Query))?)?,
+                wk: GpuTensor::load_from_source(e, src, &name(lid(LayerTensor::Key))?)?,
+                wv: GpuTensor::load_from_source(e, src, &name(lid(LayerTensor::Value))?)?,
+                wo: GpuTensor::load_from_source(e, src, &name(lid(LayerTensor::AttentionOutput))?)?,
+                q_norm: optional(LayerTensor::QueryNorm)?,
+                k_norm: optional(LayerTensor::KeyNorm)?,
+                ffn_norm: GpuTensor::load_from_source(
+                    e,
+                    src,
+                    &name(lid(LayerTensor::PreMlpNorm))?,
+                )?,
                 ffn,
             });
         }
+        let unconsumed = binding.audit_consumption(&recording.requested(), &cfg, |id, tensor| {
+            checkpoint_binding::unread_by_design(id)
+                || checkpoint_binding::owned_by_vision(tensor)
+                || checkpoint_binding::unloaded_mtp(tensor, plan.layers.len() as u32, 0)
+        });
+        checkpoint_binding::settle_consumption(&binding, &unconsumed)
+            .map_err(std::io::Error::other)?;
         Ok(Model {
             cfg,
             embd,

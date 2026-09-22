@@ -129,29 +129,39 @@ Minimum geometry tests:
 - gate kind is mutually exclusive and matches tensor ownership; and
 - missing/malformed arrays fail instead of falling back to projection-wide scalars.
 
-### The name map is a SECOND surface, and a missing row is silent
+### The name map is a SECOND surface; the loader now binds the contract first (memra#541)
 
 The tensor contract (`tensor_contract.rs`) and the engine's ggml -> HF name map
 (`hf_mapping::{ggml_to_hf, resolve_ggml}`) are two independent spellings of the same
-checkpoint. `TensorCensus`, `memra model inspect`, and the `memra-reference` executor all read
-the CONTRACT. The ENGINE's loader reads the MAP. A row the map is missing does not fail: the
-name resolves to `None` and reads as an ABSENT tensor, and several load sites treat absent as a
-legal shape: a zero-filled router selection bias, a dropped shared expert, a skipped optional
-projection. The model then loads, serves, and computes something else.
+checkpoint. Until 2026-09-22 only `TensorCensus`, `memra model inspect` and the `memra-reference`
+executor read the CONTRACT; the ENGINE's loader read the MAP, and a row the map was missing did
+not fail: the name resolved to `None`, read as an ABSENT tensor, and several load sites treated
+absent as a legal shape (a zero-filled router selection bias, a dropped shared expert, a skipped
+optional projection). The model then loaded, served, and computed something else. Three such
+gaps reached a real-artifact load in the GLM-5.3-Flash lane alone.
 
-Three such gaps reached a real-artifact load in the GLM-5.3-Flash lane alone: the six mHC
-parameters, the whole MLA family, and both `exp_probs_b.bias` and the PLURAL
-`mlp.shared_experts.*` spelling. Two of them were caught only by comparing the engine against
-`memra-reference` layer by layer, days after the artifact first "loaded fine".
+Since memra#541 both loaders (`Model::load_dense_from_source`, `HybridModel::load_from_source`)
+go through `memra_gguf::checkpoint_binding::bind_source` BEFORE any upload: the source's
+metadata census is bound against the pack's contract, and a missing, unexpected, duplicate,
+ambiguous, wrong-shape or wrong-quant tensor refuses the load with
+`checkpoint refused before upload (pack <family>, <dialect>, N census tensors): <error>`. What
+`model inspect` refuses, the server refuses, with the same text. Output-head ownership is the
+pack's declaration (`ModelPack::output_head`): an absent `output.weight` selects the token
+embedding only under `TiedHeadAllowed` (and never when config.json says
+`tie_word_embeddings: false`); a `SeparateHead` family refuses. The dense loader addresses every
+trunk tensor by `TensorId` through the binding; the hybrid loader reads through a
+`RecordingSource`, and at the end `audit_consumption` names every bound tensor the loader never
+read. The pack's `tensor_consumption` decides whether that list is a `[tensor-contract]` report
+or a refusal; `Refuse` is a per-family qualification state that needs a receipt on a real
+artifact (qwen35 GGUF: `research/loader-census-20260922/`).
 
-So, for every new architecture: write a completeness pin that compiles the real plan and
-requires EVERY tensor the GGUF-dialect contract declares to resolve through `resolve_ggml`
+The map-completeness pin is still worth writing for a new architecture: compile the real plan
+and require EVERY tensor the GGUF-dialect contract declares to resolve through `resolve_ggml`
 onto a name the HF dialect of the SAME contract declares for the SAME `TensorId`. Pin the
-count. No per-name allowlist: an allowlist is exactly how a missing row stays missing.
-`glm5_next_every_contract_tensor_resolves_through_the_engine_map` in `hf_mapping.rs` is the
-template; it is CPU-only, needs no checkpoint and no GPU, and it caught the shared-expert gap
-on its first run. Every GPU fixture gate serves tensors under names the test itself chose, so
-none of them can see this surface.
+count. No per-name allowlist. `glm5_next_every_contract_tensor_resolves_through_the_engine_map`
+in `hf_mapping.rs` is the template; it is CPU-only. The bind catches a checkpoint that does not
+match the contract; the pin catches a map that does not match the contract; the consumption
+audit catches a loader that matches neither.
 
 Where the plan DECLARES a tensor (a selection-bias router, an always-on shared expert, a
 residual topology's parameters), the loader refuses by name rather than substituting a default.

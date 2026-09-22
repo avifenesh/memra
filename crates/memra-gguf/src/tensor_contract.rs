@@ -752,6 +752,7 @@ impl ContractBuilder {
     ) {
         let aux_id = id.clone();
         let aux_name = name.clone();
+        let aux_shape = shape.clone();
         self.requirements.push(TensorRequirement {
             id,
             names: vec![name],
@@ -767,7 +768,7 @@ impl ContractBuilder {
             auxiliaries: None,
             required: true,
         });
-        self.gguf_quant_auxiliaries(&aux_id, &[aux_name], owner);
+        self.gguf_quant_auxiliaries(&aux_id, &[aux_name], &aux_shape, owner);
     }
 
     fn weight_group(
@@ -806,6 +807,7 @@ impl ContractBuilder {
     ) {
         let aux_id = id.clone();
         let aux_names = names.clone();
+        let aux_shape = shape.clone();
         self.requirements.push(TensorRequirement {
             id,
             names,
@@ -821,15 +823,26 @@ impl ContractBuilder {
             auxiliaries: None,
             required,
         });
-        self.gguf_quant_auxiliaries(&aux_id, &aux_names, owner);
+        self.gguf_quant_auxiliaries(&aux_id, &aux_names, &aux_shape, owner);
     }
 
     fn gguf_quant_auxiliaries(
         &mut self,
         tensor: &TensorId,
         weight_names: &[String],
+        weight_shape: &[u64],
         owner: TensorOwner,
     ) {
+        // GGUF auxiliaries are census ROWS and `bind` compares their shape (memra#541: the
+        // loaders bind now, so this is checked on every load). A 2-D projection carries one
+        // scalar macro-scale; a stacked 3-D expert bank carries one scale per expert
+        // (`blk.N.ffn_{proj}_exps.scale` f32 `[n_expert]`, the sidecar `HostExps` reads).
+        // Safetensors auxiliaries fold into their owner's census row and never reach `bind`.
+        let gguf_aux_shape = if self.dialect == CheckpointDialect::Gguf && weight_shape.len() == 3 {
+            vec![weight_shape[2]]
+        } else {
+            vec![1]
+        };
         for (kind, suffix) in [
             (QuantAuxTensor::WeightScale, ".scale"),
             (QuantAuxTensor::InputScale, ".input_scale"),
@@ -865,13 +878,10 @@ impl ContractBuilder {
                 },
                 names,
                 match_mode: TensorMatch::OneOf,
-                // An auxiliary never reaches `bind` as a census ROW: the census folds it into
-                // its owning weight's auxiliary list (see `census_from_safetensors_headers`),
-                // so this shape is never compared against anything. It is not an assertion
-                // that the auxiliary is a scalar — `weight_scale` is per-row and
-                // `pre_quant_scale` is `[in_features]`. Making these requirements bind for
-                // real would need a per-kind shape, which is its own change.
-                shape: vec![1],
+                // GGUF: the row's real shape (scalar, or `[n_expert]` for a stacked bank).
+                // Safetensors: never compared; the census folds `weight_scale` (per-row) and
+                // `pre_quant_scale` (`[in_features]`) into the owning weight's auxiliary list.
+                shape: gguf_aux_shape.clone(),
                 owner,
                 transform: TensorTransform::Identity,
                 quant: QuantConstraint::FloatOnly,

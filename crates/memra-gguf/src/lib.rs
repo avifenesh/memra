@@ -27,6 +27,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+pub mod checkpoint_binding;
 pub mod config;
 pub mod d2t;
 pub mod dequant;

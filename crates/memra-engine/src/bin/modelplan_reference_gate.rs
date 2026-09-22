@@ -36,6 +36,19 @@ impl TensorSource for FixtureSource {
             ne: tensor.ne.clone(),
         })
     }
+    fn tensor_census(&self) -> Result<memra_gguf::source::TensorCensus, String> {
+        // memra#541: the loader binds the contract against this census before any upload.
+        Ok(memra_gguf::source::census_from_views(
+            self.tensors.iter().map(|(name, t)| {
+                (
+                    name.as_str(),
+                    GgmlType::F32,
+                    t.ne.as_slice(),
+                    t.bytes.len() as u64,
+                )
+            }),
+        ))
+    }
 }
 
 fn fixture_source(
@@ -47,7 +60,7 @@ fn fixture_source(
         plan,
         CheckpointDialect::Gguf,
         ContractOptions {
-            output_head: OutputHead::TiedToEmbedding,
+            output_head: OutputHead::Separate,
         },
     )?;
     let mut tensors = BTreeMap::new();
@@ -56,8 +69,15 @@ fn fixture_source(
         .iter()
         .filter(|requirement| requirement.required || weights.contains_key(&requirement.id))
     {
+        // memra#541: families that declare a separate head get the embedding rows under
+        // `output.weight` (the reference reads the same numbers either way).
         let tensor = weights
             .get(&requirement.id)
+            .or_else(|| {
+                (requirement.id == memra_gguf::tensor_contract::TensorId::OutputProjection)
+                    .then(|| weights.get(&memra_gguf::tensor_contract::TensorId::TokenEmbedding))
+                    .flatten()
+            })
             .ok_or_else(|| format!("reference fixture is missing {:?}", requirement.id))?;
         let elements: usize = requirement.shape.iter().map(|&dim| dim as usize).product();
         if elements != tensor.data.len() {

@@ -1816,6 +1816,107 @@ green 4 of 4 on the 5090 under the lock. The 5090 serve-smoke on the attempt-1 t
 Q35 arms SKIP for absent models, as on every rig receipt). The final battery on `cc754b476` is in
 `integ38-cpu-battery/` and `integ38-serve-smoke-5090/` (its window and rc lines quoted in the self-review).
 
+**Revuto round 1 on #639 (real, fixed).** The `d2d-delay-*` fault's spin was launched inside the per-item loop of both
+D2D submits, so the documented 200 ms multiplied by the item count (`items=32` on the refused capture in A's target-card
+receipt: 6.4 s of copy-stream spin, linear in the layer count) and any Block settle of that ticket held the owner thread
+for the whole window. The spin is now issued once per batch, gated on the first item (the copy stream is serial, so
+every item's copy waits behind it; the owner-stream early readers still win); the contract doc says "ONCE"; the census
+test pins the gate and one spin site per class. Re-run on the local 5090 under the lock: engine `d2d_*` cells `5 passed`;
+`tools/kv-host-contract-fault-gate.sh` with the door ON (`MEMRA_HOSTGATE_CACHE_MB=64`, 9B) `KV-HOST-CONTRACT-FAULT GATE:
+ALL GREEN`, both D2D cells refusing by receipt (`integ38-fault-gate-5090-revuto/`).
+
+**Revuto round 2 on #639 (real, fixed).** The engine took its one-shot `early_reader` arm AFTER every fallible admission
+step of both D2D submits (empty batch, overflow, per-op layout/epoch/owner/fence checks, `receipt_scratch`), while the
+worker had already spent its door value at the arming site; a refused submit left the engine's class-agnostic arm live for
+the next batch of either class, so a refused capture submit could refuse the next restore's receipt and latch the restore
+route, contradicting the "taken by their own class only" invariant and mis-attributing a gate cell's refusal. The arm is
+now taken first, right after the thread check, in both submits; the census test pins the take ahead of the first refusal
+per class. Engine `d2d_*` GPU cells `5 passed` on the 5090 under the lock.
+
+## integ39 (`lane/spill-integ39-20260922`): A day 23 (the draft-bearing restore through the door, whole) and C day 28 (the hit gate's `--external-lock`, the isolating stall cell, the 5090 receipt price)
+Lane tips merged, in order: A `0ebdde372` (day 23), C `efd9f6574` (day 28), on main `f80438799` (#639). One conflict,
+`HOSTPREFIX-DOOR.md`, resolved by union; the two lines the union reported as absent were each the OLDER variant of a line
+the other lane rewrote (A's item 11 gained its day-23 sentence over C's day-27 tail; C's section-E clause gained the
+day-28 numbers over A's older text), verified against both parents before the commit (ruling 27's set-diff).
+
+**A day 23 (Move 2 owed item 2, the restore half; memra#536 comment posted).** Under the door, pre-registered before
+code (`0717ab470`): `memra_tier::conformance::d2d_restore_draft_ready` with its red arm
+`d2d_restore_draft_read_before_its_wait_is_unordered` and CPU bindings (contracts 84 passed). Engine:
+`RestoredDraftScratch` (the `MtpScratch` plus `pos`, `k_bytes`, `v_bytes`; `destinations()` lends two exact
+`CudaViewMut<u8>` spans; `set_len` and the OFF path's `copy_from_entry`), `alloc_restored_draft_scratch` (every OFF
+geometry check moved here: MTP head, ring-backed scratch, layout, capacity, truncated plane), and the two constructors
+sharing one tail `spec_session_from_restored_scratch`: `spec_session_from_restored_deferred` (OFF: alloc, copy on the owner
+stream, `set_len`, tail) and `spec_session_from_restored_ready` (ON: takes the filled scratch, checks `draft.pos`,
+`kv.len == pos`, copies nothing). Worker: the probe decides the draft at the probe (`host_restore_draft_decision`: the
+admission estimate specs the request, no DFlash drafter owns the model, no grammar, and `spec_restore_refusal` with the
+load guard and the penalty window evaluated there), allocates the scratch and sets its length before the submit, and the
+batch carries the draft K and V spans as two more `D2dRestore` ops under the SAME producer fence and the SAME pin as the
+trunk (`items=34` on the 27B against 32 plain); the scratch is owned by the pending `Restoring` record: forgotten with
+the cache under a `Latched` settle (never a free under a running copy), dropped after a `ReceiptMismatch` (the copy
+landed) and at a landed drop, handed over only at `take_ready` beside the cache and the pin; the consumer wait installed at
+the settle fences the draft items with the trunk's, so the deferred prime's first draft-head read is behind rule 3's
+wait; a declined draft is typed (`draft plane not submitted (why)`) and admission then takes the OFF copy on the owner
+stream from the pinned entry; a probe/admission disagreement is a typed census line in both directions (neither fired).
+Two CPU tests (the path census, the decision table). Target card, tree `2b850b2b0`, one sitting 09:54Z to 10:08Z,
+verbatim: identity `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` x4 (default and plain, OFF and ON); failure
+`ALL GREEN` x2; fault `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (93 ok; `d2d-restore` still refuses: `restore receipt
+refused: source_digests_sha256=d11e5c4b614f3a68.. destination_digests_sha256=1462aed093ef5fee..`); twin `V1=ok ... V6=ok
+-> PASS` x2; hit OFF `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok); hit ON, armed, `ALL GREEN (qwen)` (68 ok, 0
+FAIL), `ok: door arm: 19 route submission(s) across the two boots`; unit `8 passed` (server), `5 passed` (engine `d2d_*`).
+Hit ON spec-on boot: 13 `restore submitted off the tick`, 12 with `; draft plane N rows (X KB) in the batch` (8 x `64
+tokens, 34 planes (158.9MB) ... draft plane 64 rows (118.8KB)`, 3 x 96 tokens, 1 x 128 tokens), 13 `D2D restore receipt
+... require=ok` (12 `items=34`, 1 `items=32`), 12 `restore landed ... after 1 poll(s), 2.3 to 2.4ms ...; draft plane
+ready`, 12 `spec restore: ... + draft plane from cache`; zero refused, disabled, declined-at-probe or disagreement lines;
+every `r1/r2/r3/g1/g2 spec==plain byte identity` ok. The route engaged on every draft-bearing hit the gate serves (12 of
+16 routed hits, item 11's count): the first hit-gate receipt on any card where the identity clause covers the route for
+draft-bearing hits. The receipt's byte counts price the draft plane at 118,784 B per 64-token entry on the 27B (1,856
+B/token, item 10's estimate). Cell (v) on this tree: `pair_over_copy=2.11` / `2.13` (day 22: 2.12 to 2.15), reported.
+A's day-22 CPU census window (a fixed 500 chars of the `ReceiptMismatch` arm) now ends at the arm's real end, assertions
+unchanged. Owed and stated: the 5090 door gates on this tree (run by the lead below); Move 2 still owes the recurrent
+f32 state, the spec-boundary capture route, the isolating stall cell's capture share and the review's reading of cell
+(v). Budget 1.6 agent-hours against 5.
+
+**C day 28.** (1) `tools/spec-on-cache-hit-gate.sh [--external-lock FD]` in the identity gate's shape: under the collector
+the per-boot `flock -w 300` wrapper is absent, the FD is verified by `tier-lock-proof.py` into `LOCK.json`, `stop()`
+addresses `$SERVER_PID` only while its comm reads `memra-server`; without the flag unchanged; teeth `--lock-self-test
+FILE` plus `tools/test_spec_on_cache_hit_gate_lock.sh`, verbatim `SPEC-ON-CACHE-HIT-GATE LOCK TEETH: ALL GREEN (7 ok)`
+(default arm `probe=held`, external `probe=free` with inode and mtime unchanged, a non-numeric FD `REFUSED` exit 2), wired
+into `ci.yml`'s gate-teeth step; `docs/TESTING.md` bullet; no new `MEMRA_*` read; not yet run under the collector on a
+card (C day 29, running). (2) The isolating stall cell (Move 2 owed item 3), target card, one hold 09:35Z to 09:46Z, ten
+boots, N=5 per arm per order, both orders, two passes, 33 to 60 C, 33 to 501 W, ten `STALL REPLAY: PASS`, verbatim:
+`DAY28 ISOLATION VERDICT: capture pass1 on-off +0.7 (unc 0.2) isolated; restore pass1 on-off +0.2 (unc 0.2) isolated;
+capture pass2 on-off +0.7 (unc 0.2) isolated; restore pass2 on-off +0.2 (unc 0.1) isolated; admissible=True`. The
+restore class isolated by a whole-entry zero-suffix hit intruder (no prime of its own, `hit: 5152 of 5152` every run):
+`stall_median=8.9` / `9.0` OFF against `9.1` ON, the 9 ms being the allocation plus the recurrent f32 copies that stay on
+the owner stream in both arms (owed item 1); the rows' move changed the tenant's stall by nothing resolvable. Capture
+class: `283.7` against `284.4`, nothing evicting at the 8192 MB cache (named before the run). Finding, not tuned: the
+prime-only boot (cache off) read `301.5`, 17 ms above the same prime inside the cache-on boots, so the pre-registered
+subtraction reads `share=-17.8` with the wrong sign and the capture arm's own share stays unread. (3) The receipt's price
+on the local RTX 5090 under the lock (58 C, P8 before, no compute app), verbatim: `order=copy-first ...
+copy_median=0.394 digest_median=0.221 pair_median=0.442 pair_over_copy=1.12` and `order=digest-first ... copy_median=0.395
+digest_median=0.221 pair_median=0.441 pair_over_copy=1.12`; rows in the door table's cost section per card, never across
+cards. Process slip fixed and recorded: a `;` in a commit chain let `0ae22b577` push with trailing whitespace despite a red
+`git diff --check`; `1791a4f40` corrected it (ruling 30 restated in C's day-29 brief). Budget 3.0 against 4.
+
+**Lead review of A day 23.** Read the engine refactor (the OFF path's alloc, copy, `set_len`, tail order is
+census-pinned; the ready constructor allocates and copies nothing), the worker's ownership of the scratch at every
+settle and drop path (Latched forgets, ReceiptMismatch and landed drops free, `take_ready` hands over under `ready` only,
+`host_restore_drop` settles a pending contract with Block before the record drops), the shared pin and producer fence for
+the draft items, and the installed wait's coverage of every unfenced non-D2H item. No finding. The probe-side decision
+duplicates admission's inputs by construction; its disagreement arms are typed and the gate read neither.
+
+**Battery (tree `6a1909924`, receipts `integ39-cpu-battery/`, `integ39-serve-smoke-5090/`, `integ39-hit-gate-5090/`).**
+All fifteen CPU steps rc=0 (fmt, portable suites, memra-server suite, cross-target `DOCS_RS=1` clippy, check-flags,
+publish and docs-registry censuses, collector pytest, engine CPU lib, tier suite, engine/server/tier clippy `-D
+warnings`, markers, workflow keys, perf board, `git diff --check`). Local RTX 5090: `serve-smoke: 0 failed` (gemma4 and
+Q35 arms SKIP, absent models), engine `d2d_*` GPU cells `5 passed` under the lock, and the door gates A stated as owed
+on this tree, the hit gate OFF and ON with the tier armed (9B, gate-internal lock), verbatim: `SPEC-ON-CACHE-HIT GATE:
+ALL GREEN (qwen)` 61 ok OFF, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 68 ok ON; the spec-on boot 13 `restore submitted
+off the tick`, 12 with a draft plane in the batch (8 x `64 rows (118.8KB)`, 3 x `96 rows (178.2KB)`, 1 x `128 rows
+(237.6KB)`; the 9B's draft plane is the same 1,856 B/token), 12 `draft plane ready`, 12 `draft plane from cache`, zero
+refused, disabled, declined-at-probe or disagreement lines. The draft-bearing route now has the hit gate's identity
+clause over it on both cards.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
