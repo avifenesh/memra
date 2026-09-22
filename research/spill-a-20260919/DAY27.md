@@ -172,3 +172,25 @@ shape (day 26: 81.8 against 85.3 with the hash tick still stretched to 95.3), th
 cells, `hash-helper-gone` and `hash-never-lands`, each a typed line, nothing published, the tier latched; (4) a
 CPU unit cell proving the helper's digests equal `bind_tier_image`'s on-thread digests bitwise over a fixture
 image (same program, same bytes); (5) no flag: the door is the switch, and the census gains no `MEMRA_*` read.
+
+### 2b. The digest cell, run after the pre-registration above was committed (`ad4f229e0`)
+
+Target card's host (`pro-single-day27/box/digest-micro/`, one collector hold, no compute app on the card before or
+after, host load 0.06 before the cell, the server build finished and idle first; binary
+`65ffd3cf59c22ce3e26cb9309b92d17f1508f0358947bc1fc0476016d8c9ee0b`, source `day27-digest-micro/src/main.rs` at
+`ad4f229e0`; the box resolved the detached project's lockfile offline from its own cargo cache, three patch versions
+apart from the committed lock, banked as `micro-Cargo.lock.box`):
+
+`DIGEST-MICRO rule host="AMD EPYC 9555 64-Core Processor" bytes=167772160 n_per_order=5 pooled=10 orders=2 memory=heap
+sha_ms=77.589 lanes_ms=70.737 sha_range=77.538..77.877 lanes_range=70.662..71.044 sha_o1=77.591 sha_o2=77.570
+lanes_o1=70.783 lanes_o2=70.713 sha_gbps=2.162 lanes_gbps=2.372 lanes_over_sha=0.912 sha_stable=true lanes_stable=true`
+
+Read by the pre-registered rule: `lanes_over_sha=0.912` with disjoint ranges, so the four-lane program as compiled today
+IS cheaper than SHA-256 on this host, by 9 percent, and both are compute-bound near 2.2 to 2.4 GB/s (neither runs at
+memory speed; the scalar per-word `mix64` x4 costs about what SHA-NI costs). Consequence for (b'): the bundle checksum's
+program change would take about 7 ms off the 74.8 on the target card, not the 74.8; it does not replace (a). The SHA
+figure repeats C's day 18 on this host (77.9 cached, 78.0 heap) within 0.5 percent, so the two cells agree on the rate
+that the section 1 arithmetic used. `executed-not-qualified`.
+
+Local RTX 5090 rig's host: pending a bounded wait on the card (another lane's `memra-server` held the card from the
+start of the day's waits; the result line goes here or the cell is recorded NOT RUN).
