@@ -22229,7 +22229,7 @@ pub fn run(
     // what makes a respawn's success observable.
     health.mark_ready();
 
-    loop {
+    'worker: loop {
         // WP-A day 17 (memra#536 Move 1): the tick-top poll of the one `Demoting` entry. Its D2H
         // rides the transfer engine's copy stream; publication into the host prefix index happens
         // HERE, on the owner thread, once every item's event has completed, before admission so
@@ -22384,7 +22384,7 @@ pub fn run(
                         &mut pending_handoffs,
                     ),
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,
                 }
             }
         }
@@ -22409,7 +22409,7 @@ pub fn run(
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     if active.is_empty() {
-                        return;
+                        break 'worker;
                     } else {
                         break;
                     }
@@ -44139,6 +44139,45 @@ mod tests {
         host.purge_tenant("org-a");
         let kept = host.capturing.as_ref().expect("another tenant's stays");
         assert!(kept.ready && kept.pool_key == b);
+    }
+
+    #[test]
+    fn channel_disconnects_reach_pending_d2d_shutdown_drains() {
+        let worker = include_str!("worker.rs");
+        let run = &worker[worker.find("pub fn run(").unwrap()..];
+        let run = &run[..run.find("\nfn fail_request(").unwrap()];
+        let loop_start = run
+            .find("health.mark_ready();\n\n    'worker: loop {")
+            .expect("disconnect breaks target the worker loop");
+        let timed = loop_start
+            + run[loop_start..]
+                .find("match rx.recv_timeout(wait)")
+                .unwrap();
+        let drain = timed + run[timed..].find("match rx.try_recv()").unwrap();
+        let receive_end = drain
+            + run[drain..]
+                .find("\n        resolve_constraint_compiles(")
+                .unwrap();
+        assert!(
+            run[timed..drain]
+                .contains("Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,"),
+            "timed receive must leave through the shutdown tail"
+        );
+        assert!(
+            run[drain..receive_end].contains(
+                "Err(std::sync::mpsc::TryRecvError::Disconnected) => {\n                    if active.is_empty() {\n                        break 'worker;"
+            ),
+            "empty-active disconnect must drain even with a queued pending restore"
+        );
+        assert!(!run[timed..receive_end].contains("=> return"));
+        assert!(!run[timed..receive_end].contains("return;"));
+        let capture = run
+            .find("host_capture_drain_at_shutdown(&mut hpx);")
+            .unwrap();
+        let restore = run
+            .find("host_restore_drain_at_shutdown(&mut hpx);")
+            .unwrap();
+        assert!(receive_end < capture && capture < restore);
     }
 
     /// Every path that meets a `Capturing` entry does what the pre-registration says (a source
