@@ -2429,6 +2429,26 @@ the route-contract registration `refused=[]` (#650's boot line, an empty list). 
 plain arms: `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` 123 ok each, both hash cells (`hash-helper-gone`,
 `hash-never-lands`) present.
 
+**Revuto round 1 on #652 (reviewed by claude-cli-opus-5): one finding, real, fixed in `c26255bc7`.** `disable` joined the
+hash helper with an unbounded `handle.join()`. Dropping the job sender does not interrupt a job already being hashed, so a
+latch that fires because the digests are late (the deadline's own cause: a starved or wedged helper) blocked the owner
+thread for the rest of that job, and so did every other `disable` caller (the capture and restore latches, budget
+exhaustion) with a hash in flight. Neither hash fault cell reached it: `hash-never-lands` discards its reply and returns to
+its job channel, so the latch found an idle helper. Fix: `HostHashWorker::close(why, bound)` drops both channel ends (the
+job in hand, if any, ends with a reply that finds no receiver and drops with its payloads, so a late reply can no longer
+reach a latched tier) and joins within `bound`, else detaches with a typed line (`hash helper detached (<why>): still
+inside a job after N ms; ...`). The latch passes `HOST_HASH_LATCH_JOIN` = 50 ms (an idle helper exits in microseconds);
+shutdown passes `HOST_HASH_DEADLINE`. New cell `a_latch_with_the_helper_still_inside_a_job_detaches_it_within_the_bound`:
+a stand-in helper holds its job past the latch; the latch returns after the bound and under 2 s, the helper is detached,
+and the released job's reply send fails. On the old `join` the cell hangs (the release comes only after `disable`
+returns). The census pins both `close` calls. Checks on `c26255bc7`: `cargo fmt --all -- --check` clean, clippy
+`-D warnings` on memra-server all targets clean, memra-server suite `835 passed; 0 failed; 14 ignored`. Local RTX 5090
+fault gate, default arm, on this tree (receipt `integ45-r1-fault-gate-5090/`): `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`
+123 ok, both hash cells present, `hash helper joined (the tier latched off)` once each in the `hash-helper-gone`,
+`hash-never-lands`, `d2d-capture` and `d2d-restore` server logs, zero `hash helper detached` lines (the gate's
+count-of-one check on the join line stands unchanged). The same-day owner call moved revuto's review model from Opus 5 to
+Opus 5.5 (2026-09-22), so round 2 is reviewed on Opus 5.5.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
