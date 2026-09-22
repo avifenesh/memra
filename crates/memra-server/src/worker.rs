@@ -9219,9 +9219,27 @@ impl HostTierContext {
     /// Take the one-shot fault if it belongs to this side (`demote`: the D2H route; otherwise the
     /// H2D promote route); a fault of the other side stays armed for the route it names.
     fn take_fault(&self, demote: bool) -> Option<HostContractFault> {
-        let fault = self.fault.get().filter(|f| f.is_demote() == demote)?;
+        let fault = self
+            .fault
+            .get()
+            .filter(|f| f.is_move1() && f.is_demote() == demote)?;
         self.fault.set(None);
         Some(fault)
+    }
+    /// WP-A day 22: take the one-shot D2D fault if it names this class (`capture`: the capture
+    /// route; otherwise the restore route); a fault of another route stays armed for it.
+    fn take_d2d_fault(&self, capture: bool) -> bool {
+        let want = if capture {
+            HostContractFault::D2dDelayCapture
+        } else {
+            HostContractFault::D2dDelayRestore
+        };
+        if self.fault.get() == Some(want) {
+            self.fault.set(None);
+            true
+        } else {
+            false
+        }
     }
 }
 impl HostPrefixCache {
@@ -9863,6 +9881,11 @@ enum CaptureSettle {
 /// charge and its registered planes inside the engine, so the tier latches off (the #622 ruling).
 enum HostCaptureFailure {
     Latched(String),
+    /// WP-A day 22 (`d2d_receipt_witnessed` rules 3 and 4): the landed batch's receipt did not
+    /// witness the source (a receipt-less or mismatching item). The ticket retired and
+    /// acknowledged cleanly and the fresh planes came back and dropped: NOTHING is published; the
+    /// tier and the capture route latch.
+    ReceiptMismatch(String),
 }
 
 /// What one settle step of the `Capturing` entry produced (the CPU-testable half).
@@ -9930,6 +9953,14 @@ enum HostContractFault {
     /// published) but the route is handed an injected error for it; the unwind must ask the
     /// engine and take the published arm, nothing leaked, tier on.
     PromoteReadyView,
+    /// WP-A day 22 (memra#536 Move 2 slice 3, the receipt's red arm): the first CAPTURE of the
+    /// boot delays its copy on the copy stream and takes its destination digest from an unordered
+    /// early reader (`CudaTransfers::inject_d2d_early_reader`); the receipt must refuse it, nothing
+    /// publishes, the tier and the capture route latch.
+    D2dDelayCapture,
+    /// The same fault on the first RESTORE of the boot: nothing is primed on the destination, the
+    /// cache drops, the pin is released, the tier and the restore route latch.
+    D2dDelayRestore,
 }
 impl HostContractFault {
     fn from_door(fault: &str) -> Option<Self> {
@@ -9940,12 +9971,18 @@ impl HostContractFault {
             "contract-promote-postpublish" => Some(Self::PromotePostPublish),
             "contract-promote-reject" => Some(Self::PromoteReject),
             "contract-promote-readyview" => Some(Self::PromoteReadyView),
+            "d2d-delay-capture" => Some(Self::D2dDelayCapture),
+            "d2d-delay-restore" => Some(Self::D2dDelayRestore),
             _ => None,
         }
     }
     /// The demote (D2H) side, as opposed to the promote (H2D) side.
     fn is_demote(self) -> bool {
         matches!(self, Self::PreSubmit | Self::PostPublish)
+    }
+    /// A Move 1 fault (the D2H or H2D route), as opposed to a D2D fault (day 22).
+    fn is_move1(self) -> bool {
+        !matches!(self, Self::D2dDelayCapture | Self::D2dDelayRestore)
     }
 }
 
@@ -13799,6 +13836,15 @@ fn prefix_capture_off_tick(
             producer_fence: producer,
         })
         .collect();
+    // WP-A day 22: the one-shot `d2d-delay-capture` fault arms the engine's early reader for this
+    // batch; the receipt at the settle must refuse it (the fault gate's red arm).
+    if tier.take_d2d_fault(true) {
+        t.inject_d2d_early_reader(memra_engine::tier_transfer::D2D_DELAY_FAULT_NS);
+        eprintln!(
+            "[prefix-cache] capture fault armed (MEMRA_KV_HOST_FAULT=d2d-delay-capture): the copy \
+             is delayed and the destination digest is read early; the receipt must refuse"
+        );
+    }
     let ticket = match t.submit_d2d_capture(ops, HOST_TIER_TRANSFER_EPOCHS) {
         Ok(ticket) => ticket,
         Err(e) => {
@@ -13936,6 +13982,66 @@ fn host_kv_planes_settle_capture(
         return Err(Latched(
             "capture did not land after a host wait on every item's event".into(),
         ));
+    }
+    // WP-A day 22 (Move 2 slice 3, `d2d_receipt_witnessed`): the receipt, before anything leaves
+    // the engine. Both digests are named on the line; a `Corrupt` verdict publishes nothing.
+    let receipt = match t.d2d_receipt(&ticket) {
+        Ok(r) => r,
+        Err(e) => {
+            return Err(Latched(format!(
+                "capture receipt unreadable ({e:?}); the transfer engine keeps the fresh planes"
+            )));
+        }
+    };
+    let (src_hex, dst_hex) = d2d_receipt_digests_hex(&receipt.items);
+    let verdict = match &receipt.verdict {
+        Ok(()) => "ok".to_string(),
+        Err(e) => format!("{e:?}"),
+    };
+    eprintln!(
+        "[prefix-cache] contracts door D2D capture receipt: ticket issuer={} seq={} epochs={}/{}/{} \
+         items={} bytes={} source_digests_sha256={src_hex} destination_digests_sha256={dst_hex} \
+         require={verdict}",
+        ticket.issuer,
+        ticket.sequence,
+        ticket.epochs.state,
+        ticket.epochs.src_gen,
+        ticket.epochs.dst_gen,
+        receipt.items.len(),
+        receipt.bytes,
+    );
+    if let Err(e) = receipt.verdict {
+        // The copy landed, so the ticket leaves cleanly and every fresh plane comes back through
+        // its twin and drops here (never into an entry). A ticket that will not leave is a leak.
+        let settled = t
+            .release_producer(producer)
+            .and_then(|_| t.retire(&ticket, None))
+            .and_then(|_| t.acknowledge(&ticket));
+        if let Err(err) = settled {
+            return Err(Latched(format!(
+                "capture receipt mismatch (require={e:?}) and the ticket did not retire ({err:?}); \
+                 its fresh planes are leaked inside the transfer engine"
+            )));
+        }
+        let mut leaks = 0usize;
+        for p in registered {
+            for lease in [p.k, p.v] {
+                if t.take_plane(&lease).is_err() {
+                    leaks += 1;
+                }
+            }
+        }
+        let tail = if leaks > 0 {
+            format!("; {leaks} fresh plane(s) did not come back")
+        } else {
+            String::new()
+        };
+        return Err(HostCaptureFailure::ReceiptMismatch(format!(
+            "D2D capture receipt mismatch (require={e:?}, source_digests_sha256={src_hex}, \
+             destination_digests_sha256={dst_hex}) on ticket seq={}; retired and acknowledged, \
+             the fresh planes dropped, nothing published{tail}",
+            ticket.sequence
+        )));
     }
     let settled = t
         .release_producer(producer)
@@ -14090,11 +14196,41 @@ fn host_capture_settle_with(
             pending.ready = true;
             Some(CaptureSettled::Ready(Box::new(pending)))
         }
+        Err(HostCaptureFailure::ReceiptMismatch(err)) => {
+            // Nothing published: the shell (its recurrent clones) drops with `pending` here; the
+            // tier and the capture route latch (the receipt found the copy's bytes untrusted).
+            host_capture_latch(host, &err);
+            Some(CaptureSettled::Dropped)
+        }
         Err(HostCaptureFailure::Latched(err)) => {
             host_capture_latch(host, &err);
             Some(CaptureSettled::Dropped)
         }
     }
+}
+
+/// The two named digests of a D2D receipt line (WP-A day 22): one SHA-256 over the ordered
+/// per-item SOURCE digests and one over the ordered DESTINATION digests (a receipt-less item folds
+/// as 32 zero bytes), in the D2H line's `checksums_sha256` shape. Equal strings mean every item's
+/// destination witnessed its source; the gate's verdict is `Completion::require`'s, not a string
+/// compare here.
+fn d2d_receipt_digests_hex(items: &[memra_engine::tier_transfer::ReceiptTerm]) -> (String, String) {
+    let mut src = Vec::with_capacity(items.len() * 32);
+    let mut dst = Vec::with_capacity(items.len() * 32);
+    for t in items {
+        src.extend_from_slice(&t.source);
+        dst.extend_from_slice(&t.destination.unwrap_or([0; 32]));
+    }
+    (
+        digest_hex(&memra_engine::cache::tiered::digest(
+            "host-prefix-d2d-receipt",
+            &src,
+        )),
+        digest_hex(&memra_engine::cache::tiered::digest(
+            "host-prefix-d2d-receipt",
+            &dst,
+        )),
+    )
 }
 
 /// A capture whose observation was lost: the tier latches off (the ticket's charge or planes are
@@ -14264,6 +14400,11 @@ enum RestoreSettle {
 /// mirrored): the tier and the restore path latch off.
 enum HostRestoreFailure {
     Latched(String),
+    /// WP-A day 22 (`d2d_receipt_witnessed` rules 3 and 4): the landed, fenced batch's receipt did
+    /// not witness the source. The ticket retired and acknowledged cleanly; the caller drops the
+    /// destination cache (the copy landed, so the free is safe) and releases the pin: NOTHING is
+    /// primed on it; the tier and the restore route latch.
+    ReceiptMismatch(String),
 }
 
 /// What one settle step of the `Restoring` request produced (the CPU-testable half).
@@ -14358,6 +14499,34 @@ fn host_kv_planes_settle_restore(
             )));
         }
     }
+    // WP-A day 22 (Move 2 slice 3, `d2d_receipt_witnessed`): the receipt, read after the install
+    // (the gate requires the fence too). Both digests are named; `Corrupt` primes nothing.
+    let receipt = match t.d2d_receipt(&ticket) {
+        Ok(r) => r,
+        Err(e) => {
+            return Err(Latched(format!(
+                "restore receipt unreadable ({e:?}); the destination cache and the source pin are \
+                 kept"
+            )));
+        }
+    };
+    let (src_hex, dst_hex) = d2d_receipt_digests_hex(&receipt.items);
+    let verdict = match &receipt.verdict {
+        Ok(()) => "ok".to_string(),
+        Err(e) => format!("{e:?}"),
+    };
+    eprintln!(
+        "[prefix-cache] contracts door D2D restore receipt: ticket issuer={} seq={} epochs={}/{}/{} \
+         items={} bytes={} source_digests_sha256={src_hex} destination_digests_sha256={dst_hex} \
+         require={verdict}",
+        ticket.issuer,
+        ticket.sequence,
+        ticket.epochs.state,
+        ticket.epochs.src_gen,
+        ticket.epochs.dst_gen,
+        receipt.items.len(),
+        receipt.bytes,
+    );
     let settled = t
         .release_producer(producer)
         .and_then(|_| t.retire(&ticket, None))
@@ -14366,6 +14535,14 @@ fn host_kv_planes_settle_restore(
         return Err(Latched(format!(
             "restore ticket did not retire ({e:?}); its in-flight charge is leaked inside the \
              transfer engine"
+        )));
+    }
+    if let Err(e) = receipt.verdict {
+        return Err(HostRestoreFailure::ReceiptMismatch(format!(
+            "D2D restore receipt mismatch (require={e:?}, source_digests_sha256={src_hex}, \
+             destination_digests_sha256={dst_hex}) on ticket seq={}; retired and acknowledged, \
+             nothing primed on the destination",
+            ticket.sequence
         )));
     }
     Ok(RestoreSettle::Landed)
@@ -14467,6 +14644,13 @@ fn host_restore_settle_with(
             pending.ready = true;
             Some(RestoreSettled::Ready(Box::new(pending)))
         }
+        Err(HostRestoreFailure::ReceiptMismatch(err)) => {
+            // The copy landed and the ticket left cleanly: the cache drops here (nothing was primed
+            // on it) and the pin goes back to the caller; the tier and the restore route latch.
+            drop(pending.cache.take());
+            host_restore_latch_landed(host, &err);
+            Some(RestoreSettled::Dropped(pending.pin.take()))
+        }
         Err(HostRestoreFailure::Latched(err)) => {
             // Never a free under a running copy: the cache is forgotten, the pin is kept.
             if let Some(cache) = pending.cache.take() {
@@ -14476,6 +14660,18 @@ fn host_restore_settle_with(
             Some(RestoreSettled::Dropped(None))
         }
     }
+}
+
+/// WP-A day 22: the latch after a LANDED batch whose receipt was refused: the destination cache
+/// dropped and the source pin released (the copy had landed, so both are safe), the tier latches
+/// off and the restore path takes the tick program for the rest of the boot.
+fn host_restore_latch_landed(host: &mut HostPrefixCache, why: &str) {
+    eprintln!(
+        "[prefix-cache] RESTORE OFF-TICK DISABLED: {why}; the destination cache dropped and the \
+         source pin released (the copy had landed); every later hit restores on the tick"
+    );
+    host.restore_off_tick_disabled = true;
+    host.disable(why);
 }
 
 /// A restore whose observation was lost: the tier latches off and the restore path takes the tick
@@ -14660,6 +14856,14 @@ fn host_restore_submit(
     let refused = if ops.is_empty() {
         Some("the entry carries no KV rows".to_string())
     } else {
+        // WP-A day 22: the one-shot `d2d-delay-restore` fault arms the engine's early reader.
+        if tier.take_d2d_fault(false) {
+            t.inject_d2d_early_reader(memra_engine::tier_transfer::D2D_DELAY_FAULT_NS);
+            eprintln!(
+                "[prefix-cache] restore fault armed (MEMRA_KV_HOST_FAULT=d2d-delay-restore): the \
+                 copy is delayed and the destination digest is read early; the receipt must refuse"
+            );
+        }
         match t.submit_d2d_restore(ops, HOST_TIER_TRANSFER_EPOCHS) {
             Ok(ticket) => {
                 drop(t);
@@ -41777,6 +41981,122 @@ mod tests {
         assert!(!host.armed());
         assert!(host.capture_off_tick_disabled);
         assert_eq!(host.captures_published, 0);
+    }
+
+    /// WP-A day 22 (`d2d_receipt_witnessed` rules 3 and 4): a refused receipt at the capture settle
+    /// drops the entry unpublished, latches the tier and the capture path, and publishes nothing;
+    /// the machine treats it exactly as a latch (the ticket already left the engine cleanly).
+    #[test]
+    fn day22_a_refused_capture_receipt_drops_the_entry_and_latches() {
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_capture(&mut host, &key, false);
+        let outcome = super::host_capture_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            |_, _, _| {
+                Err(super::HostCaptureFailure::ReceiptMismatch(
+                    "D2D capture receipt mismatch (require=Corrupt, test)".into(),
+                ))
+            },
+        );
+        assert!(matches!(outcome, Some(super::CaptureSettled::Dropped)));
+        assert!(
+            host.capturing.is_none(),
+            "nothing pending, nothing published"
+        );
+        assert!(!host.armed(), "the tier latches off");
+        assert!(
+            host.capture_off_tick_disabled,
+            "the capture path takes the tick program"
+        );
+        assert_eq!(host.captures_published, 0);
+        // The restore's mismatch arm needs a device cache (`Cache` holds `CudaSlice`s) and is
+        // exercised on the card by the fault gate's `d2d-restore` cell; its statements are pinned by
+        // the source census below: the cache DROPS (the copy landed), the pin goes back, the
+        // landed-latch line prints, the tier latches.
+        let worker = include_str!("worker.rs");
+        let body = &worker[..worker.find("#[cfg(test)]\nmod tests").unwrap()];
+        let machine = body.find("fn host_restore_settle_with(").unwrap();
+        let machine_body = &body[machine..machine + body[machine..].find("\n}\n").unwrap()];
+        let arm = machine_body
+            .find("Err(HostRestoreFailure::ReceiptMismatch(err)) => {")
+            .unwrap();
+        let arm_body = &machine_body[arm..arm + 500];
+        assert!(arm_body.contains("drop(pending.cache.take());"));
+        assert!(arm_body.contains("host_restore_latch_landed(host, &err);"));
+        assert!(arm_body.contains("Some(RestoreSettled::Dropped(pending.pin.take()))"));
+        assert!(
+            !arm_body.contains("std::mem::forget"),
+            "a landed copy's cache is freed, never forgotten"
+        );
+        // Both settles read the receipt before the ticket retires; the restore's after the install.
+        for (settle, landed) in [
+            (
+                "fn host_kv_planes_settle_capture(",
+                "t.capture_landed(&ticket)",
+            ),
+            (
+                "fn host_kv_planes_settle_restore(",
+                "t.install_consumer_wait(&ticket)",
+            ),
+        ] {
+            let at = body.find(settle).unwrap();
+            let settle_body = &body[at..at + body[at..].find("\n}\n").unwrap()];
+            let before = settle_body.find(landed).unwrap();
+            let receipt = settle_body.find("t.d2d_receipt(&ticket)").unwrap();
+            let line = settle_body.find("source_digests_sha256={src_hex}").unwrap();
+            let retire = settle_body.find("t.retire(&ticket, None)").unwrap();
+            assert!(
+                before < receipt && receipt < line && line < retire,
+                "{settle}"
+            );
+            assert_eq!(settle_body.matches("t.d2d_receipt(&ticket)").count(), 1);
+        }
+        // The fault is armed immediately before each submit, one line each, one-shot per class.
+        assert_eq!(body.matches("t.inject_d2d_early_reader(").count(), 2);
+        assert_eq!(body.matches("tier.take_d2d_fault(true)").count(), 1);
+        assert_eq!(body.matches("tier.take_d2d_fault(false)").count(), 1);
+    }
+
+    /// WP-A day 22: the two D2D fault values parse, belong to no Move 1 side (`take_fault` of
+    /// either side leaves them armed), and are taken once by their own class only.
+    #[test]
+    fn day22_d2d_fault_values_are_taken_by_their_own_class_only() {
+        use super::HostContractFault as F;
+        assert_eq!(F::from_door("d2d-delay-capture"), Some(F::D2dDelayCapture));
+        assert_eq!(F::from_door("d2d-delay-restore"), Some(F::D2dDelayRestore));
+        assert_eq!(F::from_door("d2d-delay"), None, "no class, no fault");
+        assert!(!F::D2dDelayCapture.is_move1() && !F::D2dDelayRestore.is_move1());
+        assert!(F::PreSubmit.is_move1() && F::PromoteReject.is_move1());
+        let tier = contracts_context("m", Arc::new(()), 1 << 20);
+        tier.fault.set(Some(F::D2dDelayCapture));
+        assert_eq!(
+            tier.take_fault(true),
+            None,
+            "the demote route leaves it armed"
+        );
+        assert_eq!(
+            tier.take_fault(false),
+            None,
+            "the promote route leaves it armed"
+        );
+        assert!(
+            !tier.take_d2d_fault(false),
+            "the restore route leaves it armed"
+        );
+        assert_eq!(tier.fault.get(), Some(F::D2dDelayCapture));
+        assert!(tier.take_d2d_fault(true), "the capture route takes it");
+        assert_eq!(tier.fault.get(), None, "one-shot");
+        assert!(!tier.take_d2d_fault(true));
+        tier.fault.set(Some(F::D2dDelayRestore));
+        assert!(!tier.take_d2d_fault(true));
+        assert!(tier.take_d2d_fault(false));
+        assert_eq!(tier.fault.get(), None);
+        // A Move 1 fault is never taken by a D2D route.
+        tier.fault.set(Some(F::PostPublish));
+        assert!(!tier.take_d2d_fault(true) && !tier.take_d2d_fault(false));
+        assert_eq!(tier.take_fault(true), Some(F::PostPublish));
     }
 
     /// A tenant purge settles the `Capturing` entry first and drops the purged tenant's

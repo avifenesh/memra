@@ -114,3 +114,71 @@ the witnessed one.
   the pair (source and destination digests) as `2 x` the digest median. Rule (day 19, unchanged): the receipt stays
   (a) unless the pair's median exceeds the copy's median; if it does, the reading is reported verbatim and the
   door review reads it, nothing is relaxed here today.
+
+### The lead's note, received mid-day (revuto on #638, the take-ready pin leak)
+
+The lead fixed a slice-2 leak on `lane/spill-integ37-20260922` (`0d021c10a`): `host_restore_take_ready`'s
+fail-closed arm read `r.pin.take()` AFTER the `let`-else scrutinee `(r.cache.take(), r.pin.take())` had moved the
+pin into the dropped tuple, so a ready restore with no cache left its source entry pinned for the boot. The rule:
+decide the shape with borrows (`is_none()` / `is_some()`), THEN move. The lead's branch is merged into this lane
+below. Audit of every take-and-match in the worker and the engine for the same shape (`rg 'match \(.*\.take\(\)|let
+.*= \(.*\.take\(\)'`): `host_demote_settle_with` (`(pending.dead.take(), pending.contract.take())`) binds BOTH moved
+values in its refutation arm and uses both, not the bug shape; the three `match (x.is_some(), y.take())` sites
+(demote, capture, restore) decide the first with a borrow and bind the taken second in every arm, not the bug shape;
+the only instance was the one the lead fixed. Slice 3 adds none: the engine's `progress` decides the receipt with
+borrows (`match &e.receipt`, `let Some(lanes) = &receipt_lanes`), the capture's mismatch arm consumes `registered`
+in a loop with no refutation, and the restore's mismatch arm `take`s the cache and the pin as separate statements.
+
+## Task 1, what landed (under `MEMRA_KV_HOST_CONTRACTS=1`, default OFF, decide-by 2026-10-05)
+
+- `crates/memra-tier/src/conformance/d2d_receipt.rs`: the receipt program (`RECEIPT_LANES`, `mix64`,
+  `receipt_lanes`, `receipt_digest_from_lanes`, `receipt_digest`), `ReceiptTerm`, the `D2dReceiptFixture` trait,
+  the schedules `d2d_receipt_witnessed` (rules 1 and 2) and `d2d_receipt_refused` (rules 3 and 4). Bindings
+  `tests/contracts/d2d_receipt_bindings.rs`: `day22_d2d_receipt_matching_publishes_once`,
+  `day22_receipt_less_item_is_refused_and_latches`, `day22_red_arm_early_reader_receipt_is_refused_and_latches`
+  (the matching schedule fails on the early-reader fixture, asserted), `day22_receipt_digest_oracle_is_stable`.
+  The day-20 and day-21 receipt-less clauses renamed as such by name. `memra-tier` contracts `81 passed` (77 before).
+- Engine (`crates/memra-engine/cu/tier_receipt.cu`, its own fatbin `MEMRA_TIER_RECEIPT_FATBIN`;
+  `tier_transfer.rs`): `d2d_receipt_digest` (four wrapping u64 lanes, grid-stride over LE words, an aligned u64
+  path and a byte path for tails and unaligned spans, warp-shuffle block reduction, one atomic per lane per block)
+  and `tier_delay_spin` (`%globaltimer`); `ReceiptKernels` loaded by `new_with_copy_stream` (a module that will not
+  load is a construction refusal); `ReceiptScratch` per D2D batch (64 bytes per item on the device, a pinned
+  `PinnedBacking` twin, the receipt event), allocated BEFORE the batch's charge so a refusal submits nothing; in both
+  `submit_d2d_capture` and `submit_d2d_restore`: the producer wait, the source digest, the copy, the destination
+  digest, per item, then ONE D2H of the lanes and the receipt event (`seal_receipt`); `progress` lands a D2D item
+  only once the receipt event is complete and fills `s.checksum` (destination) and the expectation (source) from the
+  lanes; `d2d_receipt(&ticket)` (`NotReady` before the landing; the per-item `ReceiptTerm`s and the gate's
+  verdict); `inject_d2d_early_reader(delay_ns)` (the one-shot fault: `tier_delay_spin` on the copy stream ahead of
+  the copy, the destination digest on the OWNER stream at submit, an owner event the copy stream waits on before
+  its completion event); `D2D_DELAY_FAULT_NS` = 200 ms. `ready_view` and `take_destination` keep refusing a D2D item
+  BY DIRECTION (`Unsupported`), so the witnessed checksum opens no engine-side publication. Census
+  `d2d_capture_rules_are_as_stated` and `d2d_restore_rules_are_as_stated` extended (the order wait, delay, source
+  digest, copy, destination digest, early reader, event; the scratch before the charge; the fault RECORDS one owner
+  event and installs no owner wait). GPU cells: the two day-20/21 cells now assert the receipt (checksum = the
+  oracle, `d2d_receipt` verdict `Ok`, `ready_view` `Unsupported`; the restore's verdict `NotReady` before the
+  install), plus `d2d_receipt_digest_matches_the_cpu_oracle` (three spans, a one-byte flip moves the lanes),
+  `d2d_early_reader_fault_is_refused_by_the_receipt` (verdict `Corrupt`, the destination digest is the zeroed
+  plane's, the ticket leaves cleanly, the planes hold the late copy; a second batch matches: one-shot) and
+  `d2d_receipt_digest_price_against_the_copy` (cell (v)). `docs/KERNELS.md` rows for both kernels.
+- Worker (`crates/memra-server/src/worker.rs`): `HostContractFault::{D2dDelayCapture, D2dDelayRestore}` from
+  `d2d-delay-capture` / `d2d-delay-restore`; `take_fault` now filters to Move 1 faults (`is_move1`), so a D2D fault
+  is never consumed by the D2H or H2D route; `take_d2d_fault(capture)` per class; the arming before each submit
+  with one `capture fault armed (..)` / `restore fault armed (..)` line; `HostCaptureFailure::ReceiptMismatch`,
+  `HostRestoreFailure::ReceiptMismatch`; `host_kv_planes_settle_capture` reads `d2d_receipt` after the landing,
+  prints `[prefix-cache] contracts door D2D capture receipt: ticket issuer=.. seq=.. epochs=.. items=N bytes=B
+  source_digests_sha256=.. destination_digests_sha256=.. require=ok|<Error>` and, on a refused verdict, retires and
+  acknowledges, takes every fresh plane back through its twin and DROPS it, and returns `ReceiptMismatch` (the
+  shell drops unpublished; `host_capture_latch` prints `CAPTURE OFF-TICK DISABLED: D2D capture receipt mismatch ..`
+  and the tier latches); `host_kv_planes_settle_restore` reads `d2d_receipt` after the install (the gate requires
+  the fence), prints the `D2D restore receipt` twin, retires and acknowledges, and on a refused verdict returns
+  `ReceiptMismatch`: the machine DROPS the cache (the copy landed), hands the pin back for release, and
+  `host_restore_latch_landed` prints `RESTORE OFF-TICK DISABLED: D2D restore receipt mismatch ..; the destination
+  cache dropped and the source pin released (the copy had landed); every later hit restores on the tick`, the tier
+  latches; the parked request re-admits to the OFF program. `d2d_receipt_digests_hex` folds the ordered per-item
+  digests (a receipt-less item as 32 zero bytes) in the D2H line's shape. `docs/FLAGS.md`: the fault row's two
+  values and their description; the door row's day-22 sentence. No new flag beyond the two fault values; no new
+  numeric program for the KV bytes (the receipt reads and changes none); `unsafe` only at the two documented kernel
+  launches and the pinned scratch's zero-fill (the existing `PinnedBacking::alloc` contract); no external dependency.
+- `tools/kv-host-contract-fault-gate.sh`: cells `d2d-capture` and `d2d-restore` exactly as pre-registered (plain
+  arm, one boot each, r1 P_A then r2 P_A; `receipt_digests_differ` reads the one refused receipt line and requires
+  its two digests to differ; `texts_equal` reads r1 and r2).

@@ -501,3 +501,44 @@ carries one Move 1 batch, one capture batch and one restore batch. No new flag, 
    suffix prime plus the fixed recurrent term (restore) in both arms; the moved share is under the cell's resolution on
    the target card. An isolating cell needs an intruder with no on-tick compute of its own, or a subtraction against a
    measured prime-only arm in the same hold.
+
+## Move 2, slice 3, day 22: the receipt term of both D2D classes and the `d2d-delay` fault (`DAY22.md`)
+
+**Pre-registration, committed before any slice-3 code (`DAY22.md` "Task 1").** `memra_tier::contracts::checksum`
+is SHA-256 over host bytes with no device twin, and a host hash over a 158 MB readback would put about 100 ms per
+class on the owner thread, so the receipt is a copy-stream REDUCTION with a CPU oracle (`receipt_digest`: four
+wrapping u64 lanes of `mix64(w_j + (j + 1) * C_l)` over LE words, the byte count folded; order-independent, so the
+device order cannot move it; a receipt over KV bytes, never a numeric program over tokens). Per item on the copy
+stream: the producer wait, the SOURCE digest (behind the fence), the copy, the DESTINATION digest, then one D2H of
+the lanes and the receipt event; `progress` lands an item only with its lanes read, the destination digest is the
+item's `checksum` and the source digest its expectation, so `Completion::require`'s existing clause is the
+comparison. A refused verdict is typed and latching: nothing published (capture), nothing primed on (restore), the
+tier and the route latch, the request is served by the tick program. The fault `MEMRA_KV_HOST_FAULT=d2d-delay-capture`
+/ `d2d-delay-restore` is the red arm: the copy delayed 200 ms and the destination digest taken by an unordered early
+reader on the owner stream; a matching receipt under the fault FAILS the cell. Frozen schedule
+`d2d_receipt_witnessed` with its refusal twin `d2d_receipt_refused`.
+
+**What landed (under `MEMRA_KV_HOST_CONTRACTS=1`, default OFF, decide-by 2026-10-05; `DAY22.md` "Task 1, what
+landed").** The tier program and schedules with four CPU bindings (contracts 81 passed); the engine's
+`cu/tier_receipt.cu` (`d2d_receipt_digest`, `tier_delay_spin`, its own fatbin, loaded by `new_with_copy_stream`
+only), `ReceiptScratch` per batch, the digest launches around both classes' copies, `progress` filling the
+receipt, `d2d_receipt`, `inject_d2d_early_reader`, three new GPU cells (the oracle, the early reader, cell (v));
+the worker's receipt lines for both classes, the `ReceiptMismatch` arms, the two fault values and their arming, the
+fault gate's cells `d2d-capture` and `d2d-restore`; `docs/FLAGS.md` and `docs/KERNELS.md` rows.
+
+**What Move 2 still owes, in order.**
+
+1. **The recurrent f32 state off the tick**: both classes keep `conv_state` and `ssm_state` on the owner stream
+   (the capture by law, at the boundary; the restore by the byte-span class's shape). On the 27B that is the fixed
+   157 MB of every entry. A typed f32 span in the restore class moves the restore's share; the capture's cannot move.
+   Its receipt would be the same program over the f32 planes' bytes.
+2. **The spec-boundary capture route** (`prefix_insert_from_spec_boundary`, the MTP draft plane) and the
+   draft-bearing restore: both keep the tick program; the draft plane needs its own item class and the spec
+   session's re-arm needs the ready cache's draft rows.
+3. **A stall cell that isolates each class**: the day-20 and day-21 cells carry the intruder's prime (capture) or
+   suffix prime plus the fixed recurrent term (restore) in both arms; the moved share is under the cell's resolution
+   on the target card. An isolating cell needs an intruder with no on-tick compute of its own, or a subtraction
+   against a measured prime-only arm in the same hold. Cell (v) of day 22 prices the receipt itself.
+4. **The receipt's price in the served path**: cell (v) times the digest against the copy on one span; the
+   receipt's cost inside a capture or restore as the tick sees it (the settle reads 2 KiB of pinned lanes) is
+   under the tick's resolution by construction and is not measured separately.
