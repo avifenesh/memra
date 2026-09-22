@@ -2630,6 +2630,375 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
+        "tickshape" => {
+            // memra#641 (lane/decode-exact-641-20260923): the serving-shape replay of the one
+            // divergent prime-fairness gate run. Peer B's prompt is primed the way the
+            // non-yielding tick primed it: two `--tick`-row concat batches [A, B, C] (the
+            // first fresh, the second carried), then C's remaining rows in solo tick calls,
+            // then B decodes B=1 until `--join` and in a [B, C] wave from there. Every arm is
+            // teacher-forced on the solo reference's greedy tokens, so each step's logits are
+            // compared bitwise against the same input. Arms (`--arms`, comma list):
+            //   ref   prime_cache(B) in one call, decode B=1: the solo plain program
+            //   ref2  ref again: the per-program determinism pin, must be EXACT
+            //   tick  prime_cache(B) in `--tick`-row calls, decode B=1
+            //   bp    the concat batches [A, B, C], then B decodes B=1 throughout
+            //   bps   bp, C's solo tick calls, B=1 until --join, then the [B, C] wave
+            //   wave  ref's prime, C primed in one solo call, B=1 until --join, then [B, C]
+            // Prompts are token-id JSON arrays (`--ids-a/-b/-c`), the gate's exact ids.
+            let read_ids = |key: &str| -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+                let path = arg(&rest, key).ok_or_else(|| format!("{key} <ids.json>"))?;
+                let text = std::fs::read_to_string(&path)?;
+                let body = text.trim().trim_start_matches('[').trim_end_matches(']');
+                let ids = body
+                    .split(',')
+                    .map(|v| v.trim().parse::<u32>())
+                    .collect::<Result<Vec<u32>, _>>()?;
+                Ok(ids)
+            };
+            let ta = read_ids("--ids-a")?;
+            let tb = read_ids("--ids-b")?;
+            let tc = read_ids("--ids-c")?;
+            let tick: usize = arg(&rest, "--tick")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1024);
+            let steps: usize = arg(&rest, "--steps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(32);
+            let join: usize = arg(&rest, "--join")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(4);
+            let arms: Vec<String> = arg(&rest, "--arms")
+                .unwrap_or_else(|| "ref,ref2,tick,bp,bps,wave".into())
+                .split(',')
+                .map(|a| a.trim().to_string())
+                .filter(|a| !a.is_empty())
+                .collect();
+            assert!(
+                ta.len() == tb.len() && tb.len() % tick == 0 && tc.len() % tick == 0,
+                "tickshape replays equal-length A/B prompts on whole ticks"
+            );
+            assert!(tc.len() > tb.len(), "C must outlast B's prime, as in #641");
+            let ctx = tc.len() + steps + 64;
+            let n_embd = cx.model.cfg.n_embd as usize;
+            let e = &cx.e;
+            let model = &cx.model;
+            println!(
+                "tickshape: T_a={} T_b={} T_c={} tick={tick} steps={steps} join={join} ctx={ctx} \
+                 arms={arms:?} FA_VL={:?}",
+                ta.len(),
+                tb.len(),
+                tc.len(),
+                std::env::var("MEMRA_FA_VL").ok()
+            );
+
+            fn fnv(bytes: &[u8]) -> u64 {
+                let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+                for &b in bytes {
+                    h ^= b as u64;
+                    h = h.wrapping_mul(0x0100_0000_01b3);
+                }
+                h
+            }
+            fn f32_bytes(v: &[f32]) -> Vec<u8> {
+                v.iter().flat_map(|x| x.to_bits().to_le_bytes()).collect()
+            }
+            fn bitcmp(a: &[f32], b: &[f32]) -> (usize, f32) {
+                if a.len() != b.len() {
+                    return (usize::MAX, f32::NAN);
+                }
+                let mut n = 0usize;
+                let mut m = 0f32;
+                for (x, y) in a.iter().zip(b) {
+                    if x.to_bits() != y.to_bits() {
+                        n += 1;
+                        m = m.max((x - y).abs());
+                    }
+                }
+                (n, m)
+            }
+            // Per-layer digest of the prime's cache side effects: the quantized K/V rows
+            // present and the GDN conv ring and recurrent state.
+            let digest = |c: &Cache| -> Result<Vec<(String, u64)>, Box<dyn std::error::Error>> {
+                let mut out = Vec::new();
+                for (il, kv) in c.kv.iter().enumerate() {
+                    if let Some(kvl) = kv {
+                        let kb = e.dtoh_u8_view(&e.view_u8(&kvl.k, kvl.len * kvl.k_tok_bytes))?;
+                        let vb = e.dtoh_u8_view(&e.view_u8(&kvl.v, kvl.len * kvl.v_tok_bytes))?;
+                        out.push((format!("L{il}.k"), fnv(&kb)));
+                        out.push((format!("L{il}.v"), fnv(&vb)));
+                    }
+                }
+                for (il, r) in c.recur.iter().enumerate() {
+                    if let Some(rl) = r {
+                        out.push((
+                            format!("L{il}.conv"),
+                            fnv(&f32_bytes(&e.dtoh(&rl.conv_state)?)),
+                        ));
+                        out.push((
+                            format!("L{il}.ssm"),
+                            fnv(&f32_bytes(&e.dtoh(&rl.ssm_state)?)),
+                        ));
+                    }
+                }
+                Ok(out)
+            };
+            struct PrimeObs {
+                logits: Vec<f32>,
+                h_seed: Vec<f32>,
+                hidden: Vec<f32>,
+                digest: Vec<(String, u64)>,
+            }
+            let decode1 = |t: u32, c: &mut Cache| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+                let mut refs = [c];
+                Ok(model.decode_step_batch(e, &[t], &mut refs)?.remove(0))
+            };
+
+            // ---- ref: the solo plain program ----
+            let run_ref =
+                || -> Result<(PrimeObs, Vec<u32>, Vec<Vec<f32>>), Box<dyn std::error::Error>> {
+                    let mut c = Cache::new(e, &model.cfg, ctx)?;
+                    let (l, hs, hid) = model.prime_cache(e, &tb, &mut c, 0)?;
+                    let obs = PrimeObs {
+                        logits: l,
+                        h_seed: e.dtoh(&hs)?,
+                        hidden: e.dtoh(&hid)?,
+                        digest: digest(&c)?,
+                    };
+                    let mut toks = vec![argmax(&obs.logits) as u32];
+                    let mut logits = Vec::with_capacity(steps);
+                    for s in 1..=steps {
+                        let l = decode1(toks[s - 1], &mut c)?;
+                        toks.push(argmax(&l) as u32);
+                        logits.push(l);
+                    }
+                    Ok((obs, toks, logits))
+                };
+            let (ref_prime, ref_toks, ref_logits) = run_ref()?;
+            println!(
+                "ref: hidden rows={} first tok={} text={:?}",
+                ref_prime.hidden.len() / n_embd,
+                ref_toks[0],
+                cx.tok.decode(&ref_toks)
+            );
+
+            let mut all_exact = true;
+            let report = |name: &str, prime: &PrimeObs, dec: &[Vec<f32>]| -> bool {
+                let (lb, lm) = bitcmp(&ref_prime.logits, &prime.logits);
+                let (sb, _) = bitcmp(&ref_prime.h_seed, &prime.h_seed);
+                let (hb, hm) = bitcmp(&ref_prime.hidden, &prime.hidden);
+                let first_row = if hb == 0 || hb == usize::MAX {
+                    None
+                } else {
+                    (0..ref_prime.hidden.len() / n_embd).find(|&r| {
+                        ref_prime.hidden[r * n_embd..(r + 1) * n_embd]
+                            .iter()
+                            .zip(&prime.hidden[r * n_embd..(r + 1) * n_embd])
+                            .any(|(x, y)| x.to_bits() != y.to_bits())
+                    })
+                };
+                let diff_names: Vec<&str> = ref_prime
+                    .digest
+                    .iter()
+                    .zip(&prime.digest)
+                    .filter(|(x, y)| x.1 != y.1)
+                    .map(|(x, _)| x.0.as_str())
+                    .collect();
+                println!(
+                    "arm {name} prime: logits bitdiff={lb} maxabs={lm:.6e} argmax ref={} arm={} | \
+                     h_seed bitdiff={sb} | hidden bitdiff={hb} maxabs={hm:.6e} first_row={first_row:?} | \
+                     cache digests differ {}/{} first={:?}",
+                    argmax(&ref_prime.logits),
+                    argmax(&prime.logits),
+                    diff_names.len(),
+                    ref_prime.digest.len(),
+                    &diff_names[..diff_names.len().min(6)]
+                );
+                let mut first_bit: Option<usize> = None;
+                let mut first_flip: Option<usize> = None;
+                let mut per_step = Vec::new();
+                for (i, l) in dec.iter().enumerate() {
+                    let s = i + 1;
+                    let (b, m) = bitcmp(&ref_logits[i], l);
+                    per_step.push(format!("{s}:{b}"));
+                    if b > 0 && first_bit.is_none() {
+                        first_bit = Some(s);
+                        println!(
+                            "  first bit-different decode step {s}: bitdiff={b} maxabs={m:.6e}"
+                        );
+                    }
+                    if first_flip.is_none() && argmax(l) as u32 != ref_toks[s] {
+                        first_flip = Some(s);
+                        let (r1, rv1, r2, rv2) = top2(&ref_logits[i]);
+                        let (a1, av1, a2, av2) = top2(l);
+                        println!(
+                            "  first argmax flip at decode step {s}: ref tok={r1} (2nd {r2}, margin {:.6}) \
+                             arm tok={a1} (2nd {a2}, margin {:.6}); ref text to here {:?}",
+                            rv1 - rv2,
+                            av1 - av2,
+                            cx.tok.decode(&ref_toks[..=s])
+                        );
+                    }
+                }
+                println!("  per-step logits bitdiff: {}", per_step.join(" "));
+                let prime_flip = argmax(&prime.logits) as u32 != ref_toks[0];
+                let exact =
+                    lb == 0 && sb == 0 && hb == 0 && diff_names.is_empty() && first_bit.is_none();
+                println!(
+                    "arm {name} verdict: {}{}",
+                    if exact { "EXACT" } else { "DIFFERS" },
+                    if prime_flip || first_flip.is_some() {
+                        format!(
+                            " (greedy text diverges at token {})",
+                            if prime_flip { 0 } else { first_flip.unwrap() }
+                        )
+                    } else if !exact {
+                        " (greedy text unchanged for these steps)".to_string()
+                    } else {
+                        String::new()
+                    }
+                );
+                exact
+            };
+
+            for arm in &arms {
+                match arm.as_str() {
+                    "ref" => {
+                        all_exact &= report("ref", &ref_prime, &ref_logits);
+                    }
+                    "ref2" => {
+                        let (p, _t, l) = run_ref()?;
+                        all_exact &= report("ref2", &p, &l);
+                    }
+                    "tick" => {
+                        let mut c = Cache::new(e, &model.cfg, ctx)?;
+                        let mut hidden = Vec::new();
+                        let mut last = None;
+                        for chunk in tb.chunks(tick) {
+                            let (l, hs, hid) = model.prime_cache(e, chunk, &mut c, 0)?;
+                            hidden.extend(e.dtoh(&hid)?);
+                            last = Some((l, e.dtoh(&hs)?));
+                        }
+                        let (logits, h_seed) = last.unwrap();
+                        let p = PrimeObs {
+                            logits,
+                            h_seed,
+                            hidden,
+                            digest: digest(&c)?,
+                        };
+                        let mut dec = Vec::with_capacity(steps);
+                        for s in 1..=steps {
+                            dec.push(decode1(ref_toks[s - 1], &mut c)?);
+                        }
+                        all_exact &= report("tick", &p, &dec);
+                    }
+                    "bp" | "bps" => {
+                        let mut ca = Cache::new(e, &model.cfg, ctx)?;
+                        let mut cb = Cache::new(e, &model.cfg, ctx)?;
+                        let mut cc = Cache::new(e, &model.cfg, ctx)?;
+                        let mut hidden = Vec::new();
+                        let mut last = None;
+                        for k in 0..tb.len() / tick {
+                            let r = k * tick..(k + 1) * tick;
+                            let prompts: [&[u32]; 3] = [&ta[r.clone()], &tb[r.clone()], &tc[r]];
+                            let mut refs: Vec<&mut Cache> = vec![&mut ca, &mut cb, &mut cc];
+                            let mut outs = model.prime_cache_batch(e, &prompts, &mut refs)?;
+                            drop(outs.remove(2));
+                            let (lb_, hs, hid) = outs.remove(1);
+                            hidden.extend(e.dtoh(&hid)?);
+                            last = Some((lb_, e.dtoh(&hs)?));
+                        }
+                        drop(ca);
+                        let (logits, h_seed) = last.unwrap();
+                        let p = PrimeObs {
+                            logits,
+                            h_seed,
+                            hidden,
+                            digest: digest(&cb)?,
+                        };
+                        let mut dec = Vec::with_capacity(steps);
+                        if arm == "bp" {
+                            for s in 1..=steps {
+                                dec.push(decode1(ref_toks[s - 1], &mut cb)?);
+                            }
+                        } else {
+                            // C's remaining rows land one solo tick call per scheduler tick,
+                            // interleaved with B's B=1 decode exactly as the #641 trace shows:
+                            // the last C chunk completes in the tick of B's step `join`.
+                            let c_rest: Vec<&[u32]> = tc[tb.len()..].chunks(tick).collect();
+                            let mut c_next: Option<u32> = None;
+                            let mut c_i = 0usize;
+                            for s in 1..=steps {
+                                let ticks_left = join.saturating_sub(s);
+                                if c_i < c_rest.len() && c_rest.len() - c_i > ticks_left {
+                                    let (l, _, _) =
+                                        model.prime_cache(e, c_rest[c_i], &mut cc, 0)?;
+                                    c_i += 1;
+                                    if c_i == c_rest.len() {
+                                        c_next = Some(argmax(&l) as u32);
+                                    }
+                                }
+                                if s < join || c_next.is_none() {
+                                    dec.push(decode1(ref_toks[s - 1], &mut cb)?);
+                                } else {
+                                    let ct = c_next.unwrap();
+                                    let mut refs = [&mut cb, &mut cc];
+                                    let mut rows = model.decode_step_batch(
+                                        e,
+                                        &[ref_toks[s - 1], ct],
+                                        &mut refs,
+                                    )?;
+                                    c_next = Some(argmax(&rows[1]) as u32);
+                                    dec.push(rows.remove(0));
+                                }
+                            }
+                        }
+                        all_exact &= report(arm, &p, &dec);
+                    }
+                    "wave" => {
+                        let mut cb = Cache::new(e, &model.cfg, ctx)?;
+                        let (l, hs, hid) = model.prime_cache(e, &tb, &mut cb, 0)?;
+                        let p = PrimeObs {
+                            logits: l,
+                            h_seed: e.dtoh(&hs)?,
+                            hidden: e.dtoh(&hid)?,
+                            digest: digest(&cb)?,
+                        };
+                        let mut cc = Cache::new(e, &model.cfg, ctx)?;
+                        let (lc, _, _) = model.prime_cache(e, &tc, &mut cc, 0)?;
+                        let mut c_next = argmax(&lc) as u32;
+                        let mut dec = Vec::with_capacity(steps);
+                        for s in 1..=steps {
+                            if s < join {
+                                dec.push(decode1(ref_toks[s - 1], &mut cb)?);
+                            } else {
+                                let mut refs = [&mut cb, &mut cc];
+                                let mut rows = model.decode_step_batch(
+                                    e,
+                                    &[ref_toks[s - 1], c_next],
+                                    &mut refs,
+                                )?;
+                                c_next = argmax(&rows[1]) as u32;
+                                dec.push(rows.remove(0));
+                            }
+                        }
+                        all_exact &= report("wave", &p, &dec);
+                    }
+                    other => return Err(format!("tickshape: unknown arm {other}").into()),
+                }
+            }
+            println!(
+                "tickshape verdict: {}",
+                if all_exact {
+                    "ALL ARMS EXACT"
+                } else {
+                    "AT LEAST ONE ARM DIFFERS"
+                }
+            );
+            if !all_exact {
+                std::process::exit(1);
+            }
+        }
+
         m => return Err(format!("unknown mode {m}").into()),
     }
     Ok(())
