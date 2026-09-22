@@ -156,3 +156,34 @@ Pre-registered assertions, fixed here before the run, not fitted:
 
 If the cell does not run (lock never free within the bounded wait, model absent), the arithmetic above stands and the
 stop is recorded.
+
+## 2. The `MEMRA_KV_PARK_COMPACT` door: its `decide-by` and the cell that decides it
+
+The door-hygiene rule (`CLAUDE.md`, 2026-09-05) puts a `decide-by:` date on every default-OFF door; the row had none
+(recorded on day 27 and on #539). Set today in `docs/FLAGS.md`: **decide-by 2026-10-06**, 14 days after the door's first
+serving receipt on the target card class (`DAY27.md` 2.6). The date is the lane's, the verdict is the owner's; the
+default does not change. The decision input, from the day-27 receipts, is written in full in
+`KV-RESIDENCY-DESIGN.md` (day-28 addendum) and in the row; in brief:
+
+- **What the receipts say.** Spec path (the served path, both cards): the door writes nothing (`park-compact lines: 0`),
+  retained bytes identical across arms (39,090,913,280 B target, 7,449,083,904 B local), 0 hits in both pools, digests
+  equal 45 of 45. Plain path (`MEMRA_SERVE_SPEC=0`, target card, labelled extra): the door engages on every retirement
+  (46 lines, `2071 of 262144 rows retained in 2.1ms` up to `6459 of 262144`), retention 39,191,576,576 ->
+  22,649,241,600 B, pools still 0 hits, digests equal 45 of 45 across arms and across paths.
+- **Promotion would change** the plain pool's retained bytes only (a parked entry from `cache.max_ctx x bpt`,
+  7,784,628,224 B on the 27B at the served context, to `fed x bpt`, about 61 MB at 2071 rows) and make a plain-pool
+  resume a D2D copy into a request-cap cache instead of an in-place adoption. Spec-path deployments see nothing.
+- **Deletion would lose** the only mechanism that bounds a parked plain cache below the served context, and nothing
+  measured: 0 continuation-pool hits on every tape this lane holds (days 14, 20, 26, 27); pressure reclaim and LRU on a
+  later park would be the whole policy.
+- **The spec-pool equivalent** is a different mechanism: a spec session parks live engine state whose captured
+  draft-chain graphs bake the cache's plane addresses, so compaction there means copying the trunk rows AND dropping the
+  graphs for a recapture on resume (one `D`-class capture, 41 to 44 MB on the 9B); the address-preserving policies are a
+  TTL on `parked_at` or a per-pool byte cap. That is the owner's product switch on #539.
+- **The deciding cell** (pre-registered in the design note, pointed at by the row): plain path, both cards, default vs
+  `=1`, both orders, N>=5 per arm per length, one binary: (i) the compacted-park resume byte-identity gate on both
+  resume shapes (exact-extension continuation resuming a compacted entry, against a plain-parked resume and a cold
+  prime; digests equal, `plain-affinity` hit lines present, which needs the continuation sent as the parked session's
+  committed sequence plus the suffix, the `DAY20.md` shape, not a re-rendered chat), (ii) the step-OOM adjacency replay
+  (`retire_may_park(_, true)` refuses the park, no line, no entry), (iii) the park-time copy cost per park on both
+  cards. About 1 agent-day on the day-26/27 harness.

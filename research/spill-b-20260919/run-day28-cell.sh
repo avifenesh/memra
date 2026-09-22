@@ -40,8 +40,10 @@ nvidia-smi --query-gpu=name,memory.used,memory.total,temperature.gpu,power.draw,
 ss -ltn | grep -q ":$PORT " && { echo "port $PORT busy"; exit 4; }
 date -u +%FT%TZ > "$C/started.txt"
 # server stderr is stamped per line (epoch ms) so log events align with the 250 ms samples.
-if [ "$CTX" = unset ]; then ctx_env=(); else ctx_env=(MEMRA_CTX=$CTX); fi
-env MEMRA_COMPAT=openai MEMRA_MODELS="$MODEL_KEY=$MODEL" MEMRA_ADDR=127.0.0.1:$PORT "${ctx_env[@]}" MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_TTFT_TRACE=1 \
+# `run` is a shell function: env assignments must be shell prefixes, never `env ... run` (attempt 1 on the target card
+# died on `env: 'run': No such file or directory`). MEMRA_CTX is exported only when CTX is a number.
+if [ "$CTX" != unset ]; then export MEMRA_CTX=$CTX; else unset MEMRA_CTX; fi
+MEMRA_COMPAT=openai MEMRA_MODELS="$MODEL_KEY=$MODEL" MEMRA_ADDR=127.0.0.1:$PORT MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_TTFT_TRACE=1 \
   run "$BIN" 2>&1 | python3 -u -c 'import sys,time
 for line in sys.stdin:
     sys.stdout.write(f"{int(time.time()*1000)} {line}")' > "$C/server.log" &
