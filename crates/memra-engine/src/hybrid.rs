@@ -6381,11 +6381,17 @@ impl HybridModel {
         // memra#541: every bound tensor the loader never read is named; the pack's
         // `tensor_consumption` decides whether that is a report or a refusal. Vision towers load
         // through their own owner, and an MTP block the caller did not ask for stays unread.
+        // MTP blocks are skipped by what was actually loaded: none on the no-MTP entry points,
+        // after MEMRA_MTP_SKIP, with an external MEMRA_MTP_DRAFT, or past a MEMRA_MTP_HEADS cap.
+        let loaded_mtp_blocks = if load_mtp { embedded_head_count } else { 0 };
         let unconsumed = binding.audit_consumption(&recording.requested(), &cfg, |id, tensor| {
             memra_gguf::checkpoint_binding::unread_by_design(id)
                 || memra_gguf::checkpoint_binding::owned_by_vision(tensor)
-                || (!load_mtp
-                    && memra_gguf::checkpoint_binding::owned_by_mtp(tensor, n_trunk as u32))
+                || memra_gguf::checkpoint_binding::unloaded_mtp(
+                    tensor,
+                    n_trunk as u32,
+                    loaded_mtp_blocks,
+                )
         });
         memra_gguf::checkpoint_binding::settle_consumption(&binding, &unconsumed)
             .map_err(std::io::Error::other)?;

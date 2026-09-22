@@ -3368,8 +3368,12 @@ impl HfConfig {
         if let Some(v) = o.u32("sliding_window") {
             self.sliding_window = Some(v);
         }
-        if let Some(v) = o.raw("tie_word_embeddings") {
-            self.tie_word_embeddings = Some(v == "true");
+        // Only the two JSON literals speak; `null`, a missing key or an unreadable token leave
+        // the declaration absent, so a config that did not speak never becomes a load refusal.
+        match o.raw("tie_word_embeddings") {
+            Some("true") => self.tie_word_embeddings = Some(true),
+            Some("false") => self.tie_word_embeddings = Some(false),
+            _ => {}
         }
         if let Some(v) = o.f32("final_logit_softcapping") {
             self.final_logit_softcapping = Some(v);

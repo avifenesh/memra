@@ -435,15 +435,18 @@ pub fn owned_by_vision(tensor: &BoundTensor) -> bool {
     matches!(tensor.owner, TensorOwner::Vision(_))
 }
 
-/// Whether a bound tensor belongs to an MTP block: the glue tensors carry `TensorOwner::Mtp`,
-/// but the block's own layer tensors keep their appended layer index (`blk.<n_trunk+d>.*` in a
-/// GGUF), so anything owned by a layer at or past the trunk is the draft head's too. Receipt:
+/// Whether a bound tensor belongs to an MTP block the loader did NOT load. The glue tensors carry
+/// `TensorOwner::Mtp(depth)`, but the block's own layer tensors keep their appended layer index
+/// (`blk.<n_trunk+depth>.*` in a GGUF), so the test is by position: depth at or past
+/// `loaded_mtp_blocks`, or a layer at or past `n_trunk_layers + loaded_mtp_blocks`. The caller
+/// passes what it actually loaded (zero on the no-MTP entry points, after `MEMRA_MTP_SKIP`, with an
+/// external draft, or under a `MEMRA_MTP_HEADS` cap), not what the checkpoint carries. Receipt:
 /// `decode-batch-gate` loads without MTP and the first Refuse run named exactly the eleven
 /// `blk.32.*` tensors of the 9B's appended block.
-pub fn owned_by_mtp(tensor: &BoundTensor, n_trunk_layers: u32) -> bool {
+pub fn unloaded_mtp(tensor: &BoundTensor, n_trunk_layers: u32, loaded_mtp_blocks: u32) -> bool {
     match tensor.owner {
-        TensorOwner::Mtp(_) => true,
-        TensorOwner::Layer(index) => index >= n_trunk_layers,
+        TensorOwner::Mtp(depth) => depth >= loaded_mtp_blocks,
+        TensorOwner::Layer(index) => index >= n_trunk_layers + loaded_mtp_blocks,
         _ => false,
     }
 }

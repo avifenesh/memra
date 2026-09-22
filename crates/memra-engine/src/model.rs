@@ -1654,7 +1654,7 @@ impl Model {
         let unconsumed = binding.audit_consumption(&recording.requested(), &cfg, |id, tensor| {
             checkpoint_binding::unread_by_design(id)
                 || checkpoint_binding::owned_by_vision(tensor)
-                || checkpoint_binding::owned_by_mtp(tensor, plan.layers.len() as u32)
+                || checkpoint_binding::unloaded_mtp(tensor, plan.layers.len() as u32, 0)
         });
         checkpoint_binding::settle_consumption(&binding, &unconsumed)
             .map_err(std::io::Error::other)?;

@@ -81,6 +81,17 @@ one still refuses), and skipped by the consumption audit with that reason in cod
   (`census_from_views`) and serve the embedding rows under `output.weight` (the reference reads
   the same numbers either way). `hyper_connections_gpu::a_missing_hc_tensor_is_refused_by_name`
   now sees the contract's refusal (the semantic id names the declaration) instead of the loader's.
+- Review round 1 (revuto) widened the MTP skip: with `load_mtp` true the embedded chain can still
+  be zeroed or capped (`MEMRA_MTP_SKIP=1`, an external `MEMRA_MTP_DRAFT`, `MEMRA_MTP_HEADS=N`,
+  glm5 without `MEMRA_GLM5_MTP=1`), so the skip now follows `embedded_head_count`, what the loader
+  actually loaded (`unloaded_mtp`). Receipt: `raw/serve-9b-boot-mtp-skip.log` (9B under
+  `MEMRA_MTP_SKIP=1` with `qwen35` on `Refuse`: bound line, no refusal, completion 200). The
+  same round fixed `tie_word_embeddings` parsing: only the literals `true`/`false` speak; `null`
+  or an unreadable token leaves the declaration absent instead of becoming a refusal.
+- Review round 2 named the six fixture sources under `crates/memra-engine/src/bin/*_gate.rs`
+  that the test-fixture migration missed; they got the same census, separate head and embedding
+  fallback. Receipt: `raw/glm5-hyper-batch-gate.log` (`bound 122 semantic tensors (pack
+  glm5_next, Gguf, output head Separate)`, three PASS lines).
 - `glm5_dflash_session_gpu::gpu_glm5_prime_walker_four_turns_with_restored_suffix_and_peer`
   fails identically on `main` (5df11152f) and on this tree: pre-existing, not this lane's
   (`raw/gpu-mock-tests.log`, control run on the main checkout).
