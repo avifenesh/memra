@@ -1484,6 +1484,92 @@ nothing" and let the premise hold falsely (engine wording drift would have repri
 line now makes the premise unreadable and the gate refuses typed (`REFUSED: V3 premise unreadable: ...`). Two CPU tests
 added to `test-day29.py` (15 ok); `docs/TESTING.md` carries the exit rule.
 
+## integ36 (`lane/spill-integ36-20260922`): A day 20 (Move 2 slice 1, the capture off the tick) and B day 30 (memra#423 lives in darklanes)
+Lane tips merged: A `62aa92279`, B `e0a8afeeb`, clean on main `4bb2afb63` (#633). Engine, tier and server changes, all
+behind `MEMRA_KV_HOST_CONTRACTS=1` (default OFF, decide-by 2026-10-05), plus B's one-paragraph header fix in
+`memra-server/src/metering.rs`. No new flag, no numeric change.
+
+**A day 20, Move 2 slice 1.** Design finding, recorded before any cell ran: the pre-registered op shape
+`TransferOp::D2d(ContiguousCopy)` takes owned `DeviceLease`s on both sides and the engine's registry admits only moved
+buffers, but a capture's source is the live session cache's plane that the decoding session keeps; so the capture is a
+borrowed-source op into an owned registered destination (`D2dCapture`, `CudaTransfers::submit_d2d_capture`), not a
+`TransferOp` variant; slice 2's restore has the mirror problem (its destination is the session's cache). What landed:
+`crates/memra-tier/src/conformance/d2d_capture.rs` (`d2d_capture_publish`: not landed until every completion event,
+publish before the event is a schedule failure, `retire(None)`, `acknowledge`, destinations back; slice-1 receipt clause:
+no witnessed checksum so `Completion::require` refuses `Corrupt`) with bindings
+`day20_d2d_capture_publishes_only_after_every_items_event` ok, `day20_red_arm_publish_before_the_event_fails_the_schedule`
+ok, `day20_d2d_item_without_a_witnessed_checksum_is_refused_by_the_host_contract_gate` ok (contracts target 74 passed;
+frozen schedules untouched); engine `CopyDirection::DeviceToDevice`, `D2dCapture`, `submit_d2d_capture` (requires the
+copy stream; the copy stream waits on the producer event, `memcpy_dtod`, completion event on the copy stream, fenced at
+submit like a D2H, no owner wait), `capture_landed`, census `d2d_capture_rules_are_as_stated`, GPU cell
+`d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event`; worker `HostPrefixCache::capturing`,
+`PendingCapture`, `prefix_capture_off_tick` (called by `prefix_insert_from_session` after `prepare_snapshot`, before the
+tick program; recurrent state `clone_dtod` on the owner stream at the boundary; fresh planes registered with twins;
+producer fence; one batch), `host_kv_planes_settle_capture`, `host_capture_settle_*`, `host_capture_publish`,
+`host_capture_latch`, `host_capture_drain_at_shutdown`; call sites at the tick top after the promote poll, both idle
+waits, `purge_tenant`, admission reclaim, three device trims, the run-loop exit; the ledger's in-flight term is
+`2 x (2 x max layers + 2)`. Five CPU tests (the poll keeps the state and done reaches ready once; a missing shell or
+ticket fails closed; a latched settle drops the entry and takes the tick program; a purge drops the purged tenant's
+entry and keeps another's; every path settles or ignores as stated). Server lib 798 passed; clippy `-D warnings` on
+all three crates. Target card (tree `c7a6d3a5b`, binary `263fe777...`), door OFF and ON, verbatim: `KV-HOST-SPILL
+IDENTITY GATE: ALL GREEN (teeth=0)` default and plain both arms; `KV-HOST-SPILL FAILURE GATE: ALL GREEN` both arms;
+`KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`; `PREFIX-NEWEST-TURN-FITS: ... V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` both
+arms; `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` both arms; unit cells `8 passed` plus the engine capture cell `1 passed`;
+the route engaged in the plain ON arm (`capture submitted off the tick (seed): 64 tokens, 32 planes (158.8MB) ...`,
+`capture published off the tick (seed): ... after 1 poll(s)`), zero refusal or latch lines. Scope fact: spec-boundary
+publishes (`prefix_insert_from_spec_boundary`, the MTP draft plane) still take the tick program. Capture stall cell
+(one hold, OFF/ON/ON/OFF, N=5 per arm per order, every re-post hit at `cached_tokens=5088`), verbatim: OFF pass 1
+`stall_median=355.4`, ON pass 1 `355.4`, OFF pass 2 `353.9`, ON pass 2 `354.0`; C1 `flat` both passes (bound 6.0); ON
+`server_capture_ms` median 227.9 (submission to the observing poll). The intruder's 5120-token prime dominates both
+arms; the capture's own share is under the cell's resolution; decides nothing about the door; a capture-isolating
+cell is C day 24 (running). Not run: the local 5090 door gates on that tree (C day 24). Still owed: the spec-boundary
+capture route, Move 2 slices 2 (A day 21, running) and 3, Move 1's receipt hashes, by-reference routes, same-window A/B.
+
+**B day 30, memra#423 and #464.** Key finding: the budget journal, `balance_after_micro`, the boot backfill and the
+`/admin` API are not in memra (extracted 2026-08-29, `docs/FLAGS.md` rows 304 to 306); they live in darklanes
+`serving/darklanes-metering/src/ledger.rs` behind memra's `Metering` and `Receipt` seam; the memra half is the seam
+contract, which promises no cross-request ordering, correctly. Rows are causally ordered (one `Mutex<BudgetState>`, the
+journal file inside it); the chain broke because `admit` subtracts each request's worst-case hold with no row and settle
+stamps `current + refund`, so with A and B in flight row A stamps `B0 - a - R_B` and row B `B0 - a - b`: the breaks
+cancel at quiescence and the live gap equals the outstanding holds; the issue's "stamps a balance it read before the
+others landed" describes a race the code does not have. Cells (local 5090, darklanes-serve on the 9B, synthetic tenant,
+N=16 plus one credit in flight), verbatim: before `JOURNAL-ORDER CELL arm=before N=16 rows=17 chain_violations=17
+order_violations=0 conservation=ok cancel_sum=0 -> FAIL`; after `JOURNAL-ORDER CELL arm=after N=16 rows=17
+chain_violations=0 order_violations=0 conservation=ok cancel_sum=0 -> PASS` (twice). Fix, in darklanes, bounded, no
+schema change: per-tenant `tenant_reserved` at admit, settle and unsettled drop; every row stamps
+`balance_after + tenant_reserved_after` (the settled balance); four CPU tests from the diagram (three red before), suite
+92 of 92, clippy clean; on branch `lane/budget-journal-order-20260922` at `20f8140e8`, pushed, not merged (the lead
+opens its PR). Stated for the owner, not taken: source-file top-ups still rowless (a second chain break); audits cut at
+the first fixed boot; pre-existing fmt drift in darklanes `admin.rs` and `capture.rs` untouched. memra#464 gap: the
+backfill's only evidence is journal membership and a carried row is byte-identical to an unbilled one; the #423 fix
+repairs the seed arithmetic and adds no id to the guard; two guard-only seeds offered (about 0.5 agent-day) for the
+owner. In memra: the stale `metering.rs` header now says the stock binary wires no implementation (the reference ledger
+moved out on 2026-08-29). Ruling 32: a lane brief that names a memra seam checks first where the implementation lives
+today (the 2026-08-29 extraction moved billing to darklanes); fixes to darklanes go through their own PR under the
+owner's merge law, never through a memra integ.
+The darklanes PR for B's journal fix is avifenesh/darklanes#1093 (lead-opened, self-review comment posted; merges under
+the owner's merge law there).
+
+Battery (`integration-day12/integ36-cpu-battery/`, merged tree `bdd3b8993`, CPUQuota 1200 percent): fmt, portable
+suites, memra-server suite, clippy, censuses, collector pytest, engine CPU lib tests, tier tests, engine, server and tier
+clippy `-D warnings`, marker census, workflow keys, perf board: rc=0; `git diff --check` tripped on receipt logs (marked
+`-whitespace`). Local 5090 `tools/serve-smoke.sh` (door OFF): `serve-smoke: 0 failed`.
+
+Revuto round 1 on #634, two findings, both real, fixed by the lead: (1) the capture's source is a borrowed slice of
+the live session's KV plane and the engine retains none of it after `submit_d2d_capture`; a retiring session's cache is
+dropped on the owner stream (not ordered against the copy stream) or parked for a later request to rewrite, and the tick
+top's settle is a `Poll`, so a capture in flight across the retire seam would publish whatever bytes the copy stream
+happened to see, with no checksum term in slice 1 to catch it. Fix: before any session leaves `active`, a pending
+`Capturing` entry settles with `ContractWait::Block` ("a session retire"), so no plane is freed or rewritten under an
+in-flight read (one capture per worker). (2) when `submit_d2d_capture` refused, nothing was submitted, the producer
+event could still be pending, `release_producer` refused `Busy` and the `let _ =` dropped it, leaving the fence in the
+engine's producer table for the boot; the refusal path now drains the owner stream, releases the fence, and latches the
+route off (typed) if the fence still will not release. Source census test
+`a_session_retire_settles_a_pending_capture_before_the_cache_moves_and_a_refused_submission_releases_its_fence`; the
+admission-book lock test kept the retire seam intact (the settle sits before the loop). Server clippy `-D warnings` and
+the memra-server suite (800 passed) green, gated before the commit. Owed: the retire-seam settle's cost in the
+capture-isolating cell (C day 24 measures on the tree it has; the door review reads both).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
