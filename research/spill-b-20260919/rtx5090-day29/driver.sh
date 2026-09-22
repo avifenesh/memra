@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# WP-B day 29 local RTX 5090 door-gate driver: A's day-18 driver (research/spill-a-20260919/rtx5090-day18/driver.sh) verbatim, cells and order unchanged (DAY29.md 4). Every door gate takes the
+# WP-B day 29 local RTX 5090 door-gate driver: A's day-18 driver (research/spill-a-20260919/rtx5090-day18/driver.sh) verbatim, cells and order unchanged (DAY29.md 4; at the same depth as A's so its `cd ../../..` is the repo root). Every door gate takes the
 # canonical lock itself with `flock -n`, so a busy lock is a REFUSED exit 2 that this driver retries
 # boundedly (15 x 120 s), never signalling the holder. Door OFF = env unset; door ON = MEMRA_KV_HOST_CONTRACTS=1.
 # usage: driver.sh <model.gguf> <server_bin> <evidence_dir>

@@ -103,3 +103,91 @@ does not hold), naming the turns, the released bytes per boot, the driver free a
 and the compute-apps listing at that moment: `REFUSED: V3 premise: ...`. A gate whose premise did not hold is
 `REFUSED`, never `PASS`, and never `FAIL` on a clause it could not evaluate. Two boots that reclaim IDENTICALLY (same
 turns, same bytes) keep V3 evaluated as today. A CPU test replays A's day-18 lines through the detector.
+
+## 3. The repro: three runs, gate unchanged, door OFF, the card sampled through every turn
+
+Tree `26523b686` (the pre-registration commit; the binary from `f0dc5d0d8`, `a26c1180b5fc…`, `run*/binary.sha256`),
+gate `tools/prefix-newest-turn-fits-gate.py` at its pre-patch hash (`rtx5090-day29/gate-before-patch.sha256`), A's
+day-18 `twin27-off` command verbatim, `MEMRA_GPU_LOCK=/tmp/memra-5090.lock`, the 27B artifact. Receipts:
+`rtx5090-day29/run{1,2,3}/` (the gate's `twin27-off/` bundle with both server logs, `TURNS.md`, `summary.json`;
+`card-before.txt`, `card-after.txt`, `samples.log` at 1 Hz, `driver.log`). Every run `executed-not-qualified`, N=1
+each, the laptop card's regime not recorded by the gate (`power.limit [N/A]`).
+
+| run | start (UTC) | verdict line, verbatim | rc | co-tenant on the card |
+|---|---|---|---|---|
+| run1 | 04:27:26 | `PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=1 cohort_evictions=1 self_evictions=0 refused_or_skipped=0 effective_free_ok=2/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=FAIL V4=ok V5=ok V6=ok -> FAIL` | 1 | one `python` process (a `colbert-2` venv, not this lane's), 1390 MiB, on 139 of 139 samples, before and after |
+| run2 | 04:31:30 | the identical line, `-> FAIL` | 1 | the same process, 1390 MiB, 130 of 130 samples |
+| run3 | 04:34:27 | the identical line, `-> FAIL` | 1 | the same process, 1390 MiB, 130 of 130 samples |
+
+**Reproduces, 3 of 3, and to the byte.** Every `effective free after` and `cache-off effective free after` value in
+all three `TURNS.md` equals A's day-18 table (`3743931652`, `4670741764` after turn 1; `3602940420`, `4060382384`
+after turn 2; …), every V3 state error reads `-410352980` on turns 2 to 7 and `0` on turns 1 and 8, and the
+reclaim lines match A's line for line (`verify-day29.py` rows, all three runs):
+
+```
+turn 2: v3_error=-410352980 measured_reclaims=[(2, 1, 0, 0, 3744, 4651)] calibration_reclaims=[]
+turn 3: v3_error=-410352980 measured_reclaims=[(1, 1, 0, 0, 3603, 4443)] calibration_reclaims=[(0, 1, 0, 0, 4060, 4471)]
+turn 4: v3_error=-410352980 measured_reclaims=[(1, 0, 0, 0, 3976, 4414)] calibration_reclaims=[]
+turn 5: v3_error=-410352980 measured_reclaims=[(1, 0, 0, 0, 3938, 4385)] calibration_reclaims=[]
+turn 6: v3_error=-410352980 measured_reclaims=[(1, 1, 0, 0, 3899, 4983)] calibration_reclaims=[]
+turn 7: v3_error=-410352980 measured_reclaims=[(1, 1, 0, 0, 3861, 4965)] calibration_reclaims=[]
+turn 8: v3_error=0          measured_reclaims=[(1, 1, 0, 0, 3824, 4944)] calibration_reclaims=[(0, 1, 0, 0, 4370, 4780)]
+```
+(tuples: prefix entries, plain, spec, dspark parked sessions released; effective free MB before -> after.)
+
+Reading against the section-2 rule: **reproduces**, with the co-tenant of the predicted size on the card for the
+whole of every run, so the section-1 reading stands as the environment: a 1390 MiB (`1457520640` B) process
+beside the server is the `1463091200` B by which day 18's free-at-turn-1 fell short of day 17's (the 5.6 MB
+remainder is the context's own boot-to-boot variation), and byte-identical state values on the same tree, on a
+different day, with the same co-tenant footprint, say the card's free space at boot was the same to the byte on
+A's day 18 as here. The measured boot's turn-2 reclaim released `(4651 - 3744) MB - 497188864 B = 409811136` B of
+parked plain session (`+ 1 plain`), `541844` B from `410352980` (the log line's MB rounding), inside the 64 MiB
+slack, and `3272 x 29696 + 313187668 = 410352980` exactly (`test-day29.py::Arithmetic`). **Named:** the parked
+plain session of the cohort's last shape (`ctx_cap 3272`), which the cache-on boot's admission reclaimed at turn 2
+and the cache-off boot kept until its own turn-3 reclaim took a different one, so the two boots' retained
+parked-session sets differed by that session from turn 2 to turn 7. Not a door delta, not the day-27 budget
+change (configured budget, section 1), not a pool-accounting defect (every settle line balances). The day-17
+environment (a clean card) could not be reproduced at this sitting: the co-tenant is another session's process
+and is never touched by this lane; the clean-card run stays owed and is bounded (one cell, the first time the card
+reads no co-tenant), with the section-1 prediction on record: `evictions=9 ... -> PASS`, no `reclaim-on-defer` in
+either boot.
+
+Same-card note for the lead: A's day-17 local table and today's differ by the co-tenant alone; the 96 GB card
+never approaches the floor (`required` about 4.8 GB against about 60 GB effective free at the same admission), so
+the target-card `-> PASS` in both arms (A's day 18 and 19) is the same gate reading a shape that cannot cross.
+
+## 4. What changed: the gate names the broken premise instead of `V3=FAIL` (`tools/prefix-newest-turn-fits-gate.py`)
+
+Decided in section 2 before the runs and applied after run 3 (`apply-day29-gate-patch.py`, exact-string edits, each
+once; `rtx5090-day29/gate-before-patch.sha256` and `gate-after-patch.sha256`). **V3's clause, form and 64 MiB slack
+are unchanged**; no clause of V1..V6 moved; no new flag; no engine change today.
+
+- The `[admit-oom] reclaim-on-defer: evicted N prefix entries + P plain + S spec + D dspark parked sessions ...;
+  effective free A MB -> B MB` line is parsed (`RE_RECLAIM_PARKED`, beside the existing `RE_RECLAIM` counter) into
+  each window's `parked_releases`; the calibration boot's cohort sends are parsed into windows too (they were
+  discarded before), so both boots have one window per send: three cohort lengths x two sends, then the turns.
+- `v3_premise_rows(cal, rec)`: window by window, the parked sessions each boot's reclaim released per pool;
+  `equal` when the tuples match. The premise holds when every row is equal (no reclaim anywhere, as on the 96 GB
+  card and on day 17 locally; or the same releases in both boots).
+- Before the verdict is printed, if any row is unequal the gate writes `summary.json` with `v3_premise` (the rows),
+  `verdict_under_broken_premise` (the V1..V6 line it would have printed) and `VERDICT.txt` as the refusal, prints
+  the turn table and the unequal rows, then `REFUSED: V3 premise: ...` (exit 2) naming the windows, the releases per
+  boot, the budget, and the card at each boot. Two boots that release identically print the verdict line exactly
+  as before. A broken premise is never `PASS`, and never `FAIL` on a clause the gate could not evaluate.
+- `Server.boot()` samples the card (`nvidia-smi` driver free of total in MiB, the compute-apps listing) right
+  before it spawns the server; the samples sit in `calibration.json` (`card_at_boot`) and `summary.json`
+  (`boot.card_at_boot`). The refusal's brief carries process basenames and MiB only; the listing itself stays in
+  the JSON.
+- The docstring's assertion list gains a "V3 premise" paragraph with the exit-2 meaning and today's incident.
+
+CPU test `test-day29.py` (13 ok, run against the tree's gate): A's day-18 lines parse with their counts and free
+move; the day-18 histories break the premise on turns 2, 6 and 7 only (turns 3 and 8 released one plain session in
+BOTH boots and hold); day-17 (no reclaim) and identical-reclaim histories hold; a calibration-only release and a
+cohort-send release are rows of their own; the refusal is typed, names the unequal windows and the card, carries no
+full process path and no `PASS`; `3272 x 29696 + 313187668 == 410352980`; the turn-2 free move minus its prefix
+bytes is the constant within the MB rounding; `V3_SLACK == 64 MiB`.
+
+Expected readings on the current tree, stated before the cells: local RTX 5090 with the co-tenant present, both
+arms: `REFUSED: V3 premise: ... 3 window(s) (turn 2: ...; turn 6: ...; turn 7: ...)` (exit 2, the same
+`verdict_under_broken_premise` line as section 3 inside `summary.json`); target card, both arms: the unchanged
+`... V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` (no reclaim, every premise row equal).
