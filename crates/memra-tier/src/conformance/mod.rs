@@ -131,3 +131,9 @@ pub use reader_fence::*;
 // published only after every copy's completion event; the receipt term is slice 3's.
 mod d2d_capture;
 pub use d2d_capture::*;
+
+// Day-21 rule (WP-A, memra#536 Move 2 slice 2): the readiness of a D2D restore into a borrowed
+// destination from a pinned borrowed source, beside the frozen schedules, unversioned: landed is
+// not ready; ready is the landing plus the installed reader wait; a prime before it is unordered.
+mod d2d_restore;
+pub use d2d_restore::*;
