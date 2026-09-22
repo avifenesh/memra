@@ -27,7 +27,10 @@
 #                        promote refuse typed, the tier stay on, and the NEXT promote complete.
 #   promote-reject       MEMRA_KV_HOST_FAULT=contract-promote-reject (PR #605 finding 1): the last op of the
 #                        batch is mis-sized by one byte and the engine rejects exactly it; the unwind must
-#                        recover only the accepted sources and end as a plain refusal, tier on.
+#                        recover only the accepted sources and end as a plain refusal, tier on. The refusal
+#                        names `1 of N items`; N is the entry's plane count (a property of the artifact: 34
+#                        on the 27B, 18 on the 9B) and is read from the server's own r2 D2H receipt for the
+#                        same entry (`contracts door D2H receipt: ... items=N`), never from a table here.
 #   promote-readyview    MEMRA_KV_HOST_FAULT=contract-promote-readyview (PR #605 finding 2): the first
 #                        `ready_view` published the ticket in the engine but the route sees a failure; the
 #                        unwind must ask the engine and take the published arm, nothing leaked, tier on.
@@ -232,16 +235,21 @@ sys.exit(0 if all(json.load(open(f"{p}-r{i}.json"))["choices"][0]["text"] for i 
 PYEOF
 }
 
+d2h_receipt_items() { # $1 log: `items=N` of the FIRST D2H receipt (r2's demote of E_A, the entry r3 promotes)
+    grep -m1 -oE 'contracts door D2H receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* items=[0-9]+' "$1" \
+        | grep -oE 'items=[0-9]+' | cut -d= -f2
+}
+reject_total_matches_receipt() { # $1 log $2 items: the `1 of M items` M in the injected refusal equals the receipt's N
+    local m
+    m=$(grep -m1 -oE 'tier H2D batch partially refused: 1 of [0-9]+ items \(injected failure' "$1" \
+        | grep -oE 'of [0-9]+ items' | grep -oE '[0-9]+')
+    [ -n "$2" ] && [ -n "$m" ] && [ "$m" -eq "$2" ]
+}
 pcell() { # $1 name $2 fault $3 refused-kind-or-literal: a kind ("producer fence", "publication") names the
           # `tier H2D <kind> refused: injected failure (...)` shape; a value starting with `tier H2D ` is the whole
-          # typed reason (the reject and readyview cells carry the engine's own wording plus the injected marker)
+          # typed reason (the readyview cell carries the engine's own wording plus the injected marker); the
+          # literal `partial-reject` builds the reject cell's reason from the server's own D2H receipt item count
     local name=$1 fault=$2 kind=$3 log="$EV/$1-server.log"
-    local reason
-    case "$kind" in
-        "tier H2D "*) reason="$kind" ;;
-        *) reason="tier H2D $kind refused: injected failure (MEMRA_KV_HOST_FAULT=$fault)" ;;
-    esac
-    local refusal="promote refused (contracts door): $reason; serving without the host entry"
     echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, promote side) =="
     boot "MEMRA_KV_HOST_FAULT=$fault" "$log"
     req "$P_A" "$EV/$name-r1.json"
@@ -249,6 +257,27 @@ pcell() { # $1 name $2 fault $3 refused-kind-or-literal: a kind ("producer fence
     req "$P_A" "$EV/$name-r3.json"
     req "$P_B" "$EV/$name-r4.json"
     stop
+    local reason items=""
+    case "$kind" in
+        partial-reject)
+            items=$(d2h_receipt_items "$log")
+            echo "  $name: the entry's plane count from the server's r2 D2H receipt: items=${items:-<none>}"
+            chk "$name: the r2 D2H receipt names the entry's item total (the artifact's plane count)" \
+                test -n "$items"
+            chk "$name: the injected refusal's \`1 of M items\` M equals that receipt's items=N" \
+                reject_total_matches_receipt "$log" "$items"
+            # FLOOR (revuto on #626): a PARTIAL reject needs at least one accepted plane beside the
+            # rejected one; items=1 would satisfy the self-consistency check while making the cell
+            # a whole-batch refusal. Every artifact class read here so far carries far more (27B
+            # 34 default / 32 plain, 9B 18 / 16).
+            chk "$name: the entry carries at least two planes, so the reject is partial (items=N >= 2)" \
+                test "${items:-0}" -ge 2
+            reason="tier H2D batch partially refused: 1 of ${items:-0} items (injected failure (MEMRA_KV_HOST_FAULT=$fault))"
+            ;;
+        "tier H2D "*) reason="$kind" ;;
+        *) reason="tier H2D $kind refused: injected failure (MEMRA_KV_HOST_FAULT=$fault)" ;;
+    esac
+    local refusal="promote refused (contracts door): $reason; serving without the host entry"
     chk "$name: four completions served" four_served "$EV/$name"
     chk "$name: door ON with the transfer engine on both sides" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine.*KV plane H2D through the same engine on promote" "$log"
     chk "$name: exactly one typed injected refusal, the $kind" count_eq "$refusal" "$log" 1
@@ -268,7 +297,7 @@ pcell promote-presubmit contract-promote-presubmit "producer fence"
 pcell promote-postpublish contract-promote-postpublish publication
 # PR #605 review: a partially accepted batch (one op the engine rejects) and a first ready_view reported failed
 # while the engine has published; both must end as plain refusals with the ticket retired and acknowledged.
-pcell promote-reject contract-promote-reject "tier H2D batch partially refused: 1 of 34 items (injected failure (MEMRA_KV_HOST_FAULT=contract-promote-reject))"
+pcell promote-reject contract-promote-reject partial-reject
 pcell promote-readyview contract-promote-readyview "tier H2D destination 0 not publishable: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-readyview)"
 
 if [ "$FAILS" -eq 0 ]; then

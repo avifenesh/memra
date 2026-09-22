@@ -1,0 +1,8 @@
+cell=identity-plain-on gate=tools/kv-host-spill-identity-gate.sh
+env=MEMRA_HOSTGATE_CACHE_MB=256 MEMRA_SERVE_SPEC=0 MEMRA_KV_HOST_CONTRACTS=1
+lock=/tmp/memra-gpu.lock owner=collector3
+tree=9be3f7373dc76569ce3161e0359ddea7e0e76090
+binary_sha256=6324b1d395c59a9c3a3acc59c1fe2dd61274d0bb4df35e8f63b07fd61292145b
+model=Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+gpu=NVIDIA RTX PRO 6000 Blackwell Server Edition, 600.00 W
+status=executed-not-qualified
