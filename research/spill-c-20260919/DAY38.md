@@ -146,3 +146,75 @@ promote-on on the option (a) tree (`40 of 40 runs lack tick 2`); the base tree's
 is ruled; on the demote arms no third gap at or after the fire is stretched (`median=2 (2 to 2)`), so if the option
 (a) take-back lands after tick 2 it does not stretch its tick past 3 x p50. No figure is
 compared with day 35's receipts or with the target card. Not a qualification.
+
+## 3. The 9B entry's byte split (packet item 7), from banked logs and the source
+
+Command: `systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=20G python3
+research/spill-c-20260919/day38-9b-split.py research/spill-c-20260919/rtx5090-day31
+research/spill-c-20260919/rtx5090-day35 research/spill-c-20260919/rtx5090-day37`, into `day38-cpu/byte-split.log` (56
+lines, `# exit=0`). It reads the 46 banked `*server.log` files (day 31: 16, day 35: 6, day 37: 24), counts the
+distinct shapes of the byte-bearing lines, and does the arithmetic below on the printed figures. No card, no artifact
+read. Source cites are `worker.rs` on the lane tip unless another file is named.
+
+**The printed figures (plain 64-token class; the `DAY38 9B SHAPE` lines carry every count).**
+- E, the host image: `demote submitted off the tick: 64 tokens, 54.6MB, ... 16 items` (168 lines day 37, 42 day 35, 4
+  day 31). The line prints `host_bytes` (:12619-12625), set at :12486 to `host_image_bytes(dead.bytes, &dead.toks,
+  &dead.last_logits)`, which is device bytes + 4 x tokens + 4 x logits (:8298-8308).
+- D, the device entry: `evict (snapshot preflight, LRU): 64 tokens, 53.6MB` (176 day 37, 44 day 35, 12 day 31) prints
+  `dead.bytes` (:8060-8064); `insert (seed): 64 tokens, 53.6MB` prints `e.bytes` (:7969-7973).
+- H, the heap payloads: `demote copy complete off the tick: ... 50 heap payloads (53.7MB)` and `demote digests landed
+  off the tick: ... 50 payloads (53.7MB)` (84 each, day 37's option (a) programs only). The bytes are the sum of
+  `p.data.len() * 4` over the payloads (:12895-12896).
+- KV, exact: `contracts door D2D capture receipt: ... items=16 bytes=950272` (96 day 37, 24 day 35, 9 day 31), the
+  64-token seed capture. The receipt sums the item bytes (`tier_transfer.rs:589`, `:594`); the items are K and V of
+  each full-attention layer at rows `[0..pos)` (:14615-14616, :14683-14684). The demote's D2H receipt reads `items=16 (8
+  KV planes)` (:10975-10997).
+- Admission: `"gate": plain 14848 B/token, spec 16704 B/token` (one per boot, 46 lines). The plain coefficient is the
+  trunk cache's context-linear bytes (`spec.rs:9056-9063`); spec is plain plus the MTP scratch K + V
+  (`spec.rs:9080-9095`).
+- Census: the demote builds its image through `host_entry_from_device` (:12596), which refuses unless KV + conv + ssm
+  (+ draft + dspark tail) + 4 x `last_h` equals `dead.bytes` (:12100-12129). `census_refusals=0` in all 46 logs.
+
+**The arithmetic.**
+1. KV planes = 950,272 B = 64 x 14,848, exactly. The admission plain coefficient gives the same figure from a second
+   source: 14,848 x 64 = 950,272. The mean per plane (K + V) is 950,272 / 8 = 118,784 B = 64 x 1,856 B/token. Per-plane
+   sizes and the K/V split are printed on no banked line (`tok_bytes_lines=0` in all 46 logs). The numeric identity `server-prefix-entry-v5-kv-q8_0-34B-q5_1-24B` names two block sizes, and 34a + 24b =
+   1,856 has more than one whole-block solution (a=32, b=32; a=44, b=15), so no K/V split is stated.
+2. Token ids = 4 x 64 = 256 B (:8298-8308).
+3. The identity. With the arena off every f32 payload is `Heap`: `HostF32::down` (:8267) for conv (:12209) and ssm
+   (:12223), `HostF32::from_slice` (:8275) for logits (:12272) and `last_h` (:12275). `host_hash_take_payloads` moves
+   out every `Heap` conv, ssm, logits and hidden payload (:9894-9924). So H = conv + ssm + 4 x logits + 4 x `last_h`,
+   and E = D + 256 + 4 x logits = KV + H + 256.
+4. Rounding. Each MB figure is bytes / 1e6 at one decimal, so E is in [54,550,000, 54,650,000), D in [53,550,000,
+   53,650,000), H in [53,650,000, 53,750,000). From E, H = E - 950,272 - 256 is in [53,599,472, 53,699,472). Both hold:
+   H in [53,650,000, 53,699,472), which lifts E to [54,600,528, 54,650,000).
+5. Logits: 4 x len(`last_logits`) = E - D - 256, in (950,272, 1,099,744) B with all three figures (in (899,744,
+   1,099,744) B from E and D alone). This is a rounding bound, not a value; the vocabulary size is printed on no line.
+6. Recurrent state plus hidden: conv + ssm + 4 x len(`last_h`) = D - KV, in [52,599,728, 52,699,728) B. No banked line
+   separates conv from ssm from hidden.
+7. Payload count: 50 = 1 logits + 1 hidden + 48 `Conv(i)` / `Ssm(i)` slots. `from_slice` returns `Heap` for an
+   empty slice too (:8275-8277), so the logits and hidden payloads are always pushed; the 48 are split by class on no
+   line.
+
+**The split, as far as the logs carry it.** The 54.6 MB host image is 950,272 B of KV planes, 256 B of token ids and
+53.7 MB of heap payloads. The heap payloads are the logits, (950,272, 1,099,744) B, and the recurrent state plus the
+hidden row, [52,599,728, 52,699,728) B. As shares of E (`DAY38 9B SHARES`): KV `1.739% to 1.740%`, conv + ssm + hidden
+`96.25% to 96.52%`, logits `1.74% to 2.01%`.
+
+**The spec class (day 31).** `demote submitted ... 54.8MB, 18 items`, the D2H receipt `items=18 (8 KV planes, draft)`
+and the D2D capture receipt `items=18 bytes=1069056`. The draft plane adds 1,069,056 - 950,272 = 118,784 B = 64 x
+1,856, equal to the admission spec minus plain (16,704 - 14,848 = 1,856 B/token) and to the capture line's `draft plane
+64 rows (118.8KB)` ((kb + vb) / 1e3, :14801; 13 lines).
+
+**The lines that would separate the rest (engine code, not added today).**
+- Conv, ssm, hidden and logits by class: `demote copy complete off the tick` (:12915) with a per-`HostHashSlot` byte
+  tally of the `payloads` it already sums (:12895-12896).
+- Logits exactly: that tally's `Logits` term, or `demote submitted off the tick` (:12619-12625) printing `host_bytes`
+  and `dead.bytes` as integers.
+- Per-plane sizes and K against V: the D2H receipt (:10995-10997) or the capture line (:14899) printing `k_tok_bytes`
+  and `v_tok_bytes` (:14607-14616).
+- Offline, not read today: the artifact's metadata (vocabulary, hidden width, conv and ssm dimensions) with the
+  engine's layout formulas. That is a reading of the artifact, not of the banked logs, so it is named, not done.
+
+**What this does not say.** No per-class recurrent size, no vocabulary size, no hidden width, no K/V split. No timing.
+The 9B NVFP4 artifact and the RTX 5090 class receipts of days 31, 35 and 37.
