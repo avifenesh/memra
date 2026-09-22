@@ -1,0 +1,8 @@
+# command: grep -H 'serve-smoke: .*failed\|arm SKIP\|test result:\|^rc=' research/spill-lead-20260919/integration-day12/integ45-serve-smoke-5090/*.log research/spill-lead-20260919/integration-day12/integ45-serve-smoke-5090/*.exit
+research/spill-lead-20260919/integration-day12/integ45-serve-smoke-5090/serve-smoke.exit:rc=0 finished 2026-09-22T18:32:29Z
+research/spill-lead-20260919/integration-day12/integ45-serve-smoke-5090/gpu-d2d-cells.log:test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 556 filtered out; finished in 1.49s
+research/spill-lead-20260919/integration-day12/integ45-serve-smoke-5090/serve-smoke.log:== serve-smoke: spec arm SKIP (no draft file)
+research/spill-lead-20260919/integration-day12/integ45-serve-smoke-5090/serve-smoke.log:== serve-smoke: gemma4 arm SKIP (no model file)
+research/spill-lead-20260919/integration-day12/integ45-serve-smoke-5090/serve-smoke.log:== serve-smoke: Q35 coldhol arm SKIP (no model file)
+research/spill-lead-20260919/integration-day12/integ45-serve-smoke-5090/serve-smoke.log:serve-smoke: 0 failed
+# (sed on the output shortens each SKIP line's '(no <model|draft> at <path>)' to '(no <model|draft> file)')

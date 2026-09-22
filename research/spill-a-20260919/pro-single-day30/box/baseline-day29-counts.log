@@ -1,0 +1,56 @@
+## completion lines (A3): copy-complete batch totals, D2H receipt KV items, receipt span suffixes
+    112 items=32 (16 KV planes)
+     20 items=34 (16 KV planes, draft)
+## demote submissions (tokens, MB, items)
+    112 demote submitted off the tick: 64 tokens, 159.8MB, 32 items
+     21 demote submitted off the tick: 64 tokens, 159.9MB, 34 items
+## logs where submissions exceed copy completions
+pro-single-day29/box/gates/contract-fault/postpublish-server.log submitted=2 copy_complete=1
+## demote failures, verbatim
+      2 [prefix-host] demote failed (pinned host alloc of 69632 B failed: injected failure (MEMRA_KV_HOST_FAULT=alloc-fail)); nothing demoted
+      1 [prefix-host] demote failed (tier D2H producer fence refused: injected failure (MEMRA_KV_HOST_FAULT=contract-presubmit)); nothing demoted
+      1 [prefix-host] demote failed (tier D2H receipt refused: injected failure (MEMRA_KV_HOST_FAULT=contract-postpublish)); nothing demoted
+      1 [prefix-host] demote failed (tier hash digests never landed: ticket seq=3 waited 10.0s past the hand-off, deadline 10s (98 payloads, 157.9MB, 2 poll(s), settled synchronously by a second demote)); nothing published; the tier latches off
+      1 [prefix-host] demote failed (tier hash helper gone: the reply channel closed before the digests of ticket seq=3 landed (98 payloads, 157.9MB, 1 poll(s), tick-top poll)); nothing published; the tier latches off
+## span refusals (the typed refusal line)
+0
+## demote ledger lines per top-level cell dir: pre-submit, helper, owner in-completion (A2 reads the double-park steady set only)
+pro-single-day29/box/double-park: N=110 pre-submit median=6.09 min=5.92 max=44.13; helper median=73.10 min=72.90 max=73.50; owner in-completion median=7.39 min=7.20 max=45.18
+pro-single-day29/box/gates: N=19 pre-submit median=42.26 min=19.63 max=151.84; helper median=73.10 min=73.00 max=73.30; owner in-completion median=43.63 min=20.71 max=152.93
+## hits parked on a Hashing entry, per server log
+pro-single-day29/box/gates/contract-fault/promote-postpublish-server.log:2
+pro-single-day29/box/gates/contract-fault/promote-presubmit-server.log:2
+pro-single-day29/box/gates/contract-fault/promote-readyview-server.log:2
+pro-single-day29/box/gates/contract-fault/promote-reject-server.log:2
+pro-single-day29/box/gates/failure-on/digest-server.log:1
+pro-single-day29/box/gates/identity-default-on/host-on-server.log:1
+## verdict lines per gate log
+pro-single-day29/box/gates/contract-fault.log: ok=123 | KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+pro-single-day29/box/gates/failure-off.log: ok=15 | KV-HOST-SPILL FAILURE GATE: ALL GREEN
+pro-single-day29/box/gates/failure-on.log: ok=15 | KV-HOST-SPILL FAILURE GATE: ALL GREEN
+pro-single-day29/box/gates/hitgate-off.log: ok=61 | SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+pro-single-day29/box/gates/hitgate-on.log: ok=68 | SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+pro-single-day29/box/gates/identity-default-off.log: ok=12 | KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+pro-single-day29/box/gates/identity-default-on.log: ok=12 | KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+pro-single-day29/box/gates/identity-plain-off.log: ok=12 | KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+pro-single-day29/box/gates/identity-plain-on.log: ok=12 | KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+pro-single-day29/box/gates/twin-off.log: ok=0 | PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 s
+pro-single-day29/box/gates/twin-on.log: ok=0 | PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 s
+pro-single-day29/box/reading-day26.log: ok=0 | DAY26 GATE twin-off: PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9
+## GPU telemetry per collector cell (command.gpu.csv)
+pro-single-day29/box/double-park/command.gpu.csv: 4639 samples, 2026/09/22 17:37:54.958 to 2026/09/22 17:57:17.999, 33 to 50 C, 32.7 to 358.1 W, 0 to 17109 MiB
+pro-single-day29/box/gates/command.gpu.csv: 2115 samples, 2026/09/22 17:57:18.360 to 2026/09/22 18:06:07.890, 37 to 59 C, 86.8 to 507.0 W, 0 to 21939 MiB
+pro-single-day29/box/unit-cell/command.gpu.csv: 673 samples, 2026/09/22 18:07:38.714 to 2026/09/22 18:10:27.235, 33 to 39 C, 32.5 to 94.5 W, 0 to 627 MiB
+## double-park replays and receipts
+replays.log STALL REPLAY: PASS lines: 20
+     20 errors=0
+compute apps before/after (data rows): 0/0
+## collector cells (CELL.jsonl status, qualification, exit_code of the closing row)
+pro-single-day29/box/double-park/CELL.jsonl executed-not-qualified False 0
+pro-single-day29/box/gates/CELL.jsonl executed-not-qualified False 0
+pro-single-day29/box/unit-cell/CELL.jsonl executed-not-qualified False 0
+## lock retries: 0 file(s)
+## double-park ON boots: helper, copy and wall by demote index of the boot (readings, not clauses)
+helper: demote 1 N=10 median=73.15; demote 2 N=10 median=73.10; demote 3 N=10 median=73.10; steady (4+) N=80 median=73.10
+copy: demote 1 N=10 median=39.40; demote 2 N=10 median=135.30; demote 3 N=10 median=133.05; steady (4+) N=80 median=97.35
+wall: demote 1 N=10 median=130.35; demote 2 N=10 median=222.05; demote 3 N=10 median=220.00; steady (4+) N=80 median=183.80

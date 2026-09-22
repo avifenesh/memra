@@ -141,12 +141,27 @@ Route policy contract (memra#504, `route_contract.rs`): every serve route declar
 nine policy surfaces as implemented or refused by name; `RouteRegistry::check` runs before the
 ready handoff. CPU teeth in `route_contract::tests`: a stub route that declares nothing fails the
 same gate the production routes pass (the red arm), a partially declared route names exactly what
-it omitted, the hybrid worker implements every surface, the DSv4 contract refuses its six open gaps
-with their issues, `MEMRA_REWRITE_BUNDLE` beside a DSv4 route refuses at boot by name (#449's
+it omitted, the hybrid worker implements every surface, the DSv4 contract refuses its two open gaps
+(#449, #535) with their issues and implements memory-cost, `MEMRA_REWRITE_BUNDLE` beside a DSv4 route refuses at boot by name (#449's
 minimum), and the wiring gate: every `Implemented` declaration's evidence token must exist outside
 comments in the route's source file (`include_str!` over `worker.rs` and `dsv4_serve.rs`), the
 generalization of `progress::tests::the_prime_walks_actually_call_the_odometer` from one engine
 file to the registry. Receipt: `research/route-contract-20260922/`.
+
+Dedicated route health, admission and memory (memra#500, #501, #503): CPU teeth in
+`health::tests` (route phases, the stall verdict on a busy route, readiness while a route loads,
+the aggregate phase and idle), `route_telemetry::tests` (tickets, the service estimate, cancelled
+and refused runs that are neither served nor failed), `dsv4_admit::tests` (per-card folding, a
+short peer card that defers then refuses, memory freed mid-defer, a client leaving mid-defer, host
+eviction that buys the admission and never a device shortfall, the budget clamp, the largest
+fitting capacity), `dsv4_serve::host_reclaim_tests` (the LRU victim spares the restore source) and
+`memra-engine` `dsv4_gpu::session_plan_tests` (the planned cache and gather arithmetic, including
+the default chunk `min(512, ctx)`). Two fake routes run end to end through the completions
+handler: `a_fake_route_serves_through_its_own_admission_and_books_its_metrics` (#501) and
+`a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler` (#503: 429 with
+`Retry-After: 5` on a short peer card, 400 naming the largest fitting session, 200 after memory
+frees mid-defer, a client abort booked `cancelled` with nothing held, and the `/metrics` row).
+Receipt: `research/dsv4-route-policies-20260922/`. The two-card receipt is pending.
 
 Loader tensor-contract boundary (memra#541, `memra_gguf::checkpoint_binding`): both loaders
 bind the pack's tensor contract against the source census before any upload and refuse

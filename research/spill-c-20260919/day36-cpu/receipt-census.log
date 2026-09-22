@@ -1,0 +1,168 @@
+# command: python3 research/spill-c-20260919/day36-receipt-census.py research/spill-a-20260919 research/spill-lead-20260919/integration-day12
+pro-single-day28 LEDGER ON_boots=10 ledger_lines=110 per_boot=[('b01-on', 11), ('b03-on', 11), ('b05-on', 11), ('b07-on', 11), ('b09-on', 11), ('b12-on', 11), ('b14-on', 11), ('b16-on', 11), ('b18-on', 11), ('b20-on', 11)]
+pro-single-day28 LEDGER owner_in_completion N=110 median=7.41 min=7.17 max=45.01
+pro-single-day28 LEDGER pre_submit N=110 median=6.10 min=5.85 max=43.91 | first_three_per_boot N=30 median=42.19 min=37.39 max=43.91 | demotes_4_to_11_per_boot N=80 median=6.07 min=5.85 max=6.77
+pro-single-day28 LEDGER copy_settle N=110 median=1.21 min=1.15 max=1.27 | hashing_polls N=110 median=0.01 min=0.00 max=0.02 | take_back_bind_publish N=110 median=1.29 min=1.03 max=1.53
+pro-single-day28 LEDGER helper_hashed_in N=110 median=73.20 min=73.00 max=73.50 | landed_after_polls N=110 median=6 min=1 max=6 | wall_t0_to_publication N=110 median=183.9 min=128.9 max=225.6
+pro-single-day28 LEDGER payloads=['98 payloads (157.9MB)'] hits_parked_total=0 reparks_total=0
+pro-single-day28 FIRST-DEMOTE boots=10 outside_promote_runs=10 first_pre_submit N=10 median=37.83 min=37.39 max=39.28
+pro-single-day28   b01-on:seq=2,pre=39.28,in_promote_runs=False,in_run_ledgers=10
+pro-single-day28   b03-on:seq=2,pre=37.72,in_promote_runs=False,in_run_ledgers=10
+pro-single-day28   b05-on:seq=2,pre=38.25,in_promote_runs=False,in_run_ledgers=10
+pro-single-day28   b07-on:seq=2,pre=37.39,in_promote_runs=False,in_run_ledgers=10
+pro-single-day28   b09-on:seq=2,pre=37.54,in_promote_runs=False,in_run_ledgers=10
+pro-single-day28   b12-on:seq=2,pre=37.69,in_promote_runs=False,in_run_ledgers=10
+pro-single-day28   b14-on:seq=2,pre=38.26,in_promote_runs=False,in_run_ledgers=10
+pro-single-day28   b16-on:seq=2,pre=38.53,in_promote_runs=False,in_run_ledgers=10
+pro-single-day28   b18-on:seq=2,pre=37.93,in_promote_runs=False,in_run_ledgers=10
+pro-single-day28   b20-on:seq=2,pre=37.66,in_promote_runs=False,in_run_ledgers=10
+pro-single-day28 REGIME double-park samples=4639 2026/09/22 16:12:36.343..2026/09/22 16:31:59.369 temp=33..52C power=31.69..359.64W mem_max=17109MiB
+pro-single-day28 REGIME gates samples=2116 2026/09/22 16:31:59.737..2026/09/22 16:40:49.596 temp=39..62C power=86.59..509.82W mem_max=21939MiB
+pro-single-day28 REGIME unit-cell samples=670 2026/09/22 16:42:20.363..2026/09/22 16:45:08.168 temp=34..41C power=31.96..94.90W mem_max=881MiB
+pro-single-day28 REPLAYS stall_replay_pass=20 errors0=20 lock_retries_files=0
+pro-single-day29 LEDGER ON_boots=10 ledger_lines=110 per_boot=[('b01-on', 11), ('b03-on', 11), ('b05-on', 11), ('b07-on', 11), ('b09-on', 11), ('b12-on', 11), ('b14-on', 11), ('b16-on', 11), ('b18-on', 11), ('b20-on', 11)]
+pro-single-day29 LEDGER owner_in_completion N=110 median=7.39 min=7.20 max=45.18
+pro-single-day29 LEDGER pre_submit N=110 median=6.09 min=5.92 max=44.13 | first_three_per_boot N=30 median=42.27 min=37.38 max=44.13 | demotes_4_to_11_per_boot N=80 median=6.05 min=5.92 max=6.61
+pro-single-day29 LEDGER copy_settle N=110 median=1.21 min=1.15 max=1.25 | hashing_polls N=110 median=0.01 min=0.01 max=0.02 | take_back_bind_publish N=110 median=1.29 min=1.04 max=1.36
+pro-single-day29 LEDGER helper_hashed_in N=110 median=73.10 min=72.90 max=73.50 | landed_after_polls N=110 median=6 min=1 max=6 | wall_t0_to_publication N=110 median=183.9 min=129.8 max=226.3
+pro-single-day29 LEDGER payloads=['98 payloads (157.9MB)'] hits_parked_total=0 reparks_total=0
+pro-single-day29 FIRST-DEMOTE boots=10 outside_promote_runs=10 first_pre_submit N=10 median=37.93 min=37.38 max=40.63
+pro-single-day29   b01-on:seq=2,pre=40.63,in_promote_runs=False,in_run_ledgers=10
+pro-single-day29   b03-on:seq=2,pre=37.49,in_promote_runs=False,in_run_ledgers=10
+pro-single-day29   b05-on:seq=2,pre=38.01,in_promote_runs=False,in_run_ledgers=10
+pro-single-day29   b07-on:seq=2,pre=37.92,in_promote_runs=False,in_run_ledgers=10
+pro-single-day29   b09-on:seq=2,pre=37.95,in_promote_runs=False,in_run_ledgers=10
+pro-single-day29   b12-on:seq=2,pre=37.94,in_promote_runs=False,in_run_ledgers=10
+pro-single-day29   b14-on:seq=2,pre=37.38,in_promote_runs=False,in_run_ledgers=10
+pro-single-day29   b16-on:seq=2,pre=37.85,in_promote_runs=False,in_run_ledgers=10
+pro-single-day29   b18-on:seq=2,pre=38.23,in_promote_runs=False,in_run_ledgers=10
+pro-single-day29   b20-on:seq=2,pre=37.80,in_promote_runs=False,in_run_ledgers=10
+pro-single-day29 REGIME double-park samples=4639 2026/09/22 17:37:54.958..2026/09/22 17:57:17.999 temp=33..50C power=32.67..358.14W mem_max=17109MiB
+pro-single-day29 REGIME gates samples=2115 2026/09/22 17:57:18.360..2026/09/22 18:06:07.890 temp=37..59C power=86.77..506.99W mem_max=21939MiB
+pro-single-day29 REGIME unit-cell samples=673 2026/09/22 18:07:38.714..2026/09/22 18:10:27.235 temp=33..39C power=32.45..94.52W mem_max=627MiB
+pro-single-day29 REPLAYS stall_replay_pass=20 errors0=20 lock_retries_files=0
+TARGET IDENTITY-DEFAULT-ON parked_lines=1 ledger_lines=2 spec_k_cached_lcp=[('0', '0'), ('0', '0'), ('64', '64'), ('64', '64')]
+TARGET   [prefix-host] hit parked on a Hashing entry: request cmpl-75428aac9b5c30fdea553571818d571e (102 tokens) hits the Demoting entry's 64 tokens (ticket seq=3, 98 payloads, 157.9MB on the hash helper for 0.3ms); the request waits one tick for the digests (model gate)
+TARGET   [prefix-host] demote digests landed off the tick: ticket seq=3, 98 payloads (157.9MB) hashed in 73.2ms on the hash helper, landed after 36 poll(s) (tick-top poll); the owner thread held 150.79ms across the demote: pre-submit 148.52, copy settle 1.15 over 1 poll(s), hashing polls 0.02, take-back bind and publish 1.09; owner in-completion 149.63ms; wall 240.7ms t0 to publication; 1 hit(s) parked on the Hashing entry (35 re-park(s))
+TARGET   [prefix-host] demote digests landed off the tick: ticket seq=5, 98 payloads (157.9MB) hashed in 73.0ms on the hash helper, landed after 1 poll(s) (tick-top poll); the owner thread held 153.62ms across the demote: pre-submit 151.21, copy settle 1.27 over 1 poll(s), hashing polls 0.01, take-back bind and publish 1.14; owner in-completion 152.36ms; wall 570.7ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+RTX5090 IDENTITY-DEFAULT-ON parked_lines=1 ledger_lines=2 spec_k_cached_lcp=[('0', '0'), ('0', '0'), ('64', '64'), ('64', '64')]
+RTX5090   [prefix-host] hit parked on a Hashing entry: request cmpl-755230a9985aa4d394868770a5d3fe29 (102 tokens) hits the Demoting entry's 64 tokens (ticket seq=3, 50 payloads, 53.7MB on the hash helper for 0.4ms); the request waits one tick for the digests (model gate)
+RTX5090   [prefix-host] demote digests landed off the tick: ticket seq=3, 50 payloads (53.7MB) hashed in 12.9ms on the hash helper, landed after 6 poll(s) (tick-top poll); the owner thread held 70.02ms across the demote: pre-submit 51.56, copy settle 9.21 over 1 poll(s), hashing polls 0.01, take-back bind and publish 9.24; owner in-completion 60.80ms; wall 91.2ms t0 to publication; 1 hit(s) parked on the Hashing entry (5 re-park(s))
+RTX5090   [prefix-host] demote digests landed off the tick: ticket seq=5, 50 payloads (53.7MB) hashed in 13.0ms on the hash helper, landed after 1 poll(s) (tick-top poll); the owner thread held 71.92ms across the demote: pre-submit 53.55, copy settle 9.25 over 1 poll(s), hashing polls 0.01, take-back bind and publish 9.11; owner in-completion 62.67ms; wall 385.9ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+TARGET pro-single-day28 GATE research/spill-a-20260919/pro-single-day28/box/gates/contract-fault.log ok=98 fail=23 verdict='KV-HOST-CONTRACT-FAULT GATE: 23 FAILURE(S)'
+TARGET pro-single-day28   cells=10 ['presubmit', 'postpublish', 'promote-presubmit', 'promote-postpublish', 'promote-reject', 'promote-readyview', 'd2d-capture', 'd2d-restore', 'hash-helper-gone', 'hash-never-lands']
+TARGET pro-single-day28   per_cell ok/fail (from the cell header to the next) presubmit=9/1 postpublish=9/1 promote-presubmit=6/5 promote-postpublish=6/5 promote-reject=8/6 promote-readyview=6/5 d2d-capture=12/0 d2d-restore=14/0 hash-helper-gone=14/0 hash-never-lands=14/0
+TARGET pro-single-day28 GATE research/spill-a-20260919/pro-single-day28/box/gates/failure-off.log ok=15 fail=0 verdict='KV-HOST-SPILL FAILURE GATE: ALL GREEN'
+TARGET pro-single-day28   cells=3 ['1', '2', '3']
+TARGET pro-single-day28   per_cell ok/fail (from the cell header to the next) 1=5/0 2=6/0 3=4/0
+TARGET pro-single-day28 GATE research/spill-a-20260919/pro-single-day28/box/gates/failure-on.log ok=14 fail=1 verdict='KV-HOST-SPILL FAILURE GATE: 1 FAILURE(S)'
+TARGET pro-single-day28   cells=3 ['1', '2', '3']
+TARGET pro-single-day28   per_cell ok/fail (from the cell header to the next) 1=5/0 2=5/1 3=4/0
+TARGET pro-single-day28 GATE research/spill-a-20260919/pro-single-day28/box/gates/hitgate-off.log ok=61 fail=0 verdict='SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)'
+TARGET pro-single-day28   door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+TARGET pro-single-day28   door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+TARGET pro-single-day28 GATE research/spill-a-20260919/pro-single-day28/box/gates/hitgate-on.log ok=68 fail=0 verdict='SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)'
+TARGET pro-single-day28   door lines: armed=1 door_on=1 capture_submitted=12 capture_published=12 restore_submitted=13 restore_landed=13 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+TARGET pro-single-day28   door lines: armed=1 door_on=1 capture_submitted=2 capture_published=2 restore_submitted=3 restore_landed=3 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+TARGET pro-single-day28   ok: door arm: 30 route submission(s) across the two boots (capture, restore, demote or promote off the tick)
+TARGET pro-single-day28 GATE research/spill-a-20260919/pro-single-day28/box/gates/identity-default-off.log ok=12 fail=0 verdict='KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)'
+TARGET pro-single-day28 GATE research/spill-a-20260919/pro-single-day28/box/gates/identity-default-on.log ok=8 fail=4 verdict='KV-HOST-SPILL IDENTITY GATE: 4 FAILURE(S) (teeth=0)'
+TARGET pro-single-day28 GATE research/spill-a-20260919/pro-single-day28/box/gates/identity-plain-off.log ok=12 fail=0 verdict='KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)'
+TARGET pro-single-day28 GATE research/spill-a-20260919/pro-single-day28/box/gates/identity-plain-on.log ok=12 fail=0 verdict='KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)'
+TARGET pro-single-day28 GATE research/spill-a-20260919/pro-single-day28/box/gates/twin-off.log ok=0 fail=0 verdict='PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS'
+TARGET pro-single-day28 GATE research/spill-a-20260919/pro-single-day28/box/gates/twin-on.log ok=0 fail=0 verdict='PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS'
+TARGET pro-single-day29 GATE research/spill-a-20260919/pro-single-day29/box/gates/contract-fault.log ok=123 fail=0 verdict='KV-HOST-CONTRACT-FAULT GATE: ALL GREEN'
+TARGET pro-single-day29   cells=10 ['presubmit', 'postpublish', 'promote-presubmit', 'promote-postpublish', 'promote-reject', 'promote-readyview', 'd2d-capture', 'd2d-restore', 'hash-helper-gone', 'hash-never-lands']
+TARGET pro-single-day29   per_cell ok/fail (from the cell header to the next) presubmit=11/0 postpublish=11/0 promote-presubmit=11/0 promote-postpublish=11/0 promote-reject=14/0 promote-readyview=11/0 d2d-capture=12/0 d2d-restore=14/0 hash-helper-gone=14/0 hash-never-lands=14/0
+TARGET pro-single-day29 GATE research/spill-a-20260919/pro-single-day29/box/gates/failure-off.log ok=15 fail=0 verdict='KV-HOST-SPILL FAILURE GATE: ALL GREEN'
+TARGET pro-single-day29   cells=3 ['1', '2', '3']
+TARGET pro-single-day29   per_cell ok/fail (from the cell header to the next) 1=5/0 2=6/0 3=4/0
+TARGET pro-single-day29 GATE research/spill-a-20260919/pro-single-day29/box/gates/failure-on.log ok=15 fail=0 verdict='KV-HOST-SPILL FAILURE GATE: ALL GREEN'
+TARGET pro-single-day29   cells=3 ['1', '2', '3']
+TARGET pro-single-day29   per_cell ok/fail (from the cell header to the next) 1=5/0 2=6/0 3=4/0
+TARGET pro-single-day29 GATE research/spill-a-20260919/pro-single-day29/box/gates/hitgate-off.log ok=61 fail=0 verdict='SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)'
+TARGET pro-single-day29   door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+TARGET pro-single-day29   door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+TARGET pro-single-day29 GATE research/spill-a-20260919/pro-single-day29/box/gates/hitgate-on.log ok=68 fail=0 verdict='SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)'
+TARGET pro-single-day29   door lines: armed=1 door_on=1 capture_submitted=12 capture_published=12 restore_submitted=13 restore_landed=13 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+TARGET pro-single-day29   door lines: armed=1 door_on=1 capture_submitted=2 capture_published=2 restore_submitted=3 restore_landed=3 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+TARGET pro-single-day29   ok: door arm: 30 route submission(s) across the two boots (capture, restore, demote or promote off the tick)
+TARGET pro-single-day29 GATE research/spill-a-20260919/pro-single-day29/box/gates/identity-default-off.log ok=12 fail=0 verdict='KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)'
+TARGET pro-single-day29 GATE research/spill-a-20260919/pro-single-day29/box/gates/identity-default-on.log ok=12 fail=0 verdict='KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)'
+TARGET pro-single-day29 GATE research/spill-a-20260919/pro-single-day29/box/gates/identity-plain-off.log ok=12 fail=0 verdict='KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)'
+TARGET pro-single-day29 GATE research/spill-a-20260919/pro-single-day29/box/gates/identity-plain-on.log ok=12 fail=0 verdict='KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)'
+TARGET pro-single-day29 GATE research/spill-a-20260919/pro-single-day29/box/gates/twin-off.log ok=0 fail=0 verdict='PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS'
+TARGET pro-single-day29 GATE research/spill-a-20260919/pro-single-day29/box/gates/twin-on.log ok=0 fail=0 verdict='PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS'
+RTX5090 rtx5090-day28 GATE research/spill-a-20260919/rtx5090-day28/fault-default/gate.log ok=98 fail=23 verdict='KV-HOST-CONTRACT-FAULT GATE: 23 FAILURE(S)'
+RTX5090 rtx5090-day28   cells=10 ['presubmit', 'postpublish', 'promote-presubmit', 'promote-postpublish', 'promote-reject', 'promote-readyview', 'd2d-capture', 'd2d-restore', 'hash-helper-gone', 'hash-never-lands']
+RTX5090 rtx5090-day28   per_cell ok/fail (from the cell header to the next) presubmit=9/1 postpublish=9/1 promote-presubmit=6/5 promote-postpublish=6/5 promote-reject=8/6 promote-readyview=6/5 d2d-capture=12/0 d2d-restore=14/0 hash-helper-gone=14/0 hash-never-lands=14/0
+RTX5090 rtx5090-day28 GATE research/spill-a-20260919/rtx5090-day28/fault-plain/gate.log ok=121 fail=0 verdict='KV-HOST-CONTRACT-FAULT GATE: ALL GREEN'
+RTX5090 rtx5090-day28   cells=10 ['presubmit', 'postpublish', 'promote-presubmit', 'promote-postpublish', 'promote-reject', 'promote-readyview', 'd2d-capture', 'd2d-restore', 'hash-helper-gone', 'hash-never-lands']
+RTX5090 rtx5090-day28   per_cell ok/fail (from the cell header to the next) presubmit=10/0 postpublish=10/0 promote-presubmit=11/0 promote-postpublish=11/0 promote-reject=14/0 promote-readyview=11/0 d2d-capture=12/0 d2d-restore=14/0 hash-helper-gone=14/0 hash-never-lands=14/0
+RTX5090 rtx5090-day28 GATE research/spill-a-20260919/rtx5090-day28/hit-off-rerun/gate.log ok=61 fail=0 verdict='SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)'
+RTX5090 rtx5090-day28   door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+RTX5090 rtx5090-day28   door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+RTX5090 rtx5090-day28 GATE research/spill-a-20260919/rtx5090-day28/hit-off/gate.log ok=0 fail=0 verdict='NONE'
+RTX5090 rtx5090-day28 GATE research/spill-a-20260919/rtx5090-day28/hit-on/gate.log ok=68 fail=0 verdict='SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)'
+RTX5090 rtx5090-day28   door lines: armed=1 door_on=1 capture_submitted=12 capture_published=12 restore_submitted=13 restore_landed=13 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+RTX5090 rtx5090-day28   door lines: armed=1 door_on=1 capture_submitted=2 capture_published=2 restore_submitted=3 restore_landed=3 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+RTX5090 rtx5090-day28   ok: door arm: 30 route submission(s) across the two boots (capture, restore, demote or promote off the tick)
+RTX5090 rtx5090-day29 GATE research/spill-a-20260919/rtx5090-day29/fault-default-rerun/gate.log ok=121 fail=2 verdict='KV-HOST-CONTRACT-FAULT GATE: 2 FAILURE(S)'
+RTX5090 rtx5090-day29   cells=10 ['presubmit', 'postpublish', 'promote-presubmit', 'promote-postpublish', 'promote-reject', 'promote-readyview', 'd2d-capture', 'd2d-restore', 'hash-helper-gone', 'hash-never-lands']
+RTX5090 rtx5090-day29   per_cell ok/fail (from the cell header to the next) presubmit=10/1 postpublish=10/1 promote-presubmit=11/0 promote-postpublish=11/0 promote-reject=14/0 promote-readyview=11/0 d2d-capture=12/0 d2d-restore=14/0 hash-helper-gone=14/0 hash-never-lands=14/0
+RTX5090 rtx5090-day29 GATE research/spill-a-20260919/rtx5090-day29/fault-default-rerun2/gate.log ok=123 fail=0 verdict='KV-HOST-CONTRACT-FAULT GATE: ALL GREEN'
+RTX5090 rtx5090-day29   cells=10 ['presubmit', 'postpublish', 'promote-presubmit', 'promote-postpublish', 'promote-reject', 'promote-readyview', 'd2d-capture', 'd2d-restore', 'hash-helper-gone', 'hash-never-lands']
+RTX5090 rtx5090-day29   per_cell ok/fail (from the cell header to the next) presubmit=11/0 postpublish=11/0 promote-presubmit=11/0 promote-postpublish=11/0 promote-reject=14/0 promote-readyview=11/0 d2d-capture=12/0 d2d-restore=14/0 hash-helper-gone=14/0 hash-never-lands=14/0
+RTX5090 rtx5090-day29 GATE research/spill-a-20260919/rtx5090-day29/fault-default/gate.log ok=0 fail=0 verdict='NONE'
+RTX5090 rtx5090-day29   cells=1 ['presubmit']
+RTX5090 rtx5090-day29   per_cell ok/fail (from the cell header to the next) presubmit=0/0
+RTX5090 rtx5090-day29 GATE research/spill-a-20260919/rtx5090-day29/fault-plain-rerun/gate.log ok=123 fail=0 verdict='KV-HOST-CONTRACT-FAULT GATE: ALL GREEN'
+RTX5090 rtx5090-day29   cells=10 ['presubmit', 'postpublish', 'promote-presubmit', 'promote-postpublish', 'promote-reject', 'promote-readyview', 'd2d-capture', 'd2d-restore', 'hash-helper-gone', 'hash-never-lands']
+RTX5090 rtx5090-day29   per_cell ok/fail (from the cell header to the next) presubmit=11/0 postpublish=11/0 promote-presubmit=11/0 promote-postpublish=11/0 promote-reject=14/0 promote-readyview=11/0 d2d-capture=12/0 d2d-restore=14/0 hash-helper-gone=14/0 hash-never-lands=14/0
+RTX5090 rtx5090-day29 GATE research/spill-a-20260919/rtx5090-day29/fault-plain-rerun2/gate.log ok=123 fail=0 verdict='KV-HOST-CONTRACT-FAULT GATE: ALL GREEN'
+RTX5090 rtx5090-day29   cells=10 ['presubmit', 'postpublish', 'promote-presubmit', 'promote-postpublish', 'promote-reject', 'promote-readyview', 'd2d-capture', 'd2d-restore', 'hash-helper-gone', 'hash-never-lands']
+RTX5090 rtx5090-day29   per_cell ok/fail (from the cell header to the next) presubmit=11/0 postpublish=11/0 promote-presubmit=11/0 promote-postpublish=11/0 promote-reject=14/0 promote-readyview=11/0 d2d-capture=12/0 d2d-restore=14/0 hash-helper-gone=14/0 hash-never-lands=14/0
+RTX5090 rtx5090-day29 GATE research/spill-a-20260919/rtx5090-day29/fault-plain/gate.log ok=0 fail=0 verdict='NONE'
+RTX5090 rtx5090-day29   cells=1 ['presubmit']
+RTX5090 rtx5090-day29   per_cell ok/fail (from the cell header to the next) presubmit=0/0
+RTX5090 rtx5090-day29 GATE research/spill-a-20260919/rtx5090-day29/hit-off/gate.log ok=61 fail=0 verdict='SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)'
+RTX5090 rtx5090-day29   door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+RTX5090 rtx5090-day29   door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+RTX5090 rtx5090-day29 GATE research/spill-a-20260919/rtx5090-day29/hit-on/gate.log ok=68 fail=0 verdict='SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)'
+RTX5090 rtx5090-day29   door lines: armed=1 door_on=1 capture_submitted=12 capture_published=12 restore_submitted=13 restore_landed=13 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+RTX5090 rtx5090-day29   door lines: armed=1 door_on=1 capture_submitted=2 capture_published=2 restore_submitted=3 restore_landed=3 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+RTX5090 rtx5090-day29   ok: door arm: 30 route submission(s) across the two boots (capture, restore, demote or promote off the tick)
+RTX5090 rtx5090-day29 GATE research/spill-a-20260919/rtx5090-day29/identity-default-on/gate.log ok=12 fail=0 verdict='KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)'
+RTX5090 integ45 GATE research/spill-lead-20260919/integration-day12/integ45-fault-gate-5090/fault-default/gate.log ok=123 fail=0 verdict='KV-HOST-CONTRACT-FAULT GATE: ALL GREEN'
+RTX5090 integ45   cells=10 ['presubmit', 'postpublish', 'promote-presubmit', 'promote-postpublish', 'promote-reject', 'promote-readyview', 'd2d-capture', 'd2d-restore', 'hash-helper-gone', 'hash-never-lands']
+RTX5090 integ45   per_cell ok/fail (from the cell header to the next) presubmit=11/0 postpublish=11/0 promote-presubmit=11/0 promote-postpublish=11/0 promote-reject=14/0 promote-readyview=11/0 d2d-capture=12/0 d2d-restore=14/0 hash-helper-gone=14/0 hash-never-lands=14/0
+RTX5090 integ45 GATE research/spill-lead-20260919/integration-day12/integ45-fault-gate-5090/fault-plain/gate.log ok=123 fail=0 verdict='KV-HOST-CONTRACT-FAULT GATE: ALL GREEN'
+RTX5090 integ45   cells=10 ['presubmit', 'postpublish', 'promote-presubmit', 'promote-postpublish', 'promote-reject', 'promote-readyview', 'd2d-capture', 'd2d-restore', 'hash-helper-gone', 'hash-never-lands']
+RTX5090 integ45   per_cell ok/fail (from the cell header to the next) presubmit=11/0 postpublish=11/0 promote-presubmit=11/0 promote-postpublish=11/0 promote-reject=14/0 promote-readyview=11/0 d2d-capture=12/0 d2d-restore=14/0 hash-helper-gone=14/0 hash-never-lands=14/0
+RTX5090 integ45 GATE research/spill-lead-20260919/integration-day12/integ45-hit-gate-5090/hit-off/gate.log ok=61 fail=0 verdict='SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)'
+RTX5090 integ45   door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+RTX5090 integ45   door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+RTX5090 integ45 GATE research/spill-lead-20260919/integration-day12/integ45-hit-gate-5090/hit-on/gate.log ok=68 fail=0 verdict='SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)'
+RTX5090 integ45   door lines: armed=1 door_on=1 capture_submitted=12 capture_published=12 restore_submitted=13 restore_landed=13 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+RTX5090 integ45   door lines: armed=1 door_on=1 capture_submitted=2 capture_published=2 restore_submitted=3 restore_landed=3 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+RTX5090 integ45   ok: door arm: 30 route submission(s) across the two boots (capture, restore, demote or promote off the tick)
+TREE pro-single-day28 box/tree.sha=f9284a711
+TREE pro-single-day29 box/tree.sha=29a1cc366
+TREE rtx5090-day28 hit-off tree=f9284a711
+TREE rtx5090-day28 hit-on tree=f9284a711
+TREE rtx5090-day28 fault-default tree=f9284a711
+TREE rtx5090-day28 fault-plain tree=f9284a711
+TREE rtx5090-day28 hit-off-rerun tree=f9284a711
+TREE rtx5090-day29 identity-default-on tree=29a1cc366
+TREE rtx5090-day29 fault-default tree=29a1cc366
+TREE rtx5090-day29 fault-plain tree=29a1cc366
+TREE rtx5090-day29 hit-off tree=29a1cc366
+TREE rtx5090-day29 hit-on tree=29a1cc366
+TREE rtx5090-day29 fault-default-rerun tree=259c75f62
+TREE rtx5090-day29 fault-plain-rerun tree=259c75f62
+TREE rtx5090-day29 fault-default-rerun2 tree=06e290374
+TREE rtx5090-day29 fault-plain-rerun2 tree=06e290374
+TREE integ45 integ45-fault-gate-5090/fault-default/CELL.txt tree=1c540e050
+TREE integ45 integ45-fault-gate-5090/fault-plain/CELL.txt tree=1c540e050
+TREE integ45 integ45-hit-gate-5090/hit-off/CELL.txt tree=1c540e050
+TREE integ45 integ45-hit-gate-5090/hit-on/CELL.txt tree=1c540e050
