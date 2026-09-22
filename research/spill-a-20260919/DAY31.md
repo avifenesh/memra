@@ -150,3 +150,136 @@ arm, twelve cells, one sitting). The H2D half is the same size plus the `Arc` re
 today. Owed, in order: the log-only owner-segment field and its baseline read; `conformance/h2d_span.rs` and its
 binding; `submit_h2d_spans` / `take_h2d_spans` with the native cell; the `Arc` resident form; the `Fill` job and the
 parked state; the settle's take-back; the fault value and its gate cell; then the sitting against B1 to B5.
+
+## 3. The sitting (target card, BOX3, one RTX PRO 6000 Blackwell, 600 W; `pro-single-day31/box/`)
+
+Every number in sections 3 to 6 comes from a command over the receipt files, banked beside it: `bash
+pro-single-day31/counts.sh <root>` (`pro-single-day31/box/counts.log`, `rtx5090-day31/counts.log`), the day-30 reader
+(`python3 day30-reading.py --double-park pro-single-day31/box/double-park/ev --spans 96 --kv 32,34`,
+`box/reading-day30-doublepark.log`; `--spans 96 --kv 32,34 --a3-root pro-single-day31/box`, `box/reading-day30-a3.log`;
+`--spans 48 --kv 16,18 --a3-root rtx5090-day31`, `rtx5090-day31/reading-day30-a3.log`) and the earlier readers
+unchanged (`day28-reading.py`, `day25-double-park-reading.py` over `box/double-park/ev`, `day26-reading.py` over `box`;
+`box/reading-day28.log`, `box/reading-day25.log`, `box/reading-day26.log`).
+
+One binary for every cell, `ebfac35382330b023a445c8282e968a9a1945c353125245667fe147dbc6dfd48` (`bins/memra-server.sha256`),
+built on `/root/wt-a` at `6d940a97c` (`tree.sha`, `unit/tree.sha`; the code is `33b1285e0`, the later commits move no
+`crates/`, `tools/` or `docs/` file). Lane C's scored cell held `/tmp/memra-gpu.lock` first: the driver's bounded retry
+logged 27 waits of 120 s, 22:00:36Z to 22:52:37Z (`lock-retries.log`), and nothing of this lane ran beside it. Then
+three collector holds and the hit gate's own `flock` in one sitting, 22:54:37Z to 23:27:39Z; no compute app before or
+after (`compute apps before/after (data rows): 0/0`); every `CELL.jsonl` closing row `executed-not-qualified False 0`.
+Telemetry at 250 ms (`command.gpu.csv`):
+
+| cell | window (Z) | samples | temp | power | memory |
+|---|---|---|---|---|---|
+| double-park | 22:54:37 to 23:13:59 | 4,635 | 35 to 50 C | 33.5 to 355.6 W | 0 to 17,109 MiB |
+| gates | 23:13:59 to 23:23:19 | 2,238 | 37 to 60 C | 87.3 to 507.6 W | 0 to 21,939 MiB |
+| hit gate (own flock) | 23:23:20 to 23:24:50 | (no collector) | | | |
+| unit-cell | 23:24:50 to 23:27:39 | 673 | 32 to 40 C | 31.5 to 96.3 W | 0 to 627 MiB |
+
+The double-park cell is day 26's script byte for byte (one hold, twenty boots, N=5 per arm per order, both orders):
+`STALL REPLAY: PASS` 20 of 20, `DAY26 DOUBLE-PARK ADMISSIBLE all_receipts=True`.
+
+## 4. Verdicts, verbatim
+
+Target card (`box/gates/`, `box/unit/`, `box/double-park/`):
+
+- Identity x4 (default OFF, default ON, plain OFF, plain ON): `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`, 12 ok each.
+- Failure x2 (OFF, ON): `KV-HOST-SPILL FAILURE GATE: ALL GREEN`, 15 ok each (the two `FAIL` substrings per log are the
+  gate's own `ok: the promote caught it: VERIFY FAILED, loud and named` lines).
+- Contract fault, eleven cells with the new `span-refusal`: `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 142 ok, 0 FAIL.
+  The span-refusal cell: `refusal handed back 96 span(s); the next copy-complete carries 96`, `the next D2H receipt
+  landed 96 span(s), 96 were handed back`, `receipt seq=5 expected 2 + 3 capture ticket(s) submitted before it = 5`,
+  `staging fill line(s) [96], refusal N 96`, `byte-unequal request(s): none`, `ok: span-refusal: r1..r4 byte-equal to
+  the door-OFF boot`; the served line `[prefix-host] demote failed (tier D2H spans refused: injected failure
+  (MEMRA_KV_HOST_FAULT=contract-spans) (96 f32 spans handed back)); nothing demoted`; r4's `promote published off the
+  tick: ticket complete after 1 poll(s), 7.8ms from submission to completion (tick-top poll)`.
+- Twin x2 (OFF, ON): `PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 ... V1=ok V2=ok
+  V3=ok V4=ok V5=ok V6=ok -> PASS`.
+- Hit OFF/ON, ON armed: `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 / 68 ok; the day-24 census: `DAY26 CLAUSE 5
+  hitgate-on counts against day 24: spec_on_census_equal=True spec_off_census_equal=True route_submissions=30 (day 24:
+  30) spec_boundary_captures_with_draft_plane=11 (day 24: 11) not_routed_lines=0 (must be 0: the gate has no
+  promote-then-hit shape) -> PASS`.
+- Unit cells: the door's GPU cells `test result: ok. 13 passed` (the day-30 seven `option_b_` and six `option_c_`,
+  including `option_b_span_attach_fault_hands_every_span_back`, `option_b_span_postpublish_refusal_returns_the_staging_to_the_set`,
+  `option_b_span_staging_charge_refusal_refuses_the_attach_and_keeps_the_tier_on`, `option_b_span_refusal_returns_every_plane_and_keeps_the_tier_on`
+  and `option_b_spans_ride_the_ticket_and_land_bitwise`); the engine's `test result: ok. 6 passed` (the four `d2d_`
+  cells, the price reading, and `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok`); the CPU censuses
+  `test result: ok. 13 passed` (with `day31_the_staging_goes_back_on_every_exit_and_is_charged_once` and
+  `day31_the_copy_complete_line_tallies_the_payload_bytes_by_class`); the tier bindings `test result: ok. 3 passed`.
+- Double park (day 28's cell): `DAY30 A2 pre-submit steady N=80 median=0.63 min=0.60 max=0.66 boots_on=10
+  demotes_per_boot=[11] rule N>=80 median<=1.5 max<=3.0 -> PASS`; `DAY30 A3 logs=115 copy_complete_lines=134
+  receipts_paired=134 receipts_without_copy_line(on-tick)=0 bad=0 ... -> PASS`; `DAY28 CLAUSE 1a stall order=o1 ...
+  on_cell_median=76.9 off_cell_median=85.4 rule on<=off+2.0 -> PASS` (o2 the same), `DAY28 CLAUSE 1b e2e order=o1 ...
+  on_minus_off=+11.8 rule <=+20.0 -> PASS` (o2 `+11.8`), `DAY28 CLAUSE 1c owner in-completion N=100 median=2.02 min=1.96
+  max=2.66 runs_with_demote_without_ledger=0 rule <=12.0 -> PASS`, `DAY28 VERDICT clauses_failed=0 -> ALL PASS`;
+  `DAY25 DOUBLE-PARK stall order=o1 on_minus_off=-8.4 unc=0.1 -> isolated`, `order=o2 on_minus_off=-8.5 unc=0.2 ->
+  isolated`, e2e `+11.8 unc=0.9` / `+11.8 unc=0.8 -> isolated`.
+- Day 26's reader (its own clauses, not today's acceptance): clause 1 `-> PASS`; clause 2 `|d-expected|=3.9` / `4.0 ->
+  FAIL` against its day-26 expectation of +15.8 (day 30 read 3.8 / 4.1 the same way); clause 3 `-> FINDING` both orders;
+  clause 4 `restore-arm: NO RECEIPT -> FAIL` (the restore arm is not part of this cell); clause 5 `-> PASS` (the hit
+  gate now sits under `gates/`).
+
+Local RTX 5090 (`rtx5090-day31/`, binary `0427e65c30c85917cadc3297bbe6cce69cb65c0f2d835b101a9b2ca461cf7b6a`, the same
+`6d940a97c`, each gate under its own `flock` on `/tmp/memra-5090.lock`, 22:01:21Z to 22:05:38Z, no wait logged):
+identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok); fault default and plain
+`KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (142 ok each; the span-refusal cell `refusal handed back 48 span(s); the next
+copy-complete carries 48`, `byte-unequal request(s): none`); hit OFF `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok),
+hit ON the same (68 ok); `DAY30 A3 logs=39 copy_complete_lines=38 receipts_paired=38 ... -> PASS`.
+
+No arm is red.
+
+## 5. What the sitting shows for 1a to 1d
+
+- **1a on the served path.** The `postpublish` cell refuses a landed receipt after the take. Day 30: the boot's next
+  demote paid a fresh staging allocation, `pre-submit 28.71`. Day 31: `pre-submit 0.93`, and the boot has one
+  `tier span staging:` line (before the refusal). DAY30 finding 4 is closed.
+- **1b.** Every server log that carried a demote has exactly one fill line: 22 of 22 on the target card (`tier span
+  staging: 96 fresh pinned buffer(s), 156893184 bytes charged to the governor's pinned ledger; the set holds 156893184
+  bytes charged`), 19 of 19 on the 5090 (48 buffers, 52690944 bytes). No `Capacity` refusal anywhere: the one span
+  refusal per card is the injected one. The charge moved no double-park reading (same box, cross-sitting, not a
+  same-window pair): pre-submit steady 0.63 (day 30 0.62), demote 1 of a boot 29.71 (29.69), demotes 2 and 3 1.25 /
+  1.23 (1.26 / 1.27), helper 79.8 (79.8), owner in-completion 2.02 (1.96), stall ON against OFF -8.4 / -8.5 (-8.3 /
+  -8.6).
+- **1c.** Section 4; the cell is green on both cards and both environments of the 5090.
+- **1d.** The byte split by slot class, read off the copy-complete lines (`counts.log`, `day 31` section):
+
+| image | conv | ssm | hidden | logits | total |
+|---|---|---|---|---|---|
+| 27B plain (112 lines) | 48, 5,898,240 B (3.7 %) | 48, 150,994,944 B (95.6 %) | 1, 0 B | 1, 993,280 B (0.63 %) | 157,886,464 B |
+| 27B draft-bearing (22 lines) | as above | as above | 1, 20,480 B | as above | 157,906,944 B |
+| 9B plain (18 lines) | 24, 2,359,296 B (4.4 %) | 24, 50,331,648 B (93.8 %) | 1, 0 B | 1, 993,280 B (1.85 %) | 53,684,224 B |
+| 9B draft-bearing (20 lines) | as above | as above | 1, 16,384 B | as above | 53,700,608 B |
+
+## 6. Findings
+
+1. The SSM state is the image: 95.6 percent of the 27B's heap payload bytes and 93.7 to 93.8 percent of the 9B's. Conv
+   is 3.7 / 4.4 percent, logits under 2 percent, hidden 0 or one row. This is lane C's separating line (C DAY38 section
+   3), now a log term on every demote.
+2. A plain entry carries a hidden payload of 0 bytes (counted in the 98 / 50 payloads, empty); a draft-bearing entry
+   carries one row (5120 f32 on the 27B, 4096 on the 9B). Log only; no behavior read into it.
+3. The staging charge costs nothing measurable on the served path and never refused at these budgets (the governor's
+   pinned capacity is twice the host budget). The refusal arm is exercised by the GPU cell only (a hog charge); no served
+   cell drives the ledger to Capacity.
+4. The box was held 54 minutes by lane C's scored cell before this sitting; the bounded retry held, no overlap.
+
+## 7. What is owed, and integrability
+
+- **Integrable.** 1a to 1d are complete, with their censuses, GPU cells and the fault gate's new cell, and every gate
+  is green on both cards on `6d940a97c` in one sitting per card. The lead integrates from `origin/lane/spill-a-20260919`.
+- **Not landed: the H2D half** (section 2: design H, acceptance B1 to B5, the ordered list). Nothing of it is in the
+  tree; no H2D claim is made.
+- Still owed after it: the D2D half, the strong-form receipt; Move 1 items 1, 3, 4 unchanged. The 1b limits in section 1
+  (charges release at the latch while a quarantined ticket or a detached helper may still hold buffers; a multi-model
+  context's set grows per distinct plane length) stand.
+
+## 8. Checks, budget, cleanup
+
+- Checks on the final tree (the records commit): `cargo fmt --all -- --check` clean; clippy `-D warnings` all targets on
+  tier, engine and server `clippy_rc=0`; the `DOCS_RS=1 --target x86_64-unknown-linux-gnu` pass `docsrs_rc=0`;
+  `check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)`;
+  `check-conflict-markers: OK`; `git diff --check` clean; `.gitattributes` with `*.log -whitespace` in
+  `pro-single-day31/box/` and `rtx5090-day31/`; zero em dashes in this lane's lines. No new `MEMRA_*` name.
+- Budget: about 2.5 agent-hours of 5 (21:15Z to about 23:45Z wall), of which 54 minutes waited on lane C's lock.
+- Cleanup: BOX3 `/root/a31.bundle` removed; `/root/wt-a` at `6d940a97c` on `lane-a-day31`, clean; `/root/spill-receipts/a-day31/`
+  mirrored to `pro-single-day31/box/` (the binary excluded, its sha256 kept); no process of mine on the box; the lock
+  free; nothing of other lanes touched. Local: `/tmp/wt-a-d31` removed; the 5090 carries no process of mine.
