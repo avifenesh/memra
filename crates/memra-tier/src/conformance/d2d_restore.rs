@@ -30,9 +30,10 @@
 //!    `retire(ticket, None)` succeeds (the destination leaves through its owner, not through the
 //!    engine's publication), then `acknowledge`; the source pin is released only after that, and
 //!    the caller's pin becomes the serving session's pin.
-//! 4. The receipt term. As for the capture (`d2d_capture_publish` rule 3), a restore item has no
-//!    witnessed checksum until slice 3: `Completion::require` refuses it, so no path publishes a
-//!    restore through the host-contract gate.
+//! 4. The receipt term. As for the capture (`d2d_capture_publish` rule 3), a restore item with no
+//!    witnessed checksum is refused by `Completion::require`, so no path publishes such a restore
+//!    through the host-contract gate. Slice 3 (day 22, `d2d_receipt_witnessed`) added the witness;
+//!    this schedule's fixture stays receipt-less and keeps the refusal clause by name.
 use crate::contracts::*;
 
 /// The restore fixture: one batch of same-device copies issued off the reader's stream into a
@@ -96,7 +97,7 @@ pub fn d2d_restore_ready<F: D2dRestoreFixture>(f: &mut F) {
             f.require_receipt(&ticket),
             Err(Error::Corrupt | Error::NotReady)
         ),
-        "a D2D item has no witnessed checksum before slice 3; require must refuse"
+        "a D2D item without a witnessed checksum is refused by require (day 22: d2d_receipt_witnessed)"
     );
     // 2. Every event completes: landed, bytes exact, and STILL not ready without the wait.
     f.copy_completes();

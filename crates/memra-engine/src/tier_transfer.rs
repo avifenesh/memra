@@ -1,11 +1,23 @@
 //! Native owner-stream H2D/D2H implementation of the frozen tier contract.
 //! No worker may submit CUDA work. Unknown completion retains backing and quota.
 use cudarc::driver::{
-    CudaContext, CudaEvent, CudaSlice, CudaStream, CudaViewMut, DriverError, HostSlice, SyncOnDrop,
-    result, sys,
+    CudaContext, CudaEvent, CudaFunction, CudaModule, CudaSlice, CudaStream, CudaView, CudaViewMut,
+    DriverError, HostSlice, LaunchConfig, PushKernelArg, SyncOnDrop, result, sys,
 };
+use cudarc::nvrtc::Ptx;
 use memra_kv::KvPlane;
+/// One item's receipt term (the source digest and the witnessed destination digest), re-exported
+/// so the worker names the receipt through the engine, its only tier surface.
+pub use memra_tier::conformance::ReceiptTerm;
+use memra_tier::conformance::receipt_digest_from_lanes;
 use memra_tier::{bank::SharedBudget, contracts::*};
+
+/// The D2D receipt kernels (WP-A day 22, memra#536 Move 2 slice 3; `cu/tier_receipt.cu`): the
+/// copy-stream digest whose CPU oracle is `memra_tier::conformance::receipt_digest`, and the
+/// `d2d-delay` fault's spin. Loaded by `new_with_copy_stream` only; `new` has no D2D class.
+const TIER_RECEIPT_FATBIN: &[u8] = include_bytes!(env!("MEMRA_TIER_RECEIPT_FATBIN"));
+/// The `d2d-delay` fault's early-reader delay ahead of the copy (`inject_d2d_early_reader`).
+pub const D2D_DELAY_FAULT_NS: u64 = 200_000_000;
 use std::{
     cell::{Ref, RefCell},
     collections::HashMap,
@@ -320,6 +332,9 @@ struct Entry {
     unknown: bool,
     source: Retention,
     destination: Retention,
+    /// WP-A day 22 (Move 2 slice 3): the D2D receipt's lanes (`ReceiptScratch`); `None` for an
+    /// H2D or D2H batch, whose receipt is the host-side `checksum` in `progress`.
+    receipt: Option<ReceiptScratch>,
 }
 impl Drop for Entry {
     fn drop(&mut self) {
@@ -328,8 +343,39 @@ impl Drop for Entry {
             // its accounting alive, including after a submission error.
             std::mem::forget(std::mem::take(&mut self.items));
             std::mem::forget(self.charge.take());
+            std::mem::forget(self.receipt.take());
         }
     }
+}
+/// The receipt kernels of `cu/tier_receipt.cu`, loaded once per `CudaTransfers` with a copy stream.
+struct ReceiptKernels {
+    _module: Arc<CudaModule>,
+    digest: CudaFunction,
+    delay: CudaFunction,
+}
+/// One D2D batch's receipt lanes (WP-A day 22, `memra_tier::conformance::d2d_receipt_witnessed`):
+/// per item, 64 bytes on the device (four u64 lanes of the SOURCE digest, taken on the copy stream
+/// behind the producer fence, then four of the DESTINATION digest, taken after the copy), copied
+/// once per batch into `pinned` on the copy stream and sealed by `event`, recorded after that copy.
+/// `progress` reads the lanes only after `event` is observed complete, so an item lands with its
+/// receipt or not at all.
+struct ReceiptScratch {
+    lanes: CudaSlice<u8>,
+    pinned: PinnedBacking,
+    /// The lanes' zero-fill, recorded on the OWNER stream at allocation; every writer of the lanes
+    /// is ordered behind it explicitly (the copy stream waits on it before its first digest; the
+    /// fault's owner-stream reader follows it in stream order). Nothing here relies on cudarc's
+    /// implicit event tracking: the engine's context disables it (`Engine::new`).
+    zeroed: CudaEvent,
+    event: Option<CudaEvent>,
+}
+/// The engine's receipt of a landed D2D batch (`CudaTransfers::d2d_receipt`): per item the source
+/// digest (the item's expectation) and the destination digest (the item's checksum), and the
+/// host-contract gate's verdict over them (`Completion::require`, `device = true`).
+pub struct D2dReceipt {
+    pub bytes: u64,
+    pub items: Vec<ReceiptTerm>,
+    pub verdict: Result<()>,
 }
 /// One same-device copy of the capture class (WP-A day 20, memra#536 Move 2 slice 1): `bytes`
 /// from the head of a BORROWED live source (a session cache's plane the caller keeps) into an
@@ -382,6 +428,12 @@ pub struct CudaTransfers {
     producers: HashMap<u64, (FenceId, CudaEvent)>,
     allocations: HashMap<u64, ChargedLease>,
     entries: HashMap<TransferTicket, Entry>,
+    /// WP-A day 22: the D2D receipt kernels; `Some` exactly when `copy` is.
+    receipt: Option<ReceiptKernels>,
+    /// The one-shot `d2d-delay` fault (`inject_d2d_early_reader`): the next D2D submit of either
+    /// class delays its copy by this many nanoseconds and takes its destination digest from an
+    /// unordered early reader on the owner stream. `None` in production.
+    early_reader: Option<u64>,
 }
 impl CudaTransfers {
     /// Construct on the designated CUDA owner thread with its existing stream.
@@ -405,6 +457,8 @@ impl CudaTransfers {
             producers: HashMap::new(),
             allocations: HashMap::new(),
             entries: HashMap::new(),
+            receipt: None,
+            early_reader: None,
         })
     }
     /// `new`, plus a second stream of the same context for the copies (WP-A day 17 for the D2H,
@@ -413,7 +467,141 @@ impl CudaTransfers {
     pub fn new_with_copy_stream(owner: Arc<CudaStream>, governor: SharedBudget) -> Result<Self> {
         let mut t = Self::new(owner, governor)?;
         t.copy = Some(cuda(t.stream.context().new_stream())?);
+        // WP-A day 22: the D2D classes carry a receipt, so the copy stream comes with its kernels;
+        // a module that will not load is a construction refusal, never a receipt-less class.
+        let module = cuda(
+            t.stream
+                .context()
+                .load_module(Ptx::from_binary(TIER_RECEIPT_FATBIN.to_vec())),
+        )?;
+        let digest = cuda(module.load_function("d2d_receipt_digest"))?;
+        let delay = cuda(module.load_function("tier_delay_spin"))?;
+        t.receipt = Some(ReceiptKernels {
+            _module: module,
+            digest,
+            delay,
+        });
         Ok(t)
+    }
+    /// The `MEMRA_KV_HOST_FAULT=d2d-delay-*` fault (WP-A day 22, the red arm of the receipt): the
+    /// NEXT D2D submit of either class runs `tier_delay_spin(delay_ns)` on the copy stream between
+    /// the producer wait and the copy, and takes its DESTINATION digest from an unordered early
+    /// reader (the owner stream at submit, after the producer fence, with no wait on the copy's
+    /// event: the read a publication or a first prime chunk issued before the completion event
+    /// would make). The source digest stays on the copy stream behind the producer fence, so the
+    /// receipt must differ and the settle must refuse it. One-shot; diagnostics only.
+    pub fn inject_d2d_early_reader(&mut self, delay_ns: u64) {
+        self.early_reader = Some(delay_ns);
+    }
+    /// One batch's receipt scratch: zeroed device lanes (64 bytes per item) and a zeroed pinned
+    /// twin of the same size. Allocated before the batch is charged, so a refusal here submits
+    /// nothing.
+    fn receipt_scratch(&self, items: usize) -> Result<ReceiptScratch> {
+        let bytes = items.checked_mul(64).ok_or(Error::Overflow)?;
+        // Zeroed on the OWNER stream and fenced by `zeroed`: the copy stream waits on it before
+        // its first digest, and the fault's early reader (owner stream) follows it in order.
+        let lanes = cuda(self.stream.alloc_zeros::<u8>(bytes))?;
+        let zeroed = cuda(self.stream.record_event(None))?;
+        // SAFETY: every byte is zero-filled through `as_mut_slice` before the backing is used.
+        let mut pinned = cuda(unsafe {
+            PinnedBacking::alloc(self.stream.context(), bytes, PinnedKind::Cached)
+        })?;
+        cuda(pinned.as_mut_slice())?.fill(0);
+        Ok(ReceiptScratch {
+            lanes,
+            pinned,
+            zeroed,
+            event: None,
+        })
+    }
+    /// `d2d_receipt_digest` over `span` into `lanes` (the item's 32-byte lane block) on `stream`.
+    fn digest_on(
+        &self,
+        stream: &Arc<CudaStream>,
+        span: &CudaView<'_, u8>,
+        lanes: &mut CudaViewMut<'_, u8>,
+    ) -> Result<()> {
+        let k = self.receipt.as_ref().ok_or(Error::Unsupported)?;
+        let n = span.len() as u64;
+        let blocks = n.div_ceil(8).div_ceil(2048).clamp(1, 2048) as u32;
+        let cfg = LaunchConfig {
+            grid_dim: (blocks, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut b = stream.launch_builder(&k.digest);
+        b.arg(span).arg(&n).arg(lanes);
+        // SAFETY: documented FFI of `cu/tier_receipt.cu`: `d2d_receipt_digest(const u8* p, u64 n,
+        // u64* out)` reads exactly `n` bytes of `span` (its length) and adds into the four u64
+        // lanes of `lanes` (32 bytes, zeroed at allocation); argument order and types match.
+        cuda(unsafe { b.launch(cfg) }).map(|_| ())
+    }
+    /// `tier_delay_spin(ns)` on `stream` (the fault's delay).
+    fn delay_on(&self, stream: &Arc<CudaStream>, ns: u64) -> Result<()> {
+        let k = self.receipt.as_ref().ok_or(Error::Unsupported)?;
+        let cfg = LaunchConfig {
+            grid_dim: (1, 1, 1),
+            block_dim: (1, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut b = stream.launch_builder(&k.delay);
+        b.arg(&ns);
+        // SAFETY: documented FFI of `cu/tier_receipt.cu`: `tier_delay_spin(u64 ns)` takes one
+        // scalar and touches no memory.
+        cuda(unsafe { b.launch(cfg) }).map(|_| ())
+    }
+    /// Seal a batch's receipt: one D2H of the lanes into the pinned twin on the copy stream, then
+    /// the receipt event; `progress` reads the lanes only after that event. A failure quarantines
+    /// the batch (its items may be in flight).
+    fn seal_receipt(copy: &Arc<CudaStream>, entry: &mut Entry, mut scratch: ReceiptScratch) {
+        let sealed = (|| -> Result<()> {
+            cuda(copy.memcpy_dtoh(&scratch.lanes, &mut scratch.pinned))?;
+            scratch.event = Some(cuda(copy.record_event(None))?);
+            Ok(())
+        })();
+        if sealed.is_err() {
+            entry.unknown = true;
+        }
+        entry.receipt = Some(scratch);
+    }
+    /// The receipt of a landed D2D batch (WP-A day 22, `d2d_receipt_witnessed` rules 2 to 4):
+    /// `NotReady` before the landing; after it, per item the source digest (taken behind the
+    /// producer fence) and the destination digest (taken after the copy), and the host-contract
+    /// gate's verdict over them: `Ok` when every destination witnesses its source, `Corrupt` on a
+    /// receipt-less or mismatching item (for the restore class, read after `install_consumer_wait`,
+    /// since the gate also requires the fence). A ticket that is not a same-device batch is
+    /// `Unsupported`. The receipt reads bytes and changes none.
+    pub fn d2d_receipt(&mut self, ticket: &TransferTicket) -> Result<D2dReceipt> {
+        self.progress(ticket)?;
+        let e = &self.entries[ticket];
+        if e.items
+            .iter()
+            .flatten()
+            .any(|i| i.direction != CopyDirection::DeviceToDevice)
+        {
+            return Err(Error::Unsupported);
+        }
+        if !e.completion.producer_done {
+            return Err(Error::NotReady);
+        }
+        let mut items = Vec::with_capacity(e.items.len());
+        let mut bytes = 0u64;
+        for (i, item) in e.items.iter().enumerate() {
+            let Some(item) = item else {
+                continue;
+            };
+            bytes = bytes.saturating_add(item.bytes);
+            items.push(ReceiptTerm {
+                source: e.expected[i][0].checksum,
+                destination: e.completion.items[i].segments[0].checksum,
+            });
+        }
+        let verdict = e.completion.require(ticket, &e.expected, true);
+        Ok(D2dReceipt {
+            bytes,
+            items,
+            verdict,
+        })
     }
     /// The copy stream when one exists (`new_with_copy_stream`); `None` under `new`.
     pub fn copy_stream(&self) -> Option<&Arc<CudaStream>> {
@@ -996,6 +1184,9 @@ impl CudaTransfers {
                 return Err(Error::WrongOwner);
             }
         }
+        // WP-A day 22 (slice 3): the receipt's lanes and the one-shot fault, before the charge.
+        let mut scratch = self.receipt_scratch(ops.len())?;
+        let fault = self.early_reader.take();
         let mut request = self.request();
         request.bytes.inflight = ops.len() as u64;
         let charge = self.governor.borrow_mut().reserve(&request)?;
@@ -1021,6 +1212,7 @@ impl CudaTransfers {
             unknown: false,
             source: Retention::default(),
             destination: Retention::default(),
+            receipt: None,
         };
         for (i, op) in ops.into_iter().enumerate() {
             let mut s = SegmentCompletion {
@@ -1056,10 +1248,40 @@ impl CudaTransfers {
                     item.device.as_ref().ok_or(Error::AlreadyReleased)?,
                 )?;
                 let n = op.bytes as usize;
+                // WP-A day 22 (slice 3, `d2d_receipt_witnessed`): the SOURCE digest behind the
+                // producer fence, the copy, then the DESTINATION digest after it, all on the copy
+                // stream; the fault's arm delays the copy and reads the destination early.
+                cuda(copy.wait(&scratch.zeroed))?;
+                if let Some(ns) = fault {
+                    self.delay_on(&copy, ns)?;
+                }
+                self.digest_on(
+                    &copy,
+                    &op.source.slice(0..n),
+                    &mut scratch.lanes.slice_mut(64 * i..64 * i + 32),
+                )?;
                 cuda(copy.memcpy_dtod(
                     &op.source.slice(0..n),
                     &mut backing.borrow_mut().slice_mut(..n),
                 ))?;
+                if fault.is_none() {
+                    self.digest_on(
+                        &copy,
+                        &backing.borrow().slice(..n),
+                        &mut scratch.lanes.slice_mut(64 * i + 32..64 * i + 64),
+                    )?;
+                } else {
+                    // The early reader: the owner stream reads the destination now, unordered with
+                    // the delayed copy; the copy stream waits on that read before its event so the
+                    // lanes the settle reads are the early reader's.
+                    self.digest_on(
+                        &self.stream,
+                        &backing.borrow().slice(..n),
+                        &mut scratch.lanes.slice_mut(64 * i + 32..64 * i + 64),
+                    )?;
+                    let read = cuda(self.stream.record_event(None))?;
+                    cuda(copy.wait(&read))?;
+                }
                 drop(backing);
                 item.event = Some(cuda(copy.record_event(None))?);
                 // Fenced at submit, as an off-owner D2H: the consumer is the caller's publication
@@ -1081,6 +1303,7 @@ impl CudaTransfers {
                 segments: vec![s],
             });
         }
+        Self::seal_receipt(&copy, &mut entry, scratch);
         self.entries.insert(ticket, entry);
         Ok(ticket)
     }
@@ -1149,6 +1372,9 @@ impl CudaTransfers {
                 return Err(Error::WrongOwner);
             }
         }
+        // WP-A day 22 (slice 3): the receipt's lanes and the one-shot fault, before the charge.
+        let mut scratch = self.receipt_scratch(ops.len())?;
+        let fault = self.early_reader.take();
         let mut request = self.request();
         request.bytes.inflight = ops.len() as u64;
         let charge = self.governor.borrow_mut().reserve(&request)?;
@@ -1174,6 +1400,7 @@ impl CudaTransfers {
             unknown: false,
             source: Retention::default(),
             destination: Retention::default(),
+            receipt: None,
         };
         for (i, mut op) in ops.into_iter().enumerate() {
             let mut s = SegmentCompletion {
@@ -1207,7 +1434,33 @@ impl CudaTransfers {
             let submit = (|| {
                 cuda(copy.wait(&self.producers[&op.producer_fence.sequence].1))?;
                 let n = op.bytes as usize;
+                // WP-A day 22 (slice 3): source digest behind the fence, the copy, the destination
+                // digest after it, on the copy stream; the fault's arm as in the capture class.
+                cuda(copy.wait(&scratch.zeroed))?;
+                if let Some(ns) = fault {
+                    self.delay_on(&copy, ns)?;
+                }
+                self.digest_on(
+                    &copy,
+                    &op.source.slice(0..n),
+                    &mut scratch.lanes.slice_mut(64 * i..64 * i + 32),
+                )?;
                 cuda(copy.memcpy_dtod(&op.source.slice(0..n), &mut op.destination))?;
+                if fault.is_none() {
+                    self.digest_on(
+                        &copy,
+                        &op.destination.as_view(),
+                        &mut scratch.lanes.slice_mut(64 * i + 32..64 * i + 64),
+                    )?;
+                } else {
+                    self.digest_on(
+                        &self.stream,
+                        &op.destination.as_view(),
+                        &mut scratch.lanes.slice_mut(64 * i + 32..64 * i + 64),
+                    )?;
+                    let read = cuda(self.stream.record_event(None))?;
+                    cuda(copy.wait(&read))?;
+                }
                 item.event = Some(cuda(copy.record_event(None))?);
                 s.io_bytes = item.bytes;
                 Ok(())
@@ -1224,6 +1477,7 @@ impl CudaTransfers {
                 segments: vec![s],
             });
         }
+        Self::seal_receipt(&copy, &mut entry, scratch);
         self.entries.insert(ticket, entry);
         Ok(ticket)
     }
@@ -1294,6 +1548,14 @@ impl CudaTransfers {
         for item in e.items.iter().flatten() {
             cuda(item.event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;
         }
+        // Integ38 (lead review of WP-A day 22): a D2D batch lands only with its receipt lanes, and
+        // the receipt's D2H is recorded on the copy stream AFTER the last item's event. A host
+        // wait on the items alone leaves a window in which `progress` sees no lanes, the items
+        // stay unlanded and the settle's Block arm latches the tier for a copy that had landed.
+        // The receipt event is part of the batch's landing, so the wait covers it too.
+        if let Some(r) = &e.receipt {
+            cuda(r.event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;
+        }
         e.unknown = false;
         self.progress(ticket)
     }
@@ -1342,6 +1604,32 @@ impl CudaTransfers {
         if e.unknown {
             return Err(Error::Quarantined);
         }
+        // WP-A day 22 (Move 2 slice 3): a D2D batch's receipt lanes, readable once the receipt
+        // event (recorded after the lanes' D2H, after every item's event) is observed complete.
+        let receipt_lanes: Option<Vec<u8>> = match &e.receipt {
+            None => None,
+            Some(r) => {
+                let sealed = r
+                    .event
+                    .as_ref()
+                    .ok_or(Error::Quarantined)
+                    .and_then(event_done);
+                match sealed {
+                    Ok(true) => match r.pinned.as_slice() {
+                        Ok(lanes) => Some(lanes.to_vec()),
+                        Err(_) => {
+                            e.unknown = true;
+                            return Err(Error::Quarantined);
+                        }
+                    },
+                    Ok(false) => None,
+                    Err(err) => {
+                        e.unknown = true;
+                        return Err(err);
+                    }
+                }
+            }
+        };
         for (i, item) in e.items.iter_mut().enumerate() {
             let Some(item) = item else {
                 continue;
@@ -1367,19 +1655,39 @@ impl CudaTransfers {
                 e.unknown = true;
                 return Err(Error::Quarantined);
             }
+            if item.direction == CopyDirection::DeviceToDevice {
+                // WP-A day 22 (Move 2 slice 3, `d2d_receipt_witnessed`): a D2D item lands WITH its
+                // receipt or not yet. The lanes are read after the receipt event; the destination
+                // digest becomes the item's checksum and the source digest its expectation, so
+                // the gate clause `s.checksum != Some(e.checksum) => Corrupt` is the comparison.
+                // A batch without lanes (no scratch) stays receipt-less and refused by the same
+                // clause. Publication is still the caller's, after `capture_landed`.
+                let Some(lanes) = &receipt_lanes else {
+                    continue;
+                };
+                let off = 64 * i;
+                if lanes.len() >= off + 64 {
+                    let take = |o: usize| -> [u64; 4] {
+                        let mut l = [0u64; 4];
+                        for (k, lane) in l.iter_mut().enumerate() {
+                            let at = o + 8 * k;
+                            *lane = u64::from_le_bytes(lanes[at..at + 8].try_into().unwrap());
+                        }
+                        l
+                    };
+                    e.expected[i][0].checksum = receipt_digest_from_lanes(take(off), item.bytes);
+                    s.checksum = Some(receipt_digest_from_lanes(take(off + 32), item.bytes));
+                } else {
+                    s.checksum = None;
+                }
+                s.producer_done = true;
+                s.status = ItemStatus::Complete;
+                s.valid_bytes = item.bytes;
+                continue;
+            }
             s.producer_done = true;
             s.status = ItemStatus::Complete;
             s.valid_bytes = item.bytes;
-            if item.direction == CopyDirection::DeviceToDevice {
-                // WP-A day 20 (Move 2 slice 1): a capture has no host bytes, so no checksum
-                // term yet (slice 3 decides the device digest or the `Unwitnessed` arm). The
-                // expectation keeps its zero digest, so `Completion::require` refuses the item
-                // `Corrupt` by construction: no path publishes a capture through the
-                // host-contract gate before its receipt exists. Publication is the caller's,
-                // after `capture_landed`.
-                s.checksum = None;
-                continue;
-            }
             s.checksum = Some(checksum(
                 item.host.as_ref().ok_or(Error::AlreadyReleased)?.bytes()?,
             ));
@@ -1525,6 +1833,7 @@ impl TransferEngine for CudaTransfers {
             unknown: false,
             source: Retention::default(),
             destination: Retention::default(),
+            receipt: None,
         };
         let mut acceptances = vec![];
         for (i, (op, error)) in ops.into_iter().zip(errors).enumerate() {
@@ -2034,6 +2343,14 @@ mod tests {
             !submit_body.contains("self.stream.wait("),
             "no owner-stream wait exists at submit in the restore class"
         );
+        // Day 22: the fault's early reader RECORDS an owner-stream event (the copy stream waits on
+        // it); it never makes the owner stream wait on anything.
+        assert_eq!(
+            submit_body
+                .matches("self.stream.record_event(None)")
+                .count(),
+            1
+        );
         assert!(
             !submit_body.contains("s.consumer_fenced = true;")
                 && submit_body.contains("consumer_fenced: false,"),
@@ -2091,8 +2408,57 @@ mod tests {
         let d2d_arm = progress_body
             .find("if item.direction == CopyDirection::DeviceToDevice {")
             .expect("progress has a capture arm");
-        assert!(progress_body[d2d_arm..d2d_arm + 700].contains("s.checksum = None;"));
-        assert!(progress_body[d2d_arm..d2d_arm + 700].contains("continue;"));
+        // Day 22 (slice 3): the arm fills the receipt from the lanes (the destination digest is
+        // the checksum, the source digest the expectation) and lands the item only with them.
+        let arm = &progress_body[d2d_arm..d2d_arm + 1600];
+        assert!(arm.contains("let Some(lanes) = &receipt_lanes else {"));
+        assert!(arm.contains(
+            "e.expected[i][0].checksum = receipt_digest_from_lanes(take(off), item.bytes);"
+        ));
+        assert!(
+            arm.contains(
+                "s.checksum = Some(receipt_digest_from_lanes(take(off + 32), item.bytes));"
+            )
+        );
+        assert!(arm.contains("continue;"));
+        // Both classes digest the source behind the producer fence, copy, then digest the
+        // destination; the fault's arm reads the destination on the owner stream instead.
+        for class in ["pub fn submit_d2d_capture(", "pub fn submit_d2d_restore("] {
+            let at = body.find(class).unwrap();
+            let class_body = &body[at..body[at..].find("\n    pub fn ").unwrap() + at];
+            let wait = class_body
+                .find("cuda(copy.wait(&self.producers[&op.producer_fence.sequence].1))?;")
+                .unwrap();
+            let zeroed = class_body
+                .find("cuda(copy.wait(&scratch.zeroed))?;")
+                .unwrap();
+            let delay = class_body.find("self.delay_on(&copy, ns)?;").unwrap();
+            assert!(
+                wait < zeroed && zeroed < delay,
+                "{class}: the lanes' zero-fill fence"
+            );
+            let src_digest = class_body.find("self.digest_on(\n                    &copy,\n                    &op.source.slice(0..n),").unwrap();
+            let copy_at = class_body.find(".memcpy_dtod(").unwrap();
+            let dst_digest = class_body.find("if fault.is_none() {").unwrap();
+            let early = class_body.find("&self.stream,").unwrap();
+            let event_at = class_body
+                .find("item.event = Some(cuda(copy.record_event(None))?);")
+                .unwrap();
+            assert!(wait < delay && delay < src_digest && src_digest < copy_at);
+            assert!(
+                copy_at < dst_digest && dst_digest < early && early < event_at,
+                "{class}"
+            );
+            assert!(class_body.contains("Self::seal_receipt(&copy, &mut entry, scratch);"));
+            let scratch = class_body
+                .find("self.receipt_scratch(ops.len())?;")
+                .unwrap();
+            let charge = class_body.find(".reserve(&request)?;").unwrap();
+            assert!(
+                scratch < charge,
+                "{class}: the scratch is allocated before the charge"
+            );
+        }
         let landed = body.find("pub fn capture_landed(").unwrap();
         let landed_body = &body[landed..body[landed..].find("\n    pub fn ").unwrap() + landed];
         assert!(landed_body.contains("self.progress(ticket)?;"));
@@ -2212,26 +2578,40 @@ mod tests {
         }
         let c = t.poll(&ticket).unwrap();
         assert!(c.producer_done && c.consumer_fenced);
+        // Day 22 (slice 3): every item lands WITH its receipt: the destination digest is the
+        // checksum and equals the CPU oracle over the pattern; the gate opens on it.
+        let oracle = memra_tier::conformance::receipt_digest(&pattern);
         for item in &c.items {
             assert_eq!(item.segments[0].valid_bytes, bytes as u64);
-            assert!(
-                item.segments[0].checksum.is_none(),
-                "no checksum term in slice 1"
+            assert_eq!(
+                item.segments[0].checksum,
+                Some(oracle),
+                "the destination digest is the oracle's"
             );
         }
+        let receipt = t.d2d_receipt(&ticket).unwrap();
+        assert_eq!(receipt.items.len(), 2);
+        assert_eq!(receipt.bytes, 2 * bytes as u64);
+        for term in &receipt.items {
+            assert_eq!(term.source, oracle, "the source digest, behind the fence");
+            assert_eq!(term.destination, Some(oracle));
+        }
+        assert_eq!(receipt.verdict, Ok(()), "a matching receipt opens the gate");
         let expected: Vec<Vec<SegmentExpectation>> = (0..2)
             .map(|_| {
                 vec![SegmentExpectation {
                     valid_bytes: bytes as u64,
                     io_bytes: bytes as u64,
-                    checksum: [0; 32],
+                    checksum: oracle,
                 }]
             })
             .collect();
-        assert_eq!(c.require(&ticket, &expected, true), Err(Error::Corrupt));
+        assert_eq!(c.require(&ticket, &expected, true), Ok(()));
+        // The engine's publication stays refused by DIRECTION: a capture publishes through the
+        // caller's index insert, never through `ready_view`.
         assert!(matches!(
             t.ready_view(&ticket, 0, epochs),
-            Err(Error::Corrupt)
+            Err(Error::Unsupported)
         ));
         t.release_producer(producer).unwrap();
         t.retire(&ticket, None).unwrap();
@@ -2328,11 +2708,19 @@ mod tests {
             !c.consumer_fenced,
             "landed and still unfenced: no wait was installed at submit"
         );
+        let oracle = memra_tier::conformance::receipt_digest(&pattern);
         for item in &c.items {
             assert_eq!(item.segments[0].valid_bytes, bytes as u64);
-            assert!(item.segments[0].checksum.is_none(), "no checksum term");
+            assert_eq!(
+                item.segments[0].checksum,
+                Some(oracle),
+                "day 22: landed with its receipt"
+            );
             assert!(!item.segments[0].consumer_fenced);
         }
+        // Day 22: before the install the gate still says NotReady (the fence is part of it).
+        let early = t.d2d_receipt(&ticket).unwrap();
+        assert_eq!(early.verdict, Err(Error::NotReady));
         // Rule 3: the install fences every item with a real owner-stream wait.
         t.install_consumer_wait(&ticket).unwrap();
         let c = t.poll(&ticket).unwrap();
@@ -2343,9 +2731,19 @@ mod tests {
         for item in &c.items {
             assert!(item.segments[0].consumer_fenced && item.segments[0].consumer_fence.is_some());
         }
+        let receipt = t.d2d_receipt(&ticket).unwrap();
+        assert_eq!(
+            receipt.verdict,
+            Ok(()),
+            "landed, fenced, matching: the gate opens"
+        );
+        for term in &receipt.items {
+            assert_eq!(term.source, oracle);
+            assert_eq!(term.destination, Some(oracle));
+        }
         assert!(matches!(
             t.ready_view(&ticket, 0, epochs),
-            Err(Error::Corrupt)
+            Err(Error::Unsupported)
         ));
         t.release_producer(producer).unwrap();
         t.retire(&ticket, None).unwrap();
@@ -2356,6 +2754,227 @@ mod tests {
             let back = stream.clone_dtoh(destination).unwrap();
             assert_eq!(back, pattern, "the restore holds the source bytes");
         }
+    }
+
+    /// The receipt cells' fixture. The engine's context runs with cudarc's event tracking DISABLED
+    /// (`Engine::new`, `gpu.ctx.disable_event_tracking()`), so no slice carries implicit
+    /// cross-stream waits and the receipt's ordering is the explicit fences alone; the fixture
+    /// matches (day 22, first sitting: with tracking on, cudarc made the fault's owner-stream
+    /// reader wait on the copy-stream memcpy's write event, so the "early" reader read the landed
+    /// copy and the cell could not show the fault the server shows).
+    fn receipt_fixture() -> (CudaTransfers, Arc<CudaStream>) {
+        use memra_tier::tier::governor::Governor;
+        let ctx = CudaContext::new(0).unwrap();
+        // SAFETY: no slice of this context exists yet; every slice below is created untracked,
+        // exactly as the engine's are.
+        unsafe { ctx.disable_event_tracking() };
+        let stream = ctx.new_stream().unwrap();
+        let cap = TierBudget {
+            version: 1,
+            device: vec![1 << 30],
+            peer: vec![0],
+            replicas: vec![0],
+            pinned: 1 << 30,
+            pageable: 1 << 30,
+            staging: 1 << 30,
+            loaders: 64,
+            inflight: 64,
+            nvme: 0,
+        };
+        let gov: SharedBudget = Rc::new(RefCell::new(
+            Governor::new(cap, TierBudget::zero(1), 64, 0, Arc::new(|| 0)).unwrap(),
+        ));
+        (
+            CudaTransfers::new_with_copy_stream(stream.clone(), gov).unwrap(),
+            stream,
+        )
+    }
+
+    /// WP-A day 22 (memra#536 Move 2 slice 3): the device digest IS the CPU oracle. Three spans (a
+    /// word multiple, a tail of 5 bytes, and a one-byte span) are digested on the copy stream into
+    /// zeroed lanes; the host folds the byte count; the result equals
+    /// `memra_tier::conformance::receipt_digest` over the same bytes read back, and a one-byte
+    /// flip on the device moves it.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn d2d_receipt_digest_matches_the_cpu_oracle() {
+        let (t, stream) = receipt_fixture();
+        let copy = t.copy_stream().unwrap().clone();
+        for &n in &[8usize << 20, (8usize << 20) + 5, 1usize] {
+            let pattern: Vec<u8> = (0..n).map(|i| (i * 29 % 241) as u8).collect();
+            let mut span = stream.alloc_zeros::<u8>(n).unwrap();
+            stream.memcpy_htod(&pattern, &mut span).unwrap();
+            // Integ38 (the local 5090 sitting): the upload runs on the owner stream and the digest
+            // on the copy stream; with cudarc's tracking off (as the engine runs) nothing orders
+            // them, and the 8 MiB span lost the race on the 5090 (`n=8388608: the device digest is
+            // the oracle's` failed, three of three spans green on the target card). The engine's
+            // route waits on the producer fence; the test states its producer the same way.
+            stream.synchronize().unwrap();
+            let mut lanes = copy.alloc_zeros::<u8>(32).unwrap();
+            t.digest_on(&copy, &span.slice(..n), &mut lanes.slice_mut(..32))
+                .unwrap();
+            let back = copy.clone_dtoh(&lanes).unwrap();
+            let mut l = [0u64; 4];
+            for (k, lane) in l.iter_mut().enumerate() {
+                *lane = u64::from_le_bytes(back[8 * k..8 * k + 8].try_into().unwrap());
+            }
+            let device = receipt_digest_from_lanes(l, n as u64);
+            let readback = stream.clone_dtoh(&span).unwrap();
+            assert_eq!(readback, pattern);
+            assert_eq!(
+                device,
+                memra_tier::conformance::receipt_digest(&readback),
+                "n={n}: the device digest is the oracle's"
+            );
+            // A one-byte flip moves the device digest (fresh lanes).
+            let mut flipped = pattern.clone();
+            flipped[n / 2] ^= 0x80;
+            stream.memcpy_htod(&flipped, &mut span).unwrap();
+            stream.synchronize().unwrap();
+            let mut lanes2 = copy.alloc_zeros::<u8>(32).unwrap();
+            t.digest_on(&copy, &span.slice(..n), &mut lanes2.slice_mut(..32))
+                .unwrap();
+            let back2 = copy.clone_dtoh(&lanes2).unwrap();
+            assert_ne!(back2, back, "n={n}: a one-byte flip moves the lanes");
+        }
+    }
+
+    /// WP-A day 22, the red arm on a card: `inject_d2d_early_reader` makes the next capture read
+    /// its destination on the owner stream before the delayed copy; the receipt's destination
+    /// digest is the fresh plane's (zeros), differs from the source's, and the gate answers
+    /// `Corrupt`; the ticket still retires and acknowledges and the planes come back (the copy
+    /// did land, late). A second batch without the fault matches again (one-shot).
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn d2d_early_reader_fault_is_refused_by_the_receipt() {
+        let (mut t, stream) = receipt_fixture();
+        let bytes = 4usize << 20;
+        let pattern: Vec<u8> = (0..bytes).map(|i| (i * 11 % 239) as u8).collect();
+        let mut source = stream.alloc_zeros::<u8>(bytes).unwrap();
+        stream.memcpy_htod(&pattern, &mut source).unwrap();
+        let generation = 1u64;
+        let epochs = Epochs {
+            state: 0,
+            src_gen: 1,
+            dst_gen: generation,
+        };
+        let oracle = memra_tier::conformance::receipt_digest(&pattern);
+        let stale = memra_tier::conformance::receipt_digest(&vec![0u8; bytes]);
+        for (round, fault) in [(0, true), (1, false)] {
+            let fresh = stream.alloc_zeros::<u8>(bytes).unwrap();
+            let lease = t.register_device(fresh, generation, request()).unwrap();
+            let twin = t.retain_device(&lease).unwrap();
+            if fault {
+                t.inject_d2d_early_reader(D2D_DELAY_FAULT_NS);
+            }
+            let producer = t.record_producer(generation).unwrap();
+            let ticket = t
+                .submit_d2d_capture(
+                    vec![D2dCapture {
+                        source: &source,
+                        destination: lease,
+                        bytes: bytes as u64,
+                        producer_fence: producer,
+                    }],
+                    epochs,
+                )
+                .unwrap();
+            assert!(matches!(
+                t.d2d_receipt(&ticket),
+                Err(Error::NotReady) | Ok(_)
+            ));
+            while !t.capture_landed(&ticket).unwrap() {}
+            let receipt = t.d2d_receipt(&ticket).unwrap();
+            assert_eq!(receipt.items.len(), 1);
+            assert_eq!(receipt.items[0].source, oracle, "round {round}");
+            if fault {
+                assert_eq!(
+                    receipt.items[0].destination,
+                    Some(stale),
+                    "the early reader saw the fresh plane"
+                );
+                assert_eq!(receipt.verdict, Err(Error::Corrupt), "refused");
+            } else {
+                assert_eq!(receipt.items[0].destination, Some(oracle));
+                assert_eq!(receipt.verdict, Ok(()), "the fault was one-shot");
+            }
+            t.release_producer(producer).unwrap();
+            t.retire(&ticket, None).unwrap();
+            t.acknowledge(&ticket).unwrap();
+            let plane = t.take_plane(&twin).unwrap().into_pooled().unwrap();
+            let back = stream.clone_dtoh(&plane).unwrap();
+            assert_eq!(
+                back, pattern,
+                "the copy did land (late); nothing was published on it"
+            );
+        }
+        assert_eq!(t.device_registry_len(), 0);
+    }
+
+    /// WP-A day 22, cell (v): the digest's price against the copy's own time on this card,
+    /// event-timed on the copy stream over one 158 MB span (the 27B plain entry's size class),
+    /// N=5 per order, both orders. A reading, printed verbatim; the pre-registered rule of day 19
+    /// (`OWNER-THREAD-OFFLOAD.md`) is applied by the day's write-up, never here.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn d2d_receipt_digest_price_against_the_copy() {
+        let (t, stream) = receipt_fixture();
+        let copy = t.copy_stream().unwrap().clone();
+        let n = 158usize << 20;
+        let pattern: Vec<u8> = (0..n).map(|i| (i * 7 % 251) as u8).collect();
+        let mut src = stream.alloc_zeros::<u8>(n).unwrap();
+        stream.memcpy_htod(&pattern, &mut src).unwrap();
+        let mut dst = stream.alloc_zeros::<u8>(n).unwrap();
+        let mut lanes = copy.alloc_zeros::<u8>(32).unwrap();
+        stream.synchronize().unwrap();
+        // cudarc's default event flags disable timing; the cell needs `CU_EVENT_DEFAULT`.
+        let timing = Some(sys::CUevent_flags::CU_EVENT_DEFAULT);
+        let timed = |f: &mut dyn FnMut()| -> f32 {
+            let a = copy.record_event(timing).unwrap();
+            f();
+            let b = copy.record_event(timing).unwrap();
+            b.synchronize().unwrap();
+            a.elapsed_ms(&b).unwrap()
+        };
+        let median = |v: &mut Vec<f32>| -> f32 {
+            v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            v[v.len() / 2]
+        };
+        // Warm both once.
+        timed(&mut || copy.memcpy_dtod(&src, &mut dst).unwrap());
+        timed(&mut || {
+            t.digest_on(&copy, &src.slice(..n), &mut lanes.slice_mut(..32))
+                .unwrap()
+        });
+        for order in ["copy-first", "digest-first"] {
+            let mut copies = Vec::new();
+            let mut digests = Vec::new();
+            for _ in 0..5 {
+                if order == "copy-first" {
+                    copies.push(timed(&mut || copy.memcpy_dtod(&src, &mut dst).unwrap()));
+                    digests.push(timed(&mut || {
+                        t.digest_on(&copy, &src.slice(..n), &mut lanes.slice_mut(..32))
+                            .unwrap()
+                    }));
+                } else {
+                    digests.push(timed(&mut || {
+                        t.digest_on(&copy, &src.slice(..n), &mut lanes.slice_mut(..32))
+                            .unwrap()
+                    }));
+                    copies.push(timed(&mut || copy.memcpy_dtod(&src, &mut dst).unwrap()));
+                }
+            }
+            let cm = median(&mut copies.clone());
+            let dm = median(&mut digests.clone());
+            println!(
+                "D2D-RECEIPT PRICE order={order} bytes={n} n_per_arm=5 copy_ms={copies:?} copy_median={cm:.3} \
+                 digest_ms={digests:?} digest_median={dm:.3} pair_median={:.3} pair_over_copy={:.2}",
+                2.0 * dm,
+                2.0 * dm / cm
+            );
+        }
+        let back = stream.clone_dtoh(&dst).unwrap();
+        assert_eq!(back, pattern);
     }
 
     /// The arm is honoured by the driver, not just recorded: `cuMemHostGetFlags` on the lease's
@@ -2418,5 +3037,47 @@ mod tests {
             drop(lease);
             assert_eq!(gov.borrow().used().pinned, 0);
         }
+    }
+    /// Integ38 (lead review of WP-A day 22): the Block arm's host wait covers the receipt event,
+    /// not only the items' events. A D2D item lands only with its lanes (`progress`), and the
+    /// receipt's D2H is recorded on the copy stream after the last item's event; a `synchronize`
+    /// that returned on the items alone could hand `capture_landed` a landed copy with unread
+    /// lanes, and the settle would latch the tier for a batch that had landed. The receipt wait
+    /// sits between the item waits and the `unknown` reset, and both run through one wait path.
+    #[test]
+    fn integ38_synchronize_waits_on_the_receipt_event_after_the_items() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap()];
+        let at = body.find("pub fn synchronize(").unwrap();
+        let sync = &body[at..at + body[at..].find("\n    }\n").unwrap()];
+        let items = sync
+            .find("cuda(item.event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;")
+            .expect("the items' host wait");
+        let receipt = sync
+            .find("cuda(r.event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;")
+            .expect("the receipt's host wait");
+        let reset = sync.find("e.unknown = false;").unwrap();
+        let progress = sync.find("self.progress(ticket)").unwrap();
+        assert!(items < receipt && receipt < reset && reset < progress);
+        assert!(sync.contains("if let Some(r) = &e.receipt {"));
+        // `seal_receipt` records that event after the lanes' D2H; a seal that failed leaves it
+        // `None` and marks the entry unknown, which the wait reads as `Quarantined`.
+        let seal = body.find("fn seal_receipt(").unwrap();
+        let seal_body = &body[seal..seal + body[seal..].find("\n    }\n").unwrap()];
+        let dtoh = seal_body
+            .find("copy.memcpy_dtoh(&scratch.lanes, &mut scratch.pinned)")
+            .unwrap();
+        let ev = seal_body
+            .find("scratch.event = Some(cuda(copy.record_event(None))?);")
+            .unwrap();
+        assert!(dtoh < ev);
+        assert!(seal_body.contains("entry.unknown = true;"));
+        // One host-wait path over recorded events: the items' and the receipt's, nothing else.
+        assert_eq!(
+            body.matches("event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;")
+                .count(),
+            2,
+            "items and receipt"
+        );
     }
 }

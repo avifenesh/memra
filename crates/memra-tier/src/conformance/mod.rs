@@ -137,3 +137,9 @@ pub use d2d_capture::*;
 // not ready; ready is the landing plus the installed reader wait; a prime before it is unordered.
 mod d2d_restore;
 pub use d2d_restore::*;
+
+// Day-22 rule (WP-A, memra#536 Move 2 slice 3): the receipt term of both D2D classes, beside the
+// frozen schedules, unversioned: the destination digest witnesses the source digest; a receipt-less
+// or mismatching item is refused Corrupt, the caller latches, nothing is published or primed on.
+mod d2d_receipt;
+pub use d2d_receipt::*;
