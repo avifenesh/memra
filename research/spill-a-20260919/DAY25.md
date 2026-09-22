@@ -147,3 +147,188 @@ run, not implemented.
 Reading and the merge 0.6 agent-hours; the pre-registration, the two drivers and the two readers 0.5; the typed
 line and the CPU checks 0.5; the box shipping, build and the two holds (twenty boots near 30 minutes, the hit gate
 near 1 minute) 1.0 polled; the receipts, the readings, the records 0.8. Total planned 3.4 of 4.
+
+## Task 1, the run (target card, BOX3, one RTX PRO 6000 Blackwell, 600 W; `pro-single-day25/box/double-park/`)
+
+Tree `71ee2a64d` on the box worktree `/root/wt-a` (branch `lane-a-day25`, clean; the tree carries Task 2's typed
+line, which never prints in this cell), binary `62b4f802155cb967b86121c3c572b10174b8ab7d7e721230ce9260512a4c4e16`
+(`ev/binary.sha256`), harness `stall_cell.py` SHA-256 `13867e77da40a9b5…` (`ev/CELL.txt`). ONE collector hold
+(`CELL.jsonl` `status: executed-not-qualified`, `elapsed_seconds 1171.5`, `exit_code 0`, `qualification: false`;
+`ev/LOCK.json` owner `collector`, mechanism `inherited-flock-same-open-description`), reached after four bounded
+lock retries (`lock-retries.log`: lane C's server held the card 11:43Z to 11:51Z; never inspected or signalled).
+Twenty boots 11:51:36Z to 12:11:07Z in the pre-registered order; `compute-apps.{before,after}.csv` empty (the card
+was mine alone in the hold); card 33 to 52 C, 31.96 to 362.41 W under 600 W, 0 to 17,109 MiB (4,671 samples at
+250 ms). Every receipt `STALL REPLAY: PASS` (20 of 20), `errors=0`, one tenant text SHA per boot,
+`server_promote_ms` count 10, no bad line: `ADMISSIBLE all_receipts=True`.
+
+**The reading (`day25-double-park-reading.py`, verbatim).**
+
+```
+DAY25 DOUBLE-PARK arm=on order=o1 N_boots=5 stall_medians=[149.5, 149.3, 149.2, 149.4, 149.4] stall_cell_median=149.4 min=149.2 max=149.5 IQR=0.1 | request e2e N_runs=50 wall_median=221.4 p95=261.2 IQR=0.9
+DAY25 DOUBLE-PARK arm=on order=o2 N_boots=5 stall_medians=[149.5, 149.2, 149.5, 149.4, 149.4] stall_cell_median=149.4 min=149.2 max=149.5 IQR=0.1 | request e2e N_runs=50 wall_median=221.4 p95=261.3 IQR=0.7
+DAY25 DOUBLE-PARK arm=off order=o1 N_boots=5 stall_medians=[85.3, 85.4, 85.4, 85.3, 85.4] stall_cell_median=85.4 min=85.3 max=85.4 IQR=0.1 | request e2e N_runs=50 wall_median=115.5 p95=154.6 IQR=0.7
+DAY25 DOUBLE-PARK arm=off order=o2 N_boots=5 stall_medians=[85.2, 85.3, 85.4, 85.1, 85.3] stall_cell_median=85.3 min=85.1 max=85.4 IQR=0.1 | request e2e N_runs=50 wall_median=115.4 p95=154.4 IQR=0.8
+DAY25 DOUBLE-PARK stall order=o1 on_minus_off=+64.0 unc=0.1 -> isolated (on 149.4, off 85.4)
+DAY25 DOUBLE-PARK e2e order=o1 on_minus_off=+105.8 unc=1.2 -> isolated (on 221.4, off 115.5)
+DAY25 DOUBLE-PARK stall order=o2 on_minus_off=+64.2 unc=0.1 -> isolated (on 149.4, off 85.3)
+DAY25 DOUBLE-PARK e2e order=o2 on_minus_off=+105.9 unc=1.1 -> isolated (on 221.4, off 115.4)
+DAY25 DECOMPOSITION arm=on N_runs=100 parked_per_run=[2] restore_readmission median=90.1 range=89.7..91.5 restore_completion median=90.1 slack(readmission-completion) median=0.10 max=0.20 promote_completion median=19.6 promote_in median=26.1 demote_completion median=22.3 demote_in median=97.2 demote_in-completion median=74.9 idle_p50(tick)=13.46 residual median=+1.8 range=+1.1..+3.1 | tenant top gaps: largest median=162.8 second median=22.6 sum median=185.7
+DAY25 DECOMPOSITION arm=off N_runs=100 parked_per_run=[0] promote_in median=10.8 demote_in median=6.2 | tenant top gaps: largest median=98.7 second median=16.6
+```
+
+The ON arm's idle p50 was 13.45 to 13.53 and its p99 14.9 in every boot; the OFF arm's 13.36 to 13.39 and 14.8 to
+15.0. The ON stall reproduces C day 29's arm X (149.6 / 149.7) to 0.2 ms across sittings and the OFF stall
+reproduces day 16 (85.0) and C day 23 (85.2); today's pair is a same-window pair on one tree.
+
+**(a) What the re-admission wait is made of, by line (every one of the 100 ON promote runs carries the same eleven
+lines, `o1/b01-on/promote/receipt.json` run 2 quoted; the seq numbers advance per run).**
+
+1. `[prefix-host] promote submitted off the tick: 64 tokens, 158.8MB, ticket seq=4, 32 items on the contracts door's
+   copy stream; request parked`: the first park, at the admission pass of tick A-1.
+2. `[prefix-host] promote published off the tick: ticket complete after 1 poll(s), 20.0ms from submission to
+   completion (tick-top poll)` then `[prefix-host] promote: 64 tokens, 158.8MB in 64.4ms` (steady `26.0` to `27.1`):
+   tick A's top polls the promote complete 19.6 ms after submission (median), publishes it 6.5 ms later, and the
+   insert's eviction submits the inline demote between the two (`demote submitted off the tick ... seq=5`).
+3. `[prefix-cache] restore submitted off the tick: 64 tokens, 32 planes (158.8MB), ticket seq=6 on the contracts
+   door's copy stream; recurrent state copied on the owner stream; request parked`: the SECOND park, in the
+   admission pass of the same tick A, right after the promote's publication put the planes on the device.
+4. Tick A runs the tenant's decode step (idle p50 13.46 ms). The parked-only bounded wait never fires: it needs
+   `active.is_empty()` (`worker.rs` 23256) and the tenant is active, so the restore's poll cadence is the tick top.
+5. Tick B's top polls in the fixed order demote, promote, capture, restore (`worker.rs` 21261 to 21296):
+   `[prefix-host] demote published off the tick: ticket seq=5 complete after 1 poll(s), 60.2ms from submission to
+   completion` (steady `22.3`) then `[prefix-host] demote: 64 tokens, 159.8MB in 135.2ms` (steady `97.2`): the
+   demote's publication after its poll takes `demote_in - demote_completion` = **74.9 ms** median, the two host
+   hashes C named (the completion checksum and `bind_tier_image`'s bundle checksum; the hash micro-cell reads 77.9
+   ms per 160 MiB pass on this host).
+6. Only then `[prefix-cache] restore landed off the tick: 64 tokens (158.8MB) complete after 1 poll(s), 89.9ms from
+   submission to completion, 90.0ms to re-admission (tick-top poll)`: the restore's poll installs the owner-stream
+   wait, the admission pass re-admits, `[prefix-cache] hit: 64 of 89 prompt tokens from cache`.
+
+The arithmetic of the median run: `re-admission 90.1 = tick A's decode 13.46 + the demote's two hashes 74.9 +
+residual 1.8` (range +1.1 to +3.1); the slack between the restore's poll and its re-admission is 0.10 ms (max
+0.20). The copy the second park waits for is not in the figure at all: the restore's `from submission to
+completion` is stamped at the poll, and the copy's own duration on this card is cell (v)'s 0.16 ms plus 0.34 ms for
+the receipt pair (`pro-single-day22/`). The tenant's two stretched ticks read the same story: the second gap
+(median 22.6 ms) is tick A (decode 13.46, the promote's publication 6.5, the restore's submit with its owner-stream
+recurrent copy); the largest gap (162.8) is tick B (the demote's 74.9 ms of hashes, the restore's poll and
+re-admission, then the hit's suffix prime and the decode). Under OFF the largest gap is 98.7 (the on-tick promote
+10.8, the on-tick demote 6.2, the same suffix prime and decode). `149.4 - 85.3 = 64.1` against `74.9 - 10.8 - 6.2 =
+57.9`: the door's on-tick hashes explain the pair to within 6 ms; the second park's own on-tick share (the poll,
+the install, the take) sits inside the +1.8 ms residual.
+
+**(b) Verdicts, verbatim.** Door ON against door OFF, this shape only (no existing typed refusal fits, as
+pre-registered): the tenant's stall `on_minus_off=+64.0 unc=0.1 -> isolated` (order 1) and `+64.2 unc=0.1 ->
+isolated` (order 2); the request's end-to-end latency `on_minus_off=+105.8 unc=1.2 -> isolated` (order 1) and
+`+105.9 unc=1.1 -> isolated` (order 2), N=5 boots per arm per order, 50 runs per arm per order, both orders, 33 to
+52 C. Of the request's +105.9 ms, 90.1 is the second park's re-admission wait and about 15.3 is the first park's
+(the promote polled at 19.6 plus published at 6.5 against OFF's on-tick 10.8), residual 0.5.
+
+**(c) By construction, a scheduling artifact, or both: both, in fixed shares.** By construction: the restore route
+parks EVERY whole-entry device hit it admits, and `host_restore_park_probe` has no predicate for "the entry this
+request promoted 6.5 ms ago"; a park costs at least one tick top (the tenant's decode, 13.46 ms here) for a copy of
+about 0.5 ms that the OFF program does on the tick in 0.16 ms (the same D2D on the owner stream). That park is
+Move 2's cost on this shape and is unearned: the planes were already on the device and the copy they wait for is
+two orders of magnitude shorter than the wait. The magnitude, 90.1 ms and not 13.5, is the scheduling artifact of
+the hash tick: the tick-top order polls the demote before the restore, so the inline demote's 74.9 ms of host
+hashes run before the restore's poll in every run (100 of 100). The tenant's +64 ms is NOT the second park's:
+its on-tick share is inside the +1.8 ms residual; the tenant pays the demote's two hashes landing on one tick, which
+C day 29 read and which today's pair confirms at 57.9 of the 64.1 ms. Whether the second park is what moved the
+demote's landing onto tick B on this tree against the day-23 tree's 81.9 (C's open question) is not determined by
+this cell and is not claimed.
+
+**Proposal 1 (not implemented; for the lead's ruling): refuse the restore route by shape when the entry was promoted
+for this admission.** In `host_restore_park_probe`, after `px.lookup` finds the hit `i` and before the class check:
+if `hpx.promoted_pin` (the insertion pin of the promote published at THIS tick top, held until the next tick top
+exactly so the parked request's re-admission finds its device hit, `host_promote_park_probe` and the tick top's
+release) names entry `i`, return `false` with one typed line, `[prefix-cache] restore not routed (contracts door):
+the entry was promoted for this admission; the tick program copies it`, and the request takes the OFF device-hit
+copy on the tick. One predicate over existing state; no flag, no new state, no new engine seam, no numeric change
+(the OFF program's copy, byte-identical destination). Acceptance gate, pre-registered here: this cell again
+(promote arm, ON against OFF, twenty interleaved boots, N=5 per arm per order, both orders, one hold) with the
+clauses (1) `request parked` per ON promote run reads 1 and `restore submitted` reads 0, 100 of 100; (2) the
+request's ON e2e median drops by the re-admission median within the pair's unc (221.4 to about 131; `on_minus_off`
+from +105.9 to about +15, the first park's own share); (3) the tenant's ON stall stays within IQR of 149.4 (the
+second park cost the tenant nothing, so removing it must move nothing; a move either way is a finding); (4) the
+day-21 restore arm (`--mode restore`, a hit on an entry NOT promoted this admission) still parks once and lands 100
+of 100 with `restore landed` lines; (5) the hit gate OFF and ON `ALL GREEN` with every `spec==plain byte identity`,
+the identity gates OFF and ON `ALL GREEN`. The larger alternative (submit the restore at the promote's publication
+so one park covers both copies) still pays a tick top for a 0.5 ms copy and adds a submit site inside the publish;
+it is named and not proposed.
+
+## Task 2, the run (`pro-single-day25/box/gates/hitgate-on/`)
+
+The typed line landed as pre-registered (`71ee2a64d`): `PendingCapture.settle_after_ms` and `settle_held_ms`,
+stamped around the settle closure in `host_capture_settle_with`, printed inside the publish line's parenthesis.
+CPU: `cargo fmt --all -- --check` clean; clippy `-D warnings` all targets on tier, engine and server `Finished`
+(2m 18s); the `DOCS_RS=1 --target x86_64-unknown-linux-gnu` pass `Finished`; server lib `809 passed; 0 failed; 14
+ignored`; `check-flags: no uncovered runtime names`; markers `OK`; `git diff --check` clean.
+
+The hit gate ON on the target card, the same binary `62b4f802…`, under the gate's own `flock` on
+`/tmp/memra-gpu.lock` (`MEMRA_GPU_LOCK`), 12:11Z to 12:12Z right after the hold: `SPEC-ON-CACHE-HIT GATE: ALL GREEN
+(qwen)`, 68 `ok:`, 0 FAIL, the five `spec==plain byte identity` lines ok, engagement `ok: door arm: the host tier is
+armed on the spec-on boot`, `... the contracts door is ON ...`, `... no latch line ...` (both boots), `ok: door arm:
+30 route submission(s) across the two boots`; census `capture_submitted=12 capture_published=12 restore_submitted=13
+restore_landed=13 refused_contracts_door=0 restore_refused=0 latched=0` (spec-on) and `capture_submitted=2
+capture_published=2 restore_submitted=3 restore_landed=3` (spec-off): day 24's counts exactly.
+
+**The reading (`day25-retire-reading.py`, verbatim).**
+
+```
+DAY25 RETIRE-SETTLE lines=14 no_clause=0
+DAY25 RETIRE-SETTLE settled_by='settled synchronously by a session retire' N=11 whys=['spec-boundary'] toks=[64, 96, 128] | held_ms N=11 min=0.37 median=0.41 max=0.44 | entered_after_ms N=11 min=106.10 median=150.50 max=204.50 | completion_ms N=11 min=106.50 median=151.00 max=205.00 | share_held_over_completion N=11 min=0.00 median=0.00 max=0.00
+DAY25 RETIRE-SETTLE settled_by='tick-top poll' N=3 whys=['seed'] toks=[64] | held_ms N=3 min=0.37 median=0.37 max=0.38 | entered_after_ms N=3 min=87.30 median=87.60 max=87.70 | completion_ms N=3 min=87.60 median=88.00 max=88.00 | share_held_over_completion N=3 min=0.00 median=0.00 max=0.00
+```
+
+One line quoted whole: `[prefix-cache] capture published off the tick (spec-boundary): 64 tokens complete after 1
+poll(s), 151.0ms from submission to completion, 151.0ms to publication (settled synchronously by a session retire;
+the settle held the owner thread 0.40ms, entered 150.5ms after submission)`.
+
+**Finding (owed item 3 priced).** The retire seam's `Block` held the owner thread **0.37 to 0.44 ms** (median 0.41,
+N=11) on every spec-boundary capture of the gate, the same as the tick-top `Poll`'s 0.37 to 0.38 (N=3): the share of
+the submission-to-completion span the owner thread waited is **0.2 to 0.4 percent**. The seam entered the settle
+106 to 204 ms after submission, so the copy (about 0.5 ms with its receipt pair) had landed long before the session
+retired and `synchronize` returned at once; the 0.4 ms is the settle's fixed cost (the events read, the receipt
+lanes' D2H, retire, acknowledge), not a wait on the copy. Day 24's sentence "the owner thread still pays a host wait
+for the 159 MB copy at the retire" is refuted by its own typed figure: the owner thread paid 0.4 ms. The
+`106.3 to 204.6 ms from submission to completion` of day 24 was the session's own decode time between its prime
+stop and its retire, never a wait. The moved share of the spec-boundary capture on this shape is therefore the
+whole copy: nothing of it is on the owner thread beyond the settle's 0.4 ms and the submit.
+
+**Proposal 2 (not implemented; for the lead's ruling): no reordering is earned on this shape.** A poll-then-retire
+ordering at the seam (`Poll` first; `Block` only when the copy is still running) would not break the source-lifetime
+rule (the `Block` branch still runs before any session leaves `active`), and it would not remove anything measurable
+here: the `Block` already returns in the `Poll`'s time because the copy has landed. The ordering earns its place
+only on a shape where a session retires INSIDE the copy's own 0.5 ms window (a prime stop and a retire on the same
+tick with the copy stream busy), which no gate today produces. If the lead wants the seam to carry the distinction
+anyway, the smallest form is a source-session identity on `PendingCapture` (so the seam blocks only for the source
+session's retire and leaves another session's retire to the next tick-top poll), with the acceptance gate: the hit
+gate ON on the target card with the `held` figure unchanged (0.4 ms) and the `settled_by` of every spec-boundary
+capture still naming the retire (the source is the retiring session on this shape), plus a CPU state-machine test
+that a non-source retire leaves the capture `Pending`. Recommended ruling: leave the seam as it is and record the
+0.4 ms as the price.
+
+## Task 3, records and checks
+
+`DAY25.md` (this file), `STATE.md` rewritten, `OWNER-THREAD-OFFLOAD.md` day-25 section and owed list,
+`research/INDEX.md` row `spill-a-20260919/day25`, C's `HOSTPREFIX-DOOR.md` section B two new rows (the double-park
+pair, the retire share) and section A's owed-cell row for item 3. Checks after the records: `bash
+tools/check-flags.sh`, `bash tools/check-conflict-markers.sh`, `git diff --check`, `.gitattributes` `*.log
+-whitespace` in `pro-single-day25/`, zero em dashes in today's lines.
+
+## Pushes
+
+`c82b36d97` (the pre-registration, the drivers, the readers), `71ee2a64d` (the typed line; the tree the card ran),
+then the closing commit (the receipts, this record's run sections, STATE, OWNER-THREAD-OFFLOAD, INDEX, the door
+table), each in `MEMRA_RELEASE_QUALIFICATION_MODE=development` (printed `UNQUALIFIED DEVELOPMENT ... no GPU
+qualification claimed`, logged in the clone's `.git/memra-gate-skips.log`). Not merged into main, no PR opened.
+
+## Left as it was, and cleanup
+
+BOX3 reached through the existing control socket only (`ssh -O check`: `Master running`). `/root/wt-a` (mine) left
+at `71ee2a64d` on `lane-a-day25`, clean; `/root/spill-receipts/a-day25/` kept on the box and mirrored here as
+`pro-single-day25/box/` (bins not mirrored); the transfer bundle removed on both ends; `/root/artifacts`,
+`/root/memra-spill`, other lanes' worktrees, receipts and processes not touched (lane C's server held the card when
+the driver started; it was seen through the collector's refusal and `nvidia-smi` only, and the driver waited its
+bounded retries). No server of mine running at close; no lock held by me; local `/tmp` scratch (the CPU battery's
+script and log, the dry-test dir, the bundle) removed. Not run today: the local RTX 5090 door gates (owed with the
+lock, as on days 18 to 24; the typed line changes no 5090-facing default).
