@@ -1,0 +1,42 @@
+   Compiling version_check v0.9.5
+   Compiling libc v0.2.186
+   Compiling typenum v1.20.1
+   Compiling cfg-if v1.0.4
+   Compiling memchr v2.8.2
+   Compiling smallvec v1.15.2
+   Compiling regex-syntax v0.8.11
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling generic-array v0.14.7
+   Compiling aho-corasick v1.1.4
+   Compiling cpufeatures v0.2.17
+   Compiling memmap2 v0.9.11
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling memra-gguf v0.138.0 (<base-worktree>/crates/memra-gguf)
+   Compiling memra-tokenizer v0.138.0 (<base-worktree>/crates/memra-tokenizer)
+   Compiling memra-reference v0.138.0 (<base-worktree>/crates/memra-reference)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.44s
+     Running unittests src/lib.rs (<audit>/base-reference-target/debug/deps/memra_reference-BUILD_ID)
+
+running 1 test
+test tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state ... FAILED
+
+failures:
+
+---- tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state stdout ----
+
+thread 'tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state' (27236807) panicked at crates/memra-reference/src/lib.rs:8147:9:
+assertion `left == right` failed
+  left: [3182242064, 1053299395, 3199800549, 3198737447, 3180184138, 3187768632, 1057556100, 1035812927]
+ right: [3182242076, 1053299392, 3199800546, 3198737445, 3180184136, 3187768631, 1057556100, 1035812924]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 65 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-reference --lib`

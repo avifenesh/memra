@@ -32,7 +32,7 @@ tower = { version = "0.5", features = ["util"] }
 serde = { version = "1", features = ["derive"] }
 # preserve_order: tool schemas render into the chat template's <tools> block via
 # `tool | tojson` — key order must be the CLIENT's order (the training-time convention),
-# not BTreeMap-alphabetical. memra-server is the workspace's only serde_json consumer.
+# not BTreeMap-alphabetical. The loader's manifest decoder does not depend on map order.
 serde_json = { version = "1", features = ["preserve_order"] }
 async-stream = "0.3"
 futures-core = "0.3"

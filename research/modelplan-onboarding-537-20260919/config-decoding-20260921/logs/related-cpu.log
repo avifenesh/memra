@@ -1,0 +1,221 @@
+   Compiling memra-tokenizer v0.138.0 (<worktree>/crates/memra-tokenizer)
+   Compiling memra-reference v0.138.0 (<worktree>/crates/memra-reference)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.18s
+     Running unittests src/lib.rs (target/debug/deps/memra_reference-BUILD_ID)
+
+running 66 tests
+test speech::decode::tests::window_mel_zero_fills_past_the_audio ... ok
+test speech::decode::tests::seek_advance_reproduces_pinned_oracle_window_starts ... ok
+test speech::decode::tests::first_step_suppresses_blank_eos_and_late_timestamps ... ok
+test speech::decode::tests::closed_segment_admits_only_text_and_moves_time_forward ... ok
+test speech::encoder::tests::half_rounding_is_nearest_even_and_erf_gelu_is_not_tanh_gelu ... ok
+test speech::fastconformer::tests::a_wider_chunk_is_refused_rather_than_approximated ... ok
+test speech::decode::tests::suppressed_ids_are_masked_at_every_step ... ok
+test speech::fastconformer::tests::causal_convolution_reads_the_past_and_a_stride_of_zeros_after_it ... ok
+test speech::decode::tests::open_segment_admits_only_a_closing_timestamp_or_the_end ... ok
+test speech::fastconformer::tests::the_position_table_centres_on_the_current_frame ... ok
+test speech::fastconformer::tests::the_stem_reduces_one_hundred_twenty_eight_bins_to_seventeen ... ok
+test speech::encoder::tests::changed_encoder_programs_fail_before_loading_weights ... ok
+test speech::encoder::tests::gelu_matches_the_pinned_hf_vector_numeric_program ... ok
+test speech::decode::tests::timestamp_mass_over_the_best_text_id_forces_a_timestamp ... ok
+test speech::fastconformer::tests::the_cache_rolls_oldest_out_and_reports_only_written_rows ... ok
+test speech::matrix::tests::column_blocking_is_bit_identical_so_thread_count_cannot_move_a_number ... ok
+test speech::rnnt_frontend::tests::a_mismatched_window_or_filterbank_is_refused ... ok
+test speech::matrix::tests::independent_row_vectorization_preserves_fma_order_with_tails ... ok
+test speech::encoder::tests::every_encoder_stage_matches_independent_hf_f32_and_f16_fixtures ... ok
+test speech::rnnt_frontend::tests::a_short_or_non_finite_waveform_is_refused ... ok
+test speech::rnnt_frontend::tests::the_transform_is_five_hundred_twelve_over_a_four_hundred_sample_window ... ok
+test speech::rnnt_head::tests::the_blank_is_the_last_class_and_the_joint_is_one_wider_than_the_vocabulary ... ok
+test speech::rnnt_head::tests::the_predictor_packs_four_gates_into_every_row ... ok
+test speech::rnnt_head::tests::the_prompt_slot_is_a_language_index_not_a_token ... ok
+test speech::decoder::tests::sessions_are_independent_and_invalid_steps_do_not_advance_caches ... ok
+test speech::decoder::tests::cached_steps_hidden_logits_and_kv_match_independent_hf ... ok
+test speech_refusal_tests::speech_cannot_execute_as_an_empty_text_trunk ... ok
+test speech::frontend::tests::silence_has_the_analytic_floor_in_both_whisper_mel_geometries ... ok
+test tests::dense_gemma_executes_scaled_parallel_residual_and_k_as_v ... ok
+test speech::matrix::tests::grouping_is_bit_identical_across_group_and_lane_boundaries ... ok
+test speech::text::tests::a_window_of_pinned_oracle_ids_reads_as_hebrew ... ok
+test tests::embedded_mtp_executes_typed_fusion_block_and_fallback_head ... ok
+test tests::eos_segment_reset_reads_eos_across_boundaries ... ok
+test tests::full_attention_selection_mask_restricts_sources_to_hand_derived_rows ... ok
+test tests::gated_residual_read_and_write_match_hand_derived_two_stream_toy ... ok
+test tests::gdn_sigmoid_gate_matches_hand_derived_single_token ... ok
+test tests::gemma4_parallel_moe_executes_shared_routed_and_scaled_residual_branches ... ok
+test speech::text::tests::timestamps_and_the_terminator_never_reach_the_transcript ... ok
+test tests::generated_tiny_fixture_is_deterministic_and_executable ... ok
+test tests::gemma4_vision_executes_patch_rope_pool_standardize_and_projection ... ok
+test speech::frontend::tests::padding_happens_before_reflection_and_invalid_audio_is_rejected ... ok
+test tests::kimi_delta_net_matches_hand_derived_three_token_recurrence ... ok
+test tests::kpool_indexer_selects_causal_pools_and_appends_visible_tail ... ok
+test tests::micro_block_indexer_selects_unambiguous_block_and_always_keeps_the_tail ... ok
+test speech::rnnt_frontend::tests::silence_reaches_the_log_guard_and_not_negative_infinity ... ok
+test tests::mla_fixture_emits_latent_state_and_sparse_overflow_refuses ... ok
+test tests::ngram_ids_match_independently_computed_hash_chain ... ok
+test tests::multi_depth_mtp_threads_hidden_through_every_typed_block ... ok
+test tests::ple_block_matches_hand_derived_scalar_gather_gate_and_dilated_conv ... ok
+test tests::one_token_dense_plan_matches_hand_derived_logits_and_emits_kv_state ... ok
+test tests::hyperconnections_execute_stream_state_and_head_collapse ... ok
+test tests::qwen3_moe_fixture_executes_routed_and_shared_branches ... ok
+test tests::rope_uses_neox_split_half_pairs ... ok
+test tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state ... FAILED
+test tests::router_laws_pin_stable_ties_and_selection_only_bias ... ok
+test tests::compressed_mla_executes_window_compressor_indexer_and_grouped_output ... ok
+test tests::sliding_window_limits_attention_and_trims_reference_state ... ok
+test tests::glm5_shaped_tiny_plan_executes_kda_kpool_mla_and_mean_collapse_deterministically ... ok
+test tests::token_hash_moe_fixture_executes_from_semantic_token_table ... ok
+test tests::the_mla_fixture_shapes_match_the_tensor_contract ... ok
+test tests::dsv4_shaped_trunk_executes_one_canonical_plan ... ok
+test tests::qwen4exp_tiny_plan_executes_gated_residual_qsa_ple_moe_and_mtp ... ok
+test tests::dspark_executes_trunk_tap_ring_blocks_markov_and_confidence ... ok
+test speech::rnnt_frontend::tests::frames_past_the_valid_length_are_the_pad_value_not_a_log_floor ... ok
+test speech::frontend::tests::two_second_waveform_matches_the_pinned_hf_fp32_frontend ... ok
+test speech::frontend::tests::clip_features_use_a_clip_wide_clamp_and_read_zeros_past_the_last_sample ... ok
+
+failures:
+
+---- tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state stdout ----
+
+thread 'tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state' (28040542) panicked at crates/memra-reference/src/lib.rs:8147:9:
+assertion `left == right` failed
+  left: [3182242064, 1053299395, 3199800549, 3198737447, 3180184138, 3187768632, 1057556100, 1035812927]
+ right: [3182242076, 1053299392, 3199800546, 3198737445, 3180184136, 3187768631, 1057556100, 1035812924]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state
+
+test result: FAILED. 65 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.32s
+
+error: test failed, to rerun pass `-p memra-reference --lib`
+     Running unittests src/lib.rs (target/debug/deps/memra_sampling-BUILD_ID)
+
+running 29 tests
+test nucleus_order_tests::benchmark_pinned_rows ... ignored, remote CPU measurement, run explicitly without compilation overlap
+test nucleus_order_tests::radix_keys_match_total_cmp_including_signed_zero ... ok
+test resume_sampler_predicate_tests::disabled_sentinels_are_the_same_program ... ok
+test resume_sampler_predicate_tests::every_compared_field_refuses_on_its_own_and_names_itself ... ok
+test resume_sampler_predicate_tests::greedy_temperature_encodings_are_one_program ... ok
+test resume_sampler_predicate_tests::greedy_to_sampled_and_back_both_refuse_as_regime ... ok
+test resume_sampler_predicate_tests::identical_sampler_resumes ... ok
+test resume_sampler_predicate_tests::mismatch_is_symmetric_and_identity_is_an_equivalence ... ok
+test resume_sampler_predicate_tests::neutral_penalty_coefficients_equal_penalties_absent ... ok
+test resume_sampler_predicate_tests::seed_alone_does_not_refuse ... ok
+test resume_sampler_predicate_tests::the_reproduced_collision_pair_refuses_and_names_a_filter ... ok
+test tests::dense_penalties_match_the_scan_reference_bitwise ... ok
+test tests::full_context_and_disabled_penalty_counts_are_exact ... ok
+test tests::greedy_is_argmax ... ok
+test tests::min_p_keeps_only_high_prob ... ok
+test nucleus_order_tests::exact_cumulative_boundary_and_next_float_match ... ok
+test tests::penalty_counts_follow_the_sliding_window ... ok
+test tests::repeat_penalty_suppresses_recent ... ok
+test tests::temp_sampling_deterministic_with_seed ... ok
+test tests::the_sampled_path_penalizes_the_token_it_generated ... ok
+test tests::top_k_one_is_argmax ... ok
+test nucleus_order_tests::ties_inside_and_across_nucleus_preserve_legacy_order ... ok
+test nucleus_order_tests::discarded_zero_tail_does_not_disable_radix ... ok
+test nucleus_order_tests::nonfinite_extremes_underflow_and_signed_zero_keep_existing_behavior ... ok
+test nucleus_order_tests::radix_draws_have_reference_support_and_expected_mass ... ok
+test nucleus_order_tests::shared_default_skips_radix_scratch_even_for_broad_rows ... ok
+test nucleus_order_tests::glm_plain_constructor_limits_ordering_to_qualified_sampling_shape ... ok
+test nucleus_order_tests::randomized_vocab_shapes_and_masked_rows_match ... ok
+test nucleus_order_tests::differential_filter_penalty_seed_matrix ... ok
+
+test result: ok. 28 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 8.17s
+
+     Running unittests src/lib.rs (target/debug/deps/memra_tokenizer-BUILD_ID)
+
+running 79 tests
+test chat::tests::gemma4_tools_arm_still_rejects_tools_without_the_tool_marker ... ok
+test chat::tests::assistant_content_plus_calls_and_consecutive_tool_turns_group ... ok
+test chat::tests::hy3_thinking_maps_to_its_reasoning_effort_levels ... ok
+test chat::tests::hy3_tool_call_and_response_history_match_the_pinned_jinja ... ok
+test chat::tests::hy3_tools_definitions_match_the_pinned_jinja ... ok
+test chat::tests::gemma4_thinking_maps_to_the_think_token_and_open_turn ... ok
+test chat::tests::dsv4_effort_prefix_law ... ok
+test chat::tests::dsv4_effort_renders_per_encoding_through_dispatch ... ok
+test chat::tests::nothink_maps_to_enable_thinking_false_tail_and_degrades_gracefully ... ok
+test chat::tests::plain_chatml ... ok
+test chat::tests::gemma4_tools_arm_is_byte_identical_to_legacy_on_toolless_requests ... ok
+test chat::tests::qwen_think_mode_covers_all_three_directions ... ok
+test chat::tests::qwen_think_tail ... ok
+test chat::tests::reasoning_effort_reaches_step35_through_the_public_entry_and_only_step35 ... ok
+test chat::tests::step35_assistant_think_split_and_the_reasoning_boundary ... ok
+test chat::tests::step35_dispatch_beats_the_qwen_marker_arm ... ok
+test chat::tests::step35_plain_path_is_identical_through_both_renderers ... ok
+test chat::tests::step35_reasoning_effort_renders_in_the_system_turn ... ok
+test chat::tests::step35_plain_paths_match_the_shipped_jinja ... ok
+test chat::tests::step35_think_tail_is_unconditional_and_nothink_is_a_noop ... ok
+test chat::tests::step35_tool_results_take_their_own_role_and_group ... ok
+test chat::tests::step35_tools_header_is_not_the_qwen_header ... ok
+test chat::tests::templateless_dsv4_artifact_dispatches_on_encoding ... ok
+test chat::tests::tools_header_and_tool_response_render_per_template_law ... ok
+test chat::tests::tools_on_templates_without_tools_branch_error ... ok
+test chat::tests::tools_renderer_matches_legacy_when_plain ... ok
+test detokenize::tests::a_truncated_or_foreign_proto_is_refused ... ok
+test detokenize::tests::a_non_bpe_vocabulary_is_refused ... ok
+test detokenize::tests::an_unknown_id_is_skipped_rather_than_guessed ... ok
+test detokenize::tests::an_added_token_that_is_not_marked_special_is_text ... ok
+test detokenize::tests::markers_are_dropped_unless_they_are_asked_for ... ok
+test detokenize::tests::byte_level_pieces_decode_to_their_bytes ... ok
+test chat::tests::a_qwen_template_without_the_ladder_is_byte_identical_at_every_level ... ok
+test chat::tests::qwen38_ladder_rungs_are_distinct_prompts_and_medium_is_the_neutral_one ... ok
+test chat::tests::qwen38_effort_ladder_holds_on_the_tools_branch_too ... ok
+test hf_tests::hf_dir_identifies_deepseek_v3_from_tokenizer_json ... ok
+test hf_tests::hf_dir_identifies_qwen2_regex ... ok
+test chat::tests::qwen38_effort_ladder_reproduces_the_vendor_jinja_byte_for_byte ... ok
+test hf_tests::hf_dir_refuses_unidentifiable_pretokenizer ... ok
+test hf_tests::hf_dir_multi_eos_array_extends_the_stop_set_beyond_the_first_id ... ok
+test hf_tests::staged_checkpoints_resolve_their_own_pretokenizer ... ok
+test json::tests::excessive_nesting_refuses_before_recursing_further ... ok
+test hf_tests::hf_dir_rejects_non_byte_level ... ok
+test json::tests::scalars_and_nesting ... ok
+test hf_tests::hf_dir_single_eos_family_stop_set_unchanged ... ok
+test hf_tests::hf_dir_encode_decode_roundtrip_and_specials ... ok
+test hf_tests::hf_dir_generation_config_eos_fallback_and_jinja ... ok
+test hf_tests::hf_dir_dsv4_encoding_detection ... ok
+test hf_tests::hf_dir_identifies_glm4_regex ... ok
+test pretokenizer_tests::collect_split_regexes_walks_in_order ... ok
+test pretokenizer_tests::dictalm_tekken_pre_tokenizer_is_the_glm4_split ... ok
+test pretokenizer_tests::every_supported_pre_resolves ... ok
+test pretokenizer_tests::opt_out_env_gate ... ok
+test pretokenizer_tests::opt_out_loads_with_a_fallback_marker ... ok
+test pretokenizer_tests::pre_and_vocab_model_must_agree ... ok
+test pretokenizer_tests::split_regex_identification_is_exact ... ok
+test pretokenizer_tests::unknown_pre_is_a_typed_error ... ok
+test qwen2_tests::qwen2_gguf_token_ids_match_declared_regex_oracle ... ok
+test normalizer_tests::special_recognition_and_postprocessing_are_independent ... ok
+test qwen2_tests::qwen35_retains_its_combining_mark_merge ... ok
+test unicode::tests::collapse_map_category_bytes ... ok
+test qwen2_tests::qwen2_hf_token_ids_match_declared_regex_oracle ... ok
+test unicode::tests::deepseek_v3_differs_from_qwen35_per_mechanism ... ok
+test unicode::tests::deepseek_v3_split_matches_reference ... ok
+test unicode::tests::glm4_contractions_fold_like_the_checkpoint ... ok
+test unicode::tests::glm4_does_not_fold_combining_marks_like_qwen35 ... ok
+test unicode::tests::glm4_equals_qwen35_off_the_two_divergences ... ok
+test unicode::tests::glm4_groups_digits_where_qwen35_does_not ... ok
+test unicode::tests::glm4_split_matches_reference ... ok
+test normalizer_tests::gguf_requires_an_explicit_consistent_input_program ... ok
+test normalizer_tests::declared_programs_are_preserved_and_unsupported_imports_refuse ... ok
+test detokenize::tests::the_real_sentencepiece_model_decodes_the_pinned_hebrew_tokens ... ok
+test detokenize::tests::the_real_whisper_vocabulary_decodes_hebrew_when_the_checkpoint_is_present ... ok
+test normalizer_tests::inverted_whitespace_spans_do_not_reemit_consumed_tokens ... ok
+test unicode::tests::glm4_split_survives_long_uniform_runs ... ok
+test normalizer_tests::whitespace_consumed_added_tokens_match_independent_oracle ... ok
+test normalizer_tests::staged_nfc_and_added_tokens_match_independent_oracle ... ok
+test unicode::tests::deepseek_v3_split_survives_long_uniform_runs ... ok
+test hf_tests::hf_dir_glm53_flash_carries_all_three_declared_eos_ids ... ok
+
+test result: ok. 79 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+     Running unittests src/lib.rs (target/debug/deps/memra_validate-BUILD_ID)
+
+running 3 tests
+test tests::pr_deterministic_snapshot ... ok
+test tests::tally_contract ... ok
+test tests::median_odd_even ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: 1 target failed:
+    `-p memra-reference --lib`

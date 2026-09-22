@@ -1,0 +1,35 @@
+   Compiling memra-gguf v0.138.0 (/Users/avifen/.codex/worktrees/b6ce/memra/crates/memra-gguf)
+warning: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:20:5
+   |
+20 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling memra-tokenizer v0.138.0 (/Users/avifen/.codex/worktrees/b6ce/memra/crates/memra-tokenizer)
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+   Compiling memra-reference v0.138.0 (/Users/avifen/.codex/worktrees/b6ce/memra/crates/memra-reference)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.36s
+     Running unittests src/lib.rs (target/debug/deps/memra_reference-89d9c76964145031)
+
+running 1 test
+test tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state ... FAILED
+
+failures:
+
+---- tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state stdout ----
+
+thread 'tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state' (18749466) panicked at crates/memra-reference/src/lib.rs:8147:9:
+assertion `left == right` failed
+  left: [3182242064, 1053299395, 3199800549, 3198737447, 3180184138, 3187768632, 1057556100, 1035812927]
+ right: [3182242076, 1053299392, 3199800546, 3198737445, 3180184136, 3187768631, 1057556100, 1035812924]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 65 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-reference --lib`
