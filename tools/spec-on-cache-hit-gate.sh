@@ -113,8 +113,62 @@
 # Boots its own servers one arm at a time (flock ${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}).
 # Exit 0 = every assertion held. Evidence: <evidence_dir>/{arm}-{on,off}-r{1,2,3}.json,
 # <evidence_dir>/qwen-on-s*.json and logs.
+#
+# LOCK ARMS (C day 28, research/spill-c-20260919/DAY28.md; the kv-host-spill-identity-gate.sh shape).
+#   default                  every boot runs under this gate's own `flock -w 300` on the canonical lock.
+#   --external-lock FD       the collector (tools/tier-battery.py --external-lock) already holds the
+#                            canonical lock on the inherited FD: this gate takes NO lock of its own,
+#                            verifies the FD with tools/tier-lock-proof.py (owner `collector`) and
+#                            writes <evidence_dir>/LOCK.json before any boot. Never wrapped twice.
+#   --lock-self-test FILE    GPU-less teeth for the two arms above: boots nothing, runs the arm's launch
+#                            wrapper around a probe that asks whether FILE is locked while the wrapper
+#                            runs, prints one `LOCK-SELF-TEST ... probe=held|free` line and exits 0.
+#                            The default arm must read `held` (the wrapper holds the lock), the
+#                            external arm `free` (the gate touched no lock). FILE is a private temp
+#                            file, never a rig lock; tools/test_spec_on_cache_hit_gate_lock.sh runs it.
 set -euo pipefail
-ARM=$1
+LOCK_FD=""
+LOCK_OWNER=internal-canonical
+SELF_TEST_LOCK=""
+while [[ ${1:-} == --* ]]; do
+    case $1 in
+    --external-lock)
+        [[ ${2:-} =~ ^[0-9]+$ ]] || { echo "REFUSED: inherited lock FD required" >&2; exit 2; }
+        LOCK_FD=$2
+        LOCK_OWNER=collector
+        shift 2
+        ;;
+    --lock-self-test)
+        [[ -n ${2:-} ]] || { echo "REFUSED: --lock-self-test needs a lock file path" >&2; exit 2; }
+        SELF_TEST_LOCK=$2
+        shift 2
+        ;;
+    *)
+        echo "usage: $0 [--external-lock FD] [--lock-self-test FILE] qwen|gemma ..." >&2
+        exit 2
+        ;;
+    esac
+done
+GPU_LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}
+# The launch wrapper is the lock arm: the default arm's per-boot `flock -w 300`, nothing under the
+# collector's hold (its FD carries the exclusion for the whole gate; a second flock on the same
+# inode would deadlock behind the collector, and a `-w` timeout would boot unlocked).
+LAUNCH=()
+[[ $LOCK_OWNER == internal-canonical ]] && LAUNCH=(flock -w 300 "$GPU_LOCK")
+if [[ -n $SELF_TEST_LOCK ]]; then
+    GPU_LOCK=$SELF_TEST_LOCK
+    LAUNCH=()
+    [[ $LOCK_OWNER == internal-canonical ]] && LAUNCH=(flock -w 300 "$GPU_LOCK")
+    : >>"$GPU_LOCK"
+    before=$(stat -c '%i:%Y' "$GPU_LOCK")
+    # Inside the wrapper (or, external arm, with no wrapper at all) a non-blocking flock on the same
+    # file says whether anything holds it right now: only this gate's own wrapper can.
+    probe=$("${LAUNCH[@]}" bash -c 'flock -n "$1" true && echo free || echo held' _ "$GPU_LOCK")
+    after=$(stat -c '%i:%Y' "$GPU_LOCK")
+    echo "LOCK-SELF-TEST owner=$LOCK_OWNER fd=${LOCK_FD:-none} lock=$GPU_LOCK wrapper=${LAUNCH[*]:-none} probe=$probe inode_mtime_before=$before inode_mtime_after=$after"
+    exit 0
+fi
+ARM=${1:-}
 case "$ARM" in
 qwen)
     MODEL=$2
@@ -133,7 +187,6 @@ gemma)
     exit 2
     ;;
 esac
-GPU_LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}
 PORT=${MEMRA_GATE_PORT:-18099}
 HERE=$(cd "$(dirname "$0")" && pwd)
 # Port occupancy guard (GATE-INTEGRITY-20260819 A-16, deferred to this file's merge because
@@ -156,6 +209,13 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 # embedded head.
 MTP_DRAFT=${MEMRA_GATE_MTP_DRAFT:-}
 mkdir -p "$EV"
+if [[ $LOCK_OWNER == collector ]]; then
+    # Verified before any boot: the inherited FD must own the canonical inode's flock (the proof
+    # helper accepts the two rig locks only). REFUSED (exit 2) otherwise; nothing has started.
+    LOCK_PROOF=$(python3 "$HERE/tier-lock-proof.py" --fd "$LOCK_FD" --lock "$GPU_LOCK" --owner collector) || exit 2
+    printf '%s\n' "$LOCK_PROOF" >"$EV/LOCK.json"
+    echo "lock: collector's inherited FD $LOCK_FD on $GPU_LOCK (no flock of this gate's own)"
+fi
 SERVER_PID=""
 DRAFT_FAILS=0
 # Assert the SPEC-ON boot really loaded the drafter it was handed. Called only on spec-on
@@ -186,7 +246,7 @@ boot() { # $1 extra-env-string  $2 log
     # turn its "hit" row into a miss, i.e. a FAIL that says nothing about the code.
     local mtp=()
     [ -n "$MTP_DRAFT" ] && mtp=("MEMRA_MTP_DRAFT=$MTP_DRAFT")
-    flock -w 300 "$GPU_LOCK" env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
+    "${LAUNCH[@]}" env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
         MEMRA_COMPAT=openai "MEMRA_MODELS=gate=$MODEL" \
         "MEMRA_ADDR=127.0.0.1:$PORT" MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4 \
         "MEMRA_PREFIX_CACHE_MB=${MEMRA_HITGATE_CACHE_MB:-2048}" \
@@ -214,9 +274,14 @@ stop() {
     # was a blanket `pkill -x memra-server`, and the EXIT trap runs it after the last boot's flock
     # has been released, so on a shared rig it could kill a server another lane had just booted
     # under the lock (C day 27, research/spill-c-20260919/DAY27.md). With no boot of ours
-    # outstanding there is nothing to stop.
+    # outstanding there is nothing to stop. Under --external-lock there is no wrapper: `env` execs
+    # the binary in place, so $SERVER_PID is the server itself, addressed only while its comm says
+    # memra-server (C day 28).
     [ -n "$SERVER_PID" ] || return 0
-    pkill -x -P "$SERVER_PID" memra-server 2>/dev/null || true
+    local pids
+    pids=$(gate_server_pids)
+    # shellcheck disable=SC2086
+    [ -n "$pids" ] && kill -TERM $pids 2>/dev/null || true
     for _ in $(seq 1 30); do
         curl -s --max-time 1 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1 || {
             SERVER_PID=""
@@ -225,9 +290,20 @@ stop() {
         }
         sleep 1
     done
-    pkill -9 -x -P "$SERVER_PID" memra-server 2>/dev/null || true
+    pids=$(gate_server_pids)
+    # shellcheck disable=SC2086
+    [ -n "$pids" ] && kill -KILL $pids 2>/dev/null || true
     SERVER_PID=""
     sleep 3
+}
+gate_server_pids() { # the pid(s) this gate may signal: its own server, nothing else
+    [ -n "$SERVER_PID" ] || return 0
+    if [[ $LOCK_OWNER == collector ]]; then
+        [ "$(cat "/proc/$SERVER_PID/comm" 2>/dev/null)" = memra-server ] && echo "$SERVER_PID"
+    else
+        pgrep -x -P "$SERVER_PID" memra-server
+    fi
+    return 0
 }
 trap stop EXIT
 
