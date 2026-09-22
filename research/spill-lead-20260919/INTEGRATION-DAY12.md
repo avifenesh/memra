@@ -1315,6 +1315,63 @@ request is parked and the `Promoting` entry is not ready, the loop waits on the 
 memra-server suite (788 passed) green, gated before the commit. Owed to the door review: the promote stall cell on
 this tree (A's day-18 receipt was taken with the spin; the wait changes timing, not bytes).
 
+## integ33 (`lane/spill-integ33-20260922`): B days 27 and 28, C day 22
+Lane tips merged: C `a04a9acd2` (its worker.rs resolution of A's day 18 met main's own; main's side taken on every code
+conflict, no C-specific code was in the file), B `358441080`. Against main `0713c1a79` (#627) the non-research changes
+are B's day-27 fix in `crates/memra-server/src/worker.rs` and two `docs/FLAGS.md` rows.
+
+**B day 27, the prefix-cache budget derived at a literal 8192.** `init_prefix_cache_budget` sized `min(2 x entry(ctx),
+boot_free - 1.5 GiB)` with `ctx = MEMRA_CTX` when set, else the literal `PREFIX_CACHE_CTX_FALLBACK = 8192`, while the
+cap rule served the checkpoint's context when unset. Target card, 27B, unset: entry `8192 x 29,696 + 156,893,184 =
+400,162,816 B`, budget `800,325,632 B` beside `262,144 x 31,552 = 8,271,167,488 B` sessions; day 26's deferred shape
+inserted 45 spec-boundary entries and LRU-evicted 43, `cached=0` on 15 of 15. Fix: `prefix_budget_ctx(env_ctx,
+model_ctx)` is the cap rule's own `resolve_ctx`, applied per loaded model; `PrefixCacheBudget::Derived` names its
+`ctx_source`; the boot line prints it; an unresolvable context contributes no entry and prints a WARNING. The two-entry
+count and the boot-free clamp (the product decision) are unchanged; only the context term moved. No new flag. CPU test
+`derived_prefix_budget_context_term_is_the_served_context_set_or_unset`. After, target card, verbatim: `[prefix-cache]
+on: budget 15883MB (15883042816 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from
+checkpoint; MEMRA_CTX unset), requested 15883042816 B; boot driver free 86519709696 B, post-reserve clamp 84909096960
+B)`; warm arm `arm=iii L0 N=5 ... cached=[1440, 1440, 1440, 1440, 1440]`, `L1 ... cached=[3104 x5]`, `L2 ... cached=[5760
+x5]` where day 26 read `[0 x5]` on all three; `prefix_cache_entries=45 prefix_cache_evictions=0`; outputs equal to day 26
+on 45 of 45 (`P_G_chars_equal=45`), digests equal 45/45 across today's boots; idle retention 30.1 to 39.1 GB (the
+entries now stay). Local card (`MEMRA_CTX=65536`): a no-op by construction, `cached=[0 x5]` as day 26, digests equal
+45/45. **Park cell** (default versus `MEMRA_KV_PARK_COMPACT=1`, both orders, N=5 per arm per length): census correction
+first (a spec session parks in the spec pool only: `continuation_pool_entries=0`, `spec_pool_entries=2`); the door is
+plain-pool only and cannot reach what this mix retains: target card all four runs `retained_by_process=39090913280 ...
+continuation_pool_hits=0 spec_pool_hits=0 ... park-compact lines: 0`, digests equal 45/45 across arms and orders; local
+card the same shape at `7449083904`; the labelled plain-path pair (`MEMRA_SERVE_SPEC=0`, target) engages the door
+(`46 [kv-reuse] park-compact` lines, `2071 of 262144 rows retained` at L0, retained `39191576576 -> 22649241600` B,
+pools still 0 hits, digests equal 45/45). No default changed.
+
+**B day 28, memra#476 graph growth and the park door's decide-by.** On these dense models the only shape-keyed,
+never-freed allocation on the served path is the FA partial pool (`Engine::fa_part_pool`, retire-on-grow); neither book
+carries it; the boot-calibrated floor covers it; the verify-graph pool never engages on dense models and is charged on
+the physical side only where it does (a named predictive gap for MoE and linear families). Shape-walk cell, one
+binary, both cards, verbatim: target `G1: growth(end) = 38638080 (G_fa after ready 38638080 + delta_D 0) <= 10% floor =
+230057574: PASS`, `G2: while inflight > 0, max_underbook_real = 7443968680 <= floor = 2300575744: FAIL`, `G3: exact rows
+max |residual| = 0 (tolerance 0); line~ rows max |residual| = 804952 (tolerance 2e6 at the 1 MB grain)`, `G4:
+Overloaded/OOM lines = 0: PASS`; local `G1: growth(end) = 25758720 ... <= 10% floor = 161061273: PASS`, `G2 ...
+3144845816 <= floor = 1610612736: FAIL`, `G3 ... 0 ... 482808`, `G4 ... PASS`. Per the pre-registration G1's pass means
+no per-request booking landed; G2 is the day-24 reading (async pool cached blocks plus the retention the prefix budget
+intends), the graph term's share 0.5 and 0.8 percent, recorded not relaxed. Proposed, not landed: a boot pre-grow
+through `fa_dcw_pool_ensure` for the served context and batch cap before the probe's watermark reset (about 0.3
+agent-day; moves the boot footprint; the owner's call). `MEMRA_KV_PARK_COMPACT` row now reads `decide-by: 2026-10-06`
+with its deciding cell (plain path, both cards, both orders, N>=5: compacted-park resume byte identity on both resume
+shapes, the step-OOM adjacency replay, the copy-cost pair); promotion moves only plain-pool retained bytes, deletion
+loses nothing measured (0 hits on every tape), the spec pool is a separate owner decision.
+
+**C day 22.** With Move 1 whole and the fault gate's floor: target card `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`
+default (`items=34`) and plain (`items=32`), 65 ok each, floor line `ok: promote-reject: the entry carries at least two
+planes, so the reject is partial (items=N >= 2)`; `KV-HOST-SPILL FAILURE GATE: ALL GREEN` all four arms; `KV-HOST-SPILL
+IDENTITY GATE: ALL GREEN (teeth=0)` all four arms (ON logs carry A's `promote submitted off the tick ... request parked`
+and `promote published off the tick: ticket complete after 1 poll(s), 5.5ms`); local 5090 fault gate `ALL GREEN`
+default (`items=18`) and plain (`items=16`). The `TENANT_PCT=100` arm has its own receipt now (`pool-full refusal arm:
+whole host budget ...`, `KV-HOST-SPILL FAILURE GATE: ALL GREEN`, 14 ok each door arm; server line `[prefix-host] skip
+demote: entry 159.9MB > host budget 1MB`). Owner note recorded by C, not acted on: under the door at `TENANT_PCT=100` the
+pool-full demote runs the whole Move 1 contract (a 160 MB copy) and only then refuses at insert; deliberate per ruling
+15, reachable only with the share cap disarmed. Review table rows updated; the DFlash tail slice question survives day
+20 (the standalone tap sink is bounded; the host tier's draft-tail image identity input is unbound).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
