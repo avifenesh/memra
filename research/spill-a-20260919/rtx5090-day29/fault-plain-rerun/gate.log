@@ -1,0 +1,141 @@
+== cell presubmit: MEMRA_KV_HOST_FAULT=contract-presubmit (one-shot) ==
+  ok: presubmit: the boot's last hand-off landed before stop (bounded 15 s wait)
+  ok: presubmit: three completions served
+  ok: presubmit: door ON with the transfer engine
+  ok: presubmit: exactly one typed injected refusal, the producer fence
+  ok: presubmit: the next demote completes with a D2H contract receipt after the refusal
+receipt seq=3 expected 1 + 2 capture ticket(s) submitted before it = 3
+  ok: presubmit: the receipt's seq is 1 plus the capture tickets submitted before it
+  ok: presubmit: the next demote publishes
+  ok: presubmit: the tier never latched off
+  ok: presubmit: no entry was dropped as not whole (no quarantine)
+  ok: presubmit: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: presubmit: no host-tier refusal line beyond the injected one
+== cell postpublish: MEMRA_KV_HOST_FAULT=contract-postpublish (one-shot) ==
+  ok: postpublish: the boot's last hand-off landed before stop (bounded 15 s wait)
+  ok: postpublish: three completions served
+  ok: postpublish: door ON with the transfer engine
+  ok: postpublish: exactly one typed injected refusal, the receipt
+  ok: postpublish: the next demote completes with a D2H contract receipt after the refusal
+receipt seq=4 expected 2 + 2 capture ticket(s) submitted before it = 4
+  ok: postpublish: the receipt's seq is 2 plus the capture tickets submitted before it
+  ok: postpublish: the next demote publishes
+  ok: postpublish: the tier never latched off
+  ok: postpublish: no entry was dropped as not whole (no quarantine)
+  ok: postpublish: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: postpublish: no host-tier refusal line beyond the injected one
+== cell promote-presubmit: MEMRA_KV_HOST_FAULT=contract-promote-presubmit (one-shot, promote side) ==
+  ok: promote-presubmit: four completions served
+  ok: promote-presubmit: door ON with the transfer engine on both sides
+  ok: promote-presubmit: exactly one typed injected refusal, the producer fence
+  ok: promote-presubmit: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)
+  ok: promote-presubmit: the next promote completes with an H2D contract receipt after the refusal
+  ok: promote-presubmit: the next promote publishes
+  ok: promote-presubmit: the promote refusal kept the host entry
+  ok: promote-presubmit: the tier never latched off
+  ok: promote-presubmit: no entry was dropped as not whole (no quarantine)
+  ok: promote-presubmit: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: promote-presubmit: no host-tier refusal line beyond the injected one
+== cell promote-postpublish: MEMRA_KV_HOST_FAULT=contract-promote-postpublish (one-shot, promote side) ==
+  ok: promote-postpublish: four completions served
+  ok: promote-postpublish: door ON with the transfer engine on both sides
+  ok: promote-postpublish: exactly one typed injected refusal, the publication
+  ok: promote-postpublish: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)
+  ok: promote-postpublish: the next promote completes with an H2D contract receipt after the refusal
+  ok: promote-postpublish: the next promote publishes
+  ok: promote-postpublish: the promote refusal kept the host entry
+  ok: promote-postpublish: the tier never latched off
+  ok: promote-postpublish: no entry was dropped as not whole (no quarantine)
+  ok: promote-postpublish: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: promote-postpublish: no host-tier refusal line beyond the injected one
+== cell promote-reject: MEMRA_KV_HOST_FAULT=contract-promote-reject (one-shot, promote side) ==
+  promote-reject: the entry's plane count from the server's r2 D2H receipt: items=16
+  ok: promote-reject: the r2 D2H receipt names the entry's item total (the artifact's plane count)
+  ok: promote-reject: the injected refusal's `1 of M items` M equals that receipt's items=N
+  ok: promote-reject: the entry carries at least two planes, so the reject is partial (items=N >= 2)
+  ok: promote-reject: four completions served
+  ok: promote-reject: door ON with the transfer engine on both sides
+  ok: promote-reject: exactly one typed injected refusal, the partial-reject
+  ok: promote-reject: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)
+  ok: promote-reject: the next promote completes with an H2D contract receipt after the refusal
+  ok: promote-reject: the next promote publishes
+  ok: promote-reject: the promote refusal kept the host entry
+  ok: promote-reject: the tier never latched off
+  ok: promote-reject: no entry was dropped as not whole (no quarantine)
+  ok: promote-reject: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: promote-reject: no host-tier refusal line beyond the injected one
+== cell promote-readyview: MEMRA_KV_HOST_FAULT=contract-promote-readyview (one-shot, promote side) ==
+  ok: promote-readyview: four completions served
+  ok: promote-readyview: door ON with the transfer engine on both sides
+  ok: promote-readyview: exactly one typed injected refusal, the tier H2D destination 0 not publishable: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-readyview)
+  ok: promote-readyview: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)
+  ok: promote-readyview: the next promote completes with an H2D contract receipt after the refusal
+  ok: promote-readyview: the next promote publishes
+  ok: promote-readyview: the promote refusal kept the host entry
+  ok: promote-readyview: the tier never latched off
+  ok: promote-readyview: no entry was dropped as not whole (no quarantine)
+  ok: promote-readyview: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: promote-readyview: no host-tier refusal line beyond the injected one
+== cell d2d-capture: MEMRA_KV_HOST_FAULT=d2d-delay-capture (one-shot, the D2D capture receipt's red arm) ==
+  ok: d2d-capture: two completions served
+  ok: d2d-capture: door ON with the transfer engine
+  ok: d2d-capture: the fault was armed on the first capture
+capture receipt refused: source_digests_sha256=df8b491e903c2624.. destination_digests_sha256=1165b0578d92354c..
+  ok: d2d-capture: exactly one refused D2D capture receipt naming two different digests
+  ok: d2d-capture: no capture receipt was accepted (the route latched on the first)
+  ok: d2d-capture: the capture route latched typed on the mismatch
+  ok: d2d-capture: the tier latched off
+  ok: d2d-capture: nothing was published off the tick
+  ok: d2d-capture: nothing was hit (no entry existed before r2)
+  ok: d2d-capture: r2's capture ran on the tick after the latch (an insert follows the refusal)
+  ok: d2d-capture: r1's text equals r2's (the tick program served both)
+  ok: d2d-capture: no ticket leaked (no Capacity refusal, no leaked wording)
+== cell d2d-restore: MEMRA_KV_HOST_FAULT=d2d-delay-restore (one-shot, the D2D restore receipt's red arm) ==
+  ok: d2d-restore: two completions served
+  ok: d2d-restore: door ON with the transfer engine
+  ok: d2d-restore: r1's capture receipt was accepted (the green arm, live)
+  ok: d2d-restore: r1's capture published off the tick
+  ok: d2d-restore: the fault was armed on the first restore
+  ok: d2d-restore: exactly one restore was submitted off the tick
+restore receipt refused: source_digests_sha256=df8b491e903c2624.. destination_digests_sha256=1165b0578d92354c..
+  ok: d2d-restore: exactly one refused D2D restore receipt naming two different digests
+  ok: d2d-restore: no restore receipt was accepted
+  ok: d2d-restore: the restore route latched typed on the mismatch
+  ok: d2d-restore: the tier latched off
+  ok: d2d-restore: nothing landed off the tick (nothing primed on the refused cache)
+  ok: d2d-restore: the tick program restored r2 after the refusal
+  ok: d2d-restore: r1's text equals r2's
+  ok: d2d-restore: no ticket leaked (no Capacity refusal, no leaked wording)
+== cell hash-helper-gone: MEMRA_KV_HOST_FAULT=hash-helper-gone (one-shot, the hash helper's red arm) ==
+  ok: hash-helper-gone: three completions served (the tick program serves)
+  ok: hash-helper-gone: door ON with the transfer engine
+  ok: hash-helper-gone: exactly one copy completed and handed its heap payloads to the hash helper
+  ok: hash-helper-gone: exactly one typed injected refusal, helper gone
+hand-off ticket(s) ['2'], refusal ticket(s) ['2']
+  ok: hash-helper-gone: the refusal names the hand-off's ticket
+  ok: hash-helper-gone: the refusal says nothing published and the tier latches
+  ok: hash-helper-gone: the tier latched off exactly once
+  ok: hash-helper-gone: the hash helper joined at the latch
+  ok: hash-helper-gone: nothing published in the boot (no demote line)
+  ok: hash-helper-gone: no digests landed
+  ok: hash-helper-gone: no entry was dropped as not whole (no quarantine)
+  ok: hash-helper-gone: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: hash-helper-gone: r3's own demote met the latched tier as pre-registered (0 refusal line(s))
+  ok: hash-helper-gone: no host-tier refusal line beyond the injected one and r3's latched-off refusal
+== cell hash-never-lands: MEMRA_KV_HOST_FAULT=hash-never-lands (one-shot, the hash helper's red arm) ==
+  ok: hash-never-lands: three completions served (the tick program serves)
+  ok: hash-never-lands: door ON with the transfer engine
+  ok: hash-never-lands: exactly one copy completed and handed its heap payloads to the hash helper
+  ok: hash-never-lands: exactly one typed injected refusal, digests never landed
+hand-off ticket(s) ['2'], refusal ticket(s) ['2']
+  ok: hash-never-lands: the refusal names the hand-off's ticket
+  ok: hash-never-lands: the refusal says nothing published and the tier latches
+  ok: hash-never-lands: the tier latched off exactly once
+  ok: hash-never-lands: the hash helper joined at the latch
+  ok: hash-never-lands: nothing published in the boot (no demote line)
+  ok: hash-never-lands: no digests landed
+  ok: hash-never-lands: no entry was dropped as not whole (no quarantine)
+  ok: hash-never-lands: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: hash-never-lands: r3's own demote met the latched tier as pre-registered (1 refusal line(s))
+  ok: hash-never-lands: no host-tier refusal line beyond the injected one and r3's latched-off refusal
+KV-HOST-CONTRACT-FAULT GATE: ALL GREEN

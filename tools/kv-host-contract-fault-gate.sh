@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # kv-host-contract-fault-gate.sh: the contract-routed host-tier D2H (MEMRA_KV_HOST_CONTRACTS=1,
 # lane/spill-c-20260919 Option B) and H2D (Option C) must UNWIND a refusal without wedging the tier.
-# Six cells, one server boot each, door ON, one one-shot fault each (docs/FLAGS.md
+# Cells, one server boot each, door ON, one one-shot fault each (docs/FLAGS.md
 # `MEMRA_KV_HOST_FAULT`). The demote side first, the two unwind paths the PR #599 review found broken:
 #   presubmit    MEMRA_KV_HOST_FAULT=contract-presubmit: the producer fence is refused before any op
 #                is submitted. Every registered plane must come back to its slot, the demote fails
@@ -48,6 +48,18 @@
 #                 whole-entry hit restores through the route with the fault; the receipt refuses, nothing is primed
 #                 on the destination, the cache drops and the pin is released, the route and the tier latch, the
 #                 tick program restores r2 with r1's bytes.
+#
+# WP-A day 28 (memra#536 Move 1 owed item 2, lead ruling 39, research/spill-a-20260919/DAY28.md): the bundle checksum
+# of the image's heap payloads runs on one long-lived helper thread per tier context; the demote stays `Demoting`
+# (`Hashing`) until the digests land. Two red arms, one boot each, the demote cells' shape (r1 P_A seeds E_A; r2 P_B
+# evicts E_A, whose demote copies, completes, hands its heap payloads to the helper and takes the fault; r3 P_C evicts E_B):
+#   hash-helper-gone   MEMRA_KV_HOST_FAULT=hash-helper-gone: the helper exits on its first job; the next tick-top poll finds
+#                      the reply channel closed; typed refusal, nothing published, the tier latches and joins the helper;
+#                      r3's eviction finds the tier off and demotes nothing (no refusal line of its own).
+#   hash-never-lands   MEMRA_KV_HOST_FAULT=hash-never-lands: the helper hashes its first job and discards the reply; r3's
+#                      eviction meets the Hashing entry through the Block wait ("a second demote") and rides out the 10 s
+#                      deadline; typed refusal, nothing published, the tier latches and joins the helper; then r3's own
+#                      demote is refused typed (`the tier latched off while settling the pending demote`), exactly once.
 #
 # usage: kv-host-contract-fault-gate.sh [--external-lock FD] <model.gguf> <server_bin> <evidence_dir>
 # env:   MEMRA_HOSTGATE_CACHE_MB (default 256)  device prefix budget; must hold ONE seed entry but not two
@@ -231,6 +243,18 @@ sys.exit(0 if seq == want else 1)
 PY
 }
 
+await_publication() { # $1 refusal literal $2 log: the boot's LAST publication, a `[prefix-host] demote: ` line after the injected
+    # refusal, has landed before the boot stops. WP-A day 29 (ruling 40): r3 is the boot's last request and its spec-boundary
+    # insert, the eviction and the demote's submission land as r3 completes, so a `stop` right after r3's return read a log
+    # that ended at `demote copy complete` (day 28: the 73 ms hash on the target card still on the helper) and `the next demote
+    # publishes` failed on a publication that had not happened yet. This waits for the check's own condition, bounded
+    # 150 x 100 ms = 15 s, above the helper's 10 s deadline, so a hand-off that never lands is read as its typed refusal.
+    for _ in $(seq 1 150); do
+        if after "$1" "\\[prefix-host\\] demote: " "$2"; then return 0; fi
+        sleep 0.1
+    done
+    return 1
+}
 cell() { # $1 name $2 fault $3 refused-kind $4 expected next-receipt seq
     local name=$1 fault=$2 kind=$3 seq=$4 log="$EV/$1-server.log"
     echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot) =="
@@ -238,7 +262,11 @@ cell() { # $1 name $2 fault $3 refused-kind $4 expected next-receipt seq
     req "$P_A" "$EV/$name-r1.json"
     req "$P_B" "$EV/$name-r2.json"
     req "$P_C" "$EV/$name-r3.json"
+    # WP-A day 29 (ruling 40): the demote cells await the boot's last publication before `stop`.
+    local awaited=0
+    await_publication "demote failed (tier D2H $kind refused: injected" "$log" || awaited=$?  # a timed-out wait is a failed check below, never an abort under set -e
     stop
+    chk "$name: the boot's last publication landed before stop (bounded 15 s wait)" test "$awaited" -eq 0
     chk "$name: three completions served" three_served "$EV/$name"
     chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
     chk "$name: exactly one typed injected refusal, the $kind" count_eq "demote failed (tier D2H $kind refused: injected failure (MEMRA_KV_HOST_FAULT=$fault)); nothing demoted" "$log" 1
@@ -426,9 +454,58 @@ pcell promote-postpublish contract-promote-postpublish publication
 # while the engine has published; both must end as plain refusals with the ticket retired and acknowledged.
 pcell promote-reject contract-promote-reject partial-reject
 pcell promote-readyview contract-promote-readyview "tier H2D destination 0 not publishable: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-readyview)"
+refusal_names_handoff_ticket() { # $1 log $2 refusal kind: the refusal's `ticket seq=N` is the hand-off line's
+    python3 - "$1" "$2" <<'PYEOF'
+import re, sys
+log, kind = sys.argv[1], sys.argv[2]
+lines = open(log, errors="replace").read().splitlines()
+hand = [m.group(1) for l in lines if "handed to the hash helper" in l and (m := re.search(r"ticket seq=(\d+)", l))]
+ref = [m.group(1) for l in lines if f"demote failed (tier hash {kind}" in l and (m := re.search(r"ticket seq=(\d+)", l))]
+print(f"hand-off ticket(s) {hand}, refusal ticket(s) {ref}")
+sys.exit(0 if len(hand) == 1 and ref == hand else 1)
+PYEOF
+}
+only_these_refusals() { # $1 log $2.. literals: every host-tier refusal line carries one of the literals
+    python3 - "$@" <<'PYEOF'
+import re, sys
+log, allowed = sys.argv[1], sys.argv[2:]
+pat = re.compile(r"\[prefix-host\] (demote refused|promote refused|REFUSED|.*\(contracts door\): |demote failed)")
+bad = [l for l in open(log, errors="replace").read().splitlines() if pat.search(l) and not any(a in l for a in allowed)]
+for l in bad:
+    print("unexpected:", l[:200])
+sys.exit(0 if not bad else 1)
+PYEOF
+}
+hcell() { # $1 name $2 fault $3 refusal kind (`helper gone` | `digests never landed`) $4 r3's latched-off refusal count (0|1)
+    local name=$1 fault=$2 kind=$3 latched_refusals=$4 log="$EV/$1-server.log"
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, the hash helper's red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_B" "$EV/$name-r2.json"
+    req "$P_C" "$EV/$name-r3.json"
+    stop
+    chk "$name: three completions served (the tick program serves)" three_served "$EV/$name"
+    chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
+    chk "$name: exactly one copy completed and handed its heap payloads to the hash helper" count_eq "handed to the hash helper" "$log" 1
+    chk "$name: exactly one typed injected refusal, $kind" count_eq "demote failed (tier hash $kind" "$log" 1
+    chk "$name: the refusal names the hand-off's ticket" refusal_names_handoff_ticket "$log" "$kind"
+    chk "$name: the refusal says nothing published and the tier latches" count_eq "; nothing published; the tier latches off" "$log" 1
+    chk "$name: the tier latched off exactly once" count_eq "TIER DISABLED" "$log" 1
+    chk "$name: the hash helper joined at the latch" count_eq "hash helper joined (the tier latched off)" "$log" 1
+    chk "$name: nothing published in the boot (no demote line)" absent "\[prefix-host\] demote: " "$log"
+    chk "$name: no digests landed" absent "demote digests landed" "$log"
+    chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+    chk "$name: r3's own demote met the latched tier as pre-registered ($latched_refusals refusal line(s))" count_eq "demote refused: the tier latched off while settling the pending demote" "$log" "$latched_refusals"
+    chk "$name: no host-tier refusal line beyond the injected one and r3's latched-off refusal" only_these_refusals "$log" "demote failed (tier hash $kind" "demote refused: the tier latched off while settling the pending demote"
+}
+
 # WP-A day 22: the D2D receipt's red arm, one cell per class.
 dcell_capture
 dcell_restore
+# WP-A day 28: the hash helper's red arms, one cell each.
+hcell hash-helper-gone hash-helper-gone "helper gone" 0
+hcell hash-never-lands hash-never-lands "digests never landed" 1
 
 if [ "$FAILS" -eq 0 ]; then
     echo "KV-HOST-CONTRACT-FAULT GATE: ALL GREEN"
