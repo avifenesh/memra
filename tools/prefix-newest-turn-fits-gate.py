@@ -413,12 +413,54 @@ def parse_window(lines: list[str]) -> dict:
                     "prefix": int(m.group(1)), "plain": int(m.group(2)), "spec": int(m.group(3)), "dspark": int(m.group(4)),
                     "effective_free_before_mb": int(m.group(5)), "effective_free_after_mb": int(m.group(6)), "line": ln.strip(),
                 })
+            else:
+                # A reclaim line the detailed shape did not parse (engine wording drift): the
+                # premise is then UNREADABLE for this window, never "released nothing" (revuto on
+                # #633). `premise_readable()` turns it into a typed refusal.
+                ev.setdefault("reclaim_unparsed", []).append(ln.strip())
     return ev
 
 
 def parked_released(window: dict) -> tuple[int, int, int]:
     """Parked sessions a window's reclaim-on-defer lines released, per pool (plain, spec, dspark)."""
     return tuple(sum(r[pool] for r in window.get("parked_releases", [])) for pool in PARKED_POOLS)
+
+
+def window_reclaims_unparsed(window: dict) -> list[str]:
+    """Reclaim lines the detailed shape did not parse: every reclaim must account for its releases."""
+    unparsed = list(window.get("reclaim_unparsed", []))
+    if window.get("reclaims", 0) != len(window.get("parked_releases", [])) + len(unparsed):
+        unparsed.append(f"<{window.get('reclaims', 0)} reclaim line(s), {len(window.get('parked_releases', []))} parsed>")
+    return unparsed
+
+
+def premise_unreadable_windows(cal: dict, rec: dict) -> list[dict]:
+    """Windows in either boot whose reclaim lines the detailed shape did not parse."""
+    rows = []
+    for c, m in zip(cal["cohort"], rec["cohort"]):
+        for j, (cw, mw) in enumerate(zip(c.get("windows", []), (m["window_first"], m["window_second"])), start=1):
+            for boot, w in (("calibration", cw), ("measured", mw)):
+                bad = window_reclaims_unparsed(w)
+                if bad:
+                    rows.append({"who": f"cohort {c['tokens']} send {j}", "boot": boot, "lines": bad})
+    for ct, mt in zip(cal["turns"], rec["turns"]):
+        for boot, w in (("calibration", ct["window"]), ("measured", mt["window"])):
+            bad = window_reclaims_unparsed(w)
+            if bad:
+                rows.append({"who": f"turn {mt['turn']}", "boot": boot, "lines": bad})
+    return rows
+
+
+def gate_outcome(others_ok: bool, v3: bool, premise_ok: bool, premise_readable: bool) -> tuple[str, int]:
+    """The exit rule (revuto on #633): a failed V1/V2/V4/V5/V6 is a verdict FAIL (exit 1) whatever
+    the premise says, because asymmetric parked-session releases affect V3 only; a broken or
+    unreadable premise with every other clause holding is a typed refusal (exit 2), V3 undecided;
+    otherwise the verdict stands on V3 (exit 0 or 1)."""
+    if not others_ok:
+        return ("verdict", 1)
+    if not (premise_ok and premise_readable):
+        return ("refuse", 2)
+    return ("verdict", 0 if v3 else 1)
 
 
 def v3_premise_rows(cal: dict, rec: dict) -> list[dict]:
@@ -844,12 +886,26 @@ def main() -> None:
         )
     premise_rows = v3_premise_rows(cal, rec)
     premise_ok = all(r["equal"] for r in premise_rows)
-    refusal = None if premise_ok else v3_premise_refusal(premise_rows, cal.get("card_at_boot"), rec["boot"].get("card_at_boot"), rec["boot"]["budget_bytes"])
+    unreadable = premise_unreadable_windows(cal, rec)
+    premise_readable = not unreadable
+    others_ok = v1 and v2 and v4 and v5 and v6
+    outcome, exit_code = gate_outcome(others_ok, v3, premise_ok, premise_readable)
+    if not premise_readable:
+        refusal = ("V3 premise unreadable: " + "; ".join(f"{r['who']} ({r['boot']}): {' | '.join(r['lines'])}" for r in unreadable)
+                   + " (a reclaim-on-defer line the gate's detailed shape did not parse; engine wording drift?)")
+    elif not premise_ok:
+        refusal = v3_premise_refusal(premise_rows, cal.get("card_at_boot"), rec["boot"].get("card_at_boot"), rec["boot"]["budget_bytes"])
+    else:
+        refusal = None
+    if outcome == "verdict" and refusal is not None:
+        # a non-V3 clause failed: the verdict prints (exit 1) and the premise note rides beside it
+        verdict += " (V3 premise: " + ("unreadable" if not premise_readable else "broken") + ", V3 undecided)"
     summary = {
-        "verdict": verdict if premise_ok else f"REFUSED: {refusal}",
-        "verdict_under_broken_premise": None if premise_ok else verdict,
-        "pass": ok and premise_ok,
-        "v3_premise": {"holds": premise_ok, "rows": premise_rows},
+        "verdict": verdict if outcome == "verdict" else f"REFUSED: {refusal}",
+        "verdict_under_broken_premise": None if outcome == "verdict" else verdict,
+        "pass": outcome == "verdict" and exit_code == 0,
+        "exit_code": exit_code,
+        "v3_premise": {"holds": premise_ok, "readable": premise_readable, "rows": premise_rows, "unreadable": unreadable},
         "binary_sha256": binsha,
         "rig": rig,
         "boot": rec["boot"],
@@ -881,10 +937,12 @@ def main() -> None:
     for r in premise_rows:
         if not r["equal"]:
             print(f"premise: {r['who']}: calibration released plain/spec/dspark {r['calibration']}, measured {r['measured']}")
-    if not premise_ok:
+    for r in unreadable:
+        print(f"premise unreadable: {r['who']} ({r['boot']}): {' | '.join(r['lines'])}")
+    if outcome == "refuse":
         refuse(refusal)
     print(verdict, flush=True)
-    sys.exit(0 if ok else 1)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

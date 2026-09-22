@@ -120,3 +120,32 @@ pub use revision_v13::*;
 // restore recovers its source; a continuation over a suspended layer is refused.
 mod recovery;
 pub use recovery::*;
+
+// Day-19 rule (WP-A, memra#536 Move 1): the reader fence of an H2D issued off the owner stream,
+// beside the frozen schedules, unversioned: `consumer_fenced` is the installed reader wait.
+mod reader_fence;
+pub use reader_fence::*;
+
+// Day-20 rule (WP-A, memra#536 Move 2 slice 1): the event-ordered publication of a D2D capture
+// issued off the owner stream, beside the frozen schedules, unversioned: a captured entry is
+// published only after every copy's completion event; the receipt term is slice 3's.
+mod d2d_capture;
+pub use d2d_capture::*;
+
+// Day-21 rule (WP-A, memra#536 Move 2 slice 2): the readiness of a D2D restore into a borrowed
+// destination from a pinned borrowed source, beside the frozen schedules, unversioned: landed is
+// not ready; ready is the landing plus the installed reader wait; a prime before it is unordered.
+mod d2d_restore;
+pub use d2d_restore::*;
+
+// Day-22 rule (WP-A, memra#536 Move 2 slice 3): the receipt term of both D2D classes, beside the
+// frozen schedules, unversioned: the destination digest witnesses the source digest; a receipt-less
+// or mismatching item is refused Corrupt, the caller latches, nothing is published or primed on.
+mod d2d_receipt;
+pub use d2d_receipt::*;
+
+// Day-30 rule (WP-A, memra#536 Move 2 owed item 1, the D2H half): the typed f32 spans of a demote
+// batch, beside the frozen schedules, unversioned: one ticket and one landing with the KV items; a
+// refused attach hands every span back; a span error quarantines the ticket.
+mod d2h_span;
+pub use d2h_span::*;

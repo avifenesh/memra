@@ -381,6 +381,30 @@ fn ggml_storage(kind: GgmlType) -> StorageLayout {
     }
 }
 
+/// Build a GGUF-dialect census from in-memory tensor views: `(name, ggml type, ne, byte length)`.
+/// Test fixtures and synthetic sources use it so the loader's contract bind (memra#541) sees the
+/// same rows a real GGUF would present.
+pub fn census_from_views<'a>(
+    views: impl IntoIterator<Item = (&'a str, GgmlType, &'a [u64], u64)>,
+) -> TensorCensus {
+    TensorCensus {
+        dialect: CheckpointDialect::Gguf,
+        tensors: views
+            .into_iter()
+            .map(|(name, ggml_type, ne, n_bytes)| TensorCensusRecord {
+                physical_name: name.to_string(),
+                dtype: format!("{ggml_type:?}"),
+                entry: TensorCensusEntry {
+                    name: name.to_string(),
+                    shape: ne.to_vec(),
+                    storage: ggml_storage(ggml_type),
+                    physical_bytes: n_bytes,
+                },
+            })
+            .collect(),
+    }
+}
+
 /// Build an exact-byte GGUF census from tensor-table metadata only.
 pub fn census_from_gguf(gguf: &GgufFile) -> TensorCensus {
     TensorCensus {

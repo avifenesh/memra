@@ -515,10 +515,12 @@ mod tests {
         let plan = moe_plan(1, 0);
         let contract = gguf_contract(&plan);
         let mut census = census_for(&contract);
+        // One plane per expert: the shape the GGUF contract declares for a stacked bank's
+        // auxiliaries (memra#541), so the bind passes and the catalog's own refusal is reached.
         for name in ["blk.0.ffn_up_exps.scale", "blk.0.ffn_gate_exps.input_scale"] {
             census.push(TensorCensusEntry {
                 name: name.to_string(),
-                shape: vec![1],
+                shape: vec![4],
                 storage: StorageLayout::Float(FloatType::F32),
                 physical_bytes: 4,
             });

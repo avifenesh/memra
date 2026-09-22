@@ -9,7 +9,16 @@ entry). The tenant's client-side inter-token gaps are the observation; the idle 
 alone. Order 1 = (idle, arm) x N, order 2 = (arm, idle) x N. The rule line is fixed here and replayed
 from receipt.json by `--replay`; no threshold, no verdict: the cell measures a stall per class.
 
-    stall_cell.py --port P --mode prime|demote|promote --server-log LOG --out DIR [--n 5]
+    stall_cell.py --port P --mode prime|demote|promote|capture|restore --server-log LOG --out DIR [--n 5]
+    (`capture`, WP-A day 20: the prime arm's intruder on a boot with the prefix cache ON, so its
+    grid seed captures; after it returns the same prompt is re-posted untimed and its
+    `cached_tokens` recorded, the hit clause of memra#536 Move 2 cell (i). The three day-16
+    arms are byte-for-byte the day-16 program.)
+    (`restore`, WP-A day 21: ONE fixed intruder prompt of the prime arm's length, posted untimed in
+    setup so its grid seed captures and publishes; every timed run then re-posts the SAME prompt
+    at the tenant's 24th token, a whole-entry HIT whose restore copies the entry and primes the
+    suffix; each intruder's `cached_tokens` is recorded, memra#536 Move 2 cell (ii). The four
+    earlier arms are byte-for-byte unchanged.)
     stall_cell.py --replay DIR/receipt.json
 
 Client-side only: stdlib, no engine binary, no GPU access of its own.
@@ -113,6 +122,38 @@ def log_tail(path, offset):
         return f.read().decode("utf-8", "replace"), f.tell()
 
 
+def server_capture_ms(lines):
+    """WP-A day 20: `[prefix-cache] capture published off the tick (..): N tokens complete after P
+    poll(s), X ms from submission to completion, ..`: the copy's own duration, per publication."""
+    out = []
+    for ln in lines.splitlines():
+        if "[prefix-cache] capture published off the tick" in ln:
+            i = ln.find("poll(s), ")
+            if i >= 0:
+                num = ln[i + 9:].split("ms")[0].strip()
+                try:
+                    out.append(float(num))
+                except ValueError:
+                    pass
+    return out
+
+
+def server_restore_ms(lines):
+    """WP-A day 21: `[prefix-cache] restore landed off the tick: N tokens complete after P poll(s),
+    X ms from submission to completion, ..`: the copy's own duration, per landed restore."""
+    out = []
+    for ln in lines.splitlines():
+        if "[prefix-cache] restore landed off the tick" in ln:
+            i = ln.find("poll(s), ")
+            if i >= 0:
+                num = ln[i + 9:].split("ms")[0].strip()
+                try:
+                    out.append(float(num))
+                except ValueError:
+                    pass
+    return out
+
+
 def server_ms(lines, kind):
     out = []
     for ln in lines.splitlines():
@@ -137,8 +178,10 @@ def one_run(port, mode, arm, run_id, log_path, log_off, promote_toggle):
     intruder = None
     if arm != "idle":
         fired.wait(timeout=600)
-        if mode == "prime":
+        if mode in ("prime", "capture"):
             prompt = fresh_prompt(PRIME_TARGET_TOKENS - 4, 1000 + run_id)
+        elif mode == "restore":
+            prompt = fresh_prompt(PRIME_TARGET_TOKENS - 4, 2100)  # the ONE seeded prompt, a hit every run
         elif mode == "demote":
             prompt = fresh_prompt(72, 2000 + run_id)
         else:
@@ -154,6 +197,20 @@ def one_run(port, mode, arm, run_id, log_path, log_off, promote_toggle):
                                                                                          usage.get("cached_tokens"))}
         except Exception as e:
             intruder = {"error": repr(e), "fired_at_ms": (t_i - t_start) * 1e3}
+        if mode == "capture" and intruder is not None and "error" not in intruder:
+            # The hit clause: the same prompt again, untimed, after the tenant's stream ends (so the
+            # re-post never sits beside the timed window); its cached_tokens must equal the seed's
+            # published length (the grid-aligned prompt end).
+            th.join(timeout=900)
+            try:
+                resp2, wall2 = post(port, {"model": "gate", "prompt": prompt, "max_tokens": 1, "temperature": 0})
+                usage2 = resp2.get("usage", {})
+                intruder["repost_wall_ms"] = wall2
+                intruder["repost_prompt_tokens"] = usage2.get("prompt_tokens")
+                intruder["repost_cached_tokens"] = (usage2.get("prompt_tokens_details") or {}).get(
+                    "cached_tokens", usage2.get("cached_tokens"))
+            except Exception as e:
+                intruder["repost_error"] = repr(e)
     th.join(timeout=900)
     text = ""
     times = []
@@ -170,7 +227,11 @@ def one_run(port, mode, arm, run_id, log_path, log_off, promote_toggle):
         "itl_ms": [round(x, 3) for x in itl], "tenant_text_sha": __import__("hashlib").sha256(text.encode()).hexdigest()[:16],
         "intruder": intruder, "errors": error,
         "server_demote_ms": server_ms(tail, "demote"), "server_promote_ms": server_ms(tail, "promote"),
-        "server_log_lines": [ln for ln in tail.splitlines() if "[prefix-host]" in ln or "[abort]" in ln][:40],
+        "server_capture_ms": server_capture_ms(tail) if mode == "capture" else [],
+        "server_restore_ms": server_restore_ms(tail) if mode == "restore" else [],
+        "server_log_lines": [ln for ln in tail.splitlines() if "[prefix-host]" in ln or "[abort]" in ln
+                             or "[prefix-cache] capture" in ln or "[prefix-cache] restore" in ln
+                             or "[prefix-cache] hit" in ln][:40],
     }
     if itl:
         p50 = statistics.median(itl)
@@ -204,7 +265,9 @@ def summarize(runs):
                      "min": min(stalls) if stalls else None, "max": max(stalls) if stalls else None},
         "server_demote_ms": [x for r in arm for x in r["server_demote_ms"]],
         "server_promote_ms": [x for r in arm for x in r["server_promote_ms"]],
+        "server_restore_ms": [x for r in arm for x in r.get("server_restore_ms", [])],
         "intruder_prompt_tokens": [r["intruder"].get("prompt_tokens") for r in arm if r.get("intruder")],
+        "intruder_cached_tokens": [r["intruder"].get("cached_tokens") for r in arm if r.get("intruder")],
         "intruder_wall_ms": [round(r["intruder"].get("wall_ms", float("nan")), 1) for r in arm if r.get("intruder")],
         "tenant_text_shas": sorted({r["tenant_text_sha"] for r in runs}),
         "errors": [e for r in runs for e in r["errors"]] + [r["intruder"]["error"] for r in arm if r.get("intruder") and "error" in r["intruder"]],
@@ -221,14 +284,16 @@ def rule_line(tag, mode, n, s):
             f"stall_median={f(s['stall_ms']['median'])} stall_min={f(s['stall_ms']['min'])} stall_max={f(s['stall_ms']['max'])} "
             f"server_demote_ms={[round(x, 1) for x in s['server_demote_ms']]} "
             f"server_promote_ms={[round(x, 1) for x in s['server_promote_ms']]} "
-            f"intruder_prompt_tokens={s['intruder_prompt_tokens']} tenant_text_identical={len(s['tenant_text_shas']) == 1} "
+            + (f"server_restore_ms={[round(x, 1) for x in s['server_restore_ms']]} "
+               f"intruder_cached_tokens={s['intruder_cached_tokens']} " if mode == "restore" else "")
+            + f"intruder_prompt_tokens={s['intruder_prompt_tokens']} tenant_text_identical={len(s['tenant_text_shas']) == 1} "
             f"errors={len(s['errors'])}")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int)
-    ap.add_argument("--mode", choices=["prime", "demote", "promote"])
+    ap.add_argument("--mode", choices=["prime", "demote", "promote", "capture", "restore"])
     ap.add_argument("--server-log")
     ap.add_argument("--out")
     ap.add_argument("--n", type=int, default=5)
@@ -257,7 +322,15 @@ def main():
             tail, log_off = log_tail(a.server_log, log_off)
             setup.append({"seed": "AB"[i], "wall_ms": wall, "usage": resp.get("usage"),
                           "server_demote_ms": server_ms(tail, "demote")})
-    if a.mode == "prime":
+    if a.mode == "restore":
+        # Untimed setup: the ONE intruder prompt is posted once so its grid seed captures and
+        # publishes; every timed run's re-post is then a whole-entry hit. Recorded.
+        resp, wall = post(a.port, {"model": "gate", "prompt": fresh_prompt(PRIME_TARGET_TOKENS - 4, 2100),
+                                   "max_tokens": 1, "temperature": 0})
+        tail, log_off = log_tail(a.server_log, log_off)
+        setup.append({"seed": True, "wall_ms": wall, "usage": resp.get("usage"),
+                      "server_capture_lines": [ln for ln in tail.splitlines() if "[prefix-cache]" in ln][:10]})
+    if a.mode in ("prime", "capture"):
         # Untimed calibration of the fresh prompt's token count, recorded (the timed runs use
         # PRIME_TARGET_TOKENS - 4 words plus the run header; this reports what the tokenizer made of it).
         resp, wall = post(a.port, {"model": "gate", "prompt": fresh_prompt(PRIME_TARGET_TOKENS - 4, 999),

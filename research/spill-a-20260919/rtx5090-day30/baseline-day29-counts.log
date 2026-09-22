@@ -1,0 +1,54 @@
+## completion lines (A3): copy-complete batch totals, D2H receipt KV items, receipt span suffixes
+     33 items=16 (8 KV planes)
+     35 items=18 (8 KV planes, draft)
+## demote submissions (tokens, MB, items)
+     35 demote submitted off the tick: 64 tokens, 54.6MB, 16 items
+     37 demote submitted off the tick: 64 tokens, 54.8MB, 18 items
+## logs where submissions exceed copy completions
+rtx5090-day29/fault-plain-rerun/ev/postpublish-server.log submitted=2 copy_complete=1
+rtx5090-day29/fault-plain-rerun2/ev/postpublish-server.log submitted=2 copy_complete=1
+rtx5090-day29/fault-default-rerun/ev/postpublish-server.log submitted=2 copy_complete=1
+rtx5090-day29/fault-default-rerun2/ev/postpublish-server.log submitted=2 copy_complete=1
+## demote failures, verbatim
+      6 [prefix-host] demote failed (tier D2H producer fence refused: injected failure (MEMRA_KV_HOST_FAULT=contract-presubmit)); nothing demoted
+      4 [prefix-host] demote failed (tier D2H receipt refused: injected failure (MEMRA_KV_HOST_FAULT=contract-postpublish)); nothing demoted
+      1 [prefix-host] demote failed (tier hash digests never landed: ticket seq=2 waited 10.0s past the hand-off, deadline 10s (50 payloads, 53.7MB, 3456 poll(s), settled synchronously by a second demote)); nothing published; the tier latches off
+      1 [prefix-host] demote failed (tier hash digests never landed: ticket seq=2 waited 10.0s past the hand-off, deadline 10s (50 payloads, 53.7MB, 3502 poll(s), settled synchronously by a second demote)); nothing published; the tier latches off
+      1 [prefix-host] demote failed (tier hash digests never landed: ticket seq=3 waited 10.0s past the hand-off, deadline 10s (50 payloads, 53.7MB, 2 poll(s), settled synchronously by a second demote)); nothing published; the tier latches off
+      1 [prefix-host] demote failed (tier hash digests never landed: ticket seq=3 waited 10.0s past the hand-off, deadline 10s (50 payloads, 53.7MB, 3 poll(s), settled synchronously by a second demote)); nothing published; the tier latches off
+      2 [prefix-host] demote failed (tier hash helper gone: the reply channel closed before the digests of ticket seq=2 landed (50 payloads, 53.7MB, 1 poll(s), tick-top poll)); nothing published; the tier latches off
+      2 [prefix-host] demote failed (tier hash helper gone: the reply channel closed before the digests of ticket seq=3 landed (50 payloads, 53.7MB, 1 poll(s), tick-top poll)); nothing published; the tier latches off
+## span refusals (the typed refusal line)
+0
+## demote ledger lines per top-level cell dir: pre-submit, helper, owner in-completion (A2 reads the double-park steady set only)
+rtx5090-day29/fault-default-rerun: N=12 pre-submit median=20.95 min=18.74 max=23.97; helper median=12.90 min=12.90 max=13.10; owner in-completion median=30.28 min=28.09 max=33.45
+rtx5090-day29/fault-default-rerun2: N=14 pre-submit median=20.38 min=7.52 max=24.32; helper median=12.90 min=12.90 max=13.00; owner in-completion median=29.82 min=16.75 max=33.88
+rtx5090-day29/fault-plain: N=1 pre-submit median=16.32 min=16.32 max=16.32; helper median=12.90 min=12.90 max=12.90; owner in-completion median=24.73 min=24.73 max=24.73
+rtx5090-day29/fault-plain-rerun: N=14 pre-submit median=20.73 min=7.16 max=22.54; helper median=12.90 min=12.90 max=13.30; owner in-completion median=29.25 min=15.54 max=30.80
+rtx5090-day29/fault-plain-rerun2: N=14 pre-submit median=20.77 min=6.79 max=23.55; helper median=12.90 min=12.90 max=13.40; owner in-completion median=29.73 min=14.96 max=32.05
+rtx5090-day29/identity-default-on: N=2 pre-submit median=52.55 min=51.56 max=53.55; helper median=12.95 min=12.90 max=13.00; owner in-completion median=61.73 min=60.80 max=62.67
+## hits parked on a Hashing entry, per server log
+rtx5090-day29/fault-default-rerun2/ev/promote-postpublish-server.log:2
+rtx5090-day29/fault-default-rerun2/ev/promote-presubmit-server.log:2
+rtx5090-day29/fault-default-rerun2/ev/promote-readyview-server.log:2
+rtx5090-day29/fault-default-rerun2/ev/promote-reject-server.log:2
+rtx5090-day29/fault-default-rerun/ev/promote-postpublish-server.log:2
+rtx5090-day29/fault-default-rerun/ev/promote-presubmit-server.log:2
+rtx5090-day29/fault-default-rerun/ev/promote-readyview-server.log:2
+rtx5090-day29/fault-default-rerun/ev/promote-reject-server.log:2
+rtx5090-day29/identity-default-on/ev/host-on-server.log:1
+## verdict lines per gate log
+rtx5090-day29/battery.log: ok=0 | 2026-09-22T18:03:16Z done fault-plain-rerun2 rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+rtx5090-day29/fault-default-rerun2/gate.log: ok=123 | KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+rtx5090-day29/fault-default-rerun/gate.log: ok=121 | KV-HOST-CONTRACT-FAULT GATE: 2 FAILURE(S)
+rtx5090-day29/fault-plain-rerun2/gate.log: ok=123 | KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+rtx5090-day29/fault-plain-rerun/gate.log: ok=123 | KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+rtx5090-day29/hit-off/gate.log: ok=61 | SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+rtx5090-day29/hit-on/gate.log: ok=68 | SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+rtx5090-day29/identity-default-on/gate.log: ok=12 | KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+rtx5090-day29/launcher.log: ok=0 | 2026-09-22T17:39:02Z done hit-on rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+rtx5090-day29/rerun2-launcher.log: ok=0 | 2026-09-22T18:03:16Z done fault-plain-rerun2 rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+rtx5090-day29/rerun-launcher.log: ok=0 | 2026-09-22T17:44:30Z done fault-plain-rerun rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+## GPU telemetry per collector cell (command.gpu.csv)
+## collector cells (CELL.jsonl status, qualification, exit_code of the closing row)
+## lock retries: 0 file(s)

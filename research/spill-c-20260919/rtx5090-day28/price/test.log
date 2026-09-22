@@ -1,0 +1,12 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running unittests src/lib.rs (target/release/deps/memra_engine-f0322ac70f8275b7)
+
+running 1 test
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... D2D-RECEIPT PRICE order=copy-first bytes=165675008 n_per_arm=5 copy_ms=[0.391648, 0.394112, 0.39472, 0.396512, 0.3928] copy_median=0.394 digest_ms=[0.221056, 0.22112, 0.220768, 0.222912, 0.22288] digest_median=0.221 pair_median=0.442 pair_over_copy=1.12
+D2D-RECEIPT PRICE order=digest-first bytes=165675008 n_per_arm=5 copy_ms=[0.369088, 0.391328, 0.394976, 0.396992, 0.396224] copy_median=0.395 digest_ms=[0.221056, 0.220672, 0.217056, 0.218784, 0.22112] digest_median=0.221 pair_median=0.441 pair_over_copy=1.12
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 559 filtered out; finished in 0.51s
+

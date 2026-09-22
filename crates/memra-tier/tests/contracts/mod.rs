@@ -14,3 +14,15 @@ mod v13_bindings;
 mod resident_bindings;
 
 mod fault_arm_bindings;
+
+mod reader_fence_bindings;
+
+mod d2d_capture_bindings;
+
+mod d2d_restore_bindings;
+
+// Day 22 (WP-A, memra#536 Move 2 slice 3): the receipt term of both D2D classes.
+mod d2d_receipt_bindings;
+
+// Day 30 (WP-A, memra#536 Move 2 owed item 1): the typed f32 spans of a demote batch.
+mod d2h_span_bindings;

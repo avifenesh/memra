@@ -1107,6 +1107,9 @@ impl MlaConfig {
 pub struct ModelConfig {
     pub arch: Arch,
     pub prefill_activation: Option<crate::model_packs::qwen35::activation::PrefillFp4>,
+    /// HF `tie_word_embeddings` as declared by config.json (`None` for GGUF, which carries no
+    /// such key; an absent head tensor is the GGUF convention for a tied head).
+    pub tie_word_embeddings: Option<bool>,
     pub name: String,
     pub n_layer: u32,
     pub n_embd: u32,
@@ -1567,6 +1570,7 @@ impl ModelConfig {
             arch,
             prefill_activation: crate::model_packs::qwen35::activation::PrefillFp4::from_gguf(g)
                 .unwrap_or_else(|error| panic!("{error}")),
+            tie_word_embeddings: None,
             window_hint: u("attention.sliding_window"),
             // GGUF spells llama3 rope scaling as per-frequency factors, not a type string;
             // `rope_factors` carries them and the packs that read them declare it.
@@ -2301,6 +2305,7 @@ impl ModelConfig {
         ModelConfig {
             arch,
             prefill_activation: None,
+            tie_word_embeddings: c.tie_word_embeddings,
             window_hint: c.sliding_window,
             rope_scaling_hint: c.rope_scaling_type.clone(),
             name: c.name.clone().unwrap_or_default(),
@@ -2769,6 +2774,8 @@ pub struct HfConfig {
     pub num_global_key_value_heads: Option<u32>,
     pub sliding_window: Option<u32>,
     pub final_logit_softcapping: Option<f32>,
+    /// `tie_word_embeddings` as written in config.json; `None` when the key is absent.
+    pub tie_word_embeddings: Option<bool>,
     /// rope_parameters.{full_attention,sliding_attention}.rope_theta, flattened in apply().
     pub gemma4_rope_theta_global: Option<f32>,
     pub gemma4_rope_theta_swa: Option<f32>,
@@ -2974,6 +2981,7 @@ impl Default for HfConfig {
             global_head_dim: None,
             num_global_key_value_heads: None,
             sliding_window: None,
+            tie_word_embeddings: None,
             final_logit_softcapping: None,
             gemma4_rope_theta_global: None,
             gemma4_rope_theta_swa: None,
@@ -3359,6 +3367,13 @@ impl HfConfig {
         }
         if let Some(v) = o.u32("sliding_window") {
             self.sliding_window = Some(v);
+        }
+        // Only the two JSON literals speak; `null`, a missing key or an unreadable token leave
+        // the declaration absent, so a config that did not speak never becomes a load refusal.
+        match o.raw("tie_word_embeddings") {
+            Some("true") => self.tie_word_embeddings = Some(true),
+            Some("false") => self.tie_word_embeddings = Some(false),
+            _ => {}
         }
         if let Some(v) = o.f32("final_logit_softcapping") {
             self.final_logit_softcapping = Some(v);

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # kv-host-contract-fault-gate.sh: the contract-routed host-tier D2H (MEMRA_KV_HOST_CONTRACTS=1,
 # lane/spill-c-20260919 Option B) and H2D (Option C) must UNWIND a refusal without wedging the tier.
-# Six cells, one server boot each, door ON, one one-shot fault each (docs/FLAGS.md
+# Cells, one server boot each, door ON, one one-shot fault each (docs/FLAGS.md
 # `MEMRA_KV_HOST_FAULT`). The demote side first, the two unwind paths the PR #599 review found broken:
 #   presubmit    MEMRA_KV_HOST_FAULT=contract-presubmit: the producer fence is refused before any op
 #                is submitted. Every registered plane must come back to its slot, the demote fails
@@ -38,6 +38,28 @@
 # r3 P_A again: device miss, host hit, the promote takes the injected refusal and the cold path
 # serves (its insert evicts E_B into a clean demote); r4 P_B: host hit, the promote must complete
 # (an H2D receipt, then `[prefix-host] promote:`). Four 200s.
+#
+# Day 22 (WP-A, memra#536 Move 2 slice 3) adds the D2D receipt's red arm, two cells, one boot each, plain arm:
+#   d2d-capture   MEMRA_KV_HOST_FAULT=d2d-delay-capture: the first capture's copy is delayed and its destination
+#                 digest read early; the receipt must name two different digests and refuse (require=Corrupt),
+#                 nothing publishes, the capture route and the tier latch, r2 is served by the tick program with
+#                 r1's bytes.
+#   d2d-restore   MEMRA_KV_HOST_FAULT=d2d-delay-restore: r1 seeds through the route (its receipt accepted), r2's
+#                 whole-entry hit restores through the route with the fault; the receipt refuses, nothing is primed
+#                 on the destination, the cache drops and the pin is released, the route and the tier latch, the
+#                 tick program restores r2 with r1's bytes.
+#
+# WP-A day 28 (memra#536 Move 1 owed item 2, lead ruling 39, research/spill-a-20260919/DAY28.md): the bundle checksum
+# of the image's heap payloads runs on one long-lived helper thread per tier context; the demote stays `Demoting`
+# (`Hashing`) until the digests land. Two red arms, one boot each, the demote cells' shape (r1 P_A seeds E_A; r2 P_B
+# evicts E_A, whose demote copies, completes, hands its heap payloads to the helper and takes the fault; r3 P_C evicts E_B):
+#   hash-helper-gone   MEMRA_KV_HOST_FAULT=hash-helper-gone: the helper exits on its first job; the next tick-top poll finds
+#                      the reply channel closed; typed refusal, nothing published, the tier latches and joins the helper;
+#                      r3's eviction finds the tier off and demotes nothing (no refusal line of its own).
+#   hash-never-lands   MEMRA_KV_HOST_FAULT=hash-never-lands: the helper hashes its first job and discards the reply; r3's
+#                      eviction meets the Hashing entry through the Block wait ("a second demote") and rides out the 10 s
+#                      deadline; typed refusal, nothing published, the tier latches and joins the helper; then r3's own
+#                      demote is refused typed (`the tier latched off while settling the pending demote`), exactly once.
 #
 # usage: kv-host-contract-fault-gate.sh [--external-lock FD] <model.gguf> <server_bin> <evidence_dir>
 # env:   MEMRA_HOSTGATE_CACHE_MB (default 256)  device prefix budget; must hold ONE seed entry but not two
@@ -188,7 +210,51 @@ no_extra_refusal() { # $1 log: no host-tier refusal line beyond the injected one
     [ "$(grep -cE '\[prefix-host\] (demote refused|promote refused|REFUSED|.*\(contracts door\): )' "$1")" -eq 0 ]
 }
 not_leaked() { ! grep -q 'Capacity' "$1" && ! grep -q 'leaked' "$1"; }
+receipt_seq_accounts() { # $1 refusal literal $2 expected D2H seq without captures $3 log
+    python3 - "$1" "$2" "$3" <<'PY'
+import re, sys
+a, expected, log = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+lines = open(log, errors="replace").read().splitlines()
+ia = next((i for i, l in enumerate(lines) if a in l), None)
+if ia is None:
+    print("no refusal line"); sys.exit(1)
+rx = re.compile(r"contracts door D2H receipt: ticket issuer=[0-9]+ seq=([0-9]+) .* require=ok")
+ib = next(((i, m) for i, l in enumerate(lines[ia:], start=ia) if (m := rx.search(l))), None)
+if ib is None:
+    print("no D2H receipt after the refusal"); sys.exit(1)
+i, m = ib
+seq = int(m.group(1))
+# The sequence is consumed at SUBMISSION. Count the capture tickets submitted before this demote's
+# own submission line (Move 1 prints it); a capture submitted between the demote's submission and
+# its receipt does not precede it. Trees without the submission line count up to the receipt.
+rs = re.compile(r"demote submitted off the tick: .* ticket seq=([0-9]+)")
+sub = next(((j, n) for j, l in enumerate(lines[ia:i], start=ia) if (n := rs.search(l))), None)
+if sub is not None:
+    j, n = sub
+    if int(n.group(1)) != seq:
+        print(f"the receipt seq={seq} is not the submitted demote's seq={n.group(1)}"); sys.exit(1)
+    cut = j
+else:
+    cut = i
+captures = sum(1 for l in lines[:cut] if "capture submitted off the tick" in l)
+want = expected + captures
+print(f"receipt seq={seq} expected {expected} + {captures} capture ticket(s) submitted before it = {want}")
+sys.exit(0 if seq == want else 1)
+PY
+}
 
+await_publication() { # $1 refusal literal $2 log: the boot's LAST publication, a `[prefix-host] demote: ` line after the injected
+    # refusal, has landed before the boot stops. WP-A day 29 (ruling 40): r3 is the boot's last request and its spec-boundary
+    # insert, the eviction and the demote's submission land as r3 completes, so a `stop` right after r3's return read a log
+    # that ended at `demote copy complete` (day 28: the 73 ms hash on the target card still on the helper) and `the next demote
+    # publishes` failed on a publication that had not happened yet. This waits for the check's own condition, bounded
+    # 150 x 100 ms = 15 s, above the helper's 10 s deadline, so a hand-off that never lands is read as its typed refusal.
+    for _ in $(seq 1 150); do
+        if after "$1" "\\[prefix-host\\] demote: " "$2"; then return 0; fi
+        sleep 0.1
+    done
+    return 1
+}
 cell() { # $1 name $2 fault $3 refused-kind $4 expected next-receipt seq
     local name=$1 fault=$2 kind=$3 seq=$4 log="$EV/$1-server.log"
     echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot) =="
@@ -196,11 +262,21 @@ cell() { # $1 name $2 fault $3 refused-kind $4 expected next-receipt seq
     req "$P_A" "$EV/$name-r1.json"
     req "$P_B" "$EV/$name-r2.json"
     req "$P_C" "$EV/$name-r3.json"
+    # WP-A day 29 (ruling 40): the demote cells await the boot's last publication before `stop`.
+    local awaited=0
+    await_publication "demote failed (tier D2H $kind refused: injected" "$log" || awaited=$?  # a timed-out wait is a failed check below, never an abort under set -e
     stop
+    chk "$name: the boot's last publication landed before stop (bounded 15 s wait)" test "$awaited" -eq 0
     chk "$name: three completions served" three_served "$EV/$name"
     chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
     chk "$name: exactly one typed injected refusal, the $kind" count_eq "demote failed (tier D2H $kind refused: injected failure (MEMRA_KV_HOST_FAULT=$fault)); nothing demoted" "$log" 1
-    chk "$name: the next demote completes with a D2H contract receipt after the refusal" after "demote failed (tier D2H $kind refused: injected" "contracts door D2H receipt: ticket issuer=[0-9]+ seq=$seq .* require=ok" "$log"
+    chk "$name: the next demote completes with a D2H contract receipt after the refusal" after "demote failed (tier D2H $kind refused: injected" "contracts door D2H receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* require=ok" "$log"
+    # The ticket accounting the literal seq used to carry (spill-c day 24, slice 1 of Move 2): a
+    # refused presubmit consumed no sequence (the next D2H is 1 past the tickets before it), a
+    # refused postpublish consumed one (2 past). Since Move 2 slice 1 the plain arm's seeds submit
+    # CAPTURE tickets on the same issuer, each consuming a sequence, so the receipt's seq is the
+    # expected D2H count plus the capture tickets submitted before it, never a literal.
+    chk "$name: the receipt's seq is $seq plus the capture tickets submitted before it" receipt_seq_accounts "demote failed (tier D2H $kind refused: injected" "$seq" "$log"
     chk "$name: the next demote publishes" after "demote failed (tier D2H $kind refused: injected" "\\[prefix-host\\] demote: " "$log"
     chk "$name: the tier never latched off" absent "TIER DISABLED" "$log"
     chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
@@ -291,6 +367,85 @@ pcell() { # $1 name $2 fault $3 refused-kind-or-literal: a kind ("producer fence
     chk "$name: no host-tier refusal line beyond the injected one" one_refusal_only "$log" "$refusal"
 }
 
+two_served() { # $1 evidence prefix: r1 and r2 each carry a non-empty completion
+    python3 - "$1" <<'PYEOF'
+import json, sys
+p = sys.argv[1]
+sys.exit(0 if all(json.load(open(f"{p}-r{i}.json"))["choices"][0]["text"] for i in (1, 2)) else 1)
+PYEOF
+}
+texts_equal() { # $1 evidence prefix: r1's text is byte-equal to r2's (the tick program served both)
+    python3 - "$1" <<'PYEOF'
+import json, sys
+p = sys.argv[1]
+a = json.load(open(f"{p}-r1.json"))["choices"][0]["text"]
+b = json.load(open(f"{p}-r2.json"))["choices"][0]["text"]
+sys.exit(0 if a == b else 1)
+PYEOF
+}
+receipt_digests_differ() { # $1 log $2 class: the ONE `require=Corrupt` receipt line of $2 names two DIFFERENT digests
+    python3 - "$1" "$2" <<'PYEOF'
+import re, sys
+log, cls = sys.argv[1], sys.argv[2]
+rx = re.compile(rf"contracts door D2D {cls} receipt: .* source_digests_sha256=([0-9a-f]+) destination_digests_sha256=([0-9a-f]+) require=Corrupt")
+hits = [m for l in open(log, errors="replace") if (m := rx.search(l))]
+if len(hits) != 1:
+    print(f"{len(hits)} refused {cls} receipt line(s), expected 1"); sys.exit(1)
+src, dst = hits[0].group(1), hits[0].group(2)
+print(f"{cls} receipt refused: source_digests_sha256={src[:16]}.. destination_digests_sha256={dst[:16]}..")
+sys.exit(0 if src != dst else 1)
+PYEOF
+}
+# WP-A day 22 (memra#536 Move 2 slice 3, research/spill-a-20260919/DAY22.md): the D2D receipt's red arm. The
+# plain arm (MEMRA_SERVE_SPEC=0) so the seeds capture through the copy-stream route (the spec arm's seeds publish
+# through prefix_insert_from_spec_boundary on the tick and never reach the receipt: a cell that took the fault
+# nowhere must fail loudly, which the `exactly one refused receipt` clause does).
+dcell_capture() { # MEMRA_KV_HOST_FAULT=d2d-delay-capture: r1 P_A (the capture's early reader reads the fresh plane;
+                  # the receipt refuses; nothing published; tier and route latch), r2 P_A (cold; on-tick capture)
+    local name=d2d-capture fault=d2d-delay-capture log="$EV/d2d-capture-server.log"
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, the D2D capture receipt's red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault MEMRA_SERVE_SPEC=0" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_A" "$EV/$name-r2.json"
+    stop
+    chk "$name: two completions served" two_served "$EV/$name"
+    chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
+    chk "$name: the fault was armed on the first capture" count_eq "capture fault armed (MEMRA_KV_HOST_FAULT=$fault)" "$log" 1
+    chk "$name: exactly one refused D2D capture receipt naming two different digests" receipt_digests_differ "$log" capture
+    chk "$name: no capture receipt was accepted (the route latched on the first)" absent "D2D capture receipt: .* require=ok" "$log"
+    chk "$name: the capture route latched typed on the mismatch" count_eq "CAPTURE OFF-TICK DISABLED: D2D capture receipt mismatch" "$log" 1
+    chk "$name: the tier latched off" count_eq "TIER DISABLED" "$log" 1
+    chk "$name: nothing was published off the tick" absent "capture published off the tick" "$log"
+    chk "$name: nothing was hit (no entry existed before r2)" absent "\[prefix-cache\] hit: " "$log"
+    chk "$name: r2's capture ran on the tick after the latch (an insert follows the refusal)" after "CAPTURE OFF-TICK DISABLED: D2D capture receipt mismatch" "\[prefix-cache\] insert \(seed\)" "$log"
+    chk "$name: r1's text equals r2's (the tick program served both)" texts_equal "$EV/$name"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+}
+dcell_restore() { # MEMRA_KV_HOST_FAULT=d2d-delay-restore: r1 P_A (a clean capture with its receipt, published), r2 P_A
+                  # (a whole-entry hit; the restore's early reader reads the fresh cache; the receipt refuses; nothing
+                  # primed on it; the cache drops, the pin is released; tier and route latch; the tick program restores)
+    local name=d2d-restore fault=d2d-delay-restore log="$EV/d2d-restore-server.log"
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, the D2D restore receipt's red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault MEMRA_SERVE_SPEC=0" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_A" "$EV/$name-r2.json"
+    stop
+    chk "$name: two completions served" two_served "$EV/$name"
+    chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
+    chk "$name: r1's capture receipt was accepted (the green arm, live)" count_eq "D2D capture receipt: .* require=ok" "$log" 1
+    chk "$name: r1's capture published off the tick" count_eq "capture published off the tick" "$log" 1
+    chk "$name: the fault was armed on the first restore" count_eq "restore fault armed (MEMRA_KV_HOST_FAULT=$fault)" "$log" 1
+    chk "$name: exactly one restore was submitted off the tick" count_eq "restore submitted off the tick" "$log" 1
+    chk "$name: exactly one refused D2D restore receipt naming two different digests" receipt_digests_differ "$log" restore
+    chk "$name: no restore receipt was accepted" absent "D2D restore receipt: .* require=ok" "$log"
+    chk "$name: the restore route latched typed on the mismatch" count_eq "RESTORE OFF-TICK DISABLED: D2D restore receipt mismatch" "$log" 1
+    chk "$name: the tier latched off" count_eq "TIER DISABLED" "$log" 1
+    chk "$name: nothing landed off the tick (nothing primed on the refused cache)" absent "restore landed off the tick" "$log"
+    chk "$name: the tick program restored r2 after the refusal" after "RESTORE OFF-TICK DISABLED: D2D restore receipt mismatch" "\[prefix-cache\] hit: " "$log"
+    chk "$name: r1's text equals r2's" texts_equal "$EV/$name"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+}
+
 cell presubmit contract-presubmit "producer fence" 1
 cell postpublish contract-postpublish receipt 2
 pcell promote-presubmit contract-promote-presubmit "producer fence"
@@ -299,6 +454,58 @@ pcell promote-postpublish contract-promote-postpublish publication
 # while the engine has published; both must end as plain refusals with the ticket retired and acknowledged.
 pcell promote-reject contract-promote-reject partial-reject
 pcell promote-readyview contract-promote-readyview "tier H2D destination 0 not publishable: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-readyview)"
+refusal_names_handoff_ticket() { # $1 log $2 refusal kind: the refusal's `ticket seq=N` is the hand-off line's
+    python3 - "$1" "$2" <<'PYEOF'
+import re, sys
+log, kind = sys.argv[1], sys.argv[2]
+lines = open(log, errors="replace").read().splitlines()
+hand = [m.group(1) for l in lines if "handed to the hash helper" in l and (m := re.search(r"ticket seq=(\d+)", l))]
+ref = [m.group(1) for l in lines if f"demote failed (tier hash {kind}" in l and (m := re.search(r"ticket seq=(\d+)", l))]
+print(f"hand-off ticket(s) {hand}, refusal ticket(s) {ref}")
+sys.exit(0 if len(hand) == 1 and ref == hand else 1)
+PYEOF
+}
+only_these_refusals() { # $1 log $2.. literals: every host-tier refusal line carries one of the literals
+    python3 - "$@" <<'PYEOF'
+import re, sys
+log, allowed = sys.argv[1], sys.argv[2:]
+pat = re.compile(r"\[prefix-host\] (demote refused|promote refused|REFUSED|.*\(contracts door\): |demote failed)")
+bad = [l for l in open(log, errors="replace").read().splitlines() if pat.search(l) and not any(a in l for a in allowed)]
+for l in bad:
+    print("unexpected:", l[:200])
+sys.exit(0 if not bad else 1)
+PYEOF
+}
+hcell() { # $1 name $2 fault $3 refusal kind (`helper gone` | `digests never landed`) $4 r3's latched-off refusal count (0|1)
+    local name=$1 fault=$2 kind=$3 latched_refusals=$4 log="$EV/$1-server.log"
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, the hash helper's red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_B" "$EV/$name-r2.json"
+    req "$P_C" "$EV/$name-r3.json"
+    stop
+    chk "$name: three completions served (the tick program serves)" three_served "$EV/$name"
+    chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
+    chk "$name: exactly one copy completed and handed its heap payloads to the hash helper" count_eq "handed to the hash helper" "$log" 1
+    chk "$name: exactly one typed injected refusal, $kind" count_eq "demote failed (tier hash $kind" "$log" 1
+    chk "$name: the refusal names the hand-off's ticket" refusal_names_handoff_ticket "$log" "$kind"
+    chk "$name: the refusal says nothing published and the tier latches" count_eq "; nothing published; the tier latches off" "$log" 1
+    chk "$name: the tier latched off exactly once" count_eq "TIER DISABLED" "$log" 1
+    chk "$name: the hash helper joined at the latch" count_eq "hash helper joined (the tier latched off)" "$log" 1
+    chk "$name: nothing published in the boot (no demote line)" absent "\[prefix-host\] demote: " "$log"
+    chk "$name: no digests landed" absent "demote digests landed" "$log"
+    chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+    chk "$name: r3's own demote met the latched tier as pre-registered ($latched_refusals refusal line(s))" count_eq "demote refused: the tier latched off while settling the pending demote" "$log" "$latched_refusals"
+    chk "$name: no host-tier refusal line beyond the injected one and r3's latched-off refusal" only_these_refusals "$log" "demote failed (tier hash $kind" "demote refused: the tier latched off while settling the pending demote"
+}
+
+# WP-A day 22: the D2D receipt's red arm, one cell per class.
+dcell_capture
+dcell_restore
+# WP-A day 28: the hash helper's red arms, one cell each.
+hcell hash-helper-gone hash-helper-gone "helper gone" 0
+hcell hash-never-lands hash-never-lands "digests never landed" 1
 
 if [ "$FAILS" -eq 0 ]; then
     echo "KV-HOST-CONTRACT-FAULT GATE: ALL GREEN"

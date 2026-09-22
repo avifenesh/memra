@@ -1554,8 +1554,87 @@ the instrumentation rather than a free knob). The design constraint: Blackwell's
 so the probe runs as a killed-on-deadline child and its own timeout
 (`MEMRA_GPU_PROBE_TIMEOUT_S`) is the alarm. Health reads only atomics, so a hung
 `nvidia-smi` can never block a health answer. A GPU fault survives a worker respawn: a new
-thread on a wedged card is not recovery.
-At startup only, the canary retries up to six consecutive timed-out probes (about 60 seconds with the default 10-second deadline) to allow VRAM teardown after a redeploy; an answer resumes the usual rich or minimal query path, while six hangs latch a fault and a single steady-state hang still latches immediately.
+thread on a wedged card is not recovery. Since memra#516 (2026-09-22) one steady-state probe past
+the deadline is a miss, not a wedge: the process is DEGRADED and stays live, `/health` publishes
+`worker.gpu_probe.{degraded, miss_streak, last_ok_age_ms, degraded_reason, latched_reason}`, and
+the fatal fault latches when the miss streak reaches `MEMRA_GPU_PROBE_MISSES` (default 3). An
+answering probe clears timeout-only degradation; it never clears a latched fault, and fatal Xid,
+ECC and row-remap findings latch on first sight regardless of the streak. Before #516 a single
+hang latched for the process's life: the 2026-09-13 B200 box answered 503 for 28 minutes while
+`nvidia-smi` answered in 40 ms from a shell, because NVML stalls past 10 s under graph capture
+and large allocations. A guard reading `/health` should restart on `latched_reason`, not on
+`degraded`.
+At startup only, the canary retries up to six consecutive timed-out probes (about 60 seconds with the default 10-second deadline) to allow VRAM teardown after a redeploy; an answer resumes the usual rich or minimal query path, six hangs latch a fault, and in steady state a hang is one miss of the `MEMRA_GPU_PROBE_MISSES` streak (degraded, still live) until the bound latches.
+
+**Serve routes are registered policy contracts (memra#504).** The process has two serve routes:
+the central worker (`worker.rs` run loop) and the DSv4 thread (`dsv4_serve.rs`). The
+`Cmd::Generate -> Event` contract is shared and correct on both. Every policy that instead reads a
+side channel (`worker::Metrics`, the health beat and the prime odometer, memory admission, the
+rewrite bundle, prime fairness, the lane-cap mirror) has one writer, and a second route is not it;
+each such surface became a silent no-op on DSv4 and was found by accident, weeks apart (#449,
+#500, #501, #502, #503). Since 2026-09-22 every route registers a `RouteContract`
+(`route_contract.rs`) declaring each of the nine policy surfaces as implemented (with a call-site
+token a unit test greps in the route's source) or refused by name with the owning issue; the
+registry is checked before `ready_tx` fires, so an undeclared surface is `FATAL: worker init
+failed`, and a policy the operator armed that NO route in the process honors
+(`MEMRA_REWRITE_BUNDLE` in a DSv4-only process) refuses at boot with the refusing route named
+instead of no-oping; a mixed process keeps booting, the bundle governs the hybrid route and the
+DSv4 line names its refusal. The armed check runs before any weight loads (a DSv4 checkpoint is
+known from its path) and the full registry again before the ready handoff. Each boot prints one
+`[route-contract] model= route= capacity= implemented=[..] refused=[..]` line per route; the
+DSv4 line today refuses rewrite-qualification (#449) and prime-fairness (#535), each with its
+issue, and implements occupancy, progress and service-metrics (#500, #501) and memory-cost (#503)
+as below. `RouteRegistry::capacity_for(model)` is the number the admission cap mirror reads (#501).
+
+**A dedicated route owns its health, its admission and its memory door (#500, #501, #503,
+2026-09-22).** The DSv4 thread is the only dedicated route today. These are the code halves with
+CPU and fake-route teeth; the two-card receipt is pending, and the DSv4 serving bring-up stays
+paused (`docs/models/deepseek-v4-flash.md`).
+
+- **Health (#500, `health.rs::RouteHealth`).** Each route registers its own record beside the
+  central worker's, judged with the same stall bound and never mixed into its signals. Phase is
+  `loading` from registration to the thread's first idle, `idle` on `recv`, `busy` from dequeue
+  to the end of the request, `dead` once the thread exits. Forward progress is the thread's own
+  prime odometer (`ProgressSinkScope`, completed prime rows) plus a stamp per decode step or
+  speculative round. A busy route whose freshest signal is older than `MEMRA_HEALTH_STALL_S` is
+  stalled and `/health` goes red naming it; `/readyz` stays not-ready while any route is
+  `loading`. The top-level `phase` is the process aggregate (busy while any route serves),
+  `scheduler_phase` is the central worker's own, `routes` lists each route's record, and
+  `idle_for_ms` is set only when every thread is idle with nothing waiting. A caught
+  per-request panic counts `request_faults`; the thread keeps serving.
+- **Admission and telemetry (#501, `route_telemetry.rs`).** A model a dedicated route serves is
+  admitted against the route's own book, not the hybrid lane's 64 sessions. The queue bound is
+  `max_queue_depth(route capacity)` per lane over the route's reserved-not-dequeued count; the
+  wait estimate is the route's service p50 (the `MEMRA_RL_RESET_S` fallback until it has one)
+  times the waves ahead; `X-RateLimit-Limit` reads the route's capacity (1 for DSv4). The
+  reservation is a ticket that rides the request and releases at the route's dequeue. `/metrics`
+  folds route-served requests into the process totals and adds a `routes` array (`capacity`,
+  `waiting`, `inflight`, `running`, `admitted`, `completed`, `failed`, `cancelled`, `refused`,
+  token counters, `service_p50/p99_ms`, `round_p50/p99_ms`).
+- **Memory cost (#503, `dsv4_admit.rs`).** Before a parked prefix is consumed or any state is
+  allocated, the route charges each owning card for the session: the planned cache
+  (`plan_session_cache_bytes`), plus a fixed per-session term (the batched decode transaction,
+  chunked-prefill transients at the default chunk `min(512, ctx)`, the speculative verify state
+  and DSpark taps) measured once at boot as occupied-memory deltas at a 1024-token calibration
+  session, plus the lazily grown C4 gathers for widths 1, chunk and the verify width when the
+  host C4 tier is on. Stages on one card sum. The host tier charges the active host-C4 history
+  against `MemAvailable` plus what evicting parked entries returns. The decision is the shared
+  rule (`admit_memory::decide`): device first on every card, then the host tier with LRU
+  eviction of parked entries (never the entry the request would restore from, never for a
+  device shortfall), then a defer that re-reads every 50 ms. The budget is
+  `MEMRA_ADMIT_DEFER_BUDGET_MS`, read on this route whatever `MEMRA_ADMIT_BY_MEMORY` says,
+  clamped to half the stall bound. Past it the request is refused 429 `rate_limit_exceeded` with
+  `Retry-After: 5` and the shared memory refusal sentence. A session above what a card offers
+  with the route idle answers 400 `context_length_exceeded` naming the card, the bytes and the
+  largest session that fits; a host-C4 budget excess is the same 400 (it was a 503). A client
+  that leaves mid-defer is dropped and counted `cancelled`. Every decision prints
+  `[admit-mem] id= model= route=dsv4-thread verdict= capacity= spec= need= ceiling= host_need=
+  short= waited_ms= reclaimed= retry_after_s=`, and boot prints the calibrated `fixed_plain`,
+  `fixed_spec`, `ceiling` and `defer_budget_ms`. Limits: forward-time scratch and the
+  monolithic-prime scratch (chunk 0, or a prompt within one chunk) are not charged, so a driver
+  OOM there still answers 503 `overloaded`; the ceiling is effective free at boot, so a co-tenant
+  that arrives later reads as a defer rather than a never-fits; the gather terms are summed across
+  widths, an upper bound.
 
 **The supervision contract (`deploy/systemd/memra-server.service`) has three couplings you can
 break silently.** The unit is an example to copy, but these are not stylistic choices — each is
@@ -2507,6 +2586,20 @@ so a green line is the only signal that (c) ran; the sub-check names surface in 
 when one fails. The stage-split modes (`--mode pp`, `--mode ppspec`) SKIP gate1/2/3 by design —
 they are single-device jurisdiction — and neither PP mode was ever wired into `validate-h100.sh`; PP
 exactness has its own invocations (see [TESTING.md](TESTING.md)).
+
+**Prefill fairness (memra#521, decided 2026-09-22).** One long cold prime never holds the worker
+tick for its whole prompt on a walker route: the owned `PrimeWalker` (`MEMRA_PRIME_YIELD`, default
+ON) advances one frozen chunk per tick, the worker drains arrivals and gives each admitted peer one
+bounded quantum (a prime chunk, a committed spec round or a plain decode step), then resumes. Both
+arms execute the same frozen range program, so a yield changes interleaving, never bytes; `=0` is
+the rollback seam. The quantum is `MEMRA_PRIME_CHUNK` (4096 default; 1024 halves the peers' wait
+again at the long prime's expense). What this covers: the GDN MTP prime (`[prime-walk]
+supported=true` at boot), DFlash, GLM plain and spec. The serial plain-trunk prime is bounded per
+tick by `MEMRA_PREFILL_TICK` (1024) except the sole-request widening to 8192; E4B and dsv4 still
+prime monolithically and belong to memra#535 P3/P4. The serving-shape gate is
+`tools/prime-fairness-gate.py` (one 131k-token cold prime beside three peers, both arms, bytes identical,
+peers' first token bounded, `/health` `tick_max_ms` bounded); receipts and the 2026-09-05 incident
+shape are in `research/prime-fairness-default-20260922/` and `research/prefill-fairness-20260908/`.
 
 ## First-token cross-config drift (batched prime) — stated honestly
 

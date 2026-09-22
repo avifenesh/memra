@@ -1,0 +1,4 @@
+tree=04c67b2e021bf0a53dfd015909ee883b518014ae
+run=2026-09-22 systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=28G cargo test -p memra-server -- admit_memory memory_admission_door the_open_output_arm
+result=13 passed; 0 failed; 0 ignored; 810 filtered out (memra_server lib unittests)
+note: CPU only, no card, no lock; the #[ignore] card cell memory_admission_admits_one_900k_and_eight_4k_on_one_card was NOT run

@@ -100,7 +100,7 @@
 //! health reporting.
 
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 /// Worker phase (an AtomicU8 so the health handler is lock-free).
@@ -243,6 +243,16 @@ pub struct WorkerHealth {
     /// non-fatal Xid lines seen (13/31 app errors, 43/45 teardown, 62/63 remap pending) —
     /// counted, not fatal, so an operator can see a card degrading before it wedges.
     xid_warns: AtomicU64,
+    /// Steady-state canary bookkeeping (memra#516). A probe that HANGS is a miss; misses in a
+    /// row are a streak; the streak reaching `MEMRA_GPU_PROBE_MISSES` is the fatal latch above.
+    /// Below that bound the process is DEGRADED, not dead: `/health` stays 200 and publishes the
+    /// streak, the last answer's age and the reason, and one answering probe clears it. A
+    /// latched fault is never cleared by an answer (a card that wedged does not un-wedge
+    /// itself); only the timeout-only state recovers.
+    probe_miss_streak: AtomicU64,
+    /// ms-since-epoch of the last probe that answered; 0 until the first answer.
+    probe_last_ok_ms: AtomicU64,
+    probe_degraded_reason: Mutex<String>,
     /// Consecutive copy-count intervals for which a due peer-integrity probe was deferred by a
     /// live speculative session. This is advisory until `peer_probe_integrity_degraded` latches.
     peer_probe_deferred_intervals: AtomicU64,
@@ -254,6 +264,10 @@ pub struct WorkerHealth {
     /// forward-progress source consulted alongside the beat (memra#50). `None` = the
     /// `MEMRA_HEALTH_PROGRESS=0` rollback seam: pure beat-age semantics.
     progress: Option<ProgressSource>,
+    /// Dedicated serving routes (memra#500): each publishes its own phase and progress, judged
+    /// beside the central worker's, never through it. Written only at registration; the
+    /// verdict takes a read lock no writer holds across anything that can block.
+    routes: RwLock<Vec<Arc<RouteHealth>>>,
 }
 
 pub type SharedHealth = Arc<WorkerHealth>;
@@ -270,10 +284,14 @@ impl Default for WorkerHealth {
             gpu_faulted: AtomicBool::new(false),
             gpu_reason: Mutex::new(String::new()),
             xid_warns: AtomicU64::new(0),
+            probe_miss_streak: AtomicU64::new(0),
+            probe_last_ok_ms: AtomicU64::new(0),
+            probe_degraded_reason: Mutex::new(String::new()),
             peer_probe_deferred_intervals: AtomicU64::new(0),
             peer_probe_integrity_degraded: AtomicBool::new(false),
             stall_ms: stall_threshold_ms(),
             progress: progress_signal_enabled().then(engine_progress_source),
+            routes: RwLock::new(Vec::new()),
         }
     }
 }
@@ -386,6 +404,29 @@ impl WorkerHealth {
         self.generation.load(Ordering::Acquire)
     }
 
+    /// Register a dedicated serving route (memra#500). The route is LOADING (registered, has
+    /// never published) until its thread's first `set_idle`. A second registration under the
+    /// same name REPLACES the first: a respawned worker spawns a fresh thread, and the retired
+    /// thread's exit latch must land on its own record, not on its successor's.
+    pub fn register_route(
+        &self,
+        name: &str,
+        load: Arc<crate::route_telemetry::RouteLoad>,
+    ) -> Arc<RouteHealth> {
+        let route = Arc::new(RouteHealth::new(name, load));
+        let mut routes = self.routes.write().unwrap_or_else(|p| p.into_inner());
+        routes.retain(|r| r.name != name);
+        routes.push(route.clone());
+        route
+    }
+
+    fn routes(&self) -> Vec<Arc<RouteHealth>> {
+        self.routes
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
     // ---- runtime peer-probe coverage --------------------------------------------------
 
     /// Publish a newly observed deferred interval. The worker calls this only when a real
@@ -438,12 +479,109 @@ impl WorkerHealth {
         {
             *r = reason;
         }
+        // Latched is a different state from degraded, whatever latched it (the miss bound, the
+        // Xid tail, the ECC scan): clear the interim timeout reason here so /health never
+        // publishes a stale "n of m misses" beside `latched_reason` (memra#516).
+        if let Ok(mut r) = self.probe_degraded_reason.lock() {
+            r.clear();
+        }
         self.gpu_faulted.store(true, Ordering::Release);
     }
 
     pub fn note_xid_warn(&self, line: &str) {
         self.xid_warns.fetch_add(1, Ordering::Relaxed);
         eprintln!("[gpu-watch] WARN non-fatal Xid: {line}");
+    }
+
+    /// A canary probe answered. Clears the timeout-only degradation (streak and reason) and
+    /// stamps the answer time. Never touches the fatal latch: an answer after a latched fault is
+    /// the case the latch exists for (a GSP hang that comes back is still a card that hung).
+    pub fn note_probe_ok(&self) {
+        if self.gpu_faulted.load(Ordering::Acquire) {
+            // Latched is terminal for this process: keep the answer time honest for /health,
+            // but no streak or degradation bookkeeping runs beside a latched fault (the two
+            // published states stay disjoint).
+            self.probe_last_ok_ms.store(now_ms() + 1, Ordering::Release);
+            return;
+        }
+        let streak = self.probe_miss_streak.swap(0, Ordering::AcqRel);
+        // +1 so an answer in the process's first millisecond is not read as "never" (0).
+        self.probe_last_ok_ms.store(now_ms() + 1, Ordering::Release);
+        if let Ok(mut r) = self.probe_degraded_reason.lock()
+            && !r.is_empty()
+        {
+            r.clear();
+            eprintln!(
+                "[gpu-watch] canary answered again after {streak} missed probe(s); degradation cleared"
+            );
+        }
+    }
+
+    /// A steady-state canary probe hung past `deadline`. The streak grows; below `misses` the
+    /// process is degraded and stays live, at `misses` it is a fatal GPU fault with the streak
+    /// in its reason. Returns true when this call latched.
+    pub fn note_probe_hang(&self, deadline: Duration, misses: u64) -> bool {
+        if self.gpu_faulted.load(Ordering::Acquire) {
+            // Already latched: a further miss changes nothing and must not republish
+            // "degraded" beside "latched".
+            return true;
+        }
+        let streak = self.probe_miss_streak.fetch_add(1, Ordering::AcqRel) + 1;
+        let last_ok = self.probe_last_ok_age_ms();
+        if streak >= misses.max(1) {
+            self.mark_gpu_fault(format!(
+                "nvidia-smi did not answer within {}s on {streak} consecutive probe(s) \
+                 (policy MEMRA_GPU_PROBE_MISSES={}) — GPU/driver wedge; last answer {} ago",
+                deadline.as_secs(),
+                misses.max(1),
+                describe_age(last_ok)
+            ));
+            return true;
+        }
+        let reason = format!(
+            "nvidia-smi did not answer within {}s ({streak} of {} consecutive misses before a \
+             fault latches); last answer {} ago",
+            deadline.as_secs(),
+            misses.max(1),
+            describe_age(last_ok)
+        );
+        eprintln!("[gpu-watch] DEGRADED: {reason}");
+        if let Ok(mut r) = self.probe_degraded_reason.lock() {
+            *r = reason;
+        }
+        false
+    }
+
+    fn probe_last_ok_age_ms(&self) -> Option<u64> {
+        match self.probe_last_ok_ms.load(Ordering::Acquire) {
+            0 => None,
+            t => Some(now_ms().saturating_sub(t - 1)),
+        }
+    }
+
+    /// The canary's current state for `/health`: degraded (a miss streak below the fatal bound),
+    /// the streak, the last answer's age, and the latched reason when a fault has latched.
+    pub fn gpu_probe(&self) -> GpuProbeState {
+        GpuProbeState {
+            miss_streak: self.probe_miss_streak.load(Ordering::Acquire),
+            last_ok_age_ms: self.probe_last_ok_age_ms(),
+            // never published beside a latched fault: `mark_gpu_fault` clears it and this
+            // masks the window between the two writes
+            degraded_reason: if self.gpu_faulted.load(Ordering::Acquire) {
+                None
+            } else {
+                self.probe_degraded_reason
+                    .try_lock()
+                    .ok()
+                    .filter(|r| !r.is_empty())
+                    .map(|r| r.clone())
+            },
+            latched_reason: if self.gpu_faulted.load(Ordering::Acquire) {
+                self.gpu_reason.try_lock().ok().map(|r| r.clone())
+            } else {
+                None
+            },
+        }
     }
 
     // ---- verdicts (lock-free) ----
@@ -515,7 +653,12 @@ impl WorkerHealth {
                     self.beat_age_ms(),
                     self.stall_ms
                 )),
-                None => Ok(()),
+                None => {
+                    for route in self.routes() {
+                        route.live(self.stall_ms)?;
+                    }
+                    Ok(())
+                }
             },
         }
     }
@@ -526,17 +669,48 @@ impl WorkerHealth {
         if draining {
             return Err("draining (shutdown in progress)".into());
         }
-        self.live()
+        self.live()?;
+        // A registered route that has never published is not serving yet, whatever the
+        // central worker says. Liveness gives it the stall bound to publish (a thread that
+        // never started is a restart); readiness does not route traffic to it at all.
+        for route in self.routes() {
+            if route.phase() == PHASE_LOADING {
+                return Err(format!(
+                    "route {:?} has not published yet (registered {} ms ago)",
+                    route.name,
+                    route.registered_age_ms()
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// The observable state — /health, /readyz, and /metrics all render from this.
     pub fn snapshot(&self) -> HealthSnapshot {
+        let scheduler_phase = self.phase.load(Ordering::Acquire);
+        let beat_age_ms = self.beat_age_ms();
+        let routes: Vec<RouteSnapshot> = self.routes().iter().map(|r| r.snapshot()).collect();
+        let phase = aggregate_phase(scheduler_phase, &routes);
+        // Idle only when EVERY serving thread is idle with nothing queued at it: the valley
+        // signal and the darklane runner read this, and a central worker blocked on `recv`
+        // while a route primes 100k tokens is not a valley (memra#500).
+        let idle_for_ms =
+            (phase == PHASE_IDLE && routes.iter().all(|r| r.waiting == 0)).then(|| {
+                routes
+                    .iter()
+                    .map(|r| r.beat_age_ms)
+                    .fold(beat_age_ms, u64::min)
+            });
         HealthSnapshot {
-            phase: self.phase.load(Ordering::Acquire),
-            beat_age_ms: self.beat_age_ms(),
+            phase,
+            scheduler_phase,
+            idle_for_ms,
+            routes,
+            beat_age_ms,
             tick_max_ms: self.tick_max_ms.load(Ordering::Relaxed),
             generation: self.generation(),
             xid_warns: self.xid_warns.load(Ordering::Relaxed),
+            gpu_probe: self.gpu_probe(),
             stall_threshold_ms: self.stall_ms,
             forward_progress_age_ms: self.forward_progress_age_ms(),
             progress: self.progress.as_ref().and_then(|p| p()),
@@ -544,13 +718,271 @@ impl WorkerHealth {
     }
 }
 
+/// The process phase from the central worker's and every route's. A central worker that is not
+/// serving (dead, loading, warming) decides alone; otherwise a dead route makes the process
+/// dead, an unpublished route makes it loading, and any busy thread makes it busy.
+fn aggregate_phase(scheduler: u8, routes: &[RouteSnapshot]) -> u8 {
+    if matches!(scheduler, PHASE_DEAD | PHASE_LOADING | PHASE_WARMING) {
+        return scheduler;
+    }
+    if routes.iter().any(|r| r.phase == PHASE_DEAD) {
+        return PHASE_DEAD;
+    }
+    if routes.iter().any(|r| r.phase == PHASE_LOADING) {
+        return PHASE_LOADING;
+    }
+    if scheduler == PHASE_BUSY || routes.iter().any(|r| r.phase == PHASE_BUSY) {
+        return PHASE_BUSY;
+    }
+    PHASE_IDLE
+}
+
+/// One dedicated serving route's liveness (memra#500).
+///
+/// THE GAP. The DSv4 thread serves requests the central worker never sees, so the central
+/// worker sits IDLE on `recv` (unconditionally healthy) while the route primes, decodes, or
+/// wedges. `/health` said "idle" over a busy route, a wedged route read healthy forever, and a
+/// route stamping into the process-global odometer would have held a stalled CENTRAL worker
+/// healthy in turn. So a route owns its own record, judged with the central worker's stall
+/// bound but never mixed into its signals:
+///   * `phase`: LOADING from registration until the thread's first `set_idle`; IDLE on `recv`;
+///     BUSY from dequeue to the end of the request; DEAD once the thread exits.
+///   * forward progress: `note_rows` (completed prime rows, fed by the thread's odometer sink,
+///     `memra_engine::progress::ProgressSinkScope`) and `note_round` (a decode step or
+///     speculative round whose tokens are host-side). A BUSY route whose freshest signal
+///     (phase stamp, rows, round) is older than the stall bound is stalled.
+///   * a caught per-request panic is COUNTED (`request_faults`), not latched: the thread
+///     catches it and keeps serving, which is the route's fault-ownership contract.
+pub struct RouteHealth {
+    name: String,
+    phase: AtomicU8,
+    registered_ms: u64,
+    /// Last phase transition (dequeue, end of request, entering `recv`).
+    beat_ms: AtomicU64,
+    /// Last forward-progress stamp, stored `+1` so 0 means never (`now_ms` starts at 0).
+    progress_ms: AtomicU64,
+    rows: AtomicU64,
+    rounds: AtomicU64,
+    requests: AtomicU64,
+    request_faults: AtomicU64,
+    dead_reason: Mutex<String>,
+    load: Arc<crate::route_telemetry::RouteLoad>,
+}
+
+/// The published view of a [`RouteHealth`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RouteSnapshot {
+    pub name: String,
+    pub phase: u8,
+    pub registered_age_ms: u64,
+    pub beat_age_ms: u64,
+    /// Age of the last progress stamp, `None` if the route has never stamped one.
+    pub progress_age_ms: Option<u64>,
+    /// The quantity the route's stall verdict bounds: the fresher of the two ages above.
+    pub forward_progress_age_ms: u64,
+    pub rows: u64,
+    pub rounds: u64,
+    pub requests: u64,
+    pub request_faults: u64,
+    /// Requests reserved for this route and not yet dequeued (`RouteLoad::waiting_total`).
+    pub waiting: usize,
+    pub dead_reason: Option<String>,
+}
+
+impl RouteHealth {
+    fn new(name: &str, load: Arc<crate::route_telemetry::RouteLoad>) -> Self {
+        let t = now_ms();
+        RouteHealth {
+            name: name.to_string(),
+            phase: AtomicU8::new(PHASE_LOADING),
+            registered_ms: t,
+            beat_ms: AtomicU64::new(t),
+            progress_ms: AtomicU64::new(0),
+            rows: AtomicU64::new(0),
+            rounds: AtomicU64::new(0),
+            requests: AtomicU64::new(0),
+            request_faults: AtomicU64::new(0),
+            dead_reason: Mutex::new(String::new()),
+            load,
+        }
+    }
+
+    fn phase(&self) -> u8 {
+        self.phase.load(Ordering::Acquire)
+    }
+
+    fn set(&self, phase: u8) {
+        // a dead route stays dead: the latch is the thread's exit, and nothing after it runs
+        if self.phase() == PHASE_DEAD {
+            return;
+        }
+        self.beat_ms.store(now_ms(), Ordering::Release);
+        self.phase.store(phase, Ordering::Release);
+    }
+
+    /// The thread is about to block on its queue with no request in hand.
+    pub fn set_idle(&self) {
+        self.set(PHASE_IDLE);
+    }
+
+    /// The thread dequeued a request and starts serving it.
+    pub fn begin_request(&self) {
+        self.requests.fetch_add(1, Ordering::Relaxed);
+        self.set(PHASE_BUSY);
+    }
+
+    /// `rows` prime rows completed (the thread's odometer sink).
+    pub fn note_rows(&self, rows: usize) {
+        self.rows.fetch_add(rows as u64, Ordering::Relaxed);
+        self.progress_ms.store(now_ms() + 1, Ordering::Release);
+    }
+
+    /// One decode step or speculative round completed with its tokens host-side.
+    pub fn note_round(&self) {
+        self.rounds.fetch_add(1, Ordering::Relaxed);
+        self.progress_ms.store(now_ms() + 1, Ordering::Release);
+    }
+
+    /// A request failed by panic and the thread caught it; counted, not latched.
+    pub fn note_request_fault(&self) {
+        self.request_faults.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// The serving thread is gone. LATCHES: a route cannot come back without a new
+    /// registration (a respawn), so this record never reads live again.
+    pub fn mark_dead(&self, reason: impl Into<String>) {
+        if let Ok(mut r) = self.dead_reason.lock() {
+            *r = reason.into();
+        }
+        self.phase.store(PHASE_DEAD, Ordering::Release);
+    }
+
+    fn registered_age_ms(&self) -> u64 {
+        now_ms().saturating_sub(self.registered_ms)
+    }
+
+    fn beat_age_ms(&self) -> u64 {
+        now_ms().saturating_sub(self.beat_ms.load(Ordering::Acquire))
+    }
+
+    fn progress_age_ms(&self) -> Option<u64> {
+        match self.progress_ms.load(Ordering::Acquire) {
+            0 => None,
+            t => Some(now_ms().saturating_sub(t - 1)),
+        }
+    }
+
+    fn forward_progress_age_ms(&self) -> u64 {
+        let beat = self.beat_age_ms();
+        self.progress_age_ms().map_or(beat, |p| beat.min(p))
+    }
+
+    /// The route's liveness under the process stall bound. Three distinct failures: a thread
+    /// that is gone, a registration that never published within the bound, and a BUSY route
+    /// without forward progress for the bound.
+    fn live(&self, stall_ms: u64) -> Result<(), String> {
+        match self.phase() {
+            PHASE_DEAD => Err(format!(
+                "route {:?}: serving thread is gone ({})",
+                self.name,
+                self.dead_reason
+                    .try_lock()
+                    .map(|r| r.clone())
+                    .unwrap_or_else(|_| "exit".into())
+            )),
+            PHASE_LOADING => {
+                let age = self.registered_age_ms();
+                if age > stall_ms {
+                    Err(format!(
+                        "route {:?} registered {age} ms ago and has never published \
+                         (threshold {stall_ms} ms)",
+                        self.name
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+            PHASE_BUSY => {
+                let age = self.forward_progress_age_ms();
+                if age > stall_ms {
+                    Err(format!(
+                        "route {:?} stalled: no forward progress for {age} ms (threshold \
+                         {stall_ms} ms)",
+                        self.name
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn snapshot(&self) -> RouteSnapshot {
+        let phase = self.phase();
+        RouteSnapshot {
+            name: self.name.clone(),
+            phase,
+            registered_age_ms: self.registered_age_ms(),
+            beat_age_ms: self.beat_age_ms(),
+            progress_age_ms: self.progress_age_ms(),
+            forward_progress_age_ms: self.forward_progress_age_ms(),
+            rows: self.rows.load(Ordering::Relaxed),
+            rounds: self.rounds.load(Ordering::Relaxed),
+            requests: self.requests.load(Ordering::Relaxed),
+            request_faults: self.request_faults.load(Ordering::Relaxed),
+            waiting: self.load.waiting_total(),
+            dead_reason: (phase == PHASE_DEAD)
+                .then(|| self.dead_reason.try_lock().ok().map(|r| r.clone()))
+                .flatten(),
+        }
+    }
+}
+
+/// The GPU canary's observable state (memra#516). `degraded_reason` is `Some` while a miss
+/// streak below the fatal bound stands and `None` once a probe answers; `latched_reason` is
+/// `Some` after a fatal fault (fatal Xid, ECC/row-remap, the miss bound, or the startup window)
+/// and never clears in this process.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GpuProbeState {
+    pub miss_streak: u64,
+    pub last_ok_age_ms: Option<u64>,
+    pub degraded_reason: Option<String>,
+    pub latched_reason: Option<String>,
+}
+
+impl GpuProbeState {
+    pub fn degraded(&self) -> bool {
+        self.degraded_reason.is_some()
+    }
+}
+
+fn describe_age(age_ms: Option<u64>) -> String {
+    match age_ms {
+        None => "never in this process".to_string(),
+        Some(ms) => format!("{}s", ms / 1000),
+    }
+}
+
 /// Numbers `/health` publishes so an operator can see WHY, not just that.
 pub struct HealthSnapshot {
+    /// The PROCESS phase: the central worker's, unless it is serving and a dedicated route is
+    /// dead, unpublished or busy (`aggregate_phase`). What `/health` renders as `phase`.
     pub phase: u8,
+    /// The central worker's own phase, unaggregated.
+    pub scheduler_phase: u8,
+    /// Milliseconds the whole process has been idle (every thread idle, nothing queued at a
+    /// route), `None` while anything works. The valley signal's input.
+    pub idle_for_ms: Option<u64>,
+    /// Every registered dedicated route (memra#500).
+    pub routes: Vec<RouteSnapshot>,
     pub beat_age_ms: u64,
     pub tick_max_ms: u64,
     pub generation: u32,
     pub xid_warns: u64,
+    /// The steady-state canary (memra#516): degraded-or-not, its miss streak, the age of its
+    /// last answer, and the latched reason once a fault has latched.
+    pub gpu_probe: GpuProbeState,
     pub stall_threshold_ms: u64,
     /// The quantity the stall verdict actually bounds (memra#50): the fresher of the beat age
     /// and the prime odometer's age. Equal to `beat_age_ms` on the
@@ -588,6 +1020,20 @@ fn gpu_probe_timeout_s() -> u64 {
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(10)
+        .max(1)
+}
+
+/// MEMRA_GPU_PROBE_MISSES (default 3, minimum 1): consecutive steady-state probe hangs before
+/// the fatal GPU fault latches (memra#516). Below the bound the process is degraded and stays
+/// live; an answering probe clears it. `1` restores the pre-#516 single-hang latch. Three at
+/// the 60 s interval and 10 s deadline is about three and a half minutes of a driver that
+/// answers nothing, which is past every NVML stall measured under graph capture and large
+/// allocations (the 2026-09-13 B200 incident: single stalls of 10 to 60 s, then answers).
+pub fn gpu_probe_misses() -> u64 {
+    std::env::var("MEMRA_GPU_PROBE_MISSES")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(3)
         .max(1)
 }
 
@@ -760,8 +1206,15 @@ pub fn spawn_gpu_watch(health: SharedHealth) {
             if hangs > 0 {
                 eprintln!("[gpu-watch] startup canary recovered after {hangs} hangs");
             }
+            // The startup answer is the first "last answer" (the startup window is the only
+            // path that reaches here without one, and a Fault there has already latched).
+            if health.gpu_probe().latched_reason.is_none() {
+                health.note_probe_ok();
+            }
+            let misses = gpu_probe_misses();
             eprintln!(
-                "[gpu-watch] on: every {}s, probe deadline {}s, fatal Xid {:?}",
+                "[gpu-watch] on: every {}s, probe deadline {}s, fatal after {misses} consecutive \
+                 misses (MEMRA_GPU_PROBE_MISSES), fatal Xid {:?}",
                 interval.as_secs(),
                 deadline.as_secs(),
                 XID_FATAL
@@ -770,6 +1223,8 @@ pub fn spawn_gpu_watch(health: SharedHealth) {
                 std::thread::sleep(interval);
                 match probe_smi(args, deadline) {
                     Ok(out) => {
+                        // An answer clears timeout-only degradation (never a latched fault).
+                        health.note_probe_ok();
                         // Non-zero uncorrected ECC / a failed row remap is a hardware fault even
                         // without an Xid line reaching us (dmesg may be restricted — it is on
                         // this rig: kernel.dmesg_restrict=1).
@@ -777,10 +1232,13 @@ pub fn spawn_gpu_watch(health: SharedHealth) {
                             health.mark_gpu_fault(reason);
                         }
                     }
-                    Err(ProbeErr::Hang) => health.mark_gpu_fault(format!(
-                        "nvidia-smi did not answer within {}s — GPU/driver wedge",
-                        deadline.as_secs()
-                    )),
+                    // memra#516: one hang is a miss, not a wedge. Graph capture and large
+                    // allocations stall NVML past the deadline on Blackwell and then answer;
+                    // the 2026-09-13 B200 outage was one such hang latched for the process's
+                    // life. The streak latches at the policy bound.
+                    Err(ProbeErr::Hang) => {
+                        health.note_probe_hang(deadline, misses);
+                    }
                     Err(ProbeErr::Spawn(e)) => {
                         eprintln!("[gpu-watch] canary spawn failed ({e}); continuing on Xid only");
                     }
@@ -964,6 +1422,121 @@ pub fn spawn_sd_watchdog(health: SharedHealth) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fresh() -> WorkerHealth {
+        let h = WorkerHealth::default();
+        h.mark_ready();
+        h
+    }
+
+    #[test]
+    fn one_steady_state_hang_degrades_but_stays_live() {
+        let h = fresh();
+        h.note_probe_ok();
+        assert!(!h.note_probe_hang(Duration::from_secs(10), 3));
+        assert!(h.live().is_ok(), "a single missed probe is not a wedge");
+        let p = h.gpu_probe();
+        assert!(p.degraded());
+        assert_eq!(p.miss_streak, 1);
+        assert!(p.latched_reason.is_none());
+        assert!(p.degraded_reason.unwrap().contains("1 of 3"));
+        assert!(p.last_ok_age_ms.is_some());
+    }
+
+    #[test]
+    fn an_answer_clears_timeout_only_degradation() {
+        let h = fresh();
+        h.note_probe_ok();
+        h.note_probe_hang(Duration::from_secs(10), 3);
+        h.note_probe_hang(Duration::from_secs(10), 3);
+        assert_eq!(h.gpu_probe().miss_streak, 2);
+        assert!(h.live().is_ok());
+        h.note_probe_ok();
+        let p = h.gpu_probe();
+        assert!(!p.degraded());
+        assert_eq!(p.miss_streak, 0);
+        assert!(p.degraded_reason.is_none());
+        assert!(h.live().is_ok());
+    }
+
+    #[test]
+    fn the_miss_bound_latches_and_an_answer_does_not_unlatch() {
+        let h = fresh();
+        h.note_probe_ok();
+        assert!(!h.note_probe_hang(Duration::from_secs(10), 3));
+        assert!(!h.note_probe_hang(Duration::from_secs(10), 3));
+        assert!(
+            h.note_probe_hang(Duration::from_secs(10), 3),
+            "the third miss latches"
+        );
+        let why = h.live().unwrap_err();
+        assert!(why.contains("3 consecutive probe(s)"), "{why}");
+        assert!(!h.gpu_probe().degraded(), "latched is not also degraded");
+        assert!(why.contains("MEMRA_GPU_PROBE_MISSES=3"), "{why}");
+        h.note_probe_ok();
+        assert!(
+            h.live().is_err(),
+            "a latched fault survives an answering probe"
+        );
+        let p = h.gpu_probe();
+        assert!(p.latched_reason.is_some());
+        assert_eq!(
+            p.miss_streak, 3,
+            "no streak bookkeeping runs beside a latched fault"
+        );
+        assert!(p.last_ok_age_ms.is_some(), "the answer time stays honest");
+        // a further miss after the latch never republishes "degraded" beside "latched"
+        assert!(h.note_probe_hang(Duration::from_secs(10), 3));
+        let p = h.gpu_probe();
+        assert!(
+            !p.degraded(),
+            "latched and degraded are never both published"
+        );
+        assert!(p.latched_reason.is_some());
+    }
+
+    #[test]
+    fn misses_policy_of_one_restores_the_single_hang_latch() {
+        let h = fresh();
+        assert!(h.note_probe_hang(Duration::from_secs(10), 1));
+        assert!(h.live().is_err());
+    }
+
+    #[test]
+    fn fatal_faults_latch_regardless_of_probe_answers() {
+        let h = fresh();
+        h.note_probe_ok();
+        h.mark_gpu_fault("uncorrected volatile ECC errors = 5 (nvidia-smi)");
+        h.note_probe_ok();
+        assert!(h.live().unwrap_err().contains("ECC"));
+        assert!(h.gpu_probe().latched_reason.unwrap().contains("ECC"));
+    }
+
+    #[test]
+    fn a_fatal_latch_from_any_source_clears_a_standing_degradation() {
+        // one miss (degraded, live), then the Xid tail latches: the stale "1 of 3" reason must
+        // not be published beside the latched cause, now or ever after (revuto round 2)
+        let h = fresh();
+        h.note_probe_ok();
+        assert!(!h.note_probe_hang(Duration::from_secs(10), 3));
+        assert!(h.gpu_probe().degraded());
+        h.mark_gpu_fault("fatal Xid 119 (GSP RPC timeout)");
+        let p = h.gpu_probe();
+        assert!(!p.degraded(), "{p:?}");
+        assert!(p.degraded_reason.is_none());
+        assert!(p.latched_reason.unwrap().contains("Xid 119"));
+        h.note_probe_ok();
+        h.note_probe_hang(Duration::from_secs(10), 3);
+        assert!(!h.gpu_probe().degraded());
+        assert!(h.live().unwrap_err().contains("Xid 119"));
+    }
+
+    #[test]
+    fn probe_misses_policy_reads_env_with_a_floor_of_one() {
+        // the default and the floor are the documented contract; the env read itself is the
+        // same shape as every other knob in this file
+        assert!(gpu_probe_misses() >= 1);
+    }
 
     #[test]
     fn startup_canary_hang_then_ok_recovers() {
@@ -1341,6 +1914,151 @@ mod tests {
         let snap = h.snapshot();
         assert!(snap.tick_max_ms >= 20, "tick_max_ms = {}", snap.tick_max_ms);
         assert_eq!(snap.stall_threshold_ms, stall_threshold_ms());
+    }
+
+    // ---- dedicated routes (memra#500) ----
+
+    fn route_load(name: &str) -> Arc<crate::route_telemetry::RouteLoad> {
+        crate::route_telemetry::RouteLoad::new(name, 1)
+    }
+
+    /// A registered route that never publishes is its own failure: not ready at once, not live
+    /// once the stall bound passes, and named in both answers.
+    #[test]
+    fn a_route_that_never_publishes_is_unready_then_unlive() {
+        let h = WorkerHealth::with_stall_ms(200);
+        h.mark_ready();
+        let r = h.register_route("ds-silent", route_load("ds-silent"));
+        let why = h.ready(false).unwrap_err();
+        assert!(why.contains("\"ds-silent\" has not published"), "{why}");
+        assert!(
+            h.live().is_ok(),
+            "within the bound a new thread may still be starting"
+        );
+        assert_eq!(h.snapshot().phase, PHASE_LOADING);
+        assert_eq!(h.snapshot().scheduler_phase, PHASE_IDLE);
+        std::thread::sleep(Duration::from_millis(250));
+        let why = h.live().unwrap_err();
+        assert!(why.contains("has never published"), "{why}");
+        // the first publish clears both
+        r.set_idle();
+        h.live().unwrap();
+        h.ready(false).unwrap();
+    }
+
+    /// A BUSY route with no progress past the bound is stalled even though the central worker is
+    /// idle AND progressing: the central signals cannot vouch for the route.
+    #[test]
+    fn a_stalled_route_fails_liveness_beside_a_healthy_central_worker() {
+        let h = WorkerHealth::with_stall_ms(40);
+        h.mark_ready();
+        let r = h.register_route("ds-stall", route_load("ds-stall"));
+        r.set_idle();
+        r.begin_request();
+        std::thread::sleep(Duration::from_millis(60));
+        h.set_phase(PHASE_IDLE); // central beat fresh: it must not mask the route
+        let why = h.live().unwrap_err();
+        assert!(why.contains("route \"ds-stall\" stalled"), "{why}");
+        assert!(why.contains("threshold 40 ms"), "{why}");
+        let snap = h.snapshot();
+        assert_eq!(
+            snap.phase, PHASE_BUSY,
+            "an idle central worker is not the process phase"
+        );
+        assert_eq!(snap.scheduler_phase, PHASE_IDLE);
+        assert_eq!(snap.idle_for_ms, None);
+    }
+
+    /// A long request whose rows and rounds keep landing stays live however old its phase stamp
+    /// is: the same busy-is-not-hung contract as the central worker (memra#50).
+    #[test]
+    fn a_long_route_that_keeps_progressing_is_live() {
+        let h = WorkerHealth::with_stall_ms(200);
+        h.mark_ready();
+        let r = h.register_route("ds-long", route_load("ds-long"));
+        r.set_idle();
+        r.begin_request();
+        for i in 0..8 {
+            std::thread::sleep(Duration::from_millis(40));
+            if i % 2 == 0 {
+                r.note_rows(512);
+            } else {
+                r.note_round();
+            }
+            h.live().unwrap();
+        }
+        let s = h.snapshot();
+        let route = &s.routes[0];
+        assert!(
+            route.beat_age_ms > 200,
+            "the phase stamp alone would have stalled"
+        );
+        assert!(route.forward_progress_age_ms <= 200);
+        assert_eq!((route.rows, route.rounds, route.requests), (2048, 4, 1));
+        // and when it stops progressing it stalls
+        std::thread::sleep(Duration::from_millis(250));
+        assert!(h.live().is_err());
+        r.set_idle();
+        h.live().unwrap();
+    }
+
+    #[test]
+    fn a_dead_route_latches_and_a_respawn_replaces_the_record() {
+        let h = WorkerHealth::with_stall_ms(10_000);
+        h.mark_ready();
+        let old = h.register_route("ds-dead", route_load("ds-dead"));
+        old.set_idle();
+        old.note_request_fault();
+        h.live().unwrap();
+        old.mark_dead("dsv4 serving thread exited");
+        let why = h.live().unwrap_err();
+        assert!(
+            why.contains("serving thread is gone (dsv4 serving thread exited)"),
+            "{why}"
+        );
+        old.set_idle();
+        assert!(h.live().is_err(), "a dead record never reads live again");
+        assert_eq!(h.snapshot().phase, PHASE_DEAD);
+        // the respawn registers a fresh record under the same name; the retired thread's
+        // late latch lands on its own record only
+        let new = h.register_route("ds-dead", route_load("ds-dead"));
+        new.set_idle();
+        old.mark_dead("late exit");
+        h.live().unwrap();
+        let snap = h.snapshot();
+        assert_eq!(snap.routes.len(), 1);
+        assert_eq!(snap.routes[0].request_faults, 0);
+        assert_eq!(snap.phase, PHASE_IDLE);
+    }
+
+    /// The valley signal's input: idle only while every thread is idle and no request waits at a
+    /// route, and then the youngest idle age.
+    #[test]
+    fn process_idleness_needs_every_route_idle_and_empty() {
+        let h = WorkerHealth::with_stall_ms(10_000);
+        h.mark_ready();
+        let load = route_load("ds-valley");
+        let r = h.register_route("ds-valley", load.clone());
+        r.set_idle();
+        std::thread::sleep(Duration::from_millis(60));
+        assert!(h.snapshot().idle_for_ms.is_some_and(|ms| ms >= 50));
+        let ticket = load.try_reserve(0, 0).unwrap();
+        assert_eq!(
+            h.snapshot().idle_for_ms,
+            None,
+            "a queued route request is traffic"
+        );
+        drop(ticket);
+        r.begin_request();
+        assert_eq!(h.snapshot().idle_for_ms, None);
+        r.set_idle();
+        let ms = h.snapshot().idle_for_ms.unwrap();
+        assert!(
+            ms < 50,
+            "the route's fresh idle stamp bounds the process idle age: {ms}"
+        );
+        h.beat_busy();
+        assert_eq!(h.snapshot().idle_for_ms, None);
     }
 
     #[test]

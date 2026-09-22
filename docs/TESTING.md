@@ -112,6 +112,67 @@ engine's `build.rs`. Its red arm (a retired name refuses) and its non-vacuity ar
 name at once refuses nothing) are unit tests in `env_audit.rs`; `MEMRA_ENV_AUDIT=warn` downgrades,
 `=0` disables, both announced. Receipts: `research/env-audit-20260921/`.
 
+GPU probe recovery (memra#516, `tools/gpu-probe-recovery-gate.py`, in `tools/local-ci.sh`,
+`MEMRA_CI_GPUPROBEGATE=0` skips): the real server boots with a fake `nvidia-smi` first on `PATH`
+that follows a script per boot, at a 2 s probe interval and deadline. Arm A (`MEMRA_GPU_PROBE_MISSES=3`):
+answers at startup, hangs two probes, answers again: `/health` stays 200 with `gpu_probe.degraded`
+true and `miss_streak` 1 then 2, then returns to degraded false, streak 0, `last_ok_age_ms` fresh.
+Arm B: hangs three probes: the third latches, `/health` 503 with the streak in `detail`, a later
+answering probe does not clear it, and a later hang never publishes `degraded` beside
+`latched_reason`. Arm C: answers with uncorrected ECC once: latches at once
+and a clean answer afterwards does not clear it. CPU teeth for the policy itself are
+`health::tests::{one_steady_state_hang_degrades_but_stays_live, an_answer_clears_timeout_only_degradation,
+the_miss_bound_latches_and_an_answer_does_not_unlatch, misses_policy_of_one_restores_the_single_hang_latch,
+fatal_faults_latch_regardless_of_probe_answers}`. Receipts: `research/gpu-probe-recovery-20260922/`.
+
+Prime fairness (memra#521, `tools/prime-fairness-gate.py`, in `tools/local-ci.sh`,
+`MEMRA_CI_FAIRGATE=0` skips): one boot per `MEMRA_PRIME_YIELD` arm on the 9B NVFP4's default
+(spec) route with the concurrency demotion pinned off, greedy natural-text `prompt` streams (the
+tokenizer is calibrated per boot through `usage.prompt_tokens`); a seeded 4,096-token prompt, then
+a 131,072-token cold prime with two cold 2,048-token peers and the seeded prompt again (a cache hit)
+started 2 and 3 seconds apart. A request that generates fewer than 16 tokens refuses the run, so the
+byte clause never compares an empty output. Verdicts: every request's text identical across arms; on the yielding arm every peer's first
+token within the bar (8 s) and the peers' p95 at most half the non-yielding arm's; `/health`
+`tick_max_ms` on the yielding arm at most 6,000 ms; every request finished; the yielding boot logs
+`[prime-walk] supported=true yield_door=true` and at least one `[prime-yield]`. `--reps 3`
+interleaves the arms for a receipt. Receipts: `research/prime-fairness-default-20260922/`.
+
+Route policy contract (memra#504, `route_contract.rs`): every serve route declares each of the
+nine policy surfaces as implemented or refused by name; `RouteRegistry::check` runs before the
+ready handoff. CPU teeth in `route_contract::tests`: a stub route that declares nothing fails the
+same gate the production routes pass (the red arm), a partially declared route names exactly what
+it omitted, the hybrid worker implements every surface, the DSv4 contract refuses its two open gaps
+(#449, #535) with their issues and implements memory-cost, `MEMRA_REWRITE_BUNDLE` beside a DSv4 route refuses at boot by name (#449's
+minimum), and the wiring gate: every `Implemented` declaration's evidence token must exist outside
+comments in the route's source file (`include_str!` over `worker.rs` and `dsv4_serve.rs`), the
+generalization of `progress::tests::the_prime_walks_actually_call_the_odometer` from one engine
+file to the registry. Receipt: `research/route-contract-20260922/`.
+
+Dedicated route health, admission and memory (memra#500, #501, #503): CPU teeth in
+`health::tests` (route phases, the stall verdict on a busy route, readiness while a route loads,
+the aggregate phase and idle), `route_telemetry::tests` (tickets, the service estimate, cancelled
+and refused runs that are neither served nor failed), `dsv4_admit::tests` (per-card folding, a
+short peer card that defers then refuses, memory freed mid-defer, a client leaving mid-defer, host
+eviction that buys the admission and never a device shortfall, the budget clamp, the largest
+fitting capacity), `dsv4_serve::host_reclaim_tests` (the LRU victim spares the restore source) and
+`memra-engine` `dsv4_gpu::session_plan_tests` (the planned cache and gather arithmetic, including
+the default chunk `min(512, ctx)`). Two fake routes run end to end through the completions
+handler: `a_fake_route_serves_through_its_own_admission_and_books_its_metrics` (#501) and
+`a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler` (#503: 429 with
+`Retry-After: 5` on a short peer card, 400 naming the largest fitting session, 200 after memory
+frees mid-defer, a client abort booked `cancelled` with nothing held, and the `/metrics` row).
+Receipt: `research/dsv4-route-policies-20260922/`. The two-card receipt is pending.
+
+Loader tensor-contract boundary (memra#541, `memra_gguf::checkpoint_binding`): both loaders
+bind the pack's tensor contract against the source census before any upload and refuse
+missing, unexpected, duplicate, ambiguous, wrong-shape and wrong-quant tensors and an undeclared
+tied head with the pack and dialect named. CPU teeth: `checkpoint_binding::tests` (the glm-dsa
+micro fixture clean, byte-renamed trunk tensor, headless copy under a `SeparateHead` pack, the
+head-ownership matrix, the recording source and the consumption audit, a census-less source).
+Device arm: `crates/memra-engine/tests/checkpoint_contract_refusal_gpu.rs` (`#[ignore]`, run
+under the rig lock): the renamed and the headless tampered copies refuse before upload through
+`HybridModel::load`, the clean fixture loads. Receipts: `research/loader-census-20260922/`.
+
 Request-fault boundary (memra#525, `tools/request-fault-gate.py`, in `tools/local-ci.sh`,
 `MEMRA_CI_FAULTGATE=0` skips): one boot of the real server with the `MEMRA_FAULT_INJECT_CACHE_SALT`
 door, a control round of three concurrent greedy streams, then the same three plus a salted stream
@@ -998,6 +1059,15 @@ refusals are typed and in bytes:
 `[prefix-cache] insert refused: entry N exceeds budget M (...)` and
 `[prefix-cache] insert refused: entry N cannot fit beside L leased bytes (budget M, ...)`.
 Victim selection and accounting only: captured and restored bytes are unchanged.
+Exit rule (spill-b day 29, review round on #633): V3 compares the cache-on and cache-off boots'
+device state, so it presumes both boots retain the same parked sessions after every send. The gate
+parses every `[admit-oom] reclaim-on-defer` line per window; when the two boots' parked-session
+releases differ, or a reclaim line does not parse into its released counts, V3 is undecided. A
+failed V1, V2, V4, V5 or V6 is still the verdict `FAIL` (exit 1) with a premise note beside it; with
+every other clause holding, a broken or unreadable premise is `REFUSED: V3 premise: ...` (exit 2),
+naming the windows, the releases per boot and the card at each boot (driver free and compute-apps
+sampled into the receipts), and the would-be verdict is kept in `summary.json` as
+`verdict_under_broken_premise`. V3's clause, form and slack are unchanged.
 
 ```text
 prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra-server> --out <new-dir> \
@@ -1063,7 +1133,9 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
   day 19 (an identical sampled repeat restores `capture_len(P)`, 64 of 106; the growth turns
   restore the republished render-stable boundary, 96 of 119; an on-grid `fc` pair built
   through `/v1/tokenize` keeps the whole-prompt full-cover shape and its `restore-full-cover`
-  boundary site exercised); its identity law, spec-on text == spec-off text, is unchanged.
+  boundary site exercised); its identity law, spec-on text == spec-off text, is unchanged. Under the
+  host tier contracts door (`MEMRA_KV_HOST_CONTRACTS=1`) the gate arms the host tier on both boots and
+  asserts the door engaged (the door arm bullet under "Host tier contracts door" below; C day 27).
 - Canonical rig lock only, held for the whole cell; under the collector,
   `tools/tier-battery.py --rig pro-single --external-lock --execute python3
   tools/prefix-newest-turn-fits-gate.py --external-lock @COLLECTOR_LOCK_FD@ ...` (lead ruling 5).
@@ -1762,6 +1834,45 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   all; the aborted ticket's sequence number is consumed, no `TIER DISABLED`, no drop, no `Capacity`, no
   leaked wording). Evidence: `research/spill-c-20260919/DAY16.md` (review section), `pro-single-day16-review/`,
   replay `verify-day16-review.py`.
+- The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
+  hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
+  Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity
+  (its own line: `[kv-host-contracts] MEMRA_KV_HOST_CONTRACTS=1 with no host tier on this boot
+  (MEMRA_KV_HOST_MB=0): nothing to route, no program identity built`), `hpx.armed()` was false before any
+  entry-class check, and every "hit gate ALL GREEN OFF and ON" taken on lane A's days 17 to 21 and lane C's
+  days 24 and 26 covered the tick program in both arms (`research/spill-c-20260919/DAY26.md`,
+  `HOSTPREFIX-DOOR.md` item 11). Under the door the gate now ARMS the host tier on both of its boots
+  (spec-on and the spec-off twin) with the identity gate's budget, `MEMRA_KV_HOST_MB=8192`
+  (`MEMRA_HOSTGATE_HOST_MB`'s default; an exported `MEMRA_KV_HOST_MB` is respected), and asserts per boot
+  the tier's arming line (`[prefix-host] on: budget`), the door's (`[prefix-host] contracts door ON`), no
+  latch line (`TIER DISABLED`, `CAPTURE OFF-TICK DISABLED`, `RESTORE OFF-TICK DISABLED`), and across the two
+  boots at least one route submission (`capture`, `restore`, `demote` or `promote submitted off the tick`;
+  the spec-off twin's `insert (seed)` entries take the capture route by construction, the fault gate's `1 +
+  2 capture ticket(s)` accounting on both cards). An ON arm that ran with the tier off cannot read ALL GREEN.
+  The OFF arm and the identity clause (spec-on text == spec-off text on r1, r2, r3, g1, g2) are unchanged: a
+  red identity under the armed tier is a finding against the door, never a clause to move. Both arms print
+  an entry-class census per boot (`insert (spec-boundary)`, draft-bearing, against `insert (seed)`, plain,
+  and the class of the identity clause's own namespaces) so a reader knows which class each side of the
+  clause hit: the spec-on side's rows hit draft-bearing entries (the route refuses them by name, tick
+  program), the spec-off twin's rows hit plain entries (the route's whole-entry restore). The door arm is
+  defined for the qwen arm only. Evidence: `research/spill-c-20260919/DAY27.md`, `rtx5090-day27/`
+  (9B), `pro-single-day27/` (27B), both arms, N=1, `executed-not-qualified`.
+- The hit gate's lock arms (C day 28, the `kv-host-spill-identity-gate.sh` shape). Without a flag every
+  boot runs under the gate's own `flock -w 300` on the canonical lock, as before. With
+  `--external-lock FD` (the collector's `tools/tier-battery.py --rig <rig> --external-lock --execute
+  tools/spec-on-cache-hit-gate.sh --external-lock @COLLECTOR_LOCK_FD@ qwen ...`) the gate takes no lock
+  of its own: the collector's inherited FD carries the exclusion for the whole gate, verified by
+  `tools/tier-lock-proof.py` (owner `collector`) into `<evidence_dir>/LOCK.json` before any boot; a
+  second `flock` on the same inode would deadlock behind the collector and a `-w` timeout would boot
+  unlocked, so the wrapper is simply absent, and `stop()` then addresses `$SERVER_PID` itself (no
+  wrapper: `env` execs the binary in place; the pid is signalled only while its comm reads
+  `memra-server`). Until day 28 the gate could not run under the collector's hold (lane A day 21, C days
+  26 and 27 ran it under its own `flock`). Teeth: `tools/test_spec_on_cache_hit_gate_lock.sh` (CI, the
+  gate-teeth step) drives the gate's GPU-less `--lock-self-test FILE` arm, which boots nothing and runs
+  the arm's launch wrapper around a probe that asks whether FILE is locked while the wrapper runs: the
+  default arm must read `probe=held`, the external arm `probe=free` with FILE's inode and mtime
+  unchanged, and a non-numeric FD is `REFUSED` with exit 2 before anything runs (7 assertions; fewer
+  recorded is a broken fixture). No new `MEMRA_*` read.
 
 ### `h2d-probe --copies`
 

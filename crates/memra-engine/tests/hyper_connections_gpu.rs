@@ -179,6 +179,19 @@ impl TensorSource for FixtureSource {
             ne: t.ne.clone(),
         })
     }
+    fn tensor_census(&self) -> Result<memra_gguf::source::TensorCensus, String> {
+        // memra#541: the loader binds the contract against this census before any upload.
+        Ok(memra_gguf::source::census_from_views(
+            self.tensors.iter().map(|(name, t)| {
+                (
+                    name.as_str(),
+                    GgmlType::F32,
+                    t.ne.as_slice(),
+                    t.bytes.len() as u64,
+                )
+            }),
+        ))
+    }
 }
 
 fn fixture_source(
@@ -190,7 +203,7 @@ fn fixture_source(
         plan,
         CheckpointDialect::Gguf,
         ContractOptions {
-            output_head: OutputHead::TiedToEmbedding,
+            output_head: OutputHead::Separate,
         },
     )
     .expect("contract for the mini hyper-connections plan");
@@ -202,6 +215,13 @@ fn fixture_source(
     {
         let tensor = weights
             .get(&req.id)
+            // memra#541: the family declares a separate head; the fixture serves the embedding rows
+            // under `output.weight` (the reference reads the same numbers either way).
+            .or_else(|| {
+                (req.id == memra_gguf::tensor_contract::TensorId::OutputProjection)
+                    .then(|| weights.get(&memra_gguf::tensor_contract::TensorId::TokenEmbedding))
+                    .flatten()
+            })
             .unwrap_or_else(|| panic!("reference fixture is missing {:?}", req.id));
         let elements: usize = req.shape.iter().map(|&d| d as usize).product();
         assert_eq!(
@@ -519,8 +539,11 @@ fn a_missing_hc_tensor_is_refused_by_name() {
             error.contains(name),
             "the refusal must name the absent tensor; got: {error}"
         );
+        // Since memra#541 the refusal comes from the contract bind before any upload, and the
+        // semantic id it names (`HyperAttentionFunction`, `HyperMlpBase`, `HyperMlpScale`) is
+        // the hyper-connections declaration itself.
         assert!(
-            error.contains("HyperConnections"),
+            error.contains("HyperConnections") || error.contains("Hyper"),
             "the refusal must say which plan declaration it is enforcing; got: {error}"
         );
     }
