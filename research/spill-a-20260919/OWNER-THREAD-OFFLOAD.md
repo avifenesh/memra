@@ -737,3 +737,56 @@ the tenant's tick, the door's part about 0.6 ms. Item 5 (the rulings) closed on 
 4. **The lead's ruling on day 26's clause 2**: the refusal removes a park and 14.6 ms of request latency and moves the
    tenant's stall from 149.4 to 81.8 on the promote-then-hit shape; the remaining 74.8 in the request's path is the
    token emitted a tick after the prime, a scheduler shape outside Move 2 (named in `DAY26.md`, not proposed).
+
+## Move 1, day 27: owed item 2 read from the code, the three options pre-registered, the digest cell (`DAY27.md`)
+
+**The item's premise was wrong about the bytes.** The two Move 1 receipt hashes (`progress` at the poll, tier_transfer.rs
+1710; `bind_tier_image`'s per-plane check against the receipt, worker.rs 9344 over 9440 to 9451) run over the KV planes
+only: 32 items, about 1.9 MB on the 27B's 64-token entry, 0.9 ms each on the target host; hash 1 sits inside the demote's
+`from submission to completion` figure (the stamp at 12416 follows the whole settle), hash 2 inside `demote: ... in`. The
+74.8 ms `in - completion` is `bind_tier_image`'s ONE SHA-256 pass over the whole image (`Role::Recurrent` 9453,
+`Logits`, `Hidden`, the KV planes, the draft), about 157 MB of it the recurrent f32 state in pageable heap
+(`HostF32::Heap`, `reserve_image` returns no leases without an arena, 8594) that never crossed the contract and has no
+receipt to agree with, plus the pre-submit f32 D2H on the owner stream and the insert. The OFF arm never computes that
+checksum (`hpx.tier` is `None`, 20963 to 20978): the door's demote cost on the tick is the bundle checksum, not the copy
+Move 1 moved. The 5090's 21 to 23 ms per 54.8 MB is the same pass at that host's heap rate plus a write-combined read of
+the one-to-two-percent KV share; C's section D item 6 is answered in `HOSTPREFIX-DOOR.md`.
+
+**Options, pre-registered in `DAY27.md` section 2 before the cell.** (a) the bundle hash of the heap payloads on a helper
+thread, the entry `Demoting` (a `Hashing` phase) until the digests land, the owner thread keeping the two KV-plane hashes
+(the leases hold an `Rc` and a CUDA event and cannot move); receipt term unchanged (SHA-256, same bytes, same wire);
+fail-closed arms `hash-helper-gone` and `hash-never-lands` (typed line, nothing published, the tier latched); about 73 ms
+off the tick on the target card. (b) the D2H receipt term as the slice-3 four-lane program: moves hash 1 and hash 3 (1.9
+MB each) and the 5090's write-combined KV share, none of the 74.8 unless the bundle checksum's program changes too (b');
+the receipt stops naming the bytes cryptographically and keeps proving transfer integrity. (c) a GPU digest of the pinned
+host bytes over PCIe on the copy stream: unmeasured (no engine code launches the digest over a host pointer; the leases
+carry no `DEVICEMAP`); its device-side form (digest the source planes before the D2H) needs the recurrent state on the
+contract first (Move 2 owed item 1).
+
+**The digest cell (target host, `pro-single-day27/box/digest-micro/`, one collector hold, heap, 160 MiB, N=5 per order,
+two orders, pooled N=10, load 0.06 before):** `DIGEST-MICRO rule ... sha_ms=77.589 lanes_ms=70.737 sha_range=77.538..77.877
+lanes_range=70.662..71.044 sha_gbps=2.162 lanes_gbps=2.372 lanes_over_sha=0.912 sha_stable=true lanes_stable=true`. By the
+pre-registered rule the four-lane program is cheaper than SHA-256 on this host (disjoint ranges, 9 percent), and both
+are compute-bound near 2.2 to 2.4 GB/s: (b') would take about 7 ms off the 74.8, not the 74.8. The SHA figure repeats
+C's day 18 (77.9 cached, 78.0 heap) within 0.5 percent. **Local RTX 5090 rig's host (`rtx5090-day27/digest-micro/`, one
+collector hold, the same shape):** `sha_ms=37.111 lanes_ms=55.078 sha_range=36.837..40.676 lanes_range=54.490..56.115
+lanes_over_sha=1.484`: the four-lane program is 48 percent SLOWER than SHA-NI there; (b') would add about 18 ms per 160
+MiB on that class. Both hosts' digests byte-identical for both programs. Per host, no cross-card claim: no digest swap
+runs at memory speed on either host, so no digest change reaches the tick's cost; only (a) removes it.
+
+**Recommendation (for the lead's ruling; nothing implemented):** (a), scoped to the heap payloads, with (b) held as the
+5090 write-combined follow-up and (c)'s device-side form behind Move 2 owed item 1; acceptance gate in `DAY27.md` section
+2 (the double-park cell with `in - completion <= 12.0`, `stall_median(ON) <= OFF + 2.0`, e2e `on_minus_off <= +20.0`;
+the gates ALL GREEN both arms both cards; the two fault cells; the bitwise digest unit cell; no flag). **The baseline banked today** (the day-26 double-park cell on the
+day-27 tree, one hold, twenty boots, 20 of 20 replays PASS, `pro-single-day27/box/double-park/`): stall
+`on_minus_off=-3.4 / -3.5 unc=0.1 isolated` (81.9/81.8 against 85.2/85.3), e2e `+91.3 / +91.3 isolated`,
+`demote_in-completion median=74.8`, the tenant's gaps 95.3 and 92.4; equal to day 26 within 0.1 ms.
+
+**What Move 1 still owes, in order (restated).**
+
+1. **The settle-time owner wait for an H2D** (unchanged from day 18).
+2. **The bundle hash off the tick**: not "the receipt hashes"; `bind_tier_image`'s SHA-256 pass over the heap payloads
+   (about 157 MB on the 27B), option (a) above pending the lead's ruling; the two KV-plane receipt hashes (1.9 MB) stay
+   on the owner thread under (a) and are the object of (b) at most.
+3. **The by-reference demote routes** (unchanged).
+4. **The decision cell (i)** (unchanged).
