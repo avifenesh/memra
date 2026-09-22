@@ -11262,6 +11262,14 @@ fn host_demote_prefix_ref(
     // ledger's one-batch in-flight dimension is never raced and no demotable entry is dropped
     // to a `Capacity` refusal.
     host_demote_settle_pending(host, ContractWait::Block, "a second demote");
+    if !host.armed() {
+        // The settle can latch the tier off (`SourceQuarantined`, `TicketLeaked`); the gate
+        // above was passed before it ran (revuto round 2 on #622).
+        eprintln!(
+            "[prefix-host] demote refused: the tier latched off while settling the pending demote"
+        );
+        return HostDemoteOutcome::Off;
+    }
     // GLM host images are opt-in. OFF preserves the old refusal; ON copies
     // all current model-owned planes, with byte census before publication.
     if dead.tp.is_some() && !glm5_tp_kv_host_on() {
@@ -11538,14 +11546,63 @@ fn host_demote_settle_with(
 ) -> Option<HostDemoteOutcome> {
     let mut pending = host.demoting.take()?;
     pending.polls += 1;
-    let (Some(mut dead), Some(contract)) = (pending.dead.take(), pending.contract.take()) else {
-        // Unreachable by construction (the sink attaches the shell in the same step); a pending
-        // demote without its shell cannot take its planes back, so it is dropped as a failure.
-        eprintln!(
-            "[prefix-host] demote failed: a Demoting entry has no source shell or ticket; \
-             nothing published"
-        );
-        return Some(HostDemoteOutcome::Failed);
+    let (mut dead, contract) = match (pending.dead.take(), pending.contract.take()) {
+        (Some(dead), Some(contract)) => (dead, contract),
+        (dead, contract) => {
+            // FAIL CLOSED (revuto on #622). Unreachable by construction (the sink attaches the
+            // shell and the ticket in the same step), but a pending demote missing one of them
+            // cannot settle: dropping a SUBMITTED ticket here would leak the ledger's one
+            // in-flight charge and the registered planes without a word, and the tier would
+            // never demote again. So: a submitted ticket is settled and its sources retired
+            // through the engine where the engine is reachable, and the tier latches off (the
+            // planes cannot come back without their shell); a shell without a ticket drops whole
+            // (its planes return to the pool at drop), nothing was submitted.
+            let what = match (dead.is_some(), contract.is_some()) {
+                (false, true) => "no source shell for its submitted ticket",
+                (true, false) => "no ticket for its source shell",
+                _ => "neither source shell nor ticket",
+            };
+            let why = format!("a Demoting entry has {what}; nothing published");
+            // Every demote exit after the reclaim books the reclaim wasted (the image carries the
+            // entry's key and tokens when the shell is gone).
+            host.waste_pending_reclaim(
+                &pending.image.pool_key,
+                pending.image.toks.len(),
+                "no shell or ticket",
+            );
+            return Some(match contract {
+                None => {
+                    eprintln!("[prefix-host] demote failed ({why})");
+                    HostDemoteOutcome::Failed
+                }
+                Some(contract) => {
+                    let seq = contract.ticket.sequence;
+                    let settled = match host.tier.as_ref().and_then(|t| t.transfers.as_ref()) {
+                        Some(transfers) => {
+                            let mut t = transfers.borrow_mut();
+                            t.synchronize(&contract.ticket)
+                                .and_then(|_| t.retire_source(&contract.ticket))
+                                .map_err(|e| format!("{e:?}"))
+                        }
+                        None => Err("tier D2H transfer engine missing".to_string()),
+                    };
+                    let err = match settled {
+                        Ok(()) => format!(
+                            "{why}; ticket seq={seq} settled and its sources retired, its planes \
+                             stay registered with the transfer engine"
+                        ),
+                        Err(e) => format!("{why}; ticket seq={seq} did not settle ({e})"),
+                    };
+                    eprintln!("[prefix-host] demote failed ({err}); the tier latches off");
+                    host.disable(&err);
+                    if dead.is_some() {
+                        HostDemoteOutcome::Failed
+                    } else {
+                        HostDemoteOutcome::SourceQuarantined
+                    }
+                }
+            });
+        }
     };
     let seq = contract.ticket.sequence;
     let submitted = contract.submitted;
@@ -11573,10 +11630,12 @@ fn host_demote_settle_with(
                     "[prefix-host] demote dropped: the tier latched off while ticket seq={seq} was \
                      Demoting ({mode}); nothing published"
                 );
+                host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "tier latched off");
                 return Some(HostDemoteOutcome::Failed);
             }
             if let Err(err) = apply_flip_demote_fault(&mut kv) {
                 eprintln!("[prefix-host] demote failed ({err}); nothing published");
+                host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "flip fault");
                 return Some(HostDemoteOutcome::Failed);
             }
             let mut e = pending.image;
@@ -11984,6 +12043,14 @@ fn host_promote_prefix_hit(
     // in-flight dimension; the pending demote settles first (and a hit on ITS prompt then finds
     // it published rather than priming cold).
     host_demote_settle_pending(host, ContractWait::Block, "a promote");
+    if !host.armed() {
+        // The settle can latch the tier off; a promote from a latched-off tier is the miss it
+        // would have been with the tier off (revuto round 2 on #622).
+        eprintln!(
+            "[prefix-host] promote refused: the tier latched off while settling the pending demote"
+        );
+        return None;
+    }
     let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
     let candidate = &host.entries[pool_key][hi];
     if !host.generation_current(candidate) {
@@ -38362,6 +38429,53 @@ mod tests {
         assert!(host.demoting.is_none());
         assert_eq!(host.n_entries(), 0);
         assert!(!host.armed());
+    }
+
+    /// FAIL CLOSED (revuto on #622): a pending demote missing its shell or its ticket never
+    /// publishes; with a submitted ticket and no shell the tier latches off (the planes cannot
+    /// come back), with a shell and no ticket the entry drops whole and the tier stays armed.
+    #[test]
+    fn a_pending_demote_missing_its_shell_or_ticket_fails_closed() {
+        // (a) ticket without shell: latch off, SourceQuarantined, nothing published.
+        let (mut host, pool_key) = cpu_door_host();
+        cpu_pending_demote(&mut host, &pool_key);
+        host.demoting.as_mut().unwrap().dead = None;
+        host.reclaim_pending = 3;
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "test",
+            |_, _, _, _| panic!("the contract step must not run without a shell"),
+        );
+        assert!(matches!(
+            outcome,
+            Some(super::HostDemoteOutcome::SourceQuarantined)
+        ));
+        assert!(
+            !host.armed(),
+            "a leaked submitted ticket latches the tier off"
+        );
+        assert!(host.demoting.is_none());
+        assert_eq!(host.entries.len(), 0, "nothing published");
+        assert_eq!(
+            host.reclaim_pending, 0,
+            "the pending reclaim is booked wasted at this exit"
+        );
+        assert!(host.tenant_reclaims_wasted >= 1);
+        // (b) shell without ticket: nothing was submitted, the entry drops whole, tier armed.
+        let (mut host, pool_key) = cpu_door_host();
+        cpu_pending_demote(&mut host, &pool_key);
+        host.demoting.as_mut().unwrap().contract = None;
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Block,
+            "test",
+            |_, _, _, _| panic!("the contract step must not run without a ticket"),
+        );
+        assert!(matches!(outcome, Some(super::HostDemoteOutcome::Failed)));
+        assert!(host.armed(), "no ticket was submitted, so nothing leaked");
+        assert!(host.demoting.is_none());
+        assert_eq!(host.entries.len(), 0, "nothing published");
     }
 
     #[test]
