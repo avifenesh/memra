@@ -43351,6 +43351,8 @@ mod tests {
                 toks_len: 1,
                 bytes: 1,
                 cache: None,
+                draft: None,
+                draft_declined: None,
                 contract: None,
                 ready,
                 ready_ticks: 0,
