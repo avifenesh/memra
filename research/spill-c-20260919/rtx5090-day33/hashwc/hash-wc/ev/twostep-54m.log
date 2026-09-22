@@ -1,0 +1,22 @@
+14:49:35.926	hash-micro two-step device="NVIDIA GeForce RTX 5090 Laptop GPU" bytes=54800000 n_per_order=5 driver_flags wc=6 copy=2 wc_bit_wc=true wc_bit_copy=false
+14:49:36.398	pass order=1 pass=1 kind=wc ms=471.368 gbps=0.116
+14:49:36.622	pass order=1 pass=1 kind=wc_copy ms=224.365 memcpy_ms=212.506 hash_ms=11.859 gbps=0.244
+14:49:37.096	pass order=1 pass=2 kind=wc ms=474.086 gbps=0.116
+14:49:37.320	pass order=1 pass=2 kind=wc_copy ms=223.992 memcpy_ms=212.153 hash_ms=11.839 gbps=0.245
+14:49:37.796	pass order=1 pass=3 kind=wc ms=475.832 gbps=0.115
+14:49:38.019	pass order=1 pass=3 kind=wc_copy ms=223.409 memcpy_ms=211.587 hash_ms=11.822 gbps=0.245
+14:49:38.493	pass order=1 pass=4 kind=wc ms=473.144 gbps=0.116
+14:49:38.715	pass order=1 pass=4 kind=wc_copy ms=222.009 memcpy_ms=210.188 hash_ms=11.821 gbps=0.247
+14:49:39.187	pass order=1 pass=5 kind=wc ms=472.694 gbps=0.116
+14:49:39.410	pass order=1 pass=5 kind=wc_copy ms=223.155 memcpy_ms=211.196 hash_ms=11.959 gbps=0.246
+14:49:39.636	pass order=2 pass=1 kind=wc_copy ms=225.163 memcpy_ms=213.330 hash_ms=11.833 gbps=0.243
+14:49:40.112	pass order=2 pass=1 kind=wc ms=476.108 gbps=0.115
+14:49:40.336	pass order=2 pass=2 kind=wc_copy ms=224.635 memcpy_ms=212.795 hash_ms=11.841 gbps=0.244
+14:49:40.812	pass order=2 pass=2 kind=wc ms=475.922 gbps=0.115
+14:49:41.035	pass order=2 pass=3 kind=wc_copy ms=223.027 memcpy_ms=211.182 hash_ms=11.845 gbps=0.246
+14:49:41.508	pass order=2 pass=3 kind=wc ms=473.074 gbps=0.116
+14:49:41.734	pass order=2 pass=4 kind=wc_copy ms=225.832 memcpy_ms=213.998 hash_ms=11.834 gbps=0.243
+14:49:42.208	pass order=2 pass=4 kind=wc ms=473.673 gbps=0.116
+14:49:42.433	pass order=2 pass=5 kind=wc_copy ms=225.236 memcpy_ms=213.402 hash_ms=11.834 gbps=0.243
+14:49:42.903	pass order=2 pass=5 kind=wc ms=469.934 gbps=0.117
+14:49:42.903	HASH-MICRO two-step rule device="NVIDIA GeForce RTX 5090 Laptop GPU" bytes=54800000 n_per_order=5 pooled=10 orders=2 digest_equal=true wc_bit_wc=true wc_bit_copy=false wc_ms=473.409 wc_copy_ms=224.178 wc_copy_memcpy_ms=212.329 wc_copy_hash_ms=11.837 wc_range=469.934..476.108 wc_copy_range=222.009..225.832 wc_copy_memcpy_range=210.188..213.998 wc_copy_hash_range=11.821..11.959 wc_o1=473.144 wc_o2=473.673 wc_copy_o1=223.409 wc_copy_o2=225.163 wc_gbps=0.116 wc_copy_gbps=0.244 wc_copy_over_wc=0.474
