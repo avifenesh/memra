@@ -695,5 +695,45 @@ and record 0.4 ms as the price.
    subtraction for the capture arm's own share came out with the wrong sign; the capture share stays unread. Day 25
    settled the retire seam's part of it: 0.4 ms, not a copy wait.
 4. **The receipt's price, read by the door review**: cell (v) and its 5090 twin, verbatim; reported, nothing relaxed.
-5. **The lead's rulings on proposals 1 and 2 above**; proposal 1 removes an unearned park worth 90 ms of request
-   latency on the promote-then-hit shape and nothing of the tenant's stall.
+
+## Move 2, day 26: proposal 1 landed (ruling 36) and priced on the target card (`DAY26.md`)
+
+**The refusal.** `host_restore_promoted_this_admission(px, hpx, pool_key, i)`: when the one-tick insertion pin of
+the promote published at this tick top (`promoted_pin`) names the entry the lookup found, `host_restore_park_probe`
+prints `[prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin
+id=P, N tokens, model M); the tick program copies it` and returns `false`; the request takes the tick program's
+device-hit copy in the same admission. Between the lookup and the class check; no flag, no new state, no numeric
+change; the line is outside the hit gate's `refused (contracts door)` and `restore refused` counters; the promote's
+ticket seq is not on the pin and is not printed. Table test over the promoted-pin shapes plus a source census.
+
+**The acceptance gate (DAY25 proposal 1, verbatim; target card, one sitting, `pro-single-day26/box/`).** (1) PASS:
+100 of 100 ON promote runs `request parked` 1, `restore submitted` 0, the typed line 1. (2) FAIL: the request's e2e
+fell 221.4 to 206.8 (14.6), not by the re-admission median 90.1; `on_minus_off=+91.4 unc=1.2` against the expected
++15.8. Read from the code after the result: `advance_sample_emit` samples a session's token from the logits the
+previous step produced, so a one-token request whose prime ran in tick A gets its token in tick B's host half, after
+tick B's top polled the demote and ran its two hashes (74.8); the hashes stay in the request's path, and the refusal
+removed only tick A's decode plus the slack. (3) FINDING: the tenant's stall fell 149.4 to 81.8 (IQR 0.0), 3.4 BELOW
+OFF's 85.3 (`isolated`, both orders); the two stretched ticks now read 92.4 (decode, publish, copy, the hit's prime)
+and 95.3 (decode, the hashes, the finished request's token and retire), sum 187.8 against day 25's 185.4: the same
+work split across two ticks instead of the prime stacked on the hash tick. Day 25's "the second park cost the tenant
+nothing" is refuted: the park decided which tick the prime landed on. The demote's `in` 97.2 to 172.3 is its poll
+waiting tick A's longer step (`in - completion` 74.9 to 74.8 unchanged). (4) PASS: the day-21 restore arm, 100 of
+100, parked once and landed. (5) PASS: hit OFF 61 ok and ON 68 ok `ALL GREEN (qwen)`, the ON census equal to day
+24's exactly (12/12/13/13, 2/2/3/3, 30 route submissions, 11 draft-plane captures, zero typed refusals) on the target
+card AND on the local RTX 5090 (`rtx5090-day26/`, OFF 61 ok, ON 68 ok, the same census); identity x4
+and failure x2 `ALL GREEN`, fault `ALL GREEN` (93 ok), twin x2 PASS, unit cells 8 + 5 passed. Nothing tuned; the code
+stays on the branch; keeping it with clause 2 re-derived from the token-emission reading is the lead's ruling.
+
+**What Move 2 still owes, in order.** Item 3 (the capture share and the retire seam's part of it) closed on ruling 36:
+the seam stays, 0.4 ms is the recorded price (day 25), and C day 30 read the capture class at about a millisecond of
+the tenant's tick, the door's part about 0.6 ms. Item 5 (the rulings) closed on ruling 36.
+
+1. **The recurrent f32 state off the tick**: the restore keeps `conv_state` and `ssm_state` on the owner stream (the
+   byte-span class's shape); on the 27B that is the fixed 157 MB of every restored entry. A typed f32 span in the
+   restore class moves the restore's share; its receipt would be the same program over the f32 planes' bytes.
+2. **The publishes still on the tick**, by name: the fanout leader's snapshot and the pause sweep's boundary snapshot
+   (`prefix_snapshot` direct); the `dspark-boundary` publish; the `glm5-boundary` publish; every `OnTick` refusal.
+3. **The receipt's price, read by the door review**: cell (v) and its 5090 twin, verbatim; reported, nothing relaxed.
+4. **The lead's ruling on day 26's clause 2**: the refusal removes a park and 14.6 ms of request latency and moves the
+   tenant's stall from 149.4 to 81.8 on the promote-then-hit shape; the remaining 74.8 in the request's path is the
+   token emitted a tick after the prime, a scheduler shape outside Move 2 (named in `DAY26.md`, not proposed).
