@@ -1996,8 +1996,8 @@ mod tests {
             .collect();
         let ticket = t.submit_d2d_capture(ops, epochs).unwrap();
         // The host-contract gate never publishes a capture, landed or not.
-        assert!(matches!(t.ready_view(&ticket, 0, epochs), Err(_)));
-        assert!(matches!(t.take_destination(&ticket, 0, epochs), Err(_)));
+        assert!(t.ready_view(&ticket, 0, epochs).is_err());
+        assert!(t.take_destination(&ticket, 0, epochs).is_err());
         let mut polls = 0u32;
         while !t.capture_landed(&ticket).unwrap() {
             polls += 1;

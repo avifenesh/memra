@@ -406,3 +406,45 @@ Total about four agent-days, as priced on day 16. Slice 1 is first because its p
 servable only after its event) is the smaller correctness surface and its state (`Capturing`) is the one every
 other path already knows how to meet (a miss); slice 2's `Restoring` touches admission and the first-token program
 and rides on rule 3, which now exists.
+
+## Move 2, slice 1, day 20: the capture on the copy stream with an event-ordered publication (`DAY20.md`)
+
+**Correction to the pre-registration, made before any cell ran.** The op shape named above,
+`TransferOp::D2d(ContiguousCopy)`, takes owned `DeviceLease`s on both sides, and the engine's registry admits only
+moved buffers ("never an unowned raw pointer"). A capture's source is the live session cache's plane, which the
+decoding session keeps and appends to past the boundary: it cannot be moved into the registry, and an aliasing lease
+would be `unsafe` beyond the documented FFI. So the capture class is a same-device copy from a BORROWED source span
+into an OWNED, registered destination lease; its typed op is the engine's `D2dCapture` and
+`CudaTransfers::submit_d2d_capture`, not a `TransferOp` variant, and `ContiguousCopy` stays the owned-to-owned (peer)
+shape. The restore of slice 2 has the mirror problem (its destination is the request's fresh session cache, owned by
+the session, not by the registry) and will take the mirror shape: an owned registered source (the published entry's
+planes are the engine's to lease only if the entry is registered at insert, which today it is not) or a borrowed
+destination; decided in slice 2's own pre-registration.
+
+**What landed (under `MEMRA_KV_HOST_CONTRACTS=1`, default OFF, decide-by 2026-10-05).** The rule
+`memra_tier::conformance::d2d_capture_publish` (a captured item is not landed until every completion event is
+observed complete; a publish before the event is a schedule failure; `retire(None)`, `acknowledge`, every destination
+back; the slice-1 receipt clause: no witnessed checksum, so the host-contract gate refuses a capture item `Corrupt`)
+with CPU bindings and a red arm. The engine's capture class: `CopyDirection::DeviceToDevice`, the copy stream waits
+on the producer event, `memcpy_dtod`, a completion event on the copy stream, fenced at submit as a D2H is, no
+owner-stream wait anywhere, `capture_landed` as the publication predicate; a GPU unit cell and a census. The worker's
+`Capturing` entry: `prefix_capture_off_tick` under the seed and LCP-split publishes (after the budget preflight, before
+the tick program), the recurrent state `clone_dtod` on the OWNER stream at the boundary, fresh planes registered with
+retained twins, one batch, the tick-top settle after the promote poll, publication through the ordinary
+`insert_demoting`; a second capture, a tenant purge, the admission reclaim, every device trim and shutdown settle it
+first (the purge drops the revoked tenant's); typed refusals create no entry; a lost observation latches the tier and
+the capture path (`CAPTURE OFF-TICK DISABLED`, the #622 ruling); the ledger's in-flight dimension carries one Move 1
+batch plus one capture batch. The fanout leader (its siblings restore from the entry in the same tick) and the pause
+sweep (a by-reference demote) keep the tick program. No new flag, no new numeric program, no new `unsafe`.
+
+**What Move 2 still owes, in order.**
+
+1. **Slice 2, the restore behind rule 3's reader fence**: `Restoring`, the parked request, the reader wait before the
+   first prime chunk, the source lease, cells (ii), (iii) and (iv); its op shape decided by the ownership finding
+   above.
+2. **Slice 3, the receipt**: the device digest or the `Unwitnessed` arm by the pre-registered rule (measured, cell
+   (v)); until it lands a capture item has no checksum term and cannot pass the host-contract gate, by construction.
+3. **The capture stall cell's resolution**: the capture's own on-tick share on the target card is under the day-16
+   cell's resolution (the intruder's prime dominates both arms); a cell that isolates the capture needs an intruder
+   whose prime is not on the tick (a hit that re-captures a longer entry, or the twin gate's fitted shape with the
+   prime subtracted). Recorded, not designed here.
