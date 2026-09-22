@@ -40,6 +40,12 @@ Author's review of the full diff `main..lane/spill-integ32-20260922`, posted as 
 - A tenant purge clears the revoked tenant's cold memo and releases the worker's one-tick insertion pin on its
   device entry before the device purge; another tenant's memo and pin stay (CPU test).
 
+## Review round 2 (revuto, addressed in the integ)
+- The parked request kept the queue non-empty, so the idle block's 2 ms cap for a `Promoting` entry never fired and
+  the owner thread spun through park-and-requeue ticks for the whole copy. The admission pass counts the requests it
+  parks; with nothing active, everything parked and the entry not ready, the loop takes a bounded 2 ms command receive
+  before the tick. Source census test added. The promote stall cell on this tree is owed to the door review.
+
 ## What I did not do
 - No GPU cell of my own beyond the smoke; the door stays OFF; its decide-by review (2026-10-05) reads both halves'
   stall receipts.

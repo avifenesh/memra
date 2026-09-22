@@ -18891,6 +18891,10 @@ pub fn run(
             MAX_ACTIVE
         };
         let mut requeue: std::collections::VecDeque<Box<Request>> = Default::default();
+        // WP-A day 18, revuto round 2 on #627: requests parked on the in-flight promote this pass.
+        // When they are the whole queue and nothing is active, the loop waits on the transfer
+        // boundedly instead of spinning the owner thread through park-and-requeue ticks.
+        let mut parked_on_promote: usize = 0;
         // Per-tick count of requests the VRAM gate deferred (logged once per tick).
         let mut vram_defers = 0usize;
         // KV-FLEX GRANT REFRESH (lane/kv-flex-20260831): re-derive the borrowable slice
@@ -20229,6 +20233,7 @@ pub fn run(
                 )
             {
                 requeue.push_back(req); // waits (FIFO), never shed: its promote is in flight
+                parked_on_promote += 1;
                 continue;
             }
             // The request is admitted. Effective headroom (driver + pool-cached) said it
@@ -20498,6 +20503,32 @@ pub fn run(
             }
         }
         queue = requeue;
+        // PARKED-ONLY WAIT (WP-A day 18, revuto round 2 on #627): the off-tick promote keeps its
+        // parked request on the queue, so the idle block above (which needs an EMPTY queue) never
+        // reached its 2 ms cap and the loop spun the CUDA owner thread through park-and-requeue
+        // ticks for the whole copy. When nothing is active and every queued request is parked on
+        // the promote whose copy is still in flight, wait on the command channel for the same
+        // bounded 2 ms; the tick top then polls the transfer and the parked request re-admits.
+        if active.is_empty()
+            && parked_on_promote > 0
+            && parked_on_promote == queue.len()
+            && hpx.promoting.as_ref().is_some_and(|p| !p.ready)
+        {
+            match rx.recv_timeout(Duration::from_millis(2)) {
+                Ok(cmd) => handle_cmd(
+                    cmd,
+                    &loaded,
+                    &dsv4_routes,
+                    &order,
+                    &mut queue,
+                    &mut pending_trims,
+                    &mut pending_purges,
+                    &mut pending_handoffs,
+                ),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+            }
+        }
 
         // 3. The tick. Three phases (MEMRA_SERVE_BATCH=0 restores legacy round-robin):
         //    (a) spec sessions burst solo (spec x batch composition is a later step);
@@ -41587,6 +41618,43 @@ mod tests {
     /// and cumulative purge counters both move by exactly the removed amount.
     /// revuto on #627: a tenant purge clears the revoked tenant's one-tick cold memo and releases
     /// the worker's one-tick insertion pin on its device entry; another tenant's memo and pin stay.
+    /// revuto round 2 on #627: a request parked on the in-flight promote keeps the queue
+    /// non-empty, so the idle block's 2 ms cap never fires for it. The run loop must carry a
+    /// bounded wait for the parked-only shape between the admission pass and the tick (source
+    /// census, comment-stripped): the counter is incremented at the park site and consumed by a
+    /// `recv_timeout` guarded on the not-ready `Promoting` entry.
+    #[test]
+    fn the_run_loop_waits_boundedly_when_the_queue_is_only_requests_parked_on_a_promote() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.trim_start())
+            .filter(|l| !l.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let park = code
+            .find("requeue.push_back(req); // waits (FIFO), never shed: its promote is in flight")
+            .expect("the park site");
+        let count = code[park..]
+            .find("parked_on_promote += 1;")
+            .expect("the park site counts the parked request");
+        assert!(count < 80, "the count sits at the park site");
+        let handoff = code
+            .find("queue = requeue;")
+            .expect("the admission pass hands the queue over");
+        let wait = code[handoff..]
+            .find("&& parked_on_promote == queue.len()")
+            .expect("the parked-only condition follows the handoff");
+        let guard = code[handoff + wait..]
+            .find("hpx.promoting.as_ref().is_some_and(|p| !p.ready)")
+            .expect("the wait is guarded on a not-ready Promoting entry");
+        let recv = code[handoff + wait + guard..]
+            .find("rx.recv_timeout(Duration::from_millis(2))")
+            .expect("the wait is the bounded 2 ms command receive");
+        let tick = code[handoff..].find("3. The tick.").unwrap_or(usize::MAX);
+        assert!(wait + guard + recv < tick, "the wait precedes the tick");
+    }
+
     #[test]
     fn host_purge_clears_the_tenants_cold_memo_and_releases_its_promoted_pin() {
         let mut h = HostPrefixCache::new(1 << 20);

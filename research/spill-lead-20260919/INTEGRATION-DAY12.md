@@ -1305,6 +1305,15 @@ the purge as "pinned entries left to in-flight sessions" with the worker as the 
 memo when it names the tenant, and the worker releases the pin (`release_promoted_pin_for_tenant`) before the device
 purge. CPU test `host_purge_clears_the_tenants_cold_memo_and_releases_its_promoted_pin` (another tenant's memo and
 pin stay). Server clippy `-D warnings` and the memra-server suite (787 passed) green, gated before the commit.
+Round 2, one finding, real, fixed: the idle block's 2 ms cap for a `Promoting` entry sits inside `active.is_empty()
+&& queue.is_empty()`, but the off-tick promote keeps its parked request on the queue, so the cap never fired and the
+loop spun the CUDA owner thread through park-and-requeue ticks for the whole copy (about 26 ms per promote in A's
+receipt). The admission pass now counts the requests it parks on the promote; when nothing is active, every queued
+request is parked and the `Promoting` entry is not ready, the loop waits on the command channel for the same bounded
+2 ms before the tick (commands stay responsive; the tick top then polls the transfer). Source census test
+`the_run_loop_waits_boundedly_when_the_queue_is_only_requests_parked_on_a_promote`. Server clippy `-D warnings` and the
+memra-server suite (788 passed) green, gated before the commit. Owed to the door review: the promote stall cell on
+this tree (A's day-18 receipt was taken with the spin; the wait changes timing, not bytes).
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
