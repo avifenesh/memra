@@ -201,10 +201,12 @@ RTX 5090 Laptop GPU, the 9B (this card's own figures):
    tenant's tick on this card at this entry size, the door's part about 0.6 ms of it, ON above OFF. The restore
    class's 9 ms in both arms is the allocation and the recurrent f32 copies that stay on the owner stream (owed
    item 1), not the rows. `C/pro-single-day30/reading.log`, `C/DAY30.md`.
-6. **Neighbouring doors with their own dates.** `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-09-23; its part (b) demotes
-   into the pinned host tier through `host_demote_prefix_ref`, the door's route when ON); `MEMRA_KV_PARK_COMPACT`
-   (decide-by 2026-10-06 per `spill-b-20260919/KV-RESIDENCY-DESIGN.md` day-28 addendum; the row still reads `0 =
-   OFF by design`); `kv-tier-gate --kv-allocator vmm` (decide-by 2026-10-04, `docs/decisions/KV-PHYSICAL-RECLAIM.md`);
+6. **Neighbouring doors with their own dates.** `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-09-23; its own packet is
+   `C/ADMIT-BY-MEMORY-DECISION-PACKET.md`, day 32; its part (b) demotes into the pinned host tier through
+   `host_demote_prefix_ref(..., ContractD2h::OnTick)`, the day-16 synchronous tick program under both doors, not this
+   door's copy-stream route; a no-op with the tier unarmed); `MEMRA_KV_PARK_COMPACT` (decide-by 2026-10-06 in the
+   prose of its `docs/FLAGS.md` row since B's `72f89e233` and in `spill-b-20260919/KV-RESIDENCY-DESIGN.md`'s day-28
+   addendum; the row's value column still reads `0 = OFF by design`; the reconciliation proposal is `C/DAY32.md` 2); `kv-tier-gate --kv-allocator vmm` (decide-by 2026-10-04, `docs/decisions/KV-PHYSICAL-RECLAIM.md`);
    the MoE slot cache door (decide-by 2026-10-04, `C/MOE-SLOT-CACHE-DOOR.md`). The arena path
    (`MEMRA_GLM5_TP_KV_HOST=1`) is refused with the door until the lease handoff is built (ruling 28).
 7. **Still unbuilt or unmeasured (section D of the door table).** The arena's lease handoff; the DFlash tail slice

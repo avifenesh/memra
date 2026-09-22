@@ -819,3 +819,9 @@ cards, tree and receipt path, verbatim verdicts), the cost table (every stall ce
 per card), the open findings, and the three outcomes the door hygiene rule allows with what each would require,
 stated without a recommendation; every number there was re-read from its receipt file on day 30 (`DAY30.md`). It
 is a draft for the owner and becomes a `docs/decisions/` record only after the owner decides.
+
+DAY 32: the neighbouring door `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-09-23) has its own packet in the same shape,
+`ADMIT-BY-MEMORY-DECISION-PACKET.md` (this directory). Its part (b) reaches this tier through
+`host_demote_prefix_ref(engine, host, entry, ContractD2h::OnTick)` (`evict_all_demoting`, worker.rs), so under both doors
+ON the admission flush's demote is the day-16 synchronous tick program of Move 1 owed item 3, not the copy-stream route;
+with the host tier unarmed it is `PrefixCache::evict_all`. No cell has booted the two doors together (`DAY32.md`).
