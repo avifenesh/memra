@@ -1,0 +1,36 @@
+name: Prompt depth router
+
+on:
+  pull_request:
+    paths:
+      - research/prompt-depth-router-20260922/**
+      - .github/workflows/prompt-depth-router.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prompt-depth-router-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  classifier:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Native CPU behavior, request interface and routing latency
+        run: |
+          python3 research/prompt-depth-router-20260922/run_cpu.py \
+            --out "$RUNNER_TEMP/prompt-depth-router"
+      - name: Retain raw timings and exact CPU executables
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: prompt-depth-router-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/prompt-depth-router
+          if-no-files-found: error
+          retention-days: 7
