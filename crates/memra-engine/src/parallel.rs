@@ -1512,7 +1512,6 @@ mod tests {
             tie_word_embeddings: None,
             arch: Arch::Step35,
             prefill_activation: None,
-            tie_word_embeddings: None,
             // step35 parses its own window into `step35.sliding_window`; the hints are for
             // packs whose plan does not consume one (see ModelConfig::window_hint).
             window_hint: None,
