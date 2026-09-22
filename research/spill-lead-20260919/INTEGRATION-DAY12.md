@@ -1677,7 +1677,15 @@ pin into a tuple the refutation arm cannot reach, so a ready restore without a c
 boot (out of every eviction index, `pinned_left` on every purge). The shape is decided before anything moves; a missing
 cache releases the pin and drops the record. CPU test `a_ready_restore_without_a_cache_releases_its_pin_at_take_ready`
 (the entry's pin count returns to 0). Server clippy `-D warnings` and the memra-server suite (804 passed) green, gated
-before the commit.
+before the commit. Round 2, two findings, both real, fixed: (1) the restore park counted into the parked-only wait's
+counter but the wait was still guarded on a not-ready `Promoting` entry alone, so a whole-entry hit on an idle box parked
+its request and spun the owner thread through park-and-requeue ticks (the #627 shape again); the guard now reads a
+not-ready `Promoting` entry OR a not-ready `Restoring` request, and the census test pins it. (2) the probe called any
+other request's READY restore an orphan and dropped it on sight, so the three-tick grace was reachable only from the
+tick top's expiry and the first other request through the probe killed the state (the owner request can be requeued by
+an earlier admission gate without reaching the probe); the probe now drops it only past `RESTORE_READY_TICKS`, within the
+grace it goes through and the state waits for its owner; the CPU test covers both readings. Server clippy `-D warnings`
+and the memra-server suite (804 passed) green, gated before the commit.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.

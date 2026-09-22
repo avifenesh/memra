@@ -47,5 +47,11 @@ Author's review of the full diff `main..lane/spill-integ37-20260922`, posted as 
   source entry's pin instead of leaking it (the `let`-else scrutinee had moved the pin). CPU test asserts the pin count
   returns to 0.
 
+## Review round 2 (revuto, addressed in the integ)
+- The parked-only bounded wait is guarded on a not-ready `Promoting` entry or a not-ready `Restoring` request (a parked
+  restore no longer spins the owner thread on an idle box); census test extended.
+- Another request's ready restore is an orphan only past `RESTORE_READY_TICKS`; within the grace the probe goes through
+  and leaves the state for its owner; the CPU test covers both readings.
+
 ## What I did not do
 - No GPU cell of my own beyond the smoke; the door stays OFF; the 5090 door gates on this tree are owed (C's next day).

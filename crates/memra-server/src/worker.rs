@@ -14725,7 +14725,12 @@ fn host_restore_probe_decision(host: &HostPrefixCache, request_id: &str) -> Rest
                 RestoreProbe::ParkAgain
             }
         }
-        Some(r) if r.ready => RestoreProbe::DropOrphan,
+        // Another request's READY restore is an orphan only once its grace ran out
+        // (`RESTORE_READY_TICKS` tick tops, counted by the tick top): the owner request is
+        // normally ahead in the FIFO but an earlier admission gate (lane cap, memory defer) can
+        // requeue it without reaching this probe, and the first other request here must not kill
+        // its state (revuto round 2 on #638). Within the grace it goes through; the state waits.
+        Some(r) if r.ready && r.ready_ticks > RESTORE_READY_TICKS => RestoreProbe::DropOrphan,
         Some(_) => RestoreProbe::Through,
     }
 }
@@ -22513,7 +22518,8 @@ pub fn run(
         if active.is_empty()
             && parked_on_promote > 0
             && parked_on_promote == queue.len()
-            && hpx.promoting.as_ref().is_some_and(|p| !p.ready)
+            && (hpx.promoting.as_ref().is_some_and(|p| !p.ready)
+                || hpx.restoring.as_ref().is_some_and(|r| !r.ready))
         {
             match rx.recv_timeout(Duration::from_millis(2)) {
                 Ok(cmd) => handle_cmd(
@@ -42000,9 +42006,21 @@ mod tests {
             super::host_restore_probe_decision(&host, "req-21"),
             super::RestoreProbe::Consume
         );
+        // Another request within the grace goes through and leaves the state for its owner
+        // (revuto round 2 on #638); past the grace the state is an orphan to drop.
+        assert_eq!(
+            super::host_restore_probe_decision(&host, "req-other"),
+            super::RestoreProbe::Through
+        );
+        host.restoring.as_mut().unwrap().ready_ticks = super::RESTORE_READY_TICKS + 1;
         assert_eq!(
             super::host_restore_probe_decision(&host, "req-other"),
             super::RestoreProbe::DropOrphan
+        );
+        assert_eq!(
+            super::host_restore_probe_decision(&host, "req-21"),
+            super::RestoreProbe::Consume,
+            "the owner still consumes its own ready state"
         );
     }
 
@@ -44500,6 +44518,11 @@ mod tests {
         let guard = code[handoff + wait..]
             .find("hpx.promoting.as_ref().is_some_and(|p| !p.ready)")
             .expect("the wait is guarded on a not-ready Promoting entry");
+        assert!(
+            code[handoff + wait..handoff + wait + 400]
+                .contains("hpx.restoring.as_ref().is_some_and(|r| !r.ready)"),
+            "the wait is guarded on a not-ready Restoring request too (revuto round 2 on #638)"
+        );
         let recv = code[handoff + wait + guard..]
             .find("rx.recv_timeout(Duration::from_millis(2))")
             .expect("the wait is the bounded 2 ms command receive");
