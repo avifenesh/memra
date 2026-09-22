@@ -1127,6 +1127,56 @@ Revuto round 1 on #621: the gate's default port 8186 was `serve-gemma4-batch-gat
 2026-08-19 gate-integrity audit removed; moved to 8189 after a census of every port literal under `tools/` (8189 unused),
 the port guard unchanged; the gate re-run on this tree at 8189 (`health-fault-gate-port8189.log`).
 
+## integ30 (`lane/spill-integ30-20260922`): A day 17, memra#536 Move 1 first slice under the host-contracts door
+Lane tip merged: A `b967b8d30` on main `dc192cd95` (#621); INDEX.md conflicted on the inherited stray marker, both rows
+kept, every parent row present, census clean. Engine and worker changes, all reachable only with
+`MEMRA_KV_HOST_CONTRACTS=1` (default OFF, decide-by 2026-10-05): `crates/memra-engine/src/tier_transfer.rs` (an
+optional second CUDA stream owned by the same owner thread, `new_with_copy_stream`, `copy_stream()`, the D2H items of a
+batch issued on it behind the producer fence's event with their completion event recorded there and no owner-stream
+wait installed at submit, `synchronize_copy_stream` in `release_device` and `take_plane`); `crates/memra-server/src/
+worker.rs` and `worker/host_glm.rs` (the demote route split into `host_kv_planes_submit_contract` and
+`host_kv_planes_settle_contract` with the blocking wrapper kept; `PendingContractDemote`, `HostDemoteOutcome::Demoting`,
+`host_demote_publish` at the tick-top poll as the run loop's first statement after `require`, planes back, retire,
+acknowledge and `bind_tier_image`; settle-first in `host_demote_prefix_ref`, `host_promote_prefix_hit` and
+`purge_tenant`; a hit on a `Demoting` entry is a cold prime; a tier latched off drops it unpublished; failures publish
+nothing with the day-15 typed outcomes; `apply_flip_demote_fault` for the fault gate); five CPU tests; `docs/FLAGS.md`
+door row describes the split. No new flag, no numeric change; `Promoting` named, not introduced.
+
+**Gate lines, verbatim.** Target card (binary `ceaf238f...`): `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`
+default and plain, door OFF and ON; `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (62 ok); `SPEC-ON-CACHE-HIT GATE: ALL GREEN
+(qwen)` OFF and ON; twin gate `... V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` OFF and ON; failure gate `KV-HOST-SPILL
+FAILURE GATE: 1 FAILURE(S)` both arms (the pre-existing `FAIL: pool-full refusal is LOUD and named`, carried since C's
+day 16); unit cells `8 passed`. Local RTX 5090 (9B, binary `3a92efab...`): identity `ALL GREEN (teeth=0)` x4; hit gate
+`ALL GREEN (qwen)` OFF and ON; failure gate `1 FAILURE(S)` x2 (the same line); fault gate `KV-HOST-CONTRACT-FAULT GATE: 5
+FAILURE(S)`, all in `promote-reject` (the gate hardcodes `1 of 34 items` from the 27B; the 9B prints 18; gate unchanged,
+stated); twin gate on the 9B `REFUSED: cohort promotion did not happen for 2800 tokens ...` both arms (the gate's cohort
+shape), on the 27B artifact `-> PASS` OFF and ON. Lead reading: both reds on the 5090 are gate-shape items of the 9B
+artifact and the pool-full line is a pre-existing red on both cards; neither is A's change; both are assigned to C
+day 21 (running) with the rule that a gate match may move only to follow a cited deliberate message change.
+
+**Stall verdict, verbatim** (one RTX PRO 6000 Blackwell, N=5 per arm per order, both orders, one lock hold, replay
+PASS): `STALL rule cell=stall-demote-on arm=demote n_per_order=5 pooled=10 ... arm_p99=130.9 arm_max=163.4
+stall_median=149.6 stall_min=75.9 stall_max=150.0 ... tenant_text_identical=True errors=0`; the pre-registered rule
+against day 16 (ON 193.5, OFF 117.5) reads `toward_off`: the stretched tick is 163 ms against 208 ON and 132 OFF, the
+copy time left the tick, the two receipt hashes remain. Two false starts A kept as receipts (a submission line carrying
+the door's refusal marker text, reworded; a driver misreading the twin gate's `REFUSED: --out must be a new directory`
+as a busy lock). #536 has A's receipt and correction comments; the issue stays open (the promote's turn and Move 2).
+
+Battery (`integration-day12/integ30-cpu-battery/`, CPUQuota 1200 percent): fmt, portable suites, memra-server suite,
+clippy, censuses, collector pytest, engine CPU lib tests, engine and server clippy `-D warnings`, marker census,
+workflow keys, perf board, diff-check: 15 steps rc=0. Local 5090 `tools/serve-smoke.sh` (door OFF, the default):
+`serve-smoke: 0 failed`. C day 21 (running while this integ was built; lands as integ31) found both 5090 reds to be
+stale gates and re-read failure, fault and identity gates ALL GREEN on both cards with this slice merged.
+
+Revuto round 1 on #622, one finding, real, fixed by the lead in the integ: in `host_demote_settle_with` the arm for
+a pending demote missing its shell or its ticket took both fields before matching, so a SUBMITTED ticket without its
+shell was dropped without retire, acknowledge or abort: the ledger's one in-flight charge and the registered planes
+leaked silently and the tier would never demote again (fail open). The arm now fails closed: a submitted ticket is
+settled and its sources retired through the engine where it is reachable and the tier latches off
+(`SourceQuarantined`, the planes cannot come back without their shell); a shell without a ticket drops whole (`Failed`,
+nothing was submitted). New CPU test `a_pending_demote_missing_its_shell_or_ticket_fails_closed` (both arms); the
+six state-machine tests, the memra-server suite and server clippy `-D warnings` green on the round-1 tree.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
