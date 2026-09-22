@@ -1,0 +1,14 @@
+tree 18258c1f03d4a78b26abbc11ffb9b7cd29f758dd started 2026-09-22T12:29:12Z host avifenesh rustc rustc 1.97.1 (8bab26f4f 2026-07-14)
+== fmt: cargo fmt --all -- --check
+   rc=0 (3s)
+== portable-suites: bash tools/portable-suites.sh
+   rc=0 (21s)
+   | skip-census: output banked at /home/avifenesh/projects/wt-spill-integ41/target/portable-suites.log
+   | skip-census: 354 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 14 binaries
+   | portable-suites: PASS (tier, KV and onboarding CLI suites executed on CPU; skips 0 of budget 0; NOT GPU qualification)
+== test-server: cargo test -p memra-server --offline --no-fail-fast
+   rc=0 (164s)
+   | 
+   | test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   | 
+== clippy: env DOCS_RS=1 cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf -p memra-cli --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings

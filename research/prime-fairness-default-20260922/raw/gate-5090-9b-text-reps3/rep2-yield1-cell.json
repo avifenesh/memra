@@ -1,0 +1,132 @@
+{
+  "seed": {
+    "status": 200,
+    "text": "Write a practical handbook for new volunteers, one numbered lesson per paragraph.\nWrite a practical handbook for new volunteers, one numbered lesson per paragraph.\nWrite a",
+    "finish": "length",
+    "error": null,
+    "ttft_s": 1.0385121589933988,
+    "first_token_s": 1.0385130439826753,
+    "total_s": 1.2185117620101664,
+    "usage": {
+      "prompt_tokens": 4111,
+      "completion_tokens": 32,
+      "total_tokens": 4143,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "elapsed_s": 1.21286682,
+      "spec": {
+        "rounds": 10,
+        "drafted": 30,
+        "accepted": 22,
+        "acceptance_rate": 0.7333333333333333
+      }
+    },
+    "sha": "a26fc4e8fab0d671"
+  },
+  "cell_s": 60.302648576005595,
+  "requests": {
+    "peer-cold-a": {
+      "status": 200,
+      "text": "Write a practical handbook for new volunteers, one numbered lesson per paragraph.\nWrite a practical handbook for new volunteers, one numbered lesson per paragraph.\nWrite a",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 0.569752539973706,
+      "first_token_s": 0.5697534319770057,
+      "total_s": 55.60778236098122,
+      "usage": {
+        "prompt_tokens": 2071,
+        "completion_tokens": 32,
+        "total_tokens": 2103,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 55.574322043
+      },
+      "sha": "a26fc4e8fab0d671"
+    },
+    "peer-cold-b": {
+      "status": 200,
+      "text": "Write a practical handbook for new volunteers, one numbered lesson per paragraph.\nWrite a practical handbook for new volunteers, one numbered lesson per paragraph.\nWrite a",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 1.4053994200075977,
+      "first_token_s": 1.405400264018681,
+      "total_s": 53.04305703402497,
+      "usage": {
+        "prompt_tokens": 2140,
+        "completion_tokens": 32,
+        "total_tokens": 2172,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 52.191113469
+      },
+      "sha": "a26fc4e8fab0d671"
+    },
+    "peer-hit": {
+      "status": 200,
+      "text": "Write a practical handbook for new volunteers, one numbered lesson per paragraph.\nWrite a practical handbook for new volunteers, one numbered lesson per paragraph.\nWrite a",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 0.8708954419998918,
+      "first_token_s": 0.8708963029785082,
+      "total_s": 50.10646964798798,
+      "usage": {
+        "prompt_tokens": 4111,
+        "completion_tokens": 32,
+        "total_tokens": 4143,
+        "prompt_tokens_details": {
+          "cached_tokens": 4064
+        },
+        "elapsed_s": 49.300373493
+      },
+      "sha": "a26fc4e8fab0d671"
+    },
+    "long": {
+      "status": 200,
+      "text": "Write a practical handbook for new volunteers, one numbered lesson per paragraph.\nWrite a practical handbook for new volunteers, one numbered lesson per paragraph.\nWrite a",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 58.802517364005325,
+      "first_token_s": 58.80251832300564,
+      "total_s": 59.30010484601371,
+      "usage": {
+        "prompt_tokens": 135470,
+        "completion_tokens": 32,
+        "total_tokens": 135502,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 59.144828315,
+        "spec": {
+          "rounds": 10,
+          "drafted": 30,
+          "accepted": 22,
+          "acceptance_rate": 0.7333333333333333
+        }
+      },
+      "sha": "a26fc4e8fab0d671"
+    }
+  },
+  "tick_max_ms": 2458,
+  "generation": 0,
+  "prompt_tokens": {
+    "seed": 4111,
+    "long": 135470,
+    "peer-a": 2071,
+    "peer-b": 2140
+  },
+  "arm": "1",
+  "rep": 2,
+  "log": {
+    "prime_walk": [
+      "[prime-walk] model=\"gate\" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]"
+    ],
+    "supported": true,
+    "yield_door_on": true,
+    "yield_lines": 142,
+    "chunk_lines": 153,
+    "worker_panic": false
+  }
+}

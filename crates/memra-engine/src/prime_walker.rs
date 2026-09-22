@@ -35,10 +35,15 @@ pub struct PrimeProgress {
     pub max_chunk_wall: Duration,
 }
 
-/// The one door read shared by all adapters. Default OFF until route receipts qualify it.
+/// The one door read shared by all adapters. Default ON since 2026-09-22 (memra#521): an owned
+/// walker advances one frozen chunk per tick and the worker returns to its peers between chunks.
+/// `MEMRA_PRIME_YIELD=0` is the rollback seam (drain the same frozen tape in one call); both arms
+/// execute the same range program, so the seam changes interleaving, never bytes. Receipts:
+/// `research/prefill-fairness-20260908/` (three independent 5090 positives on the MTP route),
+/// `research/prime-fairness-default-20260922/` (the decision cell on the 5090 and a PRO 6000).
 pub fn prime_yield_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var("MEMRA_PRIME_YIELD").as_deref() == Ok("1"))
+    *ENABLED.get_or_init(|| std::env::var("MEMRA_PRIME_YIELD").as_deref() != Ok("0"))
 }
 
 /// Shared observer used by synchronous engine callers and cooperative serving adapters.
