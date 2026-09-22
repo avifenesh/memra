@@ -27,6 +27,7 @@ pub fn render(tok: &Tokenizer, user: &str) -> Result<Vec<u32>, Box<dyn std::erro
 
 pub struct TemplateShape {
     header: Vec<u8>,
+    exact_header: Option<Vec<u32>>,
     suffix: Vec<u32>,
 }
 
@@ -55,8 +56,12 @@ impl TemplateShape {
         let start = positions[0];
         let end = start + SENTINEL.len();
         let mut offset = 0;
+        let mut header_boundary = None;
         let mut suffix_start = None;
         for (index, id) in ids.iter().enumerate() {
+            if offset == start {
+                header_boundary = Some(index);
+            }
             if offset == end {
                 suffix_start = Some(index);
                 break;
@@ -69,6 +74,7 @@ impl TemplateShape {
         }
         Ok(Self {
             header: decoded[..start].to_vec(),
+            exact_header: header_boundary.map(|boundary| ids[..boundary].to_vec()),
             suffix: ids[boundary..].to_vec(),
         })
     }
@@ -80,6 +86,17 @@ impl TemplateShape {
             return Err("rendered template suffix changed");
         }
         let end = input.len() - self.suffix.len();
+        if let Some(header) = &self.exact_header
+            && input.starts_with(header)
+            && header.len() <= end
+        {
+            return Ok(UserSpan {
+                start: header.len(),
+                end,
+                leading_skip: 0,
+                header_tokens: header.len(),
+            });
+        }
         let mut matched = 0;
         for (index, id) in input[..end].iter().take(MAX_HEADER_TOKENS).enumerate() {
             if matched == self.header.len() {
