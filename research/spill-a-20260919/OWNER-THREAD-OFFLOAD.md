@@ -846,3 +846,58 @@ remaining owner-thread cost and is priced per demote by the ledger line: the pre
 allocations and registrations, the fence and the submission, then the 100 f32 D2H copies one `synchronize` at a time
 into pageable `Vec`s) reads about 6 ms at steady state, 39 to 45 ms on the first two demotes of a boot (first touch), 149
 to 151 ms under the verify arm (whose digest precedes it). Items 2 to 4 unchanged.
+
+## Move 1, day 29: owed item 2a landed under ruling 40, a hit on the `Hashing` entry parks one tick (`DAY29.md`)
+
+**What landed (`867655368`).** The admission probe decides, before the promote decision and with the request in hand,
+whether the request's prompt hits the one `Demoting` entry in its `Hashing` phase (`host_hashing_hit`: `hashing` is
+`Some`, the pool key, the host `lookup` rules, deeper than the device hit). A hit PARKS the request (`host_hashing_park`:
+the id recorded once on `PendingHashing.parked` with the typed line `hit parked on a Hashing entry: request <id> ...
+(ticket seq=S, N payloads, M MB on the hash helper for X ms); the request waits one tick for the digests`, re-parks
+counted silently); the caller's existing requeue arm takes it (`parked_on_promote += 1`); the parked-only bounded wait's
+guard covers a `Hashing` entry; the tick-top poll lands the digests and publishes; the re-admitted request finds the
+published entry, submits its promote and parks on the `Promoting` entry, then re-admits to the unmodified device hit
+path: one numeric program (the request generated nothing before the park). A copy-phase `Demoting` entry keeps the
+day-17 rule (a cold prime). The ledger line ends `; H hit(s) parked on the Hashing entry (R re-park(s))`; a latch with
+parked requests prints `H request(s) parked on the Hashing entry re-admit to a cold prime (the tier latched off)`. No
+new state the request owns (the orphan grace has nothing to expire), no hash and no wait on the owner thread, no flag,
+no new `MEMRA_*` name. CPU cells: the decision and its misses, once per id, the ids ride the polls and are consumed at
+publication and at the latch; the census and the parked-only wait test extended. The fault gate's demote cells wait for
+the boot's last publication before `stop` (bounded 15 s, its own check).
+
+**The gates, target card (one sitting, `pro-single-day29/box/`).** Identity x4 `KV-HOST-SPILL IDENTITY GATE: ALL GREEN
+(teeth=0)` (12 ok each; day 28's default ON `4 FAILURE(S)`), failure x2 `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (15 ok,
+the `digest` cell in; day 28's ON `1 FAILURE(S)`), `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (123 ok, ten cells; day 28
+`23 FAILURE(S)`), twin x2 `-> PASS`, hit OFF/ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 / 68 ok, the ON census
+equal to day 24's), unit 8 + 5 + 10. Local RTX 5090: identity default ON `ALL GREEN (teeth=0)`, fault default and plain
+`ALL GREEN` (123 ok each, on the fixed gate), hit OFF/ON `ALL GREEN (qwen)` with the day-24 census. Clauses 1a to 1c
+re-read on the new tree, the day-26 double-park cell byte-for-byte (twenty boots, N=5 per arm per order, both orders,
+20 of 20 replays PASS, 33 to 50 C): stall `81.7 / 81.8 against 85.4 / 85.1`, `-3.6 / -3.3 unc=0.1 isolated`; e2e
+`+16.8 / +16.9`; `owner in-completion median=7.39 min=7.20 max=45.18` (N=100); the helper 73.1 ms per 157.9 MB;
+`DAY28 VERDICT clauses_failed=0 -> ALL PASS`: unchanged from day 28 within 0.1 ms (this cell's promotes are spaced
+further than one hash; no hit fell in the window there). **The count**: 1 hit parked on a `Hashing` entry per identity
+default-ON boot on both cards (target card `35 re-park(s)` across the 73.2 ms hash at the 2 ms cadence, the 5090 `5`
+across 12.9 ms), the request arriving 0.3 to 0.4 ms after the hand-off; r3 and r4 `cached=64 lcp=64`; the `digest` cell
+1; the fault gate's four promote cells 2 each; every plain-arm, demote, d2d and hash cell 0; zero hits on a copy-phase
+`Demoting` entry. **Every arm of DAY28's clause 2 is green on both cards: the day-28 and day-29 code is integrable.**
+
+**The gate fix's two wrong shapes, in the history (`DAY29.md` section 2).** `grep -c` exits 1 on a zero count and the
+gate runs `set -euo pipefail`, so the first wait aborted the gate at its first cell (no verdict line); the second waited
+on a hand-off count that read 0 when r3 returned, because the spec-boundary insert, the eviction and the demote's
+submission land as r3 completes. The landed wait is the check's own condition, a publication after the injected
+refusal. Both caught on the local RTX 5090 before the target card's fault cell ran; no assertion moved.
+
+**What Move 1 still owes, in order (restated).**
+
+1. **The settle-time owner wait for an H2D** (unchanged from day 18).
+2. **The bundle hash off the tick**: LANDED and green on both cards (days 28 and 29). Item 2a CLOSED. One question for
+   the lead, not owed as work: a hit inside the COPY window (a `Demoting` entry with its ticket in flight, about 54 ms
+   on the target card) keeps the day-17 rule, a cold prime; zero observed in every ON boot on both cards today; if it
+   ever fires in a gate the same park would cover it with one predicate change (`hashing` optional).
+3. **The by-reference demote routes** (unchanged).
+4. **The decision cell (i)** (unchanged).
+
+**What Move 2 still owes (restated).** Item 1, **the recurrent f32 state off the tick**: the pre-submit segment is the
+demote's whole remaining owner-thread cost, priced per demote by the ledger line: about 6 ms at steady state (today's
+`owner in-completion` median 7.39), 40 to 45 ms on the first two demotes of a boot (first touch), 149 to 152 ms under
+the verify arm (the identity gate's `pre-submit 148.52` today). Items 2 to 4 unchanged.
