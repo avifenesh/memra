@@ -17,6 +17,11 @@ def reproduce(root, runtime_archive, expected_runtime_sha, out):
     if sha(runtime_archive) != expected_runtime_sha or source["runtime_source_sha256"] != expected_runtime_sha:
         raise ValueError("runtime archive has no matching external identity")
     workloads = json.loads((root / "workloads/manifest.json").read_text())
+    if workloads.get("schema") == 2:
+        if sha(root / "workloads/workloads_simple.py") != workloads["generator_sha256"]:
+            raise ValueError("versioned workload generator differs from frozen inputs")
+        if source["harness_files"]["prefix/workloads.py"] != workloads["helper_sha256"]:
+            raise ValueError("versioned workload helper differs from measured source")
     state = json.loads((root / "native/status.json").read_text())
     if state["status"] != "completed":
         raise ValueError("the matrix is not complete")
