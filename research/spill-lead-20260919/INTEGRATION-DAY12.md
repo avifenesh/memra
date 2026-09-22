@@ -1917,6 +1917,86 @@ off the tick`, 12 with a draft plane in the batch (8 x `64 rows (118.8KB)`, 3 x 
 refused, disabled, declined-at-probe or disagreement lines. The draft-bearing route now has the hit gate's identity
 clause over it on both cards.
 
+## integ40 (`lane/spill-integ40-20260922`): A day 24 (the spec-boundary capture route, whole) and C day 29 (decision cell (i): the two Move 1 programs in one window; the hit gate under the collector)
+Lane tips merged, in order: C `89a6aa8d6` (day 29), A `d5708266f` (day 24), on main `ebe3fe17d` (#642). One conflict,
+`HOSTPREFIX-DOOR.md` (C's tip against main), resolved by union; the flagged lines were the two Move 1 cost rows C
+rewrote with the same-window pair, C's rewritten E clause, and the day-27 tail already superseded on main, each verified
+against both parents (ruling 27). A's merge was clean.
+
+**A day 24 (Move 2 owed item 2, the capture half; memra#536 comment posted).** Pre-registered before code (`dc5eb64bc`).
+Tier first: `d2d_capture_draft_publish` (landing is EVERY item's event: a publish with the trunk landed and a draft item
+running is refused `NotReady`, both or neither; the receipt term witnessed per class) with its red arm
+`d2d_capture_draft_published_with_the_draft_unlanded_fails`; contracts 87 passed (84 before). Worker: slice 1's submit
+half factored into one core both publishers call (`host_capture_submit` over `CaptureSubmit`; the seed route's lines
+byte-unchanged), and `prefix_spec_capture_off_tick` as the spec-boundary route: refuses by name to the OFF program (TP
+shards, latent planes and tails, a snapshot at another position, a short or empty plane, the SWA ring), settles a pending
+capture `Block` before a second, skips a prefix the settled capture already published, and hands the capture back
+untouched on `OnTick`; the draft scratch rows `[0..pos)` are two more items of the same batch under one fence, ticket and
+receipt (`CapturePlaneClass::Draft`, `Done { kv, draft }`), so the `Capturing` entry owns both classes and publishes both
+or neither; a refused registration or retention of a draft plane takes every fresh plane back through `refuse`. Census
+item 10's open question (the borrow's lifetime) is answered by naming the one path that frees a source inside the tick,
+the MTP demotion (`into_demoted` drops the `MtpScratch`), which now settles a pending capture `Block` first (the spec and
+the DFlash demotions). No new engine seam, no new flag, no new numeric program. Target card, tree `185c57b4f`, one sitting
+10:59Z to 11:13Z with C sharing the card (zero lock retries), verbatim: identity `KV-HOST-SPILL IDENTITY GATE: ALL GREEN
+(teeth=0)` x4; failure `KV-HOST-SPILL FAILURE GATE: ALL GREEN` x2; fault `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (93
+ok; both D2D cells still refuse); twin `V1=ok ... V6=ok -> PASS` x2; hit OFF `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`
+(61 ok); hit ON armed `ALL GREEN (qwen)` (68 ok), `ok: door arm: 30 route submission(s) across the two boots` (day 23:
+19); unit `8 passed` (server), `5 passed` (engine). Acceptance met: all 11 of the spec-on boot's `insert (spec-boundary)`
+publishes routed with the draft plane (`capture submitted off the tick (spec-boundary): 64 tokens, 34 planes (158.9MB)
+...; draft plane 64 rows (118.8KB) in the batch`), 12 receipts `require=ok` (11 `items=34`), 12 published, day-23's
+restores still engaging (13 submitted, 12 with the draft plane), zero refused, trunk-only, dropped, skipped or latched
+lines, every `spec==plain byte identity` ok. Findings: (1) the draft plane at publication is 118,784 B per 64-token
+entry on the 27B, the restore side's figure exactly; (2) on the gate's shape every spec-boundary capture settles at the
+SESSION RETIRE (`settled synchronously by a session retire`, `after 1 poll(s)`, 106.3 to 204.6 ms), not at a tick-top
+poll, while the seed capture published at a poll: the slice-1 retire seam behaving as this slice requires (the sources
+are the live session's planes), but a session retiring in the tick after its prime stop pays a host wait for the 159 MB
+copy, so the moved share on that shape is not the copy's full cost; pricing it is owed item 3; (3) no finding against the
+engine or the gates. Budget 2.9 against 5.
+
+**C day 29 (Move 1 owed item 4, decision cell (i)).** Arm X = today's tree (the copy stream), arm Y = the day-16 tree
+`1646d421b` rebuilt on the box (`/root/wt-c-day16`, the on-tick owner-stream program; `git diff --stat 1646d421b
+653c997f4 -- crates/ Cargo.toml Cargo.lock` empty, both binaries hashed), door ON in both, the day-16 script's `on` boot,
+twenty boots `XYXYXYXYXY` then `YXYXYXYXYX` (N=5 per arm per order), one collector hold, a dry boot of Y first (the day-16
+tree built in 3 m 27 s and booted without a patch), 41 `STALL REPLAY: PASS`, `ADMISSIBLE all_receipts=True`, 33 to 51 C,
+32.5 to 360.8 W. Verbatim: `DAY29 CELL(i) class=demote order=o1 y_minus_x=+43.4 unc=0.6 -> isolated (Y owner stream 193.4
+N=5; X copy stream 150.0 N=5)`, `order=o2 y_minus_x=+43.0 unc=0.1 -> isolated (Y 193.1; X 150.0)`; `class=promote order=o1
+y_minus_x=+13.3 unc=0.4 -> isolated (Y 162.9; X 149.5)`, `order=o2 y_minus_x=+12.8 unc=0.2 -> isolated (Y 162.5; X
+149.7)`; `DAY29 CELL(i) CLAUSE class=demote stall_median(second stream)=150.0 idle_p99_sitting=14.9 -> clause_not_met`,
+`class=promote ... =149.6 ... -> clause_not_met`; `DAY29 CELL(i) CLAUSE: NOT MET (demote=False promote=False
+admissible=True); executed-not-qualified`. **Finding for the lead, not tuned (owed to A):** arm X's promote arm reads
+149.6 where the day-18 and C day-23 trees read 81.9 in the same shape; the lines (100 of 100 promote runs) say why: on
+today's tree the hit parks TWICE (`promote published off the tick ... 19.6ms`, then `restore submitted off the tick ...
+request parked`, `90.3ms to re-admission`, Move 2's restore route, absent on the C day-23 tree), and the inline demote
+publishes `after 1 poll(s), 22.4ms` (C day 23: `97.0ms`), so its two on-tick hashes land on one tick and the promote
+arm's tenant stall equals the demote arm's (150.0). Which slice between `0713c1a79` and the integ38 tip moved the copy's
+landing is not determined. Tenant text sha `264b120d487de2c9` in all 41 receipts of both trees. Lead reading: a promoted
+entry's first hit now takes the restore route and parks the request a second time; the re-admission wait (about 90 ms
+for a copy that lands in about 2 ms) rides the tick that carries the demote's on-tick hashes, so the promote-then-hit
+shape pays Move 1's park plus Move 2's park plus the hash tick. Owed to A (day 25): the second park's cost on this shape,
+and whether a hit on an entry the promote just published should restore at all (the promoted planes are already on the
+device: the restore copies device to device what the promote just landed). The hit gate under the collector
+(`--external-lock 3`, OFF and ON in one hold): `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` both arms (61 and 68 ok), first
+line `lock: collector's inherited FD 3 on /tmp/memra-gpu.lock (no flock of this gate's own)`, both `LOCK.json`
+`{"owner": "collector", "lock": "/tmp/memra-gpu.lock", "mechanism": "inherited-flock-same-open-description", ...
+"qualification": false}`. Budget 2.0 against 4.
+
+**Lead review of A day 24.** Read the submit core (one fence, one ticket, one receipt for both classes; the draft
+plane's refusal arms take every fresh plane back), the settle (`Done { kv, draft }` fills the shell's draft slot only from
+a landed batch), the route's by-name refusals and the second-capture settle, and every in-tick source free (session
+retire from integ37, the spec and DFlash demotions added here) settling a pending capture with Block first. The committed
+prefix `[0..pos)` of a live session's trunk and draft planes is append-only past `pos` and never rewritten below it by
+verification, so the borrowed source holds for the copy's life. No finding.
+
+**Battery (tree `a6699b4c8`, receipts `integ40-cpu-battery/`, `integ40-serve-smoke-5090/`, `integ40-hit-gate-5090/`).**
+All fifteen CPU steps rc=0. Local RTX 5090: `serve-smoke: 0 failed` (gemma4 and Q35 arms SKIP, absent models), engine
+`d2d_*` GPU cells `5 passed` under the lock, and the door gates A stated as owed on this tree, the hit gate OFF and ON
+armed (9B), verbatim: `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 61 ok OFF, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 68
+ok ON, `ok: door arm: 30 route submission(s) across the two boots`; the spec-on boot 11 `capture submitted off the tick
+(spec-boundary)`, all 11 with the draft plane in the batch, 12 `D2D capture receipt ... require=ok` (23 `items=18`, 2
+`items=16` across both classes), 12 `capture published off the tick`, 13 `restore submitted off the tick`, zero refused,
+disabled, trunk-only, dropped or skipped lines. Both draft-bearing routes now carry the hit gate's identity clause on
+both cards.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
