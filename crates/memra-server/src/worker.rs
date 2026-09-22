@@ -44885,15 +44885,23 @@ mod tests {
         let promote_probe = body.find("&& host_promote_park_probe(").unwrap();
         let restore_probe = body.find("&& host_restore_park_probe(").unwrap();
         assert!(promote_probe < restore_probe && restore_probe - promote_probe < 1200);
-        assert!(body[restore_probe..restore_probe + 600].contains(
+        let restore_guard_end = restore_probe
+            + body[restore_probe..]
+                .find("\n            }\n")
+                .expect("the restore park guard closes before admission");
+        let restore_guard = &body[restore_probe..restore_guard_end];
+        assert!(restore_guard.contains(
             "requeue.push_back(req); // waits (FIFO), never shed: its restore is in flight"
         ));
-        let admit_call = body[restore_probe..]
-            .find("ensure_driver_headroom(&engine, &loaded, \"prime\");")
-            .unwrap();
-        assert!(
-            admit_call < 1000,
-            "the probe sits immediately before admission"
+        assert!(restore_guard.trim_end().ends_with("continue;"));
+        let after_guard = &body[restore_guard_end + "\n            }\n".len()..];
+        assert_eq!(
+            after_guard
+                .lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty() && !line.starts_with("//")),
+            Some("ensure_driver_headroom(&engine, &loaded, \"prime\");"),
+            "admission follows the complete restore park guard"
         );
         // The reclaim and every trim settle it first.
         let reclaim = body
@@ -45415,7 +45423,7 @@ mod tests {
         // The run loop: pin release, memo clear and the promote poll follow the demote poll at the
         // tick top; the idle block requires no Promoting entry.
         let run = worker.find("pub fn run(").unwrap();
-        let loop_at = run + worker[run..].find("\n    loop {\n").unwrap();
+        let loop_at = run + worker[run..].find("\n    'worker: loop {\n").unwrap();
         let top = &worker[loop_at..loop_at + 2500];
         let demote_poll = top
             .find("host_demote_settle_pending(&mut hpx, ContractWait::Poll, \"the tick top\")")
@@ -46340,7 +46348,7 @@ mod tests {
         // The run loop: the poll is the first statement of the loop body, and the indefinite idle
         // block requires no Demoting entry.
         let run = worker.find("pub fn run(").unwrap();
-        let loop_at = run + worker[run..].find("\n    loop {\n").unwrap();
+        let loop_at = run + worker[run..].find("\n    'worker: loop {\n").unwrap();
         let poll = worker[loop_at..]
             .find("host_demote_settle_pending(&mut hpx, ContractWait::Poll, \"the tick top\")")
             .unwrap();
