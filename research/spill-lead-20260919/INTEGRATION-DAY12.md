@@ -1176,6 +1176,13 @@ settled and its sources retired through the engine where it is reachable and the
 (`SourceQuarantined`, the planes cannot come back without their shell); a shell without a ticket drops whole (`Failed`,
 nothing was submitted). New CPU test `a_pending_demote_missing_its_shell_or_ticket_fails_closed` (both arms); the
 six state-machine tests, the memra-server suite and server clippy `-D warnings` green on the round-1 tree.
+Round 2, two findings, both real, fixed: (1) the settle-first call in `host_demote_prefix_ref` and in
+`host_promote_prefix_hit` can latch the tier off, and each function's `armed()` gate had already been passed, so a
+demote or a promote continued on a latched-off tier; both now re-check `armed()` after the settle (`Off` and a miss).
+(2) the latched-off drop exit, the flip-fault exit and the fail-closed arm returned without
+`waste_pending_reclaim(..)`, unlike every other demote exit, leaving a reclaim booked pending forever; all three book
+it wasted now (the image carries the key and tokens when the shell is gone); the CPU test asserts it. Server clippy
+`-D warnings` and the memra-server suite (780 passed) green, gated before the commit this time.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.

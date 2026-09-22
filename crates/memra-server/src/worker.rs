@@ -11262,6 +11262,14 @@ fn host_demote_prefix_ref(
     // ledger's one-batch in-flight dimension is never raced and no demotable entry is dropped
     // to a `Capacity` refusal.
     host_demote_settle_pending(host, ContractWait::Block, "a second demote");
+    if !host.armed() {
+        // The settle can latch the tier off (`SourceQuarantined`, `TicketLeaked`); the gate
+        // above was passed before it ran (revuto round 2 on #622).
+        eprintln!(
+            "[prefix-host] demote refused: the tier latched off while settling the pending demote"
+        );
+        return HostDemoteOutcome::Off;
+    }
     // GLM host images are opt-in. OFF preserves the old refusal; ON copies
     // all current model-owned planes, with byte census before publication.
     if dead.tp.is_some() && !glm5_tp_kv_host_on() {
@@ -11555,6 +11563,13 @@ fn host_demote_settle_with(
                 _ => "neither source shell nor ticket",
             };
             let why = format!("a Demoting entry has {what}; nothing published");
+            // Every demote exit after the reclaim books the reclaim wasted (the image carries the
+            // entry's key and tokens when the shell is gone).
+            host.waste_pending_reclaim(
+                &pending.image.pool_key,
+                pending.image.toks.len(),
+                "no shell or ticket",
+            );
             return Some(match contract {
                 None => {
                     eprintln!("[prefix-host] demote failed ({why})");
@@ -11615,10 +11630,12 @@ fn host_demote_settle_with(
                     "[prefix-host] demote dropped: the tier latched off while ticket seq={seq} was \
                      Demoting ({mode}); nothing published"
                 );
+                host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "tier latched off");
                 return Some(HostDemoteOutcome::Failed);
             }
             if let Err(err) = apply_flip_demote_fault(&mut kv) {
                 eprintln!("[prefix-host] demote failed ({err}); nothing published");
+                host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "flip fault");
                 return Some(HostDemoteOutcome::Failed);
             }
             let mut e = pending.image;
@@ -12026,6 +12043,14 @@ fn host_promote_prefix_hit(
     // in-flight dimension; the pending demote settles first (and a hit on ITS prompt then finds
     // it published rather than priming cold).
     host_demote_settle_pending(host, ContractWait::Block, "a promote");
+    if !host.armed() {
+        // The settle can latch the tier off; a promote from a latched-off tier is the miss it
+        // would have been with the tier off (revuto round 2 on #622).
+        eprintln!(
+            "[prefix-host] promote refused: the tier latched off while settling the pending demote"
+        );
+        return None;
+    }
     let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
     let candidate = &host.entries[pool_key][hi];
     if !host.generation_current(candidate) {
@@ -38415,6 +38440,7 @@ mod tests {
         let (mut host, pool_key) = cpu_door_host();
         cpu_pending_demote(&mut host, &pool_key);
         host.demoting.as_mut().unwrap().dead = None;
+        host.reclaim_pending = 3;
         let outcome = super::host_demote_settle_with(
             &mut host,
             super::ContractWait::Poll,
@@ -38431,6 +38457,11 @@ mod tests {
         );
         assert!(host.demoting.is_none());
         assert_eq!(host.entries.len(), 0, "nothing published");
+        assert_eq!(
+            host.reclaim_pending, 0,
+            "the pending reclaim is booked wasted at this exit"
+        );
+        assert!(host.tenant_reclaims_wasted >= 1);
         // (b) shell without ticket: nothing was submitted, the entry drops whole, tier armed.
         let (mut host, pool_key) = cpu_door_host();
         cpu_pending_demote(&mut host, &pool_key);

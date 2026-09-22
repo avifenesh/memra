@@ -42,6 +42,12 @@ Author's review of the full diff `main..lane/spill-integ30-20260922`, posted as 
   registered planes leaked, no further demote possible). It now settles and retires the ticket's sources where the
   engine is reachable and latches the tier off; a shell without a ticket drops whole. CPU test added for both arms.
 
+## Review round 2 (revuto, addressed in the integ)
+- After the settle-first call the tier may be latched off; `host_demote_prefix_ref` and `host_promote_prefix_hit` now
+  re-check `armed()` and return `Off` and a miss respectively.
+- The latched-off drop exit, the flip-fault exit and the fail-closed arm now book the pending reclaim wasted like
+  every other demote exit; the CPU test asserts `reclaim_pending == 0` and the wasted counter after the arm.
+
 ## What I did not do
 - No GPU cell of my own beyond the smoke; the door stays OFF; its decide-by review (2026-10-05) reads the stall
   receipts with the rest of the door's table.
