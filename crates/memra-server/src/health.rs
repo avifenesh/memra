@@ -243,6 +243,16 @@ pub struct WorkerHealth {
     /// non-fatal Xid lines seen (13/31 app errors, 43/45 teardown, 62/63 remap pending) —
     /// counted, not fatal, so an operator can see a card degrading before it wedges.
     xid_warns: AtomicU64,
+    /// Steady-state canary bookkeeping (memra#516). A probe that HANGS is a miss; misses in a
+    /// row are a streak; the streak reaching `MEMRA_GPU_PROBE_MISSES` is the fatal latch above.
+    /// Below that bound the process is DEGRADED, not dead: `/health` stays 200 and publishes the
+    /// streak, the last answer's age and the reason, and one answering probe clears it. A
+    /// latched fault is never cleared by an answer (a card that wedged does not un-wedge
+    /// itself); only the timeout-only state recovers.
+    probe_miss_streak: AtomicU64,
+    /// ms-since-epoch of the last probe that answered; 0 until the first answer.
+    probe_last_ok_ms: AtomicU64,
+    probe_degraded_reason: Mutex<String>,
     /// Consecutive copy-count intervals for which a due peer-integrity probe was deferred by a
     /// live speculative session. This is advisory until `peer_probe_integrity_degraded` latches.
     peer_probe_deferred_intervals: AtomicU64,
@@ -270,6 +280,9 @@ impl Default for WorkerHealth {
             gpu_faulted: AtomicBool::new(false),
             gpu_reason: Mutex::new(String::new()),
             xid_warns: AtomicU64::new(0),
+            probe_miss_streak: AtomicU64::new(0),
+            probe_last_ok_ms: AtomicU64::new(0),
+            probe_degraded_reason: Mutex::new(String::new()),
             peer_probe_deferred_intervals: AtomicU64::new(0),
             peer_probe_integrity_degraded: AtomicBool::new(false),
             stall_ms: stall_threshold_ms(),
@@ -446,6 +459,85 @@ impl WorkerHealth {
         eprintln!("[gpu-watch] WARN non-fatal Xid: {line}");
     }
 
+    /// A canary probe answered. Clears the timeout-only degradation (streak and reason) and
+    /// stamps the answer time. Never touches the fatal latch: an answer after a latched fault is
+    /// the case the latch exists for (a GSP hang that comes back is still a card that hung).
+    pub fn note_probe_ok(&self) {
+        let streak = self.probe_miss_streak.swap(0, Ordering::AcqRel);
+        // +1 so an answer in the process's first millisecond is not read as "never" (0).
+        self.probe_last_ok_ms.store(now_ms() + 1, Ordering::Release);
+        if let Ok(mut r) = self.probe_degraded_reason.lock()
+            && !r.is_empty()
+        {
+            r.clear();
+            eprintln!(
+                "[gpu-watch] canary answered again after {streak} missed probe(s); degradation cleared"
+            );
+        }
+    }
+
+    /// A steady-state canary probe hung past `deadline`. The streak grows; below `misses` the
+    /// process is degraded and stays live, at `misses` it is a fatal GPU fault with the streak
+    /// in its reason. Returns true when this call latched.
+    pub fn note_probe_hang(&self, deadline: Duration, misses: u64) -> bool {
+        let streak = self.probe_miss_streak.fetch_add(1, Ordering::AcqRel) + 1;
+        let last_ok = self.probe_last_ok_age_ms();
+        if streak >= misses.max(1) {
+            // Latched is a different state from degraded: clear the interim reason so /health
+            // reads `degraded: false, latched_reason: Some(..)` rather than both at once.
+            if let Ok(mut r) = self.probe_degraded_reason.lock() {
+                r.clear();
+            }
+            self.mark_gpu_fault(format!(
+                "nvidia-smi did not answer within {}s on {streak} consecutive probe(s) \
+                 (policy MEMRA_GPU_PROBE_MISSES={}) — GPU/driver wedge; last answer {} ago",
+                deadline.as_secs(),
+                misses.max(1),
+                describe_age(last_ok)
+            ));
+            return true;
+        }
+        let reason = format!(
+            "nvidia-smi did not answer within {}s ({streak} of {} consecutive misses before a \
+             fault latches); last answer {} ago",
+            deadline.as_secs(),
+            misses.max(1),
+            describe_age(last_ok)
+        );
+        eprintln!("[gpu-watch] DEGRADED: {reason}");
+        if let Ok(mut r) = self.probe_degraded_reason.lock() {
+            *r = reason;
+        }
+        false
+    }
+
+    fn probe_last_ok_age_ms(&self) -> Option<u64> {
+        match self.probe_last_ok_ms.load(Ordering::Acquire) {
+            0 => None,
+            t => Some(now_ms().saturating_sub(t - 1)),
+        }
+    }
+
+    /// The canary's current state for `/health`: degraded (a miss streak below the fatal bound),
+    /// the streak, the last answer's age, and the latched reason when a fault has latched.
+    pub fn gpu_probe(&self) -> GpuProbeState {
+        GpuProbeState {
+            miss_streak: self.probe_miss_streak.load(Ordering::Acquire),
+            last_ok_age_ms: self.probe_last_ok_age_ms(),
+            degraded_reason: self
+                .probe_degraded_reason
+                .try_lock()
+                .ok()
+                .filter(|r| !r.is_empty())
+                .map(|r| r.clone()),
+            latched_reason: if self.gpu_faulted.load(Ordering::Acquire) {
+                self.gpu_reason.try_lock().ok().map(|r| r.clone())
+            } else {
+                None
+            },
+        }
+    }
+
     // ---- verdicts (lock-free) ----
 
     fn beat_age_ms(&self) -> u64 {
@@ -537,10 +629,36 @@ impl WorkerHealth {
             tick_max_ms: self.tick_max_ms.load(Ordering::Relaxed),
             generation: self.generation(),
             xid_warns: self.xid_warns.load(Ordering::Relaxed),
+            gpu_probe: self.gpu_probe(),
             stall_threshold_ms: self.stall_ms,
             forward_progress_age_ms: self.forward_progress_age_ms(),
             progress: self.progress.as_ref().and_then(|p| p()),
         }
+    }
+}
+
+/// The GPU canary's observable state (memra#516). `degraded_reason` is `Some` while a miss
+/// streak below the fatal bound stands and `None` once a probe answers; `latched_reason` is
+/// `Some` after a fatal fault (fatal Xid, ECC/row-remap, the miss bound, or the startup window)
+/// and never clears in this process.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GpuProbeState {
+    pub miss_streak: u64,
+    pub last_ok_age_ms: Option<u64>,
+    pub degraded_reason: Option<String>,
+    pub latched_reason: Option<String>,
+}
+
+impl GpuProbeState {
+    pub fn degraded(&self) -> bool {
+        self.degraded_reason.is_some()
+    }
+}
+
+fn describe_age(age_ms: Option<u64>) -> String {
+    match age_ms {
+        None => "never in this process".to_string(),
+        Some(ms) => format!("{}s", ms / 1000),
     }
 }
 
@@ -551,6 +669,9 @@ pub struct HealthSnapshot {
     pub tick_max_ms: u64,
     pub generation: u32,
     pub xid_warns: u64,
+    /// The steady-state canary (memra#516): degraded-or-not, its miss streak, the age of its
+    /// last answer, and the latched reason once a fault has latched.
+    pub gpu_probe: GpuProbeState,
     pub stall_threshold_ms: u64,
     /// The quantity the stall verdict actually bounds (memra#50): the fresher of the beat age
     /// and the prime odometer's age. Equal to `beat_age_ms` on the
@@ -588,6 +709,20 @@ fn gpu_probe_timeout_s() -> u64 {
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(10)
+        .max(1)
+}
+
+/// MEMRA_GPU_PROBE_MISSES (default 3, minimum 1): consecutive steady-state probe hangs before
+/// the fatal GPU fault latches (memra#516). Below the bound the process is degraded and stays
+/// live; an answering probe clears it. `1` restores the pre-#516 single-hang latch. Three at
+/// the 60 s interval and 10 s deadline is about three and a half minutes of a driver that
+/// answers nothing, which is past every NVML stall measured under graph capture and large
+/// allocations (the 2026-09-13 B200 incident: single stalls of 10 to 60 s, then answers).
+pub fn gpu_probe_misses() -> u64 {
+    std::env::var("MEMRA_GPU_PROBE_MISSES")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(3)
         .max(1)
 }
 
@@ -760,8 +895,15 @@ pub fn spawn_gpu_watch(health: SharedHealth) {
             if hangs > 0 {
                 eprintln!("[gpu-watch] startup canary recovered after {hangs} hangs");
             }
+            // The startup answer is the first "last answer" (the startup window is the only
+            // path that reaches here without one, and a Fault there has already latched).
+            if health.gpu_probe().latched_reason.is_none() {
+                health.note_probe_ok();
+            }
+            let misses = gpu_probe_misses();
             eprintln!(
-                "[gpu-watch] on: every {}s, probe deadline {}s, fatal Xid {:?}",
+                "[gpu-watch] on: every {}s, probe deadline {}s, fatal after {misses} consecutive \
+                 misses (MEMRA_GPU_PROBE_MISSES), fatal Xid {:?}",
                 interval.as_secs(),
                 deadline.as_secs(),
                 XID_FATAL
@@ -770,6 +912,8 @@ pub fn spawn_gpu_watch(health: SharedHealth) {
                 std::thread::sleep(interval);
                 match probe_smi(args, deadline) {
                     Ok(out) => {
+                        // An answer clears timeout-only degradation (never a latched fault).
+                        health.note_probe_ok();
                         // Non-zero uncorrected ECC / a failed row remap is a hardware fault even
                         // without an Xid line reaching us (dmesg may be restricted — it is on
                         // this rig: kernel.dmesg_restrict=1).
@@ -777,10 +921,13 @@ pub fn spawn_gpu_watch(health: SharedHealth) {
                             health.mark_gpu_fault(reason);
                         }
                     }
-                    Err(ProbeErr::Hang) => health.mark_gpu_fault(format!(
-                        "nvidia-smi did not answer within {}s — GPU/driver wedge",
-                        deadline.as_secs()
-                    )),
+                    // memra#516: one hang is a miss, not a wedge. Graph capture and large
+                    // allocations stall NVML past the deadline on Blackwell and then answer;
+                    // the 2026-09-13 B200 outage was one such hang latched for the process's
+                    // life. The streak latches at the policy bound.
+                    Err(ProbeErr::Hang) => {
+                        health.note_probe_hang(deadline, misses);
+                    }
                     Err(ProbeErr::Spawn(e)) => {
                         eprintln!("[gpu-watch] canary spawn failed ({e}); continuing on Xid only");
                     }
@@ -964,6 +1111,93 @@ pub fn spawn_sd_watchdog(health: SharedHealth) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fresh() -> WorkerHealth {
+        let h = WorkerHealth::default();
+        h.mark_ready();
+        h
+    }
+
+    #[test]
+    fn one_steady_state_hang_degrades_but_stays_live() {
+        let h = fresh();
+        h.note_probe_ok();
+        assert!(!h.note_probe_hang(Duration::from_secs(10), 3));
+        assert!(h.live().is_ok(), "a single missed probe is not a wedge");
+        let p = h.gpu_probe();
+        assert!(p.degraded());
+        assert_eq!(p.miss_streak, 1);
+        assert!(p.latched_reason.is_none());
+        assert!(p.degraded_reason.unwrap().contains("1 of 3"));
+        assert!(p.last_ok_age_ms.is_some());
+    }
+
+    #[test]
+    fn an_answer_clears_timeout_only_degradation() {
+        let h = fresh();
+        h.note_probe_ok();
+        h.note_probe_hang(Duration::from_secs(10), 3);
+        h.note_probe_hang(Duration::from_secs(10), 3);
+        assert_eq!(h.gpu_probe().miss_streak, 2);
+        assert!(h.live().is_ok());
+        h.note_probe_ok();
+        let p = h.gpu_probe();
+        assert!(!p.degraded());
+        assert_eq!(p.miss_streak, 0);
+        assert!(p.degraded_reason.is_none());
+        assert!(h.live().is_ok());
+    }
+
+    #[test]
+    fn the_miss_bound_latches_and_an_answer_does_not_unlatch() {
+        let h = fresh();
+        h.note_probe_ok();
+        assert!(!h.note_probe_hang(Duration::from_secs(10), 3));
+        assert!(!h.note_probe_hang(Duration::from_secs(10), 3));
+        assert!(
+            h.note_probe_hang(Duration::from_secs(10), 3),
+            "the third miss latches"
+        );
+        let why = h.live().unwrap_err();
+        assert!(why.contains("3 consecutive probe(s)"), "{why}");
+        assert!(!h.gpu_probe().degraded(), "latched is not also degraded");
+        assert!(why.contains("MEMRA_GPU_PROBE_MISSES=3"), "{why}");
+        h.note_probe_ok();
+        assert!(
+            h.live().is_err(),
+            "a latched fault survives an answering probe"
+        );
+        let p = h.gpu_probe();
+        assert!(p.latched_reason.is_some());
+        assert_eq!(
+            p.miss_streak, 0,
+            "the streak bookkeeping resets; the latch does not"
+        );
+    }
+
+    #[test]
+    fn misses_policy_of_one_restores_the_single_hang_latch() {
+        let h = fresh();
+        assert!(h.note_probe_hang(Duration::from_secs(10), 1));
+        assert!(h.live().is_err());
+    }
+
+    #[test]
+    fn fatal_faults_latch_regardless_of_probe_answers() {
+        let h = fresh();
+        h.note_probe_ok();
+        h.mark_gpu_fault("uncorrected volatile ECC errors = 5 (nvidia-smi)");
+        h.note_probe_ok();
+        assert!(h.live().unwrap_err().contains("ECC"));
+        assert!(h.gpu_probe().latched_reason.unwrap().contains("ECC"));
+    }
+
+    #[test]
+    fn probe_misses_policy_reads_env_with_a_floor_of_one() {
+        // the default and the floor are the documented contract; the env read itself is the
+        // same shape as every other knob in this file
+        assert!(gpu_probe_misses() >= 1);
+    }
 
     #[test]
     fn startup_canary_hang_then_ok_recovers() {

@@ -112,6 +112,18 @@ engine's `build.rs`. Its red arm (a retired name refuses) and its non-vacuity ar
 name at once refuses nothing) are unit tests in `env_audit.rs`; `MEMRA_ENV_AUDIT=warn` downgrades,
 `=0` disables, both announced. Receipts: `research/env-audit-20260921/`.
 
+GPU probe recovery (memra#516, `tools/gpu-probe-recovery-gate.py`, in `tools/local-ci.sh`,
+`MEMRA_CI_GPUPROBEGATE=0` skips): the real server boots with a fake `nvidia-smi` first on `PATH`
+that follows a script per boot, at a 2 s probe interval and deadline. Arm A (`MEMRA_GPU_PROBE_MISSES=3`):
+answers at startup, hangs two probes, answers again: `/health` stays 200 with `gpu_probe.degraded`
+true and `miss_streak` 1 then 2, then returns to degraded false, streak 0, `last_ok_age_ms` fresh.
+Arm B: hangs three probes: the third latches, `/health` 503 with the streak in `detail`, and a
+later answering probe does not clear it. Arm C: answers with uncorrected ECC once: latches at once
+and a clean answer afterwards does not clear it. CPU teeth for the policy itself are
+`health::tests::{one_steady_state_hang_degrades_but_stays_live, an_answer_clears_timeout_only_degradation,
+the_miss_bound_latches_and_an_answer_does_not_unlatch, misses_policy_of_one_restores_the_single_hang_latch,
+fatal_faults_latch_regardless_of_probe_answers}`. Receipts: `research/gpu-probe-recovery-20260922/`.
+
 Prime fairness (memra#521, `tools/prime-fairness-gate.py`, in `tools/local-ci.sh`,
 `MEMRA_CI_FAIRGATE=0` skips): one boot per `MEMRA_PRIME_YIELD` arm on the 9B NVFP4's default
 (spec) route with the concurrency demotion pinned off, greedy natural-text `prompt` streams (the

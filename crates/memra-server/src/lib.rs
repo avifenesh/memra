@@ -6192,6 +6192,15 @@ fn health_payload(st: &AppState, status: &str, detail: Option<&str>) -> serde_js
             })),
             "generation": s.generation,
             "xid_warnings": s.xid_warns,
+            // memra#516: the canary's own state, so a guard can tell "missed a probe just now"
+            // (degraded, still live) from "latched" (a fault this process never clears).
+            "gpu_probe": {
+                "degraded": s.gpu_probe.degraded(),
+                "miss_streak": s.gpu_probe.miss_streak,
+                "last_ok_age_ms": s.gpu_probe.last_ok_age_ms,
+                "degraded_reason": s.gpu_probe.degraded_reason,
+                "latched_reason": s.gpu_probe.latched_reason,
+            },
         },
     });
     if let Some(d) = detail {
