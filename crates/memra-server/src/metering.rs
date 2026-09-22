@@ -2,8 +2,9 @@
 //!
 //! The server's job at this boundary is to ADMIT, DENY, and REPORT COUNTS. What
 //! admission means — budgets, prices, tenancy policy — is the deployment's business,
-//! supplied behind these traits. The stock binary wires the in-repo reference
-//! implementation (`ledger::ReferenceMetering`); a deployment-owned binary can wire its own.
+//! supplied behind these traits. The stock binary wires no implementation (lane
+//! engine-billing-extraction-20260829 moved the reference ledger out of this crate); a
+//! deployment-owned binary wires its own through [`crate::ServerWiring`].
 //! Everything here speaks tokens and verdicts, never money: the vocabulary is the
 //! boundary, and it is what lets the policy half live outside this crate.
 //!
