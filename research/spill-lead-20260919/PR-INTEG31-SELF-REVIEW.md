@@ -30,6 +30,10 @@ Author's review of the full diff `main..lane/spill-integ31-20260922`, posted as 
   engine CPU lib tests, engine and server clippy `-D warnings`, marker census, workflow keys, shellcheck on the two
   gates, perf board, diff-check) and the local 5090 serve-smoke.
 
+## Review round 1 (revuto, addressed in the integ)
+- The partial-reject cell's self-consistency check had no floor on the batch size; `items=N >= 2` added so the reject
+  stays partial by construction. Banked runs read 34, 32, 18 and 16; the re-run with the floor is lane C's next day.
+
 ## What I did not do
 - No GPU gate run of my own; the gate verdicts are C's on both cards.
 - No default changed; `MEMRA_ADMIT_BY_MEMORY` and `MEMRA_KV_PARK_COMPACT` stay as they are for the owner's decision.

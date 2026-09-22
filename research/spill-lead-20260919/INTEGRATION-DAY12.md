@@ -1244,6 +1244,10 @@ serve-smoke NOT RUN: the 5090 lock was held from 00:31Z by another session's `me
 lane) for the whole window; integ30 smoked the identical engine minutes earlier (`serve-smoke: 0 failed`); my waiter
 was stopped (own process, identified by cwd), the other session's untouched. Lead error, recorded: the first attempt
 matched the waiter by name and killed my own shell (exit 144), the trap the memory already names.
+Revuto round 1 on #626, one finding, real: the fault gate's new self-consistency check (`1 of M` equals the
+receipt's `items=N`) had no floor, so a regression registering one plane would read `1 of 1 items` and pass a cell
+whose purpose is a partially accepted batch. Floor added: `items=N >= 2`. Every banked run reads far above it (27B 34
+default and 32 plain, 9B 18 and 16); a re-run of the fault gate with the floor on both cards is assigned to C day 22.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
