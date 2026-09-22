@@ -2194,6 +2194,15 @@ Budget 3.6 against 4.
 lookup so a miss never reaches it, before the class check and before the route's own pin), the table test including the
 index-shift case, the census ordering, and the typed line's single-line shape. No finding.
 
+**Battery (tree `af92791f6`, receipts `integ42-cpu-battery/`, `integ42-serve-smoke-5090/`, `integ42-hit-gate-5090/`).**
+All fifteen CPU steps rc=0. Local RTX 5090: `serve-smoke: 0 failed` (gemma4 and Q35 arms SKIP, absent models; another
+session's `decode-batch-gate` held 7778 MiB on the card at the smoke's start, listed and not touched), engine `d2d_*` GPU
+cells `5 passed` under the lock, the hit gate OFF and ON armed (9B), verbatim: `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`
+61 ok OFF, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 68 ok ON, `ok: door arm: 30 route submission(s) across the two boots`,
+11 spec-boundary captures, 13 restores, 0 `restore not routed` lines (the hit gate has no promote-then-hit shape, so
+A's refusal must not fire here), 0 refused, disabled, trunk-only, dropped or skipped lines. The day-24 census holds on
+this card after A day 26.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
