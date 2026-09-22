@@ -334,11 +334,30 @@ at 00:42:49Z on the day-27 binary (`build-local.log` `exit=0`, sha `d6a4269ef3ef
 from before that moment by another lane's `memra-server` (cwd another worktree, 6,754 MiB on the card; identified by
 cwd only, never signalled, per the lead's 2026-09-21 rule). The after cell's bounded wait expired at 01:42:49Z:
 `lock not acquired within 3600 s; cell not run` (`after-ab/lock.txt`, `chain.log` `after-ab exit=3`); the chain moved
-on to `park-o1-default` with its own 3600 s bound. Status at the time of this section (01:44Z): the local cells have
-not run; the wait continues boundedly and this section is amended if they do. What the local card would show is
-bounded by construction: at `MEMRA_CTX=65536` the derivation read 65,536 before the fix and reads it after
-(`2,051,538,944 B`, the day-26 boot line), so the local after cell is a byte-identity control, not a second after
-receipt; the local park cell's spec-path prediction is the target card's (`park-compact lines: 0`).
+on to `park-o1-default` with its own 3600 s bound. The other lane's server left the card at
+02:02Z and the chain acquired the lock at 02:02:16Z (`park-o1-default/lock.txt`); the after cell was re-queued behind
+the chain (`after-rerun.sh`, its first attempt kept as `after-ab-attempt1-lockbound/`) and, because its wait pattern
+used a relative path, it queued on the lock at 02:04:24Z instead and ran right after `park-o1-default` (02:13:52Z to
+02:25:37Z), ahead of `park-o1-compact`; every contender was this lane's own driver and the lock serialized them, so
+the interleaving changes nothing but the order of boots (recorded in `chain.log`).
+
+### 3.1 Local after cell (`rtx5090-day27/after-ab`, `MEMRA_CTX=65536`, 9B, order AB, deferred)
+
+`after-ab.exit` 0, 46 requests, `non-200=0`, `compute-apps` empty before and after, rig `75 C, 29.99 W` before /
+`74 C, 26.64 W` after (`power.limit [N/A]`; this run followed `park-o1-default` on a warm card). As predicted, a no-op
+by construction on this shape: the boot line is the day-26 budget with the new provenance text, verbatim
+`[prefix-cache] on: budget 2052MB (2051538944 B, derived: 2 x 1025769472 B max entry for model "q9" at served ctx
+65536 (from MEMRA_CTX; MEMRA_CTX set), requested 2051538944 B; boot driver free 18244501504 B, post-reserve clamp
+16633888768 B), ...`; `60 [prefix-cache] insert (spec-boundary)`, `45 [prefix-cache] evict (LRU)`, `prefix-cache hit
+lines: 0`, `cached=[0, 0, 0, 0, 0]` on all three (iii) rows exactly as on day 26; `retained_by_process=7449083904`,
+`spec_pool_entries=2 continuation_pool_entries=0 park-compact lines: 0 affinity lines: spec-affinity: declined=45`.
+Against the day-26 local `ab`: `P_G_chars_equal=44` of 45; the one row is `iii-L2-r3`, the 90 s request-deadline cut
+of the runaway generation (day 26: 17,815 tokens AB, 18,314 BA, 16,378 warm; today 18,101 here and 18,262 in
+`park-o1-default`), `finish_reason` `error` in both today's cells with an empty `content`. Against today's
+`park-o1-default` (same configuration, two boots): `digest_equal=45 digest_differs=0`. The local card is where a second
+after receipt cannot exist for this shape (the set arm did not change), and the deferred-shape misses here are the
+2,052 MB budget at 65,536 doing what it was sized to do; a local unset boot (262,144, budget 7.89 GB on a 24 GB card)
+was not run, section 1.1.
 
 ## 4. Checks actually run
 
