@@ -9826,12 +9826,22 @@ enum PromoteSettled {
 /// its geometry, and the retained twins of the two registered fresh planes, which take them back
 /// after the ticket retires.
 struct CapturePlane {
+    /// WP-A day 24: a trunk plane fills `kv[slot]` of the shell; the draft plane fills `draft`.
+    class: CapturePlaneClass,
     slot: usize,
     len: usize,
     k_tok_bytes: usize,
     v_tok_bytes: usize,
     k: memra_engine::cache::tiered::DeviceLease,
     v: memra_engine::cache::tiered::DeviceLease,
+}
+
+/// The class of one registered capture plane pair (WP-A day 24, memra#536 Move 2 owed item 2,
+/// the capture half): the trunk KV rows of one layer, or the MTP draft plane's rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CapturePlaneClass {
+    Trunk,
+    Draft,
 }
 
 /// A capture batch that was submitted on the copy stream and not yet settled (WP-A day 20): the
@@ -9865,6 +9875,9 @@ struct PendingCapture {
     polls: u32,
     copy_ms: f64,
     settled_by: String,
+    /// WP-A day 24: the `trace_prefix_entry_state` role the OFF publisher prints (`snapshot` for
+    /// the seed and lcp-split publishes, `spec-snapshot` for the spec-boundary publish).
+    trace_role: &'static str,
 }
 
 /// What one settle step of a capture batch produced.
@@ -9872,8 +9885,11 @@ enum CaptureSettle {
     /// `Poll` found at least one item's event not yet complete: the ticket is handed back.
     Pending(PendingContractCapture),
     /// Every item landed, the ticket retired and acknowledged, the fresh planes back in their
-    /// trunk slots.
-    Done(Vec<Option<PrefixPlane>>),
+    /// trunk slots and (WP-A day 24) the fresh draft plane beside them: both classes or neither.
+    Done {
+        kv: Vec<Option<PrefixPlane>>,
+        draft: Option<PrefixPlane>,
+    },
 }
 
 /// A typed failure of a capture settle. There is no `Refused` at settle: a submitted capture
@@ -13609,8 +13625,6 @@ fn prefix_capture_off_tick(
     model: Option<&HybridModel>,
     why: &str,
 ) -> CaptureRoute {
-    use memra_engine::cache::tiered::*;
-    use memra_engine::tier_transfer::D2dCapture;
     if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
         return CaptureRoute::OnTick;
     }
@@ -13635,24 +13649,9 @@ fn prefix_capture_off_tick(
     if hpx.capture_off_tick_disabled {
         return CaptureRoute::OnTick;
     }
-    let Some(tier) = hpx.tier.as_ref() else {
+    if hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
         return CaptureRoute::OnTick;
-    };
-    let Some(transfers) = tier.transfers.as_ref() else {
-        return CaptureRoute::OnTick;
-    };
-    let tenant = tier
-        .program(pool_key, HostTierEntryClass::Plain)
-        .map(|(p, _)| p.tenant_salt)
-        .unwrap_or([0; 32]);
-    let mut t = transfers.borrow_mut();
-    let dimensions = t.used().device.len();
-    let request = move || BudgetRequest {
-        bytes: TierBudget::zero(dimensions),
-        priority: Priority::Demand,
-        deadline: Deadline(u64::MAX),
-        tenant,
-    };
+    }
     let n = cache.kv.len();
     let mut conv = Vec::with_capacity(n);
     let mut ssm = Vec::with_capacity(n);
@@ -13684,6 +13683,105 @@ fn prefix_capture_off_tick(
             }
         }
     }
+    // 2 to 4 (WP-A day 24: the submit half shared with the spec-boundary publisher): the fresh
+    //   planes, the producer fence, the one batch, the `Capturing` entry.
+    let last_logits = last_logits.to_vec();
+    host_capture_submit(
+        engine,
+        hpx,
+        CaptureSubmit {
+            pool_key,
+            why,
+            pos: cache.pos,
+            toks,
+            cache,
+            conv,
+            ssm,
+            draft: None,
+            last_logits,
+            last_h: Vec::new(),
+            class: HostTierEntryClass::Plain,
+            trace_role: "snapshot",
+            bytes,
+            recurrent_note: "recurrent state cloned at the boundary on the owner stream",
+        },
+    )
+}
+
+/// What one capture publisher hands the submit core (WP-A day 24, memra#536 Move 2 owed item 2,
+/// the capture half): the boundary `pos` (rows `[0..pos)` of every plane are copied; `toks` is the
+/// prompt to `pos`), the live cache whose trunk planes are the borrowed sources, the recurrent
+/// planes already OWNED at submit (cloned at the boundary by the seed route; taken by the spec engine
+/// at the prime stop for the spec-boundary route), the optional borrowed draft source (the spec
+/// session's scratch rows: `k`, `v`, `k_tok_bytes`, `v_tok_bytes`), the entry's owned scalars, the
+/// program class for the tenant salt, the trace role the OFF publisher prints, the bytes the shell
+/// already owns, and what the submitted line says about the recurrent state.
+struct CaptureSubmit<'a> {
+    pool_key: &'a PoolKey,
+    why: &'a str,
+    pos: usize,
+    toks: &'a [u32],
+    cache: &'a Cache,
+    conv: Vec<Option<CudaSlice<f32>>>,
+    ssm: Vec<Option<CudaSlice<f32>>>,
+    draft: Option<(&'a CudaSlice<u8>, &'a CudaSlice<u8>, usize, usize)>,
+    last_logits: Vec<f32>,
+    last_h: Vec<f32>,
+    class: HostTierEntryClass,
+    trace_role: &'static str,
+    bytes: usize,
+    recurrent_note: &'static str,
+}
+
+/// The submit half of a capture, shared by both publishers (WP-A day 24; the day-20 statements
+/// unchanged for the seed route): fresh planes from the OFF allocator registered at the destination
+/// generation with retained twins that take them back, rows `[0..pos)` of every live trunk plane and
+/// (spec-boundary) of the draft scratch as two more items of the SAME batch, the producer fence, ONE
+/// batch on the copy stream behind it, the one-shot `d2d-delay-capture` arm, the shell, and the
+/// worker's `Capturing` entry. A refusal unwinds every registered plane of both classes through its
+/// twin (originals dropped first) and creates no entry.
+fn host_capture_submit(
+    engine: &Engine,
+    hpx: &mut HostPrefixCache,
+    sub: CaptureSubmit<'_>,
+) -> CaptureRoute {
+    use memra_engine::cache::tiered::*;
+    use memra_engine::tier_transfer::D2dCapture;
+    let CaptureSubmit {
+        pool_key,
+        why,
+        pos,
+        toks,
+        cache,
+        conv,
+        ssm,
+        draft,
+        last_logits,
+        last_h,
+        class,
+        trace_role,
+        mut bytes,
+        recurrent_note,
+    } = sub;
+    let Some(tier) = hpx.tier.as_ref() else {
+        return CaptureRoute::OnTick;
+    };
+    let Some(transfers) = tier.transfers.as_ref() else {
+        return CaptureRoute::OnTick;
+    };
+    let tenant = tier
+        .program(pool_key, class)
+        .map(|(p, _)| p.tenant_salt)
+        .unwrap_or([0; 32]);
+    let mut t = transfers.borrow_mut();
+    let dimensions = t.used().device.len();
+    let request = move || BudgetRequest {
+        bytes: TierBudget::zero(dimensions),
+        priority: Priority::Demand,
+        deadline: Deadline(u64::MAX),
+        tenant,
+    };
+    let n = cache.kv.len();
     // 2. Fresh KV planes from the OFF allocator, registered at the destination generation with
     //    retained twins that take them back. A refusal unwinds every registered plane through
     //    its twin (originals dropped first) and creates no entry.
@@ -13719,11 +13817,13 @@ fn prefix_capture_off_tick(
         let Some(l) = &cache.kv[il] else {
             continue;
         };
-        if l.len == 0 && cache.pos > 0 {
+        if l.len == 0 && pos > 0 {
             continue; // an MTP head layer: absent at capture, absent at restore
         }
-        let kb = l.len * l.k_tok_bytes;
-        let vb = l.len * l.v_tok_bytes;
+        // Rows `[0..pos)`: the seed route's `pos` is the layer's `len` (it requires it); the
+        // spec-boundary route's `pos` sits below a live plane the burst appended past.
+        let kb = pos * l.k_tok_bytes;
+        let vb = pos * l.v_tok_bytes;
         if kb == 0 || vb == 0 {
             return refuse(
                 &mut t,
@@ -13795,8 +13895,9 @@ fn prefix_capture_off_tick(
         originals.push(k);
         originals.push(v);
         registered.push(CapturePlane {
+            class: CapturePlaneClass::Trunk,
             slot: il,
-            len: l.len,
+            len: pos,
             k_tok_bytes: l.k_tok_bytes,
             v_tok_bytes: l.v_tok_bytes,
             k: keep_k,
@@ -13811,6 +13912,103 @@ fn prefix_capture_off_tick(
             originals,
             "the cache carries no KV plane at the boundary".to_string(),
         );
+    }
+    // 2b. WP-A day 24: the MTP draft plane, rows `[0..pos)` of the spec session's live draft
+    //     scratch (append-only below the boundary, as the trunk rows are), as two more items of the
+    //     SAME batch after the trunk rows: same fence, same ticket, same receipt. The `Capturing`
+    //     entry owns these fresh planes beside the trunk's and publishes both or neither; an alloc
+    //     or registration failure here refuses the WHOLE capture (the OFF program publishes
+    //     trunk-only under the same pressure: stated in `DAY24.md`; nothing published is the
+    //     fail-closed arm).
+    let mut draft_rows_kb = None;
+    if let Some((k_src, v_src, k_tok_bytes, v_tok_bytes)) = draft {
+        let kb = pos * k_tok_bytes;
+        let vb = pos * v_tok_bytes;
+        if kb == 0 || vb == 0 || k_src.len() < kb || v_src.len() < vb {
+            return refuse(
+                &mut t,
+                registered,
+                originals,
+                format!(
+                    "the draft plane is shorter than the boundary ({} and {} B against {kb} and \
+                     {vb} B for {pos} rows)",
+                    k_src.len(),
+                    v_src.len()
+                ),
+            );
+        }
+        let (k, v) = match (engine.alloc_u8(kb), engine.alloc_u8(vb)) {
+            (Ok(k), Ok(v)) => (k, v),
+            (Err(err), _) | (_, Err(err)) => {
+                let n = kb.max(vb);
+                return refuse(
+                    &mut t,
+                    registered,
+                    originals,
+                    format!("device alloc of {n} B for the draft plane failed: {err}"),
+                );
+            }
+        };
+        let k = match t.register_device(k, generation, request()) {
+            Ok(lease) => lease,
+            Err(e) => {
+                return refuse(
+                    &mut t,
+                    registered,
+                    originals,
+                    format!("register_device refused for the draft K plane ({e:?})"),
+                );
+            }
+        };
+        let v = match t.register_device(v, generation, request()) {
+            Ok(lease) => lease,
+            Err(e) => {
+                originals.push(k);
+                return refuse(
+                    &mut t,
+                    registered,
+                    originals,
+                    format!("register_device refused for the draft V plane ({e:?})"),
+                );
+            }
+        };
+        let (keep_k, keep_v) = match (t.retain_device(&k), t.retain_device(&v)) {
+            (Ok(a), Ok(b)) => (a, b),
+            (Err(e), _) | (_, Err(e)) => {
+                let mut leaks = 0usize;
+                for lease in [k, v] {
+                    if t.take_plane(&lease).is_err() {
+                        leaks += 1;
+                    }
+                }
+                let tail = if leaks > 0 {
+                    format!("; {leaks} fresh plane(s) of the draft did not come back")
+                } else {
+                    String::new()
+                };
+                return refuse(
+                    &mut t,
+                    registered,
+                    originals,
+                    format!("retain_device refused for the draft plane ({e:?}){tail}"),
+                );
+            }
+        };
+        sources.push((k_src, kb as u64));
+        sources.push((v_src, vb as u64));
+        originals.push(k);
+        originals.push(v);
+        registered.push(CapturePlane {
+            class: CapturePlaneClass::Draft,
+            slot: 0,
+            len: pos,
+            k_tok_bytes,
+            v_tok_bytes,
+            k: keep_k,
+            v: keep_v,
+        });
+        bytes += kb + vb;
+        draft_rows_kb = Some((pos, (kb + vb) as f64 / 1e3));
     }
     // 3. The producer fence: an owner-stream event after the boundary chunk and the clones.
     let producer = match t.record_producer(generation) {
@@ -13892,20 +14090,24 @@ fn prefix_capture_off_tick(
         ssm,
         latent: (0..n).map(|_| None).collect(),
         tp: None,
-        pos: cache.pos,
-        last_logits: last_logits.to_vec(),
+        pos,
+        last_logits,
+        // WP-A day 24: the fresh draft plane fills this slot at the settle (both classes or neither).
         draft: None,
         dspark_draft: None,
-        last_h: Vec::new(),
+        last_h,
         bytes,
         last_use: Instant::now(),
         id: 0,
         pins: 0,
     };
+    let draft_note = match draft_rows_kb {
+        Some((rows, kb)) => format!("; draft plane {rows} rows ({kb:.1}KB) in the batch"),
+        None => String::new(),
+    };
     eprintln!(
         "[prefix-cache] capture submitted off the tick ({why}): {} tokens, {items} planes \
-         ({:.1}MB) on the contracts door's copy stream; recurrent state cloned at the boundary \
-         on the owner stream",
+         ({:.1}MB) on the contracts door's copy stream; {recurrent_note}{draft_note}",
         toks.len(),
         bytes as f64 / 1e6,
     );
@@ -13925,8 +14127,128 @@ fn prefix_capture_off_tick(
         polls: 0,
         copy_ms: 0.0,
         settled_by: String::new(),
+        trace_role,
     });
     CaptureRoute::Submitted
+}
+
+/// What the spec-boundary route answered (WP-A day 24): `Routed` (submitted, or refused with a
+/// typed line: the OFF program does not run), or `OnTick` with the capture handed back untouched
+/// for the OFF program (`prefix_insert_from_spec_boundary`'s own statements and refusals).
+enum SpecCaptureRoute {
+    Routed(CaptureRoute),
+    OnTick(Box<memra_engine::spec::SpecBoundaryCapture>),
+}
+
+/// The spec-boundary publisher's capture route under the door (WP-A day 24, memra#536 Move 2 owed
+/// item 2, the capture half; census item 10 of `HOSTPREFIX-DOOR.md`). Rows `[0..pos)` of the LIVE
+/// spec session's trunk planes and of its draft scratch ride the copy stream as ONE batch behind one
+/// producer event recorded here, at the drain sweep, after the burst committed past `pos` (every
+/// kernel that wrote a trunk row or a draft-head row below `pos` precedes it); the recurrent state,
+/// the boundary logits and `last_h` are already owned by the capture (taken by the spec engine at
+/// the prime stop, no copy here). Refuses BY NAME to the OFF program: the door OFF or the capture
+/// path latched; a latent-bearing cache or a capture with latent tails (`glm5-boundary`); a TP cache;
+/// a trunk layer with `0 < len < pos` (the OFF program's loud refusal); a cache with no KV plane; a
+/// capture whose snapshot position is not `pos`. A draft source shorter than the boundary mirrors the
+/// OFF program (its typed line, the trunk routed alone). A pending capture settles first (never two
+/// in flight).
+#[allow(clippy::too_many_arguments)]
+fn prefix_spec_capture_off_tick(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    cache: &Cache,
+    pool_key: &PoolKey,
+    committed: &[u32],
+    draft_plane: Option<(&CudaSlice<u8>, &CudaSlice<u8>, usize, usize)>,
+    dspark_tail: bool,
+    cap: memra_engine::spec::SpecBoundaryCapture,
+    why: &str,
+) -> SpecCaptureRoute {
+    if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
+        return SpecCaptureRoute::OnTick(Box::new(cap));
+    }
+    let pos = cap.pos;
+    let tp_cache = cache.glm5_tp_recur.iter().any(Option::is_some)
+        || cache.glm5_tp_latent_peer.iter().any(Option::is_some);
+    // The DFlash tail (`dspark-boundary`, `export_tail`) is the drafter's own export and has no
+    // item class in this route: a publisher carrying one keeps the OFF program whole, tail
+    // included (revuto on integ40 #643: the route was installed ahead of the tail and would have
+    // published trunk and draft and dropped the tail silently).
+    if tp_cache
+        || dspark_tail
+        || cache.latent.iter().any(Option::is_some)
+        || cap.latent_tails.iter().any(Option::is_some)
+        || cap.snap.pos != pos
+        || pos == 0
+        || pos > committed.len()
+        || cache.kv.iter().flatten().any(|l| l.len != 0 && l.len < pos)
+        || cache.kv.iter().flatten().all(|l| l.len == 0)
+    {
+        return SpecCaptureRoute::OnTick(Box::new(cap));
+    }
+    // Never two captures in flight: the pending one settles (and publishes) first.
+    host_capture_settle_pending(engine, px, hpx, ContractWait::Block, "a second capture");
+    if hpx.capture_off_tick_disabled {
+        return SpecCaptureRoute::OnTick(Box::new(cap));
+    }
+    if px.has_key(pool_key, &committed[..pos]) {
+        // The settled capture published this very prefix (the OFF caller's `has_key` skip, one
+        // publication later): nothing to publish twice.
+        eprintln!(
+            "[prefix-cache] capture skipped (contracts door): the settled capture already \
+             published this {pos}-token prefix"
+        );
+        return SpecCaptureRoute::Routed(CaptureRoute::Refused);
+    }
+    // The draft source, as the OFF program reads it: shorter than the boundary publishes
+    // trunk-only with the OFF line; `None` (a ring-backed scratch) publishes trunk-only silently.
+    let draft = draft_plane.and_then(|(k_src, v_src, k_tok_bytes, v_tok_bytes)| {
+        if k_src.len() < pos * k_tok_bytes || v_src.len() < pos * v_tok_bytes {
+            eprintln!(
+                "[prefix-cache] spec publish: draft plane shorter than boundary {pos}; \
+                 entry published trunk-only",
+            );
+            return None;
+        }
+        Some((k_src, v_src, k_tok_bytes, v_tok_bytes))
+    });
+    let class = if draft.is_some() {
+        HostTierEntryClass::MtpDraft
+    } else {
+        HostTierEntryClass::Plain
+    };
+    let mut bytes = 0usize;
+    for (c, s_) in cap.snap.conv.iter().zip(cap.snap.ssm.iter()) {
+        if let Some(c) = c {
+            bytes += c.len() * 4;
+        }
+        if let Some(s_) = s_ {
+            bytes += s_.len() * 4;
+        }
+    }
+    bytes += cap.last_h.len() * 4;
+    SpecCaptureRoute::Routed(host_capture_submit(
+        engine,
+        hpx,
+        CaptureSubmit {
+            pool_key,
+            why,
+            pos,
+            toks: &committed[..pos],
+            cache,
+            conv: cap.snap.conv,
+            ssm: cap.snap.ssm,
+            draft,
+            last_logits: cap.logits,
+            last_h: cap.last_h,
+            class,
+            trace_role: "spec-snapshot",
+            bytes,
+            recurrent_note: "recurrent state and boundary logits taken by the spec engine at the \
+                             prime stop",
+        },
+    ))
 }
 
 /// The settle half of a capture: `Block` waits on every item's event (a host wait), `Poll`
@@ -14053,8 +14375,16 @@ fn host_kv_planes_settle_capture(
              leaked inside the transfer engine"
         )));
     }
-    let slots = registered.iter().map(|p| p.slot + 1).max().unwrap_or(0);
+    let slots = registered
+        .iter()
+        .filter(|p| p.class == CapturePlaneClass::Trunk)
+        .map(|p| p.slot + 1)
+        .max()
+        .unwrap_or(0);
     let mut kv: Vec<Option<PrefixPlane>> = (0..slots).map(|_| None).collect();
+    // WP-A day 24: the fresh draft plane comes back beside the trunk's; a plane of EITHER class
+    // that does not come back latches (below), so the entry publishes both or neither.
+    let mut draft: Option<PrefixPlane> = None;
     for p in registered {
         let back = |lease: &memra_engine::cache::tiered::DeviceLease,
                     what: &str,
@@ -14082,15 +14412,19 @@ fn host_kv_planes_settle_capture(
                 )));
             }
         };
-        kv[p.slot] = Some(PrefixPlane {
+        let plane = PrefixPlane {
             k,
             v,
             len: p.len,
             k_tok_bytes: p.k_tok_bytes,
             v_tok_bytes: p.v_tok_bytes,
-        });
+        };
+        match p.class {
+            CapturePlaneClass::Trunk => kv[p.slot] = Some(plane),
+            CapturePlaneClass::Draft => draft = Some(plane),
+        }
     }
-    Ok(CaptureSettle::Done(kv))
+    Ok(CaptureSettle::Done { kv, draft })
 }
 
 /// One settle step of the `Capturing` entry (the CPU-testable half): the fail-closed arm (a
@@ -14181,7 +14515,7 @@ fn host_capture_settle_with(
             host.capturing = Some(pending);
             Some(CaptureSettled::Pending)
         }
-        Ok(CaptureSettle::Done(kv)) => {
+        Ok(CaptureSettle::Done { kv, draft }) => {
             pending.copy_ms = submitted.elapsed().as_secs_f64() * 1e3;
             pending.settled_by = match wait {
                 ContractWait::Poll => "tick-top poll".to_string(),
@@ -14193,6 +14527,8 @@ fn host_capture_settle_with(
                     *slot = plane;
                 }
             }
+            // WP-A day 24: the draft plane lands beside the trunk's (None on a plain publisher).
+            shell.draft = draft;
             pending.ready = true;
             Some(CaptureSettled::Ready(Box::new(pending)))
         }
@@ -14296,6 +14632,7 @@ fn host_capture_publish(
         polls,
         copy_ms,
         settled_by,
+        trace_role,
         ..
     } = pending;
     let Some(e) = shell else {
@@ -14312,7 +14649,7 @@ fn host_capture_publish(
         t0.elapsed().as_secs_f64() * 1e3,
     );
     hpx.captures_published += 1;
-    trace_prefix_entry_state(engine, &e, e.pos, "snapshot", &why);
+    trace_prefix_entry_state(engine, &e, e.pos, trace_role, &why);
     px.insert_demoting(&pool_key, e, &why, engine, hpx);
     HostCaptureOutcome::Published
 }
@@ -17607,6 +17944,28 @@ fn prefix_insert_from_spec_boundary(
     if cache.has_swa_ring() {
         return;
     }
+    // WP-A day 24 (memra#536 Move 2 owed item 2, the capture half): under the door the trunk rows
+    // and the draft scratch rows `[0..pos)` ride the copy stream as one batch and the entry
+    // publishes at a tick top; `OnTick` hands the capture back and the statements below run
+    // unchanged (the OFF program).
+    let cap = match prefix_spec_capture_off_tick(
+        engine,
+        px,
+        hpx,
+        cache,
+        pool_key,
+        committed,
+        draft_plane,
+        dspark_draft.is_some(),
+        cap,
+        why,
+    ) {
+        SpecCaptureRoute::Routed(CaptureRoute::Submitted | CaptureRoute::Refused) => return,
+        SpecCaptureRoute::Routed(CaptureRoute::OnTick) => unreachable!(
+            "the spec route answers OnTick with the capture in hand, never through Routed"
+        ),
+        SpecCaptureRoute::OnTick(cap) => *cap,
+    };
     // LATENT ARM (lane/glm5-prefix-latent2, 2026-09-01 — the case the old refusal named
     // "unreachable today ... IF A SPEC ARM EVER LANDS FIRST"; the glm5 spec arm landed):
     // a latent-bearing cache publishes ONLY when the capture carries the boundary tails
@@ -23175,6 +23534,26 @@ pub fn run(
                                 );
                                 continue;
                             }
+                            // WP-A day 24, corrected by revuto on integ40 (#643): the DSPARK
+                            // publisher DOES route in the default configuration. Its tail is
+                            // `Some` only under `MEMRA_DSPARK_PREFIX_RESTORE=1` (default OFF);
+                            // with the tail absent a plain, non-latent, non-TP dspark cache
+                            // passes the route's by-name refusals and its trunk planes are the
+                            // borrowed source of a pending capture on the copy stream. This
+                            // settle is therefore LOAD-BEARING: `into_demoted` below moves the
+                            // session's cache, and a copy still reading it would read a moved
+                            // source. (The routed dspark capture carries no draft plane, so the
+                            // `release_capture_pin` after the publisher touches no in-flight
+                            // source.)
+                            if hpx.capturing.is_some() {
+                                host_capture_settle_pending(
+                                    &engine,
+                                    &mut px,
+                                    &mut hpx,
+                                    ContractWait::Block,
+                                    "a dspark demotion",
+                                );
+                            }
                             let sess = s.dspark.take().unwrap();
                             let committed = sess.pos();
                             let (cache, next) = sess.into_demoted();
@@ -23238,6 +23617,21 @@ pub fn run(
                                     s.model
                                 );
                                 continue;
+                            }
+                            // Integ40 (revuto on #643): the same settle for the GLM5 demotion.
+                            // Today a GLM5 cache is refused by the route by name (latent planes
+                            // and tails, TP shards), so no pending capture borrows a GLM5
+                            // session's planes; the guard states the rule where the session is
+                            // consumed rather than relying on the refusal alone, and costs
+                            // nothing when no capture is pending.
+                            if hpx.capturing.is_some() {
+                                host_capture_settle_pending(
+                                    &engine,
+                                    &mut px,
+                                    &mut hpx,
+                                    ContractWait::Block,
+                                    "a glm5 demotion",
+                                );
                             }
                             let sess = s.glm5.take().unwrap();
                             let lm = &loaded[&s.model];
@@ -23305,6 +23699,18 @@ pub fn run(
                             || (!sess.demote_ready() && !sess.has_pending())
                         {
                             continue;
+                        }
+                        // WP-A day 24: a pending spec-boundary capture reads THIS session's
+                        // draft scratch and trunk planes on the copy stream, and `into_demoted`
+                        // drops the scratch. Settle BLOCKING before the session is consumed.
+                        if hpx.capturing.is_some() {
+                            host_capture_settle_pending(
+                                &engine,
+                                &mut px,
+                                &mut hpx,
+                                ContractWait::Block,
+                                "a spec demotion",
+                            );
                         }
                         let mut sess = s.spec.take().unwrap();
                         let lm = &loaded[&s.model];
@@ -42095,6 +42501,7 @@ mod tests {
             polls: 0,
             copy_ms: 0.0,
             settled_by: String::new(),
+            trace_role: "snapshot",
         });
     }
 
@@ -42133,7 +42540,10 @@ mod tests {
             "a second capture",
             |_, _, wait| {
                 assert_eq!(wait, super::ContractWait::Block);
-                Ok(super::CaptureSettle::Done(vec![None, None]))
+                Ok(super::CaptureSettle::Done {
+                    kv: vec![None, None],
+                    draft: None,
+                })
             },
         );
         let Some(super::CaptureSettled::Ready(pending)) = outcome else {
@@ -42686,6 +43096,167 @@ mod tests {
             "drain, then release, then latch on refusal"
         );
         assert!(!body[submit..latch].contains("let _ = t.release_producer(producer);"));
+    }
+
+    /// WP-A day 24 (memra#536 Move 2 owed item 2, the capture half): every path of the
+    /// spec-boundary capture route is named by its source literal. The publisher asks the route after
+    /// its early returns and before the latent arm, and an `OnTick` answer hands the capture back for
+    /// the OFF program; the route refuses by name (latent planes or tails, a TP cache, a snapshot not
+    /// at `pos`, a trunk layer short of the boundary) before it settles a pending capture, re-checks
+    /// the key, reads the draft source as the OFF program does, and hands the core the spec class and
+    /// the OFF trace role; the core pushes the draft plane after the trunk rows and before the
+    /// producer fence and the one batch, names the draft rows on the submitted line, and the settle
+    /// takes both classes back into `Done { kv, draft }`, which the `Capturing` state lands beside the
+    /// trunk slots; publication prints the publisher's trace role; both demotions settle a pending
+    /// capture BLOCKING before they consume the session whose scratch the copy reads; the seed
+    /// route's line is unchanged; the core has exactly two callers.
+    #[test]
+    fn day24_spec_boundary_capture_paths_are_named() {
+        let src = include_str!("worker.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests {").unwrap()];
+        // The publisher.
+        let publisher = body.find("fn prefix_insert_from_spec_boundary(").unwrap();
+        let publisher_body = &body[publisher..publisher + body[publisher..].find("\n}\n").unwrap()];
+        let swa = publisher_body.find("if cache.has_swa_ring() {").unwrap();
+        let route_call = publisher_body
+            .find("let cap = match prefix_spec_capture_off_tick(")
+            .unwrap();
+        let latent_arm = publisher_body.find("// LATENT ARM").unwrap();
+        assert!(
+            swa < route_call && route_call < latent_arm,
+            "the route runs after the early returns and before the latent arm"
+        );
+        assert!(publisher_body.contains(
+            "SpecCaptureRoute::Routed(CaptureRoute::Submitted | CaptureRoute::Refused) => return,"
+        ));
+        assert!(
+            publisher_body.contains("SpecCaptureRoute::OnTick(cap) => *cap,"),
+            "OnTick hands the capture back untouched for the OFF program"
+        );
+        assert!(
+            publisher_body[route_call..].contains("dspark_draft.is_some(),"),
+            "the publisher tells the route whether it carries a DFlash tail (revuto, #643)"
+        );
+        // The route.
+        let route = body.find("fn prefix_spec_capture_off_tick(").unwrap();
+        let route_body = &body[route..route + body[route..].find("\n}\n").unwrap()];
+        for by_name in [
+            "|| dspark_tail",
+            "cache.latent.iter().any(Option::is_some)",
+            "cap.latent_tails.iter().any(Option::is_some)",
+            "cap.snap.pos != pos",
+            ".any(|l| l.len != 0 && l.len < pos)",
+            "cache.kv.iter().flatten().all(|l| l.len == 0)",
+        ] {
+            assert!(route_body.contains(by_name), "refused by name: {by_name}");
+        }
+        let by_name_end = route_body
+            .find("return SpecCaptureRoute::OnTick(Box::new(cap));\n    }\n    // Never two")
+            .unwrap();
+        let second = route_body
+            .find("host_capture_settle_pending(engine, px, hpx, ContractWait::Block, \"a second capture\")")
+            .unwrap();
+        let has_key = route_body
+            .find("if px.has_key(pool_key, &committed[..pos])")
+            .unwrap();
+        let short_draft = route_body
+            .find("draft plane shorter than boundary {pos}")
+            .unwrap();
+        let class = route_body.find("HostTierEntryClass::MtpDraft").unwrap();
+        let submit = route_body
+            .find("SpecCaptureRoute::Routed(host_capture_submit(")
+            .unwrap();
+        assert!(
+            by_name_end < second
+                && second < has_key
+                && has_key < short_draft
+                && short_draft < class
+                && class < submit,
+            "by name, then the settle, the key, the draft source, the class, the one submit"
+        );
+        assert!(route_body.contains("trace_role: \"spec-snapshot\","));
+        assert!(
+            route_body.contains("conv: cap.snap.conv,")
+                && route_body.contains("ssm: cap.snap.ssm,")
+        );
+        assert!(
+            route_body.contains("last_logits: cap.logits,")
+                && route_body.contains("last_h: cap.last_h,")
+        );
+        // The core.
+        let core = body.find("fn host_capture_submit(").unwrap();
+        let core_body = &body[core..core + body[core..].find("\n}\n").unwrap()];
+        let trunk = core_body
+            .find("for il in 0..n {\n        let Some(l) = &cache.kv[il] else {")
+            .unwrap();
+        let draft_block = core_body
+            .find("// 2b. WP-A day 24: the MTP draft plane")
+            .unwrap();
+        let draft_class = core_body.find("class: CapturePlaneClass::Draft,").unwrap();
+        let fence = core_body.find("t.record_producer(generation)").unwrap();
+        let batch = core_body
+            .find("t.submit_d2d_capture(ops, HOST_TIER_TRANSFER_EPOCHS)")
+            .unwrap();
+        assert!(
+            trunk < draft_block
+                && draft_block < draft_class
+                && draft_class < fence
+                && fence < batch,
+            "the trunk rows, then the draft plane, then the producer fence, then the one batch"
+        );
+        assert!(core_body.contains("class: CapturePlaneClass::Trunk,"));
+        assert!(core_body.contains("; draft plane {rows} rows ({kb:.1}KB) in the batch"));
+        assert!(
+            body.contains(
+                "recurrent_note: \"recurrent state cloned at the boundary on the owner stream\","
+            ),
+            "the seed route's line is unchanged"
+        );
+        assert_eq!(
+            body.matches("host_capture_submit(").count(),
+            3,
+            "the core and exactly two callers (the seed route and the spec-boundary route)"
+        );
+        // The settle and the landing.
+        let settle = body.find("fn host_kv_planes_settle_capture(").unwrap();
+        let settle_body = &body[settle..settle + body[settle..].find("\n}\n").unwrap()];
+        assert!(settle_body.contains("CapturePlaneClass::Trunk => kv[p.slot] = Some(plane),"));
+        assert!(settle_body.contains("CapturePlaneClass::Draft => draft = Some(plane),"));
+        assert!(settle_body.contains("Ok(CaptureSettle::Done { kv, draft })"));
+        let with = body.find("fn host_capture_settle_with(").unwrap();
+        let with_body = &body[with..with + body[with..].find("\n}\n").unwrap()];
+        assert!(with_body.contains("Ok(CaptureSettle::Done { kv, draft }) => {"));
+        assert!(
+            with_body.contains("shell.draft = draft;\n            pending.ready = true;"),
+            "the draft plane lands beside the trunk slots before the state turns ready"
+        );
+        let publish = body.find("fn host_capture_publish(").unwrap();
+        let publish_body = &body[publish..publish + body[publish..].find("\n}\n").unwrap()];
+        assert!(
+            publish_body.contains("trace_prefix_entry_state(engine, &e, e.pos, trace_role, &why);")
+        );
+        // The demotions.
+        let take_spec = body.find("let mut sess = s.spec.take().unwrap();").unwrap();
+        let settle_spec = body[..take_spec].rfind("\"a spec demotion\"").unwrap();
+        assert!(
+            take_spec - settle_spec < 400,
+            "the settle sits right before the spec session is consumed"
+        );
+        assert!(body[settle_spec - 300..settle_spec].contains("ContractWait::Block"));
+        let take_dspark = body.find("let sess = s.dspark.take().unwrap();").unwrap();
+        let settle_dspark = body[..take_dspark].rfind("\"a dspark demotion\"").unwrap();
+        assert!(take_dspark - settle_dspark < 400);
+        assert!(body[settle_dspark - 300..settle_dspark].contains("ContractWait::Block"));
+        // Revuto on integ40 (#643): the dspark settle is load-bearing (the publisher routes when
+        // its tail is absent, the default), and the glm5 demotion carries the same settle.
+        assert!(
+            body[settle_dspark - 1200..settle_dspark].contains("LOAD-BEARING"),
+            "the dspark settle states that the publisher routes by default"
+        );
+        let take_glm5 = body.find("let sess = s.glm5.take().unwrap();").unwrap();
+        let settle_glm5 = body[..take_glm5].rfind("\"a glm5 demotion\"").unwrap();
+        assert!(take_glm5 - settle_glm5 < 400);
+        assert!(body[settle_glm5 - 300..settle_glm5].contains("ContractWait::Block"));
     }
 
     // ---- WP-A day 21: the `Restoring` request (memra#536 Move 2 slice 2) ----
