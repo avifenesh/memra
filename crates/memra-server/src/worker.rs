@@ -20027,6 +20027,29 @@ pub fn run(
         let _ = ready_tx.send(Err(msg));
         return;
     }
+    // ROUTE POLICY CONTRACT, the env-only half (memra#504): which route each model will take is
+    // known from its path before any weight loads, so a policy the operator armed that a planned
+    // route refuses (MEMRA_REWRITE_BUNDLE beside a dsv4 checkpoint, memra#449) refuses HERE, not
+    // after a multi-minute load. The full registry (undeclared surfaces) is checked again after
+    // both model maps are complete, before the ready handoff.
+    {
+        let mut planned = crate::route_contract::RouteRegistry::default();
+        for (name, path, _) in &models {
+            let p = std::path::Path::new(path);
+            if p.is_dir() && crate::dsv4_serve::is_dsv4_dir(p) {
+                planned.register(crate::dsv4_serve::contract(name));
+            } else {
+                planned.register(crate::route_contract::RouteContract::hybrid_worker(
+                    name,
+                    crate::route_contract::hybrid_interactive_cap(),
+                ));
+            }
+        }
+        if let Err(error) = planned.check_process_env() {
+            let _ = ready_tx.send(Err(error.to_string()));
+            return;
+        }
+    }
     for (name, path, draft) in &models {
         eprintln!("[worker] loading model {name:?} <- {path}");
         // DIRECTORY path = safetensors HF checkpoint or a manifest-backed memra repack/overlay;
@@ -20411,6 +20434,31 @@ pub fn run(
         .collect();
     let mut caps = caps;
     caps.extend(dsv4_caps.drain());
+
+    // ROUTE POLICY CONTRACT (memra#504): every route this process will serve is registered
+    // with an implemented-or-refused declaration for every policy surface, and checked HERE,
+    // before `ready_tx` fires. An undeclared surface or a refused policy the operator armed
+    // (MEMRA_REWRITE_BUNDLE beside a dsv4 route, memra#449) is `FATAL: worker init failed`,
+    // not a runtime no-op found weeks later.
+    let mut route_registry = crate::route_contract::RouteRegistry::default();
+    let hybrid_sessions = crate::route_contract::hybrid_interactive_cap();
+    for name in &order {
+        if dsv4_routes.contains_key(name) {
+            route_registry.register(crate::dsv4_serve::contract(name));
+        } else if loaded.contains_key(name) {
+            route_registry.register(crate::route_contract::RouteContract::hybrid_worker(
+                name,
+                hybrid_sessions,
+            ));
+        }
+    }
+    if let Err(error) = route_registry.check_process_env() {
+        let _ = ready_tx.send(Err(error.to_string()));
+        return;
+    }
+    for route in route_registry.routes() {
+        eprintln!("{}", route.describe());
+    }
 
     // Per-model decode scheduling policy: the model fixes the exact numeric width, while the
     // default-off dual PP door may combine two such waves into one worker tick.
@@ -21720,15 +21768,18 @@ pub fn run(
             let batching_on = std::env::var("MEMRA_SERVE_BATCH")
                 .map(|v| v != "0")
                 .unwrap_or(true);
+            // ONE derivation of the interactive cap (route_contract::interactive_cap): the
+            // registry publishes and lib.rs sheds on the same number this gate enforces
+            // (memra#504; #502 was a second copy disagreeing). `max_active` carries the
+            // confidence-trace override.
             let cap = if lane == crate::lanes::Lane::Interactive {
-                if batching_on {
+                crate::route_contract::interactive_cap(
+                    batching_on,
                     std::env::var("MEMRA_MAX_SESSIONS")
                         .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(64)
-                } else {
-                    max_active
-                }
+                        .and_then(|v| v.parse().ok()),
+                    max_active,
+                )
             } else {
                 policy.max_sessions[lane.idx()]
             };
