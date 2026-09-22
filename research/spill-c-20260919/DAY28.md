@@ -201,21 +201,35 @@ prime arm: neither (no cache, no tier).
 
 **The reading, by the pre-registered rules (`day28-stall-reading.py`, verbatim).**
 
-`DAY28 ISOLATION pass=1 prime stall_median=301.5 iqr=1.5 n_per_order=5 pooled=10`  
-`DAY28 ISOLATION pass=1 class=capture arm=off stall_median=283.7 iqr=0.2 share=-17.8 unc=1.6 -> isolated`  
-`DAY28 ISOLATION pass=1 class=capture arm=on stall_median=284.4 iqr=0.1 share=-17.1 unc=1.6 -> isolated`  
-`DAY28 ISOLATION pass=1 class=capture on_minus_off=+0.7 unc=0.2 -> isolated`  
-`DAY28 ISOLATION pass=1 class=restore arm=off stall_median=8.9 iqr=0.1 share=+8.9 unc=0.1 arm_p99=15.6 arm_max=22.5 server_restore_ms=[] -> isolated`  
-`DAY28 ISOLATION pass=1 class=restore arm=on stall_median=9.1 iqr=0.1 share=+9.1 unc=0.1 arm_p99=15.6 arm_max=22.7 server_restore_ms=[14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5] -> isolated`  
-`DAY28 ISOLATION pass=1 class=restore on_minus_off=+0.2 unc=0.2 -> isolated`  
-`DAY28 ISOLATION pass=2 prime stall_median=301.5 iqr=1.5 n_per_order=5 pooled=10`  
-`DAY28 ISOLATION pass=2 class=capture arm=off stall_median=283.7 iqr=0.2 share=-17.8 unc=1.5 -> isolated`  
-`DAY28 ISOLATION pass=2 class=capture arm=on stall_median=284.4 iqr=0.1 share=-17.1 unc=1.5 -> isolated`  
-`DAY28 ISOLATION pass=2 class=capture on_minus_off=+0.7 unc=0.2 -> isolated`  
-`DAY28 ISOLATION pass=2 class=restore arm=off stall_median=9.0 iqr=0.1 share=+9.0 unc=0.1 arm_p99=15.6 arm_max=22.5 server_restore_ms=[] -> isolated`  
-`DAY28 ISOLATION pass=2 class=restore arm=on stall_median=9.1 iqr=0.1 share=+9.1 unc=0.1 arm_p99=15.6 arm_max=22.8 server_restore_ms=[14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5] -> isolated`  
-`DAY28 ISOLATION pass=2 class=restore on_minus_off=+0.2 unc=0.1 -> isolated`  
-`DAY28 ISOLATION VERDICT: capture pass1 on-off +0.7 (unc 0.2) isolated; restore pass1 on-off +0.2 (unc 0.2) isolated; capture pass2 on-off +0.7 (unc 0.2) isolated; restore pass2 on-off +0.2 (unc 0.1) isolated; admissible=True`  
+`DAY28 ISOLATION pass=1 prime stall_median=301.5 iqr=1.5 n_per_order=5 pooled=10`
+
+`DAY28 ISOLATION pass=1 class=capture arm=off stall_median=283.7 iqr=0.2 share=-17.8 unc=1.6 -> isolated`
+
+`DAY28 ISOLATION pass=1 class=capture arm=on stall_median=284.4 iqr=0.1 share=-17.1 unc=1.6 -> isolated`
+
+`DAY28 ISOLATION pass=1 class=capture on_minus_off=+0.7 unc=0.2 -> isolated`
+
+`DAY28 ISOLATION pass=1 class=restore arm=off stall_median=8.9 iqr=0.1 share=+8.9 unc=0.1 arm_p99=15.6 arm_max=22.5 server_restore_ms=[] -> isolated`
+
+`DAY28 ISOLATION pass=1 class=restore arm=on stall_median=9.1 iqr=0.1 share=+9.1 unc=0.1 arm_p99=15.6 arm_max=22.7 server_restore_ms=[14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5] -> isolated`
+
+`DAY28 ISOLATION pass=1 class=restore on_minus_off=+0.2 unc=0.2 -> isolated`
+
+`DAY28 ISOLATION pass=2 prime stall_median=301.5 iqr=1.5 n_per_order=5 pooled=10`
+
+`DAY28 ISOLATION pass=2 class=capture arm=off stall_median=283.7 iqr=0.2 share=-17.8 unc=1.5 -> isolated`
+
+`DAY28 ISOLATION pass=2 class=capture arm=on stall_median=284.4 iqr=0.1 share=-17.1 unc=1.5 -> isolated`
+
+`DAY28 ISOLATION pass=2 class=capture on_minus_off=+0.7 unc=0.2 -> isolated`
+
+`DAY28 ISOLATION pass=2 class=restore arm=off stall_median=9.0 iqr=0.1 share=+9.0 unc=0.1 arm_p99=15.6 arm_max=22.5 server_restore_ms=[] -> isolated`
+
+`DAY28 ISOLATION pass=2 class=restore arm=on stall_median=9.1 iqr=0.1 share=+9.1 unc=0.1 arm_p99=15.6 arm_max=22.8 server_restore_ms=[14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5] -> isolated`
+
+`DAY28 ISOLATION pass=2 class=restore on_minus_off=+0.2 unc=0.1 -> isolated`
+
+`DAY28 ISOLATION VERDICT: capture pass1 on-off +0.7 (unc 0.2) isolated; restore pass1 on-off +0.2 (unc 0.2) isolated; capture pass2 on-off +0.7 (unc 0.2) isolated; restore pass2 on-off +0.2 (unc 0.1) isolated; admissible=True`
 
 **What the cell isolated, and what it did not.** Restore class, isolated in both arms and both passes: a
 whole-entry hit of a 5152-token plain entry (309.9 MB: the fixed recurrent state of about 157 MB plus about 153 MB
