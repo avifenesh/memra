@@ -617,6 +617,7 @@ paragraph at the end states the question without answering it.
 | Failure, whole-budget arm | RTX 5090, 9B | not run | not run | none | stated missing (the 27B receipt stands for the arm) |
 | Contract fault (ON by construction), default and plain | RTX PRO 6000, 27B | n/a | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 67 ok with the floor and the ticket accounting clause (day 25: default `receipt seq=1 expected 1 + 0 capture ticket(s) submitted before it = 1`, plain `receipt seq=3 expected 1 + 2 capture ticket(s) submitted before it = 3`, and the postpublish twins `2 + 0 = 2`, `2 + 2 = 4`); 65 ok before the clause (`items=34` / `items=32`); the same lines on the local 5090 (9B, `rtx5090-day25/fault-*`) | `913095404` (67 ok, day 25), `98170f182` (65 ok), `9be3f7373` (64 ok), `3df0cb2b3` (64 ok), `1b354be59` | `pro-single-day25/cells/fault-*`, `pro-single-day22/cells/fault-*`, `-day21/`, `-day16/faultgate-fix/` |
 | Contract fault, default and plain | RTX 5090, 9B | n/a | `ALL GREEN`, 65 ok with the floor (`items=18` / `items=16`) | `98170f182` (day 22, 65 ok), `9be3f7373` (day 21, 64 ok); `91b0d4e08` (day 23, 65 ok x2, floor line, `items=18` / `items=16`) | `rtx5090-day22/fault-*`, `rtx5090-day21/fault-*`; `rtx5090-day23/fault-*` |
+| The sixteen door cells on the Move 2 slice-2 tree (A day 21 through integ37: identity x4, failure x4, fault x2, hit x2, twin x2, the two unit cells) | RTX 5090, 9B (the 27B for the twin) | `ALL GREEN` / `PASS` in every OFF cell (day 26): identity `(teeth=0)` x2 (12 ok), failure x2 (15 ok), hit (61 ok), twin27 `-> PASS` | `ALL GREEN` / `PASS` in every ON cell (day 26): identity `(teeth=0)` x2 (12 ok), failure x2 (15 ok), fault x2 (67 ok, accounting `1 + 0` and `1 + 2`), hit (61 ok), twin27 `-> PASS`, unit-server 8 passed, unit-engine 2 passed (`d2d_capture_*`, `d2d_restore_*`); the restore route engaged in `identity-plain-on` (two restores, `64 tokens, 16 planes (53.6MB)`, seq=6 and 7, under `teeth=0`) and `fault-plain` (four) | `b74269af5` (day 26, the only run on this class; the target card's is A day 21 `1350f118b`) | `rtx5090-day26/` (`DAY26.md`; attempt 1 in `attempt1-oom/`, twelve boot failures behind a foreign 22 GB holder, cause quoted) |
 | Identity, failure, fault on MAIN's tree after #627 | RTX PRO 6000, 27B | `ALL GREEN` in every cell (day 23): identity `(teeth=0)` x4 (12 ok), failure x4 share-cap (15 ok) and x2 whole-budget (14 ok, `skip demote: entry X MB > host budget B MB`), fault x2 (65 ok, floor, `items=34` / `items=32`) | `ALL GREEN` in every cell (day 23): identity `(teeth=0)` x4 (12 ok), failure x4 share-cap (15 ok) and x2 whole-budget (14 ok, `skip demote: entry X MB > host budget B MB`), fault x2 (65 ok, floor, `items=34` / `items=32`) | `91b0d4e08` | `pro-single-day23-gates/cells/<cell>/` (twelve cells, collector `pro-single-day23-gates/collector/`, zero lock retries, no compute app in any of the 24 snapshots) |
 
 **Arithmetic for the review (across sittings on the same box, not a same-window measurement).** On the
@@ -697,6 +698,51 @@ attributed by any cell. Both are named as open for the review; nothing is inferr
     receipt term covering both plane classes (the draft plane binds as `Role::Draft`, `items=34` on the 27B). The
     DSPARK tail is the drafter's own export (`dspark.draft_kv().export_tail`), owned and fenced by the drafter, and
     stays outside that route unless the export becomes a capture item. Nothing here is built.
+
+11. **The draft-bearing restore: what the restore route refuses by name, what a draft plane's restore would need,
+    and how much of the hit gate it is (day 26 census, `DAY26.md`; no code).** Slice 2's route
+    (`host_restore_park_probe`, worker.rs) reaches its class check only past six silent gates: a `Restoring`
+    request already pending, the route's latch, the host tier not armed (`hpx.armed()`, a `MEMRA_KV_HOST_MB`
+    budget above zero and no latch), no copy stream, an empty request id, a vision or capture request, a
+    continuation-reuse hit, or a `lookup` miss (an entry of at least 64 tokens exactly prefixing the prompt). At
+    the class check it refuses BY NAME, silently (`return false`, no line; the typed `restore refused (contracts
+    door)` line fires only after it, on the cache allocation, the OFF validation, a vanished pin or the submit):
+    `e.tp.is_some()` (TP shards), any `e.latent` plane (GLM latent tails, the `glm5-boundary` publish),
+    `e.draft.is_some()` (the MTP draft plane, every `insert (spec-boundary)` entry), `e.dspark_draft.is_some()`
+    (the DFlash tail, `dspark-boundary`), `e.pos != e.toks.len()`, empty boundary logits, and an entry with no
+    KV plane. What the draft plane's restore would need, read from the OFF program it would have to equal
+    (`spec_session_from_restored_deferred`, spec.rs 9196): today the trunk cache is restored first
+    (`prefix_restore_at`, the carrier), then the spec session is built and its `MtpScratch` is ALLOCATED inside
+    that constructor, the entry's `draft.k` and `draft.v` are copied into `scratch.kv.k` and `scratch.kv.v` with
+    `copy_u8_into` on the owner stream (`pos x k_tok_bytes` and `pos x v_tok_bytes` bytes, about 1.9 KB per
+    token on the 27B), then `scratch.set_len(pos)`, all after the geometry checks (`draft_len == pos`, the
+    entry's `k_tok_bytes`/`v_tok_bytes` equal to the model's scratch layout, `pos <= scratch.cap`, a ring-backed
+    scratch refused) and after `spec_restore_refusal` decided at admission that this REQUEST takes the draft at
+    all (a sampled request under the load guard or the penalty window, or an entry without `last_h`, serves
+    plain on the same entry). So the destination side needs: the scratch allocated at the probe, before the
+    session exists, owned by the pending `Restoring` state beside the trunk cache and never by a session while
+    the copy is in flight; a borrowed `CudaViewMut<u8>` destination of exactly `pos x k_tok_bytes` and `pos x
+    v_tok_bytes` into it; the source borrowed from the pinned entry's `draft.k`/`draft.v` under the SAME pin the
+    trunk restore takes (no second guarantee); a producer fence recorded on the owner stream after the
+    recurrent-state copies as today; the reader fence, rule 3's owner-stream wait installed at the settle
+    before the deferred prime's first draft-head read of rows `[0..pos)` (the walk reads the scratch, so the
+    wait must precede session construction or the constructor must take a ready, pre-filled scratch);
+    `spec_restore_refusal` evaluated at the probe, before the submit, so a request that would serve plain on a
+    draft-bearing entry submits the trunk restore alone (or takes the tick program as today) and never a draft
+    plane it will not read; the geometry checks moved to the probe's validation; and slice 3's receipt term over
+    both plane classes (the draft plane binds as `Role::Draft`: `items=34` on the 27B and `items=18` on the 9B
+    against 32 and 16 plain). The DFlash tail (a fixed about 85 MB `export_tail`, owned and fenced by the
+    drafter) stays outside unless the export becomes a capture item. How much of the hit gate this is: the
+    qwen arm's spec-on boot publishes 12 entries, 11 `insert (spec-boundary)` (draft-bearing) and 1 `insert
+    (seed)` (the `samp-noplane` namespace, plain), and serves 13 hits, 12 on draft-bearing entries and 1 on the
+    plain one; its spec-off twin boot publishes 2 `insert (seed)` entries and serves 3 hits, all plain; per
+    gate run 11 of 14 entries and 12 of 16 hits are draft-bearing, and the counts are IDENTICAL on both rigs
+    (target card, A day 21 `pro-single-day21/box/gates/hitgate-{off,on}`; RTX 5090, 9B, `rtx5090-day24/hit-on`
+    and `rtx5090-day26/hit-{off,on}`). One step before the class check, though: the hit gate boots with no
+    `MEMRA_KV_HOST_MB` (zero `[prefix-host]` lines in every hit-gate log on both rigs), so `hpx.armed()` is
+    false and the route is off for its 4 plain hits too; the hit gate's identity clause will cover the route,
+    for the plain hits now and the draft-bearing ones when their restore lands, only on a boot that arms the
+    host tier. Nothing here is built.
 
 ### E. The decision question, stated and not answered
 
