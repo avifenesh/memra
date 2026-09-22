@@ -49,6 +49,12 @@ Both fixed: no streak or degradation bookkeeping runs beside a latched fault (th
 still stamped), arm B of the gate now hangs again after the latch and asserts the two states are
 never published together, and the sentence names the miss streak.
 
+Round 2 found the same invariant open for the other latch sources: a standing degradation beside a
+fatal Xid or ECC latch stayed published. `mark_gpu_fault` now clears the interim reason for every
+source and `gpu_probe()` masks it while latched; `a_fatal_latch_from_any_source_clears_a_standing_degradation`
+is the test. `raw/local-ci-attempt1/` and `raw/local-ci-attempt2/` are the batteries before rounds
+1 and 2; `raw/local-ci/` is the final tree.
+
 ## What stays open in #516
 
 The default deadline stays 10 s; the issue's ask to scale it with card or model size is not

@@ -451,6 +451,12 @@ impl WorkerHealth {
         {
             *r = reason;
         }
+        // Latched is a different state from degraded, whatever latched it (the miss bound, the
+        // Xid tail, the ECC scan): clear the interim timeout reason here so /health never
+        // publishes a stale "n of m misses" beside `latched_reason` (memra#516).
+        if let Ok(mut r) = self.probe_degraded_reason.lock() {
+            r.clear();
+        }
         self.gpu_faulted.store(true, Ordering::Release);
     }
 
@@ -495,11 +501,6 @@ impl WorkerHealth {
         let streak = self.probe_miss_streak.fetch_add(1, Ordering::AcqRel) + 1;
         let last_ok = self.probe_last_ok_age_ms();
         if streak >= misses.max(1) {
-            // Latched is a different state from degraded: clear the interim reason so /health
-            // reads `degraded: false, latched_reason: Some(..)` rather than both at once.
-            if let Ok(mut r) = self.probe_degraded_reason.lock() {
-                r.clear();
-            }
             self.mark_gpu_fault(format!(
                 "nvidia-smi did not answer within {}s on {streak} consecutive probe(s) \
                  (policy MEMRA_GPU_PROBE_MISSES={}) — GPU/driver wedge; last answer {} ago",
@@ -536,12 +537,17 @@ impl WorkerHealth {
         GpuProbeState {
             miss_streak: self.probe_miss_streak.load(Ordering::Acquire),
             last_ok_age_ms: self.probe_last_ok_age_ms(),
-            degraded_reason: self
-                .probe_degraded_reason
-                .try_lock()
-                .ok()
-                .filter(|r| !r.is_empty())
-                .map(|r| r.clone()),
+            // never published beside a latched fault: `mark_gpu_fault` clears it and this
+            // masks the window between the two writes
+            degraded_reason: if self.gpu_faulted.load(Ordering::Acquire) {
+                None
+            } else {
+                self.probe_degraded_reason
+                    .try_lock()
+                    .ok()
+                    .filter(|r| !r.is_empty())
+                    .map(|r| r.clone())
+            },
             latched_reason: if self.gpu_faulted.load(Ordering::Acquire) {
                 self.gpu_reason.try_lock().ok().map(|r| r.clone())
             } else {
@@ -1211,6 +1217,25 @@ mod tests {
         h.note_probe_ok();
         assert!(h.live().unwrap_err().contains("ECC"));
         assert!(h.gpu_probe().latched_reason.unwrap().contains("ECC"));
+    }
+
+    #[test]
+    fn a_fatal_latch_from_any_source_clears_a_standing_degradation() {
+        // one miss (degraded, live), then the Xid tail latches: the stale "1 of 3" reason must
+        // not be published beside the latched cause, now or ever after (revuto round 2)
+        let h = fresh();
+        h.note_probe_ok();
+        assert!(!h.note_probe_hang(Duration::from_secs(10), 3));
+        assert!(h.gpu_probe().degraded());
+        h.mark_gpu_fault("fatal Xid 119 (GSP RPC timeout)");
+        let p = h.gpu_probe();
+        assert!(!p.degraded(), "{p:?}");
+        assert!(p.degraded_reason.is_none());
+        assert!(p.latched_reason.unwrap().contains("Xid 119"));
+        h.note_probe_ok();
+        h.note_probe_hang(Duration::from_secs(10), 3);
+        assert!(!h.gpu_probe().degraded());
+        assert!(h.live().unwrap_err().contains("Xid 119"));
     }
 
     #[test]
