@@ -2352,6 +2352,70 @@ absent models), engine `d2d_*` GPU cells `5 passed` under the lock, the hit gate
 30 route submission(s) across the two boots`, 11 spec-boundary captures, 13 restores, 0 `restore not routed`, 0 refused,
 disabled, trunk-only, dropped or skipped lines: main's own results, re-read.
 
+## integ45 (`lane/spill-integ45-20260922`): A days 28 and 29 (option (a): the bundle checksum off the tick; a hit on a `Hashing` entry parks one tick)
+Lane tip merged: A `1cce45646` (days 28 and 29) on main `ca5a90e2a` (#651), clean. Engine change under the door:
+`crates/memra-server/src/worker.rs` (+1558 lines including tests), `tools/kv-host-contract-fault-gate.sh` (two hash cells,
+the demote cells' last-publication wait), `docs/FLAGS.md` (the two fault values on the existing `MEMRA_KV_HOST_FAULT`
+row). No new `MEMRA_*` name, no flag, no `unsafe`, no engine or tier crate change.
+
+**A day 28 (ruling 39), as recorded in integ44 and now integrated with day 29.** `HostHashWorker`, one long-lived helper
+thread per `HostTierContext` (`memra-host-hash`), fed over a channel, joined at `host.disable` and at shutdown (the run
+loop's last statement, census-pinned); `PendingDemote` gains a `Hashing` phase (`PendingHashing`: ticket seq, payload
+count and bytes, the hand-off instant, the parked request ids, re-park count) and an owner-thread ledger
+(`DemoteOwnerLedger`: pre-submit, copy settle, hash polls); after the copy lands the heap payloads (the recurrent f32
+planes, the boundary logits, the hidden) are moved out of the image and handed to the helper; every settle path meets
+`Hashing` through `host_demote_settle_with_deadline` before the contract step, a `Block` settle continuing into the hash
+wait with a typed line naming what it waits on (no CUDA event and no join: the KV planes settled and the ticket retired
+before the hand-off); the reply is checked by ticket seq, payload count and per-payload byte count, each payload restored
+into its emptied slot, and `bind_tier_image` consumes the handed-in digests after a byte-count check (the same
+`checksum`, the same bytes, the receipt term unchanged); `hash-helper-gone` and `hash-never-lands` (10 s wall deadline)
+latch with the parked requests named; the publish line carries the ledger (`the owner thread held X ms across the demote:
+pre-submit, copy settle over N polls, hashing polls, take-back bind and publish; owner in-completion Y ms`). Eight CPU
+cells including the bitwise digest cell (`hash_helper_digests_equal_the_owner_thread_digests_bitwise`) and the source
+census; server lib 830 passed. Cost clauses on the target card (twenty boots, 20 of 20 `STALL REPLAY: PASS`), verbatim:
+`DAY28 CLAUSE 1a ... on_cell_median=81.8 off_cell_median=85.2 rule on<=off+2.0 -> PASS`; `DAY28 CLAUSE 1b e2e ...
+on=132.3 off=115.4 on_minus_off=+16.9 rule <=+20.0 -> PASS` (day 27: +91.3); `DAY28 CLAUSE 1c owner in-completion N=100
+median=7.40 ... rule <=12.0 -> PASS` (day 27: 74.8); the helper 73.2 ms per 157.9 MB, 100 of 100 landings at the tick-top
+poll. Clause 2 was red (a hit inside the `Hashing` window was a miss), fixed by day 29.
+
+**A day 29 (ruling 40, option 2a).** `host_hashing_hit` (pure over the host state: the `Demoting` entry with `hashing`
+`Some`, same pool key, the host `lookup` rules, deeper than the device hit) and `host_hashing_park` (the request id
+recorded once on `PendingHashing.parked`, one typed line `hit parked on a Hashing entry: request R (P tokens) hits the
+Demoting entry's N tokens (ticket seq=S, K payloads, M MB on the hash helper for T ms); the request waits one tick for the
+digests`, re-parks counted), called in the admission probe BEFORE the promote decision; the parked-only wait's guard gains
+the `Hashing` arm (`hpx.demoting ... hashing.is_some()`); the ledger line ends `; H hit(s) parked on the Hashing entry (R
+re-park(s))`; the latch tail names the parked requests (they re-admit to a cold prime). The fault gate's demote cells wait
+for the boot's last publication before `stop` (`the boot's last publication landed before stop (bounded 15 s wait)`; two
+wrong forms of that wait caught on the 5090 before the box ran, recorded). Server lib 826 passed; census and parked-wait
+tests extended. Target card, one sitting 17:37Z to 18:10Z, zero lock retries, verbatim: identity default and plain OFF and
+ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` x4 (12 ok each); failure OFF and ON `KV-HOST-SPILL FAILURE GATE: ALL
+GREEN` x2 (15 ok, the `digest` cell in); contract fault `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (123 ok, 0 FAIL, ten
+cells including the two hash cells); twin OFF and ON `-> PASS`; hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`
+61 / 68 ok with the day-24 census (`12/12/13/13`, `2/2/3/3`, `30 route submission(s)`); unit 8 passed, engine `d2d_*` 5
+passed, hash, census and parked-wait cells 10 passed. Local RTX 5090 (A): `identity-default-on` `ALL GREEN (teeth=0)`;
+`fault-default` and `fault-plain` `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (123 ok each); hit OFF and ON `ALL GREEN
+(qwen)` 61 / 68 ok, same census. Clauses 1a to 1c re-read on the day-29 tree: `81.7 / 85.4 -> PASS` and `81.8 / 85.1 ->
+PASS` (`-3.6 / -3.3 unc=0.1 isolated`), `+16.8 -> PASS` / `+16.9 -> PASS`, `median=7.39 ... -> PASS`, `DAY28 VERDICT
+clauses_failed=0 -> ALL PASS`, unchanged from day 28 within 0.1 ms. The parked-on-Hashing count in the identity gate's
+default ON arm: ONE per boot on both cards (target: `... (ticket seq=3, 98 payloads, 157.9MB on the hash helper for
+0.3ms)`, ledger `1 hit(s) parked on the Hashing entry (35 re-park(s))`; 5090: `53.7MB ... for 0.4ms`, `5 re-park(s)`);
+zero hits on a copy-phase `Demoting` entry. **Integrable: yes** (A's statement, adopted after the lead's review). Open
+question named by A, not owed work: a hit inside the copy window (before `Hashing`) keeps the day-17 cold-prime rule; zero
+observed. A's day-28 door-table rows, lost to two integ-side conflict resolutions, re-added on day 29 (section B). Budget
+4.9 + 3.7 agent-hours against 5 + 5.
+
+**Lead review of A days 28 and 29.** Read the helper's lifecycle (spawned with the tier context, one thread, the sender
+dropped and the thread joined at the tier's latch and at shutdown, a panic reported on join), the hand-off (payloads moved
+out of the pending image, never copied; restored only into their emptied slots; a reply checked by seq, count and byte
+count before any digest is consumed; `bind_tier_image` re-checks the byte count against the payload it names), the
+deadline arm (a `Poll` that has waited past 10 s or a `Block` that finds no reply latches with the parked requests named;
+a late reply for a latched ticket can only reach a disabled tier), the park (a hit names the `Hashing` entry only when the
+host lookup rules match deeper than the device hit; re-parks counted; bounded by the deadline, then the cold prime), and
+the parked-only wait guard. One numeric program per request holds by construction: bytes are hashed, nothing is
+generated, and a parked request is served by the device hit either way. No finding. **Ruling 41:** the day-28 and day-29
+code is the door's serving path; Move 1 owed item 2 (the bundle hash off the tick) closes on these receipts; item 2a
+closes; the remaining owner-thread cost of a demote is the pre-submit segment (Move 2 owed item 1, A day 30 running).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
