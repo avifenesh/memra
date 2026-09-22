@@ -2508,6 +2508,20 @@ when one fails. The stage-split modes (`--mode pp`, `--mode ppspec`) SKIP gate1/
 they are single-device jurisdiction — and neither PP mode was ever wired into `validate-h100.sh`; PP
 exactness has its own invocations (see [TESTING.md](TESTING.md)).
 
+**Prefill fairness (memra#521, decided 2026-09-22).** One long cold prime never holds the worker
+tick for its whole prompt on a walker route: the owned `PrimeWalker` (`MEMRA_PRIME_YIELD`, default
+ON) advances one frozen chunk per tick, the worker drains arrivals and gives each admitted peer one
+bounded quantum (a prime chunk, a committed spec round or a plain decode step), then resumes. Both
+arms execute the same frozen range program, so a yield changes interleaving, never bytes; `=0` is
+the rollback seam. The quantum is `MEMRA_PRIME_CHUNK` (4096 default; 1024 halves the peers' wait
+again at the long prime's expense). What this covers: the GDN MTP prime (`[prime-walk]
+supported=true` at boot), DFlash, GLM plain and spec. The serial plain-trunk prime is bounded per
+tick by `MEMRA_PREFILL_TICK` (1024) except the sole-request widening to 8192; E4B and dsv4 still
+prime monolithically and belong to memra#535 P3/P4. The serving-shape gate is
+`tools/prime-fairness-gate.py` (one 131k-token cold prime beside three peers, both arms, bytes identical,
+peers' first token bounded, `/health` `tick_max_ms` bounded); receipts and the 2026-09-05 incident
+shape are in `research/prime-fairness-default-20260922/` and `research/prefill-fairness-20260908/`.
+
 ## First-token cross-config drift (batched prime) — stated honestly
 
 Serving primes prompts BATCHED (`prime_cache`, prefill GEMMs) while the historical oracle
