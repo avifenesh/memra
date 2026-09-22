@@ -112,6 +112,7 @@ pub mod metering;
 mod prefill_receipt;
 pub mod prime_fairness;
 mod responses_api;
+pub mod route_contract;
 mod surfaces;
 mod toolcall;
 mod ttft;
@@ -2251,23 +2252,15 @@ impl Drop for InflightGuard {
     }
 }
 
-/// The lane's configured admission cap — mirrors the worker's admission gate exactly
-/// (worker.rs step 2): interactive = MEMRA_MAX_SESSIONS (64) batched / MAX_ACTIVE legacy;
-/// judge/harvest = LanePolicy::from_env().max_sessions. Read once.
+/// The lane's configured admission cap. Interactive is `route_contract::interactive_cap`, the
+/// same derivation the worker's admission gate applies (memra#504; before that this was a second
+/// copy of the arithmetic, and #502 is what a second copy costs); judge/harvest =
+/// `LanePolicy::from_env().max_sessions`. Read once. Still lane-scoped: a per-model cap for the
+/// serial dsv4 route is #501 (`RouteRegistry::capacity_for`).
 fn lane_cap(lane: lanes::Lane) -> usize {
     static CAPS: std::sync::OnceLock<[usize; 3]> = std::sync::OnceLock::new();
     CAPS.get_or_init(|| {
-        let batching = std::env::var("MEMRA_SERVE_BATCH")
-            .map(|v| v != "0")
-            .unwrap_or(true);
-        let interactive = if batching {
-            std::env::var("MEMRA_MAX_SESSIONS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(64)
-        } else {
-            worker::MAX_ACTIVE
-        };
+        let interactive = route_contract::hybrid_interactive_cap();
         let p = lanes::LanePolicy::from_env();
         [interactive, p.max_sessions[1], p.max_sessions[2]]
     })[lane.idx()]

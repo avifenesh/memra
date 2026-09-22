@@ -1,0 +1,269 @@
+{
+  "selected_k": 2,
+  "pooled_calibration_tok_s": {
+    "k1": 101.01631365310176,
+    "k2": 112.69975561167843,
+    "k3": 110.31688488932402,
+    "k4": 102.27742249162841,
+    "k5": 94.63307624924825,
+    "k6": 87.07474038230772,
+    "k7": 77.34258680857322
+  },
+  "selected_at_utc": "2026-09-21T01:31:06.244434+00:00",
+  "calibration": [
+    {
+      "cycle": 0,
+      "seed": 20266000,
+      "receipt_dir": "qwen-calibration-0",
+      "records": [
+        {
+          "seed": 20266000,
+          "arm": "k1",
+          "tokens": 13688,
+          "elapsed_s": 135.504658286,
+          "e2e_tok_s": 101.014977442,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 149120,
+            "input_tokens": 178001,
+            "new_input_tokens": 28881,
+            "cached_fraction": 0.8377481025387498
+          }
+        },
+        {
+          "seed": 20266000,
+          "arm": "k2",
+          "tokens": 13116,
+          "elapsed_s": 118.258720333,
+          "e2e_tok_s": 110.90936857,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 150176,
+            "input_tokens": 179288,
+            "new_input_tokens": 29112,
+            "cached_fraction": 0.8376243808843872
+          }
+        },
+        {
+          "seed": 20266000,
+          "arm": "k3",
+          "tokens": 14611,
+          "elapsed_s": 133.690808541,
+          "e2e_tok_s": 109.289487882,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 155744,
+            "input_tokens": 186351,
+            "new_input_tokens": 30607,
+            "cached_fraction": 0.8357561805410221
+          }
+        },
+        {
+          "seed": 20266000,
+          "arm": "k4",
+          "tokens": 13665,
+          "elapsed_s": 135.006362778,
+          "e2e_tok_s": 101.217451673,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 151872,
+            "input_tokens": 181315,
+            "new_input_tokens": 29443,
+            "cached_fraction": 0.8376140970134848
+          }
+        },
+        {
+          "seed": 20266000,
+          "arm": "k5",
+          "tokens": 13491,
+          "elapsed_s": 142.422306994,
+          "e2e_tok_s": 94.725329794,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 152000,
+            "input_tokens": 181558,
+            "new_input_tokens": 29558,
+            "cached_fraction": 0.8371980303814759
+          }
+        },
+        {
+          "seed": 20266000,
+          "arm": "k6",
+          "tokens": 13334,
+          "elapsed_s": 155.671368839,
+          "e2e_tok_s": 85.654800234,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 150336,
+            "input_tokens": 179512,
+            "new_input_tokens": 29176,
+            "cached_fraction": 0.8374704755113864
+          }
+        },
+        {
+          "seed": 20266000,
+          "arm": "k7",
+          "tokens": 15010,
+          "elapsed_s": 196.116966001,
+          "e2e_tok_s": 76.535958648,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 155296,
+            "input_tokens": 185534,
+            "new_input_tokens": 30238,
+            "cached_fraction": 0.8370217857643343
+          }
+        }
+      ]
+    },
+    {
+      "cycle": 1,
+      "seed": 20266001,
+      "receipt_dir": "qwen-calibration-1",
+      "records": [
+        {
+          "seed": 20266001,
+          "arm": "k7",
+          "tokens": 12674,
+          "elapsed_s": 161.822962599,
+          "e2e_tok_s": 78.320158008,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 147712,
+            "input_tokens": 176390,
+            "new_input_tokens": 28678,
+            "cached_fraction": 0.837417087136459
+          }
+        },
+        {
+          "seed": 20266001,
+          "arm": "k6",
+          "tokens": 12807,
+          "elapsed_s": 144.541986782,
+          "e2e_tok_s": 88.604012475,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 148256,
+            "input_tokens": 176905,
+            "new_input_tokens": 28649,
+            "cached_fraction": 0.8380543229416919
+          }
+        },
+        {
+          "seed": 20266001,
+          "arm": "k5",
+          "tokens": 13055,
+          "elapsed_s": 138.092720649,
+          "e2e_tok_s": 94.537930303,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 150656,
+            "input_tokens": 179862,
+            "new_input_tokens": 29206,
+            "cached_fraction": 0.8376199530751354
+          }
+        },
+        {
+          "seed": 20266001,
+          "arm": "k4",
+          "tokens": 12860,
+          "elapsed_s": 124.33728662,
+          "e2e_tok_s": 103.428346794,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 149600,
+            "input_tokens": 178365,
+            "new_input_tokens": 28765,
+            "cached_fraction": 0.8387295713845205
+          }
+        },
+        {
+          "seed": 20266001,
+          "arm": "k3",
+          "tokens": 13309,
+          "elapsed_s": 119.398281384,
+          "e2e_tok_s": 111.467266076,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 150432,
+            "input_tokens": 179747,
+            "new_input_tokens": 29315,
+            "cached_fraction": 0.8369096563503146
+          }
+        },
+        {
+          "seed": 20266001,
+          "arm": "k2",
+          "tokens": 12882,
+          "elapsed_s": 112.425009715,
+          "e2e_tok_s": 114.583045469,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 148576,
+            "input_tokens": 176446,
+            "new_input_tokens": 27870,
+            "cached_fraction": 0.8420479920202215
+          }
+        },
+        {
+          "seed": 20266001,
+          "arm": "k1",
+          "tokens": 13970,
+          "elapsed_s": 138.292701762,
+          "e2e_tok_s": 101.017622926,
+          "turns": 8,
+          "correctness_only": false,
+          "reuse": {
+            "turns": 8,
+            "conversations": 1,
+            "cached_tokens": 154880,
+            "input_tokens": 184735,
+            "new_input_tokens": 29855,
+            "cached_fraction": 0.8383901263972717
+          }
+        }
+      ]
+    }
+  ],
+  "workloads_lock_sha256": "3286ff6c1f03de62b33ecff8a1fd51a2dd07573cbfc3e5ed40dfe9a1b4311ad3",
+  "rule": "Pooled returned tokens / request E2E seconds; ties choose smaller K."
+}

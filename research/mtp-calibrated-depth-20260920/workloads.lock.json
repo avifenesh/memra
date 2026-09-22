@@ -1,0 +1,68 @@
+{
+  "calibration-a": {
+    "sha256": "0525408ee61bcbdde069db2336ff005b736f4e2cca2a2206eafd89f1b12702ff",
+    "sources": [
+      {
+        "path": "crates/memra-sampling/src/lib.rs",
+        "start_line": 1,
+        "end_line": 140,
+        "source_sha256": "eae02f51fbb72faeb2861132338f2ee68ea5648113560dd590e7f5788690ea61",
+        "excerpt_sha256": "b93e7bdac60b50ddc1cbf69f5a7c860ebeabeb2af986a765bbd9ee6d32418b0c"
+      },
+      {
+        "path": "crates/memra-runtime/src/lib.rs",
+        "start_line": 1,
+        "end_line": 130,
+        "source_sha256": "93e26d37268285cab68f0e5ddf697175191645875a4417fb7c8eb42c21616d33",
+        "excerpt_sha256": "625b5eda9bb73edad5b1c80048405b9b1db58e5164c467906e6944058e84540b"
+      }
+    ],
+    "initial_chars": 13766
+  },
+  "calibration-b": {
+    "sha256": "66d6ca9ec4c4c46fef865c622e4585120f2ae37cfa19936356453488816ee6dd",
+    "sources": [
+      {
+        "path": "crates/memra-gguf/src/execution_manifest.rs",
+        "start_line": 1,
+        "end_line": 170,
+        "source_sha256": "61b6e879859f516116d4adaf81c0a6d78563c9561b50f0f513b32fd24af70cb3",
+        "excerpt_sha256": "8c456b829ab753758ee20549c3699ffbec0a5406f85fa9a3cdb73ab5f28b261f"
+      },
+      {
+        "path": "crates/memra-gguf/src/tensor_contract.rs",
+        "start_line": 1,
+        "end_line": 110,
+        "source_sha256": "32716c792a0ed6b594e5ff48204944e13eae94d6c4d9cbf9ef67d1105f4779cc",
+        "excerpt_sha256": "5dfa822e05973282cc4c2b55d9fca760129335a7caff617f50449a2409959736"
+      }
+    ],
+    "initial_chars": 9273
+  },
+  "heldout-a": {
+    "sha256": "97e78022c8774896faee9fef10bfaa083c08fa12acd82fe208c6ed5e9390516a",
+    "sources": [
+      {
+        "path": "crates/memra-kv/src/lib.rs",
+        "start_line": 1,
+        "end_line": 250,
+        "source_sha256": "f0d1b73cfa345c88f64eaa44cea6d314fdbac1cdea5b630829ee143c08dd8444",
+        "excerpt_sha256": "363101b39434d3561dfdb0f3ee23cc04150277c4776d397be3452d8ff36c275a"
+      }
+    ],
+    "initial_chars": 13261
+  },
+  "heldout-b": {
+    "sha256": "32f6b6e74434fe112445f22c480a8f5d824b0e6cb05ffd61ad74cf6bd4677e9e",
+    "sources": [
+      {
+        "path": "crates/memra-tokenizer/src/chat.rs",
+        "start_line": 1,
+        "end_line": 270,
+        "source_sha256": "cd0565d937ff239d93cb5cd44f71bf35b5d6752ce9c9e1dc1ab1e13f08897043",
+        "excerpt_sha256": "4c0906e6a52c9f34ffe865dd56d1bf7dc5389e9ef9a8d054d6b60ebc7ea8819d"
+      }
+    ],
+    "initial_chars": 14972
+  }
+}

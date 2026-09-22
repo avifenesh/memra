@@ -1,0 +1,271 @@
+Review the following real Rust implementation. Explain its data flow, state ownership and correctness invariants. Identify concrete defects or risks, and propose changes with tests. Ground the analysis in the supplied excerpts.
+
+File: crates/memra-kv/src/lib.rs, lines 1..250
+```rust
+//! memra-kv — the dual KV/recurrent cache, extracted (Phase D, ARCHITECTURE-H100.md §5).
+//!
+//! Moved VERBATIM from memra-engine/src/cache.rs behind the `KvDev` seam: the cache only
+//! ever needed 7 device ops (alloc/copy/set), so the trait is that surface and nothing
+//! more. The append/dequant KERNELS stay in the engine fatbins — this crate owns the
+//! structure, sizing math, and the KV format policy (env-selected, shared by the engine's
+//! fatbin router and every cache consumer). memra-engine re-exports this as `cache` so
+//! call sites are unchanged.
+
+pub mod record;
+pub mod tiered;
+
+// ---------------- KV format policy (moved from memra-engine) ----------------
+
+/// Per-32-element block bytes of the trunk KV cache: q8_0 K (34 B) and q5_1 V (24 B), the one
+/// validated config. The env-selected format arms (`MEMRA_KV_K` / `MEMRA_KV_V`: fp8 K, q4_0 / fp8
+/// V) were removed 2026-09-05 (door sweep); gemma's e4m3 layers size themselves in
+/// `full_attention_kv_layout` below.
+pub fn kv_blk_bytes() -> (usize, usize) {
+    (34, 24)
+}
+
+/// Exact allocation geometry for one rank of a tensor-parallel KV sidecar.
+///
+/// The context-linear coefficient and fixed allocation bytes are shared by the CUDA allocator
+/// and serving admission. Keeping both consumers on this function prevents a new KV format or
+/// rank width from making the pre-admit estimate disagree with the buffers allocated at decode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TpKvRankAllocationShape {
+    pub kv_dim_k: usize,
+    pub kv_dim_v: usize,
+    pub k_token_bytes: usize,
+    pub v_token_bytes: usize,
+    pub fixed_bytes: usize,
+}
+
+impl TpKvRankAllocationShape {
+    pub fn bytes_per_token(self) -> usize {
+        self.k_token_bytes.saturating_add(self.v_token_bytes)
+    }
+
+    pub fn allocation_bytes(self, capacity: usize) -> usize {
+        self.bytes_per_token()
+            .saturating_mul(capacity)
+            .saturating_add(self.fixed_bytes)
+    }
+}
+
+#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
+pub fn tp_kv_rank_allocation_shape(
+    kv_dim_k: usize,
+    kv_dim_v: usize,
+    ranks: usize,
+) -> Result<TpKvRankAllocationShape, String> {
+    if ranks == 0 || kv_dim_k == 0 || kv_dim_v == 0 {
+        return Err(format!(
+            "TP KV dimensions and rank count must be nonzero: k={kv_dim_k} v={kv_dim_v} \
+             ranks={ranks}"
+        ));
+    }
+    if kv_dim_k % ranks != 0 || kv_dim_v % ranks != 0 {
+        return Err(format!(
+            "TP KV dimensions k={kv_dim_k} v={kv_dim_v} are not divisible by TP={ranks}"
+        ));
+    }
+    let local_k = kv_dim_k / ranks;
+    let local_v = kv_dim_v / ranks;
+    if !local_k.is_multiple_of(32) || !local_v.is_multiple_of(32) {
+        return Err(format!(
+            "TP KV local dimensions k={local_k} v={local_v} must be 32-aligned"
+        ));
+    }
+    let (k_block_bytes, v_block_bytes) = kv_blk_bytes();
+    let k_token_bytes = (local_k / 32)
+        .checked_mul(k_block_bytes)
+        .ok_or("TP KV K token-byte overflow")?;
+    let v_token_bytes = (local_v / 32)
+        .checked_mul(v_block_bytes)
+        .ok_or("TP KV V token-byte overflow")?;
+    Ok(TpKvRankAllocationShape {
+        kv_dim_k: local_k,
+        kv_dim_v: local_v,
+        k_token_bytes,
+        v_token_bytes,
+        // Two CUDA byte planes retain their existing 8-byte tail pads, plus one i32 length
+        // mirror. Allocator alignment remains visible through the device pool high-water.
+        fixed_bytes: 8 + 8 + std::mem::size_of::<i32>(),
+    })
+}
+
+/// FP8-GLOBALS switch (MEMRA_GEMMA_GKV, default ON): gemma global (hd512) layers keep
+/// their KV in e4m3 — the dequant-latency arc (HANDOVER). Windowed layers stay q8_0/q5_1.
+pub fn gkv_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("MEMRA_GEMMA_GKV")
+            .map(|v| v != "0")
+            .unwrap_or(true)
+    })
+}
+
+/// FP8-WINDOWED switch (MEMRA_GEMMA_WKV; serving-mode default): SPEC serving (MEMRA_DRAFT
+/// set) -> OFF, plain -> ON — the acceptance-vs-depth record lives on the engine-side
+/// history of `Engine::wkv_on` (git). Explicit env always wins.
+pub fn wkv_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("MEMRA_GEMMA_WKV")
+            .map(|v| v != "0")
+            .unwrap_or_else(|_| std::env::var("MEMRA_DRAFT").is_err())
+    })
+}
+
+/// Step35 SWA ring. Default OFF unless the loader arms the step37 serving default (owner flip
+/// 2026-08-27: the ring frees 16.4 GB on card0 at the natural 262144 context with identical
+/// throughput and ids, and the W8 doors OOM there without it). Architecture-scoped by its call
+/// sites: Gemma4's row-0-addressed window kernels cannot consume a rebased ring view, which is
+/// why the default arms per loaded family rather than globally. `MEMRA_SWA_RING=1` forces ON,
+/// `=0` is the kill switch either way.
+static SWA_RING_DEFAULT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_swa_ring_default(on: bool) {
+    SWA_RING_DEFAULT.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn swa_ring_on() -> bool {
+    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    match *ENV.get_or_init(|| match std::env::var("MEMRA_SWA_RING").ok().as_deref() {
+        Some("1") => Some(true),
+        Some("0") => Some(false),
+        _ => None,
+    }) {
+        Some(forced) => forced,
+        None => SWA_RING_DEFAULT.load(std::sync::atomic::Ordering::Relaxed),
+    }
+}
+
+/// With the SWA-ring door open, `prime_chunk_tokens` caps every legal chunk at this bound. The
+/// ring carries one whole maximum-size prime chunk in addition to the reader's window.
+pub const PRIME_CHUNK_MAX_TOKENS: usize = 4096;
+const SWA_VIEW_ALIGNMENT_ROWS: usize = 32;
+
+/// Physical rows required by the Step35 SWA reader contract. Prime starts at
+/// `(base_len - (window - 1)) & !31`, so at most 31 masked rows precede the live window.
+pub fn swa_ring_rows(window: usize, max_ctx: usize) -> usize {
+    // window + max prime chunk + REWIND HEADROOM + alignment. append_plan requires
+    // keep_rows + append_rows <= rows, and keep_rows is now window + SWA_REWIND_SLACK_ROWS, so the
+    // headroom has to be in `rows` or a full-size prime chunk stops fitting. Costs
+    // SWA_REWIND_SLACK_ROWS rows per ring-backed plane.
+    max_ctx.min(
+        window + PRIME_CHUNK_MAX_TOKENS + SWA_REWIND_SLACK_ROWS + (SWA_VIEW_ALIGNMENT_ROWS - 1),
+    )
+}
+
+/// Rows a ring-backed plane keeps BELOW the aligned window start so a backward rewind stays legal.
+///
+/// This is HEADROOM THE RING IS SIZED FOR, not slack scavenged from it. The original geometry
+/// (window + prime chunk + 31) left exactly one alignment block spare once a full prime chunk had
+/// to fit, and one block only covers a rewind shallower than 32 rows. Clamping a deeper request up
+/// to `base` instead makes the append legal while leaving the attention window pointing below rows
+/// the ring no longer holds — which produced all-NaN head logits and seed hiddens at pos 8661
+/// rather than an error. A ring that cannot serve the rewinds its own callers perform is
+/// undersized; the fix is to size it, not to keep redistributing 32 rows.
+pub const SWA_REWIND_SLACK_ROWS: usize = 512;
+
+/// The retain a ring-backed append must request: the aligned window start for `first_row`, minus
+/// the rewind slack, but NEVER below what the ring still holds.
+///
+/// The clamp is the part that took three attempts to find. Asking for slack unconditionally makes
+/// the REWIND legal and then breaks the very next APPEND: after a rewind, `first_row` moves back
+/// while `base` does not, so the ideal retain falls under `base` and append_plan refuses it
+/// ("SWA ring lapped required rows (base 4128, retain 4096, len 4669)"). Rows below `base` are
+/// gone and, being older than the window, are not needed — so clamping up to `base` is both legal
+/// and correct. Slack is an optimisation the ring grants when it can, never a demand.
+pub fn swa_retain_from(first_row: usize, window: usize, base: usize) -> usize {
+    let ideal = first_row
+        .saturating_sub(window.saturating_sub(1))
+        .saturating_sub(SWA_REWIND_SLACK_ROWS)
+        & !(SWA_VIEW_ALIGNMENT_ROWS - 1);
+    ideal.max(base)
+}
+
+/// WORKING-SET rows the DSA indexer TAIL RING books by default.
+///
+/// IT IS NOT A BOUND ON ANYTHING, and that is the correction (lane/glm53-ring-sizing,
+/// 2026-08-28). The ring first shipped sized as `prime_chunk_bound + 1024`, i.e. against the
+/// largest `t` a CHUNKED prefill could hand one call. glm5_next, the one architecture this ring
+/// exists for, is eager-only (`ResidualTopology::HyperConnections` refuses every batched and
+/// speculative entry point) and primes MONOLITHICALLY: `prime_cache_hyper` never calls
+/// `prime_chunk_ranges`, so its per-call `t` is the whole prompt and its only ceiling is the
+/// admission limit itself. A ring that bounds `t` is therefore a ring of `max_ctx` rows, which is
+/// the flat plane, which is no ring at all. The bench box measured what the wrong bound cost:
+/// 4630 usable prompt tokens inside a configured `MEMRA_CTX=8192`, against 7300 with the ring off
+/// on the same binary (research/glm53-flash-bringup-20260827/rebaseline-and-surface-20260828,
+/// receipts 13 and 14).
+///
+/// So `t` was removed from the requirement instead of the constant being raised.
+/// `mla_kpool_indices` DRAINS the ring inside the call: it appends what fits, builds the pool keys
+/// that frees, and continues, so a call of any `t` is served by a ring of any size. The only
+/// correctness floor left is ONE POOL, enforced by the engine because the state plan does not
+/// carry `pool`; everything above it is working set, and the ring can never again be the reason a
+/// prompt is refused.
+///
+/// 5120 is chosen, not derived. It is what the flag already books, so every banked memory number
+/// stays exactly true (1M: 13.5 GiB to 1.56 GiB over 12 MLA layers), it is one nominal 4096-token
+/// prime chunk plus slack so a CHUNKED architecture drains in exactly one iteration and pays zero
+/// extra launches, and at 5 MiB per layer it is noise against the 1 GiB per layer the ring
+/// deletes. A monolithic 1M prime drains in about 205 iterations per MLA layer, two kernel
+/// launches each, against a prefill of a million tokens.
+pub const INDEX_RING_WORKING_ROWS: usize = 5120;
+
+/// Physical rows of the DSA k-pool indexer state plane when it is a TAIL RING, or `None` to keep
+/// the flat `max_ctx`-row plane. PURE: the env read is [`index_ring_rows`].
+///
+/// `explicit` is a parsed `MEMRA_DSA_INDEX_RING`: `Some(0)` disables the ring, `Some(n)` pins the
+/// row budget (gates use a tiny one to reach the wrap in a micro fixture), `None` books the
+/// working-set default. There is deliberately NO per-call `t` input any more: see
+/// [`INDEX_RING_WORKING_ROWS`]. A ring that is not SHORTER than the flat plane is pointless, so
+/// `rows >= max_ctx` collapses to `None` and the short-context sessions that dominate the test
+/// suite keep byte-for-byte their old allocation.
+pub fn index_ring_rows_for(explicit: Option<usize>, max_ctx: usize) -> Option<usize> {
+    let rows = match explicit {
+        Some(0) => return None,
+        Some(n) => n,
+        None => INDEX_RING_WORKING_ROWS,
+    };
+    (rows > 0 && rows < max_ctx).then_some(rows)
+}
+
+/// PHYSICAL rows the SHIPPED DEFAULT derivation books for `max_ctx`: no `MEMRA_DSA_INDEX_RING`
+/// override. Pure, so the sizing gate can assert on it without racing another test's environment.
+/// This is the one function the sizing gate calls.
+pub fn index_ring_default_rows(max_ctx: usize) -> Option<usize> {
+    index_ring_rows_for(None, max_ctx)
+}
+
+/// Rows of `remaining` the indexer may append to the tail ring BEFORE the pool-key build has to
+/// drain it, or `None` when the rows this call still owes an unbuilt pool are already lapped.
+///
+/// `ring` is the EFFECTIVE ring (a multiple of `pool`; `0` is the flat plane), `pools_ready` the
+/// pools whose keys are already resident, `cur` the absolute row the next append lands on, and
+/// `remaining` the rows of this call not yet appended.
+///
+/// THE WHOLE SAFETY ARGUMENT, in one window. The plane has exactly one writer
+/// (`Engine::mla_index_append`) and exactly one reader (`Engine::mla_kpool_pool_keys`), and a row
+/// is read exactly once, by the pool-key build of the pool it belongs to. So the rows that must be
+/// live at any instant are `[pools_ready * pool, cur + take)`: everything below has already been
+/// read and is dead, everything above is not written yet. `take` is whatever is left of the ring
+/// after the carry-over `live = cur - pools_ready * pool`, and the caller drains and comes back.
+///
+
+```
+
+---TURN---
+Develop concrete failure cases for this code. Show the state before and after each failure and specify recovery behavior.
+---TURN---
+Propose a focused patch plan. Include Rust-like pseudocode, interfaces and ownership rules tied to the supplied source.
+---TURN---
+Now examine concurrency and cancellation. Give adversarial interleavings and show how the proposed changes handle them.
+---TURN---
+Design tests for the invariants discussed so far. Include boundaries, malformed inputs, repeated calls and cleanup.
+---TURN---
+Review your proposed changes for performance costs. Identify useful measurements and avoid claiming gains without evidence.
+---TURN---
+Consider a production incident involving this component. Write a debugging plan with concrete observations that distinguish plausible causes.
+---TURN---
+Consolidate the conversation into a detailed implementation and validation plan. Resolve contradictions in your earlier proposals.

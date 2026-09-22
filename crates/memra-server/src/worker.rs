@@ -4882,6 +4882,7 @@ fn host_tier_context(
         transfers: Some(std::cell::RefCell::new(transfers)),
         inflight,
         fault: std::cell::Cell::new(HostContractFault::from_door(kv_host_fault())),
+        hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,
     })
 }
 
@@ -8861,6 +8862,12 @@ impl HostPrefixCache {
             );
         }
         self.disabled = true;
+        // WP-A day 28 (ruling 39): a latched tier hashes nothing more; the hash helper closes here
+        // (idempotent; bounded, so a helper still inside a job is detached, not waited for).
+        if let Some(tier) = &self.tier {
+            tier.hasher
+                .close("the tier latched off", HOST_HASH_LATCH_JOIN);
+        }
     }
 
     fn n_entries(&self) -> usize {
@@ -9181,6 +9188,10 @@ struct HostTierContext {
     /// boot, so the identity is completed per pool key rather than stored per pool key.
     programs: HashMap<String, HostTierPrograms>,
     device: u32,
+    /// WP-A day 28 (memra#536 Move 1 owed item 2, lead ruling 39): the one long-lived hash helper
+    /// of this context; the bundle checksum of an image's heap payloads runs there, never on the
+    /// tick. Joined at shutdown and at the tier's latch (`HostPrefixCache::disable`).
+    hasher: HostHashWorker,
 }
 /// One loaded model's programs under the door: the plain program (day 13) and, for a model with
 /// an MTP head, the draft-bearing program (day 14, `host_tier_draft_program`).
@@ -9293,7 +9304,16 @@ impl HostPrefixCache {
             .map_err(|e| format!("tier admission refused: {e:?}"))
     }
 
-    fn bind_tier_image(&self, entry: &mut HostPrefixEntry) -> Result<(), String> {
+    /// WP-A day 28: `hashed` carries the digests the hash helper computed over the image's heap
+    /// payloads (the same `checksum` program over the same bytes, on the helper thread instead of
+    /// this one); a slot it names is consumed instead of hashed, after its byte count is checked
+    /// against the payload's. `None` (the synchronous route, the handoff import) hashes every
+    /// payload here as before.
+    fn bind_tier_image(
+        &self,
+        entry: &mut HostPrefixEntry,
+        hashed: Option<&HostHashDigests>,
+    ) -> Result<(), String> {
         use memra_engine::cache::tiered::*;
         let Some(tier) = &self.tier else {
             return Ok(());
@@ -9336,12 +9356,27 @@ impl HostPrefixCache {
                        row: u64,
                        encoding: &[u8],
                        bytes: &[u8],
-                       receipt: Option<&memra_engine::cache::tiered::Digest>|
+                       receipt: Option<&memra_engine::cache::tiered::Digest>,
+                       precomputed: Option<(usize, memra_engine::cache::tiered::Digest)>|
          -> std::result::Result<(), String> {
             if bytes.is_empty() {
                 return Ok(());
             }
-            let sum = checksum(bytes);
+            // WP-A day 28: a digest the hash helper computed over these bytes, byte for byte the
+            // same program (`checksum`) the line below runs; its byte count must be the payload's.
+            let sum = match precomputed {
+                Some((n, digest)) => {
+                    if n != bytes.len() {
+                        return Err(format!(
+                            "tier image {role:?} plane precomputed digest covers {n} bytes, the \
+                             payload has {}",
+                            bytes.len()
+                        ));
+                    }
+                    digest
+                }
+                None => checksum(bytes),
+            };
             // Option B receipt check: a contract-routed plane's bundle checksum must be the
             // transfer's completion checksum of the same bytes. The one legitimate difference
             // is the `flip-demote` fault, which corrupts the image after the receipt exactly as
@@ -9433,6 +9468,7 @@ impl HostPrefixCache {
                 .collect::<Vec<_>>(),
             entry.draft.as_ref().map(plane_geometry),
         );
+        // The KV planes' checksums stay on this thread (the leases hold an `Rc` and a CUDA event).
         for p in entry.kv.iter().flatten() {
             add(
                 Role::Key,
@@ -9440,6 +9476,7 @@ impl HostPrefixCache {
                 b"q8_0",
                 p.k.bytes()?,
                 p.k.receipt(),
+                None,
             )?;
             add(
                 Role::Value,
@@ -9447,10 +9484,33 @@ impl HostPrefixCache {
                 b"q5_1",
                 p.v.bytes()?,
                 p.v.receipt(),
+                None,
             )?;
         }
-        for p in entry.conv.iter().chain(&entry.ssm).flatten() {
-            add(Role::Recurrent, 4, b"f32-native", f32s_as_bytes(p), None)?;
+        let pre = |slot: HostHashSlot| hashed.and_then(|h| h.get(slot));
+        for (i, p) in entry.conv.iter().enumerate() {
+            if let Some(p) = p {
+                add(
+                    Role::Recurrent,
+                    4,
+                    b"f32-native",
+                    f32s_as_bytes(p),
+                    None,
+                    pre(HostHashSlot::Conv(i)),
+                )?;
+            }
+        }
+        for (i, p) in entry.ssm.iter().enumerate() {
+            if let Some(p) = p {
+                add(
+                    Role::Recurrent,
+                    4,
+                    b"f32-native",
+                    f32s_as_bytes(p),
+                    None,
+                    pre(HostHashSlot::Ssm(i)),
+                )?;
+            }
         }
         add(
             Role::Logits,
@@ -9458,6 +9518,7 @@ impl HostPrefixCache {
             b"f32-native",
             f32s_as_bytes(&entry.last_logits),
             None,
+            pre(HostHashSlot::Logits),
         )?;
         add(
             Role::Hidden,
@@ -9465,6 +9526,7 @@ impl HostPrefixCache {
             b"f32-native",
             f32s_as_bytes(&entry.last_h),
             None,
+            pre(HostHashSlot::Hidden),
         )?;
         // The MTP draft plane: its own K and V segments under `Role::Draft`, checksummed like
         // the trunk planes (the verify digest is blind to it; these checksums are its receipt).
@@ -9475,6 +9537,7 @@ impl HostPrefixCache {
                 b"mtp-draft-q8_0",
                 p.k.bytes()?,
                 p.k.receipt(),
+                None,
             )?;
             add(
                 Role::Draft,
@@ -9482,6 +9545,7 @@ impl HostPrefixCache {
                 b"mtp-draft-q5_1",
                 p.v.bytes()?,
                 p.v.receipt(),
+                None,
             )?;
         }
         add(
@@ -9489,6 +9553,7 @@ impl HostPrefixCache {
             1,
             b"host-prefix-shape-v2",
             &metadata,
+            None,
             None,
         )?;
         let id = KvBlockId::new(&program, [0; 32], &entry.toks, 0, 0, tier.device, 0)
@@ -9732,6 +9797,339 @@ struct PendingDemote {
     host_bytes: usize,
     t0: Instant,
     polls: u32,
+    /// WP-A day 28: `Some` once the copy settled and the image's heap payloads went to the hash
+    /// helper (`contract` is `None` then); the entry stays `Demoting` until the digests land.
+    hashing: Option<PendingHashing>,
+    /// What the owner thread held for this demote, by segment (the ledger line at publication).
+    owner: DemoteOwnerLedger,
+}
+
+/// WP-A day 28 (memra#536 Move 1 owed item 2, lead ruling 39, `research/spill-a-20260919/DAY28.md`):
+/// the `Hashing` phase of a `Demoting` entry. The KV planes settled, the ticket retired and
+/// acknowledged, the `flip-demote` fault applied; the image's HEAP payloads (the recurrent f32
+/// planes, the logits, the hidden row: about 157 MB on the 27B, pageable `Vec<f32>` that never
+/// crossed the contract and has no receipt partner) were MOVED to the helper, which owns them
+/// while it hashes and hands them back with their digests. The program is unchanged: `checksum`
+/// (SHA-256, the `valid-bytes` frame) over `f32s_as_bytes(payload)`, the call `bind_tier_image`
+/// made on the tick; only the thread differs. Nothing generates tokens here (bytes are hashed),
+/// so one numeric program per request holds by construction.
+struct PendingHashing {
+    seq: u64,
+    payloads: usize,
+    bytes: usize,
+    handed: Instant,
+    /// WP-A day 29 (ruling 40, option 2a, `DAY29.md`): the request ids the admission probe PARKED
+    /// on this entry because their prompt hits it (one typed line per id; the entry publishes
+    /// with or without them: this is a count, not a state the request owns). `reparks` counts the
+    /// silent re-parks of an already-recorded id (the `ParkAgain` shape).
+    parked: Vec<String>,
+    reparks: u32,
+}
+
+/// The owner thread's held time for one off-tick demote, by segment, in ms: before the submission
+/// (the f32 D2H on the owner stream, the lease allocations, the registration), the copy's settle
+/// steps (hash 1 inside them), the `Hashing` polls, and the take-back, bind and publish (printed at
+/// publication as `owner in-completion` = pre-submit + hashing polls + take-back).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct DemoteOwnerLedger {
+    presubmit_ms: f64,
+    copy_settle_ms: f64,
+    hash_polls_ms: f64,
+    hash_polls: u32,
+}
+
+/// Which payload of the image a hashed `Vec<f32>` came from and goes back to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostHashSlot {
+    Conv(usize),
+    Ssm(usize),
+    Logits,
+    Hidden,
+}
+
+/// One heap payload on its way to the helper and back: the helper owns the `Vec` while it hashes.
+struct HostHashPayload {
+    slot: HostHashSlot,
+    data: Vec<f32>,
+}
+
+/// One demote's hash job; the ticket sequence names it in every line and in the reply.
+struct HostHashJob {
+    seq: u64,
+    payloads: Vec<HostHashPayload>,
+}
+
+/// The helper's answer: every payload back with the byte count it hashed and its digest, in the
+/// order handed over; `helper_ms` is the helper's own wall time over the job.
+struct HostHashReply {
+    seq: u64,
+    hashed: Vec<(HostHashPayload, usize, memra_engine::cache::tiered::Digest)>,
+    helper_ms: f64,
+}
+
+/// The digests `bind_tier_image` consumes instead of hashing: per slot, the byte count hashed and
+/// the digest. A slot absent here is hashed on the owner thread as before the helper existed.
+#[derive(Default)]
+struct HostHashDigests {
+    by_slot: Vec<(HostHashSlot, usize, memra_engine::cache::tiered::Digest)>,
+}
+impl HostHashDigests {
+    fn get(&self, slot: HostHashSlot) -> Option<(usize, memra_engine::cache::tiered::Digest)> {
+        self.by_slot
+            .iter()
+            .find(|(s, _, _)| *s == slot)
+            .map(|(_, n, d)| (*n, *d))
+    }
+}
+
+/// The digest of one f32 payload as the bind computes it: THE program, called by the helper and by
+/// the owner thread alike (the bitwise unit cell compares the two over the same bytes).
+fn host_hash_payload_digest(data: &[f32]) -> (usize, memra_engine::cache::tiered::Digest) {
+    let bytes = f32s_as_bytes(data);
+    (bytes.len(), memra_engine::cache::tiered::checksum(bytes))
+}
+
+/// Move every heap payload out of the image (each slot keeps an empty `Vec` in place); `Pinned`
+/// payloads stay and are hashed on the owner thread by the bind.
+fn host_hash_take_payloads(e: &mut HostPrefixEntry) -> Vec<HostHashPayload> {
+    let mut out = Vec::new();
+    for (i, p) in e.conv.iter_mut().enumerate() {
+        if let Some(HostF32::Heap(v)) = p {
+            out.push(HostHashPayload {
+                slot: HostHashSlot::Conv(i),
+                data: std::mem::take(v),
+            });
+        }
+    }
+    for (i, p) in e.ssm.iter_mut().enumerate() {
+        if let Some(HostF32::Heap(v)) = p {
+            out.push(HostHashPayload {
+                slot: HostHashSlot::Ssm(i),
+                data: std::mem::take(v),
+            });
+        }
+    }
+    if let HostF32::Heap(v) = &mut e.last_logits {
+        out.push(HostHashPayload {
+            slot: HostHashSlot::Logits,
+            data: std::mem::take(v),
+        });
+    }
+    if let HostF32::Heap(v) = &mut e.last_h {
+        out.push(HostHashPayload {
+            slot: HostHashSlot::Hidden,
+            data: std::mem::take(v),
+        });
+    }
+    out
+}
+
+/// Put one payload back into the slot it left; the slot must be the emptied heap `Vec` the
+/// take left there, or the reply does not describe this image.
+fn host_hash_restore_payload(e: &mut HostPrefixEntry, p: HostHashPayload) -> Result<(), String> {
+    let target = match p.slot {
+        HostHashSlot::Conv(i) => e.conv.get_mut(i).and_then(Option::as_mut),
+        HostHashSlot::Ssm(i) => e.ssm.get_mut(i).and_then(Option::as_mut),
+        HostHashSlot::Logits => Some(&mut e.last_logits),
+        HostHashSlot::Hidden => Some(&mut e.last_h),
+    };
+    match target {
+        Some(HostF32::Heap(v)) if v.is_empty() => {
+            *v = p.data;
+            Ok(())
+        }
+        _ => Err(format!(
+            "the reply's {:?} payload has no emptied heap slot in the image",
+            p.slot
+        )),
+    }
+}
+
+/// The helper's two one-shot faults (`MEMRA_KV_HOST_FAULT=hash-helper-gone|hash-never-lands`),
+/// read once at boot into the helper thread: `HelperGone` exits the helper on its first job (the
+/// job dropped with it), `NeverLands` hashes the first job and discards the reply. Each is the red
+/// arm of one fail-closed path of the `Hashing` phase (typed refusal, nothing published, the tier
+/// latched). Gate: `tools/kv-host-contract-fault-gate.sh` cells `hash-helper-gone` and
+/// `hash-never-lands`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostHashFault {
+    HelperGone,
+    NeverLands,
+}
+impl HostHashFault {
+    fn from_door(fault: &str) -> Option<Self> {
+        match fault {
+            "hash-helper-gone" => Some(Self::HelperGone),
+            "hash-never-lands" => Some(Self::NeverLands),
+            _ => None,
+        }
+    }
+}
+
+/// How long a `Hashing` demote may wait for its digests after the hand-off before the tier
+/// latches (DAY28 pre-registration item 4): a wall deadline, checked at every tick-top poll and
+/// used as the `Block` wait's `recv_timeout`. About 130x the target host's hash of the largest
+/// image class (157 MB at 2.15 GB/s), not a tick count (a count latches a busy 100 ms tick late
+/// and an idle 2 ms poll early).
+const HOST_HASH_DEADLINE: Duration = Duration::from_secs(10);
+
+/// One long-lived hash helper per `HostTierContext` (never a thread per demote): a job channel in,
+/// a reply channel out, the thread handle for the join. Between jobs the helper blocks only on its
+/// job channel; inside a job it is busy for as long as the hash takes, which is unbounded when the
+/// helper is starved or wedged (the deadline's cause), so `close` never waits past its bound.
+struct HostHashWorker {
+    jobs: std::cell::RefCell<Option<std::sync::mpsc::Sender<HostHashJob>>>,
+    replies: std::cell::RefCell<Option<std::sync::mpsc::Receiver<HostHashReply>>>,
+    handle: std::cell::RefCell<Option<std::thread::JoinHandle<()>>>,
+}
+
+/// How long the tier's latch waits for the hash helper to exit before detaching it (revuto on
+/// #652): an idle helper exits within microseconds of its job channel closing; a helper still
+/// inside a job is the deadline's cause, and the owner thread must not wait for that job.
+const HOST_HASH_LATCH_JOIN: Duration = Duration::from_millis(50);
+impl HostHashWorker {
+    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {
+        let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<HostHashJob>();
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel::<HostHashReply>();
+        let handle = std::thread::Builder::new()
+            .name("memra-host-hash".into())
+            .spawn(move || {
+                let mut fault = fault;
+                for job in jobs_rx {
+                    if fault == Some(HostHashFault::HelperGone) {
+                        // The red arm: the helper is gone; the job drops with it and the owner
+                        // thread finds the reply channel closed.
+                        return;
+                    }
+                    let t = Instant::now();
+                    let hashed = job
+                        .payloads
+                        .into_iter()
+                        .map(|p| {
+                            let (n, d) = host_hash_payload_digest(&p.data);
+                            (p, n, d)
+                        })
+                        .collect();
+                    let reply = HostHashReply {
+                        seq: job.seq,
+                        hashed,
+                        helper_ms: t.elapsed().as_secs_f64() * 1e3,
+                    };
+                    if fault == Some(HostHashFault::NeverLands) {
+                        // The red arm, one-shot: the digests never land; the helper stays alive.
+                        fault = None;
+                        drop(reply);
+                        continue;
+                    }
+                    if reply_tx.send(reply).is_err() {
+                        return;
+                    }
+                }
+            })
+            .map_err(|e| format!("hash helper thread refused to spawn: {e}"))?;
+        Ok(Self {
+            jobs: std::cell::RefCell::new(Some(jobs_tx)),
+            replies: std::cell::RefCell::new(Some(reply_rx)),
+            handle: std::cell::RefCell::new(Some(handle)),
+        })
+    }
+    /// A worker over caller-owned channels (the forged-reply cell): no thread, nothing to join.
+    #[cfg(test)]
+    fn from_channels(
+        jobs: std::sync::mpsc::Sender<HostHashJob>,
+        replies: std::sync::mpsc::Receiver<HostHashReply>,
+    ) -> Self {
+        Self {
+            jobs: std::cell::RefCell::new(Some(jobs)),
+            replies: std::cell::RefCell::new(Some(replies)),
+            handle: std::cell::RefCell::new(None),
+        }
+    }
+    /// The same over a caller-owned thread (the wedged-helper cell: a job still in hand at the
+    /// latch).
+    #[cfg(test)]
+    fn from_thread(
+        jobs: std::sync::mpsc::Sender<HostHashJob>,
+        replies: std::sync::mpsc::Receiver<HostHashReply>,
+        handle: std::thread::JoinHandle<()>,
+    ) -> Self {
+        let worker = Self::from_channels(jobs, replies);
+        *worker.handle.borrow_mut() = Some(handle);
+        worker
+    }
+    fn submit(&self, job: HostHashJob) -> Result<(), String> {
+        self.jobs
+            .borrow()
+            .as_ref()
+            .ok_or_else(|| "the hash helper was closed".to_string())?
+            .send(job)
+            .map_err(|_| "the job channel closed".to_string())
+    }
+    /// `Poll`: a landed reply, `None` while the helper still works, an error when the reply
+    /// channel closed (the helper exited or panicked).
+    fn try_reply(&self) -> Result<Option<HostHashReply>, String> {
+        let replies = self.replies.borrow();
+        let replies = replies
+            .as_ref()
+            .ok_or_else(|| "the hash helper was closed".to_string())?;
+        match replies.try_recv() {
+            Ok(r) => Ok(Some(r)),
+            Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err("the reply channel closed".to_string())
+            }
+        }
+    }
+    /// `Block`: the same with a bounded wait; `None` is the deadline.
+    fn reply_within(&self, timeout: Duration) -> Result<Option<HostHashReply>, String> {
+        let replies = self.replies.borrow();
+        let replies = replies
+            .as_ref()
+            .ok_or_else(|| "the hash helper was closed".to_string())?;
+        match replies.recv_timeout(timeout) {
+            Ok(r) => Ok(Some(r)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Ok(None),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                Err("the reply channel closed".to_string())
+            }
+        }
+    }
+    /// Drop both channel ends (the helper's loop ends after the job in hand, if any, whose reply
+    /// then finds no receiver and drops with its payloads) and join the thread within `bound`;
+    /// past it the thread is detached and ends on its own. Idempotent; called at shutdown and at
+    /// the tier's latch, never inside a settle. The latch passes `HOST_HASH_LATCH_JOIN` (revuto
+    /// on #652: a latch can fire because a job is still running, and the owner thread must not
+    /// wait for it); shutdown passes the hash deadline.
+    fn close(&self, why: &str, bound: Duration) {
+        let Some(tx) = self.jobs.borrow_mut().take() else {
+            return;
+        };
+        drop(tx);
+        drop(self.replies.borrow_mut().take());
+        if let Some(handle) = self.handle.borrow_mut().take() {
+            let t = Instant::now();
+            while !handle.is_finished() && t.elapsed() < bound {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            if !handle.is_finished() {
+                eprintln!(
+                    "[prefix-host] hash helper detached ({why}): still inside a job after \
+                     {:.1}ms; it ends on its own and that job's reply drops with its payloads",
+                    t.elapsed().as_secs_f64() * 1e3
+                );
+                return;
+            }
+            let panicked = handle.join().is_err();
+            eprintln!(
+                "[prefix-host] hash helper joined ({why}){}",
+                if panicked {
+                    "; the helper had panicked"
+                } else {
+                    ""
+                }
+            );
+        }
+    }
 }
 
 /// Which program the door's H2D takes (WP-A day 18, memra#536 Move 1, the promote half). `OnTick`:
@@ -12209,6 +12607,13 @@ fn host_demote_prefix_ref(
                 host_bytes,
                 t0,
                 polls: 0,
+                hashing: None,
+                owner: DemoteOwnerLedger {
+                    // WP-A day 28: what the owner thread held before the submission (the f32
+                    // D2H on the owner stream, the lease allocations, the registration).
+                    presubmit_ms: t0.elapsed().as_secs_f64() * 1e3,
+                    ..DemoteOwnerLedger::default()
+                },
             });
             // The line carries no "(contracts door): " marker: that form is the door's REFUSAL
             // shape and the fault gate counts it (`no_extra_refusal`); a submission is not one.
@@ -12225,7 +12630,7 @@ fn host_demote_prefix_ref(
         Ok(HostImage::Whole(mut e)) => {
             // Native D2H has completed and owns a distinct immutable image before bind.
             e._tier_charge = tier_charge;
-            host_demote_publish(host, dead, e, host_bytes, t0)
+            host_demote_publish(host, dead, e, host_bytes, t0, None)
         }
         Err(failure) => {
             // The fixed-arena path reclaims inside `reserve_image`, before a copy that can fail.
@@ -12261,8 +12666,9 @@ fn host_demote_publish(
     mut e: HostPrefixEntry,
     host_bytes: usize,
     t0: Instant,
+    hashed: Option<&HostHashDigests>,
 ) -> HostDemoteOutcome {
-    if let Err(err) = host.bind_tier_image(&mut e) {
+    if let Err(err) = host.bind_tier_image(&mut e, hashed) {
         host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "bind refused");
         eprintln!("[prefix-host] demote failed ({err}); nothing published");
         return HostDemoteOutcome::Failed;
@@ -12325,7 +12731,7 @@ fn host_demote_settle_pending(
 }
 
 /// The state machine behind `host_demote_settle_pending`, with the contract step injected so the
-/// CPU conformance tests drive every arm without a device.
+/// CPU conformance tests drive every arm without a device; the hash deadline is the production one.
 fn host_demote_settle_with(
     host: &mut HostPrefixCache,
     wait: ContractWait,
@@ -12337,7 +12743,40 @@ fn host_demote_settle_with(
         ContractWait,
     ) -> Result<ContractSettle, HostContractFailure>,
 ) -> Option<HostDemoteOutcome> {
+    host_demote_settle_with_deadline(host, wait, why, settle, HOST_HASH_DEADLINE)
+}
+
+/// The driver with the hash deadline injected (the CPU `hash-never-lands` cells use a short one).
+/// WP-A day 28: a pending demote in its `Hashing` phase is met HERE, before the contract step, by
+/// every path that settles a `Demoting` entry (the tick-top `Poll`; the `Block` waits of a second
+/// demote, a promote and a tenant purge), so no path can find the entry's slot free while its
+/// digests are still on the helper. A `Block` settle of the copy continues straight into the hash
+/// wait in the same call: a `Block` caller expects the slot free when it returns.
+fn host_demote_settle_with_deadline(
+    host: &mut HostPrefixCache,
+    wait: ContractWait,
+    why: &str,
+    settle: impl FnOnce(
+        &HostTierContext,
+        &mut PrefixEntry,
+        PendingContractDemote,
+        ContractWait,
+    ) -> Result<ContractSettle, HostContractFailure>,
+    hash_deadline: Duration,
+) -> Option<HostDemoteOutcome> {
+    let held = Instant::now();
     let mut pending = host.demoting.take()?;
+    if let Some(hashing) = pending.hashing.take() {
+        return Some(host_demote_settle_hashing(
+            host,
+            pending,
+            hashing,
+            wait,
+            why,
+            hash_deadline,
+            held,
+        ));
+    }
     pending.polls += 1;
     let (mut dead, contract) = match (pending.dead.take(), pending.contract.take()) {
         (Some(dead), Some(contract)) => (dead, contract),
@@ -12409,6 +12848,7 @@ fn host_demote_settle_with(
         Ok(ContractSettle::Pending(contract)) => {
             pending.dead = Some(dead);
             pending.contract = Some(contract);
+            pending.owner.copy_settle_ms += held.elapsed().as_secs_f64() * 1e3;
             host.demoting = Some(pending);
             Some(HostDemoteOutcome::Demoting)
         }
@@ -12431,21 +12871,80 @@ fn host_demote_settle_with(
                 host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "flip fault");
                 return Some(HostDemoteOutcome::Failed);
             }
-            let mut e = pending.image;
-            e.kv = kv;
-            e.draft = draft;
+            pending.image.kv = kv;
+            pending.image.draft = draft;
+            // WP-A day 28 (ruling 39): the image's heap payloads go to the hash helper; the entry
+            // stays `Demoting` (`Hashing`) until the digests land. An image with nothing to hand
+            // off (every f32 payload pinned, which the door refuses) publishes here as on day 17.
+            let payloads = host_hash_take_payloads(&mut pending.image);
+            if payloads.is_empty() {
+                eprintln!(
+                    "[prefix-host] demote published off the tick: ticket seq={seq} complete after {} \
+                     poll(s), {copy_ms:.1}ms from submission to completion ({mode})",
+                    pending.polls
+                );
+                return Some(host_demote_publish(
+                    host,
+                    &dead,
+                    pending.image,
+                    pending.host_bytes,
+                    pending.t0,
+                    None,
+                ));
+            }
+            let n = payloads.len();
+            let bytes: usize = payloads.iter().map(|p| p.data.len() * 4).sum();
+            let submitted = match host.tier.as_ref() {
+                Some(tier) => tier.hasher.submit(HostHashJob { seq, payloads }),
+                None => Err("tier context gone under a Demoting entry".to_string()),
+            };
+            if let Err(err) = submitted {
+                let err = format!(
+                    "tier hash helper gone: {err} before the heap payloads of ticket seq={seq} \
+                     were handed over ({n} payloads, {:.1}MB, {mode})",
+                    bytes as f64 / 1e6
+                );
+                eprintln!(
+                    "[prefix-host] demote failed ({err}); nothing published; the tier latches off"
+                );
+                host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "hash helper gone");
+                host.disable(&err);
+                return Some(HostDemoteOutcome::Failed);
+            }
             eprintln!(
-                "[prefix-host] demote published off the tick: ticket seq={seq} complete after {} \
-                 poll(s), {copy_ms:.1}ms from submission to completion ({mode})",
-                pending.polls
+                "[prefix-host] demote copy complete off the tick: ticket seq={seq} complete after {} \
+                 poll(s), {copy_ms:.1}ms from submission to completion ({mode}); {n} heap payloads \
+                 ({:.1}MB) handed to the hash helper",
+                pending.polls,
+                bytes as f64 / 1e6
             );
-            Some(host_demote_publish(
-                host,
-                &dead,
-                e,
-                pending.host_bytes,
-                pending.t0,
-            ))
+            pending.dead = Some(dead);
+            pending.owner.copy_settle_ms += held.elapsed().as_secs_f64() * 1e3;
+            let hashing = PendingHashing {
+                seq,
+                payloads: n,
+                bytes,
+                handed: Instant::now(),
+                parked: Vec::new(),
+                reparks: 0,
+            };
+            match wait {
+                ContractWait::Poll => {
+                    pending.hashing = Some(hashing);
+                    host.demoting = Some(pending);
+                    Some(HostDemoteOutcome::Demoting)
+                }
+                // A `Block` caller settles the WHOLE pending demote: straight into the hash wait.
+                ContractWait::Block => Some(host_demote_settle_hashing(
+                    host,
+                    pending,
+                    hashing,
+                    wait,
+                    why,
+                    hash_deadline,
+                    Instant::now(),
+                )),
+            }
         }
         Err(failure) => {
             host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "copy failed");
@@ -12473,6 +12972,221 @@ fn host_demote_settle_with(
                 }
             })
         }
+    }
+}
+
+/// WP-A day 28: one settle step of a `Hashing` demote (ruling 39). `Poll` reads the reply channel
+/// and hands the state back while the helper works; `Block` waits on the reply for the remainder
+/// of the deadline, naming what it waits on (no CUDA event, no join: the KV planes settled and the
+/// ticket retired before the hand-off; the helper joins at shutdown and at the latch). When the
+/// digests land they are checked against the payloads (ticket, count, byte counts, slots), the
+/// payloads go back into the image and the publication runs through `host_demote_publish` with the
+/// digests handed in. Fail-closed arms, each typed, nothing published, the shell dropped whole, the
+/// tier latched: the reply channel closed (`hash-helper-gone`), the deadline (`hash-never-lands`),
+/// a reply that does not describe this image.
+#[allow(clippy::too_many_arguments)] // one settle step, every argument a named part of the state
+fn host_demote_settle_hashing(
+    host: &mut HostPrefixCache,
+    mut pending: PendingDemote,
+    hashing: PendingHashing,
+    wait: ContractWait,
+    why: &str,
+    deadline: Duration,
+    held: Instant,
+) -> HostDemoteOutcome {
+    pending.owner.hash_polls += 1;
+    let (seq, n, bytes, handed) = (hashing.seq, hashing.payloads, hashing.bytes, hashing.handed);
+    // WP-A day 29 (ruling 40): the requests the probe parked on this entry, for the ledger line
+    // and the latch tail; they own nothing here and re-admit to whatever the tick top leaves.
+    let parked_hits = hashing.parked.len();
+    let reparks = hashing.reparks;
+    let mb = bytes as f64 / 1e6;
+    let mode = match wait {
+        ContractWait::Poll => "tick-top poll".to_string(),
+        ContractWait::Block => format!("settled synchronously by {why}"),
+    };
+    let (key, toks) = (pending.image.pool_key.clone(), pending.image.toks.len());
+    let latch = |host: &mut HostPrefixCache, err: String, why: &str| -> HostDemoteOutcome {
+        eprintln!("[prefix-host] demote failed ({err}); nothing published; the tier latches off");
+        host.waste_pending_reclaim(&key, toks, why);
+        host.disable(&err);
+        if parked_hits > 0 {
+            eprintln!(
+                "[prefix-host] {parked_hits} request(s) parked on the Hashing entry re-admit to a \
+                 cold prime (the tier latched off)"
+            );
+        }
+        HostDemoteOutcome::Failed
+    };
+    let Some(dead) = pending.dead.take() else {
+        // Unreachable by construction (the sink attaches the shell before the first poll, and the
+        // copy's settle keeps it); fail closed: the payloads on the helper cannot publish.
+        return latch(
+            host,
+            format!(
+                "a Hashing entry has no source shell (ticket seq={seq}, {n} payloads, {mb:.1}MB)"
+            ),
+            "no shell",
+        );
+    };
+    let elapsed = handed.elapsed();
+    let reply = match host.tier.as_ref() {
+        None => Err("tier context gone under a Hashing entry".to_string()),
+        Some(tier) => match wait {
+            ContractWait::Poll => tier.hasher.try_reply(),
+            ContractWait::Block => {
+                eprintln!(
+                    "[prefix-host] demote hashing settled synchronously by {why}: waiting for the \
+                     hash helper's reply for ticket seq={seq} ({n} payloads, {mb:.1}MB, {:.1}ms since \
+                     the hand-off; no CUDA event and no join: the KV planes settled and the ticket \
+                     retired before the hand-off; the helper joins at shutdown or at the tier's latch)",
+                    elapsed.as_secs_f64() * 1e3
+                );
+                tier.hasher.reply_within(deadline.saturating_sub(elapsed))
+            }
+        },
+    };
+    let reply = match reply {
+        Err(err) => {
+            return latch(
+                host,
+                format!(
+                    "tier hash helper gone: {err} before the digests of ticket seq={seq} landed \
+                     ({n} payloads, {mb:.1}MB, {} poll(s), {mode})",
+                    pending.owner.hash_polls
+                ),
+                "hash helper gone",
+            );
+        }
+        Ok(None) => {
+            if wait == ContractWait::Block || elapsed >= deadline {
+                return latch(
+                    host,
+                    format!(
+                        "tier hash digests never landed: ticket seq={seq} waited {:.1}s past the \
+                         hand-off, deadline {}s ({n} payloads, {mb:.1}MB, {} poll(s), {mode})",
+                        handed.elapsed().as_secs_f64(),
+                        deadline.as_secs(),
+                        pending.owner.hash_polls
+                    ),
+                    "hash never landed",
+                );
+            }
+            pending.dead = Some(dead);
+            pending.owner.hash_polls_ms += held.elapsed().as_secs_f64() * 1e3;
+            pending.hashing = Some(hashing);
+            host.demoting = Some(pending);
+            return HostDemoteOutcome::Demoting;
+        }
+        Ok(Some(reply)) => reply,
+    };
+    // The reply must describe THIS image: its ticket, its payload count, every byte count.
+    let mismatch = if reply.seq != seq {
+        Some(format!(
+            "the reply names ticket seq={}, the Hashing entry is seq={seq}",
+            reply.seq
+        ))
+    } else if reply.hashed.len() != n {
+        Some(format!(
+            "the reply carries {} payloads, {n} were handed over",
+            reply.hashed.len()
+        ))
+    } else {
+        reply
+            .hashed
+            .iter()
+            .find(|(p, hashed_bytes, _)| *hashed_bytes != p.data.len() * 4)
+            .map(|(p, hashed_bytes, _)| {
+                format!(
+                    "the reply's {:?} digest covers {hashed_bytes} bytes, the payload has {}",
+                    p.slot,
+                    p.data.len() * 4
+                )
+            })
+    };
+    if let Some(what) = mismatch {
+        return latch(
+            host,
+            format!("tier hash reply mismatch: {what} (ticket seq={seq}, {mode})"),
+            "hash reply mismatch",
+        );
+    }
+    if !host.armed() {
+        eprintln!(
+            "[prefix-host] demote dropped: the tier latched off while ticket seq={seq} was Demoting \
+             (hashing; {mode}); nothing published"
+        );
+        host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "tier latched off");
+        return HostDemoteOutcome::Failed;
+    }
+    let mut e = pending.image;
+    let mut digests = HostHashDigests::default();
+    for (payload, hashed_bytes, digest) in reply.hashed {
+        digests.by_slot.push((payload.slot, hashed_bytes, digest));
+        if let Err(what) = host_hash_restore_payload(&mut e, payload) {
+            return latch(
+                host,
+                format!("tier hash reply mismatch: {what} (ticket seq={seq}, {mode})"),
+                "hash reply mismatch",
+            );
+        }
+    }
+    let polls_ms = pending.owner.hash_polls_ms + held.elapsed().as_secs_f64() * 1e3;
+    let publish_t = Instant::now();
+    let outcome = host_demote_publish(
+        host,
+        &dead,
+        e,
+        pending.host_bytes,
+        pending.t0,
+        Some(&digests),
+    );
+    if outcome == HostDemoteOutcome::Demoted {
+        let publish_ms = publish_t.elapsed().as_secs_f64() * 1e3;
+        let owner = pending.owner;
+        eprintln!(
+            "[prefix-host] demote digests landed off the tick: ticket seq={seq}, {n} payloads \
+             ({mb:.1}MB) hashed in {:.1}ms on the hash helper, landed after {} poll(s) ({mode}); the \
+             owner thread held {:.2}ms across the demote: pre-submit {:.2}, copy settle {:.2} over {} \
+             poll(s), hashing polls {polls_ms:.2}, take-back bind and publish {publish_ms:.2}; owner \
+             in-completion {:.2}ms; wall {:.1}ms t0 to publication; {parked_hits} hit(s) parked on \
+             the Hashing entry ({reparks} re-park(s))",
+            reply.helper_ms,
+            owner.hash_polls,
+            owner.presubmit_ms + owner.copy_settle_ms + polls_ms + publish_ms,
+            owner.presubmit_ms,
+            owner.copy_settle_ms,
+            pending.polls,
+            owner.presubmit_ms + polls_ms + publish_ms,
+            pending.t0.elapsed().as_secs_f64() * 1e3
+        );
+    }
+    outcome
+}
+
+/// WP-A day 28: shutdown (the run loop's exit) drops the one `Demoting` entry typed (a submitted
+/// copy or a hashing image: no publication after a stop, the capture drain's rule; the shell's
+/// planes return to the pool at drop, the process exit tears down the rest) and joins the hash
+/// helper.
+fn host_demote_drain_at_shutdown(hpx: &mut HostPrefixCache) {
+    if let Some(pending) = hpx.demoting.take() {
+        let phase = if pending.hashing.is_some() {
+            "its heap payloads on the hash helper"
+        } else if pending.contract.is_some() {
+            "its copy on the copy stream"
+        } else {
+            "neither a ticket nor a hash job"
+        };
+        eprintln!(
+            "[prefix-host] demote dropped at shutdown: {} tokens, {phase} (model {}{}); nothing \
+             published",
+            pending.image.toks.len(),
+            pending.image.pool_key.0,
+            ns_suffix(&pending.image.pool_key.1),
+        );
+    }
+    if let Some(tier) = &hpx.tier {
+        tier.hasher.close("shutdown", HOST_HASH_DEADLINE);
     }
 }
 
@@ -13237,6 +13951,69 @@ fn host_promote_probe_decision(
     }
 }
 
+/// WP-A day 29 (memra#536 Move 1 owed item 2a, lead ruling 40, `research/spill-a-20260919/DAY29.md`
+/// section 1.1): does this request's prompt hit the one `Demoting` entry while it is in its
+/// `Hashing` phase? Pure over the host state: the entry's heap payloads are on the hash helper
+/// (`hashing` is `Some`; a copy-phase `Demoting` entry keeps the day-17 rule, a hit on it is a
+/// cold prime), its pool key is the request's, its token key exactly prefixes the prompt under the
+/// host `lookup` rules, and it is deeper than the request's device hit (the promote candidate's
+/// own rule). Returns the hit's depth and the ticket.
+fn host_hashing_hit(
+    host: &HostPrefixCache,
+    pool_key: &PoolKey,
+    prompt: &[u32],
+    device_best_len: usize,
+) -> Option<(usize, u64)> {
+    let pending = host.demoting.as_ref()?;
+    let hashing = pending.hashing.as_ref()?;
+    let toks = &pending.image.toks;
+    let n = toks.len();
+    (pending.image.pool_key == *pool_key
+        && n >= PREFIX_CACHE_MIN_TOKENS
+        && n <= prompt.len()
+        && n > device_best_len
+        && prompt[..n] == toks[..])
+        .then_some((n, hashing.seq))
+}
+
+/// WP-A day 29 (ruling 40): PARK the request whose prompt hits the `Hashing` entry: record its id
+/// on the entry (the first park of an id prints the typed line naming the entry and the phase; a
+/// re-park counts silently, the `ParkAgain` shape) and answer `true` so the probe's caller requeues
+/// it. Nothing is hashed, waited on or submitted here: the tick-top poll lands the digests and
+/// publishes, and the re-admitted request takes the promote park to a device hit. Returns `false`
+/// when the prompt does not hit the `Hashing` entry.
+fn host_hashing_park(
+    host: &mut HostPrefixCache,
+    pool_key: &PoolKey,
+    prompt: &[u32],
+    device_best_len: usize,
+    request_id: &str,
+) -> bool {
+    let Some((n, seq)) = host_hashing_hit(host, pool_key, prompt, device_best_len) else {
+        return false;
+    };
+    let Some(hashing) = host.demoting.as_mut().and_then(|p| p.hashing.as_mut()) else {
+        return false;
+    };
+    if hashing.parked.iter().any(|id| id == request_id) {
+        hashing.reparks += 1;
+        return true;
+    }
+    hashing.parked.push(request_id.to_string());
+    eprintln!(
+        "[prefix-host] hit parked on a Hashing entry: request {request_id} ({} tokens) hits the \
+         Demoting entry's {n} tokens (ticket seq={seq}, {} payloads, {:.1}MB on the hash helper for \
+         {:.1}ms); the request waits one tick for the digests (model {}{})",
+        prompt.len(),
+        hashing.payloads,
+        hashing.bytes as f64 / 1e6,
+        hashing.handed.elapsed().as_secs_f64() * 1e3,
+        pool_key.0,
+        ns_suffix(&pool_key.1)
+    );
+    true
+}
+
 /// WP-A day 18 (memra#536 Move 1, the promote half): the door's promote decision, taken in the
 /// admission loop immediately before `admit(..)` with the request still in hand. Under the door a
 /// host hit SUBMITS the H2D on the transfer engine's copy stream and the request PARKS (the caller
@@ -13281,6 +14058,13 @@ fn host_promote_park_probe(
         .lookup(&pool_key, prompt)
         .map(|i| px.entries[&pool_key][i].toks.len())
         .unwrap_or(0);
+    // WP-A day 29 (ruling 40, option 2a): a hit on the `Hashing` entry PARKS the request one tick,
+    // decided BEFORE the promote decision so a published candidate's `Submit` cannot `Block`-settle
+    // the entry for a request whose own prompt hits it; the re-admission finds the entry published
+    // and takes the promote park to a device hit (`DAY29.md` section 1.2).
+    if host_hashing_park(host, &pool_key, prompt, device_best_len, &req.request_id) {
+        return true;
+    }
     let hi = match host_promote_probe_decision(host, &pool_key, prompt, device_best_len) {
         PromoteProbe::NoCandidate | PromoteProbe::Cold => return false,
         PromoteProbe::ParkAgain => return true,
@@ -20027,6 +20811,29 @@ pub fn run(
         let _ = ready_tx.send(Err(msg));
         return;
     }
+    // ROUTE POLICY CONTRACT, the env-only half (memra#504): which route each model will take is
+    // known from its path before any weight loads, so a policy the operator armed that a planned
+    // route refuses (MEMRA_REWRITE_BUNDLE beside a dsv4 checkpoint, memra#449) refuses HERE, not
+    // after a multi-minute load. The full registry (undeclared surfaces) is checked again after
+    // both model maps are complete, before the ready handoff.
+    {
+        let mut planned = crate::route_contract::RouteRegistry::default();
+        for (name, path, _) in &models {
+            let p = std::path::Path::new(path);
+            if p.is_dir() && crate::dsv4_serve::is_dsv4_dir(p) {
+                planned.register(crate::dsv4_serve::contract(name));
+            } else {
+                planned.register(crate::route_contract::RouteContract::hybrid_worker(
+                    name,
+                    crate::route_contract::hybrid_interactive_cap(),
+                ));
+            }
+        }
+        if let Err(error) = planned.check_process_env() {
+            let _ = ready_tx.send(Err(error.to_string()));
+            return;
+        }
+    }
     for (name, path, draft) in &models {
         eprintln!("[worker] loading model {name:?} <- {path}");
         // DIRECTORY path = safetensors HF checkpoint or a manifest-backed memra repack/overlay;
@@ -20411,6 +21218,31 @@ pub fn run(
         .collect();
     let mut caps = caps;
     caps.extend(dsv4_caps.drain());
+
+    // ROUTE POLICY CONTRACT (memra#504): every route this process will serve is registered
+    // with an implemented-or-refused declaration for every policy surface, and checked HERE,
+    // before `ready_tx` fires. An undeclared surface or a refused policy the operator armed
+    // (MEMRA_REWRITE_BUNDLE beside a dsv4 route, memra#449) is `FATAL: worker init failed`,
+    // not a runtime no-op found weeks later.
+    let mut route_registry = crate::route_contract::RouteRegistry::default();
+    let hybrid_sessions = crate::route_contract::hybrid_interactive_cap();
+    for name in &order {
+        if dsv4_routes.contains_key(name) {
+            route_registry.register(crate::dsv4_serve::contract(name));
+        } else if loaded.contains_key(name) {
+            route_registry.register(crate::route_contract::RouteContract::hybrid_worker(
+                name,
+                hybrid_sessions,
+            ));
+        }
+    }
+    if let Err(error) = route_registry.check_process_env() {
+        let _ = ready_tx.send(Err(error.to_string()));
+        return;
+    }
+    for route in route_registry.routes() {
+        eprintln!("{}", route.describe());
+    }
 
     // Per-model decode scheduling policy: the model fixes the exact numeric width, while the
     // default-off dual PP door may combine two such waves into one worker tick.
@@ -21720,15 +22552,18 @@ pub fn run(
             let batching_on = std::env::var("MEMRA_SERVE_BATCH")
                 .map(|v| v != "0")
                 .unwrap_or(true);
+            // ONE derivation of the interactive cap (route_contract::interactive_cap): the
+            // registry publishes and lib.rs sheds on the same number this gate enforces
+            // (memra#504; #502 was a second copy disagreeing). `max_active` carries the
+            // confidence-trace override.
             let cap = if lane == crate::lanes::Lane::Interactive {
-                if batching_on {
+                crate::route_contract::interactive_cap(
+                    batching_on,
                     std::env::var("MEMRA_MAX_SESSIONS")
                         .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(64)
-                } else {
-                    max_active
-                }
+                        .and_then(|v| v.parse().ok()),
+                    max_active,
+                )
             } else {
                 policy.max_sessions[lane.idx()]
             };
@@ -23311,11 +24146,14 @@ pub fn run(
         // ticks for the whole copy. When nothing is active and every queued request is parked on
         // the promote whose copy is still in flight, wait on the command channel for the same
         // bounded 2 ms; the tick top then polls the transfer and the parked request re-admits.
+        // WP-A day 29 (ruling 40): a request parked on the `Hashing` entry is the same shape; the
+        // guard covers it, and the tick top's demote poll lands the digests.
         if active.is_empty()
             && parked_on_promote > 0
             && parked_on_promote == queue.len()
             && (hpx.promoting.as_ref().is_some_and(|p| !p.ready)
-                || hpx.restoring.as_ref().is_some_and(|r| !r.ready))
+                || hpx.restoring.as_ref().is_some_and(|r| !r.ready)
+                || hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some()))
         {
             match rx.recv_timeout(Duration::from_millis(2)) {
                 Ok(cmd) => handle_cmd(
@@ -25748,6 +26586,8 @@ pub fn run(
     host_capture_drain_at_shutdown(&mut hpx);
     // WP-A day 21: and the one `Restoring` request (a host wait on its events, then drop).
     host_restore_drain_at_shutdown(&mut hpx);
+    // WP-A day 28: and the one `Demoting` entry (dropped typed), then the hash helper joins.
+    host_demote_drain_at_shutdown(&mut hpx);
 }
 
 fn fail_request(mut req: Box<Request>, error: EngineError) {
@@ -42288,6 +43128,7 @@ mod tests {
             transfers: None,
             inflight: 4,
             fault: std::cell::Cell::new(None),
+            hasher: super::HostHashWorker::spawn(None).unwrap(),
         }
     }
 
@@ -42329,6 +43170,8 @@ mod tests {
             host_bytes: 4096,
             t0: std::time::Instant::now(),
             polls: 0,
+            hashing: None,
+            owner: super::DemoteOwnerLedger::default(),
         });
     }
 
@@ -43742,13 +44585,19 @@ mod tests {
             .find("the tenant purge revoked the Restoring request")
             .unwrap();
         assert!(settle < drop_at);
-        // Shutdown drains it last.
+        // Shutdown drains it after the capture drain; since day 28 the demote drain (the pending
+        // demote dropped typed, the hash helper joined) follows it as the run loop's last statement.
         let drain = body
             .find("host_restore_drain_at_shutdown(&mut hpx);")
             .unwrap();
+        let demote_drain = drain
+            + body[drain..]
+                .find("host_demote_drain_at_shutdown(&mut hpx);")
+                .expect("the demote drain follows the restore drain");
+        assert!(demote_drain - drain < 300);
         assert!(
-            body[drain..drain + 60].contains("\n}\n"),
-            "the drain is the run loop's last statement"
+            body[demote_drain..demote_drain + 60].contains("\n}\n"),
+            "the demote drain is the run loop's last statement"
         );
         let capture_drain = body
             .find("host_capture_drain_at_shutdown(&mut hpx);")
@@ -44307,6 +45156,802 @@ mod tests {
         assert_eq!(host.demotions, 0);
     }
 
+    // ---- WP-A day 28: the `Hashing` phase (memra#536 Move 1 owed item 2, lead ruling 39) ----
+    // CPU halves: the helper's digests against the owner thread's over the same bytes (bitwise),
+    // the state machine's arms with the reply injected or faulted, the door values, and the
+    // source census. The publication of a real image with the digests handed in is the gates'
+    // (identity, failure, fault: `hash-helper-gone`, `hash-never-lands`) on a card.
+
+    fn fixture_f32(seed: u32, n: usize) -> Vec<f32> {
+        (0..n)
+            .map(|i| (i as u32).wrapping_mul(2_654_435_761).wrapping_add(seed) as f32 * 1e-3)
+            .collect()
+    }
+
+    /// A fixture image with heap payloads in every class the bind hashes: recurrent planes of
+    /// several sizes with `None` slots between them, the logits (a 27B-class vocab), the hidden row.
+    fn heap_image(key: &PoolKey) -> HostPrefixEntry {
+        let mut e = host_entry(key, (100..164).collect(), 4096);
+        e.conv = vec![
+            Some(super::HostF32::Heap(fixture_f32(1, 4096))),
+            None,
+            Some(super::HostF32::Heap(fixture_f32(2, 1 << 16))),
+        ];
+        e.ssm = vec![
+            None,
+            Some(super::HostF32::Heap(fixture_f32(3, 3 * 1024 * 1024 / 4))),
+            Some(super::HostF32::Heap(fixture_f32(4, 7))),
+        ];
+        e.last_logits = super::HostF32::Heap(fixture_f32(5, 151_936));
+        e.last_h = super::HostF32::Heap(fixture_f32(6, 5120));
+        e
+    }
+
+    /// The owner thread's digests of the image's heap payloads, THE program
+    /// (`host_hash_payload_digest`), in the order the bind consumes them.
+    fn owner_digests(
+        e: &HostPrefixEntry,
+    ) -> Vec<(
+        super::HostHashSlot,
+        usize,
+        memra_engine::cache::tiered::Digest,
+        Vec<f32>,
+    )> {
+        let mut out = Vec::new();
+        for (i, p) in e.conv.iter().enumerate() {
+            if let Some(p) = p {
+                let (n, d) = super::host_hash_payload_digest(p);
+                out.push((super::HostHashSlot::Conv(i), n, d, p.to_vec()));
+            }
+        }
+        for (i, p) in e.ssm.iter().enumerate() {
+            if let Some(p) = p {
+                let (n, d) = super::host_hash_payload_digest(p);
+                out.push((super::HostHashSlot::Ssm(i), n, d, p.to_vec()));
+            }
+        }
+        let (n, d) = super::host_hash_payload_digest(&e.last_logits);
+        out.push((super::HostHashSlot::Logits, n, d, e.last_logits.to_vec()));
+        let (n, d) = super::host_hash_payload_digest(&e.last_h);
+        out.push((super::HostHashSlot::Hidden, n, d, e.last_h.to_vec()));
+        out
+    }
+
+    #[test]
+    fn hash_helper_digests_equal_the_owner_thread_digests_bitwise() {
+        let (host, key) = cpu_door_host();
+        let mut e = heap_image(&key);
+        let expected = owner_digests(&e);
+        assert_eq!(
+            expected.len(),
+            6,
+            "two conv planes, two ssm planes, logits, hidden"
+        );
+        // The program is `checksum` (SHA-256, the `valid-bytes` frame) over the payload's bytes,
+        // the call `bind_tier_image` makes; the byte count is the payload's.
+        for (_, n, d, data) in &expected {
+            assert_eq!(*n, data.len() * 4);
+            assert_eq!(
+                *d,
+                memra_engine::cache::tiered::checksum(super::f32s_as_bytes(data))
+            );
+        }
+        // The take moves every heap payload out and leaves an emptied slot behind.
+        let payloads = super::host_hash_take_payloads(&mut e);
+        assert_eq!(payloads.len(), expected.len());
+        assert!(e.conv[0].as_ref().unwrap().is_empty());
+        assert!(e.conv[1].is_none());
+        assert!(e.ssm[1].as_ref().unwrap().is_empty());
+        assert!(e.last_logits.is_empty());
+        assert!(e.last_h.is_empty());
+        // The helper: the same digests, bitwise, over the same bytes, every payload back.
+        let worker = &host.tier.as_ref().unwrap().hasher;
+        worker
+            .submit(super::HostHashJob { seq: 9, payloads })
+            .unwrap();
+        let reply = worker
+            .reply_within(std::time::Duration::from_secs(60))
+            .unwrap()
+            .expect("the digests land");
+        assert_eq!(reply.seq, 9);
+        assert_eq!(reply.hashed.len(), expected.len());
+        for ((p, n, d), (slot, en, ed, data)) in reply.hashed.iter().zip(&expected) {
+            assert_eq!(p.slot, *slot, "the order the bind consumes");
+            assert_eq!(*n, *en, "the byte count hashed");
+            assert_eq!(*d, *ed, "the digest, bitwise");
+            assert_eq!(p.data, *data, "the payload back byte-identical");
+        }
+        assert!(reply.helper_ms >= 0.0);
+        // Back into the image: every payload in its slot; the table answers per slot.
+        let mut digests = super::HostHashDigests::default();
+        for (p, n, d) in reply.hashed {
+            digests.by_slot.push((p.slot, n, d));
+            super::host_hash_restore_payload(&mut e, p).unwrap();
+        }
+        for (slot, n, d, _) in &expected {
+            assert_eq!(digests.get(*slot), Some((*n, *d)));
+        }
+        assert_eq!(digests.get(super::HostHashSlot::Conv(1)), None);
+        assert_eq!(digests.get(super::HostHashSlot::Ssm(0)), None);
+        assert_eq!(e.conv[0].as_ref().unwrap().as_slice(), &expected[0].3[..]);
+        assert_eq!(e.conv[2].as_ref().unwrap().as_slice(), &expected[1].3[..]);
+        assert_eq!(e.ssm[1].as_ref().unwrap().as_slice(), &expected[2].3[..]);
+        assert_eq!(e.ssm[2].as_ref().unwrap().as_slice(), &expected[3].3[..]);
+        assert_eq!(e.last_logits.as_slice(), &expected[4].3[..]);
+        assert_eq!(e.last_h.as_slice(), &expected[5].3[..]);
+        // A restore into a slot that is not the emptied heap Vec refuses (the reply does not
+        // describe this image).
+        let stray = super::HostHashPayload {
+            slot: super::HostHashSlot::Conv(0),
+            data: vec![1.0],
+        };
+        assert!(super::host_hash_restore_payload(&mut e, stray).is_err());
+        let out_of_range = super::HostHashPayload {
+            slot: super::HostHashSlot::Ssm(7),
+            data: vec![],
+        };
+        assert!(super::host_hash_restore_payload(&mut e, out_of_range).is_err());
+        // The close is idempotent and the second call is a no-op; an idle helper joins well
+        // inside the bound.
+        worker.close("the cell", super::HOST_HASH_DEADLINE);
+        assert!(worker.handle.borrow().is_none());
+        worker.close("the cell again", super::HOST_HASH_DEADLINE);
+        assert!(
+            worker
+                .submit(super::HostHashJob {
+                    seq: 10,
+                    payloads: vec![]
+                })
+                .is_err()
+        );
+    }
+
+    /// A pending demote in its `Hashing` phase: the image's heap payloads handed to the tier's
+    /// helper under ticket `seq`, the shell attached. Returns the byte count handed over.
+    fn cpu_pending_hashing(host: &mut HostPrefixCache, key: &PoolKey, seq: u64) -> usize {
+        let toks: Vec<u32> = (100..164).collect();
+        let mut dead = entry_b(key, 100, 4096);
+        dead.toks = toks;
+        let mut image = heap_image(key);
+        let payloads = super::host_hash_take_payloads(&mut image);
+        let n = payloads.len();
+        let bytes: usize = payloads.iter().map(|p| p.data.len() * 4).sum();
+        host.tier
+            .as_ref()
+            .unwrap()
+            .hasher
+            .submit(super::HostHashJob { seq, payloads })
+            .unwrap();
+        host.demoting = Some(super::PendingDemote {
+            dead: Some(dead),
+            image,
+            contract: None,
+            host_bytes: 4096,
+            t0: std::time::Instant::now(),
+            polls: 1,
+            hashing: Some(super::PendingHashing {
+                seq,
+                payloads: n,
+                bytes,
+                handed: std::time::Instant::now(),
+                parked: Vec::new(),
+                reparks: 0,
+            }),
+            owner: super::DemoteOwnerLedger::default(),
+        });
+        bytes
+    }
+
+    /// A door host whose helper is the caller's pair of channels (no thread): the test plays the
+    /// helper, so the reply's timing and content are the test's.
+    fn cpu_door_host_with_channels() -> (
+        HostPrefixCache,
+        PoolKey,
+        std::sync::mpsc::Receiver<super::HostHashJob>,
+        std::sync::mpsc::Sender<super::HostHashReply>,
+    ) {
+        let (mut host, key) = cpu_door_host();
+        let (jobs_tx, jobs_rx) = std::sync::mpsc::channel();
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+        host.tier.as_mut().unwrap().hasher =
+            super::HostHashWorker::from_channels(jobs_tx, reply_rx);
+        (host, key, jobs_rx, reply_tx)
+    }
+
+    fn no_contract_step(
+        _: &super::HostTierContext,
+        _: &mut PrefixEntry,
+        _: super::PendingContractDemote,
+        _: super::ContractWait,
+    ) -> Result<super::ContractSettle, super::HostContractFailure> {
+        panic!("a Hashing entry is met before the contract step; the step must not run")
+    }
+
+    /// WP-A day 29 (ruling 40, option 2a): a hit on the `Hashing` entry parks the request (the
+    /// decision pure over the host state; the id recorded once, re-parks counted), a miss does not
+    /// (a shorter prompt, a device hit as deep, another pool key, a copy-phase `Demoting` entry, no
+    /// `Demoting` entry), the parked ids ride the state through the polls and are consumed with it
+    /// at publication and at the latch.
+    #[test]
+    fn hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not() {
+        let (mut host, key, jobs, replies) = cpu_door_host_with_channels();
+        cpu_pending_hashing(&mut host, &key, 5);
+        let prompt: Vec<u32> = (100..170).collect();
+        // The pure decision: depth and ticket of the hit; every miss shape answers None.
+        assert_eq!(
+            super::host_hashing_hit(&host, &key, &prompt, 0),
+            Some((64, 5))
+        );
+        assert_eq!(
+            super::host_hashing_hit(&host, &key, &prompt, 63),
+            Some((64, 5))
+        );
+        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 64), None);
+        let shorter: Vec<u32> = (100..150).collect();
+        assert_eq!(super::host_hashing_hit(&host, &key, &shorter, 0), None);
+        let other_prompt: Vec<u32> = (200..270).collect();
+        assert_eq!(super::host_hashing_hit(&host, &key, &other_prompt, 0), None);
+        let other_key = ("m".to_string(), "ns2".to_string());
+        assert_eq!(super::host_hashing_hit(&host, &other_key, &prompt, 0), None);
+        // The park: once per id with the typed line, re-parks counted, a miss unparked.
+        assert!(super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-1"
+        ));
+        assert!(super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-1"
+        ));
+        assert!(super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-2"
+        ));
+        assert!(!super::host_hashing_park(
+            &mut host, &key, &shorter, 0, "req-3"
+        ));
+        assert!(!super::host_hashing_park(
+            &mut host, &key, &prompt, 64, "req-4"
+        ));
+        {
+            let hashing = host.demoting.as_ref().unwrap().hashing.as_ref().unwrap();
+            assert_eq!(
+                hashing.parked,
+                vec!["req-1".to_string(), "req-2".to_string()]
+            );
+            assert_eq!(hashing.reparks, 1);
+        }
+        // The entry is still in neither index: the park is not a publication.
+        assert_eq!(host.lookup(&key, &prompt), None);
+        assert_eq!(host.n_entries(), 0);
+        // A poll before the reply keeps the parked ids with the state.
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            no_contract_step,
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Demoting));
+        let hashing = host.demoting.as_ref().unwrap().hashing.as_ref().unwrap();
+        assert_eq!(hashing.parked.len(), 2);
+        assert_eq!(hashing.reparks, 1);
+        // The reply lands; the next poll reaches publication and consumes the state (on the CPU
+        // the bind refuses by name, the day-17 proof); the park predicate is false afterwards, so
+        // the re-admitted request goes to the promote decision.
+        let job = jobs.try_recv().unwrap();
+        let hashed = job
+            .payloads
+            .into_iter()
+            .map(|p| {
+                let (n, d) = super::host_hash_payload_digest(&p.data);
+                (p, n, d)
+            })
+            .collect();
+        replies
+            .send(super::HostHashReply {
+                seq: 5,
+                hashed,
+                helper_ms: 1.0,
+            })
+            .unwrap();
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            no_contract_step,
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
+        assert!(host.demoting.is_none());
+        assert!(host.armed(), "a bind refusal is not a latch");
+        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 0), None);
+        assert!(!super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-1"
+        ));
+        // A copy-phase Demoting entry (the day-17 window) is a miss for the park too.
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_demote(&mut host, &key);
+        assert!(host.demoting.as_ref().unwrap().hashing.is_none());
+        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 0), None);
+        assert!(!super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-5"
+        ));
+        // The latch with parked requests: the state is consumed, the tier off, the parked request
+        // re-admits to the probe's first line (`armed()` false) and primes cold.
+        let (mut host, key, _jobs, replies) = cpu_door_host_with_channels();
+        cpu_pending_hashing(&mut host, &key, 6);
+        assert!(super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-6"
+        ));
+        drop(replies);
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            no_contract_step,
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
+        assert!(host.demoting.is_none());
+        assert!(!host.armed());
+        assert!(!super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-6"
+        ));
+    }
+
+    #[test]
+    fn hashing_demote_keeps_its_state_until_the_digests_land_then_reaches_publication() {
+        let (mut host, key, jobs, replies) = cpu_door_host_with_channels();
+        cpu_pending_hashing(&mut host, &key, 3);
+        let prompt: Vec<u32> = (100..170).collect();
+        // Three tick-top polls before the reply: the state is kept (shell, job), nothing is
+        // published, the hashing poll count advances, the tier stays armed, a hit is a miss.
+        for expected in 1..=3u32 {
+            let outcome = super::host_demote_settle_with(
+                &mut host,
+                super::ContractWait::Poll,
+                "the tick top",
+                no_contract_step,
+            );
+            assert_eq!(outcome, Some(super::HostDemoteOutcome::Demoting));
+            let pending = host.demoting.as_ref().unwrap();
+            assert!(pending.dead.is_some());
+            assert!(pending.contract.is_none());
+            assert_eq!(pending.hashing.as_ref().unwrap().seq, 3);
+            assert_eq!(pending.owner.hash_polls, expected);
+            assert_eq!(host.n_entries(), 0);
+            assert_eq!(host.lookup(&key, &prompt), None);
+            assert!(host.armed());
+        }
+        // The test plays the helper: THE program over the payloads it received, the reply lands.
+        let job = jobs.try_recv().expect("the job was handed over");
+        assert_eq!(job.seq, 3);
+        assert_eq!(job.payloads.len(), 6);
+        let hashed = job
+            .payloads
+            .into_iter()
+            .map(|p| {
+                let (n, d) = super::host_hash_payload_digest(&p.data);
+                (p, n, d)
+            })
+            .collect();
+        replies
+            .send(super::HostHashReply {
+                seq: 3,
+                hashed,
+                helper_ms: 1.0,
+            })
+            .unwrap();
+        // The next poll reaches publication: on the CPU the bind refuses by name (no KV plane
+        // exists, "surface is not qualified"), a typed `Failed` that proves the settle reached the
+        // publication step with the payloads back and the digests in hand; the state is consumed,
+        // nothing is resident, a bind refusal is not a latch.
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            no_contract_step,
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
+        assert!(
+            host.demoting.is_none(),
+            "a settled demote is never polled again"
+        );
+        assert_eq!(host.n_entries(), 0);
+        assert!(host.armed(), "a bind refusal is not a latch");
+        // The `Block` shape with the reply already landed: the same publication step at once.
+        let (mut host, key, jobs, replies) = cpu_door_host_with_channels();
+        cpu_pending_hashing(&mut host, &key, 4);
+        let job = jobs.try_recv().unwrap();
+        let hashed = job
+            .payloads
+            .into_iter()
+            .map(|p| {
+                let (n, d) = super::host_hash_payload_digest(&p.data);
+                (p, n, d)
+            })
+            .collect();
+        replies
+            .send(super::HostHashReply {
+                seq: 4,
+                hashed,
+                helper_ms: 1.0,
+            })
+            .unwrap();
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Block,
+            "a second demote",
+            no_contract_step,
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
+        assert!(host.demoting.is_none());
+        assert!(host.armed());
+    }
+
+    #[test]
+    fn hash_helper_gone_is_a_typed_refusal_that_latches_under_poll_and_under_block() {
+        for wait in [super::ContractWait::Poll, super::ContractWait::Block] {
+            let (mut host, key) = cpu_door_host();
+            host.tier.as_mut().unwrap().hasher =
+                super::HostHashWorker::spawn(Some(super::HostHashFault::HelperGone)).unwrap();
+            cpu_pending_hashing(&mut host, &key, 5);
+            // The helper exits on its first job; under `Poll` the closed channel is observed at
+            // the first poll that runs after the exit (bounded here), under `Block` at once.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            let outcome = loop {
+                let outcome =
+                    super::host_demote_settle_with(&mut host, wait, "a promote", no_contract_step);
+                if outcome != Some(super::HostDemoteOutcome::Demoting) {
+                    break outcome;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the helper's exit is observed"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            };
+            assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed), "{wait:?}");
+            assert!(host.demoting.is_none(), "{wait:?}: the state is consumed");
+            assert_eq!(host.n_entries(), 0);
+            assert!(
+                !host.armed(),
+                "{wait:?}: a gone helper latches the tier off"
+            );
+        }
+    }
+
+    #[test]
+    fn hash_digests_never_landing_latch_at_the_deadline_under_poll_and_under_block() {
+        // Poll: before the deadline the state is kept; at the first poll past it, the latch.
+        let (mut host, key) = cpu_door_host();
+        host.tier.as_mut().unwrap().hasher =
+            super::HostHashWorker::spawn(Some(super::HostHashFault::NeverLands)).unwrap();
+        cpu_pending_hashing(&mut host, &key, 6);
+        let short = std::time::Duration::from_millis(60);
+        let outcome = super::host_demote_settle_with_deadline(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            no_contract_step,
+            short,
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Demoting));
+        assert!(host.armed());
+        std::thread::sleep(short + std::time::Duration::from_millis(20));
+        let outcome = super::host_demote_settle_with_deadline(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            no_contract_step,
+            short,
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
+        assert!(host.demoting.is_none());
+        assert_eq!(host.n_entries(), 0);
+        assert!(!host.armed(), "digests that never land latch the tier off");
+        // Block: the wait is bounded by the deadline, then the same latch; the helper is alive
+        // (it discarded one reply) and the latch joined it.
+        let (mut host, key) = cpu_door_host();
+        host.tier.as_mut().unwrap().hasher =
+            super::HostHashWorker::spawn(Some(super::HostHashFault::NeverLands)).unwrap();
+        cpu_pending_hashing(&mut host, &key, 7);
+        let t = std::time::Instant::now();
+        let outcome = super::host_demote_settle_with_deadline(
+            &mut host,
+            super::ContractWait::Block,
+            "a tenant purge",
+            no_contract_step,
+            short,
+        );
+        assert!(
+            t.elapsed() >= std::time::Duration::from_millis(40),
+            "the Block wait rode out the deadline"
+        );
+        assert!(
+            t.elapsed() < std::time::Duration::from_secs(20),
+            "and no longer than it"
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
+        assert!(host.demoting.is_none());
+        assert!(!host.armed());
+        assert!(
+            host.tier.as_ref().unwrap().hasher.handle.borrow().is_none(),
+            "the latch joined the helper"
+        );
+    }
+
+    #[test]
+    fn a_latch_with_the_helper_still_inside_a_job_detaches_it_within_the_bound() {
+        // Revuto on #652: a latch can fire because a job is still running (a starved or wedged
+        // helper is the deadline's cause), so the owner thread must not wait for that job. The
+        // stand-in helper holds its job until released, then tries to reply.
+        let (mut host, _key) = cpu_door_host();
+        let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<super::HostHashJob>();
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel::<super::HostHashReply>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let (sent_tx, sent_rx) = std::sync::mpsc::channel::<bool>();
+        let handle = std::thread::spawn(move || {
+            let _jobs = jobs_rx;
+            let _ = release_rx.recv();
+            let reply = super::HostHashReply {
+                seq: 1,
+                hashed: Vec::new(),
+                helper_ms: 0.0,
+            };
+            let _ = sent_tx.send(reply_tx.send(reply).is_ok());
+        });
+        host.tier.as_mut().unwrap().hasher =
+            super::HostHashWorker::from_thread(jobs_tx, reply_rx, handle);
+        let t = std::time::Instant::now();
+        host.disable("a latch with a job in hand");
+        let waited = t.elapsed();
+        assert!(
+            waited >= super::HOST_HASH_LATCH_JOIN,
+            "the latch gave the helper its bound: {waited:?}"
+        );
+        assert!(
+            waited < std::time::Duration::from_secs(2),
+            "and did not wait for the job: {waited:?}"
+        );
+        assert!(!host.armed());
+        let hasher = &host.tier.as_ref().unwrap().hasher;
+        assert!(
+            hasher.handle.borrow().is_none(),
+            "the latch detached the helper"
+        );
+        assert!(
+            hasher.try_reply().is_err(),
+            "a closed helper has no reply channel"
+        );
+        release_tx.send(()).unwrap();
+        assert_eq!(
+            sent_rx.recv_timeout(std::time::Duration::from_secs(10)),
+            Ok(false),
+            "the late reply finds no receiver and drops with its payloads"
+        );
+    }
+
+    #[test]
+    fn hash_reply_that_does_not_describe_the_image_is_a_typed_refusal_that_latches() {
+        // Each forged reply: a typed `Failed`, the state consumed, the tier latched.
+        let forge = |mutate: &dyn Fn(&mut super::HostHashReply)| {
+            let (mut host, key, jobs, replies) = cpu_door_host_with_channels();
+            cpu_pending_hashing(&mut host, &key, 8);
+            let job = jobs.try_recv().unwrap();
+            let hashed = job
+                .payloads
+                .into_iter()
+                .map(|p| {
+                    let (n, d) = super::host_hash_payload_digest(&p.data);
+                    (p, n, d)
+                })
+                .collect();
+            let mut reply = super::HostHashReply {
+                seq: 8,
+                hashed,
+                helper_ms: 1.0,
+            };
+            mutate(&mut reply);
+            replies.send(reply).unwrap();
+            let outcome = super::host_demote_settle_with(
+                &mut host,
+                super::ContractWait::Poll,
+                "the tick top",
+                no_contract_step,
+            );
+            assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
+            assert!(host.demoting.is_none());
+            assert_eq!(host.n_entries(), 0);
+            assert!(
+                !host.armed(),
+                "a reply that does not describe the image latches"
+            );
+        };
+        forge(&|r| r.seq = 9);
+        forge(&|r| {
+            r.hashed.pop();
+        });
+        forge(&|r| r.hashed[0].1 += 4);
+        forge(&|r| r.hashed[0].0.slot = super::HostHashSlot::Conv(1));
+        forge(&|r| r.hashed[2].0.slot = super::HostHashSlot::Ssm(9));
+    }
+
+    #[test]
+    fn hash_fault_door_values_are_the_helpers_and_never_the_contract_routes() {
+        use super::HostHashFault as H;
+        assert_eq!(H::from_door("hash-helper-gone"), Some(H::HelperGone));
+        assert_eq!(H::from_door("hash-never-lands"), Some(H::NeverLands));
+        assert_eq!(H::from_door("hash"), None);
+        assert_eq!(H::from_door(""), None);
+        assert_eq!(H::from_door("contract-presubmit"), None);
+        assert_eq!(
+            super::HostContractFault::from_door("hash-helper-gone"),
+            None
+        );
+        assert_eq!(
+            super::HostContractFault::from_door("hash-never-lands"),
+            None
+        );
+    }
+
+    /// Source census (DAY28 pre-registration item 2): every path that settles a `Demoting` entry
+    /// meets its `Hashing` phase through the one driver, BEFORE the contract step; a `Block`
+    /// settle of the copy continues into the hash wait in the same call; `disable` joins the
+    /// helper; shutdown drops the pending demote and joins the helper, after the restore drain;
+    /// the idle waits count a `Hashing` entry as they count any `Demoting` entry; trims gain no
+    /// arm; the parked-only wait and the orphan grace gain no arm (a demote parks no request);
+    /// one helper per context, spawned once, from the existing fault door read; the helper's
+    /// program is `checksum`; no `MEMRA_` read is added.
+    #[test]
+    fn every_path_that_meets_a_hashing_demote_meets_it_through_the_same_settle() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let code: String = production
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let body = |start: &str| {
+            let a = code
+                .find(start)
+                .unwrap_or_else(|| panic!("{start} missing"));
+            let b = a + code[a..].find("\n}\n").unwrap();
+            &code[a..b]
+        };
+        // The public settle goes through the driver with the production deadline.
+        let settle_with = body("fn host_demote_settle_with(");
+        assert!(settle_with.contains(
+            "host_demote_settle_with_deadline(host, wait, why, settle, HOST_HASH_DEADLINE)"
+        ));
+        // The driver dispatches on the Hashing phase before the poll count and the contract step.
+        let driver = body("fn host_demote_settle_with_deadline(");
+        let hashing = driver
+            .find("if let Some(hashing) = pending.hashing.take() {")
+            .expect("the Hashing dispatch");
+        assert!(driver[hashing..hashing + 400].contains("host_demote_settle_hashing("));
+        assert!(hashing < driver.find("pending.polls += 1;").unwrap());
+        assert!(
+            hashing
+                < driver
+                    .find("settle(tier, &mut dead, contract, wait)")
+                    .unwrap()
+        );
+        // A Block settle of the copy continues into the hash wait; a Poll parks the state.
+        let done = driver
+            .find("Ok(ContractSettle::Done(mut kv, draft)) => {")
+            .unwrap();
+        let tail = &driver[done..];
+        assert!(tail.contains("ContractWait::Block => Some(host_demote_settle_hashing("));
+        assert!(tail.contains(
+            "ContractWait::Poll => {\n                    pending.hashing = Some(hashing);"
+        ));
+        // The hashing settle: Poll reads, Block waits bounded by the deadline and names what it
+        // waits on; the three fail-closed arms latch; publication goes through the shared step
+        // with the digests handed in.
+        let hashing_fn = body("fn host_demote_settle_hashing(");
+        assert!(hashing_fn.contains("ContractWait::Poll => tier.hasher.try_reply(),"));
+        assert!(hashing_fn.contains("tier.hasher.reply_within(deadline.saturating_sub(elapsed))"));
+        assert!(
+            hashing_fn.contains("demote hashing settled synchronously by {why}: waiting for the")
+        );
+        assert!(hashing_fn.contains("tier hash helper gone:"));
+        assert!(hashing_fn.contains("tier hash digests never landed:"));
+        assert_eq!(hashing_fn.matches("tier hash reply mismatch:").count(), 2);
+        assert!(hashing_fn.contains("host.disable(&err);"));
+        assert!(hashing_fn.contains("Some(&digests),"));
+        assert!(hashing_fn.contains("owner \\\n             in-completion {:.2}ms"));
+        // The latch closes the helper within its short bound; shutdown drops and closes within
+        // the hash deadline, after the restore drain.
+        let disable = body("    fn disable(&mut self, why: &str) {");
+        assert!(disable.contains(".close(\"the tier latched off\", HOST_HASH_LATCH_JOIN);"));
+        let drain = body("fn host_demote_drain_at_shutdown(");
+        assert!(drain.contains("hpx.demoting.take()"));
+        assert!(drain.contains("tier.hasher.close(\"shutdown\", HOST_HASH_DEADLINE);"));
+        let restore_drain = code
+            .find("host_restore_drain_at_shutdown(&mut hpx);")
+            .unwrap();
+        assert!(
+            code[restore_drain..restore_drain + 300]
+                .contains("host_demote_drain_at_shutdown(&mut hpx);")
+        );
+        // The idle waits key on `hpx.demoting` (a Hashing entry is a Demoting entry).
+        assert!(code.contains("&& hpx.demoting.is_none()"));
+        assert!(
+            code.contains(
+                "if hpx.demoting.is_some()\n                    || hpx.promoting.is_some()"
+            )
+        );
+        // Trims gain no arm: no demote settle within the trim's settle block.
+        for (i, _) in code.match_indices("host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, \"a trim\");") {
+            let lo = i.saturating_sub(1500);
+            assert!(!code[lo..i + 400].contains("host_demote_settle_pending("), "a trim meets no Demoting entry (day 17), so no Hashing entry either");
+        }
+        // WP-A day 29 (ruling 40): the parked-only wait is guarded on a Hashing entry too (a
+        // request parked on it is the promote park's shape); the orphan grace still reads no
+        // demote state (a request parked on a Hashing entry owns nothing to expire).
+        let park_wait = code.find("&& parked_on_promote == queue.len()").unwrap();
+        assert!(
+            code[park_wait..park_wait + 600]
+                .contains("|| hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some())")
+        );
+        let orphan = body("fn host_restore_expire_ready(");
+        assert!(!orphan.contains("demoting"));
+        // WP-A day 29: the probe decides the Hashing park BEFORE the promote decision, with the
+        // request still in hand, and answers the caller's one park arm; the decision is pure over
+        // the host state and requires the Hashing phase (a copy-phase Demoting entry is a miss).
+        let probe = body("fn host_promote_park_probe(");
+        let park = probe
+            .find(
+                "if host_hashing_park(host, &pool_key, prompt, device_best_len, &req.request_id) {",
+            )
+            .expect("the Hashing park in the probe");
+        let decision = probe
+            .find("let hi = match host_promote_probe_decision(")
+            .unwrap();
+        assert!(
+            park < decision,
+            "the Hashing park precedes the promote decision"
+        );
+        assert!(probe[park..park + 200].contains("return true;"));
+        let hit = body("fn host_hashing_hit(");
+        assert!(hit.contains("let hashing = pending.hashing.as_ref()?;"));
+        assert!(hit.contains("&& n > device_best_len"));
+        assert!(hit.contains("&& prompt[..n] == toks[..]"));
+        let park_fn = body("fn host_hashing_park(");
+        assert!(park_fn.contains("hit parked on a Hashing entry: request {request_id}"));
+        assert!(
+            !park_fn.contains("hasher.") && !park_fn.contains("settle"),
+            "the park never touches the helper and never settles"
+        );
+        assert_eq!(
+            code.matches("host_hashing_park(").count(),
+            2,
+            "the definition and one park site: the admission probe"
+        );
+        // The ledger line carries the parked count; the latch tail names the parked requests.
+        assert!(hashing_fn.contains("{parked_hits} hit(s) parked on \\\n             the Hashing entry ({reparks} re-park(s))"));
+        assert!(hashing_fn.contains("request(s) parked on the Hashing entry re-admit to a"));
+        // One helper per context, spawned once in production, from the existing fault door read.
+        assert_eq!(code.matches("HostHashWorker::spawn(").count(), 1);
+        assert!(code.contains(
+            "hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,"
+        ));
+        assert_eq!(code.matches("HostHashFault::from_door(").count(), 1);
+        let spawn_fn = body("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {");
+        assert!(
+            spawn_fn.contains(".name(\"memra-host-hash\".into())"),
+            "the helper is one named thread, spawned inside HostHashWorker::spawn"
+        );
+        // No new env read: the helper's only door value arrives through `kv_host_fault()`, the
+        // existing read (the flags census, `tools/check-flags.sh`, is the name-level check).
+        assert!(code.contains("HostHashFault::from_door(kv_host_fault())"));
+        // The helper's program is the bind's: `checksum` over the payload's bytes.
+        let digest = body("fn host_hash_payload_digest(");
+        assert!(digest.contains("memra_engine::cache::tiered::checksum(bytes)"));
+        let spawn = body("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {");
+        assert!(spawn.contains("host_hash_payload_digest(&p.data)"));
+        // The bind consumes a handed-in digest only after the byte count check.
+        let bind = body("    fn bind_tier_image(");
+        let pre = bind.find("let sum = match precomputed {").unwrap();
+        assert!(bind[pre..pre + 500].contains("if n != bytes.len() {"));
+        assert!(bind[pre..pre + 700].contains("None => checksum(bytes),"));
+    }
+
     /// Source census: every path the contract names settles the pending demote FIRST (a second
     /// demote of any route, a promote, a tenant purge), the tick-top poll runs before admission,
     /// the idle block is not indefinite while an entry is `Demoting`, and the eviction sink is the
@@ -44368,7 +46013,9 @@ mod tests {
         );
         // The settle-with driver is the only place that publishes a Demoting image, and it does
         // so through the shared publication function after `Done`.
-        let driver = body("fn host_demote_settle_with(");
+        // (Day 28: the driver is `host_demote_settle_with_deadline`; the `Hashing` phase publishes
+        // through `host_demote_settle_hashing`, itself through the shared publication function.)
+        let driver = body("fn host_demote_settle_with_deadline(");
         let done = driver
             .find("Ok(ContractSettle::Done(mut kv, draft)) => {")
             .unwrap();
@@ -44420,6 +46067,7 @@ mod tests {
             transfers: Some(std::cell::RefCell::new(transfers)),
             inflight,
             fault: std::cell::Cell::new(None),
+            hasher: super::HostHashWorker::spawn(None).unwrap(),
         }
     }
 
@@ -46077,6 +47725,11 @@ mod tests {
                 .contains("hpx.restoring.as_ref().is_some_and(|r| !r.ready)"),
             "the wait is guarded on a not-ready Restoring request too (revuto round 2 on #638)"
         );
+        assert!(
+            code[handoff + wait..handoff + wait + 400]
+                .contains("hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some())"),
+            "the wait is guarded on a Hashing entry too (WP-A day 29, ruling 40)"
+        );
         let recv = code[handoff + wait + guard..]
             .find("rx.recv_timeout(Duration::from_millis(2))")
             .expect("the wait is the bounded 2 ms command receive");
@@ -46598,7 +48251,7 @@ mod tests {
         let evaporation = at("demote evaporated at the tenant share cap before the D2H");
         let copy = at("host_entry_from_device(engine, host, dead, verify_digest, route)");
         let ok_arm = at("Ok(HostImage::Whole(mut e)) => {");
-        let bind = at("host.bind_tier_image(&mut e)");
+        let bind = at("host.bind_tier_image(&mut e, hashed)");
         let reclaim = at("host.reclaim_tenant_share(&dead.pool_key, &dead.toks, host_bytes)");
         let insert = at("host.insert(&dead.pool_key, e)");
         assert!(
