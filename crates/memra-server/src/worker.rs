@@ -20027,6 +20027,29 @@ pub fn run(
         let _ = ready_tx.send(Err(msg));
         return;
     }
+    // ROUTE POLICY CONTRACT, the env-only half (memra#504): which route each model will take is
+    // known from its path before any weight loads, so a policy the operator armed that a planned
+    // route refuses (MEMRA_REWRITE_BUNDLE beside a dsv4 checkpoint, memra#449) refuses HERE, not
+    // after a multi-minute load. The full registry (undeclared surfaces) is checked again after
+    // both model maps are complete, before the ready handoff.
+    {
+        let mut planned = crate::route_contract::RouteRegistry::default();
+        for (name, path, _) in &models {
+            let p = std::path::Path::new(path);
+            if p.is_dir() && crate::dsv4_serve::is_dsv4_dir(p) {
+                planned.register(crate::dsv4_serve::contract(name));
+            } else {
+                planned.register(crate::route_contract::RouteContract::hybrid_worker(
+                    name,
+                    crate::route_contract::hybrid_interactive_cap(),
+                ));
+            }
+        }
+        if let Err(error) = planned.check_process_env() {
+            let _ = ready_tx.send(Err(error.to_string()));
+            return;
+        }
+    }
     for (name, path, draft) in &models {
         eprintln!("[worker] loading model {name:?} <- {path}");
         // DIRECTORY path = safetensors HF checkpoint or a manifest-backed memra repack/overlay;
@@ -20418,11 +20441,7 @@ pub fn run(
     // (MEMRA_REWRITE_BUNDLE beside a dsv4 route, memra#449) is `FATAL: worker init failed`,
     // not a runtime no-op found weeks later.
     let mut route_registry = crate::route_contract::RouteRegistry::default();
-    let hybrid_sessions = std::env::var("MEMRA_MAX_SESSIONS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(64)
-        .max(1);
+    let hybrid_sessions = crate::route_contract::hybrid_interactive_cap();
     for name in &order {
         if dsv4_routes.contains_key(name) {
             route_registry.register(crate::dsv4_serve::contract(name));

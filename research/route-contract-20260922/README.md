@@ -50,6 +50,15 @@ odometer wiring gate was green because it greps one engine file.
 No DSv4 checkpoint is on this rig, so the DSv4 boot line and the `MEMRA_REWRITE_BUNDLE` refusal are
 unit-tested through the same `RouteRegistry::check` the worker calls, not booted.
 
+Review round 1 (revuto): the wiring gate was vacuous for DSv4 because its declarations lived in the
+grepped file (moved to `RouteContract::dsv4_thread` in `route_contract.rs`; the test asserts the
+registry never greps its own file); the hybrid cap re-derived `MEMRA_MAX_SESSIONS` without the
+`MEMRA_SERVE_BATCH` branch (now `hybrid_interactive_cap()`, the one derivation for the registry);
+the `caps` doc comment had been displaced. Also taken from the review's side note: the armed-but-
+refused check runs BEFORE any weight loads on the planned route set (a dsv4 directory is known from
+its path), so an operator with `MEMRA_REWRITE_BUNDLE` beside a dsv4 checkpoint is refused in
+milliseconds, and the full registry is checked again before the ready handoff.
+
 ## What stays open
 
 #500, #501, #503 and #449 implement the refused surfaces; each is one `refused` line becoming

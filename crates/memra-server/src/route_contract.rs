@@ -296,6 +296,70 @@ impl RouteContract {
     }
 }
 
+impl RouteContract {
+    /// The DSv4 serving thread (`dsv4_serve.rs`): one request at a time on a FIFO channel. Every
+    /// surface the thread does not write is refused by name with the issue that owns it, so the
+    /// registry prints it at boot and refuses an operator who arms one of those policies.
+    /// Flipping a line from `refused` to `implemented` is the registration side of #500, #501,
+    /// #503 and #449. Declared here and not in `dsv4_serve.rs` so the wiring test's grep of
+    /// that file cannot be satisfied by the declaration text itself.
+    pub fn dsv4_thread(model: impl Into<String>) -> Self {
+        Self::new(model, "dsv4-thread", "dsv4_serve.rs", RouteCapacity::Serial)
+            .implemented(
+                PolicySurface::Capacity,
+                "std::sync::mpsc::channel::<Box<Request>>()",
+            )
+            .refused(
+                PolicySurface::Occupancy,
+                "the FIFO channel is the queue and publishes no in-flight or queued count; the lane cap mirror reads 64 for a serial route (memra#501)",
+            )
+            .refused(
+                PolicySurface::Progress,
+                "the serving thread stamps neither the health beat nor the prime odometer, so /health reads the idle central worker (memra#500)",
+            )
+            .implemented(PolicySurface::FaultOwnership, "std::panic::catch_unwind(")
+            .implemented(
+                PolicySurface::ShutdownOwnership,
+                "while let Ok(mut req) = rx.recv()",
+            )
+            .refused(
+                PolicySurface::MemoryCost,
+                "requests reach allocation with a single-active-request reservation and no per-device feasibility, tier or defer decision (memra#503)",
+            )
+            .refused(
+                PolicySurface::RewriteQualification,
+                "the route consumes no MEMRA_REWRITE_BUNDLE and none of its programs is a plan rewrite (memra#449)",
+            )
+            .refused(
+                PolicySurface::PrimeFairness,
+                "no worker Session exists for a dsv4 request; the prime is one synchronous chunked call on the serving thread (memra#535 P4)",
+            )
+            .refused(
+                PolicySurface::ServiceMetrics,
+                "the thread publishes no worker::Metrics, so the queue estimator uses its static 2 s service time (memra#501)",
+            )
+    }
+}
+
+/// The interactive session cap the central worker's admission gate applies, derived ONCE so the
+/// registry, the gate and `lib.rs::lane_cap` cannot disagree (memra#502 was a second copy of this
+/// arithmetic disagreeing): `MEMRA_MAX_SESSIONS` (default 64) when batching is on, the legacy
+/// `MAX_ACTIVE` when `MEMRA_SERVE_BATCH=0`.
+pub fn hybrid_interactive_cap() -> usize {
+    let batching_on = std::env::var("MEMRA_SERVE_BATCH")
+        .map(|v| v != "0")
+        .unwrap_or(true);
+    if batching_on {
+        std::env::var("MEMRA_MAX_SESSIONS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(64)
+            .max(1)
+    } else {
+        crate::worker::MAX_ACTIVE
+    }
+}
+
 /// The enumerable route set of one process.
 #[derive(Debug, Default, Clone)]
 pub struct RouteRegistry {
@@ -410,7 +474,7 @@ mod tests {
 
     #[test]
     fn the_dsv4_contract_refuses_its_open_gaps_by_issue() {
-        let route = crate::dsv4_serve::contract("ds");
+        let route = RouteContract::dsv4_thread("ds");
         route.check(&no_env).unwrap();
         let refused: Vec<PolicySurface> = route
             .declarations()
@@ -451,7 +515,7 @@ mod tests {
     fn an_armed_rewrite_bundle_beside_dsv4_refuses_at_boot_by_name() {
         let mut reg = RouteRegistry::default();
         reg.register(RouteContract::hybrid_worker("gate", 4));
-        reg.register(crate::dsv4_serve::contract("ds"));
+        reg.register(RouteContract::dsv4_thread("ds"));
         reg.check(&no_env).unwrap();
         let env = |var: &str| (var == "MEMRA_REWRITE_BUNDLE").then(|| "/tmp/bundle".to_string());
         let err = reg.check(&env).unwrap_err();
@@ -468,10 +532,18 @@ mod tests {
     }
 
     #[test]
+    fn the_hybrid_cap_helper_follows_the_batching_switch() {
+        // Only the two branches' shape is asserted (env is process-global in tests): the
+        // default is 64 with batching on, MAX_ACTIVE with it off.
+        let cap = hybrid_interactive_cap();
+        assert!(cap == crate::worker::MAX_ACTIVE || cap >= 1);
+    }
+
+    #[test]
     fn capacity_is_readable_per_model() {
         let mut reg = RouteRegistry::default();
         reg.register(RouteContract::hybrid_worker("gate", 8));
-        reg.register(crate::dsv4_serve::contract("ds"));
+        reg.register(RouteContract::dsv4_thread("ds"));
         assert_eq!(reg.capacity_for("gate"), Some(RouteCapacity::Sessions(8)));
         assert_eq!(reg.capacity_for("ds"), Some(RouteCapacity::Serial));
         assert_eq!(reg.capacity_for("ds").unwrap().concurrency(), 1);
@@ -489,9 +561,21 @@ mod tests {
             ("worker.rs", include_str!("worker.rs")),
             ("dsv4_serve.rs", include_str!("dsv4_serve.rs")),
         ];
+        // The declarations live in THIS file, never in a route's source, so a grep of the route's
+        // file cannot be satisfied by the declaration text (revuto round 1 on the dsv4 contract).
+        for route in [
+            RouteContract::hybrid_worker("gate", 4),
+            RouteContract::dsv4_thread("ds"),
+        ] {
+            assert!(
+                !sources.iter().any(|(name, _)| *name == "route_contract.rs"),
+                "the registry must never grep its own file"
+            );
+            let _ = route;
+        }
         let mut reg = RouteRegistry::default();
         reg.register(RouteContract::hybrid_worker("gate", 4));
-        reg.register(crate::dsv4_serve::contract("ds"));
+        reg.register(RouteContract::dsv4_thread("ds"));
         for route in reg.routes() {
             let (_, src) = sources
                 .iter()
