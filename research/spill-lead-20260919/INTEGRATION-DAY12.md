@@ -1555,6 +1555,21 @@ suites, memra-server suite, clippy, censuses, collector pytest, engine CPU lib t
 clippy `-D warnings`, marker census, workflow keys, perf board: rc=0; `git diff --check` tripped on receipt logs (marked
 `-whitespace`). Local 5090 `tools/serve-smoke.sh` (door OFF): `serve-smoke: 0 failed`.
 
+Revuto round 1 on #634, two findings, both real, fixed by the lead: (1) the capture's source is a borrowed slice of
+the live session's KV plane and the engine retains none of it after `submit_d2d_capture`; a retiring session's cache is
+dropped on the owner stream (not ordered against the copy stream) or parked for a later request to rewrite, and the tick
+top's settle is a `Poll`, so a capture in flight across the retire seam would publish whatever bytes the copy stream
+happened to see, with no checksum term in slice 1 to catch it. Fix: before any session leaves `active`, a pending
+`Capturing` entry settles with `ContractWait::Block` ("a session retire"), so no plane is freed or rewritten under an
+in-flight read (one capture per worker). (2) when `submit_d2d_capture` refused, nothing was submitted, the producer
+event could still be pending, `release_producer` refused `Busy` and the `let _ =` dropped it, leaving the fence in the
+engine's producer table for the boot; the refusal path now drains the owner stream, releases the fence, and latches the
+route off (typed) if the fence still will not release. Source census test
+`a_session_retire_settles_a_pending_capture_before_the_cache_moves_and_a_refused_submission_releases_its_fence`; the
+admission-book lock test kept the retire seam intact (the settle sits before the loop). Server clippy `-D warnings` and
+the memra-server suite (800 passed) green, gated before the commit. Owed: the retire-seam settle's cost in the
+capture-isolating cell (C day 24 measures on the tree it has; the door review reads both).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

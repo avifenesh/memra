@@ -40,5 +40,13 @@ Author's review of the full diff `main..lane/spill-integ36-20260922`, posted as 
   engine CPU lib tests, tier tests, engine, server and tier clippy `-D warnings`, marker census, workflow keys, perf
   board, diff-check) and the local 5090 serve-smoke if the lock frees within the window (stated either way).
 
+## Review round 1 (revuto, addressed in the integ)
+- Source lifetime: a pending capture now settles `Block` before any session leaves `active` (the retiring session's
+  cache is dropped on the owner stream or parked for reuse; either could run under the copy stream's read). The engine
+  keeps no source, so the worker holds the invariant at the seam that moves the source.
+- Refusal path: a refused submission drains the owner stream, releases the producer fence, and latches the route off
+  typed if the fence will not release, instead of dropping a `Busy` and leaking the fence for the boot.
+- Both pinned by a source census test; the admission-book lock test still holds.
+
 ## What I did not do
 - No GPU cell of my own beyond the smoke; the door stays OFF; the 5090 door gates on this tree are C day 24's.

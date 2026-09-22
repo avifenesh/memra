@@ -13791,13 +13791,36 @@ fn prefix_capture_off_tick(
     let ticket = match t.submit_d2d_capture(ops, HOST_TIER_TRANSFER_EPOCHS) {
         Ok(ticket) => ticket,
         Err(e) => {
-            let _ = t.release_producer(producer);
-            return refuse(
+            // Nothing was submitted, so the producer event may still be pending on the owner
+            // stream and `release_producer` would refuse `Busy`; dropped, the fence would stay in
+            // the engine's producer table for the boot (revuto on #634). Drain the owner stream
+            // first; a fence that still will not release latches the route off, typed.
+            let released = t
+                .owner_stream()
+                .synchronize()
+                .map_err(|err| format!("owner stream drain: {err}"))
+                .and_then(|_| {
+                    t.release_producer(producer)
+                        .map_err(|err| format!("release_producer: {err:?}"))
+                });
+            let route = refuse(
                 &mut t,
                 registered,
                 Vec::new(),
                 format!("submission refused: {e:?}"),
             );
+            if let Err(err) = released {
+                drop(t);
+                host_capture_latch(
+                    hpx,
+                    &format!(
+                        "producer fence seq={} did not release after a refused capture submission \
+                         ({err})",
+                        producer.sequence
+                    ),
+                );
+            }
+            return route;
         }
     };
     drop(t);
@@ -23333,6 +23356,20 @@ pub fn run(
         finished.dedup();
         let mut retired_interactive = false;
         let mut oom_teardowns = 0usize;
+        // MOVE 2 SLICE 1 (revuto on #634): a pending capture reads a live session's KV planes on
+        // the copy stream and the engine retains no source. A retiring session's cache is dropped
+        // on the owner stream (not ordered against the copy stream) or parked for a later request
+        // to rewrite; either would run under the in-flight read. Settle the `Capturing` entry
+        // BLOCKING before any session leaves `active`. One capture per worker.
+        if !finished.is_empty() && hpx.capturing.is_some() {
+            host_capture_settle_pending(
+                &engine,
+                &mut px,
+                &mut hpx,
+                ContractWait::Block,
+                "a session retire",
+            );
+        }
         for &i in finished.iter().rev() {
             let mut s = active.remove(i);
             // One retirement receipt, never per-token logging or a sampler policy switch.
@@ -41033,6 +41070,40 @@ mod tests {
         // The other capture sites keep the tick program: the fanout leader (its siblings restore
         // from the entry in the same tick) and the pause sweep (a by-reference demote).
         assert_eq!(body.matches("prefix_capture_off_tick(").count(), 2);
+    }
+
+    /// revuto on #634: the session retire seam settles a pending capture BLOCKING before the
+    /// cache is dropped or parked (the capture's source is the live cache and the engine retains
+    /// none of it); and a refused submission drains the owner stream before releasing the
+    /// producer fence, latching the route off if the fence will not release.
+    #[test]
+    fn a_session_retire_settles_a_pending_capture_before_the_cache_moves_and_a_refused_submission_releases_its_fence()
+     {
+        let worker = include_str!("worker.rs");
+        let body = &worker[..worker.find("#[cfg(test)]\nmod tests").unwrap()];
+        let remove = body.find("let mut s = active.remove(i);").unwrap();
+        let settle = body[..remove]
+            .rfind("host_capture_settle_pending(")
+            .expect("a pending capture settles before any session leaves active");
+        assert!(
+            remove - settle < 400,
+            "the settle sits right before the retire loop"
+        );
+        assert!(body[settle..settle + 200].contains("ContractWait::Block"));
+        assert!(body[settle..settle + 200].contains("\"a session retire\""));
+        let route = body.find("fn prefix_capture_off_tick(").unwrap();
+        let submit = route
+            + body[route..]
+                .find("t.submit_d2d_capture(ops, HOST_TIER_TRANSFER_EPOCHS)")
+                .unwrap();
+        let drain = submit + body[submit..].find(".owner_stream()").unwrap();
+        let release = submit + body[submit..].find("t.release_producer(producer)").unwrap();
+        let latch = submit + body[submit..].find("host_capture_latch(").unwrap();
+        assert!(
+            drain < release && release < latch,
+            "drain, then release, then latch on refusal"
+        );
+        assert!(!body[submit..latch].contains("let _ = t.release_producer(producer);"));
     }
 
     // ---- WP-A day 18: the `Promoting` state machine (memra#536 Move 1, the promote half) ----
