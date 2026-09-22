@@ -1691,6 +1691,11 @@ pub struct Request {
     /// None for internally-constructed requests (tests, embeddings/rerank capture routes),
     /// which the gate skips.
     pub wire_deadline: Option<std::time::Instant>,
+    /// The waiting slot a dedicated route's admission took for this request (memra#501). A
+    /// route-bound request holds this INSTEAD of a lane `ADMISSION_RESERVATIONS` slot; the route
+    /// drops it at dequeue, and a request dropped anywhere earlier (a failed send, a dead
+    /// thread's channel) frees it with itself. None on the central worker's requests.
+    pub(crate) route_ticket: Option<crate::route_telemetry::RouteTicket>,
     /// per-request stream back to the handler. tokio mpsc so the async side can await it.
     pub tx: EventSender,
 }
@@ -2013,6 +2018,14 @@ pub(crate) fn release_pending_admit() {
 /// path.
 pub(crate) fn release_admission_reservation(lane: Lane) {
     decrement_atomic(&ADMISSION_RESERVATIONS[lane.idx()]);
+}
+
+/// Release whichever hard reservation this request holds: its route ticket when a dedicated
+/// route admitted it (memra#501), else its lane slot. Exactly one of the two was taken.
+pub(crate) fn release_request_reservation(req: &mut Request) {
+    if req.route_ticket.take().is_none() {
+        release_admission_reservation(req.lane);
+    }
 }
 
 /// Requeue a worker-owned request after a bounded step-OOM park. It was released when the
@@ -4938,7 +4951,7 @@ fn clamp_kv_host_budget(requested: usize, mem_available: usize) -> (usize, bool)
 
 /// Parse `MemAvailable` (kB, NOT MemFree: same field the spill budget reads) out of
 /// /proc/meminfo content. None when absent or malformed.
-fn meminfo_available_bytes(meminfo: &str) -> Option<usize> {
+pub(crate) fn meminfo_available_bytes(meminfo: &str) -> Option<usize> {
     let line = meminfo.lines().find(|l| l.starts_with("MemAvailable:"))?;
     let kb = line.split_whitespace().nth(1)?.parse::<usize>().ok()?;
     Some(kb.saturating_mul(1024))
@@ -20863,7 +20876,16 @@ pub fn run(
                 }
             };
             dsv4_caps.insert(name.clone(), crate::dsv4_serve::caps(&dm));
-            dsv4_routes.insert(name.clone(), crate::dsv4_serve::spawn(name.clone(), dm));
+            // The route's own books (memra#500, #501): its load is get-or-create so tickets
+            // outstanding across a respawn stay counted; its health record is fresh per spawn
+            // so a predecessor's exit latch cannot mark this thread dead.
+            let cap = crate::dsv4_serve::contract(name).capacity.concurrency();
+            let load = crate::route_telemetry::register(name, cap);
+            let route_health = health.register_route(name, load.clone());
+            dsv4_routes.insert(
+                name.clone(),
+                crate::dsv4_serve::spawn(name.clone(), dm, route_health, load),
+            );
             order.push(name.clone());
             continue;
         }
@@ -26591,7 +26613,7 @@ pub fn run(
 }
 
 fn fail_request(mut req: Box<Request>, error: EngineError) {
-    release_admission_reservation(req.lane);
+    release_request_reservation(&mut req);
     if let Some(ready) = req.constraint_ready.take() {
         let _ = ready.send(Err(error));
     } else {
@@ -26659,6 +26681,20 @@ fn handle_cmd(
                         EngineError::engine("dsv4 serving thread is down (send failed)"),
                     );
                 }
+                return;
+            }
+            // A request the HTTP layer admitted against a dedicated route carries that route's
+            // ticket and no lane slot. Every central path below releases a lane slot, so one
+            // reaching them would free a reservation it never took. Fail it closed instead: its
+            // drop releases the ticket, the only reservation it holds.
+            if let Some(ticket) = req.route_ticket.as_ref() {
+                let error = EngineError::engine(format!(
+                    "model {:?} was admitted on dedicated route {:?}, which this worker does \
+                     not serve",
+                    req.model,
+                    ticket.route()
+                ));
+                fail_request(req, error);
                 return;
             }
             if !loaded.contains_key(&req.model) {
@@ -27758,6 +27794,7 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         constraint_ready: None,
         oom_retries: s.oom_retries,
         wire_deadline: s.wire_deadline,
+        route_ticket: None,
         spec_k_replay: Some(s.spec_k),
         prepared_prompt: None,
         images: Vec::new(),
@@ -35386,6 +35423,7 @@ mod tests {
             capture: None,
             vision_memory: None,
             wire_deadline: None,
+            route_ticket: None,
             tx,
         }
     }
@@ -35832,6 +35870,7 @@ mod tests {
             capture: None,
             vision_memory: None,
             wire_deadline: None,
+            route_ticket: None,
             ttft: None,
             tx: bad_tx,
         });
@@ -48766,6 +48805,7 @@ mod tests {
             capture: None,
             vision_memory: None,
             wire_deadline: None,
+            route_ticket: None,
             ttft: None,
             tx,
         });
