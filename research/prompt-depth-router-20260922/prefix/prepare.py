@@ -103,7 +103,8 @@ def build(source, out):
             text,
             indent + "prefix_study_io::request_routing::write_record(&mut routing_log, turn, request_selection)?;",
             indent + "prefix_study_io::native_prefix::Recorder {\n"
-            + indent + f"    log: &mut routing_log, out: {outvar},\n"
+            + indent + "    log: &mut routing_log, "
+            + ("out,\n" if outvar == "out" else f"out: {outvar},\n")
             + indent + "}.write(\n"
             + indent + "    turn, request_selection.as_ref(), &tok, &prompt, &prefix_shape,\n"
             + indent + '    arm.strip_prefix("fixed:").and_then(|k| k.parse().ok()).unwrap_or(3),\n'
