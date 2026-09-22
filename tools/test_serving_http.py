@@ -5,6 +5,7 @@ import socket
 import threading
 import time
 import unittest
+from unittest import mock
 
 from serving_http import capture_request
 from serving_release import ServingGateError
@@ -53,12 +54,51 @@ def peer(handler):
     try:
         yield port
     finally:
-        listener.close()
-        thread.join(timeout=3)
+        # The client may close before the accept thread is scheduled. Reap the
+        # bounded peer first so listener teardown cannot race its pending accept.
+        try:
+            thread.join(timeout=3)
+        finally:
+            listener.close()
         if thread.is_alive():
             raise AssertionError("test peer was not reaped")
         if failures:
             raise failures[0]
+
+
+class PeerLifecycleTests(unittest.TestCase):
+    def test_connected_client_close_waits_for_delayed_accept(self):
+        accepting = threading.Event()
+        allow_accept = threading.Event()
+        original_accept = socket.socket.accept
+        original_join = threading.Thread.join
+
+        def delayed_accept(listener):
+            accepting.set()
+            if not allow_accept.wait(2):
+                raise AssertionError("test did not release the delayed accept")
+            return original_accept(listener)
+
+        def release_then_join(thread, *args, **kwargs):
+            allow_accept.set()
+            return original_join(thread, *args, **kwargs)
+
+        with mock.patch.object(socket.socket, "accept", delayed_accept), \
+                mock.patch.object(threading.Thread, "join", release_then_join):
+            with peer(lambda _: self.fail("closed client sent no request")) as port:
+                self.assertTrue(accepting.wait(1))
+                # A connected observer can close before the fixture thread accepts.
+                with socket.create_connection(("127.0.0.1", port), timeout=1):
+                    pass
+
+    def test_peer_handler_failure_is_still_reported(self):
+        def fail(_):
+            raise ValueError("fixture handler failure")
+        with self.assertRaisesRegex(ValueError, "fixture handler failure"):
+            with peer(fail) as port:
+                with socket.create_connection(("127.0.0.1", port), timeout=1) as client:
+                    client.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                    client.recv(1)  # Wait until the handler closes its accepted socket.
 
 
 class HttpCaptureTests(unittest.TestCase):
