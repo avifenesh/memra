@@ -1,0 +1,9 @@
+tree 720820350adea3e073d1a1cd81cc71091709a1ff started 2026-09-22T04:36:05Z host avifenesh rustc rustc 1.97.1 (8bab26f4f 2026-07-14)
+== fmt: cargo fmt --all -- --check
+   rc=0 (4s)
+== portable-suites: bash tools/portable-suites.sh
+   rc=0 (29s)
+   | skip-census: output banked at /home/avifenesh/projects/wt-spill-integ34/target/portable-suites.log
+   | skip-census: 338 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 14 binaries
+   | portable-suites: PASS (tier, KV and onboarding CLI suites executed on CPU; skips 0 of budget 0; NOT GPU qualification)
+== test-server: cargo test -p memra-server --offline --no-fail-fast
