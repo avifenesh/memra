@@ -330,6 +330,16 @@ impl Drop for Entry {
         }
     }
 }
+/// One same-device copy of the capture class (WP-A day 20, memra#536 Move 2 slice 1): `bytes`
+/// from the head of a BORROWED live source (a session cache's plane the caller keeps) into an
+/// OWNED registered destination lease, behind `producer_fence`. See
+/// `CudaTransfers::submit_d2d_capture`.
+pub struct D2dCapture<'a> {
+    pub source: &'a CudaSlice<u8>,
+    pub destination: DeviceLease,
+    pub bytes: u64,
+    pub producer_fence: FenceId,
+}
 /// Opaque graph-use retention. Drop only after graph execution/destruction retires.
 pub struct GraphPin {
     _pins: Vec<Rc<()>>,
@@ -687,6 +697,8 @@ impl CudaTransfers {
                 CopyDirection::DeviceToHost => {
                     item.device.take();
                 }
+                // A capture's source is borrowed (the caller's live plane): nothing to retire.
+                CopyDirection::DeviceToDevice => {}
             }
             item.source_retired = true;
         }
@@ -909,6 +921,172 @@ impl CudaTransfers {
             .all(|i| i.segments.iter().all(|s| s.consumer_fenced));
         Ok(())
     }
+    /// The capture class (WP-A day 20, memra#536 Move 2 slice 1;
+    /// `memra_tier::conformance::d2d_capture_publish`): ONE batch of same-device copies issued on
+    /// the COPY stream behind each op's producer fence (an owner-stream event recorded after the
+    /// boundary chunk), from the head of a BORROWED live source into an OWNED registered
+    /// destination lease. Not a `TransferOp`: `ContiguousCopy` takes two owned leases and the
+    /// registry admits only moved buffers, and a capture's source is a session cache's plane the
+    /// decoding session keeps (its rows `0..bytes` are append-only per position, the capture law;
+    /// the recurrent state, which the next step overwrites, is not in this class and stays on the
+    /// owner stream). All-or-nothing: a refused op refuses the whole batch with nothing submitted
+    /// (the destinations drop here; the caller keeps its retained twins and takes the planes
+    /// back through them). No owner-stream wait is installed at any point: the destination's
+    /// consumer is the caller's publication into the device prefix index, host-ordered after
+    /// `capture_landed`, so each item is fenced at submit as a D2H is. No checksum term (slice
+    /// 3): `Completion::require`, `ready_view` and `take_destination` refuse a capture item, so
+    /// the host-contract publication gate cannot publish it. Requires the copy stream
+    /// (`new_with_copy_stream`); under `new` the class does not exist (`Unsupported`): the
+    /// on-tick program is the caller's own `prefix_snapshot`.
+    pub fn submit_d2d_capture(
+        &mut self,
+        ops: Vec<D2dCapture<'_>>,
+        epochs: Epochs,
+    ) -> Result<TransferTicket> {
+        self.check_thread()?;
+        let Some(copy) = self.copy.clone() else {
+            return Err(Error::Unsupported);
+        };
+        if ops.is_empty() {
+            return Err(Error::EmptyBatch);
+        }
+        if ops.len() > u32::MAX as usize
+            || self.sequence == u64::MAX
+            || self.fence_sequence.checked_add(ops.len() as u64).is_none()
+        {
+            return Err(Error::Overflow);
+        }
+        for op in &ops {
+            if op.bytes == 0
+                || op.bytes > op.destination.bytes()
+                || op.bytes > op.source.len() as u64
+            {
+                return Err(Error::InvalidLayout);
+            }
+            if op.destination.generation() != epochs.dst_gen {
+                return Err(Error::StaleEpoch);
+            }
+            let backing = self
+                .owner
+                .resolve::<Rc<RefCell<KvPlane>>>(&op.destination)?;
+            if !Arc::ptr_eq(backing.borrow().stream(), &self.stream)
+                || !Arc::ptr_eq(op.source.stream().context(), self.stream.context())
+            {
+                return Err(Error::WrongOwner);
+            }
+            if self
+                .producers
+                .get(&op.producer_fence.sequence)
+                .is_none_or(|(actual, _)| actual != &op.producer_fence)
+            {
+                return Err(Error::WrongOwner);
+            }
+        }
+        let mut request = self.request();
+        request.bytes.inflight = ops.len() as u64;
+        let charge = self.governor.borrow_mut().reserve(&request)?;
+        self.sequence += 1;
+        let ticket = TransferTicket {
+            issuer: self.owner.issuer(),
+            sequence: self.sequence,
+            epochs,
+        };
+        let mut entry = Entry {
+            items: vec![],
+            completion: Completion {
+                ticket,
+                items: vec![],
+                producer_done: false,
+                consumer_fenced: false,
+            },
+            expected: vec![],
+            charge: Some(charge),
+            cancelled: false,
+            published: false,
+            retired: false,
+            unknown: false,
+            source: Retention::default(),
+            destination: Retention::default(),
+        };
+        for (i, op) in ops.into_iter().enumerate() {
+            let mut s = SegmentCompletion {
+                segment: 0,
+                status: ItemStatus::Pending,
+                valid_bytes: 0,
+                io_bytes: 0,
+                checksum: None,
+                epochs,
+                producer_done: false,
+                consumer_fenced: false,
+                consumer_fence: None,
+                error: None,
+            };
+            entry.expected.push(vec![SegmentExpectation {
+                valid_bytes: op.bytes,
+                io_bytes: op.bytes,
+                checksum: [0; 32],
+            }]);
+            let mut item = Item {
+                host: None,
+                device: Some(op.destination),
+                bytes: op.bytes,
+                direction: CopyDirection::DeviceToDevice,
+                event: None,
+                taken: false,
+                source_retired: false,
+            };
+            // From this point any CUDA error may mean work was submitted: accept + quarantine.
+            let submit = (|| {
+                cuda(copy.wait(&self.producers[&op.producer_fence.sequence].1))?;
+                let backing = self.owner.resolve::<Rc<RefCell<KvPlane>>>(
+                    item.device.as_ref().ok_or(Error::AlreadyReleased)?,
+                )?;
+                let n = op.bytes as usize;
+                cuda(copy.memcpy_dtod(
+                    &op.source.slice(0..n),
+                    &mut backing.borrow_mut().slice_mut(..n),
+                ))?;
+                drop(backing);
+                item.event = Some(cuda(copy.record_event(None))?);
+                // Fenced at submit, as an off-owner D2H: the consumer is the caller's publication
+                // after the event is observed complete; no owner-stream wait exists or is owed.
+                s.consumer_fence = Some(self.next_fence(epochs.dst_gen)?);
+                s.consumer_fenced = true;
+                s.io_bytes = item.bytes;
+                Ok(())
+            })();
+            if let Err(error) = submit {
+                s.status = ItemStatus::Quarantined;
+                s.error = Some(error);
+                entry.unknown = true;
+            }
+            entry.items.push(Some(item));
+            entry.completion.items.push(ItemOutcome {
+                item: i as u32,
+                accepted: true,
+                segments: vec![s],
+            });
+        }
+        self.entries.insert(ticket, entry);
+        Ok(ticket)
+    }
+    /// The capture's publication predicate (`d2d_capture_publish` rule 1 and 2): every item's
+    /// completion event observed complete. The caller publishes into the device prefix index
+    /// only when this answers `true`, then `retire(ticket, None)`, `acknowledge`, and takes the
+    /// planes back through its twins. A ticket that is not a capture is refused `Unsupported`; a
+    /// quarantined observation is `Quarantined`, never `true`.
+    pub fn capture_landed(&mut self, ticket: &TransferTicket) -> Result<bool> {
+        self.progress(ticket)?;
+        let e = &self.entries[ticket];
+        if e.items
+            .iter()
+            .flatten()
+            .any(|i| i.direction != CopyDirection::DeviceToDevice)
+        {
+            return Err(Error::Unsupported);
+        }
+        Ok(e.completion.producer_done)
+    }
     /// Retain both sides for legacy whole-transfer graph users.
     pub fn pin_graph(&mut self, ticket: &TransferTicket) -> Result<GraphPin> {
         let source = self.pin_source_graph(ticket)?;
@@ -1044,6 +1222,16 @@ impl CudaTransfers {
             s.producer_done = true;
             s.status = ItemStatus::Complete;
             s.valid_bytes = item.bytes;
+            if item.direction == CopyDirection::DeviceToDevice {
+                // WP-A day 20 (Move 2 slice 1): a capture has no host bytes, so no checksum
+                // term yet (slice 3 decides the device digest or the `Unwitnessed` arm). The
+                // expectation keeps its zero digest, so `Completion::require` refuses the item
+                // `Corrupt` by construction: no path publishes a capture through the
+                // host-contract gate before its receipt exists. Publication is the caller's,
+                // after `capture_landed`.
+                s.checksum = None;
+                continue;
+            }
             s.checksum = Some(checksum(
                 item.host.as_ref().ok_or(Error::AlreadyReleased)?.bytes()?,
             ));
@@ -1265,6 +1453,7 @@ impl TransferEngine for CudaTransfers {
                     )?;
                     let host = item.host.as_mut().ok_or(Error::AlreadyReleased)?;
                     match direction {
+                        CopyDirection::DeviceToDevice => unreachable!("validated above"),
                         // A taken host destination may be used as an immutable
                         // H2D source before the earlier ticket is acknowledged.
                         CopyDirection::HostToDevice => cuda(
@@ -1394,6 +1583,11 @@ impl TransferEngine for CudaTransfers {
             .ok_or(Error::Rejected)?;
         if i.taken {
             return Err(Error::AlreadyReleased);
+        }
+        if i.direction == CopyDirection::DeviceToDevice {
+            // A capture's destination leaves through the caller's retained twin (`take_plane`)
+            // after `retire` and `acknowledge`, never through the host-contract publication.
+            return Err(Error::Unsupported);
         }
         let destination = if i.direction == CopyDirection::HostToDevice {
             Destination::Device(
@@ -1650,7 +1844,59 @@ mod tests {
         let fence = install_body.find("s.consumer_fenced = true;").unwrap();
         assert!(wait < fence);
         assert!(install_body.contains("item.direction != CopyDirection::HostToDevice"));
-        assert_eq!(body.matches("s.consumer_fenced = true;").count(), 2);
+        // Day 20: the capture class fences at submit too (its consumer is the caller's
+        // publication); three fencing statements in the body, none elsewhere.
+        assert_eq!(body.matches("s.consumer_fenced = true;").count(), 3);
+    }
+
+    /// WP-A day 20 (memra#536 Move 2 slice 1, `memra_tier::conformance::d2d_capture_publish`):
+    /// the capture class exists only with the copy stream, issues behind the producer event on
+    /// that stream, installs NO owner-stream wait, records its completion event there, carries no
+    /// checksum term (so the host-contract gate refuses it), and `capture_landed` answers the
+    /// engine's `producer_done` for capture tickets only.
+    #[test]
+    fn d2d_capture_rules_are_as_stated() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap()];
+        let submit = body.find("pub fn submit_d2d_capture(").unwrap();
+        let submit_body = &body[submit..body[submit..].find("\n    pub fn ").unwrap() + submit];
+        let needs_copy = submit_body
+            .find("let Some(copy) = self.copy.clone() else {")
+            .expect("the capture class requires the copy stream");
+        assert!(
+            submit_body[needs_copy..needs_copy + 120].contains("return Err(Error::Unsupported);")
+        );
+        let producer_wait = submit_body
+            .find("cuda(copy.wait(&self.producers[&op.producer_fence.sequence].1))?;")
+            .unwrap();
+        let copy_at = submit_body.find("cuda(copy.memcpy_dtod(").unwrap();
+        let event_at = submit_body
+            .find("item.event = Some(cuda(copy.record_event(None))?);")
+            .unwrap();
+        let fenced_at = submit_body.find("s.consumer_fenced = true;").unwrap();
+        assert!(producer_wait < copy_at && copy_at < event_at && event_at < fenced_at);
+        assert!(
+            !submit_body.contains("self.stream.wait("),
+            "no owner-stream wait exists in the capture class"
+        );
+        assert!(submit_body.contains("direction: CopyDirection::DeviceToDevice,"));
+        assert!(submit_body.contains("checksum: None,"));
+        assert_eq!(body.matches(".memcpy_dtod(").count(), 1);
+        let progress = body.find("fn progress(").unwrap();
+        let progress_body = &body[progress..body[progress..].find("\n    fn ").unwrap() + progress];
+        let d2d_arm = progress_body
+            .find("if item.direction == CopyDirection::DeviceToDevice {")
+            .expect("progress has a capture arm");
+        assert!(progress_body[d2d_arm..d2d_arm + 700].contains("s.checksum = None;"));
+        assert!(progress_body[d2d_arm..d2d_arm + 700].contains("continue;"));
+        let landed = body.find("pub fn capture_landed(").unwrap();
+        let landed_body = &body[landed..body[landed..].find("\n    pub fn ").unwrap() + landed];
+        assert!(landed_body.contains("self.progress(ticket)?;"));
+        assert!(landed_body.contains("i.direction != CopyDirection::DeviceToDevice"));
+        assert!(landed_body.contains("Ok(e.completion.producer_done)"));
+        let take = body.find("fn take_destination(").unwrap();
+        let take_body = &body[take..body[take..].find("\n    fn ").unwrap() + take];
+        assert!(take_body.contains("if i.direction == CopyDirection::DeviceToDevice {"));
     }
 
     fn native_fixture() -> (CudaTransfers, Arc<CudaStream>, SharedBudget) {
@@ -1685,6 +1931,114 @@ mod tests {
             deadline: Deadline(u64::MAX),
             tenant: [0; 32],
         }
+    }
+
+    /// WP-A day 20 (memra#536 Move 2 slice 1): the capture class on a card. Two owned planes are
+    /// registered as destinations with retained twins; a borrowed source holds a pattern; one
+    /// capture batch on the copy stream behind an owner-stream producer fence; the host-contract
+    /// gate refuses the items (no checksum term); `capture_landed` turns true; `retire(None)`,
+    /// `acknowledge`, the planes come back through the twins and hold the pattern byte for byte.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event() {
+        use memra_tier::tier::governor::Governor;
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.new_stream().unwrap();
+        let cap = TierBudget {
+            version: 1,
+            device: vec![1 << 30],
+            peer: vec![0],
+            replicas: vec![0],
+            pinned: 1 << 30,
+            pageable: 1 << 30,
+            staging: 1 << 30,
+            loaders: 64,
+            inflight: 64,
+            nvme: 0,
+        };
+        let gov: SharedBudget = Rc::new(RefCell::new(
+            Governor::new(cap, TierBudget::zero(1), 64, 0, Arc::new(|| 0)).unwrap(),
+        ));
+        let mut t = CudaTransfers::new_with_copy_stream(stream.clone(), gov).unwrap();
+        let bytes = 8usize << 20;
+        let pattern: Vec<u8> = (0..bytes).map(|i| (i * 13 % 251) as u8).collect();
+        let mut source = stream.alloc_zeros::<u8>(bytes).unwrap();
+        stream.memcpy_htod(&pattern, &mut source).unwrap();
+        let generation = 1u64;
+        let epochs = Epochs {
+            state: 0,
+            src_gen: 1,
+            dst_gen: generation,
+        };
+        let mut twins = Vec::new();
+        let mut destinations = Vec::new();
+        for _ in 0..2 {
+            let fresh = stream.alloc_zeros::<u8>(bytes).unwrap();
+            let lease = t.register_device(fresh, generation, request()).unwrap();
+            twins.push(t.retain_device(&lease).unwrap());
+            destinations.push(lease);
+        }
+        // The class does not exist without the copy stream.
+        let (mut on_owner, _s, _g) = native_fixture();
+        assert!(matches!(
+            on_owner.submit_d2d_capture(Vec::new(), epochs),
+            Err(Error::Unsupported)
+        ));
+        let producer = t.record_producer(generation).unwrap();
+        let ops: Vec<D2dCapture<'_>> = destinations
+            .into_iter()
+            .map(|destination| D2dCapture {
+                source: &source,
+                destination,
+                bytes: bytes as u64,
+                producer_fence: producer,
+            })
+            .collect();
+        let ticket = t.submit_d2d_capture(ops, epochs).unwrap();
+        // The host-contract gate never publishes a capture, landed or not.
+        assert!(t.ready_view(&ticket, 0, epochs).is_err());
+        assert!(t.take_destination(&ticket, 0, epochs).is_err());
+        let mut polls = 0u32;
+        while !t.capture_landed(&ticket).unwrap() {
+            polls += 1;
+            assert!(
+                polls < 1_000_000,
+                "the copy stream never completed the capture"
+            );
+        }
+        let c = t.poll(&ticket).unwrap();
+        assert!(c.producer_done && c.consumer_fenced);
+        for item in &c.items {
+            assert_eq!(item.segments[0].valid_bytes, bytes as u64);
+            assert!(
+                item.segments[0].checksum.is_none(),
+                "no checksum term in slice 1"
+            );
+        }
+        let expected: Vec<Vec<SegmentExpectation>> = (0..2)
+            .map(|_| {
+                vec![SegmentExpectation {
+                    valid_bytes: bytes as u64,
+                    io_bytes: bytes as u64,
+                    checksum: [0; 32],
+                }]
+            })
+            .collect();
+        assert_eq!(c.require(&ticket, &expected, true), Err(Error::Corrupt));
+        assert!(matches!(
+            t.ready_view(&ticket, 0, epochs),
+            Err(Error::Corrupt)
+        ));
+        t.release_producer(producer).unwrap();
+        t.retire(&ticket, None).unwrap();
+        assert!(t.retired(&ticket).unwrap());
+        t.acknowledge(&ticket).unwrap();
+        for twin in &twins {
+            let plane = t.take_plane(twin).unwrap().into_pooled().unwrap();
+            let back = stream.clone_dtoh(&plane).unwrap();
+            assert_eq!(back, pattern, "the capture holds the source bytes");
+        }
+        assert_eq!(t.device_registry_len(), 0);
     }
 
     /// The arm is honoured by the driver, not just recorded: `cuMemHostGetFlags` on the lease's

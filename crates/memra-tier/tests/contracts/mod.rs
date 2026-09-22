@@ -16,3 +16,5 @@ mod resident_bindings;
 mod fault_arm_bindings;
 
 mod reader_fence_bindings;
+
+mod d2d_capture_bindings;
