@@ -153,3 +153,21 @@ helper on the target card, +55 ms on the 5090 host, DAY27's digest micro-cell) i
   demotes 2 and 3 discriminate DAY28's first-touch attribution: at most 3 ms means the day-28 first touch was the
   heap `Vec` pages, now on the helper; 30 to 45 ms means it is the pinned KV lease first touch; the helper's time grows
   by the staging copy (predicted at most 95 ms steady, from 73.4).
+
+## 2a. Amendment to A3, committed before any run
+
+Design item 4 and A3 put the span count into the D2H receipt line's `items=`. That line is parsed as the KV item
+count by two readers: `tools/kv-host-contract-fault-gate.sh:314` (`d2h_receipt_items`, the first receipt's
+`items=N`, which the partial-reject cell at `:336` to `:349` requires to equal the promote H2D batch's `1 of M items`;
+the promote is the H2D half, owed and unchanged) and `research/spill-c-20260919/verify-day15.py:22` (`items=(\d+)
+\((\d+) KV planes(, draft)?\)`). Adding the spans there would turn the fault gate's partial-reject cell red for a
+reason that is not a defect. So, before any run:
+
+- The D2H receipt line keeps `items=` as the KV item count and gains a suffix after `retired acknowledged`:
+  `; 96 f32 spans landed under the ticket and taken back before the retire` (27B; 48 on the 9B). No `items=` in it.
+- The demote copy-complete line (`demote copy complete off the tick: ... from submission to completion (...)`) gains
+  the batch total after the mode: `items=130 (34 KV, 96 f32 spans);` on the 27B with the draft, `items=128 (32 KV, 96
+  f32 spans);` without; 9B `items=66 (18 KV, 48 f32 spans);` and `items=64 (16 KV, 48 f32 spans);`.
+- A3 as amended: on every contract demote of an ON arm, the copy-complete line's `items=` equals the KV count plus the
+  span count (the pairs above), the receipt line's span suffix names the same span count, and the receipt line's
+  `items=` is the KV count (32 or 34 on the 27B, 16 or 18 on the 9B). The promote line is unchanged.
