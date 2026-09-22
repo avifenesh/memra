@@ -1,0 +1,400 @@
+{
+  "issue": 526,
+  "domain": "architecture-devops: original phase-evidence reader findings closure",
+  "reviewed_head": "96ec779a26bf75ae780df9a19334c04eb39bfd45",
+  "base_snapshot": "38b8f0e74b71235c195654027b6699f6a7462319",
+  "reader_introduced_at": "14669ca14aabea1ffdfe31334bb68bba18687310",
+  "code_review": "pass",
+  "reader_source_go": true,
+  "source_go": true,
+  "findings": [],
+  "native_go": false,
+  "outer_C4_go": false,
+  "merge_go": false,
+  "security_domain_go": false,
+  "conclusion": "Scoped pure-reader source GO at exact96ec779a. All three AD526-PHASE-EVIDENCE findings are resolved. Both request and health bodies obey the external inclusive cap; malformed method/path/owner metadata refuses before unsafe indexing; target invocation/start is connected to the observed phase without rejecting overlapping reads, and a later reread cannot hide an earlier observation of the same trace. The original saved counterexample bytes and unchanged finder script now refuse correctly. No actionable new defect found in this bounded repair.",
+  "resolved_findings": [
+    {
+      "id": "AD526-PHASE-EVIDENCE-1",
+      "status": "resolved",
+      "file": "tools/serving_cancel_evidence.py",
+      "line": 88,
+      "code_quote": "require(len(value[\"body\"]) <= maximum_bytes, \"response body exceeds trusted byte cap\")",
+      "evidence": "Hydration receives maximum_bytes from validated expected_program.http.max_body_bytes for both attempts and health. Original16580/16443-byte packets with unchanged16384-byte trusted cap now refuse. Exactly16384 bytes remains accepted on both surfaces; no record-supplied limit or tolerance is used."
+    },
+    {
+      "id": "AD526-PHASE-EVIDENCE-2",
+      "status": "resolved",
+      "file": "tools/serving_cancel_evidence.py",
+      "line": 325,
+      "code_quote": "require(cancellation[\"invoke_started_ns\"] <= target_invocation[\"started_ns\"]\n        and target_attempt[\"started_ns\"] <= trigger[\"log_read\"][\"finished_ns\"],",
+      "evidence": "The original trigger-read-before-target-start packet now refuses. New linkage preserves prior invocation<=HTTP-start bounds, permits reads that straddle HTTP start (including equality at read end), and rejects a target invocation preceding the outer invoke clock. Because read bytes/times are nondecreasing, checking the last completed pre-start prefix catches any earlier complete observation of the selected PID/trace_id even if a later reread was chosen as trigger. Producer trace_elapsed_ns is not compared with host time."
+    },
+    {
+      "id": "AD526-PHASE-EVIDENCE-3",
+      "status": "resolved",
+      "file": "tools/serving_cancel_evidence.py",
+      "line": 246,
+      "code_quote": "and row.get(\"path\") == request[\"path\"], \"request owner or method/path differs\")",
+      "evidence": "Every request observation now matches trusted owner, POST method and exact request path before the invocation loop indexespath. The original missing-path packet and additional null/list/object/numeric path, method and owner variants raise ServingGateError; no KeyError remains in these controls."
+    }
+  ],
+  "tests": [
+    {
+      "name": "Supplied pure reader/parser/wire suite",
+      "status": "pass",
+      "normal_passed": 75,
+      "optimized_passed": 75,
+      "failed": 0,
+      "skipped": 0,
+      "reader_methods": 22,
+      "parser_methods": 36,
+      "wire_methods": 17,
+      "proof": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/independent-runs.json"
+    },
+    {
+      "name": "Original unchanged finder probes",
+      "status": "pass",
+      "normal_passed": 5,
+      "optimized_passed": 5,
+      "repro_sha256": "beedfb31aa68a606de9a9b772518943d6100cd8151cc10aa618c40676f2e9a3d",
+      "original_status": "Before repair3false-accept assertions and1KeyError; originalbaseline/reports/logs preserved."
+    },
+    {
+      "name": "Additional independent closure boundaries",
+      "status": "pass",
+      "normal_passed": 4,
+      "optimized_passed": 4,
+      "proof": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/boundary-runs.json",
+      "cases": [
+        "Direct replay of all4original saved index/blob/expectation counterexamples, without regenerating their bytes.",
+        "Positive starts at read.start, read.start+1 and read.finish.",
+        "Target request-invocation timestamp before its outer invocation clock refuses.",
+        "Seven malformed request path/method/owner variants refuse withServingGateError."
+      ]
+    },
+    {
+      "name": "New supplied boundaries inspected and rerun",
+      "status": "pass",
+      "cases": [
+        "Bothbody types accept exactcap and refuse cap+1.",
+        "Read overlap accepts; observation finishing before target start refuses.",
+        "Later reread of a phase cannot erase an earlier completed prefix containing that trace.",
+        "Missing/list path has typed refusal."
+      ]
+    },
+    {
+      "name": "Frozen source/diff and preservation",
+      "status": "pass",
+      "two_file_delta": true,
+      "fixture_unchanged": true,
+      "collector38b_unchanged": true,
+      "runtime_unchanged": true,
+      "production_assert_guards": 0,
+      "diff_sha256": "6bf3d0fda10892b7ca3a847860bfcb25a57b58285f96b0fb7446bc3d21b3f537"
+    }
+  ],
+  "assessment": [
+    {
+      "boundary": "Authoritative limits",
+      "result": "The cap comes only from the external expected program after its strict validation. Declared payload size ceilings remain separate; a checksum-consistent oversized response cannot authorize a different HTTP cap."
+    },
+    {
+      "boundary": "Chronology and stale-prefix proof",
+      "result": "All added comparisons use host monotonic observations. Existing append/read ordering makes the latest completed pre-start prefix sufficient for the earlier-trace census; the check usesPID/trace_id, including an early trace_start before its client key is bound. No read-start-before-request overconstraint or invented cross-clock mapping is introduced."
+    },
+    {
+      "boundary": "Existing repaired cancellation contract",
+      "result": "The reader retains the38b shared min(set_after,target.finish) causal cancellation bound and original bracket. No collector behavior, peer/terminal/typed-error veto, parser framing or fixture was changed."
+    },
+    {
+      "boundary": "Synthetic fixture and external responsibility",
+      "result": "Positive ownership evidence remains explicitly syntheticLinux layered on a saved portableIO capture. Passing these checks establishes internal sampled consistency only, with qualificationFalse; it is not proof of realLinux listener/boot identity, source/build/model authenticity or GPU lease scope."
+    }
+  ],
+  "preserved_reports": {
+    "original_reader": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-14669-on38b8.json",
+      "sha256": "4ebfaf9fb5d42119683e7b9b19bea77f6305ff13b3afd89489e34a6a2fb45b3c"
+    },
+    "collector_closure": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e.json",
+      "sha256": "68519392d3ef87ad6f050ec26d9b6445e71796944f3de0d9b379ed4ca7f27616",
+      "collector_source_go": true,
+      "re_reviewed": false
+    },
+    "original_repro": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-14669-on38b8-evidence/reader_repros.py",
+      "sha256": "beedfb31aa68a606de9a9b772518943d6100cd8151cc10aa618c40676f2e9a3d"
+    },
+    "owner_red": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/performance-scratch/serving-cancel/reader-repair-001/red.json",
+      "sha256": "72c497145ad2659f3a85063f08b75efd8871652ce750e854ebb107a68cfe3bd1"
+    },
+    "owner_green": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/performance-scratch/serving-cancel/reader-repair-001/green.json",
+      "sha256": "06e2e33d0469b78d1c11a64a47b7655eaf62876380a6d802e0da28fcdf818a22",
+      "candidate_source_hashes_match": true
+    }
+  },
+  "source_identity": {
+    "tools/test_serving_cancel_evidence.py": {
+      "sha256": "ca1c1c1aea97b12688c5e2565170f61171754f7dc1ba294d5edd88b39fc8f338",
+      "blob": "1885f12f2d235ba386a2171ab855aed76adfb54b"
+    },
+    "tools/serving_release.py": {
+      "sha256": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c",
+      "blob": "dac3460e5095ce95cd77c984a6f8276055121cc3"
+    },
+    "tools/serving_cancel_evidence.py": {
+      "sha256": "6b005dfea0104dbec839b6f7115c4ae699b98c09fea69cb1f6fd2c27b1861450",
+      "blob": "f31e5c0b5713803290a0c343f2051ef73c58d4f9"
+    },
+    "tools/serving_trace.py": {
+      "sha256": "986eefdee5bc30cb0c8f56b1618554128c69fa9002440bae6d705de118e90db4",
+      "blob": "8cfc91a5d9a082ae4dfa1ed14835c87a469a6661"
+    },
+    "tools/serving_completion.py": {
+      "sha256": "bf0d4dd9c569884133d0516e128bfa625cd83d993d62bdda41cb4f1dea3aa1fa",
+      "blob": "b5cd89e0d6dd5bb629578a0931b7a14c46a36e16"
+    },
+    "tools/serving_policy.py": {
+      "sha256": "d7cb92568dbd45b4433159ee98d216405d76b12cc42a579062298c741b2243c7",
+      "blob": "49d6faf58bea5e8232c27b909830c5d6911acb37"
+    },
+    "tools/serving_lifecycle.py": {
+      "sha256": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3",
+      "blob": "ecdba39dd7fb945646ae9168d015802cbd04a0a7"
+    },
+    "tools/serving_evidence.py": {
+      "sha256": "b5896f13f2b37f0b64719d2f86d663f99e1d28cc05714b32962362d2a4250970",
+      "blob": "2100ac2fe55942c68d501474c53e016cb71ce724"
+    },
+    "tools/serving_capture.py": {
+      "sha256": "4fc3434999a5490a077386a8f235166ed0e87cd997a889eb8e8da8e807aca163",
+      "blob": "2690ad91019d8f06e11204481395018dce40b3d9"
+    },
+    "tools/serving_process.py": {
+      "sha256": "22dca5e161a926fa8c9382c762223af0b8029ae2cf0c13f16bef7f5066df984a",
+      "blob": "d6ee0c61265892e3a996a079a04edacd2de796ec"
+    },
+    "tools/serving_listener.py": {
+      "sha256": "e71bf54a25ed91f2549ff690ee2a96cbd9db902c8c3af1651f4958f7e196f58e",
+      "blob": "7491cdbdbc6c049aee35b79c1a5041ea8f2c8202"
+    },
+    "tools/serving_http.py": {
+      "sha256": "287e493db1678b503106c3ce662601d553229062670244c716369a2b619569d8",
+      "blob": "fecc63f2495f7e6159a9c0ee1eeb7f89ebd52fc0"
+    },
+    "tools/serving_cancel_phase.py": {
+      "sha256": "c1a04c343cc4c07ef215d1f7f3c5fde7e84fffb5d44a6e578587339b086dda68",
+      "blob": "fd65d30c123b2cbdc1912af30cd69e9ac1b1e8c8"
+    },
+    "tools/serving_cancel.py": {
+      "sha256": "605460c9bf83815cde88f3d2f5c12dac24e36ada4c28af4c3280b140b3e4570d",
+      "blob": "5a815d9da84e8ac4a52f873de6a04febd73b9c6e"
+    },
+    "tools/test_serving_cancel.py": {
+      "sha256": "c2950ee1e2e4fc63c2d70a1bf4960a9eb2e8b6b5cd3bd04f90b8c5f16371d25d",
+      "blob": "adf1d9bb0d83cc9608e65fe90993b690d5409fe9"
+    },
+    "tools/serving_manifest.py": {
+      "sha256": "12b7f252fb9b40670d53bd751e83992f46b79237cb1e12bf361444fdd5551b6f",
+      "blob": "b53a07c4d96f04e859b6d72689f3539792c1ee22"
+    },
+    "tools/test_serving_cancel_phase.py": {
+      "sha256": "0cdbd44ede3eee175da23964b1c7c639a246f208e9ed96864d2dca6e3f884554",
+      "blob": "5a557625a836e37369317fde675348051b79228e"
+    },
+    "tools/test_serving_trace.py": {
+      "sha256": "e4e4f60d9ef58515ee76ffad2f29590a54e16aac01210943a18533b70f1a8564",
+      "blob": "e92748bfb7a22b5b5fd5df64d4f954059e7a919a"
+    },
+    "tools/serving-release.cells.json": {
+      "sha256": "90c03281164603802e5af9db87062f6be5c4696f16aa24f40e8af13d814796f6",
+      "blob": "121a15343d7555487d8a649bb207df3b76721bde"
+    },
+    "tools/fixtures/phase-cancel-capture.json": {
+      "sha256": "e5b48644d1ab22cf64450fa35d3b737570547d43cd3ed8f536030f0e6bdea9e4",
+      "blob": "d38a34dcf82abede40ed9246f919ca9bb4c41a7c"
+    },
+    "tools/test_serving_release.py": {
+      "sha256": "749eac9fdfca15a88600b57e6dc65e361cb16281fbcf2f670821884dd9860aa8",
+      "blob": "6f7e6f4e8d469d1bc4623e0d8bc4fd223c0b4bf9"
+    }
+  },
+  "tests_or_reads": [
+    "Exact38b..96ec two-file Git delta; all other tree paths unchanged.",
+    "Original finder script copied byte-identically and run on frozen96ec imports in normal/-O.",
+    "Original saved counterexample packets read without mutation, plus valid overlap/type-boundary controls.",
+    "Ownerred/green records verified against actual source/repro hashes; no closed collector audit repeated."
+  ],
+  "validation_gaps": [
+    {
+      "kind": "real_Linux_IO_and_native_C4",
+      "status": "pending_parent_work",
+      "blocks_pure_reader_source_go": false,
+      "description": "Parent separately prepares actualLinuxIO. Source/build/model/controller/physical-lease authentication and complete nativeC4 remain outside this component and this review."
+    }
+  ],
+  "artifacts": {
+    "test_serving_trace.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/test_serving_trace.py",
+      "sha256": "e4e4f60d9ef58515ee76ffad2f29590a54e16aac01210943a18533b70f1a8564"
+    },
+    "optimized-supplied.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/optimized-supplied.stderr",
+      "sha256": "55309ae6667f2c99a4c014bc247c932cbb1a0659cf735ad876601a3f6c909143"
+    },
+    "independent-runs.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/independent-runs.json",
+      "sha256": "bc8556d87c348838f40c4fce57dc0214feead32d608abc5bde3ead05575293d5"
+    },
+    "closure_boundaries.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/closure_boundaries.py",
+      "sha256": "0dab3f862960ca32592a10942d474fb1d479e84ae5af9f1a5f412b2d052407d2"
+    },
+    "serving_cancel.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_cancel.py",
+      "sha256": "605460c9bf83815cde88f3d2f5c12dac24e36ada4c28af4c3280b140b3e4570d"
+    },
+    "serving_cancel_evidence.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_cancel_evidence.py",
+      "sha256": "6b005dfea0104dbec839b6f7115c4ae699b98c09fea69cb1f6fd2c27b1861450"
+    },
+    "serving-release.cells.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving-release.cells.json",
+      "sha256": "90c03281164603802e5af9db87062f6be5c4696f16aa24f40e8af13d814796f6"
+    },
+    "serving_trace.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_trace.py",
+      "sha256": "986eefdee5bc30cb0c8f56b1618554128c69fa9002440bae6d705de118e90db4"
+    },
+    "serving_policy.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_policy.py",
+      "sha256": "d7cb92568dbd45b4433159ee98d216405d76b12cc42a579062298c741b2243c7"
+    },
+    "serving_release.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_release.py",
+      "sha256": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c"
+    },
+    "serving_evidence.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_evidence.py",
+      "sha256": "b5896f13f2b37f0b64719d2f86d663f99e1d28cc05714b32962362d2a4250970"
+    },
+    "test_serving_cancel_evidence.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/test_serving_cancel_evidence.py",
+      "sha256": "ca1c1c1aea97b12688c5e2565170f61171754f7dc1ba294d5edd88b39fc8f338"
+    },
+    "serving_listener.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_listener.py",
+      "sha256": "e71bf54a25ed91f2549ff690ee2a96cbd9db902c8c3af1651f4958f7e196f58e"
+    },
+    "optimized-supplied.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/optimized-supplied.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "serving_cancel_phase.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_cancel_phase.py",
+      "sha256": "c1a04c343cc4c07ef215d1f7f3c5fde7e84fffb5d44a6e578587339b086dda68"
+    },
+    "normal-supplied.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/normal-supplied.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "normal-boundaries.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/normal-boundaries.stderr",
+      "sha256": "538280e07fac2b7d82b40235d0091190e29c00a0f2437dd430b71f9c6b404d48"
+    },
+    "exact.patch": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/exact.patch",
+      "sha256": "6bf3d0fda10892b7ca3a847860bfcb25a57b58285f96b0fb7446bc3d21b3f537"
+    },
+    "boundary-runs.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/boundary-runs.json",
+      "sha256": "9d73865f38e35a1abdb642a6a91d618cf347b564715d7bab5a3d2cc1a8b8126a"
+    },
+    "normal-original-repros.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/normal-original-repros.stderr",
+      "sha256": "8c4c697d61606faff52f2d9ef10e1b13945b03541dc1dd144b108d8622f5b137"
+    },
+    "optimized-boundaries.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/optimized-boundaries.stderr",
+      "sha256": "0105ab6d47ff9e03b6b5ec0b5994a00850fddbe325df509035f9127d6f7ea41a"
+    },
+    "optimized-original-repros.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/optimized-original-repros.stderr",
+      "sha256": "ab4bfd8b0aee31c3f2ff1e7dda7638fd43e19b6acb5ebb91a367e1ad7f376d5f"
+    },
+    "serving_http.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_http.py",
+      "sha256": "287e493db1678b503106c3ce662601d553229062670244c716369a2b619569d8"
+    },
+    "serving_manifest.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_manifest.py",
+      "sha256": "12b7f252fb9b40670d53bd751e83992f46b79237cb1e12bf361444fdd5551b6f"
+    },
+    "serving_lifecycle.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_lifecycle.py",
+      "sha256": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3"
+    },
+    "source-proof.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/source-proof.json",
+      "sha256": "4c71904ed1a729a18eb6274bcc1f76e957d282dfef8fe9f378d4073070e4b64b"
+    },
+    "serving_completion.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_completion.py",
+      "sha256": "bf0d4dd9c569884133d0516e128bfa625cd83d993d62bdda41cb4f1dea3aa1fa"
+    },
+    "optimized-original-repros.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/optimized-original-repros.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "test_serving_cancel.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/test_serving_cancel.py",
+      "sha256": "c2950ee1e2e4fc63c2d70a1bf4960a9eb2e8b6b5cd3bd04f90b8c5f16371d25d"
+    },
+    "serving_process.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_process.py",
+      "sha256": "22dca5e161a926fa8c9382c762223af0b8029ae2cf0c13f16bef7f5066df984a"
+    },
+    "test_serving_cancel_phase.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/test_serving_cancel_phase.py",
+      "sha256": "0cdbd44ede3eee175da23964b1c7c639a246f208e9ed96864d2dca6e3f884554"
+    },
+    "optimized-boundaries.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/optimized-boundaries.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "normal-boundaries.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/normal-boundaries.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "test_serving_release.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/test_serving_release.py",
+      "sha256": "749eac9fdfca15a88600b57e6dc65e361cb16281fbcf2f670821884dd9860aa8"
+    },
+    "normal-original-repros.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/normal-original-repros.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "reader_repros.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/reader_repros.py",
+      "sha256": "beedfb31aa68a606de9a9b772518943d6100cd8151cc10aa618c40676f2e9a3d"
+    },
+    "serving_capture.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/serving_capture.py",
+      "sha256": "4fc3434999a5490a077386a8f235166ed0e87cd997a889eb8e8da8e807aca163"
+    },
+    "normal-supplied.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-evidence-repair-96ec779a-evidence/normal-supplied.stderr",
+      "sha256": "be69794497b98b57969036a4476e66524ded7668c6bcb605016b64b162a5132a"
+    }
+  },
+  "recorded_utc": "2026-09-22T00:17:04.237715+00:00",
+  "limits": [
+    "No owner edits, remote/GPU or rental activity, Cargo build, public post or merge.",
+    "Only pure CPU tests and small reviewer-owned snapshots; priorreports/failures/counterexamplebytes preserved.",
+    "Reader source GO does not confer native, outerC4, merge or separate security-domain approval."
+  ]
+}

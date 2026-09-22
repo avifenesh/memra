@@ -1,0 +1,133 @@
+{
+  "issue": 526,
+  "sidecar": "pure overload_recovery predicate",
+  "base_head": "14f75c67a383a89e3901789c81d839294676237c",
+  "status": "implementation_and_local_cpu_controls_complete_unstaged",
+  "owned_files": [
+    {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/issue-526/tools/serving_recovery.py",
+      "sha256": "ddb271f43d6a36e4f8fc4d26f9ac83b37d8ff2525d6f48c50a651d5a4760152e"
+    },
+    {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/issue-526/tools/test_serving_recovery.py",
+      "sha256": "7936e089166953e0a9efc9f08c35c5c8b9e9c3710aadd8f73a09ba144310507f"
+    }
+  ],
+  "api": {
+    "entrypoint": "serving_recovery.evaluate_overload_recovery_cell(required, program, *, attempts, health_samples)",
+    "success": "Derived denominator, per-role IDs, full wire counts, peer/recovery completion rows, typed refusals with retry and spanning-peer IDs, and complete generation census; no passed or qualification boolean.",
+    "failure": "serving_release.ServingGateError",
+    "required": "One overload_recovery cell returned by serving_manifest.required_cells with independently trusted bytes and release scope; exact four true requirement flags.",
+    "program": "Exact cell_id, scope, server_identity, mode=overload_then_recovery, requests. Each request has id/role/model/wire/path/payload. peer/recovery additionally have inclusive positive prompt_tokens and completion_tokens ranges. refused instead has one frozen error_code in shed_queue/shed_deadline/shed_queue_wait. 3..256 requests, at least one per role.",
+    "observations": "All planned IDs exactly once. Requests carry POST/path/server_identity/timestamps/status/body bytes/raw response headers/optional transport_error; health carries unique id, GET /health, same identity, timestamps, status200 and raw status=ok/worker.generation. Complete before/after health brackets for every request including refusal.",
+    "ordering": "Every refusal is strictly spanned by at least one clean peer client interval. All recovery captures start strictly after all peer/refused captures finish. Same worker generation throughout all health samples, including between phases."
+  },
+  "source_contracts": [
+    {
+      "path": "crates/memra-server/src/lib.rs",
+      "line": 2758,
+      "end_line": 2846,
+      "contract": "reserve_pending_admit_with_ceiling: queue-bound/deadline/wait-ceiling branches return 429 rate_limit_error with shed_queue/shed_deadline/shed_queue_wait, retry estimate supplied."
+    },
+    {
+      "path": "crates/memra-server/src/lib.rs",
+      "line": 3889,
+      "end_line": 3902,
+      "contract": "error_body has message/type/param/code; these three queue branches supply param=None."
+    },
+    {
+      "path": "crates/memra-server/src/lib.rs",
+      "line": 3969,
+      "end_line": 4007,
+      "contract": "context_length_exceeded is400; quota rate_limit_exceeded is429; overloaded is503. They do not prove the selected queue scenario."
+    },
+    {
+      "path": "crates/memra-server/src/lib.rs",
+      "line": 4043,
+      "end_line": 4075,
+      "contract": "Retry-After canonical decimal seconds clamped1..60; retry-after-ms exactlyseconds*1000. overloaded503 is also used for worker unavailability."
+    },
+    {
+      "path": "crates/memra-server/src/lib.rs",
+      "line": 6206,
+      "end_line": 6225,
+      "contract": "Normal health is status200/status=ok; draining is also200 but distinct, unhealthy503 is refused by this predicate."
+    }
+  ],
+  "cpu_validation": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "python": "3.14.7 (main, Aug  5 2026, 10:29:49) [Clang 21.0.0 (clang-2100.1.1.101)]",
+    "new_tests": 28,
+    "total_tests": 61,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "command": [
+      "/opt/homebrew/opt/python@3.14/bin/python3.14",
+      "-B",
+      "-m",
+      "unittest",
+      "-v",
+      "test_serving_recovery",
+      "test_serving_completion",
+      "test_serving_lifecycle",
+      "test_serving_release",
+      "test_serving_manifest"
+    ],
+    "cwd": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/issue-526/tools",
+    "raw_log": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/performance-scratch/serving-recovery-implementation/cpu-final-pu8or88y/unittest.log",
+    "run_record": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/performance-scratch/serving-recovery-implementation/cpu-final-pu8or88y/run.json",
+    "hashes_before_after_equal": true,
+    "source_snapshots": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/performance-scratch/serving-recovery-implementation/cpu-final-pu8or88y/source",
+    "earlier_26_test_run": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/performance-scratch/serving-recovery-implementation/cpu-initial-dwgx926e"
+  },
+  "false_acceptance_controls": [
+    "missing/duplicate/empty/unplanned IDs and missing role denominator",
+    "context400/quota429/worker503/wrong typed queue code",
+    "valid-looking bytes with client cancel/transport read failure",
+    "200 with missing/truncated terminal, missing usage or empty output",
+    "missing/duplicate/contradictory/out-of-source-range retry headers",
+    "no spanning peer or late unrelated refusal despite clean_success2/refused1 counts",
+    "recovery preceding completion of any pressure request",
+    "worker change BETWEEN individually unaffected request phases",
+    "missing refusal generation bracket, owner/path/method substitution",
+    "weakened required flags and capture-supplied success summaries"
+  ],
+  "unchanged_source_bindings": {
+    "tools/serving_completion.py": "bf0d4dd9c569884133d0516e128bfa625cd83d993d62bdda41cb4f1dea3aa1fa",
+    "tools/test_serving_completion.py": "43e2f9b5eb92a303538766834569a14a6425b5936c7d3f939ecba5f429f03ece",
+    "tools/serving_lifecycle.py": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3",
+    "tools/test_serving_lifecycle.py": "37006bd0e7ccc4cbb1626e35a8b9f033528820585394bc0a4a6d2e094ce9a2a1",
+    "tools/serving_policy.py": "d7cb92568dbd45b4433159ee98d216405d76b12cc42a579062298c741b2243c7",
+    "tools/serving_release.py": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c",
+    "tools/test_serving_release.py": "749eac9fdfca15a88600b57e6dc65e361cb16281fbcf2f670821884dd9860aa8",
+    "tools/serving_manifest.py": "12b7f252fb9b40670d53bd751e83992f46b79237cb1e12bf361444fdd5551b6f",
+    "tools/test_serving_manifest.py": "db189ad35082ce1fb40c91e8cecd8d8638be5531d16c763932341e8cf403fe6d",
+    "tools/serving-release.cells.json": "90c03281164603802e5af9db87062f6be5c4696f16aa24f40e8af13d814796f6",
+    "crates/memra-server/src/lib.rs": "dd613fde9c4ddb1a28effe4cc37c2c95da2e6fe9f7e3ffb32119b5da303127f3"
+  },
+  "ccaa_helpers_identical_at_14f": {
+    "tools/serving_policy.py": true,
+    "tools/serving_process.py": true,
+    "tools/serving_release.py": true,
+    "tools/serving_lifecycle.py": true
+  },
+  "limits": [
+    "Pure synthetic raw-wire CPU fixtures, not native serving execution or release qualification. No GPU, remote job, socket or process startup was performed for this sidecar.",
+    "Caller must authenticate independent required scope/manifest, frozen program and all payloads/IDs, actual collector listener/process identity, source/binary/artifacts and card lease. This pure API checks consistency, not provenance.",
+    "Only source queue429 codes are accepted. Generic overloaded503 and quota rate_limit_exceeded429 remain unsupported for this queue-specific predicate.",
+    "Header clamp and paired units are checked, not the unobserved queue estimate/depth, billing or client adherence to retry delay.",
+    "Spanning intervals are client capture observations, not proof of concurrent server/GPU execution or last-write time. No throughput/latency benchmark claim.",
+    "Current implementation requires GET metadata on health as well as POST/path/owner metadata on all requests; collector mapping/integration remains parent-owned."
+  ],
+  "workspace": {
+    "changed_repo_paths": [
+      "tools/serving_recovery.py",
+      "tools/test_serving_recovery.py"
+    ],
+    "staged_paths": [],
+    "committed": false,
+    "pushed": false,
+    "other_repo_paths_modified_by_this_sidecar": []
+  }
+}

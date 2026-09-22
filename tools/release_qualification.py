@@ -245,32 +245,63 @@ def coverage_module():
     return module
 
 
-def validate_lease(lease, run):
+def validate_physical_lease(lease, run):
+    """Validate a closed physical-card lease without selecting a model's rig.
+
+    This is receipt validation, not proof that a lock is currently held. Capture
+    must verify live wrapper ancestry and FLOCK ownership; callers must also bind
+    the source, binary, numerical environment and model-specific hardware scope.
+    Requested device order defines CUDA ordinals; locks use sorted UUID order.
+    """
+    import math
+
     ids = lease["requested_uuids"]
-    require(ids and len(set(ids)) == len(ids) and all(isinstance(x, str) and GPU_UUID.fullmatch(x) for x in ids),
+    require(type(ids) is list and ids
+            and all(isinstance(x, str) and GPU_UUID.fullmatch(x) for x in ids)
+            and len(set(ids)) == len(ids),
             "invalid physical GPU set")
+    require(all(type(lease[k]) is int and lease[k] > 1 for k in ("wrapper_pid", "child_pid"))
+            and lease["wrapper_pid"] != lease["child_pid"], "invalid lease process identities")
     require(lease["lock_order"] == sorted(ids) and lease["lock_files"] ==
             {x: f"/tmp/memra-gpu-locks/{x}.lock" for x in ids}, "lease physical locks mismatch")
-    require(lease["state"] == "finished" and lease["exit_code"] == 0 and lease["child_exit_code"] == 0
+    require(lease["state"] == "finished"
+            and all(type(lease[k]) is int and lease[k] == 0 for k in ("exit_code", "child_exit_code"))
             and lease["timed_out"] is False and lease["interrupted_signal"] is None
             and lease["lingering_compute"] == [], "native lease did not finish cleanly")
-    require(run["lease_owner"] == {k: lease[k] for k in ("wrapper_pid", "child_pid", "requested_uuids")},
+    require(all(type(run["lease_owner"].get(k)) is int for k in ("wrapper_pid", "child_pid"))
+            and run["lease_owner"] == {k: lease[k] for k in ("wrapper_pid", "child_pid", "requested_uuids")},
             "run and completed lease identities differ")
+    times = (lease["started_unix"], run["started_unix"], run["finished_unix"], lease["finished_unix"])
+    require(all(type(t) in (int, float) and t >= 0
+                and (type(t) is int or math.isfinite(t)) for t in times),
+            "invalid lease/run timestamps")
     require(lease["started_unix"] <= run["started_unix"] < run["finished_unix"] <= lease["finished_unix"],
             "run is outside the completed lease interval")
     devices = run["hardware"]["devices"]
     require([d["uuid"] for d in devices] == ids, "hardware differs from leased GPU set")
+    require([d["uuid"] for d in lease["devices"]] == ids and
+            [d["name"] for d in lease["devices"]] == [d["name"] for d in devices],
+            "hardware observation and lease differ")
+    indices = [d["index"] for d in lease["devices"]]
+    require(all(type(index) is int and index >= 0 for index in indices)
+            and len(set(indices)) == len(indices)
+            and [d["index"] for d in devices] == [str(index) for index in indices],
+            "physical GPU indices differ or are duplicated")
+    require(run["numeric_environment"].get("CUDA_VISIBLE_DEVICES") == digest(",".join(ids).encode()),
+            "CUDA visibility does not bind the leased physical UUIDs in order")
+
+
+def validate_lease(lease, run):
+    """The generic battery's existing single-card GPU0 / PRO6000 profile."""
+    validate_physical_lease(lease, run)
+    ids = lease["requested_uuids"]
+    devices = run["hardware"]["devices"]
     require(len(ids) == 1, "generic release battery currently qualifies one physical card; use a separate Step gate for topology claims")
     require(run["hardware"]["headroom_query"] == {"nvml_index": 0, "uuid": ids[0]}
             and devices[0]["index"] == "0" and lease["devices"][0]["index"] == 0,
             "CUDA UUID and battery NVML GPU0 headroom selection differ")
-    require(run["numeric_environment"].get("CUDA_VISIBLE_DEVICES") == digest(ids[0].encode()),
-            "CUDA visibility does not bind the leased physical UUID")
     require(all("RTX PRO 6000 Blackwell" in d["name"] and d["compute_cap"] == "12.0"
                 and d["driver_version"] for d in devices), "wrong release rig/architecture")
-    require([d["uuid"] for d in lease["devices"]] == ids and
-            [d["name"] for d in lease["devices"]] == [d["name"] for d in devices],
-            "hardware observation and lease differ")
 
 
 def validate_build(build, source, source_reference, evidence):

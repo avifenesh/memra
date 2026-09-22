@@ -110,6 +110,11 @@ jobs:
       - name: Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)
         run: tools/unittest-floor.sh tools test_cache_qualification.py 15
 
+      - name: Serving qualification collector and policy controls (CPU only)
+        # Real listener ownership checks require a complete host procfs FD view.
+        # Root is confined to this disposable runner's tests; no GPU/model is used.
+        run: sudo env CUDA_VISIBLE_DEVICES= PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools -p 'test_serving_*.py' -v
+
       - name: CPU-only artifact path safety tests
         run: python3 tools/test_nvme_builder_safety.py
 

@@ -1281,6 +1281,14 @@ impl Event {
     }
 }
 
+/// Why the worker must stop producing events. A queue overflow is not evidence
+/// that the HTTP client disconnected, even if the receiver subsequently drops.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EventCloseReason {
+    QueueOverflow,
+    ReceiverDropped,
+}
+
 #[derive(Debug)]
 struct EventQueueState {
     events: std::sync::atomic::AtomicUsize,
@@ -1363,10 +1371,21 @@ impl EventSender {
     }
 
     pub fn is_closed(&self) -> bool {
-        self.state
+        self.close_reason().is_some()
+    }
+
+    pub(crate) fn close_reason(&self) -> Option<EventCloseReason> {
+        if self
+            .state
             .overflowed
             .load(std::sync::atomic::Ordering::Acquire)
-            || self.inner.is_closed()
+        {
+            Some(EventCloseReason::QueueOverflow)
+        } else if self.inner.is_closed() {
+            Some(EventCloseReason::ReceiverDropped)
+        } else {
+            None
+        }
     }
 
     pub async fn closed(&self) {
@@ -19938,6 +19957,13 @@ pub fn run(
     };
     crate::affinity::apply_and_announce(&affinity);
 
+    // A supervisor respawn is a new owner even though its command receiver survives.
+    // External lifecycle captures also bind the process boot/start identity.
+    static NEXT_WORKER_GENERATION: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(1);
+    let worker_generation =
+        NEXT_WORKER_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
     // memra#187: validate deployment suitability for predictive admission enforcement before allocating CUDA engines
     let admit_predict_cfg = crate::admit_predict::ShadowConfig::from_env();
     if let Err(err_msg) =
@@ -21282,7 +21308,7 @@ pub fn run(
     // what makes a respawn's success observable.
     health.mark_ready();
 
-    loop {
+    'worker: loop {
         // WP-A day 17 (memra#536 Move 1): the tick-top poll of the one `Demoting` entry. Its D2H
         // rides the transfer engine's copy stream; publication into the host prefix index happens
         // HERE, on the owner thread, once every item's event has completed, before admission so
@@ -21359,6 +21385,7 @@ pub fn run(
                         health.set_phase(crate::health::PHASE_BUSY);
                         handle_cmd(
                             cmd,
+                            worker_generation,
                             &loaded,
                             &dsv4_routes,
                             &order,
@@ -21389,6 +21416,7 @@ pub fn run(
                                 health.set_phase(crate::health::PHASE_BUSY);
                                 handle_cmd(
                                     cmd,
+                                    worker_generation,
                                     &loaded,
                                     &dsv4_routes,
                                     &order,
@@ -21425,6 +21453,7 @@ pub fn run(
                 match rx.recv_timeout(wait) {
                     Ok(cmd) => handle_cmd(
                         cmd,
+                        worker_generation,
                         &loaded,
                         &dsv4_routes,
                         &order,
@@ -21434,7 +21463,7 @@ pub fn run(
                         &mut pending_handoffs,
                     ),
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,
                 }
             }
         }
@@ -21447,6 +21476,7 @@ pub fn run(
             match rx.try_recv() {
                 Ok(cmd) => handle_cmd(
                     cmd,
+                    worker_generation,
                     &loaded,
                     &dsv4_routes,
                     &order,
@@ -21458,7 +21488,7 @@ pub fn run(
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     if active.is_empty() {
-                        return;
+                        break 'worker;
                     } else {
                         break;
                     }
@@ -21619,15 +21649,25 @@ pub fn run(
         // inserts consult it. No-op (no driver call) while disarmed.
         kv_flex.refresh_grant(&engine);
         while let Some(mut req) = queue.pop_front() {
-            // DISCONNECT ABORT (gap-scan F8): a queued request whose client already hung
-            // up (receiver dropped) never reaches the GPU — dropped here, logged for the
-            // metering record (0 generated; prompt never primed).
+            // DISCONNECT ABORT (gap-scan F8): drop a closed queued request before
+            // admission. A parked request may still own an asynchronous restore;
+            // dropping its Box does not establish release of that cache/pin/ticket.
             if req.tx.is_closed() {
+                let trace = req.ttft.clone();
+                observe_receiver_close(trace.as_ref(), &req.tx);
+                let trace = queued_retirement_trace(trace, &req.request_id, hpx.restoring.as_ref());
                 eprintln!(
                     "[abort] client disconnected while queued (model {:?}); dropped",
                     req.model
                 );
                 release_admission_reservation(req.lane);
+                drop(req);
+                if let Some(trace) = trace {
+                    trace.mark_retired_at(
+                        crate::ttft::RetirementOutcome::Aborted,
+                        crate::ttft::RetirementSite::WorkerQueue,
+                    );
+                }
                 continue;
             }
             // KV-FLEX SHED-ON-ARRIVAL (lane/kv-flex-20260831, tiering spec Arc G): a
@@ -23001,6 +23041,12 @@ pub fn run(
                     dspark_drafts.contains_key(&req.model),
                 )
             {
+                if let Some(trace) = req.ttft.as_ref() {
+                    // This is an actual requeue with separately owned restore resources.
+                    // Its single-attempt trace stays ineligible even if a later lost
+                    // observation quarantines the restore and clears hpx.restoring.
+                    trace.mark_requeued();
+                }
                 requeue.push_back(req); // waits (FIFO), never shed: its restore is in flight
                 parked_on_promote += 1;
                 continue;
@@ -23287,6 +23333,7 @@ pub fn run(
             match rx.recv_timeout(Duration::from_millis(2)) {
                 Ok(cmd) => handle_cmd(
                     cmd,
+                    worker_generation,
                     &loaded,
                     &dsv4_routes,
                     &order,
@@ -23296,7 +23343,7 @@ pub fn run(
                     &mut pending_handoffs,
                 ),
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,
             }
         }
 
@@ -24986,6 +25033,15 @@ pub fn run(
             );
         }
         for &i in finished.iter().rev() {
+            // Declaration order is intentional: every remaining Session field drops
+            // before this guard, including on an early continue. Replays and unwinding
+            // never produce a clean retirement observation.
+            let _retirement_trace =
+                AbortedRetirementTrace(if active[i].aborted && !active[i].oom_teardown {
+                    active[i].ttft.clone()
+                } else {
+                    None
+                });
             let mut s = active.remove(i);
             // One retirement receipt, never per-token logging or a sampler policy switch.
             if !s.oom_teardown {
@@ -25729,6 +25785,7 @@ fn fail_request(mut req: Box<Request>, error: EngineError) {
 #[allow(clippy::too_many_arguments)] // one parked-reply vec per admin command class
 fn handle_cmd(
     cmd: Cmd,
+    worker_generation: u64,
     loaded: &HashMap<String, LoadedModel>,
     dsv4_routes: &HashMap<String, std::sync::mpsc::Sender<Box<Request>>>,
     order: &[String],
@@ -25795,6 +25852,10 @@ fn handle_cmd(
                 ));
                 fail_request(req, error);
                 return;
+            }
+            if let Some(trace) = req.ttft.as_ref() {
+                trace.bind_worker(worker_generation, "shared_gpu_worker");
+                trace.mark_queued();
             }
             queue.push_back(req);
         }
@@ -26856,6 +26917,9 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         loaded.contains_key(&s.model),
         "parked session's model must still be loaded"
     );
+    if let Some(trace) = s.ttft.as_ref() {
+        trace.mark_requeued();
+    }
     Some(Box::new(Request {
         model: s.model.clone(),
         prompt_ids: p.prompt_ids.clone(),
@@ -30797,9 +30861,16 @@ fn prefill_tick(
                             .glm5_plain_prime_start(engine, cache, &chunk, q - take)?,
                     );
             }
-            let mut walker = lm
+            let walker = lm
                 .model
                 .glm5_plain_prime_walker(engine, &mut s.glm5_plain_prime);
+            let scope = if q > take {
+                crate::prime_observation::PrimeScope::SegmentWithContinuation
+            } else {
+                crate::prime_observation::PrimeScope::RemainingPrompt
+            };
+            let mut walker =
+                crate::prime_observation::observe_prime(walker, s.ttft.as_deref(), scope);
             if !s.prime_service.advance(&mut walker)? {
                 return Ok(0);
             }
@@ -30823,12 +30894,32 @@ fn prefill_tick(
                 let tx = s.tx.clone();
                 Box::new(move || tx.is_closed())
             });
-            let (l, _h, x) = lm.model.prime_cache_overlaid(
-                engine,
-                &chunk,
-                s.cache.as_mut().unwrap(),
-                s.prefill_queue.len(),
-                ov_window.as_ref(),
+            let trace = if s.vision.is_none() && s.capture.is_none() {
+                s.ttft.as_deref()
+            } else {
+                None
+            };
+            let scope = if s.prefill_queue.is_empty() {
+                crate::prime_observation::PrimeScope::RemainingPrompt
+            } else {
+                crate::prime_observation::PrimeScope::SegmentWithContinuation
+            };
+            let (l, _h, x) = crate::prime_observation::observe_call(
+                trace,
+                memra_engine::prime_walker::PrimeChunk {
+                    phase: "plain-prime-call",
+                    rows: chunk.len(),
+                },
+                scope,
+                || {
+                    lm.model.prime_cache_overlaid(
+                        engine,
+                        &chunk,
+                        s.cache.as_mut().unwrap(),
+                        s.prefill_queue.len(),
+                        ov_window.as_ref(),
+                    )
+                },
             )?;
             (l, x)
         };
@@ -30905,9 +30996,25 @@ fn prefill_tick(
                 let _ = s.tx.send(Event::PromptCapture { hidden, logits });
             }
         } else {
-            s.last_logits = lm
-                .model
-                .decode_step(engine, tok, s.cache.as_mut().unwrap())?;
+            let trace = if s.vision.is_none() && s.capture.is_none() {
+                s.ttft.as_deref()
+            } else {
+                None
+            };
+            let scope = if s.prefill_queue.is_empty() {
+                crate::prime_observation::PrimeScope::RemainingPrompt
+            } else {
+                crate::prime_observation::PrimeScope::SegmentWithContinuation
+            };
+            s.last_logits = crate::prime_observation::observe_call(
+                trace,
+                memra_engine::prime_walker::PrimeChunk {
+                    phase: "plain-prompt-token",
+                    rows: 1,
+                },
+                scope,
+                || lm.model.decode_step(engine, tok, s.cache.as_mut().unwrap()),
+            )?;
         }
         if let Some(&target) = s.prefill_queue.front() {
             write_confidence_trace(s, tok, target, &s.last_logits)?;
@@ -31921,13 +32028,18 @@ fn step_session(
                 .constraint
                 .as_mut()
                 .map(|c| crate::constrained::SpecGrammar::new(c, lm.eos_id));
-            let mut walker = lm.model.mtp_prime_walker(
+            let walker = lm.model.mtp_prime_walker(
                 engine,
                 spec,
                 &mut s.mtp_prime,
                 grammar
                     .as_mut()
                     .map(|g| g as &mut dyn memra_engine::spec::SpecConstraint),
+            );
+            let mut walker = crate::prime_observation::observe_prime(
+                walker,
+                s.ttft.as_deref(),
+                crate::prime_observation::PrimeScope::RemainingPrompt,
             );
             if !s.prime_service.advance(&mut walker)? {
                 return Ok(true);
@@ -32722,7 +32834,12 @@ fn step_dspark_spec(
                 )?,
             });
         }
-        let mut walker = lm.model.dspark_prime_walker(engine, d, &mut s.dspark_prime);
+        let walker = lm.model.dspark_prime_walker(engine, d, &mut s.dspark_prime);
+        let mut walker = crate::prime_observation::observe_prime(
+            walker,
+            s.ttft.as_deref(),
+            crate::prime_observation::PrimeScope::RemainingPrompt,
+        );
         if !s.prime_service.advance(&mut walker)? {
             return Ok(true);
         }
@@ -33071,7 +33188,12 @@ fn step_glm5_spec(
                 )?,
             });
         }
-        let mut walker = lm.model.glm5_prime_walker(engine, &mut s.glm5_prime);
+        let walker = lm.model.glm5_prime_walker(engine, &mut s.glm5_prime);
+        let mut walker = crate::prime_observation::observe_prime(
+            walker,
+            s.ttft.as_deref(),
+            crate::prime_observation::PrimeScope::RemainingPrompt,
+        );
         if !s.prime_service.advance(&mut walker)? {
             return Ok(true);
         }
@@ -33376,6 +33498,9 @@ fn glm5_prof_rounds_flush(s: &mut Session, force: bool) {
 }
 
 fn abort_log(s: &mut Session) {
+    if !s.aborted {
+        observe_receiver_close(s.ttft.as_ref(), &s.tx);
+    }
     s.aborted = true;
     eprintln!(
         "[abort] client disconnected: model {:?}, prompt {} ({} cached, {} fed), \
@@ -33387,6 +33512,44 @@ fn abort_log(s: &mut Session) {
         s.generated.len(),
         s.t0.elapsed().as_secs_f64()
     );
+}
+
+/// Only retain a queue-retirement observer when this request has no outstanding
+/// restore owner. This never settles or drops GPU resources; normal restore
+/// polling, expiry and quarantine keep their existing lifetime rules.
+fn queued_retirement_trace(
+    trace: Option<Arc<crate::ttft::Trace>>,
+    request_id: &str,
+    restoring: Option<&PendingRestore>,
+) -> Option<Arc<crate::ttft::Trace>> {
+    trace.filter(|_| restoring.is_none_or(|restore| restore.request_id != request_id))
+}
+
+fn observe_receiver_close(trace: Option<&Arc<crate::ttft::Trace>>, tx: &EventSender) {
+    if let Some(trace) = trace
+        && let Some(reason) = tx.close_reason()
+    {
+        let cause = match reason {
+            EventCloseReason::QueueOverflow => crate::ttft::ReceiverCloseCause::EventQueueOverflow,
+            EventCloseReason::ReceiverDropped => crate::ttft::ReceiverCloseCause::ReceiverDropped,
+        };
+        trace.mark_receiver_closed(cause);
+    }
+}
+
+struct AbortedRetirementTrace(Option<Arc<crate::ttft::Trace>>);
+
+impl Drop for AbortedRetirementTrace {
+    fn drop(&mut self) {
+        if let Some(trace) = self.0.as_ref()
+            && !std::thread::panicking()
+        {
+            trace.mark_retired_at(
+                crate::ttft::RetirementOutcome::Aborted,
+                crate::ttft::RetirementSite::ActiveSession,
+            );
+        }
+    }
 }
 
 /// PRIME CANCELLATION (memra#536 item 2): a `prefill_tick` error that is the engine's typed
@@ -34412,6 +34575,7 @@ mod tests {
     #[tokio::test]
     async fn slow_reader_queue_is_bounded_and_cancels_only_its_request() {
         let (tx, mut rx) = event_channel();
+        assert_eq!(tx.close_reason(), None);
         for id in 0..MAX_EVENT_QUEUE_EVENTS {
             tx.send(Event::Token {
                 id: id as u32,
@@ -34427,6 +34591,10 @@ mod tests {
             .is_err()
         );
         assert!(tx.is_closed(), "queue overflow must cancel the producer");
+        assert_eq!(
+            tx.close_reason(),
+            Some(super::EventCloseReason::QueueOverflow)
+        );
         let mut received = 0usize;
         while rx.recv().await.is_some() {
             received += 1;
@@ -34435,6 +34603,12 @@ mod tests {
             }
         }
         assert_eq!(received, MAX_EVENT_QUEUE_EVENTS);
+        drop(rx);
+        assert_eq!(
+            tx.close_reason(),
+            Some(super::EventCloseReason::QueueOverflow),
+            "dropping a failed stream must not relabel overflow as a client disconnect"
+        );
 
         let (healthy_tx, mut healthy_rx) = event_channel();
         healthy_tx
@@ -34447,6 +34621,12 @@ mod tests {
             healthy_rx.recv().await,
             Some(Event::Token { id: 7, .. })
         ));
+        assert_eq!(healthy_tx.close_reason(), None);
+        drop(healthy_rx);
+        assert_eq!(
+            healthy_tx.close_reason(),
+            Some(super::EventCloseReason::ReceiverDropped)
+        );
     }
 
     #[test]
@@ -42993,6 +43173,73 @@ mod tests {
         assert!(kept.ready && kept.pool_key == b);
     }
 
+    #[test]
+    fn channel_disconnects_reach_pending_d2d_shutdown_drains() {
+        let worker = include_str!("worker.rs");
+        let run = &worker[worker.find("pub fn run(").unwrap()..];
+        let run = &run[..run.find("\nfn fail_request(").unwrap()];
+        let loop_start = run
+            .find("health.mark_ready();\n\n    'worker: loop {")
+            .expect("disconnect breaks target the worker loop");
+        let timed = loop_start
+            + run[loop_start..]
+                .find("match rx.recv_timeout(wait)")
+                .unwrap();
+        let drain = timed + run[timed..].find("match rx.try_recv()").unwrap();
+        let receive_end = drain
+            + run[drain..]
+                .find("\n        resolve_constraint_compiles(")
+                .unwrap();
+        let parked = run
+            .find("match rx.recv_timeout(Duration::from_millis(2))")
+            .unwrap();
+        let capture = run
+            .find("host_capture_drain_at_shutdown(&mut hpx);")
+            .unwrap();
+        let restore = run
+            .find("host_restore_drain_at_shutdown(&mut hpx);")
+            .unwrap();
+        let loop_body = &run[loop_start..capture];
+        // Inventory the whole command-channel receive surface, including the two idle
+        // exits before `timed` and the parked-only receive after `receive_end`.
+        assert_eq!(loop_body.matches("match rx.").count(), 5);
+        assert_eq!(loop_body.matches("rx.try_recv()").count(), 2);
+        assert_eq!(loop_body.matches("rx.recv()").count(), 1);
+        assert_eq!(loop_body.matches("rx.recv_timeout(").count(), 2);
+        assert!(
+            run[loop_start..timed].contains("Err(_) => break, // all senders dropped -> shutdown")
+        );
+        assert!(
+            run[loop_start..timed]
+                .contains("Err(std::sync::mpsc::TryRecvError::Disconnected) => break,")
+        );
+        assert!(
+            run[timed..drain]
+                .contains("Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,"),
+            "timed receive must leave through the shutdown tail"
+        );
+        assert!(
+            run[drain..receive_end].contains(
+                "Err(std::sync::mpsc::TryRecvError::Disconnected) => {\n                    if active.is_empty() {\n                        break 'worker;"
+            ),
+            "empty-active disconnect must drain even with a queued pending restore"
+        );
+        assert!(
+            run[parked..capture]
+                .contains("Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,"),
+            "parked-only disconnect must drain the pending restore"
+        );
+        assert_eq!(
+            loop_body
+                .matches("Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,")
+                .count(),
+            2
+        );
+        assert!(!loop_body.contains("=> return"));
+        assert!(!loop_body.contains("return;"));
+        assert!(receive_end < parked && parked < capture && capture < restore);
+    }
+
     /// Every path that meets a `Capturing` entry does what the pre-registration says (a source
     /// census over the run loop and the route): the tick top polls it after the demote and promote
     /// polls; the idle waits count it; a tenant purge settles it and drops the revoked tenant's; the
@@ -43089,16 +43336,86 @@ mod tests {
     /// none of it); and a refused submission drains the owner stream before releasing the
     /// producer fence, latching the route off if the fence will not release.
     #[test]
+    fn queued_retirement_does_not_claim_request_owned_restore_release() {
+        for (restore_id, ready, was_parked, expected_clean) in [
+            (None, false, false, true),
+            (Some("queued-request"), false, false, false),
+            (Some("queued-request"), true, false, false),
+            (Some("another-request"), false, false, true),
+            (None, false, true, false),
+        ] {
+            let restoring = restore_id.map(|request_id| super::PendingRestore {
+                request_id: request_id.to_string(),
+                pool_key: ("fixture".to_string(), "namespace".to_string()),
+                pin: None,
+                toks_len: 1,
+                bytes: 1,
+                cache: None,
+                contract: None,
+                ready,
+                ready_ticks: 0,
+                t0: std::time::Instant::now(),
+                polls: 0,
+                copy_ms: 0.0,
+                settled_by: String::new(),
+            });
+            let trace = crate::ttft::Trace::for_test("/v1/completions");
+            trace.bind_request("queued-request", "fixture");
+            trace.bind_worker(1, "shared_gpu_worker");
+            trace.mark_queued();
+            if was_parked {
+                trace.mark_requeued();
+            }
+            trace.mark_http_pending_drop();
+            trace.mark_receiver_closed(crate::ttft::ReceiverCloseCause::ReceiverDropped);
+            let observer = trace.observe_for_test();
+            let retirement = super::queued_retirement_trace(
+                Some(trace.clone()),
+                "queued-request",
+                restoring.as_ref(),
+            );
+            drop(trace); // The queued Box<Request>'s trace reference has gone.
+            if let Some(trace) = retirement {
+                trace.mark_retired_at(
+                    crate::ttft::RetirementOutcome::Aborted,
+                    crate::ttft::RetirementSite::WorkerQueue,
+                );
+            }
+            let lines = observer.json_lines();
+            let clean = lines.iter().any(|line| {
+                line.contains("\"event\":\"retired\"")
+                    && line.contains("\"retirement_site\":\"WorkerQueue\"")
+                    && line.contains("\"sequence_valid\":true")
+            });
+            assert_eq!(clean, expected_clean);
+            if restore_id == Some("queued-request") {
+                assert!(
+                    !lines
+                        .iter()
+                        .any(|line| line.contains("\"event\":\"retired\""))
+                );
+            }
+            if was_parked {
+                assert!(lines.iter().any(|line| line.contains("request_requeued")));
+            }
+        }
+    }
+
+    #[test]
     fn a_session_retire_settles_a_pending_capture_before_the_cache_moves_and_a_refused_submission_releases_its_fence()
      {
         let worker = include_str!("worker.rs");
         let body = &worker[..worker.find("#[cfg(test)]\nmod tests").unwrap()];
         let remove = body.find("let mut s = active.remove(i);").unwrap();
+        let retire_loop = body[..remove]
+            .rfind("for &i in finished.iter().rev() {")
+            .expect("session removal is inside the retirement loop");
         let settle = body[..remove]
             .rfind("host_capture_settle_pending(")
             .expect("a pending capture settles before any session leaves active");
+        // Diagnostic guards inside the loop do not move the settlement boundary.
         assert!(
-            remove - settle < 400,
+            settle < retire_loop && retire_loop - settle < 400,
             "the settle sits right before the retire loop"
         );
         assert!(body[settle..settle + 200].contains("ContractWait::Block"));

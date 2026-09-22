@@ -1,0 +1,52 @@
+{
+  "cpu_only": true,
+  "python": "3.12.3",
+  "source_before": {
+    "serving_capture.py": "023ee6039307227cb0c54de222b154a881f5eff5a95239bf9d095cbc04e6ad91",
+    "test_serving_capture.py": "11b9309a104ce6018fc8ef015e843b15835eac828af882c7df8cb37a8c1498de",
+    "serving_http.py": "287e493db1678b503106c3ce662601d553229062670244c716369a2b619569d8",
+    "serving_release.py": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c",
+    "serving_process.py": "117fef5fe7bd74c51f696236a4a2bce982da3917ba8c5dcd5988338c18e2d16a",
+    "serving_listener.py": "e71bf54a25ed91f2549ff690ee2a96cbd9db902c8c3af1651f4958f7e196f58e",
+    "serving_lifecycle.py": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3",
+    "serving_capture-before.py": "9518423e2f25d86bfdec046e333fedcb2728b6f788266b9b8509a2612333cc26"
+  },
+  "source_after": {
+    "serving_capture.py": "023ee6039307227cb0c54de222b154a881f5eff5a95239bf9d095cbc04e6ad91",
+    "test_serving_capture.py": "11b9309a104ce6018fc8ef015e843b15835eac828af882c7df8cb37a8c1498de",
+    "serving_http.py": "287e493db1678b503106c3ce662601d553229062670244c716369a2b619569d8",
+    "serving_release.py": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c",
+    "serving_process.py": "117fef5fe7bd74c51f696236a4a2bce982da3917ba8c5dcd5988338c18e2d16a",
+    "serving_listener.py": "e71bf54a25ed91f2549ff690ee2a96cbd9db902c8c3af1651f4958f7e196f58e",
+    "serving_lifecycle.py": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3",
+    "serving_capture-before.py": "9518423e2f25d86bfdec046e333fedcb2728b6f788266b9b8509a2612333cc26"
+  },
+  "results": {
+    "red": {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "test_serving_capture.CaptureInputTests.test_interruption_inside_thread_start_still_joins_native_worker",
+        "-v"
+      ],
+      "exit_code": 1,
+      "log_sha256": "75933825aa9ea0cd9c3284d4571523aac8ade0791f3998347177e6ba7e6b0557"
+    },
+    "green": {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        ".",
+        "-p",
+        "test_serving_capture.py",
+        "-v"
+      ],
+      "exit_code": 0,
+      "log_sha256": "43e382619d0b768f57207d0e4570999250d343772f84b57f34d252c0e1c1c3f8"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "checked_at": "2026-09-21T12:12:18.726879+00:00",
+  "command": [
+    "python3",
+    "-B",
+    "-m",
+    "unittest",
+    "-v",
+    "test_serving_cancel.CancellationOrderTests",
+    "test_serving_cancel.CancelPolicyTests",
+    "test_serving_release",
+    "test_serving_lifecycle"
+  ],
+  "exit": 0,
+  "source_sha256": {
+    "serving_cancel.py": "59a377d507d725730fa6f127127e5156191ea5304f42fd832374b24b43e036eb",
+    "test_serving_cancel.py": "147ba1aa801a5327ecddefc3a695d6f40453c2b75c6cd2296af8016c420a6dc7"
+  },
+  "before_after_equal": true,
+  "log_sha256": "51866b6b711f3315f362aba2e27b0b295ad9cd06d90e4958b5100cf62fd16f70",
+  "network_or_process_fixtures": false,
+  "remaining": "actual localhost/process execution awaits explicit user approval; independent source re-review pending"
+}
