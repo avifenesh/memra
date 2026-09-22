@@ -11561,7 +11561,6 @@ fn host_demote_settle_with(
                     HostDemoteOutcome::Failed
                 }
                 Some(contract) => {
-                    use memra_engine::cache::tiered::TransferEngine;
                     let seq = contract.ticket.sequence;
                     let settled = match host.tier.as_ref().and_then(|t| t.transfers.as_ref()) {
                         Some(transfers) => {
