@@ -125,3 +125,9 @@ pub use recovery::*;
 // beside the frozen schedules, unversioned: `consumer_fenced` is the installed reader wait.
 mod reader_fence;
 pub use reader_fence::*;
+
+// Day-20 rule (WP-A, memra#536 Move 2 slice 1): the event-ordered publication of a D2D capture
+// issued off the owner stream, beside the frozen schedules, unversioned: a captured entry is
+// published only after every copy's completion event; the receipt term is slice 3's.
+mod d2d_capture;
+pub use d2d_capture::*;
