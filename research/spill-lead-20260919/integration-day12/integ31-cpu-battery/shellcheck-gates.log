@@ -1,0 +1,12 @@
+
+In tools/kv-host-spill-failure-gate.sh line 63:
+. "$HERE/port-guard.sh"
+  ^-------------------^ SC1091 (info): Not following: ./port-guard.sh was not specified as input (see shellcheck -x).
+
+
+In tools/kv-host-contract-fault-gate.sh line 67:
+. "$HERE/port-guard.sh"
+  ^-------------------^ SC1091 (info): Not following: ./port-guard.sh was not specified as input (see shellcheck -x).
+
+For more information:
+  https://www.shellcheck.net/wiki/SC1091 -- Not following: ./port-guard.sh wa...

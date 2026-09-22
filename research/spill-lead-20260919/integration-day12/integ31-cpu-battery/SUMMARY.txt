@@ -8,9 +8,9 @@ tree 92407aa306dfb00422b1c15b9ce20a02940d1362 started 2026-09-22T00:29:11Z host 
    | portable-suites: PASS (tier, KV and onboarding CLI suites executed on CPU; skips 0 of budget 0; NOT GPU qualification)
 == test-server: cargo test -p memra-server --offline --no-fail-fast
    rc=0 (165s)
-   | 
+   |
    | test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-   | 
+   |
 == clippy: env DOCS_RS=1 cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf -p memra-cli --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
    rc=0 (34s)
    |     Checking hyper-util v0.1.20
@@ -36,7 +36,35 @@ tree 92407aa306dfb00422b1c15b9ce20a02940d1362 started 2026-09-22T00:29:11Z host 
    | 87 passed, 32 subtests passed in 17.85s
 == test-engine-cpu: cargo test -p memra-engine --lib --offline --no-fail-fast
    rc=0 (23s)
-   | 
+   |
    | test result: ok. 526 passed; 0 failed; 25 ignored; 0 measured; 0 filtered out; finished in 9.09s
-   | 
+   |
 == clippy-engine: cargo clippy -p memra-engine -p memra-server --offline --all-targets -- -D warnings
+   rc=0 (150s)
+   | warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   | warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 29s
+== conflict-markers: bash tools/check-conflict-markers.sh
+   rc=0 (0s)
+   | check-conflict-markers: OK (no conflict marker line in tracked source or docs)
+== workflow-keys: python3 tools/check-workflow-keys.py
+   rc=0 (0s)
+   | check-workflow-keys: .github/workflows/publish.yml: jobs publish
+   | check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+   | check-workflow-keys: OK: 5 workflow files, no duplicate mapping keys (stdlib walker)
+== shellcheck-gates: shellcheck tools/kv-host-spill-failure-gate.sh tools/kv-host-contract-fault-gate.sh
+   rc=1 (0s)
+   |
+   | For more information:
+   |   https://www.shellcheck.net/wiki/SC1091 -- Not following: ./port-guard.sh wa...
+== perf-board: python3 tools/update-perf-board.py --check
+   rc=0 (0s)
+   | perf board is up to date
+== diff-check: git diff --check origin/main HEAD
+   rc=2 (0s)
+   | +   |
+   | research/spill-lead-20260919/integration-day12/integ31-cpu-battery/test-engine-cpu.log:561: new blank line at EOF.
+   | research/spill-lead-20260919/integration-day12/integ31-cpu-battery/test-server.log:954: new blank line at EOF.
+finished 2026-09-22T00:36:07Z
+== shellcheck-gates (rerun, -x follows the sourced port-guard; the first run's rc=1 was SC1091 info only)
+   rc=0

@@ -1176,6 +1176,12 @@ could not find G0 and G3 to G7 spelled out in any tracked doc and maps onto G1, 
 Owner decisions flagged: the `MEMRA_ADMIT_BY_MEMORY` door's decide-by is 2026-09-23 with B's receipt as its evidence;
 the park policy. Comments on #539 and #552; both open.
 
+Lead error, recorded: the integ30 round-1 commit (`913199b4b`) went out with server clippy `-D warnings` red on an
+unused import because the check's result was not gated before the commit (the same heredoc-chain trap as twice
+earlier today); the memra-server suite was green. Corrected in `340e8a474` with the note on the PR. Ruling 30: every
+gate in a lead chain runs in its own `if ! ...; then exit; fi` line before the commit; a chain never carries a gate's
+result across a heredoc.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
