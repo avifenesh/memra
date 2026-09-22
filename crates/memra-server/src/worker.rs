@@ -21768,15 +21768,18 @@ pub fn run(
             let batching_on = std::env::var("MEMRA_SERVE_BATCH")
                 .map(|v| v != "0")
                 .unwrap_or(true);
+            // ONE derivation of the interactive cap (route_contract::interactive_cap): the
+            // registry publishes and lib.rs sheds on the same number this gate enforces
+            // (memra#504; #502 was a second copy disagreeing). `max_active` carries the
+            // confidence-trace override.
             let cap = if lane == crate::lanes::Lane::Interactive {
-                if batching_on {
+                crate::route_contract::interactive_cap(
+                    batching_on,
                     std::env::var("MEMRA_MAX_SESSIONS")
                         .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(64)
-                } else {
-                    max_active
-                }
+                        .and_then(|v| v.parse().ok()),
+                    max_active,
+                )
             } else {
                 policy.max_sessions[lane.idx()]
             };

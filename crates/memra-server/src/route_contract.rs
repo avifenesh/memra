@@ -165,9 +165,10 @@ impl std::fmt::Display for RouteContractError {
                 reason,
             } => write!(
                 f,
-                "{env} is set but route {model:?} ({kind}) refuses the {} policy: {reason}. \
-                 Unset {env} or serve this model on a route that honors it; a policy the route \
-                 cannot read is refused at boot, not ignored at runtime (memra#504)",
+                "{env} is set but no route in this process honors the {} policy; route \
+                 {model:?} ({kind}) refuses it: {reason}. Unset {env} or serve a model on a \
+                 route that honors it; a policy no route can read is refused at boot, not \
+                 ignored at runtime (memra#504)",
                 surface.name()
             ),
         }
@@ -211,8 +212,8 @@ impl RouteContract {
         self.decls.iter().map(|(s, d)| (*s, d))
     }
 
-    /// Every surface declared, and no refused surface armed by `env`.
-    pub fn check(&self, env: &dyn Fn(&str) -> Option<String>) -> Result<(), RouteContractError> {
+    /// Every surface declared (the omission the class of bugs lived in).
+    pub fn check_declared(&self) -> Result<(), RouteContractError> {
         let undeclared: Vec<PolicySurface> = PolicySurface::ALL
             .iter()
             .copied()
@@ -224,19 +225,6 @@ impl RouteContract {
                 kind: self.kind,
                 surfaces: undeclared,
             });
-        }
-        for (surface, decl) in &self.decls {
-            if let (PolicyDecl::Refused { reason }, Some(var)) = (decl, surface.arming_env())
-                && env(var).is_some_and(|v| !v.is_empty())
-            {
-                return Err(RouteContractError::ArmedButRefused {
-                    model: self.model.clone(),
-                    kind: self.kind,
-                    surface: *surface,
-                    env: var,
-                    reason,
-                });
-            }
         }
         Ok(())
     }
@@ -341,23 +329,34 @@ impl RouteContract {
     }
 }
 
-/// The interactive session cap the central worker's admission gate applies, derived ONCE so the
-/// registry, the gate and `lib.rs::lane_cap` cannot disagree (memra#502 was a second copy of this
-/// arithmetic disagreeing): `MEMRA_MAX_SESSIONS` (default 64) when batching is on, the legacy
-/// `MAX_ACTIVE` when `MEMRA_SERVE_BATCH=0`.
+/// The interactive session cap of the central worker, as ONE pure derivation: `max_sessions`
+/// (`MEMRA_MAX_SESSIONS`, default 64) when `batching_on`, else `legacy_max_active`. The worker's
+/// admission gate, `lib.rs::lane_cap` and the registry all call this, so the number the gate
+/// enforces, the number the HTTP layer sheds on and the number the registry publishes are the
+/// same number by construction (memra#502 was two copies of this arithmetic disagreeing). No
+/// floor: `MEMRA_MAX_SESSIONS=0` is 0 everywhere, as the gate has always read it.
+pub fn interactive_cap(
+    batching_on: bool,
+    max_sessions: Option<usize>,
+    legacy_max_active: usize,
+) -> usize {
+    if batching_on {
+        max_sessions.unwrap_or(64)
+    } else {
+        legacy_max_active
+    }
+}
+
+/// `interactive_cap` from the process environment with the legacy `MAX_ACTIVE`. The worker's gate
+/// passes its own `max_active` (which the confidence-trace door lowers to 1) instead.
 pub fn hybrid_interactive_cap() -> usize {
     let batching_on = std::env::var("MEMRA_SERVE_BATCH")
         .map(|v| v != "0")
         .unwrap_or(true);
-    if batching_on {
-        std::env::var("MEMRA_MAX_SESSIONS")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(64)
-            .max(1)
-    } else {
-        crate::worker::MAX_ACTIVE
-    }
+    let max_sessions = std::env::var("MEMRA_MAX_SESSIONS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok());
+    interactive_cap(batching_on, max_sessions, crate::worker::MAX_ACTIVE)
 }
 
 /// The enumerable route set of one process.
@@ -384,11 +383,39 @@ impl RouteRegistry {
         self.contract_for(model).map(|r| r.capacity)
     }
 
-    /// The boot gate: every registered route checks clean, or the first failure is the reason
-    /// the worker refuses to come up.
+    /// The boot gate. Every registered route must declare every surface (an omission is the
+    /// first error). An ARMED policy is refused only when no registered route can honor it: a
+    /// mixed process (hybrid models beside a dsv4 checkpoint) with `MEMRA_REWRITE_BUNDLE` keeps
+    /// booting, the bundle governs the hybrid route and the dsv4 line names its refusal; a
+    /// dsv4-only process with the bundle set has armed a policy nobody reads and refuses.
     pub fn check(&self, env: &dyn Fn(&str) -> Option<String>) -> Result<(), RouteContractError> {
         for route in &self.routes {
-            route.check(env)?;
+            route.check_declared()?;
+        }
+        for surface in PolicySurface::ALL {
+            let Some(var) = surface.arming_env() else {
+                continue;
+            };
+            if !env(var).is_some_and(|v| !v.is_empty()) {
+                continue;
+            }
+            let honored = self
+                .routes
+                .iter()
+                .any(|r| matches!(r.decl(surface), Some(PolicyDecl::Implemented { .. })));
+            if honored || self.routes.is_empty() {
+                continue;
+            }
+            let first = &self.routes[0];
+            if let Some(PolicyDecl::Refused { reason }) = first.decl(surface) {
+                return Err(RouteContractError::ArmedButRefused {
+                    model: first.model.clone(),
+                    kind: first.kind,
+                    surface,
+                    env: var,
+                    reason,
+                });
+            }
         }
         Ok(())
     }
@@ -448,7 +475,7 @@ mod tests {
         let route = RouteContract::new("half", "stub-route", "stub.rs", RouteCapacity::Serial)
             .implemented(PolicySurface::Capacity, "x")
             .refused(PolicySurface::Progress, "not yet");
-        match route.check(&no_env).unwrap_err() {
+        match route.check_declared().unwrap_err() {
             RouteContractError::Undeclared { surfaces, .. } => {
                 assert_eq!(surfaces.len(), PolicySurface::ALL.len() - 2);
                 assert!(!surfaces.contains(&PolicySurface::Capacity));
@@ -461,7 +488,7 @@ mod tests {
     #[test]
     fn the_hybrid_worker_contract_implements_every_surface() {
         let route = RouteContract::hybrid_worker("gate", 64);
-        route.check(&no_env).unwrap();
+        route.check_declared().unwrap();
         for s in PolicySurface::ALL {
             assert!(
                 matches!(route.decl(s), Some(PolicyDecl::Implemented { .. })),
@@ -475,7 +502,7 @@ mod tests {
     #[test]
     fn the_dsv4_contract_refuses_its_open_gaps_by_issue() {
         let route = RouteContract::dsv4_thread("ds");
-        route.check(&no_env).unwrap();
+        route.check_declared().unwrap();
         let refused: Vec<PolicySurface> = route
             .declarations()
             .filter_map(|(s, d)| matches!(d, PolicyDecl::Refused { .. }).then_some(s))
@@ -509,34 +536,60 @@ mod tests {
         assert!(route.describe().contains("route=dsv4-thread"));
     }
 
-    /// The #449 minimum: a rewrite bundle armed beside a route that cannot consume it refuses at
-    /// boot with the route named, instead of no-oping past the `continue`.
+    /// The #449 minimum: a rewrite bundle armed in a process where no route can consume it
+    /// refuses at boot with the refusing route named, instead of no-oping past the `continue`.
+    /// A mixed process keeps booting: the bundle governs the hybrid route (revuto round 2).
     #[test]
-    fn an_armed_rewrite_bundle_beside_dsv4_refuses_at_boot_by_name() {
-        let mut reg = RouteRegistry::default();
-        reg.register(RouteContract::hybrid_worker("gate", 4));
-        reg.register(RouteContract::dsv4_thread("ds"));
-        reg.check(&no_env).unwrap();
+    fn an_armed_rewrite_bundle_refuses_only_when_no_route_honors_it() {
         let env = |var: &str| (var == "MEMRA_REWRITE_BUNDLE").then(|| "/tmp/bundle".to_string());
-        let err = reg.check(&env).unwrap_err();
-        let text = err.to_string();
-        assert!(text.contains("MEMRA_REWRITE_BUNDLE is set but route \"ds\" (dsv4-thread) refuses the rewrite-qualification policy"), "{text}");
+        // dsv4-only: nobody reads the bundle -> refused, by route and issue
+        let mut dsv4_only = RouteRegistry::default();
+        dsv4_only.register(RouteContract::dsv4_thread("ds"));
+        dsv4_only.check(&no_env).unwrap();
+        let text = dsv4_only.check(&env).unwrap_err().to_string();
+        assert!(text.contains("MEMRA_REWRITE_BUNDLE is set but no route in this process honors the rewrite-qualification policy"), "{text}");
+        assert!(text.contains("\"ds\" (dsv4-thread)"), "{text}");
         assert!(text.contains("#449"), "{text}");
         // an empty value is unset
         let empty = |var: &str| (var == "MEMRA_REWRITE_BUNDLE").then(String::new);
-        reg.check(&empty).unwrap();
-        // a hybrid-only process with the bundle armed is fine
+        dsv4_only.check(&empty).unwrap();
+        // mixed: the hybrid route honors it, the process boots, the dsv4 line still refuses
+        let mut mixed = RouteRegistry::default();
+        mixed.register(RouteContract::hybrid_worker("gate", 4));
+        mixed.register(RouteContract::dsv4_thread("ds"));
+        mixed.check(&env).unwrap();
+        assert!(
+            mixed
+                .contract_for("ds")
+                .unwrap()
+                .describe()
+                .contains("rewrite-qualification:")
+        );
+        // hybrid-only with the bundle armed is the ordinary case
         let mut hybrid_only = RouteRegistry::default();
         hybrid_only.register(RouteContract::hybrid_worker("gate", 4));
         hybrid_only.check(&env).unwrap();
     }
 
     #[test]
-    fn the_hybrid_cap_helper_follows_the_batching_switch() {
-        // Only the two branches' shape is asserted (env is process-global in tests): the
-        // default is 64 with batching on, MAX_ACTIVE with it off.
-        let cap = hybrid_interactive_cap();
-        assert!(cap == crate::worker::MAX_ACTIVE || cap >= 1);
+    fn the_interactive_cap_is_one_derivation_with_both_branches() {
+        assert_eq!(interactive_cap(true, None, 4), 64);
+        assert_eq!(interactive_cap(true, Some(8), 4), 8);
+        assert_eq!(
+            interactive_cap(true, Some(0), 4),
+            0,
+            "no floor: the gate reads 0 as 0"
+        );
+        assert_eq!(
+            interactive_cap(false, Some(8), 4),
+            4,
+            "batching off is the legacy cap"
+        );
+        assert_eq!(
+            interactive_cap(false, None, 1),
+            1,
+            "the confidence-trace door lowers max_active to 1"
+        );
     }
 
     #[test]

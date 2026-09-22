@@ -59,6 +59,14 @@ refused check runs BEFORE any weight loads on the planned route set (a dsv4 dire
 its path), so an operator with `MEMRA_REWRITE_BUNDLE` beside a dsv4 checkpoint is refused in
 milliseconds, and the full registry is checked again before the ready handoff.
 
+Round 2: the armed-policy refusal was process-global while the bundle arms per route, so a mixed
+deployment and `memra verify serve` beside a hybrid model would have refused; it now refuses only
+when NO registered route honors the surface (a DSv4-only process with the bundle, which is #449's
+exact case; `memra model verify serve --against deepseek_v4` therefore refuses honestly instead of
+passing a serve gate whose bundle nothing read). The cap helper was a third copy; the worker's
+admission gate and `lib.rs::lane_cap` now call `route_contract::interactive_cap`, one pure
+derivation with a real two-branch test, and the confidence-trace override stays the gate's.
+
 ## What stays open
 
 #500, #501, #503 and #449 implement the refused surfaces; each is one `refused` line becoming

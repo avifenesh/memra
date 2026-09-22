@@ -1576,8 +1576,11 @@ each such surface became a silent no-op on DSv4 and was found by accident, weeks
 (`route_contract.rs`) declaring each of the nine policy surfaces as implemented (with a call-site
 token a unit test greps in the route's source) or refused by name with the owning issue; the
 registry is checked before `ready_tx` fires, so an undeclared surface is `FATAL: worker init
-failed`, and a refused policy the operator armed (`MEMRA_REWRITE_BUNDLE` beside a DSv4 route)
-refuses at boot with the route named instead of no-oping. Each boot prints one
+failed`, and a policy the operator armed that NO route in the process honors
+(`MEMRA_REWRITE_BUNDLE` in a DSv4-only process) refuses at boot with the refusing route named
+instead of no-oping; a mixed process keeps booting, the bundle governs the hybrid route and the
+DSv4 line names its refusal. The armed check runs before any weight loads (a DSv4 checkpoint is
+known from its path) and the full registry again before the ready handoff. Each boot prints one
 `[route-contract] model= route= capacity= implemented=[..] refused=[..]` line per route; the
 DSv4 line today refuses occupancy, progress, memory-cost, rewrite-qualification, prime-fairness
 and service-metrics, each with its issue. `RouteRegistry::capacity_for(model)` is the number the
