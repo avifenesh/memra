@@ -14598,7 +14598,7 @@ fn host_restore_submit(
     engine: &Engine,
     e: &PrefixEntry,
     cache: &mut Cache,
-    hpx: &HostPrefixCache,
+    hpx: &mut HostPrefixCache,
 ) -> Result<(PendingContractRestore, usize), String> {
     use memra_engine::tier_transfer::D2dRestore;
     let tier = hpx.tier.as_ref().ok_or("tier context missing")?;
@@ -14657,28 +14657,49 @@ fn host_restore_submit(
         }
         bytes += kb + vb;
     }
-    if ops.is_empty() {
-        let _ = t.release_producer(producer);
-        return Err("the entry carries no KV rows".to_string());
-    }
-    let ticket = match t.submit_d2d_restore(ops, HOST_TIER_TRANSFER_EPOCHS) {
-        Ok(ticket) => ticket,
-        Err(err) => {
-            let _ = t.release_producer(producer);
-            return Err(format!("submission refused: {err:?}"));
+    let refused = if ops.is_empty() {
+        Some("the entry carries no KV rows".to_string())
+    } else {
+        match t.submit_d2d_restore(ops, HOST_TIER_TRANSFER_EPOCHS) {
+            Ok(ticket) => {
+                drop(t);
+                cache.pos = restore_len;
+                return Ok((
+                    PendingContractRestore {
+                        ticket,
+                        producer,
+                        sizes,
+                        submitted: Instant::now(),
+                    },
+                    bytes,
+                ));
+            }
+            Err(err) => Some(format!("submission refused: {err:?}")),
         }
     };
+    // Nothing was submitted, so the producer event may still be pending on the owner stream and
+    // `release_producer` would refuse `Busy`; dropped, the fence would stay in the engine's
+    // producer table for the boot (revuto on #634, mirrored from the capture). Drain the owner
+    // stream first; a fence that still will not release latches the route off, typed.
+    let released = t
+        .owner_stream()
+        .synchronize()
+        .map_err(|err| format!("owner stream drain: {err}"))
+        .and_then(|_| {
+            t.release_producer(producer)
+                .map_err(|err| format!("release_producer: {err:?}"))
+        });
     drop(t);
-    cache.pos = restore_len;
-    Ok((
-        PendingContractRestore {
-            ticket,
-            producer,
-            sizes,
-            submitted: Instant::now(),
-        },
-        bytes,
-    ))
+    if let Err(err) = released {
+        host_restore_latch(
+            hpx,
+            &format!(
+                "producer fence seq={} did not release after a refused restore submission ({err})",
+                producer.sequence
+            ),
+        );
+    }
+    Err(refused.expect("one of the two refusals"))
 }
 
 /// The admission probe's decision, pure over the request and the pending state (WP-A day 21).
@@ -41835,9 +41856,10 @@ mod tests {
         let drain = body
             .find("host_capture_drain_at_shutdown(&mut hpx);")
             .unwrap();
+        // Day 21: the restore drain follows it and is the run loop's last statement.
         assert!(
-            body[drain..drain + 60].contains("\n}\n"),
-            "the drain is the run loop's last statement"
+            body[drain..drain + 200].contains("host_restore_drain_at_shutdown(&mut hpx);"),
+            "the capture drain is followed by the restore drain at the run loop's exit"
         );
         let route = body.find("fn prefix_capture_off_tick(").unwrap();
         let route_end = route
@@ -41900,6 +41922,306 @@ mod tests {
             "drain, then release, then latch on refusal"
         );
         assert!(!body[submit..latch].contains("let _ = t.release_producer(producer);"));
+    }
+
+    // ---- WP-A day 21: the `Restoring` request (memra#536 Move 2 slice 2) ----
+    // CPU halves: the probe's decision, the fail-closed arms of the settle machine (a pending
+    // restore missing its cache or its ticket; a `Latched` answer keeps the pin and forgets the
+    // cache), and a source census of every path that meets a `Restoring` request. The
+    // pending-to-ready path needs a device cache and is exercised on the card by the hit gate's ON
+    // arm (`restore landed off the tick` lines) and the engine's `d2d_restore_*` GPU cell.
+    fn cpu_pending_restore(host: &mut HostPrefixCache, pool_key: &PoolKey, with_ticket: bool) {
+        host.restoring = Some(super::PendingRestore {
+            request_id: "req-21".to_string(),
+            pool_key: pool_key.clone(),
+            pin: Some(super::PrefixPin {
+                key: pool_key.clone(),
+                id: 77,
+            }),
+            toks_len: 64,
+            bytes: 4096,
+            cache: None,
+            contract: with_ticket.then(|| super::PendingContractRestore {
+                ticket: memra_engine::cache::tiered::TransferTicket {
+                    issuer: 7,
+                    sequence: 9,
+                    epochs: super::HOST_TIER_TRANSFER_EPOCHS,
+                },
+                producer: memra_engine::cache::tiered::FenceId {
+                    issuer: 7,
+                    owner: 0,
+                    generation: 1,
+                    sequence: 8,
+                },
+                sizes: vec![64, 64],
+                submitted: std::time::Instant::now(),
+            }),
+            ready: false,
+            ready_ticks: 0,
+            t0: std::time::Instant::now(),
+            polls: 0,
+            copy_ms: 0.0,
+            settled_by: String::new(),
+        });
+    }
+
+    /// The probe's decision: no state is `Through`; this request's pending state parks it again and
+    /// its ready state is consumed; another request's ready state is an orphan; another request's
+    /// pending state lets this one through (one restore per worker, the tick program meanwhile); an
+    /// empty request id never matches.
+    #[test]
+    fn restore_probe_decision_parks_its_own_request_and_names_an_orphan() {
+        let (mut host, key) = cpu_door_host();
+        assert_eq!(
+            super::host_restore_probe_decision(&host, "req-21"),
+            super::RestoreProbe::Through
+        );
+        cpu_pending_restore(&mut host, &key, true);
+        assert_eq!(
+            super::host_restore_probe_decision(&host, "req-21"),
+            super::RestoreProbe::ParkAgain
+        );
+        assert_eq!(
+            super::host_restore_probe_decision(&host, "req-other"),
+            super::RestoreProbe::Through
+        );
+        assert_eq!(
+            super::host_restore_probe_decision(&host, ""),
+            super::RestoreProbe::Through
+        );
+        host.restoring.as_mut().unwrap().ready = true;
+        assert_eq!(
+            super::host_restore_probe_decision(&host, "req-21"),
+            super::RestoreProbe::Consume
+        );
+        assert_eq!(
+            super::host_restore_probe_decision(&host, "req-other"),
+            super::RestoreProbe::DropOrphan
+        );
+    }
+
+    /// FAIL CLOSED (the #622 ruling mirrored): a pending restore missing its cache never re-admits
+    /// its request onto it. With a submitted ticket and no cache the tier and the restore path latch
+    /// off and the pin is KEPT (never a free under a possibly running copy); with neither the state
+    /// drops whole and its pin comes back to the caller; nothing latches.
+    #[test]
+    fn a_pending_restore_missing_its_cache_or_ticket_fails_closed() {
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_restore(&mut host, &key, true);
+        let outcome = super::host_restore_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "test",
+            |_, _, _| panic!("the contract step must not run without a cache"),
+        );
+        assert!(matches!(
+            outcome,
+            Some(super::RestoreSettled::Dropped(None))
+        ));
+        assert!(
+            !host.armed(),
+            "a leaked submitted ticket latches the tier off"
+        );
+        assert!(host.restore_off_tick_disabled, "and the restore path");
+        assert!(host.restoring.is_none());
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_restore(&mut host, &key, false);
+        let outcome = super::host_restore_settle_with(
+            &mut host,
+            super::ContractWait::Block,
+            "test",
+            |_, _, _| panic!("the contract step must not run without a ticket"),
+        );
+        let Some(super::RestoreSettled::Dropped(Some(pin))) = outcome else {
+            panic!("a cache-less, ticket-less state drops whole and hands its pin back");
+        };
+        assert_eq!(pin.id, 77);
+        assert!(host.armed(), "nothing was submitted, so nothing leaked");
+        assert!(!host.restore_off_tick_disabled);
+        assert!(host.restoring.is_none());
+        assert!(
+            super::host_restore_settle_with(
+                &mut host,
+                super::ContractWait::Poll,
+                "x",
+                |_, _, _| { panic!("the contract step must not run with nothing pending") }
+            )
+            .is_none()
+        );
+    }
+
+    /// Every path that meets a `Restoring` request does what the pre-registration says (a source
+    /// census over the run loop, the probe, the hit site and the routes): the tick top polls it
+    /// after the capture poll and expires a stale ready state; the idle waits count it; the
+    /// admission loop parks the request on the requeue right after the promote probe; the reclaim
+    /// and every trim settle it first; the purge settles and drops the revoked tenant's with the
+    /// device cache in hand, before either index purges; shutdown drains it last; the destination
+    /// cache lives in the pending state (never in `active`) and leaves it only through
+    /// `host_restore_take_ready` under `ready`, so no session retire, park or rewind can meet it
+    /// in flight (the #634 seam, mirrored); the source pin is taken before the submit and carried
+    /// to the serving session; a refused submission drains the owner stream, releases the fence or
+    /// latches the route off, never `let _`; the settle installs the owner-stream wait (rule 3)
+    /// before the ticket retires.
+    #[test]
+    fn every_path_that_meets_a_restoring_request_settles_or_ignores_it_as_stated() {
+        let worker = include_str!("worker.rs");
+        let body = &worker[..worker.find("#[cfg(test)]\nmod tests").unwrap()];
+        let top = body
+            .find("host_demote_settle_pending(&mut hpx, ContractWait::Poll, \"the tick top\")")
+            .unwrap();
+        let capture = top + body[top..].find("host_capture_settle_pending(").unwrap();
+        let restore = top
+            + body[top..]
+                .find("host_restore_settle_pending(&mut px, &mut hpx, ContractWait::Poll, \"the tick top\")")
+                .unwrap();
+        assert!(
+            capture < restore,
+            "the restore poll follows the capture poll"
+        );
+        let expire = top
+            + body[top..]
+                .find("host_restore_expire_ready(&mut px, &mut hpx);")
+                .unwrap();
+        assert!(restore < expire && expire - restore < 200);
+        assert!(body.contains("&& hpx.restoring.is_none()"));
+        assert!(body.contains("|| hpx.restoring.is_some()\n"));
+        // The admission loop: the restore probe right after the promote probe, the same park.
+        let promote_probe = body.find("&& host_promote_park_probe(").unwrap();
+        let restore_probe = body.find("&& host_restore_park_probe(").unwrap();
+        assert!(promote_probe < restore_probe && restore_probe - promote_probe < 1200);
+        assert!(body[restore_probe..restore_probe + 600].contains(
+            "requeue.push_back(req); // waits (FIFO), never shed: its restore is in flight"
+        ));
+        let admit_call = body[restore_probe..]
+            .find("ensure_driver_headroom(&engine, &loaded, \"prime\");")
+            .unwrap();
+        assert!(
+            admit_call < 1000,
+            "the probe sits immediately before admission"
+        );
+        // The reclaim and every trim settle it first.
+        let reclaim = body
+            .find("evict_all_demoting(&engine, &mut px, &mut hpx, budget)")
+            .unwrap();
+        let reclaim_settle = body[..reclaim]
+            .rfind("host_restore_settle_pending(")
+            .expect("the reclaim settles the restore first");
+        assert!(reclaim - reclaim_settle < 900);
+        for trim in [
+            "trim_model_device_pools(&engine, &loaded, \"admin-trim\")",
+            "trim_model_device_pools(&engine, &loaded, \"admission-drain\")",
+            "trim_model_device_pools(&engine, &loaded, \"oom-teardown\")",
+        ] {
+            let at = body.find(trim).unwrap();
+            let settle = body[..at]
+                .rfind("host_restore_settle_pending(")
+                .unwrap_or_else(|| panic!("{trim} settles the restore first"));
+            assert!(
+                at - settle < 700,
+                "{trim} settles the restore right before it"
+            );
+            assert!(
+                body[settle..at].contains("ContractWait::Block")
+                    && body[settle..at].contains("\"a trim\""),
+                "{trim} settles the restore blocking"
+            );
+        }
+        // The purge, worker level, before either index purges.
+        let purge = body
+            .find("host_restore_purge_tenant(&mut px, &mut hpx, &tenant);")
+            .unwrap();
+        assert!(body[purge..purge + 200].contains("hpx.purge_tenant(&tenant)"));
+        assert!(body[purge..purge + 300].contains("px.purge_tenant(&tenant)"));
+        let purge_fn = body.find("fn host_restore_purge_tenant(").unwrap();
+        let purge_body = &body[purge_fn..purge_fn + body[purge_fn..].find("\n}\n").unwrap()];
+        let settle = purge_body
+            .find("ContractWait::Block, \"a tenant purge\"")
+            .unwrap();
+        let drop_at = purge_body
+            .find("the tenant purge revoked the Restoring request")
+            .unwrap();
+        assert!(settle < drop_at);
+        // Shutdown drains it last.
+        let drain = body
+            .find("host_restore_drain_at_shutdown(&mut hpx);")
+            .unwrap();
+        assert!(
+            body[drain..drain + 60].contains("\n}\n"),
+            "the drain is the run loop's last statement"
+        );
+        let capture_drain = body
+            .find("host_capture_drain_at_shutdown(&mut hpx);")
+            .unwrap();
+        assert!(capture_drain < drain);
+        // The destination never enters `active` in flight: it lives in the pending state and is
+        // handed out exactly once, under `ready`, by the hit site's take.
+        assert_eq!(body.matches("r.cache.take()").count(), 1);
+        let take = body.find("fn host_restore_take_ready(").unwrap();
+        let take_body = &body[take..take + body[take..].find("\n}\n").unwrap()];
+        let ready_check = take_body.find("if !r.ready").unwrap();
+        let hand = take_body.find("r.cache.take()").unwrap();
+        assert!(ready_check < hand, "the cache leaves only under ready");
+        assert!(take_body.contains("hpx.restores_landed += 1;"));
+        let hit = body
+            .find("host_restore_take_ready(px, hpx, &req.request_id, &pool_key, i)")
+            .unwrap();
+        let carry = body[hit..]
+            .find("prefix_pin = off_tick_pin.or_else(|| px.pin(&pool_key, i));")
+            .expect("the off-tick pin carries over as the serving pin");
+        assert!(carry < 8000, "the carry-over sits at the hit site");
+        // The route: validate, then pin, then submit; a refused submission drains, releases or
+        // latches, never `let _`.
+        let probe = body.find("fn host_restore_park_probe(").unwrap();
+        let probe_body = &body[probe..probe + body[probe..].find("\n}\n").unwrap()];
+        let validate = probe_body
+            .find("prefix_restore_validate(&cache, e, &pool_key, e.pos, Some(&lm.model))")
+            .unwrap();
+        let pin = probe_body.find("px.pin(&pool_key, i)").unwrap();
+        let submit = probe_body
+            .find("host_restore_submit(engine, e, &mut cache, hpx)")
+            .unwrap();
+        assert!(validate < pin && pin < submit);
+        assert!(
+            probe_body[submit..].contains("px.unpin(&pin);"),
+            "a refusal releases the pin"
+        );
+        let submit_fn = body.find("fn host_restore_submit(").unwrap();
+        let submit_body = &body[submit_fn..submit_fn + body[submit_fn..].find("\n}\n").unwrap()];
+        let copies = submit_body
+            .find(".copy_into(&mut dst.conv_state, 0, c, c.len())")
+            .unwrap();
+        let fence = submit_body.find(".record_producer(generation)").unwrap();
+        let batch = submit_body
+            .find("t.submit_d2d_restore(ops, HOST_TIER_TRANSFER_EPOCHS)")
+            .unwrap();
+        let drain = submit_body.find(".owner_stream()").unwrap();
+        let release = submit_body.find("t.release_producer(producer)").unwrap();
+        let latch = submit_body.find("host_restore_latch(").unwrap();
+        assert!(
+            copies < fence && fence < batch && batch < drain && drain < release && release < latch
+        );
+        assert!(!submit_body.contains("let _ = t.release_producer(producer);"));
+        assert_eq!(submit_body.matches(".record_producer(").count(), 1);
+        // The settle: landed, then the owner-stream wait installed (rule 3), then retire.
+        let settle_fn = body.find("fn host_kv_planes_settle_restore(").unwrap();
+        let settle_body = &body[settle_fn..settle_fn + body[settle_fn..].find("\n}\n").unwrap()];
+        let landed = settle_body.find("t.restore_landed(&ticket)").unwrap();
+        let install = settle_body
+            .find("t.install_consumer_wait(&ticket)")
+            .unwrap();
+        let retire = settle_body.find("t.retire(&ticket, None)").unwrap();
+        assert!(landed < install && install < retire);
+        // A Latched settle forgets the cache and keeps the pin.
+        let machine = body.find("fn host_restore_settle_with(").unwrap();
+        let machine_body = &body[machine..machine + body[machine..].find("\n}\n").unwrap()];
+        let latched = machine_body
+            .find("Err(HostRestoreFailure::Latched(err)) => {")
+            .unwrap();
+        assert!(machine_body[latched..].contains("std::mem::forget(cache);"));
+        assert!(machine_body[latched..].contains("RestoreSettled::Dropped(None)"));
+        // One submit site.
+        assert_eq!(body.matches("host_restore_park_probe(").count(), 2);
+        assert_eq!(body.matches("t.submit_d2d_restore(").count(), 1);
     }
 
     // ---- WP-A day 18: the `Promoting` state machine (memra#536 Move 1, the promote half) ----
