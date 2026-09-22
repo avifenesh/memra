@@ -61,8 +61,9 @@ def build(source, out):
             '    writeln!(routing_log, "turn\\tsource\\tkind\\tk\\trouting_ns")?;',
             '    writeln!(routing_log, "turn\\tsource\\tbudget\\tkind\\tk\\ttokens_read\\tuser_tokens\\tinput_tokens\\tdecoded_bytes\\tinspected_bytes\\theader_tokens\\tcore_ns\\trouting_ns")?;')
         text = replace_once(
-            text, indent + "history.push(Turn {",
-            indent + "history.clear();\n" + indent + "history.push(Turn {")
+            text, indent + 'history.push(Turn {\n' + indent + '    role: "user".into(),',
+            indent + "history.clear();\n" + indent + 'history.push(Turn {\n'
+            + indent + '    role: "user".into(),')
         text = replace_once(
             text,
             indent + f"let request_selection = routing.map(|r| r.select(turn, user, {cap} as u8)).transpose()?;",
