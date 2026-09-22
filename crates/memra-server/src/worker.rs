@@ -9875,6 +9875,12 @@ struct PendingCapture {
     polls: u32,
     copy_ms: f64,
     settled_by: String,
+    /// WP-A day 25: `submitted.elapsed()` on entry to the settle that landed the copy (the span the
+    /// copy ran while the owner thread did other work) and the settle's own duration on the owner
+    /// thread (under `Block` the host wait plus the receipt read and retire; under `Poll` the events
+    /// read and the receipt). Both print on the publish line so the retire seam's wait is priced.
+    settle_after_ms: f64,
+    settle_held_ms: f64,
     /// WP-A day 24: the `trace_prefix_entry_state` role the OFF publisher prints (`snapshot` for
     /// the seed and lcp-split publishes, `spec-snapshot` for the spec-boundary publish).
     trace_role: &'static str,
@@ -14127,6 +14133,8 @@ fn host_capture_submit(
         polls: 0,
         copy_ms: 0.0,
         settled_by: String::new(),
+        settle_after_ms: 0.0,
+        settle_held_ms: 0.0,
         trace_role,
     });
     CaptureRoute::Submitted
@@ -14497,12 +14505,16 @@ fn host_capture_settle_with(
         }
     };
     let submitted = contract.submitted;
+    // WP-A day 25: the settle's own span on the owner thread, and where in the copy's life it began.
+    let settle_after_ms = submitted.elapsed().as_secs_f64() * 1e3;
+    let settle_entered = Instant::now();
     let settled = match &host.tier {
         Some(tier) => settle(tier, contract, wait),
         None => Err(HostCaptureFailure::Latched(
             "tier context gone under a Capturing entry".into(),
         )),
     };
+    let settle_held_ms = settle_entered.elapsed().as_secs_f64() * 1e3;
     match settled {
         Ok(CaptureSettle::Pending(contract)) => {
             pending.contract = Some(contract);
@@ -14511,6 +14523,8 @@ fn host_capture_settle_with(
         }
         Ok(CaptureSettle::Done { kv, draft }) => {
             pending.copy_ms = submitted.elapsed().as_secs_f64() * 1e3;
+            pending.settle_after_ms = settle_after_ms;
+            pending.settle_held_ms = settle_held_ms;
             pending.settled_by = match wait {
                 ContractWait::Poll => "tick-top poll".to_string(),
                 ContractWait::Block => format!("settled synchronously by {why}"),
@@ -14626,6 +14640,8 @@ fn host_capture_publish(
         polls,
         copy_ms,
         settled_by,
+        settle_after_ms,
+        settle_held_ms,
         trace_role,
         ..
     } = pending;
@@ -14638,7 +14654,9 @@ fn host_capture_publish(
     };
     eprintln!(
         "[prefix-cache] capture published off the tick ({why}): {} tokens complete after {polls} \
-         poll(s), {copy_ms:.1}ms from submission to completion, {:.1}ms to publication ({settled_by})",
+         poll(s), {copy_ms:.1}ms from submission to completion, {:.1}ms to publication ({settled_by}; \
+         the settle held the owner thread {settle_held_ms:.2}ms, entered {settle_after_ms:.1}ms after \
+         submission)",
         e.toks.len(),
         t0.elapsed().as_secs_f64() * 1e3,
     );
@@ -42472,6 +42490,8 @@ mod tests {
             polls: 0,
             copy_ms: 0.0,
             settled_by: String::new(),
+            settle_after_ms: 0.0,
+            settle_held_ms: 0.0,
             trace_role: "snapshot",
         });
     }
