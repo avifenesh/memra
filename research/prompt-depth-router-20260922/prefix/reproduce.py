@@ -23,6 +23,12 @@ def reproduce(root, runtime_archive, expected_runtime_sha, out):
         if source["harness_files"]["prefix/workloads.py"] != workloads["helper_sha256"]:
             raise ValueError("versioned workload helper differs from measured source")
     state = json.loads((root / "native/status.json").read_text())
+    freeze = json.loads((root / "native/FREEZE.json").read_text())
+    identity = json.loads((root / "native/identity.json").read_text())
+    if (freeze["pipeline_sha256"] != source["harness_files"]["prefix/pipeline.py"]
+            or identity["runner_sha256"] != source["harness_files"]["prefix/run.py"]
+            or identity["source"] != source):
+        raise ValueError("executed pipeline, runner or source identity changed")
     if state["status"] != "completed":
         raise ValueError("the matrix is not complete")
     with tempfile.TemporaryDirectory(prefix="prefix-replay-") as temporary:
@@ -45,6 +51,7 @@ def reproduce(root, runtime_archive, expected_runtime_sha, out):
         subprocess.run(["rustc", "--edition=2024", "-O", str(Path(__file__).with_name("replay.rs")),
                         "-o", str(binary)], check=True, capture_output=True)
         replayed, prefixes = [], 0
+        paired_prompts = {}
         for relative in state["completed"]:
             run = root / "native" / relative
             saved = json.loads(run.with_name(run.name + ".audit.json").read_text())
@@ -75,6 +82,14 @@ def reproduce(root, runtime_archive, expected_runtime_sha, out):
                 raise ValueError("correctness path flag or extra execution settings changed")
             if sha(root / "workloads" / entry["file"]) != entry["sha256"]:
                 raise ValueError("workload bytes changed")
+            if phase == "scored":
+                scenario = int(saved["label"].split("-")[0])
+                for turn in range(1, 9):
+                    key = (family, scenario, turn)
+                    prompt_sha = sha(run / f"turn-{turn}.prompt.ids")
+                    previous = paired_prompts.setdefault(key, prompt_sha)
+                    if previous != prompt_sha:
+                        raise ValueError("paired policies received different prompt tokens")
             metrics = metrics_from_log(run.with_name(run.name + ".log").read_text())[saved["arm"]]
             audited = audit_run(run, entry, saved["arm"], saved["seed"],
                                 metrics, context_auditor, loop_candidate)
