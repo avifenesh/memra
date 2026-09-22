@@ -1183,6 +1183,71 @@ demote or a promote continued on a latched-off tier; both now re-check `armed()`
 `waste_pending_reclaim(..)`, unlike every other demote exit, leaving a reclaim booked pending forever; all three book
 it wasted now (the image carries the key and tokens when the shell is gone); the CPU test asserts it. Server clippy
 `-D warnings` and the memra-server suite (780 passed) green, gated before the commit this time.
+## integ31 (`lane/spill-integ31-20260922`): C day 21 (two stale gates) and B day 26 (memra#539 census, cell, design)
+Lane tips merged: C `304e8235c` (carrying A's day 17, already in integ30), B `1ea29941e`. Non-research changes are
+the two gate scripts only: `tools/kv-host-spill-failure-gate.sh` and `tools/kv-host-contract-fault-gate.sh`.
+**C day 21, both reds were stale gates, not the server.** (1) The failure gate matched the insert-path line
+`[prefix-host] skip demote: entry X MB > host budget B MB` (`HostPrefixCache::insert`), reachable only at
+`MEMRA_KV_HOST_TENANT_PCT=100`; under the server default 50 (`49d1d6f65`, "50 BY DESIGN") the demote path refuses
+before the D2H copy with `demote evaporated at the tenant share cap before the D2H copy: N tokens, X MB (50% of B MB,
+...); reclaim refused: the image alone exceeds the share (X MB > B MB); nothing evicted` (memra#384, `405466cf7`);
+lane D's day 8 was green only with `TENANT_PCT=100` set out of band. The gate now mirrors the server's parse of
+`TENANT_PCT`, asserts the full anchored shape with bytes and budget for the arm in force, and adds
+`prefix_host_tenant_rejects >= 1` under the cap; stricter, not looser, verified against banked A and D logs before any
+run. (2) The fault gate hardcoded `1 of 34 items`; it now reads `items=N` from the server's first `contracts door D2H
+receipt` and asserts the refusal's `1 of M` equals N, all 12 prior assertions kept, two added; finding: the plain
+environment reads `items=32` on the 27B (no draft planes), so the hardcoded 34 would have failed the plain arm on the
+target card too. Verdicts, verbatim, tree `9be3f7373` (A's slice merged): target card `KV-HOST-SPILL FAILURE GATE: ALL
+GREEN` (default-off, default-on, plain-off, plain-on; 15 ok each), `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (default
+`items=34`, plain `items=32`; 64 ok each), `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (all four arms); local
+RTX 5090 (9B) identical verdict lines in all ten cells, reject cell `items=18` default and `items=16` plain. The
+whole-budget arm (`TENANT_PCT=100`) was asserted by pattern against D's banked log only, not run. `HOSTPREFIX-DOOR.md`
+review rows moved from pre-existing red to their verdicts. Ruling 29: a gate that reads red on both cards and both arms
+is a lane item the day it is seen, never a "pre-existing" note carried across days.
+**B day 26, memra#539.** Census (anchors on `1c66ff10e`): the cap rule at `worker.rs:21705-21745`: `max_tokens` bounded
+gives `prompt + max_tokens + 8`; omitted gives the server context (`MEMRA_CTX`, else the checkpoint's 262,144) unless
+`MEMRA_ADMIT_BY_MEMORY=1` (default OFF, decide-by 2026-09-23) gives `prompt + 8192 + 8`; registry deployments never
+reach the open arm. Every session cache is born at `ctx_cap` (`Cache::new_inner` allocates K and V planes of `max_ctx`
+rows per full-attention layer, never grown or trimmed); a hit D2D-copies `restore_len` rows into a fresh cap-sized cache
+and shares nothing; retired caches park in the reuse pools at `cache.max_ctx` with no TTL. Bytes per token: 1,856 B per
+full-attention layer (q8_0 K plus q5_1 V); Qwen3.5-9B 14,848 plain and 16,704 spec; the 27B mint 29,696 and 31,552,
+confirmed by the server's own `[admission] request cost` lines. Cell (N=5 per arm per order, both orders; P and G
+identical across orders on 44 of 45 requests per card), allocated over used, verbatim medians: target card (27B,
+`MEMRA_CTX` unset) arm (i) `max_tokens` omitted `median=129.26 / 71.90 / 41.61` (8,271,167,488 B allocated per
+request), arm (ii) bounded `1.00` on every row, arm (iii) warm `134.02 / 72.12 / 41.15` with `cached=0` in the
+deferred shape (43 of 45 spec-boundary entries LRU-evicted inside an 800 MB budget whose derivation prints
+`at MEMRA_CTX=8192`) and `cached=1440/3104/5760` in the warm cell; concurrency at 262,144 from 82.76 GB idle free: L0
+`8 -> 49`, L1 `7 -> 35`, L2 `7 -> 27`. Local RTX 5090 (9B, `MEMRA_CTX=65536`): (i) `11.30 / 10.73 / 6.62`, (ii) `1.00`,
+(iii) `11.79 / 10.62 / 6.35`; concurrency `8 -> 18`, `6 -> 11`, `5 -> 8`. Recorded, not fixed (B day 27, running):
+the prefix-cache budget derived at `MEMRA_CTX=8192` when unset; about 30 GB retained on the target card after 45
+sequential requests with none active (four parked whole-session entries at 8.27 GB). Design note
+`KV-RESIDENCY-DESIGN.md`: recommended order (a) the existing admission-by-memory door as the bounded open default (0.5
+agent-day, policy only), (b) grow-on-demand VMM planes (3 to 4 agent-days; receipts on both cards from the tier lane's
+day 10, addresses never move so the one-program law holds by construction), (c) paged KV (10 to 15), (d) copy-on-write
+sharing (3 to 5) only on shared-prefix workload evidence; reason: the open-arm ratio is the cap rule, removable with no
+numeric change, the bounded arm is already 1.00, layout options buy the prefix copy and preemption, not the ratio. B
+could not find G0 and G3 to G7 spelled out in any tracked doc and maps onto G1, G2 and #552 criterion 4, saying so.
+Owner decisions flagged: the `MEMRA_ADMIT_BY_MEMORY` door's decide-by is 2026-09-23 with B's receipt as its evidence;
+the park policy. Comments on #539 and #552; both open.
+Lead error, recorded: the integ30 round-1 commit (`913199b4b`) went out with server clippy `-D warnings` red on an
+unused import because the check's result was not gated before the commit (the same heredoc-chain trap as twice
+earlier today); the memra-server suite was green. Corrected in `340e8a474` with the note on the PR. Ruling 30: every
+gate in a lead chain runs in its own `if ! ...; then exit; fi` line before the commit; a chain never carries a gate's
+result across a heredoc.
+
+Battery (`integration-day12/integ31-cpu-battery/`, run on the pre-merge tree that carried A's day 17 through C, then the
+final-tree checks after merging main `a19631f9d`): fmt, portable suites, memra-server suite, clippy, censuses, collector
+pytest, engine CPU lib tests, engine and server clippy `-D warnings`, marker census, workflow keys, perf board: rc=0;
+shellcheck on the two gates clean once `SC1091` (the sourced port guard) is excluded; `git diff --check` tripped only
+on battery summary whitespace. The final tree's engine equals main (only the two gate scripts differ). Local 5090
+serve-smoke NOT RUN: the 5090 lock was held from 00:31Z by another session's `memra-server` (cwd `wt-525`, not a spill
+lane) for the whole window; integ30 smoked the identical engine minutes earlier (`serve-smoke: 0 failed`); my waiter
+was stopped (own process, identified by cwd), the other session's untouched. Lead error, recorded: the first attempt
+matched the waiter by name and killed my own shell (exit 144), the trap the memory already names.
+Revuto round 1 on #626, one finding, real: the fault gate's new self-consistency check (`1 of M` equals the
+receipt's `items=N`) had no floor, so a regression registering one plane would read `1 of 1 items` and pass a cell
+whose purpose is a partially accepted batch. Floor added: `items=N >= 2`. Every banked run reads far above it (27B 34
+default and 32 plain, 9B 18 and 16); a re-run of the fault gate with the floor on both cards is assigned to C day 22.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.

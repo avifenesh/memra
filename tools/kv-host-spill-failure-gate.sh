@@ -5,8 +5,20 @@
 # (docs/FLAGS.md section 4). Three cells, each its own boot:
 #
 #   pool-full      MEMRA_KV_HOST_MB=1: a real entry cannot fit the 1 MiB tier, so the demote
-#                  must refuse BY NAME ("skip demote: entry ... > host budget"), keep zero
-#                  host entries, and leave serving untouched.
+#                  must refuse BY NAME, keep zero host entries, and leave serving untouched.
+#                  Which named refusal fires depends on MEMRA_KV_HOST_TENANT_PCT (server
+#                  default 50, `49d1d6f65`): below 100 the per-tenant share cap is checked
+#                  BEFORE the D2H copy and the image alone exceeds the share, so the line is
+#                  "demote evaporated at the tenant share cap before the D2H copy: N tokens,
+#                  X MB (P% of B MB, ...); reclaim refused: the image alone exceeds the share
+#                  (X MB > S MB); nothing evicted" (the reclaim suffix from `405466cf7`,
+#                  memra#384) and prefix_host_tenant_rejects counts it; at exactly 100 the cap
+#                  is disarmed and the insert-path whole-budget line fires after the copy:
+#                  "skip demote: entry X MB > host budget B MB". The gate asserts the one the
+#                  effective cap produces, with its bytes and budget, and prints which. Until
+#                  day 21 of lane/spill-c-20260919 it matched only the insert-path line, which
+#                  was green only with MEMRA_KV_HOST_TENANT_PCT=100 set out of band
+#                  (research/spill-d-20260919/DAY8-CELLS.md).
 #   digest-mismatch MEMRA_KV_HOST_VERIFY=1 MEMRA_KV_HOST_FAULT=flip-demote: one demoted K
 #                  byte is flipped AFTER the demote digest is recorded, so the promote must
 #                  print "[prefix-host] VERIFY FAILED", drop the host entry, and serve the
@@ -24,6 +36,7 @@
 # env:   MEMRA_HOSTGATE_CACHE_MB (default 1024)  device prefix budget; must hold ONE seed
 #                                                entry but not two, or no demote ever fires
 #        MEMRA_HOSTGATE_HOST_MB  (default 8192)  host budget for the fault cells
+#        MEMRA_KV_HOST_TENANT_PCT (server default 50) selects the pool-full refusal arm asserted
 # Boots its own servers one cell at a time (flock ${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}).
 # Exit 0 = every assertion held. Evidence: <evidence_dir>/<cell>-r{1..3}.json + logs.
 set -euo pipefail
@@ -65,6 +78,9 @@ printf '%s\n' "$LOCK_PROOF" > "$EV/LOCK.json"
 SERVER_PID=""
 CACHE_MB=${MEMRA_HOSTGATE_CACHE_MB:-1024}
 HOST_MB=${MEMRA_HOSTGATE_HOST_MB:-8192}
+# The effective per-tenant share cap, mirroring the server's parse (integer 1..=100, else 50 loudly).
+TENANT_PCT=${MEMRA_KV_HOST_TENANT_PCT:-50}
+[[ $TENANT_PCT =~ ^[0-9]+$ ]] && [ "$TENANT_PCT" -ge 1 ] && [ "$TENANT_PCT" -le 100 ] || TENANT_PCT=50
 
 boot() { # $1 extra-env-string  $2 log
     memra_port_guard kv-host-spill-failure-gate "$PORT" MEMRA_GATE_PORT || return 1
@@ -155,6 +171,13 @@ chk() { # NAME CMD...: run CMD under `if` so set -e never fires on an asserted f
     fi
 }
 absent() { ! grep -q "$1" "$2"; }
+# The two named pool-full refusals, each with its bytes and its budget (see the header).
+poolfull_refusal_whole_budget() { # $1 log
+    grep -qE '\[prefix-host\] skip demote: entry [0-9]+\.[0-9]MB > host budget [0-9]+MB$' "$1"
+}
+poolfull_refusal_share_cap() { # $1 log
+    grep -qE '\[prefix-host\] demote evaporated at the tenant share cap before the D2H copy: [0-9]+ tokens, [0-9]+\.[0-9]MB \([0-9]+% of [0-9]+MB, MEMRA_KV_HOST_TENANT_PCT; model gate\); reclaim refused: the image alone exceeds the share \([0-9]+\.[0-9]MB > [0-9]+MB\); nothing evicted$' "$1"
+}
 jqpy() { # $1 file $2 python-expr over loaded json `r`
     python3 -c "
 import json, sys
@@ -181,8 +204,17 @@ run_cell poolfull
 stop
 chk "device budget forced an eviction (the failure path's trigger)" \
     grep -q "\[prefix-cache\] evict" "$EV/poolfull-server.log"
-chk "pool-full refusal is LOUD and named" \
-    grep -q "\[prefix-host\] skip demote: entry" "$EV/poolfull-server.log"
+if [ "$TENANT_PCT" -ge 100 ]; then
+    echo "  pool-full refusal arm: whole host budget (MEMRA_KV_HOST_TENANT_PCT=100 disarms the share cap; insert-path skip demote after the copy)"
+    chk "pool-full refusal is LOUD and named (skip demote: entry X MB > host budget B MB)" \
+        poolfull_refusal_whole_budget "$EV/poolfull-server.log"
+else
+    echo "  pool-full refusal arm: tenant share cap ${TENANT_PCT}% (server default 50; pre-copy evaporation, the image alone exceeds the share)"
+    chk "pool-full refusal is LOUD and named (demote evaporated at the tenant share cap before the D2H copy: N tokens, X MB (P% of B MB); the image alone exceeds the share (X MB > S MB))" \
+        poolfull_refusal_share_cap "$EV/poolfull-server.log"
+    chk "the refusal counted (prefix_host_tenant_rejects >= 1)" \
+        jqpy "$EV/poolfull-metrics.json" "r['prefix_host_tenant_rejects'] >= 1"
+fi
 chk "nothing entered the tier" \
     jqpy "$EV/poolfull-metrics.json" \
     "r['prefix_host_entries'] == 0 and r['prefix_host_demotions'] == 0 and r['prefix_host_promotions'] == 0"
