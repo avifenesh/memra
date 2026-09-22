@@ -40,7 +40,7 @@ impl FixtureSource {
             &plan,
             CheckpointDialect::Gguf,
             ContractOptions {
-                output_head: OutputHead::TiedToEmbedding,
+                output_head: OutputHead::Separate,
             },
         )
         .expect("fixture tensor contract");
@@ -50,9 +50,20 @@ impl FixtureSource {
             .iter()
             .filter(|req| req.required || reference.weights.contains_key(&req.id))
         {
+            // memra#541: glm5_next declares a separate head; the fixture serves the embedding
+            // rows under `output.weight` (the reference reads the same numbers either way).
             let tensor = reference
                 .weights
                 .get(&req.id)
+                .or_else(|| {
+                    (req.id == memra_gguf::tensor_contract::TensorId::OutputProjection)
+                        .then(|| {
+                            reference
+                                .weights
+                                .get(&memra_gguf::tensor_contract::TensorId::TokenEmbedding)
+                        })
+                        .flatten()
+                })
                 .expect("required reference tensor");
             assert!(tensor.ints.is_none(), "this fixture uses F32 tensors only");
             let bytes: Vec<u8> = tensor
@@ -222,7 +233,7 @@ mod tests {
             &source.plan,
             CheckpointDialect::Gguf,
             ContractOptions {
-                output_head: OutputHead::TiedToEmbedding,
+                output_head: OutputHead::Separate,
             },
         )
         .unwrap();

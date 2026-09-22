@@ -435,8 +435,17 @@ pub fn owned_by_vision(tensor: &BoundTensor) -> bool {
     matches!(tensor.owner, TensorOwner::Vision(_))
 }
 
-pub fn owned_by_mtp(tensor: &BoundTensor) -> bool {
-    matches!(tensor.owner, TensorOwner::Mtp(_))
+/// Whether a bound tensor belongs to an MTP block: the glue tensors carry `TensorOwner::Mtp`,
+/// but the block's own layer tensors keep their appended layer index (`blk.<n_trunk+d>.*` in a
+/// GGUF), so anything owned by a layer at or past the trunk is the draft head's too. Receipt:
+/// `decode-batch-gate` loads without MTP and the first Refuse run named exactly the eleven
+/// `blk.32.*` tensors of the 9B's appended block.
+pub fn owned_by_mtp(tensor: &BoundTensor, n_trunk_layers: u32) -> bool {
+    match tensor.owner {
+        TensorOwner::Mtp(_) => true,
+        TensorOwner::Layer(index) => index >= n_trunk_layers,
+        _ => false,
+    }
 }
 
 /// A [`TensorSource`] that records the ggml name of every tensor read through it. Probes

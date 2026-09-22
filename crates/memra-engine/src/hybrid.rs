@@ -6384,7 +6384,8 @@ impl HybridModel {
         let unconsumed = binding.audit_consumption(&recording.requested(), &cfg, |id, tensor| {
             memra_gguf::checkpoint_binding::unread_by_design(id)
                 || memra_gguf::checkpoint_binding::owned_by_vision(tensor)
-                || (!load_mtp && memra_gguf::checkpoint_binding::owned_by_mtp(tensor))
+                || (!load_mtp
+                    && memra_gguf::checkpoint_binding::owned_by_mtp(tensor, n_trunk as u32))
         });
         memra_gguf::checkpoint_binding::settle_consumption(&binding, &unconsumed)
             .map_err(std::io::Error::other)?;

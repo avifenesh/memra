@@ -60,6 +60,31 @@ memra's W4A16 path quantizes activations dynamically and its calibrated A4 progr
 No engine code path reads the plane; it is in the census, bound by the contract (so a malformed
 one still refuses), and skipped by the consumption audit with that reason in code.
 
+## What the boundary caught while it was being built
+
+- `decode-batch-gate` loads the 9B WITHOUT its MTP block, and the first `Refuse` run named
+  exactly the eleven `blk.32.*` tensors of the appended block: the block's layer tensors carry
+  their appended layer index (`TensorOwner::Layer(32)`), only the glue tensors carry
+  `TensorOwner::Mtp`. `owned_by_mtp` is now index-aware (owner layer at or past the trunk).
+  Receipt: `raw/local-ci-attempt1-decode-batch-refusal.txt`.
+- The GGUF contract declared every quantization auxiliary as a `[1]` scalar. That was never
+  compared for safetensors (auxiliaries fold into the owning weight's row) but GGUF auxiliaries
+  are census rows, and a stacked expert bank carries one macro-scale per expert
+  (`blk.N.ffn_{proj}_exps.scale` f32 `[n_expert]`, the sidecar `HostExps` reads). With the
+  loaders binding, every glm5 MoE fixture with per-expert scale planes refused
+  (`shape mismatch: expected [1], got [8]`). The contract now declares `[ne[2]]` for a 3-D GGUF
+  weight's auxiliaries and `[1]` otherwise. The two real NVFP4 GGUFs on this rig (9B dense:
+  scalar `.scale` rows; Ornith 35B MoE: no `.scale` rows at all) bind under both rules.
+- 23 GPU test fixtures (`crates/memra-engine/tests/*_gpu.rs`) and the in-crate
+  `model_memory_fixture` served tensors under contract names but exposed no census and used a
+  tied head under families that ship a separate one. They now expose a census
+  (`census_from_views`) and serve the embedding rows under `output.weight` (the reference reads
+  the same numbers either way). `hyper_connections_gpu::a_missing_hc_tensor_is_refused_by_name`
+  now sees the contract's refusal (the semantic id names the declaration) instead of the loader's.
+- `glm5_dflash_session_gpu::gpu_glm5_prime_walker_four_turns_with_restored_suffix_and_peer`
+  fails identically on `main` (5df11152f) and on this tree: pre-existing, not this lane's
+  (`raw/gpu-mock-tests.log`, control run on the main checkout).
+
 ## Scope and what stays open
 
 - `Refuse` is set for `qwen35` only, on the receipt above. Every other pack reports. Flipping a
