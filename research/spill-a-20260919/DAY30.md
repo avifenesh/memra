@@ -171,3 +171,47 @@ reason that is not a defect. So, before any run:
 - A3 as amended: on every contract demote of an ON arm, the copy-complete line's `items=` equals the KV count plus the
   span count (the pairs above), the receipt line's span suffix names the same span count, and the receipt line's
   `items=` is the KV count (32 or 34 on the 27B, 16 or 18 on the 9B). The promote line is unchanged.
+
+## 3. What landed (the D2H half, in the stated order)
+
+1. **Tier conformance** (`97a9e091f`): `crates/memra-tier/src/conformance/d2h_span.rs`, rules 1 to 5 of the span
+   batch (refusal before enqueue is whole; one landing over items AND spans; the receipt term; back exactly once
+   before retirement; fail closed), three schedules (`d2h_span_batch`, `d2h_span_enqueue_failure_quarantines`, the red
+   arm `d2h_span_taken_on_the_items_landing_fails`) and a CPU binding (`tests/contracts/d2h_span_bindings.rs`,
+   3 passed). Additive and unversioned; `WIRE_VERSION` stays 1.
+2. **Engine seam** (`97a9e091f`): `PinnedHostBuf::new_unwritten` (cached pinned, no fill, unreadable until landed),
+   `enqueue_from_device_f32` (`cuMemcpyDtoHAsync`, no host wait) and `mark_landed` (`crates/memra-engine/src/pinned_host.rs`);
+   `D2hSpan`, `CudaTransfers::submit_d2h_spans` (`tier_transfer.rs:1644`: admission first, the owner-stream fence and the
+   copy-stream wait, then one enqueue and one event per span; any error from the first enqueue on sets the ticket
+   `unknown`) and `take_d2h_spans` (`:1733`); `progress` folds the span events into `producer_done`, `retire` is `Busy`
+   while spans are untaken, an unretired entry's drop forgets its spans. The CPU census `d2h_span_rules_are_as_stated`
+   (`:3338`) and the native ignored cell `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream` (`:3397`: three spans
+   of 3, 5 and 4 MiB, an invalid attach refused whole, a 300 ms copy-stream delay so the KV items land first and the
+   take is refused `NotReady`, a second attach `Busy`, the bytes bitwise after the take, the injected second-span
+   enqueue fault quarantining the ticket).
+3. **Worker** (`fc637d26a`, `crates/memra-server/src/worker.rs`): the per-context staging pool
+   (`HostTierContext.staging`, `staging_take` `:9214`, `staging_put` `:9223`, cleared at the latch `:8871`);
+   `host_spans_submit` (`:10776`) moves every non-empty `dead.conv` / `dead.ssm` plane into a span after the KV
+   ticket, and a refusal hands every span back, returns the sources to `dead`, returns the staging and unwinds the
+   ticket through `host_contract_abort` (`tier D2H spans refused: <error> (<n> f32 spans handed back)`); the image
+   carries empty heap placeholders for the spanned slots; the settle takes the spans after the landing and before the
+   retire (`:10929`), puts each source back into `dead` (it frees with the shell, after its event) and returns the
+   staging with the KV planes; the driver attaches each staging buffer to its placeholder payload (`:13041`), the helper
+   copies it into the payload's heap `Vec` and hashes that (`:10043`, the same `host_hash_payload_digest` program and the
+   same resident form), and the landed path returns the staging to the pool (`:13310`). The two lines as amended in
+   section 2a. The CPU census `the_d2h_spans_ride_the_ticket_in_the_stated_order` (`:46098`) and two GPU door cells:
+   `option_b_spans_ride_the_ticket_and_land_bitwise` (`:46444`) and `option_b_span_refusal_returns_every_plane_and_keeps_the_tier_on`
+   (`:46560`, planes on a foreign stream refused `WrongOwner (4 f32 spans handed back)`, every plane whole, the tier
+   on, the next owner-stream demote lands).
+4. **CPU census** (the two above) plus the reader `day30-reading.py` and the sitting scripts (`a8d6b1df5`), all
+   before any run.
+
+Checks on the code: `cargo fmt --all -- --check` clean; clippy `-D warnings` all targets on tier, engine and server
+`Finished`; the `DOCS_RS=1 --target x86_64-unknown-linux-gnu` pass `Finished`; `check-flags: every runtime MEMRA_* name
+resolves against 'docs/FLAGS.md' (no grandfather list)`; `check-conflict-markers: OK`; `git diff --check` clean; zero
+em dashes. No new `MEMRA_*` name.
+
+The reader against day 29's receipts (the baseline, same command): `DAY30 A2 pre-submit steady N=80 median=6.05
+min=5.92 max=6.61 boots_on=10 demotes_per_boot=[11] ... -> FAIL`; demotes 1 to 3 of a boot `median=37.93`, `42.89`,
+`42.27`; `helper hashed_in_ms N=110 median=73.1`; A3 `copy_complete_lines=0 ... -> FAIL` (the day-29 lines carry no
+`items=` term).
