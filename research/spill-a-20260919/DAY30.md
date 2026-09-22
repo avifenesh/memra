@@ -448,3 +448,60 @@ sha256 kept); the bundles that carried the tree removed on both ends; no server 
 nothing of other lanes touched. Local: the release build and the battery under the CPU quota; the 5090 held only
 through the gates' own `flock`, after the bounded idle wait; the staged binary directory removed; no scratch of this
 run left in `/tmp`.
+
+## 11. Main moved twice after the records commit (the lane merged both; the 5090 half re-run on the merged tree)
+
+- `origin/main` moved to `0c86309bd` (#652: `c26255bc7` replaces `HostHashWorker::join` with
+  `close(why, bound)`, the latch passing `HOST_HASH_LATCH_JOIN` and shutdown `HOST_HASH_DEADLINE`; `298f7d052` its
+  records). Merged as `2a83224ab`. One hunk conflicted, in `HostPrefixCache::disable` (`worker.rs`): main's bounded
+  `tier.hasher.close("the tier latched off", HOST_HASH_LATCH_JOIN);` against the lane's
+  `tier.staging.borrow_mut().clear();`. Resolved by keeping both, the close first; main's census test and the lane's
+  (`disable.contains("tier.staging.borrow_mut().clear();")`) both pass on the result.
+- CPU suites on `2a83224ab` (`rtx5090-day30-merge/cpu/`, `tree.sha`, `rc.log` all `rc=0`): `cargo fmt --all --
+  --check` clean; clippy `-D warnings` all targets on tier, engine and server `Finished`; the GPU-less `DOCS_RS=1
+  --target x86_64-unknown-linux-gnu` pass `Finished`; server lib `test result: ok. 836 passed; 0 failed; 16 ignored`;
+  tier contracts `test result: ok. 90 passed; 0 failed; 0 ignored`. Release build `Finished` in 18.00 s, `rc=0`,
+  `binary.sha256` `11a82727afc4d3c45b10ed5c608c26c6bf620e8fcc97c24d6f65d3863994081e`.
+- The 5090 half on `2a83224ab`, first pass (`battery-5090.sh`, byte-identical to section 7's; `battery.log`): the
+  identity and both fault cells `rc=2`, `REFUSED: canonical GPU lock busy` (their `flock -n` met another lane's hold
+  while the card idled between that lane's boots); hit-off `rc=1`, `server died during boot:` with an empty server log
+  (its launch wrapper's `flock -w 300` ran out). No verdict is read from that pass. The lane stopped it before hit-on
+  and wrote `rerun-held.sh`: the same five gates, env, binary and artifact under ONE collector hold of
+  `/tmp/memra-5090.lock` (bounded, 15 x `flock -w 120`), then the idle check under the hold (no compute app and at
+  least 20000 MiB free, 15 x 60 s), either bound running out recording every cell NOT RUN; each gate takes the held
+  FD through its own `--external-lock 9`. No gate, cell or threshold changed. The holder of the lock was never
+  inspected beyond nvidia-smi's own listing and never signalled.
+- The held rerun, `2026-09-22T21:05:31Z` to `21:09:21Z`, verbatim (`battery.log`, each `gate.log`):
+  - `identity-default-on-held`: `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok, 0 FAIL).
+  - `fault-default-held`: `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (123 ok, 0 FAIL).
+  - `fault-plain-held`: `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (123 ok, 0 FAIL).
+  - `hit-off-held`: `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok; `armed=0 door_on=0`).
+  - `hit-on-held`: `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (68 ok), census `armed=1 door_on=1
+    capture_submitted=12 capture_published=12 restore_submitted=13 restore_landed=13 demote_submitted=0
+    promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0` (spec-on), `capture_submitted=2
+    capture_published=2 restore_submitted=3 restore_landed=3` (spec-off), `ok: door arm: 30 route submission(s)
+    across the two boots`: equal to day 24's and to section 7's.
+  - A3 (`reading-day30-a3.log`): `DAY30 A3 logs=47 copy_complete_lines=34 receipts_paired=34
+    receipts_without_copy_line(on-tick)=0 bad=0 ... -> PASS`; `DAY30 VERDICT clauses_failed=0 -> ALL PASS`.
+  - The bounded close on the lane's tree (`latch-lines.log`, its command banked): `hash helper joined (the tier
+    latched off)` 8 lines, `hash helper joined (shutdown)` 15, `hash helper detached` 0.
+  - Card before and after each held cell (`card-range.log`): N=10 readings, 60 to 66 C, 26.70 to 40.10 W, 15 MiB used.
+  - Demote ledger lines (`counts.log`), recorded as this card's gate traffic, not a cost cell: `fault-default-held:
+    N=14 pre-submit median=3.50 ...; helper median=30.10 ...; owner in-completion median=12.82`, `fault-plain-held:
+    N=14 pre-submit median=1.93 ...; helper median=30.30 ...; owner in-completion median=10.31`,
+    `identity-default-on-held: N=2 pre-submit median=42.20` (the verify arm, finding 5).
+- `origin/main` then moved to `9717e8d57` (#653, integ46: C days 36 and 37, research files only). Merged as
+  `4eeb76dfd`, auto-merged in `research/INDEX.md`, the door packet, `HOSTPREFIX-DOOR.md` and C's `STATE.md`; every
+  line either side added since the merge base is present in the result (set-diff under `LC_ALL=C`), and
+  `4eeb76dfd` moves no `crates/` or `tools/` file against `2a83224ab`, so the held rerun covers its engine and gate
+  tree. C's day-37 packet lines still read `A day 30 running` (section 5 items 2 and 7, section 6); they are C's
+  dated text and stay for C and the lead to re-read against this day.
+- The target card's receipts (sections 4 to 6) stay on `a8d6b1df5`; no BOX3 run on either merged tree. Main's
+  change there is the latch's bounded close, which the 5090 rerun exercises (8 latch joins, 0 detached).
+
+**Integrability after the merges**: the lane tip carries `origin/main` at `9717e8d57` with no open conflict; the
+D2H half is integrable as in section 9. Checks on this commit as in section 10 (`cargo fmt --all -- --check`,
+`check-flags`, `check-conflict-markers: OK`, `git diff --check`), `.gitattributes` in `rtx5090-day30-merge/`, zero em
+dashes in the section. Budget: about 2.5 agent-hours of 5 from the restart (the integ45 merge, `18:44Z`) to this
+commit. Local: the build and CPU suites under the CPU quota; the 5090 taken only through the collector hold, released
+at the end (`LOCAL-HELD-RERUN-DONE`); the staged binary directory removed; no scratch of this run left in `/tmp`.
