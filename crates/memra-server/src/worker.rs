@@ -43355,10 +43355,6 @@ mod tests {
         });
     }
 
-    /// The probe's decision: no state is `Through`; this request's pending state parks it again and
-    /// its ready state is consumed; another request's ready state is an orphan; another request's
-    /// pending state lets this one through (one restore per worker, the tick program meanwhile); an
-    /// empty request id never matches.
     /// WP-A day 26 (ruling 36): the promoted-pin predicate over its three shapes (the pin names this
     /// entry, the pin names another entry, no pin) plus a pin of another pool at the same index.
     #[test]
@@ -43460,6 +43456,10 @@ mod tests {
         assert!(!def_body.contains("MEMRA_") && !probe_body[refusal..class].contains("MEMRA_"));
     }
 
+    /// The probe's decision: no state is `Through`; this request's pending state parks it again and
+    /// its ready state is consumed; another request's ready state is an orphan; another request's
+    /// pending state lets this one through (one restore per worker, the tick program meanwhile); an
+    /// empty request id never matches.
     #[test]
     fn restore_probe_decision_parks_its_own_request_and_names_an_orphan() {
         let (mut host, key) = cpu_door_host();
