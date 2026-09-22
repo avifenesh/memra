@@ -380,7 +380,9 @@ the second, every one logged with `nvidia-smi`'s own listing, nothing signalled)
   it owns the lock), another lane's gate held the lock through the five minutes (its `memra-server` is the compute app in
   the launcher's next wait listing, 16:39Z), the flock timed out without launching and the boot loop read a dead pid; the
   card was never touched by that cell. The re-run (`rerun-hit-off.sh`, the same gate unwrapped from the first pass's
-  `MemoryMax` scope, after the same bounded wait) is recorded below when it lands.
+  `MemoryMax` scope, after the same bounded wait) landed 17:09:22Z to 17:09:44Z after nine logged waits (another
+  lane's `hold`, `kernel-check`, `decode-batch-gate` and `decode-dc-gate` on the card, nothing signalled): `hit-off-rerun`
+  **`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`** (61 ok; `door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submit`). So on this card the hit gate reads `ALL GREEN` in both arms.
 - `hit-on` (16:47:27Z to 16:47:53Z): `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (68 ok), census `armed=1 door_on=1
   capture_submitted=12 capture_published=12 restore_submitted=13 restore_landed=13 demote_submitted=0
   promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0` (spec-on), `capture_submitted=2
