@@ -129,6 +129,15 @@ the only instance was the one the lead fixed. Slice 3 adds none: the engine's `p
 borrows (`match &e.receipt`, `let Some(lanes) = &receipt_lanes`), the capture's mismatch arm consumes `registered`
 in a loop with no refutation, and the restore's mismatch arm `take`s the cache and the pin as separate statements.
 
+The lead's second note (revuto round 2 on #638, `40964560a` on the same branch): the run loop's parked-only bounded
+wait now covers a not-ready `Restoring` request (a request parked on its restore was spinning the owner thread as
+#627's promote did), and `host_restore_probe_decision` returns `DropOrphan` for another request's ready restore only
+past `RESTORE_READY_TICKS` (within the grace it is `Through`, the state left for its owner). Slice 3 parks a request on
+NO new pending state and introduces NO new ready state: the receipt rides the existing `Capturing` and `Restoring`
+states (the same tick-top polls, the same parks, the same grace), so neither the wait's guard nor the probe's grace
+gains an arm today. The lead's branch tip `40964560a` is merged into this lane as `ac1ac91c5` (clean; marker census
+OK), so the target-card gates below run on a tree that carries both fixes.
+
 ## Task 1, what landed (under `MEMRA_KV_HOST_CONTRACTS=1`, default OFF, decide-by 2026-10-05)
 
 - `crates/memra-tier/src/conformance/d2d_receipt.rs`: the receipt program (`RECEIPT_LANES`, `mix64`,
