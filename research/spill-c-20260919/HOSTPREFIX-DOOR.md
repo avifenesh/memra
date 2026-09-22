@@ -621,6 +621,17 @@ paragraph at the end states the question without answering it.
 | The digest micro-cell on the target card's host: SHA-256 (`memra_tier::contracts::checksum`) against the slice-3 four-lane digest (`memra_tier::conformance::receipt_digest`) over 160 MiB of heap | n/a (OFF hashes nothing) | `sha_ms=77.589 lanes_ms=70.737 lanes_over_sha=0.912` (`sha_range=77.538..77.877 lanes_range=70.662..71.044`, 2.162 against 2.372 GB/s, both stable) | A day 27, `day27-digest-micro/` (both engine programs by path dependency), N=5 per order, two orders interleaved call by call, pooled N=10, one collector hold, the card idle at 33 C, 33.50 W; A's pre-registered rule (`lanes_over_sha < 1` with disjoint ranges) read TRUE: the four-lane program 9 percent cheaper here, neither at memory speed, so (b') is worth about 7 ms of the 74.8 (A's reading) | `spill-a-20260919/pro-single-day27/box/digest-micro/ev/digest-micro.log` (integ43) |
 | The digest micro-cell on the RTX 5090 class host (this host's own figure, never compared to the row above) | n/a | `sha_ms=37.111 lanes_ms=55.078 lanes_over_sha=1.484` (`sha_range=36.837..40.676 lanes_range=54.490..56.115`, 4.521 against 3.046 GB/s, both stable) | A day 27, the same cell, one collector hold on `/tmp/memra-5090.lock`, the card idle at 56 C, 16.54 W; A's rule read FALSE: the four-lane program 48 percent slower than SHA-NI here; digests byte-identical to the target host's for both programs | `spill-a-20260919/rtx5090-day27/digest-micro/ev/digest-micro.log` (integ43) |
 
+### B-5090. The cost table on the RTX 5090 class: door OFF against ON on the local RTX 5090 Laptop GPU, the 9B (per card; never divided into B)
+
+| Quantity | OFF | ON | Shape | Receipt |
+|---|---|---|---|---|
+| Demote stall median (the tenant's worst tick minus its p50), the plain 64-token entry `54.6MB, 16 items` | `63.7` (IQR 2.0, pass 1); `63.0` (IQR 2.3, pass 2) | `67.0` (IQR 2.6, pass 1); `63.2` (IQR 1.5, pass 2); `on_minus_off=+3.3 unc=3.3 -> under_resolution`, `+0.3 unc=2.7 -> under_resolution` | C day 35, `091a931c0`, A day 16's shape on the 9B (cache 64 MB, host 8192 MB, `MEMRA_SERVE_SPEC=0`, the tenant 400 tokens at a 7.3 ms tick, A's intruder shapes byte-for-byte), six boots in ONE hold on `/tmp/memra-5090.lock`, two passes in opposite order, N=5 per arm per order per boot, N=10 pooled per pass; 58 to 89 C, 30.64 to 175.33 W, `power.limit [N/A]`; 10 of 10 replays PASS; pass 1 beside an unidentified co-tenant (card-wide memory 20.3 to 23.2 GB against 7.6 to 9.8 GB in pass 2), pass 2 clean | `rtx5090-day35/stall/ev/pass{1,2}/{off,on}/demote/`, `rtx5090-day35/reading.log` |
+| Promote stall median (the promote-then-hit shape, A day 26's refusal firing once per run) | `47.7` (IQR 0.9); `47.5` (IQR 2.4) | `49.3` (IQR 12.5); `50.1` (IQR 1.3); `on_minus_off=+1.6 unc=12.5 -> under_resolution`, `+2.6 unc=2.7 -> under_resolution` | as above; per ON run one `promote submitted ... request parked`, one `H2D receipt require=ok`, one `promote published off the tick` (19.7 to 20.3 ms), one `restore not routed (contracts door)`, zero `restore submitted` | `rtx5090-day35/stall/ev/pass{1,2}/{off,on}/promote/` |
+| The server's own lines: demote `in` | 17.1 to 26.9 (N=9 per pass) | 54.6 to 70.2 (N=9 per pass); `from submission to completion` median 44.0 / 41.0; `in - completion` median 23.8 (21.7 to 26.2) / 21.6 (20.6 to 23.4) | as above; the `in - completion` segment about 1.8 to 2.0 of day 33's 11.9 ms heap pass at the entry size on this host | `rtx5090-day35/reading.log` (`DAY35 ATTRIBUTION`) |
+| The server's own lines: promote `in`, and the inline demote inside the promote window | promote 8.2 to 10.3 steady (27.2 to 31.6 first touch); inline demote 4.6 to 6.6 steady | promote 24.7 to 26.2 steady (41.6 to 45.6 first touch), completion 20.1 median; inline demote 78.3 to 83.1 steady (it spans the park), its `in - completion` 21.8 / 21.9 | as above | as above |
+| Where the door's share lands in the tenant's ticks (post-hoc description, `day35-gaps-posthoc.py`, written after the run) | demote: two stretched ticks, `top1_median=71.2 / 70.3`, `top2_median=41.3 / 41.9`, sum `112.8 / 112.3`; promote: one stretched tick, `55.2 / 54.8` | demote: `top1_median=74.5 / 70.5`, `top2_median=70.9 / 69.4`, sum `146.9 / 140.0` (+34.1 / +27.7 per demote, the door's share on the SECOND tick, +29.6 / +27.5 over OFF's); promote: two stretched ticks, `56.7 / 57.4` and `40.1 / 40.0`, top-2 sum `97.9 / 97.6` against `65.3 / 64.6` (+32.6 / +33.0 per hit) | the worst tick is the same in both arms in both classes, which is why the rule's `on_minus_off` is under resolution here; a property of the metric on this shape, stated, not a re-reading of the verdict lines | `rtx5090-day35/gaps-posthoc.log` |
+| The prime arm (the class's baseline; no door in it) | n/a | n/a | pass 2 `stall_median=278.4` (IQR 6.6), five stretched ticks of 220.9 to 292.6 ms per 5120- to 5123-token prime; pass 1 INADMISSIBLE, 7 of 10 intruders refused by the memory admission beside the co-tenant (`[admit-oom] capacity reject ... available 1794MB`) | `rtx5090-day35/stall/ev/pass{1,2}/prime/prime/` |
+
 ### C. The correctness table: identity, failure and fault gates, both cards, both arms
 
 | Gate | Card, artifact | Door OFF | Door ON | Trees with a green receipt (latest first) | Receipts |
@@ -703,7 +714,8 @@ attributed by any cell. Both are named as open for the review; nothing is inferr
    put about 490 ms per pass on 54.8 MB; the ON demote's `in` figure reads 38.5 to 60.4, so the two hashes are not
    reading write-combined memory at that rate on this tree; which memory they read is item 6's question, not
    answered here. The per-hardware rule's pair on this class now exists as one cell with these N and this regime;
-   no tenant-stall cell exists on this class.
+   the tenant-stall cell on this class exists since day 35 (the RTX 5090 cost table below section B; `DAY35.md`): both
+   classes `under_resolution` in both passes by the worst-tick rule, the door's shares on a second stretched tick.
 6. **The promote-side census question and the day-16 write-combined contradiction** named in the arithmetic.
    RESOLVED day 27 and day 33: A's code census (`spill-a-20260919/DAY27.md` section 1, integ43; the paragraph below,
    A's) names the memory each hash reads and what the 74.8 is, and answers the promote side (its item 5: hash 3 over
@@ -894,3 +906,11 @@ reaches the tick's cost. Ruling 39 (lead, integ43) approved option (a), the bund
 both cards, two fault cells, a bitwise digest unit cell, no flag); its receipt does not exist at the time of writing. The
 question of this section is unchanged and still not answered here; what the review weighs has moved from an unattributed
 32 ms in the demote arm's stall to a named pass with an approved arm that has not yet been measured.
+
+DAY 35: the RTX 5090 class has its tenant-stall cell (the table B-5090 above; `DAY35.md`, `rtx5090-day35/`). By the day-16
+rule (the tenant's worst tick minus its p50) the door's demote and promote arms are under resolution on this card in both passes
+(`+3.3 unc 3.3`, `+0.3 unc 2.7`; `+1.6 unc 12.5`, `+2.6 unc 2.7`), with every door line present and every receipt `require=ok`;
+the door's share is there, on a second stretched tick the rule does not read (about 70 ms against 41 for a demote, a second
+40 ms tick for a promote), and the ON demote's `in - completion` on this host reads 21.6 to 23.8 ms, about two of day 33's heap
+passes at the entry size. Pass 1 ran beside an unidentified co-tenant of about 12.6 GB and its prime arm is inadmissible for
+that reason; pass 2 is clean. The question of this section is unchanged and still not answered here.
