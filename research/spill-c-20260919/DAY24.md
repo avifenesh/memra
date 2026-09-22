@@ -32,7 +32,39 @@ and the holder is never inspected or signalled; compute apps and driver free sam
 free). Receipts `rtx5090-day24/<cell>/` (`CELL.txt`, `gate.log`, `ev/`, `compute-apps.{before,after}.csv`,
 `card.{before,after}.csv`, `verdict.txt`, `gate.exit`), `rtx5090-day24/battery.log`.
 
-TABLE-PLACEHOLDER
+Sixteen cells 05:59:41Z to 06:11:39Z plus the rerun at 06:13:46Z (`battery.log`); one bounded lock retry
+(`failure-default-off/lock-retries.txt`: `attempt 1: lock busy, waiting 120 s`; no compute app in its before
+snapshot; the holder was never inspected or signalled); no compute app in any of the 34 before and after snapshots.
+Every line verbatim; pass/fail cells, no timing claim.
+
+| Cell | Environment | Verdict line | ok / FAIL |
+|---|---|---|---|
+| fault-default | default (door ON by construction) | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` | 65 / 0 |
+| fault-plain | `MEMRA_SERVE_SPEC=0` | `KV-HOST-CONTRACT-FAULT GATE: 2 FAILURE(S)` | 63 / 2 (the finding below) |
+| fault-plain-rerun | `MEMRA_SERVE_SPEC=0`, the same cell again | `KV-HOST-CONTRACT-FAULT GATE: 2 FAILURE(S)` | 63 / 2 (same two lines, receipts `seq=3` and `seq=4` again) |
+| failure-default-off | default | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| failure-default-on | default, `MEMRA_KV_HOST_CONTRACTS=1` | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| failure-plain-off | `MEMRA_SERVE_SPEC=0` | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| failure-plain-on | `MEMRA_SERVE_SPEC=0`, door ON | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| identity-default-off | default | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-default-on | default, door ON | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-plain-off | `MEMRA_SERVE_SPEC=0` | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-plain-on | `MEMRA_SERVE_SPEC=0`, door ON | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| hit-off | door OFF (`spec-on-cache-hit-gate.sh qwen`, 9B) | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` | 61 / 0 |
+| hit-on | door ON | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` | 61 / 0 |
+| twin27-off | door OFF, the 27B, gate defaults (1024 MiB budget) | `PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` | PASS (no `REFUSED: V3 premise` line: the premise held on a clean card) |
+| twin27-on | door ON, the 27B | the identical line, `-> PASS` | PASS |
+| unit-server (`option_b_*`, `option_c_*`, ignored GPU cells) | the door's unwinds on the card | `test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 805 filtered out; finished in 0.35s` | 8 / 0 |
+| unit-engine (`d2d_capture_*`) | the capture class on the card | `test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok`, `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 553 filtered out; finished in 0.30s` | 1 / 0 |
+
+Where the route engaged on this card: every plain-arm seed in the identity, failure and fault logs prints `capture
+submitted off the tick (seed): 64 tokens, 16 planes (53.6MB) on the contracts door's copy stream; recurrent state
+cloned at the boundary on the owner stream` then `capture published off the tick (seed): 64 tokens complete after
+1 poll(s), 0.0ms from submission to completion, 0.0ms to publication (tick-top poll)` (the 9B's 16 planes are about
+0.9 MB of the 53.6 MB entry); the default (spec) arms publish through the spec boundary and show no capture line,
+as on A's target card. The twin gate's `-> PASS` on both arms reproduces the lead's integ35 clean-card line to the
+byte (`evictions=9 cohort_evictions=3 ... effective_free_ok=8/8`), now on the slice-1 tree. Fourteen of the sixteen
+owed cells are green on this card; the fault gate's plain arm is red on a gate clause, twice, with the receipt.
 
 ### Finding: the fault gate's plain arm reads `2 FAILURE(S)` on the slice-1 tree, and the two lines are the gate's seq pin
 
@@ -127,16 +159,35 @@ over both plane classes). No code.
 
 ## Hygiene on the final tree
 
-HYGIENE-PLACEHOLDER
+`cargo fmt --all -- --check` rc=0 (`day24-cpu/fmt-merge.log`); `cargo test -p memra-server --lib` `799 passed; 0
+failed; 14 ignored` (`day24-cpu/server-tests-merge.log`); `cargo test -p memra-tier` every binary `0 failed`, the
+contracts `74 passed` (`day24-cpu/tier-tests-merge.log`); the two test binaries prebuilt under the CPU quota before
+the unit cells (`day24-cpu/test-build-{server,engine}.log`) so the lock hold carried the run, not the build;
+`tools/check-flags.sh` no uncovered runtime names (no new `MEMRA_*` read: the drivers set existing names);
+`tools/check-conflict-markers.sh` OK; `python3 tools/check-public-boundary.py check` 0 new (the receipts carry
+`127.0.0.1` only); `git diff --check` clean; no em dash in any file written today; shellcheck on the two drivers
+info-level only (SC2094 on the lock fd's own path).
 
 ## Pushes
 
-PUSHES-PLACEHOLDER
+`fad129042` (the two merges), `11df6e653` (the drivers before the run), `dd91c4949` (twelve cells' receipts, this
+file with the finding and the pre-registration, the census), then the closing commit (the remaining receipts,
+STATE, INDEX), each in `MEMRA_RELEASE_QUALIFICATION_MODE=development` (printed `UNQUALIFIED DEVELOPMENT ... no GPU
+qualification claimed`, logged in the clone's `.git/memra-gate-skips.log`). Not merged into main, no PR opened.
 
 ## Left as it was, and cleanup
 
-CLEANUP-PLACEHOLDER
+Not touched: BOX3 (no connection opened today: Task 2 stopped at its arithmetic and Task 1 is the local card's),
+`/root/artifacts`, `/root/memra-spill`, other lanes' worktrees or processes (the local lock was busy once behind a
+holder with no compute app, seen only in the retry record; another session's leftover shell matched a `pgrep` of
+mine and was left alone). No `/tmp` scratch created (the battery wrote under `rtx5090-day24/` and `day24-cpu/`
+directly); no server of mine on the card at close (compute apps empty, 23970 MiB free, 56 C); both locks free.
 
 ## Budget
 
-BUDGET-PLACEHOLDER
+About 1.3 agent-hours against 4: reading and the two merges 0.2, the drivers and the build 0.2, the sixteen cells
+plus the rerun 0.3 (wall 05:59Z to 06:15Z, the cells ran while the census was read), the fault-plain diagnosis
+0.2, the capture cell's code reading and arithmetic 0.2, the census and records 0.2. Blockers: none. Open for the
+lead and lane A: the fault gate's `cell` clause pins the ticket seq (1, 2) that slice 1's plain-arm captures now
+consume; the capture-isolating cell is stopped by arithmetic, not by the box; the spec-boundary route census is in
+the door review's item 10.
