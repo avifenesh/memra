@@ -245,3 +245,21 @@ boot under the collector's hold), no touch of other lanes' worktrees or processe
 that held the card before and after were listed by `nvidia-smi` and left alone), no third lock name, no cross-card
 comparison, no median without its N and regime, nothing tuned after a result (the post-hoc gap description is labelled
 and decides nothing), no recommendation.
+
+Checks at close: `shellcheck` clean on `day35-stall-cell.sh` and `day35-local-run.sh`; `tools/check-flags.sh` (`no uncovered
+runtime names`); `tools/check-conflict-markers.sh` OK; `git diff --check` clean (the receipt dir's `.gitattributes` marks
+`*.log` and the banked `harness.diff` `-whitespace`, the day-28 form); zero em dashes in every line added today; no provider
+host, id, price or location in the added lines; `python3 tools/check-public-boundary.py check`: `599 matches (599
+grandfathered, 0 new)`. Scratch: the reader's `/tmp/spill-c-day35-readertest` symlink layout and the merge's
+`/tmp/spill-c-idx-{ours,theirs}.md` removed at close. Budget: about 1.3 agent-hours against 4 (14 minutes of that the
+bounded wait for the card, 11 the hold).
+
+## Push section
+
+- `091a931c0` (the two merges), `UNQUALIFIED DEVELOPMENT: refs/heads/lane/spill-c-20260919 at <sha>; no GPU qualification
+  claimed`, `pre-push: skip recorded`.
+- `da9b22b63`: the pre-registration (cell 1: this file's Task 1, the harness copy, the cell, the reader, the runner, the build
+  log), the same two hook lines.
+- `20b4ee655`: the run (cell 2: `rtx5090-day35/`, Tasks 2 and 3 of this file, the post-hoc gap script), the same two hook lines.
+- The records tip: this section, `STATE.md`, the INDEX row, the door doc and the packet; its SHA is the commit that carries this
+  line.
