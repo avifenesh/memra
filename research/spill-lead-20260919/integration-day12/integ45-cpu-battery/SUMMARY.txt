@@ -12,3 +12,57 @@ tree ebf94591d24e8127164c3ea46c3a51dc710a6ea2 started 2026-09-22T18:22:09Z host 
    | test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
    | 
 == clippy: env DOCS_RS=1 cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf -p memra-cli --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
+   rc=0 (33s)
+   |     Checking hyper-util v0.1.20
+   |     Checking axum v0.7.9
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 32.94s
+== check-flags: bash tools/check-flags.sh
+   rc=0 (1s)
+   | check-flags: runtime literal reads=869
+   | check-flags: no uncovered runtime names
+   | check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+== publish-census: bash tools/workspace-publish-census.sh
+   rc=0 (0s)
+   | publish-census: OK — 12 publishable members, 12 listed, order topological, unpublishable: memra-probe
+== docs-registry: bash tools/docs-registry-census.sh
+   rc=0 (0s)
+   | docs-registry-census: ROUTER.md lines=47 (cap 60)
+   | docs-registry-census: check-flags --list answered with 869 runtime names (coverage enforced by check-flags.sh itself)
+   | docs-registry-census: flags-table-census: docs/FLAGS.md tables=58 rows=914, every row matches its header
+== pytest-battery: python3 -m pytest -q crates/memra-tier/tests/battery/
+   rc=0 (18s)
+   | .................................................. [ 57%]
+   | .....................................                          [100%]
+   | 87 passed, 32 subtests passed in 17.75s
+== test-engine-cpu: cargo test -p memra-engine --lib --offline --no-fail-fast
+   rc=0 (24s)
+   | 
+   | test result: ok. 531 passed; 0 failed; 30 ignored; 0 measured; 0 filtered out; finished in 9.10s
+   | 
+== test-tier: cargo test -p memra-tier --offline --no-fail-fast
+   rc=0 (8s)
+   | 
+   | test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+   | 
+== clippy-engine: cargo clippy -p memra-engine -p memra-server -p memra-tier --offline --all-targets -- -D warnings
+   rc=0 (150s)
+   | warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   | warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 30s
+== conflict-markers: bash tools/check-conflict-markers.sh
+   rc=0 (1s)
+   | check-conflict-markers: OK (no conflict marker line in tracked source or docs)
+== workflow-keys: python3 tools/check-workflow-keys.py
+   rc=0 (0s)
+   | check-workflow-keys: .github/workflows/publish.yml: jobs publish
+   | check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+   | check-workflow-keys: OK: 6 workflow files, no duplicate mapping keys (stdlib walker)
+== perf-board: python3 tools/update-perf-board.py --check
+   rc=0 (0s)
+   | perf board is up to date
+== diff-check: git diff --check origin/main HEAD
+   rc=2 (0s)
+   | research/spill-lead-20260919/integration-day12/integ45-cpu-battery/SUMMARY.txt:13: trailing whitespace.
+   | +   | 
+   | research/spill-lead-20260919/integration-day12/integ45-cpu-battery/test-server.log:1009: new blank line at EOF.
+finished 2026-09-22T18:29:16Z

@@ -37,7 +37,10 @@ Author's review of the full diff `main..lane/spill-integ45-20260922`, posted as 
 - Battery on this tree in the receipts (fmt, portable suites, memra-server suite, cross-target `DOCS_RS=1` clippy,
   censuses, collector pytest, engine CPU lib, tier suite, engine/server/tier clippy `-D warnings`, marker census,
   workflow keys, perf board, diff-check), the local 5090 serve-smoke, the engine `d2d_*` GPU cells, the hit gate OFF and
-  ON (armed) and the contract fault gate default and plain ON with the two hash cells (stated either way).
+  ON (armed) and the contract fault gate default and plain ON with the two hash cells. Result: fourteen of fifteen CPU
+  steps rc=0, `diff-check` red only on the receipts' own bytes before their `.gitattributes`, clean after;
+  `serve-smoke: 0 failed`; `d2d_*` 5 passed; `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 61 ok OFF and 68 ok ON with 30
+  route submissions; `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` 123 ok in both arms.
 
 ## Push regime
 Engine source in the range: pushed with `MEMRA_RELEASE_QUALIFICATION_MODE=development` (announced, logged). No GPU

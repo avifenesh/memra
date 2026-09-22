@@ -2416,6 +2416,19 @@ generated, and a parked request is served by the device hit either way. No findi
 code is the door's serving path; Move 1 owed item 2 (the bundle hash off the tick) closes on these receipts; item 2a
 closes; the remaining owner-thread cost of a demote is the pre-submit segment (Move 2 owed item 1, A day 30 running).
 
+**Battery (tree `1c540e050`, A's engine tree on main's; receipts `integ45-cpu-battery/`, `integ45-serve-smoke-5090/`,
+`integ45-hit-gate-5090/`, `integ45-fault-gate-5090/`).** Fourteen of fifteen CPU steps rc=0; the fifteenth, `diff-check`,
+rc=2 on the battery's own receipt bytes (`SUMMARY.txt:13: trailing whitespace`, `test-server.log:1009: new blank line at
+EOF`) before the receipt dirs carried `.gitattributes`; with them, `git diff --check origin/main HEAD` is clean on the
+committed tree. Local RTX 5090: `serve-smoke: 0 failed` (spec, gemma4 and Q35 arms SKIP, absent models), engine `d2d_*`
+GPU cells `5 passed` under the lock, the hit gate OFF and ON armed (9B), verbatim: `SPEC-ON-CACHE-HIT GATE: ALL GREEN
+(qwen)` 61 ok OFF, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 68 ok ON, `ok: door arm: 30 route submission(s) across the
+two boots`, 11 spec-boundary captures, 13 restores, 0 `restore not routed`, 0 hits parked on a `Hashing` entry (the park
+lives in the identity gate's shape, not this one), and one line matching `refused|DISABLED|trunk-only|dropped|skipped`:
+the route-contract registration `refused=[]` (#650's boot line, an empty list). The fault gate on this card, default and
+plain arms: `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` 123 ok each, both hash cells (`hash-helper-gone`,
+`hash-never-lands`) present.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
