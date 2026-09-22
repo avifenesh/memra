@@ -768,7 +768,11 @@ two orders, pooled N=10, load 0.06 before):** `DIGEST-MICRO rule ... sha_ms=77.5
 lanes_range=70.662..71.044 sha_gbps=2.162 lanes_gbps=2.372 lanes_over_sha=0.912 sha_stable=true lanes_stable=true`. By the
 pre-registered rule the four-lane program is cheaper than SHA-256 on this host (disjoint ranges, 9 percent), and both
 are compute-bound near 2.2 to 2.4 GB/s: (b') would take about 7 ms off the 74.8, not the 74.8. The SHA figure repeats
-C's day 18 (77.9 cached, 78.0 heap) within 0.5 percent.
+C's day 18 (77.9 cached, 78.0 heap) within 0.5 percent. **Local RTX 5090 rig's host (`rtx5090-day27/digest-micro/`, one
+collector hold, the same shape):** `sha_ms=37.111 lanes_ms=55.078 sha_range=36.837..40.676 lanes_range=54.490..56.115
+lanes_over_sha=1.484`: the four-lane program is 48 percent SLOWER than SHA-NI there; (b') would add about 18 ms per 160
+MiB on that class. Both hosts' digests byte-identical for both programs. Per host, no cross-card claim: no digest swap
+runs at memory speed on either host, so no digest change reaches the tick's cost; only (a) removes it.
 
 **Recommendation (for the lead's ruling; nothing implemented):** (a), scoped to the heap payloads, with (b) held as the
 5090 write-combined follow-up and (c)'s device-side form behind Move 2 owed item 1; acceptance gate in `DAY27.md` section

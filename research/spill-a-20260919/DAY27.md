@@ -192,5 +192,23 @@ program change would take about 7 ms off the 74.8 on the target card, not the 74
 figure repeats C's day 18 on this host (77.9 cached, 78.0 heap) within 0.5 percent, so the two cells agree on the rate
 that the section 1 arithmetic used. `executed-not-qualified`.
 
-Local RTX 5090 rig's host: pending a bounded wait on the card (another lane's `memra-server` held the card from the
-start of the day's waits; the result line goes here or the cell is recorded NOT RUN).
+Local RTX 5090 rig's host (`rtx5090-day27/digest-micro/`, one collector hold on `/tmp/memra-5090.lock` taken on the
+first try after a 14-minute bounded wait for another lane's `memra-server` boots to leave the card; no compute app before
+or after, host load 0.89 before and 0.90 after, the card idle at 56 C and 16.5 W in the collector's sample; binary
+`1bc13e74da94a335...`, source at `70c6d1e96`, the committed lockfile, the build and the collector under the CPU quota
+scope):
+
+`DIGEST-MICRO rule host="Intel(R) Core(TM) Ultra 9 275HX" bytes=167772160 n_per_order=5 pooled=10 orders=2 memory=heap
+sha_ms=37.111 lanes_ms=55.078 sha_range=36.837..40.676 lanes_range=54.490..56.115 sha_o1=37.617 sha_o2=37.084
+lanes_o1=55.428 lanes_o2=54.688 sha_gbps=4.521 lanes_gbps=3.046 lanes_over_sha=1.484 sha_stable=true lanes_stable=true`
+
+Read by the pre-registered rule: `lanes_over_sha=1.484` with disjoint ranges, so on this host the four-lane program as
+compiled today is NOT cheaper than SHA-256; it is 48 percent slower (SHA-NI at 4.5 GB/s against the scalar four-lane
+loop at 3.0). The SHA figure repeats C's day 18 here (37.3 cached, 37.5 heap) within 0.6 percent. The two hosts' digests
+are byte-identical to each other for both programs (the fill is deterministic), the cross-check that both cells ran the
+same two programs over the same bytes. `executed-not-qualified`.
+
+**Reading across the two hosts, per host, no cross-card claim.** (b') moves the target card's 74.8 by about 7 ms and
+would ADD about 18 ms per 160 MiB on the 5090 class's host; under the per-hardware rule that is a per-host default at
+most, and on neither host does the four-lane program run at memory speed, so no digest swap reaches the tick's cost. The
+only option that removes the 74.8 from the owner thread without a new program is (a).
