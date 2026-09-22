@@ -166,8 +166,11 @@ last = samples[-1] if samples else {}
 def gi(d, k):
     v = d.get(k); return int(v) if v not in (None, "") else None
 free_end = gi(last, "cuda_driver_free_bytes"); pool_used_end = gi(last, "cuda_pool_used_bytes"); pool_res_end = gi(last, "cuda_pool_reserved_bytes")
-first_done = [r for r in client if r["arm"] == "warmup"]
-pool_after_warmup = (first_done[0].get("after") or {}).get("cuda_pool_used_bytes") if first_done else None
+# pool baseline: the pool used at idle before the first mix request (the ready-time gauges read 0 until the first tick,
+# so take the max nonzero idle sample, like free_ready above; the warmup's own gauges are 0 for the same reason)
+idle_pool = [int(s["cuda_pool_used_bytes"]) for s in samples
+             if s.get("cuda_pool_used_bytes") and int(s["cuda_pool_used_bytes"]) > 0 and first_req and int(s["epoch_ms"]) < first_req]
+pool_after_warmup = max(idle_pool) if idle_pool else None
 print(f"idle driver free before the first request={free_ready} last sample={free_end} retained_by_process={None if None in (free_ready, free_end) else free_ready - free_end}")
 print(f"pool used after warmup={pool_after_warmup} last={pool_used_end} delta={None if None in (pool_after_warmup, pool_used_end) else pool_used_end - pool_after_warmup}; "
       f"pool reserved last={pool_res_end} cached last={end.get('cuda_pool_cached_bytes')}")

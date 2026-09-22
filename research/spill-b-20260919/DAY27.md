@@ -98,6 +98,53 @@ continuation (day 26: 0 on all 15), the sha256 per completion (must be equal on 
 is 0 in both, and on the hits the byte-identity of restore is the day-14 and day-19 gate's claim, re-read here as
 digest equality), the boot line, `prefix_cache_evictions`, and the retained bytes at idle. Results: section 1.4.
 
+### 1.4 After: target card, one RTX PRO 6000 Blackwell, 27B, `MEMRA_CTX` unset (`pro-single-day27/cell-after-ab`)
+
+Collector cell (`command.capture.json`: `status executed-not-qualified`, `qualification false`, `exit_code 0`), tree
+`de2c781e6`, `build.log` `exit=0`, `binary.sha256` recorded; 46 requests (1 warmup + 45), `non-200=0`; rig and
+`compute-apps` lines in `cells/after-ab/gpu-*.csv` and `compute-apps-*.csv`. Boot line, verbatim:
+
+```text
+[prefix-cache] on: budget 15883MB (15883042816 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), requested 15883042816 B; boot driver free 86519709696 B, post-reserve clamp 84909096960 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+```
+
+The deferred shape now hits on all 15 continuations where day 26 read `cached=0` on all 15, verbatim from
+`cells/after-ab/REPORT.txt` (the (i) rows are the day-26 rows to the token):
+
+```text
+arm=i L0 N=5 P=[1481, 1481, 1484, 1484, 1483] G=[591, 369, 589, 457, 545] cached=[0, 0, 0, 0, 0] ratios=[126.52, 141.7, 126.46, 135.06, 129.26] min=126.46 median=129.26 max=141.70 alloc_B=8271167488 used_B_median=63987456 booked_MB=[9291, 9777, 9779, 9779, 9778] inherited=1
+arm=i L1 N=5 P=[3138, 3138, 3139, 3138, 3136] G=[478, 954, 673, 508, 494] cached=[0, 0, 0, 0, 0] ratios=[72.5, 64.06, 68.77, 71.9, 72.22] min=64.06 median=71.90 max=72.50 alloc_B=8271167488 used_B_median=115038592 booked_MB=[10571, 10571, 10572, 10571, 10570] inherited=1
+arm=i L2 N=5 P=[5797, 5803, 5802, 5805, 5803] G=[629, 497, 505, 443, 354] cached=[0, 0, 0, 0, 0] ratios=[40.79, 41.61, 41.56, 41.96, 42.58] min=40.79 median=41.61 max=42.58 alloc_B=8271167488 used_B_median=198777600 booked_MB=[11065, 11066, 11065, 11066, 11066] inherited=0
+arm=iii L0 N=5 P=[1572, 1565, 1595, 1563, 1580] G=[384, 239, 227, 484, 561] cached=[1440, 1440, 1440, 1440, 1440] ratios=[134.02, 145.31, 143.88, 128.06, 122.44] min=122.44 median=134.02 max=145.31 alloc_B=8271167488 used_B_median=61715712 booked_MB=[9821, 9818, 9832, 9817, 9825] inherited=0
+arm=iii L1 N=5 P=[3236, 3220, 3228, 3234, 3223] G=[564, 621, 407, 319, 211] cached=[3104, 3104, 3104, 3104, 3104] ratios=[68.99, 68.25, 72.12, 73.78, 76.34] min=68.25 median=72.12 max=76.34 alloc_B=8271167488 used_B_median=114691520 booked_MB=[10618, 10611, 10615, 10617, 10612] inherited=0
+arm=iii L2 N=5 P=[5887, 5884, 5884, 5868, 5885] G=[345, 487, 576, 354, 539] cached=[5760, 5760, 5760, 5760, 5760] ratios=[42.06, 41.15, 40.58, 42.13, 40.81] min=40.58 median=41.15 max=42.13 alloc_B=8271167488 used_B_median=201017792 booked_MB=[11067, 11067, 11067, 11067, 11067] inherited=1
+   45  [prefix-cache] insert (spec-boundary)  first: [prefix-cache] insert (spec-boundary): 1440 tokens, 202.3MB (resident 202.3MB / 15883MB, model q38)
+   15  [prefix-cache] hit  first: [prefix-cache] hit: 1440 of 1572 prompt tokens from cache (model q38)
+   15  [prefix-cache] spec  first: [prefix-cache] spec restore: 1440 of 1572 prompt tokens + draft plane from cache [suffix queued] (model q38)
+prefix-cache hit lines: 15
+prefix_cache_entries=45 prefix_cache_bytes=11986255872 prefix_cache_hits=15 prefix_cache_hit_tokens=51520 prefix_cache_inserts=45 prefix_cache_evictions=0 prefix_cache_misses=31
+```
+
+Against day 26 (`day27-compare.py`, day-26 `ab` as A, today as B): `tags=45 digest_equal=0 digest_differs=0
+missing=0 rows_with_both_digests=0 (a day-26 tape records content_chars only, no sha256) P_G_chars_equal=45`, and
+`cached_tokens A: [0 x 15]` against `cached_tokens B: [1440, 1440, 1440, 1440, 1440, 3104, 3104, 3104, 3104, 3104,
+5760, 5760, 5760, 5760, 5760]`; against the day-26 `warm` cell (the hit shape) `P_G_chars_equal=45` and the same
+`cached_tokens` on all 15. The day-26 client recorded completion lengths, not digests, so the byte comparison with
+day 26 is P, G and `content_chars` on 45 of 45 (every (i) and (iii) completion ends in `stop`, every (ii) in
+`length`); the sha256 per completion is recorded from today on (`REPORT.txt` "completion digests") and the digest
+comparison proper is between today's cells on the same binary (section 2.5). The (ii) arm's digest is the empty
+string's (`e3b0c442...`): the 96 bounded tokens are reasoning and `content` is empty, on day 26 as today.
+
+Eviction arithmetic against the pre-registration: 45 entries resident at 11,986,255,872 B (my per-entry estimates for
+the (ii) entries were high; the actual total sits under the 15.9 GB budget with no eviction at all), so L2 was not
+marginal in practice. Retention at idle moved with it, verbatim: `idle driver free before the first
+request=82759516160 last sample=43668602880 retained_by_process=39090913280`; `pool used after
+warmup=17914203332 last=47778680904 delta=29864477572; pool reserved last=57680068608 cached last=9901387704`;
+`spec_pool_entries=2 continuation_pool_entries=0`. The 39.1 GB is the 12.0 GB of resident prefix entries (the budget's
+purpose, yielding under pressure through `alloc_with_single_reclaim_retry` and the step-OOM reclaim), the two parked
+spec sessions of the last open requests (2 x 8.27 GB), and the pool's cached free blocks (9.9 GB); day 26 held 30.1 GB
+with 0.68 GB of entries and 12.2 GB cached. Executed, not qualified.
+
 ## 2. About 30 GB retained on the target card after 45 sequential requests with none active
 
 ### 2.1 What the tape says is retained (day 26, re-read with the pool gauges, before any new run)
