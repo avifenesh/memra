@@ -238,3 +238,167 @@ restore have none today) and its correctness surface is the restore ordering und
 about four agent-days, after Move 1, because it reuses Move 1's `poll`-at-tick-top shape and its copy
 stream. Neither move is started by this lane without the lead's ruling; the census and the stall cell
 are the input.
+
+## Move 1, the first owed item, day 19: rule 3 in the tier crate (`DAY19.md`)
+
+The settle-time owner wait for an H2D now has its conformance: `crates/memra-tier/src/conformance/reader_fence.rs`
+(rule 3, unversioned beside the frozen schedules, the day-11 shape). `consumer_fenced` is the installed wait on the
+reader's stream, never a flag and never the copy's landing; the schedule `h2d_reader_fence` is the same under both
+installs (`ReaderWaitInstall::AtSubmit`, the engine's day-18 program; `AtSettle`, the owed program) and
+`h2d_reader_issued_before_its_wait_is_unordered` is the forbidden order. CPU bindings
+(`tests/contracts/reader_fence_bindings.rs`): the at-submit install passes, the at-settle install with a wait on the
+reader stream passes, and the red arm (a settle-time flag with no reader wait) fails the schedule. The engine change
+(the wait installed at the settle, after `event_done`, before `ready_view`, the consumer fence recorded after it)
+is allowed by the schedule and lands only with the identity gate OFF and ON on the target card; `DAY19.md` records
+whether it did.
+
+## Move 2 pre-registration (day 19, committed before any Move 2 code): the D2D capture and restore off the tick
+
+Input: the census (`OWNER-THREAD-CENSUS.md` rows "prefix snapshot capture (D2D)" and "hit restore (D2D)"), the
+day-16 stall cell (`stall_cell.py`, its prime arm), the twin gate's fitted entry shape on the 27B
+(`rtx5090-day18/twin27-off/shape.json`: `fit_fixed_bytes=157.3 MB`, `fit_bytes_per_token=29,564`), lane C's day-22
+observation (a pool-full demote under `TENANT_PCT=100` runs the whole contract copy before `insert` refuses it: a
+Move 2 capture must ask the budget BEFORE it copies, never after), and rule 3 above.
+
+### What a capture copies, what a restore copies, where each runs today
+
+**Capture** (`prefix_snapshot`, `worker.rs`, called from the capture publish inside `prefill_tick`: the LCP-split
+boundary, the grid seed through `maybe_prefix_seed`, and the DFlash/glm5 drains). Per layer with a KV plane: two
+`engine.alloc_u8` (a pool call on the worker thread) and two `engine.copy_u8_into` (K and V, `len * k_tok_bytes` and
+`len * v_tok_bytes`, D2D on the owner stream); per recurrent layer: two `engine.clone_dtod` (`conv_state`,
+`ssm_state`, f32, an alloc plus a copy each); the MTP draft plane is one more KV slot of the same shape; latent
+(MLA) planes and glm5 TP shards only under their own flags (out of scope here: a Move 2 entry that carries them
+keeps the tick program, refused by name as the door refuses them at demote). No host wait: the copies are
+stream-ordered behind the prime that wrote the source; the insert that follows may evict, and an eviction into the
+host tier is the demote class (Move 1). On the 27B (65 layers, the served artifact of the day-16 cell): the 64-token
+grid seed is 159.8 MB (measured, `DAY16.md`), of which about 157.3 MB is the recurrent state (fixed per entry) and
+about 1.9 MB the KV rows; a 4096-token entry is about 278 MB (157.3 fixed plus 4096 x 29,564); the day-16 prime
+arm's 5120-token seed about 309 MB. The recurrent state dominates every capture on this model: it is a fixed 157 MB
+of `clone_dtod` per entry, and it is the part that MUST be exact at the boundary (the next decode step overwrites
+it), so it is the part that cannot leave the boundary's stream position.
+
+**Restore** (`prefix_restore_at`, called from admission for a device hit, `AdmissionRestoreRoute::Native`, and after
+a host promote publishes). Into the request's fresh session cache, per layer: `engine.copy_u8_into` of K and V for
+`restore_len` rows, `set_i32_one(len_d)`; per recurrent layer `engine.copy_into` of `conv_state` and `ssm_state`;
+`cache.pos = restore_len`; then the request's first prime chunk on the same stream. Same byte counts as the
+capture at the restored length (a 64-token hit restores 159.8 MB, a 4096-token hit about 278 MB). No host wait;
+stream-ordered; the source entry is leased for the restore (`source lease released after restore fence`).
+
+**Today** both run on the owner stream, synchronously with respect to the tick's kernel order, inside the tick
+(capture) or inside admission on the worker thread (restore). Neither blocks the host; both occupy the owner stream
+between the tenant's kernels, so the tenant's next step queues behind up to 160 to 310 MB of D2D per event. The
+day-16 prime arm (`stall_median=301.5` ms) is the prime plus its capture and cannot separate them; cell (i) below
+does.
+
+### The one-program law under an event-ordered publication
+
+No token is produced by a copy, so the law is about WHICH program produces the first token after a restore and
+WHAT an entry holds when it is served. Two clauses, both pre-registered as gates, not tolerances:
+
+1. **A captured entry is published only after its copy's event.** The entry enters the LRU as `Capturing` and
+   becomes servable only when the copy stream's completion event has been observed complete at the tick top (the
+   Move 1 poll shape). The KV plane copies may run on the copy stream behind a producer event recorded on the owner
+   stream after the boundary chunk; the recurrent-state copies (`clone_dtod` of `conv_state` and `ssm_state`) STAY
+   on the owner stream at the boundary, because the next decode step of the captured session overwrites them and a
+   copy-stream read would race it. The K/V rows `0..boundary` are append-only per position and stable. So the
+   capture law (memra#602, a grid-aligned boundary's state or nothing) holds by stream position for the recurrent
+   state and by event for the rows.
+2. **A restore's destination is readable only after its event, before the request's first prime chunk.** The
+   restore copies run on the copy stream behind a producer event (the source entry's publication, already
+   complete); the OWNER stream waits on the restore's completion event before the first prime chunk is issued
+   (rule 3's reader fence: the wait installed on the reader's stream, then the consumer fence recorded after the
+   prime chunk). The request sits in a `Restoring` admission state for the ticks the copy takes (the step-OOM park's
+   shape, as `Promoting` on day 18); it never blocks the worker and its first step never runs on an incomplete
+   cache. The proof is the hit gate's identity clause and the continuation gate, run with the copy stream forced
+   slow (the delayed-copy-stream fault below): any digest difference is a FAIL of the ordering, never a tolerance.
+
+### States and what every path does on meeting them
+
+`Capturing` (one per worker, the entry's planes allocated and being written by the copy stream, not in the LRU's
+servable set) and `Restoring` (one per worker, a request parked with a fresh cache whose planes the copy stream is
+writing):
+
+| path | on a `Capturing` entry | on a `Restoring` request/entry |
+|---|---|---|
+| hit lookup | a MISS (cold prime); never a wait, never a partial restore | the source entry is leased by the restore: servable to others (reads only), not evictable |
+| eviction (capacity, LRU) | not a candidate (not in the servable set); if room is needed, the LRU evicts servable entries or refuses the capture at publication (the capture is dropped, its planes freed after its event) | the source entry is leased: skipped, as any leased entry is today |
+| admission reclaim (`reclaim-on-defer`) | settles the capture first (a host wait on its event, then publish or drop), then reclaims: the reclaim's accounting must see a published or a freed entry, never a half-written one | the parked request holds its booked KV bytes; the reclaim may not take its fresh cache; the source entry is leased |
+| trim (`pool_trim_to_zero`) | settles first (trim needs a quiescent pool; the capture's allocations are live) | settles first (the restore's destination is live) |
+| demote (any route, Move 1) | a `Capturing` entry is not demotable (not published); the demote takes the next LRU candidate | the source entry is leased: not demotable while the restore reads it (Option C's `retain_device` twin or a reader count) |
+| tenant purge | the purged tenant's `Capturing` entry is dropped unpublished after a host wait on its event (planes freed; never freed under a running copy); another tenant's stays | the purged tenant's parked request is shed with a host wait on its restore event before its cache is freed; the source entry, if the tenant's, is dropped after the lease releases |
+| shutdown / model unload | a host wait on the event, then drop; no publication after a stop | the same; the parked request is failed with a typed line |
+| a second capture while one is pending | settles the pending one first (never two in flight; the Move 1 rule) | n/a |
+| a second hit on the same entry while a restore is pending | serves from the published source (a second restore may queue behind the first, one per worker, else cold) | n/a |
+| tier latched off (Move 1's `Latched`) | unaffected (the capture is device-only) | unaffected |
+
+### Failure paths
+
+Typed, one line each, never silent: a copy-stream allocation refusal at capture (`capture refused: device alloc of
+N B failed`, the entry is not created, the tick continues); a completion never observed (an event that never
+completes or a quarantined poll: the entry is dropped unpublished after a bounded host wait and the capture path
+latches to the tick program for the boot, `[prefix-cache] CAPTURE OFF-TICK DISABLED`); a restore whose event is
+never observed (the parked request is failed with a typed line and its cache freed after a host wait; the restore
+path latches likewise); a restore source evicted under a pending restore (impossible by the lease; asserted by a
+census and a fault); a publication attempted before the event (a debug assertion and a gate teeth cell). Every
+failure keeps the OFF program's line where one exists and adds none where none exists.
+
+### The contract in `memra-tier` terms
+
+A D2D contract beside the D2H and H2D ones, additive: `TransferOp::D2d(ContiguousCopy)` on ONE device (the
+existing `ContiguousCopy` shape: source and destination `DeviceLease`s, spans, epochs, a producer fence; `p2p` is
+its two-device sibling and stays as is). Ticket: one per capture or restore batch (all planes of the entry, one
+`Epochs`). Producer fence: an event recorded on the owner stream after the boundary chunk (capture) or after the
+source entry's publication (restore). Consumer fence: for a capture, none on the owner stream (the destination's
+consumer is the LRU, whose "read" is the publication after `event_done`, like a D2H's host consumer); for a restore,
+rule 3's reader fence (the owner stream waits on the item event before the first prime chunk; the consumer fence is
+recorded after it). Receipt: byte count, epochs, completion event, and a checksum term. The checksum is the open
+design point: `progress` hashes HOST bytes today and a D2D has none. Two candidates, to be decided by a CPU
+schedule before any GPU code: (a) a device-side digest recorded on the copy stream after the copy (a Memra-native
+reduction kernel over the destination bytes, its CPU oracle the same function over a D2H readback in the gate;
+one kernel, not a numeric program for tokens), compared against the same digest of the source; (b) no checksum for
+D2D: `Completion::require` grows an additive `Checksum::Unwitnessed` arm for a D2D item whose bytes crossed a
+single device's memory under one driver call, with the identity binding (`IdentitySlot::bind`) carrying the entry's
+identity. (a) proves the bytes, (b) proves nothing about them and is the OFF program's level of evidence. The
+pre-registered choice is (a) unless the digest's cost on the copy stream exceeds the copy's own time on the
+target card (measured, N>=5, both orders); (b) then stays a diagnostic. The frozen schedule: `d2d_capture_publish`
+(a captured item is `NotReady` until its event; `ready_view` requires the receipt; a publish before the event is a
+schedule failure) and `d2d_restore_reader_fence` (rule 3 re-bound to a D2D: the reader stream's wait, the early read
+unordered), both with CPU bindings and a red arm each, in `conformance/` beside rule 3.
+
+### Decision cells (pre-registered by shape; none has run)
+
+All on the target card class (one RTX PRO 6000 Blackwell, 600 W), through the collector, `N=5` per arm per order,
+both orders, replay `PASS`, errors 0, the tenant's text byte-identical, the day-16 harness with two new arms:
+
+- **(i) capture arm.** The tenant streams its 160 tokens; the intruder is a 4096-token grid-aligned seed whose
+  capture publishes about 278 MB (recorded as the tokenizer made it). `stall_median` before (the tick program) and
+  after (the copy stream); decision clause `stall_median(after) <= idle p99` of the same sitting; the entry must then
+  hit (`cached_tokens` equal to the published length) with the cold digest.
+- **(ii) restore arm.** The same, the intruder a 4096-token hit whose restore copies about 278 MB; the same clause;
+  the request's text equal to its cold text.
+- **(iii) the delayed copy stream.** A fault door (`MEMRA_KV_HOST_FAULT=d2d-delay`, one-shot, its FLAGS.md row and
+  decide-by in the same commit) queues a delay kernel on the copy stream ahead of the restore; the hit gate
+  (`spec-on-cache-hit-gate.sh`, plain and spec arms) and the continuation gate must stay `ALL GREEN`: the first step
+  would read an incomplete cache if the ordering were wrong, and any digest difference is a FAIL.
+- **(iv) identity, captured and restored entries, OFF versus ON.** `kv-host-spill-identity-gate.sh` default and plain
+  with the Move 2 door OFF and ON, plus the twin gate on the 27B; every line `ALL GREEN (teeth=0)` and `-> PASS`.
+- **(v) the capture digest's price** (only under receipt choice (a)): the digest kernel's time on the copy stream
+  against the copy's own time, same window, both orders.
+
+### Slices and their price
+
+1. **Slice 1, the capture on the copy stream with an event-ordered publication** (the first slice, named): the
+   D2D contract's CPU schedule `d2d_capture_publish` and its bindings; `TransferOp::D2d` in the tier crate;
+   `CudaTransfers` issuing a same-device copy on the copy stream behind the producer event; `prefix_snapshot`
+   splitting the recurrent-state `clone_dtod` (owner stream, boundary) from the KV plane copies (copy stream) under a
+   door; the `Capturing` state and its tick-top settle; cells (i) and (iv). About 1.5 agent-days including the
+   target-card cells.
+2. **Slice 2, the restore behind rule 3's reader fence**: `Restoring`, the parked request, the reader wait before
+   the first prime chunk, the source lease, cells (ii), (iii) and (iv). About 1.5 agent-days.
+3. **Slice 3, the receipt**: the digest kernel or the `Unwitnessed` arm by the pre-registered rule, cell (v), the
+   fault gate's D2D cells. About 1 agent-day.
+
+Total about four agent-days, as priced on day 16. Slice 1 is first because its publication rule (an entry is
+servable only after its event) is the smaller correctness surface and its state (`Capturing`) is the one every
+other path already knows how to meet (a miss); slice 2's `Restoring` touches admission and the first-token program
+and rides on rule 3, which now exists.
