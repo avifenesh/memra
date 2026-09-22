@@ -1162,6 +1162,12 @@ copy time left the tick, the two receipt hashes remain. Two false starts A kept 
 the door's refusal marker text, reworded; a driver misreading the twin gate's `REFUSED: --out must be a new directory`
 as a busy lock). #536 has A's receipt and correction comments; the issue stays open (the promote's turn and Move 2).
 
+Battery (`integration-day12/integ30-cpu-battery/`, CPUQuota 1200 percent): fmt, portable suites, memra-server suite,
+clippy, censuses, collector pytest, engine CPU lib tests, engine and server clippy `-D warnings`, marker census,
+workflow keys, perf board, diff-check: 15 steps rc=0. Local 5090 `tools/serve-smoke.sh` (door OFF, the default):
+`serve-smoke: 0 failed`. C day 21 (running while this integ was built; lands as integ31) found both 5090 reds to be
+stale gates and re-read failure, fault and identity gates ALL GREEN on both cards with this slice merged.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
