@@ -1,5 +1,20 @@
 # Fast per-request depth routing
 
+Fast lexical routing passed CPU checks, but request-level K did not beat calibrated fixed K on either model.
+
+| Model | Fixed K=3 | Prompt routing | Change |
+|---|---:|---:|---:|
+| Qwen3.8-27B NVFP4+Q5_K, embedded MTP | 106.225 tok/s | 105.377 tok/s | -0.798% |
+| Gemma 4 12B QAT Q4_0, Q8_0 assistant | 185.064 tok/s | 184.995 tok/s | -0.037% |
+
+These are six clean paired conversations per model on one RTX 5090, eight turns
+each, approximately 16K initial input, 512-token output caps, sampled 0.7/20/0.95
+and default thinking. The metric includes complete native request time and
+prefix reuse. No held-out set was excluded. [NATIVE-RESULTS.md](NATIVE-RESULTS.md)
+contains the controls, learned K tables, per-class rates and reconstruction scope.
+This establishes no benefit over the best tested fixed depth and promotes no
+serving default.
+
 This experiment classifies the requested output once and selects a speculative
 depth for the complete request. It starts with a bounded lexical classifier:
 ordinary word/phrase rules, no trained model, regex dependency, tokenizer,
@@ -31,8 +46,10 @@ prefill, but overlap is not assumed in the timing report.
 
 The prior [span-level study](../mtp-context-depth-20260921/README.md) measured
 Gemma 4 12B QAT Q4_0/Q8_0 profiles 2/4/4 and Qwen3.8-27B NVFP4+Q5_K profiles
-3/3/4 on one RTX 5090. Those are candidate mappings for this experiment.
-Their effectiveness as one K per request has not yet been measured.
+3/3/4 on one RTX 5090. This study recalibrated all controls from the same
+fixed-depth runs at its request shape. The request-level tables were Qwen
+3/2/3 and Gemma 3/3/4 for prose/code/numeric, each with global K=3 fallback.
+The classification rule and lookup were frozen before held-out measurement.
 
 ## Interface
 
@@ -76,3 +93,24 @@ overhead and do not assume prefill overlap.
 
 Tracking: Memra issue #635. This is a research component; no serving default or
 model numerical program changes.
+
+## Native receipt reproduction
+
+`native-receipts/` retains every calibration, correctness and held-out record,
+including exact prompt/output tapes, routing decisions, span costs, timing and
+binary/source bindings. The archived runtime is the prior tested engine plus
+the request-driver changes; the active engine has no new dispatch door.
+
+```sh
+python3 reproduce_native.py --receipts native-receipts \
+  --manifest-sha256 "$(cut -d ' ' -f 1 native-receipts/manifest.sha256)" \
+  --parent-archive ../mtp-context-depth-20260921/latest-receipts/runtime-source.tar.gz \
+  --out /tmp/prompt-depth-reproduction --check NATIVE-RESULTS.md
+```
+
+The output directory must be new. Replay verifies every member hash, compiles
+only the externally pinned classifier source, reconstructs the full registered
+matrix, refits both controls from the same calibration data, and reproduces the
+report. Expanded public-boundary review is recorded in
+`native-publication-review.json`; the two compressed-stream matches are bound to
+exact archive hashes, and every expanded data member passed the secret scan.

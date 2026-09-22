@@ -7,6 +7,8 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
+prompt-depth-router-20260922 | Fast lexical routing passed CPU checks, but request-level K did not beat calibrated fixed K on either model. | prompt-depth-router-20260922/README.md
+
 qwen-prefill-attn-20260909 | Exact launch diet: 131070 cold TTFT 68.267276 -> 66.496199 s, N=3; graph default has no runtime door. Attention numerical work remains separate. | qwen-prefill-attn-20260909/MECHANISM.md
 
 release-v0.137.0-20260909 | PREPARED CANDIDATE ONLY. No tag or deployment is authorized by this record. | RESULTS.md
