@@ -11762,7 +11762,7 @@ impl Dsv4Gpu {
                 let _ = self.decode_step_greedy_tap(tok, state, dstate, 0)?;
             }
             self.dspark_write_rings(dstate, 0, pos)?;
-            // Tokenwise restored continuation (`MEMRA_DSV4_PREFILL_CHUNK=0`): each step read
+            // Tokenwise restored continuation (a zero prefill chunk): each step read
             // its token or row back, so each is a completed one-row prime (memra#500).
             crate::progress::note_prime_rows(1);
         }
