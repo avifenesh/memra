@@ -197,3 +197,109 @@ run (ms, the harness's `stall_median`):
   this card a 150 MB D2D is well under a millisecond, so the expected reading is `flat`, which records that the rows'
   on-tick share is under the cell's resolution. A stall difference larger than the bound in either direction is a
   finding to explain, not a verdict on the door. Nothing here decides the door.
+
+## Task 2, the target card: gates (BOX3, tree `1350f118b`, binary `ddde2083…`; receipts `pro-single-day21/box/`)
+
+Built on the box from the shipped bundles under `nohup` (`build rc=0`, `box/build.log`; a first build died with an
+ssh drop and left nothing). The collector cell `gates` (`tools/tier-battery.py --rig pro-single --external-lock`,
+`/tmp/memra-gpu.lock`, `LOCK.json` owner `collector`) ran every gate in one lock hold; the hit gate under its own
+`flock` on the canonical lock; the unit cells in a second collector hold; the stall cell in a third. No lock retry
+was needed; the card was idle at the start (`0 MiB`). Every line verbatim, N=1 per gate cell, the card's regime in
+the collector's `command.gpu.csv` beside each cell; `executed-not-qualified`.
+
+| cell | arm | verdict line, verbatim |
+|---|---|---|
+| identity-default-off | door OFF | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` |
+| identity-default-on | door ON | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` |
+| identity-plain-off | `MEMRA_SERVE_SPEC=0` | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` |
+| identity-plain-on | `MEMRA_SERVE_SPEC=0`, door ON | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` |
+| failure-off | door OFF | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` |
+| failure-on | door ON | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` |
+| contract-fault | ON by construction | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` |
+| twin-off | door OFF | `PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` |
+| twin-on | door ON | the identical line, `-> PASS` |
+| hitgate-off | door OFF | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` |
+| hitgate-on | door ON | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` |
+| unit-cell (`option_b_*`, `option_c_*`) | the copy-stream engine | `test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 809 filtered out; finished in 0.27s` |
+| unit-cell (engine `d2d_capture_*`, `d2d_restore_*`) | the two D2D classes on the card | `test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok`, `test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok`, `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 554 filtered out; finished in 0.52s` |
+
+**Where the route engaged, and where it did not.** The plain ON arm's identity server log carries two restores,
+verbatim: `[prefix-cache] restore submitted off the tick: 64 tokens, 32 planes (158.8MB), ticket seq=6 on the
+contracts door's copy stream; recurrent state copied on the owner stream; request parked` then `[prefix-cache] restore
+landed off the tick: 64 tokens (158.8MB) complete after 1 poll(s), 75.4ms from submission to completion, 75.5ms to
+re-admission (tick-top poll)` (and `seq=7`; the 75 ms is submission to the OBSERVING poll, the same semantics as the
+capture's and the promote's lines: the rest of the tick ran between; the 158.8 MB is the entry's byte count, of which
+the recurrent state, copied on the owner stream, is about 157 MB and the 32 KV planes about 1.9 MB). Zero `restore
+refused`, `restore dropped` or `RESTORE OFF-TICK DISABLED` lines anywhere under `gates/` (the one `TIER DISABLED` line
+under `failure-on` is the failure gate's own `alloc-fail` arm, verbatim `[prefix-host] TIER DISABLED: pinned host alloc
+of 69632 B failed: injected failure (MEMRA_KV_HOST_FAULT=alloc-fail) ...`). The hit gate's ON arm shows ZERO restores
+through the route: every entry it publishes is a spec-boundary capture (`insert (spec-boundary)`, the MTP draft plane,
+14 lines) and its 14 hits (`hit: 64 of 106`, `64 of 119`, `96 of 119`) are on draft-bearing entries, which the route
+refuses by name; both hit-gate arms ran the tick program for their restores. The default (spec) identity arm likewise.
+So the one-program proof of THIS slice on the card is the plain identity arm: OFF against ON, `teeth=0`, with the ON
+arm's hits restored through the route; the hit gate's identity clause covered the tick program today and will cover
+the route when the draft-bearing restore lands (owed, `OWNER-THREAD-OFFLOAD.md` item 3).
+
+**Reading.** The identity and fault gates are green in both arms on the target card class and the hit gate is green
+in both arms, the pre-registered condition: the slice STANDS under the door, with the scope stated above (the plain
+whole-entry hit; draft-bearing hits keep the tick program). Commits `ce2089638`, `c2874bd42`, `1350f118b` keep their
+`wip:` prefix (history is not rewritten); this record and `OWNER-THREAD-OFFLOAD.md` are where the slice is promoted to
+"landed under the door".
+
+## Task 2, the target card: the restore stall cell (pre-registered above; run after the unit cells, one collector hold)
+
+`stall-both.sh` under the collector (`box/stall-both/`, `stall-both.collector.log`): OFF pass 1, ON pass 1, ON pass 2,
+OFF pass 2 (`box/stall-restore-{off,on}/ev.pass{1,2}/`), each boot's harness interleaving idle/arm in both orders,
+N=5 per arm per order, `MEMRA_SERVE_SPEC=0`, cache 1024 MB, host tier 8 GiB. The one intruder prompt is 5121 tokens as
+the tokenizer made it (the pre-registration wrote "about 5088"; the recorded figure stands), seeded untimed in setup
+so its grid seed published at 5088; every timed intruder then hit it whole (`cached_tokens=5088`) and primed the
+33-token suffix. Rule lines, verbatim (`receipt.json` `rule_line`):
+
+`STALL rule cell=stall-restore-off arm=restore n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.5 idle_p95=14.7 idle_p99=14.9 idle_max=16.3 arm_runs=10 arm_p50=13.4 arm_p95=14.8 arm_p99=15.5 arm_max=104.8 stall_median=88.1 stall_min=87.8 stall_max=91.3 server_demote_ms=[] server_promote_ms=[] server_restore_ms=[] intruder_cached_tokens=[5088, 5088, 5088, 5088, 5088, 5088, 5088, 5088, 5088, 5088] intruder_prompt_tokens=[5121, 5121, 5121, 5121, 5121, 5121, 5121, 5121, 5121, 5121] tenant_text_identical=True errors=0` (pass 1)
+
+`STALL rule cell=stall-restore-on arm=restore n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.5 idle_p95=14.8 idle_p99=14.9 idle_max=14.9 arm_runs=10 arm_p50=13.5 arm_p95=14.8 arm_p99=22.1 arm_max=93.7 stall_median=80.1 stall_min=80.1 stall_max=80.2 server_demote_ms=[] server_promote_ms=[] server_restore_ms=[14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.5, 14.4, 14.5] intruder_cached_tokens=[5088, 5088, 5088, 5088, 5088, 5088, 5088, 5088, 5088, 5088] intruder_prompt_tokens=[5121, 5121, 5121, 5121, 5121, 5121, 5121, 5121, 5121, 5121] tenant_text_identical=True errors=0` (pass 1)
+
+Pass 2: OFF `stall_median=87.9` (`stall_min=87.8 stall_max=88.1 arm_p99=15.5 arm_max=101.5`), ON `stall_median=80.2`
+(`stall_min=80.1 stall_max=80.3 arm_p99=22.1 arm_max=93.8`, `server_restore_ms=[14.5, 14.5, 14.5, 14.5, 14.5, 14.5,
+14.5, 14.5, 14.4, 14.4]`); full lines in the receipts and in `box/stall-restore-*.pass2.log`.
+
+Admissibility: `errors=0` and `tenant_text_identical=True` on all four; every intruder read `cached_tokens=5088`
+against `prompt_tokens=5121` (within 64): a whole-entry hit in both arms, every run. The ON arm's `server_restore_ms`
+(submission to the observing poll) is 14.5 ms on all 20 lines: the copy is observed at the next tick top, one tick
+after submission (the tick is 13.4 to 14.5 ms here), so the figure is the tick period, not the copy.
+
+**Verdict, by the pre-registered rules.** C1 pass 1: `on_under_off` (ON 80.1 against OFF 88.1, delta -8.0, bound
+6.0). C1 pass 2: `on_under_off` (ON 80.2 against OFF 87.9, delta -7.7). C2: ON `server_restore_ms` median 14.5 both
+passes (the tick period; the copy's own duration is below it). The pre-registered expectation was `flat`; the reading
+is larger than the bound and is a finding to explain, not a verdict on the door: the ON arm's `arm_p99` rose from
+15.5 to 22.1 in both passes while its `arm_max` fell by about 8 ms, which is the shape of a SPLIT, not a removal. OFF
+does the intruder's whole admission in one tick (the fresh cache's allocation, the recurrent-state and row copies, the
+suffix prime); ON does the allocation, the recurrent-state copies and the submit in tick T and parks, and the
+re-admitted request primes in tick T+1: about 8 ms of the intruder's owner-thread work moved from the prime's tick to
+the previous one (the second bump at 22.1 - 13.5 = 8.6 ms). The KV rows' D2D share (about 150 MB at 5088 tokens) is
+under the cell's resolution on this card, as pre-registered, and the recurrent 157 MB stays on the owner stream in
+both arms. Same-window, one lock hold, N=5 per arm per order, both orders; `executed-not-qualified`; the cell decides
+nothing about the door.
+
+## Task 3: records and checks
+
+`STATE.md` rewritten (day 21). `OWNER-THREAD-OFFLOAD.md`: the day-21 section (the pre-registration pointer, what
+landed, what Move 2 still owes). `research/INDEX.md` row `spill-a-20260919/day21`. `docs/FLAGS.md` door row day-21
+sentence (in the worker commit `ce2089638`). Checks on the final tree: `cargo fmt --all -- --check` clean; clippy
+`-D warnings` clean on `memra-tier` (`--all-targets`), `memra-engine` and `memra-server` (`--lib --tests`); `memra-tier`
+contracts `77 passed`; `memra-engine` lib `tier_transfer` `6 passed; 3 ignored`; `memra-server` lib `803 passed; 14
+ignored`; `git diff --check` clean on every source commit of the day; `tools/check-flags.sh` (no uncovered runtime
+names); `tools/check-conflict-markers.sh` OK; `python3 tools/check-public-boundary.py check` `0 new`. The lead's
+integ36 branch (`bd6584f9b`, the #634 fixes) merged as `14b2d7b0f`. The box worktree `/root/wt-a` is at `1350f118b` on
+`lane-a-day21`; `/root/spill-receipts/a-day21/` mirrored to `pro-single-day21/box/` (bins excluded); both bundles
+removed on both ends; local `/tmp` scratch removed. Not run today: the local RTX 5090 door gates (owed with the lock,
+as on days 18 to 20). #536 comment posted with this receipt; the issue stays open.
+
+## Budget
+
+About 4.2 agent-hours against 4: reading and the merge 0.6, the pre-registration 0.4, the tier schedule and bindings
+0.3, the engine's restore class 0.4, the worker's `Restoring` request with the lead's #634 mirror and the census 1.3,
+the harness arm, box scripts, the ship and the box cells 0.6 (one build lost to an ssh drop), records and the comment
+0.6. Blockers: none (the box lock was free throughout; the 5090 was not touched). Open: slice 3 and the `d2d-delay`
+fault, the f32 state, the spec-boundary route and the draft-bearing restore, an isolating stall cell, the 5090 door
+gates on this tree, the Move 1 owed items.
