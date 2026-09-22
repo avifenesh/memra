@@ -217,6 +217,7 @@ fn main() {
             "moe_router",
             "spec_sample",
             "flash_attn_kf8vf8",
+            "tier_receipt",
         ] {
             std::fs::write(out.join(format!("{stem}.fatbin")), []).unwrap();
         }
@@ -230,6 +231,7 @@ fn main() {
             ("MEMRA_ROUTER_FATBIN", "moe_router"),
             ("MEMRA_SAMPLE_FATBIN", "spec_sample"),
             ("MEMRA_FLASH_FATBIN_KF8VF8", "flash_attn_kf8vf8"),
+            ("MEMRA_TIER_RECEIPT_FATBIN", "tier_receipt"),
         ] {
             println!(
                 "cargo:rustc-env={env}={}",
@@ -294,6 +296,9 @@ fn main() {
         ("cu/qmatvec_gemm.cu", "MEMRA_GEMM_FATBIN"),
         ("cu/moe_router.cu", "MEMRA_ROUTER_FATBIN"),
         ("cu/spec_sample.cu", "MEMRA_SAMPLE_FATBIN"),
+        // WP-A day 22 (memra#536 Move 2 slice 3): the D2D receipt digest and the fault delay,
+        // loaded by `tier_transfer::CudaTransfers::new_with_copy_stream` only.
+        ("cu/tier_receipt.cu", "MEMRA_TIER_RECEIPT_FATBIN"),
     ] {
         println!("cargo:rerun-if-changed={src}");
         println!("cargo:rerun-if-changed=cu/wgmma_common.cuh");
