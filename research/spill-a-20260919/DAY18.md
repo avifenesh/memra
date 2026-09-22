@@ -198,3 +198,94 @@ receipt` line per promote (the copy still crosses the contract), every intruder'
 the day-16 receipt's shape (the promoted entry is hit, not primed cold), and no `demote failed`, `promote
 failed`, `promote refused`, `TIER DISABLED` line in the boot's server log. The arm's `server_promote_ms` now
 spans submission to publication and is read as such.
+
+## Task 1: what landed (commit `f3e6be867`, `wip:` until the gates below are read)
+
+**Engine, `crates/memra-engine/src/tier_transfer.rs`.** In `submit_batch` the issue stream is the copy stream
+whenever one exists, for BOTH directions (day 17 moved the D2H; today the H2D); every copy under `new` keeps
+the owner stream (the day-16 program, statement for statement). The owner-stream wait on the item's
+completion event is installed for every H2D (both issue streams) and for an owner-stream D2H only, so a
+copy-stream D2H still installs none (day 17) and a copy-stream H2D orders every later owner-stream kernel
+behind its landing by construction. Producer fence (`issue.wait(producer event)`), the `memcpy_htod` /
+`memcpy_dtoh` calls, the per-item event, `check_thread`, `validate`, the registry, the receipts: unchanged.
+No new `unsafe`. Source census `copy_stream_issue_and_owner_wait_rules_are_as_stated` (CPU).
+
+**Server, `crates/memra-server/src/worker.rs`.** The frozen promote route is split at step 6:
+`host_kv_planes_submit_promote` (steps 1 to 5: the plane list, fresh planes from `alloc_u8`, registration
+with retained twins, source twins, the producer fence, one batch; returns `PendingContractPromote { ticket,
+producer, registered, planned, sources, sizes, kv_slots, fault, submitted }`) and
+`host_kv_planes_settle_promote(tier, pending, wait)` (steps 6 to 11: `synchronize(&ticket)` under
+`ContractWait::Block` only, `poll(&ticket)`, `Pending(..)` handed back under `Poll` while
+`!completion.producer_done`, then `require` against the D2H receipts, `ready_view` per item, the consumer
+fence, the owner drain, `retire_source`, `release_producer`, `retire`, `acknowledge`, the fresh planes into
+`PrefixPlane`s, the unchanged `contracts door H2D receipt:` line). `host_kv_planes_from_contract` is the
+synchronous wrapper (submit, then `Block`), so the hook, the GPU unit cells and the frozen-order census
+(`option_c_contract_route_is_door_only_and_keeps_the_frozen_promote_order`) read the same needles in the
+same order across the two halves. `device_entry_from_host_parts(engine, src, tier, route: ContractH2d)`
+builds the device entry with the KV planes deferred under `OffTick` (returns the shell plus the pending
+ticket) and whole under `OnTick`; `device_entry_from_host` is the `OnTick` wrapper.
+
+The decision moved: `host_promote_park_probe(engine, px, hpx, reuse, plan, req, ctx_cap)` runs in the
+admission loop immediately before `admit(..)`, after every defer gate, only when no retained admission plan
+holds a pin. It uses the body's own predicates, factored into `request_has_images`, `request_reuse_on`,
+`request_prefix_on` (with `ring_prefix_excluded`) and `continuation_reuse_index`, which `admit` now calls
+too (a `debug_assert_eq!` ties `prefix_on` to the helper). Decision (`host_promote_probe_decision`, pure):
+`NoCandidate`, `ParkAgain` (the pending promote IS this prompt's candidate), `Cold` (the memo names it), or
+`Submit { settle_first }`. A ready pending promote publishes first (the probe has the device cache in hand);
+a pending promote of another entry settles and publishes (`Block`, "a second promote"), then the pending
+demote (`Block`, "a promote"), then the decision is taken again on the settled state. `host_promote_prepare`
+(the day-16 checks: generation, class, program, identity lease, residency charge, the same lines) is shared
+with the hook. A submit refusal reports through the shared `host_promote_report_failure` (the day-16 arms,
+same lines and counters) and sets the memo; a whole entry without a contract route publishes at once
+through the shared tail; a submitted ticket becomes `HostPrefixCache::promoting = Some(PendingPromote {
+pool_key, host_toks, host_id, host_len, shell, contract, ready, tier_identity, tier_charge,
+expected_digest, t0, polls, copy_ms, settled_by })` with one `promote submitted off the tick: N tokens,
+X MB, ticket seq=S, M items on the contracts door's copy stream; request parked` line, and the caller does
+`requeue.push_back(req); continue;` (the VRAM-defer shape: FIFO, never shed, the reservation kept).
+
+The state machine `host_promote_settle_with(host, wait, why, settle)` takes the contract step as a closure
+(CPU tests): a ready state is handed out as `Ready`; the fail-closed arm mirrors the lead's #622 ruling (a
+submitted ticket without its shell is `synchronize`d and `retire_source`d through the engine where reachable
+and the tier latches off; a shell without a ticket drops whole; a ready state without a shell drops whole);
+`Pending` keeps the state and counts the poll; `Done` fills the shell's `kv` and `draft`, records `copy_ms`
+and the settle mode, drops unpublished with the memo if the tier latched off meanwhile, else `Ready`; a
+typed failure goes through `host_promote_report_failure` with the memo. `host_promote_settle_contract`
+(no device cache in hand: a demote route, a tenant purge) puts a `Ready` state back;
+`host_promote_settle_pending(engine, px, host, wait, why)` publishes it through `host_promote_publish`,
+which runs the shared tail `host_promote_finish` (the `MEMRA_KV_HOST_VERIFY` digest with `VERIFY FAILED`
+dropping the host entry by id, the identity lease's `require`, the residency charge, the recency touch by
+id, `insert_pinned_demoting`, the counters, then `promote published off the tick: ticket complete after N
+poll(s), X ms from submission to completion (..)` and the unchanged `promote:` line) and holds the insertion
+pin in `HostPrefixCache::promoted_pin`. Settle-first sites: the hook (`host_promote_settle_pending`, `Block`,
+"a promote", before `host_promote_candidate`; plus the memo check), `host_demote_prefix_ref`
+(`host_promote_settle_contract`, `Block`, "a second demote"), `purge_tenant` (`Block`, "a tenant purge", then
+the purged tenant's pending promote is dropped unpublished with a typed line). Run loop: after the demote
+poll, the tick top releases `promoted_pin`, clears `promote_cold`, polls `host_promote_settle_pending(..,
+Poll, "the tick top")`; the indefinite idle block requires `hpx.promoting.is_none()` and the timed idle wait
+is capped at 2 ms while pending. Boot line: `contracts door: D2H demotes and H2D promotes ride the transfer
+engine's copy stream and publish at the tick top (memra#536 Move 1)`.
+
+**Tests.** CPU: `promoting_entry_parks_its_prompt_again_and_a_memo_serves_it_cold` (the probe decision on
+every arm), `a_pending_promote_poll_keeps_the_state_and_done_reaches_ready_once` (three pending polls keep
+the state, `Done` reaches `Ready` exactly once with the shell filled, a ready state is handed out without a
+contract step, nothing pending answers `None`), `a_failing_promote_never_publishes_and_keeps_the_day16_typed_outcomes`
+(`Refused` keeps the host entry with the memo, `ReceiptMismatch` drops it, `Latched` latches the tier off,
+`Failed` counts `rejected_allocs`; the real contract step on the CPU has no engine and latches, typed),
+`a_pending_promote_missing_its_shell_or_ticket_fails_closed` (the three arms), `a_tier_latched_off_under_a_promoting_entry_drops_it_unpublished`,
+and the census `every_path_that_meets_a_promoting_entry_settles_it_first` (the settle-first sites, the tick-top
+order pin then memo then poll, the probe before `admit(` with the requeue, the shared predicates at both sites,
+`ContractH2d::OffTick` at the probe and the route selector only, publication only in `host_promote_publish` through
+the shared tail after the insert). Three existing censuses moved to the new shape in the same commit (the settle-first
+census's idle window, the promote-order census's caller arms now in `host_promote_report_failure`, the probe wiring
+census's `host_promote_candidate` count 3). The memra-tier crate is untouched (its frozen conformance schedules
+unchanged). `cargo test -p memra-server --lib`: 786 passed, 0 failed, 14 ignored; the engine census 1 passed;
+`cargo clippy -p memra-engine -p memra-server --lib --tests -- -D warnings` clean (one `large_enum_variant` fixed by
+boxing `Ready`); `cargo fmt --all -- --check`, `git diff --check`, `tools/check-flags.sh`, `tools/check-conflict-markers.sh`
+green. `docs/FLAGS.md` door row carries the day-18 sentence (same commit). No new flag, no new `MEMRA_*` read, no
+new numeric program, no new `unsafe`.
+
+**What is NOT in this slice, stated.** The submit-time owner wait for an H2D stays (its cost to the tenant is
+bounded by the copy time and is what the stall cell reads; a settle-time install is the named follow-up). The
+two receipt hashes stay on the owner thread inside the tick (`progress` at the poll, `bind_tier_image` at a
+demote's publication). The by-reference demote routes keep the blocking program. The hook keeps the day-16
+synchronous program as its fallback.

@@ -185,6 +185,43 @@ What Move 1 still owes, in order:
 4. **The decision cell (i) as pre-registered above** with both classes on the second stream, once the
    promote has moved; day 17 ran the demote arm alone against the day-16 receipt (`DAY17.md`).
 
+## Move 1, second slice: the promote half (day 18, `DAY18.md`)
+
+The H2D side of Move 1 is in, under the door: the engine issues every copy on the copy stream when one
+exists and keeps the submit-time owner wait for an H2D (its destination's consumer is the owner stream;
+a D2H still installs none); the door's promote decision moved from the admission body to the admission
+loop before `admit(..)` (`host_promote_park_probe`, sharing the body's predicates), a host hit submits
+(`host_kv_planes_submit_promote`) and the request PARKS on the requeue; the worker's one `Promoting` entry
+(`HostPrefixCache::promoting`) is polled at the tick top (`host_promote_settle_pending`,
+`host_kv_planes_settle_promote` under `Poll`) and published through the shared day-16 tail
+(`host_promote_finish`) with the insertion pin held one tick; the parked request re-admits to a device hit.
+Every other path settles it first (the hook, a demote of any route, a tenant purge; contract-only where
+no device cache is in hand, the purged tenant's dropped); failures keep the day-16 typed outcomes and set a
+one-tick memo so the request serves cold once; the fail-closed arm mirrors the lead's #622 ruling. Item 4
+of the Move 1 list is done in this shape. Item 5 holds. The gates and the stall cell are in `DAY18.md`.
+
+What Move 1 still owes, in order:
+
+1. **The settle-time owner wait for an H2D.** The engine keeps the submit-time `owner.wait(item event)`
+   for an H2D, so kernels the tenant submits after the promote's submit queue behind the copy's landing
+   (bounded by the copy time, about 6 ms per 160 MB on the target card). An engine method that installs
+   the wait after `event_done` at the settle (the consumer fence recorded after it) would remove that
+   bound; it changes the engine's `consumer_fenced` semantics for a copy-stream H2D and needs the tier
+   crate's conformance to speak first. Decided by the day-18 stall reading of the promote arm.
+2. **The receipt hashes** (unchanged from the day-17 list: `progress`'s completion checksum at the poll,
+   `bind_tier_image`'s bundle checksum at a demote's publication, both on the owner thread inside the tick).
+3. **The by-reference demote routes** (unchanged: the admission reclaim flush, the pause sweep, the handoff
+   keep the blocking program; the pause sweep's park half needs the `Demoting` state to protect the park).
+4. **The decision cell (i) as pre-registered above, both classes, same window.** Day 17 ran the demote arm
+   and day 18 the promote arm, each against the day-16 receipt on the same box across sittings; the
+   same-window interleaved A/B of both classes (door ON with the copy stream against door ON on the owner
+   stream) has no arm today because the owner-stream program left with the slices; its shape is the
+   day-16 script's `on` boot against a build of the day-16 tree, N=5 per arm per order, both orders.
+
+Move 2 (the D2D capture and restore) is next in line: it reuses the copy stream and the tick-top poll shape
+both halves of Move 1 now have, and its new work is the capture and restore contract itself (the
+`Capturing` and `restoring` states, the delayed-copy-stream fault, the event-ordered publication).
+
 ## Order of work, priced
 
 Move 1 is the bounded one: the contract already has fences, tickets and typed unwinds, and the copy
