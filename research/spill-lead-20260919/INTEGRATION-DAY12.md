@@ -1376,6 +1376,66 @@ Battery (`integration-day12/integ33-cpu-battery/`, merged tree `be554e587`, CPUQ
 memra-server suite, clippy, censuses, collector pytest, engine CPU lib tests, server clippy `-D warnings`, marker census,
 workflow keys, perf board, diff-check: 13 steps rc=0. Local 5090 `tools/serve-smoke.sh`: `serve-smoke: 0 failed`.
 
+## integ34 (`lane/spill-integ34-20260922`): A day 19 (tier conformance rule 3, the H2D reader wait at the settle; Move 2 pre-registration) and C day 23 (promote stall on the fixed tree; the door review table)
+Lane tips merged: A `494c5adc6`, C `eafcd9462`, clean on main `da1f59bf6` (#631). Engine and tier changes, all behind
+`MEMRA_KV_HOST_CONTRACTS=1`: `crates/memra-tier/src/conformance/reader_fence.rs` (rule 3: `consumer_fenced` is the
+installed wait on the reader's stream, never a flag and never the copy's landing; schedules `h2d_reader_fence(fixture,
+ReaderWaitInstall::{AtSubmit, AtSettle})` and `h2d_reader_issued_before_its_wait_is_unordered`) with
+`tests/contracts/reader_fence_bindings.rs` (`day19_h2d_reader_fence_at_submit_is_the_engines_day18_program` ok,
+`day19_red_arm_settle_time_flag_without_a_reader_wait_fails_the_schedule` ok under `catch_unwind`,
+`day19_h2d_reader_fence_at_settle_with_a_wait_on_the_reader_stream` ok; contracts target 71 passed);
+`crates/memra-engine/src/tier_transfer.rs` (`submit_batch` no longer fences an off-owner H2D at submit;
+`install_consumer_wait(ticket)` installs the owner-stream wait on each H2D item's event and records the consumer fence,
+fail-closed on a quarantined or eventless item, `unknown` on a stream error); `crates/memra-server/src/worker.rs`
+(`host_kv_planes_settle_promote` calls it under `Poll` and `Block` before the receipt check and `ready_view`, aborting
+through `host_promote_contract_abort` on refusal; the engine and worker censuses pin the order); `docs/FLAGS.md` door
+row. No new flag, no numeric change.
+
+**A day 19.** Day-18 5090 receipts settled first (A's detached driver): identity default ON, plain OFF, plain ON `KV-
+HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`; failure OFF and ON `ALL GREEN`; fault `ALL GREEN` (64 ok); hit OFF and
+ON `ALL GREEN (qwen)`; unit cells `8 passed`; identity default OFF `REFUSED: canonical GPU lock busy` (not run, 30
+lock-busy retries); the 27B twin gate on the 5090 read, in both door arms identically, `... evictions=1
+cohort_evictions=1 ... effective_free_ok=2/8 ... V3=FAIL ... -> FAIL` with a constant `-410352980` B effective-free
+error on turns 2 to 7 while day 17 local and today's target card read `evictions=9 -> PASS`: a local-card reading, not a
+door delta, cause not established, assigned to B day 29 (running). Engine wait moved as above; target card on the moved
+tree (binary `bf353fc7...`): identity `ALL GREEN (teeth=0)` default and plain, OFF and ON; failure `ALL GREEN` both
+arms; fault `ALL GREEN` (65 ok); twin `-> PASS` both arms; hit `ALL GREEN (qwen)` both arms; unit cells `8 passed`; ON
+arms carry `promote published off the tick ... 7.6ms` and `H2D receipt ... require=ok`, zero `reader wait refused`.
+Move 2 pre-registered in `OWNER-THREAD-OFFLOAD.md`; first slice named (the capture on the copy stream with an
+event-ordered publication, `Capturing` state, `TransferOp::D2d(ContiguousCopy)`, the recurrent-state `clone_dtod` kept
+at the boundary on the owner stream, schedule `d2d_capture_publish` first; 1.5 agent-days) and started as A day 20
+(running). Owed, stated by A: the 5090 door gates on this tree, the 27B twin repro, the same-window A/B of both Move 1
+classes, the receipt hashes off the tick, the by-reference routes.
+
+**C day 23, the promote stall on the tree with the parked-only wait** (one RTX PRO 6000 Blackwell at 600 W, one
+collector hold, OFF boot then ON boot, N=5 per arm per order, both orders, replay PASS x4), verbatim: `STALL rule
+cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7 idle_p99=14.8
+idle_max=14.9 arm_runs=10 arm_p50=13.4 arm_p95=14.8 arm_p99=92.5 arm_max=131.0 stall_median=81.9 stall_min=81.4
+stall_max=117.6 server_demote_ms=[207.7, 207.8, 172.6, 171.8, 172.3, 172.0, 172.4, 171.8, 172.5, 171.9]
+server_promote_ms=[61.3, 61.6, 26.4, 25.8, 25.9, 26.0, 25.9, 26.1, 25.9, 26.0] intruder_prompt_tokens=[89, 86, 89, 86,
+89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0`; `stall-promote-off ... arm_max=134.2 stall_median=85.2
+stall_min=84.4 stall_max=120.8 server_demote_ms=[40.6, 42.1, 6.8, 6.3, 6.1, 6.1, 6.0, 6.1, 6.1, 6.0]
+server_promote_ms=[45.0, 46.5, 11.2, 10.6, 10.5, 10.4, 10.4, 10.5, 10.5, 10.3] ...`; `stall-demote-on ... arm_max=163.1
+stall_median=149.5 ... server_demote_ms=[127.6, 132.6, 132.5, 132.2, 132.4, 132.0, 132.5, 132.2, 131.9]`; demote OFF
+`stall_median=117.5`. Pre-registered reading as printed: `admissible=True P1=at_or_under_day18 P2=within_wait
+P3=on_at_off P4=off_stable P5=demote_half_unchanged P6=off_stable`: the parked-only wait moved neither the tenant's
+stall nor the promote's window (publish `1 poll(s), 19.5` to `19.7ms` x10, zero `settled synchronously by a promote`),
+and P3 is the lane's one same-window OFF/ON pair of the promote arm. Door gates on the same tree: target card twelve
+cells all `ALL GREEN` (fault 65 ok x2 with the floor, failure 15 ok x4 and whole-budget 14 ok x2, identity 12 ok x4);
+local RTX 5090 (9B) ten cells `ALL GREEN`. `HOSTPREFIX-DOOR.md` review table final for 2026-10-05: 15 owed cells all
+banked with tree, receipt path and verbatim verdict; the cost table (demote stall 117.5 OFF against 193.5 on-tick and
+149.5 after Move 1; promote 85.2 OFF against 162.8 on-tick and 81.9 after Move 1; cached pair demote 37.8 against
+113.6; hash pass 77.9 ms cached against 1698 WC on the target host; lifecycle share below resolution; arena pair
+`arena_first_touch_absent; arena_not_slower`); the correctness table green both arms on both cards; the missing list
+(arena handoff per ruling 28, DFlash tail slice, verify digest v3, the 5090-class pair, two census questions, the 5090
+whole-budget arm); the decision question stated, not answered. Lead reading: the door's review input is complete on
+the target card; the owner decides on 2026-10-05.
+
+Battery (`integration-day12/integ34-cpu-battery/`, merged tree `720820350`, CPUQuota 1200 percent): fmt, portable
+suites, memra-server suite, clippy, censuses, collector pytest, engine CPU lib tests, tier tests, engine, server and tier
+clippy `-D warnings`, marker census, workflow keys, perf board: rc=0; `git diff --check` tripped on A's cargo receipt logs
+(blank line at EOF, marked `-whitespace`). Local 5090 `tools/serve-smoke.sh` (door OFF): `serve-smoke: 0 failed`.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
