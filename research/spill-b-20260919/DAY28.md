@@ -187,3 +187,155 @@ default does not change. The decision input, from the day-27 receipts, is writte
   committed sequence plus the suffix, the `DAY20.md` shape, not a re-rendered chat), (ii) the step-OOM adjacency replay
   (`retire_may_park(_, true)` refuses the park, no line, no entry), (iii) the park-time copy cost per park on both
   cards. About 1 agent-day on the day-26/27 harness.
+
+## 3. The shape-walk cell: both cards, one binary (`3c9bdfeaa`), `executed-not-qualified`
+
+Two attempts did not produce data and are kept as labelled failures. Local attempt 1
+(`rtx5090-day28/before-attempt1-oom-cotenant/`): the lock was acquired at once but the card was already at 23,806 of
+24,463 MiB, two processes of another session held 20,778 + 1,604 MiB outside the canonical lock (`compute-apps-before.csv`,
+identified by cwd only, never signalled); the server died at boot, quoted: `[server] FATAL: worker init failed:
+Engine::new failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")`; the cell was re-queued behind
+`wait-then-run.sh` (memory.used below 2,500 MiB on two consecutive 30 s polls, 90 min bound; the first waiter, this
+lane's own process, was stopped by pid and restarted at 2,500 MiB when a 1.6 GB `kernel-check` of the other session was
+still on the card; `before.wait.log`). Target-card attempt 1 (`pro-single-day28/cell-before-attempt1-env-run/`,
+`cells/before-attempt1-env-run/`): a harness bug, `env ... run "$BIN"` cannot call the shell function `run`
+(`env: 'run': No such file or directory`), fixed in `3c9bdfeaa`; no GPU data. The runs below are on the fixed runner.
+
+### 3.1 Target card: one RTX PRO 6000 Blackwell, 27B, `MEMRA_CTX` unset (`pro-single-day28/cells/before/`)
+
+Collector cell (`cell-before/command.capture.json`: `status executed-not-qualified`, `qualification false`,
+`exit_code 0`), tree `3c9bdfeaa`, binary sha `59d74cd2...`, 25 requests, `non-200=0`, `compute-apps` empty before and
+after, regime `32 C, 32.42 W` before / `45 C, 55.07 W` after, `power.limit 600.00 W`, server up 03:37:44Z to
+03:38:40Z, 191 samples at 250 ms. Boot, verbatim: `[admit-cal] boot calibration done: model="q38" route=mtp transient
+floor 2194MB (static was 1536MB; measured 2194MB; probe kv charge 127MB, draft-state 46MB, drafted 63 accepted 42;
+[dev0 peak-mapped 18976MB rest-mapped 16608MB charged 173MB -> 2194MB]; 1.7s)`, so `floor = 2,300,575,744 B`;
+`[admit-predict] shadow armed: budget_bytes=65881157328 budget_src=derived(effective_free_bytes=84065415872 -
+prefix_cache_budget_bytes=15883042816 - admission_reserve_bytes=2301215728) ... enforce=false`. Paths as predicted:
+`S1-0=spec S2-0=spec S2-1=spec`, every S4, S8, S8b request `plain` (the batched trunk), `L-0=spec`.
+
+The growth term, verbatim (`REPORT.txt`):
+
+```text
+1790048269787 [fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)  g_i=1609920 G_fa=1609920
+1790048269802 [fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)  g_i=3219840 G_fa=4829760
+1790048269847 [fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)  g_i=6439680 G_fa=11269440
+1790048294509 [fa-pool] grow #3 dev=0 o_len 1597440 -> 3194880 ml_len 6240 -> 12480 (retired kept, zero=false)  g_i=12879360 G_fa=24148800
+1790048305305 [fa-pool] grow #4 dev=0 o_len 3194880 -> 6389760 ml_len 12480 -> 24960 (retired kept, zero=false)  g_i=25758720 G_fa=49907520
+1790048269804 [spec] draft-session state high-water: 46MB (max of parked delta 46MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)
+[spec-vg] lines: 0
+G_fa at ready (the probe's grows, inside the floor's measurement) = 11269440; grows after ready = 2
+grow at 1790048294509: used 26805 -> 26805 MiB; g_i=12879360 (12.3 MiB); inflight=8
+grow at 1790048305305: used 26805 -> 26805 MiB; g_i=25758720 (24.6 MiB); inflight=1
+G3: exact rows max |residual| = 0 (tolerance 0); line~ rows max |residual| = 804952 (tolerance 2e6 at the 1 MB grain)
+G1: growth(end) = 38638080 (G_fa after ready 38638080 + delta_D 0) <= 10% floor = 230057574: PASS
+G2: while inflight > 0, max_underbook_real = 7443968680 <= floor = 2300575744: FAIL
+G4: Overloaded/OOM lines = 0: PASS
+```
+
+Grows #0 to #2 are the probe's (before ready, inside the floor's measurement). Grow #3 fired at S8 with 8 in flight
+(the batched trunk's FA at `t = 8` rows, the B-scaled demand of section 1.2), grow #4 at L with 1 in flight (the 22,600-
+token t_kv). The device did not step at either grow at the 250 ms grain (`26805 -> 26805 MiB`): the allocations landed
+in the pool's already-reserved blocks. `delta_D = 0`: the probe's 46 MB high-water held through every serving capture.
+G3 holds on every shape: 17 exact rows read `residual = 0` (for example `S8-0 P=2136 L=96 C=2296 path=plain
+kv_hat=1402714900 cost_exact=1404377876 bracket=1662976`, and `1404377876 - 1402714900 = 1662976 = 29696 x 56`), the 8
+MB-rounded rows sit inside the line's grain; at the eighth concurrent admit `booked_bytes=10856373644
+booked_real=10868014476`, a difference of `11,640,832 = 7 x 1,662,976`, the seven brackets and nothing else.
+
+G2 reads FAIL, and the reading is the day-24 one, not a graph term. The maximum in-flight under-booking (7,443,968,680 B
+at the `S8b-0` admit, one request booked) is the device delta the walk left behind between bursts: pool reserved rose
+18,589,155,328 -> 30,970,740,736 B over the walk, of which 4,460,933,712 B was cached free blocks at that sample
+(`RELEASE_THRESHOLD = u64::MAX`, handed back to the gate by `effective_free_bytes`), the rest the intentional retention
+(25 prefix-cache entries of the walk's prompts under the 15.9 GB budget, the last parked spec sessions, `L`'s at 22,760 x
+31,552 B = 718 MB). Subtracting `growth(t)` moves the number by 38.6 MB (`7405330600`). The graph growth's whole share
+of the in-flight under-booking is 0.5 %.
+
+### 3.2 Local RTX 5090 Laptop GPU, 9B, `MEMRA_CTX=65536` (`rtx5090-day28/before/`)
+
+Lock acquired 03:38:08Z (`lock.txt`), `before.exit` 0, 25 requests, `non-200=0`, one foreign long-lived tenant on the
+card throughout (a 1,390 MiB process of another project, present in every `compute-apps` snapshot of the day, not this
+lane's, not touched); regime `68 C, 11.05 W` before / `75 C, 24.28 W` after (`power.limit [N/A]`), server up 03:38:18Z to
+03:39:05Z, 164 samples. Boot: `transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB,
+draft-state 41MB ...)`, `floor = 1,610,612,736 B`; prefix budget `2052MB ... at served ctx 65536 (from MEMRA_CTX)`.
+Paths: `S1-0=spec S2-0=spec S2-1=spec`, S4 all `plain`; in the eight-bursts the first arrivals were admitted with at most
+two projected active and took the spec path (`S8-0=spec`, `S8b-1=spec`), the other seven of each burst `plain`;
+`L-0=spec`.
+
+```text
+1790048301945 [fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)  g_i=1073280 G_fa=1073280
+1790048301956 [fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)  g_i=2146560 G_fa=3219840
+1790048302001 [fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)  g_i=4293120 G_fa=7512960
+1790048323315 [fa-pool] grow #3 dev=0 o_len 1064960 -> 2129920 ml_len 4160 -> 8320 (retired kept, zero=false)  g_i=8586240 G_fa=16099200
+1790048332795 [fa-pool] grow #4 dev=0 o_len 2129920 -> 4259840 ml_len 8320 -> 16640 (retired kept, zero=false)  g_i=17172480 G_fa=33271680
+1790048301960 [spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+[spec-vg] lines: 0
+G_fa at ready (the probe's grows, inside the floor's measurement) = 7512960; grows after ready = 2
+grow at 1790048323315: used 13198 -> 13262 MiB; g_i=8586240 (8.2 MiB); inflight=8
+grow at 1790048332795: used 14062 -> 14062 MiB; g_i=17172480 (16.4 MiB); inflight=1
+G3: exact rows max |residual| = 0 (tolerance 0); line~ rows max |residual| = 482808 (tolerance 2e6 at the 1 MB grain)
+G1: growth(end) = 25758720 (G_fa after ready 25758720 + delta_D 0) <= 10% floor = 161061273: PASS
+G2: while inflight > 0, max_underbook_real = 3144845816 <= floor = 1610612736: FAIL
+G4: Overloaded/OOM lines = 0: PASS
+```
+
+The same ladder day 24 produced (`G_fa = 33,271,680 B`, section 1.2's arithmetic to the byte), the same two post-ready
+triggers (S8 at 8 in flight, L at 1), `delta_D = 0`, G3 `residual = 0` on 17 exact rows including the spec rows inside
+the bursts (`S8-0`, `S8b-1`: `cost_exact - kv_hat = 935424 = 16704 x 56`). G2 FAIL for the same reason as the target
+card (3,144,845,816 B at the `S8b-1` admit with one request booked: pool reserved 8,791,261,184 -> 13,287,555,072 B
+over the walk, 1,545,726,224 B cached at that sample, the prefix entries under the 2,052 MB budget, the parked spec
+sessions); minus `growth(t)` it reads `3119087096`, the graph term's share 0.8 %.
+
+### 3.3 Verdict on the fix, against the pre-registration
+
+G1 PASS on both cards: the growth attributable to the shapes the walk presented is 38,638,080 B (target) and
+25,758,720 B (local), 1.7 % and 1.6 % of the respective floors, against a 10 % line. Per section 1.4, **no per-request
+booking lands today**: the floor covers the term by a factor of 60, and a per-request charge for a shared, grow-only
+device pool would be charged N times for one allocation (the same over-booking direction day 24 named for `W`'s
+`call_row_bytes` term). G2 is FAIL on both cards before, as on day 24, and the fix that would move it is not a booking:
+the in-flight device delta the books do not carry is the async pool's cached blocks plus the retention the budget
+intends (prefix entries, parked sessions), which `effective_free_bytes` already hands the gate and `nvidia-smi` cannot
+see. No tolerance is moved; the FAIL stands as measured.
+
+**The booking point, proposed (not done).** The term is predictable from the request only in the sense that its
+DEMAND is (`n_head x ceil(t_kv / sp) x head_dim`, and `t x` that on the rows path), but the ALLOCATION is lazy, shared
+and monotone: it happens once per process per rung, at whichever request first presents the shape, and is never
+returned. The right booking point is therefore the boot, not the admission: `fa_dcw_pool_ensure(head_dim, n_head,
+n_head_kv, served_ctx)` (`lib.rs:32380`, exists, idempotent, callable from outside any capture) run for each loaded
+model inside `run_boot_calibration` BEFORE the probe's `pool_high_water_reset`, with the rows-path multiplier
+`decode_batch_cap()` on a `fa_sm_count() >= 128` card, so every rung the served context and the batch cap can reach is
+grown before ready and the calibrated floor is measured with the pool at its final size; the two `[fa-pool] grow` lines
+this walk produced after ready would then not exist. Cost: about 0.3 agent-day (one call site, one CPU test on the
+demand arithmetic, the walk re-run on both cards as the after cell with `grows after ready = 0` as the assertion). It
+changes no numeric program (the pool's contents are per-launch scratch; only its size moves) and needs no flag; it
+does change the boot's memory footprint by the final rung (67 MB on the 9B at 262,144, more on the rows path), which
+is why it is proposed here for the owner rather than landed. The `[spec-vg]` pool (MoE + linear families) is the one
+graph pool whose growth is per new key and charged on the physical side only (`vg_debt`), so on those families the
+predictive book has a real gap this lane's models cannot measure; named for the lead.
+
+## 4. Checks actually run
+
+| Check | Result |
+| --- | --- |
+| `git merge --no-ff origin/main` (`3df055601`) | clean, `check-conflict-markers: OK` |
+| `cargo build --release -p memra-server --offline`, local (CPU quota) and target card | `exit=0` both (`rtx5090-day28/build-local.log`, `pro-single-day28/build.log`) |
+| `cargo fmt --all -- --check`, clippy `-D warnings` | no Rust source changed today (no engine change); not re-run |
+| `python3 -m py_compile` on the client and parser; `bash -n` on the runner, waiter and chain | OK |
+| Target-card cell through the collector (`cell-before`) | `status executed-not-qualified`, `qualification false`, `exit_code 0`; 25 of 25 requests 200 |
+| Local cell under `flock /tmp/memra-5090.lock` (`before`) | `before.exit` 0; 25 of 25 requests 200; attempt 1 kept as `before-attempt1-oom-cotenant/` |
+| Full GPU exactness battery (`kernel-check`, `run-gen`, `run-spec`) | NOT RUN (no engine change; nothing is qualified today) |
+| `git diff --check`, `cargo fmt --all -- --check` (CPU quota), `tools/check-flags.sh`, `tools/check-conflict-markers.sh`, `python3 tools/check-public-boundary.py check` | clean; PASS; `check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)`; `check-conflict-markers: OK`; `public-boundary: 582 matches (582 grandfathered, 0 new)` |
+| em-dash census on every file written today | 0 |
+
+## 5. Boundaries and record
+
+- No engine change, no new `MEMRA_*` read, no default changed (the park door's row gains a date, not a value), no format
+  substitution, no `unsafe`, no third lock name, no bare GPU run (the target-card cell under the collector's
+  `/tmp/memra-gpu.lock`; the local cell under `flock` on the canonical 5090 lock; the OOM'd attempt held the lock too),
+  no `--no-verify`, no touch of `/root/artifacts`, `/root/memra-spill` or other lanes' worktrees or processes (the
+  co-tenants of the local card were read from `nvidia-smi` and left alone; the one process this lane stopped was its
+  own waiter, by pid), no host, id, location or cost in a tracked file, no cross-box timing; every cell
+  `executed-not-qualified`; every verdict line verbatim; no tolerance moved after a result.
+- Receipts: `pro-single-day28/` (mirror of the target card's `b-day28`: `cell-before/` collector capture, `cells/before/`
+  server.log stamped, client.jsonl, samples.csv, REPORT.txt, gpu and compute-apps before and after; `build.log`,
+  `binary.sha256`, `source.txt`, `chain.sh`, `chain.log`, `chain-attempt1.log`, the attempt-1 dirs),
+  `rtx5090-day28/` (`before/`, `before-attempt1-oom-cotenant/`, `build-local.log`, `wait-then-run.sh`,
+  `before.wait.log`, `before.launch.log`).

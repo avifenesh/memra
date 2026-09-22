@@ -1,0 +1,145 @@
+== boot
+[admit-predict] shadow armed: budget_bytes=11368580224 budget_src=derived(effective_free_bytes=15030731904 - prefix_cache_budget_bytes=2051538944 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+[admit-cal] boot calibration done: model="q9" route=mtp transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9440MB rest-mapped 8064MB charged 109MB -> 1266MB]; 1.3s)
+floor=1610612736
+== [fa-pool] grow lines (verbatim) with g_i = 4 x (o_i + 2 x m_i) and the cumulative G_fa after each
+1790048301945 [fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)  g_i=1073280 G_fa=1073280
+1790048301956 [fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)  g_i=2146560 G_fa=3219840
+1790048302001 [fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)  g_i=4293120 G_fa=7512960
+1790048323315 [fa-pool] grow #3 dev=0 o_len 1064960 -> 2129920 ml_len 4160 -> 8320 (retired kept, zero=false)  g_i=8586240 G_fa=16099200
+1790048332795 [fa-pool] grow #4 dev=0 o_len 2129920 -> 4259840 ml_len 8320 -> 16640 (retired kept, zero=false)  g_i=17172480 G_fa=33271680
+1790048301960 [spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+[spec-vg] lines: 0
+G_fa at ready (the probe's grows, inside the floor's measurement) = 7512960; grows after ready = 2
+== request-cost lines (verbatim)
+[admission] request cost: model="q9" ctx=194 path=spec = 16704 B/token x ctx + 24MB prefill-workspace + 0MB fixed = 27MB
+[admission] request cost: model="q9" ctx=2194 path=spec = 16704 B/token x ctx + 733MB prefill-workspace + 103MB fixed = 873MB
+[admission] request cost: model="q9" ctx=2205 path=spec = 16704 B/token x ctx + 737MB prefill-workspace + 107MB fixed = 881MB
+[admission] request cost: model="q9" ctx=2334 path=spec = 16704 B/token x ctx + 784MB prefill-workspace + 107MB fixed = 930MB
+[admission] request cost: model="q9" ctx=2348 path=plain = 14848 B/token x ctx + 789MB prefill-workspace + 107MB fixed = 931MB
+[admission] request cost: model="q9" ctx=2227 path=plain = 14848 B/token x ctx + 745MB prefill-workspace + 107MB fixed = 885MB
+[admission] request cost: model="q9" ctx=2424 path=plain = 14848 B/token x ctx + 816MB prefill-workspace + 107MB fixed = 959MB
+[admission] request cost: model="q9" ctx=2529 path=plain = 14848 B/token x ctx + 854MB prefill-workspace + 107MB fixed = 999MB
+[admission] request cost: model="q9" ctx=2254 path=spec = 16704 B/token x ctx + 755MB prefill-workspace + 108MB fixed = 900MB
+[admission] request cost: model="q9" ctx=2919 path=plain = 14848 B/token x ctx + 994MB prefill-workspace + 108MB fixed = 1145MB
+[admission] request cost: model="q9" ctx=2792 path=plain = 14848 B/token x ctx + 949MB prefill-workspace + 108MB fixed = 1098MB
+[admission] request cost: model="q9" ctx=2427 path=plain = 14848 B/token x ctx + 817MB prefill-workspace + 108MB fixed = 962MB
+[admission] request cost: model="q9" ctx=2625 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1036MB
+[admission] request cost: model="q9" ctx=2349 path=plain = 14848 B/token x ctx + 789MB prefill-workspace + 108MB fixed = 932MB
+[admission] request cost: model="q9" ctx=2528 path=plain = 14848 B/token x ctx + 854MB prefill-workspace + 108MB fixed = 999MB
+[admission] request cost: model="q9" ctx=2713 path=plain = 14848 B/token x ctx + 920MB prefill-workspace + 108MB fixed = 1069MB
+[admission] request cost: model="q9" ctx=22718 path=spec = 16704 B/token x ctx + 1779MB prefill-workspace + 108MB fixed = 2267MB
+[admission] request cost: model="q9" ctx=2351 path=spec = 16704 B/token x ctx + 790MB prefill-workspace + 145MB fixed = 974MB
+[admission] request cost: model="q9" ctx=2266 path=plain = 14848 B/token x ctx + 759MB prefill-workspace + 145MB fixed = 938MB
+[admission] request cost: model="q9" ctx=2638 path=plain = 14848 B/token x ctx + 893MB prefill-workspace + 145MB fixed = 1077MB
+[admission] request cost: model="q9" ctx=2450 path=plain = 14848 B/token x ctx + 825MB prefill-workspace + 145MB fixed = 1007MB
+[admission] request cost: model="q9" ctx=2548 path=plain = 14848 B/token x ctx + 861MB prefill-workspace + 145MB fixed = 1044MB
+[admission] request cost: model="q9" ctx=2818 path=plain = 14848 B/token x ctx + 958MB prefill-workspace + 145MB fixed = 1145MB
+[admission] request cost: model="q9" ctx=2919 path=plain = 14848 B/token x ctx + 994MB prefill-workspace + 145MB fixed = 1183MB
+[admission] request cost: model="q9" ctx=2723 path=plain = 14848 B/token x ctx + 924MB prefill-workspace + 145MB fixed = 1109MB
+== admit-predict lines (verbatim)
+[admit-predict] id=chatcmpl-d2669b3a1aa8803808ce12a162c076c0 tenant="" model="q9" verdict=admit reason=maxtok-fallback prompt=66 predicted_completion=64 kv_hat=69999504 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-13f3d921796dba130c227cff1b80ce5c tenant="" model="q9" verdict=admit reason=global-p95 prompt=2034 predicted_completion=64 kv_hat=915513544 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-e4cb0d5f503baf1bd2214078a06a79e6 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2045 predicted_completion=96 kv_hat=923908744 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-a87cff42b4b006663426ac91979af2a8 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2174 predicted_completion=96 kv_hat=972581768 booked_bytes=923908744 booked_real=924844168 inflight=1 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-2bebdc56bf9efab95e8f4dbe36352c29 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2188 predicted_completion=96 kv_hat=929942584 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-25c0db748e1646b4d13eb2e2154d0ed6 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2067 predicted_completion=96 kv_hat=884557748 booked_bytes=929942584 booked_real=930774072 inflight=1 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-87db93e60c5836d8e794511cd3d165aa tenant="" model="q9" verdict=admit reason=global-p95 prompt=2264 predicted_completion=96 kv_hat=958491060 booked_bytes=1814500332 booked_real=1816163308 inflight=2 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-8dde300d24fc12016d6cf4bd269036c1 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2369 predicted_completion=96 kv_hat=998038196 booked_bytes=2772991392 booked_real=2775485856 inflight=3 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-ad1b964bcfced305148c8ba6863cb1a1 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2094 predicted_completion=96 kv_hat=943010948 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-465c8777c4f34f429cb21b4204d8dd29 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2759 predicted_completion=96 kv_hat=1144598516 booked_bytes=943010948 booked_real=943946372 inflight=1 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-12a4b88e1d9ffffa5a4fdb523efb9f55 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2632 predicted_completion=96 kv_hat=1097659764 booked_bytes=2087609464 booked_real=2089376376 inflight=2 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-0ef9c71565d10804d55239534fc253af tenant="" model="q9" verdict=admit reason=global-p95 prompt=2267 predicted_completion=96 kv_hat=960676724 booked_bytes=3185269228 booked_real=3187867628 inflight=3 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-6c622a9d30dc1c5ce49953a99ef7cb33 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2465 predicted_completion=96 kv_hat=1034985332 booked_bytes=4145945952 booked_real=4149375840 inflight=4 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-c1c1c78e04161272a8f98f1dbde4cb0b tenant="" model="q9" verdict=admit reason=global-p95 prompt=2189 predicted_completion=96 kv_hat=931403636 booked_bytes=5180931284 booked_real=5185192660 inflight=5 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-353680127cfd3b5130ee871de8f500b9 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2368 predicted_completion=96 kv_hat=998581620 booked_bytes=6112334920 booked_real=6117427784 inflight=6 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-d26b6e2653074e803a3df65598b9925d tenant="" model="q9" verdict=admit reason=global-p95 prompt=2553 predicted_completion=96 kv_hat=1068011380 booked_bytes=7110916540 booked_real=7116840892 inflight=7 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-c17f83f46315de7931b4475a6d4f76c1 tenant="" model="q9" verdict=admit reason=global-p95 prompt=22558 predicted_completion=96 kv_hat=2309663748 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-0d89b24fc06360794a70a20c4ba7ed82 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2191 predicted_completion=96 kv_hat=1017065480 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-ac884fea6f8bdf7f918287e5a6894ff8 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2106 predicted_completion=96 kv_hat=937001016 booked_bytes=1017065480 booked_real=1018000904 inflight=1 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-1a1cf3ec8c439caca6f28d91109a9346 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2478 predicted_completion=96 kv_hat=1076611128 booked_bytes=1954066496 booked_real=1955833408 inflight=2 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-d69bb9ed06f1e10d7adb29025551340c tenant="" model="q9" verdict=admit reason=global-p95 prompt=2290 predicted_completion=96 kv_hat=1006055480 booked_bytes=3030677624 booked_real=3033276024 inflight=3 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-068a481ed685e1c5a7b6ea7239eacf01 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2388 predicted_completion=96 kv_hat=1042834488 booked_bytes=4036733104 booked_real=4040162992 inflight=4 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-ff00ff409aa053eb5070912ccf809caf tenant="" model="q9" verdict=admit reason=global-p95 prompt=2658 predicted_completion=96 kv_hat=1144164408 booked_bytes=5079567592 booked_real=5083828968 inflight=5 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-0e3f4572f7ee07d569a8e7515d533e49 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2759 predicted_completion=96 kv_hat=1182069304 booked_bytes=6223732000 booked_real=6228824864 inflight=6 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-cfe4c6d6463d1bb52c387ed2d2730019 tenant="" model="q9" verdict=admit reason=global-p95 prompt=2563 predicted_completion=96 kv_hat=1108511288 booked_bytes=7405801304 booked_real=7411725656 inflight=7 cap=64 budget_bytes=11368580224 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+== idle baseline mem.used MiB: n=8 min=10092 max=10092
+== samples (epoch_ms, mem_used_mib, delta_bytes, real_book, shadow_book, under_real, under_shadow, inflight, growth(t), pool_reserved, pool_cached); every 4th printed, all kept in samples.csv
+1790048304851 10092 0 0 0 0 0 0 0 8791261184 249287324
+1790048305851 10092 0 0 0 0 0 0 0 8791261184 249287324
+1790048306851 10604 536870912 917000000 915513544 -380129088 -378642632 1 0 8791261184 249287324
+1790048307851 10604 536870912 0 0 536870912 536870912 0 0 9328132096 501270712
+1790048308851 10604 536870912 0 0 536870912 536870912 0 0 9328132096 501270712
+1790048309851 11180 1140850688 1898844168 1896490512 -757993480 -755639824 2 0 9328132096 501270712
+1790048310851 11180 1140850688 1898844168 1896490512 -757993480 -755639824 2 0 9328132096 501270712
+1790048311851 11180 1140850688 0 0 1140850688 1140850688 0 0 9932111872 890457400
+1790048312851 11180 1140850688 0 0 1140850688 1140850688 0 0 9932111872 890457400
+1790048313851 11180 1140850688 3774485856 3771029588 -2633635168 -2630178900 4 0 9932111872 890457400
+1790048314851 11436 1409286144 3774485856 3771029588 -2365199712 -2361743444 4 0 9932111872 890457400
+1790048315851 11438 1411383296 3774485856 3771029588 -2363102560 -2359646292 4 0 10200547328 35699816
+1790048316851 11438 1411383296 0 0 1411383296 1411383296 0 0 10200547328 423663760
+1790048317851 11438 1411383296 0 0 1411383296 1411383296 0 0 10200547328 423663760
+1790048318851 11854 1847590912 943946372 943010948 903644540 904579964 1 0 10200547328 423663760
+1790048319851 12558 2585788416 8185840892 8178927920 -5600052476 -5593139504 8 0 10200547328 423663760
+1790048320851 12558 2585788416 8185840892 8178927920 -5600052476 -5593139504 8 0 10200547328 423663760
+1790048321851 12558 2585788416 8185840892 8178927920 -5600052476 -5593139504 8 0 10200547328 423663760
+1790048322851 12750 2787115008 8185840892 8178927920 -5398725884 -5391812912 8 0 10200547328 423663760
+1790048323851 13262 3323985920 8185840892 8178927920 -4861854972 -4854942000 8 8586240 12113149952 81944624
+1790048324851 13262 3323985920 8185840892 8178927920 -4861854972 -4854942000 8 8586240 12113149952 81944624
+1790048325851 13262 3323985920 0 0 3323985920 3323985920 0 8586240 12113149952 1606983952
+1790048326851 13262 3323985920 0 0 3323985920 3323985920 0 8586240 12113149952 1606983952
+1790048327851 13902 3995074560 2311000000 2309663748 1684074560 1685410812 1 8586240 12113149952 1606983952
+1790048328851 14030 4129292288 2311000000 2309663748 1818292288 1819628540 1 8586240 12113149952 1606983952
+1790048329851 14030 4129292288 2311000000 2309663748 1818292288 1819628540 1 8586240 12113149952 1606983952
+1790048330852 14062 4162846720 2311000000 2309663748 1851846720 1853182972 1 8586240 12113149952 1606983952
+1790048331854 14062 4162846720 2311000000 2309663748 1851846720 1853182972 1 8586240 12113149952 1606983952
+1790048332854 14062 4162846720 2311000000 2309663748 1851846720 1853182972 1 25758720 12113149952 1606983952
+1790048333854 14062 4162846720 0 0 4162846720 4162846720 0 25758720 12952010752 1545726224
+1790048334854 14062 4162846720 0 0 4162846720 4162846720 0 25758720 12952010752 1545726224
+1790048335854 14062 4162846720 1018000904 1017065480 3144845816 3145781240 1 25758720 12952010752 1545726224
+1790048336854 14094 4196401152 8520725656 8514312592 -4324324504 -4317911440 8 25758720 12952010752 1545726224
+1790048337854 14126 4229955584 8520725656 8514312592 -4290770072 -4284357008 8 25758720 12952010752 1545726224
+1790048338854 14126 4229955584 8520725656 8514312592 -4290770072 -4284357008 8 25758720 12952010752 1545726224
+1790048339854 14382 4498391040 8520725656 8514312592 -4022334616 -4015921552 8 25758720 12952010752 1545726224
+1790048340854 14382 4498391040 8520725656 8514312592 -4022334616 -4015921552 8 25758720 13287555072 113772592
+1790048341855 14382 4498391040 0 0 4498391040 4498391040 0 25758720 13287555072 1666724304
+1790048342855 14382 4498391040 0 0 4498391040 4498391040 0 25758720 13287555072 1666724304
+== peak mem.used MiB=14382 at 1790048339604
+max_underbook_real   = (4498391040, 1790048341604, 14382, 0)   (bytes, epoch_ms, mem_used_mib, real_book), all samples
+max_underbook_shadow = (4498391040, 1790048341604, 14382, 0)   (bytes, epoch_ms, mem_used_mib, shadow_book), all samples
+while inflight > 0: max_underbook_real=(3144845816, 1790048335604, 14062, 1018000904) max_underbook_shadow=(3145781240, 1790048335604, 14062, 1017065480); real minus growth(t): (3119087096, 1790048335604, 14062, 1018000904, 25758720)
+== device step across each post-ready grow (MiB used before -> after, growth bytes g_i)
+grow at 1790048323315: used 13198 -> 13262 MiB; g_i=8586240 (8.2 MiB); inflight=8
+grow at 1790048332795: used 14062 -> 14062 MiB; g_i=17172480 (16.4 MiB); inflight=1
+== per-request physical cost and G3 residual (tag, P, L, C, path, kv_hat, booked_real delta / cost~, residual)
+warm P=66 L=64 C=194 path=spec bpt=16704 kv_hat=69999504 cost_exact=None cost~=71000000 bracket=935424 residual(line~)=65072 W~=24000000 A~=0 D~=44000000
+S1-0 P=2034 L=64 C=2194 path=spec bpt=16704 kv_hat=915513544 cost_exact=None cost~=917000000 bracket=1469952 residual(line~)=16504 W~=733000000 A~=103000000 D~=44000000
+S2-0 P=2045 L=96 C=2205 path=spec bpt=16704 kv_hat=923908744 cost_exact=924844168 cost~=925000000 bracket=935424 residual(exact)=0 W~=737000000 A~=107000000 D~=44000000
+S2-1 P=2174 L=96 C=2334 path=spec bpt=16704 kv_hat=972581768 cost_exact=None cost~=974000000 bracket=935424 residual(line~)=482808 W~=784000000 A~=107000000 D~=44000000
+S4-1 P=2188 L=96 C=2348 path=plain bpt=14848 kv_hat=929942584 cost_exact=930774072 cost~=931000000 bracket=831488 residual(exact)=0 W~=789000000 A~=107000000 D~=0
+S4-0 P=2067 L=96 C=2227 path=plain bpt=14848 kv_hat=884557748 cost_exact=885389236 cost~=885000000 bracket=831488 residual(exact)=0 W~=745000000 A~=107000000 D~=0
+S4-2 P=2264 L=96 C=2424 path=plain bpt=14848 kv_hat=958491060 cost_exact=959322548 cost~=959000000 bracket=831488 residual(exact)=0 W~=816000000 A~=107000000 D~=0
+S4-3 P=2369 L=96 C=2529 path=plain bpt=14848 kv_hat=998038196 cost_exact=None cost~=999000000 bracket=831488 residual(line~)=130316 W~=854000000 A~=107000000 D~=0
+S8-0 P=2094 L=96 C=2254 path=spec bpt=16704 kv_hat=943010948 cost_exact=943946372 cost~=944000000 bracket=935424 residual(exact)=0 W~=755000000 A~=108000000 D~=44000000
+S8-7 P=2759 L=96 C=2919 path=plain bpt=14848 kv_hat=1144598516 cost_exact=1145430004 cost~=1145000000 bracket=831488 residual(exact)=0 W~=994000000 A~=108000000 D~=0
+S8-6 P=2632 L=96 C=2792 path=plain bpt=14848 kv_hat=1097659764 cost_exact=1098491252 cost~=1098000000 bracket=831488 residual(exact)=0 W~=949000000 A~=108000000 D~=0
+S8-2 P=2267 L=96 C=2427 path=plain bpt=14848 kv_hat=960676724 cost_exact=961508212 cost~=962000000 bracket=831488 residual(exact)=0 W~=817000000 A~=108000000 D~=0
+S8-4 P=2465 L=96 C=2625 path=plain bpt=14848 kv_hat=1034985332 cost_exact=1035816820 cost~=1036000000 bracket=831488 residual(exact)=0 W~=889000000 A~=108000000 D~=0
+S8-1 P=2189 L=96 C=2349 path=plain bpt=14848 kv_hat=931403636 cost_exact=932235124 cost~=932000000 bracket=831488 residual(exact)=0 W~=789000000 A~=108000000 D~=0
+S8-3 P=2368 L=96 C=2528 path=plain bpt=14848 kv_hat=998581620 cost_exact=999413108 cost~=999000000 bracket=831488 residual(exact)=0 W~=854000000 A~=108000000 D~=0
+S8-5 P=2553 L=96 C=2713 path=plain bpt=14848 kv_hat=1068011380 cost_exact=None cost~=1069000000 bracket=831488 residual(line~)=157132 W~=920000000 A~=108000000 D~=0
+L-0 P=22558 L=96 C=22718 path=spec bpt=16704 kv_hat=2309663748 cost_exact=None cost~=2311000000 bracket=935424 residual(line~)=400828 W~=1779000000 A~=108000000 D~=44000000
+S8b-1 P=2191 L=96 C=2351 path=spec bpt=16704 kv_hat=1017065480 cost_exact=1018000904 cost~=1018000000 bracket=935424 residual(exact)=0 W~=790000000 A~=145000000 D~=44000000
+S8b-0 P=2106 L=96 C=2266 path=plain bpt=14848 kv_hat=937001016 cost_exact=937832504 cost~=938000000 bracket=831488 residual(exact)=0 W~=759000000 A~=145000000 D~=0
+S8b-4 P=2478 L=96 C=2638 path=plain bpt=14848 kv_hat=1076611128 cost_exact=1077442616 cost~=1077000000 bracket=831488 residual(exact)=0 W~=893000000 A~=145000000 D~=0
+S8b-2 P=2290 L=96 C=2450 path=plain bpt=14848 kv_hat=1006055480 cost_exact=1006886968 cost~=1007000000 bracket=831488 residual(exact)=0 W~=825000000 A~=145000000 D~=0
+S8b-3 P=2388 L=96 C=2548 path=plain bpt=14848 kv_hat=1042834488 cost_exact=1043665976 cost~=1044000000 bracket=831488 residual(exact)=0 W~=861000000 A~=145000000 D~=0
+S8b-6 P=2658 L=96 C=2818 path=plain bpt=14848 kv_hat=1144164408 cost_exact=1144995896 cost~=1145000000 bracket=831488 residual(exact)=0 W~=958000000 A~=145000000 D~=0
+S8b-7 P=2759 L=96 C=2919 path=plain bpt=14848 kv_hat=1182069304 cost_exact=1182900792 cost~=1183000000 bracket=831488 residual(exact)=0 W~=994000000 A~=145000000 D~=0
+S8b-5 P=2563 L=96 C=2723 path=plain bpt=14848 kv_hat=1108511288 cost_exact=None cost~=1109000000 bracket=831488 residual(line~)=-342776 W~=924000000 A~=145000000 D~=0
+G3: exact rows max |residual| = 0 (tolerance 0); line~ rows max |residual| = 482808 (tolerance 2e6 at the 1 MB grain)
+G1: growth(end) = 25758720 (G_fa after ready 25758720 + delta_D 0) <= 10% floor = 161061273: PASS
+G2: while inflight > 0, max_underbook_real = 3144845816 <= floor = 1610612736: FAIL
+G4: Overloaded/OOM lines = 0: PASS
+== path per request (from the request-cost line in its block): L-0=spec S1-0=spec S2-0=spec S2-1=spec S4-0=plain S4-1=plain S4-2=plain S4-3=plain S8-0=spec S8-1=plain S8-2=plain S8-3=plain S8-4=plain S8-5=plain S8-6=plain S8-7=plain S8b-0=plain S8b-1=spec S8b-2=plain S8b-3=plain S8b-4=plain S8b-5=plain S8b-6=plain S8b-7=plain warm=spec
+requests=25 non-200=0 admits=25 ready_ms=1790048302794

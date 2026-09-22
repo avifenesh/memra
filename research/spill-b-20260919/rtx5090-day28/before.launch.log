@@ -1,0 +1,14 @@
+2026-09-22T03:38:08Z waiting for /tmp/memra-5090.lock (flock -w 3600)
+2026-09-22T03:38:08Z lock acquired
+S8b-4 P=2478 L=96 C=2638 path=plain bpt=14848 kv_hat=1076611128 cost_exact=1077442616 cost~=1077000000 bracket=831488 residual(exact)=0 W~=893000000 A~=145000000 D~=0
+S8b-2 P=2290 L=96 C=2450 path=plain bpt=14848 kv_hat=1006055480 cost_exact=1006886968 cost~=1007000000 bracket=831488 residual(exact)=0 W~=825000000 A~=145000000 D~=0
+S8b-3 P=2388 L=96 C=2548 path=plain bpt=14848 kv_hat=1042834488 cost_exact=1043665976 cost~=1044000000 bracket=831488 residual(exact)=0 W~=861000000 A~=145000000 D~=0
+S8b-6 P=2658 L=96 C=2818 path=plain bpt=14848 kv_hat=1144164408 cost_exact=1144995896 cost~=1145000000 bracket=831488 residual(exact)=0 W~=958000000 A~=145000000 D~=0
+S8b-7 P=2759 L=96 C=2919 path=plain bpt=14848 kv_hat=1182069304 cost_exact=1182900792 cost~=1183000000 bracket=831488 residual(exact)=0 W~=994000000 A~=145000000 D~=0
+S8b-5 P=2563 L=96 C=2723 path=plain bpt=14848 kv_hat=1108511288 cost_exact=None cost~=1109000000 bracket=831488 residual(line~)=-342776 W~=924000000 A~=145000000 D~=0
+G3: exact rows max |residual| = 0 (tolerance 0); line~ rows max |residual| = 482808 (tolerance 2e6 at the 1 MB grain)
+G1: growth(end) = 25758720 (G_fa after ready 25758720 + delta_D 0) <= 10% floor = 161061273: PASS
+G2: while inflight > 0, max_underbook_real = 3144845816 <= floor = 1610612736: FAIL
+G4: Overloaded/OOM lines = 0: PASS
+== path per request (from the request-cost line in its block): L-0=spec S1-0=spec S2-0=spec S2-1=spec S4-0=plain S4-1=plain S4-2=plain S4-3=plain S8-0=spec S8-1=plain S8-2=plain S8-3=plain S8-4=plain S8-5=plain S8-6=plain S8-7=plain S8b-0=plain S8b-1=spec S8b-2=plain S8b-3=plain S8b-4=plain S8b-5=plain S8b-6=plain S8b-7=plain warm=spec
+requests=25 non-200=0 admits=25 ready_ms=1790048302794
