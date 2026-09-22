@@ -1513,6 +1513,37 @@ exited 70 and the port went refused. A request that arrived during the dead wind
 **served by the respawn** — the supervisor owns the command channel across restarts, so
 queued work survives a worker death.
 
+**Per-request faults stay per-request (memra#525).** The ladder above is for the card and the
+process, not for one request's bug. Before memra#525 the single `catch_unwind` around the scheduler
+loop was the only boundary, so a Rust panic in ONE request's step (a bad index, an unwrap on a
+request-shaped edge) unwound the whole loop: every in-flight `Session` was dropped, every peer
+stream ended truncated after a 200, health flipped dead, and the worker respawned (or exited 70)
+for a fault that was never the card's. Now each per-session decode step, spec step, prefill call,
+constraint-mask staging, prefix-fanout leader prime, batched prime call (interactive and dark)
+and batched decode call runs under `request_fault_guard` (worker.rs). The classification happens
+at the catch site, once, from two facts: does the panic payload quote a driver or library error
+(`DriverError`, `CUDA_ERROR_*`, `CUBLAS_STATUS_*`, an OOM string), and does the CUDA context still
+answer a synchronize, a 16-float allocation and a readback right after the panic. Both clean is a
+**request fault**: one `[fault] request=<id> route=lane<n>/<model> site=<site> panic=<msg>` line,
+`request_faults_total` += 1, and exactly that request ends with `code: worker_fault` (500 before
+the first byte; the stream's error object after it, then close). The faulted session is marked aborted, so the retire sweep never parks its KV into the shared
+reuse pools where a later prefix match would resume from the residue, and it is not a completion
+for the admission history. The worker continues the same
+tick with its peers untouched. Either fact dirty is a **worker fault**: the panic is re-raised
+into the ladder above unchanged (a CUDA error is sticky per process, so the respawn is the right
+answer there and only there). A batched prime or decode call is guarded as one unit: a panic inside it
+is one request fault line naming every id in the wave and retires the wave; peers outside the
+wave are untouched. `request_faults_total` counts guarded calls that panicked, so a wave counts once while every request in
+it fails typed. `worker_respawns_total` counts the ladder; a rising `request_faults_total` with a
+flat `worker_respawns_total` is the signature of a request-shaped bug that needs a repro, not a
+card that needs a restart. `MEMRA_PANIC_AFTER` still panics at retire time, outside every guard,
+so it still exercises the worker ladder. The gate is `tools/request-fault-gate.py`
+(`MEMRA_FAULT_INJECT_CACHE_SALT`, receipts `research/request-fault-20260922/`). What the boundary
+does not promise: a panic while a `std::Mutex` is held poisons that mutex, and the next `lock()`
+on it panics outside the guard and takes the ladder; a panic that leaves a shared structure (the
+prefix cache, a parked pool) half-updated is caught, but its residue is whatever the unwound
+frames left behind.
+
 **GPU faults (`MEMRA_GPU_WATCH`).** A watcher thread tails Xid lines (`/dev/kmsg`, falling
 back to `journalctl -k -f`) and latches unhealthy on the fatal classes
 (48/64/79/94/95/119/120), counting the rest as warnings. It also probes `nvidia-smi` for

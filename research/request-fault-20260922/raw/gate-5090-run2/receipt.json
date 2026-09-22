@@ -1,0 +1,73 @@
+{
+  "model": "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf",
+  "bin": "target/release/memra-server",
+  "peers": 3,
+  "max_tokens": 48,
+  "salted": {
+    "status": 200,
+    "text": "",
+    "finish": null,
+    "error": {
+      "message": "this request hit an internal fault and was retired; other requests were not affected. Report the request id",
+      "type": "server_error",
+      "param": null,
+      "code": "worker_fault"
+    },
+    "chunks": 0,
+    "done": true
+  },
+  "per_peer": [
+    {
+      "prompt": "List three facts about the Moon in one short paragraph.",
+      "control_sha": "888d259f7d342ce6",
+      "fault_sha": "888d259f7d342ce6",
+      "fault_finish": "length",
+      "fault_error": null,
+      "identical": true
+    },
+    {
+      "prompt": "Explain what a hash table is to a beginner in a few sentences.",
+      "control_sha": "8c59c1643b76d16f",
+      "fault_sha": "8c59c1643b76d16f",
+      "fault_finish": "length",
+      "fault_error": null,
+      "identical": true
+    },
+    {
+      "prompt": "Write four lines about autumn rain, plain prose, no title.",
+      "control_sha": "b5ed9ff85fe74a6c",
+      "fault_sha": "b5ed9ff85fe74a6c",
+      "fault_finish": "length",
+      "fault_error": null,
+      "identical": true
+    }
+  ],
+  "request_faults_total_before": 0,
+  "request_faults_total": 1,
+  "worker_respawns_total": 0,
+  "health": {
+    "status": "ok",
+    "models": [
+      "gate"
+    ],
+    "worker": {
+      "phase": "idle",
+      "beat_age_ms": 1000,
+      "tick_max_ms": 95,
+      "stall_threshold_ms": 120000,
+      "forward_progress_age_ms": 1000,
+      "prime_progress": {
+        "rows": 150,
+        "chunks": 4,
+        "age_ms": 1457
+      },
+      "generation": 0,
+      "xid_warnings": 0
+    }
+  },
+  "fault_lines": [
+    "[fault] request=chatcmpl-ae110c09f086544491c6970c78fe29de route=lane0/gate site=fault-inject panic=[fault-inject] MEMRA_FAULT_INJECT_CACHE_SALT matched request chatcmpl-ae110c09f086544491c6970c78fe29de; the CUDA context answers, this request is retired with worker_fault and the worker continues"
+  ],
+  "worker_panic_lines": [],
+  "verdict": "PASS"
+}

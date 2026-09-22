@@ -112,6 +112,17 @@ engine's `build.rs`. Its red arm (a retired name refuses) and its non-vacuity ar
 name at once refuses nothing) are unit tests in `env_audit.rs`; `MEMRA_ENV_AUDIT=warn` downgrades,
 `=0` disables, both announced. Receipts: `research/env-audit-20260921/`.
 
+Request-fault boundary (memra#525, `tools/request-fault-gate.py`, in `tools/local-ci.sh`,
+`MEMRA_CI_FAULTGATE=0` skips): one boot of the real server with the `MEMRA_FAULT_INJECT_CACHE_SALT`
+door, a control round of three concurrent greedy streams, then the same three plus a salted stream
+that panics inside its guarded step. Verdicts: the salted stream ends with an error object
+whose `code` is `worker_fault` and no `finish_reason`; every peer finishes and its text equals the
+control round's byte for byte; `request_faults_total` reads 1, `worker_respawns_total` 0,
+`/health` `worker.generation` 0; the log carries exactly one `[fault] request=` line and no
+`[worker] PANIC`. The classification itself (request fault vs re-raised worker fault, driver-looking
+payloads, pass-through of returned errors) is CPU-only unit tests, `request_fault_guard_tests` in
+worker.rs. Receipts: `research/request-fault-20260922/`.
+
 The docs-fit owner call is closed: tier 2 now runs the full `run-spec` K=1..8 sweep and requires
 eight per-K PASS lines plus the final `SELF-CONSISTENCY PASS` marker. The raw run is logged before
 parsing; a red quotes the failing K and `FIRST DIVERGENCE` index.
