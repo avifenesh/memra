@@ -251,9 +251,10 @@ await_hashes() { # $1 log: every `handed to the hash helper` hand-off of the boo
     # 10 s deadline, so a hand-off that never lands is read as its typed refusal, not as a timeout here.
     for _ in $(seq 1 150); do
         local handed landed failed
-        handed=$(grep -c "handed to the hash helper" "$1")
-        landed=$(grep -c "demote digests landed off the tick" "$1")
-        failed=$(grep -c "demote failed (tier hash" "$1")
+        # `grep -c` exits 1 on a zero count and this gate runs `set -e`: the `|| true` keeps the count.
+        handed=$(grep -c "handed to the hash helper" "$1" || true)
+        landed=$(grep -c "demote digests landed off the tick" "$1" || true)
+        failed=$(grep -c "demote failed (tier hash" "$1" || true)
         [ "$handed" -le $((landed + failed)) ] && return 0
         sleep 0.1
     done
