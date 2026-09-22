@@ -1,7 +1,8 @@
 //! Native owner-stream H2D/D2H implementation of the frozen tier contract.
 //! No worker may submit CUDA work. Unknown completion retains backing and quota.
 use cudarc::driver::{
-    CudaContext, CudaEvent, CudaSlice, CudaStream, DriverError, HostSlice, SyncOnDrop, result, sys,
+    CudaContext, CudaEvent, CudaSlice, CudaStream, CudaViewMut, DriverError, HostSlice, SyncOnDrop,
+    result, sys,
 };
 use memra_kv::KvPlane;
 use memra_tier::{bank::SharedBudget, contracts::*};
@@ -337,6 +338,17 @@ impl Drop for Entry {
 pub struct D2dCapture<'a> {
     pub source: &'a CudaSlice<u8>,
     pub destination: DeviceLease,
+    pub bytes: u64,
+    pub producer_fence: FenceId,
+}
+/// One same-device copy of the restore class (WP-A day 21, memra#536 Move 2 slice 2): `bytes`
+/// from the head of a BORROWED published source (a device prefix entry's plane, held by the
+/// device LRU's pin from submit through acknowledge) into a BORROWED destination view (the
+/// admitted request's fresh session cache plane, exactly `bytes` long), behind `producer_fence`.
+/// Nothing on either side is the registry's. See `CudaTransfers::submit_d2d_restore`.
+pub struct D2dRestore<'a> {
+    pub source: &'a CudaSlice<u8>,
+    pub destination: CudaViewMut<'a, u8>,
     pub bytes: u64,
     pub producer_fence: FenceId,
 }
@@ -853,14 +865,16 @@ impl CudaTransfers {
         Ok(f)
     }
     /// Rule 3 (WP-A day 19, `memra_tier::conformance::h2d_reader_fence` under
-    /// `ReaderWaitInstall::AtSettle`): install the OWNER stream's wait on every H2D item's
-    /// completion event that is not yet fenced, then fence it. The destination's consumer is the
-    /// owner stream (the D2D restore and every kernel after it); until this runs an off-owner H2D
-    /// is not `consumer_fenced` and `ready_view` refuses it `NotReady`. Idempotent: an item fenced
-    /// at submit (the owner-stream program, every D2H) is left alone. Recorded strictly before
-    /// `ready_view` and before `record_consumer`, whose event then orders behind the copy. A CUDA
-    /// error here leaves the ticket unpublished with its destinations bound; the caller unwinds
-    /// through `cancel` as for any pre-publication refusal.
+    /// `ReaderWaitInstall::AtSettle`; day 21, `d2d_restore_ready`): install the OWNER stream's
+    /// wait on every item's completion event that is not yet fenced, then fence it. The
+    /// destination's consumer is the owner stream (the D2D restore and every kernel after it for
+    /// an H2D; the request's first prime chunk for a D2D restore); until this runs an off-owner
+    /// H2D is not `consumer_fenced` and `ready_view` refuses it `NotReady`, and a D2D restore is
+    /// not `ready`. Idempotent: an item fenced at submit (the owner-stream program, every D2H,
+    /// every D2D capture) is left alone; a D2H is never fenced here (its consumer is the host).
+    /// Recorded strictly before `ready_view` and before `record_consumer`, whose event then orders
+    /// behind the copy. A CUDA error here leaves the ticket unpublished with its destinations
+    /// bound; the caller unwinds through `cancel` as for any pre-publication refusal.
     pub fn install_consumer_wait(&mut self, ticket: &TransferTicket) -> Result<()> {
         self.check_thread()?;
         let e = self.entries.get_mut(ticket).ok_or(Error::UnknownTicket)?;
@@ -877,7 +891,7 @@ impl CudaTransfers {
                 continue;
             };
             let s = &e.completion.items[i].segments[0];
-            if s.consumer_fenced || item.direction != CopyDirection::HostToDevice {
+            if s.consumer_fenced || item.direction == CopyDirection::DeviceToHost {
                 continue;
             }
             if s.status == ItemStatus::Quarantined {
@@ -894,7 +908,7 @@ impl CudaTransfers {
                 continue;
             };
             let s = &e.completion.items[i].segments[0];
-            if s.consumer_fenced || item.direction != CopyDirection::HostToDevice {
+            if s.consumer_fenced || item.direction == CopyDirection::DeviceToHost {
                 continue;
             }
             let event = item.event.as_ref().ok_or(Error::Quarantined)?;
@@ -1086,6 +1100,140 @@ impl CudaTransfers {
             return Err(Error::Unsupported);
         }
         Ok(e.completion.producer_done)
+    }
+    /// The restore class (WP-A day 21, memra#536 Move 2 slice 2;
+    /// `memra_tier::conformance::d2d_restore_ready`): ONE batch of same-device copies issued on
+    /// the COPY stream behind each op's producer fence (an owner-stream event recorded at submit,
+    /// after the recurrent-state copies), from the head of a BORROWED published source (a device
+    /// prefix entry's plane, pinned by the device LRU from submit through acknowledge: the
+    /// producer-side guarantee for a borrowed source) into a BORROWED destination view (the parked
+    /// request's fresh session cache plane). Nothing on either side is the registry's, so no
+    /// destination lease exists and `take_destination`, `ready_view` and `Completion::require`
+    /// refuse the items (no checksum term until slice 3). All-or-nothing: a refused op refuses the
+    /// whole batch with nothing submitted. The items are NOT fenced at submit (rule 3: the
+    /// destination's consumer is the owner stream, whose wait on each completion event is
+    /// installed by `install_consumer_wait` at the settle, before the request is re-admitted);
+    /// `restore_landed` answers the landing, and the caller's `ready` is the landing plus the
+    /// installed wait. Requires the copy stream; under `new` the class does not exist
+    /// (`Unsupported`): the on-tick program is the caller's own `prefix_restore_at`.
+    pub fn submit_d2d_restore(
+        &mut self,
+        ops: Vec<D2dRestore<'_>>,
+        epochs: Epochs,
+    ) -> Result<TransferTicket> {
+        self.check_thread()?;
+        let Some(copy) = self.copy.clone() else {
+            return Err(Error::Unsupported);
+        };
+        if ops.is_empty() {
+            return Err(Error::EmptyBatch);
+        }
+        if ops.len() > u32::MAX as usize || self.sequence == u64::MAX {
+            return Err(Error::Overflow);
+        }
+        for op in &ops {
+            if op.bytes == 0
+                || op.bytes != op.destination.len() as u64
+                || op.bytes > op.source.len() as u64
+            {
+                return Err(Error::InvalidLayout);
+            }
+            if !Arc::ptr_eq(op.source.stream().context(), self.stream.context()) {
+                return Err(Error::WrongOwner);
+            }
+            if self
+                .producers
+                .get(&op.producer_fence.sequence)
+                .is_none_or(|(actual, _)| actual != &op.producer_fence)
+            {
+                return Err(Error::WrongOwner);
+            }
+        }
+        let mut request = self.request();
+        request.bytes.inflight = ops.len() as u64;
+        let charge = self.governor.borrow_mut().reserve(&request)?;
+        self.sequence += 1;
+        let ticket = TransferTicket {
+            issuer: self.owner.issuer(),
+            sequence: self.sequence,
+            epochs,
+        };
+        let mut entry = Entry {
+            items: vec![],
+            completion: Completion {
+                ticket,
+                items: vec![],
+                producer_done: false,
+                consumer_fenced: false,
+            },
+            expected: vec![],
+            charge: Some(charge),
+            cancelled: false,
+            published: false,
+            retired: false,
+            unknown: false,
+            source: Retention::default(),
+            destination: Retention::default(),
+        };
+        for (i, mut op) in ops.into_iter().enumerate() {
+            let mut s = SegmentCompletion {
+                segment: 0,
+                status: ItemStatus::Pending,
+                valid_bytes: 0,
+                io_bytes: 0,
+                checksum: None,
+                epochs,
+                producer_done: false,
+                // Unfenced at submit (rule 3): the owner stream's wait is installed at the settle.
+                consumer_fenced: false,
+                consumer_fence: None,
+                error: None,
+            };
+            entry.expected.push(vec![SegmentExpectation {
+                valid_bytes: op.bytes,
+                io_bytes: op.bytes,
+                checksum: [0; 32],
+            }]);
+            let mut item = Item {
+                host: None,
+                device: None,
+                bytes: op.bytes,
+                direction: CopyDirection::DeviceToDevice,
+                event: None,
+                taken: false,
+                source_retired: false,
+            };
+            // From this point any CUDA error may mean work was submitted: accept + quarantine.
+            let submit = (|| {
+                cuda(copy.wait(&self.producers[&op.producer_fence.sequence].1))?;
+                let n = op.bytes as usize;
+                cuda(copy.memcpy_dtod(&op.source.slice(0..n), &mut op.destination))?;
+                item.event = Some(cuda(copy.record_event(None))?);
+                s.io_bytes = item.bytes;
+                Ok(())
+            })();
+            if let Err(error) = submit {
+                s.status = ItemStatus::Quarantined;
+                s.error = Some(error);
+                entry.unknown = true;
+            }
+            entry.items.push(Some(item));
+            entry.completion.items.push(ItemOutcome {
+                item: i as u32,
+                accepted: true,
+                segments: vec![s],
+            });
+        }
+        self.entries.insert(ticket, entry);
+        Ok(ticket)
+    }
+    /// The restore's landing predicate (`d2d_restore_ready` rules 1 and 2): every item's
+    /// completion event observed complete. Landing is NOT readiness: the caller's `ready` is this
+    /// plus every item fenced by `install_consumer_wait`, read from `poll`'s `consumer_fenced`.
+    /// A ticket that is not a same-device batch is refused `Unsupported`; a quarantined
+    /// observation is `Quarantined`, never `true`.
+    pub fn restore_landed(&mut self, ticket: &TransferTicket) -> Result<bool> {
+        self.capture_landed(ticket)
     }
     /// Retain both sides for legacy whole-transfer graph users.
     pub fn pin_graph(&mut self, ticket: &TransferTicket) -> Result<GraphPin> {
@@ -1843,10 +1991,65 @@ mod tests {
         let wait = install_body.find("cuda(stream.wait(event))").unwrap();
         let fence = install_body.find("s.consumer_fenced = true;").unwrap();
         assert!(wait < fence);
-        assert!(install_body.contains("item.direction != CopyDirection::HostToDevice"));
+        // Day 21: the install skips a D2H only (its consumer is the host); an unfenced H2D and an
+        // unfenced D2D restore are fenced here, a D2D capture (fenced at submit) is left alone.
+        assert!(install_body.contains("item.direction == CopyDirection::DeviceToHost"));
+        assert!(!install_body.contains("!= CopyDirection::HostToDevice"));
         // Day 20: the capture class fences at submit too (its consumer is the caller's
-        // publication); three fencing statements in the body, none elsewhere.
+        // publication); three fencing statements in the body, none elsewhere (day 21: the restore
+        // class adds none, its items are fenced by the install).
         assert_eq!(body.matches("s.consumer_fenced = true;").count(), 3);
+    }
+
+    /// WP-A day 21 (memra#536 Move 2 slice 2, `memra_tier::conformance::d2d_restore_ready`): the
+    /// restore class exists only with the copy stream, issues behind the producer event on that
+    /// stream into a borrowed destination view of exactly the item's bytes, registers nothing,
+    /// records its completion event there, installs NO wait and NO fence at submit (rule 3: the
+    /// install at the settle fences it), carries no checksum term, and `restore_landed` is the
+    /// same-device landing predicate. Source census, CPU.
+    #[test]
+    fn d2d_restore_rules_are_as_stated() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap()];
+        let submit = body.find("pub fn submit_d2d_restore(").unwrap();
+        let submit_body = &body[submit..body[submit..].find("\n    pub fn ").unwrap() + submit];
+        let needs_copy = submit_body
+            .find("let Some(copy) = self.copy.clone() else {")
+            .expect("the restore class requires the copy stream");
+        assert!(
+            submit_body[needs_copy..needs_copy + 120].contains("return Err(Error::Unsupported);")
+        );
+        assert!(submit_body.contains("op.bytes != op.destination.len() as u64"));
+        let producer_wait = submit_body
+            .find("cuda(copy.wait(&self.producers[&op.producer_fence.sequence].1))?;")
+            .unwrap();
+        let copy_at = submit_body
+            .find("cuda(copy.memcpy_dtod(&op.source.slice(0..n), &mut op.destination))?;")
+            .unwrap();
+        let event_at = submit_body
+            .find("item.event = Some(cuda(copy.record_event(None))?);")
+            .unwrap();
+        assert!(producer_wait < copy_at && copy_at < event_at);
+        assert!(
+            !submit_body.contains("self.stream.wait("),
+            "no owner-stream wait exists at submit in the restore class"
+        );
+        assert!(
+            !submit_body.contains("s.consumer_fenced = true;")
+                && submit_body.contains("consumer_fenced: false,"),
+            "a restore item is unfenced at submit (rule 3)"
+        );
+        assert!(
+            !submit_body.contains("register_device") && submit_body.contains("device: None,"),
+            "nothing on either side is the registry's"
+        );
+        assert!(submit_body.contains("direction: CopyDirection::DeviceToDevice,"));
+        assert!(submit_body.contains("checksum: None,"));
+        // Two same-device copy statements in the body: the capture's and the restore's.
+        assert_eq!(body.matches(".memcpy_dtod(").count(), 2);
+        let landed = body.find("pub fn restore_landed(").unwrap();
+        let landed_body = &body[landed..body[landed..].find("\n    pub fn ").unwrap() + landed];
+        assert!(landed_body.contains("self.capture_landed(ticket)"));
     }
 
     /// WP-A day 20 (memra#536 Move 2 slice 1, `memra_tier::conformance::d2d_capture_publish`):
@@ -1881,7 +2084,8 @@ mod tests {
         );
         assert!(submit_body.contains("direction: CopyDirection::DeviceToDevice,"));
         assert!(submit_body.contains("checksum: None,"));
-        assert_eq!(body.matches(".memcpy_dtod(").count(), 1);
+        // Day 21: the restore class adds the second same-device copy statement.
+        assert_eq!(body.matches(".memcpy_dtod(").count(), 2);
         let progress = body.find("fn progress(").unwrap();
         let progress_body = &body[progress..body[progress..].find("\n    fn ").unwrap() + progress];
         let d2d_arm = progress_body
@@ -2039,6 +2243,119 @@ mod tests {
             assert_eq!(back, pattern, "the capture holds the source bytes");
         }
         assert_eq!(t.device_registry_len(), 0);
+    }
+
+    /// WP-A day 21 (memra#536 Move 2 slice 2, `memra_tier::conformance::d2d_restore_ready`): the
+    /// restore class on a card. Two borrowed destination planes (the fixture's own, as a session
+    /// cache's would be) and a borrowed patterned source; one restore batch on the copy stream
+    /// behind an owner-stream producer fence; nothing registered; the items are unfenced at
+    /// submit and the host-contract gate refuses them; `restore_landed` turns true; the install
+    /// fences every item (the owner stream now waits on the events); `retire(None)`,
+    /// `acknowledge`; an owner-stream readback after the install holds the pattern byte for byte.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait() {
+        use memra_tier::tier::governor::Governor;
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.new_stream().unwrap();
+        let cap = TierBudget {
+            version: 1,
+            device: vec![1 << 30],
+            peer: vec![0],
+            replicas: vec![0],
+            pinned: 1 << 30,
+            pageable: 1 << 30,
+            staging: 1 << 30,
+            loaders: 64,
+            inflight: 64,
+            nvme: 0,
+        };
+        let gov: SharedBudget = Rc::new(RefCell::new(
+            Governor::new(cap, TierBudget::zero(1), 64, 0, Arc::new(|| 0)).unwrap(),
+        ));
+        let mut t = CudaTransfers::new_with_copy_stream(stream.clone(), gov).unwrap();
+        let bytes = 8usize << 20;
+        let pattern: Vec<u8> = (0..bytes).map(|i| (i * 17 % 253) as u8).collect();
+        let mut source = stream.alloc_zeros::<u8>(bytes).unwrap();
+        stream.memcpy_htod(&pattern, &mut source).unwrap();
+        let generation = 1u64;
+        let epochs = Epochs {
+            state: 0,
+            src_gen: 1,
+            dst_gen: generation,
+        };
+        let mut destinations: Vec<CudaSlice<u8>> = (0..2)
+            .map(|_| stream.alloc_zeros::<u8>(bytes).unwrap())
+            .collect();
+        // The class does not exist without the copy stream.
+        let (mut on_owner, _s, _g) = native_fixture();
+        assert!(matches!(
+            on_owner.submit_d2d_restore(Vec::new(), epochs),
+            Err(Error::Unsupported)
+        ));
+        let producer = t.record_producer(generation).unwrap();
+        let ticket = {
+            let ops: Vec<D2dRestore<'_>> = destinations
+                .iter_mut()
+                .map(|destination| D2dRestore {
+                    source: &source,
+                    destination: destination.slice_mut(..bytes),
+                    bytes: bytes as u64,
+                    producer_fence: producer,
+                })
+                .collect();
+            t.submit_d2d_restore(ops, epochs).unwrap()
+        };
+        assert_eq!(
+            t.device_registry_len(),
+            0,
+            "nothing registered on either side"
+        );
+        // The host-contract gate never publishes a restore, landed or not.
+        assert!(t.ready_view(&ticket, 0, epochs).is_err());
+        assert!(t.take_destination(&ticket, 0, epochs).is_err());
+        let mut polls = 0u32;
+        while !t.restore_landed(&ticket).unwrap() {
+            polls += 1;
+            assert!(
+                polls < 1_000_000,
+                "the copy stream never completed the restore"
+            );
+        }
+        let c = t.poll(&ticket).unwrap();
+        assert!(c.producer_done);
+        assert!(
+            !c.consumer_fenced,
+            "landed and still unfenced: no wait was installed at submit"
+        );
+        for item in &c.items {
+            assert_eq!(item.segments[0].valid_bytes, bytes as u64);
+            assert!(item.segments[0].checksum.is_none(), "no checksum term");
+            assert!(!item.segments[0].consumer_fenced);
+        }
+        // Rule 3: the install fences every item with a real owner-stream wait.
+        t.install_consumer_wait(&ticket).unwrap();
+        let c = t.poll(&ticket).unwrap();
+        assert!(
+            c.producer_done && c.consumer_fenced,
+            "landed and fenced: ready"
+        );
+        for item in &c.items {
+            assert!(item.segments[0].consumer_fenced && item.segments[0].consumer_fence.is_some());
+        }
+        assert!(matches!(
+            t.ready_view(&ticket, 0, epochs),
+            Err(Error::Corrupt)
+        ));
+        t.release_producer(producer).unwrap();
+        t.retire(&ticket, None).unwrap();
+        assert!(t.retired(&ticket).unwrap());
+        t.acknowledge(&ticket).unwrap();
+        // The reader (owner) stream reads after the installed wait: the pattern, byte for byte.
+        for destination in &destinations {
+            let back = stream.clone_dtoh(destination).unwrap();
+            assert_eq!(back, pattern, "the restore holds the source bytes");
+        }
     }
 
     /// The arm is honoured by the driver, not just recorded: `cuMemHostGetFlags` on the lease's
