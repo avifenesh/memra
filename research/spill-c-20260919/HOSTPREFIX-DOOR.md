@@ -698,6 +698,51 @@ attributed by any cell. Both are named as open for the review; nothing is inferr
     DSPARK tail is the drafter's own export (`dspark.draft_kv().export_tail`), owned and fenced by the drafter, and
     stays outside that route unless the export becomes a capture item. Nothing here is built.
 
+11. **The draft-bearing restore: what the restore route refuses by name, what a draft plane's restore would need,
+    and how much of the hit gate it is (day 26 census, `DAY26.md`; no code).** Slice 2's route
+    (`host_restore_park_probe`, worker.rs) reaches its class check only past six silent gates: a `Restoring`
+    request already pending, the route's latch, the host tier not armed (`hpx.armed()`, a `MEMRA_KV_HOST_MB`
+    budget above zero and no latch), no copy stream, an empty request id, a vision or capture request, a
+    continuation-reuse hit, or a `lookup` miss (an entry of at least 64 tokens exactly prefixing the prompt). At
+    the class check it refuses BY NAME, silently (`return false`, no line; the typed `restore refused (contracts
+    door)` line fires only after it, on the cache allocation, the OFF validation, a vanished pin or the submit):
+    `e.tp.is_some()` (TP shards), any `e.latent` plane (GLM latent tails, the `glm5-boundary` publish),
+    `e.draft.is_some()` (the MTP draft plane, every `insert (spec-boundary)` entry), `e.dspark_draft.is_some()`
+    (the DFlash tail, `dspark-boundary`), `e.pos != e.toks.len()`, empty boundary logits, and an entry with no
+    KV plane. What the draft plane's restore would need, read from the OFF program it would have to equal
+    (`spec_session_from_restored_deferred`, spec.rs 9196): today the trunk cache is restored first
+    (`prefix_restore_at`, the carrier), then the spec session is built and its `MtpScratch` is ALLOCATED inside
+    that constructor, the entry's `draft.k` and `draft.v` are copied into `scratch.kv.k` and `scratch.kv.v` with
+    `copy_u8_into` on the owner stream (`pos x k_tok_bytes` and `pos x v_tok_bytes` bytes, about 1.9 KB per
+    token on the 27B), then `scratch.set_len(pos)`, all after the geometry checks (`draft_len == pos`, the
+    entry's `k_tok_bytes`/`v_tok_bytes` equal to the model's scratch layout, `pos <= scratch.cap`, a ring-backed
+    scratch refused) and after `spec_restore_refusal` decided at admission that this REQUEST takes the draft at
+    all (a sampled request under the load guard or the penalty window, or an entry without `last_h`, serves
+    plain on the same entry). So the destination side needs: the scratch allocated at the probe, before the
+    session exists, owned by the pending `Restoring` state beside the trunk cache and never by a session while
+    the copy is in flight; a borrowed `CudaViewMut<u8>` destination of exactly `pos x k_tok_bytes` and `pos x
+    v_tok_bytes` into it; the source borrowed from the pinned entry's `draft.k`/`draft.v` under the SAME pin the
+    trunk restore takes (no second guarantee); a producer fence recorded on the owner stream after the
+    recurrent-state copies as today; the reader fence, rule 3's owner-stream wait installed at the settle
+    before the deferred prime's first draft-head read of rows `[0..pos)` (the walk reads the scratch, so the
+    wait must precede session construction or the constructor must take a ready, pre-filled scratch);
+    `spec_restore_refusal` evaluated at the probe, before the submit, so a request that would serve plain on a
+    draft-bearing entry submits the trunk restore alone (or takes the tick program as today) and never a draft
+    plane it will not read; the geometry checks moved to the probe's validation; and slice 3's receipt term over
+    both plane classes (the draft plane binds as `Role::Draft`: `items=34` on the 27B and `items=18` on the 9B
+    against 32 and 16 plain). The DFlash tail (a fixed about 85 MB `export_tail`, owned and fenced by the
+    drafter) stays outside unless the export becomes a capture item. How much of the hit gate this is: the
+    qwen arm's spec-on boot publishes 12 entries, 11 `insert (spec-boundary)` (draft-bearing) and 1 `insert
+    (seed)` (the `samp-noplane` namespace, plain), and serves 13 hits, 12 on draft-bearing entries and 1 on the
+    plain one; its spec-off twin boot publishes 2 `insert (seed)` entries and serves 3 hits, all plain; per
+    gate run 11 of 14 entries and 12 of 16 hits are draft-bearing, and the counts are IDENTICAL on both rigs
+    (target card, A day 21 `pro-single-day21/box/gates/hitgate-{off,on}`; RTX 5090, 9B, `rtx5090-day24/hit-on`
+    and `rtx5090-day26/hit-{off,on}`). One step before the class check, though: the hit gate boots with no
+    `MEMRA_KV_HOST_MB` (zero `[prefix-host]` lines in every hit-gate log on both rigs), so `hpx.armed()` is
+    false and the route is off for its 4 plain hits too; the hit gate's identity clause will cover the route,
+    for the plain hits now and the draft-bearing ones when their restore lands, only on a boot that arms the
+    host tier. Nothing here is built.
+
 ### E. The decision question, stated and not answered
 
 Promotion would make the contract program the naked default of the host tier on the target card class:
