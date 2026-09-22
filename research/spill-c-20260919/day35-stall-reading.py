@@ -118,11 +118,15 @@ def admissible(kind, mode, rec, log):
     if kind == "on" and mode == "promote":
         for r in runs:
             L = r["server_log_lines"]
-            shape = (count(L, "promote submitted off the tick"), sum(1 for ln in L if "H2D receipt" in ln and "require=ok" in ln),
-                     count(L, "promote published off the tick"), count(L, "request parked"),
+            # Five independent lines. On this tree "request parked" is the TAIL of the submitted
+            # line, never a line of its own (revuto on integ44 #651): it is asserted as part of
+            # that line, not counted again.
+            shape = (sum(1 for ln in L if "promote submitted off the tick" in ln and ln.rstrip().endswith("request parked")),
+                     sum(1 for ln in L if "H2D receipt" in ln and "require=ok" in ln),
+                     count(L, "promote published off the tick"),
                      count(L, "restore not routed (contracts door)"), count(L, "restore submitted off the tick"))
-            if shape != (1, 1, 1, 1, 1, 0):
-                why.append(f"run {r['run_id']} promote shape {shape} != (1,1,1,1,1,0)")
+            if shape != (1, 1, 1, 1, 0):
+                why.append(f"run {r['run_id']} promote shape {shape} != (1,1,1,1,0)")
     return not why, "; ".join(why) or "errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered"
 
 

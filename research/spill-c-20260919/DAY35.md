@@ -101,7 +101,7 @@ refused the day-16 ON receipts on the off-tick line census, which that tree's on
   ticket seq=N, 16 items on the contracts door's copy stream`, `contracts door D2H receipt: ... items=16 ... require=ok`,
   `demote published off the tick: ticket seq=N complete after P poll(s), X ms from submission to completion (tick-top
   poll)`. ON promote arm, every run exactly: one `promote submitted off the tick: ... request parked`, one `contracts
-  door H2D receipt: ... require=ok`, one `promote published off the tick`, one `request parked`, one `[prefix-cache]
+  door H2D receipt: ... require=ok`, one `promote published off the tick`, one `[prefix-cache]
   restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=P, 64 tokens, model
   gate); the tick program copies it` (A day 26's promoted-pin refusal on the promote-then-hit shape, on `main` since
   #647), zero `restore submitted off the tick`; plus the inline demote's three lines. Zero refused or latched lines in
@@ -140,7 +140,7 @@ intruders 104 to 177 ms after firing, promote 63 to 127 ms). The ON boots' serve
 (`ev/pass{1,2}/on/server.log`, identical counts in both): `demote submitted off the tick` 21, `D2H receipt ... require=ok`
 21, `demote published off the tick` 21, `[prefix-host] demote:` 21 (the 9 demote-arm evictions, the promote arm's 2 seeds
 and its 10 inline demotes); `promote submitted off the tick ... request parked` 10, `H2D receipt ... require=ok` 10,
-`promote published off the tick` 10, `[prefix-host] promote:` 10, `request parked` 10, `restore not routed (contracts
+`promote published off the tick` 10, `[prefix-host] promote:` 10 (the `request parked` tail is on the 10 submitted lines, not a line of its own), `restore not routed (contracts
 door)` 10, `restore submitted off the tick` 0, `capture submitted off the tick (seed)` 12; every `require=` line `ok` (43 of
 43); zero `failed`, `refused`, `latched off` or `TIER DISABLED` lines. The OFF boots: 21 `[prefix-host] demote:` and 10
 `[prefix-host] promote:` lines, no `off the tick` line. The prime boots: no `[prefix-host]` line. The entries are the plain
