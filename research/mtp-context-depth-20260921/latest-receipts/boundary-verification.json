@@ -1,0 +1,40 @@
+{
+  "runtime_archive_sha256": "943d165b80f268ffacc63e78191c669ed4bda562b3151d45758876321e3f6dc8",
+  "scanner_sha256": "0000058db5d59a35421999679372f43e760bdf7e72fde72b1748e74a396518aa",
+  "policy_sha256": "ef9eebfc074f4b9db708682ec0ac99b3533fe6f4c4433490c3e1cb7fd7f8bd32",
+  "archives": [
+    {
+      "file": "common-records.tar.gz",
+      "sha256": "457cad1547228b070c8d77234bedf09ff0b1de2e265c1c77b1eff75fb3256140",
+      "files": 66,
+      "compressed_rules": [],
+      "expanded_matches_reviewed": 0
+    },
+    {
+      "file": "gemma-records.tar.gz",
+      "sha256": "8bf4093409ea4afea853be4c02530b3cc37196674d55e1a6a2d09925f17f1805",
+      "files": 1211,
+      "compressed_rules": [],
+      "expanded_matches_reviewed": 2
+    },
+    {
+      "file": "qwen-records.tar.gz",
+      "sha256": "05aec54a534319f4beb1148efe6fcb5af0e7add7b3d085513fa2c406c68eaf76",
+      "files": 1531,
+      "compressed_rules": [
+        "provider_name_aws"
+      ],
+      "expanded_matches_reviewed": 0
+    },
+    {
+      "file": "runtime-source.tar.gz",
+      "sha256": "943d165b80f268ffacc63e78191c669ed4bda562b3151d45758876321e3f6dc8",
+      "files": 1307,
+      "compressed_rules": [
+        "provider_name_aws"
+      ],
+      "expanded_matches_reviewed": 12
+    }
+  ],
+  "unresolved_matches": 0
+}

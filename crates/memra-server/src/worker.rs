@@ -1431,6 +1431,11 @@ pub enum ErrClass {
     /// couple of seconds will work. -> 429 + Retry-After. Uptime-neutral at OpenRouter, and
     /// their own guidance prefers an early 429 to queueing.
     RateLimit,
+    /// A Rust panic inside THIS request's step while the CUDA context still answered
+    /// (memra#525): the request fails with `code: worker_fault`, the worker keeps serving its
+    /// peers. Only a driver error or a failed post-panic probe reaches the supervisor's
+    /// respawn/exit ladder. -> 500 + `code: worker_fault`.
+    WorkerFault,
     /// The BOX is out of capacity (VRAM exhausted, step OOM past its park budget). -> 503,
     /// not 429: "a 429 that a client cannot fix by waiting should not be a 429", and OpenAI
     /// itself serves overload as 503. This one honestly counts against uptime, because it is
@@ -1533,6 +1538,8 @@ impl EngineError {
         let message = message.into();
         let class = if is_cuda_oom(&message) {
             ErrClass::Overloaded
+        } else if message.contains(REQUEST_FAULT_PREFIX) {
+            ErrClass::WorkerFault
         } else {
             ErrClass::Engine
         };
@@ -6736,6 +6743,9 @@ pub(crate) fn engine_client_message(class: ErrClass) -> &'static str {
         ErrClass::Overloaded => {
             "the model is temporarily at capacity; retry after the Retry-After delay"
         }
+        ErrClass::WorkerFault => {
+            "this request hit an internal fault and was retired; other requests were not affected. Report the request id"
+        }
         _ => {
             "the engine could not complete this request; retry, and report the request id if it persists"
         }
@@ -6744,6 +6754,298 @@ pub(crate) fn engine_client_message(class: ErrClass) -> &'static str {
 
 fn is_cuda_oom(err: &str) -> bool {
     err.contains("CUDA_ERROR_OUT_OF_MEMORY") || err.contains("out of memory")
+}
+
+/// Marker the request-fault guard writes into the error it returns; `EngineError::engine`
+/// classifies any message carrying it as `ErrClass::WorkerFault` (the same text-classification
+/// seam `is_cuda_oom` uses, so the 27 `EngineError::engine(format!(..{err}))` arms need no edit).
+pub const REQUEST_FAULT_PREFIX: &str = "request fault:";
+
+/// Request faults caught by the guard (the request failed, the worker kept running). One per
+/// guarded call that panicked: a batched prime or decode wave counts ONCE while every request in
+/// the wave is retired with `worker_fault`; the wave's `[fault]` line names all of its ids.
+pub static REQUEST_FAULTS_TOTAL: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// Worker thread respawns the supervisor attempted (a worker fault reached the ladder).
+pub static WORKER_RESPAWNS_TOTAL: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+pub fn request_faults_total() -> u64 {
+    REQUEST_FAULTS_TOTAL.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn worker_respawns_total() -> u64 {
+    WORKER_RESPAWNS_TOTAL.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn panic_payload_text(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+        .unwrap_or_else(|| "non-string panic payload".into())
+}
+
+/// A panic whose message quotes a driver or library error is a worker fault whatever the probe
+/// says afterwards: the state that produced it is not this request's alone.
+fn looks_like_cuda_fault(msg: &str) -> bool {
+    msg.contains("DriverError")
+        || msg.contains("CUDA_ERROR_")
+        || msg.contains("CUBLAS_STATUS")
+        || msg.contains("cuBLAS")
+        || is_cuda_oom(msg)
+}
+
+/// Post-panic probe: the context must still take a synchronize, a small allocation and a
+/// readback. A sticky CUDA error fails the first call; a healthy context passes all three.
+fn cuda_context_healthy(e: &Engine) -> bool {
+    e.stream().synchronize().is_ok() && e.zeros(16).and_then(|z| e.dtoh(&z)).is_ok()
+}
+
+/// The per-request fault boundary (memra#525). Runs `f` under `catch_unwind`; on a panic it
+/// classifies at the catch site: a driver-looking payload or a failed `context_healthy` probe is
+/// a WORKER fault and the panic is re-raised into the supervisor's respawn/exit ladder; anything
+/// else is a REQUEST fault: one `[fault]` line, `REQUEST_FAULTS_TOTAL` bumped, and an `Err`
+/// carrying `REQUEST_FAULT_PREFIX` so the existing error arms retire exactly this session with a
+/// typed `worker_fault` and the worker goes on serving its peers. `context_healthy` is a
+/// parameter so the classification has CPU-only teeth (`request_fault_guard_tests`).
+pub(crate) fn request_fault_guard<T>(
+    context_healthy: impl FnOnce() -> bool,
+    request_id: &str,
+    route: &str,
+    site: &str,
+    f: impl FnOnce() -> Result<T, Box<dyn std::error::Error>>,
+) -> Result<T, Box<dyn std::error::Error>> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(result) => result,
+        Err(payload) => {
+            let msg = panic_payload_text(payload.as_ref());
+            if looks_like_cuda_fault(&msg) || !context_healthy() {
+                eprintln!(
+                    "[fault] request={request_id} route={route} site={site} WORKER FAULT: {msg} \
+                     (driver error in the panic or the CUDA context no longer answers); \
+                     re-raising to the supervisor"
+                );
+                std::panic::resume_unwind(payload);
+            }
+            REQUEST_FAULTS_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            eprintln!(
+                "[fault] request={request_id} route={route} site={site} panic={msg}; the CUDA \
+                 context answers, this request is retired with worker_fault and the worker \
+                 continues"
+            );
+            Err(format!("{REQUEST_FAULT_PREFIX} {site} panicked: {msg}").into())
+        }
+    }
+}
+
+/// `request_fault_guard` with the live CUDA probe.
+fn guard_request<T>(
+    e: &Engine,
+    request_id: &str,
+    route: &str,
+    site: &str,
+    f: impl FnOnce() -> Result<T, Box<dyn std::error::Error>>,
+) -> Result<T, Box<dyn std::error::Error>> {
+    request_fault_guard(|| cuda_context_healthy(e), request_id, route, site, f)
+}
+
+fn fault_route(s: &Session) -> String {
+    format!("lane{}/{}", s.lane.idx(), s.model)
+}
+
+/// A guard `Err` that carries `REQUEST_FAULT_PREFIX` leaves the session's device state as the
+/// unwound frames left it (KV written for a token whose `fed.push` never ran, or the reverse).
+/// Mark the session aborted so `retire_may_park` refuses it: its cache must never be parked into
+/// the shared reuse pools where a later prefix match would resume from that residue, and it is
+/// not a completion for the admission history. Every single-session error arm after a guard
+/// calls this; the wave arms set `aborted` for the whole wave already.
+fn quarantine_request_fault(s: &mut Session, err: &(dyn std::error::Error + 'static)) {
+    if err.to_string().contains(REQUEST_FAULT_PREFIX) {
+        s.aborted = true;
+    }
+}
+
+/// MEMRA_FAULT_INJECT_CACHE_SALT (fault-injection door, memra#525): a request whose
+/// `cache_salt` equals the value panics inside its own guarded `fault-inject` step at the top of
+/// the tick, deterministically, so a
+/// gate can prove the boundary on the wire: that request fails typed, its peers finish byte-
+/// identical to a run without it, and the worker generation does not move.
+fn fault_inject_salt() -> Option<&'static str> {
+    static SALT: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    SALT.get_or_init(|| {
+        let salt = std::env::var("MEMRA_FAULT_INJECT_CACHE_SALT")
+            .ok()
+            .filter(|v| !v.is_empty());
+        if let Some(v) = salt.as_deref() {
+            eprintln!(
+                "[fault-inject] MEMRA_FAULT_INJECT_CACHE_SALT armed: a request with cache_salt={v:?} \
+                 panics inside its guarded step (memra#525 gate door; never set in serving)"
+            );
+        }
+        salt
+    })
+    .as_deref()
+}
+
+#[cfg(test)]
+mod request_fault_guard_tests {
+    //! CPU-only teeth for the memra#525 boundary: the probe is a closure, so every branch of the
+    //! classification runs without a card.
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    /// The counter and the panic hook are process-global and `cargo test` runs this binary's
+    /// tests concurrently: every test here holds this lock for its whole body.
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn faults() -> u64 {
+        REQUEST_FAULTS_TOTAL.load(Ordering::Relaxed)
+    }
+
+    /// Silence the expected panics for the duration of one test and restore whatever hook was
+    /// installed before (libtest's), so an unrelated test's panic still prints.
+    type PanicHook = Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send + 'static>;
+    struct QuietPanics(Option<PanicHook>);
+    impl QuietPanics {
+        fn install() -> Self {
+            let saved = std::panic::take_hook();
+            std::panic::set_hook(Box::new(|_| {}));
+            QuietPanics(Some(saved))
+        }
+    }
+    impl Drop for QuietPanics {
+        fn drop(&mut self) {
+            if let Some(saved) = self.0.take() {
+                std::panic::set_hook(saved);
+            }
+        }
+    }
+
+    #[test]
+    fn ok_and_err_pass_through_untouched() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let before = faults();
+        let ok = request_fault_guard(|| true, "r", "lane0/m", "site", || Ok::<u32, _>(7));
+        assert_eq!(ok.unwrap(), 7);
+        let err = request_fault_guard(
+            || true,
+            "r",
+            "lane0/m",
+            "site",
+            || Err::<u32, Box<dyn std::error::Error>>("plain engine error".into()),
+        );
+        let msg = err.unwrap_err().to_string();
+        assert_eq!(msg, "plain engine error");
+        assert!(!msg.contains(REQUEST_FAULT_PREFIX));
+        assert_eq!(faults(), before, "a returned Err is not a fault");
+    }
+
+    #[test]
+    fn panic_with_healthy_context_is_a_request_fault() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let _quiet = QuietPanics::install();
+        let before = faults();
+        let r = request_fault_guard(
+            || true,
+            "req-1",
+            "lane1/qwen",
+            "decode step",
+            || {
+                if faults() < u64::MAX {
+                    panic!("index out of bounds: the len is 3 but the index is 9");
+                }
+                Ok::<u32, Box<dyn std::error::Error>>(0)
+            },
+        );
+        let msg = r.unwrap_err().to_string();
+        assert!(msg.starts_with(REQUEST_FAULT_PREFIX), "{msg}");
+        assert!(msg.contains("decode step panicked"), "{msg}");
+        assert!(msg.contains("index out of bounds"), "{msg}");
+        assert_eq!(faults(), before + 1);
+        let e = EngineError::engine(format!("prefill error: {msg}"));
+        assert_eq!(e.class, ErrClass::WorkerFault);
+        assert!(
+            engine_client_message(ErrClass::WorkerFault)
+                .contains("other requests were not affected")
+        );
+    }
+
+    #[test]
+    fn panic_with_dead_context_reraises() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let _quiet = QuietPanics::install();
+        let before = faults();
+        let r = std::panic::catch_unwind(|| {
+            request_fault_guard(
+                || false,
+                "req-2",
+                "lane0/m",
+                "decode step",
+                || {
+                    if faults() < u64::MAX {
+                        panic!("something ordinary");
+                    }
+                    Ok::<u32, Box<dyn std::error::Error>>(0)
+                },
+            )
+        });
+        let payload = r.expect_err("a dead context re-raises the panic");
+        assert_eq!(panic_payload_text(payload.as_ref()), "something ordinary");
+        assert_eq!(
+            faults(),
+            before,
+            "a worker fault is not counted as a request fault"
+        );
+    }
+
+    #[test]
+    fn driver_looking_panic_reraises_even_when_probe_is_healthy() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let _quiet = QuietPanics::install();
+        let before = faults();
+        let r = std::panic::catch_unwind(|| {
+            request_fault_guard(
+                || true,
+                "req-3",
+                "lane0/m",
+                "spec step",
+                || {
+                    if faults() < u64::MAX {
+                        panic!(
+                            "called `Result::unwrap()` on an `Err` value: DriverError(CUDA_ERROR_ILLEGAL_ADDRESS)"
+                        );
+                    }
+                    Ok::<u32, Box<dyn std::error::Error>>(0)
+                },
+            )
+        });
+        assert!(r.is_err());
+        assert_eq!(faults(), before);
+        assert!(looks_like_cuda_fault("CUBLAS_STATUS_EXECUTION_FAILED"));
+        assert!(looks_like_cuda_fault("CUDA_ERROR_OUT_OF_MEMORY"));
+        assert!(!looks_like_cuda_fault("attempt to subtract with overflow"));
+    }
+
+    #[test]
+    fn plain_engine_message_stays_engine_class() {
+        assert_eq!(
+            EngineError::engine("batch step: shape mismatch".to_string()).class,
+            ErrClass::Engine
+        );
+        assert_eq!(
+            EngineError::engine("CUDA_ERROR_OUT_OF_MEMORY".to_string()).class,
+            ErrClass::Overloaded
+        );
+    }
+}
+
+fn maybe_inject_fault(cache_ns: &str, request_id: &str) {
+    if let Some(salt) = fault_inject_salt()
+        && salt == cache_ns
+    {
+        panic!("[fault-inject] MEMRA_FAULT_INJECT_CACHE_SALT matched request {request_id}");
+    }
 }
 
 /// The error the MEMRA_STEP_OOM_FAULT door forges: a QUOTED CUDA OOM (so `is_cuda_oom`
@@ -20591,11 +20893,18 @@ pub fn run(
                 let generated_before = active[i].generated.len();
                 let lane = active[i].lane;
                 let step_started = Instant::now();
-                let step_result = match step_session_async_chain(&engine, &loaded, &mut active[i]) {
-                    Ok(Some(keep)) => Ok(keep),
-                    Ok(None) => step_session(&engine, &loaded, &mut active[i], &mut spec_metrics),
-                    Err(err) => Err(err),
-                };
+                let (fault_id, fault_route) =
+                    (active[i].request_id.clone(), fault_route(&active[i]));
+                let step_result =
+                    guard_request(&engine, &fault_id, &fault_route, "decode step", || {
+                        match step_session_async_chain(&engine, &loaded, &mut active[i]) {
+                            Ok(Some(keep)) => Ok(keep),
+                            Ok(None) => {
+                                step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
+                            }
+                            Err(err) => Err(err),
+                        }
+                    });
                 record_output_progress(
                     generated_before,
                     active[i].generated.len(),
@@ -20610,6 +20919,7 @@ pub fn run(
                     Ok(true) => {}
                     Ok(false) => finished.push(i),
                     Err(err) => {
+                        quarantine_request_fault(&mut active[i], err.as_ref());
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -21059,25 +21369,30 @@ pub fn run(
                 // pretending is full); the match below (park-vs-honest-error, the
                 // teardown fence, park_requeue, the retry budget) is production logic,
                 // un-doctored. This is the ONLY injection point of the door.
-                let step_result = if step_oom_fault_fire() {
-                    eprintln!(
-                        "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this step reports a \
-                         synthetic CUDA OOM (model {}, generated {}, oom_retries {}/{})",
-                        active[i].model,
-                        active[i].generated.len(),
-                        active[i].oom_retries,
-                        step_oom_retries(),
-                    );
-                    Err(STEP_OOM_FAULT_MSG.into())
-                } else if was_dspark_step {
-                    step_dspark_spec(&engine, &loaded, &mut dspark_drafts, &mut active[i])
-                } else if active[i].glm5_on {
-                    step_glm5_spec(&engine, &loaded, &mut active[i])
-                } else if active[i].gspec_k > 0 {
-                    step_gemma_spec(&engine, &loaded, &mut gemma_drafts, &mut active[i])
-                } else {
-                    step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
-                };
+                let (fault_id, fault_route) =
+                    (active[i].request_id.clone(), fault_route(&active[i]));
+                let step_result =
+                    guard_request(&engine, &fault_id, &fault_route, "spec step", || {
+                        if step_oom_fault_fire() {
+                            eprintln!(
+                                "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this step reports a \
+                             synthetic CUDA OOM (model {}, generated {}, oom_retries {}/{})",
+                                active[i].model,
+                                active[i].generated.len(),
+                                active[i].oom_retries,
+                                step_oom_retries(),
+                            );
+                            Err(STEP_OOM_FAULT_MSG.into())
+                        } else if was_dspark_step {
+                            step_dspark_spec(&engine, &loaded, &mut dspark_drafts, &mut active[i])
+                        } else if active[i].glm5_on {
+                            step_glm5_spec(&engine, &loaded, &mut active[i])
+                        } else if active[i].gspec_k > 0 {
+                            step_gemma_spec(&engine, &loaded, &mut gemma_drafts, &mut active[i])
+                        } else {
+                            step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
+                        }
+                    });
                 let step_elapsed_ms = step_started.elapsed().as_secs_f32() * 1000.0;
                 if let Some((
                     start_ms,
@@ -21224,6 +21539,7 @@ pub fn run(
                                 active[i].tokens_emitted
                             );
                         }
+                        quarantine_request_fault(&mut active[i], err.as_ref());
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -21312,6 +21628,35 @@ pub fn run(
             // scheduler-level chunk per session, but concatenate eligible chunks so N cold
             // requests do not serialize N separate trunk walks ahead of ready rows.
             let mut batch_advanced: std::collections::HashSet<usize> = Default::default();
+            // FAULT INJECTION (MEMRA_FAULT_INJECT_CACHE_SALT, memra#525; the loop body never runs
+            // with the door unset): the salted session panics inside its own guarded step, on
+            // the worker thread with a live CUDA context, before any shared structure is touched
+            // this tick. The guard classifies it as a request fault and this arm retires exactly
+            // that session; its peers take the tick as if it had never been admitted.
+            if fault_inject_salt().is_some() {
+                #[allow(clippy::needless_range_loop)]
+                // allow: `finished` is pushed inside the loop and the guard closure takes
+                // `&mut active[i]`, so the index, not an iterator, is what the borrow allows
+                for i in 0..active.len() {
+                    if finished.contains(&i) || dedup_advanced.contains(&i) {
+                        continue;
+                    }
+                    let (fault_id, fault_route) =
+                        (active[i].request_id.clone(), fault_route(&active[i]));
+                    let probe =
+                        guard_request(&engine, &fault_id, &fault_route, "fault-inject", || {
+                            maybe_inject_fault(&active[i].cache_ns, &active[i].request_id);
+                            Ok(())
+                        });
+                    if let Err(err) = probe {
+                        active[i].aborted = true;
+                        let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
+                            "step error: {err}"
+                        ))));
+                        finished.push(i);
+                    }
+                }
+            }
             let (cand, held) = 'pb: loop {
                 // default 6 (2026-07-26): with the varlen GDN core (task #18) the
                 // concat sweet spot moved from B=4 to B=6-8 (16501 vs 15950 tok/s
@@ -21427,6 +21772,11 @@ pub fn run(
                         .map(|&(i, take)| active[i].prefill_queue.drain(..take).collect())
                         .collect();
                     let prompt_refs: Vec<&[u32]> = prompts.iter().map(|p| p.as_slice()).collect();
+                    let batch_ids: String = cand
+                        .iter()
+                        .map(|&(i, _)| active[i].request_id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(",");
                     let mut cache_refs: Vec<&mut memra_engine::cache::Cache> = active
                         .iter_mut()
                         .enumerate()
@@ -21435,10 +21785,10 @@ pub fn run(
                         .collect();
                     let lm = &loaded[cand_model.as_ref().unwrap()];
                     let t_pb = Instant::now();
-                    match lm
-                        .model
-                        .prime_cache_batch(&engine, &prompt_refs, &mut cache_refs)
-                    {
+                    match guard_request(&engine, &batch_ids, "batch", "batched prime", || {
+                        lm.model
+                            .prime_cache_batch(&engine, &prompt_refs, &mut cache_refs)
+                    }) {
                         Ok(outs) => {
                             let toks: usize = prompts.iter().map(|p| p.len()).sum();
                             let partial = cand
@@ -21484,9 +21834,12 @@ pub fn run(
                             fired = true;
                         }
                         Err(err) => {
+                            // A request fault (a panic caught by the guard) leaves the wave's
+                            // caches in whatever state the unwound frames left: retire the wave
+                            // like a tainted one; never hand it to the single-prime path.
                             let tainted = cand.iter().any(|&(i, _)| {
                                 active[i].cache.as_ref().is_some_and(|cache| cache.tainted)
-                            });
+                            }) || err.to_string().contains(REQUEST_FAULT_PREFIX);
                             if tainted {
                                 eprintln!(
                                     "[prime-batch] failed after a partial pipeline wave ({err}); dropping tainted sessions"
@@ -21598,19 +21951,22 @@ pub fn run(
                         budget
                     );
                 }
-                match prefill_tick(
-                    &engine,
-                    &loaded,
-                    &mut px,
-                    &mut hpx,
-                    s,
-                    budget,
-                    vision_tower.as_ref(),
-                    gemma_tower.as_ref(),
-                    glm5_tower.as_ref(),
-                    step_tower.as_ref(),
-                    overlay_publish,
-                ) {
+                let (fault_id, fault_route) = (s.request_id.clone(), fault_route(s));
+                match guard_request(&engine, &fault_id, &fault_route, "prefill", || {
+                    prefill_tick(
+                        &engine,
+                        &loaded,
+                        &mut px,
+                        &mut hpx,
+                        s,
+                        budget,
+                        vision_tower.as_ref(),
+                        gemma_tower.as_ref(),
+                        glm5_tower.as_ref(),
+                        step_tower.as_ref(),
+                        overlay_publish,
+                    )
+                }) {
                     Ok(consumed) => {
                         if consumed > 0 {
                             prefill_single_calls += 1;
@@ -21619,6 +21975,7 @@ pub fn run(
                     }
                     Err(err) if prime_cancelled_abort(s, err.as_ref()) => finished.push(i),
                     Err(err) => {
+                        quarantine_request_fault(s, err.as_ref());
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
                         ))));
@@ -21661,7 +22018,12 @@ pub fn run(
                 }
                 let generated_before = active[i].generated.len();
                 let lane = active[i].lane;
-                let step_result = step_session(&engine, &loaded, &mut active[i], &mut spec_metrics);
+                let (fault_id, fault_route) =
+                    (active[i].request_id.clone(), fault_route(&active[i]));
+                let step_result =
+                    guard_request(&engine, &fault_id, &fault_route, "decode step", || {
+                        step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
+                    });
                 let emitted = record_output_tokens(
                     generated_before,
                     active[i].generated.len(),
@@ -21676,6 +22038,7 @@ pub fn run(
                     Ok(true) => {}
                     Ok(false) => finished.push(i),
                     Err(err) => {
+                        quarantine_request_fault(&mut active[i], err.as_ref());
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -21717,7 +22080,17 @@ pub fn run(
                         // token mask and H2D the packed bitset into the session's stable
                         // device buffer — the batched step bans on device BEFORE its device
                         // sampler, so this row rides the same lean tick as everyone else.
-                        if let Err(err) = stage_grammar_mask(&engine, &mut active[i]) {
+                        let (fault_id, fault_route) =
+                            (active[i].request_id.clone(), fault_route(&active[i]));
+                        let staged = guard_request(
+                            &engine,
+                            &fault_id,
+                            &fault_route,
+                            "constraint mask",
+                            || stage_grammar_mask(&engine, &mut active[i]).map_err(Into::into),
+                        );
+                        if let Err(err) = staged {
+                            quarantine_request_fault(&mut active[i], err.as_ref());
                             let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                                 "constraint mask: {err}"
                             ))));
@@ -21780,7 +22153,12 @@ pub fn run(
                         }
                     })
                     .collect();
-                let logits = {
+                let batch_ids: String = idxs
+                    .iter()
+                    .map(|&i| active[i].request_id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let logits = guard_request(&engine, &batch_ids, "batch", "batched decode", || {
                     // split-borrow: pull the caches out via split_at_mut-style indexing
                     let mut caches: Vec<&mut Cache> = Vec::with_capacity(idxs.len());
                     // SAFETY: idxs are unique indices into `active`; we take disjoint &mut.
@@ -21818,7 +22196,7 @@ pub fn run(
                             true,
                         ),
                     }
-                };
+                });
                 match logits {
                     Ok((rows, next_toks)) => {
                         for (k, &i) in idxs.iter().enumerate() {
@@ -21962,6 +22340,11 @@ pub fn run(
                         .map(|&i| active[i].prefill_queue.drain(..).collect())
                         .collect();
                     let prompt_refs: Vec<&[u32]> = prompts.iter().map(|p| p.as_slice()).collect();
+                    let batch_ids: String = dcand
+                        .iter()
+                        .map(|&i| active[i].request_id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(",");
                     let mut cache_refs: Vec<&mut memra_engine::cache::Cache> = active
                         .iter_mut()
                         .enumerate()
@@ -21969,10 +22352,10 @@ pub fn run(
                         .map(|(_, s)| s.cache.as_mut().unwrap())
                         .collect();
                     let lm = &loaded[dmodel.as_ref().unwrap()];
-                    match lm
-                        .model
-                        .prime_cache_batch(&engine, &prompt_refs, &mut cache_refs)
-                    {
+                    match guard_request(&engine, &batch_ids, "batch", "dark batched prime", || {
+                        lm.model
+                            .prime_cache_batch(&engine, &prompt_refs, &mut cache_refs)
+                    }) {
                         Ok(outs) => {
                             let ncar = dcand.iter().filter(|&&i| !active[i].fed.is_empty()).count();
                             eprintln!(
@@ -21992,9 +22375,11 @@ pub fn run(
                             }
                         }
                         Err(err) => {
+                            // a request fault (a panic the guard caught) retires the wave like a
+                            // tainted one; its caches are not handed back to the chunk path
                             let tainted = dcand.iter().any(|&i| {
                                 active[i].cache.as_ref().is_some_and(|cache| cache.tainted)
-                            });
+                            }) || err.to_string().contains(REQUEST_FAULT_PREFIX);
                             if tainted {
                                 eprintln!(
                                     "[prime-batch dark] failed after a partial pipeline wave ({err}); dropping tainted sessions"
@@ -22039,20 +22424,24 @@ pub fn run(
                 if chunk < memra_engine::hybrid_forward::PRIME_MIN_T {
                     break;
                 }
-                if let Err(err) = prefill_tick(
-                    &engine,
-                    &loaded,
-                    &mut px,
-                    &mut hpx,
-                    s,
-                    chunk,
-                    vision_tower.as_ref(),
-                    gemma_tower.as_ref(),
-                    glm5_tower.as_ref(),
-                    step_tower.as_ref(),
-                    overlay_publish,
-                ) {
+                let (fault_id, fault_route) = (s.request_id.clone(), fault_route(s));
+                if let Err(err) = guard_request(&engine, &fault_id, &fault_route, "prefill", || {
+                    prefill_tick(
+                        &engine,
+                        &loaded,
+                        &mut px,
+                        &mut hpx,
+                        s,
+                        chunk,
+                        vision_tower.as_ref(),
+                        gemma_tower.as_ref(),
+                        glm5_tower.as_ref(),
+                        step_tower.as_ref(),
+                        overlay_publish,
+                    )
+                }) {
                     if !prime_cancelled_abort(s, err.as_ref()) {
+                        quarantine_request_fault(s, err.as_ref());
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
                         ))));
@@ -27467,18 +27856,29 @@ fn dedup_interactive_prefixes(
         let model = active[leader_i].model.clone();
         let key = active[leader_i].pool_key();
         let t0 = Instant::now();
-        let leader_out = {
-            let s = &mut active[leader_i];
-            loaded[&model].model.prime_cache(
-                engine,
-                &prefix,
-                s.cache.as_mut().unwrap(),
-                queued_after,
-            )
-        };
+        let (fault_id, fault_route) = (
+            active[leader_i].request_id.clone(),
+            fault_route(&active[leader_i]),
+        );
+        let leader_out = guard_request(
+            engine,
+            &fault_id,
+            &fault_route,
+            "prefix fanout prime",
+            || {
+                let s = &mut active[leader_i];
+                loaded[&model].model.prime_cache(
+                    engine,
+                    &prefix,
+                    s.cache.as_mut().unwrap(),
+                    queued_after,
+                )
+            },
+        );
         let (leader_logits, _h, _x) = match leader_out {
             Ok(out) => out,
             Err(err) => {
+                quarantine_request_fault(&mut active[leader_i], err.as_ref());
                 let _ = active[leader_i]
                     .tx
                     .send(Event::Error(EngineError::engine(format!(
@@ -31172,6 +31572,7 @@ pub fn spawn(
                             .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
                             .unwrap_or_else(|| "non-string panic payload".into());
                         attempt += 1;
+                        WORKER_RESPAWNS_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         h2.mark_dead(format!("worker thread panicked: {why}"));
                         eprintln!("[worker] PANIC in the GPU worker thread: {why}");
                         if attempt > worker_respawn_max() {
