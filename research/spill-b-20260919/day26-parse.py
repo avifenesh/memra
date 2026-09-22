@@ -160,4 +160,43 @@ print(f"prefix-cache hit lines: {sum(n for k, (n, _) in kinds.items() if k.start
 print("== admit-predict lines (verbatim, first 6 and last 3)")
 for kv in predict[:6] + predict[-3:]:
     print(kv["line"])
+print("== day 27: retained at idle, pools and the park door (metrics-end.json, the last sample, the server lines)")
+end = json.load(open(os.path.join(C, "metrics-end.json"))) if os.path.exists(os.path.join(C, "metrics-end.json")) else {}
+last = samples[-1] if samples else {}
+def gi(d, k):
+    v = d.get(k); return int(v) if v not in (None, "") else None
+free_end = gi(last, "cuda_driver_free_bytes"); pool_used_end = gi(last, "cuda_pool_used_bytes"); pool_res_end = gi(last, "cuda_pool_reserved_bytes")
+# pool baseline: the pool used at idle before the first mix request (the ready-time gauges read 0 until the first tick,
+# so take the max nonzero idle sample, like free_ready above; the warmup's own gauges are 0 for the same reason)
+idle_pool = [int(s["cuda_pool_used_bytes"]) for s in samples
+             if s.get("cuda_pool_used_bytes") and int(s["cuda_pool_used_bytes"]) > 0 and first_req and int(s["epoch_ms"]) < first_req]
+pool_after_warmup = max(idle_pool) if idle_pool else None
+print(f"idle driver free before the first request={free_ready} last sample={free_end} retained_by_process={None if None in (free_ready, free_end) else free_ready - free_end}")
+print(f"pool used after warmup={pool_after_warmup} last={pool_used_end} delta={None if None in (pool_after_warmup, pool_used_end) else pool_used_end - pool_after_warmup}; "
+      f"pool reserved last={pool_res_end} cached last={end.get('cuda_pool_cached_bytes')}")
+for k in ("continuation_pool_entries", "continuation_pool_hits", "continuation_pool_evictions", "spec_pool_entries", "spec_pool_hits",
+          "spec_pool_evictions", "spec_pool_misses", "prefix_cache_entries", "prefix_cache_bytes", "prefix_cache_hits", "prefix_cache_hit_tokens",
+          "prefix_cache_inserts", "prefix_cache_evictions", "prefix_cache_misses", "step_oom_parks", "admission_vram_defers"):
+    print(f"{k}={end.get(k)}")
+park = {}
+for _, l in map(stamp, log):
+    m = re.match(r"(\[kv-reuse\] park-compact[a-z :]*?)(?=[:( ]|$)", l)
+    if m:
+        park.setdefault(m.group(1).strip(), [0, l]); park[m.group(1).strip()][0] += 1
+print(f"park-compact lines: {sum(n for n, _ in park.values())}")
+for k, (n, first) in sorted(park.items()):
+    print(f"{n:5d}  {k}  first: {first[:220]}")
+aff = {}
+for _, l in map(stamp, log):
+    m = re.search(r"\[worker\] ((?:plain|spec)-affinity: [a-z]+)", l)
+    if m:
+        aff[m.group(1)] = aff.get(m.group(1), 0) + 1
+print("affinity lines: " + ", ".join(f"{k}={v}" for k, v in sorted(aff.items())))
+print("== day 27: completion digests (tag, P, G, cached, finish_reason, sha256)")
+for r in sorted(client, key=lambda r: r["submit_ms"]):
+    if r["arm"] == "warmup":
+        continue
+    u = r["usage"] or {}
+    print(f"{r['tag']} P={u.get('prompt_tokens')} G={u.get('completion_tokens')} cached={(u.get('prompt_tokens_details') or {}).get('cached_tokens')} "
+          f"finish={r.get('finish_reason')} sha256={r.get('content_sha256')}")
 print(f"requests_ok={len(rows)} non200={sum(1 for r in client if r['status'] != 200 and r['arm'] != 'warmup')}")
