@@ -102,19 +102,59 @@ def prepare(source, out):
         )
         path.write_text(text)
 
+    # Keep the proven serialization, artifact checks, GPU contention monitor,
+    # token-count reconstruction and KV audit in the existing study runner.
+    runner = out / "research/mtp-context-depth-20260921/run_study.py"
+    text = runner.read_text()
+    text = replace_once(text, "    a = p.parse_args()", """    p.add_argument('--request-depths', type=Path, help='Frozen prompt/schedule arm map')
+    p.add_argument('--runtime-binding', type=Path, required=True)
+    a = p.parse_args()""")
+    text = replace_once(text, "    if a.schedule:\n", """    request_depths = json.loads(a.request_depths.read_text()) if a.request_depths else {}
+    if set(request_depths) & (reserved | set(fixed_depths)):
+        raise ValueError('Request-depth labels collide with controls')
+    for key, value in request_depths.items():
+        if not re.fullmatch(r'[a-z][a-z0-9_]*', key) or not isinstance(value, str):
+            raise ValueError('Invalid request-depth label')
+        if not re.fullmatch(r'(prompt:(?:[0-9]+,){3}[0-9]+|schedule:(?:[0-9]+,){7}[0-9]+)', value):
+            raise ValueError('Invalid request-depth policy')
+        if any(not 1 <= int(k) <= maximum for k in value.split(':', 1)[1].split(',')):
+            raise ValueError('Request depth exceeds native cap')
+    binding = json.loads(a.runtime_binding.read_text())
+    if binding['parent_runtime_archive_sha256'] != '943d165b80f268ffacc63e78191c669ed4bda562b3151d45758876321e3f6dc8':
+        raise ValueError('Unrecognized native runtime parent')
+    for name, expected in binding['files'].items():
+        path = Path(name)
+        if path.is_absolute() or '..' in path.parts or digest(a.runtime_binding.parent / path) != expected:
+            raise ValueError('Prepared native source binding changed')
+    if a.schedule:
+""")
+    text = replace_once(text, "if not set(order) <= reserved | set(fixed_depths):",
+                        "if not set(order) <= reserved | set(fixed_depths) | set(request_depths):")
+    text = replace_once(text, "        'source_commit': a.source_commit,",
+                        """        'source_recipe_commit': a.source_commit,
+        'runtime_binding_sha256': digest(a.runtime_binding),
+        'runtime_binding': binding,
+        'request_depths': request_depths,""")
+    text = replace_once(text,
+                        "            runtime_arm = f'fixed:{fixed_depths[arm]}' if arm in fixed_depths else arm",
+                        "            runtime_arm = request_depths.get(arm, f'fixed:{fixed_depths[arm]}' if arm in fixed_depths else arm)")
+    text = replace_once(text, "'calibration_only': True", "'rates_only': True")
+    runner.write_text(text)
+
     touched = [
         "crates/memra-engine/src/bin/mtp_depth_study.rs",
         "crates/memra-engine/src/bin/gemma_depth_study.rs",
         "crates/memra-engine/src/bin/depth_study_io/mod.rs",
         "crates/memra-engine/src/bin/depth_study_io/router.rs",
         "crates/memra-engine/src/bin/depth_study_io/request_routing.rs",
+        "research/mtp-context-depth-20260921/run_study.py",
     ]
     receipt = {
         "parent_runtime_archive_sha256": SOURCE_SHA256,
         "parent_runtime_revision": SOURCE_REVISION,
         "preparer_sha256": sha(Path(__file__)),
         "files": {name: sha(out / name) for name in touched},
-        "scope": "research request drivers and routing only; numerical engine remains the pinned parent",
+        "scope": "research request drivers, routing and orchestration; numerical engine remains the pinned parent",
     }
     (out / "REQUEST-ROUTING-SOURCE.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt

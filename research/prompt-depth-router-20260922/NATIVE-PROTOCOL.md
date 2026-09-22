@@ -5,8 +5,9 @@ Freeze the classifier before observing native timings. The runtime parent is
 `943d165b80f268ffacc63e78191c669ed4bda562b3151d45758876321e3f6dc8`,
 the exact runtime used for the preceding latest-engine comparison. All arms use
 the same resulting executable per model. `prepare_native.py` changes only the
-two research drivers and their shared routing/I/O files; model math, sampler and
-native prompt-checkpoint reuse stay at that pin.
+two research drivers, their shared routing/I/O files and the research-runner
+binding; model math, sampler and native prompt-checkpoint reuse stay at that pin.
+Native executables are built on CPU CI before the development GPU is allocated.
 
 ## Workload and clocks
 

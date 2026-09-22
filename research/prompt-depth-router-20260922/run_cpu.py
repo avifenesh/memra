@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import platform
 import subprocess
+import sys
 import time
 
 HERE = Path(__file__).resolve().parent
@@ -53,7 +54,8 @@ def main():
             ).strip(),
             "source_hashes": {
                 name: sha(HERE / name)
-                for name in ("router.rs", "main.rs", "request_routing.rs", "cases.tsv", "run_cpu.py")
+                for name in ("router.rs", "main.rs", "request_routing.rs", "cases.tsv", "run_cpu.py",
+                             "fit_profile.py", "test_fit_profile.py")
             },
             "platform": platform.platform(),
             "machine": platform.machine(),
@@ -74,6 +76,9 @@ def main():
         }
         metadata["rustc"] = command("rustc-version", ["rustc", "-Vv"])
         (out / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+        command("python-syntax", [sys.executable, "-c",
+                "import ast,pathlib; [ast.parse(p.read_text(),filename=str(p)) for p in pathlib.Path('.').glob('*.py')]"])
+        command("profile-tests", [sys.executable, "-m", "unittest", "test_fit_profile", "-v"])
         command("format", ["rustfmt", "--edition", "2024", "--check", "main.rs", "router.rs"])
         compiler = ["rustc", "--edition=2024", "-D", "warnings", "-C", "opt-level=3"]
         command("build-tests", [*compiler, "--test", "main.rs", "-o", str(out / "router-tests")])

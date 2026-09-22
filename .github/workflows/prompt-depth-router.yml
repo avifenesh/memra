@@ -34,3 +34,36 @@ jobs:
           path: ${{ runner.temp }}/prompt-depth-router
           if-no-files-found: error
           retention-days: 7
+
+  native-build:
+    needs: classifier
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install CUDA compiler and headers without allocating a GPU
+        run: tools/install-cuda-ci.sh
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: "1.97.1"
+          components: clippy
+      - name: Build the bound research runtime and request router
+        run: |
+          python3 research/prompt-depth-router-20260922/build_native_cpu.py \
+            --source-archive research/mtp-context-depth-20260921/latest-receipts/runtime-source.tar.gz \
+            --out "$RUNNER_TEMP/prompt-depth-native"
+      - name: Retain exact programs, source and compiler logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: prompt-depth-native-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/prompt-depth-native/*.json
+            ${{ runner.temp }}/prompt-depth-native/*.stdout
+            ${{ runner.temp }}/prompt-depth-native/*.stderr
+            ${{ runner.temp }}/prompt-depth-native/*.tar.gz
+            ${{ runner.temp }}/prompt-depth-native/binaries
+          if-no-files-found: error
+          retention-days: 7
