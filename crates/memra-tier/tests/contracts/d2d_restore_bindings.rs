@@ -5,6 +5,12 @@
 //! carries no checksum and `Completion::require` refuses it `Corrupt`. `prime_early` is the red
 //! arm: a caller that re-admits its request and primes on the landed copy BEFORE the reader wait is
 //! installed, the shape the worker change must never take.
+//!
+//! Day 23 (the draft-bearing restore, `d2d_restore_draft_ready`): the same fixture with a class per
+//! item (`Role::Key`/`Role::Value` trunk rows, `Role::Draft` draft rows), a `witnessed` mode in which
+//! a landed item carries its receipt term (the modelled destination digest equal to the source's),
+//! and the deferred prime's first draft-head read on the reader stream. `draft_read_early` is the
+//! red arm: a session built over the landed scratch before the wait.
 use super::conformance::*;
 use super::support::*;
 use memra_tier::contracts::*;
@@ -14,6 +20,13 @@ const ITEM_EVENT: u64 = 1;
 
 struct RestoreBatch {
     prime_early: bool,
+    /// Day 23: the class of every item, in item order (trunk K/V, then the draft plane's K/V).
+    classes: Vec<Role>,
+    /// Day 23: a landed item carries its witnessed receipt term (the slice-3 program modelled).
+    witnessed: bool,
+    /// Day 23: one entry per draft-head read the reader stream issued: ordered at issue or not.
+    draft_reads: Vec<bool>,
+    draft_read_early: bool,
     event_done: bool,
     completion: Option<Completion>,
     bytes: Vec<u64>,
@@ -29,6 +42,12 @@ impl RestoreBatch {
     fn new(items: usize) -> Self {
         Self {
             prime_early: false,
+            classes: (0..items)
+                .map(|i| if i % 2 == 0 { Role::Key } else { Role::Value })
+                .collect(),
+            witnessed: false,
+            draft_reads: vec![],
+            draft_read_early: false,
             event_done: false,
             completion: None,
             bytes: (0..items).map(|i| 96 + 16 * i as u64).collect(),
@@ -39,6 +58,30 @@ impl RestoreBatch {
             retired: false,
             acknowledged: false,
         }
+    }
+    /// Day 23: `trunk` trunk items followed by the draft plane's K and V items, witnessed.
+    fn draft_bearing(trunk: usize) -> Self {
+        let mut f = Self::new(trunk + 2);
+        f.classes = (0..trunk)
+            .map(|i| if i % 2 == 0 { Role::Key } else { Role::Value })
+            .chain([Role::Draft, Role::Draft])
+            .collect();
+        f.witnessed = true;
+        f
+    }
+    /// The modelled receipt term of item `i`: its class and byte count folded into 32 bytes (the
+    /// source digest; the destination digest equals it once the copy landed).
+    fn digest_of(&self, i: usize) -> Digest {
+        let mut d = [0u8; 32];
+        d[0] = match self.classes[i] {
+            Role::Draft => 0xD7,
+            Role::Key => 0x4B,
+            Role::Value => 0x56,
+            _ => 0x00,
+        };
+        d[1..9].copy_from_slice(&self.bytes[i].to_le_bytes());
+        d[9] = i as u8;
+        d
     }
     fn entry(&mut self, ticket: &TransferTicket) -> Result<&mut Completion> {
         match &mut self.completion {
@@ -93,19 +136,28 @@ impl D2dRestoreFixture for RestoreBatch {
             // The red arm: the request is re-admitted on issue and primes at once.
             self.prime_issues();
         }
+        if self.draft_read_early {
+            // Day 23's red arm: a session built over the scratch at issue reads draft rows at once.
+            self.draft_read_issues();
+        }
         ticket
     }
     fn poll(&mut self, ticket: &TransferTicket) -> Result<Completion> {
         let done = self.event_done;
         let bytes = self.bytes.clone();
+        let digests: Vec<Option<Digest>> = (0..bytes.len())
+            .map(|i| self.witnessed.then(|| self.digest_of(i)))
+            .collect();
         let c = self.entry(ticket)?;
         if done {
-            for (item, bytes) in c.items.iter_mut().zip(bytes) {
+            for ((item, bytes), digest) in c.items.iter_mut().zip(bytes).zip(digests) {
                 for s in &mut item.segments {
                     s.status = ItemStatus::Complete;
                     s.producer_done = true;
                     s.valid_bytes = bytes;
-                    s.checksum = None; // slice 2: no witnessed checksum term for a D2D
+                    // slice 2: no witnessed checksum term for a D2D; day 23 models slice 3's
+                    // witness (destination digest = source digest) in the witnessed mode.
+                    s.checksum = digest;
                 }
             }
             c.producer_done = true;
@@ -137,11 +189,17 @@ impl D2dRestoreFixture for RestoreBatch {
         let expected: Vec<Vec<SegmentExpectation>> = self
             .bytes
             .iter()
-            .map(|&b| {
+            .enumerate()
+            .map(|(i, &b)| {
                 vec![SegmentExpectation {
                     valid_bytes: b,
                     io_bytes: b,
-                    checksum: [0; 32],
+                    // The source digest is the expectation (slice 3); receipt-less: never met.
+                    checksum: if self.witnessed {
+                        self.digest_of(i)
+                    } else {
+                        [0; 32]
+                    },
                 }]
             })
             .collect();
@@ -198,6 +256,32 @@ impl D2dRestoreFixture for RestoreBatch {
     }
     fn submitted_bytes(&self) -> Vec<u64> {
         self.bytes.clone()
+    }
+}
+
+impl D2dDraftRestoreFixture for RestoreBatch {
+    fn item_classes(&self) -> Vec<Role> {
+        self.classes.clone()
+    }
+    fn draft_read_issues(&mut self) {
+        self.draft_reads
+            .push(self.reader_waits.contains(&ITEM_EVENT));
+    }
+    fn draft_reads_ordered(&self) -> bool {
+        self.draft_reads.iter().all(|ordered| *ordered)
+    }
+    fn witnessed_classes(&mut self, ticket: &TransferTicket) -> Result<Vec<Role>> {
+        let c = self.poll(ticket)?;
+        Ok(c.items
+            .iter()
+            .enumerate()
+            .filter(|(i, item)| {
+                item.segments.iter().all(|s| {
+                    s.status == ItemStatus::Complete && s.checksum == Some(self.digest_of(*i))
+                })
+            })
+            .map(|(i, _)| self.classes[i])
+            .collect())
     }
 }
 
@@ -260,6 +344,84 @@ fn day21_d2d_restore_item_without_a_witnessed_checksum_is_refused_by_the_host_co
         Err(Error::Corrupt | Error::NotReady)
     ));
     f.copy_completes();
+    f.install_reader_wait(&ticket);
+    assert!(f.ready(&ticket).unwrap());
+    assert_eq!(f.require_receipt(&ticket), Err(Error::Corrupt));
+}
+
+/// Day 23: the draft-bearing batch (16 trunk items and the draft plane's two, the 9B's `items=18`;
+/// then 32 and two, the 27B's `items=34`): both classes land, are witnessed and are fenced by the
+/// one install; the prime and the draft-head read after it are ordered; the pin outlives the ticket.
+#[test]
+fn day23_draft_bearing_restore_is_ready_for_both_classes_only_after_the_installed_wait() {
+    for trunk in [16usize, 32] {
+        let mut f = RestoreBatch::draft_bearing(trunk);
+        d2d_restore_draft_ready(&mut f);
+        assert!(f.retired && f.acknowledged);
+        assert_eq!(
+            f.reader_waits,
+            vec![ITEM_EVENT],
+            "one install fences both classes"
+        );
+        assert_eq!(f.primes, vec![true]);
+        assert_eq!(f.draft_reads, vec![true]);
+        assert_eq!(f.pins, 0, "the one pin was handed over after acknowledge");
+        assert_eq!(
+            f.classes.iter().filter(|r| **r == Role::Draft).count(),
+            2,
+            "the draft plane is its K and V items"
+        );
+        assert_eq!(f.classes.len(), trunk + 2);
+    }
+}
+
+/// Day 23's red arm: a session built over the landed scratch before the installed wait (its first
+/// draft-head read at issue) fails the schedule, and the read stays unordered under a later wait.
+#[test]
+fn day23_red_arm_draft_read_before_the_reader_wait_fails_the_schedule() {
+    let mut f = RestoreBatch::draft_bearing(4);
+    f.draft_read_early = true;
+    let schedule = catch_unwind(AssertUnwindSafe(|| {
+        d2d_restore_draft_ready(&mut f);
+    }));
+    assert!(
+        schedule.is_err(),
+        "a draft-head read before the installed reader wait must not pass the draft rule"
+    );
+    let mut early = RestoreBatch::draft_bearing(4);
+    d2d_restore_draft_read_before_its_wait_is_unordered(&mut early);
+    assert_eq!(early.draft_reads, vec![false]);
+    assert!(
+        early
+            .ready(&TransferTicket {
+                issuer: 95,
+                sequence: 1,
+                epochs: epochs(),
+            })
+            .unwrap()
+    );
+}
+
+/// Day 23, the receipt clause over the draft class: a draft-bearing batch whose items land with no
+/// witnessed term (the slice-2 shape) is refused by the host-contract gate after the landing and
+/// after the wait, and `witnessed_classes` names none of them; the draft rule itself fails on it.
+#[test]
+fn day23_unwitnessed_draft_items_are_refused_by_the_host_contract_gate() {
+    let mut f = RestoreBatch::draft_bearing(4);
+    f.witnessed = false;
+    let schedule = catch_unwind(AssertUnwindSafe(|| {
+        d2d_restore_draft_ready(&mut f);
+    }));
+    assert!(
+        schedule.is_err(),
+        "a draft-bearing batch without the witnessed term does not pass the draft rule"
+    );
+    let mut f = RestoreBatch::draft_bearing(4);
+    f.witnessed = false;
+    let ticket = f.submit();
+    f.copy_completes();
+    assert!(f.landed(&ticket).unwrap());
+    assert!(f.witnessed_classes(&ticket).unwrap().is_empty());
     f.install_reader_wait(&ticket);
     assert!(f.ready(&ticket).unwrap());
     assert_eq!(f.require_receipt(&ticket), Err(Error::Corrupt));
