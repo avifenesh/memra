@@ -275,3 +275,51 @@ the owner: the park policy on the spec pool (TTL, a cap at the served context, o
 bytes are; the plain-pool door, as written, is not. A labelled extra pair on the plain path (`MEMRA_SERVE_SPEC=0`,
 `pro-single-day27/cell-plain-*`) follows in 2.6 to give the door a plain pool to act on; it is outside the
 pre-registered comparison.
+
+### 2.6 Labelled extra pair, plain path (`MEMRA_SERVE_SPEC=0`), target card (`pro-single-day27/cell-plain-*`)
+
+Outside the pre-registered comparison; the same mix, prompts and binary with `MEMRA_SERVE_SPEC=0` so every session
+is a plain session and parks in the continuation pool the door acts on. Four collector cells, each `status
+executed-not-qualified`, `qualification false`, `exit_code 0`, 46 requests, `non-200=0`, elapsed 275.5 to 276.0 s;
+regime (before / after): `plain-o1-default` `33 C, 32.94 W` / `47 C, 89.99 W`; `plain-o1-compact` `42 C, 36.06 W` /
+`46 C, 90.33 W`; `plain-o2-compact` `42 C, 35.55 W` / `46 C, 89.05 W`; `plain-o2-default` `42 C, 35.07 W` / `47 C,
+90.44 W`. Request-cost lines read `path=plain = 29696 B/token x ctx`; the open arm allocates `262,144 x 29,696 =
+7,784,628,224 B`. P and G equal the spec path's on every request (greedy; the (i) rows are the section 1.4 rows with
+`alloc_B=7784628224`), and `cached_tokens` on the 15 continuations reads `[1440 x 5, 3104, 3104, 3104, 3104, 0, 5760
+x 5]` in all four plain cells: `iii-L1-r4` misses on the plain path in both arms and both orders (`prefix_cache_hits=14`,
+47 inserts, 0 evictions), so it is a plain-path capture-boundary fact, not the door's. Verbatim summary blocks, the two
+`default` cells identical to the byte and the two `compact` cells identical to the byte:
+
+```text
+plain-o1-default / plain-o2-default:
+idle driver free before the first request=84942651392 last sample=45751074816 retained_by_process=39191576576
+pool used after warmup=16396420244 last=46866169896 delta=30469749652; pool reserved last=55633248256 cached last=8767078360
+continuation_pool_entries=2 continuation_pool_hits=0 spec_pool_entries=0 spec_pool_hits=0
+prefix_cache_entries=47 prefix_cache_bytes=12105383936 prefix_cache_hits=14 prefix_cache_hit_tokens=48416 prefix_cache_inserts=47
+park-compact lines: 0
+affinity lines: plain-affinity: declined=45
+
+plain-o1-compact / plain-o2-compact:
+idle driver free before the first request=84506443776 last sample=61857202176 retained_by_process=22649241600
+pool used after warmup=16395174548 last=30720791848 delta=14325617300; pool reserved last=39527120896 cached last=8806329048
+continuation_pool_entries=2 continuation_pool_hits=0 spec_pool_entries=0 spec_pool_hits=0
+prefix_cache_entries=47 prefix_cache_bytes=12105383936 prefix_cache_hits=14 prefix_cache_hit_tokens=48416 prefix_cache_inserts=47
+park-compact lines: 46
+   46  [kv-reuse] park-compact  first: [kv-reuse] park-compact: 164 of 172 rows retained in 2.1ms (model q38)
+affinity lines: plain-affinity: declined=45
+```
+
+Digests: order 1 `default` against `compact` `tags=45 digest_equal=45 digest_differs=0 missing=0
+rows_with_both_digests=45 ... P_G_chars_equal=45`; order 2 `compact` against `default` the same line.
+
+Reading. With a plain pool to act on, the door does what its row says: every retiring plain session was compacted
+(46 `[kv-reuse] park-compact:` lines, one per request including the warmup; the open ones read `2071 of 262144 rows
+retained` in about 2 ms), and idle retention fell from 39,191,576,576 B to 22,649,241,600 B, a difference of
+16,542,334,976 B, which is the two parked 262,144-row plain caches (2 x 7,784,628,224 = 15,569,256,448 B) plus the
+pool rounding around them; the pool's cached blocks (8.8 GB) and the 12.1 GB of prefix entries did not move, and the
+pool bought nothing in either arm (`continuation_pool_hits=0`, `plain-affinity: declined` on all 45 replays and
+continuations). Digests are equal across arms on every request. This is the door's first serving receipt on the target
+card class; it is labelled extra, `executed-not-qualified`, N=5 per arm per length, both orders, and it does not decide
+the door: the row's own pending gates (the compacted-park resume byte-identity gate on both resume shapes, the
+step-OOM adjacency replay) are still pending, and on the served spec path the pool that holds the bytes is out of the
+door's scope (2.5).
