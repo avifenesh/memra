@@ -1,0 +1,9 @@
+2026-09-22T03:23:36Z waiting for /tmp/memra-5090.lock (flock -w 3600)
+2026-09-22T03:23:36Z lock acquired
+server never ready
+1790047426943 [server] build: memra-0.138.0-5795813f6195 (id: source-tree, git: 88552c5efc40)
+1790047426944 [server] starting; models config = [("q9", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+1790047426946 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790047426947 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1790047427046 [gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1790047427150 [server] FATAL: worker init failed: Engine::new failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
