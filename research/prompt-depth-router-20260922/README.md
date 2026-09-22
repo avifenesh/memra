@@ -4,6 +4,10 @@ The primary continuation is [`prefix/PROTOCOL.md`](prefix/PROTOCOL.md):
 forecasters read only the first X user-prompt tokens, with X=64,128,256; compare
 fixed K=3 against adaptation on prose and code at 256/1K/4K/16K prompt lengths.
 Normal model tokenization is reused. No LLM or draft-head training is required.
+The first complex-contract qualification reached no Qwen final code at either
+8,192 or 12,288 output tokens. The versioned
+[`simple-helper protocol`](prefix/SIMPLE-PROTOCOL.md) retains that attempt
+and prepares a separate six-scenario corpus; no paired result is claimed yet.
 The earlier decoder-prefix tree in [`forecast/PROTOCOL.md`](forecast/PROTOCOL.md)
 is retained as a separate diagnostic.
 
