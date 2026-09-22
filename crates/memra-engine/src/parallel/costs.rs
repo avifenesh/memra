@@ -289,7 +289,8 @@ mod tests {
             let dense = QWEN
                 .replace("qwen3_moe", "qwen3")
                 .replace(",\"num_experts\":4,\"num_experts_per_tok\":2", "")
-                .replace("\"moe_intermediate_size\":32", "\"intermediate_size\":32");
+                .replace(",\"moe_intermediate_size\":32", "")
+                .replace("\"intermediate_size\":64", "\"intermediate_size\":32");
             let raw = dense.replacen('{', &format!("{{\"tie_word_embeddings\":{tied},"), 1);
             let f = Fixture::new(&raw);
             let source = SafetensorsSource::open(&f.0).unwrap();

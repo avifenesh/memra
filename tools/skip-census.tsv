@@ -45,13 +45,13 @@ memra-gguf	config::minimax_tests::minimax_name_mapping_against_index	crates/memr
 memra-gguf	dequant::tests::iq3s_vs_ggml_oracle	crates/memra-gguf/src/dequant.rs:740	SKIP: /tmp/iq3s_raw.bin missing
 memra-gguf	safetensors::tests::real_qwen3_17b_header	crates/memra-gguf/src/safetensors.rs:1526	SKIP real_qwen3_17b_header: no model at {dir}
 memra-gguf	safetensors::tests::real_qwen3_17b_config	crates/memra-gguf/src/safetensors.rs:1576	SKIP real_qwen3_17b_config: no config at {cfgp:?}
-memra-gguf	source::artifact_identity_tests::hy3_repack_probe::hy3_manifest_offset_roundtrip	crates/memra-gguf/src/source.rs:5055	SKIP: Hy3 repack absent
-memra-gguf	source::artifact_identity_tests::hy3_repack_probe::hy3_inventory_dtype_shape_assertions	crates/memra-gguf/src/source.rs:5093	SKIP: Hy3 repack absent
-memra-gguf	source::artifact_identity_tests::hy3_repack_probe::hy3_load_plan_dry_run_no_cuda	crates/memra-gguf/src/source.rs:5170	SKIP: Hy3 repack absent
-memra-gguf	source::artifact_identity_tests::nv27b_probe::nvidia_27b_dtype_routing	crates/memra-gguf/src/source.rs:5239	SKIP: ckpt absent
-memra-gguf	source::artifact_identity_tests::nv27b_probe::nvidia_27b_mtp_mapping	crates/memra-gguf/src/source.rs:5275	SKIP: ckpt absent
-memra-gguf	source::artifact_identity_tests::m3_probe::minimax_m3_lm_head_q8	crates/memra-gguf/src/source.rs:5333	SKIP: ckpt absent
-memra-gguf	source::artifact_identity_tests::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity	crates/memra-gguf/src/source.rs:5368	SKIP: ckpt/twin absent
+memra-gguf	source::hy3_repack_probe::hy3_manifest_offset_roundtrip	crates/memra-gguf/src/source.rs:5055	SKIP: Hy3 repack absent
+memra-gguf	source::hy3_repack_probe::hy3_inventory_dtype_shape_assertions	crates/memra-gguf/src/source.rs:5093	SKIP: Hy3 repack absent
+memra-gguf	source::hy3_repack_probe::hy3_load_plan_dry_run_no_cuda	crates/memra-gguf/src/source.rs:5170	SKIP: Hy3 repack absent
+memra-gguf	source::nv27b_probe::nvidia_27b_dtype_routing	crates/memra-gguf/src/source.rs:5239	SKIP: ckpt absent
+memra-gguf	source::nv27b_probe::nvidia_27b_mtp_mapping	crates/memra-gguf/src/source.rs:5275	SKIP: ckpt absent
+memra-gguf	source::m3_probe::minimax_m3_lm_head_q8	crates/memra-gguf/src/source.rs:5333	SKIP: ckpt absent
+memra-gguf	source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity	crates/memra-gguf/src/source.rs:5368	SKIP: ckpt/twin absent
 memra-gguf	model_packs::qwen4_exp::tests::expected_census_matches_the_banked_artifact_and_the_contract_binds_it	crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1101	SKIP qwen4exp census gate: no fixture at {path}
 memra-gguf	model_packs::qwen4_exp::tests::nvfp4_census_matches_the_banked_mint_and_the_dialect_contract_binds_it	crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1282	SKIP qwen4exp nvfp4 census gate: no fixture at {path}
 memra-tokenizer	parity_with_llama_tokenize	crates/memra-tokenizer/tests/llama_parity.rs:81	SKIP: model not found at {model} (set MEMRA_TEST_MODEL)

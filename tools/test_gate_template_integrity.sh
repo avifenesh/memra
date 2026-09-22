@@ -26,7 +26,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GATE_SRC="${MEMRA_GATE_SRC_DIR:-$ROOT}"
-EXPECT_ASSERTIONS=51
+EXPECT_ASSERTIONS=52
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/gate-template-fixture-XXXXXX")
 VERDICTS="$WORK/verdicts.txt"
@@ -492,6 +492,7 @@ if [ ! -f "$CENSUS_TOOL" ]; then
         "skip census: verify agrees with the source" \
         "skip census: an UNDECLARED skipping test fails verify" \
         "skip census: a STALE manifest row fails verify" \
+        "skip census: braces in literals and comments are not module scope" \
         "skip census: skips over budget FAIL and name the budget variable" \
         "skip census: an explicitly raised budget passes and reports the count" \
         "skip census: a red suite fails on the suite verdict before any skip count" \
@@ -541,6 +542,42 @@ RS
         fail "skip census: a STALE manifest row fails verify" "no stale-row diagnosis in $UND"
     fi
 
+    # Braces inside char, string and raw-string literals and comments must not move a later
+    # module under an earlier one: libtest prints `source::after::t`, so the census must too.
+    LIT_COPY="$WORK/literal-copy"
+    mkdir -p "$LIT_COPY/tools" "$LIT_COPY/crates/memra-gguf/src"
+    cp "$CENSUS_TOOL" "$LIT_COPY/tools/"
+    cat > "$LIT_COPY/crates/memra-gguf/src/source.rs" <<'RS'
+#[cfg(test)]
+mod literals {
+    fn opens<'a>(s: &'a str) -> String {
+        // an unbalanced { in a comment
+        /* and { in a /* nested */ block */
+        let raw = r#"{"a":{"#;
+        s.replacen('{', "{\"k\":{", 1) + raw + "\\" + &'\''.to_string()
+    }
+}
+
+#[cfg(test)]
+mod after {
+    #[test]
+    fn skip_after_literal_braces() {
+        if !std::path::Path::new("/nope").exists() {
+            eprintln!("SKIP: after literal braces");
+            return;
+        }
+    }
+}
+RS
+    LIT="$WORK/literal.out"
+    ( cd "$LIT_COPY" && python3 tools/skip-census.py static --crate memra-gguf ) > "$LIT" 2>&1
+    if grep -qP '^memra-gguf\tsource::after::skip_after_literal_braces\t' "$LIT"; then
+        pass "skip census: braces in literals and comments are not module scope"
+    else
+        fail "skip census: braces in literals and comments are not module scope" \
+            "static census did not print source::after::skip_after_literal_braces: $(cat "$LIT")"
+    fi
+
     # Stub cargo: canned libtest output, so the run arms need no build.
     CARGO_HOME_STUB="$WORK/cargohome"
     mkdir -p "$CARGO_HOME_STUB/bin"
@@ -549,8 +586,8 @@ RS
 case "${FIXTURE_CARGO_MODE:-skips}" in
   skips)
     printf 'running 4 tests\n'
-    printf 'test source::artifact_identity_tests::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity ... SKIP: ckpt/twin absent\nok\n'
-    printf 'test source::artifact_identity_tests::m3_probe::minimax_m3_lm_head_q8 ... SKIP: ckpt absent\nok\n'
+    printf 'test source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity ... SKIP: ckpt/twin absent\nok\n'
+    printf 'test source::m3_probe::minimax_m3_lm_head_q8 ... SKIP: ckpt absent\nok\n'
     printf 'test a::b ... ok\n'
     printf 'test c::d ... ok\n'
     printf 'test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n' ;;
