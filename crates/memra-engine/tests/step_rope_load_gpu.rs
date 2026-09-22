@@ -26,6 +26,7 @@ struct Tensor {
 #[derive(Clone)]
 struct Source {
     config: ModelConfig,
+    dialect: CheckpointDialect,
     tensors: BTreeMap<String, Tensor>,
 }
 
@@ -35,16 +36,64 @@ impl TensorSource for Source {
     }
 
     fn tensor_census(&self) -> Result<memra_gguf::source::TensorCensus, String> {
-        Ok(memra_gguf::source::census_from_views(
-            self.tensors.iter().map(|(name, tensor)| {
+        let mut census =
+            memra_gguf::source::census_from_views(self.tensors.iter().map(|(name, tensor)| {
                 (
                     name.as_str(),
                     tensor.dtype,
                     tensor.shape.as_slice(),
                     tensor.bytes.len() as u64,
                 )
-            }),
-        ))
+            }));
+        if self.dialect == CheckpointDialect::HfSafetensors {
+            let plan = memra_gguf::model_packs::compile_for_load(&self.config)
+                .map_err(|error| error.to_string())?;
+            let options = ContractOptions {
+                output_head: OutputHead::Separate,
+            };
+            let gguf = TensorContract::for_plan(&plan, CheckpointDialect::Gguf, options)
+                .map_err(|error| error.to_string())?;
+            let hf = TensorContract::for_plan(&plan, CheckpointDialect::HfSafetensors, options)
+                .map_err(|error| error.to_string())?;
+            let mut rows = Vec::new();
+            for row in census.tensors {
+                let id = gguf
+                    .requirements
+                    .iter()
+                    .find(|requirement| requirement.names.contains(&row.entry.name))
+                    .map(|requirement| &requirement.id)
+                    .ok_or_else(|| format!("unknown fixture tensor {}", row.entry.name))?;
+                let requirement = hf
+                    .requirements
+                    .iter()
+                    .find(|requirement| &requirement.id == id)
+                    .ok_or_else(|| format!("no HF fixture tensor for {id:?}"))?;
+                let mut shape = row.entry.shape.clone();
+                let names = match requirement.match_mode {
+                    TensorMatch::OneOf => &requirement.names[..1],
+                    TensorMatch::All => {
+                        if shape.pop() != Some(requirement.names.len() as u64)
+                            || row.entry.physical_bytes % requirement.names.len() as u64 != 0
+                        {
+                            return Err("invalid stacked expert fixture extent".into());
+                        }
+                        requirement.names.as_slice()
+                    }
+                };
+                shape.reverse();
+                for name in names {
+                    let mut physical = row.clone();
+                    physical.physical_name = name.clone();
+                    physical.entry.name = name.clone();
+                    physical.entry.shape = shape.clone();
+                    physical.entry.physical_bytes /= names.len() as u64;
+                    rows.push(physical);
+                }
+            }
+            census.dialect = CheckpointDialect::HfSafetensors;
+            census.tensors = rows;
+        }
+        Ok(census)
     }
 
     fn find(&self, name: &str) -> Option<TensorView<'_>> {
@@ -85,12 +134,18 @@ fn fixture() -> Result<(Source, ModelPlan, Vec<f32>), Box<dyn std::error::Error>
         memra_gguf::execution_manifest::decode_batch_program(&plan),
         memra_gguf::execution_manifest::DecodeBatchProgram::SlidingGatedMoe
     );
-    let fixture = memra_reference::deterministic_fixture(&plan)?;
+    let mut fixture = memra_reference::deterministic_fixture(&plan)?;
+    // Step requires a separately stored head. Give the synthetic head its own
+    // deterministic tensor while preserving the original fixture's numeric values.
+    fixture.weights.insert(
+        TensorId::OutputProjection,
+        fixture.weights[&TensorId::TokenEmbedding].clone(),
+    );
     let contract = TensorContract::for_plan(
         &plan,
         CheckpointDialect::Gguf,
         ContractOptions {
-            output_head: OutputHead::TiedToEmbedding,
+            output_head: OutputHead::Separate,
         },
     )?;
     let mut tensors = BTreeMap::new();
@@ -144,7 +199,82 @@ fn fixture() -> Result<(Source, ModelPlan, Vec<f32>), Box<dyn std::error::Error>
             );
         }
     }
-    Ok((Source { config, tensors }, plan, factors))
+    Ok((
+        Source {
+            config,
+            dialect: CheckpointDialect::HfSafetensors,
+            tensors,
+        },
+        plan,
+        factors,
+    ))
+}
+
+#[test]
+fn fixture_censuses_bind_actual_step_contract_before_upload()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (mut source, _, factors) = fixture()?;
+    let bind = |source: &Source| -> Result<(), Box<dyn std::error::Error>> {
+        let (cfg, plan) = memra_gguf::model_packs::compile_for_source(source)?;
+        memra_gguf::checkpoint_binding::bind_source(source, &cfg, &plan)?;
+        Ok(())
+    };
+    assert!(source.find("rope_freqs.weight").is_none());
+    let census = source.tensor_census()?;
+    assert_eq!(census.dialect, CheckpointDialect::HfSafetensors);
+    assert!(
+        !census
+            .tensors
+            .iter()
+            .any(|row| row.entry.name == "rope_freqs.weight")
+    );
+    assert_eq!(
+        census
+            .tensors
+            .iter()
+            .map(|row| row.entry.physical_bytes)
+            .sum::<u64>(),
+        source
+            .tensors
+            .values()
+            .map(|tensor| tensor.bytes.len() as u64)
+            .sum::<u64>()
+    );
+    bind(&source)?;
+    let mut missing_head = source.clone();
+    missing_head.tensors.remove("output.weight");
+    assert!(bind(&missing_head).is_err());
+    let mut wrong_shape = source.clone();
+    wrong_shape
+        .tensors
+        .get_mut("token_embd.weight")
+        .unwrap()
+        .shape[0] += 1;
+    assert!(bind(&wrong_shape).is_err());
+    source.dialect = CheckpointDialect::Gguf;
+    source.config.step35.as_mut().unwrap().rope_freq_factors = None;
+    for stored in [factors.clone(), {
+        let mut full = factors.clone();
+        full.resize(64, 999.0);
+        full
+    }] {
+        source.tensors.insert(
+            "rope_freqs.weight".into(),
+            Tensor {
+                bytes: stored
+                    .iter()
+                    .flat_map(|value| value.to_le_bytes())
+                    .collect(),
+                shape: vec![stored.len() as u64],
+                dtype: GgmlType::F32,
+            },
+        );
+        bind(&source)?;
+    }
+    source.tensors.remove("rope_freqs.weight");
+    assert!(bind(&source).is_err());
+    println!("CPU_STEP_FIXTURE_BIND_PASS hf=true checkpoint=true full_head=true refusals=3");
+    Ok(())
 }
 
 fn logits(
@@ -186,6 +316,7 @@ fn hf_and_tensor_factors_match_missing_factors_fail_and_identity_fixture_diverge
     // Engine caches are model-owned: configure_moe_cache_layout must precede lazy
     // cache construction. Each arm therefore gets and drops its own Engine.
     let hf = logits(&Engine::new(0)?, &source, Some(&factors))?;
+    source.dialect = CheckpointDialect::Gguf;
     source.config.step35.as_mut().unwrap().rope_freq_factors = None;
     source.tensors.insert(
         "rope_freqs.weight".into(),
