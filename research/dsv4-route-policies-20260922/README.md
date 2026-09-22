@@ -43,7 +43,8 @@ against the cards before allocating, so a session that did not fit died as a dri
 
 ## Receipts (`raw/`, tree in `raw/tree.sha`, rebased on main 0c86309bd)
 
-- `memra-server-lib.log`: the full `memra-server` lib suite, 868 passed, 0 failed, 14 ignored.
+- `memra-server-lib.log`: the full `memra-server` lib suite after the self-review fixes below,
+  869 passed, 0 failed, 14 ignored.
   Includes `dsv4_admit::tests` (12), `route_telemetry::tests`, `health::tests` route cases,
   `route_contract::tests` (the DSv4 contract refuses only #449 and #535; the wiring gate finds
   `load.begin()`, the progress sink, `run.finish(stats)` and `dsv4_admit::admit_session(` in
@@ -76,6 +77,22 @@ against the cards before allocating, so a session that did not fit died as a dri
   suites 354 passed, 0 skipped; the GPU-only `#[ignore]` engine tests under
   `/tmp/memra-5090.lock`, 30 passed, 3 pair-only tests skipped with `SKIP-PAIR` (one card).
   The fix touches a comment only, so run 1's GPU and server results carry to the fixed tree.
+
+## Self-review fixes (`raw/self-review/`)
+
+- **Route shed text.** The three route shed messages in `reserve_route_admit` had lost their
+  `\` line continuations, so each client-visible message carried a 22-space run mid-sentence.
+  The continuations are back, and the shed tests now read the message body
+  (`assert_route_shed_text`: names the route, no whitespace run). `shed-text-red.log` is the
+  check on the old literals (3 failed), `shed-text-green.log` the fix (3 passed).
+- **Route books scoped to this state.** The route registry is process-global. `/metrics` already
+  read only routes this state serves; the hybrid in-flight netting and the request's route
+  selection did not, so a book registered by another state in the process (a test's fake route)
+  could price this state's requests. `served_routes(st)` and a served-model filter on selection
+  close both. `a_route_book_this_state_does_not_serve_is_not_its_traffic` is red with both
+  scopings reverted (`foreign-book-red-both-unscoped.log`: a foreign model selected the route),
+  red with only the netting reverted (`foreign-book-red-netting-unscoped.log`: remaining 64,
+  expected 63), and green on the fix. `clippy-memra-server.log`: `-D warnings`, clean.
 
 ## Limits (stated, not hidden)
 

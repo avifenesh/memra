@@ -399,12 +399,6 @@ pub(crate) fn all() -> Vec<Arc<RouteLoad>> {
     v
 }
 
-/// HTTP in-flight on `lane` across every dedicated route: what the lane gauge counts that the
-/// central worker does not serve.
-pub(crate) fn inflight_on_lane(lane: usize) -> usize {
-    all().iter().map(|r| r.inflight(lane)).sum()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,7 +514,7 @@ mod tests {
         assert_eq!(lookup("t-reg-model").unwrap().waiting_total(), 1);
         assert!(lookup("t-reg-unknown").is_none());
         let inflight = a.enter(1);
-        assert!(inflight_on_lane(1) >= 1);
+        assert_eq!((a.inflight(1), a.inflight_total()), (1, 1));
         drop(inflight);
         assert_eq!(a.inflight(1), 0);
     }

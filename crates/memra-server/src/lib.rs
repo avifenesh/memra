@@ -2946,7 +2946,9 @@ fn reserve_route_admit(
         if waiting_lane >= bound {
             return shed(
                 format!(
-                    "{} queue on route {:?} is at its bound ({waiting_lane} queued, bound                      {bound}); this request was not admitted and is not billed; retry after                      ~{est_wait_s}s (a coarse estimate, not a promise)",
+                    "{} queue on route {:?} is at its bound ({waiting_lane} queued, bound \
+                     {bound}); this request was not admitted and is not billed; retry after \
+                     ~{est_wait_s}s (a coarse estimate, not a promise)",
                     lane.as_str(),
                     route.name()
                 ),
@@ -2960,7 +2962,10 @@ fn reserve_route_admit(
         if interactive && waits_for_capacity && est_wait_s.saturating_mul(1_000) > remaining_ms {
             return shed(
                 format!(
-                    "estimated queue wait ~{est_wait_s}s on route {:?} exceeds this request's                      remaining timeout_ms deadline ({remaining_ms} ms); this request was not                      admitted and is not billed; retry after ~{est_wait_s}s or raise timeout_ms                      (a coarse estimate, not a promise)",
+                    "estimated queue wait ~{est_wait_s}s on route {:?} exceeds this request's \
+                     remaining timeout_ms deadline ({remaining_ms} ms); this request was not \
+                     admitted and is not billed; retry after ~{est_wait_s}s or raise timeout_ms \
+                     (a coarse estimate, not a promise)",
                     route.name()
                 ),
                 est_wait_s,
@@ -2970,7 +2975,10 @@ fn reserve_route_admit(
         if interactive && waits_for_capacity && ceiling_s > 0 && est_wait_s > ceiling_s {
             return shed(
                 format!(
-                    "estimated queue wait ~{est_wait_s}s on route {:?} exceeds this                      deployment's queue-wait ceiling ({ceiling_s}s); this request was not                      admitted and is not billed; retry after ~{est_wait_s}s (a coarse                      estimate, not a promise)",
+                    "estimated queue wait ~{est_wait_s}s on route {:?} exceeds this \
+                     deployment's queue-wait ceiling ({ceiling_s}s); this request was not \
+                     admitted and is not billed; retry after ~{est_wait_s}s (a coarse \
+                     estimate, not a promise)",
                     route.name()
                 ),
                 est_wait_s,
@@ -3133,16 +3141,26 @@ impl RateLimit {
     }
 }
 
+/// The dedicated routes this state serves (memra#501). The route registry is process-global,
+/// so a book whose name is none of this state's served models (a second state in the process,
+/// a test's fake route) is not this server's traffic: it neither folds into `/metrics`, nor
+/// comes off the hybrid lane's in-flight reading, nor selects a request's route.
+fn served_routes(st: &AppState) -> Vec<std::sync::Arc<route_telemetry::RouteLoad>> {
+    route_telemetry::all()
+        .into_iter()
+        .filter(|r| st.models.iter().any(|m| m == r.name()))
+        .collect()
+}
+
 /// Take the HTTP-layer request slot or reject a tenant whose configured override is already
 /// full. Global interactive capacity still queues as before; this gate exists only when the
 /// key's override is narrower than the lane cap.
-#[allow(clippy::result_large_err)]
-// allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
 ///
-/// `model` selects the route (memra#501): a model a dedicated route serves gets that route's
+/// `model` selects the route (memra#501): a model this state serves on a dedicated route gets that route's
 /// X-RateLimit reading and, through `RateLimit::route`, its admission arm. `None` (the token
 /// utility routes, embeddings) and a centrally served model read the lane, with the in-flight
 /// count net of every dedicated route's traffic on that lane.
+#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
 fn acquire_request_slot(
     st: &AppState,
     lane: lanes::Lane,
@@ -3152,11 +3170,17 @@ fn acquire_request_slot(
 ) -> Result<(InflightGuard, RateLimit), Response> {
     let global = lane_cap(lane);
     let tenant_cap = tenant.rate_limit.filter(|&cap| cap < global);
-    let route = model.and_then(route_telemetry::lookup);
+    let route = model
+        .filter(|m| st.models.iter().any(|served| served == m))
+        .and_then(route_telemetry::lookup);
     let reading = |n_inflight: usize, n_tenant: usize, route| match route {
         Some(route) => RateLimit::at_admit_route(route, tenant, n_tenant),
         None => {
-            let hybrid = n_inflight.saturating_sub(route_telemetry::inflight_on_lane(lane.idx()));
+            let routed = served_routes(st)
+                .iter()
+                .map(|r| r.inflight(lane.idx()))
+                .sum::<usize>();
+            let hybrid = n_inflight.saturating_sub(routed);
             RateLimit::at_admit(lane, hybrid, &st.metrics, tenant, n_tenant)
         }
     };
@@ -6671,12 +6695,9 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
     // Dedicated routes (memra#501) serve outside the central worker, so its meter never sees
     // their requests. Fold each route's served counters into this scrape's copy: `admitted`,
     // `completed`, `tokens_out` and the prompt split then describe the whole process. The step
-    // percentiles stay central-only; a route's own timing is in its `routes` row below. Only
-    // routes serving a model of this state count: the registry is process-global, and a book no
-    // served model names is not this server's traffic.
-    let routes = route_telemetry::all()
+    // percentiles stay central-only; a route's own timing is in its `routes` row below.
+    let routes = served_routes(&st)
         .iter()
-        .filter(|r| st.models.iter().any(|m| m == r.name()))
         .map(|r| r.snapshot())
         .collect::<Vec<_>>();
     for r in &routes {
@@ -18336,6 +18357,19 @@ default_reasoning_effort = "always"
         RequestDeadline::starting_now(ms)
     }
 
+    /// A route shed's client text is one readable sentence naming its route: no whitespace
+    /// run (the three route literals once lost their line continuations and answered with
+    /// 22-space gaps mid-sentence).
+    fn assert_route_shed_text(resp: Response, route: &str) {
+        let body = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(body_value(resp));
+        let msg = body["error"]["message"].as_str().expect("error message");
+        assert!(msg.contains(&format!("route {route:?}")), "{msg}");
+        assert!(!msg.contains("  "), "whitespace run in {msg:?}");
+    }
+
     /// No service signal yet: the route's estimate is the `MEMRA_RL_RESET_S` fallback (2 s by
     /// default) times the waves ahead, `backlog / capacity + 1`. The deadline shed on that
     /// estimate is reachable, and a wider route divides the same backlog into fewer waves.
@@ -18358,6 +18392,7 @@ default_reasoning_effort = "always"
             .expect_err("one wave ahead of a 1 s deadline must shed");
         assert_eq!(outcome, "shed_deadline");
         assert_eq!(retry_after(&resp), Some((2 * f).clamp(1, 60).to_string()));
+        assert_route_shed_text(resp, "t501-fallback-serial");
         let second = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MAX))
             .map_err(|(_, o)| o)
             .expect("a deadline that covers the estimate is admitted");
@@ -18413,11 +18448,12 @@ default_reasoning_effort = "always"
             .expect_err("a 60 s service time cannot fit a 1 s deadline behind a running request");
         assert_eq!(outcome, "shed_deadline");
         assert_eq!(retry_after(&resp), Some("60".into()));
-        let (_, outcome) =
+        let (resp, outcome) =
             reserve_pending_admit_with_ceiling(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MAX), 30)
                 .map(|_| ())
                 .expect_err("the 30 s ceiling sheds a 60 s estimate the deadline could absorb");
         assert_eq!(outcome, "shed_queue_wait");
+        assert_route_shed_text(resp, "t501-observed");
         let dark = reserve_pending_admit_with_ceiling(
             &st,
             lanes::Lane::Harvest,
@@ -18453,6 +18489,7 @@ default_reasoning_effort = "always"
                     .expect_err("at the bound");
             assert_eq!(outcome, "shed_queue");
             assert!(retry_after(&resp).is_some());
+            assert_route_shed_text(resp, "t501-busy");
             assert_eq!(
                 busy.waiting(lane.idx()),
                 bound,
@@ -18551,7 +18588,8 @@ default_reasoning_effort = "always"
     #[test]
     fn the_ratelimit_trio_reads_the_route_the_model_selects() {
         let _counters = admission_counters_guard();
-        let st = fake_worker_state();
+        let mut st = fake_worker_state();
+        st.models = Arc::new(vec!["m".into(), "t501-trio".into()]);
         let lane = lanes::Lane::Interactive;
         let route = route_telemetry::register("t501-trio", 1);
         let tenant = auth::TenantCtx {
@@ -18583,6 +18621,44 @@ default_reasoning_effort = "always"
         );
         drop((guard, hybrid_guard));
         assert_eq!(route.inflight(lane.idx()), 0);
+    }
+
+    /// The route registry is process-global: a book whose model this state does not serve
+    /// neither selects the request's reading nor comes off this state's hybrid in-flight count.
+    #[test]
+    fn a_route_book_this_state_does_not_serve_is_not_its_traffic() {
+        let _counters = admission_counters_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let foreign = route_telemetry::register("t501-foreign", 1);
+        let held = foreign.enter(lane.idx());
+        let tenant = auth::TenantCtx {
+            tenant: "t501-foreign".into(),
+            lane_class: auth::LaneClass::Interactive,
+            rate_limit: None,
+            key_prefix: None,
+        };
+        let env = Envelope::new(true);
+        let Ok((guard, rl)) = acquire_request_slot(&st, lane, Some("t501-foreign"), &tenant, &env)
+        else {
+            panic!("the lane slot must be acquired");
+        };
+        assert!(
+            rl.route.is_none(),
+            "a model this state does not serve selects no route"
+        );
+        assert_eq!(rl.limit, lane_cap(lane));
+        assert_eq!(
+            rl.remaining,
+            lane_cap(lane) - 1,
+            "a foreign book's in-flight is not netted off this state's lane"
+        );
+        assert_eq!(
+            foreign.inflight(lane.idx()),
+            1,
+            "the foreign book is untouched"
+        );
+        drop((guard, held));
     }
 
     /// Wiring: every production ingress that commits a pending admission binds it to the
