@@ -591,7 +591,9 @@ mod tests {
         let arena =
             memra_engine::PinnedHostArena::reserve(root.ctx().clone(), pool.budget).unwrap();
         pool.arena = Some(arena.clone());
-        let host = host_entry_from_device(&root, &mut pool, &mut src, None).unwrap();
+        let host = host_entry_from_device(&root, &mut pool, &mut src, None, ContractD2h::OnTick)
+            .map(HostImage::whole)
+            .unwrap();
         assert_eq!(arena.bytes().1, 80); // every plane plus logits/hidden boundary
         assert_eq!(host.bytes, 80 + src.toks.len() * 4);
         assert!(matches!(host.conv[0], Some(HostF32::Pinned(_))));
@@ -630,7 +632,10 @@ mod tests {
         );
         poison[0].fill(0xa5);
         drop(poison);
-        let recycled = host_entry_from_device(&root, &mut pool, &mut src, None).unwrap();
+        let recycled =
+            host_entry_from_device(&root, &mut pool, &mut src, None, ContractD2h::OnTick)
+                .map(HostImage::whole)
+                .unwrap();
         assert_eq!(
             digest(&device_entry_from_host(&root, &recycled, None).unwrap()).unwrap(),
             want
@@ -640,7 +645,8 @@ mod tests {
         // without leaking its partially available extents or falling back.
         let blocker = arena.try_reserve_planes(&[pool.budget - 76]).unwrap();
         let leased = arena.bytes().1;
-        let error = host_entry_from_device(&root, &mut pool, &mut src, None)
+        let error = host_entry_from_device(&root, &mut pool, &mut src, None, ContractD2h::OnTick)
+            .map(HostImage::whole)
             .err()
             .unwrap();
         assert!(error.to_string().contains("pinned arena admission refused"));
@@ -684,8 +690,15 @@ mod tests {
         );
         pool.model_generations
             .insert("model-a".into(), Arc::new(()));
-        let mut host =
-            host_entry_from_device(&root, &mut pool, &mut src, Some(want.clone())).unwrap();
+        let mut host = host_entry_from_device(
+            &root,
+            &mut pool,
+            &mut src,
+            Some(want.clone()),
+            ContractD2h::OnTick,
+        )
+        .map(HostImage::whole)
+        .unwrap();
         drop(src);
         // Host images retain streams/contexts, not source CUDA buffers.
         let restored = device_entry_from_host(&root, &host, None).unwrap();
@@ -779,7 +792,15 @@ mod tests {
         // Corruption must be rejected by the real hook, not merely hash unequal.
         let mut fresh = entry(&root, &peer);
         let want = digest(&fresh).unwrap();
-        let mut damaged = host_entry_from_device(&root, &mut pool, &mut fresh, Some(want)).unwrap();
+        let mut damaged = host_entry_from_device(
+            &root,
+            &mut pool,
+            &mut fresh,
+            Some(want),
+            ContractD2h::OnTick,
+        )
+        .map(HostImage::whole)
+        .unwrap();
         damaged.glm.as_mut().unwrap().tp.as_mut().unwrap().recur[0]
             .as_mut()
             .unwrap()[1]
@@ -833,8 +854,15 @@ mod tests {
         drop(poison);
         let mut recycled = entry(&root, &peer);
         let want = digest(&recycled).unwrap();
-        let host =
-            host_entry_from_device(&root, &mut pool, &mut recycled, Some(want.clone())).unwrap();
+        let host = host_entry_from_device(
+            &root,
+            &mut pool,
+            &mut recycled,
+            Some(want.clone()),
+            ContractD2h::OnTick,
+        )
+        .map(HostImage::whole)
+        .unwrap();
         assert_eq!(arena.bytes().1, recycled.bytes + 8);
         assert_eq!(
             digest(&device_entry_from_host(&root, &host, None).unwrap()).unwrap(),
