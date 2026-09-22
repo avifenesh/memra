@@ -2804,6 +2804,12 @@ mod tests {
             let pattern: Vec<u8> = (0..n).map(|i| (i * 29 % 241) as u8).collect();
             let mut span = stream.alloc_zeros::<u8>(n).unwrap();
             stream.memcpy_htod(&pattern, &mut span).unwrap();
+            // Integ38 (the local 5090 sitting): the upload runs on the owner stream and the digest
+            // on the copy stream; with cudarc's tracking off (as the engine runs) nothing orders
+            // them, and the 8 MiB span lost the race on the 5090 (`n=8388608: the device digest is
+            // the oracle's` failed, three of three spans green on the target card). The engine's
+            // route waits on the producer fence; the test states its producer the same way.
+            stream.synchronize().unwrap();
             let mut lanes = copy.alloc_zeros::<u8>(32).unwrap();
             t.digest_on(&copy, &span.slice(..n), &mut lanes.slice_mut(..32))
                 .unwrap();
@@ -2824,6 +2830,7 @@ mod tests {
             let mut flipped = pattern.clone();
             flipped[n / 2] ^= 0x80;
             stream.memcpy_htod(&flipped, &mut span).unwrap();
+            stream.synchronize().unwrap();
             let mut lanes2 = copy.alloc_zeros::<u8>(32).unwrap();
             t.digest_on(&copy, &span.slice(..n), &mut lanes2.slice_mut(..32))
                 .unwrap();
