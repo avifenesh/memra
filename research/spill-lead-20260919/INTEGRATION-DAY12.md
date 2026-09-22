@@ -1598,6 +1598,95 @@ and slice 1's own `OnTick` refusals; bytes on the 27B at ctx 8192: trunk 243 MB,
 tail about 85 MB fixed; an off-tick route needs a second borrowed span (the draft scratch owned by `SpecSession`), a
 producer event at the drain sweep, and settle-before-drop across a retiring or parking spec session.
 
+## integ37 (`lane/spill-integ37-20260922`): A day 21, Move 2 slice 2, the hit restore off the tick
+Lane tip merged: A `ff3f0f6f5` on main `5df11152f` (#634), clean. All behind `MEMRA_KV_HOST_CONTRACTS=1` (default OFF,
+decide-by 2026-10-05); no new flag, no numeric change.
+
+**Design finding, pre-registered before code.** The restore's destination is the request's fresh session cache and its
+source is a published entry's `PrefixPlane`; neither is registered with the engine, and registering the source would
+take planes out of an entry that must stay servable. So the op is `D2dRestore` / `CudaTransfers::submit_d2d_restore`,
+borrowed on both sides (source slice, destination view), the device LRU's pin as the producer-side guarantee (a pinned
+entry is out of every eviction index by construction), rule 3's owner-stream wait installed at the settle as the reader
+fence (items unfenced at submit; `install_consumer_wait` now fences every unfenced non-D2H item). `Restoring` is a state
+of the parked request (one per worker), not of the entry. The recurrent f32 state keeps the owner stream in this slice
+(about 157 MB of every 27B entry; stated so the stall reading is bounded correctly).
+
+**What landed.** `crates/memra-tier/src/conformance/d2d_restore.rs` (`d2d_restore_ready`,
+`d2d_restore_primed_before_its_wait_is_unordered`) with bindings
+`day21_d2d_restore_is_ready_only_after_the_landing_and_the_installed_reader_wait` ok,
+`day21_red_arm_prime_before_the_reader_wait_fails_the_schedule` ok (fails the schedule under `catch_unwind`),
+`day21_d2d_restore_item_without_a_witnessed_checksum_is_refused_by_the_host_contract_gate` ok (contracts target 77
+passed); engine `D2dRestore`, `submit_d2d_restore`, `restore_landed`, census `d2d_restore_rules_are_as_stated`, GPU cell
+`d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait`; worker `HostPrefixCache::restoring`,
+`host_restore_park_probe` (in the admission loop after the promote probe: the OFF validation split out as
+`prefix_restore_validate`, fresh cache, pin, recurrent state and `len` on the owner stream, one batch, park on the
+requeue), the tick-top poll installing the wait plus a three-tick orphan expiry, `host_restore_take_ready` at admit's hit
+site (pin carried over), settle-first at the reclaim, the three trims, the tenant purge (worker level, before either
+index purges) and shutdown, fail-closed arms, `Latched` forgets the cache and keeps the pin, a refused submission drains
+the owner stream and releases the fence or latches typed (the #634 shape mirrored), the ledger's third in-flight term;
+CPU tests `restore_probe_decision_parks_its_own_request_and_names_an_orphan`,
+`a_pending_restore_missing_its_cache_or_ticket_fails_closed`, census
+`every_path_that_meets_a_restoring_request_settles_or_ignores_it_as_stated`; server lib 803 passed; clippy `-D
+warnings` on tier, engine, server. Stated limit: the pending-to-ready path needs a device cache, so CPU tests do not
+reach it; the card does. `docs/FLAGS.md` door row day-21 sentence.
+
+**Gates, target card** (tree `1350f118b`, binary `ddde2083...`), verbatim per arm: identity default OFF, default ON,
+plain OFF, plain ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`; failure OFF and ON `KV-HOST-SPILL FAILURE GATE:
+ALL GREEN`; fault `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`; twin OFF and ON `PREFIX-NEWEST-TURN-FITS: ... evictions=9
+cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32
+off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS`; hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN
+(qwen)`; unit cells `8 passed` and engine `2 passed`. Engagement: the plain identity ON arm carries two `restore
+submitted off the tick: 64 tokens, 32 planes (158.8MB), ticket seq=6 ...; request parked` and `restore landed off the
+tick: ... complete after 1 poll(s), 75.4ms` pairs under `teeth=0`, zero refused, dropped or disabled restore lines. The
+hit gate's entries are all `insert (spec-boundary)` (draft-bearing), which the route refuses by name, so its 14 hits kept
+the tick program in both arms: the one-program proof of this slice today is the plain identity arm; the draft-bearing
+restore is owed. **Restore stall**, verbatim rule lines: `STALL rule cell=stall-restore-off arm=restore n_per_order=5
+pooled=10 ... arm_p99=15.5 arm_max=104.8 stall_median=88.1 stall_min=87.8 stall_max=91.3 ... intruder_cached_tokens=[5088
+x10] intruder_prompt_tokens=[5121 x10] tenant_text_identical=True errors=0`, `... cell=stall-restore-on ... arm_p99=22.1
+arm_max=93.7 stall_median=80.1 stall_min=80.1 stall_max=80.2 ... server_restore_ms=[14.5 x9, 14.4]` (pass 1); pass 2 OFF
+87.9, ON 80.2; C1 `on_under_off` both passes (bound 6.0); the pre-registered expectation was `flat`; A's reading: the
+intruder's admission work splits across two ticks (ON p99 22.1 against OFF 15.5, about 8 ms moved), not a removal; the
+rows' D2D share is under resolution; `server_restore_ms` 14.5 is the tick period; decides nothing about the door. Owed
+by Move 2: slice 3 (the receipt term with the `d2d-delay` fault; A day 22, running), the f32 state off the tick, the
+spec-boundary capture route and the draft-bearing restore, an isolating stall cell; the 5090 door gates on this tree.
+
+**C day 25 (tip `8c96ca6b5`, merged into integ37).** The fixed fault gate live, door ON, verbatim on both cards, both
+arms, 67 ok each, 0 FAIL: local RTX 5090 (9B) fault-default `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` with `receipt seq=1
+expected 1 + 0 capture ticket(s) submitted before it = 1` and `receipt seq=2 expected 2 + 0 ... = 2`; fault-plain `ALL
+GREEN` with `receipt seq=3 expected 1 + 2 capture ticket(s) submitted before it = 3` and `receipt seq=4 expected 2 + 2 ...
+= 4`; target card (27B) the identical four accounting lines and `ALL GREEN` both arms; identity on the target card over
+the retire-seam settle: all four arms `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`. The retire-seam settle's cost,
+pre-registered before the run, two arms per boot (`plain`; `coincide`, a victim stream aborted right after the intruder
+is posted so another session retires in the seed's iteration), OFF/ON/ON/OFF, N=5 per arm per order, both orders, 37
+to 58 C, 32.6 to 503.1 W, replay PASS x8, verbatim: `DAY25 RETIRE VERDICT: admissible=True plain-R1-pass1=within_bound
+plain-R2-pass1=within_bound plain-R3-pass1=within_bound plain-R1-pass2=within_bound plain-R2-pass2=within_bound
+plain-R3-pass2=within_bound coincide-R1-pass1=within_bound coincide-R2-pass1=within_bound coincide-R3-pass1=within_bound
+coincide-R1-pass2=within_bound coincide-R2-pass2=within_bound coincide-R3-pass2=within_bound seam-pass1=exercised
+seam-pass2=exercised -> HOLDS (R1, R2, R3 within 3.0 ms in both arms and both passes; the seam exercised in both
+passes)`; every ON minus OFF delta 0.1 to 0.7 ms; `settled synchronously by a session retire` 10 of 10 in both ON boots.
+A first attempt failed at the harness's prompt calibration (kept as a labelled failure, fixed, rerun; no rule moved).
+
+Battery (`integration-day12/integ37-cpu-battery/`, tree `83f9be5e5`, CPUQuota 1200 percent): fmt, portable suites,
+memra-server suite, clippy, censuses, collector pytest, engine CPU lib tests, tier tests, engine, server and tier clippy
+`-D warnings`, marker census, workflow keys, perf board: rc=0; `git diff --check` tripped on receipt logs (marked
+`-whitespace`). Local 5090 `tools/serve-smoke.sh` (door OFF): `serve-smoke: 0 failed`.
+
+Revuto round 1 on #638, one finding, real, fixed by the lead: `host_restore_take_ready`'s fail-closed arm could never
+release the source entry's pin because the `let`-else scrutinee `(r.cache.take(), r.pin.take())` had already moved the
+pin into a tuple the refutation arm cannot reach, so a ready restore without a cache left its entry pinned for the
+boot (out of every eviction index, `pinned_left` on every purge). The shape is decided before anything moves; a missing
+cache releases the pin and drops the record. CPU test `a_ready_restore_without_a_cache_releases_its_pin_at_take_ready`
+(the entry's pin count returns to 0). Server clippy `-D warnings` and the memra-server suite (804 passed) green, gated
+before the commit. Round 2, two findings, both real, fixed: (1) the restore park counted into the parked-only wait's
+counter but the wait was still guarded on a not-ready `Promoting` entry alone, so a whole-entry hit on an idle box parked
+its request and spun the owner thread through park-and-requeue ticks (the #627 shape again); the guard now reads a
+not-ready `Promoting` entry OR a not-ready `Restoring` request, and the census test pins it. (2) the probe called any
+other request's READY restore an orphan and dropped it on sight, so the three-tick grace was reachable only from the
+tick top's expiry and the first other request through the probe killed the state (the owner request can be requeued by
+an earlier admission gate without reaching the probe); the probe now drops it only past `RESTORE_READY_TICKS`, within the
+grace it goes through and the state waits for its owner; the CPU test covers both readings. Server clippy `-D warnings`
+and the memra-server suite (804 passed) green, gated before the commit.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
