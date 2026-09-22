@@ -4,6 +4,8 @@
 # usage: run-day26-cell.sh <cell-name> <AB|BA> [bin]     (cell dir: $RIGDIR/<cell-name>/)
 # env: MODEL (artifact), MODEL_KEY (served name), RIGDIR (receipt root), LOCK (/tmp/memra-5090.lock; "none" when the
 #      collector already holds the canonical lock), MEMRA_CTX (unset = the checkpoint's declared context), N (reps).
+#      Day 27: MEMRA_KV_PARK_COMPACT and MEMRA_SERVE_SPEC pass through to the server (recorded in shape.txt); the
+#      client records a sha256 per completion so arms compare byte-for-byte (day27-compare.py).
 set -uo pipefail
 cell=${1:?cell}; order=${2:?AB|BA}
 WT=${WT:-$HOME/projects/wt-spill-b}
@@ -24,7 +26,7 @@ cd "$WT" || exit 1
 C=$RIGDIR/$cell; rm -rf "$C"; mkdir -p "$C"
 sha256sum "$BIN" > "$C/binary.sha256"; git rev-parse HEAD > "$C/source.txt"; git status --short > "$C/dirty.txt"
 sha256sum "$MODEL" > "$C/model.sha256" &
-echo "order=$order n=$N model_key=$MODEL_KEY ctx=${MEMRA_CTX:-unset} lock=$LOCK warm=${WARM_IMMEDIATE:+immediate}${WARM_IMMEDIATE:-deferred}" > "$C/shape.txt"
+echo "order=$order n=$N model_key=$MODEL_KEY ctx=${MEMRA_CTX:-unset} lock=$LOCK warm=${WARM_IMMEDIATE:+immediate}${WARM_IMMEDIATE:-deferred} park_compact=${MEMRA_KV_PARK_COMPACT:-unset} serve_spec=${MEMRA_SERVE_SPEC:-default}" > "$C/shape.txt"
 if [ "$LOCK" != none ]; then
   exec 9>"$LOCK"
   echo "$(date -u +%FT%TZ) waiting for $LOCK (flock -w 3600)" | tee "$C/lock.txt"

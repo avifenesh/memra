@@ -4047,6 +4047,9 @@ enum PrefixCacheBudget {
         entry_bytes: usize,
         model: String,
         ctx: usize,
+        /// Where the context term came from: `"MEMRA_CTX"` or `"checkpoint"` (the served
+        /// context `request_ctx_cap` reads for the same model; never a literal).
+        ctx_source: &'static str,
         boot_free_bytes: usize,
         clamp_bytes: usize,
     },
@@ -4140,6 +4143,19 @@ fn model_prefix_entry_bytes(model: &HybridModel, ctx: usize) -> usize {
     )
 }
 
+/// The context term of the derived prefix-cache budget: the served context the admission cap
+/// rule reads for the same model (`resolve_ctx`, the one resolver behind `request_ctx_cap`: an
+/// explicit `MEMRA_CTX`, else the checkpoint's own declared context; an unusable value refuses).
+/// Until 2026-09-22 an unset `MEMRA_CTX` fell back to a literal 8192 here while the sessions
+/// were capped at the checkpoint's context, so a target card serving 262,144 held two 8k-sized
+/// entries (800 MB) under 8.27 GB sessions and LRU-evicted 43 of 45 spec-boundary entries before
+/// their continuation arrived (WP-B day 26/27, `research/spill-b-20260919/DAY27.md`). The two-entry
+/// count and the boot-free clamp are unchanged; only the context term moved. Pure so the set and
+/// unset arms are unit-testable without touching the process environment.
+fn prefix_budget_ctx(env_ctx: Option<&str>, model_ctx: usize) -> Result<usize, String> {
+    resolve_ctx(env_ctx, model_ctx)
+}
+
 fn derived_prefix_cache_budget(
     entry_bytes: usize,
     boot_free_bytes: usize,
@@ -4169,25 +4185,49 @@ fn init_prefix_cache_budget(
             };
         }
 
-        // A SIZING heuristic, deliberately NOT `resolve_ctx`: this picks how many bytes of
-        // prefix snapshots to keep, and deriving it from a 1M-token declared context would
-        // size the budget against a window no request has asked for. It publishes nothing and
-        // caps nothing, so the historical 8192 floor stays, named rather than inline.
-        const PREFIX_CACHE_CTX_FALLBACK: usize = 8192;
-        let ctx = std::env::var("MEMRA_CTX")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(PREFIX_CACHE_CTX_FALLBACK);
+        // The context term is the served context: the value `request_ctx_cap` reads for the
+        // same model through `resolve_env_ctx` (an explicit MEMRA_CTX, else the checkpoint's
+        // declared context). An explicit MEMRA_CTX always reached this formula; the unset arm
+        // used to substitute a literal 8192 and sized the budget against a window no session
+        // was capped at (`prefix_budget_ctx`). A model whose context does not resolve
+        // contributes no entry and says so: its requests refuse for the same reason.
+        let env_ctx: Result<Option<String>, String> = match std::env::var_os("MEMRA_CTX") {
+            None => Ok(None),
+            Some(value) => value
+                .into_string()
+                .map(Some)
+                .map_err(|_| "MEMRA_CTX is not valid Unicode".to_string()),
+        };
+        let ctx_source = if env_ctx.as_ref().is_ok_and(Option::is_none) {
+            "checkpoint"
+        } else {
+            "MEMRA_CTX"
+        };
         let mut entries: Vec<_> = loaded
             .iter()
-            .map(|(name, lm)| (name.as_str(), model_prefix_entry_bytes(&lm.model, ctx)))
+            .map(|(name, lm)| {
+                let model_ctx = lm.model.cfg.context_length as usize;
+                match env_ctx
+                    .clone()
+                    .and_then(|env| prefix_budget_ctx(env.as_deref(), model_ctx))
+                {
+                    Ok(ctx) => (name.as_str(), model_prefix_entry_bytes(&lm.model, ctx), ctx),
+                    Err(err) => {
+                        eprintln!(
+                            "[prefix-cache] WARNING: served context unresolved for model \
+                             {name:?} ({err}); it contributes no entry to the derived budget"
+                        );
+                        (name.as_str(), 0, 0)
+                    }
+                }
+            })
             .collect();
-        entries.sort_unstable_by_key(|(name, _)| *name);
-        let (model, entry_bytes) = entries
+        entries.sort_unstable_by_key(|(name, _, _)| *name);
+        let (model, entry_bytes, ctx) = entries
             .into_iter()
-            .max_by_key(|(_, bytes)| *bytes)
-            .map(|(name, bytes)| (name.to_string(), bytes))
-            .unwrap_or_else(|| ("(none)".to_string(), 0));
+            .max_by_key(|(_, bytes, _)| *bytes)
+            .map(|(name, bytes, ctx)| (name.to_string(), bytes, ctx))
+            .unwrap_or_else(|| ("(none)".to_string(), 0, 0));
         let boot_free_bytes = engine
             .ctx()
             .mem_get_info()
@@ -4207,6 +4247,7 @@ fn init_prefix_cache_budget(
             entry_bytes,
             model,
             ctx,
+            ctx_source,
             boot_free_bytes,
             clamp_bytes,
         }
@@ -17087,15 +17128,22 @@ pub fn run(
                 entry_bytes,
                 model,
                 ctx,
+                ctx_source,
                 boot_free_bytes,
                 clamp_bytes,
             } => (
                 *bytes,
                 format!(
                     "{bytes} B, derived: {} x {entry_bytes} B max entry for model {model:?} at \
-                     MEMRA_CTX={ctx}, requested {requested_bytes} B; boot driver free \
-                     {boot_free_bytes} B, post-reserve clamp {clamp_bytes} B",
+                     served ctx {ctx} (from {ctx_source}; MEMRA_CTX {}), requested \
+                     {requested_bytes} B; boot driver free {boot_free_bytes} B, post-reserve \
+                     clamp {clamp_bytes} B",
                     PREFIX_CACHE_DEFAULT_ENTRIES,
+                    if *ctx_source == "MEMRA_CTX" {
+                        "set"
+                    } else {
+                        "unset"
+                    },
                 ),
             ),
         };
@@ -29977,7 +30025,8 @@ mod tests {
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
     use super::{MAX_EVENT_QUEUE_EVENTS, event_channel};
     use super::{
-        PREFIX_CACHE_DEFAULT_ENTRIES, derived_prefix_cache_budget, prefix_entry_geometry_bytes,
+        PREFIX_CACHE_DEFAULT_ENTRIES, derived_prefix_cache_budget, prefix_budget_ctx,
+        prefix_entry_geometry_bytes,
     };
     use super::{PpFreeSnapshot, concat_prime_pp_eligibility};
     use super::{
@@ -30263,6 +30312,70 @@ mod tests {
         assert_eq!(budget, entry_bytes);
         assert_eq!(budget, clamp);
         assert!(budget <= constrained_free);
+    }
+
+    /// WP-B day 27 (`research/spill-b-20260919/DAY27.md`): the derived budget's context term is
+    /// the served context, set or unset, the same value `request_ctx_cap` reads. Geometry is the
+    /// Qwen3.8-27B trunk from the target card's own boot line (400,162,816 B at 8192 =
+    /// 8192 x 29,696 + 156,893,184 B recurrent state) and its boot driver free.
+    #[test]
+    fn derived_prefix_budget_context_term_is_the_served_context_set_or_unset() {
+        let bpt = 29_696;
+        let recurrent = 156_893_184;
+        let model_ctx = 262_144;
+        let boot_free = 86_519_709_696;
+
+        // MEMRA_CTX set: authoritative, exactly as before (the day-26 boot line).
+        let ctx = prefix_budget_ctx(Some("8192"), model_ctx).unwrap();
+        assert_eq!(ctx, 8192);
+        let entry = prefix_entry_geometry_bytes(bpt, recurrent, ctx);
+        assert_eq!(entry, 400_162_816);
+        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free);
+        assert_eq!((budget, requested), (800_325_632, 800_325_632));
+        assert_eq!(clamp, 84_909_096_960);
+
+        // MEMRA_CTX unset: the checkpoint's own context, never a literal 8192.
+        let ctx = prefix_budget_ctx(None, model_ctx).unwrap();
+        assert_eq!(ctx, model_ctx);
+        let entry = prefix_entry_geometry_bytes(bpt, recurrent, ctx);
+        assert_eq!(entry, 7_941_521_408);
+        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free);
+        assert_eq!(requested, 15_883_042_816);
+        assert_eq!(clamp, boot_free - SPEC_SHRINK_RESERVE);
+        assert_eq!(budget, 15_883_042_816);
+
+        // The clamp is unchanged: a small card still keeps the serving-transient reserve.
+        let small_free = 16_029_908_992;
+        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, small_free);
+        assert_eq!(clamp, small_free - SPEC_SHRINK_RESERVE);
+        assert_eq!(budget, clamp);
+        assert!(budget < requested);
+
+        // Unresolvable contexts refuse like the cap rule does; nothing substitutes a number.
+        assert!(prefix_budget_ctx(None, 0).is_err());
+        assert!(prefix_budget_ctx(Some("abc"), model_ctx).is_err());
+        assert!(prefix_budget_ctx(Some("0"), model_ctx).is_err());
+
+        // Source text: the init path reads the served context and the literal is gone.
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+        let init_at = prod
+            .find("fn init_prefix_cache_budget(")
+            .expect("init exists");
+        let init = &prod[init_at..init_at + 4000];
+        assert!(
+            init.contains("prefix_budget_ctx(env.as_deref(), model_ctx)"),
+            "the derived budget must read the served context per model"
+        );
+        assert!(
+            !prod.contains("PREFIX_CACHE_CTX_FALLBACK"),
+            "no literal context fallback remains in the budget derivation"
+        );
     }
 
     #[test]

@@ -10,7 +10,7 @@ Writes <out>/samples.csv (250 ms: epoch_ms, mem_used_mib, cuda_driver_free_bytes
 cuda_pool_reserved_bytes, admission_booked_bytes, active_sessions, prefix_cache_bytes) and <out>/client.jsonl
 (one row per request: arm, length index, rep, submit/done ms, status, usage, driver free and pool used before/after).
 """
-import argparse, json, os, subprocess, sys, threading, time, urllib.error, urllib.request
+import argparse, hashlib, json, os, subprocess, sys, threading, time, urllib.error, urllib.request
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--base", required=True); ap.add_argument("--out", required=True); ap.add_argument("--model", default="q9")
@@ -67,7 +67,7 @@ def chat(tag, arm, li, rep, messages, max_tokens):
     req = urllib.request.Request(a.base + "/v1/chat/completions", data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     before = metrics()
-    t0 = int(time.time() * 1000); status = None; usage = None; err = None; content = None
+    t0 = int(time.time() * 1000); status = None; usage = None; err = None; content = None; j = {}
     try:
         with urllib.request.urlopen(req, timeout=1800) as r:
             status = r.status; j = json.load(r); usage = j.get("usage")
@@ -80,7 +80,10 @@ def chat(tag, arm, li, rep, messages, max_tokens):
     after = metrics()
     row = {"tag": tag, "arm": arm, "length_idx": li, "rep": rep, "submit_ms": t0, "done_ms": t1, "status": status,
            "prompt_chars": sum(len(m["content"]) for m in messages), "max_tokens": max_tokens, "usage": usage,
-           "err": err, "before": before, "after": after, "content_chars": None if content is None else len(content)}
+           "err": err, "before": before, "after": after, "content_chars": None if content is None else len(content),
+           # day 27: completion digest so two arms (or a before and an after binary) compare byte-for-byte
+           "content_sha256": None if content is None else hashlib.sha256(content.encode()).hexdigest(),
+           "finish_reason": ((j.get("choices") or [{}])[0].get("finish_reason") if status == 200 else None)}
     rows.append(row); print(json.dumps({k: v for k, v in row.items() if k not in ("before", "after")}), flush=True)
     return content
 
