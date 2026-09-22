@@ -73,6 +73,29 @@
 # exercised by its own ON-GRID prompt: PROMPT padded with " ok" words until /v1/tokenize counts a
 # multiple of 32 (the `fc` cells), because an off-grid prompt can no longer be a full-cover hit.
 #
+# THE HOST TIER CONTRACTS DOOR ARM (lane/spill-c-20260919 day 27). The door's gate batteries run this
+# gate twice, once with MEMRA_KV_HOST_CONTRACTS unset (door OFF) and once with MEMRA_KV_HOST_CONTRACTS=1
+# (door ON). Until day 27 the ON arm booted with no MEMRA_KV_HOST_MB, so the server built no program
+# identity (`[kv-host-contracts] ... nothing to route`), `hpx.armed()` was false before any entry-class
+# check, and the ON arm was the OFF arm under another name: every "hit gate ALL GREEN OFF and ON" read
+# from it covered the tick program only (research/spill-c-20260919/DAY26.md, HOSTPREFIX-DOOR.md item 11).
+# Under the door this gate now arms the host tier on BOTH boots (spec-on and the spec-off twin) with
+# the identity gate's host budget, MEMRA_KV_HOST_MB=8192 (kv-host-spill-identity-gate.sh's
+# MEMRA_HOSTGATE_HOST_MB default; an exported MEMRA_KV_HOST_MB is respected), and ASSERTS that the door
+# engaged: each boot's log carries the tier's arming line (`[prefix-host] on: budget`) and the door's
+# (`[prefix-host] contracts door ON`), no latch (`TIER DISABLED`, `CAPTURE OFF-TICK DISABLED`, `RESTORE
+# OFF-TICK DISABLED`), and the two boots together carry at least one route submission (`capture`,
+# `restore`, `demote` or `promote submitted off the tick`; the spec-off twin's `insert (seed)` entries
+# take the capture route by construction, the contract fault gate's `1 + 2 capture ticket(s)`
+# accounting on both cards). An ON arm that ran with the tier off can no longer read ALL GREEN. The
+# OFF arm is unchanged. The identity clause (spec-on text == spec-off text) is unchanged in both arms:
+# a red identity under the armed tier is a finding against the door, never a clause to move. Both
+# arms print the entry-class census per boot (draft-bearing `insert (spec-boundary)` against plain
+# `insert (seed)`, and the class of the identity clause's own namespaces) so a review can read which
+# class each side of the clause hit. The door arm is defined for the qwen arm only (a gemma tower is
+# a boot refusal under the door). No new MEMRA_* read: MEMRA_KV_HOST_CONTRACTS and MEMRA_KV_HOST_MB are
+# docs/FLAGS.md rows.
+#
 # usage:
 #   spec-on-cache-hit-gate.sh qwen  <model.gguf>              <server_bin> <evidence_dir>
 #   spec-on-cache-hit-gate.sh gemma <model.gguf> <draft.gguf> <server_bin> <evidence_dir>
@@ -185,8 +208,15 @@ boot() { # $1 extra-env-string  $2 log
 }
 stop() {
     # kill the SERVER, not the flock wrapper (the spec-cache-gate.sh lesson: killing the
-    # wrapper orphans the server and the next boot silently reuses it on the same port).
-    pkill -x memra-server 2>/dev/null || true
+    # wrapper orphans the server and the next boot silently reuses it on the same port), and
+    # ONLY THIS GATE'S server: the child of its own flock wrapper (`flock` forks, the child execs
+    # `env` which execs the binary, so the server's parent pid is $SERVER_PID). Until day 27 this
+    # was a blanket `pkill -x memra-server`, and the EXIT trap runs it after the last boot's flock
+    # has been released, so on a shared rig it could kill a server another lane had just booted
+    # under the lock (C day 27, research/spill-c-20260919/DAY27.md). With no boot of ours
+    # outstanding there is nothing to stop.
+    [ -n "$SERVER_PID" ] || return 0
+    pkill -x -P "$SERVER_PID" memra-server 2>/dev/null || true
     for _ in $(seq 1 30); do
         curl -s --max-time 1 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1 || {
             SERVER_PID=""
@@ -195,7 +225,7 @@ stop() {
         }
         sleep 1
     done
-    pkill -9 -x memra-server 2>/dev/null || true
+    pkill -9 -x -P "$SERVER_PID" memra-server 2>/dev/null || true
     SERVER_PID=""
     sleep 3
 }
@@ -300,6 +330,18 @@ PY
 }
 
 TEETH=${MEMRA_HITGATE_TEETH:-0}
+# The contracts door arm (header): with MEMRA_KV_HOST_CONTRACTS=1 in the environment both boots arm
+# the host tier with the identity gate's budget, and the door's engagement is asserted below.
+DOOR=${MEMRA_KV_HOST_CONTRACTS:-0}
+DOOR_ENV=""
+if [ "$DOOR" = 1 ]; then
+    if [ "$ARM" != qwen ]; then
+        echo "REFUSED: the contracts door arm (MEMRA_KV_HOST_CONTRACTS=1) is defined for the qwen arm only" >&2
+        exit 2
+    fi
+    DOOR_HOST_MB=${MEMRA_KV_HOST_MB:-8192}
+    DOOR_ENV="MEMRA_KV_HOST_MB=$DOOR_HOST_MB"
+fi
 SAMPLED_TEMP=${MEMRA_HITGATE_TEMP:-0.8}
 SAMPLED_SEEDS=${MEMRA_HITGATE_SEEDS:-"7 1234 99991"}
 # ---- BOUNDARY-PROBE TEMPERATURE: 4.0, and here is the arithmetic that fixes it there. ----
@@ -642,6 +684,71 @@ sys.exit(1 if fails else 0)
 PY
 }
 
+# Entry-class and door-route census of one server log. Printed in BOTH arms so the review can read
+# which class each side of the identity clause hit; asserted on only under the door (door_assert).
+# The identity clause's rows live in the default namespace (r1..r3, no `ns`) and in ns "grow"
+# (g1..g4); the class of every entry published there is the class the clause's hits restored on
+# that side (a hit restores an entry of its own namespace only).
+DOOR_ROUTE_RE='(capture|restore|demote|promote) submitted off the tick'
+DOOR_LATCH_RE='TIER DISABLED|CAPTURE OFF-TICK DISABLED|RESTORE OFF-TICK DISABLED'
+door_census() { # $1 label  $2 server log
+    local log=$2 sb seed other idl idsb idseed cls
+    sb=$(grep -c "\[prefix-cache\] insert (spec-boundary)" "$log" || true)
+    seed=$(grep -c "\[prefix-cache\] insert (seed)" "$log" || true)
+    other=$(grep -E "\[prefix-cache\] insert \(" "$log" | grep -vcE "insert \((spec-boundary|seed)\)" || true)
+    echo "  census $1: entries published: $sb draft-bearing (insert (spec-boundary)), $seed plain (insert (seed)), $other other"
+    grep -oE "\[prefix-cache\] hit: [0-9]+ of [0-9]+ prompt tokens" "$log" | sort | uniq -c \
+        | sed -E 's/^ *([0-9]+) \[prefix-cache\] /    hits x\1: /' || true
+    idl=$(grep -E "\[prefix-cache\] insert \(" "$log" | grep -E 'model [^,)]+\)$|ns "grow"\)$' || true)
+    idsb=$(printf '%s\n' "$idl" | grep -c "insert (spec-boundary)" || true)
+    idseed=$(printf '%s\n' "$idl" | grep -c "insert (seed)" || true)
+    if [ "$idsb" -gt 0 ] && [ "$idseed" = 0 ]; then cls=draft-bearing
+    elif [ "$idseed" -gt 0 ] && [ "$idsb" = 0 ]; then cls=plain
+    elif [ "$idsb" = 0 ] && [ "$idseed" = 0 ]; then cls=none
+    else cls=mixed; fi
+    echo "    identity clause namespaces (default, \"grow\") on the $1 side: $idsb draft-bearing, $idseed plain -> its hits restored $cls entries"
+    echo "    door lines: armed=$(grep -c '\[prefix-host\] on: budget' "$log" || true)" \
+        "door_on=$(grep -c '\[prefix-host\] contracts door ON' "$log" || true)" \
+        "capture_submitted=$(grep -c 'capture submitted off the tick' "$log" || true)" \
+        "capture_published=$(grep -c 'capture published off the tick' "$log" || true)" \
+        "restore_submitted=$(grep -c 'restore submitted off the tick' "$log" || true)" \
+        "restore_landed=$(grep -c 'restore landed off the tick' "$log" || true)" \
+        "demote_submitted=$(grep -c 'demote submitted off the tick' "$log" || true)" \
+        "promote_submitted=$(grep -c 'promote submitted off the tick' "$log" || true)" \
+        "refused_contracts_door=$(grep -c 'refused (contracts door)' "$log" || true)" \
+        "restore_refused=$(grep -c 'restore refused' "$log" || true)" \
+        "latched=$(grep -cE "$DOOR_LATCH_RE" "$log" || true)"
+}
+# The door arm's engagement assertions for one boot (header). Quotes the arming line and the first
+# route line verbatim so a receipt reads them without opening the log.
+door_assert() { # $1 label  $2 server log
+    local log=$2 line
+    if line=$(grep -m1 '\[prefix-host\] on: budget' "$log"); then
+        echo "  ok: door arm: the host tier is armed on the $1 boot"
+        echo "     $line"
+    else
+        echo "  FAIL: door arm: no '[prefix-host] on: budget' line on the $1 boot (MEMRA_KV_HOST_MB not in force: the tier is off before any class check)"
+        FAILS=$((FAILS + 1))
+    fi
+    if line=$(grep -m1 '\[prefix-host\] contracts door ON' "$log"); then
+        echo "  ok: door arm: the contracts door is ON on the $1 boot"
+        echo "     ${line:0:200}"
+    else
+        echo "  FAIL: door arm: no '[prefix-host] contracts door ON' line on the $1 boot"
+        FAILS=$((FAILS + 1))
+    fi
+    if grep -qE "$DOOR_LATCH_RE" "$log"; then
+        echo "  FAIL: door arm: the tier or a route latched off on the $1 boot:"
+        grep -E "$DOOR_LATCH_RE" "$log" | head -3 | sed 's/^/     /'
+        FAILS=$((FAILS + 1))
+    else
+        echo "  ok: door arm: no latch line on the $1 boot"
+    fi
+    if line=$(grep -m1 -E "$DOOR_ROUTE_RE" "$log"); then
+        echo "     first route line on the $1 boot: $line"
+    fi
+}
+
 if [ "$ARM" = qwen ]; then
     # MEMRA_SPEC_BOUNDARY_TRACE=1 is diagnostics-only (one stderr line per boundary draw) and
     # is what makes Item 1's assertions — and the MEASURED boundary rate — observable instead
@@ -650,11 +757,11 @@ if [ "$ARM" = qwen ]; then
         echo "== qwen arm: spec-on boot, TEETH/ROLLBACK posture (every door shut) =="
         boot "MEMRA_SPEC_BOUNDARY_TRACE=1 MEMRA_SPEC_RESTORE_SAMPLED=0 \
               MEMRA_SPEC_SAMPLED_BOUNDARY=0 MEMRA_SPEC_PEN_SESSION=0 \
-              MEMRA_SPEC_RESTORE_REPUBLISH=0" "$EV/qwen-on-server.log"
+              MEMRA_SPEC_RESTORE_REPUBLISH=0 $DOOR_ENV" "$EV/qwen-on-server.log"
         assert_mtp_drafter "$EV/qwen-on-server.log"
     else
-        echo "== qwen arm: spec-on boot =="
-        boot "MEMRA_SPEC_BOUNDARY_TRACE=1" "$EV/qwen-on-server.log"
+        echo "== qwen arm: spec-on boot${DOOR_ENV:+ (contracts door ON, $DOOR_ENV)} =="
+        boot "MEMRA_SPEC_BOUNDARY_TRACE=1 $DOOR_ENV" "$EV/qwen-on-server.log"
         assert_mtp_drafter "$EV/qwen-on-server.log"
     fi
     req "$PROMPT" 0 "$EV/qwen-on-r1.json"      # cold: spec engages, publishes seed entry
@@ -697,6 +804,11 @@ if [ "$ARM" = qwen ]; then
     # continuation byte-for-byte. Same program on both sides — no prefill-segmentation confound.
     req "$PROMPT$EXT" 0 "$EV/qwen-on-g4.json" 7 grow
     stop
+    door_census spec-on "$EV/qwen-on-server.log"
+    if [ "$DOOR" = 1 ]; then
+        echo "-- contracts door arm (MEMRA_KV_HOST_CONTRACTS=1, $DOOR_ENV): engagement on the spec-on boot --"
+        door_assert spec-on "$EV/qwen-on-server.log"
+    fi
     if grep -q "\[prefix-cache\] spec restore:" "$EV/qwen-on-server.log"; then
         echo "  ok: server log shows spec restore"
     else
@@ -810,8 +922,8 @@ if [ "$ARM" = qwen ]; then
         fi
     fi
 
-    echo "== qwen arm: spec-off twin boot (identity reference) =="
-    boot "MEMRA_SERVE_SPEC=0" "$EV/qwen-off-server.log"
+    echo "== qwen arm: spec-off twin boot (identity reference${DOOR_ENV:+; contracts door ON, $DOOR_ENV}) =="
+    boot "MEMRA_SERVE_SPEC=0 $DOOR_ENV" "$EV/qwen-off-server.log"
     req "$PROMPT" 0 "$EV/qwen-off-r1.json"
     req "$PROMPT" 0 "$EV/qwen-off-r2.json"
     req "$PROMPT$EXT" 0 "$EV/qwen-off-r3.json"
@@ -825,6 +937,18 @@ if [ "$ARM" = qwen ]; then
     req "$PROMPT" 0 "$EV/qwen-off-g1.json" 7 grow
     req "$PROMPT$EXT" 0 "$EV/qwen-off-g2.json" 7 grow
     stop
+    door_census spec-off "$EV/qwen-off-server.log"
+    if [ "$DOOR" = 1 ]; then
+        echo "-- contracts door arm: engagement on the spec-off twin boot --"
+        door_assert spec-off "$EV/qwen-off-server.log"
+        ROUTES=$(cat "$EV/qwen-on-server.log" "$EV/qwen-off-server.log" | grep -cE "$DOOR_ROUTE_RE" || true)
+        if [ "$ROUTES" -gt 0 ]; then
+            echo "  ok: door arm: $ROUTES route submission(s) across the two boots (capture, restore, demote or promote off the tick)"
+        else
+            echo "  FAIL: door arm: zero route submissions across the two boots; the door routed nothing this gate hit or published"
+            FAILS=$((FAILS + 1))
+        fi
+    fi
     check "off-boot rows carry no spec" \
         "spec(r1) is None and spec(r2) is None and spec(r3) is None" qwen-off
     for n in r1 r2 r3 g1 g2; do
@@ -846,6 +970,7 @@ else
     req "$PROMPT$EXT" 0 "$EV/gemma-on-r2.json" # greedy extended: gspec restored carrier
     req "$PROMPT" 0 "$EV/gemma-on-r3.json"     # greedy full-cover: PLAIN by design
     stop
+    door_census spec-on "$EV/gemma-on-server.log"
     check "r1 sampled leader is plain + cold" "spec(r1) is None and cached(r1) == 0" gemma-on
     check "r2 hit has cached tokens" "cached(r2) > 0" gemma-on
     check "r2 hit SPEC ENGAGED (accepted > 0)" \
@@ -859,6 +984,7 @@ else
     req "$PROMPT$EXT" 0 "$EV/gemma-off-r2.json"
     req "$PROMPT" 0 "$EV/gemma-off-r3.json"
     stop
+    door_census spec-off "$EV/gemma-off-server.log"
     for n in 2 3; do
         if python3 -c "
 import json,sys

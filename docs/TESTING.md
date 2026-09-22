@@ -1072,7 +1072,9 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
   day 19 (an identical sampled repeat restores `capture_len(P)`, 64 of 106; the growth turns
   restore the republished render-stable boundary, 96 of 119; an on-grid `fc` pair built
   through `/v1/tokenize` keeps the whole-prompt full-cover shape and its `restore-full-cover`
-  boundary site exercised); its identity law, spec-on text == spec-off text, is unchanged.
+  boundary site exercised); its identity law, spec-on text == spec-off text, is unchanged. Under the
+  host tier contracts door (`MEMRA_KV_HOST_CONTRACTS=1`) the gate arms the host tier on both boots and
+  asserts the door engaged (the door arm bullet under "Host tier contracts door" below; C day 27).
 - Canonical rig lock only, held for the whole cell; under the collector,
   `tools/tier-battery.py --rig pro-single --external-lock --execute python3
   tools/prefix-newest-turn-fits-gate.py --external-lock @COLLECTOR_LOCK_FD@ ...` (lead ruling 5).
@@ -1771,6 +1773,31 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   all; the aborted ticket's sequence number is consumed, no `TIER DISABLED`, no drop, no `Capacity`, no
   leaked wording). Evidence: `research/spill-c-20260919/DAY16.md` (review section), `pro-single-day16-review/`,
   replay `verify-day16-review.py`.
+- The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
+  hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
+  Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity
+  (its own line: `[kv-host-contracts] MEMRA_KV_HOST_CONTRACTS=1 with no host tier on this boot
+  (MEMRA_KV_HOST_MB=0): nothing to route, no program identity built`), `hpx.armed()` was false before any
+  entry-class check, and every "hit gate ALL GREEN OFF and ON" taken on lane A's days 17 to 21 and lane C's
+  days 24 and 26 covered the tick program in both arms (`research/spill-c-20260919/DAY26.md`,
+  `HOSTPREFIX-DOOR.md` item 11). Under the door the gate now ARMS the host tier on both of its boots
+  (spec-on and the spec-off twin) with the identity gate's budget, `MEMRA_KV_HOST_MB=8192`
+  (`MEMRA_HOSTGATE_HOST_MB`'s default; an exported `MEMRA_KV_HOST_MB` is respected), and asserts per boot
+  the tier's arming line (`[prefix-host] on: budget`), the door's (`[prefix-host] contracts door ON`), no
+  latch line (`TIER DISABLED`, `CAPTURE OFF-TICK DISABLED`, `RESTORE OFF-TICK DISABLED`), and across the two
+  boots at least one route submission (`capture`, `restore`, `demote` or `promote submitted off the tick`;
+  the spec-off twin's `insert (seed)` entries take the capture route by construction, the fault gate's `1 +
+  2 capture ticket(s)` accounting on both cards). An ON arm that ran with the tier off cannot read ALL GREEN.
+  The OFF arm and the identity clause (spec-on text == spec-off text on r1, r2, r3, g1, g2) are unchanged: a
+  red identity under the armed tier is a finding against the door, never a clause to move. Both arms print
+  an entry-class census per boot (`insert (spec-boundary)`, draft-bearing, against `insert (seed)`, plain,
+  and the class of the identity clause's own namespaces) so a reader knows which class each side of the
+  clause hit: the spec-on side's rows hit draft-bearing entries (the route refuses them by name, tick
+  program), the spec-off twin's rows hit plain entries (the route's whole-entry restore). The door arm is
+  defined for the qwen arm only. The gate has no `--external-lock` and takes the canonical lock itself per
+  boot, so under the collector's hold it would block: the door batteries run it under its own `flock`
+  (lane A day 21, C days 26 and 27). Evidence: `research/spill-c-20260919/DAY27.md`, `rtx5090-day27/`
+  (9B), `pro-single-day27/` (27B), both arms, N=1, `executed-not-qualified`.
 
 ### `h2d-probe --copies`
 

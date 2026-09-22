@@ -217,6 +217,7 @@ fn main() {
             "moe_router",
             "spec_sample",
             "flash_attn_kf8vf8",
+            "tier_receipt",
         ] {
             std::fs::write(out.join(format!("{stem}.fatbin")), []).unwrap();
         }
@@ -230,6 +231,7 @@ fn main() {
             ("MEMRA_ROUTER_FATBIN", "moe_router"),
             ("MEMRA_SAMPLE_FATBIN", "spec_sample"),
             ("MEMRA_FLASH_FATBIN_KF8VF8", "flash_attn_kf8vf8"),
+            ("MEMRA_TIER_RECEIPT_FATBIN", "tier_receipt"),
         ] {
             println!(
                 "cargo:rustc-env={env}={}",

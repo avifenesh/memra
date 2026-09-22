@@ -1548,6 +1548,14 @@ impl CudaTransfers {
         for item in e.items.iter().flatten() {
             cuda(item.event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;
         }
+        // Integ38 (lead review of WP-A day 22): a D2D batch lands only with its receipt lanes, and
+        // the receipt's D2H is recorded on the copy stream AFTER the last item's event. A host
+        // wait on the items alone leaves a window in which `progress` sees no lanes, the items
+        // stay unlanded and the settle's Block arm latches the tier for a copy that had landed.
+        // The receipt event is part of the batch's landing, so the wait covers it too.
+        if let Some(r) = &e.receipt {
+            cuda(r.event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;
+        }
         e.unknown = false;
         self.progress(ticket)
     }
@@ -2796,6 +2804,12 @@ mod tests {
             let pattern: Vec<u8> = (0..n).map(|i| (i * 29 % 241) as u8).collect();
             let mut span = stream.alloc_zeros::<u8>(n).unwrap();
             stream.memcpy_htod(&pattern, &mut span).unwrap();
+            // Integ38 (the local 5090 sitting): the upload runs on the owner stream and the digest
+            // on the copy stream; with cudarc's tracking off (as the engine runs) nothing orders
+            // them, and the 8 MiB span lost the race on the 5090 (`n=8388608: the device digest is
+            // the oracle's` failed, three of three spans green on the target card). The engine's
+            // route waits on the producer fence; the test states its producer the same way.
+            stream.synchronize().unwrap();
             let mut lanes = copy.alloc_zeros::<u8>(32).unwrap();
             t.digest_on(&copy, &span.slice(..n), &mut lanes.slice_mut(..32))
                 .unwrap();
@@ -2816,6 +2830,7 @@ mod tests {
             let mut flipped = pattern.clone();
             flipped[n / 2] ^= 0x80;
             stream.memcpy_htod(&flipped, &mut span).unwrap();
+            stream.synchronize().unwrap();
             let mut lanes2 = copy.alloc_zeros::<u8>(32).unwrap();
             t.digest_on(&copy, &span.slice(..n), &mut lanes2.slice_mut(..32))
                 .unwrap();
@@ -3022,5 +3037,47 @@ mod tests {
             drop(lease);
             assert_eq!(gov.borrow().used().pinned, 0);
         }
+    }
+    /// Integ38 (lead review of WP-A day 22): the Block arm's host wait covers the receipt event,
+    /// not only the items' events. A D2D item lands only with its lanes (`progress`), and the
+    /// receipt's D2H is recorded on the copy stream after the last item's event; a `synchronize`
+    /// that returned on the items alone could hand `capture_landed` a landed copy with unread
+    /// lanes, and the settle would latch the tier for a batch that had landed. The receipt wait
+    /// sits between the item waits and the `unknown` reset, and both run through one wait path.
+    #[test]
+    fn integ38_synchronize_waits_on_the_receipt_event_after_the_items() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap()];
+        let at = body.find("pub fn synchronize(").unwrap();
+        let sync = &body[at..at + body[at..].find("\n    }\n").unwrap()];
+        let items = sync
+            .find("cuda(item.event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;")
+            .expect("the items' host wait");
+        let receipt = sync
+            .find("cuda(r.event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;")
+            .expect("the receipt's host wait");
+        let reset = sync.find("e.unknown = false;").unwrap();
+        let progress = sync.find("self.progress(ticket)").unwrap();
+        assert!(items < receipt && receipt < reset && reset < progress);
+        assert!(sync.contains("if let Some(r) = &e.receipt {"));
+        // `seal_receipt` records that event after the lanes' D2H; a seal that failed leaves it
+        // `None` and marks the entry unknown, which the wait reads as `Quarantined`.
+        let seal = body.find("fn seal_receipt(").unwrap();
+        let seal_body = &body[seal..seal + body[seal..].find("\n    }\n").unwrap()];
+        let dtoh = seal_body
+            .find("copy.memcpy_dtoh(&scratch.lanes, &mut scratch.pinned)")
+            .unwrap();
+        let ev = seal_body
+            .find("scratch.event = Some(cuda(copy.record_event(None))?);")
+            .unwrap();
+        assert!(dtoh < ev);
+        assert!(seal_body.contains("entry.unknown = true;"));
+        // One host-wait path over recorded events: the items' and the receipt's, nothing else.
+        assert_eq!(
+            body.matches("event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;")
+                .count(),
+            2,
+            "items and receipt"
+        );
     }
 }
