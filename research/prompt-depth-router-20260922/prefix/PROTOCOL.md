@@ -85,6 +85,12 @@ including normal tokenization, prefix extraction/decoding, forecasting,
 configuration, prefill and generation. Keep model-load/warmup and receipt I/O
 outside that clock and identify the boundary.
 
+Report pooled tokens/seconds and each paired scenario gain, alongside output
+length and complete-request latency ratios. Pointwise 95% bootstrap intervals
+use 5,000 resamples of whole matched scenarios (seed 20730922). Six scenarios
+per cell and three prefix budgets are exploratory; selecting the largest gain
+among those budgets is not independent confirmation of a winning policy.
+
 Also report forecaster time against both X and full prompt length, classification
 and fallback rates, actual K engagement, output phase coverage, per-cell paired
 changes and relevant decode-cycle diagnostics. Fixed K=3 is shown for prose

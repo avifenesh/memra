@@ -26,6 +26,11 @@ def reproduce(root, runtime_archive, expected_runtime_sha, out):
         repo.mkdir()
         with tarfile.open(runtime_archive) as archive:
             archive.extractall(repo, filter="data")
+        compiled = repo / "crates/memra-engine/src/bin/prefix_study_io"
+        for local, name in ((Path(__file__).parent.parent / "router.rs", "router.rs"),
+                            (Path(__file__).with_name("prefix_policy.rs"), "prefix_policy.rs")):
+            if sha(local) != sha(compiled / name):
+                raise ValueError("replay classifier differs from the actual compiled native source")
         base = repo / "research/mtp-context-depth-20260921"
         sys.path.insert(0, str(base))
         from audit_context import audit_run as context_auditor

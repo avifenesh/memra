@@ -4,6 +4,7 @@ import argparse
 import collections
 import json
 from pathlib import Path
+import random
 import statistics
 
 from audit import save, sha
@@ -49,6 +50,22 @@ def comparisons(matched):
                 "max": max(r["routing_ns"] for r in rows) / 1000,
             },
         }
+        # Resample whole matched scenarios, preserving both policies in a pair.
+        # These are pointwise exploratory intervals, not a multiple-test gate.
+        if len(rows) >= 3 and label != "fixed3":
+            rng = random.Random(20730922)
+            gains = []
+            for _ in range(5000):
+                indices = [rng.randrange(len(rows)) for _ in rows]
+                adapted_rate = (sum(rows[i]["output_tokens"] for i in indices)
+                                / sum(rows[i]["elapsed_s"] for i in indices))
+                fixed_rate = (sum(baseline[i]["output_tokens"] for i in indices)
+                              / sum(baseline[i]["elapsed_s"] for i in indices))
+                gains.append(100 * (adapted_rate / fixed_rate - 1))
+            result["arms"][label]["paired_bootstrap_95_percent"] = [
+                quantile(gains, .025), quantile(gains, .975)]
+        else:
+            result["arms"][label]["paired_bootstrap_95_percent"] = None
     return result
 
 
