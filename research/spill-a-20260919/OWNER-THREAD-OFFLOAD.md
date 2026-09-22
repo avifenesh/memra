@@ -790,3 +790,114 @@ day-27 tree, one hold, twenty boots, 20 of 20 replays PASS, `pro-single-day27/bo
    on the owner thread under (a) and are the object of (b) at most.
 3. **The by-reference demote routes** (unchanged).
 4. **The decision cell (i)** (unchanged).
+
+## Move 1, day 28: owed item 2 landed under ruling 39, the bundle hash off the tick (`DAY28.md`)
+
+**What landed (`45f824a75`).** One long-lived `HostHashWorker` per `HostTierContext` (never a thread per demote). After the
+KV copy settles, the image's heap payloads (`HostF32::Heap`: the 98 recurrent f32 planes, the logits, the hidden row;
+157.9 MB on the 27B) are MOVED to the helper, the entry stays `Demoting` in a `Hashing` phase of `PendingDemote`, and the
+tick-top poll takes the payloads and digests back and publishes through `host_demote_publish` with the digests handed to
+`bind_tier_image`, which consumes each after a byte-count check. The program is unchanged (`checksum`, SHA-256 with the
+`valid-bytes` frame, over `f32s_as_bytes(payload)`); the KV planes' checksums stay on the owner thread. Every path that
+settles a `Demoting` entry meets `Hashing` through `host_demote_settle_with_deadline` before the contract step (tick-top
+`Poll`; the `Block` waits of a second demote, a promote, a tenant purge; a `Block` settle of the copy continues into the
+hash wait in the same call and names what it waits on). Fail-closed: `hash-helper-gone`, `hash-never-lands` (10 s wall
+deadline after the hand-off) and a reply that does not describe the image each end typed, nothing published, the tier
+latched, the helper joined; shutdown drops a pending demote typed and joins the helper. The two fault values sit on the
+existing `MEMRA_KV_HOST_FAULT` row. CPU cells: the helper's digests equal the owner thread's bitwise over a fixture image;
+the state machine's arms under `Poll` and `Block`; the forged replies; the door table; the source census.
+
+**The tick's cost, target card (the day-26 double-park cell byte-for-byte on this tree, one hold, twenty boots, N=5 per
+arm per order, both orders, 20 of 20 replays PASS; `pro-single-day28/box/`).** The demote's owner-thread `in -
+completion`: **74.8 (day 27) to 7.40 median** (N=100, min 7.17, max 45.01: the first two demotes of each boot, the pinned
+first touch); the helper hashes the 157.9 MB in 73.2 ms (73.0 to 73.4) off the tick; the take-back, bind and publish 1.08
+to 1.13 ms; the hashing polls 0.01 ms. The request's e2e `on_minus_off` **+91.3 to +16.9 / +16.9** (132.3 against 115.4,
+`isolated`; the +15.8 the token-emission reading predicted). The tenant's stall `81.8 / 81.9 against 85.2`, `-3.4 unc 0.1
+isolated`, unchanged; the tenant's second-largest gap **92.4 to 19.0** (the demote's tick is the decode plus the
+pre-submit segment); the largest 95.3 is the intruder's own prime, present in both arms (OFF 98.6). Wall `in - completion`
+74.8 to 86.5 (the publication waits for the helper and a tick top: 6 polls median); every landing a tick-top poll, no
+`Block` wait met a `Hashing` entry in this cell. `DAY28 VERDICT clauses_failed=0 -> ALL PASS`.
+
+**The finding that keeps the door's default arm red (`DAY28.md` section 5).** A hit that arrives inside the `Hashing`
+window is a miss (the day-17 rule "a `Demoting` entry is a miss", harmless while the window was one copy and one tick, now
+covers 73 ms plus a tick on this host, about 12 ms plus a tick on the 5090's). The default (spec) arm inserts at the
+boundary, so its eviction demote hands off as the request ends and the next request's admission lands in the window: on
+the target card `identity-default-on` `4 FAILURE(S)`, `failure-on` `1 FAILURE(S)` (the `digest` cell), `contract-fault`
+`23 FAILURE(S)` (the four promote cells; the demote cells' `the next demote publishes`, the boot's last hand-off cut by
+`stop`); on the 5090 `fault-default` `23 FAILURE(S)`. Every plain-arm cell, both hit gates (census equal to day 24), both
+twins, both d2d cells and both hash cells are green on both cards. On the day-26 tree the bind ran inside the tick top
+that observed the copy complete, before admission, so the window did not exist. Not tuned today.
+
+**What Move 1 still owes, in order (restated).**
+
+1. **The settle-time owner wait for an H2D** (unchanged from day 18).
+2. **The bundle hash off the tick**: LANDED as code and priced (above); its gate is red on one shape, item 2a.
+   2a. **A hit on the one `Hashing` entry's own prompt must not miss** (new, for the lead's ruling): park the request one
+   tick as the promote does, re-admitted when the digests land (recommended: nothing on the owner thread; the request's
+   e2e grows by the remainder of the hash only when it arrives inside the window), or settle the `Hashing` demote
+   synchronously at the probe (the `Block` shape, at most the hash's remainder on the tick). Same gate set, plus the fault
+   gate's demote cells awaiting the boot's last publication before `stop`. Until it lands, the day-28 code is not the
+   door's serving path.
+3. **The by-reference demote routes** (unchanged).
+4. **The decision cell (i)** (unchanged).
+
+**What Move 2 still owes (restated).** Item 1, **the recurrent f32 state off the tick**, is now the demote's whole
+remaining owner-thread cost and is priced per demote by the ledger line: the pre-submit segment (32 pinned lease
+allocations and registrations, the fence and the submission, then the 100 f32 D2H copies one `synchronize` at a time
+into pageable `Vec`s) reads about 6 ms at steady state, 39 to 45 ms on the first two demotes of a boot (first touch), 149
+to 151 ms under the verify arm (whose digest precedes it). Items 2 to 4 unchanged.
+
+## Move 1, day 29: owed item 2a landed under ruling 40, a hit on the `Hashing` entry parks one tick (`DAY29.md`)
+
+**What landed (`867655368`).** The admission probe decides, before the promote decision and with the request in hand,
+whether the request's prompt hits the one `Demoting` entry in its `Hashing` phase (`host_hashing_hit`: `hashing` is
+`Some`, the pool key, the host `lookup` rules, deeper than the device hit). A hit PARKS the request (`host_hashing_park`:
+the id recorded once on `PendingHashing.parked` with the typed line `hit parked on a Hashing entry: request <id> ...
+(ticket seq=S, N payloads, M MB on the hash helper for X ms); the request waits one tick for the digests`, re-parks
+counted silently); the caller's existing requeue arm takes it (`parked_on_promote += 1`); the parked-only bounded wait's
+guard covers a `Hashing` entry; the tick-top poll lands the digests and publishes; the re-admitted request finds the
+published entry, submits its promote and parks on the `Promoting` entry, then re-admits to the unmodified device hit
+path: one numeric program (the request generated nothing before the park). A copy-phase `Demoting` entry keeps the
+day-17 rule (a cold prime). The ledger line ends `; H hit(s) parked on the Hashing entry (R re-park(s))`; a latch with
+parked requests prints `H request(s) parked on the Hashing entry re-admit to a cold prime (the tier latched off)`. No
+new state the request owns (the orphan grace has nothing to expire), no hash and no wait on the owner thread, no flag,
+no new `MEMRA_*` name. CPU cells: the decision and its misses, once per id, the ids ride the polls and are consumed at
+publication and at the latch; the census and the parked-only wait test extended. The fault gate's demote cells wait for
+the boot's last publication before `stop` (bounded 15 s, its own check).
+
+**The gates, target card (one sitting, `pro-single-day29/box/`).** Identity x4 `KV-HOST-SPILL IDENTITY GATE: ALL GREEN
+(teeth=0)` (12 ok each; day 28's default ON `4 FAILURE(S)`), failure x2 `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (15 ok,
+the `digest` cell in; day 28's ON `1 FAILURE(S)`), `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (123 ok, ten cells; day 28
+`23 FAILURE(S)`), twin x2 `-> PASS`, hit OFF/ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 / 68 ok, the ON census
+equal to day 24's), unit 8 + 5 + 10. Local RTX 5090: identity default ON `ALL GREEN (teeth=0)`, fault default and plain
+`ALL GREEN` (123 ok each, on the fixed gate), hit OFF/ON `ALL GREEN (qwen)` with the day-24 census. Clauses 1a to 1c
+re-read on the new tree, the day-26 double-park cell byte-for-byte (twenty boots, N=5 per arm per order, both orders,
+20 of 20 replays PASS, 33 to 50 C): stall `81.7 / 81.8 against 85.4 / 85.1`, `-3.6 / -3.3 unc=0.1 isolated`; e2e
+`+16.8 / +16.9`; `owner in-completion median=7.39 min=7.20 max=45.18` (N=100); the helper 73.1 ms per 157.9 MB;
+`DAY28 VERDICT clauses_failed=0 -> ALL PASS`: unchanged from day 28 within 0.1 ms (this cell's promotes are spaced
+further than one hash; no hit fell in the window there). **The count**: 1 hit parked on a `Hashing` entry per identity
+default-ON boot on both cards (target card `35 re-park(s)` across the 73.2 ms hash at the 2 ms cadence, the 5090 `5`
+across 12.9 ms), the request arriving 0.3 to 0.4 ms after the hand-off; r3 and r4 `cached=64 lcp=64`; the `digest` cell
+1; the fault gate's four promote cells 2 each; every plain-arm, demote, d2d and hash cell 0; zero hits on a copy-phase
+`Demoting` entry. **Every arm of DAY28's clause 2 is green on both cards: the day-28 and day-29 code is integrable.**
+
+**The gate fix's two wrong shapes, in the history (`DAY29.md` section 2).** `grep -c` exits 1 on a zero count and the
+gate runs `set -euo pipefail`, so the first wait aborted the gate at its first cell (no verdict line); the second waited
+on a hand-off count that read 0 when r3 returned, because the spec-boundary insert, the eviction and the demote's
+submission land as r3 completes. The landed wait is the check's own condition, a publication after the injected
+refusal. Both caught on the local RTX 5090 before the target card's fault cell ran; no assertion moved.
+
+**What Move 1 still owes, in order (restated).**
+
+1. **The settle-time owner wait for an H2D** (unchanged from day 18).
+2. **The bundle hash off the tick**: LANDED and green on both cards (days 28 and 29). Item 2a CLOSED. One question for
+   the lead, not owed as work: a hit inside the COPY window (a `Demoting` entry with its ticket in flight, about 54 ms
+   on the target card) keeps the day-17 rule, a cold prime; zero observed in every ON boot on both cards today; if it
+   ever fires in a gate the same park would cover it with one predicate change (`hashing` optional).
+3. **The by-reference demote routes** (unchanged).
+4. **The decision cell (i)** (unchanged).
+
+**What Move 2 still owes (restated).** Item 1, **the recurrent f32 state off the tick**: the pre-submit segment is the
+demote's whole remaining owner-thread cost, priced per demote by the ledger line: about 6 ms at steady state (today's
+`owner in-completion` median 7.39), 40 to 45 ms on the first two demotes of a boot (first touch), 149 to 152 ms under
+the verify arm (the identity gate's `pre-submit 148.52` today). Items 2 to 4 unchanged.

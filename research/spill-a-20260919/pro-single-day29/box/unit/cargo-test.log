@@ -1,0 +1,19 @@
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/root/wt-a/crates/memra-server)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 41s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-e53347545693156a)
+
+running 8 tests
+test worker::tests::option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on ... ok
+test worker::tests::option_c_first_ready_view_failure_unwinds_through_the_published_arm ... ok
+test worker::tests::option_c_partial_acceptance_unwinds_refused_with_every_destination_released ... ok
+test worker::tests::option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 832 filtered out; finished in 0.28s
+
