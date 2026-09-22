@@ -359,6 +359,34 @@ after receipt cannot exist for this shape (the set arm did not change), and the 
 2,052 MB budget at 65,536 doing what it was sized to do; a local unset boot (262,144, budget 7.89 GB on a 24 GB card)
 was not run, section 1.1.
 
+### 3.2 Local park cell (`rtx5090-day27/park-*`, `MEMRA_CTX=65536`, 9B, spec path, default vs `MEMRA_KV_PARK_COMPACT=1`, both orders)
+
+Four runs, one server boot each under `flock` on the canonical lock, `*.exit` 0, 46 requests each, `non-200=0`,
+`compute-apps` empty after every run; regime (before / after): `park-o1-default` `50 C, 13.20 W` / `75 C, 30.55 W`;
+`park-o1-compact` `74 C, 25.60 W` / `75 C, 26.39 W`; `park-o2-compact` `68 C, 11.15 W` / `75 C, 25.19 W`;
+`park-o2-default` `69 C, 11.31 W` / `75 C, 30.23 W` (`power.limit [N/A]`); 2,756 to 2,902 samples each. The summary
+block reads the same in all four, verbatim:
+
+```text
+idle driver free before the first request=16029908992 last sample=8580825088 retained_by_process=7449083904
+pool used after warmup=8541290852 last=13121243464 delta=4579952612; pool reserved last=16240345088 cached last=3119101624
+continuation_pool_entries=0 continuation_pool_hits=0 spec_pool_entries=2 spec_pool_hits=0 spec_pool_evictions=43
+prefix_cache_hits=0 prefix_cache_inserts=60 prefix_cache_evictions=45
+park-compact lines: 0
+affinity lines: spec-affinity: declined=45
+```
+
+`cached=[0, 0, 0, 0, 0]` on every (iii) row in every run (the 2,052 MB budget at 65,536, as day 26). Digests
+(`day27-compare.py`): order 1 `default` against `compact` `tags=45 digest_equal=45 digest_differs=0 missing=0
+rows_with_both_digests=45 ... P_G_chars_equal=44`; order 2 `compact` against `default` the same; across boots
+`park-o1-default` against `park-o2-default` and `park-o1-compact` against `park-o2-compact` each `digest_equal=45`. The
+one `P_G_chars` difference in every pair is `iii-L2-r3`, the 90 s deadline cut of the runaway generation (G 18,262 /
+17,747 / 17,067 / 17,848 across the four runs, `finish_reason` `error`, empty `content`, digest equal), a clock fact
+recorded on day 26 as well. Reading: the same as the target card's (2.5), on the second card class: the door writes
+nothing on the spec path, retained bytes at idle are identical in both arms (7,449,083,904 B: two parked spec sessions
+at `65,536 x 16,704 = 1,094,713,344 B` each, the 2.0 GB of prefix entries, the pool's cached 3.1 GB), both pools hit
+nothing, every completion byte-identical across arms and boots. Executed, not qualified.
+
 ## 4. Checks actually run
 
 | Check | Result |
@@ -370,7 +398,7 @@ was not run, section 1.1.
 | `cargo fmt --all -- --check` | PASS |
 | `python3 -m py_compile` on the client, parser and comparator; `bash -n` on the drivers | OK |
 | Target-card cells through the collector (`cell-after-ab`, `cell-park-*` x4, `cell-plain-*` x4) | `status executed-not-qualified`, `qualification false`, `exit_code 0` in all nine; 45 of 45 requests 200 in each |
-| Local cells under `flock /tmp/memra-5090.lock` | see section 3 |
+| Local cells under `flock /tmp/memra-5090.lock` (`after-ab` rerun, `park-*` x4) | `*.exit` 0 in all five; 45 of 45 requests 200 in each; the first `after-ab` attempt `lock not acquired within 3600 s; cell not run` kept as `after-ab-attempt1-lockbound/` |
 | Full GPU exactness battery (`kernel-check`, `run-gen`, `run-spec`) | NOT RUN (the change moves a byte budget, no kernel or numeric program; nothing is qualified today) |
 | `git diff --check`, `tools/check-flags.sh`, `tools/check-conflict-markers.sh`, `python3 tools/check-public-boundary.py check` | `PASS`; `check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)`; `check-conflict-markers: OK`; `public-boundary: 582 matches (582 grandfathered, 0 new)` |
 | pre-push hook | one refusal on the first push of the fix: `docs/FLAGS.md:1433: 5 cells` (two unescaped pipes in my new row text), fixed by rewording; every push afterwards `UNQUALIFIED DEVELOPMENT ... no GPU qualification claimed`, logged |
