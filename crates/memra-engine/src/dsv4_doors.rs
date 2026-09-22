@@ -290,7 +290,7 @@ pub const TUNED_BENCH_PROGRAM: Dsv4Program = Dsv4Program {
 ///
 /// The scalar reference expert executor survives, and only here. It is the arm
 /// every CLASS row compares against (`dsv4_moe_program_class_gate`,
-/// `dsv4_program_accuracy`), so it must stay reachable, and it must be
+/// `dsv4_task_accuracy`), so it must stay reachable, and it must be
 /// unreachable from a serving process, because a request that silently took the
 /// slower numeric class is exactly the incident #461 was opened about. So it has
 /// no environment variable: a gate binary calls this before `Dsv4Gpu::load`, and
