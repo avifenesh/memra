@@ -208,8 +208,15 @@ boot() { # $1 extra-env-string  $2 log
 }
 stop() {
     # kill the SERVER, not the flock wrapper (the spec-cache-gate.sh lesson: killing the
-    # wrapper orphans the server and the next boot silently reuses it on the same port).
-    pkill -x memra-server 2>/dev/null || true
+    # wrapper orphans the server and the next boot silently reuses it on the same port), and
+    # ONLY THIS GATE'S server: the child of its own flock wrapper (`flock` forks, the child execs
+    # `env` which execs the binary, so the server's parent pid is $SERVER_PID). Until day 27 this
+    # was a blanket `pkill -x memra-server`, and the EXIT trap runs it after the last boot's flock
+    # has been released, so on a shared rig it could kill a server another lane had just booted
+    # under the lock (C day 27, research/spill-c-20260919/DAY27.md). With no boot of ours
+    # outstanding there is nothing to stop.
+    [ -n "$SERVER_PID" ] || return 0
+    pkill -x -P "$SERVER_PID" memra-server 2>/dev/null || true
     for _ in $(seq 1 30); do
         curl -s --max-time 1 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1 || {
             SERVER_PID=""
@@ -218,7 +225,7 @@ stop() {
         }
         sleep 1
     done
-    pkill -9 -x memra-server 2>/dev/null || true
+    pkill -9 -x -P "$SERVER_PID" memra-server 2>/dev/null || true
     SERVER_PID=""
     sleep 3
 }
