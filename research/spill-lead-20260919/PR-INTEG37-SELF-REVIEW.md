@@ -37,5 +37,10 @@ Author's review of the full diff `main..lane/spill-integ37-20260922`, posted as 
   engine CPU lib tests, tier tests, engine, server and tier clippy `-D warnings`, marker census, workflow keys, perf
   board, diff-check) and the local 5090 serve-smoke if the lock frees within the window (stated either way).
 
+## Lane C day 25 folded in
+- The fixed fault gate live: ALL GREEN on both cards and both arms with the accounting lines; identity ALL GREEN over
+  the retire-seam settle; the settle's cost cell `HOLDS` (deltas 0.1 to 0.7 ms against a 3.0 ms bound, the seam
+  exercised 10 of 10). C's day-25 changes are receipts, drivers and docs.
+
 ## What I did not do
 - No GPU cell of my own beyond the smoke; the door stays OFF; the 5090 door gates on this tree are owed (C's next day).

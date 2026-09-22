@@ -1650,6 +1650,27 @@ rows' D2D share is under resolution; `server_restore_ms` 14.5 is the tick period
 by Move 2: slice 3 (the receipt term with the `d2d-delay` fault; A day 22, running), the f32 state off the tick, the
 spec-boundary capture route and the draft-bearing restore, an isolating stall cell; the 5090 door gates on this tree.
 
+**C day 25 (tip `8c96ca6b5`, merged into integ37).** The fixed fault gate live, door ON, verbatim on both cards, both
+arms, 67 ok each, 0 FAIL: local RTX 5090 (9B) fault-default `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` with `receipt seq=1
+expected 1 + 0 capture ticket(s) submitted before it = 1` and `receipt seq=2 expected 2 + 0 ... = 2`; fault-plain `ALL
+GREEN` with `receipt seq=3 expected 1 + 2 capture ticket(s) submitted before it = 3` and `receipt seq=4 expected 2 + 2 ...
+= 4`; target card (27B) the identical four accounting lines and `ALL GREEN` both arms; identity on the target card over
+the retire-seam settle: all four arms `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`. The retire-seam settle's cost,
+pre-registered before the run, two arms per boot (`plain`; `coincide`, a victim stream aborted right after the intruder
+is posted so another session retires in the seed's iteration), OFF/ON/ON/OFF, N=5 per arm per order, both orders, 37
+to 58 C, 32.6 to 503.1 W, replay PASS x8, verbatim: `DAY25 RETIRE VERDICT: admissible=True plain-R1-pass1=within_bound
+plain-R2-pass1=within_bound plain-R3-pass1=within_bound plain-R1-pass2=within_bound plain-R2-pass2=within_bound
+plain-R3-pass2=within_bound coincide-R1-pass1=within_bound coincide-R2-pass1=within_bound coincide-R3-pass1=within_bound
+coincide-R1-pass2=within_bound coincide-R2-pass2=within_bound coincide-R3-pass2=within_bound seam-pass1=exercised
+seam-pass2=exercised -> HOLDS (R1, R2, R3 within 3.0 ms in both arms and both passes; the seam exercised in both
+passes)`; every ON minus OFF delta 0.1 to 0.7 ms; `settled synchronously by a session retire` 10 of 10 in both ON boots.
+A first attempt failed at the harness's prompt calibration (kept as a labelled failure, fixed, rerun; no rule moved).
+
+Battery (`integration-day12/integ37-cpu-battery/`, tree `83f9be5e5`, CPUQuota 1200 percent): fmt, portable suites,
+memra-server suite, clippy, censuses, collector pytest, engine CPU lib tests, tier tests, engine, server and tier clippy
+`-D warnings`, marker census, workflow keys, perf board: rc=0; `git diff --check` tripped on receipt logs (marked
+`-whitespace`). Local 5090 `tools/serve-smoke.sh` (door OFF): `serve-smoke: 0 failed`.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
