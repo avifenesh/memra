@@ -1436,6 +1436,47 @@ suites, memra-server suite, clippy, censuses, collector pytest, engine CPU lib t
 clippy `-D warnings`, marker census, workflow keys, perf board: rc=0; `git diff --check` tripped on A's cargo receipt logs
 (blank line at EOF, marked `-whitespace`). Local 5090 `tools/serve-smoke.sh` (door OFF): `serve-smoke: 0 failed`.
 
+## integ35 (`lane/spill-integ35-20260922`): B day 29, the 5090 twin gate's `V3=FAIL` classified; the door gates on the 5090
+Lane tip merged: B `184edb5bd` on main `226abab0e` (#632), clean. The only non-research change is
+`tools/prefix-newest-turn-fits-gate.py`.
+
+**The `V3=FAIL`, reproduced three times, gate unchanged, door OFF, verbatim (identical):** `PREFIX-NEWEST-TURN-FITS:
+budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=1
+cohort_evictions=1 self_evictions=0 refused_or_skipped=0 effective_free_ok=2/8 identity_ok=8/8 grid_ok=21/21 grid=32
+off_grid_calls=0 V1=ok V2=ok V3=FAIL V4=ok V5=ok V6=ok -> FAIL`, A's day-18 table to the byte, with a 1390 MiB
+co-tenant (another session's python, never touched) on the card on every 1 Hz sample of all three runs. Named cause:
+`410352980 = 3272 x 29696 + 313187668`, one parked plain session of the cohort's last shape (`ctx_cap 3272`, the
+admission line's `313MB fixed`); the cache-on boot's turn-2 `[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 1
+plain ...; effective free 3744MB -> 4651MB` released it while the cache-off boot kept its counterpart until its own
+turn-3 reclaim took a different one: `required` is about 4830 MB, day 17 had 5207 MB effective free at that admission,
+day 18 3744 MB (the co-tenant's 1.46 GB less, and the cache-on boot carries 0.93 GB of cache), so the two boots crossed
+the floor on different turns. V3's premise (equal retained parked-session state in both boots) failed, not the
+accounting (every settle line balances); not a door delta; the day-27 budget change is not involved (the gate sets
+`MEMRA_PREFIX_CACHE_MB=1024` and `MEMRA_CTX=16384` itself). The clean-card run arrived when the co-tenant left
+mid-battery: `evictions=9 ... -> PASS`, day 17's values to the byte.
+
+**What changed, gate only:** V3's clause, form and 64 MiB slack unchanged; when the two boots' `reclaim-on-defer`
+parked-session releases differ on any window the gate refuses with `REFUSED: V3 premise: ...` (exit 2) naming the
+windows, the releases per boot, the budget and the card at each boot (driver free and compute-apps now sampled into the
+receipts), keeping the would-be line in `summary.json` as `verdict_under_broken_premise`. CPU test `test-day29.py` 13 ok
+(rerun in this battery). Red arm on the card under one collector hold with a self-owned 1390 MiB `cudaMalloc` child:
+`REFUSED: V3 premise: ... 6 window(s) (turn 2: calibration released plain/spec/dspark 0/0/0, measured 1/0/0; ...)`, exit
+2. Ruling 31: a gate whose verdict depends on a premise about the card's state names the premise, samples the card into
+its receipt, and refuses typed when the premise fails; it never prints a FAIL that a co-tenant produced.
+
+**The 5090 door gates on `1dce64df0`, both arms, verbatim:** `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` default
+OFF (the arm A never got), default ON, plain OFF, plain ON (12 ok each); `KV-HOST-SPILL FAILURE GATE: ALL GREEN` OFF
+and ON (15 ok); `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (65 ok); `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` OFF and ON
+(61 ok); unit cells `8 passed`; 9B twin `REFUSED: cohort promotion did not happen for 2800 tokens ...` both arms (A's
+day-17 shape fact); 27B twin `... evictions=9 cohort_evictions=3 ... effective_free_ok=8/8 ... V3=ok ... -> PASS` both
+arms on a clean card. Target card, 27B twin `-> PASS` both arms on the patched gate, premise rows equal. Lead reading:
+the door's correctness table is now green on both cards for every arm, including the one arm the 5090 lacked.
+
+Battery (`integration-day12/integ35-cpu-battery/`, docs and tool): the gate's `py_compile` and `--help`, B's
+`test-day29.py` (`OK`), flags census, marker census, public-boundary `check` (0 new), perf board, workflow keys, em-dash
+scan: rc=0; `git diff --check` tripped on a raw cargo receipt log's blank line at EOF (marked `-whitespace`). No engine
+change, no smoke.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
