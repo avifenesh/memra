@@ -2089,6 +2089,17 @@ the recorded price, and Move 2 owed item 3 closes on this receipt. Lead review o
 fields on `PendingCapture`, timed around the settle, printed on the publish line, no parser splits inside the
 parenthesis): no finding.
 
+**Battery (tree `e14c270a6`, receipts `integ41-cpu-battery/`, `integ41-serve-smoke-5090/`, `integ41-hit-gate-5090/`).**
+Fourteen CPU steps rc=0; `git diff --check origin/main HEAD` rc=2 on the battery's own receipt directory only (its
+summary and logs, given the usual `-whitespace` attributes at commit; the tracked tree is clean, re-checked after the
+commit). Local RTX 5090: `serve-smoke: 0 failed` (gemma4 and Q35 arms SKIP, absent models), engine `d2d_*` GPU cells `5
+passed` under the lock, the hit gate OFF and ON armed (9B), verbatim: `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 61 ok
+OFF, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 68 ok ON, `ok: door arm: 30 route submission(s) across the two boots`, 11
+spec-boundary captures, 12 capture receipts `require=ok`, 13 restores, zero refused, disabled, trunk-only, dropped or
+skipped lines. A's new typed clause on this card: 12 publish lines carry `the settle held the owner thread`, `held_ms N=12
+min=0.42 median=0.55 max=2.63` (11 `settled synchronously by a session retire`, 14 `tick-top poll` lines across both
+boots); this card's own figure, beside the target card's 0.41 median, never compared.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
