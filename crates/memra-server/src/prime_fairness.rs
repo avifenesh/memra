@@ -3,7 +3,7 @@
 //! grants ready decode peers a recovery interval across ordinary worker ticks;
 //! arrivals and cancellation are still drained at every tick.
 
-use memra_engine::prime_walker::PrimeProgress;
+use memra_engine::prime_walker::{PrimeProgress, PrimeYieldMode};
 use std::time::{Duration, Instant};
 
 /// Structural route support. A bounded route still needs source/model/topology
@@ -15,12 +15,40 @@ pub enum PrimeRoute {
 }
 
 impl PrimeRoute {
-    pub fn require_cooperative(self, enabled: bool) -> Result<(), String> {
-        if enabled && let Self::Unsupported(reason) = self {
-            Err(format!("MEMRA_PRIME_YIELD=1 unsupported: {reason}"))
+    pub fn scheduler(batching: bool) -> Self {
+        if batching {
+            Self::TickBounded
         } else {
-            Ok(())
+            Self::Unsupported(
+                "the legacy scheduler has no saved plain-prime adapter; requires MEMRA_SERVE_BATCH=1",
+            )
         }
+    }
+
+    pub fn mtp(batching: bool, walker_supported: bool) -> Self {
+        if !batching {
+            Self::scheduler(false)
+        } else if walker_supported {
+            Self::SavedWalker
+        } else {
+            Self::Unsupported("selected MTP plan/topology has no saved prime walker")
+        }
+    }
+
+    /// Default ON applies where the selected route has a worker boundary.
+    /// Unsupported routes retain their existing program unless ON was explicit.
+    pub fn cooperative_enabled(self, mode: PrimeYieldMode) -> Result<bool, String> {
+        match self {
+            Self::Unsupported(reason) if mode == PrimeYieldMode::ExplicitOn => {
+                Err(format!("MEMRA_PRIME_YIELD=1 unsupported: {reason}"))
+            }
+            Self::Unsupported(_) => Ok(false),
+            Self::SavedWalker | Self::TickBounded => Ok(mode.enabled()),
+        }
+    }
+
+    pub fn require_cooperative(self, mode: PrimeYieldMode) -> Result<(), String> {
+        self.cooperative_enabled(mode).map(|_| ())
     }
 }
 
@@ -132,6 +160,18 @@ impl Default for PrimePolicy {
 }
 
 impl PrimePolicy {
+    pub fn for_scheduler(
+        batching: bool,
+        mode: PrimeYieldMode,
+        slo_ms: f32,
+    ) -> Result<Self, String> {
+        if PrimeRoute::scheduler(batching).cooperative_enabled(mode)? {
+            Self::from_slo_ms(slo_ms).map_err(str::to_owned)
+        } else {
+            Ok(Self::default())
+        }
+    }
+
     pub fn from_slo_ms(ms: f32) -> Result<Self, &'static str> {
         let goal = Duration::try_from_secs_f64(f64::from(ms) / 1000.0)
             .map_err(|_| "cooperative prefill requires a finite positive MEMRA_SLO_P99_MS")?;
@@ -345,14 +385,154 @@ mod tests {
 
     #[test]
     fn unsupported_policy_refuses_without_disabling_the_existing_serial_route() {
-        assert!(PrimeRoute::SavedWalker.require_cooperative(true).is_ok());
-        assert!(PrimeRoute::TickBounded.require_cooperative(true).is_ok());
+        for mode in [
+            PrimeYieldMode::ImplicitOn,
+            PrimeYieldMode::ExplicitOn,
+            PrimeYieldMode::Off,
+        ] {
+            assert_eq!(
+                PrimeRoute::SavedWalker.cooperative_enabled(mode).unwrap(),
+                mode.enabled()
+            );
+            assert_eq!(
+                PrimeRoute::TickBounded.cooperative_enabled(mode).unwrap(),
+                mode.enabled()
+            );
+        }
         let route = || PrimeRoute::Unsupported("serial request loop has no worker return boundary");
         assert_eq!(
-            route().require_cooperative(true).unwrap_err(),
+            route()
+                .require_cooperative(PrimeYieldMode::ExplicitOn)
+                .unwrap_err(),
             "MEMRA_PRIME_YIELD=1 unsupported: serial request loop has no worker return boundary"
         );
-        assert!(route().require_cooperative(false).is_ok());
+        assert!(
+            !route()
+                .cooperative_enabled(PrimeYieldMode::ImplicitOn)
+                .unwrap()
+        );
+        assert!(!route().cooperative_enabled(PrimeYieldMode::Off).unwrap());
+    }
+
+    #[test]
+    fn legacy_implicit_and_off_skip_cooperative_slo_validation() {
+        for goal in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            assert!(PrimePolicy::for_scheduler(false, PrimeYieldMode::ImplicitOn, goal).is_ok());
+            assert!(PrimePolicy::for_scheduler(false, PrimeYieldMode::Off, goal).is_ok());
+            assert!(PrimePolicy::for_scheduler(true, PrimeYieldMode::Off, goal).is_ok());
+            assert!(PrimePolicy::for_scheduler(true, PrimeYieldMode::ImplicitOn, goal).is_err());
+        }
+        assert!(PrimePolicy::for_scheduler(false, PrimeYieldMode::ExplicitOn, 50.0).is_err());
+        assert!(PrimePolicy::for_scheduler(true, PrimeYieldMode::ExplicitOn, 50.0).is_ok());
+        assert!(PrimePolicy::for_scheduler(true, PrimeYieldMode::ImplicitOn, 50.0).is_ok());
+    }
+
+    #[test]
+    fn mtp_selection_requires_both_scheduler_and_walker_capability() {
+        for batching in [false, true] {
+            for supported in [false, true] {
+                let route = || PrimeRoute::mtp(batching, supported);
+                assert_eq!(
+                    route()
+                        .cooperative_enabled(PrimeYieldMode::ImplicitOn)
+                        .unwrap(),
+                    batching && supported
+                );
+                assert!(!route().cooperative_enabled(PrimeYieldMode::Off).unwrap());
+                match route().cooperative_enabled(PrimeYieldMode::ExplicitOn) {
+                    Ok(enabled) => assert!(enabled && batching && supported),
+                    Err(_) => assert!(!batching || !supported),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn environment_mode_preserves_route_defaults() {
+        const CASE: &str = "PRIME_POLICY_TEST_CASE";
+        if let Ok(case) = std::env::var(CASE) {
+            let expected = match case.as_str() {
+                "unset" => PrimeYieldMode::ImplicitOn,
+                "on" => PrimeYieldMode::ExplicitOn,
+                "off" => PrimeYieldMode::Off,
+                _ => panic!("unexpected test case"),
+            };
+            let actual = memra_engine::prime_walker::prime_yield_mode();
+            assert_eq!(actual, expected);
+            assert_eq!(
+                memra_engine::prime_walker::prime_yield_enabled(),
+                expected.enabled()
+            );
+            assert_eq!(
+                PrimeRoute::SavedWalker.cooperative_enabled(actual).unwrap(),
+                expected.enabled()
+            );
+            assert_eq!(
+                PrimeRoute::Unsupported("serial route")
+                    .require_cooperative(actual)
+                    .is_err(),
+                expected == PrimeYieldMode::ExplicitOn
+            );
+            let legacy = PrimeRoute::mtp(false, true).cooperative_enabled(actual);
+            if expected == PrimeYieldMode::ExplicitOn {
+                assert!(legacy.is_err());
+            } else {
+                assert!(!legacy.unwrap());
+            }
+            return;
+        }
+        // Separate processes exercise the actual environment read without mutating
+        // process-global environment or the OnceLock under parallel Rust tests.
+        for (case, value) in [("unset", None), ("on", Some("1")), ("off", Some("0"))] {
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command.args([
+                "--exact",
+                "prime_fairness::tests::environment_mode_preserves_route_defaults",
+            ]);
+            command.env(CASE, case).env_remove("MEMRA_PRIME_YIELD");
+            if let Some(value) = value {
+                command.env("MEMRA_PRIME_YIELD", value);
+            }
+            let output = command.output().unwrap();
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains("test result: ok. 1 passed;"),
+                "{case}: subprocess must execute exactly the requested test"
+            );
+            assert!(
+                output.status.success(),
+                "{case}: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    #[test]
+    fn serving_guards_use_request_mode_and_legacy_mtp_uses_route_policy() {
+        let source = include_str!("worker.rs");
+        let production = source.split("#[cfg(test)]\nmod tests").next().unwrap();
+        assert_eq!(
+            production
+                .matches(".require_cooperative(memra_engine::prime_walker::prime_yield_mode())")
+                .count(),
+            3
+        );
+        assert!(
+            !production.contains(
+                ".require_cooperative(memra_engine::prime_walker::prime_yield_enabled())"
+            )
+        );
+        assert!(production.contains("PrimePolicy::for_scheduler(\n        serve_batching(),\n        memra_engine::prime_walker::prime_yield_mode(),"));
+        assert!(production.contains("PrimeRoute::mtp(\n                serve_batching(),\n                lm.model.mtp_prime_walk_supported(),"));
+        let dsv4 = include_str!("dsv4_serve.rs");
+        assert!(
+            dsv4.contains(".require_cooperative(memra_engine::prime_walker::prime_yield_mode())?;")
+        );
+        assert!(
+            !dsv4.contains(
+                ".require_cooperative(memra_engine::prime_walker::prime_yield_enabled())"
+            )
+        );
     }
 
     #[test]

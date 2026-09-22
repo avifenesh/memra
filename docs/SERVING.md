@@ -312,7 +312,7 @@ concurrency slot while cold prefill remains, the scheduler also uses the short
 `MEMRA_PRIME_BATCH_HOLD_MS` window as a refill grace. That lets a not-yet-admitted replacement
 cross the HTTP/channel boundary before the worker can enter the next cold prime call. The fence
 ends after the hit's first token, and cold-only traffic retains dense continuation batching.
-With `MEMRA_PRIME_YIELD=1`, this preference yields an ordinary prefill phase after
+With cooperative prefill enabled on an eligible route, this preference yields an ordinary prefill phase after
 at most the configured `MEMRA_SLO_P99_MS` interval of preference, so an endless
 stream of cached arrivals cannot keep an admitted prime waiting indefinitely.
 Saved primes also share service using their measured chunk cost. These local
@@ -2552,7 +2552,10 @@ the rollback seam. The quantum is `MEMRA_PRIME_CHUNK` (4096 default; 1024 halves
 again at the long prime's expense). What this covers: the GDN MTP prime (`[prime-walk]
 supported=true` at boot), DFlash, GLM plain and spec. The serial plain-trunk prime is bounded per
 tick by `MEMRA_PREFILL_TICK` (1024) except the sole-request widening to 8192; E4B and dsv4 still
-prime monolithically and belong to memra#535 P3/P4. The serving-shape gate is
+prime monolithically and belong to memra#535 P3/P4. An implicit setting retains the existing
+program on unsupported routes; explicitly enabling the feature refuses those routes. The legacy
+scheduler keeps its shared `step_session` path and does not select a cooperative MTP walker.
+The serving-shape gate is
 `tools/prime-fairness-gate.py` (one 131k-token cold prime beside three peers, both arms, bytes identical,
 peers' first token bounded, `/health` `tick_max_ms` bounded); receipts and the 2026-09-05 incident
 shape are in `research/prime-fairness-default-20260922/` and `research/prefill-fairness-20260908/`.

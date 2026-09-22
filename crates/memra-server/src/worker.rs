@@ -20792,22 +20792,16 @@ pub fn run(
     tokenizer_snapshots: &tokenizers::TokenizerSnapshots,
 ) {
     let policy = crate::lanes::LanePolicy::from_env();
-    let mut prime_policy = if memra_engine::prime_walker::prime_yield_enabled() {
-        if !serve_batching() {
-            let _ = ready_tx.send(Err(
-                "cooperative prefill requires MEMRA_SERVE_BATCH=1; the legacy scheduler has no saved plain-prime adapter".into(),
-            ));
+    let mut prime_policy = match crate::prime_fairness::PrimePolicy::for_scheduler(
+        serve_batching(),
+        memra_engine::prime_walker::prime_yield_mode(),
+        policy.slo_p99_ms,
+    ) {
+        Ok(policy) => policy,
+        Err(why) => {
+            let _ = ready_tx.send(Err(why));
             return;
         }
-        match crate::prime_fairness::PrimePolicy::from_slo_ms(policy.slo_p99_ms) {
-            Ok(policy) => policy,
-            Err(why) => {
-                let _ = ready_tx.send(Err(why.into()));
-                return;
-            }
-        }
-    } else {
-        crate::prime_fairness::PrimePolicy::default()
     };
     // ---- one-time init on the worker thread: Engine + all models resident ----
     //
@@ -31649,7 +31643,7 @@ fn prefill_tick(
         crate::prime_fairness::PrimeRoute::Unsupported(
             "vision/capture request shape is outside the cooperative text-prefill policy",
         )
-        .require_cooperative(memra_engine::prime_walker::prime_yield_enabled())?;
+        .require_cooperative(memra_engine::prime_walker::prime_yield_mode())?;
     }
     if let Some(trace) = s.ttft.as_ref() {
         trace.mark_prime_start();
@@ -31784,7 +31778,7 @@ fn prefill_tick(
                 "selected plain prime consumes the whole prompt without a saved walker",
             )
         };
-        cooperative_route.require_cooperative(memra_engine::prime_walker::prime_yield_enabled())?;
+        cooperative_route.require_cooperative(memra_engine::prime_walker::prime_yield_mode())?;
         let take = s.glm5_plain_prime.as_ref().map_or_else(
             || prefill_tick_take(q, budget, eager_mono, bound_rem),
             |state| state.tokens_len(),
@@ -32921,14 +32915,17 @@ fn step_session(
         // return a cache-authoritative surplus token past this target; expose it when the request
         // still has room so worker generated/sampler/fed state stays aligned with SpecSession.
         let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
-        if !s.prefill_queue.is_empty() && !lm.model.mtp_prime_walk_supported() {
-            crate::prime_fairness::PrimeRoute::Unsupported(
-                "selected MTP plan/topology has no saved prime walker",
+        // The legacy worker also calls step_session, but has no cooperative
+        // adapter contract. Default ON must not select a saved MTP walk there.
+        let cooperative_prime = if s.prefill_queue.is_empty() {
+            false // Continuation/decode requests no prime feature.
+        } else {
+            crate::prime_fairness::PrimeRoute::mtp(
+                serve_batching(),
+                lm.model.mtp_prime_walk_supported(),
             )
-            .require_cooperative(memra_engine::prime_walker::prime_yield_enabled())?;
-        }
-        let cooperative_prime = memra_engine::prime_walker::prime_yield_enabled()
-            && lm.model.mtp_prime_walk_supported();
+            .cooperative_enabled(memra_engine::prime_walker::prime_yield_mode())?
+        };
         let suffix: Vec<u32> = if cooperative_prime {
             s.prefill_queue.iter().copied().collect()
         } else {
@@ -33606,7 +33603,7 @@ fn step_gemma_spec(
             crate::prime_fairness::PrimeRoute::Unsupported(
                 "Gemma speculative prime has no saved worker adapter",
             )
-            .require_cooperative(memra_engine::prime_walker::prime_yield_enabled())?;
+            .require_cooperative(memra_engine::prime_walker::prime_yield_mode())?;
         }
         let queued: Vec<u32> = s.prefill_queue.drain(..).collect();
         if queued.is_empty() {

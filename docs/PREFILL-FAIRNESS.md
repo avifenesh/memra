@@ -1,7 +1,9 @@
 # Cooperative prefill qualification
 
-Issue #521 owns scheduling between existing numerical chunks. `MEMRA_PRIME_YIELD`
-remains default OFF while the current source, model and topology are qualified.
+Issue #521 owns scheduling between existing numerical chunks. Main's
+`MEMRA_PRIME_YIELD` default is ON for eligible routes; `0` disables it. An unset
+setting retains the existing program on routes without a cooperative boundary.
+An explicitly enabled request still refuses those unsupported feature routes.
 Historical September 8–11 receipts describe their own binaries and policies; they
 do not qualify this controller or establish current PRO 6000 latency.
 
@@ -29,23 +31,26 @@ S is a local service-sharing interval, not a promised ITL or TTFT percentile. A
 frozen chunk is unpreemptible and can exceed S. The native gate must report its
 actual cost, peer gaps, completion counts and long-prime progress. A zero,
 negative, nonfinite or unrepresentable S refuses cooperative worker startup.
-With `MEMRA_PRIME_YIELD` unset or `0`, these controls are disabled and the prior
-scheduler behavior is retained, including the existing interpretation of S by
-the separate lane admission policy.
+With `MEMRA_PRIME_YIELD=0`, these controls are disabled. An implicit setting on
+the legacy scheduler also skips cooperative SLO validation and keeps its shared
+`step_session` path, including the separate lane admission policy's existing
+interpretation of S. The legacy path cannot select a cooperative MTP walker;
+that selection requires both the batching scheduler and the existing model
+walker capability. Eligible routes remain enabled when the setting is unset.
 
 ## Structural route audit at 435a57a7
 
 | Selected request route | Existing worker boundary | Current scope |
 | --- | --- | --- |
-| GDN MTP compatible plan, MTP attached, no hyper state, no PP cuts | `MtpPrimeWalker`, frozen trunk and draft-fill tape | Native qualification pending; unsupported MTP plans/topologies refuse cooperative prime |
+| GDN MTP compatible plan, MTP attached, no hyper state, no PP cuts | `MtpPrimeWalker`, frozen trunk and draft-fill tape | Native qualification pending; unsupported MTP plans/topologies refuse an explicitly enabled cooperative request |
 | DFlash cold or resumed | `DsparkPrimeWalker`, saved taps and 256-row ingestion carry | Native qualification pending; admission/session-cap wait must be measured separately |
 | GLM plain text | `Glm5PlainPrimeWalker`, saved trunk and owned cache | Native qualification pending per actual mixer and topology |
 | GLM native MTP or DFlash spec | `Glm5PrimeWalker`, trunk/draft preparation and final anchor | Native qualification pending per actual route and topology |
-| Generic or qualified Gemma plain chunked prime | Existing `prefill_tick` token budget and carried state | No new numerical partition; whole-prompt nonwalker branch refuses cooperative prime |
-| Gemma assistant speculative prime | Synchronous constructor | Cooperative prime refuses; no claim that internal chunks yield to the worker |
-| Vision/capture request shapes | Setup/capture outside the text walker contract | Cooperative request refuses; serial behavior remains available with the policy off |
-| DSv4 serial serving worker | Internal chunk loops, no peer request scheduling boundary | Cooperative policy refuses at load |
-| Legacy `MEMRA_SERVE_BATCH=0` scheduler | No saved plain-prime service loop | Cooperative worker startup refuses |
+| Generic or qualified Gemma plain chunked prime | Existing `prefill_tick` token budget and carried state | No new numerical partition; whole-prompt nonwalker branch refuses explicit ON and keeps its existing program when implicit |
+| Gemma assistant speculative prime | Synchronous constructor | Explicit ON refuses; implicit keeps the constructor, without claiming internal chunks yield to the worker |
+| Vision/capture request shapes | Setup/capture outside the text walker contract | Explicit ON refuses; implicit and OFF retain the existing program |
+| DSv4 serial serving worker | Internal chunk loops, no peer request scheduling boundary | Explicit ON refuses at load; implicit and OFF retain serial serving |
+| Legacy `MEMRA_SERVE_BATCH=0` scheduler | No saved plain-prime service loop | Explicit ON refuses at startup; implicit and OFF retain the legacy path |
 
 This is a capability audit, not a native support promotion. No route or hardware
 default is selected from CPU fixtures. PP/TP and all supported mixer shapes must
@@ -90,5 +95,6 @@ On a parent-allocated PRO 6000 physical-card lease, the serving gate must includ
   performance decisions require balanced interleaved A/B in both orders, N>=5.
 
 The 5090 compatibility follow-up cannot alter unrelated serving or replace the
-blocking PRO 6000 evidence. Native execution and defaults await source review and
-the coordinator's physical-card allocation.
+blocking PRO 6000 evidence. Fresh qualification of the changed source awaits
+source review and the coordinator's physical-card allocation; carrying main's
+existing default is not a new performance or native qualification result.

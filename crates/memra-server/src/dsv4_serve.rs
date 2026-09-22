@@ -527,7 +527,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     crate::prime_fairness::PrimeRoute::Unsupported(
         "DSv4 serves through a serial request loop; internal chunking does not yield to peer requests",
     )
-    .require_cooperative(memra_engine::prime_walker::prime_yield_enabled())?;
+    .require_cooperative(memra_engine::prime_walker::prime_yield_mode())?;
     let devices: Vec<usize> = match std::env::var("MEMRA_DSV4_DEVICES") {
         Err(_) => vec![0, 1],
         Ok(s) => s
