@@ -5,6 +5,10 @@ depth for the complete request. It starts with a bounded lexical classifier:
 ordinary word/phrase rules, no trained model, regex dependency, tokenizer,
 allocation in the classifier, or model download.
 
+The [CPU result](CPU-RESULTS.md) records 95/95 expected fixture outcomes and a
+0.179 us median / 0.298 us p99 complete routing call on the measured Xeon CPU.
+Native decoding is evaluated separately under [NATIVE-PROTOCOL.md](NATIVE-PROTOCOL.md).
+
 The input is the **latest user instruction**, not the complete chat transcript.
 Prose, code and numerical requests get separate labels. Mixed and unsupported
 requests use the caller's fixed-depth fallback. Quoted text, Markdown fences,

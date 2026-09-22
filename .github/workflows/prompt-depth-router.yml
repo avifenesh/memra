@@ -26,6 +26,12 @@ jobs:
         run: |
           python3 research/prompt-depth-router-20260922/run_cpu.py \
             --out "$RUNNER_TEMP/prompt-depth-router"
+      - name: Reproduce the banked CPU report
+        run: |
+          lane=research/prompt-depth-router-20260922
+          pin=$(cut -d ' ' -f 1 "$lane/cpu-receipts/manifest.sha256")
+          python3 "$lane/cpu_report.py" --receipts "$lane/cpu-receipts" \
+            --manifest-sha256 "$pin" --check "$lane/CPU-RESULTS.md"
       - name: Retain raw timings and exact CPU executables
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
