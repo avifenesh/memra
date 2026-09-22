@@ -920,3 +920,40 @@ the door's share is there, on a second stretched tick the rule does not read (ab
 40 ms tick for a promote), and the ON demote's `in - completion` on this host reads 21.6 to 23.8 ms, about two of day 33's heap
 passes at the entry size. Pass 1 ran beside an unidentified co-tenant of about 12.6 GB and its prime arm is inadmissible for
 that reason; pass 2 is clean. The question of this section is unchanged and still not answered here.
+
+DAY 36: what changed since day 34, counted from the receipt files (`DAY36.md`; the commands in the packet's appendix A,
+outputs under `day36-cpu/`). Option (a) landed on A day 28: the bundle hash runs on one helper thread per
+`HostTierContext` (`hashed in` `median=73.20` ms per `98 payloads (157.9MB)` on the target card, off the tick), and the
+demote's owner-thread `in - completion` reads `median=7.40` (A's N=100; `DAY28 CLAUSE 1c ... rule <=12.0 -> PASS`) from
+day 27's 74.8; clauses 1a, 1b, 3, 4 and 5 passed, and clause 2 read "**Clause 2 FAILS on the target card**" (identity
+default ON `4 FAILURE(S) (teeth=0)`, failure ON `1 FAILURE(S)`, contract fault `23 FAILURE(S)`; the RTX 5090's default
+fault arm the same 23) for one cause, a hit inside the `Hashing` window missing. Option 2a (ruling 40) landed on A day
+29: that hit parks one tick at a time until the digests land (1 line in the host-on boot of each card's identity default-ON arm), and A
+day 29 read "**Clause 2 PASSES on both cards.**" with clause 1 unchanged (`median=7.39`, stall 81.7 / 81.8 against OFF
+85.4 / 85.1, e2e `+16.8` / `+16.9`). Ruling 41 (integ45) makes the day-28 and day-29 code the door's serving path, closes
+Move 1 owed items 2 and 2a, and names the pre-submit segment (Move 2 owed item 1, A day 30 running) as the demote's
+remaining owner-thread cost: `median=6.07` on the 4th to 11th demote of a boot and `42.19` on the first three (N=80 and
+N=30, day 28). integ45's RTX 5090 receipts on the battery tree `1c540e050`, counted by this lane's command: hit gate OFF
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 `ok:`) and ON `ALL GREEN (qwen)` (68 `ok:`, `ok: door arm: 30 route
+submission(s) across the two boots`); contract fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (123 `ok:`
+each, 0 `FAIL:`, the ten cells with `hash-helper-gone` and `hash-never-lands` 14 `ok:` each); the serve smoke
+`serve-smoke: 0 failed` (the spec, gemma4 and Q35 arms SKIP for absent files) and the D2D cells `test result: ok. 5
+passed; 0 failed`. Not on `main` at the time of writing (`origin/main` `ca5a90e2a`). Scope: every day-28 and day-29
+stall figure is the promote-then-hit shape; no demote-class tenant-stall cell has run on this code on either card. The
+question of this section is unchanged and still not answered here.
+
+DAY 37: the RTX 5090 class has a demote-class tenant-stall cell on the option (a) tree (`DAY37.md`, `rtx5090-day37/`).
+Day 35's cell ran unchanged with two binaries in one hold, interleaved in both orders: `091a931c0` (day 35's tree, no
+option (a)) and `8b889dcdf` (the day-28 and day-29 code, on `main` since #652), six boots each, 40 receipts, every one
+`REPLAY: PASS`, under the rule pre-registered in `DAY37.md` section 1 before the first boot. By the day-16 rule the
+tenant's worst tick minus its p50 does not separate the binaries in any arm or in either class's difference in
+differences (`did-demote o1=-2.3/5.8 o2=-6.4/7.3 under_resolution`, `did-promote o1=-1.8/8.8 o2=+0.7/8.1
+under_resolution`), and `ON - OFF` stays under resolution within each binary (demote `+4.4 unc 4.9` on `091a931c0`,
+`+0.1 unc 5.7` on `8b889dcdf`). By the pre-registered secondary quantity, the tenant's two largest gaps summed, the
+demote-on and promote-on arms `moved` (`-21.7/5.2`, `-24.5/8.5`; `-23.1/8.7`, `-21.4/9.2`), both OFF controls and the
+prime control did not, and both DiDs `moved` (`did-demote o1=-24.2/8.2 o2=-29.0/12.7 moved`, `did-promote
+o1=-24.0/14.2 o2=-19.1/9.8 moved`): the worst tick alone does not separate the binaries and the two largest gaps
+summed do; the reader does not split the sum per tick. The demote's owner-thread ledger inside the cell: `owner_held=40.29` over the first three demotes of a boot
+and `41.85` over the 4th on (N=12, N=24), `pre_submit=23.49` and `25.06`, `hashed_in=12.9` off the tick, 0 parked
+hits, 0 reparks, 0 detaches. The target card's demote class on the option (a) tree is measured by no line. The question
+of this section is unchanged and still not answered here.
