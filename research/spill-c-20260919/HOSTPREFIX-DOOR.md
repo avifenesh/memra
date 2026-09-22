@@ -941,3 +941,19 @@ each, 0 `FAIL:`, the ten cells with `hash-helper-gone` and `hash-never-lands` 14
 passed; 0 failed`. Not on `main` at the time of writing (`origin/main` `ca5a90e2a`). Scope: every day-28 and day-29
 stall figure is the promote-then-hit shape; no demote-class tenant-stall cell has run on this code on either card. The
 question of this section is unchanged and still not answered here.
+
+DAY 37: the RTX 5090 class has a demote-class tenant-stall cell on the option (a) tree (`DAY37.md`, `rtx5090-day37/`).
+Day 35's cell ran unchanged with two binaries in one hold, interleaved in both orders: `091a931c0` (day 35's tree, no
+option (a)) and `8b889dcdf` (the day-28 and day-29 code, on `main` since #652), six boots each, 40 receipts, every one
+`REPLAY: PASS`, under the rule pre-registered in `DAY37.md` section 1 before the first boot. By the day-16 rule the
+tenant's worst tick minus its p50 does not separate the binaries in any arm or in either class's difference in
+differences (`did-demote o1=-2.3/5.8 o2=-6.4/7.3 under_resolution`, `did-promote o1=-1.8/8.8 o2=+0.7/8.1
+under_resolution`), and `ON - OFF` stays under resolution within each binary (demote `+4.4 unc 4.9` on `091a931c0`,
+`+0.1 unc 5.7` on `8b889dcdf`). By the pre-registered secondary quantity, the tenant's two largest gaps summed, the
+demote-on and promote-on arms `moved` (`-21.7/5.2`, `-24.5/8.5`; `-23.1/8.7`, `-21.4/9.2`), both OFF controls and the
+prime control did not, and both DiDs `moved` (`did-demote o1=-24.2/8.2 o2=-29.0/12.7 moved`, `did-promote
+o1=-24.0/14.2 o2=-19.1/9.8 moved`): the worst tick alone does not separate the binaries and the two largest gaps
+summed do; the reader does not split the sum per tick. The demote's owner-thread ledger inside the cell: `owner_held=40.29` over the first three demotes of a boot
+and `41.85` over the 4th on (N=12, N=24), `pre_submit=23.49` and `25.06`, `hashed_in=12.9` off the tick, 0 parked
+hits, 0 reparks, 0 detaches. The target card's demote class on the option (a) tree is measured by no line. The question
+of this section is unchanged and still not answered here.
