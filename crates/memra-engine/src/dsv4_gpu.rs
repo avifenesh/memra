@@ -1303,6 +1303,151 @@ fn dsv4_cache_cap_blocks(capacity: usize, ratio: usize) -> usize {
     capacity.checked_div(ratio).unwrap_or(0)
 }
 
+/// One stage's device memory, read by `Dsv4Gpu::stage_memory` (memra#503).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StageMemory {
+    pub dev: usize,
+    pub driver_free: u64,
+    pub total: u64,
+    pub pool_reserved: u64,
+    pub pool_used: u64,
+}
+
+impl StageMemory {
+    /// What a new allocation can claim: driver free plus the bytes the async pool holds mapped
+    /// and unused (the boot pins `RELEASE_THRESHOLD` to MAX, so freed blocks stay in the pool
+    /// where `cuMemGetInfo` cannot see them).
+    pub fn effective_free(&self) -> u64 {
+        self.driver_free
+            .saturating_add(self.pool_reserved.saturating_sub(self.pool_used))
+    }
+
+    /// Bytes allocations hold on the device, whoever made them and through whichever allocator:
+    /// everything the driver has handed out minus what the pool holds mapped and unused. The
+    /// difference of two readings around a set of live allocations is their device cost,
+    /// synchronous and stream-ordered alike.
+    pub fn occupied(&self) -> u64 {
+        self.total
+            .saturating_sub(self.driver_free)
+            .saturating_sub(self.pool_reserved.saturating_sub(self.pool_used))
+    }
+}
+
+/// One trunk layer's session-cache geometry, read off its loaded `LayerDev`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LayerCacheGeom {
+    ratio: usize,
+    /// `(latent, slots)` of the compressor's pending pair.
+    cmp: Option<(usize, usize)>,
+    /// `(d, latent, slots)`: the indexer's key-store row width and its pending pair.
+    idx: Option<(usize, usize, usize)>,
+}
+
+impl LayerCacheGeom {
+    fn of(layer: &LayerDev) -> Self {
+        let pend = |c: &CmpDev| (c.latent, if c.overlap { 2 * c.ratio } else { c.ratio });
+        LayerCacheGeom {
+            ratio: layer.ratio,
+            cmp: layer.cmp.as_ref().map(pend),
+            idx: layer.idx.as_ref().map(|ix| {
+                let (latent, slots) = pend(&ix.cmp);
+                (ix.cmp.d, latent, slots)
+            }),
+        }
+    }
+}
+
+/// One entry of `Dsv4Gpu::cache_layout`.
+#[derive(Clone, Copy, Debug)]
+struct CacheSlot {
+    stage: usize,
+    /// The TP/EP rank-1 copy of a layer, held in `DecodeState::tp_ep_caches`.
+    replica: bool,
+    geom: LayerCacheGeom,
+}
+
+/// What one layer cache allocates at a session capacity. `alloc_decode_state_inner` allocates
+/// exactly this and the serving admission plans with exactly this (memra#503), so the plan and
+/// the allocation cannot drift apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LayerCacheShape {
+    cap_blocks: usize,
+    /// The compressed C4 history lives in pinned host RAM, not in `kvc`.
+    c4_host: bool,
+    kvc_rows: usize,
+    pend: Option<(usize, usize)>,
+    /// Indexer key-store elements; `Some(0)` still allocates (a zero-row store).
+    ikvc_elems: Option<usize>,
+    ipend: Option<(usize, usize)>,
+}
+
+impl LayerCacheShape {
+    fn new(
+        geom: LayerCacheGeom,
+        capacity: usize,
+        transient_rows: usize,
+        host_c4: bool,
+        win: usize,
+    ) -> Self {
+        let cap_blocks = dsv4_cache_cap_blocks(capacity, geom.ratio);
+        let c4_host = host_c4 && geom.ratio == 4 && geom.idx.is_some() && cap_blocks > 0;
+        LayerCacheShape {
+            cap_blocks,
+            c4_host,
+            kvc_rows: win + if c4_host { 0 } else { cap_blocks } + transient_rows,
+            pend: geom.cmp,
+            ikvc_elems: geom.idx.map(|(d, _, _)| cap_blocks * d),
+            ipend: geom.idx.map(|(_, latent, slots)| (latent, slots)),
+        }
+    }
+
+    /// Device bytes: window/transient kv, both pending pairs, the indexer key store. Excludes
+    /// an explicit recent-row C4 sidecar, which serving never allocates.
+    fn device_bytes(&self, hd: usize) -> u64 {
+        let pair =
+            |p: Option<(usize, usize)>| p.map_or(0, |(latent, slots)| 2 * slots * latent * 4);
+        (self.kvc_rows * hd * 4
+            + pair(self.pend)
+            + self.ikvc_elems.unwrap_or(0) * 4
+            + pair(self.ipend)) as u64
+    }
+
+    /// Pinned host bytes of the authoritative C4 history (`C4HostStore`, 512-wide rows).
+    fn host_bytes(&self) -> u64 {
+        if self.c4_host {
+            (self.cap_blocks * 512 * 4) as u64
+        } else {
+            0
+        }
+    }
+}
+
+/// Per-stage `(device, pinned host)` session-cache bytes of a layout.
+fn plan_cache_bytes(
+    layout: &[CacheSlot],
+    n_stages: usize,
+    capacity: usize,
+    transient_rows: usize,
+    host_c4: bool,
+    win: usize,
+    hd: usize,
+) -> (Vec<u64>, Vec<u64>) {
+    let mut device = vec![0u64; n_stages];
+    let mut host = vec![0u64; n_stages];
+    for slot in layout {
+        let shape = LayerCacheShape::new(slot.geom, capacity, transient_rows, host_c4, win);
+        device[slot.stage] += shape.device_bytes(hd);
+        host[slot.stage] += shape.host_bytes();
+    }
+    (device, host)
+}
+
+/// `C4Gather::ensure`'s allocation for `width` query rows: all 640 slots of 512-wide values
+/// plus the row index table.
+fn c4_gather_bytes(width: usize, idx_stride: usize) -> u64 {
+    (width * 640 * 512 * 4 + width * idx_stride * 4) as u64
+}
+
 fn dsv4_split_for_tail_reserve(layer_bytes: &[u64], tail_reserve: u64) -> usize {
     assert!(
         layer_bytes.len() >= 2,
@@ -6054,6 +6199,9 @@ impl Dsv4Gpu {
             .forward_impl(ids, None, None, Some(state))?
             .expect("prefill logits");
         state.pos = ids.len();
+        // Call-granularity odometer stamp (memra#500): the monolithic prime is one call, its
+        // logits are already host-side, so its completion is the only honest progress point.
+        crate::progress::note_prime_rows(ids.len());
         Ok(out)
     }
 
@@ -6138,6 +6286,12 @@ impl Dsv4Gpu {
             let (logits, _) =
                 self.verify_batch_dev_output(toks, state, &mut vstate, None, output)?;
             self.commit_verify_dev(state, &mut vstate, toks.len())?;
+            // Per-chunk odometer stamp (memra#500). Under the default `all` head a non-final
+            // chunk read its argmax rows back, so the stamp follows device completion; under
+            // `MEMRA_DSV4_PREFILL_HEAD=last` a non-final chunk returns without a readback and
+            // the stamp attests enqueue only, the final chunk's `Last` readback being the
+            // completion point (a wedge is then caught one stall bound after that stamp).
+            crate::progress::note_prime_rows(toks.len());
             if let Some(rows) = logits {
                 last_logits = Some(if output == VerifyOutput::Last {
                     rows
@@ -6634,6 +6788,148 @@ impl Dsv4Gpu {
         Ok(bytes)
     }
 
+    /// Every trunk layer cache a `DecodeState` holds, in allocation order: each layer on its
+    /// own stage, then under TP/EP the rank-1 replica of each on stage 1.
+    fn cache_layout(&self) -> Vec<CacheSlot> {
+        let mc = &self.model.mc;
+        let n_trunk = mc.n_layer - mc.nextn_predict_layers;
+        let geom = |stage: usize, il: u32| {
+            let layer = self.stages[stage]
+                .layers
+                .iter()
+                .find(|l| l.il == il)
+                .unwrap_or_else(|| panic!("layer {il} not on stage {stage}"));
+            LayerCacheGeom::of(layer)
+        };
+        let mut layout: Vec<CacheSlot> = (0..n_trunk)
+            .map(|il| {
+                let stage = self.layer_stage[il as usize];
+                CacheSlot {
+                    stage,
+                    replica: false,
+                    geom: geom(stage, il),
+                }
+            })
+            .collect();
+        if self.topology.is_tp_ep() {
+            layout.extend((0..n_trunk).map(|il| CacheSlot {
+                stage: 1,
+                replica: true,
+                geom: geom(1, il),
+            }));
+        }
+        layout
+    }
+
+    /// Session-cache bytes a fresh or restored `DecodeState` at `capacity` allocates, per
+    /// stage, as `(device, pinned host)` (memra#503). Computed from the same
+    /// `LayerCacheShape` the allocator allocates, so a serving admission can charge the
+    /// capacity-dependent state before any allocation. Covers the layer caches only: the step
+    /// workspace, the matrix step's width-1 transaction and every transaction scratch are
+    /// capacity-independent and are the caller's fixed term. No recent-row C4 sidecar.
+    pub fn plan_session_cache_bytes(
+        &self,
+        capacity: usize,
+        transient_rows: usize,
+        host_c4: bool,
+    ) -> Res<(Vec<u64>, Vec<u64>)> {
+        let transient_rows = transient_rows.max(usize::from(self.matrix_moe));
+        if capacity == 0 || capacity > self.max_seq || transient_rows > DSV4_BATCH_WIDTH_MAX {
+            return Err(format!(
+                "dsv4 session plan capacity {capacity} or transient width {transient_rows} outside model/transaction limits {} / {DSV4_BATCH_WIDTH_MAX}",
+                self.max_seq,
+            ));
+        }
+        let d = self.model.cfg();
+        Ok(plan_cache_bytes(
+            &self.cache_layout(),
+            self.stages.len(),
+            capacity,
+            transient_rows,
+            host_c4,
+            d.sliding_window as usize,
+            d.head_dim as usize,
+        ))
+    }
+
+    /// Device bytes the active-C4 gather reserves in one transaction workspace of `width`
+    /// rows, per stage: nonzero only on stages holding a host-C4 layer, and only when the state
+    /// is allocated with host C4 (`C4Gather::ensure`, grown lazily at the first round, so it
+    /// is not visible to an allocation-time measurement).
+    pub fn c4_gather_bytes_for_width(&self, width: usize) -> Vec<u64> {
+        let mut bytes = vec![0u64; self.stages.len()];
+        let stride = self.verify_idx_stride();
+        for slot in self.cache_layout() {
+            if slot.geom.ratio == 4 && slot.geom.idx.is_some() {
+                bytes[slot.stage] = c4_gather_bytes(width, stride);
+            }
+        }
+        bytes
+    }
+
+    /// The per-row index stride of a transaction workspace (`alloc_batched_state_for`).
+    fn verify_idx_stride(&self) -> usize {
+        let d = self.model.cfg();
+        let itopk = d.index_topk as usize;
+        d.sliding_window as usize + itopk.max(self.max_seq / 128 + 1)
+    }
+
+    /// Last-stage device bytes a DSpark chunked continuation of `width` rows allocates for
+    /// its tap capture (`dspark_continue_prefix_chunked`), 0 without a drafter.
+    pub fn dspark_prefill_tap_bytes(&self, width: usize) -> u64 {
+        self.dspark.as_ref().map_or(0, |ds| {
+            let row = ds.targets.len() * self.model.mc.n_embd as usize * 4;
+            (width * row + row) as u64
+        })
+    }
+
+    /// Each stage's device memory as a serving admission reads it (memra#503). Every stage
+    /// stream is fenced first: a dropped slice is a stream-ordered free, and the pool keeps
+    /// counting it as used until its stream passes the free.
+    pub fn stage_memory(&self) -> Res<Vec<StageMemory>> {
+        use cudarc::driver::sys;
+        let mut out = Vec::with_capacity(self.stages.len());
+        for st in &self.stages {
+            st.gpu.ctx.bind_to_thread().map_err(e("bind ctx memory"))?;
+            st.gpu.stream().synchronize().map_err(e("memory fence"))?;
+            let (driver_free, total) = st.gpu.ctx.mem_get_info().map_err(e("mem_get_info"))?;
+            let mut m = StageMemory {
+                dev: st.dev,
+                driver_free: driver_free as u64,
+                total: total as u64,
+                ..StageMemory::default()
+            };
+            unsafe {
+                let mut pool: sys::CUmemoryPool = std::ptr::null_mut();
+                if sys::cuDeviceGetDefaultMemPool(&mut pool, st.gpu.ctx.cu_device())
+                    != sys::CUresult::CUDA_SUCCESS
+                    || pool.is_null()
+                {
+                    return Err(format!("dsv4 stage dev {}: no default memory pool", st.dev));
+                }
+                let read = |attr: sys::CUmemPool_attribute, what: &str| -> Res<u64> {
+                    let mut v = 0u64;
+                    if sys::cuMemPoolGetAttribute(pool, attr, &mut v as *mut u64 as *mut _)
+                        != sys::CUresult::CUDA_SUCCESS
+                    {
+                        return Err(format!("dsv4 stage dev {}: pool {what} unreadable", st.dev));
+                    }
+                    Ok(v)
+                };
+                m.pool_reserved = read(
+                    sys::CUmemPool_attribute::CU_MEMPOOL_ATTR_RESERVED_MEM_CURRENT,
+                    "reserved",
+                )?;
+                m.pool_used = read(
+                    sys::CUmemPool_attribute::CU_MEMPOOL_ATTR_USED_MEM_CURRENT,
+                    "used",
+                )?;
+            }
+            out.push(m);
+        }
+        Ok(out)
+    }
+
     fn alloc_decode_state_inner(
         &self,
         capacity: usize,
@@ -6652,7 +6948,6 @@ impl Dsv4Gpu {
             ));
         }
         let d = self.model.cfg();
-        let mc = &self.model.mc;
         let win = d.sliding_window as usize;
         let hd = d.head_dim as usize;
         if host_c4
@@ -6664,80 +6959,63 @@ impl Dsv4Gpu {
                 "direct host-C4 allocation requires native device math and SWA128/HD512".into(),
             );
         }
-        let n_trunk = mc.n_layer - mc.nextn_predict_layers;
-        let mut caches = Vec::with_capacity(n_trunk as usize);
-        let mut tp_ep_caches = None;
+        let layout = self.cache_layout();
+        let mut caches = Vec::with_capacity(layout.len());
+        let mut rank1 = Vec::new();
         let mut cache_bytes = vec![0u64; self.stages.len()];
         let mut host_cache_bytes = vec![0u64; self.stages.len()];
         // iteration 3, rung 4: reserve T_max TRANSIENT window-kv rows per layer at
         // kvc rows [win + cap_blocks, win + cap_blocks + T_max) — where a batched verify
         // round's kv lands so the persistent ring stays read-only until commit (§3.1).
         // Zero rows when the drafter is not loaded: today's exact allocation, byte for byte.
-        let trans_rows = transient_rows;
-        for il in 0..n_trunk {
-            let stage_i = self.layer_stage[il as usize];
+        // The shape of every allocation is `LayerCacheShape`'s, the same one the serving
+        // admission plans with before it allocates (memra#503).
+        for slot in &layout {
+            let stage_i = slot.stage;
             let st = &self.stages[stage_i];
-            st.gpu.ctx.bind_to_thread().map_err(e("bind ctx cache"))?;
+            let lbl = |own: &'static str, tp: &'static str| if slot.replica { tp } else { own };
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e(lbl("bind ctx cache", "bind ctx tp cache")))?;
             let stream = st.gpu.stream();
-            let lidx = st
-                .layers
-                .iter()
-                .position(|l| l.il == il)
-                .unwrap_or_else(|| panic!("layer {il} not on stage {stage_i}"));
-            let layer = &st.layers[lidx];
-            let ratio = layer.ratio;
-            let cap_blocks = dsv4_cache_cap_blocks(capacity, ratio);
-            let c4_host = if host_c4 && ratio == 4 && layer.idx.is_some() && cap_blocks > 0 {
-                let store = C4HostStore::with_recent(stream.clone(), cap_blocks, recent_rows)?;
+            let shape = LayerCacheShape::new(slot.geom, capacity, transient_rows, host_c4, win);
+            let c4_host = if shape.c4_host {
+                let store =
+                    C4HostStore::with_recent(stream.clone(), shape.cap_blocks, recent_rows)?;
                 host_cache_bytes[stage_i] += store.bytes() as u64;
                 Some(store)
             } else {
                 None
             };
-            let kvc_rows = win + if c4_host.is_some() { 0 } else { cap_blocks } + trans_rows;
-            let mut bytes =
-                (kvc_rows * hd * 4) as u64 + c4_host.as_ref().map_or(0, C4HostStore::device_bytes);
             let kvc = stream
-                .alloc_zeros::<f32>(kvc_rows * hd)
-                .map_err(e("kvc alloc"))?;
+                .alloc_zeros::<f32>(shape.kvc_rows * hd)
+                .map_err(e(lbl("kvc alloc", "tp kvc alloc")))?;
             // pending pair: kv zeros, score -inf (block-0-at-decode masking, receipts)
-            let mk_pend = |latent: usize, slots: usize| -> Res<(CudaSlice<f32>, CudaSlice<f32>)> {
+            type PendPair = (Option<CudaSlice<f32>>, Option<CudaSlice<f32>>);
+            let mk_pend = |pair: Option<(usize, usize)>| -> Res<PendPair> {
+                let Some((latent, slots)) = pair else {
+                    return Ok((None, None));
+                };
                 let kv = stream
                     .alloc_zeros::<f32>(slots * latent)
-                    .map_err(e("pend kv alloc"))?;
+                    .map_err(e(lbl("pend kv alloc", "tp pend kv alloc")))?;
                 let sc = upload_f32(&stream, &vec![f32::NEG_INFINITY; slots * latent])?;
-                Ok((kv, sc))
+                Ok((Some(kv), Some(sc)))
             };
-            let (pend_kv, pend_score) = if let Some(cmp) = &layer.cmp {
-                let slots = if cmp.overlap {
-                    2 * cmp.ratio
-                } else {
-                    cmp.ratio
-                };
-                bytes += (2 * slots * cmp.latent * 4) as u64;
-                let (a, b) = mk_pend(cmp.latent, slots)?;
-                (Some(a), Some(b))
-            } else {
-                (None, None)
+            let (pend_kv, pend_score) = mk_pend(shape.pend)?;
+            let ikvc = match shape.ikvc_elems {
+                Some(n) => Some(
+                    stream
+                        .alloc_zeros::<f32>(n)
+                        .map_err(e(lbl("ikvc alloc", "tp ikvc alloc")))?,
+                ),
+                None => None,
             };
-            let (ikvc, ipend_kv, ipend_score) = if let Some(ix) = &layer.idx {
-                bytes += (cap_blocks * ix.cmp.d * 4) as u64;
-                let store = stream
-                    .alloc_zeros::<f32>(cap_blocks * ix.cmp.d)
-                    .map_err(e("ikvc alloc"))?;
-                let slots = if ix.cmp.overlap {
-                    2 * ix.cmp.ratio
-                } else {
-                    ix.cmp.ratio
-                };
-                bytes += (2 * slots * ix.cmp.latent * 4) as u64;
-                let (a, b) = mk_pend(ix.cmp.latent, slots)?;
-                (Some(store), Some(a), Some(b))
-            } else {
-                (None, None, None)
-            };
-            cache_bytes[stage_i] += bytes;
-            caches.push(LayerCache {
+            let (ipend_kv, ipend_score) = mk_pend(shape.ipend)?;
+            cache_bytes[stage_i] +=
+                shape.device_bytes(hd) + c4_host.as_ref().map_or(0, C4HostStore::device_bytes);
+            let cache = LayerCache {
                 kvc,
                 c4_host,
                 n_blocks: 0,
@@ -6747,89 +7025,14 @@ impl Dsv4Gpu {
                 i_blocks: 0,
                 ipend_kv,
                 ipend_score,
-            });
-        }
-        if self.topology.is_tp_ep() {
-            let stage_i = 1usize;
-            let st = &self.stages[stage_i];
-            let mut rank1 = Vec::with_capacity(n_trunk as usize);
-            for il in 0..n_trunk {
-                st.gpu
-                    .ctx
-                    .bind_to_thread()
-                    .map_err(e("bind ctx tp cache"))?;
-                let stream = st.gpu.stream();
-                let layer = st
-                    .layers
-                    .iter()
-                    .find(|l| l.il == il)
-                    .unwrap_or_else(|| panic!("layer {il} not on TP rank 1"));
-                let ratio = layer.ratio;
-                let cap_blocks = dsv4_cache_cap_blocks(capacity, ratio);
-                let c4_host = if host_c4 && ratio == 4 && layer.idx.is_some() && cap_blocks > 0 {
-                    let store = C4HostStore::with_recent(stream.clone(), cap_blocks, recent_rows)?;
-                    host_cache_bytes[stage_i] += store.bytes() as u64;
-                    Some(store)
-                } else {
-                    None
-                };
-                let kvc_rows = win + if c4_host.is_some() { 0 } else { cap_blocks } + trans_rows;
-                let mut bytes = (kvc_rows * hd * 4) as u64
-                    + c4_host.as_ref().map_or(0, C4HostStore::device_bytes);
-                let kvc = stream
-                    .alloc_zeros::<f32>(kvc_rows * hd)
-                    .map_err(e("tp kvc alloc"))?;
-                let mk_pend =
-                    |latent: usize, slots: usize| -> Res<(CudaSlice<f32>, CudaSlice<f32>)> {
-                        let kv = stream
-                            .alloc_zeros::<f32>(slots * latent)
-                            .map_err(e("tp pend kv alloc"))?;
-                        let sc = upload_f32(&stream, &vec![f32::NEG_INFINITY; slots * latent])?;
-                        Ok((kv, sc))
-                    };
-                let (pend_kv, pend_score) = if let Some(cmp) = &layer.cmp {
-                    let slots = if cmp.overlap {
-                        2 * cmp.ratio
-                    } else {
-                        cmp.ratio
-                    };
-                    bytes += (2 * slots * cmp.latent * 4) as u64;
-                    let (a, b) = mk_pend(cmp.latent, slots)?;
-                    (Some(a), Some(b))
-                } else {
-                    (None, None)
-                };
-                let (ikvc, ipend_kv, ipend_score) = if let Some(ix) = &layer.idx {
-                    bytes += (cap_blocks * ix.cmp.d * 4) as u64;
-                    let store = stream
-                        .alloc_zeros::<f32>(cap_blocks * ix.cmp.d)
-                        .map_err(e("tp ikvc alloc"))?;
-                    let slots = if ix.cmp.overlap {
-                        2 * ix.cmp.ratio
-                    } else {
-                        ix.cmp.ratio
-                    };
-                    bytes += (2 * slots * ix.cmp.latent * 4) as u64;
-                    let (a, b) = mk_pend(ix.cmp.latent, slots)?;
-                    (Some(store), Some(a), Some(b))
-                } else {
-                    (None, None, None)
-                };
-                cache_bytes[stage_i] += bytes;
-                rank1.push(LayerCache {
-                    kvc,
-                    c4_host,
-                    n_blocks: 0,
-                    pend_kv,
-                    pend_score,
-                    ikvc,
-                    i_blocks: 0,
-                    ipend_kv,
-                    ipend_score,
-                });
+            };
+            if slot.replica {
+                rank1.push(cache);
+            } else {
+                caches.push(cache);
             }
-            tp_ep_caches = Some(rank1);
         }
+        let tp_ep_caches = self.topology.is_tp_ep().then_some(rank1);
         let ws = if matches!(self.decode_path, DecodePath::Device { .. }) && !self.matrix_moe {
             Some(self.alloc_step_ws()?)
         } else {
@@ -11559,6 +11762,9 @@ impl Dsv4Gpu {
                 let _ = self.decode_step_greedy_tap(tok, state, dstate, 0)?;
             }
             self.dspark_write_rings(dstate, 0, pos)?;
+            // Tokenwise restored continuation (`MEMRA_DSV4_PREFILL_CHUNK=0`): each step read
+            // its token or row back, so each is a completed one-row prime (memra#500).
+            crate::progress::note_prime_rows(1);
         }
         let last = self.stages.len() - 1;
         self.stages[last]
@@ -11794,6 +12000,8 @@ impl Dsv4Gpu {
         }
         dstate.tap_head = 0;
         stream.synchronize().map_err(e("prime sync"))?;
+        // Call-granularity odometer stamp (memra#500), after the prime's own synchronize.
+        crate::progress::note_prime_rows(s);
         Ok(out)
     }
 
@@ -11919,6 +12127,10 @@ impl Dsv4Gpu {
                     .draft_prime_rows
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
+            // Per-chunk odometer stamp (memra#500), after the trunk commit AND the drafter ring
+            // advance: the chunk is complete for both models. Same readback note as the plain
+            // walk above.
+            crate::progress::note_prime_rows(toks.len());
             if let Some(rows) = logits {
                 last_logits = Some(if output == VerifyOutput::Last {
                     rows
@@ -14056,9 +14268,9 @@ impl Dsv4Gpu {
                 slot_rows: i(tmax)?,
                 tap_tmp: f(tmax * hidden)?,
             };
-            bytes[st.dev] += acc.get();
+            bytes[stage_index] += acc.get();
             if let Some(work) = &w.grouped_work {
-                bytes[st.dev] += work.bytes;
+                bytes[stage_index] += work.bytes;
             }
             if let Some(ep) = &w.ep {
                 bytes[stage_index] += ep.owner_bytes;
@@ -14115,7 +14327,7 @@ impl Dsv4Gpu {
             };
             for c in cmp.iter().chain(idxc.iter()) {
                 let slots = if c.overlap { 2 * c.ratio } else { c.ratio };
-                bytes[st.dev] += ((2 * slots * c.latent + 2 * tmax * c.latent) * 4) as u64;
+                bytes[stage_i] += ((2 * slots * c.latent + 2 * tmax * c.latent) * 4) as u64;
             }
             layers.push(LayerCkptDev {
                 cmp,
@@ -14179,7 +14391,7 @@ impl Dsv4Gpu {
         };
         let tp_ep_ar_outputs = if self.topology.is_tp_ep() {
             let mut outputs = Vec::with_capacity(2);
-            for st in &self.stages {
+            for (stage_i, st) in self.stages.iter().enumerate() {
                 st.gpu
                     .ctx
                     .bind_to_thread()
@@ -14189,7 +14401,7 @@ impl Dsv4Gpu {
                     .stream()
                     .alloc_zeros::<f32>(tmax * topk * hidden)
                     .map_err(e("TP/EP AR output"))?;
-                bytes[st.dev] += (tmax * topk * hidden * 4) as u64;
+                bytes[stage_i] += (tmax * topk * hidden * 4) as u64;
                 outputs.push(output);
             }
             Some(
@@ -14202,7 +14414,7 @@ impl Dsv4Gpu {
         };
         let tp_ep_attention_outputs = if self.attention_tp.is_some() {
             let mut outputs = Vec::with_capacity(2);
-            for stage in &self.stages {
+            for (stage_i, stage) in self.stages.iter().enumerate() {
                 stage
                     .gpu
                     .ctx
@@ -14215,7 +14427,7 @@ impl Dsv4Gpu {
                         .alloc_zeros::<f32>(tmax * hidden)
                         .map_err(e("attention TP2 output allocation"))?,
                 );
-                bytes[stage.dev] += (tmax * hidden * 4) as u64;
+                bytes[stage_i] += (tmax * hidden * 4) as u64;
             }
             Some(
                 outputs
@@ -20334,5 +20546,175 @@ mod round_commit_tests {
             ),
             4
         );
+    }
+}
+
+#[cfg(test)]
+mod session_plan_tests {
+    use super::*;
+
+    // DSV4-Flash-shaped layer kinds: a ratio-0 SWA-only layer, a ratio-4 compressed layer with
+    // an overlapping compressor and an indexer, a ratio-128 compressed layer without one.
+    const WIN: usize = 128;
+    const HD: usize = 512;
+
+    fn swa() -> LayerCacheGeom {
+        LayerCacheGeom {
+            ratio: 0,
+            cmp: None,
+            idx: None,
+        }
+    }
+
+    fn c4() -> LayerCacheGeom {
+        LayerCacheGeom {
+            ratio: 4,
+            cmp: Some((512, 8)),
+            idx: Some((128, 128, 8)),
+        }
+    }
+
+    fn c128() -> LayerCacheGeom {
+        LayerCacheGeom {
+            ratio: 128,
+            cmp: Some((512, 128)),
+            idx: None,
+        }
+    }
+
+    fn slot(stage: usize, replica: bool, geom: LayerCacheGeom) -> CacheSlot {
+        CacheSlot {
+            stage,
+            replica,
+            geom,
+        }
+    }
+
+    #[test]
+    fn a_layer_shape_is_the_allocators_arithmetic() {
+        // capacity 4096, 512 transient rows: the default chunk min(512, ctx) at a 4k session
+        let s = LayerCacheShape::new(c4(), 4096, 512, false, WIN);
+        assert_eq!(s.cap_blocks, 1024);
+        assert!(!s.c4_host);
+        assert_eq!(s.kvc_rows, WIN + 1024 + 512);
+        assert_eq!(s.ikvc_elems, Some(1024 * 128));
+        let expect =
+            (WIN + 1024 + 512) * HD * 4 + 2 * 8 * 512 * 4 + 1024 * 128 * 4 + 2 * 8 * 128 * 4;
+        assert_eq!(s.device_bytes(HD), expect as u64);
+        assert_eq!(s.host_bytes(), 0);
+
+        // host C4 moves the compressed rows off kvc and onto pinned host, nothing else
+        let h = LayerCacheShape::new(c4(), 4096, 512, true, WIN);
+        assert!(h.c4_host);
+        assert_eq!(h.kvc_rows, WIN + 512);
+        assert_eq!(
+            s.device_bytes(HD) - h.device_bytes(HD),
+            (1024 * HD * 4) as u64
+        );
+        assert_eq!(h.host_bytes(), (1024 * 512 * 4) as u64);
+
+        // host C4 never applies to a layer without the indexer or at another ratio
+        assert!(!LayerCacheShape::new(c128(), 4096, 512, true, WIN).c4_host);
+        assert!(!LayerCacheShape::new(swa(), 4096, 512, true, WIN).c4_host);
+        // a ratio-0 layer holds the window and the transient rows only
+        let w = LayerCacheShape::new(swa(), 4096, 512, false, WIN);
+        assert_eq!(w.device_bytes(HD), ((WIN + 512) * HD * 4) as u64);
+        assert_eq!(w.ikvc_elems, None);
+        // below one block the indexer store still exists at zero rows, and C4 stays on device
+        let tiny = LayerCacheShape::new(c4(), 3, 1, true, WIN);
+        assert_eq!(
+            (tiny.cap_blocks, tiny.c4_host, tiny.ikvc_elems),
+            (0, false, Some(0))
+        );
+    }
+
+    #[test]
+    fn the_plan_charges_each_stage_its_own_layers_and_the_tp_replica() {
+        let pp = [
+            slot(0, false, swa()),
+            slot(0, false, c4()),
+            slot(1, false, c128()),
+            slot(1, false, c4()),
+        ];
+        let (dev, host) = plan_cache_bytes(&pp, 2, 8192, 512, false, WIN, HD);
+        let b = |g, cap| LayerCacheShape::new(g, cap, 512, false, WIN).device_bytes(HD);
+        assert_eq!(
+            dev,
+            vec![
+                b(swa(), 8192) + b(c4(), 8192),
+                b(c128(), 8192) + b(c4(), 8192)
+            ]
+        );
+        assert_eq!(host, vec![0, 0]);
+
+        // TP/EP: every layer on stage 0, its replica on stage 1, charged the same bytes
+        let tp = [
+            slot(0, false, swa()),
+            slot(0, false, c4()),
+            slot(1, true, swa()),
+            slot(1, true, c4()),
+        ];
+        let (dev, host) = plan_cache_bytes(&tp, 2, 8192, 512, true, WIN, HD);
+        assert_eq!(dev[0], dev[1]);
+        assert_eq!(host[0], host[1]);
+        assert_eq!(host[0], (8192 / 4 * 512 * 4) as u64);
+    }
+
+    #[test]
+    fn the_plan_scales_with_capacity_and_the_transient_rows_do_not() {
+        // The admission charges plan(capacity) plus a fixed term measured once at a small
+        // calibration capacity. The plan carries every capacity-dependent byte; at block
+        // multiples of the coarsest ratio it is exactly linear.
+        let layout = [
+            slot(0, false, swa()),
+            slot(0, false, c4()),
+            slot(1, false, c128()),
+        ];
+        let at = |cap| plan_cache_bytes(&layout, 2, cap, 512, false, WIN, HD).0;
+        let (a, b, c) = (at(1024), at(2048), at(4096));
+        for s in 0..2 {
+            assert_eq!(b[s] - a[s], (c[s] - b[s]) / 2, "stage {s}");
+        }
+        // the transient width is capacity-independent: the same delta at any capacity
+        let wide = |cap| plan_cache_bytes(&layout, 2, cap, 512, false, WIN, HD).0;
+        let narrow = |cap| plan_cache_bytes(&layout, 2, cap, 17, false, WIN, HD).0;
+        for s in 0..2 {
+            assert_eq!(
+                wide(1024)[s] - narrow(1024)[s],
+                wide(65536)[s] - narrow(65536)[s]
+            );
+        }
+    }
+
+    #[test]
+    fn gather_bytes_match_the_workspace_ensure() {
+        // C4Gather::ensure: values nq*640*512 f32, indices nq*stride i32
+        assert_eq!(
+            c4_gather_bytes(512, 1152),
+            (512 * 640 * 512 * 4 + 512 * 1152 * 4) as u64
+        );
+        assert_eq!(c4_gather_bytes(1, 1152), (640 * 512 * 4 + 1152 * 4) as u64);
+        assert_eq!(c4_gather_bytes(0, 1152), 0);
+    }
+
+    #[test]
+    fn effective_free_and_occupied_split_the_pools_mapped_unused_bytes() {
+        let m = StageMemory {
+            dev: 1,
+            driver_free: 10,
+            total: 100,
+            pool_reserved: 50,
+            pool_used: 30,
+        };
+        assert_eq!(m.effective_free(), 30);
+        // 90 handed out by the driver, 20 of it mapped and unused in the pool
+        assert_eq!(m.occupied(), 70);
+        let over = StageMemory { pool_used: 60, ..m };
+        assert_eq!(
+            over.effective_free(),
+            10,
+            "a racing reading never goes negative"
+        );
+        assert_eq!(over.occupied(), 90);
     }
 }

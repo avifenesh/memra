@@ -33,10 +33,13 @@
 //!   - streaming granularity is the spec ROUND (or every plain token) — the commit
 //!     callback seam on the gated drivers, `None` = byte-identical bench behavior.
 
-use crate::worker::{EngineError, Event, ModelCaps, Request, SpecUsage};
+use crate::dsv4_admit::{self, Admission, AdmissionLine, MemoryProbe, SessionNeed};
+use crate::health::RouteHealth;
+use crate::route_telemetry::{RouteLoad, RouteRun, ServeStats};
+use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request, SpecUsage};
 use memra_engine::dsv4_gpu::{
-    DSV4_BATCH_WIDTH_MAX, DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState,
-    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, RoundTake, dsv4_penalize_row,
+    DSV4_BATCH_WIDTH_MAX, DecodePath, DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState,
+    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, RoundTake, StageMemory, dsv4_penalize_row,
     dsv4_sample_row, resolve_vt,
 };
 use memra_gguf::dsv4_forward::ActQuantVariant;
@@ -120,6 +123,26 @@ pub struct Dsv4Model {
     pub host_cache_bytes: usize,
     pub c4_host_bytes: usize,
     pub prefill_chunk: usize,
+    /// The route's memory book, calibrated at load (memra#503).
+    pub memory: Dsv4Memory,
+}
+
+/// What a session costs on each stage beyond its capacity-planned layer caches, and the most
+/// each card offers with the route idle. Measured once at load, by allocating the route's own
+/// state around two `stage_memory` readings (memra#503): the step workspace, the matrix
+/// width-1 transaction and the transaction scratch are sized by the model, not the session, so
+/// one small calibration session prices every larger one.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Dsv4Memory {
+    /// Owning device of each stage.
+    pub devs: Vec<usize>,
+    /// Per-stage device bytes a plain session holds beyond its layer caches.
+    pub fixed_plain: Vec<u64>,
+    /// The same for a speculative session: the drafter state plus the larger of the two
+    /// transactions it holds in turn (the chunked prefill with its tap capture, then verify).
+    pub fixed_spec: Vec<u64>,
+    /// Effective free per stage after calibration, nothing resident.
+    pub ceiling: Vec<u64>,
 }
 
 fn env_text(name: &str, raw: Option<OsString>) -> Result<Option<String>, String> {
@@ -183,6 +206,70 @@ fn admit_c4_host_bytes(budget: usize, per_stage: &[u64]) -> Result<usize, String
 }
 
 impl Dsv4Model {
+    /// Transient rows every session state is allocated with: wide enough for the chunked
+    /// prefill and for a verify round.
+    fn transient_rows(&self) -> usize {
+        self.prefill_chunk.max(self.gpu.verify_tmax())
+    }
+
+    /// The device charge of a session at `capacity`, per owning card, plus `host_c4` pinned
+    /// host bytes (memra#503). Layer caches come from the allocator's own plan; the fixed term
+    /// from the load calibration; the active-C4 gather, grown lazily at a workspace's first
+    /// round and so invisible to the calibration, is added for each workspace width the
+    /// session runs (decode, prefill chunk, and verify when speculative).
+    fn session_need(
+        &self,
+        capacity: usize,
+        spec: bool,
+        host_c4: u64,
+    ) -> Result<SessionNeed, String> {
+        let host_c4_on = self.c4_host_bytes > 0;
+        let (mut need, _) =
+            self.gpu
+                .plan_session_cache_bytes(capacity, self.transient_rows(), host_c4_on)?;
+        let mem = &self.memory;
+        let fixed = if spec {
+            &mem.fixed_spec
+        } else {
+            &mem.fixed_plain
+        };
+        if fixed.len() != need.len() || mem.ceiling.len() != need.len() {
+            return Err(format!(
+                "dsv4 memory book covers {} stages, the session plan {}",
+                fixed.len(),
+                need.len()
+            ));
+        }
+        for (n, f) in need.iter_mut().zip(fixed) {
+            *n = n.saturating_add(*f);
+        }
+        if host_c4_on {
+            let mut widths = vec![1, self.prefill_chunk];
+            if spec {
+                widths.push(self.gpu.verify_tmax());
+            }
+            for w in widths.into_iter().filter(|&w| w > 0) {
+                for (n, g) in need.iter_mut().zip(self.gpu.c4_gather_bytes_for_width(w)) {
+                    *n = n.saturating_add(g);
+                }
+            }
+        }
+        Ok(SessionNeed {
+            devices: dsv4_admit::per_device(&mem.devs, &need, &mem.ceiling),
+            host: host_c4,
+        })
+    }
+
+    /// Whether the session's charge fits every card with the route idle and its active C4
+    /// history fits the host budget: what no wait can change.
+    fn fits_ceiling(&self, capacity: usize, spec: bool) -> bool {
+        let Ok(host) = self.planned_c4_host_bytes(capacity) else {
+            return false;
+        };
+        self.session_need(capacity, spec, host as u64)
+            .is_ok_and(|n| n.devices.iter().all(|d| d.need <= d.ceiling))
+    }
+
     fn planned_c4_host_bytes(&self, capacity: usize) -> Result<usize, String> {
         if self.c4_host_bytes == 0 {
             return Ok(0);
@@ -199,7 +286,7 @@ impl Dsv4Model {
         host: Option<&Dsv4HostDecodeState>,
     ) -> Result<DecodeState, String> {
         let planned = self.planned_c4_host_bytes(capacity)?;
-        let transient = self.prefill_chunk.max(self.gpu.verify_tmax());
+        let transient = self.transient_rows();
         let state = match (self.c4_host_bytes > 0, host) {
             (true, Some(host)) => self
                 .gpu
@@ -489,32 +576,150 @@ impl Dsv4HostCache {
         self.total_bytes += entry.bytes;
         self.entries.entry(cache_ns).or_default().push(entry);
         while self.total_bytes > self.budget {
-            let victim = self
-                .entries
-                .iter()
-                .flat_map(|(ns, pool)| {
-                    pool.iter()
-                        .enumerate()
-                        .map(move |(i, e)| (e.last_use, e.id, ns.clone(), i))
-                })
-                .min_by_key(|(last_use, id, _, _)| (*last_use, *id));
-            let Some((_, _, ns, i)) = victim else {
+            if self.evict_lru(None, "LRU").is_none() {
                 break;
-            };
-            let pool = self.entries.get_mut(&ns).expect("victim pool exists");
-            let dead = pool.swap_remove(i);
-            self.total_bytes = self.total_bytes.saturating_sub(dead.bytes);
-            if pool.is_empty() {
-                self.entries.remove(&ns);
             }
-            eprintln!(
-                "[dsv4-host] evict LRU: {} tokens, {:.1} MiB (resident {:.1}/{:.1} MiB)",
-                dead.toks.len(),
-                dead.bytes as f64 / 1048576.0,
-                self.total_bytes as f64 / 1048576.0,
-                self.budget as f64 / 1048576.0,
-            );
         }
+    }
+
+    /// The entry `take` would restore for this request, by id, without consuming it: the one
+    /// parked entry a memory reclaim for this request must spare.
+    fn restore_candidate(
+        &self,
+        cache_ns: &str,
+        affinity: Option<&str>,
+        prompt: &[u32],
+        need_dspark: bool,
+    ) -> Option<u64> {
+        if !self.armed() {
+            return None;
+        }
+        let pool = self.entries.get(cache_ns)?;
+        let i = select_prefix(
+            pool.iter().map(|e| Candidate {
+                toks: &e.toks,
+                has_dspark: e.dspark.is_some(),
+                affinity: e.affinity.as_deref(),
+                id: e.id,
+            }),
+            affinity,
+            prompt,
+            need_dspark,
+        )
+        .ok()?;
+        Some(pool[i].id)
+    }
+
+    /// Parked bytes an eviction sparing `spare` can return.
+    fn reclaimable(&self, spare: Option<u64>) -> usize {
+        self.entries
+            .values()
+            .flatten()
+            .filter(|e| Some(e.id) != spare)
+            .map(|e| e.bytes)
+            .sum()
+    }
+
+    /// Evict least-recently-used entries, sparing `spare`, until at least `bytes` are freed or
+    /// nothing else is evictable (memra#503: the host tier's yield to a memory admission).
+    fn reclaim(&mut self, bytes: usize, spare: Option<u64>) -> usize {
+        let mut got = 0usize;
+        while got < bytes {
+            match self.evict_lru(spare, "for admission") {
+                Some(freed) => got += freed,
+                None => break,
+            }
+        }
+        got
+    }
+
+    /// Evict the least-recently-used entry other than `spare`, returning its bytes.
+    fn evict_lru(&mut self, spare: Option<u64>, why: &str) -> Option<usize> {
+        let (ns, i) = lru_victim(
+            self.entries.iter().flat_map(|(ns, pool)| {
+                pool.iter()
+                    .enumerate()
+                    .map(move |(i, e)| (ns.as_str(), i, e.last_use, e.id))
+            }),
+            spare,
+        )?;
+        let pool = self.entries.get_mut(&ns).expect("victim pool exists");
+        let dead = pool.swap_remove(i);
+        self.total_bytes = self.total_bytes.saturating_sub(dead.bytes);
+        if pool.is_empty() {
+            self.entries.remove(&ns);
+        }
+        eprintln!(
+            "[dsv4-host] evict {why}: {} tokens, {:.1} MiB (resident {:.1}/{:.1} MiB)",
+            dead.toks.len(),
+            dead.bytes as f64 / 1048576.0,
+            self.total_bytes as f64 / 1048576.0,
+            self.budget as f64 / 1048576.0,
+        );
+        Some(dead.bytes)
+    }
+}
+
+/// The least-recently-used `(namespace, index)` among `(namespace, index, last_use, id)`
+/// entries, oldest use first and the lower id on a tie, never `spare`.
+fn lru_victim<'a>(
+    entries: impl Iterator<Item = (&'a str, usize, Instant, u64)>,
+    spare: Option<u64>,
+) -> Option<(String, usize)> {
+    entries
+        .filter(|&(_, _, _, id)| Some(id) != spare)
+        .min_by_key(|&(_, _, last_use, id)| (last_use, id))
+        .map(|(ns, i, _, _)| (ns.to_string(), i))
+}
+
+/// The live readings behind the route's memory admission (memra#503).
+struct LiveProbe<'a> {
+    gpu: &'a Dsv4Gpu,
+    host_cache: &'a mut Dsv4HostCache,
+    /// The parked entry this request would restore from; never evicted for its admission.
+    spare: Option<u64>,
+    tx: &'a EventSender,
+    t0: Instant,
+}
+
+impl MemoryProbe for LiveProbe<'_> {
+    fn device_free(&mut self, devs: &[usize]) -> Result<Vec<u64>, String> {
+        let stages = self.gpu.stage_memory()?;
+        devs.iter()
+            .map(|&dev| {
+                stages
+                    .iter()
+                    .find(|s| s.dev == dev)
+                    .map(StageMemory::effective_free)
+                    .ok_or_else(|| format!("dsv4 memory probe: no stage on device {dev}"))
+            })
+            .collect()
+    }
+
+    fn host(&mut self) -> Option<(u64, u64)> {
+        let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
+        let available = crate::worker::meminfo_available_bytes(&meminfo)?;
+        Some((
+            available as u64,
+            self.host_cache.reclaimable(self.spare) as u64,
+        ))
+    }
+
+    fn reclaim_host(&mut self, bytes: u64) -> u64 {
+        self.host_cache
+            .reclaim(usize::try_from(bytes).unwrap_or(usize::MAX), self.spare) as u64
+    }
+
+    fn cancelled(&self) -> bool {
+        self.tx.is_closed()
+    }
+
+    fn elapsed_ms(&self) -> u64 {
+        self.t0.elapsed().as_millis() as u64
+    }
+
+    fn wait(&mut self, ms: u64) {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
     }
 }
 
@@ -598,7 +803,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
             format!("{prefill_chunk} tokens")
         },
     );
-    Ok(Dsv4Model {
+    let mut m = Dsv4Model {
         gpu: Arc::new(gpu),
         tok,
         max_seq,
@@ -607,7 +812,107 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         host_cache_bytes,
         c4_host_bytes,
         prefill_chunk,
+        memory: Dsv4Memory::default(),
+    };
+    m.memory = calibrate_memory(&m).map_err(|e| format!("dsv4 memory calibration: {e}"))?;
+    let per_stage = |v: &[u64]| {
+        m.memory
+            .devs
+            .iter()
+            .zip(v)
+            .map(|(d, b)| format!("{d}:{b}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    eprintln!(
+        "[admit-mem] route=dsv4-thread model={name:?} calibrated fixed_plain={} fixed_spec={} \
+         ceiling={} defer_budget_ms={}",
+        per_stage(&m.memory.fixed_plain),
+        per_stage(&m.memory.fixed_spec),
+        per_stage(&m.memory.ceiling),
+        route_defer_budget_ms(),
+    );
+    Ok(m)
+}
+
+/// Tokens of the calibration session: small, so it costs the boot nothing it cannot return.
+const CALIBRATION_CAPACITY: usize = 1024;
+
+/// Per-stage bytes the readings `now` hold beyond `base`, less the layer caches the plan
+/// already prices.
+fn fixed_delta(now: &[StageMemory], base: &[StageMemory], cache: &[u64]) -> Vec<u64> {
+    now.iter()
+        .zip(base)
+        .zip(cache)
+        .map(|((n, b), c)| n.occupied().saturating_sub(b.occupied()).saturating_sub(*c))
+        .collect()
+}
+
+/// Measure the route's fixed per-session cost and its idle ceiling (memra#503). Allocates, in
+/// the order a request does, a calibration session, the chunked-prefill transaction and (with
+/// a drafter) the drafter state and the verify transaction, reading every stage around them.
+/// Everything is dropped before the ceiling is read, so the ceiling is what a request can
+/// claim with the route idle and co-tenants as they were at boot.
+fn calibrate_memory(m: &Dsv4Model) -> Result<Dsv4Memory, String> {
+    let gpu = &m.gpu;
+    let cap = m.max_seq.min(CALIBRATION_CAPACITY);
+    let base = gpu.stage_memory()?;
+    let devs: Vec<usize> = base.iter().map(|s| s.dev).collect();
+    let (cache, _) = gpu.plan_session_cache_bytes(cap, m.transient_rows(), m.c4_host_bytes > 0)?;
+    // Chunked prefill runs batched transactions only on the PP device path; the TP/EP slice
+    // admits a single-token prime and the legacy path has no transaction.
+    let transactions = m.prefill_chunk > 0
+        && !gpu.topology.is_tp_ep()
+        && matches!(gpu.decode_path, DecodePath::Device { .. });
+    let state = m.request_state(cap, None)?;
+    let prefill = if transactions {
+        Some(gpu.alloc_prefill_state_for(cap, m.prefill_chunk)?)
+    } else {
+        None
+    };
+    let fixed_plain = fixed_delta(&gpu.stage_memory()?, &base, &cache);
+    let fixed_spec = if m.spec {
+        let dstate = gpu.dspark_alloc_state()?;
+        let mut with_prefill = fixed_delta(&gpu.stage_memory()?, &base, &cache);
+        if transactions && let Some(last) = with_prefill.last_mut() {
+            // the continuation's tap capture, allocated inside the chunk loop
+            *last = last.saturating_add(gpu.dspark_prefill_tap_bytes(m.prefill_chunk));
+        }
+        drop(prefill);
+        let verify = gpu.alloc_verify_state_for(cap)?;
+        let with_verify = fixed_delta(&gpu.stage_memory()?, &base, &cache);
+        drop(verify);
+        drop(dstate);
+        with_prefill
+            .iter()
+            .zip(&with_verify)
+            .map(|(p, v)| *p.max(v))
+            .collect()
+    } else {
+        drop(prefill);
+        fixed_plain.clone()
+    };
+    drop(state);
+    let ceiling = gpu
+        .stage_memory()?
+        .iter()
+        .map(StageMemory::effective_free)
+        .collect();
+    Ok(Dsv4Memory {
+        devs,
+        fixed_plain,
+        fixed_spec,
+        ceiling,
     })
+}
+
+/// The defer budget this route spends (memra#503): `MEMRA_ADMIT_DEFER_BUDGET_MS`, clamped
+/// under the stall bound.
+fn route_defer_budget_ms() -> u64 {
+    dsv4_admit::defer_budget_ms(
+        crate::admit_memory::MemoryAdmitConfig::from_env().defer_budget_ms,
+        crate::health::stall_threshold_ms(),
+    )
 }
 
 /// The route's policy contract (memra#504): declared in `route_contract.rs`, not here, so the
@@ -650,39 +955,101 @@ pub fn caps(m: &Dsv4Model) -> ModelCaps {
     }
 }
 
+/// The route's two books, borrowed by one request's `Emit`: health gets a round stamp, load a
+/// round-time sample, at every committed decode step or speculative round.
+struct RouteProgress {
+    health: Arc<RouteHealth>,
+    load: Arc<RouteLoad>,
+    last_round: Instant,
+}
+
+impl RouteProgress {
+    fn round(&mut self) {
+        let now = Instant::now();
+        self.health.note_round();
+        self.load
+            .note_round(now.duration_since(self.last_round).as_millis() as u64);
+        self.last_round = now;
+    }
+}
+
+/// Latches the route DEAD when the serving thread ends for any reason: the channel closed, a
+/// panic outside the per-request catch, or a respawn dropping the old sender. The record is the
+/// one registered for THIS thread, so a late latch cannot mark a successor dead.
+struct ExitLatch(Arc<RouteHealth>);
+
+impl Drop for ExitLatch {
+    fn drop(&mut self) {
+        self.0.mark_dead(if std::thread::panicking() {
+            "dsv4 serving thread panicked"
+        } else {
+            "dsv4 serving thread exited"
+        });
+    }
+}
+
+/// Answer a request with an error. Constraint-carrying requests wait on the constraint_ready
+/// channel, not the event stream: failing only via tx leaves the HTTP layer to a 503 compile
+/// timeout (rung-3 serve finding: response_format 503 instead of the named 400). Same
+/// dispatch as the worker's fail_request.
+fn fail_request(req: &mut Request, err: EngineError) {
+    if let Some(ready) = req.constraint_ready.take() {
+        let _ = ready.send(Err(err));
+    } else {
+        let _ = req.tx.send(Event::Error(err));
+    }
+}
+
 /// Spawn the serving thread; the returned Sender is the model's admission queue.
-pub fn spawn(name: String, m: Dsv4Model) -> std::sync::mpsc::Sender<Box<Request>> {
+///
+/// `health` is this thread's own liveness record (memra#500) and `load` its route book
+/// (memra#501): the thread publishes idle before every wait, busy at every dequeue, rows at every
+/// completed prime chunk (its progress sink) and a stamp at every decode step or spec round, so
+/// the central worker's idle beat can neither mask nor be masked by this route.
+pub fn spawn(
+    name: String,
+    m: Dsv4Model,
+    health: Arc<RouteHealth>,
+    load: Arc<RouteLoad>,
+) -> std::sync::mpsc::Sender<Box<Request>> {
     let (tx, rx) = std::sync::mpsc::channel::<Box<Request>>();
     std::thread::Builder::new()
         .name(format!("dsv4-serve-{name}"))
         .spawn(move || {
+            let _latch = ExitLatch(health.clone());
+            let sink = health.clone();
+            let _progress =
+                memra_engine::progress::ProgressSinkScope::install(Box::new(move |rows| {
+                    sink.note_rows(rows)
+                }));
             let mut host_cache = Dsv4HostCache::new(m.host_cache_bytes);
-            while let Ok(mut req) = rx.recv() {
+            loop {
+                health.set_idle();
+                let Ok(mut req) = rx.recv() else { break };
+                // Occupancy rises before the ticket falls (`RouteLoad::begin`), so an arrival
+                // never reads a free route between the two.
+                let mut run = load.begin();
                 // The worker's DSV4 channel is unbounded, so the hard admission reservation
                 // remains held until this serving thread actually receives the request. Merely
                 // forwarding it from the command channel must not make the queue appear empty.
-                crate::worker::release_admission_reservation(req.lane);
+                crate::worker::release_request_reservation(&mut req);
                 if req.tx.is_closed() {
                     continue; // client gone while queued
                 }
+                run.admit();
+                health.begin_request();
+                let mut progress = RouteProgress {
+                    health: health.clone(),
+                    load: load.clone(),
+                    last_round: Instant::now(),
+                };
                 let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    serve_one(&m, &mut host_cache, &mut req)
+                    serve_one(&m, &mut host_cache, &mut req, Some(&mut progress))
                 }));
                 match r {
-                    Ok(Ok(())) => {}
-                    Ok(Err(err)) => {
-                        // constraint-carrying requests wait on the constraint_ready
-                        // channel, not the event stream — failing only via tx leaves
-                        // the HTTP layer to a 503 compile timeout (rung-3 serve
-                        // finding: response_format 503 instead of the named 400).
-                        // Same dispatch as the worker's fail_request.
-                        if let Some(ready) = req.constraint_ready.take() {
-                            let _ = ready.send(Err(err));
-                        } else {
-                            let _ = req.tx.send(Event::Error(err));
-                        }
-                    }
+                    Ok(served) => settle(run, &mut req, served),
                     Err(payload) => {
+                        health.note_request_fault();
                         let why = payload
                             .downcast_ref::<String>()
                             .cloned()
@@ -752,6 +1119,8 @@ struct Emit<'a> {
     /// so it is part of the token boundary the parked-prefix tier has to name; without it an
     /// eos-terminated session cannot park at all (see `processed_prefix_tokens`).
     terminal: Option<u32>,
+    /// The serving route's books; `None` off the serving thread (unit tests).
+    progress: Option<&'a mut RouteProgress>,
 }
 
 impl<'a> Emit<'a> {
@@ -775,6 +1144,7 @@ impl<'a> Emit<'a> {
             stop_reason: None,
             client_gone: false,
             terminal: None,
+            progress: None,
         }
     }
 
@@ -784,6 +1154,10 @@ impl<'a> Emit<'a> {
     /// `park_prefix` can name. A swallowed EOS COUNTS as taken: the device consumed it and
     /// the next turn's render replays it after the assistant content.
     fn push_round(&mut self, new: &[u32]) -> RoundTake {
+        // Every call is one committed decode step or speculative round: forward progress.
+        if let Some(p) = self.progress.as_mut() {
+            p.round();
+        }
         let mut taken = 0usize;
         for &id in new {
             if self.stop_reason.is_some() || self.client_gone {
@@ -967,6 +1341,8 @@ fn continue_plain_prefix(
         } else {
             let _ = m.gpu.decode_step_greedy(tok, state)?;
         }
+        // Each step read its token or row back: one completed prime row (memra#500).
+        memra_engine::progress::note_prime_rows(1);
     }
     Ok(last.expect("non-empty suffix has final logits"))
 }
@@ -1173,11 +1549,108 @@ fn processed_prefix_tokens(
     Ok(toks)
 }
 
+/// How one dequeued request left the route.
+#[derive(Debug)]
+pub(crate) enum Served {
+    Done(ServeStats),
+    /// The client left while the request waited for memory.
+    Cancelled,
+    /// The memory door turned it away (memra#503); the error is the client's answer.
+    Refused(EngineError),
+}
+
+/// The client's answer for one admission outcome: `None` serves the request, `Some` turns it
+/// away, with the Retry-After a refusal carries (for the receipt line). `fits` is the largest
+/// session the route can hold; it runs only for a session no wait can fit.
+pub(crate) fn admission_answer(
+    outcome: &Admission,
+    capacity: usize,
+    prompt_len: usize,
+    fits: impl FnOnce() -> usize,
+) -> (Option<Served>, Option<u64>) {
+    match *outcome {
+        Admission::Admit { .. } => (None, None),
+        Admission::Cancelled { .. } => (Some(Served::Cancelled), None),
+        Admission::Refuse { .. } => {
+            let s = crate::admit_memory::clamp_retry_after_s(None);
+            let err = EngineError::rate_limit_after(crate::admit_memory::MEMORY_REFUSE_MESSAGE, s);
+            (Some(Served::Refused(err)), Some(s))
+        }
+        Admission::NeverFits { dev, need, ceiling } => {
+            let err = EngineError::context_length(format!(
+                "a {capacity}-token session (prompt {prompt_len} + max_tokens {}) needs {need} \
+                 bytes on device {dev}, above the {ceiling} bytes this route offers there; the \
+                 largest session that fits is {} tokens",
+                capacity.saturating_sub(prompt_len),
+                fits(),
+            ));
+            (Some(Served::Refused(err)), None)
+        }
+    }
+}
+
+/// Book how a served request left the route and answer its client when it was turned away.
+pub(crate) fn settle(run: RouteRun, req: &mut Request, served: Result<Served, EngineError>) {
+    match served {
+        Ok(Served::Done(stats)) => run.finish(stats),
+        Ok(Served::Cancelled) => run.cancel(),
+        Ok(Served::Refused(err)) => {
+            run.refuse();
+            fail_request(req, err);
+        }
+        Err(err) => fail_request(req, err),
+    }
+}
+
+/// The route's memory door (memra#503), run before a parked prefix is consumed or any state
+/// is allocated. `None` admits. A refusal answers 429 with `Retry-After`; a session no wait
+/// can fit answers a context-length error naming the largest session that fits.
+fn admit_request(
+    m: &Dsv4Model,
+    host_cache: &mut Dsv4HostCache,
+    req: &Request,
+    prompt: &[u32],
+    capacity: usize,
+    spec: bool,
+    host_c4: u64,
+) -> Result<Option<Served>, EngineError> {
+    let need = m
+        .session_need(capacity, spec, host_c4)
+        .map_err(EngineError::engine)?;
+    let spare = host_cache.restore_candidate(&req.cache_ns, req.affinity.as_deref(), prompt, spec);
+    let mut probe = LiveProbe {
+        gpu: &m.gpu,
+        host_cache,
+        spare,
+        tx: &req.tx,
+        t0: Instant::now(),
+    };
+    let outcome = dsv4_admit::admit_session(&need, &mut probe, route_defer_budget_ms())
+        .map_err(EngineError::engine)?;
+    let (answer, retry_after_s) = admission_answer(&outcome, capacity, prompt.len(), || {
+        dsv4_admit::largest_fitting_capacity(m.max_seq, |c| m.fits_ceiling(c, spec))
+    });
+    eprintln!(
+        "{}",
+        dsv4_admit::admission_line(&AdmissionLine {
+            request_id: &req.request_id,
+            model: &req.model,
+            capacity,
+            spec,
+            need: &need,
+            outcome: &outcome,
+            retry_after_s,
+        })
+    );
+    Ok(answer)
+}
+
 fn serve_one(
     m: &Dsv4Model,
     host_cache: &mut Dsv4HostCache,
     req: &mut Request,
-) -> Result<(), EngineError> {
+    progress: Option<&mut RouteProgress>,
+) -> Result<Served, EngineError> {
     let t0 = std::time::Instant::now();
     if req.grammar.is_some() {
         return Err(EngineError::invalid_param(
@@ -1227,10 +1700,24 @@ fn serve_one(
     }
     let use_spec = m.spec && !(greedy && penalties_set);
     let session_capacity = prompt.len() + budget;
-    // Refuse before consuming a parked prefix or starting any state allocation.
-    // This is a single-active-request reservation, not concurrency admission.
-    m.planned_c4_host_bytes(session_capacity)
-        .map_err(EngineError::overloaded)?;
+    // Memory admission (memra#503), before consuming a parked prefix or starting any state
+    // allocation: the active C4 history against its configured budget (a session past it can
+    // never fit, so it is the client's error, not a retryable one), then the whole session
+    // against every owning card and the host.
+    let host_c4 = m
+        .planned_c4_host_bytes(session_capacity)
+        .map_err(EngineError::context_length)?;
+    if let Some(turned_away) = admit_request(
+        m,
+        host_cache,
+        req,
+        &prompt,
+        session_capacity,
+        use_spec,
+        host_c4 as u64,
+    )? {
+        return Ok(turned_away);
+    }
     // In the reference program, a prompt no wider than one configured chunk gets the canonical
     // monolithic prime. It is deliberately not parked: a later, longer cold prompt
     // uses the chunked numeric regime, so retaining this state would make cache use
@@ -1259,6 +1746,7 @@ fn serve_one(
         &req.stop_token_ids,
         budget,
     );
+    emit.progress = progress;
     let mut spec_usage: Option<SpecUsage> = None;
     let state_to_park: DecodeState;
     let mut dstate_to_park: Option<DsparkState> = None;
@@ -1527,6 +2015,11 @@ fn serve_one(
             }
         }
     };
+    let stats = ServeStats {
+        tokens_out: emit.ids.len(),
+        n_prompt: prompt.len(),
+        n_cached,
+    };
     emit.finish(
         prompt.len(),
         n_cached,
@@ -1543,7 +2036,7 @@ fn serve_one(
             dstate_to_park.as_ref(),
         );
     }
-    Ok(())
+    Ok(Served::Done(stats))
 }
 
 fn argmax(v: &[f32]) -> u32 {
@@ -1554,6 +2047,39 @@ fn argmax(v: &[f32]) -> u32 {
         }
     }
     best as u32
+}
+
+#[cfg(test)]
+mod host_reclaim_tests {
+    use super::lru_victim;
+    use std::time::{Duration, Instant};
+
+    /// The admission reclaim evicts least-recently-used first, breaks a tie by id, and never
+    /// picks the entry the waiting request would restore from.
+    #[test]
+    fn the_victim_is_the_oldest_entry_other_than_the_spared_one() {
+        let t0 = Instant::now();
+        let old = t0;
+        let newer = t0 + Duration::from_millis(5);
+        let entries = [
+            ("ns-a", 0, newer, 7),
+            ("ns-b", 1, old, 9),
+            ("ns-b", 2, old, 3),
+        ];
+        let pick = |spare| lru_victim(entries.iter().copied(), spare);
+        assert_eq!(
+            pick(None),
+            Some(("ns-b".to_string(), 2)),
+            "oldest, then lowest id"
+        );
+        assert_eq!(pick(Some(3)), Some(("ns-b".to_string(), 1)));
+        assert_eq!(
+            lru_victim(entries[..1].iter().copied(), Some(7)),
+            None,
+            "the spared entry alone is never evicted"
+        );
+        assert_eq!(lru_victim(std::iter::empty(), None), None);
+    }
 }
 
 #[cfg(test)]

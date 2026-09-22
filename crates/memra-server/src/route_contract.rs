@@ -17,9 +17,10 @@
 //! serving. A refused surface whose policy an operator has actually armed (today:
 //! `MEMRA_REWRITE_BUNDLE` beside a DSv4 route, #449) is the same refusal with the route named.
 //!
-//! What this module does NOT do: implement the DSv4 policies. #500 (progress), #501 (capacity,
-//! occupancy, metrics), #503 (memory cost) and #449 (rewrite bundle) each flip one declaration
-//! from `Refused` to `Implemented`; until then the registry names them at every boot.
+//! What this module does NOT do: implement the DSv4 policies. Each issue flips its declaration
+//! from `Refused` to `Implemented` where the route gains the call site: #500 (progress), #501
+//! (occupancy, service metrics) and #503 (memory cost) have; #449 (rewrite bundle) has not, and
+//! the registry names it at every boot.
 
 use std::collections::BTreeMap;
 
@@ -288,32 +289,31 @@ impl RouteContract {
     /// The DSv4 serving thread (`dsv4_serve.rs`): one request at a time on a FIFO channel. Every
     /// surface the thread does not write is refused by name with the issue that owns it, so the
     /// registry prints it at boot and refuses an operator who arms one of those policies.
-    /// Flipping a line from `refused` to `implemented` is the registration side of #500, #501,
-    /// #503 and #449. Declared here and not in `dsv4_serve.rs` so the wiring test's grep of
-    /// that file cannot be satisfied by the declaration text itself.
+    /// Flipping a line from `refused` to `implemented` is the registration side of each issue
+    /// (#500, #501 and #503 done; #449 open). Declared here and not in `dsv4_serve.rs` so the
+    /// wiring test's grep of that file cannot be satisfied by the declaration text itself.
     pub fn dsv4_thread(model: impl Into<String>) -> Self {
         Self::new(model, "dsv4-thread", "dsv4_serve.rs", RouteCapacity::Serial)
             .implemented(
                 PolicySurface::Capacity,
                 "std::sync::mpsc::channel::<Box<Request>>()",
             )
-            .refused(
-                PolicySurface::Occupancy,
-                "the FIFO channel is the queue and publishes no in-flight or queued count; the lane cap mirror reads 64 for a serial route (memra#501)",
-            )
-            .refused(
+            // memra#501: `running` rises at dequeue on the route's own book
+            // (route_telemetry::RouteLoad); the HTTP layer prices waits and the trio from it.
+            .implemented(PolicySurface::Occupancy, "load.begin()")
+            // memra#500: the thread's prime odometer stamps route to its own RouteHealth.
+            .implemented(
                 PolicySurface::Progress,
-                "the serving thread stamps neither the health beat nor the prime odometer, so /health reads the idle central worker (memra#500)",
+                "memra_engine::progress::ProgressSinkScope::install(",
             )
             .implemented(PolicySurface::FaultOwnership, "std::panic::catch_unwind(")
             .implemented(
                 PolicySurface::ShutdownOwnership,
-                "while let Ok(mut req) = rx.recv()",
+                "let Ok(mut req) = rx.recv() else { break };",
             )
-            .refused(
-                PolicySurface::MemoryCost,
-                "requests reach allocation with a single-active-request reservation and no per-device feasibility, tier or defer decision (memra#503)",
-            )
+            // memra#503: the route's own per-device charge through the shared decision rule,
+            // before any allocation (dsv4_admit).
+            .implemented(PolicySurface::MemoryCost, "dsv4_admit::admit_session(")
             .refused(
                 PolicySurface::RewriteQualification,
                 "the route consumes no MEMRA_REWRITE_BUNDLE and none of its programs is a plan rewrite (memra#449)",
@@ -322,10 +322,8 @@ impl RouteContract {
                 PolicySurface::PrimeFairness,
                 "no worker Session exists for a dsv4 request; the prime is one synchronous chunked call on the serving thread (memra#535 P4)",
             )
-            .refused(
-                PolicySurface::ServiceMetrics,
-                "the thread publishes no worker::Metrics, so the queue estimator uses its static 2 s service time (memra#501)",
-            )
+            // memra#501: the served counters and the service-time window the route's estimate reads.
+            .implemented(PolicySurface::ServiceMetrics, "run.finish(stats)")
     }
 }
 
@@ -510,20 +508,17 @@ mod tests {
         assert_eq!(
             refused,
             vec![
-                PolicySurface::Occupancy,
-                PolicySurface::Progress,
-                PolicySurface::MemoryCost,
                 PolicySurface::RewriteQualification,
                 PolicySurface::PrimeFairness,
-                PolicySurface::ServiceMetrics,
             ]
         );
+        assert!(matches!(
+            route.decl(PolicySurface::MemoryCost),
+            Some(PolicyDecl::Implemented { .. })
+        ));
         for (s, issue) in [
-            (PolicySurface::Progress, "#500"),
-            (PolicySurface::Occupancy, "#501"),
-            (PolicySurface::ServiceMetrics, "#501"),
-            (PolicySurface::MemoryCost, "#503"),
             (PolicySurface::RewriteQualification, "#449"),
+            (PolicySurface::PrimeFairness, "#535"),
         ] {
             match route.decl(s) {
                 Some(PolicyDecl::Refused { reason }) => {
