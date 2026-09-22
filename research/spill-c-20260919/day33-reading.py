@@ -153,8 +153,13 @@ def main():
     cell = root / "hashwc" / "hash-wc"
     ev = cell / "ev"
     print(f"== day-33 hash-wc cell: {cell}")
-    lock = json.loads((ev / "LOCK.json").read_text()) if (ev / "LOCK.json").exists() else {}
-    check(lock.get("acquired") is True and lock.get("lock") == "/tmp/memra-5090.lock", f"lock proof: {lock.get('lock')} acquired={lock.get('acquired')} owner={lock.get('owner')}")
+    # The collector's own lock.json carries `acquired`; the cell's ev/LOCK.json (tools/tier-lock-proof.py on the
+    # inherited fd) carries the lock path, owner, device and inode. The clause: acquired on /tmp/memra-5090.lock,
+    # and the proof taken inside the cell names the same lock file (same device and inode).
+    coll = json.loads((cell / "lock.json").read_text()) if (cell / "lock.json").exists() else {}
+    proof = json.loads((ev / "LOCK.json").read_text()) if (ev / "LOCK.json").exists() else {}
+    same = proof.get("lock") == coll.get("lock") == "/tmp/memra-5090.lock" and (proof.get("device"), proof.get("inode")) == (coll.get("device"), coll.get("inode"))
+    check(coll.get("acquired") is True and same, f"lock proof: collector {coll.get('lock')} acquired={coll.get('acquired')} owner={coll.get('owner')}; cell proof owner={proof.get('owner')} same file={same} (inode {proof.get('inode')})")
     cj = cell / "CELL.jsonl"
     status = [json.loads(l).get("status") for l in cj.read_text().splitlines() if l.strip()] if cj.exists() else []
     check("executed-not-qualified" in status, f"collector status {status}")
@@ -181,7 +186,7 @@ def main():
         rules, kv, passes, extra = parse_micro(path, kinds, prefix)
         check(rc == "0", f"{label}: exit {rc}")
         check(len(rules) == 1, f"{label}: one `{prefix}` line")
-        check(all(len(v) == 10 for v in passes.values()), f"{label}: 10 passes per kind {{k: len(v) for k, v in passes.items()}}")
+        check(all(len(v) == 10 for v in passes.values()), f"{label}: 10 passes per kind " + str({k: len(v) for k, v in passes.items()}))
         if kv:
             for k in kinds:
                 check(abs(float(kv[f"{k}_ms"]) - med(passes[k])) < 0.01, f"{label}: {k} median agrees with the pass lines ({kv[f'{k}_ms']} ms)")
