@@ -641,3 +641,59 @@ missing entry is a cold prime). No new flag, no new numeric program, no new `uns
    out with the wrong sign (a cache-off boot's prime is not a cache-on boot's prime); the capture share stays unread.
 4. **The receipt's price, read by the door review**: cell (v) of day 22 and its 5090 twin (C day 28), verbatim, the
    pair 2.11x to 2.15x the copy on the target card and 1.12x on the 5090; reported, nothing relaxed.
+
+## Move 2, day 25: the double park priced, the retire-settle share priced (`DAY25.md`)
+
+**The double park (C day 29's finding; pre-registered in `DAY25.md` "Task 1").** On the promote arm of the day-16
+stall script the hit parks twice under the door: the promote's park, then, after the promote's publication put the
+planes on the device, the same request's hit takes the restore route and parks again. Target card, one hold, twenty
+interleaved boots (ON OFF ... and OFF ON ...), N=5 boots per arm per order, both orders, every replay PASS. The
+tenant's stall ON 149.4 / 149.4 against OFF 85.4 / 85.3 (`+64.0 / +64.2 unc=0.1 -> isolated`); the request's e2e ON
+221.4 against OFF 115.5 / 115.4 (`+105.8 / +105.9 -> isolated`). The re-admission wait, by line in 100 of 100 ON
+runs: 90.1 ms (89.7 to 91.5) = the tick's decode 13.46 + the inline demote's two on-tick hashes 74.9 (`demote_in -
+demote_completion`) + residual 1.8; the poll-to-re-admit slack 0.10 ms; the copy itself about 0.5 ms (cell (v)). The
+parked-only bounded wait never fires with a tenant active, so the poll cadence is the tick top, and the tick top
+polls the demote before the restore. Verdict: BOTH. By construction the restore route parks every whole-entry
+device hit, including one whose planes the same request's promote landed 6.5 ms earlier: one tick top for a 0.5 ms
+copy, unearned. The 90.1 ms magnitude is the hash tick's scheduling artifact. The tenant's +64 ms is the demote's
+hashes on one tick (57.9 of 64.1 by arithmetic), not the second park (inside the +1.8 residual). No existing typed
+refusal fits the shape (the probe refuses by class, tenancy or latch; the fault door has no restore arm), so the
+pair is door ON against OFF and says so.
+
+**Proposal 1, for the lead's ruling (not implemented).** In `host_restore_park_probe`, refuse the route by shape
+when `hpx.promoted_pin` (the insertion pin of the promote published at this tick top, held exactly for this
+request's re-admission) names the hit entry: one typed line, the OFF device-hit copy on the tick, no flag, no new
+state, no numeric change. Acceptance gate: the same cell with `request parked` 2 -> 1 and `restore submitted` 0 in
+100 of 100 ON promote runs, the request's e2e down by the re-admission median (about 221 -> 131), the tenant's stall
+within IQR of 149.4, the day-21 restore arm still parking once and landing 100 of 100, hit and identity gates ALL
+GREEN in both arms.
+
+**The retire-settle share (owed item 3; pre-registered in `DAY25.md` "Task 2").** `PendingCapture` carries
+`settle_after_ms` and `settle_held_ms`, stamped around the settle closure in `host_capture_settle_with` and printed
+inside the publish line's parenthesis (`; the settle held the owner thread H ms, entered A ms after submission`); no
+parser splits inside it, no new `MEMRA_*` read. The hit gate ON on the target card (`ALL GREEN (qwen)`, 68 ok, day
+24's census counts exactly): the retire seam's `Block` held the owner thread 0.37 to 0.44 ms (median 0.41, N=11),
+the tick-top `Poll` 0.37 to 0.38 (N=3), entered 106 to 204 ms after submission, share 0.2 to 0.4 percent. Day 24's
+"host wait for the 159 MB copy at the retire" is refuted by its own typed figure: the copy had landed, the seam's
+cost is the settle's fixed 0.4 ms. The moved share of the spec-boundary capture on this shape is the whole copy.
+
+**Proposal 2, for the lead's ruling (not implemented).** No reordering is earned: a poll-then-retire seam breaks
+nothing (the `Block` branch still precedes any session leaving `active`) and removes nothing measurable (the
+`Block` already returns in the `Poll`'s time). The smallest distinguishing form, if wanted, is a source-session
+identity on `PendingCapture` so the seam blocks only for the source's retire; its gate is the hit gate ON with
+`held` unchanged and a CPU test that a non-source retire leaves the capture `Pending`. Recommended: leave the seam
+and record 0.4 ms as the price.
+
+**What Move 2 still owes, in order.**
+
+1. **The recurrent f32 state off the tick**: the restore keeps `conv_state` and `ssm_state` on the owner stream (the
+   byte-span class's shape); on the 27B that is the fixed 157 MB of every restored entry. A typed f32 span in the
+   restore class moves the restore's share; its receipt would be the same program over the f32 planes' bytes.
+2. **The publishes still on the tick**, by name: the fanout leader's snapshot and the pause sweep's boundary snapshot
+   (`prefix_snapshot` direct); the `dspark-boundary` publish; the `glm5-boundary` publish; every `OnTick` refusal.
+3. **A stall cell that isolates the capture class**: C day 28 read the door delta at +0.7 ms but the pre-registered
+   subtraction for the capture arm's own share came out with the wrong sign; the capture share stays unread. Day 25
+   settled the retire seam's part of it: 0.4 ms, not a copy wait.
+4. **The receipt's price, read by the door review**: cell (v) and its 5090 twin, verbatim; reported, nothing relaxed.
+5. **The lead's rulings on proposals 1 and 2 above**; proposal 1 removes an unearned park worth 90 ms of request
+   latency on the promote-then-hit shape and nothing of the tenant's stall.
