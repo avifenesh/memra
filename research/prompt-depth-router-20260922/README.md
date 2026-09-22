@@ -7,10 +7,12 @@ allocation in the classifier, or model download.
 
 The input is the **latest user instruction**, not the complete chat transcript.
 Prose, code and numerical requests get separate labels. Mixed and unsupported
-requests use the caller's fixed-depth fallback. Quoted text, Markdown fences and
-block quotes are input material, not routing instructions. The initial vocabulary
-is English; unsupported languages fall back. Work is bounded by 16 KiB and 512
-visible words; exceeding either limit also falls back.
+requests use the caller's fixed-depth fallback. Quoted text, Markdown fences,
+block quotes and explicitly marked `<reference>`, `<context>` and `<document>`
+blocks are input material. The initial vocabulary is English; unsupported
+languages fall back. Work is bounded by 256 KiB and 512 visible words; exceeding
+either limit also falls back. A long reference followed by a short instruction
+can therefore be routed without scanning the reference for intent.
 
 `router.rs` exports `select_depth(instruction, profile, ceiling)`. It returns the
 kind and K without touching model state. A caller invokes it once before drafting

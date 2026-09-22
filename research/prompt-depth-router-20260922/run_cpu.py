@@ -53,7 +53,7 @@ def main():
             ).strip(),
             "source_hashes": {
                 name: sha(HERE / name)
-                for name in ("router.rs", "main.rs", "cases.tsv", "run_cpu.py")
+                for name in ("router.rs", "main.rs", "request_routing.rs", "cases.tsv", "run_cpu.py")
             },
             "platform": platform.platform(),
             "machine": platform.machine(),
@@ -69,6 +69,7 @@ def main():
             "ceiling": 8,
             "batches": 5,
             "iterations_per_group_per_batch": 20000,
+            "input_byte_limit": 262144,
             "timer": "std::time::Instant; timer-inclusive, in-process complete routing call",
         }
         metadata["rustc"] = command("rustc-version", ["rustc", "-Vv"])
@@ -103,7 +104,7 @@ def main():
                 startup.append(commands[-1]["wall_ns"])
         oversized = json.loads(command(
             "cli-oversized", [str(binary), "classify", "2,4,4,4", "8"],
-            ("Explain " + "x" * 16384).encode(),
+            ("Explain " + "x" * 262144).encode(),
         ))
         if oversized != {"kind": "unknown", "k": 4}:
             raise RuntimeError("oversized CLI input did not fall back")
@@ -119,7 +120,7 @@ def main():
                 [str(binary), "bench", str(HERE / "cases.tsv"), "2,4,4,4", "8", "20000"],
             )
             rows = [json.loads(line) for line in text.splitlines()]
-            if len(rows) != 5 or any(len(r["samples_ns"]) != 20000 for r in rows):
+            if len(rows) != 7 or any(len(r["samples_ns"]) != 20000 for r in rows):
                 raise RuntimeError("incomplete timing batch")
             for row in rows:
                 all_rows.append({"batch": batch, **row})

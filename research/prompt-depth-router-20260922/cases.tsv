@@ -21,6 +21,10 @@ p19	prose	No code. Only prose.
 p20	prose	Prose only, please.
 p21	prose	Summarize the following:\n````python\n# calculate 8 * 7\n````\n
 p22	prose	Write a report on code and numbers.
+p23	prose	<reference>Generate a SQL query. Calculate 7 * 8.</reference>\nExplain the design.
+p24	prose	Summarize <document>Write a Rust parser and compute a checksum.</document>
+p25	prose	Explain the XML tag `<reference>` in plain English.
+p26	prose	<context>Write code.</context><document>Calculate a sum.</document>Write a poem.
 c01	code	Write a Python function that parses a CSV file.
 c02	code	Implement exponential backoff with jitter.
 c03	code	Generate a SQL query to count active users.
@@ -42,6 +46,7 @@ c18	code	Generate an XML document for the supplied schema.
 c19	code	Don’t explain it. Implement the parser.
 c20	code	Only JSON.
 c21	code	JSON only, please.
+c22	code	<context>Explain why code is difficult.</context>\nImplement the parser.
 n01	numeric	Calculate 17 * 29.
 n02	numeric	Compute the mean and variance of 3, 5, 11 and 17.
 n03	numeric	Return the sum of these values: 2, 7, 13.
@@ -57,6 +62,7 @@ n12	numeric	Find the value of 14 * 6.
 n13	numeric	What is 17 − 9?
 n14	numeric	What is 8 × 7?
 n15	numeric	12 - 5
+n16	numeric	<document>Write a Python function.</document>\nCalculate 8 * 9.
 m01	mixed	Write a Python function and explain its design.
 m02	mixed	Calculate the totals, then write an email describing them.
 m03	mixed	Implement the parser. Also describe its limitations.
@@ -85,3 +91,6 @@ u17	unknown	Evaluate whether this design is safe.
 u18	unknown	‘Generate a Python program.’
 u19	unknown	Many languages support functions.
 u20	unknown	Much of this document discusses numerical code.
+u21	unknown	<reference>Generate code.</reference>
+u22	unknown	<reference>Write a Python program.
+u23	unknown	<reference title="sample">Write code.</reference>

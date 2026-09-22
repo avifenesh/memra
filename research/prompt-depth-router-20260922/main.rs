@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod request_routing;
 mod router;
 
 use router::{Kind, Profile, classify, select_depth};
@@ -165,6 +167,14 @@ fn run() -> Result<(), Box<dyn Error>> {
             let long = format!("Explain this:\n```\n{}\n```", "x".repeat(router::MAX_BYTES - 22));
             assert_eq!(classify(&long), Kind::Prose);
             measure("near_byte_limit_quoted_input", &[&long], p, ceiling, iterations);
+            let quoted_16k = format!("Explain this:\n```\n{}\n```", "x".repeat(16384 - 22));
+            measure("quoted_16k_input", &[&quoted_16k], p, ceiling, iterations);
+            let reference = format!(
+                "<reference>{}</reference>\nExplain the architecture.",
+                "Generate code. ".repeat(14000)
+            );
+            assert_eq!(classify(&reference), Kind::Prose);
+            measure("large_marked_reference", &[&reference], p, ceiling, iterations);
             let excessive = "x".repeat(router::MAX_BYTES + 1);
             measure("byte_limit_fallback", &[&excessive], p, ceiling, iterations);
             let many = format!("Explain {}", "a ".repeat(router::MAX_WORDS));
@@ -265,6 +275,21 @@ mod tests {
         ] {
             assert_eq!(classify(source), Kind::Unknown);
         }
+    }
+
+    #[test]
+    fn large_reference_is_data_and_task_tags_remain_instructions() {
+        let prompt = format!(
+            "<reference>{}</reference>\nExplain the architecture.",
+            "Generate code and calculate numbers. ".repeat(5000)
+        );
+        assert!(prompt.len() > 16384);
+        assert_eq!(classify(&prompt), Kind::Prose);
+        assert_eq!(classify("<task>Write code.</task>"), Kind::Code);
+        assert_eq!(
+            classify("<reference>Write code.</reference>"),
+            Kind::Unknown
+        );
     }
 
     #[test]

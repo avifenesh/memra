@@ -3,7 +3,7 @@
 //! The caller supplies measured depths and the runtime's legal/admitted ceiling.
 //! This function does not change model state, sampling, or a running request.
 
-pub const MAX_BYTES: usize = 16 * 1024;
+pub const MAX_BYTES: usize = 256 * 1024;
 pub const MAX_WORDS: usize = 512;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -187,6 +187,31 @@ impl<'a> Iterator for Tokens<'a> {
         let bytes = self.text.as_bytes();
         while self.pos < bytes.len() {
             let byte = bytes[self.pos];
+            if byte == b'<' {
+                let mut skipped = false;
+                for (open, close) in [
+                    ("<reference", "</reference>"),
+                    ("<context", "</context>"),
+                    ("<document", "</document>"),
+                ] {
+                    if bytes[self.pos..].starts_with(open.as_bytes())
+                        && bytes
+                            .get(self.pos + open.len())
+                            .is_some_and(|b| *b == b'>' || b.is_ascii_whitespace())
+                    {
+                        // '<' is a UTF-8 boundary. Find the closing marker
+                        // without tokenizing or copying the reference.
+                        self.pos = self.text[self.pos + open.len()..]
+                            .find(close)
+                            .map_or(bytes.len(), |end| self.pos + open.len() + end + close.len());
+                        skipped = true;
+                        break;
+                    }
+                }
+                if skipped {
+                    continue;
+                }
+            }
             let curly_close = if bytes[self.pos..].starts_with("“".as_bytes()) {
                 Some("”")
             } else if bytes[self.pos..].starts_with("‘".as_bytes()) {
