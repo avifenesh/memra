@@ -700,7 +700,21 @@ attributed by any cell. Both are named as open for the review; nothing is inferr
    reading write-combined memory at that rate on this tree; which memory they read is item 6's question, not
    answered here. The per-hardware rule's pair on this class now exists as one cell with these N and this regime;
    no tenant-stall cell exists on this class.
-6. **The promote-side census question and the day-16 write-combined contradiction** named in the arithmetic.
+6. **The promote-side census question and the day-16 write-combined contradiction** named in the arithmetic. ANSWERED day 27 (A, `spill-a-20260919/DAY27.md` section 1, read from
+   the code on `cb9fa5ef3`, no cell): the two Move 1 receipt hashes (`progress` at the poll, `bind_tier_image`'s
+   per-plane check) cover the KV planes only, about 1.9 MB on the 27B's 64-token entry (a few MB on the 9B; not
+   split by any line), in the card's pinned kind (cached on the target, write-combined on the 5090); the demote's
+   `in - completion` (74.8 ms target, 21 to 23 ms 5090) is ONE SHA-256 pass of `bind_tier_image`'s `StateBundle`
+   checksum over the WHOLE image, about 157 MB of it the recurrent f32 state in pageable heap (`HostF32::Heap`,
+   `reserve_image` with no arena) that never crossed the contract and has no receipt partner, plus the pre-submit
+   f32 D2H and the insert. The write-combined pass of the micro-cell (1431.6 ms per 160 MiB) applies to the one
+   to two percent of the entry that lives in the write-combined leases, which is why the 5090 reads 21 to 23 and
+   not 490 per pass: one heap-rate pass (37.5 ms per 160 MiB here) over the entry plus a write-combined read of
+   the small KV share. The OFF arm never computes the bundle checksum (`hpx.tier` is `None` under OFF), so the
+   door's demote cost is that pass, not Move 1's copy. Day 16's write-combined delta on this card is the same
+   reading. The promote-side census question: the promote's `completion` figure contains the engine's hash 3 over
+   the KV source leases (1.9 MB), and the recurrent state is not receipted at promote (the restore copies it on
+   the owner stream; `MEMRA_KV_HOST_VERIFY=1` alone digests it).
    The RTX 5090 measurement, day 33 (`DAY33.md`, `rtx5090-day33/hashwc/`; 9B pair-cell entry size 54,800,000 B and 160 MiB,
    one collector hold, N=5 per kind per order, both orders, N=10 pooled, 56 to 58 C, premise `PINNED-DEFAULT ...
    kind=write-combined flags=4` inside the hold; this card's figures, compared to nothing from the target card): the engine
