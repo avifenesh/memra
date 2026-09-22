@@ -527,11 +527,11 @@ jobs:
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
-      - name: Selected rewrite scope CPU refusals and seal separation
+      - name: Rewrite identity gate CPU tests (scope refusals, seal separation, hidden boundary)
         run: |
           MEMRA_ENGINE_SKIP_BUDGET=0 python3 tools/skip-census.py run \
-            --budget-var MEMRA_ENGINE_SKIP_BUDGET --min-passed 2 \
-            -- cargo test --release -p memra-engine --bin rewrite_identity_gate selected_scope_tests
+            --budget-var MEMRA_ENGINE_SKIP_BUDGET --min-passed 4 \
+            -- cargo test --release -p memra-engine --bin rewrite_identity_gate
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"

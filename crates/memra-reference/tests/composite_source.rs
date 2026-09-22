@@ -44,17 +44,34 @@ fn write_artifact(directory: &Path, rows: Vec<(String, Vec<u64>, Vec<f32>)>, ove
 
 #[test]
 fn retained_composite_load_matches_reference_weights_and_logits_bit_for_bit() {
-    let raw = r#"{"model_type":"qwen3_moe","tie_word_embeddings":true,"num_hidden_layers":1,"hidden_size":8,"num_attention_heads":2,"num_key_value_heads":1,"head_dim":4,"intermediate_size":16,"vocab_size":32,"max_position_embeddings":32,"num_experts":4,"num_experts_per_tok":2,"moe_intermediate_size":8}"#;
+    // qwen3_moe checkpoints own a separate output projection; the pack refuses a tied head.
+    let raw = r#"{"model_type":"qwen3_moe","tie_word_embeddings":false,"num_hidden_layers":1,"hidden_size":8,"num_attention_heads":2,"num_key_value_heads":1,"head_dim":4,"intermediate_size":16,"vocab_size":32,"max_position_embeddings":32,"num_experts":4,"num_experts_per_tok":2,"moe_intermediate_size":8}"#;
     let config = ModelConfig::from_hf(&HfConfig::try_parse(raw).unwrap());
     let pack = model_packs::for_config(&config).unwrap();
     let original_plan = pack.compile_plan(&config).unwrap();
-    let original = deterministic_fixture(&original_plan).unwrap();
+    // The deterministic fixture ties the head to the embedding, so add a distinct projection.
+    let (vocab, hidden) = (
+        original_plan.vocab_size as usize,
+        original_plan.hidden_size as usize,
+    );
+    let head = ReferenceTensor::new(
+        vec![vocab, hidden],
+        (0..vocab * hidden)
+            .map(|i| ((i * 7 + 3) % 17) as f32 * 0.0125 - 0.1)
+            .collect(),
+    )
+    .unwrap();
+    let mut original = deterministic_fixture(&original_plan).unwrap();
+    original
+        .weights
+        .insert(TensorId::OutputProjection, head.clone());
     let mut plan = original_plan.clone();
     let MlpPlan::Moe(moe) = &mut plan.layers[0].mlp else {
         unreachable!()
     };
     moe.retained_experts = Some(vec![1, 3]);
-    let expected = deterministic_fixture(&plan).unwrap();
+    let mut expected = deterministic_fixture(&plan).unwrap();
+    expected.weights.insert(TensorId::OutputProjection, head);
     let contract = pack
         .compile_tensor_contract(
             &config,
