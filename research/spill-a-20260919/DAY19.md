@@ -93,3 +93,71 @@ and `option_c_*`. If the identity gate or the fault gate is red in either arm th
 decided by the day-18 promote-arm reading; its measurement is the same-window A/B owed in the offload note. No 5090
 cell today (the change is under the door on the target card class; the 5090 door gates on this tree are owed with
 the lock, as on day 18).
+
+### Target card, the result (BOX3, tree `c96d51862`, binary `bf353fc7…`; receipts `pro-single-day19/box/`)
+
+Built on the box from the shipped bundle (`build rc=0`, `box/build.log`); the collector cell `gates` (`tools/tier-battery.py
+--rig pro-single --external-lock`, `/tmp/memra-gpu.lock`, `LOCK.json` owner `collector`) ran every gate in one lock
+hold; the hit gate under its own `flock` on the canonical lock; the unit cells in a second collector hold. No lock
+retry was needed; nothing of mine is left running on the box. Every line verbatim, N=1 per cell, the card's regime in
+the collector's `command.gpu.csv` beside each cell; `executed-not-qualified`.
+
+| cell | arm | verdict line, verbatim | ok / fail |
+|---|---|---|---|
+| identity-default-off | door OFF | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-default-on | door ON | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-plain-off | `MEMRA_SERVE_SPEC=0` | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| identity-plain-on | `MEMRA_SERVE_SPEC=0`, door ON | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` | 12 / 0 |
+| failure-off | door OFF | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| failure-on | door ON | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` | 15 / 0 |
+| contract-fault | ON by construction | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` | 65 / 0 (the lead's #626 floor item is the 65th) |
+| twin-off | door OFF | `PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` | PASS |
+| twin-on | door ON | the identical line, `-> PASS` | PASS |
+| hitgate-off | door OFF | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` | 61 / 0 |
+| hitgate-on | door ON | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` | 61 / 0 |
+| unit-cell (`option_b_*`, `option_c_*`) | the copy-stream engine | `test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 794 filtered out; finished in 0.26s` | 8 / 0 |
+
+The ON arms exercised the moved wait: the identity gates' server logs each carry one `[prefix-host] promote published
+off the tick: ticket complete after 1 poll(s), 7.6ms from submission to completion (tick-top poll)` and one
+`contracts door H2D receipt: .. require=ok .. published retired acknowledged`; the failure gate's ON boot two H2D
+receipts through the `Block` route (the hook); the fault gate four off-tick publications and four receipts; zero
+`reader wait refused` lines anywhere. The hit gate's ON arm publishes no promote (its entries stay on the device at
+`MEMRA_HOSTGATE_CACHE_MB=256`; the same as day 18). The twin gate on this card reads `evictions=9` in both arms, the
+day-17 shape, so the 5090's `V3=FAIL` of the day-18 record is a local-card reading, not a tree-wide one.
+
+**Reading.** The identity and fault gates are green in both arms on the target card class, the pre-registered
+condition: the settle-time reader wait STANDS under the door. Commit `c96d51862` keeps its `wip:` prefix (history is
+not rewritten); this record and `OWNER-THREAD-OFFLOAD.md` are where it is promoted to "landed under the door". The
+engine's `consumer_fenced` semantics for a copy-stream H2D now follow rule 3 exactly: unfenced at submit, fenced by
+the installed owner-stream wait at the settle. Measurement is not claimed: the tenant-side effect (the kernels
+between submit and settle no longer queue behind the copy's landing, up to about 6 ms per 160 MB on this card) is
+the same-window A/B owed in the offload note; the day-18 promote arm read `at_off` already, so the expected reading
+of that cell is a tail, not a median.
+
+## Task 3: Move 2 slice 1
+
+Not started: the budget closed at the records. Slice 1 is named and priced in `OWNER-THREAD-OFFLOAD.md`; its first
+commit is the CPU schedule `d2d_capture_publish` and its bindings, before any engine code.
+
+## Task 4: records and checks
+
+`STATE.md` rewritten (day 19). `OWNER-THREAD-OFFLOAD.md`: the day-19 section closes Move 1's first owed item with the
+verdict; the owed list is now the receipt hashes, the by-reference routes, the same-window decision cell.
+`research/INDEX.md` row `spill-a-20260919/day19`. `docs/FLAGS.md` door row (day-19 sentence, in the code commit).
+Checks on the final tree: `cargo fmt --check` (tier, engine, server) clean; clippy `-D warnings` on `memra-tier`
+(`--all-targets`), `memra-engine` and `memra-server` (`--lib --tests`) clean; `memra-tier` contracts `71 passed`;
+`memra-engine` lib `tier_transfer` `4 passed; 1 ignored`; `memra-server` lib `788 passed; 14 ignored`; `git diff
+--check` clean on every source commit (the receipt commit `e3a6acd67` carries `box/unit/cargo-test.log:21: new blank
+line at EOF`, a receipt's own bytes, kept); `tools/check-flags.sh` (no uncovered runtime names),
+`tools/check-conflict-markers.sh` OK, `python3 tools/check-public-boundary.py check` `0 new`. The box worktree
+`/root/wt-a` is at `c96d51862` on `lane-a-day19`; `/root/spill-receipts/a-day19/` mirrored to `pro-single-day19/box/`
+(bins excluded); the bundle removed on both ends; `/tmp/spill-a-day19/` removed locally at close. #536 comment posted
+with this receipt; the issue stays open.
+
+## Budget
+
+About 3.9 agent-hours against 4: the day-18 settle and the merge 0.4, rule 3's schedule and bindings 0.8, the Move 2
+pre-registration 0.6, the engine and worker change with its censuses and the local battery 0.7, the target-card cells
+0.8, records and the #536 comment 0.6. Blockers: none today (the box lock was free; the local 5090 was not touched).
+Open: the 5090 door gates on this tree (owed with the lock), the 5090 twin27 `V3=FAIL` repro for lane B, the
+same-window A/B of both Move 1 classes, the receipt hashes off the tick, the by-reference routes, Move 2 slice 1.

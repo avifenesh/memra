@@ -250,7 +250,11 @@ installs (`ReaderWaitInstall::AtSubmit`, the engine's day-18 program; `AtSettle`
 reader stream passes, and the red arm (a settle-time flag with no reader wait) fails the schedule. The engine change
 (the wait installed at the settle, after `event_done`, before `ready_view`, the consumer fence recorded after it)
 is allowed by the schedule and lands only with the identity gate OFF and ON on the target card; `DAY19.md` records
-whether it did.
+whether it did. **It did** (`c96d51862`): `CudaTransfers::install_consumer_wait` at the settle, an off-owner H2D
+unfenced at submit; on the target card identity `ALL GREEN (teeth=0)` default and plain, OFF and ON, failure, fault
+(65 ok), twin, hit and the unit cells green in both arms. Move 1's owed list is now: the receipt hashes off the tick,
+the by-reference demote routes, the same-window decision cell with both classes (door ON on the copy stream against a
+build of the day-16 tree).
 
 ## Move 2 pre-registration (day 19, committed before any Move 2 code): the D2D capture and restore off the tick
 
