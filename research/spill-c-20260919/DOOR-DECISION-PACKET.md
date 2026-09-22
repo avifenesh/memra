@@ -377,7 +377,7 @@ RTX 5090 Laptop GPU, the 9B (this card's own figures):
   4th to 11th demote of a boot and `42.19` on the first three, the first touch of the 32 pinned lease allocations;
   section 2), Move 1's two receipt hashes over the KV planes (about 0.9 ms each, about 1.8 ms together on the target
   host, A's code-read arithmetic), and a hit on a `Hashing` entry parked for one tick at a time until the digests land
-  (1 per boot in the identity gate's default-ON arm on both cards, `35 re-park(s)` and `5 re-park(s)`; item 2); the
+  (1 line in the host-on boot of the identity gate's default-ON arm on each card, `35 re-park(s)` and `5 re-park(s)`; item 2); the
   bundle checksum runs on the helper thread since option (a) (`hashed in` `median=73.20` ms per 157.9 MB on the target
   card, 12.9 and 13.0 ms per 53.7 MB on the RTX 5090's two ledger lines, off the tick), and that code is on integ45's
   ref, not on `main` at the time of writing; the arena would have to take the lease handoff or stay refused; the spec-boundary capture

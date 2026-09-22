@@ -928,7 +928,7 @@ demote's owner-thread `in - completion` reads `median=7.40` (A's N=100; `DAY28 C
 day 27's 74.8; clauses 1a, 1b, 3, 4 and 5 passed, and clause 2 read "**Clause 2 FAILS on the target card**" (identity
 default ON `4 FAILURE(S) (teeth=0)`, failure ON `1 FAILURE(S)`, contract fault `23 FAILURE(S)`; the RTX 5090's default
 fault arm the same 23) for one cause, a hit inside the `Hashing` window missing. Option 2a (ruling 40) landed on A day
-29: that hit parks one tick at a time until the digests land (1 per boot in each card's identity default-ON arm), and A
+29: that hit parks one tick at a time until the digests land (1 line in the host-on boot of each card's identity default-ON arm), and A
 day 29 read "**Clause 2 PASSES on both cards.**" with clause 1 unchanged (`median=7.39`, stall 81.7 / 81.8 against OFF
 85.4 / 85.1, e2e `+16.8` / `+16.9`). Ruling 41 (integ45) makes the day-28 and day-29 code the door's serving path, closes
 Move 1 owed items 2 and 2a, and names the pre-submit segment (Move 2 owed item 1, A day 30 running) as the demote's
