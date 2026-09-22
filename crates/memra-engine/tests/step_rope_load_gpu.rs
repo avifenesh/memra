@@ -34,6 +34,19 @@ impl TensorSource for Source {
         self.config.clone()
     }
 
+    fn tensor_census(&self) -> Result<memra_gguf::source::TensorCensus, String> {
+        Ok(memra_gguf::source::census_from_views(
+            self.tensors.iter().map(|(name, tensor)| {
+                (
+                    name.as_str(),
+                    tensor.dtype,
+                    tensor.shape.as_slice(),
+                    tensor.bytes.len() as u64,
+                )
+            }),
+        ))
+    }
+
     fn find(&self, name: &str) -> Option<TensorView<'_>> {
         let tensor = self.tensors.get(name)?;
         Some(TensorView {
