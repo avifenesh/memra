@@ -118,3 +118,33 @@ jobs:
           lane=research/prompt-depth-router-20260922/prefix
           cmp "$RUNNER_TEMP/prefix-v2-replay/RESULTS.json" "$lane/RESULTS.json"
           cmp "$RUNNER_TEMP/prefix-v2-replay/RESULTS.md" "$lane/RESULTS.md"
+
+  confidence-replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Re-audit every fixed-confidence request and the one-file runtime patch
+        run: |
+          lane=research/prompt-depth-router-20260922/confidence
+          python3 -m compileall -q "$lane"
+          pin=$(cut -d ' ' -f 1 "$lane/receipts-v1/manifest.sha256")
+          python3 "$lane/reproduce.py" \
+            --candidate "$lane/receipts-v1" \
+            --manifest-sha256 "$pin" \
+            --base research/prompt-depth-router-20260922/prefix/receipts-v2/runtime-source.tar.gz \
+            --out "$RUNNER_TEMP/confidence-replay"
+          cmp "$RUNNER_TEMP/confidence-replay/RESULTS.json" "$lane/RESULTS.json"
+          cmp "$RUNNER_TEMP/confidence-replay/RESULTS.md" "$lane/RESULTS.md"
+      - name: Retain exact replay receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qwen-confidence-replay-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/confidence-replay/REPLAY.json
+            ${{ runner.temp }}/confidence-replay/RESULTS.json
+            ${{ runner.temp }}/confidence-replay/RESULTS.md
+          if-no-files-found: error
+          retention-days: 7

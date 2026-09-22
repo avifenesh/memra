@@ -12,8 +12,11 @@ from audit import audit_run, save, sha
 
 
 class Runner:
-    def __init__(self, repo, models, binaries, source, out):
+    def __init__(self, repo, models, binaries, source, out, families=("qwen", "gemma")):
         self.repo, self.models, self.binaries, self.out = repo, models, binaries, out
+        self.families = tuple(families)
+        if not self.families or any(family not in ("qwen", "gemma") for family in self.families):
+            raise ValueError("unknown research model family")
         self.source = json.loads(source.read_text())
         self.lock = open("/tmp/memra-gpu.lock", "a")
         fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -31,14 +34,23 @@ class Runner:
         if settings:
             raise ValueError("unregistered Memra settings: " + ", ".join(settings))
         for name, expected in self.source["binaries"].items():
+            if name.removesuffix("-prefix-study") not in self.families:
+                continue
             if sha(binaries / name) != expected:
                 raise ValueError("native binary differs from the build artifact")
+        if "runtime_source_archive" in self.source:
+            archive = source.parent / self.source["runtime_source_archive"]
+            if sha(archive) != self.source["runtime_source_sha256"]:
+                raise ValueError("patched runtime source archive differs")
+        if "patched_spec_sha256" in self.source:
+            if sha(repo / "crates/memra-engine/src/spec.rs") != self.source["patched_spec_sha256"]:
+                raise ValueError("confidence-capable MTP source differs")
         binding = json.loads((repo / "PREFIX-ROUTING-SOURCE.json").read_text())
         for name, expected in binding["files"].items():
             if sha(repo / name) != expected:
                 raise ValueError("prepared source differs from the compiled experiment")
         artifacts = {}
-        for family in ("qwen", "gemma"):
+        for family in self.families:
             artifacts[family] = json.loads((models / family / "artifacts.lock.json").read_text())
             pinned = json.loads((base / f"{family}-artifacts.lock.json").read_text())
             if artifacts[family] != pinned:
@@ -64,7 +76,15 @@ class Runner:
     def close(self):
         self.lock.close()
 
-    def run(self, family, phase, label, entry, workload, arm, max_new, gate=False, seed=None):
+    def run(
+        self, family, phase, label, entry, workload, arm, max_new,
+        gate=False, seed=None, pmin=0.0, pmin0=False, native_adapt=True,
+        spec_stats=False,
+    ):
+        if family not in self.families:
+            raise ValueError("model family was not registered")
+        if not 0.0 <= pmin <= 1.0:
+            raise ValueError("confidence cutoff must be within [0, 1]")
         seed = entry["seed"] if seed is None else seed
         if self.gpu_processes():
             raise RuntimeError("GPU contention before the next arm; stopped without eviction")
@@ -83,13 +103,19 @@ class Runner:
         if gate:
             cmd.append("gate")
         environment = {
-            **self.environment, "MEMRA_SPEC_ADAPT": "1", "MEMRA_SPEC_ADAPT_FLOOR": "1",
+            **self.environment, "MEMRA_SPEC_ADAPT": "1" if native_adapt else "0",
+            "MEMRA_SPEC_ADAPT_FLOOR": "1",
             "MEMRA_SPEC_CAPMAX": "7" if family == "qwen" else "5",
-            "MEMRA_SPEC_PMIN": "0", "MEMRA_SPEC_PMIN_INROUND": "0",
+            "MEMRA_SPEC_PMIN": str(pmin), "MEMRA_SPEC_PMIN0": "1" if pmin0 else "0",
+            "MEMRA_SPEC_PMIN_INROUND": "0",
         }
+        if spec_stats:
+            environment["MEMRA_SPEC_STATS"] = "1"
         save(parent / f"{label}.command.json", {
             "argv": cmd, "settings": {k: v for k, v in environment.items() if k.startswith("MEMRA_")},
             "seed": seed, "max_new": max_new, "gate": gate, "arm": arm,
+            "pmin": pmin, "pmin0": pmin0, "native_adapt": native_adapt,
+            "spec_stats": spec_stats,
             "workload_sha256": entry["sha256"], "binary_sha256": sha(binary),
         })
         print(json.dumps({"started": f"{family}/{phase}/{label}", "arm": arm}), flush=True)
