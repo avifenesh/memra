@@ -268,7 +268,8 @@ cell() { # $1 name $2 fault $3 refused-kind $4 expected next-receipt seq
     req "$P_B" "$EV/$name-r2.json"
     req "$P_C" "$EV/$name-r3.json"
     # WP-A day 29 (ruling 40): the demote cells await the boot's last publication before `stop`.
-    await_hashes "$log"; local awaited=$?
+    local awaited=0
+    await_hashes "$log" || awaited=$?  # a timed-out wait is a failed check below, never an abort under set -e
     stop
     chk "$name: the boot's last hand-off landed before stop (bounded 15 s wait)" test "$awaited" -eq 0
     chk "$name: three completions served" three_served "$EV/$name"
