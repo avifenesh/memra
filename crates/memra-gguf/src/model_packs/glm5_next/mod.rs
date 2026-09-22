@@ -11,6 +11,8 @@ use crate::model_plan::{
 /// Bring-up lane research/glm53-flash-bringup-20260827/ (census, plan design, oracle bank).
 pub static PACK: ModelPack = ModelPack {
     family: "glm5_next",
+    output_head: OutputHeadContract::SeparateHead,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &["glm5_next_text", "glm5-next"],
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],

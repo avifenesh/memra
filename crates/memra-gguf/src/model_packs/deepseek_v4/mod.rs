@@ -8,6 +8,8 @@ use crate::tensor_contract::{
 
 pub static PACK: ModelPack = ModelPack {
     family: "deepseek_v4",
+    output_head: OutputHeadContract::SeparateHead,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &["deepseek_v4", "deepseek-v4", "deepseek_v4_preview"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
@@ -35,6 +37,8 @@ pub static PACK: ModelPack = ModelPack {
 
 pub static DSPARK_PACK: ModelPack = ModelPack {
     family: "deepseek_v4_dspark",
+    output_head: OutputHeadContract::SeparateHead,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &["deepseek_v4_dspark", "deepseek-v4-dspark"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],

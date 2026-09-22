@@ -5,6 +5,11 @@ pub mod activation;
 
 pub static PACK: ModelPack = ModelPack {
     family: "qwen35",
+    output_head: OutputHeadContract::TiedHeadAllowed,
+    // Refuse is a qualification state: the 9B NVFP4 MTP GGUF loads with zero unconsumed bound
+    // tensors once the by-design-unread `.input_scale` planes are excluded
+    // (research/loader-census-20260922/raw/serve-9b-boot-refuse.log).
+    tensor_consumption: TensorConsumption::Refuse,
     aliases: &[
         "qwen3_5",
         "qwen3_5_text",

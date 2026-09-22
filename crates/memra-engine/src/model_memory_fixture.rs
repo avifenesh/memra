@@ -128,6 +128,20 @@ impl TensorSource for FixtureSource {
     fn config(&self) -> ModelConfig {
         self.config.clone()
     }
+    fn tensor_census(&self) -> Result<memra_gguf::source::TensorCensus, String> {
+        Ok(memra_gguf::source::TensorCensus {
+            dialect: memra_gguf::tensor_contract::CheckpointDialect::Gguf,
+            tensors: self
+                .census()
+                .into_iter()
+                .map(|entry| memra_gguf::source::TensorCensusRecord {
+                    physical_name: entry.name.clone(),
+                    dtype: "F32".to_string(),
+                    entry,
+                })
+                .collect(),
+        })
+    }
     fn find(&self, name: &str) -> Option<TensorView<'_>> {
         let tensor = self.tensors.get(name)?;
         Some(TensorView {

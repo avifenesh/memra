@@ -11,6 +11,8 @@ use crate::config::HfConfig;
 /// vocab 131072, rope_theta 1e6, no sliding window, untied embeddings.
 pub static PACK: ModelPack = ModelPack {
     family: "llama_dense",
+    output_head: OutputHeadContract::TiedHeadAllowed,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &["llama", "mistral"],
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[

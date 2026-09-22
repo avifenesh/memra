@@ -7,6 +7,8 @@ use crate::model_plan::{
 
 pub static PACK: ModelPack = ModelPack {
     family: "glm_dsa",
+    output_head: OutputHeadContract::SeparateHead,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &["glm_moe_dsa", "glm-dsa"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[

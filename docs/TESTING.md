@@ -112,6 +112,16 @@ engine's `build.rs`. Its red arm (a retired name refuses) and its non-vacuity ar
 name at once refuses nothing) are unit tests in `env_audit.rs`; `MEMRA_ENV_AUDIT=warn` downgrades,
 `=0` disables, both announced. Receipts: `research/env-audit-20260921/`.
 
+Loader tensor-contract boundary (memra#541, `memra_gguf::checkpoint_binding`): both loaders
+bind the pack's tensor contract against the source census before any upload and refuse
+missing, unexpected, duplicate, ambiguous, wrong-shape and wrong-quant tensors and an undeclared
+tied head with the pack and dialect named. CPU teeth: `checkpoint_binding::tests` (the glm-dsa
+micro fixture clean, byte-renamed trunk tensor, headless copy under a `SeparateHead` pack, the
+head-ownership matrix, the recording source and the consumption audit, a census-less source).
+Device arm: `crates/memra-engine/tests/checkpoint_contract_refusal_gpu.rs` (`#[ignore]`, run
+under the rig lock): the renamed and the headless tampered copies refuse before upload through
+`HybridModel::load`, the clean fixture loads. Receipts: `research/loader-census-20260922/`.
+
 Request-fault boundary (memra#525, `tools/request-fault-gate.py`, in `tools/local-ci.sh`,
 `MEMRA_CI_FAULTGATE=0` skips): one boot of the real server with the `MEMRA_FAULT_INJECT_CACHE_SALT`
 door, a control round of three concurrent greedy streams, then the same three plus a salted stream
