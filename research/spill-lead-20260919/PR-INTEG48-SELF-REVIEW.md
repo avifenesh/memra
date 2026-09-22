@@ -26,5 +26,7 @@ Author's review of the full diff `main..lane/spill-integ48-20260923`, posted as 
   `.gitattributes` in both new receipt dirs.
 
 ## Push regime
-Records only, so no engine range and no GPU battery; hooks run as normal. No tag (docs and receipts). Revuto: if capped
+Records only, so no GPU battery. The release qualification gate refused the first push of the new branch as
+`UNQUALIFIED` (its range for a branch with no upstream named main's engine files, not this diff's), so the branch went
+up with `MEMRA_RELEASE_QUALIFICATION_MODE=development` (announced, logged); every other hook ran and passed. No tag (docs and receipts). Revuto: if capped
 or unavailable, this comment is the review.
