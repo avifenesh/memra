@@ -15345,6 +15345,24 @@ fn host_restore_probe_decision(host: &HostPrefixCache, request_id: &str) -> Rest
     }
 }
 
+/// WP-A day 26 (lead ruling 36 on DAY25 proposal 1): the restore route is refused by shape when the
+/// one-tick insertion pin of the promote published at this tick top (`promoted_pin`, held until the
+/// next tick top so the parked request's re-admission finds its device hit) names the entry the
+/// lookup found: the planes landed on the device a few milliseconds ago for exactly this admission,
+/// and a park would spend a tick top on a copy the tick program does in a fraction of a
+/// millisecond. Pure over existing state; returns the pin's id (the device entry's id) for the
+/// typed line. `None` when no promote was published this tick top, when the pin names another
+/// entry, or when it names an entry of another pool.
+fn host_restore_promoted_this_admission(
+    px: &PrefixCache,
+    hpx: &HostPrefixCache,
+    pool_key: &PoolKey,
+    i: usize,
+) -> Option<u64> {
+    let pin = hpx.promoted_pin.as_ref()?;
+    (pin.key == *pool_key && px.id_index(pin) == Some(i)).then_some(pin.id)
+}
+
 /// WP-A day 21 (memra#536 Move 2 slice 2): the door's restore decision, taken in the admission loop
 /// immediately after the promote probe and before `admit(..)` with the request still in hand.
 /// Under the door a whole-entry device hit SUBMITS its restore on the transfer engine's copy stream
@@ -15418,6 +15436,21 @@ fn host_restore_park_probe(
     let Some(i) = px.lookup(&pool_key, prompt) else {
         return false;
     };
+    if let Some(pin_id) = host_restore_promoted_this_admission(px, hpx, &pool_key, i) {
+        // WP-A day 26 (ruling 36): the entry was promoted for this admission; the tick program's
+        // device-hit copy (the OFF program, `prefix_restore` in `admit`) serves it on this tick.
+        // The line names the pin and the entry so a gate can count it; it contains neither
+        // `refused (contracts door)` nor `restore refused`, the hit gate's refusal counters.
+        let e = &px.entries[&pool_key][i];
+        eprintln!(
+            "[prefix-cache] restore not routed (contracts door): the entry was promoted for this \
+             admission (insertion pin id={pin_id}, {} tokens, model {}{}); the tick program copies it",
+            e.toks.len(),
+            pool_key.0,
+            ns_suffix(&pool_key.1)
+        );
+        return false;
+    }
     {
         // The route's class: a whole entry on one device, plain or MTP draft-bearing (day 23).
         // DFlash-tail, TP and latent entries keep the tick program by name.
@@ -43326,6 +43359,107 @@ mod tests {
     /// its ready state is consumed; another request's ready state is an orphan; another request's
     /// pending state lets this one through (one restore per worker, the tick program meanwhile); an
     /// empty request id never matches.
+    /// WP-A day 26 (ruling 36): the promoted-pin predicate over its three shapes (the pin names this
+    /// entry, the pin names another entry, no pin) plus a pin of another pool at the same index.
+    #[test]
+    fn restore_probe_promoted_pin_names_only_the_promoted_entry() {
+        let acme = key(&crate::auth::scope_namespace("acme", "s1"));
+        let beta = key(&crate::auth::scope_namespace("beta", "s1"));
+        let mut px = PrefixCache::default();
+        let mut e0 = entry_b(&acme, 100, 8);
+        e0.id = 11;
+        let mut e1 = entry_b(&acme, 101, 8);
+        e1.id = 12;
+        px.entries.entry(acme.clone()).or_default().extend([e0, e1]);
+        let mut eb = entry_b(&beta, 102, 8);
+        eb.id = 13;
+        px.entries.entry(beta.clone()).or_default().push(eb);
+        let mut h = HostPrefixCache::new(1 << 20);
+        let table = [
+            // (the pin), then the answer for (acme, 0), (acme, 1), (beta, 0)
+            (None, [None, None, None]),
+            (Some((&acme, 0)), [Some(11), None, None]),
+            (Some((&acme, 1)), [None, Some(12), None]),
+            (Some((&beta, 0)), [None, None, Some(13)]),
+        ];
+        for (pin, want) in table {
+            if let Some(old) = h.promoted_pin.take() {
+                px.unpin(&old);
+            }
+            h.promoted_pin = pin.and_then(|(k, i)| px.pin(k, i));
+            assert_eq!(h.promoted_pin.is_some(), pin.is_some());
+            let got = [
+                super::host_restore_promoted_this_admission(&px, &h, &acme, 0),
+                super::host_restore_promoted_this_admission(&px, &h, &acme, 1),
+                super::host_restore_promoted_this_admission(&px, &h, &beta, 0),
+            ];
+            assert_eq!(got, want, "pin={pin:?}");
+        }
+        // The pin outlives an eviction only as a dangling id: an entry the index no longer holds
+        // is never named (the probe's lookup could not have found it either).
+        h.promoted_pin = px.pin(&acme, 0);
+        let gone = px.entries.get_mut(&acme).unwrap().remove(0);
+        assert_eq!(gone.id, 11);
+        assert_eq!(
+            super::host_restore_promoted_this_admission(&px, &h, &acme, 0),
+            None,
+            "index 0 is now entry 12, not the pinned 11"
+        );
+    }
+
+    /// WP-A day 26 (ruling 36): the refusal sits after the lookup and before the class check, prints
+    /// the one typed line naming the pin and the entry, and moves no existing counter.
+    #[test]
+    fn day26_promoted_pin_refusal_is_named_before_the_class_check() {
+        let src = include_str!("worker.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests {").unwrap()];
+        let probe = body.find("fn host_restore_park_probe(").unwrap();
+        let probe_body = &body[probe..probe + body[probe..].find("\n}\n").unwrap()];
+        let lookup = probe_body.find("px.lookup(&pool_key, prompt)").unwrap();
+        let refusal = probe_body
+            .find("host_restore_promoted_this_admission(px, hpx, &pool_key, i)")
+            .unwrap();
+        let class = probe_body.find("// The route's class:").unwrap();
+        let pin = probe_body.find("px.pin(&pool_key, i)").unwrap();
+        assert!(
+            lookup < refusal && refusal < class && class < pin,
+            "lookup, then the promoted-pin refusal, then the class check, then the route's own pin"
+        );
+        let head =
+            "[prefix-cache] restore not routed (contracts door): the entry was promoted for this";
+        let tail = "admission (insertion pin id={pin_id}, {} tokens, model {}{}); the tick program copies it";
+        let h = probe_body[refusal..class]
+            .find(head)
+            .expect("the typed line's head");
+        let t = probe_body[refusal..class]
+            .find(tail)
+            .expect("the typed line's tail");
+        assert!(
+            h < t && t - h < 120,
+            "one typed line, the tail on the head's continuation"
+        );
+        assert!(
+            probe_body[refusal..class].contains("return false;"),
+            "the refusal takes the OFF program in this admission"
+        );
+        // The hit gate's counters (`refused (contracts door)`, `restore refused`) do not see it.
+        let printed =
+            "restore not routed (contracts door): the entry was promoted for this admission";
+        assert!(!printed.contains("refused (contracts door)"));
+        assert!(!printed.contains("restore refused"));
+        // One predicate site in the probe; one definition; no new `MEMRA_` read in either.
+        assert_eq!(
+            body.matches("host_restore_promoted_this_admission(")
+                .count(),
+            2
+        );
+        let def = body
+            .find("fn host_restore_promoted_this_admission(")
+            .unwrap();
+        let def_body = &body[def..def + body[def..].find("\n}\n").unwrap()];
+        assert!(!def_body.contains("MEMRA_") && !probe_body[refusal..class].contains("MEMRA_"));
+    }
+
     #[test]
     fn restore_probe_decision_parks_its_own_request_and_names_an_orphan() {
         let (mut host, key) = cpu_door_host();

@@ -113,7 +113,7 @@ Scoring reuses `memra_mla_kpool_score_f32` and `memra_mla_kpool_score_dsa_f32`, 
 the RP arm, through `mla_ffi.rs::mla_kpool_score_range`. Key-pointer offset and relative
 causal position restrict the pool domain without introducing a numeric twin. Existing
 `__fmaf_rn`, `__fmul_rn` and `__fadd_rn` define the arithmetic. The TC scorer range passed the same bit-identity gate at levels 1 and 2. No live-position/captured-middle twin is added.
-Evidence: `research/glm5-tp-indexer-split-20260908/DESIGN.md`, and the 2026-09-10 dev-pair cell on vast 50431646 (2x B200 SXM, TP-2) that flipped the door ON.
+Evidence: `research/glm5-tp-indexer-split-20260908/DESIGN.md`, and the 2026-09-10 dev-pair cell on a rented 2x B200 SXM pair (TP-2) that flipped the door ON.
 
 ## DSV4 small-kernel diet, 2026-09-07
 
