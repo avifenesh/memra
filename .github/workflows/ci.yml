@@ -165,6 +165,7 @@ jobs:
         run: |
           tools/test_gate_template_integrity.sh
           python3 -m unittest tools.test_generate_arch_gates
+          tools/test_spec_on_cache_hit_gate_lock.sh
 
       # Release-guard teeth (2026-08-23). Three tag races in one week shipped GitHub releases
       # whose binaries self-report a different version than the tag; tools/release-guard.sh

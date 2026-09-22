@@ -1,0 +1,129 @@
+--- research/spill-a-20260919/stall_cell.py	2026-09-22 08:17:57.841822024 +0000
++++ research/spill-c-20260919/day28_stall_cell.py	2026-09-22 09:35:09.021275221 +0000
+@@ -21,6 +21,17 @@
+     earlier arms are byte-for-byte unchanged.)
+     stall_cell.py --replay DIR/receipt.json
+ 
++    (`restore-exact`, WP-C day 28, research/spill-c-20260919/DAY28.md: lane A's `stall_cell.py` with ONE
++    added arm, everything else byte-for-byte A's program. The isolating restore intruder: setup builds the
++    prime arm's prompt ON THE 32-TOKEN GRID (` ok` filler words until `/v1/tokenize` reads a multiple of
++    32), posts it once untimed so its seed captures the WHOLE prompt (`cache.pos == toks.len()`), and posts
++    it once more untimed to confirm `cached_tokens == prompt_tokens`; every timed run then re-posts that
++    SAME prompt at the tenant's 24th token: a whole-entry hit with a ZERO-token suffix, served from the
++    entry's boundary logits, so the intruder has no prime of its own and its only owner-thread work is the
++    restore class (OFF: the recurrent copies and the KV rows on the tick; ON: the recurrent copies and
++    the submit on the tick, the rows on the copy stream). The seed's `cached_tokens` per run is recorded;
++    a setup whose confirm post is not a whole-entry hit REFUSES (exit 2) before any timed run.)
++
+ Client-side only: stdlib, no engine binary, no GPU access of its own.
+ """
+ import argparse
+@@ -77,6 +88,38 @@
+     return json.loads(data), wall
+ 
+ 
++EXACT_PROMPT = [None]  # WP-C day 28: the on-grid seed prompt of the restore-exact arm, set in setup
++GRID = 32
++
++
++def tokcount(port, prompt):
++    """WP-C day 28: `/v1/tokenize` count of a prompt (no prime, no cache effect); the model's default
++    add_special mirrors /v1/completions (the hit gate's `tokcount`)."""
++    c = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
++    c.request("POST", "/v1/tokenize", body=json.dumps({"model": "gate", "prompt": prompt}),
++              headers={"Content-Type": "application/json"})
++    r = c.getresponse()
++    data = r.read()
++    c.close()
++    if r.status != 200:
++        raise RuntimeError(f"tokenize HTTP {r.status}: {data[:200]!r}")
++    return json.loads(data)["count"]
++
++
++def ongrid_prompt(port, base):
++    """WP-C day 28: `base` plus ` ok` words until the count is a multiple of GRID (the hit gate's
++    `ongrid_prompt`: each ` ok` is one token on the BPE tokenizers here; corrects up to three times)."""
++    count = tokcount(port, base)
++    pad = (GRID - count % GRID) % GRID
++    for _ in range(3):
++        p = base + " ok" * pad
++        count = tokcount(port, p)
++        if count % GRID == 0:
++            return p, count, pad
++        pad += (GRID - count % GRID) % GRID
++    raise RuntimeError(f"could not build an on-grid prompt (last count {count})")
++
++
+ def stream_tenant(port, arrivals, fired, error):
+     """Streams the tenant; appends the monotonic arrival time of every SSE token event."""
+     try:
+@@ -182,6 +225,8 @@
+             prompt = fresh_prompt(PRIME_TARGET_TOKENS - 4, 1000 + run_id)
+         elif mode == "restore":
+             prompt = fresh_prompt(PRIME_TARGET_TOKENS - 4, 2100)  # the ONE seeded prompt, a hit every run
++        elif mode == "restore-exact":
++            prompt = EXACT_PROMPT[0]  # WP-C day 28: the on-grid seed, a whole-entry zero-suffix hit every run
+         elif mode == "demote":
+             prompt = fresh_prompt(72, 2000 + run_id)
+         else:
+@@ -228,7 +273,7 @@
+         "intruder": intruder, "errors": error,
+         "server_demote_ms": server_ms(tail, "demote"), "server_promote_ms": server_ms(tail, "promote"),
+         "server_capture_ms": server_capture_ms(tail) if mode == "capture" else [],
+-        "server_restore_ms": server_restore_ms(tail) if mode == "restore" else [],
++        "server_restore_ms": server_restore_ms(tail) if mode in ("restore", "restore-exact") else [],
+         "server_log_lines": [ln for ln in tail.splitlines() if "[prefix-host]" in ln or "[abort]" in ln
+                              or "[prefix-cache] capture" in ln or "[prefix-cache] restore" in ln
+                              or "[prefix-cache] hit" in ln][:40],
+@@ -285,7 +330,7 @@
+             f"server_demote_ms={[round(x, 1) for x in s['server_demote_ms']]} "
+             f"server_promote_ms={[round(x, 1) for x in s['server_promote_ms']]} "
+             + (f"server_restore_ms={[round(x, 1) for x in s['server_restore_ms']]} "
+-               f"intruder_cached_tokens={s['intruder_cached_tokens']} " if mode == "restore" else "")
++               f"intruder_cached_tokens={s['intruder_cached_tokens']} " if mode in ("restore", "restore-exact") else "")
+             + f"intruder_prompt_tokens={s['intruder_prompt_tokens']} tenant_text_identical={len(s['tenant_text_shas']) == 1} "
+             f"errors={len(s['errors'])}")
+ 
+@@ -293,7 +338,7 @@
+ def main():
+     ap = argparse.ArgumentParser()
+     ap.add_argument("--port", type=int)
+-    ap.add_argument("--mode", choices=["prime", "demote", "promote", "capture", "restore"])
++    ap.add_argument("--mode", choices=["prime", "demote", "promote", "capture", "restore", "restore-exact"])
+     ap.add_argument("--server-log")
+     ap.add_argument("--out")
+     ap.add_argument("--n", type=int, default=5)
+@@ -330,6 +375,33 @@
+         tail, log_off = log_tail(a.server_log, log_off)
+         setup.append({"seed": True, "wall_ms": wall, "usage": resp.get("usage"),
+                       "server_capture_lines": [ln for ln in tail.splitlines() if "[prefix-cache]" in ln][:10]})
++    if a.mode == "restore-exact":
++        # WP-C day 28, untimed setup: the prime arm's prompt padded onto the grid, seeded once (a
++        # whole-prompt capture), then posted once more to confirm a whole-entry zero-suffix hit.
++        base = fresh_prompt(PRIME_TARGET_TOKENS - 4, 2100)
++        p, count, pad = ongrid_prompt(a.port, base)
++        EXACT_PROMPT[0] = p
++        resp, wall = post(a.port, {"model": "gate", "prompt": p, "max_tokens": 1, "temperature": 0})
++        tail, log_off = log_tail(a.server_log, log_off)
++        setup.append({"seed": True, "ongrid_tokens": count, "filler_words": pad, "wall_ms": wall,
++                      "usage": resp.get("usage"),
++                      "server_capture_lines": [ln for ln in tail.splitlines() if "[prefix-cache]" in ln][:10]})
++        resp2, wall2 = post(a.port, {"model": "gate", "prompt": p, "max_tokens": 1, "temperature": 0})
++        tail, log_off = log_tail(a.server_log, log_off)
++        u2 = resp2.get("usage", {})
++        cached2 = (u2.get("prompt_tokens_details") or {}).get("cached_tokens", u2.get("cached_tokens"))
++        setup.append({"confirm": True, "wall_ms": wall2, "usage": u2, "cached_tokens": cached2,
++                      "server_lines": [ln for ln in tail.splitlines() if "[prefix-cache]" in ln or "[prefix-host]" in ln][:10]})
++        print(f"  restore-exact setup: on-grid prompt {count} tokens ({pad} filler words); seed "
++              f"prompt_tokens={resp.get('usage', {}).get('prompt_tokens')}; confirm prompt_tokens="
++              f"{u2.get('prompt_tokens')} cached_tokens={cached2}", flush=True)
++        if cached2 is None or u2.get("prompt_tokens") != cached2 or count % GRID != 0:
++            os.makedirs(a.out, exist_ok=True)
++            json.dump({"tag": tag, "mode": a.mode, "setup": setup, "refused": True},
++                      open(os.path.join(a.out, "receipt.json"), "w"), indent=1)
++            print(f"REFUSED: restore-exact setup is not a whole-entry zero-suffix hit "
++                  f"(prompt_tokens={u2.get('prompt_tokens')} cached_tokens={cached2} ongrid={count})")
++            return 2
+     if a.mode in ("prime", "capture"):
+         # Untimed calibration of the fresh prompt's token count, recorded (the timed runs use
+         # PRIME_TARGET_TOKENS - 4 words plus the run header; this reports what the tokenizer made of it).

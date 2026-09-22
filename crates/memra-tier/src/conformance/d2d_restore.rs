@@ -34,6 +34,10 @@
 //!    witnessed checksum is refused by `Completion::require`, so no path publishes such a restore
 //!    through the host-contract gate. Slice 3 (day 22, `d2d_receipt_witnessed`) added the witness;
 //!    this schedule's fixture stays receipt-less and keeps the refusal clause by name.
+//!
+//! Day 23 adds the draft-bearing restore below (`d2d_restore_draft_ready`): the MTP draft plane as
+//! two more items of the same batch, its own consumer (the deferred prime's first draft-head read)
+//! under the same installed wait, and the witnessed receipt term over both classes.
 use crate::contracts::*;
 
 /// The restore fixture: one batch of same-device copies issued off the reader's stream into a
@@ -168,5 +172,165 @@ pub fn d2d_restore_primed_before_its_wait_is_unordered<F: D2dRestoreFixture>(f: 
     assert!(
         !f.primes_ordered(),
         "the early prime stays unordered; a later wait does not order it"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Day-23 rule (WP-A, memra#536 Move 2, owed item 2, the restore half): the DRAFT-BEARING restore.
+// A spec-published entry carries, beside its trunk KV rows, the MTP draft plane: rows `[0..pos)`
+// of the publishing session's draft scratch (`Role::Draft`, one K and one V span). Its restore
+// destination is the admitted request's FRESH draft scratch, allocated before any session exists
+// and owned by the pending state while the copy is in flight; its consumer is the deferred prime's
+// first draft-head read on the reader (owner) stream, which exists only once a session is built
+// over the ready scratch. The draft plane is two more items of the SAME batch as the trunk rows:
+// one ticket, one producer fence, one pin (the trunk's) and one receipt; nothing in the rule
+// above changes for the trunk items.
+//
+// Rule, the draft-bearing restore:
+//
+// 1. One batch, both classes. The batch carries at least one `Role::Draft` item and at least one
+//    trunk item (`Role::Key` or `Role::Value`); every item has a class; the source of every item is
+//    held by the one pin from submit through acknowledge.
+// 2. Landing is not readiness for either class (rule 2 above), and a draft-head read issued before
+//    the installed wait is UNORDERED, landed copy or not; a later wait does not order it. That read
+//    is this schedule's red arm.
+// 3. The receipt term covers both classes: after the landing every item, draft and trunk, carries a
+//    witnessed checksum (the destination digest equal to the source digest), so the host-contract
+//    gate answers `NotReady` while unfenced and admits the batch once the wait is installed; a
+//    batch whose draft items were not witnessed is refused.
+// 4. Ready. The installed wait fences every item of both classes at once; a prime and a draft-head
+//    read after it are ordered; retire, acknowledge and the pin hand-over follow rule 3 above.
+
+/// The draft-bearing fixture: the restore fixture plus the class of every item, the deferred
+/// prime's first draft-head read on the reader stream, and the witnessed receipt term per class.
+/// `witnessed_classes` lists the classes of the items whose landed completion carries a checksum
+/// equal to its expectation, in item order (empty before the landing).
+pub trait D2dDraftRestoreFixture: D2dRestoreFixture {
+    fn item_classes(&self) -> Vec<Role>;
+    fn draft_read_issues(&mut self);
+    fn draft_reads_ordered(&self) -> bool;
+    fn witnessed_classes(&mut self, ticket: &TransferTicket) -> Result<Vec<Role>>;
+}
+
+/// The schedule. The fixture starts before `submit`; the source entry (trunk and draft planes) is
+/// pinned by the caller at submit.
+pub fn d2d_restore_draft_ready<F: D2dDraftRestoreFixture>(f: &mut F) {
+    let ticket = f.submit();
+    let classes = f.item_classes();
+    let expected = f.submitted_bytes();
+    assert_eq!(classes.len(), expected.len(), "every item has a class");
+    assert!(
+        classes.contains(&Role::Draft),
+        "the batch carries the draft plane"
+    );
+    assert!(
+        classes.iter().any(|r| matches!(r, Role::Key | Role::Value)),
+        "and the trunk rows: one batch, one ticket, one receipt"
+    );
+    assert!(
+        f.source_pinned(),
+        "the one pin holds every source plane from submit"
+    );
+    // 1. Running: not landed, not ready, unfenced; nothing witnessed yet; the gate is closed.
+    let c = f.poll(&ticket).unwrap();
+    assert!(!c.producer_done, "the copies have not landed at submit");
+    assert!(!fenced(&c), "unfenced at submit (rule 3)");
+    assert!(!f.landed(&ticket).unwrap());
+    assert!(!f.ready(&ticket).unwrap());
+    assert!(
+        f.witnessed_classes(&ticket).unwrap().is_empty(),
+        "no item is witnessed before its landing"
+    );
+    assert!(matches!(
+        f.require_receipt(&ticket),
+        Err(Error::NotReady | Error::Corrupt)
+    ));
+    assert!(f.draft_reads_ordered(), "no draft read has been issued");
+    // 2. Landed: bytes exact per item, both classes witnessed, still not ready; the gate says
+    //    NotReady (the fence is part of it), never ok.
+    f.copy_completes();
+    let c = f.poll(&ticket).unwrap();
+    assert!(c.producer_done);
+    assert!(f.landed(&ticket).unwrap());
+    let delivered: Vec<u64> = c
+        .items
+        .iter()
+        .filter(|i| i.accepted)
+        .flat_map(|i| i.segments.iter().map(|s| s.valid_bytes))
+        .collect();
+    assert_eq!(delivered, expected, "each item delivered exactly its bytes");
+    assert_eq!(
+        f.witnessed_classes(&ticket).unwrap(),
+        classes,
+        "the receipt term is witnessed for every item of both classes"
+    );
+    assert!(!fenced(&c), "landing is not a fence");
+    assert!(
+        !f.ready(&ticket).unwrap(),
+        "landed draft rows without the installed wait are not ready"
+    );
+    assert_eq!(
+        f.require_receipt(&ticket),
+        Err(Error::NotReady),
+        "witnessed but unfenced: the host-contract gate is not open yet"
+    );
+    assert!(f.source_pinned());
+    // 3. The wait: both classes fenced at once, ready, the gate admits the batch, the prime and
+    //    the draft-head read after it are ordered.
+    f.install_reader_wait(&ticket);
+    let c = f.poll(&ticket).unwrap();
+    assert!(
+        fenced(&c),
+        "every item of both classes is fenced by the one install"
+    );
+    assert!(f.ready(&ticket).unwrap());
+    assert_eq!(
+        f.require_receipt(&ticket),
+        Ok(()),
+        "witnessed and fenced: the host-contract gate admits both classes"
+    );
+    f.prime_issues();
+    f.draft_read_issues();
+    assert!(f.primes_ordered(), "the prime after the wait is ordered");
+    assert!(
+        f.draft_reads_ordered(),
+        "the draft-head read after the wait is ordered"
+    );
+    f.retire(&ticket, None).unwrap();
+    assert!(f.retired(&ticket).unwrap());
+    assert!(f.source_pinned(), "the pin outlives the retirement");
+    f.acknowledge(&ticket).unwrap();
+    assert!(f.source_pinned(), "and the acknowledgement");
+    f.release_source();
+    assert!(
+        !f.source_pinned(),
+        "the pin is handed over after acknowledge"
+    );
+    assert!(f.draft_reads_ordered());
+}
+
+/// The forbidden order: a draft-head read issued on the reader stream after the copy landed but
+/// before the reader wait is installed is UNORDERED (a session built over the scratch before the
+/// wait), landed copy or not; a later wait does not order it. The binding must report the early
+/// read unordered and the destination not ready throughout.
+pub fn d2d_restore_draft_read_before_its_wait_is_unordered<F: D2dDraftRestoreFixture>(f: &mut F) {
+    let ticket = f.submit();
+    assert!(f.item_classes().contains(&Role::Draft));
+    assert!(!f.ready(&ticket).unwrap());
+    f.copy_completes();
+    assert!(f.landed(&ticket).unwrap());
+    assert!(!f.ready(&ticket).unwrap());
+    assert!(f.draft_reads_ordered(), "no draft read has been issued");
+    f.draft_read_issues();
+    assert!(
+        !f.draft_reads_ordered(),
+        "a draft-head read before the installed wait is unordered, landed copy or not"
+    );
+    assert!(!f.ready(&ticket).unwrap());
+    f.install_reader_wait(&ticket);
+    assert!(f.ready(&ticket).unwrap());
+    assert!(
+        !f.draft_reads_ordered(),
+        "the early read stays unordered; a later wait does not order it"
     );
 }
