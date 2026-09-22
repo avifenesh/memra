@@ -1,3 +1,7 @@
 # Preserve gateway evidence byte-for-byte, including HTTP CRLF and command
 # output whitespace covered by the captured SHA-256 manifests.
 research/gateway-20260812/raw/** -text
+
+# A unified diff encodes blank context lines as one literal space.
+# Preserve the hash-pinned research patch instead of rewriting those bytes.
+research/mtp-calibrated-depth-20260920/prototype.patch -text whitespace=-blank-at-eol

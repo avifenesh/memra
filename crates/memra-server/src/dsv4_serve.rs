@@ -610,6 +610,13 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     })
 }
 
+/// The route's policy contract (memra#504): declared in `route_contract.rs`, not here, so the
+/// registry's wiring test greps THIS file for the call sites the declarations name without the
+/// declarations themselves satisfying it.
+pub fn contract(model: &str) -> crate::route_contract::RouteContract {
+    crate::route_contract::RouteContract::dsv4_thread(model)
+}
+
 /// ModelCaps for the /v1/models surface + the HTTP layer's gates — the same
 /// template-string laws the hybrid caps block applies (shared functions, not copies).
 pub fn caps(m: &Dsv4Model) -> ModelCaps {
