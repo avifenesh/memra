@@ -87,3 +87,40 @@ jobs:
             ${{ runner.temp }}/prompt-prefix-native/binaries
           if-no-files-found: error
           retention-days: 7
+
+  prefix-v2-replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: "1.97.1"
+      - name: Independently replay and render all measured requests
+        run: |
+          lane=research/prompt-depth-router-20260922/prefix
+          pin=$(cut -d ' ' -f 1 "$lane/receipts-v2/manifest.sha256")
+          python3 "$lane/publication.py" \
+            --receipts "$lane/receipts-v2" \
+            --manifest-sha256 "$pin" \
+            --out "$RUNNER_TEMP/prefix-v2-replay"
+          python3 "$lane/render_results.py" \
+            --source "$RUNNER_TEMP/prefix-v2-replay/RESULTS.json" \
+            --out "$RUNNER_TEMP/prefix-v2-render"
+          cp "$RUNNER_TEMP/prefix-v2-render/RESULTS.md" "$RUNNER_TEMP/prefix-v2-replay/RESULTS.md"
+      - name: Retain independently replayed reports for exact publication
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: prompt-prefix-replayed-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/prefix-v2-replay/RESULTS.json
+            ${{ runner.temp }}/prefix-v2-replay/RESULTS.md
+          if-no-files-found: error
+          retention-days: 3
+      - name: Compare independently replayed reports with the publication
+        run: |
+          lane=research/prompt-depth-router-20260922/prefix
+          cmp "$RUNNER_TEMP/prefix-v2-replay/RESULTS.json" "$lane/RESULTS.json"
+          cmp "$RUNNER_TEMP/prefix-v2-replay/RESULTS.md" "$lane/RESULTS.md"
