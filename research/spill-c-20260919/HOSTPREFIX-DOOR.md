@@ -627,7 +627,7 @@ paragraph at the end states the question without answering it.
 | Failure, default and plain, share-cap arm | RTX PRO 6000, 27B | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (15 ok) | same | `e008bf502` (A day 26, 15 ok both arms), `98170f182`, `9be3f7373`, `3df0cb2b3`; days 13 to 17 red on the gate's stale line (resolved day 21) | `pro-single-day22/cells/failure-*`, `-day21/` |
 | Failure, whole-budget arm (`MEMRA_KV_HOST_TENANT_PCT=100`) | RTX PRO 6000, 27B | `ALL GREEN` (14 ok), `skip demote: entry 159.9MB > host budget 1MB` | `ALL GREEN` (14 ok), the whole contract runs before the same refusal | `98170f182` (day 22, the only run) | `pro-single-day22/cells/failure-default-pct100-*` |
 | Failure, default and plain, share-cap arm | RTX 5090, 9B | `ALL GREEN` x2 | `ALL GREEN` x2 | `9be3f7373` (day 21); `91b0d4e08` (day 23, `ALL GREEN` x4, 15 ok) | `rtx5090-day21/failure-*`; `rtx5090-day23/failure-*` |
-| Failure, whole-budget arm | RTX 5090, 9B | not run | not run | none | stated missing (the 27B receipt stands for the arm) |
+| Failure, whole-budget arm (`MEMRA_KV_HOST_TENANT_PCT=100`), default and plain | RTX 5090, 9B | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` x2 (14 ok, 0 FAIL), `[prefix-host] skip demote: entry 54.8MB > host budget 1MB` (default) / `entry 54.6MB` (plain), twice per boot | `ALL GREEN` x2 (14 ok), the same refusals, each after the whole Move 1 contract ran (`demote submitted off the tick ... 18 items` / `16 items`, `D2H receipt ... require=ok`, `demote published off the tick ... 36.2ms` / `24.9ms from submission to completion`) | `934a6da3a` (day 31; binary built at `5cef58f09`, `crates/` equal) | `rtx5090-day31/gates/failure-{default,plain}-pct100-{off,on}/` (`gate.log`, `verdict.txt`, `poolfull-demote-lines.txt`), `DAY31.md` |
 | Contract fault (ON by construction), default and plain | RTX PRO 6000, 27B | n/a | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 67 ok with the floor and the ticket accounting clause (day 25: default `receipt seq=1 expected 1 + 0 capture ticket(s) submitted before it = 1`, plain `receipt seq=3 expected 1 + 2 capture ticket(s) submitted before it = 3`, and the postpublish twins `2 + 0 = 2`, `2 + 2 = 4`); 65 ok before the clause (`items=34` / `items=32`); the same lines on the local 5090 (9B, `rtx5090-day25/fault-*`) | `e008bf502` (93 ok, A day 26, over the promoted-pin refusal: the four promote cells read `restore submitted` 0 and one typed refusal each, the `d2d-restore` cell still exactly one restore submitted), `913095404` (67 ok, day 25), `98170f182` (65 ok), `9be3f7373` (64 ok), `3df0cb2b3` (64 ok), `1b354be59` | `pro-single-day25/cells/fault-*`, `pro-single-day22/cells/fault-*`, `-day21/`, `-day16/faultgate-fix/` |
 | Contract fault, default and plain | RTX 5090, 9B | n/a | `ALL GREEN`, 65 ok with the floor (`items=18` / `items=16`) | `98170f182` (day 22, 65 ok), `9be3f7373` (day 21, 64 ok); `91b0d4e08` (day 23, 65 ok x2, floor line, `items=18` / `items=16`) | `rtx5090-day22/fault-*`, `rtx5090-day21/fault-*`; `rtx5090-day23/fault-*` |
 | The sixteen door cells on the Move 2 slice-2 tree (A day 21 through integ37: identity x4, failure x4, fault x2, hit x2, twin x2, the two unit cells) | RTX 5090, 9B (the 27B for the twin) | `ALL GREEN` / `PASS` in every OFF cell (day 26): identity `(teeth=0)` x2 (12 ok), failure x2 (15 ok), hit (61 ok), twin27 `-> PASS` | `ALL GREEN` / `PASS` in every ON cell (day 26): identity `(teeth=0)` x2 (12 ok), failure x2 (15 ok), fault x2 (67 ok, accounting `1 + 0` and `1 + 2`), hit (61 ok), twin27 `-> PASS`, unit-server 8 passed, unit-engine 2 passed (`d2d_capture_*`, `d2d_restore_*`); the restore route engaged in `identity-plain-on` (two restores, `64 tokens, 16 planes (53.6MB)`, seq=6 and 7, under `teeth=0`) and `fault-plain` (four) | `b74269af5` (day 26, the only run on this class; the target card's is A day 21 `1350f118b`) | `rtx5090-day26/` (`DAY26.md`; attempt 1 in `attempt1-oom/`, twelve boot failures behind a foreign 22 GB holder, cause quoted); DAY 27 NOTE: the two hit cells here ran with the host tier UNARMED (the gate exported no `MEMRA_KV_HOST_MB`; the server's own line `[kv-host-contracts] MEMRA_KV_HOST_CONTRACTS=1 with no host tier on this boot (MEMRA_KV_HOST_MB=0): nothing to route, no program identity built`, zero `[prefix-host]` lines), so their `ALL GREEN` OFF and ON covered the tick program in both arms; the armed runs are the day-27 rows below, these stay as receipts |
@@ -673,16 +673,44 @@ attributed by any cell. Both are named as open for the review; nothing is inferr
 3. **Verify digest v3** (the draft plane inside `MEMRA_KV_HOST_VERIFY`): not landed; the day-14 finding 4 item.
 4. RESOLVED day 21 (`7efab005d`): the pool-full failure-gate line was the gate's; day 22 added the whole-budget
    arm as a run receipt and the fault gate's floor receipt.
-5. **The RTX 5090 class pair.** Every cost cell above ran on the target card; `PinnedKind::for_device` leaves
-   the 5090 class write-combined, where the micro-cell reads 1431.6 ms per 160 MiB hash pass (0.117 GB/s).
-   The door's demote cost on that class is unmeasured (no pair cell there: the pair needs a quiet card for
-   about 15 minutes and the local card carried other sessions' servers on every sitting since day 18) and, by
-   the arithmetic above, would be the write-combined pass unless the census question in item 6 resolves
-   otherwise. The per-hardware rule wants that pair before any default on that class.
+5. **The RTX 5090 class pair.** RESOLVED day 31 (`DAY31.md`, `rtx5090-day31/pair/`): the day-16 `wc-cell` shape
+   adapted to the 9B (cache 64 MB, host tier 8192 MB, the default spec boot, 64-token draft-bearing entries of
+   54.8 MB demoted as `18 items`), four boots `o1-off, o1-on, o2-on, o2-off` in ONE collector hold on the `rtx5090`
+   rig (35 s), N=5 per arm per order, both orders, pooled N=10; the collector's 250 ms CSV 54 to 74 C, 9.5 to
+   169.9 W, the cell's own 1 s CSV 55 to 74 C, 27.7 to 169.3 W, `power.limit [N/A]`, no compute app before or
+   after; `WC PAIR REPLAY: PASS (12 checks)`; the write-combined premise printed inside the hold by
+   `tier-transfer-gate roundtrip`: `PINNED-DEFAULT device="NVIDIA GeForce RTX 5090 Laptop GPU" kind=write-combined
+   flags=4` (`driver_flags=6` at six sizes). The server's boot lines do not print the arm (the door line names the
+   engine, the `[prefix-host] on:` line names the OFF tier's cached pool), so that print is the receipt. This card's
+   own rows (ms; the server's `demote: ... in Y` and `promote: ... in Y` lines; never compared to section B):
+
+   | Quantity | OFF | ON | Receipt |
+   |---|---|---|---|
+   | Demote pooled (r2 to r6 of each boot) | `median 20.0 (N=10, min 4.8, max 24.1, IQR 18.0)`; per boot `[23.1, 23.8, 21.8, 5.1, 4.8, 5.3]`, `[18.2, 24.1, 22.6, 5.4, 6.5, 17.6]` | `median 57.3 (N=10, min 38.5, max 60.4, IQR 19.3)`; per boot `[57.8, 60.4, 58.9, 39.7, 39.5, 39.7]`, `[57.7, 58.8, 56.9, 39.4, 38.5, 38.7]`; the door's `demote published ... from submission to completion` `median 26.5 (N=12, min 17.3, max 37.4, IQR 18.1)` | `rtx5090-day31/pair/reading.log`, `pair/wc-pair/ev/*-server.log` |
+   | Promote pooled (r3 to r7) | `median 15.6 (N=10, min 8.6, max 27.7, IQR 17.6)` | `median 21.1 (N=10, min 20.1, max 42.4, IQR 18.5)`; the door's `promote published ... from submission to completion` `median 14.9 (N=10, min 14.6, max 15.9, IQR 0.7)` | as above |
+   | Promote minus its inline demote | `median 3.5 (N=10, min 3.4, max 4.1, IQR 0.4)` | `median -19.3 (N=10, min -37.4, max -15.4, IQR 7.4)`: negative because on this tree the inline demote publishes at a later tick top than the promote (log order per hit: `demote submitted`, `promote published`, `D2H receipt`, `demote published`), so day 16's subtraction does not isolate the ON promote | as above |
+   | The verdict line, verbatim | | `DAY31 PAIR VERDICT: demote off 20.0 (N=10) on 57.3 (N=10) on_minus_off +37.3 unc 26.4 isolated; promote off 15.6 (N=10) on 21.1 (N=10) on_minus_off +5.4 unc 25.6 under_resolution; promote_minus_inline off 3.5 (N=10) on -19.3 (N=10) on_minus_off -22.9 unc 7.4 isolated; parked per boot [0, 10, 10, 0]; pinned=write-combined; admissible=True` | `rtx5090-day31/pair/reading.log` |
+
+   Read from the receipt, not tuned: the raw lists step in both arms (the first three demotes of a boot 18 to 24
+   OFF and 57 to 60 ON, the later ones 5 to 7 OFF and 38 to 40 ON; A day 17's first-touch step on this card too),
+   so the pooled medians straddle the step and the IQRs are 18 to 20. Every ON boot reads `parked=10,
+   restore_submitted=5` for its 5 promotes: the day-29 double park on this card, on draft-bearing entries (A day
+   26's approved proposal 1 is the named change). The micro-cell's 1431.6 ms per 160 MiB write-combined pass would
+   put about 490 ms per pass on 54.8 MB; the ON demote's `in` figure reads 38.5 to 60.4, so the two hashes are not
+   reading write-combined memory at that rate on this tree; which memory they read is item 6's question, not
+   answered here. The per-hardware rule's pair on this class now exists as one cell with these N and this regime;
+   no tenant-stall cell exists on this class.
 6. **The promote-side census question and the day-16 write-combined contradiction** named in the arithmetic.
 7. **The door gates on MAIN's tree after #627 on the target card.** RESOLVED day 23: twelve cells on `91b0d4e08` through the collector, all `ALL GREEN` (`pro-single-day23-gates/`, `DAY23.md`).
 8. **The 5090 door gates on the tree after #627.** RESOLVED day 23: ten cells on `91b0d4e08` (fault x2 65 ok, failure x4, identity x4) `ALL GREEN` (`rtx5090-day23/`, `DAY23.md`); the whole-budget arm excepted (item 9).
-9. **The whole-budget arm on the RTX 5090** (never run there; the 27B receipt stands for the arm).
+9. **The whole-budget arm on the RTX 5090.** RESOLVED day 31: four cells (`failure-{default,plain}-pct100-{off,on}`,
+   `MEMRA_KV_HOST_TENANT_PCT=100`, cache 64 MB) on `934a6da3a`, all `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (14 ok,
+   0 FAIL, no lock retry, no compute app before or after, 54 to 61 C); the refusal `[prefix-host] skip demote: entry
+   54.8MB > host budget 1MB` (default) and `entry 54.6MB > host budget 1MB` (plain) twice per boot in every arm; in
+   the ON arms each refusal follows the whole Move 1 contract (`demote submitted off the tick: 64 tokens, 54.8MB,
+   ticket seq=3, 18 items ...`, `D2H receipt ... items=18 (8 KV planes, draft) ... require=ok`, `demote published off
+   the tick: ticket seq=3 complete after 1 poll(s), 36.2ms from submission to completion`; plain `54.6MB ... 16
+   items`, `24.9ms`), as the 27B receipt showed on the target card (`rtx5090-day31/gates/`, section C row).
 10. **Slice 3 and the spec-boundary route: the publishes still on the tick after Move 2 slice 1 (day 24 census,
     `DAY24.md`; no code).** Slice 1 (`prefix_capture_off_tick`, A day 20) routes only `prefix_insert_from_session`,
     the `seed` and `lcp-split` publishes of a plain-primed session. Still on the tick program are: (a) every
@@ -800,3 +828,9 @@ cards, tree and receipt path, verbatim verdicts), the cost table (every stall ce
 per card), the open findings, and the three outcomes the door hygiene rule allows with what each would require,
 stated without a recommendation; every number there was re-read from its receipt file on day 30 (`DAY30.md`). It
 is a draft for the owner and becomes a `docs/decisions/` record only after the owner decides.
+
+DAY 32: the neighbouring door `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-09-23) has its own packet in the same shape,
+`ADMIT-BY-MEMORY-DECISION-PACKET.md` (this directory). Its part (b) reaches this tier through
+`host_demote_prefix_ref(engine, host, entry, ContractD2h::OnTick)` (`evict_all_demoting`, worker.rs), so under both doors
+ON the admission flush's demote is the day-16 synchronous tick program of Move 1 owed item 3, not the copy-stream route;
+with the host tier unarmed it is `PrefixCache::evict_all`. No cell has booted the two doors together (`DAY32.md`).
