@@ -539,6 +539,9 @@ fault gate's cells `d2d-capture` and `d2d-restore`; `docs/FLAGS.md` and `docs/KE
    suffix prime plus the fixed recurrent term (restore) in both arms; the moved share is under the cell's resolution
    on the target card. An isolating cell needs an intruder with no on-tick compute of its own, or a subtraction
    against a measured prime-only arm in the same hold. Cell (v) of day 22 prices the receipt itself.
-4. **The receipt's price in the served path**: cell (v) times the digest against the copy on one span; the
-   receipt's cost inside a capture or restore as the tick sees it (the settle reads 2 KiB of pinned lanes) is
-   under the tick's resolution by construction and is not measured separately.
+4. **The receipt's price, read by the door review**: cell (v) on the target card (`DAY22.md`), verbatim, one digest
+   0.168 ms against the copy's 0.158 ms on 158 MiB (1.06x) and the pair the receipt needs 0.335 ms (2.12x to 2.15x),
+   N=5 per order, both orders. By the day-19 rule the pair EXCEEDS the copy's own time, the clause under which (b),
+   the `Unwitnessed` arm, was to be the receipt and (a) a diagnostic. Today's brief ordered (a); the reading is
+   reported and nothing is relaxed. For the review: the cost sits on the copy stream, off the tick (the owner thread
+   reads 2 KiB of pinned lanes at the settle), and (a) is what the fault gate's two red arms prove.
