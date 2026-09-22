@@ -46,6 +46,9 @@ Author's review of the full diff `main..lane/spill-integ38-20260922`, posted as 
 - **Revuto round 1, fixed (`d2d-delay-*` spin once per batch):** the fault's spin sat inside the per-item loop and
   multiplied by the item count (6.4 s on a 32-plane entry); it is gated on the first item now, the doc says once, the
   census test pins it; fault gate ALL GREEN on the 5090 with both D2D cells refusing, engine cells 5 passed.
+- **Revuto round 2, fixed (the arm is spent by the submit that takes it):** the engine's `early_reader.take()` sat after
+  the fallible admission steps, so a refused submit left the arm live for the next batch of either class; it is taken
+  first now in both submits, census-pinned.
 - Fail-closed arms mirror the #638 rules: the capture mismatch retires the ticket before touching planes and counts any
   plane that did not come back; the restore mismatch frees the cache only because the copy landed (never a free under a
   running copy; the `Latched` arm still forgets) and hands the pin back through `RestoreSettled::Dropped(pin)`.

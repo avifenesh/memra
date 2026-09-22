@@ -1147,6 +1147,10 @@ impl CudaTransfers {
         epochs: Epochs,
     ) -> Result<TransferTicket> {
         self.check_thread()?;
+        // The one-shot arm is spent by THIS submit whether or not admission refuses it (revuto
+        // round 2 on integ38 #639): taken ahead of every fallible step, so a refused submit cannot
+        // leave the arm live for the next batch of either class.
+        let fault = self.early_reader.take();
         let Some(copy) = self.copy.clone() else {
             return Err(Error::Unsupported);
         };
@@ -1187,7 +1191,6 @@ impl CudaTransfers {
         }
         // WP-A day 22 (slice 3): the receipt's lanes and the one-shot fault, before the charge.
         let mut scratch = self.receipt_scratch(ops.len())?;
-        let fault = self.early_reader.take();
         let mut request = self.request();
         request.bytes.inflight = ops.len() as u64;
         let charge = self.governor.borrow_mut().reserve(&request)?;
@@ -1352,6 +1355,10 @@ impl CudaTransfers {
         epochs: Epochs,
     ) -> Result<TransferTicket> {
         self.check_thread()?;
+        // The one-shot arm is spent by THIS submit whether or not admission refuses it (revuto
+        // round 2 on integ38 #639): taken ahead of every fallible step, so a refused submit cannot
+        // leave the arm live for the next batch of either class.
+        let fault = self.early_reader.take();
         let Some(copy) = self.copy.clone() else {
             return Err(Error::Unsupported);
         };
@@ -1381,7 +1388,6 @@ impl CudaTransfers {
         }
         // WP-A day 22 (slice 3): the receipt's lanes and the one-shot fault, before the charge.
         let mut scratch = self.receipt_scratch(ops.len())?;
-        let fault = self.early_reader.take();
         let mut request = self.request();
         request.bytes.inflight = ops.len() as u64;
         let charge = self.governor.borrow_mut().reserve(&request)?;
@@ -2452,6 +2458,14 @@ mod tests {
             );
             // Revuto on integ38 (#639): the spin is issued once per batch, at the first item; a
             // spin per item multiplied the documented delay by the item count.
+            let take = class_body
+                .find("let fault = self.early_reader.take();")
+                .expect("the arm is taken");
+            let first_refusal = class_body.find("if ops.is_empty() {").unwrap();
+            assert!(
+                take < first_refusal,
+                "{class}: the arm is spent before any admission refusal (revuto round 2, #639)"
+            );
             let once = class_body
                 .find("if let Some(ns) = fault\n                    && i == 0\n")
                 .expect("the delay is gated on the first item");

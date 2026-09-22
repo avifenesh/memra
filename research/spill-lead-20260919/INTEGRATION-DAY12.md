@@ -1825,6 +1825,14 @@ test pins the gate and one spin site per class. Re-run on the local 5090 under t
 `tools/kv-host-contract-fault-gate.sh` with the door ON (`MEMRA_HOSTGATE_CACHE_MB=64`, 9B) `KV-HOST-CONTRACT-FAULT GATE:
 ALL GREEN`, both D2D cells refusing by receipt (`integ38-fault-gate-5090-revuto/`).
 
+**Revuto round 2 on #639 (real, fixed).** The engine took its one-shot `early_reader` arm AFTER every fallible admission
+step of both D2D submits (empty batch, overflow, per-op layout/epoch/owner/fence checks, `receipt_scratch`), while the
+worker had already spent its door value at the arming site; a refused submit left the engine's class-agnostic arm live for
+the next batch of either class, so a refused capture submit could refuse the next restore's receipt and latch the restore
+route, contradicting the "taken by their own class only" invariant and mis-attributing a gate cell's refusal. The arm is
+now taken first, right after the thread check, in both submits; the census test pins the take ahead of the first refusal
+per class. Engine `d2d_*` GPU cells `5 passed` on the 5090 under the lock.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
