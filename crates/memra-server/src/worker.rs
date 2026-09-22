@@ -12280,13 +12280,6 @@ fn host_promote_prefix_hit(
     prompt: &[u32],
     device_best_len: usize,
 ) -> Option<(usize, PrefixPin)> {
-    // WP-A day 17: a promote never races the `Demoting` entry for the ledger's one-batch
-    // in-flight dimension; the pending demote settles first (and a hit on ITS prompt then finds
-    // it published rather than priming cold).
-    host_demote_settle_pending(host, ContractWait::Block, "a promote");
-    // WP-A day 18: the same for a `Promoting` entry (this hook has the device cache in hand, so a
-    // settled one publishes here; a hit on ITS prompt then finds the device entry).
-    host_promote_settle_pending(engine, px, host, ContractWait::Block, "a promote");
     let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
     // WP-A day 18: under the door the admission probe owns the promote decision and this hook is
     // reached only after it declined; a memo naming this entry means "serve cold, the typed line
@@ -12294,6 +12287,21 @@ fn host_promote_prefix_hit(
     if host_promote_memo_names(host, pool_key, &host.entries[pool_key][hi].toks) {
         return None;
     }
+    // WP-A day 17: a promote never races the `Demoting` entry for the ledger's one-batch
+    // in-flight dimension: the pending demote settles BEFORE THIS HOOK'S OWN SUBMISSION. Day 18
+    // moved the settle behind the candidate check: the day-17 shape settled on every admission,
+    // so a request with a plain device hit (the parked request re-admitting after its promote
+    // published, whose insert had just submitted a demote) paid that demote's copy synchronously
+    // inside its tick (the day-18 stall receipt, run 1: `server_demote_ms` back at the day-16
+    // figure). A request that submits nothing waits on nothing; a hit on the Demoting prompt is a
+    // cold prime, the pre-registered rule.
+    host_demote_settle_pending(host, ContractWait::Block, "a promote");
+    // WP-A day 18: the same for a `Promoting` entry (this hook has the device cache in hand, so a
+    // settled one publishes here).
+    host_promote_settle_pending(engine, px, host, ContractWait::Block, "a promote");
+    // The settles may have moved host indexes (a publication touches, a failure removes): look the
+    // candidate up again on the settled state.
+    let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
     let prepared = host_promote_prepare(host, pool_key, hi)?;
     let t0 = Instant::now();
     let tier_route = match (&host.tier, prepared.class) {
@@ -39664,7 +39672,11 @@ mod tests {
                 "host_promote_settle_pending(engine, px, host, ContractWait::Block, \"a promote\")",
             )
             .expect("the hook settles a pending promote before its own");
-        assert!(settle < hook.find("host_promote_candidate(").unwrap());
+        // After the candidate and memo checks (a hook that submits nothing waits on nothing), before
+        // the submission; the candidate is looked up again on the settled state.
+        assert!(hook.find("host_promote_candidate(").unwrap() < settle);
+        assert!(settle < hook.find("host_promote_prepare(").unwrap());
+        assert_eq!(hook.matches("host_promote_candidate(").count(), 2);
         assert!(hook.contains("host_promote_memo_names(host, pool_key,"));
         let demote = body("fn host_demote_prefix_ref(");
         let settle = demote
@@ -39797,8 +39809,11 @@ mod tests {
         let promote = body("fn host_promote_prefix_hit(");
         let settle = promote
             .find("host_demote_settle_pending(host, ContractWait::Block, \"a promote\")")
-            .expect("the promote hook settles first");
-        assert!(settle < promote.find("host_promote_candidate(").unwrap());
+            .expect("the promote hook settles before its own submission");
+        // Day 18: after the candidate check (a hook that submits nothing waits on nothing), before
+        // anything of the submission (`host_promote_prepare` takes the identity lease and charge).
+        assert!(promote.find("host_promote_candidate(").unwrap() < settle);
+        assert!(settle < promote.find("host_promote_prepare(").unwrap());
         let purge = body("    fn purge_tenant(&mut self, tenant: &str) -> (usize, usize, usize) {");
         assert!(
             purge.contains(
@@ -41324,9 +41339,10 @@ mod tests {
         // it (definition + the one call site).
         assert_eq!(
             prod.matches("host_promote_candidate(").count(),
-            3,
-            "definition + the promote hook's consult + the admission probe's decision (WP-A day \
-             18, `host_promote_probe_decision`), nothing else"
+            4,
+            "definition + the promote hook's two consults (before and after its settle-first) + \
+             the admission probe's decision (WP-A day 18, `host_promote_probe_decision`), nothing \
+             else"
         );
         let hook = prod
             .find("fn host_promote_prefix_hit(")
