@@ -310,11 +310,13 @@ affinity lines: plain-affinity: declined=45
 ```
 
 Digests: order 1 `default` against `compact` `tags=45 digest_equal=45 digest_differs=0 missing=0
-rows_with_both_digests=45 ... P_G_chars_equal=45`; order 2 `compact` against `default` the same line.
+rows_with_both_digests=45 ... P_G_chars_equal=45`; order 2 `compact` against `default` the same line. Across paths, `plain-o1-default` against the spec-path `park-o1-default` (same prompts, same binary): `digest_equal=45
+digest_differs=0`, every completion byte-identical between the plain and the MTP-spec program on this mix (the one
+row that differs is `iii-L1-r4`'s `cached_tokens`, 0 on plain and 3104 on spec, with equal digests).
 
 Reading. With a plain pool to act on, the door does what its row says: every retiring plain session was compacted
 (46 `[kv-reuse] park-compact:` lines, one per request including the warmup; the open ones read `2071 of 262144 rows
-retained` in about 2 ms), and idle retention fell from 39,191,576,576 B to 22,649,241,600 B, a difference of
+retained` at L0 up to `6459 of 262144 rows retained` at L2, 1.7 to 2.1 ms each; the bounded ones `1809 of 1817`), and idle retention fell from 39,191,576,576 B to 22,649,241,600 B, a difference of
 16,542,334,976 B, which is the two parked 262,144-row plain caches (2 x 7,784,628,224 = 15,569,256,448 B) plus the
 pool rounding around them; the pool's cached blocks (8.8 GB) and the 12.1 GB of prefix entries did not move, and the
 pool bought nothing in either arm (`continuation_pool_hits=0`, `plain-affinity: declined` on all 45 replays and
@@ -323,3 +325,50 @@ card class; it is labelled extra, `executed-not-qualified`, N=5 per arm per leng
 the door: the row's own pending gates (the compacted-park resume byte-identity gate on both resume shapes, the
 step-OOM adjacency replay) are still pending, and on the served spec path the pool that holds the bytes is out of the
 door's scope (2.5).
+
+## 3. Local RTX 5090 Laptop GPU: the day-27 chain and the canonical lock
+
+`rtx5090-day27/chain-local.sh` (the after cell at `MEMRA_CTX=65536`, then the park cell's four runs, each one server boot
+through `run-day26-cell.sh` under `flock -w 3600` on `/tmp/memra-5090.lock`, CPU work under the quota scope) started
+at 00:42:49Z on the day-27 binary (`build-local.log` `exit=0`, sha `d6a4269ef3ef7dc8...`). The canonical lock was held
+from before that moment by another lane's `memra-server` (cwd another worktree, 6,754 MiB on the card; identified by
+cwd only, never signalled, per the lead's 2026-09-21 rule). The after cell's bounded wait expired at 01:42:49Z:
+`lock not acquired within 3600 s; cell not run` (`after-ab/lock.txt`, `chain.log` `after-ab exit=3`); the chain moved
+on to `park-o1-default` with its own 3600 s bound. Status at the time of this section (01:44Z): the local cells have
+not run; the wait continues boundedly and this section is amended if they do. What the local card would show is
+bounded by construction: at `MEMRA_CTX=65536` the derivation read 65,536 before the fix and reads it after
+(`2,051,538,944 B`, the day-26 boot line), so the local after cell is a byte-identity control, not a second after
+receipt; the local park cell's spec-path prediction is the target card's (`park-compact lines: 0`).
+
+## 4. Checks actually run
+
+| Check | Result |
+| --- | --- |
+| `git merge --no-ff origin/main` (`dc192cd95`) | clean, `check-conflict-markers: OK` |
+| `cargo build --release -p memra-server --offline`, local (CPU quota) and target card | `exit=0` both (`rtx5090-day27/build-local.log`, `pro-single-day27/build.log`) |
+| `cargo test -p memra-server --lib -- derived_prefix_budget request_ctx_cap an_unset_ctx` (CPU quota) | `test result: ok. 4 passed; 0 failed` incl. `derived_prefix_budget_context_term_is_the_served_context_set_or_unset` (`rtx5090-day27/test-derived-budget.log`) |
+| `cargo clippy --release -p memra-server --all-targets -- -D warnings` (CPU quota) | `exit=0`, no warning (`rtx5090-day27/clippy-server.log`) |
+| `cargo fmt --all -- --check` | PASS |
+| `python3 -m py_compile` on the client, parser and comparator; `bash -n` on the drivers | OK |
+| Target-card cells through the collector (`cell-after-ab`, `cell-park-*` x4, `cell-plain-*` x4) | `status executed-not-qualified`, `qualification false`, `exit_code 0` in all nine; 45 of 45 requests 200 in each |
+| Local cells under `flock /tmp/memra-5090.lock` | see section 3 |
+| Full GPU exactness battery (`kernel-check`, `run-gen`, `run-spec`) | NOT RUN (the change moves a byte budget, no kernel or numeric program; nothing is qualified today) |
+| `git diff --check`, `tools/check-flags.sh`, `tools/check-conflict-markers.sh`, `python3 tools/check-public-boundary.py check` | `PASS`; `check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)`; `check-conflict-markers: OK`; `public-boundary: 582 matches (582 grandfathered, 0 new)` |
+| pre-push hook | one refusal on the first push of the fix: `docs/FLAGS.md:1433: 5 cells` (two unescaped pipes in my new row text), fixed by rewording; every push afterwards `UNQUALIFIED DEVELOPMENT ... no GPU qualification claimed`, logged |
+
+## 5. Boundaries and record
+
+- One engine change (the budget's context term), no new `MEMRA_*` read, no default changed, no format substitution, no
+  `unsafe`, no third lock name, no bare GPU run (target-card cells under the collector's `/tmp/memra-gpu.lock`; local
+  cells only under `flock` on the canonical 5090 lock, and none ran without it), no `--no-verify`, no touch of
+  `/root/artifacts`, `/root/memra-spill` or other lanes' worktrees, no host, id, location or cost in a tracked file, no
+  cross-box timing; every median with N=5 and its regime line; every cell `executed-not-qualified`.
+- Harness changes are additive: `content_sha256` and `finish_reason` per request in `client.jsonl`, `park_compact` and
+  `serve_spec` in `shape.txt`, the day-27 summary block in `REPORT.txt`, `day27-compare.py`. The target-card
+  `REPORT.txt` files were regenerated locally from the mirrored inputs after the parser's pool-baseline fix (the box
+  tree ran the earlier line, which read the warmup's zeroed gauges); inputs untouched.
+- Receipts: `pro-single-day27/` (mirror of the target card's `b-day27`: collector cells `cell-*` with `CELL.jsonl`,
+  `command.gpu.csv`, `command.capture.json`; `cells/*` with server.log stamped, client.jsonl, samples.csv, metrics
+  snapshots, REPORT.txt, gpu and compute-apps before and after; `build.log`, `binary.sha256`, `source.txt`, `chain.log`,
+  `chain.sh`, `chain-plain.sh`), `rtx5090-day27/` (build, test and clippy logs, `chain-local.sh`, `chain.log`, the
+  after cell's `lock.txt`).
