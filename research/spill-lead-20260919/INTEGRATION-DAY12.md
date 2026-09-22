@@ -2449,6 +2449,46 @@ fault gate, default arm, on this tree (receipt `integ45-r1-fault-gate-5090/`): `
 count-of-one check on the join line stands unchanged). The same-day owner call moved revuto's review model from Opus 5 to
 Opus 5.5 (2026-09-22), so round 2 is reviewed on Opus 5.5.
 
+## integ46 (`lane/spill-integ46-20260922`): C days 36 and 37 (the door packet re-read with option (a) landed; the 5090 demote-class tenant-stall cell on the option (a) code)
+Lane tip merged: C `cb4bc1a87` (days 36 and 37) on main `0c86309bd` (#652), clean. Docs and receipts only: outside
+`research/spill-c-20260919/` the diff against main is the two `research/INDEX.md` rows; the engine tree equals main's.
+A day 30 (Move 2 owed item 1, the recurrent f32 state onto the copy stream) is running on BOX3 and is not in this integ.
+
+**C day 36 (no card).** The door packet (`C/DOOR-DECISION-PACKET.md`) re-read against A days 28 and 29 and ruling 41:
+item 2 carries the twelve `DAY28` clause and verdict lines verbatim and clause 2 per gate per card; section 2 names the
+demote's remaining owner-thread cost, the pre-submit segment (`median=6.07` on the 4th to 11th demote of a boot, N=80;
+`42.19` on the first three, N=30; target card), with the helper's `hashed in` `median=73.20` ms per 157.9 MB off the tick;
+sections 3 and 4 gain the day-28, day-29 and integ45 RTX 5090 rows; item 7 drops option (a) and names Move 2 owed item 1.
+The counting rule (`C/DAY36.md` section 1): every figure added maps to a command in the packet's appendix A or in DAY36,
+each output under `day36-cpu/` with its command on the first line. The stopped first run's resync is DAY36 section 0.
+
+**C day 37 (the RTX 5090 class).** Day 35's cell unchanged, run with two binaries in ONE hold on `/tmp/memra-5090.lock`:
+`091a931c0` (the day-35 tree) and `8b889dcdf` (the option (a) tree), programs p1-base p2-opta p3-opta p4-base, 24
+boots, 40 of 40 `REPLAY: PASS`, 19:47:19Z to 20:31:34Z, 51 to 89 C. The rule and the secondary quantity were
+pre-registered in `a50922b27` (committed 19:46:56Z, before the first boot). Verbatim (`C/rtx5090-day37/reading.log`):
+`DAY37 VERDICT q=stall: prime o1=+27.9/51.4 o2=-6.4/15.0 under_resolution; demote-off o1=+1.3/4.1 o2=+2.6/5.5
+under_resolution; demote-on o1=-1.0/4.2 o2=-3.8/4.7 under_resolution; promote-off o1=+0.5/7.6 o2=-1.9/3.4
+under_resolution; promote-on o1=-1.4/4.4 o2=-1.3/7.4 under_resolution; did-demote o1=-2.3/5.8 o2=-6.4/7.3
+under_resolution; did-promote o1=-1.8/8.8 o2=+0.7/8.1 under_resolution` and `DAY37 VERDICT q=top1_plus_top2: prime
+o1=+45.6/97.7 o2=-11.6/24.4 under_resolution; demote-off o1=+2.5/6.4 o2=+4.5/9.4 under_resolution; demote-on
+o1=-21.7/5.2 o2=-24.5/8.5 moved; promote-off o1=+0.9/11.3 o2=-2.4/3.3 under_resolution; promote-on o1=-23.1/8.7
+o2=-21.4/9.2 moved; did-demote o1=-24.2/8.2 o2=-29.0/12.7 moved; did-promote o1=-24.0/14.2 o2=-19.1/9.8 moved`. By the
+worst-tick rule the two binaries do not separate; by the sum of the tenant's two largest gaps the ON arms and both DiDs
+moved by about 20 to 29 ms with the OFF and prime controls under resolution, the direction option (a)'s mechanism
+predicts (the bind pass leaves the tick). Which of the two ticks moved is not read by this cell (C day 38, a
+pre-registered post-hoc reader over the same receipts, running). The target card's demote class on the option (a) tree
+stays unmeasured. The engine's `[gpu-watch] Xid source:` startup line carries an em dash, so each raw `server.log` holds
+one; the logs are banked as written (`C/DAY37.md` section 6).
+
+**Checks on this tree** (`integration-day12/integ46-checks/checks.log`, tree `dbb67ac12`): `check-flags` rc=0,
+`check-conflict-markers` rc=0, `git diff --check origin/main HEAD` rc=0, `public-boundary: 604 matches (604
+grandfathered, 0 new).`, `update-perf-board.py --check` rc=0, zero em dashes in the added Markdown lines. No engine source
+in the range, so no GPU battery and no release tag.
+
+**Owner decisions flagged.** `MEMRA_ADMIT_BY_MEMORY` reaches its decide-by tomorrow, 2026-09-23 (packet
+`C/ADMIT-BY-MEMORY-DECISION-PACKET.md`, on main since integ42; it recommends nothing). The others are unchanged: 2026-10-04 (MoE slot cache, VMM), 2026-10-05 (the
+contracts door), 2026-10-06 (the park door).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

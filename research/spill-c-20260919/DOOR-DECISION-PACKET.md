@@ -97,7 +97,10 @@ Under `MEMRA_KV_HOST_CONTRACTS=1` with a host tier armed (`MEMRA_KV_HOST_MB > 0`
   `hash-helper-gone` and `hash-never-lands` cells (a 10 s deadline) latch the tier with the parked requests named, on
   the existing `MEMRA_KV_HOST_FAULT` row; no new `MEMRA_*` read.
 - **What still runs on the tick under ON.** The recurrent f32 state (`conv_state`, `ssm_state`, about 157 MB of
-  every 27B entry) is copied on the owner stream by both D2D classes (Move 2 owed item 1). The by-reference
+  every 27B entry) is copied on the owner stream by both D2D classes (Move 2 owed item 1). On A's branch (A day 30,
+  `A/DAY30.md`; the lead integrates) the demote's recurrent planes ride the KV ticket as D2H spans into a cached
+  pinned staging set, so the demote's steady pre-submit reads 0.62 ms on the target card (day 29: 6.05, N=80 each),
+  while the promote's H2D and both D2D recurrent copies stay on the owner stream. The by-reference
   demote routes (the admission reclaim flush, the pause sweep, the handoff) keep the day-16 synchronous program
   (Move 1 owed item 3). The H2D's settle-time wait is an owner-stream wait on the copy's event (rule 3), so the
   tick program orders behind the landing at the settle. What the demote's tick pays under ON since the helper, read
