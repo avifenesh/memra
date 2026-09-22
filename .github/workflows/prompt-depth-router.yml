@@ -6,6 +6,14 @@ on:
       - research/prompt-depth-router-20260922/**
       - .github/workflows/prompt-depth-router.yml
   workflow_dispatch:
+    inputs:
+      study:
+        description: Research study to execute
+        type: choice
+        options:
+          - all
+          - prefix
+        default: all
 
 permissions:
   contents: read
@@ -16,6 +24,7 @@ concurrency:
 
 jobs:
   classifier:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'prefix' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -42,6 +51,7 @@ jobs:
           retention-days: 7
 
   native-build:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'prefix' }}
     needs: classifier
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -75,6 +85,7 @@ jobs:
           retention-days: 7
 
   native-receipts:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'prefix' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -108,6 +119,7 @@ jobs:
           retention-days: 7
 
   upcoming-format:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'prefix' }}
     needs: native-receipts
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -132,3 +144,7 @@ jobs:
           path: ${{ runner.temp }}/upcoming-format
           if-no-files-found: error
           retention-days: 7
+
+  prefix-study:
+    if: ${{ github.event_name == 'pull_request' || inputs.study == 'prefix' || inputs.study == 'all' }}
+    uses: ./.github/workflows/prompt-prefix-depth.yml
