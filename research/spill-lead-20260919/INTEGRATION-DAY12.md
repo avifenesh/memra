@@ -1671,6 +1671,14 @@ memra-server suite, clippy, censuses, collector pytest, engine CPU lib tests, ti
 `-D warnings`, marker census, workflow keys, perf board: rc=0; `git diff --check` tripped on receipt logs (marked
 `-whitespace`). Local 5090 `tools/serve-smoke.sh` (door OFF): `serve-smoke: 0 failed`.
 
+Revuto round 1 on #638, one finding, real, fixed by the lead: `host_restore_take_ready`'s fail-closed arm could never
+release the source entry's pin because the `let`-else scrutinee `(r.cache.take(), r.pin.take())` had already moved the
+pin into a tuple the refutation arm cannot reach, so a ready restore without a cache left its entry pinned for the
+boot (out of every eviction index, `pinned_left` on every purge). The shape is decided before anything moves; a missing
+cache releases the pin and drops the record. CPU test `a_ready_restore_without_a_cache_releases_its_pin_at_take_ready`
+(the entry's pin count returns to 0). Server clippy `-D warnings` and the memra-server suite (804 passed) green, gated
+before the commit.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

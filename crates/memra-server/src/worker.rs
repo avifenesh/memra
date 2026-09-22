@@ -14898,7 +14898,10 @@ fn host_restore_take_ready(
         }
     }
     let mut r = hpx.restoring.take()?;
-    let (Some(cache), Some(pin)) = (r.cache.take(), r.pin.take()) else {
+    // Decide the shape BEFORE moving anything out: a `let`-else scrutinee that `take`s both fields
+    // moves the pin into a tuple the refutation arm cannot reach, so `r.pin.take()` there was `None`
+    // and the entry stayed pinned for the life of the boot (revuto on #638).
+    if r.cache.is_none() || r.pin.is_none() {
         eprintln!(
             "[prefix-cache] restore dropped (a ready Restoring request has no cache or no pin); the \
              tick program serves"
@@ -14907,7 +14910,9 @@ fn host_restore_take_ready(
             px.unpin(&pin);
         }
         return None;
-    };
+    }
+    let cache = r.cache.take().expect("checked");
+    let pin = r.pin.take().expect("checked");
     eprintln!(
         "[prefix-cache] restore landed off the tick: {} tokens ({:.1}MB) complete after {} \
          poll(s), {:.1}ms from submission to completion, {:.1}ms to re-admission ({})",
@@ -42005,6 +42010,29 @@ mod tests {
     /// its request onto it. With a submitted ticket and no cache the tier and the restore path latch
     /// off and the pin is KEPT (never a free under a possibly running copy); with neither the state
     /// drops whole and its pin comes back to the caller; nothing latches.
+    /// revuto on #638: a ready `Restoring` record without a cache must release its source pin at
+    /// `host_restore_take_ready` (the old `let`-else moved the pin into the scrutinee and leaked it).
+    #[test]
+    fn a_ready_restore_without_a_cache_releases_its_pin_at_take_ready() {
+        let (mut host, pool_key) = cpu_door_host();
+        let mut px = PrefixCache::default();
+        let e = entry_b(&pool_key, 77, 8);
+        px.entries.entry(pool_key.clone()).or_default().push(e);
+        let pin = px.pin(&pool_key, 0).expect("the entry exists");
+        assert_eq!(px.entries[&pool_key][0].pins, 1);
+        cpu_pending_restore(&mut host, &pool_key, false);
+        let r = host.restoring.as_mut().unwrap();
+        r.pin = Some(pin);
+        r.ready = true;
+        let out = super::host_restore_take_ready(&mut px, &mut host, "req-21", &pool_key, 0);
+        assert!(out.is_none(), "no cache: nothing is handed to the request");
+        assert!(host.restoring.is_none());
+        assert_eq!(
+            px.entries[&pool_key][0].pins, 0,
+            "the source pin is released, not leaked"
+        );
+    }
+
     #[test]
     fn a_pending_restore_missing_its_cache_or_ticket_fails_closed() {
         let (mut host, key) = cpu_door_host();
