@@ -9,7 +9,9 @@ cd /root/wt-b || exit 1
 export PATH=/root/.cargo/bin:/usr/local/cuda/bin:$PATH
 log() { echo "$(date -u +%FT%TZ) $*" >> $R/chain.log; }
 log "chain start HEAD=$(git rev-parse HEAD)"
-git fetch origin lane/spill-b-20260919 >> $R/fetch.log 2>&1 && git merge --ff-only origin/lane/spill-b-20260919 >> $R/fetch.log 2>&1 || { log "fetch/ff failed"; exit 1; }
+# SRC: origin, or a git bundle path when the box has no route to the git host (2026-09-23: none).
+SRC=${SRC:-origin}
+git fetch "$SRC" lane/spill-b-20260919 >> $R/fetch.log 2>&1 && git merge --ff-only FETCH_HEAD >> $R/fetch.log 2>&1 || { log "fetch/ff failed (SRC=$SRC)"; exit 1; }
 log "tree HEAD=$(git rev-parse HEAD)"
 git rev-parse HEAD > $R/source.txt
 ( nice -n 10 cargo build --release -p memra-server --offline || nice -n 10 cargo build --release -p memra-server ) > $R/build.log 2>&1; rc=$?; echo "exit=$rc" >> $R/build.log
