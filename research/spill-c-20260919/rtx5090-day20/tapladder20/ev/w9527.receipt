@@ -1,0 +1,7 @@
+[dspark-q38] acceptance 28/28 = 1.000 rounds=4 draft=33.1ms snap=1.6ms verify=211.2ms rollback+replay=0.0ms ingest=1.6ms
+prompt.txt: prompt 16382 -> gen 32 | plain 2.5 tok/s | spec 128.4 tok/s | EXACT
+[dspark-q38-gate] prompt.txt: prompt=16382 spec_sha256=0d6449b292e6f417e94a0640733ce13efba0458828bf1f168eb4b3a2f047492e plain_sha256=0d6449b292e6f417e94a0640733ce13efba0458828bf1f168eb4b3a2f047492e spec_len=32 plain_len=32 prime_s=11.984
+== dspark_q38_gate: ALL EXACT | mean plain 2.5 tok/s | mean spec 128.4 tok/s | 32 tokens ==
+[alloc-trace] 1677516800 bytes from crates/memra-engine/src/dflash.rs:3977
+[alloc-trace] 26214400 bytes from crates/memra-engine/src/dflash.rs:4008
+[alloc-trace] 26214400 bytes from crates/memra-engine/src/dflash.rs:4008

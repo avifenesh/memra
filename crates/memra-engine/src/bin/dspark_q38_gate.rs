@@ -45,6 +45,17 @@ fn plain_oracle(
     Ok(out)
 }
 
+/// SHA-256 of a token stream as little-endian u32 bytes: the receipt a storage change
+/// must keep byte for byte (memra#365 day-20 cell; the ids never reach stdout otherwise).
+fn ids_sha256(ids: &[u32]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    for id in ids {
+        h.update(id.to_le_bytes());
+    }
+    format!("{:x}", h.finalize())
+}
+
 fn first_divergence(a: &[u32], b: &[u32]) -> Option<usize> {
     let n = a.len().min(b.len());
     (0..n)
@@ -204,6 +215,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     want.len()
                 )
             }
+        );
+        // Receipt line: the spec stream and the plain oracle digested, with the prime wall
+        // (prompt prefill plus draft ingest, the standalone TTFT analogue). A tap-storage
+        // change must leave spec_sha256, spec_len and the acceptance line unchanged.
+        println!(
+            "[dspark-q38-gate] {name}: prompt={} spec_sha256={} plain_sha256={} spec_len={} plain_len={} prime_s={:.3}",
+            ids.len(),
+            ids_sha256(&got),
+            ids_sha256(want_cut),
+            got.len(),
+            want.len(),
+            memra_engine::PRIME_NANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9
         );
         sum_plain += want.len() as f64 / plain_s;
         sum_spec += got.len() as f64 / spec_s.max(1e-9);
