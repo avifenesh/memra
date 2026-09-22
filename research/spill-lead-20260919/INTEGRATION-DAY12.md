@@ -1570,6 +1570,34 @@ admission-book lock test kept the retire seam intact (the settle sits before the
 the memra-server suite (800 passed) green, gated before the commit. Owed: the retire-seam settle's cost in the
 capture-isolating cell (C day 24 measures on the tree it has; the door review reads both).
 
+**C day 24 (tip `01725be2a`, merged into integ36).** The 5090 door gates on the slice-1 tree (9B; 27B for the twin),
+verbatim: fault default `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (65 ok); fault plain `KV-HOST-CONTRACT-FAULT GATE: 2
+FAILURE(S)` (63 ok), reproduced in a rerun, the two lines `FAIL: presubmit: the next demote completes with a D2H
+contract receipt after the refusal` and the postpublish twin; failure x4 `ALL GREEN`; identity x4 `ALL GREEN (teeth=0)`;
+hit OFF and ON `ALL GREEN (qwen)`; twin27 OFF and ON `... V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` (no premise
+refusal); unit cells `8 passed` and the engine capture cell `1 passed`. C's finding, verified by the lead on the banked
+logs: the gate's clause matched the demote receipt by the literal `seq=1` (presubmit) or `seq=2` (postpublish); on the
+slice-1 tree the plain arm's seeds submit capture tickets on the same issuer and each consumes a sequence, so the demote
+after the refusal completes as `seq=3` or `seq=4` with `require=ok` and the literal missed it; the default (spec) arm
+passed because its seed publishes through `prefix_insert_from_spec_boundary` (tick program, no ticket); A's day-20
+target-card fault gate ran the default arm only. Gate fix by the lead in this integ (`tools/kv-host-contract-fault-gate.sh`):
+the receipt clause matches any `seq`, and a new clause `receipt_seq_accounts` keeps the accounting the literal carried
+(a refused presubmit consumed no sequence, a refused postpublish consumed one) as `expected + the capture tickets
+submitted before the demote's own submission line` (the sequence is consumed at submission; a capture submitted between
+the demote's submission and its receipt does not precede it; trees without the submission line count up to the receipt),
+and asserts the receipt's seq equals the submitted demote's. Replayed on the banked logs: slice-1 plain presubmit `seq=3
+expected 1 + 2 = 3`, postpublish `seq=4 expected 2 + 2 = 4` (and the rerun), slice-1 default `1 + 0`, `2 + 0`, the day-22
+pre-slice tree `1 + 0`: all rc=0. A live rerun of the fault gate plain arm on the fixed gate is owed (C day 25).
+Capture-isolating cell: stopped at the pre-registration with the arithmetic: no publish class captures generated rows
+(publishes are `seed`, `lcp-split`, `spec-boundary`, `dspark-boundary`, `glm5-boundary`); the nearest shape (a warm hit
+deepened by exactly 64 on-grid tokens) moves 154 MB of KV planes at the shape and 243 MB at ctx 8192, 1.5 to 2.4 ms even at
+100 GB/s, under C1's 6 ms threshold and the harness's resolution while both arms share tens of ms; the claim would read
+`flat` by construction; no run. Slice-3 census in `HOSTPREFIX-DOOR.md` item 10: still on the tick are every
+`prefix_insert_from_spec_boundary` publish (MTP drain sweep, dspark, glm5), the fanout leader and pause sweep snapshots,
+and slice 1's own `OnTick` refusals; bytes on the 27B at ctx 8192: trunk 243 MB, MTP draft plane about 15 MB, dspark
+tail about 85 MB fixed; an off-tick route needs a second borrowed span (the draft scratch owned by `SpecSession`), a
+producer event at the drain sweep, and settle-before-drop across a retiring or parking spec session.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

@@ -188,6 +188,38 @@ no_extra_refusal() { # $1 log: no host-tier refusal line beyond the injected one
     [ "$(grep -cE '\[prefix-host\] (demote refused|promote refused|REFUSED|.*\(contracts door\): )' "$1")" -eq 0 ]
 }
 not_leaked() { ! grep -q 'Capacity' "$1" && ! grep -q 'leaked' "$1"; }
+receipt_seq_accounts() { # $1 refusal literal $2 expected D2H seq without captures $3 log
+    python3 - "$1" "$2" "$3" <<'PY'
+import re, sys
+a, expected, log = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+lines = open(log, errors="replace").read().splitlines()
+ia = next((i for i, l in enumerate(lines) if a in l), None)
+if ia is None:
+    print("no refusal line"); sys.exit(1)
+rx = re.compile(r"contracts door D2H receipt: ticket issuer=[0-9]+ seq=([0-9]+) .* require=ok")
+ib = next(((i, m) for i, l in enumerate(lines[ia:], start=ia) if (m := rx.search(l))), None)
+if ib is None:
+    print("no D2H receipt after the refusal"); sys.exit(1)
+i, m = ib
+seq = int(m.group(1))
+# The sequence is consumed at SUBMISSION. Count the capture tickets submitted before this demote's
+# own submission line (Move 1 prints it); a capture submitted between the demote's submission and
+# its receipt does not precede it. Trees without the submission line count up to the receipt.
+rs = re.compile(r"demote submitted off the tick: .* ticket seq=([0-9]+)")
+sub = next(((j, n) for j, l in enumerate(lines[ia:i], start=ia) if (n := rs.search(l))), None)
+if sub is not None:
+    j, n = sub
+    if int(n.group(1)) != seq:
+        print(f"the receipt seq={seq} is not the submitted demote's seq={n.group(1)}"); sys.exit(1)
+    cut = j
+else:
+    cut = i
+captures = sum(1 for l in lines[:cut] if "capture submitted off the tick" in l)
+want = expected + captures
+print(f"receipt seq={seq} expected {expected} + {captures} capture ticket(s) submitted before it = {want}")
+sys.exit(0 if seq == want else 1)
+PY
+}
 
 cell() { # $1 name $2 fault $3 refused-kind $4 expected next-receipt seq
     local name=$1 fault=$2 kind=$3 seq=$4 log="$EV/$1-server.log"
@@ -200,7 +232,13 @@ cell() { # $1 name $2 fault $3 refused-kind $4 expected next-receipt seq
     chk "$name: three completions served" three_served "$EV/$name"
     chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
     chk "$name: exactly one typed injected refusal, the $kind" count_eq "demote failed (tier D2H $kind refused: injected failure (MEMRA_KV_HOST_FAULT=$fault)); nothing demoted" "$log" 1
-    chk "$name: the next demote completes with a D2H contract receipt after the refusal" after "demote failed (tier D2H $kind refused: injected" "contracts door D2H receipt: ticket issuer=[0-9]+ seq=$seq .* require=ok" "$log"
+    chk "$name: the next demote completes with a D2H contract receipt after the refusal" after "demote failed (tier D2H $kind refused: injected" "contracts door D2H receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* require=ok" "$log"
+    # The ticket accounting the literal seq used to carry (spill-c day 24, slice 1 of Move 2): a
+    # refused presubmit consumed no sequence (the next D2H is 1 past the tickets before it), a
+    # refused postpublish consumed one (2 past). Since Move 2 slice 1 the plain arm's seeds submit
+    # CAPTURE tickets on the same issuer, each consuming a sequence, so the receipt's seq is the
+    # expected D2H count plus the capture tickets submitted before it, never a literal.
+    chk "$name: the receipt's seq is $seq plus the capture tickets submitted before it" receipt_seq_accounts "demote failed (tier D2H $kind refused: injected" "$seq" "$log"
     chk "$name: the next demote publishes" after "demote failed (tier D2H $kind refused: injected" "\\[prefix-host\\] demote: " "$log"
     chk "$name: the tier never latched off" absent "TIER DISABLED" "$log"
     chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
