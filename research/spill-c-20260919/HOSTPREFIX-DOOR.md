@@ -28,6 +28,9 @@ nothing here is a support state. Rulings applied: 13 (one `tenant_salt` owner in
 exercised by Option B), 15 (Option A first, OFF byte-identical by construction, ON leaves the gate lines
 unchanged, the startup arena is out of scope; B after A's receipts, C after B's). Census that motivated
 it: `HOSTPREFIX-CONTRACT-CENSUS.md` Part E.
+The review's input list in its final form is the last section of this file ("Review table for the
+decide-by (2026-10-05), final form (day 23)"): owed cells, cost table, correctness table, what is still
+missing and why, and the decision question stated without an answer.
 
 ## What the door does
 
@@ -552,25 +555,69 @@ the tests; the verdict moves to the "Removed doors" ledger. The sidecar route it
 (lane B's) is the lead's to keep or drop. If Option B lands and the door has served two weeks
 with no rollback, the seam is deleted and the constructor becomes the naked default.
 
-## Review table for the decide-by (2026-10-05), written day 18 (`DAY18.md`)
+## Review table for the decide-by (2026-10-05), final form (day 23, `DAY23.md`; first written day 18)
 
-Every row is `executed-not-qualified` development evidence; the target card is one RTX PRO 6000 Blackwell
-at 600 W unless the row says otherwise. "Banked" means the receipt and its replay are in this repository (or
-on lane A's branch where named). The door's decision is the review's; this table is its input list.
+Every row is `executed-not-qualified` development evidence. The target card is one RTX PRO 6000 Blackwell at
+600 W through the canonical collector (`tools/tier-battery.py --rig pro-single`, lock `/tmp/memra-gpu.lock`);
+the RTX 5090 rows are the local RTX 5090 Laptop GPU with the Qwen3.5-9B NVFP4 MTP artifact under `flock` on
+`/tmp/memra-5090.lock`; the target card runs the Qwen3.8-27B NVFP4-Q5K MTP artifact. "Banked" means the
+receipt and its replay are in this repository (or on lane A's branch where named). Timing rows carry their N
+and regime in the cited receipt; a same-window pair is named as one, everything else is a same-box
+cross-sitting reading. The door's decision is the review's; these tables are its input list, and the
+paragraph at the end states the question without answering it.
 
-| Owed cell | Receipt | Verdict line (verbatim) | State |
-|---|---|---|---|
-| Identity gate, default (spec) environment, OFF against ON | `pro-single-day22/cells/identity-default-{off,on}` (day 22, Move 1 whole: the ON log carries `promote submitted off the tick ... request parked`, the H2D receipt `items=34 ... published retired acknowledged`, `promote published off the tick: ticket complete after 1 poll(s)`); `pro-single-day21/cells/identity-default-{off,on}` (A's demote slice); `pro-single-day14/`, `pro-single-day15/`, `pro-single-day16/hostgate-identity-{off,on}-default` (`verify-day16.py`: `DAY16 REPLAY: PASS`, 203 checks) | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` both arms, the same 13 verdict lines, equal demote bytes, ON D2H then H2D receipts `items=34 (16 KV planes, draft) complete=34 require=ok` | banked (day 13 finding 2, `5 FAILURE(S)` under ON on the spec surface, fixed day 14 by the draft-plane surface) |
-| Identity gate, plain environment, OFF against ON | `pro-single-day22/cells/identity-plain-{off,on}` (day 22, Move 1 whole, `items=32`); `pro-single-day21/cells/identity-plain-{off,on}`; `pro-single-day13/`, `-day15/`, `-day16/hostgate-identity-{off,on}-plain` | `ALL GREEN`, 13 lines, demotes `89 / 160.5MB`, `86 / 160.4MB`, 1 promote, 1 `verify ok`; ON receipts `items=32 (16 KV planes)` | banked |
-| Failure gate, default and plain, OFF against ON, plus the whole-budget arm | `pro-single-day22/cells/failure-{default,plain}-{off,on}` and `failure-default-pct100-{off,on}` (day 22, tree `98170f182` with Move 1 whole); `pro-single-day21/cells/failure-{default,plain}-{off,on}` (day 21, tree `9be3f7373` with lane A's Move 1 slice; earlier `pro-single-day13/` to `-day16/`) | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` in all four share-cap arms on the target card (days 21 and 22) and on the RTX 5090 (`rtx5090-day21/`), 15 `ok` each, arm line `pool-full refusal arm: tenant share cap 50%`; the whole-budget arm (`MEMRA_KV_HOST_TENANT_PCT=100`) RUN on the target card day 22, door OFF and ON, `ALL GREEN`, 14 `ok` each (the tenant-reject count belongs to the share-cap arm), arm line `pool-full refusal arm: whole host budget (... insert-path skip demote after the copy)`, server line `[prefix-host] skip demote: entry 159.9MB > host budget 1MB`; until day 22 that arm was asserted by pattern against lane D's banked day-8 log only; under the door it runs the whole Move 1 contract (submit, D2H receipt, publish) before the insert-path refusal (`DAY22.md`, recorded for the lead); digest cell ON unchanged: receipt `seq=1`, `FAULT: flipped one demoted K byte`, `VERIFY FAILED` at promote. Days 13 to 17 read `1 FAILURE(S)` on `FAIL: pool-full refusal is LOUD and named` in both arms: the gate matched the insert-path `skip demote: entry` line, reachable only at `MEMRA_KV_HOST_TENANT_PCT=100`, while the default 50 (`49d1d6f65`) refuses before the copy with the typed share-cap line (suffix `405466cf7`); the gate's match moved to that cited text (`7efab005d`, `DAY21.md`), the server unchanged | banked; resolved day 21, never the door's |
-| Contract fault gate, six cells (presubmit, postpublish, promote-presubmit, promote-postpublish, promote-reject, promote-readyview), with the floor | `pro-single-day22/cells/fault-{default,plain}` (day 22, tree `98170f182`, Move 1 whole, the lead's floor from #626); `pro-single-day21/cells/fault-{default,plain}` (day 21; earlier `pro-single-day16/faultgate-fix/`) | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 65 `ok:` on day 22 in the default and the plain environment on the target card (`items=34`, `items=32`), the floor line `ok: promote-reject: the entry carries at least two planes, so the reject is partial (items=N >= 2)` visible in both; day 21 read 64 `ok:` before the floor on the target card and on the RTX 5090 (`items=18`, `items=16`). The floor (revuto on #626, added by the lead): the reject cell's self-consistency check `1 of M` equals `items=N` had no floor, so a regression registering one plane would have passed a cell whose purpose is a PARTIAL reject; `items=N >= 2` closes it. Until day 21 the promote-reject cell hardcoded the 27B's `1 of 34 items` (red on the 9B, lane A day 17, and it would have been red in the plain environment on the 27B); it now reads the total from the server's own r2 D2H receipt (`7efab005d`) | banked; resolved day 21 |
-| Review-round cells (PR #599 findings 1 and 2; PR #605 findings 1 and 2) | `pro-single-day15-review/` (`verify-day15-review.py`), `pro-single-day16-review/` (`verify-day16-review.py`) | `DAY15 REVIEW REPLAY: PASS` (46 checks); `DAY16 REVIEW REPLAY: PASS` (42 checks) | banked |
-| Lane A's tenant reclaim fix arm, OFF against ON | `pro-single-day15/`, `pro-single-day16/tenant-{off,on}` | `PASS` both arms, eight receipts | banked |
-| Serve smoke and lane B's two gates, OFF against ON | `pro-single-day16/smoke-{off,on}`, `bevict-{off,on}`, `bnewest-{off,on}` | line-identical OFF against ON | banked |
-| The door's cost with WRITE-COMBINED destinations (the pre-`for_device` engine), N=5 per arm per order, both orders, one lock hold | `pro-single-day16/wc-pair2-retry3/` (`wc-pair.py`: `WC PAIR REPLAY: PASS`) | demote ON 169.2 ms pooled against OFF 38.6 (steady state 136 to 140 against 6 to 8); promote's own share 33.2 against 4.5 | banked as the record; SUPERSEDED on this card class by `PinnedKind::for_device` (`docs/decisions/PINNED-DESTINATIONS.md`, ruling 23) |
-| The door's cost with CACHED destinations (a `for_device` binary), same cell | lane A day 15, `research/spill-a-20260919/pro-single-day15/wc-pair/` on `origin/lane/spill-a-20260919` (`DAY15.md` there; replay with this lane's `wc-pair.py`: `WC PAIR REPLAY: PASS (12 checks)`) | demote pooled OFF **37.8** against ON **113.6** ms (steady state 6.1 to 6.9 against 81.8 to 83.0); promote 11.4 against 88.7; promote minus inline demote **4.4** against **5.8**; 36 to 51 C, 491 W peak under 600 W | banked on A's branch (the lead integrates) |
-| The hash micro-cell (the split of the delta into the hash and the ticket lifecycle), both cards | `pro-single-day18/hashmicro/`, `rtx5090-day18/hashmicro/` (`day18-replay.py`: `DAY18 REPLAY hashmicro: PASS (8 checks)` on both) | target card: `cached_ms=77.922 wc_ms=1698.063 heap_ms=77.990 ... cached_gbps=2.153 wc_gbps=0.099 ... wc_over_cached=21.792`; RTX 5090 Laptop host: `cached_ms=37.339 wc_ms=1431.613 heap_ms=37.480 ... cached_gbps=4.493 wc_gbps=0.117 ... wc_over_cached=38.340` (full lines in `DAY18.md`) | banked today |
-| The arena pair (door OFF both arms; whether the arena is the cheaper host shape at all) | `pro-single-day17/arena-pair/` (`arena-pair.py`: `ARENA PAIR REPLAY: PASS (18 checks)`) | `... -> arena_first_touch_absent; arena_not_slower` | banked; an input to the arena item, not the door's cost |
+### A. Owed cells: what the door owes, and where each receipt is
+
+| Owed cell | Tree | Receipt | Verdict line (verbatim) | State |
+|---|---|---|---|---|
+| Identity gate, default (spec) environment, OFF against ON | `98170f182` (day 22, Move 1 whole: A day 18 plus #622, #626); `9be3f7373` (day 21, A's demote slice); `3df0cb2b3` (A day 18 run 2); `1b354be59`, `70038ed01`, `30e433c4c` (days 16, 15, 14); `5ecfd262c` (day 13, the red finding) | `pro-single-day22/cells/identity-default-{off,on}` (the ON log carries `promote submitted off the tick ... request parked`, the H2D receipt `items=34 ... published retired acknowledged`, `promote published off the tick: ticket complete after 1 poll(s)`); `pro-single-day21/cells/identity-default-{off,on}`; `pro-single-day14/`, `-day15/`, `-day16/hostgate-identity-{off,on}-default` (`verify-day16.py`: `DAY16 REPLAY: PASS`, 203 checks) | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` both arms, 12 `ok`, the same 13 verdict lines, equal demote bytes, ON D2H then H2D receipts `items=34 (16 KV planes, draft) complete=34 require=ok` | banked (day 13 finding 2, `5 FAILURE(S)` under ON on the spec surface, fixed day 14 by the draft-plane surface) |
+| Identity gate, plain environment (`MEMRA_SERVE_SPEC=0`), OFF against ON | as above | `pro-single-day22/cells/identity-plain-{off,on}` (`items=32`); `pro-single-day21/cells/identity-plain-{off,on}`; `pro-single-day13/`, `-day15/`, `-day16/hostgate-identity-{off,on}-plain` | `ALL GREEN (teeth=0)`, 13 lines, demotes `89 / 160.5MB`, `86 / 160.4MB`, 1 promote, 1 `verify ok`; ON receipts `items=32 (16 KV planes)` | banked |
+| Failure gate, default and plain, OFF against ON, plus the whole-budget arm | `98170f182` (day 22); `9be3f7373` (day 21); `3df0cb2b3` (A day 18); days 13 to 16 | `pro-single-day22/cells/failure-{default,plain}-{off,on}` and `failure-default-pct100-{off,on}`; `pro-single-day21/cells/failure-{default,plain}-{off,on}`; `rtx5090-day21/failure-*` | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` in all four share-cap arms (15 `ok`, arm line `pool-full refusal arm: tenant share cap 50%`); the whole-budget arm `MEMRA_KV_HOST_TENANT_PCT=100` run day 22 door OFF and ON, `ALL GREEN`, 14 `ok` each, arm line `pool-full refusal arm: whole host budget (... insert-path skip demote after the copy)`, server line `[prefix-host] skip demote: entry 159.9MB > host budget 1MB`; under the door that arm runs the whole Move 1 contract (submit, D2H receipt, publish, 160 MB) before the insert-path refusal (`DAY22.md`, recorded for the lead); digest cell ON: receipt `seq=1`, `FAULT: flipped one demoted K byte`, `VERIFY FAILED` at promote. Days 13 to 17 read `1 FAILURE(S)` on `FAIL: pool-full refusal is LOUD and named`: the gate matched the insert-path line reachable only at `TENANT_PCT=100` while the server default 50 refuses before the copy with the typed share-cap line; the gate's match moved (`7efab005d`, `DAY21.md`), the server unchanged | banked; resolved day 21, never the door's |
+| Contract fault gate, six cells (presubmit, postpublish, promote-presubmit, promote-postpublish, promote-reject, promote-readyview), with the floor | `98170f182` (day 22, the lead's floor from #626); `9be3f7373` (day 21); `3df0cb2b3` (A day 18, 64 ok); `1b354be59` (day 16, `faultgate-fix/`) | `pro-single-day22/cells/fault-{default,plain}`; `pro-single-day21/cells/fault-{default,plain}`; `rtx5090-day22/fault-{default,plain}`; `rtx5090-day21/fault-*` | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 65 `ok:` (day 22, both environments, both cards; `items=34` / `items=32` on the 27B, `items=18` / `items=16` on the 9B), the floor line `ok: promote-reject: the entry carries at least two planes, so the reject is partial (items=N >= 2)`; 64 `ok:` before the floor (day 21). The floor (revuto on #626): the `1 of M` equals `items=N` self-consistency had no floor, so a regression registering one plane would have passed a cell whose purpose is a PARTIAL reject. Until day 21 the reject cell hardcoded the 27B's `1 of 34 items` (red on the 9B); it reads the total from the server's own r2 D2H receipt now (`7efab005d`) | banked; resolved day 21 |
+| Review-round cells (PR #599 findings 1 and 2; PR #605 findings 1 and 2) | `70038ed01` review tree, `1b354be59` review tree | `pro-single-day15-review/` (`verify-day15-review.py`), `pro-single-day16-review/` (`verify-day16-review.py`) | `DAY15 REVIEW REPLAY: PASS` (46 checks); `DAY16 REVIEW REPLAY: PASS` (42 checks) | banked |
+| Lane A's tenant reclaim fix arm, OFF against ON | `70038ed01`, `1b354be59` | `pro-single-day15/`, `pro-single-day16/tenant-{off,on}` | `PASS` both arms, eight receipts | banked |
+| Serve smoke and lane B's two gates, OFF against ON | `1b354be59` | `pro-single-day16/smoke-{off,on}`, `bevict-{off,on}`, `bnewest-{off,on}` | line-identical OFF against ON | banked |
+| The door's cost with WRITE-COMBINED destinations (the pre-`for_device` engine), N=5 per arm per order, both orders, one lock hold | `1b354be59` | `pro-single-day16/wc-pair2-retry3/` (`wc-pair.py`: `WC PAIR REPLAY: PASS`) | demote ON 169.2 ms pooled against OFF 38.6 (steady state 136 to 140 against 6 to 8); promote's own share 33.2 against 4.5 | banked as the record; SUPERSEDED on this card class by `PinnedKind::for_device` (`docs/decisions/PINNED-DESTINATIONS.md`, ruling 23) |
+| The door's cost with CACHED destinations (a `for_device` binary), same cell | lane A day 15 (engine source equal to `main` `a51e29abb`) | `research/spill-a-20260919/pro-single-day15/wc-pair/` on `origin/lane/spill-a-20260919` (`DAY15.md` there; replay with this lane's `wc-pair.py`: `WC PAIR REPLAY: PASS (12 checks)`) | demote pooled OFF **37.8** against ON **113.6** ms (steady state 6.1 to 6.9 against 81.8 to 83.0); promote 11.4 against 88.7; promote minus inline demote **4.4** against **5.8**; 36 to 51 C, 491 W peak under 600 W | banked on A's branch (the lead integrates) |
+| The hash micro-cell (the split of the delta into the hash and the ticket lifecycle), both cards | `e16bc69e8` | `pro-single-day18/hashmicro/`, `rtx5090-day18/hashmicro/` (`day18-replay.py`: `DAY18 REPLAY hashmicro: PASS (8 checks)` on both) | target card: `cached_ms=77.922 wc_ms=1698.063 heap_ms=77.990 ... cached_gbps=2.153 wc_gbps=0.099 ... wc_over_cached=21.792`; RTX 5090 Laptop host: `cached_ms=37.339 wc_ms=1431.613 heap_ms=37.480 ... cached_gbps=4.493 wc_gbps=0.117 ... wc_over_cached=38.340` (full lines in `DAY18.md`) | banked |
+| The arena pair (door OFF both arms; whether the arena is the cheaper host shape at all) | `0b55f7b39` | `pro-single-day17/arena-pair/` (`arena-pair.py`: `ARENA PAIR REPLAY: PASS (18 checks)`) | `ARENA-PAIR rule first_touch_page_o1=35.4 first_touch_page_o2=35.8 first_touch_arena_o1=0.0 first_touch_arena_o2=0.0 steady_demote_page=6.1 steady_demote_arena=6.2 demote_page=38.0 demote_arena=6.2 promote_page=11.3 promote_arena=6.6 promote_excl_page=4.5 promote_excl_arena=0.4 N=5/arm/order pooled=10 orders=2 ... -> arena_first_touch_absent; arena_not_slower` | banked; an input to the arena item, not the door's cost |
+| The stall cell, five arms (prime; demote OFF, ON; promote OFF, ON), the on-tick door (before Move 1) | A day 16, `1646d421b` (engine source equal to `main` `653c997f4`) | `research/spill-a-20260919/pro-single-day16/box/stall-{prime,off,on}/ev/` (`stall_cell.py --replay`: `STALL REPLAY: PASS` x5) | `stall-demote-off ... stall_median=117.5`, `stall-promote-off ... stall_median=85.0`, `stall-demote-on ... stall_median=193.5 ... server_demote_ms=[112.8, 118.1, ...]`, `stall-promote-on ... stall_median=162.8 ... server_promote_ms=[122.7, 123.5, 88.8, ...]`; idle p50 13.4, p99 14.8 in every cell | banked on A's branch and on `main` (#626 carried the day-16 records) |
+| The stall cell, demote ON after Move 1's demote half (the D2H off the tick) | A day 17, `fc46e230d` | `research/spill-a-20260919/pro-single-day17/box/stall-on/ev/` | `stall-demote-on ... arm_max=163.4 stall_median=149.6 ... server_demote_ms=[127.9, 134.0, 133.4, ...]` (submission to publication); the promote arm of the same boot, recorded not claimed: `stall_median=86.4` | banked on A's branch |
+| The stall cell, promote ON after Move 1's promote half (the H2D off the tick, the request parked) | A day 18 run 2, `3df0cb2b3` (run 1, on the tree before A's hook fix: `stall_median=157.8`, `flat`, ten `settled synchronously by a promote` lines) | `research/spill-a-20260919/pro-single-day18/box/stall-on/ev/` (`box/replays.log`) | `stall-promote-on ... arm_p99=92.6 arm_max=131.1 stall_median=81.9 stall_min=81.5 stall_max=117.7 server_demote_ms=[207.0, 208.1, 172.7, ...] server_promote_ms=[60.8, 61.9, 26.4, 26.1, ...]` -> `at_off` (3.1 ms under day 16's OFF), `promote_half_flat`; `stall-demote-on ... stall_median=149.7` | banked on A's branch; taken WITH the owner-thread spin that #627 round 2 removed |
+| The stall cell on MAIN's tree after #627 (the parked-only wait), promote OFF and ON, demote OFF and ON, one lock hold (this day) | `91b0d4e08` (`crates/` equal to `main` `0713c1a79`) | `pro-single-day23/stall/ev/{off,on}/{demote,promote}/receipt.json` (`replays.log`: `STALL REPLAY: PASS` x4; `day23-stall-reading.py`) | `stall-promote-on ... arm_p99=92.5 arm_max=131.0 stall_median=81.9 stall_min=81.4 stall_max=117.6 server_demote_ms=[207.7, 207.8, 172.6, ...] server_promote_ms=[61.3, 61.6, 26.4, 25.8, 25.9, 26.0, 25.9, 26.1, 25.9, 26.0]`; `stall-promote-off ... arm_max=134.2 stall_median=85.2 ... server_promote_ms=[45.0, 46.5, 11.2, 10.6, ...]`; `stall-demote-on ... arm_max=163.1 stall_median=149.5 ... server_demote_ms=[127.6, 132.6, 132.5, ...]`; `stall-demote-off ... arm_max=132.1 stall_median=117.5 ... server_demote_ms=[38.1, 42.9, 42.9, ...]`; reading `admissible=True P1=at_or_under_day18 P2=within_wait P3=on_at_off P4=off_stable P5=demote_half_unchanged P6=off_stable`; publish `1 poll(s), 19.5` to `19.7ms` x10; zero `settled synchronously by a promote`; 32 to 51 C, 33 to 363 W under 600 W | banked (`DAY23.md`); the parked-only wait moved neither the tenant's stall nor the promote's window; the one same-window OFF against ON pair of the promote arm on one tree |
+
+### B. The cost table: door OFF against ON on the target card (64-token entry, 159.9 MB, ms)
+
+| Quantity | OFF | ON | Shape | Receipt |
+|---|---|---|---|---|
+| Demote stall median (the tenant's stretched tick), the on-tick door | 117.5 | 193.5 | A day 16, `1646d421b`, N=5 per arm per order, both orders, 43 to 50 C, 88 to 329 W | A `pro-single-day16/box/stall-{off,on}` |
+| Demote stall median after Move 1's demote half (the D2H off the tick) | 117.5 (day 16) | 149.6 (A day 17), 149.7 (A day 18 run 2), 149.5 (this day, same window as 117.5 OFF) | cross-sitting against day 16 except this day's pair | A `pro-single-day17/box/stall-on`, `-day18/box/stall-on`; `pro-single-day23/stall/ev` |
+| Promote stall median, the on-tick door | 85.0 | 162.8 | A day 16 | as above |
+| Promote stall median after Move 1 whole (the H2D off the tick, request parked) | 85.0 (day 16); 85.2 (this day) | 81.9 (A day 18 run 2, with the spin); 81.9 (this day, the parked-only wait; same window as the OFF beside it) | this day's OFF against ON is the one same-window pair of the promote arm on one tree | `pro-single-day23/stall/ev` |
+| Server demote line, steady state, cached destinations | 6.1 to 6.9 (inline in a promote), 36.9 to 43.0 (a fresh entry: first touch) | 81.8 to 83.0 synchronous (A day 15 pair; day 16 stall `82.0` to `82.9`); 132 to 134 (A day 17) and 172 (A day 18) submission to publication off the tick; 131.9 to 132.6 in the demote arm and 171.8 to 172.6 inline in the promote arm this day | the ON figure after Move 1 spans submission to publication and is not the tenant's cost | A `pro-single-day15/wc-pair`, `-day16/box`, `-day17/box`, `-day18/box`; `pro-single-day23` |
+| Server promote line, steady state | 10.4 to 11.3 | 87.9 to 88.8 synchronous (day 16); 25.9 to 26.4 submission to publication (A day 18 run 2); 25.8 to 26.4 this day | as above | as above |
+| The cached-destination pair (the door's copy-and-hash cost, no stall): demote pooled | 37.8 (steady 6.1 to 6.9) | 113.6 (steady 81.8 to 83.0) | A day 15, `for_device` cached, N=5 per arm per order, both orders, one hold, 36 to 51 C, 491 W peak | A `pro-single-day15/wc-pair/` |
+| The cached-destination pair: promote, and promote minus its inline demote | 11.4; 4.4 | 88.7; 5.8 | as above | as above |
+| The write-combined pair (superseded on this class by ruling 23) | demote 38.6 (steady 6 to 8); promote share 4.5 | demote 169.2 (steady 136 to 140); promote share 33.2 | day 16, `1b354be59`, N=5 per arm per order, both orders, one hold | `pro-single-day16/wc-pair2-retry3/` |
+| The hash micro-cell: one SHA-256 pass over 160 MiB on the target card's host | n/a (OFF hashes nothing) | cached 77.9 (range 77.8 to 78.0, 2.153 GB/s); write-combined 1698.1 (0.099 GB/s); heap 78.0 | `hash-micro --bytes 167772160 --n 5`, N=5 per kind per order, two orders, 36 to 38 C | `pro-single-day18/hashmicro/` |
+| The hash micro-cell on the RTX 5090 class host | n/a | cached 37.3 (4.493 GB/s); write-combined 1431.6 (0.117 GB/s) | as above, 58 to 59 C | `rtx5090-day18/hashmicro/` |
+| The ticket lifecycle's share (arithmetic across sittings on one box, not a measurement) | 0 | the cached steady demote delta is about 76 ms (82 against 6.1); one hash pass is 77.9 ms; so the lifecycle's synchronous share is below the two cells' resolution (about 2 ms). After Move 1 the lifecycle is the off-tick 172 ms submission to publication (A day 18) of which the tenant's tick pays the difference between the ON and OFF demote stall medians (149.7 against 117.5 cross-sitting; this day's same-window pair 149.5 against 117.5, 32.0 ms) | see the arithmetic paragraph below | `DAY18.md`, `HOSTPREFIX-DOOR.md` |
+| The arena pair (door OFF both arms) | page-pinned: first touch 35.4 / 35.8, steady demote 6.1, promote 11.3, promote excl. demote 4.5 | arena: first touch 0.0 / 0.0, steady demote 6.2, promote 6.6, promote excl. demote 0.4 | day 17, N=5 per arm per order, two orders, 33 to 51 C, 493 W peak | `pro-single-day17/arena-pair/` |
+
+### C. The correctness table: identity, failure and fault gates, both cards, both arms
+
+| Gate | Card, artifact | Door OFF | Door ON | Trees with a green receipt (latest first) | Receipts |
+|---|---|---|---|---|---|
+| Identity, default (spec) | RTX PRO 6000, 27B | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok) | same, 12 ok, D2H and H2D receipts `items=34` | `98170f182` (day 22), `9be3f7373` (day 21), `3df0cb2b3` (A day 18 x2), `1b354be59`, `70038ed01`, `30e433c4c`; red on `5ecfd262c` (day 13, fixed day 14) | `pro-single-day22/cells/identity-default-*`, `-day21/`, A `pro-single-day18/box/` |
+| Identity, plain | RTX PRO 6000, 27B | `ALL GREEN (teeth=0)` (12 ok) | same, `items=32` | as above (green since day 13) | `pro-single-day22/cells/identity-plain-*` |
+| Identity, default and plain | RTX 5090, 9B | `ALL GREEN (teeth=0)` x2 | `ALL GREEN (teeth=0)` x2 | `9be3f7373` (day 21); `91b0d4e08` (day 23, main's tree after #627, `ALL GREEN (teeth=0)` x4, 12 ok) | `rtx5090-day21/identity-*`; `rtx5090-day23/identity-*` |
+| Failure, default and plain, share-cap arm | RTX PRO 6000, 27B | `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (15 ok) | same | `98170f182`, `9be3f7373`, `3df0cb2b3`; days 13 to 17 red on the gate's stale line (resolved day 21) | `pro-single-day22/cells/failure-*`, `-day21/` |
+| Failure, whole-budget arm (`MEMRA_KV_HOST_TENANT_PCT=100`) | RTX PRO 6000, 27B | `ALL GREEN` (14 ok), `skip demote: entry 159.9MB > host budget 1MB` | `ALL GREEN` (14 ok), the whole contract runs before the same refusal | `98170f182` (day 22, the only run) | `pro-single-day22/cells/failure-default-pct100-*` |
+| Failure, default and plain, share-cap arm | RTX 5090, 9B | `ALL GREEN` x2 | `ALL GREEN` x2 | `9be3f7373` (day 21); `91b0d4e08` (day 23, `ALL GREEN` x4, 15 ok) | `rtx5090-day21/failure-*`; `rtx5090-day23/failure-*` |
+| Failure, whole-budget arm | RTX 5090, 9B | not run | not run | none | stated missing (the 27B receipt stands for the arm) |
+| Contract fault (ON by construction), default and plain | RTX PRO 6000, 27B | n/a | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 65 ok with the floor (`items=34` / `items=32`) | `98170f182` (65 ok), `9be3f7373` (64 ok), `3df0cb2b3` (64 ok), `1b354be59` | `pro-single-day22/cells/fault-*`, `-day21/`, `-day16/faultgate-fix/` |
+| Contract fault, default and plain | RTX 5090, 9B | n/a | `ALL GREEN`, 65 ok with the floor (`items=18` / `items=16`) | `98170f182` (day 22, 65 ok), `9be3f7373` (day 21, 64 ok); `91b0d4e08` (day 23, 65 ok x2, floor line, `items=18` / `items=16`) | `rtx5090-day22/fault-*`, `rtx5090-day21/fault-*`; `rtx5090-day23/fault-*` |
+| Identity, failure, fault on MAIN's tree after #627 | RTX PRO 6000, 27B | `ALL GREEN` in every cell (day 23): identity `(teeth=0)` x4 (12 ok), failure x4 share-cap (15 ok) and x2 whole-budget (14 ok, `skip demote: entry X MB > host budget B MB`), fault x2 (65 ok, floor, `items=34` / `items=32`) | `ALL GREEN` in every cell (day 23): identity `(teeth=0)` x4 (12 ok), failure x4 share-cap (15 ok) and x2 whole-budget (14 ok, `skip demote: entry X MB > host budget B MB`), fault x2 (65 ok, floor, `items=34` / `items=32`) | `91b0d4e08` | `pro-single-day23-gates/cells/<cell>/` (twelve cells, collector `pro-single-day23-gates/collector/`, zero lock retries, no compute app in any of the 24 snapshots) |
 
 **Arithmetic for the review (across sittings on the same box, not a same-window measurement).** On the
 target card one engine hash pass over 160 MiB of cached pinned memory is 77.9 ms (N=10, range 77.8 to
@@ -586,30 +633,57 @@ Write-combined: one pass over 160 MiB of write-combined memory is 1698 ms here (
 read 1711 ms with another implementation), yet the day-16 pair with write-combined destinations read a
 demote delta of about 130 ms; the ON demote of day 16 cannot have hashed 160 MB of write-combined memory
 at this rate, so which bytes the completion checksum read on that binary is a census question, not
-settled here. Both are named as open for the review; nothing is inferred beyond the numbers.
+settled here. After Move 1 the copy and the hash leave the tick: the demote's tenant cost fell from 193.5
+to 149.6 (day 16 to day 17) and the promote's from 162.8 to 81.9 (day 16 to day 18), both cross-sitting;
+what remains in the tenant's tick on the demote side (about 32 ms over OFF, cross-sitting) is not
+attributed by any cell. Both are named as open for the review; nothing is inferred beyond the numbers.
 
-**Still missing at the decide-by, stated.**
-1. The arena under the door: `MEMRA_GLM5_TP_KV_HOST=1` is refused with the door at boot (its fixed backing
-   is not governor-charged and its slices are not leases); the lease handoff is engine work, not started;
-   day 17's pair says the arena removes the first-touch step (about 35 ms on the first three demotes per
-   boot) and is otherwise equal at steady state, which is what a pricing would weigh. Scoped by ruling 28
-   (lead, integ27): the handoff stays scoped until this review, where the budget question (one pinned budget
-   or two) is decided with the door. Re-read day 22: unchanged.
-2. The DFlash tail slice: no drafter artifact identity is derivable from a GGUF digest and no gate boots a
-   DFlash drafter on the card; no cell exists. Re-read day 22 against day 20 (`DAY20.md`, memra#365): day 20
-   bounded the STANDALONE whole-prompt tap sink (the prefill tap buffer in `generate_spec_dspark` and
-   `generate_spec_dflash`), a prime-time allocation shape; the tail slice is the host tier's image of the draft
-   KV TAIL (`dspark_draft`) under the door, whose two blockers (identity, gate) day 20 did not touch. The
-   question survives; it is not answered. Day 20 did record the export directory's byte manifest (`config.json`
-   and `model.safetensors` sha256, equal to #370's `qualification.json`), which is the identity input the slice
-   would bind; nothing binds it. Pre-registered, no cell exists.
-3. Verify digest v3 (the draft plane inside `MEMRA_KV_HOST_VERIFY`): not landed; the day-14 finding 4 item.
-4. RESOLVED day 21 (`DAY21.md`, `7efab005d`): the pool-full failure-gate line was the gate's, stale against the
-   default tenant share cap; `ALL GREEN` in all four arms on both cards on the tree carrying A's slice; day 22
-   added the whole-budget arm as a run receipt (both door arms, target card) and the fault gate's floor receipt.
-5. The RTX 5090 class: every door cell above ran on the target card; `PinnedKind::for_device` leaves that
-   class write-combined, where today's micro-cell reads 1431.6 ms per 160 MiB hash pass (0.117 GB/s); the
-   door's demote cost on that class is unmeasured (no pair cell there) and, by the arithmetic above, would
-   be the write-combined pass unless the census question in the paragraph above resolves otherwise. The
-   per-hardware rule wants that pair before any default on that class.
-6. The promote-side census question and the day-16 write-combined contradiction named above.
+### D. Still missing at the decide-by, stated, with the reason
+
+1. **The arena under the door.** `MEMRA_GLM5_TP_KV_HOST=1` is refused with the door at boot (its fixed backing
+   is not governor-charged and its slices are not leases); the lease handoff is engine work, not started.
+   Day 17's pair says the arena removes the first-touch step (about 35 ms on the first three demotes per boot)
+   and is otherwise equal at steady state, which is what a pricing would weigh. Scoped by ruling 28 (lead,
+   integ27): the handoff stays scoped until this review, where the budget question (one pinned budget or two)
+   is decided with the door. Unchanged days 22 and 23.
+2. **The DFlash tail slice.** No drafter artifact identity is derivable from a GGUF digest and no gate boots a
+   DFlash drafter on the card; no cell exists. Day 20 (`DAY20.md`, memra#365) bounded the STANDALONE
+   whole-prompt tap sink (the prefill tap buffer in `generate_spec_dspark` and `generate_spec_dflash`), a
+   prime-time allocation shape; the tail slice is the host tier's image of the draft KV TAIL (`dspark_draft`)
+   under the door, whose two blockers day 20 did not touch. Day 20 did record the export directory's byte
+   manifest (`config.json` and `model.safetensors` sha256, equal to #370's `qualification.json`), which is
+   the identity input the slice would bind; nothing binds it. Pre-registered; the cell is not pre-registered
+   in a runnable shape because its gate (a DFlash drafter booted on the card) does not exist.
+3. **Verify digest v3** (the draft plane inside `MEMRA_KV_HOST_VERIFY`): not landed; the day-14 finding 4 item.
+4. RESOLVED day 21 (`7efab005d`): the pool-full failure-gate line was the gate's; day 22 added the whole-budget
+   arm as a run receipt and the fault gate's floor receipt.
+5. **The RTX 5090 class pair.** Every cost cell above ran on the target card; `PinnedKind::for_device` leaves
+   the 5090 class write-combined, where the micro-cell reads 1431.6 ms per 160 MiB hash pass (0.117 GB/s).
+   The door's demote cost on that class is unmeasured (no pair cell there: the pair needs a quiet card for
+   about 15 minutes and the local card carried other sessions' servers on every sitting since day 18) and, by
+   the arithmetic above, would be the write-combined pass unless the census question in item 6 resolves
+   otherwise. The per-hardware rule wants that pair before any default on that class.
+6. **The promote-side census question and the day-16 write-combined contradiction** named in the arithmetic.
+7. **The door gates on MAIN's tree after #627 on the target card.** RESOLVED day 23: twelve cells on `91b0d4e08` through the collector, all `ALL GREEN` (`pro-single-day23-gates/`, `DAY23.md`).
+8. **The 5090 door gates on the tree after #627.** RESOLVED day 23: ten cells on `91b0d4e08` (fault x2 65 ok, failure x4, identity x4) `ALL GREEN` (`rtx5090-day23/`, `DAY23.md`); the whole-budget arm excepted (item 9).
+9. **The whole-budget arm on the RTX 5090** (never run there; the 27B receipt stands for the arm).
+
+### E. The decision question, stated and not answered
+
+Promotion would make the contract program the naked default of the host tier on the target card class:
+every pageable D2H and every contract-routed H2D would carry a ticket, a per-item completion event, a
+completion checksum over the plane, a typed receipt with epochs and a require verdict, and the fail-closed
+settle arms, with the OFF program and its `MEMRA_KV_HOST_CONTRACTS` read deleted; Move 1's off-tick copies
+would be the only demote and promote path, and the arena path would have to take the lease handoff or stay
+refused. Deletion would remove the door, `host_tier_context` and its helpers, the FLAGS.md row, the six fault
+cells and the contract receipts, and would keep the synchronous OFF program (one host-blocking synchronize
+per plane at demote, an owner-stream `htod_u8_into` at promote, no receipt, no byte attestation, no typed
+unwind), so the door's offload (Move 1) and its attestation would be lost together with its cost and its
+open items. The receipts say: identity `teeth=0` in every arm on both cards on every tree since day 14, the
+failure and fault gates green with the floor on both cards, the contract's copy-and-hash cost on cached
+destinations about one hash pass per 160 MB entry (76 to 78 ms) at demote and 1.4 ms at promote, the
+tenant's stall for a demote 149.6 against 117.5 and for a promote 81.9 against 85.0 after Move 1 (cross-
+sitting; this day's same-window pair on main's tree after #627: promote 81.9 against 85.2, demote 149.5 against 117.5), the write-combined class 20 to 40 times slower per hash
+pass and unmeasured as a pair, the arena handoff and the DFlash tail slice not built, and the promote-side
+hash not where the census puts it. Whether that trade is a default, a longer door with a new date, or a
+deletion is the owner's call at the review; nothing in this lane's records answers it.
