@@ -2902,7 +2902,7 @@ pub fn glm5_tp_split_prime_hostdiet_level() -> u8 {
 /// candidate exchange and merge preserve the replicated selector's full index sequence.
 /// Decode rejects the door before reading it and keeps the replicated kernel sequence.
 ///
-/// Flipped ON by the dev-pair cell of 2026-09-10 (vast 50431646, 2x B200 SXM, TP-2): prime
+/// Flipped ON by the dev-pair cell of 2026-09-10 (a rented 2x B200 SXM pair, TP-2): prime
 /// -34.25% at 1M (736.2216 s -> 484.0600 s, n=3 per arm) and -10.36% at 128k (38.4299 s ->
 /// 34.4500 s), decode flat at both (-0.21% and +0.29%), output tapes byte-identical at both
 /// contexts, and the CHECK oracle reports the merged index plane byte-identical to the
