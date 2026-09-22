@@ -47,6 +47,27 @@ def reproduce(root, runtime_archive, expected_runtime_sha, out):
             inputs = workloads["families"][family]
             entry = (inputs["qualification"] if phase == "qualification"
                      else inputs["scenarios"][str(int(saved["label"].split("-")[0]))])
+            expected_seed = entry["seed"]
+            if phase == "qualification" and saved["label"].startswith("sampled-"):
+                expected_seed += 10
+            elif phase == "qualification" and saved["label"].startswith("coverage-"):
+                expected_seed += 20
+            command = json.loads(run.with_name(run.name + ".command.json").read_text())
+            exit_row = json.loads(run.with_name(run.name + ".exit.json").read_text())
+            if (saved["seed"] != expected_seed or command["seed"] != expected_seed
+                    or command["binary_sha256"] != source["binaries"][f"{family}-prefix-study"]
+                    or command["workload_sha256"] != entry["sha256"]
+                    or command["arm"] != saved["arm"]
+                    or command["max_new"] != saved["max_new"]
+                    or command["gate"] != saved["gate"]
+                    or exit_row["returncode"] != 0 or exit_row["contamination"]):
+                raise ValueError("command, binary, seed or successful-exit binding changed")
+            expected_args = [saved["arm"], str(expected_seed), str(saved["max_new"]),
+                             "32768", "0" if saved["gate"] else "0.7"]
+            if command["argv"][5:10] != expected_args:
+                raise ValueError("executed request settings differ from the declared policy")
+            if command["argv"][10:] != (["gate"] if saved["gate"] else []):
+                raise ValueError("correctness path flag or extra execution settings changed")
             if sha(root / "workloads" / entry["file"]) != entry["sha256"]:
                 raise ValueError("workload bytes changed")
             metrics = metrics_from_log(run.with_name(run.name + ".log").read_text())[saved["arm"]]
