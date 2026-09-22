@@ -8,7 +8,16 @@ on:
       - research/prompt-depth-router-20260922/prepare_native.py
       - .github/workflows/prompt-prefix-depth.yml
   workflow_dispatch:
+    inputs:
+      build_native:
+        type: boolean
+        default: true
+        description: Compile the two native GPU programs on the CPU runner
   workflow_call:
+    inputs:
+      build_native:
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -38,8 +47,15 @@ jobs:
           python3 research/prompt-depth-router-20260922/prefix/prepare.py \
             --source-archive research/mtp-context-depth-20260921/latest-receipts/runtime-source.tar.gz \
             --out "$RUNNER_TEMP/prefix-source"
+      - name: Check raw prefix auditing, format coverage and paired metrics
+        run: |
+          python3 -m unittest discover -s research/prompt-depth-router-20260922/prefix -p 'test_*.py' -v
+          python3 -m compileall -q research/prompt-depth-router-20260922/prefix
+          rustc --edition=2024 -O research/prompt-depth-router-20260922/prefix/replay.rs \
+            -o "$RUNNER_TEMP/prefix-replay"
 
   native-build:
+    if: ${{ github.event_name == 'pull_request' || inputs.build_native }}
     needs: prefix-policy
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -69,6 +85,5 @@ jobs:
             ${{ runner.temp }}/prompt-prefix-native/*.stderr
             ${{ runner.temp }}/prompt-prefix-native/*.tar.gz
             ${{ runner.temp }}/prompt-prefix-native/binaries
-            ${{ runner.temp }}/prompt-prefix-native/prefix-tests
           if-no-files-found: error
           retention-days: 7

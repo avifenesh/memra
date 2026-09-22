@@ -13,18 +13,19 @@ on:
         options:
           - all
           - prefix
+          - prefix-checks
         default: all
 
 permissions:
   contents: read
 
 concurrency:
-  group: prompt-depth-router-${{ github.event.pull_request.number || github.ref }}
+  group: prompt-depth-router-${{ github.event.pull_request.number || github.ref }}-${{ inputs.study || 'all' }}
   cancel-in-progress: true
 
 jobs:
   classifier:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'prefix' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study == 'all' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -51,7 +52,7 @@ jobs:
           retention-days: 7
 
   native-build:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'prefix' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study == 'all' }}
     needs: classifier
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -85,7 +86,7 @@ jobs:
           retention-days: 7
 
   native-receipts:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'prefix' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study == 'all' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -119,7 +120,7 @@ jobs:
           retention-days: 7
 
   upcoming-format:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'prefix' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study == 'all' }}
     needs: native-receipts
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -146,5 +147,7 @@ jobs:
           retention-days: 7
 
   prefix-study:
-    if: ${{ github.event_name == 'pull_request' || inputs.study == 'prefix' || inputs.study == 'all' }}
+    if: ${{ github.event_name == 'pull_request' || startsWith(inputs.study, 'prefix') || inputs.study == 'all' }}
     uses: ./.github/workflows/prompt-prefix-depth.yml
+    with:
+      build_native: ${{ inputs.study != 'prefix-checks' }}

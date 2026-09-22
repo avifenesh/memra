@@ -60,6 +60,20 @@ Choose output budgets on calibration examples that actually reach final code
 and prose. Do not repeat the 512-token Qwen coverage failure. Retain reasoning
 and final-output counts separately, plus real code/prose annotations.
 
+Try 8,192 returned tokens on the separate versioned-record qualification task,
+then 12,288 only if coverage fails. Use the first budget at which all eight
+qualification requests cover their requested format without an exact repetition
+loop; freeze it per model before any scored request. The context limit is
+32,768 tokens. Closed Python fences must contain at least 80 bytes of parseable
+Python; prose must contain at least 200 bytes and no source-code fence. These
+are format checks, not a claim that the generated program solves its task.
+
+Each scored scenario contributes one matched request for every length/type.
+If any arm triggers the pinned exact-repetition screen, exclude that same
+request from all four arms. Never replace its seed. The primary requested-format
+table retains capped responses and format failures and reports them; also
+show the separate subset where every arm covers the requested final format.
+
 If controlled assistant-prefix or non-thinking cells are useful, label them as
 separate diagnostics and do not pool them with default free generation. Failed
 format coverage is reported; no evaluation seed is replaced or silently dropped.
