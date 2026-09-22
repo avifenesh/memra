@@ -6853,15 +6853,23 @@ fn fault_route(s: &Session) -> String {
 }
 
 /// MEMRA_FAULT_INJECT_CACHE_SALT (fault-injection door, memra#525): a request whose
-/// `cache_salt` equals the value panics inside its first guarded step, deterministically, so a
+/// `cache_salt` equals the value panics inside its own guarded `fault-inject` step at the top of
+/// the tick, deterministically, so a
 /// gate can prove the boundary on the wire: that request fails typed, its peers finish byte-
 /// identical to a run without it, and the worker generation does not move.
 fn fault_inject_salt() -> Option<&'static str> {
     static SALT: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
     SALT.get_or_init(|| {
-        std::env::var("MEMRA_FAULT_INJECT_CACHE_SALT")
+        let salt = std::env::var("MEMRA_FAULT_INJECT_CACHE_SALT")
             .ok()
-            .filter(|v| !v.is_empty())
+            .filter(|v| !v.is_empty());
+        if let Some(v) = salt.as_deref() {
+            eprintln!(
+                "[fault-inject] MEMRA_FAULT_INJECT_CACHE_SALT armed: a request with cache_salt={v:?} \
+                 panics inside its guarded step (memra#525 gate door; never set in serving)"
+            );
+        }
+        salt
     })
     .as_deref()
 }
@@ -20828,7 +20836,6 @@ pub fn run(
                     (active[i].request_id.clone(), fault_route(&active[i]));
                 let step_result =
                     guard_request(&engine, &fault_id, &fault_route, "decode step", || {
-                        maybe_inject_fault(&active[i].cache_ns, &active[i].request_id);
                         match step_session_async_chain(&engine, &loaded, &mut active[i]) {
                             Ok(Some(keep)) => Ok(keep),
                             Ok(None) => {
@@ -21304,7 +21311,6 @@ pub fn run(
                     (active[i].request_id.clone(), fault_route(&active[i]));
                 let step_result =
                     guard_request(&engine, &fault_id, &fault_route, "spec step", || {
-                        maybe_inject_fault(&active[i].cache_ns, &active[i].request_id);
                         if step_oom_fault_fire() {
                             eprintln!(
                                 "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this step reports a \
@@ -21559,6 +21565,35 @@ pub fn run(
             // scheduler-level chunk per session, but concatenate eligible chunks so N cold
             // requests do not serialize N separate trunk walks ahead of ready rows.
             let mut batch_advanced: std::collections::HashSet<usize> = Default::default();
+            // FAULT INJECTION (MEMRA_FAULT_INJECT_CACHE_SALT, memra#525; the loop body never runs
+            // with the door unset): the salted session panics inside its own guarded step, on
+            // the worker thread with a live CUDA context, before any shared structure is touched
+            // this tick. The guard classifies it as a request fault and this arm retires exactly
+            // that session; its peers take the tick as if it had never been admitted.
+            if fault_inject_salt().is_some() {
+                #[allow(clippy::needless_range_loop)]
+                // allow: `finished` is pushed inside the loop and the guard closure takes
+                // `&mut active[i]`, so the index, not an iterator, is what the borrow allows
+                for i in 0..active.len() {
+                    if finished.contains(&i) || dedup_advanced.contains(&i) {
+                        continue;
+                    }
+                    let (fault_id, fault_route) =
+                        (active[i].request_id.clone(), fault_route(&active[i]));
+                    let probe =
+                        guard_request(&engine, &fault_id, &fault_route, "fault-inject", || {
+                            maybe_inject_fault(&active[i].cache_ns, &active[i].request_id);
+                            Ok(())
+                        });
+                    if let Err(err) = probe {
+                        active[i].aborted = true;
+                        let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
+                            "step error: {err}"
+                        ))));
+                        finished.push(i);
+                    }
+                }
+            }
             let (cand, held) = 'pb: loop {
                 // default 6 (2026-07-26): with the varlen GDN core (task #18) the
                 // concat sweet spot moved from B=4 to B=6-8 (16501 vs 15950 tok/s
@@ -21674,6 +21709,11 @@ pub fn run(
                         .map(|&(i, take)| active[i].prefill_queue.drain(..take).collect())
                         .collect();
                     let prompt_refs: Vec<&[u32]> = prompts.iter().map(|p| p.as_slice()).collect();
+                    let batch_ids: String = cand
+                        .iter()
+                        .map(|&(i, _)| active[i].request_id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(",");
                     let mut cache_refs: Vec<&mut memra_engine::cache::Cache> = active
                         .iter_mut()
                         .enumerate()
@@ -21682,10 +21722,10 @@ pub fn run(
                         .collect();
                     let lm = &loaded[cand_model.as_ref().unwrap()];
                     let t_pb = Instant::now();
-                    match lm
-                        .model
-                        .prime_cache_batch(&engine, &prompt_refs, &mut cache_refs)
-                    {
+                    match guard_request(&engine, &batch_ids, "batch", "batched prime", || {
+                        lm.model
+                            .prime_cache_batch(&engine, &prompt_refs, &mut cache_refs)
+                    }) {
                         Ok(outs) => {
                             let toks: usize = prompts.iter().map(|p| p.len()).sum();
                             let partial = cand
@@ -21731,9 +21771,12 @@ pub fn run(
                             fired = true;
                         }
                         Err(err) => {
+                            // A request fault (a panic caught by the guard) leaves the wave's
+                            // caches in whatever state the unwound frames left: retire the wave
+                            // like a tainted one; never hand it to the single-prime path.
                             let tainted = cand.iter().any(|&(i, _)| {
                                 active[i].cache.as_ref().is_some_and(|cache| cache.tainted)
-                            });
+                            }) || err.to_string().contains(REQUEST_FAULT_PREFIX);
                             if tainted {
                                 eprintln!(
                                     "[prime-batch] failed after a partial pipeline wave ({err}); dropping tainted sessions"
@@ -21847,7 +21890,6 @@ pub fn run(
                 }
                 let (fault_id, fault_route) = (s.request_id.clone(), fault_route(s));
                 match guard_request(&engine, &fault_id, &fault_route, "prefill", || {
-                    maybe_inject_fault(&s.cache_ns, &s.request_id);
                     prefill_tick(
                         &engine,
                         &loaded,
@@ -21916,7 +21958,6 @@ pub fn run(
                     (active[i].request_id.clone(), fault_route(&active[i]));
                 let step_result =
                     guard_request(&engine, &fault_id, &fault_route, "decode step", || {
-                        maybe_inject_fault(&active[i].cache_ns, &active[i].request_id);
                         step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
                     });
                 let emitted = record_output_tokens(
@@ -22303,7 +22344,6 @@ pub fn run(
                 }
                 let (fault_id, fault_route) = (s.request_id.clone(), fault_route(s));
                 if let Err(err) = guard_request(&engine, &fault_id, &fault_route, "prefill", || {
-                    maybe_inject_fault(&s.cache_ns, &s.request_id);
                     prefill_tick(
                         &engine,
                         &loaded,

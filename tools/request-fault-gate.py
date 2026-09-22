@@ -13,7 +13,7 @@ payload or a failed probe stays a WORKER fault and takes the old ladder.
 
 Serving shape, one card, one boot of the real `memra-server` with the fault-injection door
 `MEMRA_FAULT_INJECT_CACHE_SALT=<salt>` (FLAGS.md): a request whose `cache_salt` equals the salt
-panics inside its first guarded step. Two rounds against the same server, greedy, plain path
+panics inside its own guarded `fault-inject` step at the top of the tick. Two rounds against the same server, greedy, plain path
 (`MEMRA_SERVE_SPEC=0`), every request a `stream: true` chat completion:
   control: `--peers` concurrent streams (prompts P1..Pn), texts kept.
   fault:   the same `--peers` streams plus one more carrying the salt, all started together.
@@ -143,6 +143,7 @@ class Server:
             "max_tokens": max_tokens,
             "temperature": 0,
             "stream": True,
+            "chat_template_kwargs": {"enable_thinking": False},
         }
         if salt:
             body["cache_salt"] = salt
@@ -172,7 +173,8 @@ class Server:
                         continue
                     out["chunks"] += 1
                     for ch in obj.get("choices", []):
-                        out["text"] += ch.get("delta", {}).get("content") or ""
+                        delta = ch.get("delta", {})
+                        out["text"] += (delta.get("reasoning_content") or "") + (delta.get("content") or "")
                         if ch.get("finish_reason"):
                             out["finish"] = ch["finish_reason"]
         except urllib.error.HTTPError as e:
@@ -277,7 +279,7 @@ def main() -> int:
     worker_panic = [l for l in log.splitlines() if "[worker] PANIC" in l]
     v4 = (
         len(fault_lines) == 1
-        and "site=prefill" in fault_lines[0]
+        and "site=fault-inject" in fault_lines[0]
         and "MEMRA_FAULT_INJECT_CACHE_SALT matched" in fault_lines[0]
         and not worker_panic
     )

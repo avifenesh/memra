@@ -115,7 +115,7 @@ name at once refuses nothing) are unit tests in `env_audit.rs`; `MEMRA_ENV_AUDIT
 Request-fault boundary (memra#525, `tools/request-fault-gate.py`, in `tools/local-ci.sh`,
 `MEMRA_CI_FAULTGATE=0` skips): one boot of the real server with the `MEMRA_FAULT_INJECT_CACHE_SALT`
 door, a control round of three concurrent greedy streams, then the same three plus a salted stream
-that panics inside its guarded prefill step. Verdicts: the salted stream ends with an error object
+that panics inside its guarded step. Verdicts: the salted stream ends with an error object
 whose `code` is `worker_fault` and no `finish_reason`; every peer finishes and its text equals the
 control round's byte for byte; `request_faults_total` reads 1, `worker_respawns_total` 0,
 `/health` `worker.generation` 0; the log carries exactly one `[fault] request=` line and no
