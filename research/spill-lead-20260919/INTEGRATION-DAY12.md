@@ -2587,6 +2587,69 @@ the battery `SUMMARY.txt` hold one; banked as written.
 `C/ADMIT-BY-MEMORY-DECISION-PACKET.md`; it recommends nothing). The others are unchanged: 2026-10-04 (MoE slot cache,
 VMM), 2026-10-05 (the contracts door), 2026-10-06 (the park door).
 
+## integ48 (`lane/spill-integ48-20260923`): C day 39 (the target card's demote-class tenant-stall cell on the option (a) code, three binaries in one hold)
+Lane tip merged: C `a7608c268` (day 39) on main `5f1b0eda4` (#656) as `fa02b6559`, clean (one auto-merged hunk in
+`research/INDEX.md`, C's row). Records and receipts only: `git diff origin/main HEAD -- crates tools` is empty, and C's
+tip carries no crate diff against B2 (`160929a92`). No flag, no engine line, no `MEMRA_*` name.
+
+**C day 39 (one RTX PRO 6000 Blackwell, collector rig `pro-single`, `/tmp/memra-gpu.lock`).** Day 35's five arms
+(prime, demote OFF and ON, promote OFF and ON) on the 27B in A day 16's target-card shape, the harness byte-for-byte
+(SHA-256 `9c9b3878...0ccc`), three binaries built on the box from fixed SHAs: B0 `091a931c0` (before option (a)), B1
+`9717e8d57` (option (a), 2a and the bounded latch close, no spans), B2 `160929a92` (B1 plus A day 30's D2H spans). One
+hold, programs p1-b0 p2-b1 p3-b2 p4-b2 p5-b1 p6-b0, 36 boots in 56.0 minutes, no wait and no refusal, 60 receipts. The
+pre-registration `89c2cd521` was committed at 21:57:26Z; the first mark is 21:58:02Z. Verbatim
+(`C/pro-single-day39/reading.log`):
+
+```
+DAY39 VERDICT contrast=b1-b0 q=stall: prime o1=-0.1/2.3 o2=+0.0/2.3 under_resolution; demote-off o1=-0.6/2.0 o2=-0.5/1.5 under_resolution; demote-on o1=-31.8/0.8 o2=-31.1/1.2 moved; promote-off o1=-0.3/4.0 o2=-0.3/1.4 under_resolution; promote-on o1=-0.1/0.9 o2=-0.0/0.9 under_resolution; did-demote o1=-31.2/2.1 o2=-30.6/2.0 moved; did-promote o1=+0.3/4.0 o2=+0.3/1.7 under_resolution
+DAY39 VERDICT contrast=b2-b1 q=stall: prime o1=+0.0/2.4 o2=-0.0/2.3 under_resolution; demote-off o1=+0.3/1.4 o2=+0.3/1.4 under_resolution; demote-on o1=-41.2/0.7 o2=-41.8/1.2 moved; promote-off o1=-0.0/1.9 o2=+0.2/1.7 under_resolution; promote-on o1=-5.0/0.8 o2=-5.1/0.8 moved; did-demote o1=-41.5/1.6 o2=-42.1/1.9 moved; did-promote o1=-4.9/2.1 o2=-5.3/1.9 moved
+DAY39 ADMISSIBLE: 60 of 60 receipts; all=True
+```
+
+Per tree (pooled N=40, stall medians): demote OFF `117.9`, `117.4`, `117.7` and ON `150.1`, `118.6`, `77.1` on b0, b1,
+b2; demote ON minus OFF `+32.1 unc=1.4 -> isolated`, `+1.2 unc=1.7 -> under_resolution`, `-40.6 unc=1.0 -> isolated`;
+promote ON minus OFF `-3.3`, `-3.1`, `-8.2`, each `isolated`; prime `301.6` on all three. Per tick
+(`C/pro-single-day39/tick-split.log`): `DAY39 TICK HYPOTHESIS contrast=b1-b0 P1 ... P5 ... -> consistent with H`, so
+option (a)'s move sits on tick 2 on this card as on the 5090 (day 38); b2-b1 moves demote-on on tick 1 (`-41.2/0.7`,
+`-41.8/1.2`) and leaves tick 2 `under_resolution`. Promote tick 2 is `not_defined` on b1 and b2 (the arm stretches one
+tick). Described, not ruled on: the ledger (b1 `pre_submit` 43.71 / 42.44 against b2 1.17 / 1.15; helper `hashed_in`
+73.3 / 73.2 against 107.3 / 104.8), every one of the 84 b2 copy-complete lines `items=128 (32 KV, 96 f32 spans)`, and
+the regime `DAY39 REGIME hold: samples=13410 temp_c=33..59 (median 50) power_w=33.50..499.83 (median 317.76)
+clocks_sm_mhz=180..2422 (median 2422) mem_used_mib=0..19573 power_limit=['600.00 W']`, no program differing from its
+block partner. One post-run reader fix, a timestamp parse in the regime reader (the box writes 3 fraction digits); no
+rule or admissibility clause moved. C also updates the door packet's day-39 rows and status lines ("on `main` since
+#656"). No recommendation; `executed-not-qualified`.
+
+**Lead review of C day 39.** Checked on the merged tree: the harness SHA-256 equals the registered one; `box/builds.log`
+names trees `091a931c0...`, `9717e8d5...`, `160929a9...`, equal to section 0; `git diff 9717e8d57 160929a92 -- crates`
+is exactly the files of `97a9e091f` and `fc637d26a` (7 files, +1448/-33), so b2-b1 isolates A day 30; the
+pre-registration commit precedes the first boot mark (C's push time is its statement, not independently re-derived
+here). Both readers rerun on the banked receipts under a CPU cap: the stall reader's output is identical to
+`reading.log` below its command header, and the tick reader's is identical except the path it names for the reading
+log. The regime fix diff (`day39-cpu/diffs/regime-postrun-parse-fix.diff`) changes only the fraction parse. What the
+cell says, in the lead's words and inside its scope (one card, the 27B, the plain 64-token class, `MEMRA_SERVE_SPEC=0`):
+on the target card the pre-option-(a) door costs the demote-class tenant 32.1 ms over OFF; option (a) brings that to
+`under_resolution`; with A day 30's spans the door's demote stall sits 40.6 ms below OFF and its promote stall 8.2 ms
+below OFF, both `isolated`. Between b2 and main's engine today sit exactly #655's 12 crate files (DSv4 route policies), checked by file set.
+**Ruling 43:** C day 39 is read as registered; the packet's owed target-card demote-class tenant-stall cell on the
+option (a) tree now exists, on three trees, and enters the contracts-door packet (2026-10-05) as target-card evidence.
+No default moves on it: the door is the owner's decision. Still owed from the cell: why b1 shows no first-touch
+pre-submit step here (a per-demote allocation line, lane A's engine code), the b2 helper's `hashed_in` rise of 31.6 to
+34.0 ms (off the tick, unattributed), promote tick 2 on b1 and b2, and the unchanged A day 30 section 9 items.
+
+**Checks (tree `fa02b6559`; records only, so no GPU battery and no tag).** `bash tools/check-flags.sh` exit 0,
+`bash tools/check-conflict-markers.sh` exit 0, `python3 tools/update-perf-board.py --check` exit 0,
+`public-boundary: 604 matches (604 grandfathered, 0 new).`, `git diff --check origin/main HEAD` clean, zero em dashes
+in added lines, `.gitattributes` in both new receipt dirs.
+
+**Running.** A day 31 (the H2D half and the day-30 owed items) and B day 31 (`MEMRA_ADMIT_BY_MEMORY`: the OFF/ON cell,
+the open-output sweep, the digest identity gate and the survey of how other engines bound an omitted `max_tokens`,
+per the owner's 2026-09-23 call to measure; decide-by moving to 2026-10-07).
+
+**Owner decisions flagged.** `MEMRA_ADMIT_BY_MEMORY`: measuring (B day 31); 8192 is a placeholder, not a default.
+2026-10-04 (MoE slot cache, VMM), 2026-10-05 (the contracts door; C day 39's rows are new input), 2026-10-06 (the park
+door).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

@@ -1,0 +1,21 @@
+# day 39 engine-tree diffs, 2026-09-22T21:33:38Z
+## B0 091a931c0 -> B1 9717e8d57 (crates)
+ crates/memra-server/src/dsv4_serve.rs     |    7 +
+ crates/memra-server/src/lib.rs            |   21 +-
+ crates/memra-server/src/route_contract.rs |  656 +++++++++++
+ crates/memra-server/src/worker.rs         | 1719 ++++++++++++++++++++++++++++-
+ 4 files changed, 2356 insertions(+), 47 deletions(-)
+## B1 9717e8d57 -> B2 160929a92 (crates)
+ crates/memra-engine/src/pinned_host.rs             |  59 ++
+ crates/memra-engine/src/tier_transfer.rs           | 447 ++++++++++++++-
+ crates/memra-server/src/worker.rs                  | 623 ++++++++++++++++++++-
+ crates/memra-tier/src/conformance/d2h_span.rs      | 153 +++++
+ crates/memra-tier/src/conformance/mod.rs           |   6 +
+ .../tests/contracts/d2h_span_bindings.rs           | 190 +++++++
+ crates/memra-tier/tests/contracts/mod.rs           |   3 +
+ 7 files changed, 1448 insertions(+), 33 deletions(-)
+## commits touching crates, B1..B2
+fc637d26a feat(server): the demote's recurrent f32 planes ride the KV ticket as D2H spans into a cached pinned staging set; the settle takes them back before the retire and the hash helper hashes the landed bytes (WP-A day 30, memra#536 Move 2 owed item 1, the D2H half)
+97a9e091f feat(tier-transfer): the D2H span class, typed f32 spans that ride a demote's ticket (WP-A day 30, memra#536 Move 2 owed item 1)
+## B2 160929a92 -> lane HEAD d036db237 (crates, Cargo.toml, Cargo.lock)
+(empty above = no diff)
