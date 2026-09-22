@@ -22621,7 +22621,7 @@ pub fn run(
                     active.len(),
                     queue.len() + requeue.len(),
                     estimate_spec,
-                    dspark_drafts.get(&req.model).is_some(),
+                    dspark_drafts.contains_key(&req.model),
                 )
             {
                 requeue.push_back(req); // waits (FIFO), never shed: its restore is in flight
@@ -42493,7 +42493,7 @@ mod tests {
         let probe_call = body.find("&& host_restore_park_probe(").unwrap();
         assert!(body[probe_call..probe_call + 600].contains("estimate_spec,"));
         assert!(
-            body[probe_call..probe_call + 600].contains("dspark_drafts.get(&req.model).is_some(),")
+            body[probe_call..probe_call + 600].contains("dspark_drafts.contains_key(&req.model),")
         );
     }
 
