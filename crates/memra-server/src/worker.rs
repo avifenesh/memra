@@ -9817,6 +9817,12 @@ struct PendingHashing {
     payloads: usize,
     bytes: usize,
     handed: Instant,
+    /// WP-A day 29 (ruling 40, option 2a, `DAY29.md`): the request ids the admission probe PARKED
+    /// on this entry because their prompt hits it (one typed line per id; the entry publishes
+    /// with or without them: this is a count, not a state the request owns). `reparks` counts the
+    /// silent re-parks of an already-recorded id (the `ParkAgain` shape).
+    parked: Vec<String>,
+    reparks: u32,
 }
 
 /// The owner thread's held time for one off-tick demote, by segment, in ms: before the submission
@@ -12875,6 +12881,8 @@ fn host_demote_settle_with_deadline(
                 payloads: n,
                 bytes,
                 handed: Instant::now(),
+                parked: Vec::new(),
+                reparks: 0,
             };
             match wait {
                 ContractWait::Poll => {
@@ -12943,12 +12951,11 @@ fn host_demote_settle_hashing(
     held: Instant,
 ) -> HostDemoteOutcome {
     pending.owner.hash_polls += 1;
-    let PendingHashing {
-        seq,
-        payloads: n,
-        bytes,
-        handed,
-    } = hashing;
+    let (seq, n, bytes, handed) = (hashing.seq, hashing.payloads, hashing.bytes, hashing.handed);
+    // WP-A day 29 (ruling 40): the requests the probe parked on this entry, for the ledger line
+    // and the latch tail; they own nothing here and re-admit to whatever the tick top leaves.
+    let parked_hits = hashing.parked.len();
+    let reparks = hashing.reparks;
     let mb = bytes as f64 / 1e6;
     let mode = match wait {
         ContractWait::Poll => "tick-top poll".to_string(),
@@ -12959,6 +12966,12 @@ fn host_demote_settle_hashing(
         eprintln!("[prefix-host] demote failed ({err}); nothing published; the tier latches off");
         host.waste_pending_reclaim(&key, toks, why);
         host.disable(&err);
+        if parked_hits > 0 {
+            eprintln!(
+                "[prefix-host] {parked_hits} request(s) parked on the Hashing entry re-admit to a \
+                 cold prime (the tier latched off)"
+            );
+        }
         HostDemoteOutcome::Failed
     };
     let Some(dead) = pending.dead.take() else {
@@ -13017,12 +13030,7 @@ fn host_demote_settle_hashing(
             }
             pending.dead = Some(dead);
             pending.owner.hash_polls_ms += held.elapsed().as_secs_f64() * 1e3;
-            pending.hashing = Some(PendingHashing {
-                seq,
-                payloads: n,
-                bytes,
-                handed,
-            });
+            pending.hashing = Some(hashing);
             host.demoting = Some(pending);
             return HostDemoteOutcome::Demoting;
         }
@@ -13097,7 +13105,8 @@ fn host_demote_settle_hashing(
              ({mb:.1}MB) hashed in {:.1}ms on the hash helper, landed after {} poll(s) ({mode}); the \
              owner thread held {:.2}ms across the demote: pre-submit {:.2}, copy settle {:.2} over {} \
              poll(s), hashing polls {polls_ms:.2}, take-back bind and publish {publish_ms:.2}; owner \
-             in-completion {:.2}ms; wall {:.1}ms t0 to publication",
+             in-completion {:.2}ms; wall {:.1}ms t0 to publication; {parked_hits} hit(s) parked on \
+             the Hashing entry ({reparks} re-park(s))",
             reply.helper_ms,
             owner.hash_polls,
             owner.presubmit_ms + owner.copy_settle_ms + polls_ms + publish_ms,
@@ -13898,6 +13907,69 @@ fn host_promote_probe_decision(
     }
 }
 
+/// WP-A day 29 (memra#536 Move 1 owed item 2a, lead ruling 40, `research/spill-a-20260919/DAY29.md`
+/// section 1.1): does this request's prompt hit the one `Demoting` entry while it is in its
+/// `Hashing` phase? Pure over the host state: the entry's heap payloads are on the hash helper
+/// (`hashing` is `Some`; a copy-phase `Demoting` entry keeps the day-17 rule, a hit on it is a
+/// cold prime), its pool key is the request's, its token key exactly prefixes the prompt under the
+/// host `lookup` rules, and it is deeper than the request's device hit (the promote candidate's
+/// own rule). Returns the hit's depth and the ticket.
+fn host_hashing_hit(
+    host: &HostPrefixCache,
+    pool_key: &PoolKey,
+    prompt: &[u32],
+    device_best_len: usize,
+) -> Option<(usize, u64)> {
+    let pending = host.demoting.as_ref()?;
+    let hashing = pending.hashing.as_ref()?;
+    let toks = &pending.image.toks;
+    let n = toks.len();
+    (pending.image.pool_key == *pool_key
+        && n >= PREFIX_CACHE_MIN_TOKENS
+        && n <= prompt.len()
+        && n > device_best_len
+        && prompt[..n] == toks[..])
+        .then_some((n, hashing.seq))
+}
+
+/// WP-A day 29 (ruling 40): PARK the request whose prompt hits the `Hashing` entry: record its id
+/// on the entry (the first park of an id prints the typed line naming the entry and the phase; a
+/// re-park counts silently, the `ParkAgain` shape) and answer `true` so the probe's caller requeues
+/// it. Nothing is hashed, waited on or submitted here: the tick-top poll lands the digests and
+/// publishes, and the re-admitted request takes the promote park to a device hit. Returns `false`
+/// when the prompt does not hit the `Hashing` entry.
+fn host_hashing_park(
+    host: &mut HostPrefixCache,
+    pool_key: &PoolKey,
+    prompt: &[u32],
+    device_best_len: usize,
+    request_id: &str,
+) -> bool {
+    let Some((n, seq)) = host_hashing_hit(host, pool_key, prompt, device_best_len) else {
+        return false;
+    };
+    let Some(hashing) = host.demoting.as_mut().and_then(|p| p.hashing.as_mut()) else {
+        return false;
+    };
+    if hashing.parked.iter().any(|id| id == request_id) {
+        hashing.reparks += 1;
+        return true;
+    }
+    hashing.parked.push(request_id.to_string());
+    eprintln!(
+        "[prefix-host] hit parked on a Hashing entry: request {request_id} ({} tokens) hits the \
+         Demoting entry's {n} tokens (ticket seq={seq}, {} payloads, {:.1}MB on the hash helper for \
+         {:.1}ms); the request waits one tick for the digests (model {}{})",
+        prompt.len(),
+        hashing.payloads,
+        hashing.bytes as f64 / 1e6,
+        hashing.handed.elapsed().as_secs_f64() * 1e3,
+        pool_key.0,
+        ns_suffix(&pool_key.1)
+    );
+    true
+}
+
 /// WP-A day 18 (memra#536 Move 1, the promote half): the door's promote decision, taken in the
 /// admission loop immediately before `admit(..)` with the request still in hand. Under the door a
 /// host hit SUBMITS the H2D on the transfer engine's copy stream and the request PARKS (the caller
@@ -13942,6 +14014,13 @@ fn host_promote_park_probe(
         .lookup(&pool_key, prompt)
         .map(|i| px.entries[&pool_key][i].toks.len())
         .unwrap_or(0);
+    // WP-A day 29 (ruling 40, option 2a): a hit on the `Hashing` entry PARKS the request one tick,
+    // decided BEFORE the promote decision so a published candidate's `Submit` cannot `Block`-settle
+    // the entry for a request whose own prompt hits it; the re-admission finds the entry published
+    // and takes the promote park to a device hit (`DAY29.md` section 1.2).
+    if host_hashing_park(host, &pool_key, prompt, device_best_len, &req.request_id) {
+        return true;
+    }
     let hi = match host_promote_probe_decision(host, &pool_key, prompt, device_best_len) {
         PromoteProbe::NoCandidate | PromoteProbe::Cold => return false,
         PromoteProbe::ParkAgain => return true,
@@ -23972,11 +24051,14 @@ pub fn run(
         // ticks for the whole copy. When nothing is active and every queued request is parked on
         // the promote whose copy is still in flight, wait on the command channel for the same
         // bounded 2 ms; the tick top then polls the transfer and the parked request re-admits.
+        // WP-A day 29 (ruling 40): a request parked on the `Hashing` entry is the same shape; the
+        // guard covers it, and the tick top's demote poll lands the digests.
         if active.is_empty()
             && parked_on_promote > 0
             && parked_on_promote == queue.len()
             && (hpx.promoting.as_ref().is_some_and(|p| !p.ready)
-                || hpx.restoring.as_ref().is_some_and(|r| !r.ready))
+                || hpx.restoring.as_ref().is_some_and(|r| !r.ready)
+                || hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some()))
         {
             match rx.recv_timeout(Duration::from_millis(2)) {
                 Ok(cmd) => handle_cmd(
@@ -45080,6 +45162,8 @@ mod tests {
                 payloads: n,
                 bytes,
                 handed: std::time::Instant::now(),
+                parked: Vec::new(),
+                reparks: 0,
             }),
             owner: super::DemoteOwnerLedger::default(),
         });
@@ -45109,6 +45193,132 @@ mod tests {
         _: super::ContractWait,
     ) -> Result<super::ContractSettle, super::HostContractFailure> {
         panic!("a Hashing entry is met before the contract step; the step must not run")
+    }
+
+    /// WP-A day 29 (ruling 40, option 2a): a hit on the `Hashing` entry parks the request (the
+    /// decision pure over the host state; the id recorded once, re-parks counted), a miss does not
+    /// (a shorter prompt, a device hit as deep, another pool key, a copy-phase `Demoting` entry, no
+    /// `Demoting` entry), the parked ids ride the state through the polls and are consumed with it
+    /// at publication and at the latch.
+    #[test]
+    fn hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not() {
+        let (mut host, key, jobs, replies) = cpu_door_host_with_channels();
+        cpu_pending_hashing(&mut host, &key, 5);
+        let prompt: Vec<u32> = (100..170).collect();
+        // The pure decision: depth and ticket of the hit; every miss shape answers None.
+        assert_eq!(
+            super::host_hashing_hit(&host, &key, &prompt, 0),
+            Some((64, 5))
+        );
+        assert_eq!(
+            super::host_hashing_hit(&host, &key, &prompt, 63),
+            Some((64, 5))
+        );
+        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 64), None);
+        let shorter: Vec<u32> = (100..150).collect();
+        assert_eq!(super::host_hashing_hit(&host, &key, &shorter, 0), None);
+        let other_prompt: Vec<u32> = (200..270).collect();
+        assert_eq!(super::host_hashing_hit(&host, &key, &other_prompt, 0), None);
+        let other_key = ("m".to_string(), "ns2".to_string());
+        assert_eq!(super::host_hashing_hit(&host, &other_key, &prompt, 0), None);
+        // The park: once per id with the typed line, re-parks counted, a miss unparked.
+        assert!(super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-1"
+        ));
+        assert!(super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-1"
+        ));
+        assert!(super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-2"
+        ));
+        assert!(!super::host_hashing_park(
+            &mut host, &key, &shorter, 0, "req-3"
+        ));
+        assert!(!super::host_hashing_park(
+            &mut host, &key, &prompt, 64, "req-4"
+        ));
+        {
+            let hashing = host.demoting.as_ref().unwrap().hashing.as_ref().unwrap();
+            assert_eq!(
+                hashing.parked,
+                vec!["req-1".to_string(), "req-2".to_string()]
+            );
+            assert_eq!(hashing.reparks, 1);
+        }
+        // The entry is still in neither index: the park is not a publication.
+        assert_eq!(host.lookup(&key, &prompt), None);
+        assert_eq!(host.n_entries(), 0);
+        // A poll before the reply keeps the parked ids with the state.
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            no_contract_step,
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Demoting));
+        let hashing = host.demoting.as_ref().unwrap().hashing.as_ref().unwrap();
+        assert_eq!(hashing.parked.len(), 2);
+        assert_eq!(hashing.reparks, 1);
+        // The reply lands; the next poll reaches publication and consumes the state (on the CPU
+        // the bind refuses by name, the day-17 proof); the park predicate is false afterwards, so
+        // the re-admitted request goes to the promote decision.
+        let job = jobs.try_recv().unwrap();
+        let hashed = job
+            .payloads
+            .into_iter()
+            .map(|p| {
+                let (n, d) = super::host_hash_payload_digest(&p.data);
+                (p, n, d)
+            })
+            .collect();
+        replies
+            .send(super::HostHashReply {
+                seq: 5,
+                hashed,
+                helper_ms: 1.0,
+            })
+            .unwrap();
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            no_contract_step,
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
+        assert!(host.demoting.is_none());
+        assert!(host.armed(), "a bind refusal is not a latch");
+        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 0), None);
+        assert!(!super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-1"
+        ));
+        // A copy-phase Demoting entry (the day-17 window) is a miss for the park too.
+        let (mut host, key) = cpu_door_host();
+        cpu_pending_demote(&mut host, &key);
+        assert!(host.demoting.as_ref().unwrap().hashing.is_none());
+        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 0), None);
+        assert!(!super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-5"
+        ));
+        // The latch with parked requests: the state is consumed, the tier off, the parked request
+        // re-admits to the probe's first line (`armed()` false) and primes cold.
+        let (mut host, key, _jobs, replies) = cpu_door_host_with_channels();
+        cpu_pending_hashing(&mut host, &key, 6);
+        assert!(super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-6"
+        ));
+        drop(replies);
+        let outcome = super::host_demote_settle_with(
+            &mut host,
+            super::ContractWait::Poll,
+            "the tick top",
+            no_contract_step,
+        );
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
+        assert!(host.demoting.is_none());
+        assert!(!host.armed());
+        assert!(!super::host_hashing_park(
+            &mut host, &key, &prompt, 0, "req-6"
+        ));
     }
 
     #[test]
@@ -45447,11 +45657,51 @@ mod tests {
             let lo = i.saturating_sub(1500);
             assert!(!code[lo..i + 400].contains("host_demote_settle_pending("), "a trim meets no Demoting entry (day 17), so no Hashing entry either");
         }
-        // The parked-only wait and the orphan grace never read the demote state.
+        // WP-A day 29 (ruling 40): the parked-only wait is guarded on a Hashing entry too (a
+        // request parked on it is the promote park's shape); the orphan grace still reads no
+        // demote state (a request parked on a Hashing entry owns nothing to expire).
         let park_wait = code.find("&& parked_on_promote == queue.len()").unwrap();
-        assert!(!code[park_wait..park_wait + 600].contains("demoting"));
+        assert!(
+            code[park_wait..park_wait + 600]
+                .contains("|| hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some())")
+        );
         let orphan = body("fn host_restore_expire_ready(");
         assert!(!orphan.contains("demoting"));
+        // WP-A day 29: the probe decides the Hashing park BEFORE the promote decision, with the
+        // request still in hand, and answers the caller's one park arm; the decision is pure over
+        // the host state and requires the Hashing phase (a copy-phase Demoting entry is a miss).
+        let probe = body("fn host_promote_park_probe(");
+        let park = probe
+            .find(
+                "if host_hashing_park(host, &pool_key, prompt, device_best_len, &req.request_id) {",
+            )
+            .expect("the Hashing park in the probe");
+        let decision = probe
+            .find("let hi = match host_promote_probe_decision(")
+            .unwrap();
+        assert!(
+            park < decision,
+            "the Hashing park precedes the promote decision"
+        );
+        assert!(probe[park..park + 200].contains("return true;"));
+        let hit = body("fn host_hashing_hit(");
+        assert!(hit.contains("let hashing = pending.hashing.as_ref()?;"));
+        assert!(hit.contains("&& n > device_best_len"));
+        assert!(hit.contains("&& prompt[..n] == toks[..]"));
+        let park_fn = body("fn host_hashing_park(");
+        assert!(park_fn.contains("hit parked on a Hashing entry: request {request_id}"));
+        assert!(
+            !park_fn.contains("hasher.") && !park_fn.contains("settle"),
+            "the park never touches the helper and never settles"
+        );
+        assert_eq!(
+            code.matches("host_hashing_park(").count(),
+            2,
+            "the definition and one park site: the admission probe"
+        );
+        // The ledger line carries the parked count; the latch tail names the parked requests.
+        assert!(hashing_fn.contains("{parked_hits} hit(s) parked on \\\n             the Hashing entry ({reparks} re-park(s))"));
+        assert!(hashing_fn.contains("request(s) parked on the Hashing entry re-admit to a"));
         // One helper per context, spawned once in production, from the existing fault door read.
         assert_eq!(code.matches("HostHashWorker::spawn(").count(), 1);
         assert!(code.contains(
@@ -47250,6 +47500,11 @@ mod tests {
             code[handoff + wait..handoff + wait + 400]
                 .contains("hpx.restoring.as_ref().is_some_and(|r| !r.ready)"),
             "the wait is guarded on a not-ready Restoring request too (revuto round 2 on #638)"
+        );
+        assert!(
+            code[handoff + wait..handoff + wait + 400]
+                .contains("hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some())"),
+            "the wait is guarded on a Hashing entry too (WP-A day 29, ruling 40)"
         );
         let recv = code[handoff + wait + guard..]
             .find("rx.recv_timeout(Duration::from_millis(2))")
