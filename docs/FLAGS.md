@@ -1096,6 +1096,7 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
 | `MEMRA_FA_FLOOR=1` | prefill-FA floor kernel variant (fa_hd128_check gate bin) |
 | `MEMRA_MSCALE_PROFILE` / `MEMRA_MSCALE_NOEAGER` / `MEMRA_MSCALE_INTERLEAVE` | verify-mscale probe bin controls (`INTERLEAVE=1` alternates the arms) |
 | `MEMRA_TEST_MODEL`, `MEMRA_LLAMA_TOKENIZE`, `MEMRA_ST_TEST_DIR` | test-suite input paths (tokenizer parity, safetensors header tests) |
+| `MEMRA_BOUND_*` | test-suite inputs for `crates/memra-engine/tests/bound_loader_gpu.rs`, one set per case by `research/modelplan-onboarding-bound-census-20260920/native-acceptance-20260922/run-native.py`: `_CASE`, `_CASE_PATH`, `_ROOT`, `_FORMAT`, `_OUT`, `_EXPECT_ERROR`, `_OUTPUT_KIND`, `_OUTPUT_SHA256`, `_NVFP4_QUERY`. Not read by the engine or server. |
 | `MEMRA_GATE_DUMP_TOKENS=1` | test-only `gemma-gate` token-stream dump used by exact ON/OFF benchmark harnesses; does not alter inference |
 | `MEMRA_KC_MODELS_DIR` | model dir for kernel-check's REAL-WEIGHT sections (the router weight-oracle bit-identity + m-invariance sweep added by `lane/fast-router`; battery scripts set it, unset skips with a note) |
 | `MEMRA_KC_FAST=1` / `MEMRA_KC_ONLY=a,b,...` | kernel-check dev-loop scoping (fast-gate tier 0, 2026-08-02): `FAST` skips ALL weight-oracle sections (synthetic arms only, ~2s vs ~4.5min); `ONLY` runs sections whose name contains a csv term. Every skip prints LOUD; the full battery (no env) still gates merges/tags — see docs/TESTING.md |
