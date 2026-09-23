@@ -5,7 +5,7 @@ use crate::dsv4_ffi;
 use crate::mmq_ffi::{
     memra_bind_device, memra_moe_kq_gemm_sk, memra_moe_kq_gemm_sk_gu,
     memra_moe_kq_gemm_sk_gu_half2, memra_moe_kq_gemm_sk_gu_m1, memra_moe_kq_gemm_sk_gu_m1_half2,
-    memra_moe_kq_gemm_sk_m1, memra_moe_kq_gemm_sk_m1_half2,
+    memra_moe_kq_gemm_sk_m1, memra_moe_kq_gemm_sk_m1_half2, memra_moe_kq_m1_stream,
 };
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
 use memra_runtime::Gpu;
@@ -240,6 +240,11 @@ fn modelopt_pointers(
         .ok_or("matrix bank dimension overflow")?;
     let wb = area / 2;
     let sb = area / 16;
+    // The one-token streaming visitor moves 16-byte weight pieces with cp.async; every plane
+    // pointer below is base + a multiple of 16, so the bases carry the whole contract.
+    if !w.is_multiple_of(16) || !sc.is_multiple_of(16) {
+        return Err("matrix expert-bank planes must be 16-byte aligned".into());
+    }
     if experts.checked_mul(3).and_then(|n| n.checked_mul(wb)) != Some(wlen)
         || experts.checked_mul(3).and_then(|n| n.checked_mul(sb)) != Some(slen)
     {
@@ -475,10 +480,30 @@ impl GroupedWork {
                     );
                 }
             } else {
-                self.routes
-                    .project(&s, table, 0, &self.input, self.intermediate.cols, out.g1)?;
-                self.routes
-                    .project(&s, table, 2, &self.input, self.intermediate.cols, out.g3)?;
+                let stream = self.plain_single
+                    && crate::moe_f16g_tail_on()
+                    && crate::dsv4_moe_m1_stream_on();
+                for (projection, dst) in [(0, &mut *out.g1), (2, &mut *out.g3)] {
+                    if stream {
+                        self.routes.project_stream(
+                            &s,
+                            table,
+                            projection,
+                            &self.input,
+                            self.intermediate.cols,
+                            dst,
+                        )?;
+                    } else {
+                        self.routes.project(
+                            &s,
+                            table,
+                            projection,
+                            &self.input,
+                            self.intermediate.cols,
+                            dst,
+                        )?;
+                    }
+                }
                 unsafe {
                     for (dst, scales) in [
                         (&mut *out.g1, &self.routes.macro1),
@@ -541,6 +566,9 @@ impl GroupedWork {
         if live > 0 {
             self.intermediate.gather(&s, out.hq, out.hs, None, live)?;
 
+            // A gate that armed the M1 tensor-core or half2 down tail asked for that program
+            // (the TP/EP bench pins it and counts its enqueues), so it keeps precedence; the
+            // stream visitor is what every other one-row step takes, the served path included.
             if self.plain_single
                 && crate::moe_f16g_tail_on()
                 && (crate::moe_f16g_m1_tc_on() || crate::moe_f16g_down_m1_half2_on())
@@ -552,6 +580,18 @@ impl GroupedWork {
                     &mut self.contribution,
                     self.input.cols,
                     crate::moe_f16g_down_m1_half2_on(),
+                )?;
+            } else if self.plain_single
+                && crate::moe_f16g_tail_on()
+                && crate::dsv4_moe_m1_stream_on()
+            {
+                self.routes.project_stream(
+                    &s,
+                    table,
+                    1,
+                    &self.intermediate,
+                    self.input.cols,
+                    &mut self.contribution,
                 )?;
             } else {
                 self.routes.project(
@@ -682,6 +722,52 @@ impl GroupedRoutes {
         };
         if rc != 0 {
             return Err(format!("matrix projection {projection} rc={rc}"));
+        }
+        Ok(())
+    }
+
+    /// One-token streaming visitor (memra #664): the same numeric program as `project`'s
+    /// sktail tail for one-row groups, one warp per n8 column tile.
+    fn project_stream(
+        &self,
+        s: &Arc<CudaStream>,
+        table: &CudaSlice<u64>,
+        projection: i32,
+        input: &HalfMirror,
+        out_f: usize,
+        output: &mut CudaSlice<f32>,
+    ) -> Res<()> {
+        if table.len() != self.experts * 6
+            || output.len() < self.live_slots * out_f
+            || crate::moe_f16g_mode() < 2
+            || crate::dsv4_moe_f16g_sk_params().0 < 0
+            || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)
+        {
+            return Err(
+                "matrix stream projection requires a complete local table and direct visitor"
+                    .into(),
+            );
+        }
+        let rc = unsafe {
+            memra_moe_kq_m1_stream(
+                table.device_ptr(s).0 as *const u64,
+                projection,
+                self.experts as i32,
+                self.ids.device_ptr(s).0 as *const i32,
+                input.half.device_ptr(s).0 as *const std::ffi::c_void,
+                output.device_ptr_mut(s).0 as *mut f32,
+                input.scale.device_ptr(s).0 as *const f32,
+                self.offsets.device_ptr(s).0 as *const i32,
+                self.experts as i32,
+                self.live_slots as i32,
+                input.cols as i32,
+                out_f as i32,
+                (input.cols / 2) as i64,
+                s.cu_stream().cast(),
+            )
+        };
+        if rc != 0 {
+            return Err(format!("matrix stream projection {projection} rc={rc}"));
         }
         Ok(())
     }
@@ -1134,6 +1220,280 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires one CUDA GPU; M1 streaming visitor identity only"]
+    fn cuda_m1_stream_matches_sktail_bit_for_bit() {
+        use super::{GroupedWork, modelopt_table};
+        use crate::dsv4_ep::{EpCompute, EpScratch};
+        use crate::dsv4_ffi as k;
+        use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
+
+        fn view(x: &mut EpScratch) -> EpCompute<'_> {
+            EpCompute {
+                xq: &x.xq,
+                xs: &x.xs,
+                ids: &x.ids,
+                weights: &x.weights,
+                g1: &mut x.g1,
+                g3: &mut x.g3,
+                h: &mut x.h,
+                hq: &mut x.hq,
+                hs: &mut x.hs,
+                contribution: &mut x.contribution,
+            }
+        }
+        fn bits(values: &[f32]) -> Vec<u32> {
+            values.iter().map(|value| value.to_bits()).collect()
+        }
+
+        assert!(crate::moe_f16g_mode() >= 2);
+        assert!(crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT));
+        assert!(crate::moe_f16g_tail_on());
+        let gpu = memra_runtime::Gpu::new(0).unwrap();
+        let s = gpu.stream();
+
+        // Exhaustive B-value probe: every E4M3FN scale byte (NaN bytes, both zeros, subnormals)
+        // times every E2M1 code, against the sktail store's f32 product rounded to f16.
+        let mut probe = s.alloc_zeros::<u16>(16 * 256).unwrap();
+        let mut probe_ref = s.alloc_zeros::<u16>(16 * 256).unwrap();
+        let rc = unsafe {
+            crate::mmq_ffi::memra_moe_kq_m1_stream_dequant_probe(
+                probe.device_ptr_mut(&s).0 as *mut u16,
+                probe_ref.device_ptr_mut(&s).0 as *mut u16,
+                s.cu_stream().cast(),
+            )
+        };
+        assert_eq!(rc, 0);
+        let probe = s.clone_dtoh(&probe).unwrap();
+        let probe_ref = s.clone_dtoh(&probe_ref).unwrap();
+        for (i, (got, want)) in probe.iter().zip(&probe_ref).enumerate() {
+            assert_eq!(
+                got,
+                want,
+                "B value code={} scale=0x{:02x}",
+                i / 256,
+                i % 256
+            );
+        }
+
+        let (ne, hidden, inter, topk) = (16, 4096, 2048, 6);
+        let slots = topk;
+        let wb = hidden * inter / 2;
+        let sb = hidden * inter / 16;
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let weight_data: Vec<u8> = (0..ne * 3 * wb)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state >> 24) as u8
+            })
+            .collect();
+        // Every scale byte appears in every projection, including 0x00, 0x80, 0x7f and 0xff.
+        let scale_data: Vec<u8> = (0..ne * 3 * sb)
+            .map(|i| {
+                let expert = i / (3 * sb);
+                let projection = (i / sb) % 3;
+                ((i * 167 + expert * 29 + projection * 71) % 256) as u8
+            })
+            .collect();
+        let weights = s.clone_htod(&weight_data).unwrap();
+        let scales = s.clone_htod(&scale_data).unwrap();
+        drop(weight_data);
+        drop(scale_data);
+        let full_table = modelopt_table(&s, &weights, &scales, ne, hidden, inter).unwrap();
+        let mut shard_w = Vec::new();
+        let mut shard_s = Vec::new();
+        let mut shard_tables = Vec::new();
+        for first in [0, ne / 2] {
+            let mut w = s.alloc_zeros::<u8>(ne / 2 * 3 * wb).unwrap();
+            let mut sc = s.alloc_zeros::<u8>(ne / 2 * 3 * sb).unwrap();
+            s.memcpy_dtod(
+                &weights.slice(first * 3 * wb..(first + ne / 2) * 3 * wb),
+                &mut w,
+            )
+            .unwrap();
+            s.memcpy_dtod(
+                &scales.slice(first * 3 * sb..(first + ne / 2) * 3 * sb),
+                &mut sc,
+            )
+            .unwrap();
+            shard_tables.push(modelopt_table(&s, &w, &sc, ne / 2, hidden, inter).unwrap());
+            shard_w.push(w);
+            shard_s.push(sc);
+        }
+        // Power-of-two macro scales keep the scaled gate/up rows a bijection of the raw
+        // projection bits, so comparing g1/g3 compares the visitors themselves.
+        let scale2_host: Vec<f32> = (0..ne * 3)
+            .map(|i| 2.0_f32.powi((i % 7) as i32 - 4))
+            .collect();
+        let scale2 = s.clone_htod(&scale2_host).unwrap();
+        let input: Vec<f32> = (0..hidden)
+            .map(|i| {
+                ((i * 7919 % 2001) as f32 - 1000.0) / 64.0 * 2.0_f32.powi((i / 128 % 9) as i32 - 4)
+            })
+            .collect();
+        let x = s.clone_htod(&input).unwrap();
+        let routing: Vec<f32> = (0..slots)
+            .map(|p| if p == 4 { -0.0 } else { (p + 1) as f32 / 32.0 })
+            .collect();
+
+        // (global experts, first, local count, table)
+        let configs: [(usize, usize, &CudaSlice<u64>); 3] = [
+            (0, ne, &full_table),
+            (0, ne / 2, &shard_tables[0]),
+            (ne / 2, ne / 2, &shard_tables[1]),
+        ];
+        let patterns: [[i32; 6]; 4] = [
+            [3, 11, 0, 15, 7, 12],   // scattered, empty groups between
+            [9, 10, 11, 12, 13, 14], // one shard owns every route, the other none
+            [5, 5, 2, 2, 2, 9],      // duplicate routes: two- and three-row groups
+            [0, 1, 2, 3, 4, 5],
+        ];
+        let mut engaged = 0u64;
+        for (first, count, table) in configs {
+            for selected in patterns {
+                let mut arms = Vec::new();
+                for stream in [false, true] {
+                    let mut scratch =
+                        EpScratch::new(&gpu, &gpu, 1, topk, hidden, inter, None).unwrap();
+                    for dst in [&mut scratch.g1, &mut scratch.g3, &mut scratch.h] {
+                        s.memcpy_htod(&vec![f32::NAN; dst.len()], dst).unwrap();
+                    }
+                    s.memcpy_htod(&selected, &mut scratch.ids.slice_mut(..slots))
+                        .unwrap();
+                    s.memcpy_htod(&routing, &mut scratch.weights.slice_mut(..slots))
+                        .unwrap();
+                    unsafe {
+                        k::ck(
+                            "M1 stream fixture FP8 input",
+                            k::memra_dsv4_act_quant_fp8(
+                                x.device_ptr(&s).0 as *const f32,
+                                scratch.xq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                                scratch.xs.device_ptr_mut(&s).0 as *mut f32,
+                                1,
+                                hidden as i32,
+                                s.cu_stream().cast(),
+                            ),
+                        )
+                        .unwrap();
+                    }
+                    let mut work =
+                        GroupedWork::new_partition(&s, ne, first, count, slots, hidden, inter)
+                            .unwrap();
+                    crate::set_dsv4_moe_m1_stream_for_gate(stream);
+                    let before = crate::dsv4_moe_m1_stream_dispatches();
+                    work.prepare(
+                        &gpu,
+                        &view(&mut scratch),
+                        &scale2,
+                        &scale2_host,
+                        1,
+                        topk,
+                        true,
+                    )
+                    .unwrap();
+                    work.gate_up(&gpu, table, &mut view(&mut scratch), 6.0)
+                        .unwrap();
+                    work.down(&gpu, table, &mut view(&mut scratch)).unwrap();
+                    let live = work.routes.live_slots;
+                    let delta = crate::dsv4_moe_m1_stream_dispatches() - before;
+                    crate::clear_dsv4_moe_m1_stream_for_gate();
+                    let expected = if stream && live > 0 { 3 } else { 0 };
+                    assert_eq!(
+                        delta, expected,
+                        "stream engagement first={first} {selected:?}"
+                    );
+                    engaged += delta;
+                    let take = |v: &CudaSlice<f32>, n: usize| s.clone_dtoh(&v.slice(..n)).unwrap();
+                    arms.push((
+                        live,
+                        take(&scratch.g1, live * inter),
+                        take(&scratch.g3, live * inter),
+                        take(&scratch.h, live * inter),
+                        take(&scratch.contribution, slots * hidden),
+                    ));
+                }
+                let (reference, candidate) = (&arms[0], &arms[1]);
+                assert_eq!(reference.0, candidate.0);
+                assert!(reference.1.iter().all(|v| v.is_finite()));
+                assert_eq!(
+                    bits(&reference.1),
+                    bits(&candidate.1),
+                    "gate first={first} {selected:?}"
+                );
+                assert_eq!(
+                    bits(&reference.2),
+                    bits(&candidate.2),
+                    "up first={first} {selected:?}"
+                );
+                assert_eq!(
+                    bits(&reference.3),
+                    bits(&candidate.3),
+                    "H first={first} {selected:?}"
+                );
+                assert_eq!(
+                    bits(&reference.4),
+                    bits(&candidate.4),
+                    "down contribution first={first} {selected:?}"
+                );
+                println!(
+                    "EXACT M1 stream first={first} count={count} routes={selected:?} live={}",
+                    reference.0
+                );
+            }
+        }
+        assert!(engaged > 0);
+
+        // Precedence: a gate that armed the half2 down tail keeps it, and the stream still
+        // takes gate and up. The TP/EP bench counts those down enqueues.
+        let mut scratch = EpScratch::new(&gpu, &gpu, 1, topk, hidden, inter, None).unwrap();
+        s.memcpy_htod(&patterns[0], &mut scratch.ids.slice_mut(..slots))
+            .unwrap();
+        s.memcpy_htod(&routing, &mut scratch.weights.slice_mut(..slots))
+            .unwrap();
+        unsafe {
+            k::ck(
+                "M1 stream precedence FP8 input",
+                k::memra_dsv4_act_quant_fp8(
+                    x.device_ptr(&s).0 as *const f32,
+                    scratch.xq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                    scratch.xs.device_ptr_mut(&s).0 as *mut f32,
+                    1,
+                    hidden as i32,
+                    s.cu_stream().cast(),
+                ),
+            )
+            .unwrap();
+        }
+        let mut work = GroupedWork::new_partition(&s, ne, 0, ne, slots, hidden, inter).unwrap();
+        crate::set_dsv4_moe_m1_stream_for_gate(true);
+        crate::set_moe_f16g_down_m1_half2_for_gate(true);
+        let (stream_before, half2_before) = (
+            crate::dsv4_moe_m1_stream_dispatches(),
+            crate::moe_f16g_down_m1_half2_dispatches(),
+        );
+        work.prepare(
+            &gpu,
+            &view(&mut scratch),
+            &scale2,
+            &scale2_host,
+            1,
+            topk,
+            true,
+        )
+        .unwrap();
+        work.gate_up(&gpu, &full_table, &mut view(&mut scratch), 6.0)
+            .unwrap();
+        work.down(&gpu, &full_table, &mut view(&mut scratch))
+            .unwrap();
+        crate::clear_moe_f16g_down_m1_half2_for_gate();
+        crate::clear_dsv4_moe_m1_stream_for_gate();
+        assert_eq!(crate::dsv4_moe_m1_stream_dispatches() - stream_before, 2);
+        assert_eq!(crate::moe_f16g_down_m1_half2_dispatches() - half2_before, 1);
+        drop((shard_tables, shard_w, shard_s));
+    }
+
+    #[test]
     #[ignore = "requires one CUDA GPU; correctness only, run with matrix visitor enabled"]
     fn cuda_matrix_chain_full_bank_equals_two_partitions() {
         use super::{GroupedWork, modelopt_table};
@@ -1379,8 +1739,11 @@ mod tests {
         );
         assert!(super::modelopt_pointers(w, s, 6 * wb - 1, 6 * sb, 2, 128, 256).is_err());
         assert!(super::modelopt_pointers(w, s, 6 * wb, 6 * sb + 1, 2, 128, 256).is_err());
-        assert!(super::modelopt_pointers(u64::MAX, s, 6 * wb, 6 * sb, 2, 128, 256).is_err());
-        assert!(super::modelopt_pointers(w, u64::MAX, 6 * wb, 6 * sb, 2, 128, 256).is_err());
+        let top = u64::MAX & !15;
+        assert!(super::modelopt_pointers(top, s, 6 * wb, 6 * sb, 2, 128, 256).is_err());
+        assert!(super::modelopt_pointers(w, top, 6 * wb, 6 * sb, 2, 128, 256).is_err());
+        assert!(super::modelopt_pointers(w + 8, s, 6 * wb, 6 * sb, 2, 128, 256).is_err());
+        assert!(super::modelopt_pointers(w, s + 4, 6 * wb, 6 * sb, 2, 128, 256).is_err());
         for (ne, hidden, inter) in [
             (0, 128, 256),
             (513, 128, 256),

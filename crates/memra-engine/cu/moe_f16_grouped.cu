@@ -1973,6 +1973,194 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int 
     return e?1000+(int)e:0;
 }
 
+// ---------------------------------------------------------------------------------------------
+// DSV4 ModelOpt one-token streaming visitor (memra #664), the plain one-row default.
+//
+// Plain decode routes one token to top-k experts, so every live CSR group holds one row and the
+// shipped moe_kq_sktail_kernel spends a whole 32x64 tile (dequant to shared, ldmatrix, 16 MMAs
+// per k64 of which one row is kept) per 64 output columns, 129 launches per token. This visitor
+// keeps the same numeric program and changes only the schedule: one warp owns one n8 column tile
+// over the full K, streams the 8 weight rows through a per-warp cp.async ring, and issues the
+// SAME mma.sync.m16n8k16.f32.f16.f16.f32 per k16 block in the same ascending order, from acc = 0,
+// with the same epilogue y = acc * row_scale.
+//
+// Bit identity is by construction, operand by operand:
+//   A  every A row is the token's f16 activation row. sktail's A tile is the same row replicated
+//      by its m_e-1 clamp, so each MMA sees an identical 16x16 A.
+//   B  sktail stores __float2half(f1 * kv[code]) with f1 = 0.5 * e4m3fn(scale) and kv the doubled
+//      E2M1 codebook, i.e. the exact f32 product e4m3 * e2m1. Here the E2M1 code decodes to its f16
+//      value (kqs_e2m1_f16x4, byte LUT, code 8 -> +0 as kv[8]) and the scale byte to its f16 value
+//      (cvt.rn.f16x2.e4m3x2 after the NaN bytes 0x7F/0xFF are cleared to +0 as g_e4m3fn_to_float
+//      does), and mul.rn.f16x2 forms the product. Every such product has at most 6 significant
+//      bits and lies in [2^-10, 2688], so it is exact in f16 and both roundings return it.
+//   C  one accumulator chain per n8 tile, k16 blocks ascending, the same column octets.
+// The component test (dsv4_grouped::tests) compares against the sktail launch bit for bit on
+// every scale byte and every code, all three projections, and CSR layouts with empty groups.
+//
+// Shape contract: in_f % 128 == 0, out_f % 8 == 0, row_bytes == in_f / 2, 16-byte aligned plane
+// bases (modelopt_pointers refuses anything else). Groups larger than one row stay correct (each
+// row is an independent GEMV) but re-stream the expert per row; the Rust caller dispatches only
+// the one-token plain step.
+#define KQS_WARPS 4
+#define KQS_CHUNK 128                // k values per ring stage
+#define KQS_ROW 80                   // 64 code bytes + 8 scale bytes + 8 pad per row stage
+#define KQS_STAGES 4
+#define KQS_WARP_RING (KQS_STAGES * 8 * KQS_ROW)
+
+static std::atomic<unsigned long long> g_moe_kq_m1_stream_dispatches{0};
+
+// Four ModelOpt E2M1 codes -> two f16x2 MMA B registers. x holds c0 (k 2t), c1 (k 2t+1),
+// c2 (k 2t+8), c3 (k 2t+9) in nibbles 0..3; b0 = {c0, c1}, b1 = {c2, c3}. The f16 magnitudes of
+// E2M1 {0, .5, 1, 1.5, 2, 3, 4, 6} all have a zero low byte, so a byte LUT gives the high byte and
+// the code's sign moves to bit 15. A negative-zero code decodes to +0, matching kv[8] = 0.
+__device__ __forceinline__ void kqs_e2m1_f16x4(uint32_t x, uint32_t& b0, uint32_t& b1){
+    const uint32_t mag = x & 0x7777u;
+    const uint32_t nz  = (mag + 0x7777u) & 0x8888u;   // nibble bit 3 set iff magnitude != 0
+    const uint32_t sg  = x & nz;
+    const uint32_t hb  = __byte_perm(0x3E3C3800u, 0x46444240u, mag);
+    b0 = __byte_perm(hb, 0u, 0x1404u) | ((sg << 12) & 0x8000u) | ((sg << 24) & 0x80000000u);
+    b1 = __byte_perm(hb, 0u, 0x3424u) | ((sg << 4) & 0x8000u) | ((sg << 16) & 0x80000000u);
+}
+
+// Clear E4M3FN NaN bytes (|b| == 0x7F) to +0, the value g_e4m3fn_to_float returns for them.
+__device__ __forceinline__ uint32_t kqs_e4m3fn_clear_nan(uint32_t w){
+    const uint32_t nan = ((w & 0x7F7F7F7Fu) + 0x01010101u) & 0x80808080u;
+    return w & ~((nan >> 7) * 0xFFu);
+}
+
+// Two NaN-cleared E4M3FN bytes -> f16x2 (byte 0 -> low half). Exact: every finite E4M3 value is
+// an f16 value.
+__device__ __forceinline__ uint32_t kqs_e4m3x2_f16x2(uint32_t w16){
+    uint32_t d;
+    const unsigned short v = (unsigned short)w16;
+    asm("cvt.rn.f16x2.e4m3x2 %0, %1;" : "=r"(d) : "h"(v));
+    return d;
+}
+
+__device__ __forceinline__ uint32_t kqs_hmul2(uint32_t a, uint32_t b){
+    uint32_t d;
+    asm("mul.rn.f16x2 %0, %1, %2;" : "=r"(d) : "r"(a), "r"(b));
+    return d;
+}
+
+__device__ __forceinline__ void kqs_cp8(void* smem, const void* g){
+    unsigned s = (unsigned)__cvta_generic_to_shared(smem);
+    asm volatile("cp.async.ca.shared.global [%0],[%1],8;" :: "r"(s), "l"(g));
+}
+
+// Exhaustive dequant probe for the component test: out[code * 256 + byte] = f16 bits of the
+// streaming visitor's B value for (scale byte, E2M1 code). The test compares it against
+// __float2half(g_e4m3fn_to_float(byte) * kv[code]) computed by kqs_dequant_ref_kernel.
+static __global__ void kqs_dequant_probe_kernel(uint16_t* out, uint16_t* ref){
+    const int byte = threadIdx.x, code = blockIdx.x;
+    const uint32_t sw = kqs_e4m3fn_clear_nan((uint32_t)byte);
+    const uint32_t s2 = __byte_perm(kqs_e4m3x2_f16x2(sw), 0u, 0x1010u);
+    uint32_t b0, b1;
+    // code in all four nibble positions: c0 and c2 land in low halves, c1 and c3 in high halves.
+    const uint32_t x = (uint32_t)code * 0x1111u;
+    kqs_e2m1_f16x4(x, b0, b1);
+    b0 = kqs_hmul2(b0, s2);
+    b1 = kqs_hmul2(b1, s2);
+    const uint16_t v = (uint16_t)b0;
+    const bool same = (uint16_t)(b0 >> 16) == v && (uint16_t)b1 == v && (uint16_t)(b1 >> 16) == v;
+    out[code * 256 + byte] = same ? v : (uint16_t)0x7E01u;   // a NaN pattern flags lane skew
+    const float f = g_e4m3fn_to_float((uint8_t)byte) * (float)g_kvalues_mxfp4[code];
+    const __half h = __float2half(f);
+    ref[code * 256 + byte] = *reinterpret_cast<const uint16_t*>(&h);
+}
+
+template<int WARPS>
+static __global__ void __launch_bounds__(WARPS * 32)
+moe_kq_m1_stream_kernel(
+        const unsigned long long* __restrict__ table, int proj, int n_expert,
+        const int* __restrict__ ex_ids, const __half* __restrict__ A,
+        float* __restrict__ Y, const float* __restrict__ row_scale,
+        const int* __restrict__ ex_off, int n_active, int in_f, int out_f, long row_bytes){
+    extern __shared__ __align__(16) unsigned char kqs_smem[];
+    uint32_t* As = reinterpret_cast<uint32_t*>(kqs_smem);          // in_f / 2 permuted words
+    const int r = blockIdx.y;
+    if(r >= ex_off[n_active]) return;                              // block-uniform exit
+    // CSR group of row r: the smallest i in [1, n_active] with ex_off[i] > r, minus one.
+    int lo_i = 1, hi_i = n_active;
+    while(lo_i < hi_i){
+        const int mid = (lo_i + hi_i) >> 1;
+        if(ex_off[mid] > r) hi_i = mid; else lo_i = mid + 1;
+    }
+    const int eid = ex_ids[lo_i - 1];
+    const uint8_t* Wq  = (const uint8_t*)table[(size_t)(2 * proj) * n_expert + eid];
+    const uint8_t* Wsc = (const uint8_t*)table[(size_t)(2 * proj + 1) * n_expert + eid];
+
+    // Stage the activation row with each k16 block's words {t, t+4} adjacent, so lane t reads
+    // its (a0, a2) MMA pair as one 8-byte load.
+    const int tid = threadIdx.y * 32 + threadIdx.x;
+    const uint32_t* arow = reinterpret_cast<const uint32_t*>(A + (size_t)r * in_f);
+    for(int w = tid; w < in_f / 2; w += WARPS * 32)
+        As[(w & ~7) | ((w & 3) << 1) | ((w >> 2) & 1)] = arow[w];
+    __syncthreads();
+
+    const int lane = threadIdx.x, warp = threadIdx.y;
+    const int n0 = (blockIdx.x * WARPS + warp) * 8;
+    if(n0 >= out_f) return;                                        // no block barrier follows
+    unsigned char* ring = kqs_smem + (size_t)in_f * 2 + (size_t)warp * KQS_WARP_RING;
+    const int nch = in_f / KQS_CHUNK;
+    const int sc_row = in_f / 16;
+    // copy roles: lane L moves code piece (row L>>2, 16 B piece L&3); lanes 0..7 also move their
+    // row's 8 scale bytes.
+    const uint8_t* cp_q = Wq + (size_t)(n0 + (lane >> 2)) * row_bytes + (lane & 3) * 16;
+    const uint8_t* cp_s = Wsc + (size_t)(n0 + (lane & 7)) * sc_row;
+    const int cp_qoff = (lane >> 2) * KQS_ROW + (lane & 3) * 16;
+    const int cp_soff = (lane & 7) * KQS_ROW + 64;
+    auto issue = [&](int c){
+        if(c < nch){
+            unsigned char* st = ring + (c % KQS_STAGES) * (8 * KQS_ROW);
+            sk_cp16(st + cp_qoff, cp_q + (size_t)c * (KQS_CHUNK / 2));
+            if(lane < 8) kqs_cp8(st + cp_soff, cp_s + (size_t)c * (KQS_CHUNK / 16));
+        }
+        asm volatile("cp.async.commit_group;" ::: "memory");
+    };
+    #pragma unroll
+    for(int c = 0; c < KQS_STAGES - 1; c++) issue(c);
+
+    const int gq = lane >> 2, t = lane & 3;
+    const uint32_t pick = (uint32_t)t | ((uint32_t)(t + 4) << 4);   // bytes t and t+4 of a block
+    float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    for(int c = 0; c < nch; c++){
+        issue(c + KQS_STAGES - 1);
+        asm volatile("cp.async.wait_group %0;" :: "n"(KQS_STAGES - 1) : "memory");
+        __syncwarp();
+        const unsigned char* rowp = ring + (c % KQS_STAGES) * (8 * KQS_ROW) + gq * KQS_ROW;
+        const uint2 scw = *reinterpret_cast<const uint2*>(rowp + 64);
+        const uint32_t sw[2] = {kqs_e4m3fn_clear_nan(scw.x), kqs_e4m3fn_clear_nan(scw.y)};
+        const uint2* ap = reinterpret_cast<const uint2*>(As) + (size_t)c * (KQS_CHUNK / 16) * 4 + t;
+        #pragma unroll
+        for(int q = 0; q < 4; q++){                                 // 16 code bytes = 2 k16 blocks
+            const uint4 v = *reinterpret_cast<const uint4*>(rowp + q * 16);
+            const uint32_t s01 = kqs_e4m3x2_f16x2(q & 1 ? sw[q >> 1] >> 16 : sw[q >> 1]);
+            #pragma unroll
+            for(int h = 0; h < 2; h++){
+                const uint32_t x = __byte_perm(h ? v.z : v.x, h ? v.w : v.y, pick);
+                const uint32_t s2 = __byte_perm(s01, 0u, h ? 0x3232u : 0x1010u);
+                uint32_t b0, b1;
+                kqs_e2m1_f16x4(x, b0, b1);
+                b0 = kqs_hmul2(b0, s2);
+                b1 = kqs_hmul2(b1, s2);
+                const uint2 a2 = ap[(q * 2 + h) * 4];
+                const unsigned a[4] = {a2.x, a2.x, a2.y, a2.y};
+                sk_mma(acc, a, b0, b1);
+            }
+        }
+        __syncwarp();
+    }
+    asm volatile("cp.async.wait_group 0;" ::: "memory");
+    if(gq == 0){
+        const float s = row_scale[r];
+        float* y = Y + (size_t)r * out_f + n0 + 2 * t;
+        y[0] = acc[0] * s;
+        y[1] = acc[1] * s;
+    }
+}
+
+
 extern "C" {
 
 size_t memra_moe_f16g_w_bytes(int n_active, int out_f, int in_f){
@@ -2371,6 +2559,40 @@ unsigned long long memra_moe_kq_gemm_sk_gu_half2_dispatches(){
 
 unsigned long long memra_moe_kq_gemm_sk_m1_half2_dispatches(){
     return g_moe_kq_m1_h2_dispatches.load(std::memory_order_relaxed);
+}
+
+int memra_moe_kq_m1_stream(
+        const unsigned long long* table, int proj, int n_expert, const int* ex_ids,
+        const void* act_f16, float* y, const float* row_scale, const int* ex_off_dev,
+        int n_active, int slots, int in_f, int out_f, long row_bytes, void* stream){
+    if(!table || !ex_ids || !act_f16 || !y || !row_scale || !ex_off_dev
+       || proj < 0 || proj > 2 || n_expert <= 0 || n_active <= 0 || slots <= 0
+       || slots > 65535 || in_f <= 0 || out_f <= 0 || in_f % KQS_CHUNK || out_f % 8
+       || row_bytes != in_f / 2)
+        return 40004;
+    const size_t smem = (size_t)in_f * 2 + (size_t)KQS_WARPS * KQS_WARP_RING;
+    if(smem > 48 * 1024) return 40004;
+    const dim3 grid((unsigned)((out_f / 8 + KQS_WARPS - 1) / KQS_WARPS), (unsigned)slots, 1);
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    moe_kq_m1_stream_kernel<KQS_WARPS><<<grid, dim3(32, KQS_WARPS, 1), smem, st>>>(
+        table, proj, n_expert, ex_ids, (const __half*)act_f16, y, row_scale, ex_off_dev,
+        n_active, in_f, out_f, row_bytes);
+    cudaError_t e = cudaGetLastError();
+    if(!e) g_moe_kq_m1_stream_dispatches.fetch_add(1, std::memory_order_relaxed);
+    return e ? 1000 + (int)e : 0;
+}
+
+unsigned long long memra_moe_kq_m1_stream_dispatches(){
+    return g_moe_kq_m1_stream_dispatches.load(std::memory_order_relaxed);
+}
+
+// Component-test entry: fills out/ref (16 codes x 256 scale bytes, f16 bits) on the device.
+int memra_moe_kq_m1_stream_dequant_probe(uint16_t* out, uint16_t* ref, void* stream){
+    if(!out || !ref) return 40004;
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    kqs_dequant_probe_kernel<<<16, 256, 0, st>>>(out, ref);
+    cudaError_t e = cudaGetLastError();
+    return e ? 1000 + (int)e : 0;
 }
 
 int memra_moe_f16g_gather_act(const float* x, const int* pair_tok_or_null, void* act_f16,
