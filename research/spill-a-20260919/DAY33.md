@@ -202,7 +202,14 @@ stays unplaced.
 The two Nsight Systems boots queued with the cell did not run: `Failed to create directory "/tmp/nvidia/nsight_systems":
 Permission denied` (its temp directory; TMPDIR was not set). The job then held the lock, waiting for a server that
 could not come up, until it was stopped at about 18:27:30Z (`owner-hold/gap.log`); the lead's integ53 battery took the
-lock at 18:27.
+lock at 18:27. The lesson, applied to the rerun: every prerequisite of a boot is checked before the lock is taken (an nsys
+precheck profiling `/bin/true` with `TMPDIR` set to this lane's scratch), and under the hold the server's readiness is
+bounded to 60 s, after which the boot is stopped and the lock moves on.
+
+The log-only timeline (`d7d54c7a9`, the lead's ask): the loop stamps its tick counter and start at the loop top; the
+`promote published off the tick` line gains, after the parenthesized mode the readers parse, `timeline from t0:
+submitted +S ms (tick K, its top +T ms); poll 1 at +P ms (tick K', its top +T' ms) pending|complete (path); ...;
+published +Q ms (..)`. No behavior change; it becomes part of the receipts on every card.
 
 ## 6. The D2D half of Move 2 owed item 1, pre-registered (no code)
 
