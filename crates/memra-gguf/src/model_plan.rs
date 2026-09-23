@@ -270,6 +270,7 @@ impl std::fmt::Debug for FullAttentionPlan {
             debug.field("mimo_math", mimo_math);
         }
         debug.finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
