@@ -1677,7 +1677,7 @@ impl ModelConfig {
         // HF counts only trunk blocks; GGUF block_count includes appended NextN blocks.
         // qwen4_exp nests the depth in an `mtp` sub-object (its flat twin key usually rides
         // beside it; the object is the fallback for a sibling that drops the flat spelling).
-        let nextn = if matches!(arch, Arch::MiMoV2) {
+        let mut nextn = if matches!(arch, Arch::MiMoV2) {
             // MiMo's three draft blocks live in model_mtp.safetensors, not the
             // main checkpoint's 48-layer trunk.
             0
@@ -1910,11 +1910,8 @@ impl ModelConfig {
         // NVIDIA + local text ckpts) uses `mtp_num_hidden_layers`. Same meaning (head depth = 1).
         // qwen4_exp carries both a flat `mtp_num_hidden_layers` and an `mtp` sub-object; the
         // object is the fallback and is cross-checked against the flat key below.
-        let mut nextn = c
-            .num_nextn_predict_layers
-            .or(c.mtp_num_hidden_layers)
-            .or(c.qwen4exp_mtp_num_hidden_layers)
-            .unwrap_or(0);
+        // Start from the family-resolved depth above. In particular, MiMo's
+        // separate MTP artifact must not be re-counted as trunk layers here.
         // deepseek_v4: `num_nextn_predict_layers` is VESTIGIAL on 0731 — still 1 while the
         // drafter is 3 DSpark blocks (the repo's own inference/config.json: n_mtp_layers 3).
         // The load-bearing derivation is len(compress_ratios) − num_hidden_layers, and every
@@ -4227,7 +4224,10 @@ pub(crate) mod hf_tests {
 
     #[test]
     fn mimo_v2_source_router_and_separate_draft() {
-        let config = pinned_mimo_config();
+        let source = HfConfig::parse(include_str!("model_packs/mimo_v2/fixtures/config.json"));
+        assert_eq!(source.n_shared_experts, None);
+        assert_eq!(source.routed_scaling_factor, None);
+        let config = ModelConfig::from_hf(&source);
         assert_eq!(config.moe.as_ref().unwrap().expert_count, 256);
         assert_eq!(config.moe.as_ref().unwrap().expert_used_count, 8);
         let mimo = config.mimo.as_ref().unwrap();

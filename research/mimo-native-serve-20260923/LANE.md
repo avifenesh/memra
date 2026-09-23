@@ -112,3 +112,19 @@ Current fail-closed implementation slice in this worktree:
   attention math, router/draft, and continued refusal for the next hosted
   diagnostic run. No acceptance criterion was relaxed. The root
   Memra checkout remains on `main` with its unrelated edits untouched.
+
+Hosted CI on head `bbf165254` compiled but the pinned fixture tests failed
+before their assertions: the exact vendor JSON uses declared null for
+`n_shared_experts` and `routed_scaling_factor`, while `ConfigObject` rejected
+both as non-null-only fields. A narrow nullable-override intake now treats
+those two values as absent and keeps other declared nulls strict. The
+subsequent off-rig Rust run passed three of four fixture checks and exposed
+a second generic NextN derivation that shadowed the MiMo-specific depth of
+zero; it had made 48 trunk layers appear as 51. Removing that duplicate
+derivation preserved the DeepSeek-V4 explicit override. The owned
+non-production host then ran
+`cargo test -p memra-gguf --lib mimo_v2_source -- --test-threads=1 --nocapture`
+with Rust 1.97.1 on a bounded CPU-only Docker cell: **4 passed, 0 failed**.
+Logs and exact source snapshots are under the Darklanes MiMo serving-max
+receipt namespace. A fresh hosted CI run and exact-head review remain
+required; no native serving support is claimed.

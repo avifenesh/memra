@@ -33,6 +33,8 @@ impl<'a> ConfigObject<'a> {
                         | "num_key_value_heads"
                         | "num_attention_groups"
                         | "head_dim"
+                        | "n_shared_experts"
+                        | "routed_scaling_factor"
                         | "eos_token_id"
                         | "final_logit_softcapping"
                         | "name_or_path"
