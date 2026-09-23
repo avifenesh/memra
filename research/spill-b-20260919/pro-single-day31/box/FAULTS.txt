@@ -1,0 +1,152 @@
+== O1-off: panics=0 respawns=0 fatal=False engine_errors=1
+  server.log:12173 t=1790126262505 in=iv-a-r1 prev=iv-a-r0 P=1661 G=102441 finish=stop P+G=104102 booked-64=262144
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 7 col 0/4 pos=262142: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to
+  non-200 rows=1 status_none=0 first_no_status=None
+    iv-a-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+== O1-on2048: panics=0 respawns=0 fatal=False engine_errors=6
+  server.log:981 t=1790130416322 in=iv-a-r0 prev=iii-L2-r4 P=5885 G=539 finish=stop P+G=6424 booked-64=7941
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 5 col 0/4 pos=3714: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to n
+  server.log:1048 t=1790130429972 in=iv-a-r1 prev=iii-L2-r4 P=5885 G=539 finish=stop P+G=6424 booked-64=7941
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 7 col 0/4 pos=3714: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to n
+  server.log:1117 t=1790130442192 in=iv-a-r2 prev=iii-L2-r4 P=5885 G=539 finish=stop P+G=6424 booked-64=7941
+    [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 6 j=2 pos=3716: head-out NaN 5120/5120, round-input-seed NaN 0/5120 — refusing to dereference the embed row (#87 trap)
+  server.log:1187 t=1790130454433 in=iv-b-r0 prev=iii-L2-r4 P=5885 G=539 finish=stop P+G=6424 booked-64=7941
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 4 col 0/4 pos=2173: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to n
+  server.log:1255 t=1790130466786 in=iv-b-r1 prev=iii-L2-r4 P=5885 G=539 finish=stop P+G=6424 booked-64=7941
+    [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 5 j=2 pos=2174: head-out NaN 5120/5120, round-input-seed NaN 0/5120 — refusing to dereference the embed row (#87 trap)
+  server.log:1323 t=1790130482187 in=iv-b-r2 prev=iii-L2-r4 P=5885 G=539 finish=stop P+G=6424 booked-64=7941
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 5 col 0/4 pos=2173: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to n
+  non-200 rows=6 status_none=0 first_no_status=None
+    iv-a-r0 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-a-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-a-r2 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-b-r0 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-b-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-b-r2 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+== O1-on8192: panics=2 respawns=1 fatal=True engine_errors=1
+  server.log:1167 t=1790130863078 in=iv-a-r0 prev=iii-L2-r4 P=5885 G=539 finish=stop P+G=6424 booked-64=14085
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 4 col 0/4 pos=9858: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to n
+  server.log:1423 t=1790130914195 in=iv-a-r2 prev=iv-a-r1 P=1661 G=8200 finish=length P+G=9861 booked-64=9861
+    thread 'memra-gpu-worker' (360539) panicked at crates/memra-engine/src/spec.rs:4590:9:
+  server.log:1426 t=1790130914243 in=iv-a-r2 prev=iv-a-r1 P=1661 G=8200 finish=length P+G=9861 booked-64=9861
+    [worker] PANIC in the GPU worker thread: mtp_kv_fill: scratch overflow
+  server.log:1427 t=1790130914243 in=iv-a-r2 prev=iv-a-r1 P=1661 G=8200 finish=length P+G=9861 booked-64=9861
+    [worker] respawn attempt 1/1 in 2s (reloading weights)
+  server.log:2479 t=1790131120255 in=- prev=iv-b-r2 P=120 G=8200 finish=length P+G=8320 booked-64=8320
+    thread 'memra-gpu-worker' (360539) panicked at crates/memra-engine/src/spec.rs:4590:9:
+  server.log:2481 t=1790131120298 in=- prev=iv-b-r2 P=120 G=8200 finish=length P+G=8320 booked-64=8320
+    [worker] PANIC in the GPU worker thread: mtp_kv_fill: scratch overflow
+  server.log:2482 t=1790131120298 in=- prev=iv-b-r2 P=120 G=8200 finish=length P+G=8320 booked-64=8320
+    [worker] FATAL: worker unrecoverable after 1 respawn attempt(s) — exiting the process so the supervisor can restart it whole (CUDA errors are sticky per process; a live HTTP listener with a dead worker serves nothing)
+  non-200 rows=65 status_none=64 first_no_status=burst-b34
+    iv-a-r0 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+== O1-on32768: panics=1 respawns=1 fatal=False engine_errors=3
+  server.log:1917 t=1790131524593 in=iv-a-r1 prev=iv-a-r0 P=1661 G=32776 finish=length P+G=34437 booked-64=34437
+    thread 'memra-gpu-worker' (364685) panicked at crates/memra-engine/src/spec.rs:4590:9:
+  server.log:1920 t=1790131524642 in=iv-a-r1 prev=iv-a-r0 P=1661 G=32776 finish=length P+G=34437 booked-64=34437
+    [worker] PANIC in the GPU worker thread: mtp_kv_fill: scratch overflow
+  server.log:1921 t=1790131524642 in=iv-a-r1 prev=iv-a-r0 P=1661 G=32776 finish=length P+G=34437 booked-64=34437
+    [worker] respawn attempt 1/1 in 2s (reloading weights)
+  server.log:2968 t=1790131728626 in=iv-a-r1 prev=iv-a-r0 P=1661 G=32776 finish=length P+G=34437 booked-64=34437
+    [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 4 j=2 pos=34435: head-out NaN 5120/5120, round-input-seed NaN 0/5120 — refusing to dereference the embed row (#87 trap)
+  server.log:3969 t=1790131935311 in=iv-a-r2 prev=iv-a-r0 P=1661 G=32776 finish=length P+G=34437 booked-64=34437
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 5 col 0/4 pos=34435: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to 
+  server.log:5549 t=1790132239917 in=iv-b-r1 prev=iv-b-r0 P=120 G=18443 finish=stop P+G=18563 booked-64=32896
+    [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 5 j=2 pos=32894: head-out NaN 5120/5120, round-input-seed NaN 0/5120 — refusing to dereference the embed row (#87 trap)
+  non-200 rows=20 status_none=0 first_no_status=None
+    iv-a-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-a-r2 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-b-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    burst-b51 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b28 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b38 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b33 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b23 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b6 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b62 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b48 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b42 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b63 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b17 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b14 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b41 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b60 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b34 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b21 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b54 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+== O2-on32768: panics=1 respawns=1 fatal=False engine_errors=3
+  server.log:2494 t=1790133037087 in=iv-b-r1 prev=iv-b-r0 P=120 G=18443 finish=stop P+G=18563 booked-64=32896
+    [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 5 j=2 pos=32894: head-out NaN 5120/5120, round-input-seed NaN 0/5120 — refusing to dereference the embed row (#87 trap)
+  server.log:4492 t=1790133458001 in=iv-a-r1 prev=iv-a-r0 P=1661 G=32776 finish=length P+G=34437 booked-64=34437
+    thread 'memra-gpu-worker' (376240) panicked at crates/memra-engine/src/spec.rs:4590:9:
+  server.log:4495 t=1790133458048 in=iv-a-r1 prev=iv-a-r0 P=1661 G=32776 finish=length P+G=34437 booked-64=34437
+    [worker] PANIC in the GPU worker thread: mtp_kv_fill: scratch overflow
+  server.log:4496 t=1790133458048 in=iv-a-r1 prev=iv-a-r0 P=1661 G=32776 finish=length P+G=34437 booked-64=34437
+    [worker] respawn attempt 1/1 in 2s (reloading weights)
+  server.log:5543 t=1790133662036 in=iv-a-r1 prev=iv-a-r0 P=1661 G=32776 finish=length P+G=34437 booked-64=34437
+    [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 4 j=2 pos=34435: head-out NaN 5120/5120, round-input-seed NaN 0/5120 — refusing to dereference the embed row (#87 trap)
+  server.log:6544 t=1790133868692 in=iv-a-r2 prev=iv-a-r0 P=1661 G=32776 finish=length P+G=34437 booked-64=34437
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 5 col 0/4 pos=34435: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to 
+  non-200 rows=20 status_none=0 first_no_status=None
+    iv-b-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-a-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-a-r2 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    burst-b52 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b43 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b9 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b44 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b49 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b35 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b59 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b22 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b13 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b2 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b20 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b60 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b40 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b37 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b54 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b5 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b1 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+== O2-on8192: panics=2 respawns=1 fatal=True engine_errors=1
+  server.log:1682 t=1790134308671 in=iv-a-r0 prev=iv-b-r2 P=120 G=8200 finish=length P+G=8320 booked-64=8320
+    thread 'memra-gpu-worker' (387982) panicked at crates/memra-engine/src/spec.rs:4590:9:
+  server.log:1685 t=1790134308720 in=iv-a-r0 prev=iv-b-r2 P=120 G=8200 finish=length P+G=8320 booked-64=8320
+    [worker] PANIC in the GPU worker thread: mtp_kv_fill: scratch overflow
+  server.log:1686 t=1790134308720 in=iv-a-r0 prev=iv-b-r2 P=120 G=8200 finish=length P+G=8320 booked-64=8320
+    [worker] respawn attempt 1/1 in 2s (reloading weights)
+  server.log:1970 t=1790134378567 in=iv-a-r0 prev=iv-b-r2 P=120 G=8200 finish=length P+G=8320 booked-64=8320
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 4 col 0/4 pos=9858: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to n
+  server.log:2227 t=1790134429564 in=iv-a-r2 prev=iv-a-r1 P=1661 G=8200 finish=length P+G=9861 booked-64=9861
+    thread 'memra-gpu-worker' (387982) panicked at crates/memra-engine/src/spec.rs:4590:9:
+  server.log:2229 t=1790134429606 in=iv-a-r2 prev=iv-a-r1 P=1661 G=8200 finish=length P+G=9861 booked-64=9861
+    [worker] PANIC in the GPU worker thread: mtp_kv_fill: scratch overflow
+  server.log:2230 t=1790134429606 in=iv-a-r2 prev=iv-a-r1 P=1661 G=8200 finish=length P+G=9861 booked-64=9861
+    [worker] FATAL: worker unrecoverable after 1 respawn attempt(s) — exiting the process so the supervisor can restart it whole (CUDA errors are sticky per process; a live HTTP listener with a dead worker serves nothing)
+  non-200 rows=66 status_none=65 first_no_status=iv-a-r2
+    iv-a-r0 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+== O2-on2048: panics=0 respawns=0 fatal=False engine_errors=6
+  server.log:983 t=1790134631162 in=iv-b-r0 prev=iii-L2-r4 P=5885 G=539 finish=stop P+G=6424 booked-64=7941
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 4 col 0/4 pos=2173: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to n
+  server.log:1051 t=1790134643532 in=iv-b-r1 prev=iii-L2-r4 P=5885 G=539 finish=stop P+G=6424 booked-64=7941
+    [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 5 j=2 pos=2174: head-out NaN 5120/5120, round-input-seed NaN 0/5120 — refusing to dereference the embed row (#87 trap)
+  server.log:1119 t=1790134658957 in=iv-b-r2 prev=iii-L2-r4 P=5885 G=539 finish=stop P+G=6424 booked-64=7941
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 5 col 0/4 pos=2173: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to n
+  server.log:1189 t=1790134675154 in=iv-a-r0 prev=iii-L2-r4 P=5885 G=539 finish=stop P+G=6424 booked-64=7941
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 5 col 0/4 pos=3714: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to n
+  server.log:1256 t=1790134688845 in=iv-a-r1 prev=iii-L2-r4 P=5885 G=539 finish=stop P+G=6424 booked-64=7941
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 7 col 0/4 pos=3714: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to n
+  server.log:1325 t=1790134701097 in=iv-a-r2 prev=iii-L2-r4 P=5885 G=539 finish=stop P+G=6424 booked-64=7941
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 6 col 0/4 pos=3716: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to n
+  non-200 rows=6 status_none=0 first_no_status=None
+    iv-b-r0 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-b-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-b-r2 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-a-r0 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-a-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-a-r2 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+== O2-off: panics=0 respawns=0 fatal=False engine_errors=1
+  server.log:20399 t=1790141671039 in=iv-a-r1 prev=iv-a-r0 P=1661 G=102441 finish=stop P+G=104102 booked-64=262144
+    [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 7 j=2 pos=262142: head-out NaN 5120/5120, round-input-seed NaN 0/5120 — refusing to dereference the embed row (#87 trap)
+  non-200 rows=1 status_none=0 first_no_status=None
+    iv-a-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng

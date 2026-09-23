@@ -483,6 +483,33 @@ pub fn moe_f16g_down_m1_half2_dispatches() -> u64 {
     unsafe { mmq_ffi::memra_moe_kq_gemm_sk_m1_half2_dispatches() }
 }
 
+/// DSV4 one-token streaming MoE visitor (memra #664). Same ModelOpt f16-MMA numeric program
+/// as the sktail tail, one warp per n8 column tile; the grouped caller takes it for the
+/// one-token plain step's gate, up and down projections. It is the code, not a door: a
+/// same-class win with a clean receipt (owner ruling 2026-09-10), measured +29% served plain
+/// decode on 2x RTX PRO 6000 (`research/dsv4f-bringup-20260923/m1-stream-664/`). There is no
+/// environment read. The gate override runs the sktail reference arm in one loaded model.
+static DSV4_MOE_M1_STREAM_OVERRIDE: AtomicI8 = AtomicI8::new(-1);
+
+pub fn dsv4_moe_m1_stream_on() -> bool {
+    DSV4_MOE_M1_STREAM_OVERRIDE.load(Ordering::Acquire) != 0
+}
+
+pub fn set_dsv4_moe_m1_stream_for_gate(enabled: bool) -> bool {
+    let previous = dsv4_moe_m1_stream_on();
+    DSV4_MOE_M1_STREAM_OVERRIDE.store(enabled as i8, Ordering::Release);
+    previous
+}
+
+pub fn clear_dsv4_moe_m1_stream_for_gate() {
+    DSV4_MOE_M1_STREAM_OVERRIDE.store(-1, Ordering::Release);
+}
+
+/// Snapshot of the CUDA-side successful enqueue receipt for the streaming visitor.
+pub fn dsv4_moe_m1_stream_dispatches() -> u64 {
+    unsafe { mmq_ffi::memra_moe_kq_m1_stream_dispatches() }
+}
+
 /// Per-model door for the gemma-MoE (gelu) grouped path: round 49's Hopper default
 /// REGRESSED g26 board-2048 prefill -8.3% interleaved x5 on-box (def median 10380,
 /// wild 8.9k-11.7k spread; off 11317, ±0.13%) — the +6-15% probe verdict didn't

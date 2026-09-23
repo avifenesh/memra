@@ -1,0 +1,21 @@
+START utc=2026-09-23T05:21:56Z cmd=/root/lane/target-fin/release/deps/memra_engine-88d7a4f71e6f66fa cuda_m1_stream_matches_sktail_bit_for_bit --ignored --nocapture
+
+running 1 test
+[moe-sk-form] dev=0 qt=108 sms=188 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=2048 n_active=16 max_m=6
+EXACT M1 stream first=0 count=16 routes=[3, 11, 0, 15, 7, 12] live=6
+EXACT M1 stream first=0 count=16 routes=[9, 10, 11, 12, 13, 14] live=6
+EXACT M1 stream first=0 count=16 routes=[5, 5, 2, 2, 2, 9] live=6
+EXACT M1 stream first=0 count=16 routes=[0, 1, 2, 3, 4, 5] live=6
+EXACT M1 stream first=0 count=8 routes=[3, 11, 0, 15, 7, 12] live=3
+EXACT M1 stream first=0 count=8 routes=[9, 10, 11, 12, 13, 14] live=0
+EXACT M1 stream first=0 count=8 routes=[5, 5, 2, 2, 2, 9] live=5
+EXACT M1 stream first=0 count=8 routes=[0, 1, 2, 3, 4, 5] live=6
+EXACT M1 stream first=8 count=8 routes=[3, 11, 0, 15, 7, 12] live=3
+EXACT M1 stream first=8 count=8 routes=[9, 10, 11, 12, 13, 14] live=6
+EXACT M1 stream first=8 count=8 routes=[5, 5, 2, 2, 2, 9] live=1
+EXACT M1 stream first=8 count=8 routes=[0, 1, 2, 3, 4, 5] live=0
+test dsv4_grouped::tests::cuda_m1_stream_matches_sktail_bit_for_bit ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 573 filtered out; finished in 0.83s
+
+GATE_DONE rc=0 utc=2026-09-23T05:21:57Z

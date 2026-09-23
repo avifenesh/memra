@@ -46,9 +46,11 @@
 use std::time::Instant;
 
 /// Open-output charge when the door is armed and neither `max_tokens` nor `max_ctx` bounds the
-/// request. 8192 is the `default_output_length` the fleet's registries already pin for the
-/// large models (memra `models.toml` rows), i.e. the bound the HTTP layer applies where a
-/// registry exists; the naked path now agrees with it instead of charging the whole envelope.
+/// request; since memra#659 it is also that request's output budget (the `CTX_SLACK` rows stay
+/// free). 8192 is a placeholder, not a measured choice: the owner's 2026-09-23 call is to measure
+/// before any value becomes a default, the registries differ (the door's target registry pins
+/// 32768), and every surveyed engine bounds an omitted `max_tokens` by the remaining context
+/// (`research/spill-b-20260919/OPEN-OUTPUT-SURVEY.md`, the `docs/FLAGS.md` row).
 pub(crate) const DEFAULT_OPEN_OUTPUT_TOKENS: usize = 8192;
 
 /// How long a request may sit in the memory-deferred requeue before the refusal is preferred

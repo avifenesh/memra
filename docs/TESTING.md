@@ -980,6 +980,18 @@ for any change that touches a DSv4 dense, HC, verify or commit path. Before #660
 failed every bit-gate cell: the HC24 split ran only on one-row calls, so verify rows took the
 sequential class. Receipts: `research/dsv4f-bringup-20260923/`.
 
+### DSv4 one-token MoE stream visitor (#664)
+
+`cargo test -p memra-engine --release --lib cuda_m1_stream_matches_sktail_bit_for_bit -- --ignored`
+(one CUDA card) compares the stream visitor against the sktail launch bit for bit: an exhaustive
+B-value probe over every E4M3FN scale byte and E2M1 code, then gate, up, H and the down
+contribution over a full bank and both EP halves, four route patterns (empty groups, one shard
+owning every route, duplicate routes, contiguous). It also pins engagement (3 enqueues per live
+step ON, 0 OFF) and precedence (a gate-armed half2 down tail keeps down; the stream takes gate
+and up). On the pair, `dsv4-gpu-dspark-gate ... --served` takes the stream and fails unless arm
+P enqueued it; without `--served` the historical pins hold the sktail program and fail if it did.
+Both invocations must PASS every DSpark bit gate.
+
 
 ### DSv4 gate source tape (#657)
 
