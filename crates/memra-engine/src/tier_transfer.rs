@@ -4306,6 +4306,70 @@ mod tests {
         assert!(t.retire(&ticket, None).is_err());
         stream.synchronize().unwrap();
     }
+    /// WP-A day 33, acceptance (d) on a card (`DAY33.md` design F item 3: the owner thread waits for
+    /// nothing): a host function occupying the COPY stream must not hold the owner thread's CUDA
+    /// work. A test host function sleeps 200 ms on the copy stream; meanwhile the owner thread, in
+    /// the same context, allocates on its stream, copies to and from the device through pageable
+    /// memory, records an event and synchronizes its stream, all timed. They must finish while the
+    /// host function still sleeps (under 50 ms in all, the copy stream still busy), and device work
+    /// queued on the copy stream behind the host function must wait for it (the order rule 6 relies
+    /// on).
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn h2d_fill_host_function_does_not_hold_the_owner_thread() {
+        unsafe extern "C" fn sleep_200ms(_: *mut std::ffi::c_void) {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        let ctx = CudaContext::new(0).unwrap();
+        let owner = ctx.new_stream().unwrap();
+        let copy = ctx.new_stream().unwrap();
+        let host_bytes: Vec<u8> = (0..(4usize << 20)).map(|i| (i % 253) as u8).collect();
+        let mut behind = owner.alloc_zeros::<u8>(host_bytes.len()).unwrap();
+        owner.synchronize().unwrap();
+        let started = std::time::Instant::now();
+        // SAFETY: a no-argument test host function; the driver calls it once.
+        unsafe {
+            result::stream::launch_host_function(
+                copy.cu_stream(),
+                sleep_200ms,
+                std::ptr::null_mut(),
+            )
+        }
+        .unwrap();
+        // Device work on the copy stream queued behind the host function (a memset: no host
+        // memory involved, so enqueueing it cannot itself wait).
+        let landed = {
+            copy.memset_zeros(&mut behind).unwrap();
+            copy.record_event(None).unwrap()
+        };
+        let owner_t = std::time::Instant::now();
+        let mut d = owner.alloc_zeros::<u8>(host_bytes.len()).unwrap();
+        owner.memcpy_htod(&host_bytes, &mut d).unwrap();
+        let back = owner.clone_dtoh(&d).unwrap();
+        let ev = owner.record_event(None).unwrap();
+        owner.synchronize().unwrap();
+        ev.synchronize().unwrap();
+        let owner_ms = owner_t.elapsed().as_secs_f64() * 1e3;
+        let copy_busy = !event_done(&landed).unwrap();
+        eprintln!(
+            "owner-thread work while the copy stream's host function sleeps: {owner_ms:.2} ms; the \
+             copy behind the host function still pending: {copy_busy}"
+        );
+        assert_eq!(back, host_bytes);
+        assert!(
+            owner_ms < 50.0,
+            "the owner thread was held {owner_ms:.2} ms"
+        );
+        assert!(
+            copy_busy,
+            "the copy stream's work waits behind its host function"
+        );
+        landed.synchronize().unwrap();
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(200),
+            "the copy landed only after the host function returned"
+        );
+    }
     fn f32_bytes(p: &[f32]) -> &[u8] {
         // SAFETY: an f32 slice is plain bytes of four times its length.
         unsafe { std::slice::from_raw_parts(p.as_ptr().cast(), p.len() * 4) }
