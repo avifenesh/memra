@@ -16,7 +16,7 @@ def one_step_law(target, proposal, *, cutoff, discard_chosen):
             continue
         accept = min(1.0, target[pick] / q)
         output[pick] += q * accept
-        if not accept:
+        if accept < 1.0:
             for token, p in enumerate(residual):
                 output[token] += q * (1 - accept) * p
     return output

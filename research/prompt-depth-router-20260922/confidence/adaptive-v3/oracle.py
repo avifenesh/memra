@@ -7,8 +7,7 @@ import math
 from pathlib import Path
 import random
 
-from costs import read_costs
-from learn import loop_candidate, read_rounds
+from learn import loop_candidate, read_costs, read_rounds
 
 
 def sha(path):
