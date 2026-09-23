@@ -23,4 +23,4 @@ Author's review of the full diff `main..lane/spill-integ51-20260923`, posted as 
   in authored lines.
 
 ## Push regime
-Research only, so no battery. Revuto: if capped or unavailable, this comment is the review. No tag.
+Research only, so no battery. The first push of the new branch was refused `UNQUALIFIED`: its no-upstream range named main's engine files, not this diff. The branch went up with `MEMRA_RELEASE_QUALIFICATION_MODE=development`, announced and logged, and every other hook ran and passed. Revuto: if capped or unavailable, this comment is the review. No tag.
