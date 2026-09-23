@@ -8,14 +8,13 @@
 
 use memra_engine::dsv4_attention_tp::ATTENTION_TP_NUMERIC_CLASS;
 use memra_engine::dsv4_gpu::{Dsv4Gpu, TP_EP_RANK_ORDER_NUMERIC_CLASS};
+use memra_engine::dsv4_source_tape::SourceTape;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
 const CONTINUATION_TOKENS: usize = 3;
-const PINNED_SOURCE_SHA256: &str =
-    "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Receipt {
@@ -353,20 +352,14 @@ fn main() {
     );
 
     let dir = Path::new(&args[1]);
-    let source = std::fs::read_to_string(&args[2]).expect("source");
-    let source_sha256 = sha256_bytes(source.as_bytes());
-    assert_eq!(
-        source_sha256, PINNED_SOURCE_SHA256,
-        "pinned real-source tape"
-    );
+    let tape = SourceTape::read(&args[2]).expect("source tape");
+    let source_sha256 = tape.sha256.to_owned();
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
-    let prompt = tokenizer.encode(
-        &format!("Review this inference engine source:\n\n{source}"),
-        true,
-    );
-    assert!(
-        prompt.len() > CONTINUATION_TOKENS,
-        "source must provide enough real tokens"
+    let prompt = tape.prompt(
+        &tokenizer,
+        "Review this inference engine source:\n\n",
+        // verify_refusal_boundary reads tokens[..128].
+        128,
     );
 
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);

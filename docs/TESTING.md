@@ -956,6 +956,32 @@ explicit gate rollback and refusal, and verify a new thread's environment policy
 `tools/test-dsv4-dense-control-policy.sh` exercises the actual exact-tail and
 all five dense-TC drivers under unset, explicit S16 and zero before CUDA calls.
 
+### DSv4 DSpark spec == plain on the served program (#660)
+
+`dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1] --served` runs plain,
+sequential-verify and batched T=k+1 verify arms in one process on the served defaults
+(`MEMRA_DSV4_DRAFTER=dspark MEMRA_DSV4_DECODE_PATH=device`, chunked prefill and prime, the
+matrix expert program, the serve route's depth cap and verify threshold). It requires greedy
+spec == plain byte-exact, batched verify logits and every live cache class after commit bit-equal
+to sequential decode over every compressor phase and accept count, accepted-position ring writes,
+and determinism across runs. Without `--served` it pins `MEMRA_DSV4_HC_DOT_SPLIT=0` and
+`MEMRA_DSV4_DENSE_FAST=0`, the historical program. Run it on the pair under `/tmp/memra-gpu.lock`
+for any change that touches a DSv4 dense, HC, verify or commit path. Before #660 the served run
+failed every bit-gate cell: the HC24 split ran only on one-row calls, so verify rows took the
+sequential class. Receipts: `research/dsv4f-bringup-20260923/`.
+
+
+### DSv4 gate source tape (#657)
+
+The DSv4 perf and identity gates take `<source.txt>`, the prompt tape. The originally pinned
+tape (sha256 `f6e175a6...`) was cut from a dirty tree and no reachable machine holds it.
+Rebuild the clean tape with `tools/dsv4-source-tape.py <out.txt>` from any checkout that has
+commit 9e3c8b550; it refuses a digest other than `11e4bd80...`. The two tapes share their first
+3,736,115 bytes, and `memra_engine::dsv4_source_tape::SourceTape` tokenizes only that prefix and
+asserts a 4096-token margin, so both tapes give the same gate prompt tokens. The one mode that
+reads past the prefix, the `dsv4_hc_dot_split_gate` 64-window sampler, still requires the pinned
+tape and refuses the rebuild.
+
 
 ### Model-owned device admission and reclaim (#544)
 

@@ -29,6 +29,7 @@ use std::sync::Arc;
 
 pub mod checkpoint_binding;
 pub mod config;
+mod config_json;
 pub mod d2t;
 pub mod dequant;
 pub mod dsv4;
@@ -49,6 +50,7 @@ pub mod placement;
 pub mod safetensors;
 pub mod source;
 pub mod spec_oracle;
+pub(crate) mod strict_json;
 pub mod tensor_contract;
 
 pub const GGUF_MAGIC: u32 = 0x4655_4747; // "GGUF" little-endian

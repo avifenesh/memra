@@ -51,6 +51,7 @@ unsafe extern "C" {
         partial: *mut f32,
         partial_len: i32,
         y: *mut f32,
+        m: i32,
         n: i32,
         k: i32,
         stream: *mut c_void,
@@ -9141,6 +9142,7 @@ impl Dsv4Gpu {
                         dpm!(*hc_dot_partial, &stream),
                         hc_dot_partial.len() as i32,
                         dpm!(*mixes, &stream),
+                        1,
                         rows as i32,
                         w as i32,
                         sp(&stream),
@@ -13144,7 +13146,7 @@ pub struct VerifyWs {
     h_rx: CudaSlice<f32>,
     emb: CudaSlice<f32>,
     mixes: CudaSlice<f32>,
-    hc_dot_partial: CudaSlice<f32>, // [24*32], stable across retained variants
+    hc_dot_partial: CudaSlice<f32>, // [tmax*24*32], stable across retained variants
     pre: CudaSlice<f32>,
     post: CudaSlice<f32>,
     comb: CudaSlice<f32>,
@@ -14193,7 +14195,7 @@ impl Dsv4Gpu {
                 h_rx: f(tmax * hc * hidden)?,
                 emb: f(tmax * hidden)?,
                 mixes: f(tmax * (2 + hc) * hc)?,
-                hc_dot_partial: f(24 * 32)?,
+                hc_dot_partial: f(tmax * 24 * 32)?,
                 pre: f(tmax * hc)?,
                 post: f(tmax * hc)?,
                 comb: f(tmax * hc * hc)?,
@@ -14698,8 +14700,9 @@ impl Dsv4Gpu {
         let stream = st.gpu.stream();
         let w = hc * hidden;
         let rows = (2 + hc) * hc;
-        if t == 1
-            && self.dots_f32
+        // Every row count takes the split class when it is on, so a verify or prefill
+        // row carries the same bits as that row decoded alone (#660).
+        if self.dots_f32
             && rows == 24
             && w == 16384
             && unsafe { memra_dsv4_hc_dot_split_slices_for_gate() } != 0
@@ -14713,6 +14716,7 @@ impl Dsv4Gpu {
                         dpm!(vws.hc_dot_partial, &stream),
                         vws.hc_dot_partial.len() as i32,
                         dpm!(vws.mixes, &stream),
+                        t as i32,
                         rows as i32,
                         w as i32,
                         sp(&stream),

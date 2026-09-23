@@ -1,0 +1,12 @@
+   Compiling memra-gguf v0.138.0 (<worktree>/crates/memra-gguf)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.45s
+     Running unittests src/lib.rs (target/debug/deps/memra_gguf-BUILD_ID)
+
+running 5 tests
+test strict_json::tests::decoded_duplicates_and_malformed_strings_refuse_at_every_level ... ok
+test strict_json::tests::number_tokens_remain_exact_and_cannot_be_forged_by_object_keys ... ok
+test strict_json::tests::integer_schema_consumers_can_still_reject_float_string_and_null_tokens ... ok
+test strict_json::tests::declaration_keys_and_values_share_unicode_decoding ... ok
+test strict_json::tests::raw_value_recursion_remains_bounded ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 312 filtered out; finished in 0.00s

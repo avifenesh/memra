@@ -508,6 +508,9 @@ extern "C" int memra_dsv4_dense_exact_tail_dots(const float* x, const void* w,
 // HC24 split numeric class: contiguous K slices, original eight-element leaf
 // order within each slice, original 128-leaf tree, then ascending slice sum.
 // Association differs from exact-tail dots. No atomics or capture allocations.
+// Token rows ride blockIdx.y (partial) and blockIdx.x (reduce) through the one
+// kernel body, so a verify or prefill row is bit-identical to the same row
+// decoded alone: spec == plain needs every routed shape in this class (#660).
 static thread_local int dsv4_hc_dot_split_slices = [] {
     const char* value = std::getenv("MEMRA_DSV4_HC_DOT_SPLIT");
     // Owner accepted S16 on 2026-09-09. Other slice counts stay explicit.
@@ -527,6 +530,8 @@ extern "C" int memra_dsv4_hc_dot_split_slices_for_gate() {
 template<int S>
 __global__ void dsv4_hc_dot_split_partial_kernel(const float* __restrict__ x,
     const float* __restrict__ w, float* __restrict__ partial) {
+    x += (long)blockIdx.y * 16384;
+    partial += (long)blockIdx.y * 24 * S;
     const int row = blockIdx.x / S;
     const int slice = blockIdx.x % S;
     constexpr int width = 16384 / S;
@@ -557,6 +562,8 @@ __global__ void dsv4_hc_dot_split_partial_kernel(const float* __restrict__ x,
 template<int S>
 __global__ void dsv4_hc_dot_split_reduce_kernel(const float* __restrict__ partial,
     float* __restrict__ y) {
+    partial += (long)blockIdx.x * 24 * S;
+    y += (long)blockIdx.x * 24;
     const int row = threadIdx.x;
     if (row >= 24) return;
     float acc = 0.0f;
@@ -566,24 +573,25 @@ __global__ void dsv4_hc_dot_split_reduce_kernel(const float* __restrict__ partia
     y[row] = acc;
 }
 template<int S> static int dsv4_hc_dot_split_launch(const float* x, const float* w,
-    float* partial, float* y, cudaStream_t stream) {
-    dsv4_hc_dot_split_partial_kernel<S><<<24 * S, 128, 0, stream>>>(x, w, partial);
+    float* partial, float* y, int m, cudaStream_t stream) {
+    dsv4_hc_dot_split_partial_kernel<S><<<dim3(24 * S, m), 128, 0, stream>>>(x, w, partial);
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) return (int)err;
-    dsv4_hc_dot_split_reduce_kernel<S><<<1, 32, 0, stream>>>(partial, y);
+    dsv4_hc_dot_split_reduce_kernel<S><<<m, 32, 0, stream>>>(partial, y);
     return (int)cudaGetLastError();
 }
+// `m` token rows of x [m][k] into y [m][n]; partial holds m * 24 * slices floats.
 extern "C" int memra_dsv4_hc_dot_split(const float* x, const float* w,
-    float* partial, int partial_len, float* y, int n, int k, void* raw_stream) {
+    float* partial, int partial_len, float* y, int m, int n, int k, void* raw_stream) {
     const int slices = dsv4_hc_dot_split_slices;
-    if (n != 24 || k != 16384 || partial_len < 24 * slices ||
+    if (m < 1 || m > 65535 || n != 24 || k != 16384 || partial_len / 24 / m < slices ||
         !dsv4_dense_exact_tail_dots_admits(x, w, 0, y, 1, n, k) ||
         !dsv4_dense_exact_tail_aligned(partial, 4)) return 40075;
     const auto stream = (cudaStream_t)raw_stream;
     switch (slices) {
-        case 8: return dsv4_hc_dot_split_launch<8>(x, w, partial, y, stream);
-        case 16: return dsv4_hc_dot_split_launch<16>(x, w, partial, y, stream);
-        case 32: return dsv4_hc_dot_split_launch<32>(x, w, partial, y, stream);
+        case 8: return dsv4_hc_dot_split_launch<8>(x, w, partial, y, m, stream);
+        case 16: return dsv4_hc_dot_split_launch<16>(x, w, partial, y, m, stream);
+        case 32: return dsv4_hc_dot_split_launch<32>(x, w, partial, y, m, stream);
         default: return 40075;
     }
 }
