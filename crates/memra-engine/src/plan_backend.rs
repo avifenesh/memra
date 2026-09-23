@@ -14,7 +14,9 @@ pub use execution_snapshot::{
     RewriteBoundaryGuard, RewriteExecutionGuard, RewriteExecutionSnapshot,
 };
 pub use runtime_identity::running_implementation_sha256;
-use runtime_identity::{LoadedLibraries, hash_parts, numeric_environment, numeric_program_sha256};
+use runtime_identity::{
+    LoadedLibraries, check_latched_env, hash_parts, numeric_environment, numeric_program_sha256,
+};
 pub(crate) use runtime_identity::{
     RewriteLoadState, checked_rewrite_identity, identity_requested, install_rewrite_admission,
     refuse_external_rewrite_artifacts, source_artifact_identity,
@@ -48,6 +50,16 @@ impl RewriteLoadState {
     }
 }
 
+/// The environment an identity captures must still select every policy the engine latched at
+/// its first read, because the latch, not the environment, is what the program runs.
+fn check_latched_numeric_policies() -> Result<(), String> {
+    check_latched_env(
+        "MEMRA_BF16_MMV",
+        crate::Engine::bf16_mmv_latched(),
+        std::env::var("MEMRA_BF16_MMV").as_deref() == Ok("1"),
+    )
+}
+
 pub(crate) fn capture_rewrite_identity(
     model: &HybridModel,
     source: &dyn memra_gguf::source::TensorSource,
@@ -63,6 +75,7 @@ pub(crate) fn capture_rewrite_identity(
             "rewrite identity requires a composite identity for external draft artifacts".into(),
         );
     }
+    check_latched_numeric_policies()?;
     let state = RewriteLoadState {
         mutation_generation: model.rewrite_mutations(),
         pipeline: model.is_multi_device(),

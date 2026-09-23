@@ -757,6 +757,53 @@ fn parse_auto_w4a16_bf16_mmv(value: Option<&str>) -> Result<bool, String> {
     }
 }
 
+/// Set after the first model load in this process resolves its placement. Loaded models read
+/// the process-level variables automatic placement writes, and their identities capture them,
+/// so a later load must not change those variables.
+static PLACEMENT_ENV_FIXED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+const EARLIER_LOAD: &str = "an earlier model load in this process";
+const BF16_MMV_LATCH: &str = "the engine's BF16 matvec policy, latched at its first read,";
+const PP_ENV_REMEDY: &str = "set MEMRA_PP_STAGES, MEMRA_PP_DEVICES and MEMRA_PP_SPLITS for the \
+     whole process in place of MEMRA_PARALLEL=auto, or load this model in its own process";
+const BF16_MMV_REMEDY: &str =
+    "set MEMRA_BF16_MMV for the whole process before start, or load this model in its own process";
+
+/// Names what already fixed MEMRA_BF16_MMV before automatic placement would write `value`.
+fn bf16_mmv_fixed_by(
+    value: &str,
+    latched: Option<bool>,
+    earlier_load: bool,
+) -> Option<&'static str> {
+    if latched.is_some_and(|on| on != (value == "1")) {
+        Some(BF16_MMV_LATCH)
+    } else if earlier_load {
+        Some(EARLIER_LOAD)
+    } else {
+        None
+    }
+}
+
+/// Refuses an automatic-placement write that would change a process-level variable after
+/// `fixed_by` fixed it. A write of the value already present, or before any reader, passes.
+fn check_placement_env_write(
+    key: &str,
+    value: &str,
+    current: Option<&str>,
+    fixed_by: Option<&str>,
+    remedy: &str,
+) -> Result<(), String> {
+    match fixed_by {
+        Some(reader) if current != Some(value) => Err(format!(
+            "automatic placement for this model needs {key}={value}, but {reader} already fixed \
+             {key}={}; {remedy}",
+            current.map_or_else(|| "<unset>".to_owned(), |current| format!("{current:?}"))
+        )),
+        _ => Ok(()),
+    }
+}
+
 fn parse_auto_parallel_tp_attention(value: Option<&str>) -> Result<bool, String> {
     match value {
         None | Some("") | Some("0") => Ok(false),
@@ -796,11 +843,25 @@ fn auto_parallel_tp_attention_ranks() -> Result<Option<usize>, String> {
 /// A selected pipeline is persisted into the existing process-level PP configuration before
 /// `pp_cuts`, cache allocation, or weight placement reads it. Expert placement is passed directly
 /// to the backend registry below. No architecture or layer list participates in this decision.
+///
+/// Every load marks the placement environment fixed once it is resolved. A later load in the
+/// same process refuses a write that would change it; the first load writes as before.
 fn prepare_auto_parallel(
     src: &dyn TensorSource,
     cfg: &ModelConfig,
     plan: &memra_gguf::model_plan::ModelPlan,
 ) -> Result<Option<crate::parallel::AutoParallelPlacement>, Box<dyn std::error::Error>> {
+    let placement = resolve_auto_parallel(src, cfg, plan)?;
+    PLACEMENT_ENV_FIXED.store(true, std::sync::atomic::Ordering::Release);
+    Ok(placement)
+}
+
+fn resolve_auto_parallel(
+    src: &dyn TensorSource,
+    cfg: &ModelConfig,
+    plan: &memra_gguf::model_plan::ModelPlan,
+) -> Result<Option<crate::parallel::AutoParallelPlacement>, Box<dyn std::error::Error>> {
+    let earlier_load = PLACEMENT_ENV_FIXED.load(std::sync::atomic::Ordering::Acquire);
     let Some(devices) = crate::tp::auto_parallel_devices()? else {
         return Ok(None);
     };
@@ -828,8 +889,16 @@ fn prepare_auto_parallel(
         };
         let enabled = parse_auto_w4a16_bf16_mmv(explicit.as_deref())?;
         if enabled && explicit.is_none() {
+            check_placement_env_write(
+                "MEMRA_BF16_MMV",
+                "1",
+                None,
+                bf16_mmv_fixed_by("1", crate::Engine::bf16_mmv_latched(), earlier_load),
+                BF16_MMV_REMEDY,
+            )?;
             // SAFETY: automatic placement is resolved before any model tensor loads or
-            // `Engine::bf16_mmv_on()` reads the process-level numeric policy.
+            // `Engine::bf16_mmv_on()` reads the process-level numeric policy. The check above
+            // refuses the write once another load or the latch has fixed it.
             unsafe {
                 std::env::set_var("MEMRA_BF16_MMV", "1");
             }
@@ -857,12 +926,29 @@ fn prepare_auto_parallel(
             .map(usize::to_string)
             .collect::<Vec<_>>()
             .join(",");
+        let stages = stages.to_string();
+        let writes = [
+            ("MEMRA_PP_STAGES", stages.as_str()),
+            ("MEMRA_PP_DEVICES", device_list.as_str()),
+            ("MEMRA_PP_SPLITS", splits.as_str()),
+        ];
+        // All three are unset here (refused above), so any earlier load read them unset.
+        for (key, value) in writes {
+            check_placement_env_write(
+                key,
+                value,
+                None,
+                earlier_load.then_some(EARLIER_LOAD),
+                PP_ENV_REMEDY,
+            )?;
+        }
         // SAFETY: model loading owns this process-level policy before pp_cuts, transport, cache,
-        // or weight placement reads any of these variables.
+        // or weight placement reads any of these variables. The checks above refuse the write
+        // once an earlier load has read them.
         unsafe {
-            std::env::set_var("MEMRA_PP_STAGES", stages.to_string());
-            std::env::set_var("MEMRA_PP_DEVICES", &device_list);
-            std::env::set_var("MEMRA_PP_SPLITS", &splits);
+            for (key, value) in writes {
+                std::env::set_var(key, value);
+            }
         }
     }
     let family = if placement.routed_layers.is_empty() {
@@ -6547,6 +6633,7 @@ mod pipeline_cut_tests {
 #[cfg(test)]
 mod auto_parallel_policy_tests {
     use super::{
+        BF16_MMV_REMEDY, EARLIER_LOAD, PP_ENV_REMEDY, bf16_mmv_fixed_by, check_placement_env_write,
         parse_auto_parallel_tp_attention, parse_auto_parallel_tp_attention_ranks,
         parse_auto_w4a16_bf16_mmv,
     };
@@ -6588,6 +6675,58 @@ mod auto_parallel_policy_tests {
         for bad in ["", "0", "1", "5", "all"] {
             assert!(parse_auto_parallel_tp_attention_ranks(Some(bad)).is_err());
         }
+    }
+
+    #[test]
+    fn first_load_placement_writes_are_unchanged() {
+        // No earlier load and no latch: the single-model path writes exactly as before.
+        assert_eq!(bf16_mmv_fixed_by("1", None, false), None);
+        check_placement_env_write("MEMRA_BF16_MMV", "1", None, None, BF16_MMV_REMEDY).unwrap();
+        for (key, value) in [
+            ("MEMRA_PP_STAGES", "2"),
+            ("MEMRA_PP_DEVICES", "0,1"),
+            ("MEMRA_PP_SPLITS", "24"),
+        ] {
+            check_placement_env_write(key, value, None, None, PP_ENV_REMEDY).unwrap();
+        }
+        // A latch that already agrees with the write does not refuse the first load.
+        assert_eq!(bf16_mmv_fixed_by("1", Some(true), false), None);
+    }
+
+    #[test]
+    fn later_load_cannot_change_a_fixed_placement_variable() {
+        let error = check_placement_env_write(
+            "MEMRA_BF16_MMV",
+            "1",
+            None,
+            bf16_mmv_fixed_by("1", Some(false), false),
+            BF16_MMV_REMEDY,
+        )
+        .unwrap_err();
+        assert!(error.contains("needs MEMRA_BF16_MMV=1"), "{error}");
+        assert!(error.contains("latched at its first read"), "{error}");
+        assert!(error.contains("MEMRA_BF16_MMV=<unset>"), "{error}");
+        assert!(error.contains("for the whole process"), "{error}");
+
+        assert_eq!(bf16_mmv_fixed_by("1", None, true), Some(EARLIER_LOAD));
+        assert_eq!(bf16_mmv_fixed_by("1", Some(true), true), Some(EARLIER_LOAD));
+        for key in ["MEMRA_PP_STAGES", "MEMRA_PP_DEVICES", "MEMRA_PP_SPLITS"] {
+            let error =
+                check_placement_env_write(key, "2", None, Some(EARLIER_LOAD), PP_ENV_REMEDY)
+                    .unwrap_err();
+            assert!(error.contains(&format!("{key}=<unset>")), "{error}");
+            assert!(error.contains(EARLIER_LOAD), "{error}");
+            assert!(error.contains("for the whole"), "{error}");
+        }
+        // Writing the value a reader already saw changes nothing and passes.
+        check_placement_env_write(
+            "MEMRA_PP_STAGES",
+            "2",
+            Some("2"),
+            Some(EARLIER_LOAD),
+            PP_ENV_REMEDY,
+        )
+        .unwrap();
     }
 }
 

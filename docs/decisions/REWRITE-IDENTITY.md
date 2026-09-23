@@ -89,6 +89,13 @@ within a tick; a change is detected at the next tick. This is not a claim that a
 whole serving token step has constant cost or measured throughput improvement. Drift
 at a boundary revokes every older snapshot; restoring external state does not revive it.
 
+Automatic placement writes `MEMRA_BF16_MMV` and `MEMRA_PP_*` into the process before
+tensor load. A second model load in the same process could otherwise change what the
+first model runs, or capture a `MEMRA_BF16_MMV=1` the engine had already latched off.
+A later load now refuses such a write and names the variable to set for the whole
+process. Identity capture refuses when the environment disagrees with the latched
+policy. The first load in a process writes exactly as before.
+
 The native runner includes a separate `library-drift` probe using a real read/execute
 mapping (never executed) and a populated eager cache. It must refuse retained re-entry
 before token work and preserve cache hashes. Qualified graph/prime/worker probes and real environment-drift control are now

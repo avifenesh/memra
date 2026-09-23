@@ -10,6 +10,7 @@ pub(crate) fn capture_target_trim_rewrite_identity(
 ) -> Result<(RewriteIdentity, RewriteLoadState), Box<dyn std::error::Error>> {
     proof.validate(model, source, &target_artifact_sha256)?;
     let artifact_sha256 = proof.artifact_sha256().to_owned();
+    check_latched_numeric_policies()?;
     let state = RewriteLoadState {
         mutation_generation: model.rewrite_mutations(),
         pipeline: model.is_multi_device(),

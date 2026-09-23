@@ -34,6 +34,25 @@ pub(super) fn numeric_environment(
         .collect()
 }
 
+/// The captured environment must describe a policy the engine latched at its first read.
+/// A later write cannot change the latch, so an identity built from the new value would lie.
+pub(super) fn check_latched_env(
+    key: &str,
+    latched: Option<bool>,
+    env_on: bool,
+) -> Result<(), String> {
+    match latched {
+        Some(on) if on != env_on => Err(format!(
+            "{key} latched {} at its first read but the environment now selects {}; the \
+             captured identity would not describe the running program. Set {key} for the whole \
+             process before start",
+            if on { "on" } else { "off" },
+            if env_on { "on" } else { "off" },
+        )),
+        _ => Ok(()),
+    }
+}
+
 pub(crate) fn refuse_external_rewrite_artifacts() -> Result<(), String> {
     for key in [
         "MEMRA_MTP_DRAFT",
@@ -342,6 +361,21 @@ mod tests {
 
     fn vars(pairs: &[(&str, &str)]) -> BTreeMap<OsString, OsString> {
         numeric_environment(pairs.iter().map(|(k, v)| ((*k).into(), (*v).into())))
+    }
+
+    #[test]
+    fn identity_capture_refuses_an_environment_that_disagrees_with_a_latch() {
+        // Not yet latched, or latched to the same value: capture proceeds as before.
+        for env_on in [false, true] {
+            check_latched_env("MEMRA_BF16_MMV", None, env_on).unwrap();
+            check_latched_env("MEMRA_BF16_MMV", Some(env_on), env_on).unwrap();
+        }
+        let error = check_latched_env("MEMRA_BF16_MMV", Some(false), true).unwrap_err();
+        assert!(error.contains("MEMRA_BF16_MMV latched off"), "{error}");
+        assert!(error.contains("now selects on"), "{error}");
+        assert!(error.contains("for the whole process"), "{error}");
+        let error = check_latched_env("MEMRA_BF16_MMV", Some(true), false).unwrap_err();
+        assert!(error.contains("latched on"), "{error}");
     }
 
     #[test]

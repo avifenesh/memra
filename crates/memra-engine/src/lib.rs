@@ -24595,8 +24595,20 @@ impl Engine {
     /// default OFF and gated by the run-gen argmax gate + boot battery like the other
     /// numeric-class doors (DEV_ROUTES precedent).
     pub(crate) fn bf16_mmv_on() -> bool {
+        *Self::bf16_mmv_latch()
+            .get_or_init(|| std::env::var("MEMRA_BF16_MMV").as_deref() == Ok("1"))
+    }
+
+    /// The `bf16_mmv_on` value latched at its first read, or `None` before that read.
+    /// Load-time placement and identity capture use it to refuse an environment that no
+    /// longer describes the running program.
+    pub(crate) fn bf16_mmv_latched() -> Option<bool> {
+        Self::bf16_mmv_latch().get().copied()
+    }
+
+    fn bf16_mmv_latch() -> &'static std::sync::OnceLock<bool> {
         static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *ON.get_or_init(|| std::env::var("MEMRA_BF16_MMV").as_deref() == Ok("1"))
+        &ON
     }
 
     /// One-block-per-row BF16 matvec: y[out_f] = W_bf16[out_f, in_f] @ x[in_f], f32 accumulate.
