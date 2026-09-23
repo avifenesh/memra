@@ -4578,6 +4578,141 @@ extern "C" int memra_dsv4_small_hc_f32_fixed_order(
     return 0;
 }
 
+// DSV4 HC finish, one CTA per position: the split-dot slice sum, the small HC
+// program above and the entry rmsnorm_f32acc with its bf16 pack. Thread t owns
+// x[t + 128j]. That is the rowsq leaf order above, the collapse column t + 128k
+// of copy c at j = 32c + k, and the rmsnorm_f32acc_regs<32> columns t + 128k,
+// so x is read once and y never leaves registers. Every sum keeps the order and
+// tree of the kernels it replaces: dsv4_hc_dot_split_reduce_kernel<S>, this
+// file's small HC kernel, dsv4_rmsnorm_f32acc_regs<32> and dsv4_cvt_bf16_kernel.
+// dsv4_block_sum128_f32 pairs as dsv4_block_sum_f32 does at 128 threads.
+template <int S>
+__global__ void __launch_bounds__(128) dsv4_hc_finish_f32_fixed_order_kernel(
+        const float* __restrict__ partial, const float* __restrict__ x,
+        float* __restrict__ mixes, const float* __restrict__ scale,
+        const float* __restrict__ base, float* __restrict__ pre, float* __restrict__ post,
+        float* __restrict__ comb, float* __restrict__ y, const float* __restrict__ norm_w,
+        float* __restrict__ out, __nv_bfloat16* __restrict__ out_b, int iters, float hc_eps,
+        float eps) {
+    constexpr int HC = 4, D = 4096, B = 128, ROWS = 24, W = HC * D, J = W / B, K = D / B;
+    const long p = blockIdx.x;
+    partial += p * ROWS * S;
+    x += p * W;
+    mixes += p * ROWS;
+    pre += p * HC;
+    post += p * HC;
+    comb += p * HC * HC;
+    out += p * D;
+    if (y) y += p * D;
+    if (out_b) out_b += p * D;
+    const int t = threadIdx.x;
+    float mix = 0.0f;
+    if (t < ROWS) {
+#pragma unroll
+        for (int s = 0; s < S; ++s) mix = __fadd_rn(mix, partial[t * S + s]);
+    }
+    float xv[J];
+#pragma unroll
+    for (int j = 0; j < J; ++j) xv[j] = x[t + j * B];
+    float acc = 0.0f;
+#pragma unroll
+    for (int j = 0; j < J; ++j) acc += xv[j] * xv[j];
+    __shared__ float sh_x[B], sh_y[B];
+    float tot = dsv4_block_sum128_f32(acc, sh_x);
+    float rsq = 1.0f / sqrtf(tot / (float)W + hc_eps);
+    __shared__ float smix[ROWS], spre[HC];
+    if (t < ROWS) {
+        float v = mix * rsq;
+        mixes[t] = v;
+        smix[t] = v;
+    }
+    __syncthreads();
+    if (t < 32) {
+        constexpr unsigned MASK = 0xffffffffu;
+        if (t < HC) {
+            float pv = dsv4_sigmoid(smix[t]*scale[0] + base[t]) + hc_eps;
+            pre[t] = spre[t] = pv;
+            post[t] = 2.0f * dsv4_sigmoid(smix[HC+t]*scale[1] + base[HC+t]);
+        }
+        int r = t < 16 ? t / HC : 0;
+        int c = t < 16 ? t % HC : 0;
+        float cv = t < 16 ? smix[2*HC+t]*scale[2] + base[2*HC+t] : 0.0f;
+        float mx = -INFINITY;
+        for (int k = 0; k < HC; ++k) mx = fmaxf(mx, __shfl_sync(MASK, cv, r*HC+k));
+        float ev = expf(cv-mx), sum = 0.0f;
+        for (int k = 0; k < HC; ++k) sum += __shfl_sync(MASK, ev, r*HC+k);
+        cv = ev / sum + hc_eps;
+        for (int it = 0; it < iters; ++it) {
+            if (it > 0) {
+                float rs = 0.0f;
+                for (int k = 0; k < HC; ++k) rs += __shfl_sync(MASK, cv, r*HC+k);
+                cv /= rs + hc_eps;
+            }
+            float cs = 0.0f;
+            for (int j = 0; j < HC; ++j) cs += __shfl_sync(MASK, cv, j*HC+c);
+            cv /= cs + hc_eps;
+        }
+        if (t < 16) comb[t] = cv;
+    }
+    __syncthreads();
+    float yv[K];
+#pragma unroll
+    for (int k = 0; k < K; ++k) {
+        float v = 0.0f;
+#pragma unroll
+        for (int c = 0; c < HC; ++c) v += spre[c] * xv[c * K + k];
+        yv[k] = v;
+    }
+    float acc2 = 0.0f;
+#pragma unroll
+    for (int k = 0; k < K; ++k) acc2 += yv[k] * yv[k];
+    float tot2 = dsv4_block_sum128_f32(acc2, sh_y);
+    float mean = tot2 / (float)D;
+    float rsq2 = 1.0f / sqrtf(mean + eps);
+#pragma unroll
+    for (int k = 0; k < K; ++k) {
+        int j = t + k * B;
+        if (y) y[j] = yv[k];
+        float o = norm_w[j] * (yv[k] * rsq2);
+        out[j] = o;
+        if (out_b) out_b[j] = __float2bfloat16(o);
+    }
+}
+
+// `s` positions. `partial` is dsv4_hc_dot_split_partial_kernel<slices> output for the
+// same x; y and out_b may be null.
+extern "C" int memra_dsv4_hc_finish_f32_fixed_order(
+        const float* partial, int slices, const float* x, float* mixes, const float* scale,
+        const float* base, float* pre, float* post, float* comb, float* y,
+        const float* norm_w, float* out, void* out_b, int s, int hc, int d, int iters,
+        float hc_eps, float eps, void* stream_v) {
+    if (s < 1 || s > 65535 || hc != 4 || d != 4096 || iters < 0 || !norm_w || !out)
+        return 40027;
+    auto stream = (cudaStream_t)stream_v;
+    auto ob = (__nv_bfloat16*)out_b;
+    switch (slices) {
+        case 8:
+            dsv4_hc_finish_f32_fixed_order_kernel<8><<<(unsigned)s, 128, 0, stream>>>(
+                partial, x, mixes, scale, base, pre, post, comb, y, norm_w, out, ob, iters,
+                hc_eps, eps);
+            break;
+        case 16:
+            dsv4_hc_finish_f32_fixed_order_kernel<16><<<(unsigned)s, 128, 0, stream>>>(
+                partial, x, mixes, scale, base, pre, post, comb, y, norm_w, out, ob, iters,
+                hc_eps, eps);
+            break;
+        case 32:
+            dsv4_hc_finish_f32_fixed_order_kernel<32><<<(unsigned)s, 128, 0, stream>>>(
+                partial, x, mixes, scale, base, pre, post, comb, y, norm_w, out, ob, iters,
+                hc_eps, eps);
+            break;
+        default:
+            return 40027;
+    }
+    DSV4_ERR();
+    return 0;
+}
+
 // ---- head hc gate, batched positions.
 extern "C" __global__ void dsv4_hc_head_pre_m_kernel(const float* __restrict__ mixes,
                                                      const float* __restrict__ scale,
