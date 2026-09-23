@@ -1,0 +1,47 @@
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (33 layers, nextn=1)
+text prompt (472 chars) -> 90 tokens
+prompt tokens: [760, 5638, 4534, 11147, 8232, 14855, 10480, 6009, 13914, 494, 23683, 7575, 1472, 46120, 3357, 26502, 888, 87567, 1083, 3545, 4779, 11, 1332, 9966, 1452, 5344, 3947, 61369, 23304, 1070, 13, 8618, 6228, 369, 16384, 3658, 440, 279, 3672, 11, 1521, 264, 10281, 9705, 628, 9959, 264, 795, 1395, 14043, 29551, 13, 58737, 11, 2923, 539, 2923, 11, 1204, 264, 20340, 8404, 17830, 15089, 23776, 47493, 321, 49703, 1141, 11312, 364, 264, 3074, 3817, 11, 321, 10033, 864, 6228, 80018, 37972, 948, 279, 6009, 5883, 34105, 3545, 4779, 13, 198]
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 49152 ml_len 16 -> 192 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+
+[generate]   31 tok in 0.251s = 123.69 tok/s (gen-only; this run's prime 0.037s)
+  tokens: [760, 5638, 4534, 11147, 8232, 14855, 10480, 6009, 13914, 494, 23683, 7575, 1472, 46120, 3357, 26502, 888, 87567, 1083, 3545, 4779, 11, 1332, 9966, 1452, 5344, 3947, 61369, 23304, 1070, 13, 8618]
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+[fa-pool] grow #3 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+
+[generate_spec K=1] 32 tok in 0.198s = 156.72 tok/s (1.27x vs generate; this run's prime 0.040s)
+  acceptance: 15/17 = 88.2%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=2] 32 tok in 0.158s = 196.78 tok/s (1.59x vs generate; this run's prime 0.042s)
+  acceptance: 20/22 = 90.9%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #4 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+
+[generate_spec K=3] 32 tok in 0.180s = 172.17 tok/s (1.39x vs generate; this run's prime 0.044s)
+  acceptance: 22/27 = 81.5%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=4] 32 tok in 0.160s = 194.22 tok/s (1.57x vs generate; this run's prime 0.046s)
+  acceptance: 27/32 = 84.4%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=5] 32 tok in 0.175s = 177.19 tok/s (1.43x vs generate; this run's prime 0.042s)
+  acceptance: 23/40 = 57.5%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #5 dev=0 o_len 393216 -> 786432 ml_len 1536 -> 3072 (retired kept, zero=false)
+
+[generate_spec K=6] 32 tok in 0.174s = 177.67 tok/s (1.44x vs generate; this run's prime 0.042s)
+  acceptance: 29/42 = 69.0%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=7] 32 tok in 0.210s = 147.56 tok/s (1.19x vs generate; this run's prime 0.042s)
+  acceptance: 30/49 = 61.2%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=8] 32 tok in 0.243s = 127.71 tok/s (1.03x vs generate; this run's prime 0.047s)
+  acceptance: 31/56 = 55.4%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
