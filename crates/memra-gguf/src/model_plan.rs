@@ -1397,6 +1397,13 @@ impl ModelConfig {
                     return Err(unsupported(field, format!("{value:?}")));
                 }
             }
+            // Geometry is available for sizing and census, but the generic
+            // attention plan cannot yet express MiMo's denominator-only
+            // learned sinks or pre-cache value scaling.
+            return Err(unsupported(
+                "mimo.attention_math",
+                "learned sinks and pre-cache value scaling".to_owned(),
+            ));
         }
         if let Some(window) = self.window_hint {
             let represented =
@@ -2309,6 +2316,9 @@ fn norm_weight_transform(cfg: &ModelConfig) -> WeightTransform {
 }
 
 fn qk_norm_presence(cfg: &ModelConfig) -> TensorPresence {
+    if cfg.mimo.is_some() {
+        return TensorPresence::Absent;
+    }
     if cfg.geometry.is_some()
         || cfg.gemma4.is_some()
         || cfg.mla.is_some()
@@ -2507,6 +2517,19 @@ mod tests {
             ModelPlan::compile(&unsupported),
             Err(PlanCompileError::UnsupportedSemantics {
                 field: "mimo.n_group",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn mimo_geometry_does_not_compile_without_sink_and_value_math() {
+        let cfg = config(include_str!("model_packs/mimo_v2/fixtures/config.json"));
+        assert_eq!(qk_norm_presence(&cfg), TensorPresence::Absent);
+        assert!(matches!(
+            ModelPlan::compile(&cfg),
+            Err(PlanCompileError::UnsupportedSemantics {
+                field: "mimo.attention_math",
                 ..
             })
         ));

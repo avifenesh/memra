@@ -457,6 +457,48 @@ impl ArchGeometryTable {
         }
     }
 
+    fn mimo(c: &HfConfig, n_layer: u32, head_dim_k: u32, head_dim_v: u32, n_rot: u32) -> Self {
+        let pattern = c
+            .hybrid_layer_pattern
+            .as_ref()
+            .expect("mimo_v2 requires hybrid_layer_pattern");
+        assert_eq!(pattern.len(), n_layer as usize);
+        assert!(pattern.iter().all(|&class| class <= 1));
+        let full = LayerGeometry {
+            mixer: LayerKind::FullAttention,
+            n_head: c.num_attention_heads,
+            n_head_kv: c
+                .num_key_value_heads
+                .expect("mimo_v2 requires num_key_value_heads"),
+            head_dim_k,
+            head_dim_v,
+            n_rot,
+            rope_base: c.rope_theta,
+            window: None,
+            rope_factors: false,
+            attention_gate: AttentionGateKind::None,
+        };
+        let swa_head_dim = c.swa_head_dim.expect("mimo_v2 requires swa_head_dim");
+        let swa = LayerGeometry {
+            n_head: c
+                .swa_num_attention_heads
+                .expect("mimo_v2 requires swa_num_attention_heads"),
+            n_head_kv: c
+                .swa_num_key_value_heads
+                .expect("mimo_v2 requires swa_num_key_value_heads"),
+            head_dim_k: swa_head_dim,
+            head_dim_v: c.swa_v_head_dim.expect("mimo_v2 requires swa_v_head_dim"),
+            n_rot: resolve_rope_dim_count(c.rotary_dim, c.partial_rotary_factor, swa_head_dim),
+            rope_base: c.swa_rope_theta.expect("mimo_v2 requires swa_rope_theta"),
+            window: Some(c.sliding_window.expect("mimo_v2 requires sliding_window")),
+            ..full
+        };
+        Self {
+            classes: vec![full, swa],
+            layer_classes: pattern.iter().map(|&class| class as u16).collect(),
+        }
+    }
+
     pub fn classes(&self) -> &[LayerGeometry] {
         &self.classes
     }
@@ -2343,6 +2385,13 @@ impl ModelConfig {
                 step35
                     .as_ref()
                     .expect("step35 geometry needs step35 config"),
+            )),
+            Arch::MiMoV2 => Some(ArchGeometryTable::mimo(
+                c,
+                n_layer,
+                head_dim_k,
+                head_dim_v,
+                rope_dim_count,
             )),
             _ => None,
         };
@@ -4232,6 +4281,27 @@ pub(crate) mod hf_tests {
         assert_eq!(mimo.swa_head_dim, Some(192));
         assert_eq!(mimo.swa_v_head_dim, Some(128));
         assert_eq!(mimo.swa_rope_theta, Some(10_000.0));
+        assert_eq!(config.geometry.as_ref().unwrap().classes().len(), 2);
+        for index in [0, 5, 11, 17, 23, 29, 35, 41, 47] {
+            let layer = config.layer_geometry(index).unwrap();
+            assert_eq!(layer.n_head, 64);
+            assert_eq!(layer.n_head_kv, 4);
+            assert_eq!(layer.head_dim_k, 192);
+            assert_eq!(layer.head_dim_v, 128);
+            assert_eq!(layer.n_rot, 64);
+            assert_eq!(layer.rope_base, 10_000_000.0);
+            assert_eq!(layer.window, None);
+        }
+        for index in [1, 4, 6, 46] {
+            let layer = config.layer_geometry(index).unwrap();
+            assert_eq!(layer.n_head, 64);
+            assert_eq!(layer.n_head_kv, 8);
+            assert_eq!(layer.head_dim_k, 192);
+            assert_eq!(layer.head_dim_v, 128);
+            assert_eq!(layer.n_rot, 64);
+            assert_eq!(layer.rope_base, 10_000.0);
+            assert_eq!(layer.window, Some(128));
+        }
     }
 
     #[test]
