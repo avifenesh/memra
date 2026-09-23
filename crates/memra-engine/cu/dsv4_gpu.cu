@@ -3102,9 +3102,13 @@ extern "C" int memra_dsv4_rmsnorm_f32acc(const float* x, const float* w, float* 
 
 // Q-LoRA normalization plus the following bf16 pack. Same 128-thread tree,
 // eight-load accumulation order and f32 intermediate as the separate pair.
+// One CTA per row, as the separate pair launches, so a verify row carries the
+// bits of the same row decoded alone.
 extern "C" __global__ void dsv4_small_norm_pack_f32_fixed_order_kernel(
         float* x, const float* w, __nv_bfloat16* packed, int n, float eps) {
     constexpr int B = 128;
+    x += (long)blockIdx.x * n;
+    packed += (long)blockIdx.x * n;
     float acc = 0.0f;
     int i = threadIdx.x;
     for (; i + 7*B < n; i += 8*B) {
@@ -3126,8 +3130,8 @@ extern "C" __global__ void dsv4_small_norm_pack_f32_fixed_order_kernel(
 
 extern "C" int memra_dsv4_small_norm_pack_f32_fixed_order(
         float* x, const float* w, void* packed, int s, int n, float eps, void* stream_v) {
-    if (s != 1 || n < 1) return 40027;
-    dsv4_small_norm_pack_f32_fixed_order_kernel<<<1, 128, 0, (cudaStream_t)stream_v>>>(
+    if (s < 1 || n < 1) return 40027;
+    dsv4_small_norm_pack_f32_fixed_order_kernel<<<(unsigned)s, 128, 0, (cudaStream_t)stream_v>>>(
         x, w, (__nv_bfloat16*)packed, n, eps);
     DSV4_ERR();
     return 0;
@@ -4534,14 +4538,22 @@ extern "C" int memra_dsv4_hc_sinkhorn_m(const float* mixes, const float* scale,
     return 0;
 }
 
-// DSV4 plain t=1 diet. Keep the f32x rowsq tree at exactly 128 threads.
+// DSV4 diet. Keep the f32x rowsq tree at exactly 128 threads.
 // Sinkhorn owns one matrix element per lane and gathers each sum in the
 // original ascending order. No early exit or reassociation. This TU uses
-// -fmad=false, as do the three unfused kernels.
+// -fmad=false, as do the three unfused kernels. One CTA per position, the
+// row the unfused kernels give that position.
 extern "C" __global__ void dsv4_small_hc_f32_fixed_order_kernel(
         const float* x, float* mixes, const float* scale, const float* base,
         float* pre, float* post, float* comb, float* y, int d, int iters, float eps) {
     constexpr int HC = 4, B = 128, ROWS = 24;
+    long p = blockIdx.x;
+    x += p * HC * d;
+    mixes += p * ROWS;
+    pre += p * HC;
+    post += p * HC;
+    comb += p * HC * HC;
+    y += p * d;
     int t = threadIdx.x;
     int w = HC * d;
     float acc = 0.0f;
@@ -4602,8 +4614,8 @@ extern "C" int memra_dsv4_small_hc_f32_fixed_order(
         const float* x, float* mixes, const float* scale, const float* base,
         float* pre, float* post, float* comb, float* y, int s, int hc, int d,
         int iters, float eps, void* stream_v) {
-    if (s != 1 || hc != 4 || d != 4096 || iters < 0) return 40027;
-    dsv4_small_hc_f32_fixed_order_kernel<<<1, 128, 0, (cudaStream_t)stream_v>>>(
+    if (s < 1 || hc != 4 || d != 4096 || iters < 0) return 40027;
+    dsv4_small_hc_f32_fixed_order_kernel<<<(unsigned)s, 128, 0, (cudaStream_t)stream_v>>>(
         x, mixes, scale, base, pre, post, comb, y, d, iters, eps);
     DSV4_ERR();
     return 0;

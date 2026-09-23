@@ -301,11 +301,13 @@ So, concretely:
 - **No product voice here.** No prices, packs, credits, trials, rate cards, support promises,
   launch narratives, or "our customers". Those belong to the website, which is where a
   reader can be sold something and can hold someone to terms.
-- **Link loudly anyway.** The repo is the owner's and says so: author, the lab
-  ([tiyuvta.ai](https://tiyuvta.ai)) and the hosted instance
-  ([inference.tiyuvta.ai](https://inference.tiyuvta.ai)) are named at the top and are meant
-  to be found. That is attribution and a shortcut for readers without a card — not a sales
-  pitch, and it never becomes the reason the repo exists.
+- **Link loudly anyway.** The repo is the owner's and says so: the author and the lab
+  ([tiyuvta.ai](https://tiyuvta.ai)) are named at the top and are meant to be found. The lab
+  helps teams self-deploy and fine-tune open models; hosted inference is not the business
+  (owner call 2026-09-18, darklanes `spec/positioning/PIVOT-20260918.md`). The DeepSeek trial
+  endpoint is a time-limited capability demo of that service: if the top links it, call it a
+  demo, never a hosted API or a product. That is attribution and a way for readers without a
+  card to try the engine, not a sales pitch, and it never becomes the reason the repo exists.
 - **Capability, not deployment.** "memra runs Qwen3.8-27B at its full 262k context, gated by
   the exactness battery" is an engine claim. "It serves production at tiyuvta.ai, live the
   day after release, before a single public token" is a product claim wearing an engine
