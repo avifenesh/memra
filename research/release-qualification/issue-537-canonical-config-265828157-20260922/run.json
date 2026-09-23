@@ -1,0 +1,255 @@
+{
+  "battery_log": {
+    "path": "battery.log",
+    "sha256": "3a0a04c484f7dcb1ec3e0f9ff0f06e884413fc2116da025a2a546173065d11a5"
+  },
+  "binaries_after": {
+    "argmax-margin-probe": {
+      "bytes": 50211104,
+      "format": "ELF-x86_64",
+      "sha256": "26e6a23f9c36e114288d10465fe42347a328fc2d0633efb8dbe3122a4de3cd1a"
+    },
+    "kernel-check": {
+      "bytes": 43909648,
+      "format": "ELF-x86_64",
+      "sha256": "90de91206aafd3d460c0f1d18f4a08178b551389f4aa4982d30d89e0f3a5e41b"
+    },
+    "memra-server": {
+      "bytes": 69445496,
+      "format": "ELF-x86_64",
+      "sha256": "76b8fffb075e39826737e3f91de8e97d20d33658c1f72a6ab8df162a7e8b58b0"
+    },
+    "run-gen": {
+      "bytes": 53474720,
+      "format": "ELF-x86_64",
+      "sha256": "c3d94013589a6250a7d6c66683987d4cc2ad6efd5a8c3c17ac7eaca7b93fe22e"
+    },
+    "run-spec": {
+      "bytes": 53530848,
+      "format": "ELF-x86_64",
+      "sha256": "290c6d000e53c37de0d77a9a23565afe8861ce69535d2377f94560aeffee76f2"
+    },
+    "tok-parity": {
+      "bytes": 1710424,
+      "format": "ELF-x86_64",
+      "sha256": "2d84f110a5295a6315fd08664bdbff0951ba1f7b5dd18c807a4281bd38698a6d"
+    }
+  },
+  "binaries_before": {
+    "argmax-margin-probe": {
+      "bytes": 50211104,
+      "format": "ELF-x86_64",
+      "sha256": "26e6a23f9c36e114288d10465fe42347a328fc2d0633efb8dbe3122a4de3cd1a"
+    },
+    "kernel-check": {
+      "bytes": 43909648,
+      "format": "ELF-x86_64",
+      "sha256": "90de91206aafd3d460c0f1d18f4a08178b551389f4aa4982d30d89e0f3a5e41b"
+    },
+    "memra-server": {
+      "bytes": 69445496,
+      "format": "ELF-x86_64",
+      "sha256": "76b8fffb075e39826737e3f91de8e97d20d33658c1f72a6ab8df162a7e8b58b0"
+    },
+    "run-gen": {
+      "bytes": 53474720,
+      "format": "ELF-x86_64",
+      "sha256": "c3d94013589a6250a7d6c66683987d4cc2ad6efd5a8c3c17ac7eaca7b93fe22e"
+    },
+    "run-spec": {
+      "bytes": 53530848,
+      "format": "ELF-x86_64",
+      "sha256": "290c6d000e53c37de0d77a9a23565afe8861ce69535d2377f94560aeffee76f2"
+    },
+    "tok-parity": {
+      "bytes": 1710424,
+      "format": "ELF-x86_64",
+      "sha256": "2d84f110a5295a6315fd08664bdbff0951ba1f7b5dd18c807a4281bd38698a6d"
+    }
+  },
+  "cells": [
+    {
+      "exit_code": 0,
+      "kind": "kernel",
+      "log": {
+        "path": "cells/1-kernel.log",
+        "sha256": "abf1be97b2ae418e5c7aa229f44d0cbfdee12c00c6b155b55340dda38996da36"
+      },
+      "model": "kernel"
+    },
+    {
+      "exit_code": 0,
+      "kind": "argmax",
+      "log": {
+        "path": "cells/2-argmax.log",
+        "sha256": "c9c301ab56d30fd70aa2eccc3233116e568f8cc37e5a93044e8c57207f20a0c2"
+      },
+      "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+      "exit_code": 0,
+      "kind": "spec",
+      "log": {
+        "path": "cells/3-spec.log",
+        "sha256": "0740e289644b581d46b1901f9e730982d9b54344b0ec7b4051bd498f4f7fbe92"
+      },
+      "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+      "exit_code": 0,
+      "kind": "argmax",
+      "log": {
+        "path": "cells/4-argmax.log",
+        "sha256": "92c7b956b389a20d9d8a6db84b2cce0e9f6fe901f2fb96d3d2166ed3fcfa6a81"
+      },
+      "model": "qwen/qwen3.8-27b"
+    },
+    {
+      "exit_code": 0,
+      "kind": "spec",
+      "log": {
+        "path": "cells/5-spec.log",
+        "sha256": "418aa007c34ed4df8709a9a2dcdceba6f0fbdd35a4a843dd8f80a6ea8f530369"
+      },
+      "model": "qwen/qwen3.8-27b"
+    }
+  ],
+  "command": [
+    "bash",
+    "tools/release-battery.sh",
+    "--evidence-dir",
+    "cells"
+  ],
+  "exit_code": 0,
+  "finished_unix": 1790099777.7541475,
+  "hardware": {
+    "devices": [
+      {
+        "compute_cap": "12.0",
+        "driver_version": "580.178.04",
+        "index": "0",
+        "memory_mib": "97887",
+        "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "pci_bus_id": "00000000:05:00.0",
+        "uuid": "GPU-9c18c8af-0aa5-0157-3722-ef6957a4c9a6"
+      }
+    ],
+    "headroom_query": {
+      "nvml_index": 0,
+      "uuid": "GPU-9c18c8af-0aa5-0157-3722-ef6957a4c9a6"
+    },
+    "runtime_platform": {
+      "glibc": "2.39",
+      "machine": "x86_64",
+      "profile": "ubuntu-24.04"
+    },
+    "topology_sha256": "d7a84c74380339363b5aec283f30c5546dab92a7a3bd2da122e9e2ccc0ab7276"
+  },
+  "hardware_after": {
+    "devices": [
+      {
+        "compute_cap": "12.0",
+        "driver_version": "580.178.04",
+        "index": "0",
+        "memory_mib": "97887",
+        "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "pci_bus_id": "00000000:05:00.0",
+        "uuid": "GPU-9c18c8af-0aa5-0157-3722-ef6957a4c9a6"
+      }
+    ],
+    "headroom_query": {
+      "nvml_index": 0,
+      "uuid": "GPU-9c18c8af-0aa5-0157-3722-ef6957a4c9a6"
+    },
+    "runtime_platform": {
+      "glibc": "2.39",
+      "machine": "x86_64",
+      "profile": "ubuntu-24.04"
+    },
+    "topology_sha256": "d7a84c74380339363b5aec283f30c5546dab92a7a3bd2da122e9e2ccc0ab7276"
+  },
+  "lease_owner": {
+    "child_pid": 54216,
+    "requested_uuids": [
+      "GPU-9c18c8af-0aa5-0157-3722-ef6957a4c9a6"
+    ],
+    "wrapper_pid": 54137
+  },
+  "manifests": {
+    "tools/kernel-check-27b.cells": {
+      "path": "kernel-check-27b.cells",
+      "sha256": "4c8382370a988e24bc09f73fac484b2657d73a872116071cacb3e9d486cd74ea"
+    },
+    "tools/kernel-check-step35.cells": {
+      "path": "kernel-check-step35.cells",
+      "sha256": "1fdf361e60da2d2bb14cea997e12fa2462e4b722c8c86967c5064698c7338951"
+    }
+  },
+  "models_after": {
+    "/data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf": {
+      "bytes": 20188038400,
+      "sha256": "72ff9600aa2b0de77a5b27041a84448c2ce88c7b2055529fc23b3cd5bf518fd3"
+    },
+    "/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf": {
+      "bytes": 15705922304,
+      "sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a"
+    },
+    "/data/models/kernel-oracles/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf": {
+      "bytes": 5657607424,
+      "sha256": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de"
+    },
+    "/data/models/kernel-oracles/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf": {
+      "bytes": 17730509792,
+      "sha256": "649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3"
+    }
+  },
+  "models_before": {
+    "/data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf": {
+      "bytes": 20188038400,
+      "sha256": "72ff9600aa2b0de77a5b27041a84448c2ce88c7b2055529fc23b3cd5bf518fd3"
+    },
+    "/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf": {
+      "bytes": 15705922304,
+      "sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a"
+    },
+    "/data/models/kernel-oracles/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf": {
+      "bytes": 5657607424,
+      "sha256": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de"
+    },
+    "/data/models/kernel-oracles/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf": {
+      "bytes": 17730509792,
+      "sha256": "649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3"
+    }
+  },
+  "numeric_environment": {
+    "CUDA_DEVICE_ORDER": "2c5dc10dcdcdaa7e0ec0d9d6ec93d03e04971b8220d646a68d9712f029082eb7",
+    "CUDA_VISIBLE_DEVICES": "861b83c8a67a5a3f2490afa1af2250e62f502f759f01086a59dc65fcf232895e",
+    "LD_LIBRARY_PATH": "3659df4131f4f49c1b107e37c4fede255d05fbeb16e29cbbb6d4af6d522055c5",
+    "MEMRA_KC_MODELS_DIR": "79e102abb42f1f19829a7a2a1f64b843e651cc192990508f647f58265133f992",
+    "NVIDIA_TF32_OVERRIDE": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+  },
+  "numeric_environment_after": {
+    "CUDA_DEVICE_ORDER": "2c5dc10dcdcdaa7e0ec0d9d6ec93d03e04971b8220d646a68d9712f029082eb7",
+    "CUDA_VISIBLE_DEVICES": "861b83c8a67a5a3f2490afa1af2250e62f502f759f01086a59dc65fcf232895e",
+    "LD_LIBRARY_PATH": "3659df4131f4f49c1b107e37c4fede255d05fbeb16e29cbbb6d4af6d522055c5",
+    "MEMRA_KC_MODELS_DIR": "79e102abb42f1f19829a7a2a1f64b843e651cc192990508f647f58265133f992",
+    "NVIDIA_TF32_OVERRIDE": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+  },
+  "oracle_directory": "/data/models/kernel-oracles",
+  "roster": {
+    "path": "roster.tsv",
+    "sha256": "703be08e63494bed7a6a035d780c4cc2b352d5f0a8c56d665137302dc8e7ff8f"
+  },
+  "schema": "memra-native-release-run-v1",
+  "source_after": "2489175c5faec9c28b7b51b49e5be076db3b38fcc56025cf5c34803de9304204",
+  "source_before": "2489175c5faec9c28b7b51b49e5be076db3b38fcc56025cf5c34803de9304204",
+  "started_unix": 1790099576.8058176,
+  "telemetry": {
+    "path": "telemetry.csv",
+    "sha256": "2ee8dae93ebc974665151645e2cc9e72ec055a9364ae5b421544a4ffd366c90a"
+  },
+  "topology": {
+    "path": "topology.txt",
+    "sha256": "d7a84c74380339363b5aec283f30c5546dab92a7a3bd2da122e9e2ccc0ab7276"
+  }
+}

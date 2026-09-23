@@ -1107,14 +1107,14 @@ fn load_config_only(source: &str) -> Result<ModelConfig, Box<dyn std::error::Err
     }
     if path.is_dir() {
         let bytes = std::fs::read(path.join("config.json"))?;
-        return Ok(ModelConfig::from_hf(&HfConfig::parse(std::str::from_utf8(
-            &bytes,
-        )?)));
+        return Ok(ModelConfig::from_hf(&HfConfig::try_parse(
+            std::str::from_utf8(&bytes)?,
+        )?));
     }
     let (repo, revision) = parse_pinned_hf_source(source)?;
     let url = format!("https://huggingface.co/{repo}/resolve/{revision}/config.json");
     let config = http_text(&url)?.ok_or("pinned model has no config.json")?;
-    Ok(ModelConfig::from_hf(&HfConfig::parse(&config)))
+    Ok(ModelConfig::from_hf(&HfConfig::try_parse(&config)?))
 }
 
 fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
@@ -1158,7 +1158,7 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
 
     let config_bytes = std::fs::read(path.join("config.json"))?;
     let config_text = std::str::from_utf8(&config_bytes)?;
-    let config = ModelConfig::from_hf(&HfConfig::parse(config_text));
+    let config = ModelConfig::from_hf(&HfConfig::try_parse(config_text)?);
     let tokenizer = inspect_hf_tokenizer_dir(path);
     let model = StModel::open(path)?;
     let shards = local_shards(path)?;
@@ -1187,7 +1187,7 @@ fn load_remote(repo: &str, revision: &str) -> Result<SourceData, Box<dyn std::er
     let config_bytes = http_text(&format!("{base}/config.json"))?
         .ok_or("pinned model has no config.json")?
         .into_bytes();
-    let config = ModelConfig::from_hf(&HfConfig::parse(std::str::from_utf8(&config_bytes)?));
+    let config = ModelConfig::from_hf(&HfConfig::try_parse(std::str::from_utf8(&config_bytes)?)?);
     let tokenizer = inspect_remote_hf_tokenizer(&base);
     let index = http_text(&format!("{base}/model.safetensors.index.json"))?;
     let shards: Vec<String> = if let Some(index) = index {

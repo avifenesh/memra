@@ -1,0 +1,5 @@
+argmax-margin-gate: model=Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf prompt=board-2048.txt window=12 canary=0
+  explained pos=2041 margin=0.0378 < delta=0.3479
+  SUMMARY flips=1 bad=0
+  PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+  raw: /data/work/memra-native-20260923/pr556-8a3adc6e71/run/cells/argmax-1/gate-Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp-board-2048.log

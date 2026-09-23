@@ -84,7 +84,7 @@ or nonempty receipt namespace before launching the synthetic NVFP4/FP8/kernel-ch
 |---|---|---|---|
 | 0 | seconds (~2 s kernel-check scoped + build) | workspace compile + kernel-check scoped to the touched sections | every edit-compile loop |
 | 1 | ~1–2 min | tier 0 + golden-token argmax probe on ONE model per affected kernel class (+ one single-K spec probe when the diff touches the spec pipeline) | before every dev-loop commit |
-| 2 | tens of minutes | the full battery, `tools/local-ci.sh`: kernel-check ALL GREEN (~4.5 min), prime-gate, run-gen argmax per model, VERIFY-GATE, `run-spec` K=1..8 self-consistency on the Qwen 35B target + external MTP draft (`MEMRA_CI_RUNSPEC=0` skips), Gemma-4 31B stream agreement 64/64, decode-batch-gate (config + Q8_0 strict, the serving tick's exactness, wired in 2026-08-05), graph-warmup stress (`tools/graph-warmup-stress-gate.sh`, pool-growth adversarial bit-identity behind the `MEMRA_GRAPH_WARMUPS=1` default, wired 2026-08-05), serve-smoke, health-fault-gate (`tools/health-fault-gate.sh`, readiness, panic-respawn, gpu-watch latch and drain arms on the real server, wired 2026-09-22; `MEMRA_CI_HEALTH_FAULT=0` skips), serve-stress (`tools/serve-stress-gate.sh`, the c=64 concurrency contract behind the admission spec-headroom fix, wired 2026-08-06; `MEMRA_CI_STRESS=0` skips), accept-gate (`tools/accept-gate.sh`, exact served-spec acceptance counts + a 128-token text sha at the production drafter/K, wired 2026-08-06; smoke cell by default, `--full` for the 6-cell matrix, `MEMRA_CI_ACCEPT=0` skips) | **every merge, every tag** (unchanged) |
+| 2 | tens of minutes | the full battery, `tools/local-ci.sh`: kernel-check ALL GREEN (~4.5 min), prime-gate, run-gen argmax per model, VERIFY-GATE, `run-spec` K=1..8 self-consistency on the Qwen 35B target + external MTP draft (`MEMRA_CI_RUNSPEC=0` skips), Gemma-4 31B stream agreement 64/64, decode-batch-gate (config + Q8_0 strict, the serving tick's exactness, wired in 2026-08-05), graph-warmup stress (`tools/graph-warmup-stress-gate.sh`, pool-growth adversarial bit-identity behind the `MEMRA_GRAPH_WARMUPS=1` default, wired 2026-08-05), serve-smoke, health-fault-gate (`tools/health-fault-gate.sh`, readiness, panic-respawn, gpu-watch latch and drain arms on the real server, wired 2026-09-22; `MEMRA_CI_HEALTH_FAULT=0` skips), serve-stress (`tools/serve-stress-gate.sh`, the c=64 concurrency contract behind the admission spec-headroom fix, wired 2026-08-06; `MEMRA_CI_STRESS=0` skips), spec-ctx-edge (`tools/spec-ctx-edge-gate.sh`, open requests at their cap under default spec, wired 2026-09-23; `MEMRA_CI_SPEC_CTX_EDGE=0` skips), accept-gate (`tools/accept-gate.sh`, exact served-spec acceptance counts + a 128-token text sha at the production drafter/K, wired 2026-08-06; smoke cell by default, `--full` for the 6-cell matrix, `MEMRA_CI_ACCEPT=0` skips) | **every merge, every tag** (unchanged) |
 
 The battery's last correctness stage runs every memra-engine `#[ignore]` GPU test serially
 (`--test-threads=1`): the tests flip process-global gate doors and share one device, so
@@ -183,6 +183,16 @@ control round's byte for byte; `request_faults_total` reads 1, `worker_respawns_
 `[worker] PANIC`. The classification itself (request fault vs re-raised worker fault, driver-looking
 payloads, pass-through of returned errors) is CPU-only unit tests, `request_fault_guard_tests` in
 worker.rs. Receipts: `research/request-fault-20260922/`.
+
+Speculative context edge (memra#659, `tools/spec-ctx-edge-gate.sh`, in `tools/local-ci.sh`,
+`MEMRA_CI_SPEC_CTX_EDGE=0` skips): three boots of the real server on the 9B's default spec route.
+Door ON with open output 64: four open requests each 200, `finish_reason: length`, exactly 64
+tokens, then a bounded control. The same door with `MEMRA_SERVE_SPEC=0`: one open request whose
+message equals the spec arm's first byte for byte. Door OFF at `MEMRA_CTX=384`: three runaways each
+200 with `finish_reason: length` inside the cap. Every boot: no `panicked`, `argmax sentinel`,
+`[worker] FATAL`, respawn or `spec verify refused` line, `/health` 200 after the last request. The
+engine side is a CPU source census (`spec::ctx_edge_659_census`) of the round guards in the qwen
+and gemma burst loops and of the verify funnel's refusal. Receipts: `research/spec-ctx-edge-20260923/`.
 
 The docs-fit owner call is closed: tier 2 now runs the full `run-spec` K=1..8 sweep and requires
 eight per-K PASS lines plus the final `SELF-CONSISTENCY PASS` marker. The raw run is logged before
@@ -955,6 +965,32 @@ fresh child processes for unset, 0, 1, 16, 8, 32, invalid and empty values, chec
 explicit gate rollback and refusal, and verify a new thread's environment policy.
 `tools/test-dsv4-dense-control-policy.sh` exercises the actual exact-tail and
 all five dense-TC drivers under unset, explicit S16 and zero before CUDA calls.
+
+### DSv4 DSpark spec == plain on the served program (#660)
+
+`dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1] --served` runs plain,
+sequential-verify and batched T=k+1 verify arms in one process on the served defaults
+(`MEMRA_DSV4_DRAFTER=dspark MEMRA_DSV4_DECODE_PATH=device`, chunked prefill and prime, the
+matrix expert program, the serve route's depth cap and verify threshold). It requires greedy
+spec == plain byte-exact, batched verify logits and every live cache class after commit bit-equal
+to sequential decode over every compressor phase and accept count, accepted-position ring writes,
+and determinism across runs. Without `--served` it pins `MEMRA_DSV4_HC_DOT_SPLIT=0` and
+`MEMRA_DSV4_DENSE_FAST=0`, the historical program. Run it on the pair under `/tmp/memra-gpu.lock`
+for any change that touches a DSv4 dense, HC, verify or commit path. Before #660 the served run
+failed every bit-gate cell: the HC24 split ran only on one-row calls, so verify rows took the
+sequential class. Receipts: `research/dsv4f-bringup-20260923/`.
+
+
+### DSv4 gate source tape (#657)
+
+The DSv4 perf and identity gates take `<source.txt>`, the prompt tape. The originally pinned
+tape (sha256 `f6e175a6...`) was cut from a dirty tree and no reachable machine holds it.
+Rebuild the clean tape with `tools/dsv4-source-tape.py <out.txt>` from any checkout that has
+commit 9e3c8b550; it refuses a digest other than `11e4bd80...`. The two tapes share their first
+3,736,115 bytes, and `memra_engine::dsv4_source_tape::SourceTape` tokenizes only that prefix and
+asserts a 4096-token margin, so both tapes give the same gate prompt tokens. The one mode that
+reads past the prefix, the `dsv4_hc_dot_split_gate` 64-window sampler, still requires the pinned
+tape and refuses the rebuild.
 
 
 ### Model-owned device admission and reclaim (#544)

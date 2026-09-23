@@ -12,6 +12,7 @@ use memra_engine::dsv4_gpu::{
     dsv4_sampler_order,
 };
 use memra_engine::dsv4_sampler::{Dsv4DeviceSampler, Dsv4Sampler, dsv4_sampler};
+use memra_engine::dsv4_source_tape::SourceTape;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -27,7 +28,6 @@ const PROMPT_TOKENS: usize = 256;
 const OUTPUT_TOKENS: usize = 256;
 const REPEATS: usize = 2;
 const ATTENTION_REPEATS: usize = 5;
-const SOURCE_SHA256: &str = "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded";
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Counters {
@@ -613,24 +613,20 @@ fn main() {
         "sampled plain TP/EP gate refuses DSpark"
     );
     let dir = Path::new(&args[1]);
-    let source = std::fs::read_to_string(&args[2]).expect("source");
-    assert_eq!(
-        format!("{:x}", Sha256::digest(source.as_bytes())),
-        SOURCE_SHA256,
-        "pinned source"
-    );
+    let tape = SourceTape::read(&args[2]).expect("source tape");
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
-    let prompt = tokenizer.encode(
-        &format!("Review this inference engine source:\n\n{source}"),
-        true,
+    let prompt = tape.prompt(
+        &tokenizer,
+        "Review this inference engine source:\n\n",
+        PROMPT_TOKENS,
     );
-    assert!(prompt.len() >= PROMPT_TOKENS);
 
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
     Dsv4Gpu::set_attention_tp_for_gate(attention_mode);
     println!("NUMERIC_CLASS {numeric_class}");
     println!(
-        "PROTOCOL {{\"plain_only\":true,\"sampled\":true,\"topology\":\"tp_ep_all_layers\",\"attention_tp\":{attention_mode},\"prompt_tokens\":{PROMPT_TOKENS},\"output_tokens\":{OUTPUT_TOKENS},\"repeats\":{repeats},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260907,\"sampler_order\":\"{sampler_name}\",\"timing_scope\":\"sample_plus_forward_envelope\",\"sampling_in_timing\":true,\"source_sha256\":\"{SOURCE_SHA256}\",\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false}}"
+        "PROTOCOL {{\"plain_only\":true,\"sampled\":true,\"topology\":\"tp_ep_all_layers\",\"attention_tp\":{attention_mode},\"prompt_tokens\":{PROMPT_TOKENS},\"output_tokens\":{OUTPUT_TOKENS},\"repeats\":{repeats},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260907,\"sampler_order\":\"{sampler_name}\",\"timing_scope\":\"sample_plus_forward_envelope\",\"sampling_in_timing\":true,\"source_sha256\":\"{}\",\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false}}",
+        tape.sha256
     );
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses

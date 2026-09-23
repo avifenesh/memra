@@ -1,0 +1,8 @@
+.RUN build-engine: ['cargo', 'build', '--release', '-j', '4', '-p', 'memra-engine', '--bin', 'kernel-check', '--bin', 'run-gen', '--bin', 'run-spec', '--bin', 'argmax-margin-probe']
+RUN build-server: ['cargo', 'build', '--release', '-j', '4', '-p', 'memra-server', '--bin', 'memra-server']
+RUN build-focused: ['cargo', 'test', '--release', '-j', '4', '-p', 'memra-engine', '--test', 'step_rope_load_gpu', '--no-run', '--message-format=json']
+........
+----------------------------------------------------------------------
+Ran 9 tests in 0.016s
+
+OK

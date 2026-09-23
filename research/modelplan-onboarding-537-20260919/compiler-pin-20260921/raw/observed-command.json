@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "cargo",
+    "build",
+    "--release",
+    "-j",
+    "4",
+    "-p",
+    "memra-engine",
+    "--bin",
+    "kernel-check",
+    "--bin",
+    "run-gen",
+    "--bin",
+    "run-spec",
+    "--bin",
+    "argmax-margin-probe"
+  ],
+  "exit_code": 0,
+  "timeout": null,
+  "required_output_matched": true,
+  "started_unix": 1789937311.789361,
+  "finished_unix": 1789937525.0284696,
+  "log_sha256": "aec6474be6179d4869fec7d0155f682a73d839b0b54837a9ce438815b8ee2f8b"
+}

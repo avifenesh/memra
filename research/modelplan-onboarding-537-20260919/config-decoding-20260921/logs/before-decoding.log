@@ -1,0 +1,26 @@
+     Locking 12 packages to latest Rust 1.97.1 compatible versions
+   Compiling version_check v0.9.5
+   Compiling libc v0.2.189
+   Compiling typenum v1.20.1
+   Compiling cfg-if v1.0.5
+   Compiling generic-array v0.14.7
+   Compiling cpufeatures v0.2.17
+   Compiling memmap2 v0.9.11
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling memra-gguf v0.138.0 (<base-worktree>/crates/memra-gguf)
+   Compiling q537-config-decoding-probe v0.1.0 (<audit>/probe)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.24s
+     Running `<audit>/target/debug/q537-config-decoding-probe`
+literal_relu: REFUSE model plan does not implement declared hidden_act=relu
+escaped_key_relu: ACCEPT Dense(DenseMlpPlan { intermediate_size: 64, activation: Silu })
+escaped_supported_silu: REFUSE model plan does not implement declared hidden_act=si\u006cu
+wrong_type_number: ACCEPT Dense(DenseMlpPlan { intermediate_size: 64, activation: Silu })
+duplicate_literal_keys: ACCEPT Dense(DenseMlpPlan { intermediate_size: 64, activation: Silu })
+duplicate_decoded_keys: ACCEPT Dense(DenseMlpPlan { intermediate_size: 64, activation: Silu })
+nested_escaped_relu: ACCEPT Dense(DenseMlpPlan { intermediate_size: 64, activation: Silu })
+leading_garbage: ACCEPT Dense(DenseMlpPlan { intermediate_size: 64, activation: Silu })
+trailing_garbage: ACCEPT Dense(DenseMlpPlan { intermediate_size: 64, activation: Silu })
+truncated_object: ACCEPT Dense(DenseMlpPlan { intermediate_size: 64, activation: Silu })

@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "wrapper_pid": 21536,
+  "child_pid": 21541,
+  "requested_uuids": [
+    "GPU-7edaf141-7bed-7e99-10d0-fc79d455c842"
+  ],
+  "lock_order": [
+    "GPU-7edaf141-7bed-7e99-10d0-fc79d455c842"
+  ],
+  "lock_files": {
+    "GPU-7edaf141-7bed-7e99-10d0-fc79d455c842": "/tmp/memra-gpu-locks/GPU-7edaf141-7bed-7e99-10d0-fc79d455c842.lock"
+  },
+  "lock_inodes": {
+    "GPU-7edaf141-7bed-7e99-10d0-fc79d455c842": {
+      "inode": 535326,
+      "device_major": 253,
+      "device_minor": 1
+    }
+  },
+  "devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-7edaf141-7bed-7e99-10d0-fc79d455c842",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:04:00.0"
+    }
+  ],
+  "all_devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-7edaf141-7bed-7e99-10d0-fc79d455c842",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:04:00.0"
+    }
+  ],
+  "command": [
+    "env",
+    "MEMRA_GPU_LOCK=/tmp/memra-gpu.lock",
+    "MEMRA_HOSTGATE_CACHE_MB=80",
+    "MEMRA_HOSTGATE_TEETH=1",
+    "bash",
+    "tools/kv-host-spill-identity-gate.sh",
+    "/data/models/kernel-oracles/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf",
+    "/data/work/memra-native-20260923/pr556-8a3adc6e71/build/target/release/memra-server",
+    "/data/work/memra-native-20260923/host-556-8a3adc6e71-cache80/teeth"
+  ],
+  "started_unix": 1790124143.5018663,
+  "state": "finished",
+  "exit_code": 1,
+  "child_exit_code": 1,
+  "finished_unix": 1790124158.6411693,
+  "timed_out": false,
+  "interrupted_signal": null,
+  "lingering_compute": []
+}

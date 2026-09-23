@@ -2,6 +2,7 @@
 //! Derived from the qualified graph split-K protocol; other defaults stay ON.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg, dsv4_prof_on};
 use memra_engine::dsv4_sampler::{Dsv4Sampler, dsv4_sampler};
+use memra_engine::dsv4_source_tape::SourceTape;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -33,7 +34,6 @@ fn default_program() {
 const PRIME: usize = 256;
 const OUTPUT: usize = 256;
 const CAPACITY: usize = PRIME + OUTPUT + 8;
-const SOURCE_SHA: &str = "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded";
 fn sha_f32(row: &[f32]) -> String {
     assert!(row.iter().all(|v| v.is_finite()), "finite final logits");
     let mut h = Sha256::new();
@@ -144,11 +144,14 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
             let forward = segment != 1;
             // Deleted entry families: a stale capture carrying one would be
             // dispatching a kernel this tree no longer builds (memra #461).
+            // The fused norm/RoPE kernel left with its door in memra #490; its norm and
+            // rotation are the separate rmsnorm and rope nodes counted below.
             for deleted in [
                 "moe_m1_graph_splitk_partial_kernel",
                 "moe_m1_graph_splitk_reduce_kernel",
                 "moe_m1_splitk_fast_partial_kernel",
                 "moe_m1_splitk_fast_reduce_kernel",
+                "dsv4_norm_rope_f32_fixed_order_kernel",
             ] {
                 assert_eq!(count_kernel(&dot, deleted), 0, "{deleted} is deleted");
             }
@@ -166,20 +169,16 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
                     0
                 }
             );
-            assert_eq!(
-                count_kernel(&dot, "dsv4_norm_rope_f32_fixed_order_kernel"),
-                if forward { 43 } else { 0 }
-            );
             let norms = match segment {
-                0 => 86,
-                2 => 128,
-                3 => 148,
+                0 => 129,
+                2 => 171,
+                3 => 191,
                 _ => usize::from(rank == 1),
             };
             assert_eq!(count_kernel(&dot, "dsv4_rmsnorm_f32acc_kernel"), norms);
             assert_eq!(
                 count_kernel(&dot, "dsv4_rope_kernel"),
-                if forward { 107 } else { 0 }
+                if forward { 150 } else { 0 }
             );
             assert_eq!(count_kernel(&dot, "dsv4_dense_exact_tail_fp8_kernel"), 0);
             assert_eq!(count_kernel(&dot, "dsv4_dense_exact_tail_dots_kernel"), 0);
@@ -545,17 +544,13 @@ fn main() {
         top_k: 0,
         seed: 20260907,
     };
-    let source = std::fs::read_to_string(&args[2]).expect("source tape");
-    assert_eq!(
-        format!("{:x}", Sha256::digest(source.as_bytes())),
-        SOURCE_SHA
-    );
+    let tape = SourceTape::read(&args[2]).expect("source tape");
     let tokenizer = Tokenizer::from_hf_dir(Path::new(&args[1])).expect("tokenizer");
-    let prompt = tokenizer.encode(
-        &format!("Review this inference engine source:\n\n{source}"),
-        true,
+    let prompt = tape.prompt(
+        &tokenizer,
+        "Review this inference engine source:\n\n",
+        PRIME,
     );
-    assert!(prompt.len() >= PRIME);
     let output = PathBuf::from(&args[3]);
     std::fs::create_dir(&output).expect("new output directory");
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
@@ -706,6 +701,7 @@ mod evidence {
     //! Owner evidence only: eight 256-position TF tapes and 64 bounded greedy twins.
     use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg, dsv4_prof_on};
     use memra_engine::dsv4_sampler::{Dsv4Sampler, dsv4_sampler};
+    use memra_engine::dsv4_source_tape::SourceTape;
     use memra_gguf::dsv4_forward::ActQuantVariant;
     use memra_tokenizer::Tokenizer;
     use sha2::{Digest, Sha256};
@@ -717,7 +713,6 @@ mod evidence {
     const PRIME: usize = 256;
     const TF: usize = 256;
     const GREEDY: usize = 64;
-    const SOURCE_SHA: &str = "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded";
     fn token_hash(tokens: &[u32]) -> String {
         let mut h = Sha256::new();
         for t in tokens {
@@ -848,11 +843,9 @@ mod evidence {
             assert_eq!(std::env::var(name).as_deref(), Ok(value), "{name}");
         }
         assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
-        let source = std::fs::read_to_string(&args[2]).unwrap();
-        assert_eq!(
-            format!("{:x}", Sha256::digest(source.as_bytes())),
-            SOURCE_SHA
-        );
+        // The 64 windows span the whole tape, past the prefix the rebuild shares (#657).
+        let tape = SourceTape::read(&args[2]).unwrap();
+        let source = tape.full_pinned();
         let tokenizer = Tokenizer::from_hf_dir(Path::new(&args[1])).unwrap();
         let out = PathBuf::from(&args[3]);
         std::fs::create_dir(&out).unwrap();

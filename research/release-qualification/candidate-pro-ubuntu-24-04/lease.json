@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "wrapper_pid": 18347,
+  "child_pid": 18353,
+  "requested_uuids": [
+    "GPU-7edaf141-7bed-7e99-10d0-fc79d455c842"
+  ],
+  "lock_order": [
+    "GPU-7edaf141-7bed-7e99-10d0-fc79d455c842"
+  ],
+  "lock_files": {
+    "GPU-7edaf141-7bed-7e99-10d0-fc79d455c842": "/tmp/memra-gpu-locks/GPU-7edaf141-7bed-7e99-10d0-fc79d455c842.lock"
+  },
+  "lock_inodes": {
+    "GPU-7edaf141-7bed-7e99-10d0-fc79d455c842": {
+      "inode": 535326,
+      "device_major": 253,
+      "device_minor": 1
+    }
+  },
+  "devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-7edaf141-7bed-7e99-10d0-fc79d455c842",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:04:00.0"
+    }
+  ],
+  "all_devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-7edaf141-7bed-7e99-10d0-fc79d455c842",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:04:00.0"
+    }
+  ],
+  "command": [
+    "python3",
+    "-B",
+    "tools/qualify-release.py",
+    "capture",
+    "--expected-head",
+    "8a3adc6e712a3c23337e28aeb755ab50955ad832",
+    "--build",
+    "/data/work/memra-native-20260923/pr556-8a3adc6e71/build",
+    "--out",
+    "/data/work/memra-native-20260923/pr556-8a3adc6e71/run",
+    "--oracles",
+    "/data/models/kernel-oracles"
+  ],
+  "started_unix": 1790122310.6304328,
+  "state": "finished",
+  "exit_code": 0,
+  "child_exit_code": 0,
+  "finished_unix": 1790122651.5276368,
+  "timed_out": false,
+  "interrupted_signal": null,
+  "lingering_compute": []
+}

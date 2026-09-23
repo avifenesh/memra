@@ -61,6 +61,16 @@
 #                      deadline; typed refusal, nothing published, the tier latches and joins the helper; then r3's own
 #                      demote is refused typed (`the tier latched off while settling the pending demote`), exactly once.
 #
+# WP-A day 31 (memra#536 Move 2 owed item 1, the D2H half, research/spill-a-20260919/DAY31.md): the off-tick
+# demote's f32 span attach. One cell, two boots (door ON with the fault, then door OFF as the byte reference):
+#   span-refusal   MEMRA_KV_HOST_FAULT=contract-spans: r1 P_A seeds E_A; r2 P_B evicts E_A, whose demote builds
+#                  every recurrent plane into a span (charged staging from the context's set) and takes the
+#                  injected attach refusal: every span back, the KV ticket unwound typed, the tier on, `N f32 spans
+#                  handed back` with N the span count of the next demote's own copy-complete line; r3 P_C evicts
+#                  E_B, whose demote completes with its spans landed under the ticket, reuses the staging set (one
+#                  `tier span staging:` line in the boot) and publishes; r4 P_B hits E_B on the host and promotes.
+#                  The OFF boot serves the same four requests; r1..r4 are byte-equal across the two boots.
+#
 # usage: kv-host-contract-fault-gate.sh [--external-lock FD] <model.gguf> <server_bin> <evidence_dir>
 # env:   MEMRA_HOSTGATE_CACHE_MB (default 256)  device prefix budget; must hold ONE seed entry but not two
 #        MEMRA_HOSTGATE_HOST_MB  (default 8192) host tier budget
@@ -500,12 +510,116 @@ hcell() { # $1 name $2 fault $3 refusal kind (`helper gone` | `digests never lan
     chk "$name: no host-tier refusal line beyond the injected one and r3's latched-off refusal" only_these_refusals "$log" "demote failed (tier hash $kind" "demote refused: the tier latched off while settling the pending demote"
 }
 
+spans_refusal_matches_copy() { # $1 log: the refusal's `N f32 spans handed back` N equals the span count of the
+                               # first copy-complete line after it, and N >= 1
+    python3 - "$1" <<'PYEOF'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+rx = re.compile(r"demote failed \(tier D2H spans refused: injected failure \(MEMRA_KV_HOST_FAULT=contract-spans\) \(([0-9]+) f32 spans handed back\)\); nothing demoted")
+hit = next(((i, int(m.group(1))) for i, l in enumerate(lines) if (m := rx.search(l))), None)
+if hit is None:
+    print("no injected spans refusal"); sys.exit(1)
+i, n = hit
+cx = re.compile(r"demote copy complete off the tick: .* \(([0-9]+) KV, ([0-9]+) f32 spans\)")
+cc = next((int(m.group(2)) for l in lines[i + 1:] if (m := cx.search(l))), None)
+print(f"refusal handed back {n} span(s); the next copy-complete carries {cc}")
+sys.exit(0 if cc is not None and n >= 1 and cc == n else 1)
+PYEOF
+}
+spans_landed_after() { # $1 log: the first D2H receipt after the refusal says its spans landed, as many as were handed back
+    python3 - "$1" <<'PYEOF'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+rx = re.compile(r"\(([0-9]+) f32 spans handed back\)\); nothing demoted")
+hit = next(((i, int(m.group(1))) for i, l in enumerate(lines) if "MEMRA_KV_HOST_FAULT=contract-spans" in l and (m := rx.search(l))), None)
+if hit is None:
+    print("no injected spans refusal"); sys.exit(1)
+i, n = hit
+rr = re.compile(r"contracts door D2H receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* require=ok .*; ([0-9]+) f32 spans landed under the ticket and taken back before the retire")
+first = next((l for l in lines[i + 1:] if "contracts door D2H receipt" in l), None)
+m = rr.search(first) if first is not None else None
+got = int(m.group(1)) if m else "none"
+print(f"the next D2H receipt landed {got} span(s), {n} were handed back")
+sys.exit(0 if got == n else 1)
+PYEOF
+}
+one_staging_fill() { # $1 log: exactly one `tier span staging:` line in the boot (the refused demote filled the set, every
+                     # later demote reused it) and its fresh-buffer count equals the refusal's N
+    python3 - "$1" <<'PYEOF'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+fills = [int(m.group(1)) for l in lines if (m := re.search(r"tier span staging: ([0-9]+) fresh pinned buffer\(s\), [0-9]+ bytes charged", l))]
+ref = next((int(m.group(1)) for l in lines if "MEMRA_KV_HOST_FAULT=contract-spans" in l and (m := re.search(r"\(([0-9]+) f32 spans handed back\)", l))), None)
+print(f"staging fill line(s) {fills}, refusal N {ref}")
+sys.exit(0 if len(fills) == 1 and ref is not None and fills[0] == ref else 1)
+PYEOF
+}
+await_settled() { # $1 log: every `demote submitted off the tick` has its `[prefix-host] demote: ` publication (bounded 15 s)
+    for _ in $(seq 1 150); do
+        if [ "$(grep -c 'demote submitted off the tick' "$1")" -eq "$(grep -c '\[prefix-host\] demote: ' "$1")" ]; then return 0; fi
+        sleep 0.1
+    done
+    return 1
+}
+texts_equal_arms() { # $1 prefix A $2 prefix B $3 count: rK's text of arm A is byte-equal to rK's of arm B for K=1..count
+    python3 - "$1" "$2" "$3" <<'PYEOF'
+import json, sys
+a, b, n = sys.argv[1], sys.argv[2], int(sys.argv[3])
+bad = [k for k in range(1, n + 1)
+       if json.load(open(f"{a}-r{k}.json"))["choices"][0]["text"] != json.load(open(f"{b}-r{k}.json"))["choices"][0]["text"]]
+print("byte-unequal request(s):", bad if bad else "none")
+sys.exit(0 if not bad else 1)
+PYEOF
+}
+scell() { # WP-A day 31: MEMRA_KV_HOST_FAULT=contract-spans (door ON), then the same four requests door OFF
+    local name=span-refusal fault=contract-spans log="$EV/span-refusal-server.log" offlog="$EV/span-refusal-off-server.log"
+    local refusal="demote failed (tier D2H spans refused: injected failure (MEMRA_KV_HOST_FAULT=contract-spans) ("
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, the off-tick span attach's red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_B" "$EV/$name-r2.json"
+    req "$P_C" "$EV/$name-r3.json"
+    local awaited=0 settled=0
+    await_publication "$refusal" "$log" || awaited=$?  # a timed-out wait is a failed check below, never an abort under set -e
+    req "$P_B" "$EV/$name-r4.json"
+    await_settled "$log" || settled=$?
+    stop
+    echo "== cell $name: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) =="
+    boot "MEMRA_KV_HOST_CONTRACTS=0" "$offlog"
+    req "$P_A" "$EV/$name-off-r1.json"
+    req "$P_B" "$EV/$name-off-r2.json"
+    req "$P_C" "$EV/$name-off-r3.json"
+    req "$P_B" "$EV/$name-off-r4.json"
+    stop
+    chk "$name: r3's publication landed before r4 (bounded 15 s wait)" test "$awaited" -eq 0
+    chk "$name: every submitted demote published before stop (bounded 15 s wait)" test "$settled" -eq 0
+    chk "$name: four completions served" four_served "$EV/$name"
+    chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
+    chk "$name: exactly one typed injected spans refusal" count_eq "$refusal" "$log" 1
+    chk "$name: the refusal's N spans handed back equals the next copy-complete's span count (N >= 1)" spans_refusal_matches_copy "$log"
+    chk "$name: the next D2H receipt landed its N spans under the ticket" spans_landed_after "$log"
+    chk "$name: the refused ticket consumed one sequence (the next receipt's seq is 2 plus captures)" receipt_seq_accounts "$refusal" 2 "$log"
+    chk "$name: the next demote publishes" after "$refusal" "\\[prefix-host\\] demote: " "$log"
+    chk "$name: the staging set filled once and every later demote reused it" one_staging_fill "$log"
+    chk "$name: r4 hit E_B on the host and promoted" after_any "$refusal" "\\[prefix-host\\] promote: " "$log"
+    chk "$name: the tier never latched off" absent "TIER DISABLED" "$log"
+    chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+    chk "$name: no host-tier refusal line beyond the injected one" one_refusal_only "$log" "$refusal"
+    chk "$name: OFF boot: four completions served" four_served "$EV/$name-off"
+    chk "$name: OFF boot: the contracts door is off" absent "contracts door ON" "$offlog"
+    chk "$name: OFF boot: r4 hit E_B on the host and promoted (the same route shape)" grep -q "\\[prefix-host\\] promote: " "$offlog"
+    chk "$name: r1..r4 byte-equal to the door-OFF boot" texts_equal_arms "$EV/$name" "$EV/$name-off" 4
+}
+
 # WP-A day 22: the D2D receipt's red arm, one cell per class.
 dcell_capture
 dcell_restore
 # WP-A day 28: the hash helper's red arms, one cell each.
 hcell hash-helper-gone hash-helper-gone "helper gone" 0
 hcell hash-never-lands hash-never-lands "digests never landed" 1
+# WP-A day 31: the off-tick span attach's red arm, byte-compared with the door-OFF boot.
+scell
 
 if [ "$FAILS" -eq 0 ]; then
     echo "KV-HOST-CONTRACT-FAULT GATE: ALL GREEN"
