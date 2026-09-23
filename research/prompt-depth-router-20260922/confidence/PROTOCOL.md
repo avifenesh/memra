@@ -68,14 +68,31 @@ are prior cautions, not same-hardware controls for this 32 GB RTX 5090 run.
 
 ## Adaptive continuation
 
-Freeze an online C controller before held-out requests. It must carry state
-across requests, update only after committed output, probe lower and higher
-cutoffs, include probe and confidence-read cost, and report every C move.
-Compare it with C=0 and the best calibrated **fixed** cutoff at K=3 on the
-same held-out code cells. Add fixed K=2 with C=0 and Memra's native depth
-adjustment as simpler depth controls; a confidence policy that only mimics a
-cheaper fixed depth has not demonstrated a learning gain. Any change to graph capture or to the
-rejection-sampling path needs its own exactness gate. A positive fixed C
-alone does not establish a gain from adapting C; a negative fixed-C grid
-does not prove every adaptive rule fails. No served default is changed by
-this research.
+The fixed-C grid and a disjoint held-out code comparison are the entry gate
+for a live C controller. Development selected C=0.15 at +6.81% pooled
+tok/s versus C=0, but the separately versioned held-out result was +1.03%
+pooled, with a 4K loss and no consistent gain across lengths. A frozen
+offline policy replay made zero C adoptions and was -0.17% versus its
+calibrated fixed C=0.15 even before policy CPU or calibration cost. The
+current raw-probability cutoff therefore did not advance to a live online
+controller. The failed first all-format qualifier, successful separate
+code-only qualifier, fixed grid and offline replay remain banked in
+`FAILED-QUALIFICATION.json`, `CODE-ONLY-V2-PROTOCOL.md`, `RESULTS.md`,
+`HELDOUT-RESULTS.md` and `OFFLINE-RESULTS.json`.
+
+The next live experiment needs a separately frozen learner that carries
+state across requests, updates only after committed output, probes lower
+and higher cutoffs, includes probe and confidence-read cost, and records
+every C move. First establish a cost-inclusive hindsight oracle over
+uncensored full K=3 offers on the same target-token tape; a stitched
+best-of-arm score from different sampled outputs is not that oracle.
+Calibrate the proposed score against conditional
+accepted-prefix survival first; the current raw MTP probability is
+computed at temperature 1 while proposals here use temperature 0.7 with
+top-k/top-p filtering. Compare live learning with C=0, the best calibrated
+**fixed** cutoff at K=3, fixed K=2/C=0 and native depth adjustment on
+disjoint code cells. A policy that mimics a cheaper fixed depth has not
+demonstrated a learning gain. Changes to graph capture or the
+rejection-sampling path require their own exactness gate. A negative
+fixed-C result does not prove every adaptive rule fails. No served
+default changes in this research.

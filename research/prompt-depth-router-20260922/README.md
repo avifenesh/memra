@@ -1,13 +1,21 @@
 # Fast per-request depth routing
 
+On the tested Qwen code corpus, keep K=3/C=0 as the research control;
+neither prompt-prefix depth routing nor C=0.15 establishes a stable win.
+The [confidence verdict](confidence/VERDICT.md) covers K=3 with confidence-based
+draft stopping. A development grid selected C=0.15 at +6.81% pooled
+tok/s, but the separately versioned code-only held-out comparison measured
++1.03% pooled, with a 4K loss of 4.98%. A frozen offline policy replay
+did not beat its calibrated fixed C, and no live threshold learner or
+served default was promoted.
+
 For the tested Qwen3.8 code requests, keep K=3 as the research control.
 The K=4 code setting in `prefix/prefix_policy.rs` is the frozen experimental
 arm from the completed study: its pooled throughput changes versus K=3
 were negative at 256, 1K and 4K prompt tokens, with pointwise intervals that
 include zero; the 16K comparison was also inconclusive. It is not a Qwen serving
-recommendation. The [confidence continuation](confidence/PROTOCOL.md) tests
-whether draft stopping within a K=3 ceiling helps on that exact model and
-request shape; it does not change a served default.
+recommendation. The [confidence protocol](confidence/PROTOCOL.md) fixes
+the K=3 ceiling for its separate request shape.
 
 The primary continuation is [`prefix/PROTOCOL.md`](prefix/PROTOCOL.md):
 forecasters read only the first X user-prompt tokens, with X=64,128,256; compare

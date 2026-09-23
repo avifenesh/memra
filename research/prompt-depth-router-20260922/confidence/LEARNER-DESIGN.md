@@ -4,7 +4,8 @@ K=3 is the ceiling for the code-request research arm. A confidence gate may
 offer zero to three MTP draft tokens in each round. A learned cutoff should
 change that gate only when the extra accepted output is worth its draft,
 confidence-read and verification cost on the running artifact and hardware.
-The fixed-C grid prices the existing gate before a learner is built.
+The completed fixed-C grid and code-only held-out set did not establish a
+stable win for the current raw-probability gate; see `VERDICT.md`.
 
 ## What the learner may observe
 
@@ -46,12 +47,16 @@ the conditional-survival target and the need for calibration. Learning to
 Draft (arXiv:2603.01639, §3.1 and §6.3) shows why cycle throughput is a
 better reward than acceptance length alone.
 
-At K=3 the extra host confidence read may cost more than a short failed
-draft. If the fixed-C grid loses, first separate the confidence-read,
-draft and verify clocks on the same binary. A cheaper confidence path
-would then get its own exactness and paired wall-time cell before a
-learner uses it. This keeps a negative cutoff recipe from being read as
-evidence that all confidence-aware stopping is impossible.
+The post-result 512-output-token phase control separated the confidence
+read from actual cuts on the same binary. Off and probability-only arms
+returned identical sampled token tapes and K=3 draft lengths in both
+orders. Probability-only added 0.85% to draft-phase time per 100 tokens,
+while complete-request rate was nearly equal (101.84 versus 101.80
+tok/s). This capped diagnostic does not explain the free-generation
+held-out variability by itself. A cheaper confidence path would still
+need its own exactness and paired wall-time cell before a learner uses
+it. The negative cutoff recipe does not rule out other calibrated
+confidence signals.
 
 One concrete cost candidate is the sampled draft path's existing filtered
 `filter_stats` output (`cu/spec_sample.cu`): it already emits the row max,
@@ -63,6 +68,16 @@ so it needs a matched exactness gate, acceptance calibration and a direct
 cost/quality comparison; it is not an assumed optimization.
 
 ## Controls and promotion boundary
+
+Establish a cost-inclusive oracle upper bound before fitting a controller:
+record full K=3 offers and verified accepted prefixes on disjoint code
+requests, then price the best hindsight stopping choices against the
+best fixed C on the same target-token tape. Never-offered slots have no
+labels, so the oracle corpus must include an uncensored full-offer arm;
+the current separately sampled C arms cannot supply an attainable
+counterfactual oracle by choosing their fastest request after the fact.
+If the bounded oracle cannot clear the fixed-control gain floor after
+confidence-read and exploration costs, stop the learner work there.
 
 Compare live adaptive C with C=0, the best calibrated fixed C, fixed K=2
 at C=0, and native depth adjustment on disjoint code requests. Keep H and
