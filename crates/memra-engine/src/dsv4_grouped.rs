@@ -6,6 +6,7 @@ use crate::mmq_ffi::{
     memra_bind_device, memra_moe_kq_gemm_sk, memra_moe_kq_gemm_sk_gu,
     memra_moe_kq_gemm_sk_gu_half2, memra_moe_kq_gemm_sk_gu_m1, memra_moe_kq_gemm_sk_gu_m1_half2,
     memra_moe_kq_gemm_sk_m1, memra_moe_kq_gemm_sk_m1_half2, memra_moe_kq_m1_stream,
+    memra_moe_kq_mrow_stream,
 };
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
 use memra_runtime::Gpu;
@@ -193,9 +194,15 @@ pub(crate) struct GroupedWork {
     pub contribution: CudaSlice<f32>,
     pub bytes: u64,
     plain_single: bool,
+    /// A multi-row step small enough for the multi-row stream visitor (a verify round).
+    stream_rows: bool,
     gu_fuse: bool,
     phase: MatrixPhase,
 }
+
+/// Largest step the multi-row stream visitor takes. Verify rounds sit far below it; wider
+/// prefill chunks keep sktail's 32-row tiles, which this lane did not measure against.
+pub(crate) const MROW_STREAM_MAX_ROWS: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MatrixPhase {
@@ -332,6 +339,7 @@ impl GroupedWork {
                 .map_err(|e| format!("grouped contribution allocation: {e}"))?,
             bytes,
             plain_single: false,
+            stream_rows: false,
             gu_fuse: false,
             phase: MatrixPhase::Idle,
         })
@@ -356,6 +364,7 @@ impl GroupedWork {
         self.phase = MatrixPhase::Failed;
         let slots = rows.checked_mul(topk).ok_or("matrix slot count overflow")?;
         self.plain_single = rows == 1;
+        self.stream_rows = rows > 1 && rows <= MROW_STREAM_MAX_ROWS;
         let hidden = self.input.cols;
         let inter = self.intermediate.cols;
         if rows == 0
@@ -480,12 +489,19 @@ impl GroupedWork {
                     );
                 }
             } else {
-                let stream = self.plain_single
-                    && crate::moe_f16g_tail_on()
-                    && crate::dsv4_moe_m1_stream_on();
+                let stream = crate::moe_f16g_tail_on() && crate::dsv4_moe_m1_stream_on();
                 for (projection, dst) in [(0, &mut *out.g1), (2, &mut *out.g3)] {
-                    if stream {
+                    if stream && self.plain_single {
                         self.routes.project_stream(
+                            &s,
+                            table,
+                            projection,
+                            &self.input,
+                            self.intermediate.cols,
+                            dst,
+                        )?;
+                    } else if stream && self.stream_rows {
+                        self.routes.project_mrow(
                             &s,
                             table,
                             projection,
@@ -586,6 +602,18 @@ impl GroupedWork {
                 && crate::dsv4_moe_m1_stream_on()
             {
                 self.routes.project_stream(
+                    &s,
+                    table,
+                    1,
+                    &self.intermediate,
+                    self.input.cols,
+                    &mut self.contribution,
+                )?;
+            } else if self.stream_rows
+                && crate::moe_f16g_tail_on()
+                && crate::dsv4_moe_m1_stream_on()
+            {
+                self.routes.project_mrow(
                     &s,
                     table,
                     1,
@@ -768,6 +796,54 @@ impl GroupedRoutes {
         };
         if rc != 0 {
             return Err(format!("matrix stream projection {projection} rc={rc}"));
+        }
+        Ok(())
+    }
+
+    /// Multi-row streaming visitor: `project_stream`'s program for groups of any size, the
+    /// rows of each 16-row chunk sharing one pass over the expert.
+    fn project_mrow(
+        &self,
+        s: &Arc<CudaStream>,
+        table: &CudaSlice<u64>,
+        projection: i32,
+        input: &HalfMirror,
+        out_f: usize,
+        output: &mut CudaSlice<f32>,
+    ) -> Res<()> {
+        if table.len() != self.experts * 6
+            || output.len() < self.live_slots * out_f
+            || crate::moe_f16g_mode() < 2
+            || crate::dsv4_moe_f16g_sk_params().0 < 0
+            || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)
+        {
+            return Err(
+                "matrix multi-row stream projection requires a complete local table and direct visitor"
+                    .into(),
+            );
+        }
+        let rc = unsafe {
+            memra_moe_kq_mrow_stream(
+                table.device_ptr(s).0 as *const u64,
+                projection,
+                self.experts as i32,
+                self.ids.device_ptr(s).0 as *const i32,
+                input.half.device_ptr(s).0 as *const std::ffi::c_void,
+                output.device_ptr_mut(s).0 as *mut f32,
+                input.scale.device_ptr(s).0 as *const f32,
+                self.offsets.device_ptr(s).0 as *const i32,
+                self.experts as i32,
+                self.live_slots as i32,
+                input.cols as i32,
+                out_f as i32,
+                (input.cols / 2) as i64,
+                s.cu_stream().cast(),
+            )
+        };
+        if rc != 0 {
+            return Err(format!(
+                "matrix multi-row stream projection {projection} rc={rc}"
+            ));
         }
         Ok(())
     }
@@ -1490,6 +1566,247 @@ mod tests {
         crate::clear_dsv4_moe_m1_stream_for_gate();
         assert_eq!(crate::dsv4_moe_m1_stream_dispatches() - stream_before, 2);
         assert_eq!(crate::moe_f16g_down_m1_half2_dispatches() - half2_before, 1);
+        drop((shard_tables, shard_w, shard_s));
+    }
+
+    #[test]
+    #[ignore = "requires one CUDA GPU; multi-row streaming visitor identity only"]
+    fn cuda_mrow_stream_matches_sktail_bit_for_bit() {
+        use super::{GroupedWork, MROW_STREAM_MAX_ROWS, modelopt_table};
+        use crate::dsv4_ep::{EpCompute, EpScratch};
+        use crate::dsv4_ffi as k;
+        use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
+
+        fn view(x: &mut EpScratch) -> EpCompute<'_> {
+            EpCompute {
+                xq: &x.xq,
+                xs: &x.xs,
+                ids: &x.ids,
+                weights: &x.weights,
+                g1: &mut x.g1,
+                g3: &mut x.g3,
+                h: &mut x.h,
+                hq: &mut x.hq,
+                hs: &mut x.hs,
+                contribution: &mut x.contribution,
+            }
+        }
+        fn bits(values: &[f32]) -> Vec<u32> {
+            values.iter().map(|value| value.to_bits()).collect()
+        }
+
+        assert!(crate::moe_f16g_mode() >= 2);
+        assert!(crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT));
+        assert!(crate::moe_f16g_tail_on());
+        let gpu = memra_runtime::Gpu::new(0).unwrap();
+        let s = gpu.stream();
+
+        let (ne, hidden, inter, topk) = (16, 4096, 2048, 6);
+        let wb = hidden * inter / 2;
+        let sb = hidden * inter / 16;
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let weight_data: Vec<u8> = (0..ne * 3 * wb).map(|_| (next() >> 24) as u8).collect();
+        // Every scale byte appears in every projection, including 0x00, 0x80, 0x7f and 0xff.
+        let scale_data: Vec<u8> = (0..ne * 3 * sb)
+            .map(|i| {
+                let expert = i / (3 * sb);
+                let projection = (i / sb) % 3;
+                ((i * 167 + expert * 29 + projection * 71) % 256) as u8
+            })
+            .collect();
+        let weights = s.clone_htod(&weight_data).unwrap();
+        let scales = s.clone_htod(&scale_data).unwrap();
+        drop(weight_data);
+        drop(scale_data);
+        let full_table = modelopt_table(&s, &weights, &scales, ne, hidden, inter).unwrap();
+        let mut shard_w = Vec::new();
+        let mut shard_s = Vec::new();
+        let mut shard_tables = Vec::new();
+        for first in [0, ne / 2] {
+            let mut w = s.alloc_zeros::<u8>(ne / 2 * 3 * wb).unwrap();
+            let mut sc = s.alloc_zeros::<u8>(ne / 2 * 3 * sb).unwrap();
+            s.memcpy_dtod(
+                &weights.slice(first * 3 * wb..(first + ne / 2) * 3 * wb),
+                &mut w,
+            )
+            .unwrap();
+            s.memcpy_dtod(
+                &scales.slice(first * 3 * sb..(first + ne / 2) * 3 * sb),
+                &mut sc,
+            )
+            .unwrap();
+            shard_tables.push(modelopt_table(&s, &w, &sc, ne / 2, hidden, inter).unwrap());
+            shard_w.push(w);
+            shard_s.push(sc);
+        }
+        let scale2_host: Vec<f32> = (0..ne * 3)
+            .map(|i| 2.0_f32.powi((i % 7) as i32 - 4))
+            .collect();
+        let scale2 = s.clone_htod(&scale2_host).unwrap();
+
+        let configs: [(usize, usize, &CudaSlice<u64>); 3] = [
+            (0, ne, &full_table),
+            (0, ne / 2, &shard_tables[0]),
+            (ne / 2, ne / 2, &shard_tables[1]),
+        ];
+        // Route patterns over tokens i: scattered distinct experts, every token on the same six
+        // (groups of `rows` rows), one shard owning every route, a within-token duplicate that
+        // grows one group past a 16-row chunk, and seeded random distinct top-6.
+        let pattern = |kind: usize, rows: usize, seed: &mut u64| -> Vec<i32> {
+            let mut out = Vec::with_capacity(rows * topk);
+            for i in 0..rows {
+                let mut picked: Vec<i32> = match kind {
+                    0 => (0..topk).map(|j| ((i * 3 + j * 5) % ne) as i32).collect(),
+                    1 => (0..topk as i32).collect(),
+                    2 => (0..topk).map(|j| (9 + (i + j) % 6) as i32).collect(),
+                    3 => vec![5, 5, 5, 5, 5, ((i * 7) % ne) as i32],
+                    _ => {
+                        let mut v = Vec::new();
+                        while v.len() < topk {
+                            *seed ^= *seed << 13;
+                            *seed ^= *seed >> 7;
+                            *seed ^= *seed << 17;
+                            let e = (*seed % ne as u64) as i32;
+                            if !v.contains(&e) {
+                                v.push(e);
+                            }
+                        }
+                        v
+                    }
+                };
+                out.append(&mut picked);
+            }
+            out
+        };
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut engaged = 0u64;
+        let mut chunked = false;
+        for rows in [2usize, 3, 5, 8, 16, 17] {
+            let slots = rows * topk;
+            let input: Vec<f32> = (0..rows * hidden)
+                .map(|n| {
+                    let (r, i) = (n / hidden, n % hidden);
+                    (((i * 7919 + r * 104_729) % 2001) as f32 - 1000.0) / 64.0
+                        * 2.0_f32.powi((i / 128 % 9) as i32 - 4)
+                })
+                .collect();
+            let x = s.clone_htod(&input).unwrap();
+            let routing: Vec<f32> = (0..slots)
+                .map(|p| {
+                    if p == 4 {
+                        -0.0
+                    } else {
+                        (p % 13 + 1) as f32 / 32.0
+                    }
+                })
+                .collect();
+            for kind in 0..5 {
+                let selected = pattern(kind, rows, &mut seed);
+                for (first, count, table) in configs {
+                    let mut arms = Vec::new();
+                    for stream in [false, true] {
+                        let mut scratch =
+                            EpScratch::new(&gpu, &gpu, rows, topk, hidden, inter, None).unwrap();
+                        for dst in [&mut scratch.g1, &mut scratch.g3, &mut scratch.h] {
+                            s.memcpy_htod(&vec![f32::NAN; dst.len()], dst).unwrap();
+                        }
+                        s.memcpy_htod(&selected, &mut scratch.ids.slice_mut(..slots))
+                            .unwrap();
+                        s.memcpy_htod(&routing, &mut scratch.weights.slice_mut(..slots))
+                            .unwrap();
+                        unsafe {
+                            k::ck(
+                                "mrow stream fixture FP8 input",
+                                k::memra_dsv4_act_quant_fp8(
+                                    x.device_ptr(&s).0 as *const f32,
+                                    scratch.xq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                                    scratch.xs.device_ptr_mut(&s).0 as *mut f32,
+                                    rows as i32,
+                                    hidden as i32,
+                                    s.cu_stream().cast(),
+                                ),
+                            )
+                            .unwrap();
+                        }
+                        let mut work =
+                            GroupedWork::new_partition(&s, ne, first, count, slots, hidden, inter)
+                                .unwrap();
+                        crate::set_dsv4_moe_m1_stream_for_gate(stream);
+                        let (m1_before, mrow_before) = (
+                            crate::dsv4_moe_m1_stream_dispatches(),
+                            crate::dsv4_moe_mrow_stream_dispatches(),
+                        );
+                        work.prepare(
+                            &gpu,
+                            &view(&mut scratch),
+                            &scale2,
+                            &scale2_host,
+                            rows,
+                            topk,
+                            true,
+                        )
+                        .unwrap();
+                        work.gate_up(&gpu, table, &mut view(&mut scratch), 6.0)
+                            .unwrap();
+                        work.down(&gpu, table, &mut view(&mut scratch)).unwrap();
+                        let live = work.routes.live_slots;
+                        let m1 = crate::dsv4_moe_m1_stream_dispatches() - m1_before;
+                        let mrow = crate::dsv4_moe_mrow_stream_dispatches() - mrow_before;
+                        crate::clear_dsv4_moe_m1_stream_for_gate();
+                        let expected = if stream && live > 0 && rows <= MROW_STREAM_MAX_ROWS {
+                            3
+                        } else {
+                            0
+                        };
+                        assert_eq!(m1, 0, "one-token visitor on a {rows}-row step");
+                        assert_eq!(
+                            mrow, expected,
+                            "mrow engagement rows={rows} first={first} kind={kind}"
+                        );
+                        engaged += mrow;
+                        let take =
+                            |v: &CudaSlice<f32>, n: usize| s.clone_dtoh(&v.slice(..n)).unwrap();
+                        arms.push((
+                            live,
+                            take(&scratch.g1, live * inter),
+                            take(&scratch.g3, live * inter),
+                            take(&scratch.h, live * inter),
+                            take(&scratch.contribution, slots * hidden),
+                        ));
+                    }
+                    let (reference, candidate) = (&arms[0], &arms[1]);
+                    assert_eq!(reference.0, candidate.0);
+                    assert!(reference.1.iter().all(|v| v.is_finite()));
+                    let tag = format!("rows={rows} first={first} kind={kind}");
+                    assert_eq!(bits(&reference.1), bits(&candidate.1), "gate {tag}");
+                    assert_eq!(bits(&reference.2), bits(&candidate.2), "up {tag}");
+                    assert_eq!(bits(&reference.3), bits(&candidate.3), "H {tag}");
+                    assert_eq!(
+                        bits(&reference.4),
+                        bits(&candidate.4),
+                        "down contribution {tag}"
+                    );
+                    let local = |e: &i32| (first..first + count).contains(&(*e as usize));
+                    let widest = (0..ne as i32)
+                        .map(|e| selected.iter().filter(|&&v| v == e && local(&v)).count())
+                        .max()
+                        .unwrap_or(0);
+                    chunked |= widest > 16 && rows <= MROW_STREAM_MAX_ROWS;
+                    println!(
+                        "EXACT mrow stream {tag} count={count} live={} widest_group={widest}",
+                        reference.0
+                    );
+                }
+            }
+        }
+        assert!(engaged > 0);
+        assert!(chunked, "no group crossed a 16-row chunk");
         drop((shard_tables, shard_w, shard_s));
     }
 
