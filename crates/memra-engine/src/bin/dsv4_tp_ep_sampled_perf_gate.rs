@@ -34,6 +34,7 @@ struct Counters {
     rank_layer: [u64; 2],
     ep: u64,
     ar: u64,
+    gathers: u64,
     attention_rank: [u64; 2],
     attention_ar: u64,
     gu_m1: u64,
@@ -49,6 +50,7 @@ fn counters(gpu: &Dsv4Gpu) -> Counters {
         rank_layer: gpu.tp_ep_rank_layer_calls(),
         ep: gpu.ep_calls(),
         ar: gpu.tp_ep_ar_dispatches(),
+        gathers: gpu.tp_ep_row_gathers(),
         attention_rank: gpu.attention_tp_rank_calls(),
         attention_ar: gpu.attention_tp_ar_calls(),
         gu_m1: memra_engine::moe_f16g_gu_m1_tc_dispatches(),
@@ -68,6 +70,7 @@ fn delta(after: Counters, before: Counters) -> Counters {
         ],
         ep: after.ep - before.ep,
         ar: after.ar - before.ar,
+        gathers: after.gathers - before.gathers,
         attention_rank: std::array::from_fn(|rank| {
             after.attention_rank[rank] - before.attention_rank[rank]
         }),
@@ -191,8 +194,13 @@ fn assert_engagement(gpu: &Dsv4Gpu, c: Counters, prime: usize, decode: usize) {
     );
     assert_eq!(
         c.ar,
-        (prime + decode) as u64 * layers + attention_steps,
-        "one-shot AR engagement"
+        (prime + decode) as u64 * layers,
+        "one-shot AR engagement: the expert join only; the attention join gathers"
+    );
+    assert_eq!(
+        c.gathers,
+        2 * attention_steps,
+        "attention TP2 row gathers: wo_a groups and wo_b rows"
     );
     assert_eq!(
         c.attention_rank, [attention_steps; 2],
@@ -411,23 +419,26 @@ fn run_once(
         let snapshot = gpu
             .attention_tp_last_join_for_gate(&state)
             .expect("actual final attention join");
-        let hidden = gpu.attention_tp_geometry().unwrap().hidden;
+        let plan = gpu.attention_tp_geometry().unwrap();
+        for plane in &snapshot.partials {
+            assert_eq!(plane.len(), plan.local_hidden);
+        }
         for plane in snapshot.partials.iter().chain(snapshot.joined.iter()) {
-            assert_eq!(plane.len(), hidden);
             assert!(plane.iter().all(|value| value.is_finite()));
         }
-        for (column, (&rank0, &rank1)) in snapshot.partials[0]
+        // The join is the two wo_b row halves in rank order, bit for bit.
+        let expected: Vec<u32> = snapshot.partials[0]
             .iter()
-            .zip(&snapshot.partials[1])
-            .enumerate()
-        {
-            let expected = rank0 + rank1;
-            assert!(expected.is_finite());
-            for joined in &snapshot.joined {
+            .chain(&snapshot.partials[1])
+            .map(|value| value.to_bits())
+            .collect();
+        for joined in &snapshot.joined {
+            assert_eq!(joined.len(), plan.hidden);
+            for (column, value) in joined.iter().enumerate() {
                 assert_eq!(
-                    joined[column].to_bits(),
-                    expected.to_bits(),
-                    "actual attention GPU sum vs CPU f32 at {column}"
+                    value.to_bits(),
+                    expected[column],
+                    "attention join vs rank-order row halves at {column}"
                 );
             }
         }
