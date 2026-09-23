@@ -269,6 +269,10 @@ def report(root, workloads, development_report):
             str(length): compare(cells["code", length])
             for length in (256, 1024, 4096, 16384)
         },
+        "prose_diagnostic_by_prompt_tokens": {
+            str(length): compare(cells["prose", length])
+            for length in (256, 1024, 4096, 16384)
+        },
         "all_arms_format_covered_code": {
             str(length): compare([
                 pair for pair in cells["code", length]

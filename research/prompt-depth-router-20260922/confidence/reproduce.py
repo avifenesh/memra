@@ -10,6 +10,7 @@ import tarfile
 
 from verify_source import verify as verify_source
 from render_fixed import render as render_fixed
+from render_heldout import render as render_heldout
 
 
 ARCHIVES = {
@@ -334,6 +335,7 @@ def reproduce(candidate, manifest_sha256, base, out):
     ):
         raise ValueError("code-only v2 report differs from independently audited records")
     (out / "HELDOUT-RESULTS.json").write_text(json.dumps(heldout, indent=2) + "\n")
+    (out / "HELDOUT-RESULTS.md").write_text(render_heldout(heldout))
 
     receipt = {
         "status": "replayed-without-GPU",
@@ -347,6 +349,7 @@ def reproduce(candidate, manifest_sha256, base, out):
         "markdown_sha256": sha(out / "RESULTS.md"),
         "offline_results_sha256": sha(out / "OFFLINE-RESULTS.json"),
         "heldout_results_sha256": sha(out / "HELDOUT-RESULTS.json"),
+        "heldout_markdown_sha256": sha(out / "HELDOUT-RESULTS.md"),
         "failed_qualification_sha256": sha(out / "FAILED-QUALIFICATION.json"),
     }
     (out / "REPLAY.json").write_text(json.dumps(receipt, indent=2) + "\n")
