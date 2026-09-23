@@ -3546,6 +3546,10 @@ impl HfConfig {
                 // Preserve the existing native Step route without fabricating a canonical
                 // Gemma tower. Unified Gemma's encoder-free program remains unrepresented.
                 cfg.vision = None;
+            } else if mimo_v2 {
+                // MiMo's typed tower was parsed above. A generic tower would invent
+                // unrelated defaults for its model_type-less vision_config.
+                cfg.vision = None;
             } else {
                 let rope_theta = match vision.object("rope_parameters")? {
                     Some(rope) => rope.f32("rope_theta")?.unwrap_or(100.0),
