@@ -23,7 +23,7 @@ def fit(root, models, views):
     summary = json.loads((root / "development-summary.json").read_text())
     qualifier = json.loads((root / "qualification-result.json").read_text())
     if summary["schema"] != 1 or qualifier["schema"] != 1:
-        raise ValueError("v5 development and qualifier schemas differ")
+        raise ValueError("v6 development and qualifier schemas differ")
     models.mkdir(exist_ok=True)
     views.mkdir(exist_ok=True)
     result = {}
