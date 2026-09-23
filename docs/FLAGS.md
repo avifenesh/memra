@@ -998,7 +998,6 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
 | `MEMRA_F16OUT=0` | separate epilogue launches instead of the fused fp16-operand `_f16out` twins (silu_mul / gated_rmsnorm / sig_mul) on the f16 prefill lane. Engages only at t>=16 with `MEMRA_PP_F16`-class mirrors live; auto-off under verify-exact. Bit-identical class (the twins emit the cvt kernel's exact halves) | task #17 (`hybrid_forward.rs f16out_on()`) |
 | `MEMRA_FA_EMIT=0` | f32 Q/K/V operands into prefill FA instead of the bf16 emit-straight-from-norm staging (t>=16; island/vision primes keep f32 regardless — the emit path has no island consumer) | `hybrid_forward.rs` emit gate |
 | `MEMRA_FA_BF16KV=0` | in-kernel scalar K/V staging in the hd128/hd256 prefill FA instead of pre-converted bf16 mirrors — BIT-IDENTICAL (same `__float2bfloat16` values into the same mma); the pre-convert turned the 67%-of-stalls scalar staging into int4 vector copies | default-on 2026-07-26 (`lib.rs fa_prefill`) |
-| `MEMRA_FA_VL=0` | per-seq prefill FA loop instead of the varlen batched arm on the batched-prefill path (engages at b=2..8, hd 128/256, FusedQ attention-gate class, fresh prompts) | `hybrid_forward.rs` (`use_favl`) |
 | `MEMRA_FAW_P1=0` | SWA windowed prefill FA back to the g4/o2 arms (P1 = per-head Br=64 stamp with the FA2 schedule + boundary/interior mask split; FP order preserved → bit-identical, gated) | P1 default-on 2026-07-22 engine study (`lib.rs fa_prefill_w`) |
 | `MEMRA_FAW_G4=0` | per-head SWA stamp instead of the MQA 4-heads/CTA staged-K/V-sharing twin (n_head_kv==1, n_head%4==0 class; per-(head,row) FP chain identical → bit-identical, gated) | `lib.rs` |
 | `MEMRA_FAW_O2=0` | single-CTA/SM smem layout instead of the occupancy-2 shared-K/V-buffer twin (~36.5 KB smem, 2 CTA/SM — the llama hd256 mechanism). Bit-identical | `lib.rs` |
@@ -1596,6 +1595,33 @@ deleted them (darklanes `research/dsv4f-norm-pp2-port-20260911/LANE.md`). The re
 dispositions are argued per case in darklanes
 `research/dsv4f-door-reach-20260910/LANE.md`, including both outcomes of the memra #461 matrix
 verdict for the two doors that depend on it.
+
+## Removed doors, 2026-09-23 (the fresh varlen prefill FA: a second program for the batched prime, memra#641)
+
+memra#641, lane `research/decode-exact-641-20260923/RESULTS.md`. The engine replay of the
+issue's shape (`concat-prime-probe <9B NVFP4> tickshape`, the gate's A/B/C ids, tick 1024, one
+local RTX 5090 Laptop, N=1 per env as pre-registered) on `9c07b398b` plus the probe arm:
+
+```text
+arm bp prime: logits bitdiff=248319 maxabs=1.816733e-1 argmax ref=82 arm=82 | h_seed bitdiff=4096 | hidden bitdiff=8388594 maxabs=9.308960e0 first_row=Some(0) | cache digests differ 55/66 first=["L7.k", "L7.v", "L11.k", "L11.v", "L15.k", "L15.v"]
+tickshape verdict: AT LEAST ONE ARM DIFFERS
+```
+
+With `MEMRA_FA_VL=0` on the same binary every arm was EXACT. The fresh varlen arm attended bf16
+copies of the pre-quantization f32 K/V, while every solo chunk, chunk 0 included, has attended
+the quantized cache view since the 2026-08-05 chunk-invariance fix, so a request primed inside a
+fresh `[A, B, C]` batch took a different numerical program than the same request primed alone.
+The one-numeric-program law makes that a bug, not a speed trade.
+
+- `MEMRA_FA_VL` (default ON since task #18, 2026-07-26): **DELETED**, with the `use_favl`
+  branch of `prime_cache_batch_inner`, `Engine::fa_prefill_vl8` and `Engine::attn_pre_vl8`, the
+  `FaSeqVl`/`FaVl8`/`AttnPreVl`/`AttnPreVl8` argument structs, the VL kernels in
+  `cu/flash_attn.cu` (`fa_mirror_vl`, `q_gate_split_vl`, `attn_rms_vl`, `attn_rope_vl`,
+  `append_kv_vl`, `fa_prefill_bf16kv_vl` and its hd128 twin) and the sm_90a batched twin in
+  `cu/fa3_prefill.cu` (`memra_fa3_vl`, its kernel and stub). Every batch, fresh or carried, now
+  runs the per-sequence attention core, the solo prime's program. The occupancy win of one varlen
+  launch is given up; a varlen twin over the dequantized cache view may come back only with its
+  own bit-identity gate cell and receipt.
 
 ## Removed doors, 2026-09-21 (the prefix-cache policy door: decided on the incident's shape, the segmented arm deleted)
 

@@ -310,6 +310,18 @@ world, not the label) and must be caught. Note: the serve-level solo-vs-loaded b
 config flip at the co-residence boundary (`research/iso-gap-20260807/`); this arm pins the
 within-config isolation that any fix for that flip relies on.
 
+`ptick` / `ptickc` landed 2026-09-23 (`tools/prime-tick-exact-gate.sh`, memra#641,
+`research/decode-exact-641-20260923/`): the **prime-shape** axis of the one-program law. A peer's
+prompt primed inside a fresh then a carried `[A, B, C]` concat batch (`prime_cache_batch`), in
+solo tick calls, or followed by a `[B, C]` decode wave must give logits, hidden rows, cache
+digests and 32 teacher-forced decode steps bit-identical to `prime_cache(B)` in one call
+(`concat-prime-probe <model> tickshape`, the prime-fairness gate's exact ids, tick 1024). It was
+registered red on `9c07b398b`: the fresh batch's varlen FA arm attended bf16 of the
+pre-quantization K/V while the solo prime attends the quantized cache view, and greedy text
+diverged at token 8. The gate refuses a log where `prime_cache_batch` fell back to solo primes
+(the vacuous pass). `ptickc` changes B's first token inside the batches only and must see bp and
+bps DIFFER while ref2, tick and wave stay EXACT.
+
 `amargin` / `amarginc` landed 2026-08-06 (`tools/argmax-margin-gate.sh`, + its `--canary` teeth):
 run-gen's prefill-vs-decode argmax assert calibrated against the **top-2 margin at the deciding
 position**, because a near-tie flip and a real cache bug are the same red until you measure the

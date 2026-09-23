@@ -157,6 +157,15 @@ b2geo35c	cmd	tools/step35-b2-geometry-gate.sh	--canary	-	-
 # Canary: MEMRA_STEP35_PRIME_BATCH=0 restores that refusal after the mechanism lands.
 pbatch35	cmd	tools/step35-prime-batch-gate.sh	-	-	-
 pbatch35c	cmd	tools/step35-prime-batch-gate.sh	--canary	-	-
+# ptick/ptickc: ONE numeric program per request across the scheduler's PRIME shapes on the
+# qwen hybrid (memra#641, research/decode-exact-641-20260923). concat-prime-probe tickshape
+# primes peer B inside fresh then carried [A, B, C] 1024-row concat batches, in solo tick calls,
+# and through a [B, C] decode wave, teacher-forced and compared bitwise against prime_cache(B)
+# in one call. REGISTERED RED on 9c07b398b (the fresh varlen FA arm: bp/bps logits bitdiff
+# 248319, greedy text diverging at token 8); the arm's deletion turns it green. Canary: B's first
+# token is changed inside the batches only, so bp/bps must DIFFER while ref2/tick/wave stay EXACT.
+ptick	cmd	tools/prime-tick-exact-gate.sh	-	-	-
+ptickc	cmd	tools/prime-tick-exact-gate.sh	--canary	-	-
 # gwstress: the MEMRA_GRAPH_WARMUPS=1 pool-growth adversarial gate (lane/graph-warmups) —
 # large<->small session cycles + overlap arm force captures over freed async-pool blocks;
 # bit-identity vs eager is the arbiter (#68's class corrupts without faulting) and the

@@ -2669,3 +2669,13 @@ batched body under a sharded cross-device placement measured 28x slow at B=1 wit
 `decode-batch-gate` gates PASSING, because peer reads are byte-exact and only perf broke.
 Those are sm_120a numbers on a Gen5 x16 pair, not NVSwitch, and are not promoted to this
 ledger as H100 cells.
+
+**Varlen FA arm removed (2026-09-23, memra#641).** The task #18 varlen attention arm
+(`fa_prefill_bf16kv_vl`, `fa_mirror_vl`, the four pre-FA vl kernels and the round-31
+`bw24_fa3_vl` batched twin, all above) is deleted on every target. It attended bf16 copies of
+the pre-quantization K/V, and since the 2026-08-05 chunk-invariance fix the solo prime attends
+the quantized cache view, so a fresh batched prime was a second numerical program for the same
+request (sm_120a engine replay: logits bitdiff 248319, greedy text diverging at decode token 8;
+`research/decode-exact-641-20260923/RESULTS.md`). The +5.7% / +2.8% / +0.7% batched-prime wins
+recorded above are given up. No H100 cell was re-measured for this removal; a varlen twin over
+the dequantized cache view is the way back, with its own bit-identity gate.

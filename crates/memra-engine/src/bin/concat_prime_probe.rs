@@ -76,6 +76,13 @@
 //!           --hist K (needs --suffix): sequence = prompt-a ++ K greedy tokens ++ suffix;
 //!           the hist arm keeps the live prime(A)+decode(K) cache and primes the suffix on
 //!           top (restored-conversation shape); mono re-renders the same bytes cold.
+//!   tickshape <model> tickshape --ids-a <json> --ids-b <json> --ids-c <json> [--tick 1024]
+//!                               [--steps 32] [--join 4] [--arms ref,ref2,tick,bp,bps,wave]
+//!                               [--canary]
+//!           memra#641 serving-shape replay: peer B primed in fresh then carried [A, B, C]
+//!           tick batches, in solo tick calls, and through a [B, C] decode wave, each arm
+//!           teacher-forced and compared bitwise (logits, hidden rows, cache digests, every
+//!           decode step) against prime_cache(B) in one call. Gate: tools/prime-tick-exact-gate.sh.
 
 use memra_engine::Engine;
 use memra_engine::cache::Cache;
@@ -2645,6 +2652,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             //   bps   bp, C's solo tick calls, B=1 until --join, then the [B, C] wave
             //   wave  ref's prime, C primed in one solo call, B=1 until --join, then [B, C]
             // Prompts are token-id JSON arrays (`--ids-a/-b/-c`), the gate's exact ids.
+            // `--canary` changes the world, not the label: B's first token inside the bp/bps
+            // batches is replaced, so a comparator that still reports those arms EXACT is blind.
+            let canary = rest.iter().any(|a| a == "--canary");
             let read_ids = |key: &str| -> Result<Vec<u32>, Box<dyn std::error::Error>> {
                 let path = arg(&rest, key).ok_or_else(|| format!("{key} <ids.json>"))?;
                 let text = std::fs::read_to_string(&path)?;
@@ -2684,11 +2694,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let model = &cx.model;
             println!(
                 "tickshape: T_a={} T_b={} T_c={} tick={tick} steps={steps} join={join} ctx={ctx} \
-                 arms={arms:?} FA_VL={:?}",
+                 arms={arms:?} canary={canary}",
                 ta.len(),
                 tb.len(),
-                tc.len(),
-                std::env::var("MEMRA_FA_VL").ok()
+                tc.len()
             );
 
             fn fnv(bytes: &[u8]) -> u64 {
@@ -2897,9 +2906,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let mut cc = Cache::new(e, &model.cfg, ctx)?;
                         let mut hidden = Vec::new();
                         let mut last = None;
+                        let mut tb_arm = tb.clone();
+                        if canary {
+                            tb_arm[0] = if tb_arm[0] == 0 { 1 } else { tb_arm[0] - 1 };
+                        }
                         for k in 0..tb.len() / tick {
                             let r = k * tick..(k + 1) * tick;
-                            let prompts: [&[u32]; 3] = [&ta[r.clone()], &tb[r.clone()], &tc[r]];
+                            let prompts: [&[u32]; 3] = [&ta[r.clone()], &tb_arm[r.clone()], &tc[r]];
                             let mut refs: Vec<&mut Cache> = vec![&mut ca, &mut cb, &mut cc];
                             let mut outs = model.prime_cache_batch(e, &prompts, &mut refs)?;
                             drop(outs.remove(2));
