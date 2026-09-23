@@ -1624,7 +1624,9 @@ on every device f32x HC4 / hidden 4096 load, PP-2 included:
 - Served PP-2 plain greedy c1 on 2x RTX PRO 6000 Blackwell WS, one boot per row, order
   `on off off on on off off on on off`, on the tree before the one-token MoE stream visitor:
   **40.11 tok/s (N=5, 40.08..40.12) against 38.78 (N=5, 38.77..38.82), +3.4%**, TPOT p50
-  -0.85 ms, same text on all 8 prompts in every row.
+  -0.85 ms, same text on all 8 prompts in every row. Re-measured on the lane merged with the
+  one-token stream visitor, order `on off off on on off`: **52.24 (N=3, 52.21..52.27) against
+  50.08 (N=3, 50.05..50.09), +4.3%**, TPOT p50 -0.83 ms, same hashes.
 - Served DSpark: flat (-0.1%, N=2 each; verify rows keep the unfused kernels).
   `dsv4-gpu-dspark-gate --served`: PASS.
 

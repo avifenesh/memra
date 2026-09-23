@@ -75,6 +75,33 @@ a7784b9a 7568f9b3 9dd1aedd 4fd72390 937f04d8`, warmup `e78fb458`, the plain hash
 each card under 50% most of the time, so these are 5..20 samples per row): power median 176..230 W,
 peak 246 W against the 500 W limit, SM clock 2595..2850 MHz, GPU temperature at most 62 C.
 
+## Re-measured on the merged tree
+
+The lane was merged with main after the one-token MoE stream visitor (#672) landed, so the
+unfused arm got faster and the diet's share of the step grew. Same protocol on the merged lane
+head `dccade473` plus the same `raw/diet-lane.patch`, binary `1d75a010...`, order
+`on off off on on off`, cells `raw/ab-cells.txt`. Queue `raw/merged/q-diet2.sh`, summary
+`raw/merged/q-diet2.summary`, receipts `raw/merged/ab/r<N>-<arm>/`.
+
+| row | arm | decode tok/s (1/TPOT p50) | TPOT p50 / p95 / p99 ms | ITL p50 / p99 ms | TTFT p50 / p95 ms | E2E p50 ms | agg tok/s |
+|---|---|---|---|---|---|---|---|
+| r1 | diet | 52.24 | 19.14 / 19.17 / 19.17 | 19.03 / 19.85 | 199 / 216 | 5,079 | 50.37 |
+| r2 | unfused | 50.08 | 19.97 / 20.00 / 20.00 | 19.85 / 20.71 | 200 / 218 | 5,289 | 48.36 |
+| r3 | unfused | 50.09 | 19.96 / 19.99 / 19.99 | 19.85 / 20.64 | 200 / 216 | 5,288 | 48.37 |
+| r4 | diet | 52.27 | 19.13 / 19.14 / 19.14 | 19.00 / 19.77 | 199 / 216 | 5,077 | 50.41 |
+| r5 | diet | 52.21 | 19.16 / 19.16 / 19.16 | 19.04 / 19.82 | 200 / 217 | 5,084 | 50.34 |
+| r6 | unfused | 50.05 | 19.98 / 20.01 / 20.02 | 19.86 / 20.93 | 200 / 217 | 5,296 | 48.33 |
+
+**Diet 52.24 tok/s median (N=3, 52.21..52.27) against unfused 50.08 (N=3, 50.05..50.09), +4.3%,
+TPOT p50 19.97 -> 19.14 ms (-0.83 ms per token, the same absolute saving as the first
+campaign).** Disjoint arms, same greedy hashes on every row. Pooled 250 ms samples at 20%
+utilization or more: power median 215..224 W, peak 246 W, SM clock 2595..2850 MHz with one low
+sample in r1 (1185 MHz) that did not move its median, at most 61 C.
+
+On the same binary: the kernel boundary tests EXACT again (`raw/merged/component/gate.log`, test
+binary `76d56154...`), and `dsv4-gpu-dspark-gate --served` PASS
+(`raw/merged/dspark-served/gate.log`, binary `0c64b89b...`).
+
 ## DSpark on top
 
 Same lane binary with `MEMRA_DSV4_DRAFTER=dspark`, order `on off off on`, cells
