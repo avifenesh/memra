@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import time
 
 
@@ -59,10 +60,17 @@ def input_manifests(args):
 
 
 def record(root, label, k, arm, audit, schedule=None):
+    observed = [
+        int(row["sampler_top_k"]) for row in v4.table(root / "turns.tsv")
+    ]
     return {
         "name": root.name, "variant": label,
-        "sampler_top_k": k if schedule is None else "scheduled",
+        "sampler_top_k": (
+            "learned" if arm in ("learn-topk", "joint-ckd")
+            else k if schedule is None else "scheduled"
+        ),
         "sampler_schedule": list(schedule) if schedule is not None else None,
+        "observed_top_k": observed,
         "arm": arm, "tokens": sum(row["output_tokens"] for row in audit),
         "seconds": sum(row["elapsed_s"] for row in audit),
         "format": sum(bool(row["fenced_parseable_function"]) for row in audit),
@@ -129,6 +137,20 @@ def run_one(args, entry, workloads, topic, label, k, arm, cap, *,
         "source_sha256": args.source_sha, "model_sha256": MODEL_SHA,
         "workload_sha256": entry["sha256"], "sampler_top_k": k,
         "sampler_schedule": list(schedule) if schedule is not None else None,
+        "topk_model_sha256": next(
+            (
+                sha(option.removeprefix("topk-model="))
+                for option in extra if option.startswith("topk-model=")
+            ),
+            None,
+        ),
+        "joint_models": {
+            option.split("=", 1)[0]: option.split("=", 1)[1]
+            for option in extra
+            if option.startswith((
+                "joint-model-dir=", "depth-variant=", "confidence-variant=",
+            ))
+        },
         "temperature": temperature, "cap": cap,
         "memra_settings": {
             key: value for key, value in environment.items()
@@ -146,10 +168,20 @@ def run_one(args, entry, workloads, topic, label, k, arm, cap, *,
         ):
             raise ValueError("incomplete or changed native K cell: " + root.name)
         audit = validate(root, entry, arm)
-        if schedule is not None:
-            turns = v4.table(root / "turns.tsv")
-            if [int(row["sampler_top_k"]) for row in turns] != list(schedule):
-                raise ValueError("resumed sampler schedule was not executed")
+        turns = v4.table(root / "turns.tsv")
+        actual = [int(row["sampler_top_k"]) for row in turns]
+        if (
+            (schedule is not None and actual != list(schedule))
+            or (schedule is None and arm not in ("learn-topk", "joint-ckd")
+                and actual != [k] * 8)
+            or (arm in ("learn-topk", "joint-ckd")
+                and any(value not in TOP_K for value in actual))
+        ):
+            raise ValueError("resumed sampler action differs")
+        if arm in ("learn-topk", "noop-topk", "joint-ckd", "noop-ckd") and any(
+            int(row["k_model_ns"]) == 0 for row in turns
+        ):
+            raise ValueError("K model did not run inside request clock")
         audit_path = root / "audit.json"
         if audit_path.exists():
             if json.loads(audit_path.read_text()) != audit:
@@ -175,8 +207,17 @@ def run_one(args, entry, workloads, topic, label, k, arm, cap, *,
     audit = validate(root, entry, arm)
     turns = v4.table(root / "turns.tsv")
     expected = [k] * 8 if schedule is None else list(schedule)
-    if [int(row["sampler_top_k"]) for row in turns] != expected:
+    actual = [int(row["sampler_top_k"]) for row in turns]
+    if (
+        (arm not in ("learn-topk", "joint-ckd") and actual != expected)
+        or (arm in ("learn-topk", "joint-ckd")
+            and any(value not in TOP_K for value in actual))
+    ):
         raise ValueError("actual sampled top-k differs from frozen schedule")
+    if arm in ("learn-topk", "noop-topk", "joint-ckd", "noop-ckd") and any(
+        int(row["k_model_ns"]) == 0 for row in turns
+    ):
+        raise ValueError("K model did not run inside request clock")
     save(root / "audit.json", audit)
     return record(root, label, k, arm, audit, schedule)
 
@@ -277,18 +318,148 @@ def development(args, old):
     return records
 
 
+def old_code_probes(root, entry):
+    worker = LANE / "confidence/adaptive-v3/quality.py"
+    passed = 0
+    for turn, expected in enumerate(entry["turns"], 1):
+        payload = {
+            "text": (root / f"turn-{turn}.answer.txt").read_text(),
+            "function": expected["function"],
+        }
+        try:
+            result = subprocess.run(
+                [sys.executable, "-I", str(worker), "--worker"],
+                input=json.dumps(payload), text=True, capture_output=True,
+                timeout=3,
+            )
+            passed += (
+                result.returncode == 0
+                and json.loads(result.stdout)["pass"] is True
+            )
+        except (subprocess.TimeoutExpired, json.JSONDecodeError):
+            pass
+    return passed
+
+
+def select_topk(args, old):
+    trained = json.loads((args.out / "topk-training-summary.json").read_text())
+    manifest = json.loads((args.models / "topk-models.json").read_text())
+    if len(manifest) != 3 or trained["schema"] != 1:
+        raise ValueError("K router model manifest differs")
+    model_paths = {}
+    for item in manifest:
+        path = args.models / f"topk-{item['variant']}.tsv"
+        if (
+            item["variant"] not in ("first16", "first32", "prior")
+            or item["variant"] in model_paths
+            or sha(path) != item["model_sha256"]
+        ):
+            raise ValueError("K router weights differ from frozen training")
+        model_paths[item["variant"]] = path
+    records = []
+    topics = old["groups"]["heldout"][3:]
+    for index, entry in enumerate(topics):
+        arms = [
+            (f"topk{k}-d3-c0", k, "fixed:3", ())
+            for k in TOP_K
+        ]
+        if len(trained["quality_eligible_top_k"]) > 1:
+            for variant, path in model_paths.items():
+                arms.append((
+                    f"learn-{variant}", 20, "learn-topk",
+                    (f"topk-model={path}",),
+                ))
+                arms.append((
+                    f"noop-{variant}", 20, "noop-topk",
+                    (f"topk-model={path}",),
+                ))
+        order = arms[index % len(arms):] + arms[:index % len(arms)]
+        if index % 2:
+            order.reverse()
+        for label, k, arm, extra in order:
+            records.append(run_one(
+                args, entry, args.development, f"selection-{index}",
+                label, k, arm, 3, extra=extra,
+            ))
+    scores = defaultdict(list)
+    for record in records:
+        index = int(record["name"].split("-")[1])
+        record["functional_pass"] = old_code_probes(
+            args.out / record["name"], topics[index],
+        )
+        scores[record["variant"]].append(record)
+    rates = {}
+    for variant, rows in scores.items():
+        if len(rows) != 3:
+            raise ValueError("K selector lacks matched development topics")
+        tokens = sum(row["tokens"] for row in rows)
+        seconds = sum(row["seconds"] for row in rows)
+        rates[variant] = {
+            "tokens": tokens, "seconds": seconds,
+            "tok_s": tokens / seconds,
+            "format_pass": sum(row["format"] for row in rows),
+            "functional_pass": sum(row["functional_pass"] for row in rows),
+            "loops": sum(row["loops"] for row in rows),
+        }
+    qualified_fixed = [
+        k for k in TOP_K
+        if rates[f"topk{k}-d3-c0"]["format_pass"] == 24
+        and rates[f"topk{k}-d3-c0"]["functional_pass"] == 24
+        and rates[f"topk{k}-d3-c0"]["loops"] == 0
+    ]
+    if 20 not in qualified_fixed:
+        raise ValueError("recommended K=20 fails development-selection quality")
+    fixed_best = max(
+        qualified_fixed, key=lambda k: rates[f"topk{k}-d3-c0"]["tok_s"],
+    )
+    qualified_learned = [
+        variant for variant in model_paths
+        if f"learn-{variant}" in rates
+        and rates[f"learn-{variant}"]["format_pass"] == 24
+        and rates[f"learn-{variant}"]["functional_pass"] == 24
+        and rates[f"learn-{variant}"]["loops"] == 0
+    ]
+    chosen = max(
+        qualified_learned,
+        key=lambda variant: rates[f"learn-{variant}"]["tok_s"],
+        default=None,
+    )
+    save(args.out / "selected-topk.json", {
+        "schema": 1, "variant": chosen,
+        "model_sha256": sha(model_paths[chosen]) if chosen else None,
+        "quality_eligible_actions": trained["quality_eligible_top_k"],
+        "best_fixed_top_k": fixed_best,
+        "selection_scores": rates,
+        "status": "selected" if chosen else "no-quality-qualified-K-router",
+    })
+    return records
+
+
 def main():
     parser = argparse.ArgumentParser()
     for name in ("binary", "model", "development", "fresh", "out"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--source-sha", required=True)
-    parser.add_argument("--phase", choices=("qualification", "development"), required=True)
+    parser.add_argument("--models", type=Path)
+    parser.add_argument(
+        "--phase", choices=("qualification", "development", "selection"),
+        required=True,
+    )
     args = parser.parse_args()
     for name in ("binary", "model", "development", "fresh", "out"):
         setattr(args, name, getattr(args, name).resolve())
+    if args.models is not None:
+        args.models = args.models.resolve()
     args.out.mkdir(exist_ok=True)
     old, fresh = input_manifests(args)
-    records = qualify(args, fresh) if args.phase == "qualification" else development(args, old)
+    if args.phase == "qualification":
+        records = qualify(args, fresh)
+    elif args.phase == "development":
+        records = development(args, old)
+    else:
+        if args.models is None:
+            raise ValueError("K model selection needs frozen trained weights")
+        records = select_topk(args, old)
     save(args.out / f"{args.phase}-summary.json", {
         "schema": 1, "phase": args.phase, "records": records,
     })

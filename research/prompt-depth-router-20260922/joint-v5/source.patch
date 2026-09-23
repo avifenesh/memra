@@ -637,7 +637,21 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
 diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engine/src/bin/mtp_depth_study.rs
 --- a/crates/memra-engine/src/bin/mtp_depth_study.rs
 +++ b/crates/memra-engine/src/bin/mtp_depth_study.rs
-@@ -13,17 +13,151 @@
+@@ -1,11 +1,13 @@
+ //! Full-vocabulary embedded-MTP depth research, Qwen native-session driver.
+ use memra_engine::Engine;
+ use memra_engine::hybrid::HybridModel;
++use memra_engine::learned_depth::{LearnedDepth, TinyConfidenceModel, TinyDepthModel};
+ use memra_engine::spec::SpecSampling;
+ use memra_engine::spec::{MtpDepthExperiment, SpecSession};
+ use memra_gguf::GgufFile;
+ use memra_tokenizer::Tokenizer;
+ use memra_tokenizer::chat::{ThinkMode, Turn};
++use std::collections::HashMap;
+ use std::io::Write;
+ use std::path::Path;
+ use std::process::Command;
+@@ -13,17 +15,151 @@
  
  mod depth_study_io;
  
@@ -786,22 +800,22 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          "trace-c2" => "fixed:2",
 -        "trace-c3" | "learn-c3" | "monitor-c3" | "fixed-c3" => "fixed:3",
 +        "trace-c3" | "learn-c3" | "monitor-c3" | "fixed-c3"
-+        | "learn-topk" | "noop-topk" => "fixed:3",
++        | "learn-topk" | "noop-topk" | "joint-ckd" | "noop-ckd" => "fixed:3",
          other => other,
      };
      Ok(match arm {
-@@ -103,8 +237,8 @@
+@@ -103,8 +239,8 @@
          println!("{}", prompt.len());
          return Ok(());
      }
 -    if !(10..=16).contains(&args.len()) {
 -        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
 +    if !(10..=18).contains(&args.len()) {
-+        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [cap=N] [sampler-top-k=3|10|20] [sampler-schedule=K1,...,K8] [topk-model=PATH] [explore-seed=UINT64] [depth-model=PATH] [confidence-model=PATH] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
++        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [cap=N] [sampler-top-k=3|10|20] [sampler-schedule=K1,...,K8] [topk-model=PATH] [joint-model-dir=PATH] [depth-variant=token|history|prior] [confidence-variant=token|history|prior] [explore-seed=UINT64] [depth-model=PATH] [confidence-model=PATH] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
      }
      let arm = args[5].as_str();
      let seed: u64 = args[6].parse()?;
-@@ -115,8 +249,50 @@
+@@ -115,8 +251,69 @@
      let mut confidence_policy = None;
      let mut confidence_costs = None;
      let mut fixed_cutoffs = None;
@@ -809,6 +823,9 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +    let mut requested_top_k = None;
 +    let mut sampler_schedule = None;
 +    let mut topk_model_path = None;
++    let mut joint_model_dir = None;
++    let mut depth_variant = None;
++    let mut confidence_variant = None;
 +    let mut explore_seed = None;
 +    let mut depth_model = None;
 +    let mut confidence_model = None;
@@ -837,6 +854,22 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +            if path.is_empty() || topk_model_path.replace(path).is_some() {
 +                return Err("invalid sampler K model path".into());
 +            }
++        } else if let Some(path) = option.strip_prefix("joint-model-dir=") {
++            if path.is_empty() || joint_model_dir.replace(path).is_some() {
++                return Err("invalid joint model directory".into());
++            }
++        } else if let Some(value) = option.strip_prefix("depth-variant=") {
++            if !matches!(value, "token" | "history" | "prior")
++                || depth_variant.replace(value).is_some()
++            {
++                return Err("invalid depth feature variant".into());
++            }
++        } else if let Some(value) = option.strip_prefix("confidence-variant=") {
++            if !matches!(value, "token" | "history" | "prior")
++                || confidence_variant.replace(value).is_some()
++            {
++                return Err("invalid confidence feature variant".into());
++            }
 +        } else if let Some(value) = option.strip_prefix("explore-seed=") {
 +            if explore_seed.replace(value.parse::<u64>()?).is_some() {
 +                return Err("duplicate randomized depth seed".into());
@@ -853,7 +886,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
              if path.is_empty() || confidence_policy.replace(path).is_some() {
                  return Err("invalid confidence policy path".into());
              }
-@@ -143,9 +319,28 @@
+@@ -143,9 +340,32 @@
              standard_args.push(option.clone());
          }
      }
@@ -865,8 +898,12 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +            values.iter().any(|&k| !matches!(k, 3 | 10 | 20))
 +        })
 +        || (sampler_schedule.is_some() && topk_model_path.is_some())
-+        || matches!(arm, "learn-topk" | "noop-topk") != topk_model_path.is_some()
-+        || (topk_model_path.is_some() && cap != 3)
++        || matches!(arm, "learn-topk" | "noop-topk" | "joint-ckd" | "noop-ckd") != topk_model_path.is_some()
++        || (matches!(arm, "learn-topk" | "noop-topk") && cap != 3)
++        || (matches!(arm, "joint-ckd" | "noop-ckd") && cap != 4)
++        || matches!(arm, "joint-ckd" | "noop-ckd") != joint_model_dir.is_some()
++        || matches!(arm, "joint-ckd" | "noop-ckd") != depth_variant.is_some()
++        || matches!(arm, "joint-ckd" | "noop-ckd") != confidence_variant.is_some()
 +        || (arm == "explore-d" && requested_cap.is_none())
 +        || (arm == "explore-d") != explore_seed.is_some()
 +        || matches!(arm, "trained-d" | "noop-d" | "joint-cd" | "noop-cd") != depth_model.is_some()
@@ -883,7 +920,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
      if confidence_policy.is_some() != live_confidence
          || confidence_costs.is_some() != live_confidence
          || (arm == "fixed-c3") != fixed_cutoffs.is_some()
-@@ -169,7 +364,7 @@
+@@ -169,7 +389,7 @@
      let mut rows = std::fs::File::create_new(output.join("turns.tsv"))?;
      writeln!(
          rows,
@@ -892,7 +929,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
      )?;
      let mut trace = std::fs::File::create_new(output.join("rounds.tsv"))?;
      writeln!(
-@@ -195,18 +390,25 @@
+@@ -195,18 +415,44 @@
      if mtp.d2t.is_some() || draft_vocab != model.output.out_features() {
          return Err("MTP draft and target heads must both use the full vocabulary".into());
      }
@@ -910,6 +947,25 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +    } else {
 +        None
 +    };
++    let mut joint_policies: HashMap<i32, LearnedDepth> = HashMap::new();
++    if let Some(directory) = joint_model_dir {
++        let router = k_router.as_ref().ok_or("joint policy lacks sampler K router")?;
++        for (k, _) in &router.weights {
++            let base = Path::new(directory).join(format!("topk{k}"));
++            let depth = std::fs::read_to_string(base.join(format!(
++                "depth-{}.tsv",
++                depth_variant.ok_or("missing joint depth variant")?,
++            )))?;
++            let confidence = std::fs::read_to_string(base.join(format!(
++                "confidence-{}.tsv",
++                confidence_variant.ok_or("missing joint confidence variant")?,
++            )))?;
++            let noop = arm == "noop-ckd";
++            let policy = LearnedDepth::trained(TinyDepthModel::parse(&depth)?, noop)
++                .with_confidence(TinyConfidenceModel::parse(&confidence)?, noop);
++            joint_policies.insert(*k, policy);
++        }
++    }
      let mut routing_log = std::fs::File::create_new(output.join("routing.tsv"))?;
 -    writeln!(routing_log, "turn\tsource\tkind\tk\trouting_ns")?;
 +    writeln!(routing_log, "turn\tsource\tkind\tdraft_depth\trouting_ns")?;
@@ -922,7 +978,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          top_p: 0.95,
          min_p: 0.0,
          penalty_last_n: 0,
-@@ -215,7 +417,7 @@
+@@ -215,7 +461,7 @@
          penalty_present: 0.0,
      };
      eprintln!(
@@ -931,7 +987,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          model.output.out_features(),
          draft_vocab,
          arm == "learned" || arm == "context",
-@@ -252,9 +454,30 @@
+@@ -252,9 +498,36 @@
      let mut total_tokens = 0usize;
      let mut total_seconds = 0f64;
      let mut measured_rounds = 0usize;
@@ -940,6 +996,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          let turn = index + 1;
          let started = Instant::now();
 +        let mut routed_prefix = None;
++        let mut routed_choice = None;
 +        let mut k_model_ns = 0_u128;
 +        let turn_top_k = if let Some(router) = &k_router {
 +            let decision_start = Instant::now();
@@ -950,8 +1007,13 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +            }
 +            let predicted = router.select(&prefix, previous_accept);
 +            routed_prefix = Some(prefix);
++            routed_choice = Some(predicted);
 +            k_model_ns = decision_start.elapsed().as_nanos();
-+            if arm == "noop-topk" { sampler_top_k } else { predicted }
++            if matches!(arm, "noop-topk" | "noop-ckd") {
++                sampler_top_k
++            } else {
++                predicted
++            }
 +        } else {
 +            sampler_schedule.map_or(sampler_top_k, |values| values[index])
 +        };
@@ -962,7 +1024,19 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          history.push(Turn {
              role: "user".into(),
              content: (*user).into(),
-@@ -324,6 +547,14 @@
+@@ -309,6 +582,11 @@
+         if let Some(selection) = request_selection {
+             sess.depth_experiment = Some(MtpDepthExperiment::Learned(memra_engine::learned_depth::LearnedDepth::fixed(usize::from(selection.decision.k) + 1)?));
+         }
++        if matches!(arm, "joint-ckd" | "noop-ckd") {
++            let choice = routed_choice.ok_or("joint policy lacks selected K")?;
++            let policy = joint_policies.get(&choice).ok_or("joint policy lacks K-specific C/D")?;
++            sess.depth_experiment = Some(MtpDepthExperiment::Learned(policy.clone()));
++        }
+         let applied_cutoffs = if live_confidence {
+             Some(learned_cutoffs)
+         } else if trace_confidence {
+@@ -324,6 +602,14 @@
          let new_input_tokens = prompt.len() - cached_tokens;
          let trace_start = sess.depth_rounds.len();
          let confidence_start = sess.confidence_rounds.len();
@@ -977,7 +1051,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          let mut on_commit = |chunk: &[u32]| !chunk.iter().any(|id| eos.contains(id));
          let (mut ids, drafted, accepted) = model.generate_spec_session_sampled(
              &e,
-@@ -331,10 +562,10 @@
+@@ -331,16 +617,23 @@
              &prompt[cached_tokens..],
              max_new,
              cap,
@@ -990,7 +1064,20 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          ids.truncate(max_new);
          if let Some(end) = ids.iter().position(|id| eos.contains(id)) {
              ids.truncate(end + 1);
-@@ -472,6 +703,10 @@
+         }
+         e.stream().synchronize()?;
+         carried_policy = sess.depth_experiment.clone();
++        if matches!(arm, "joint-ckd" | "noop-ckd") {
++            let choice = routed_choice.ok_or("joint policy lacks selected K")?;
++            let Some(MtpDepthExperiment::Learned(policy)) = &sess.depth_experiment else {
++                return Err("joint C/D policy disappeared after sampled request".into());
++            };
++            joint_policies.insert(choice, policy.clone());
++        }
+         if ids.is_empty()
+             || ids
+                 .iter()
+@@ -472,6 +765,10 @@
              Some(MtpDepthExperiment::Learned(p)) => Some(p),
              _ => None,
          };
@@ -1001,7 +1088,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          context_receipts.write(
              turn,
              user,
-@@ -506,7 +741,7 @@
+@@ -506,7 +803,7 @@
          };
          writeln!(
              rows,
@@ -1010,7 +1097,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
              prompt.len(),
              ids.len(),
              new_trace.len(),
-@@ -523,6 +758,11 @@
+@@ -523,6 +820,11 @@
          )?;
          rows.flush()?;
          trace.flush()?;
@@ -1022,7 +1109,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          save_ids(&output.join(format!("turn-{turn}.prompt.ids")), &prompt)?;
          save_ids(&output.join(format!("turn-{turn}.output.ids")), &ids)?;
          std::fs::write(output.join(format!("turn-{turn}.raw.txt")), &raw)?;
-@@ -536,10 +776,15 @@
+@@ -536,10 +838,15 @@
          )?;
          history.push(answer);
          parked = Some(sess);
@@ -1039,7 +1126,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
              ids.len()
          );
      }
-@@ -578,6 +823,29 @@
+@@ -578,6 +885,29 @@
      );
      println!("PERF_METRICS_END");
      Ok(())
