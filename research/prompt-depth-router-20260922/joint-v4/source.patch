@@ -1,0 +1,217 @@
+diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/learned_depth.rs
+--- a/crates/memra-engine/src/learned_depth.rs
++++ b/crates/memra-engine/src/learned_depth.rs
+@@ -16,8 +16,24 @@
+ #[derive(Clone, Debug)]
+ pub struct LearnedDepth {
+     context: Option<Box<crate::context_depth::ContextDepth>>,
++    exploration: Option<Box<DepthExploration>>,
+     stats: Vec<DepthStats>,
+     fixed_depth: usize,
++}
++
++#[derive(Clone, Debug)]
++struct DepthExploration {
++    seed: u64,
++    rounds: u64,
++    max_k: usize,
++    current_depth: usize,
++    switches: u64,
++}
++
++fn mix(mut value: u64) -> u64 {
++    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
++    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
++    value ^ (value >> 31)
+ }
+ 
+ fn stat(depth: usize) -> DepthStats {
+@@ -38,8 +54,28 @@
+         }
+         Ok(Self {
+             context: None,
++            exploration: None,
+             stats: vec![stat(depth)],
+             fixed_depth: depth,
++        })
++    }
++
++    /// Seeded per-round training assignment, independent of acceptance feedback.
++    pub fn randomized(max_k: usize, seed: u64) -> Result<Self, &'static str> {
++        if !(1..=crate::context_depth::MAX_K).contains(&max_k) {
++            return Err("randomized draft ceiling is out of range");
++        }
++        Ok(Self {
++            context: None,
++            exploration: Some(Box::new(DepthExploration {
++                seed,
++                rounds: 0,
++                max_k,
++                current_depth: 2,
++                switches: 0,
++            })),
++            stats: (2..=max_k + 1).map(stat).collect(),
++            fixed_depth: 2,
+         })
+     }
+ 
+@@ -56,6 +92,7 @@
+         Ok(Self {
+             stats: (2..=priors.cap + 1).map(stat).collect(),
+             fixed_depth: priors.global_k + 1,
++            exploration: None,
+             context: Some(Box::new(crate::context_depth::ContextDepth::new(
+                 priors,
+                 token_bytes,
+@@ -65,6 +102,9 @@
+     }
+ 
+     pub fn depth(&self) -> usize {
++        if let Some(exploration) = &self.exploration {
++            return exploration.current_depth;
++        }
+         self.context
+             .as_ref()
+             .map_or(self.fixed_depth, |c| c.depth())
+@@ -73,6 +113,9 @@
+         &self.stats
+     }
+     pub fn switches(&self) -> u64 {
++        if let Some(exploration) = &self.exploration {
++            return exploration.switches;
++        }
+         self.context.as_ref().map_or(0, |c| c.switches())
+     }
+     pub fn context(&self) -> Option<&crate::context_depth::ContextDepth> {
+@@ -84,6 +127,17 @@
+         }
+     }
+     pub fn prepare_output(&mut self, output: &[u32]) -> Result<(), &'static str> {
++        if let Some(exploration) = &mut self.exploration {
++            let draw = mix(exploration.seed.wrapping_add(
++                exploration.rounds.wrapping_mul(0x9e37_79b9_7f4a_7c15),
++            ));
++            let next = draw as usize % exploration.max_k + 2;
++            if exploration.rounds > 0 && next != exploration.current_depth {
++                exploration.switches += 1;
++            }
++            exploration.current_depth = next;
++            exploration.rounds += 1;
++        }
+         if let Some(c) = &mut self.context {
+             c.prepare_output(output)?;
+         }
+@@ -151,4 +205,25 @@
+         assert_eq!(p.stats()[0].tokens, 1);
+         assert_eq!(p.depth(), 3);
+     }
+-}
++    #[test]
++    fn randomized_training_depths_keep_exposure_and_survive_a_new_request() {
++        let mut p = LearnedDepth::randomized(4, 20774000).unwrap();
++        let mut chosen = Vec::new();
++        for round in 0..128 {
++            if round == 64 {
++                p.begin_request("another turn");
++            }
++            p.prepare_output(&[11, 12]).unwrap();
++            let depth = p.depth();
++            chosen.push(depth - 1);
++            p.observe_output(depth, 0, &[11], Duration::from_millis(1), true)
++                .unwrap();
++        }
++        assert!(chosen.iter().all(|depth| (1..=4).contains(depth)));
++        for depth in 1..=4 {
++            assert!(chosen.iter().filter(|&&action| action == depth).count() >= 16);
++        }
++        assert_eq!(p.stats().iter().map(|s| s.rounds).sum::<u64>(), 128);
++        assert!(p.switches() > 0);
++    }
++}
+diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engine/src/bin/mtp_depth_study.rs
+--- a/crates/memra-engine/src/bin/mtp_depth_study.rs
++++ b/crates/memra-engine/src/bin/mtp_depth_study.rs
+@@ -16,10 +16,19 @@
+ fn experiment(
+     arm: &str,
+     cap: usize,
++    explore_seed: Option<u64>,
+     tok: &Tokenizer,
+     vocabulary: usize,
+     priors: Option<&str>,
+ ) -> Result<Option<MtpDepthExperiment>, Box<dyn std::error::Error>> {
++    if arm == "explore-d" {
++        return Ok(Some(MtpDepthExperiment::Learned(
++            memra_engine::learned_depth::LearnedDepth::randomized(
++                cap,
++                explore_seed.ok_or("randomized depth requires its own seed")?,
++            )?,
++        )));
++    }
+     let arm = match arm {
+         "trace-c1" => "fixed:1",
+         "trace-c2" => "fixed:2",
+@@ -103,8 +112,8 @@
+         println!("{}", prompt.len());
+         return Ok(());
+     }
+-    if !(10..=16).contains(&args.len()) {
+-        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
++    if !(10..=18).contains(&args.len()) {
++        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [cap=N] [explore-seed=UINT64] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
+     }
+     let arm = args[5].as_str();
+     let seed: u64 = args[6].parse()?;
+@@ -115,8 +124,18 @@
+     let mut confidence_policy = None;
+     let mut confidence_costs = None;
+     let mut fixed_cutoffs = None;
++    let mut requested_cap = None;
++    let mut explore_seed = None;
+     for option in &args[10..] {
+-        if let Some(path) = option.strip_prefix("confidence-policy=") {
++        if let Some(value) = option.strip_prefix("cap=") {
++            if requested_cap.replace(value.parse::<usize>()?).is_some() {
++                return Err("duplicate draft ceiling".into());
++            }
++        } else if let Some(value) = option.strip_prefix("explore-seed=") {
++            if explore_seed.replace(value.parse::<u64>()?).is_some() {
++                return Err("duplicate randomized depth seed".into());
++            }
++        } else if let Some(path) = option.strip_prefix("confidence-policy=") {
+             if path.is_empty() || confidence_policy.replace(path).is_some() {
+                 return Err("invalid confidence policy path".into());
+             }
+@@ -143,9 +162,16 @@
+             standard_args.push(option.clone());
+         }
+     }
++    let cap = requested_cap.unwrap_or(7);
++    if !(1..=7).contains(&cap)
++        || (arm == "explore-d" && requested_cap.is_none())
++        || (arm == "explore-d") != explore_seed.is_some()
++    {
++        return Err("explicit randomized draft ceiling must be in 1..=7".into());
++    }
+     let (gate, cold_reference, priors) = depth_study_io::extra_args(&standard_args)?;
+     let live_confidence = matches!(arm, "learn-c3" | "monitor-c3");
+-    let trace_confidence = live_confidence || matches!(arm, "trace-c1" | "trace-c2" | "trace-c3");
++    let trace_confidence = live_confidence || matches!(arm, "trace-c1" | "trace-c2" | "trace-c3" | "explore-d");
+     if confidence_policy.is_some() != live_confidence
+         || confidence_costs.is_some() != live_confidence
+         || (arm == "fixed-c3") != fixed_cutoffs.is_some()
+@@ -195,11 +221,12 @@
+     if mtp.d2t.is_some() || draft_vocab != model.output.out_features() {
+         return Err("MTP draft and target heads must both use the full vocabulary".into());
+     }
+-    let cap = 7;
+     let routing = depth_study_io::request_routing::RequestRouting::parse(arm, cap as u8)?;
+     let initial_arm = routing.map(|r| format!("fixed:{}", r.initial_k()))
+         .unwrap_or_else(|| arm.to_owned());
+-    let initial_experiment = experiment(&initial_arm, cap, &tok, model.output.out_features(), priors)?;
++    let initial_experiment = experiment(
++        &initial_arm, cap, explore_seed, &tok, model.output.out_features(), priors,
++    )?;
+     let mut routing_log = std::fs::File::create_new(output.join("routing.tsv"))?;
+     writeln!(routing_log, "turn\tsource\tkind\tk\trouting_ns")?;
+     let eos = tok.eog_ids();

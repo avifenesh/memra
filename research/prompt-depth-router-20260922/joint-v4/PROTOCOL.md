@@ -114,8 +114,12 @@ For round-level training, record actual offered D, accepted-prefix
 labels only while all earlier proposals were accepted, committed
 tokens, draft/verify/commit wall, and complete request time. Cover
 each eligible D action on calibration with a preregistered randomized
-schedule and retain action propensities, so a learner is not trained
-only on states selected by its own favorite depth. Acceptance is a
+schedule. Draw a distinct, uniformly assigned `explore-seed` for
+each conversation before it runs; draw each round's D independently
+of observed acceptance from that seeded stream, with nominal
+propensity `1/K`. Retain that seed, round counter, action and
+per-action exposure. Fail the training gate if any D lacks enough
+eligible rounds; never impute a missing action. Acceptance is a
 **calibration target and feature for later rounds**; it is never the
 evaluation metric. Train a small frozen predictor of conditional
 survival/cycle utility and select actions with measured marginal
