@@ -8273,14 +8273,23 @@ impl HostPlaneBytes {
 
 /// Legacy pageable state only exists with the arena OFF. Every f32 payload in
 /// an armed host image consumes the same pre-reserved lease as its K/V planes.
+/// WP-A day 32 (Move 2 owed item 1, the H2D half, design H): a heap payload is SHARED and
+/// immutable (`HostHeapF32`), so the promote hands the resident plane to the hash helper for the
+/// staging fill as an owned clone, never a borrow across threads. Same bytes, same hash input.
 enum HostF32 {
-    Heap(Vec<f32>),
+    Heap(HostHeapF32),
     Pinned(memra_engine::PinnedHostBuf),
 }
+/// WP-A day 32: the resident heap form of one f32 payload. `Arc<Vec<f32>>`, not `Arc<[f32]>`:
+/// `Arc<[f32]>::from(Vec<f32>)` copies the bytes into a fresh allocation (the header must sit in
+/// front of them), which would put a second full copy of every demoted recurrent plane on the
+/// owner thread of the door-OFF demote (`host_glm::read_f32` returns the `Vec`); `Arc::new` of
+/// the `Vec` moves it. The sharing and the immutability are the same.
+type HostHeapF32 = Arc<Vec<f32>>;
 impl HostF32 {
     fn down(p: &CudaSlice<f32>, planes: &mut HostPlaneLeases) -> Result<Self, String> {
         if planes.0.is_none() {
-            return host_glm::read_f32(p).map(Self::Heap);
+            return host_glm::read_f32(p).map(|v| Self::Heap(Arc::new(v)));
         }
         let mut data = planes.take(p.len() * 4)?;
         data.copy_from_device_f32(p).map_err(|e| e.to_string())?;
@@ -8288,7 +8297,7 @@ impl HostF32 {
     }
     fn from_slice(p: &[f32], planes: &mut HostPlaneLeases) -> Result<Self, String> {
         if planes.0.is_none() {
-            return Ok(Self::Heap(p.to_vec()));
+            return Ok(Self::Heap(Arc::new(p.to_vec())));
         }
         let mut data = planes.take(p.len() * 4)?;
         data.copy_from_slice(f32s_as_bytes(p))
@@ -9961,7 +9970,7 @@ enum HostHashSlot {
 /// staging comes back with the reply to the context's set.
 struct HostHashPayload {
     slot: HostHashSlot,
-    data: Vec<f32>,
+    data: HostHeapF32,
     staged: Option<memra_engine::PinnedHostBuf>,
 }
 
@@ -10146,7 +10155,7 @@ impl HostHashWorker {
                         .map(|mut p| {
                             // WP-A day 30: a landed f32 span becomes the payload's heap `Vec`.
                             if let Some(staged) = &p.staged {
-                                p.data = staged.as_f32_slice().to_vec();
+                                p.data = Arc::new(staged.as_f32_slice().to_vec());
                             }
                             let (n, d) = host_hash_payload_digest(&p.data);
                             (p, n, d)
@@ -12560,7 +12569,7 @@ fn host_entry_from_device(
             continue;
         }
         if spanned.contains(&HostHashSlot::Conv(i)) {
-            conv.push(Some(HostF32::Heap(Vec::new())));
+            conv.push(Some(HostF32::Heap(HostHeapF32::default())));
             continue;
         }
         conv.push(match c {
@@ -12578,7 +12587,7 @@ fn host_entry_from_device(
             continue;
         }
         if spanned.contains(&HostHashSlot::Ssm(i)) {
-            ssm.push(Some(HostF32::Heap(Vec::new())));
+            ssm.push(Some(HostF32::Heap(HostHeapF32::default())));
             continue;
         }
         ssm.push(match s {
@@ -43508,10 +43517,10 @@ mod tests {
             conv: Vec::new(),
             ssm: Vec::new(),
             pos: 0,
-            last_logits: super::HostF32::Heap(vec![0.0]),
+            last_logits: super::HostF32::Heap(Arc::new(vec![0.0])),
             draft: None,
             dspark_draft: None,
-            last_h: super::HostF32::Heap(Vec::new()),
+            last_h: super::HostF32::Heap(Default::default()),
             device_bytes: bytes,
             bytes,
             last_use: next_instant(),
@@ -45698,17 +45707,20 @@ mod tests {
     fn heap_image(key: &PoolKey) -> HostPrefixEntry {
         let mut e = host_entry(key, (100..164).collect(), 4096);
         e.conv = vec![
-            Some(super::HostF32::Heap(fixture_f32(1, 4096))),
+            Some(super::HostF32::Heap(Arc::new(fixture_f32(1, 4096)))),
             None,
-            Some(super::HostF32::Heap(fixture_f32(2, 1 << 16))),
+            Some(super::HostF32::Heap(Arc::new(fixture_f32(2, 1 << 16)))),
         ];
         e.ssm = vec![
             None,
-            Some(super::HostF32::Heap(fixture_f32(3, 3 * 1024 * 1024 / 4))),
-            Some(super::HostF32::Heap(fixture_f32(4, 7))),
+            Some(super::HostF32::Heap(Arc::new(fixture_f32(
+                3,
+                3 * 1024 * 1024 / 4,
+            )))),
+            Some(super::HostF32::Heap(Arc::new(fixture_f32(4, 7)))),
         ];
-        e.last_logits = super::HostF32::Heap(fixture_f32(5, 151_936));
-        e.last_h = super::HostF32::Heap(fixture_f32(6, 5120));
+        e.last_logits = super::HostF32::Heap(Arc::new(fixture_f32(5, 151_936)));
+        e.last_h = super::HostF32::Heap(Arc::new(fixture_f32(6, 5120)));
         e
     }
 
@@ -45784,7 +45796,7 @@ mod tests {
             assert_eq!(p.slot, *slot, "the order the bind consumes");
             assert_eq!(*n, *en, "the byte count hashed");
             assert_eq!(*d, *ed, "the digest, bitwise");
-            assert_eq!(p.data, *data, "the payload back byte-identical");
+            assert_eq!(*p.data, *data, "the payload back byte-identical");
         }
         assert!(reply.helper_ms >= 0.0);
         // Back into the image: every payload in its slot; the table answers per slot.
@@ -45808,13 +45820,13 @@ mod tests {
         // describe this image).
         let stray = super::HostHashPayload {
             slot: super::HostHashSlot::Conv(0),
-            data: vec![1.0],
+            data: Arc::new(vec![1.0]),
             staged: None,
         };
         assert!(super::host_hash_restore_payload(&mut e, stray).is_err());
         let out_of_range = super::HostHashPayload {
             slot: super::HostHashSlot::Ssm(7),
-            data: vec![],
+            data: Default::default(),
             staged: None,
         };
         assert!(super::host_hash_restore_payload(&mut e, out_of_range).is_err());
@@ -46630,7 +46642,7 @@ mod tests {
         );
         let helper = body("impl HostHashWorker {");
         assert!(
-            at(helper, "p.data = staged.as_f32_slice().to_vec();")
+            at(helper, "p.data = Arc::new(staged.as_f32_slice().to_vec());")
                 < at(helper, "host_hash_payload_digest(&p.data)")
         );
         let hashing = body("fn host_demote_settle_hashing(");
@@ -46764,7 +46776,7 @@ mod tests {
     fn day31_the_copy_complete_line_tallies_the_payload_bytes_by_class() {
         let heap = |slot, n: usize| super::HostHashPayload {
             slot,
-            data: vec![0.0; n],
+            data: Arc::new(vec![0.0; n]),
             staged: None,
         };
         let payloads = vec![
@@ -47136,7 +47148,7 @@ mod tests {
             .into_iter()
             .map(|(slot, buf)| super::HostHashPayload {
                 slot,
-                data: Vec::new(),
+                data: Default::default(),
                 staged: Some(buf),
             })
             .collect();
