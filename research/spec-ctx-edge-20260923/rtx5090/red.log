@@ -1,0 +1,21 @@
+== spec-ctx-edge-gate: arms=on,plain,off port=8193 open=64 ctx=384 out=/home/avifenesh/projects/wt-spec-ctx-edge/research/spec-ctx-edge-20260923/rtx5090/red ==
+--- arm on: door ON, open output 64, default spec ---
+  [on] ready (pid 1970497)
+SCE (on) r1 open request: http=500 finish_reason= prompt_tokens= completion_tokens= expected=64 -> FAIL
+SCE (on) r2 open request: http=500 finish_reason= prompt_tokens= completion_tokens= expected=64 -> FAIL
+SCE (on) r3 open request: http=500 finish_reason= prompt_tokens= completion_tokens= expected=64 -> FAIL
+SCE (on) r4 open request: http=500 finish_reason= prompt_tokens= completion_tokens= expected=64 -> FAIL
+SCE (on) bounded control: http=200 completion_tokens=16 expected=16 -> PASS
+SCE (on) boot census: alive=1 health=200 panicked=0 argmax_sentinel=4 worker_fatal=0 respawn=0 verify_refused=0 spec_acc_lines=9 (spec expected=1) -> FAIL
+--- arm plain: door ON, open output 64, MEMRA_SERVE_SPEC=0 ---
+  [plain] ready (pid 1971055)
+SCE (plain) r1 open request: http=200 finish_reason=length completion_tokens=72 expected=64 -> FAIL
+SCE (plain) boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 worker_fatal=0 respawn=0 verify_refused=0 spec_acc_lines=0 (spec expected=0) -> PASS
+--- arm off: door OFF, MEMRA_CTX=384, default spec ---
+  [off] ready (pid 1971437)
+SCE (off) r1 open request to the cap: http=500 finish_reason= prompt_tokens= completion_tokens= room=384 -> FAIL
+SCE (off) r2 open request to the cap: http=500 finish_reason= prompt_tokens= completion_tokens= room=384 -> FAIL
+SCE (off) r3 open request to the cap: http=500 finish_reason= prompt_tokens= completion_tokens= room=384 -> FAIL
+SCE (off) boot census: alive=1 health=200 panicked=0 argmax_sentinel=3 worker_fatal=0 respawn=0 verify_refused=0 spec_acc_lines=30 (spec expected=1) -> FAIL
+== spec-ctx-edge-gate: 2 PASS, 10 FAIL ==
+SPEC-CTX-EDGE GATE: RED
