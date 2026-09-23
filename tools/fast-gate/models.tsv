@@ -166,6 +166,14 @@ pbatch35c	cmd	tools/step35-prime-batch-gate.sh	--canary	-	-
 # token is changed inside the batches only, so bp/bps must DIFFER while ref2/tick/wave stay EXACT.
 ptick	cmd	tools/prime-tick-exact-gate.sh	-	-	-
 ptickc	cmd	tools/prime-tick-exact-gate.sh	--canary	-	-
+# pbg9/pbg9c: prime-batch-gate --exact on the qwen hybrid 9B (memra#641): prime_cache_batch vs
+# prime_cache bitwise per sequence (prefill logits, h_seed, hidden stack, teacher-forced decode
+# logits) at b3-p24, b4-p1100 and carried b3-p600. The gate existed but ran on the 9B in no
+# battery; it was red on 9c07b398b (seq 0 logits diff 248320/248320) and is green on the fix.
+# The rows refuse a vacuous solo fallback. Canary: seq 0's first token changes inside the batch
+# only; seq 0 must differ and seqs 1 and 2 must stay bit-identical.
+pbg9	cmd	tools/prime-batch-exact-gate.sh	-	-	-
+pbg9c	cmd	tools/prime-batch-exact-gate.sh	--canary	-	-
 # gwstress: the MEMRA_GRAPH_WARMUPS=1 pool-growth adversarial gate (lane/graph-warmups) —
 # large<->small session cycles + overlap arm force captures over freed async-pool blocks;
 # bit-identity vs eager is the arbiter (#68's class corrupts without faulting) and the

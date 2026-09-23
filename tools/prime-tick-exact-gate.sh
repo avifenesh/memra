@@ -27,7 +27,8 @@
 #
 # GPU: run under the rig lock (fast-gate's cmd rows hold it; standalone, wrap the call in
 # `flock /tmp/memra-5090.lock` on the local 5090). Prompts are generated from pinned seeds and
-# checked against pinned sha256s, so the ids cannot drift silently.
+# checked against pinned sha256s, so the ids cannot drift silently. A green run without --log
+# removes its scratch dir; a red run keeps the raw log it names.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
@@ -75,7 +76,11 @@ then
     exit 1
 fi
 
-LOG="${LOG:-$WORK/tickshape.log}"
+# A green run without --log removes its scratch; a red one keeps the raw log for the reader.
+LOG_KEEP=1
+[ -n "$LOG" ] || { LOG="$WORK/tickshape.log"; LOG_KEEP=0; }
+green_exit() { [ "$LOG_KEEP" = 1 ] || rm -f "$LOG"; exit 0; }
+green_note() { if [ "$LOG_KEEP" = 1 ]; then echo "log $LOG"; else echo "scratch removed"; fi; }
 ARGS=(--ids-a "$WORK/ids-a.json" --ids-b "$WORK/ids-b.json" --ids-c "$WORK/ids-c.json"
       --tick 1024 --steps 32 --join 4 --arms "ref,ref2,tick,bp,bps,wave")
 [ "$CANARY" = 1 ] && ARGS+=(--canary)
@@ -113,14 +118,14 @@ if [ "$CANARY" = 1 ]; then
         echo "  read EXACT on $((2 - bad_batched)) batched arm(s): the comparator is blind; log $LOG)"
         exit 1
     fi
-    echo "prime-tick-exact-gate: CANARY OK (bp and bps DIFFER with B's batch prompt changed; log $LOG)"
-    exit 0
+    echo "prime-tick-exact-gate: CANARY OK (bp and bps DIFFER with B's batch prompt changed; $(green_note))"
+    green_exit
 fi
 
 if [ $fail -eq 0 ] && [ $bad_batched -eq 0 ] && [ $rc -eq 0 ] \
     && grep -q "^tickshape verdict: ALL ARMS EXACT" "$LOG"; then
-    echo "prime-tick-exact-gate: PASS (every prime shape is bit-identical to the solo prime; log $LOG)"
-    exit 0
+    echo "prime-tick-exact-gate: PASS (every prime shape is bit-identical to the solo prime; $(green_note))"
+    green_exit
 fi
 echo "prime-tick-exact-gate: FAIL rc=$rc (a request primed inside a tick batch or a wave took a"
 echo "  different numeric program than the solo prime; memra#641, raw log $LOG)"
