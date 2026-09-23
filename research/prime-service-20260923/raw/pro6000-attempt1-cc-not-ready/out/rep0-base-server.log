@@ -1,0 +1,5 @@
+[server] build: memra-0.138.0-30ec0f1a0594 (id: source-tree, git: 5f1b0eda4bd2)
+[server] starting; models config = [("gate", "/data/models/kernel-oracles/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: /dev/kmsg
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[server] FATAL: worker init failed: Engine::new failed: DriverError(CUDA_ERROR_SYSTEM_NOT_READY, "system not yet initialized")

@@ -119,6 +119,9 @@ alternating each rep), decoders already streaming when a 131k prime and a second
 32k prime arrive. It records the decoders' rate and ITL inside each prime's
 window and each prime's TTFT, so the interval's price to the long prime is
 measured beside what it buys the peers.
+The first receipt is `research/prime-service-20260923/` (one RTX PRO 6000, main
+`5f1b0eda4` against the interval): PASS, decoders' rate inside the 131k window 8.73 to
+52.15 ev/s, the 131k prime's TTFT 28.09 to 46.92 s.
 
 The 5090 compatibility follow-up cannot alter unrelated serving or replace the
 blocking PRO 6000 evidence. Fresh qualification of the changed source awaits
