@@ -962,6 +962,24 @@ struct StepLanding {
     rows: usize,
 }
 
+impl StepLanding {
+    /// Block the host until every stage's readback event of the queued step has completed.
+    /// Enqueues nothing, so a serve loop may call it without holding its launch turn.
+    fn wait(&mut self, stages: &[Stage]) -> Res<()> {
+        for (si, event) in self.events.iter_mut().enumerate() {
+            if let Some(event) = event.take() {
+                stages[si]
+                    .gpu
+                    .ctx
+                    .bind_to_thread()
+                    .map_err(e("bind deferred completion"))?;
+                event.synchronize().map_err(e("deferred readback wait"))?;
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Dsv4PrefillDraft {
     #[default]
@@ -11660,6 +11678,20 @@ impl Dsv4Gpu {
         result
     }
 
+    /// Pipelined plain greedy step, the wait: block until this step's own readbacks landed,
+    /// not whatever else the stage streams hold. Queues no work, so a serve loop calls it
+    /// without its launch turn; [`Self::decode_step_greedy_complete`] waits itself otherwise.
+    pub fn decode_step_greedy_wait(&self, state: &mut DecodeState) -> Res<()> {
+        let work = state
+            .matrix_step
+            .as_mut()
+            .ok_or("matrix one-row workspace missing")?;
+        match work.verify.landing.as_mut() {
+            Some(landing) if landing.rows != 0 => landing.wait(&self.stages),
+            _ => Err("pipelined greedy wait without a queued step".into()),
+        }
+    }
+
     /// Pipelined plain greedy step, second half: wait for this step's own readbacks (not for
     /// whatever else the stage streams hold), refuse on a MoE fault before anything commits,
     /// then commit the one row and return its token. Same bits as [`Self::decode_step_greedy`].
@@ -18322,16 +18354,7 @@ impl Dsv4Gpu {
         if rows == 0 {
             return Err("deferred step completion without a queued readback".into());
         }
-        for (si, event) in landing.events.iter_mut().enumerate() {
-            if let Some(event) = event.take() {
-                self.stages[si]
-                    .gpu
-                    .ctx
-                    .bind_to_thread()
-                    .map_err(e("bind deferred completion"))?;
-                event.synchronize().map_err(e("deferred readback wait"))?;
-            }
-        }
+        landing.wait(&self.stages)?;
         let mut first = None;
         for (si, vws) in vstate.ws.iter_mut().enumerate() {
             if !vws.moe_fault_armed {

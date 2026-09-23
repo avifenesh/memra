@@ -125,6 +125,8 @@ pub struct Dsv4Model {
     pub prefill_chunk: usize,
     /// The route's memory book, calibrated at load (memra#503).
     pub memory: Dsv4Memory,
+    /// Serving lanes (`MEMRA_DSV4_SESSIONS`, memra #667).
+    pub sessions: usize,
 }
 
 /// What a session costs on each stage beyond its capacity-planned layer caches, and the most
@@ -153,6 +155,23 @@ fn env_text(name: &str, raw: Option<OsString>) -> Result<Option<String>, String>
             .map(Some)
             .map_err(|_| format!("{name} is not valid Unicode")),
     }
+}
+
+/// `MEMRA_DSV4_SESSIONS` (memra #667): serving lanes that share the route's queue and launch
+/// turn. Unset or `1` is the serial route; `2..=4` pipeline plain greedy steps across sessions.
+fn resolve_sessions(raw: Option<&str>) -> Result<usize, String> {
+    match raw.map(str::trim) {
+        None | Some("") => Ok(1),
+        Some(text) => match text.parse::<usize>() {
+            Ok(n @ 1..=4) => Ok(n),
+            _ => Err(format!("MEMRA_DSV4_SESSIONS {text:?} must be 1..=4")),
+        },
+    }
+}
+
+/// The configured serving lanes, read once per caller from the environment.
+pub fn sessions_from_env() -> Result<usize, String> {
+    resolve_sessions(configured_env_text("MEMRA_DSV4_SESSIONS")?.as_deref())
 }
 
 fn configured_env_text(name: &str) -> Result<Option<String>, String> {
@@ -803,6 +822,12 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
             format!("{prefill_chunk} tokens")
         },
     );
+    let sessions = sessions_from_env()?;
+    if sessions > 1 && !gpu.matrix_moe_enabled() {
+        return Err(format!(
+            "MEMRA_DSV4_SESSIONS={sessions} pipelines the PP matrix program only; this load runs another"
+        ));
+    }
     let mut m = Dsv4Model {
         gpu: Arc::new(gpu),
         tok,
@@ -813,6 +838,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         c4_host_bytes,
         prefill_chunk,
         memory: Dsv4Memory::default(),
+        sessions,
     };
     m.memory = calibrate_memory(&m).map_err(|e| format!("dsv4 memory calibration: {e}"))?;
     let per_stage = |v: &[u64]| {
@@ -941,7 +967,11 @@ fn route_defer_budget_ms() -> u64 {
 /// registry's wiring test greps THIS file for the call sites the declarations name without the
 /// declarations themselves satisfying it.
 pub fn contract(model: &str) -> crate::route_contract::RouteContract {
-    crate::route_contract::RouteContract::dsv4_thread(model)
+    // An unreadable value refuses at load; the contract only needs the lane count.
+    crate::route_contract::RouteContract::dsv4_thread_sessions(
+        model,
+        sessions_from_env().unwrap_or(1),
+    )
 }
 
 /// ModelCaps for the /v1/models surface + the HTTP layer's gates — the same
@@ -1035,57 +1065,149 @@ pub fn spawn(
     load: Arc<RouteLoad>,
 ) -> std::sync::mpsc::Sender<Box<Request>> {
     let (tx, rx) = std::sync::mpsc::channel::<Box<Request>>();
-    std::thread::Builder::new()
-        .name(format!("dsv4-serve-{name}"))
-        .spawn(move || {
-            let _latch = ExitLatch(health.clone());
-            let sink = health.clone();
-            let _progress =
-                memra_engine::progress::ProgressSinkScope::install(Box::new(move |rows| {
-                    sink.note_rows(rows)
-                }));
-            let mut host_cache = Dsv4HostCache::new(m.host_cache_bytes);
-            loop {
-                health.set_idle();
-                let Ok(mut req) = rx.recv() else { break };
-                // Occupancy rises before the ticket falls (`RouteLoad::begin`), so an arrival
-                // never reads a free route between the two.
-                let mut run = load.begin();
-                // The worker's DSV4 channel is unbounded, so the hard admission reservation
-                // remains held until this serving thread actually receives the request. Merely
-                // forwarding it from the command channel must not make the queue appear empty.
-                crate::worker::release_request_reservation(&mut req);
-                if req.tx.is_closed() {
-                    continue; // client gone while queued
-                }
-                run.admit();
-                health.begin_request();
-                let mut progress = RouteProgress {
-                    health: health.clone(),
-                    load: load.clone(),
-                    last_round: Instant::now(),
-                };
-                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    serve_one(&m, &mut host_cache, &mut req, Some(&mut progress))
-                }));
-                match r {
-                    Ok(served) => settle(run, &mut req, served),
-                    Err(payload) => {
-                        health.note_request_fault();
-                        let why = payload
-                            .downcast_ref::<String>()
-                            .cloned()
-                            .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
-                            .unwrap_or_else(|| "non-string panic payload".into());
-                        let _ = req.tx.send(Event::Error(EngineError::engine(format!(
-                            "dsv4 generation panicked: {why}"
-                        ))));
-                    }
-                }
-            }
-        })
-        .expect("spawn dsv4 serve thread");
+    let lanes = m.sessions.max(1);
+    let rx = Arc::new(std::sync::Mutex::new(rx));
+    let turn = Arc::new(std::sync::Mutex::new(Dsv4HostCache::new(
+        m.host_cache_bytes,
+    )));
+    let m = Arc::new(m);
+    for lane in 0..lanes {
+        let (m, rx, turn, health, load) = (
+            m.clone(),
+            rx.clone(),
+            turn.clone(),
+            health.clone(),
+            load.clone(),
+        );
+        std::thread::Builder::new()
+            .name(if lanes == 1 {
+                format!("dsv4-serve-{name}")
+            } else {
+                format!("dsv4-serve-{name}-{lane}")
+            })
+            .spawn(move || serve_lane(&m, &rx, &turn, &health, &load, lanes))
+            .expect("spawn dsv4 serve thread");
+    }
     tx
+}
+
+/// One serving lane. With one lane this is the serial route. With several (memra #667) the
+/// lanes share the queue and the launch turn: every engine call runs holding the turn, and a
+/// pipelined greedy step gives it up only while it waits for its own readbacks, so another
+/// lane's step is queued whole on the stage streams behind it.
+fn serve_lane(
+    m: &Dsv4Model,
+    rx: &std::sync::Mutex<std::sync::mpsc::Receiver<Box<Request>>>,
+    turn_lock: &std::sync::Mutex<Dsv4HostCache>,
+    health: &Arc<RouteHealth>,
+    load: &Arc<RouteLoad>,
+    lanes: usize,
+) {
+    let _latch = ExitLatch(health.clone());
+    let sink = health.clone();
+    let _progress = memra_engine::progress::ProgressSinkScope::install(Box::new(move |rows| {
+        sink.note_rows(rows)
+    }));
+    loop {
+        if lanes == 1 {
+            health.set_idle();
+        } else {
+            health.set_idle_if_free();
+        }
+        let next = match rx.lock() {
+            Ok(queue) => queue.recv(),
+            Err(poisoned) => poisoned.into_inner().recv(),
+        };
+        let Ok(mut req) = next else { break };
+        // Occupancy rises before the ticket falls (`RouteLoad::begin`), so an arrival
+        // never reads a free route between the two.
+        let mut run = load.begin();
+        // The worker's DSV4 channel is unbounded, so the hard admission reservation
+        // remains held until this serving thread actually receives the request. Merely
+        // forwarding it from the command channel must not make the queue appear empty.
+        crate::worker::release_request_reservation(&mut req);
+        if req.tx.is_closed() {
+            continue; // client gone while queued
+        }
+        run.admit();
+        health.begin_request();
+        let mut progress = RouteProgress {
+            health: health.clone(),
+            load: load.clone(),
+            last_round: Instant::now(),
+        };
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut turn = Turn::take(turn_lock);
+            serve_one(m, &mut turn, &mut req, Some(&mut progress))
+        }));
+        match r {
+            Ok(served) => settle(run, &mut req, served),
+            Err(payload) => {
+                health.note_request_fault();
+                let why = payload
+                    .downcast_ref::<String>()
+                    .cloned()
+                    .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+                    .unwrap_or_else(|| "non-string panic payload".into());
+                let _ = req.tx.send(Event::Error(EngineError::engine(format!(
+                    "dsv4 generation panicked: {why}"
+                ))));
+            }
+        }
+        health.end_request();
+    }
+}
+
+/// The route's launch turn (memra #667). It owns the parked-prefix cache, and a session holds
+/// it for every engine call, so one session's work is queued whole on the stage streams
+/// before another's. Only a pipelined greedy step gives it up, while it waits for its own
+/// readbacks. With one serving lane nobody else ever asks for it.
+struct Turn<'a> {
+    lock: &'a std::sync::Mutex<Dsv4HostCache>,
+    guard: Option<std::sync::MutexGuard<'a, Dsv4HostCache>>,
+}
+
+impl<'a> Turn<'a> {
+    fn take(lock: &'a std::sync::Mutex<Dsv4HostCache>) -> Self {
+        let mut turn = Turn { lock, guard: None };
+        turn.acquire();
+        turn
+    }
+
+    fn acquire(&mut self) {
+        if self.guard.is_none() {
+            self.guard = Some(self.lock.lock().unwrap_or_else(|p| p.into_inner()));
+        }
+    }
+
+    fn release(&mut self) {
+        self.guard = None;
+    }
+
+    fn cache(&mut self) -> &mut Dsv4HostCache {
+        self.acquire();
+        self.guard.as_deref_mut().expect("turn held")
+    }
+}
+
+/// One plain greedy step. Serial lanes take the one-call step. Pipelined lanes queue the step
+/// holding the turn, wait for its readbacks without it, then take the turn back to commit.
+fn greedy_step(
+    m: &Dsv4Model,
+    turn: &mut Turn,
+    tok: u32,
+    state: &mut DecodeState,
+) -> Result<u32, String> {
+    if m.sessions <= 1 {
+        return m.gpu.decode_step_greedy(tok, state);
+    }
+    turn.acquire();
+    m.gpu.decode_step_greedy_enqueue(tok, state)?;
+    turn.release();
+    let waited = m.gpu.decode_step_greedy_wait(state);
+    turn.acquire();
+    waited?;
+    m.gpu.decode_step_greedy_complete(state)
 }
 
 /// Streaming state shared by every route: incremental detok, EOS, stop strings,
@@ -1669,7 +1791,7 @@ fn admit_request(
 
 fn serve_one(
     m: &Dsv4Model,
-    host_cache: &mut Dsv4HostCache,
+    turn: &mut Turn,
     req: &mut Request,
     progress: Option<&mut RouteProgress>,
 ) -> Result<Served, EngineError> {
@@ -1731,7 +1853,7 @@ fn serve_one(
         .map_err(EngineError::context_length)?;
     if let Some(turned_away) = admit_request(
         m,
-        host_cache,
+        turn.cache(),
         req,
         &prompt,
         session_capacity,
@@ -1749,7 +1871,8 @@ fn serve_one(
     let short_monolithic = !m.gpu.matrix_moe_enabled()
         && m.prefill_chunk > 0
         && !use_chunked_prefill(m.prefill_chunk, prompt.len());
-    let mut restored = try_restore_prefix(m, host_cache, req, &prompt, session_capacity, use_spec);
+    let mut restored =
+        try_restore_prefix(m, turn.cache(), req, &prompt, session_capacity, use_spec);
     let n_cached = restored.as_ref().map_or(0, |hit| hit.n_cached);
     let _ = req.tx.send(Event::PromptUsage {
         n_prompt: prompt.len(),
@@ -1957,9 +2080,7 @@ fn serve_one(
                     dsv4_penalize_row(&mut row, &window, pc);
                     argmax(&row)
                 } else {
-                    m.gpu
-                        .decode_step_greedy(t, &mut state)
-                        .map_err(EngineError::engine)?
+                    greedy_step(m, turn, t, &mut state).map_err(EngineError::engine)?
                 };
             }
         } else {
@@ -2051,7 +2172,7 @@ fn serve_one(
     if let Some(toks) = park_toks {
         park_prefix(
             m,
-            host_cache,
+            turn.cache(),
             req,
             toks,
             &state_to_park,
@@ -2320,8 +2441,23 @@ mod declared_context_tests {
 
 #[cfg(test)]
 mod c4_host_budget_tests {
-    use super::{admit_c4_host_bytes, env_text, resolve_c4_host_bytes, resolve_env_mb};
+    use super::{
+        admit_c4_host_bytes, env_text, resolve_c4_host_bytes, resolve_env_mb, resolve_sessions,
+    };
     use std::ffi::OsString;
+
+    #[test]
+    fn serving_lanes_resolve_literally() {
+        for raw in [None, Some(""), Some("1"), Some(" 1 ")] {
+            assert_eq!(resolve_sessions(raw), Ok(1));
+        }
+        for n in 2..=4 {
+            assert_eq!(resolve_sessions(Some(&n.to_string())), Ok(n));
+        }
+        for raw in ["0", "5", "two", "-1", "2.0"] {
+            assert!(resolve_sessions(Some(raw)).is_err(), "{raw}");
+        }
+    }
 
     #[test]
     fn budget_is_opt_in_and_strictly_parsed() {

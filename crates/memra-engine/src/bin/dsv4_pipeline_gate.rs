@@ -1,8 +1,8 @@
 //! PP-2 request pipelining gate (memra #667).
 //!
 //! Two sessions decode the same greedy streams twice: serially, one session after the other
-//! through `decode_step_greedy`, then pipelined through `decode_step_greedy_enqueue` /
-//! `decode_step_greedy_complete` in the order a two-session serve loop takes: queue A, queue
+//! through `decode_step_greedy`, then pipelined through `decode_step_greedy_enqueue`, `_wait` and
+//! `_complete` in the order a two-session serve loop takes: queue A, queue
 //! B, then finish A and queue its next step, finish B and queue its next. Each stage stream
 //! then holds the two sessions' steps in order, so card 0 runs one session's stage 0 while
 //! card 1 runs the other's stage 1.
@@ -94,6 +94,8 @@ fn pipelined(
             if session.tokens.len() >= output {
                 continue;
             }
+            gpu.decode_step_greedy_wait(&mut session.state)
+                .expect("pipelined wait");
             let next = gpu
                 .decode_step_greedy_complete(&mut session.state)
                 .expect("pipelined complete");
