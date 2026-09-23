@@ -2797,6 +2797,78 @@ three doc comments, so no binary program changes (the integ48 precedent for rese
 - 2026-10-05: the contracts door (C day 39 and A day 31 are new input).
 - 2026-10-06: the park door.
 
+## integ51 (`lane/spill-integ51-20260923`): B day 32 (the `MEMRA_ADMIT_BY_MEMORY` rerun on the fixed tree, both cards; V-DOOR FAIL on V-ALLOC only; memra#680 found)
+Lane tip: B `214f2a8a5`, which already carries main `c3eb41d12` (#677 included), so the branch is a fast-forward.
+Research only: `git diff origin/main HEAD` touches `research/` and nothing else.
+
+**B day 32.** Pre-registration `51c113659` was committed at 06:32:14Z, and the first boot started at 06:33:04Z. Same
+arms, workloads and orders as day 31, run on binaries built from `d544c6b82` (#668). The truncation band is G = v
+exactly, and the three day-31 reader gaps are closed (a crash term, a non-vacuous retry, the twin-failed rows counted).
+No crash-pattern line on any of the 16 boots. V-ID is `differ=0` on all 12 ON arms, and every ON `length` row, burst
+included, ends at exactly G = v. Verbatim: `DAY32 V-DOOR card=rtx5090 boots=8 excluded=0 v_crash_all=True
+v_id_all=True v_alloc_all=False v_trunc_band_all=True v_trunc_conserved_all=True v_retry_all=True -> FAIL` and the
+same line for `card=pro6000`. The FAIL is V-ALLOC alone, on all 12 ON boots, every mismatch exactly -8 (first at
+`rtx5090-day32/boots/O1-on2048/server.log:46`, `ctx=3551` against the registered 3559). The pre-registered expectation
+kept day 31's `P + v + 72`. With #668's budget `v`, the engine books `max(ctx_cap, P + budget + 64)` = `P + v + 64`,
+while the allocation `P + v + 8` is unchanged. Selection rules as printed, none chosen: `DAY32 SELECT card=rtx5090
+R1_smallest_zero_truncation=8192 ... R2_smallest_v_ge_max_natural_G=8192 (max_natural_G=6405)`, `DAY32 SELECT
+card=pro6000 R1_smallest_zero_truncation=none ... R2_smallest_v_ge_max_natural_G=none of [2048, 8192, 32768]
+(max_natural_G=193178)`, and R3 `32768` and R4 `context` on both cards. Every reading matches what was written
+before the first boot. Truncation and concurrency per card are in DAY32 2.5. In short:
+- 5090, burst of 32:
+  - 2048 cuts all 15 (i) requests and 3 (iv-a) requests, where OFF lets them stop naturally.
+  - 8192 and 32768 cut nothing.
+  - Bursts peak at 11 in flight OFF and 32 at 2048 and 8192. At 32768: 19 in flight, 11 refused with 429 and 2 lost
+    to 503 prefill OOM.
+- PRO 6000, burst of 64:
+  - 2048 and 8192 each cut 5 requests that stop under OFF at 18,443 to 193,178 tokens; 32768 cuts 4.
+  - OFF peaks at 9 in flight, 2048 and 8192 at 64. At 32768 the burst loses 46 (O1) and 47 (O2) of 64 to 503 prefill
+    OOM.
+
+Pre-fix against post-fix, as observed (50 main commits apart, so nothing is attributed to one commit):
+- Day 31's crash lines in all 16 boots are gone, and the ON FATALs are gone.
+- Every ON `length` row ends at v (day 31: `v + 4` to `v + 8`).
+- The OFF runaways end 200 `length` instead of 500.
+
+**memra#680, filed from these receipts.** At 32768 on the PRO 6000 the door let the 64-request burst reach 58 in
+flight, against its own estimate of `est_bytes=4353602568` per request. The log has 109 `[admission] request cost`
+lines but only 12 `[admit-mem] id=` lines (6 `defer`, 6 `refuse`, no `admit`). A `reclaim-on-defer` evicted 52 prefix
+entries (13.3 GB) at the first defer. Then 46 and 47 of 64 died in prefill with `CUDA_ERROR_OUT_OF_MEMORY` and
+returned 503. The 5090 shows the same shape at a smaller scale (2 prefill-OOM 503s per order on both days). B day 33
+owns the repro, the diagnosis and the fix, with an engine change under the door authorized.
+
+**Lead review of B day 32.** The arms, values, orders and reader match `51c113659`. I checked the V-ALLOC delta
+against #668's change: `SPEC_SHRINK_SLACK` 64 on top of the new budget `v` gives exactly the observed booking, so the
+reader's expectation was stale and the door's arithmetic is consistent. The FAIL stands as recorded. It is not
+re-read. The identity, crash, band and retry terms are clean on both cards. The 32768 target-card burst is a real
+defect that no pre-registered verdict judges (V-RETRY does not judge 503s), and B quoted it without diagnosing it,
+as its scope said. No finding against B's work.
+
+**Ruling 46:**
+- Day 32 is read as registered: V-DOOR FAIL on V-ALLOC alone, the cause stated above.
+- The door does not qualify. Independently of V-ALLOC, #680 is a disqualifying defect of the door as built.
+- No open-output value is selected, and the door stays OFF. The owner decides by 2026-10-07.
+- That decision waits for two things: B day 33's fix of #680, and a clean rerun under a fresh pre-registration with
+  the booking formula written as `max(ctx_cap, P + budget + 64)`.
+- The owner's inputs: R3 reads 32768 and R4 reads `context` on both cards; the 5090 reads R1 and R2 at 8192, while
+  the PRO 6000 has no swept value that avoids truncation.
+
+**Checks.** Research-only diff:
+- check-flags passed and conflict markers are clean.
+- `update-perf-board.py --check`: up to date.
+- `git diff --check origin/main HEAD` is clean (B's receipt dirs mark their width-cut quotes `-whitespace`).
+- No em dash in authored lines. The public boundary runs in the pre-push hook.
+- No battery was run: no code moves.
+
+**Running.** A day 32: the H2D half; its code and 5090 receipts are pushed, and its BOX3 sitting is next. B day 33:
+memra#680, on the 5090 first, and on BOX3 after A's `LANE-A-PRO-DONE`.
+
+**Owner decisions flagged.**
+- `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-10-07): after #680's fix and the clean rerun.
+- 2026-10-04: MoE slot cache, VMM.
+- 2026-10-05: the contracts door (C day 39 and A day 31 are new input; A day 32 is pending).
+- 2026-10-06: the park door.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

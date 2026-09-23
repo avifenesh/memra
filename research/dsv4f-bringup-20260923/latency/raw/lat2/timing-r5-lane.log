@@ -1,0 +1,46 @@
+
+running 1 test
+test latency_kernel_timing ... TIMING tree=lane kernel=rmsnorm_f32acc shape=1x4096 rep=0 us_per_launch=1.802
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x4096 rep=1 us_per_launch=1.820
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x4096 rep=2 us_per_launch=1.763
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x4096 rep=3 us_per_launch=1.755
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x4096 rep=4 us_per_launch=1.751
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x1024 rep=0 us_per_launch=1.741
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x1024 rep=1 us_per_launch=1.741
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x1024 rep=2 us_per_launch=1.739
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x1024 rep=3 us_per_launch=1.727
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x1024 rep=4 us_per_launch=1.776
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x512 rep=0 us_per_launch=1.742
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x512 rep=1 us_per_launch=1.731
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x512 rep=2 us_per_launch=1.797
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x512 rep=3 us_per_launch=1.743
+TIMING tree=lane kernel=rmsnorm_f32acc shape=1x512 rep=4 us_per_launch=1.740
+TIMING tree=lane kernel=route_m shape=s1_ne256_top6 rep=0 us_per_launch=4.400
+TIMING tree=lane kernel=route_m shape=s1_ne256_top6 rep=1 us_per_launch=4.401
+TIMING tree=lane kernel=route_m shape=s1_ne256_top6 rep=2 us_per_launch=4.401
+TIMING tree=lane kernel=route_m shape=s1_ne256_top6 rep=3 us_per_launch=4.401
+TIMING tree=lane kernel=route_m shape=s1_ne256_top6 rep=4 us_per_launch=4.401
+TIMING tree=lane kernel=grouped_routes shape=slots6_groups256 rep=0 us_per_call=5.291
+TIMING tree=lane kernel=grouped_routes shape=slots6_groups256 rep=1 us_per_call=5.262
+TIMING tree=lane kernel=grouped_routes shape=slots6_groups256 rep=2 us_per_call=5.196
+TIMING tree=lane kernel=grouped_routes shape=slots6_groups256 rep=3 us_per_call=5.193
+TIMING tree=lane kernel=grouped_routes shape=slots6_groups256 rep=4 us_per_call=5.184
+TIMING tree=lane kernel=grouped_routes_partition shape=slots6_groups128 rep=0 us_per_call=5.178
+TIMING tree=lane kernel=grouped_routes_partition shape=slots6_groups128 rep=1 us_per_call=5.200
+TIMING tree=lane kernel=grouped_routes_partition shape=slots6_groups128 rep=2 us_per_call=5.183
+TIMING tree=lane kernel=grouped_routes_partition shape=slots6_groups128 rep=3 us_per_call=5.177
+TIMING tree=lane kernel=grouped_routes_partition shape=slots6_groups128 rep=4 us_per_call=5.183
+TIMING tree=lane kernel=wo_a_slices8 shape=8x1024x4096 rep=0 us_per_call=24.895
+TIMING tree=lane kernel=wo_a_grouped shape=8x1024x4096 rep=0 us_per_call=13.050
+TIMING tree=lane kernel=wo_a_slices8 shape=8x1024x4096 rep=1 us_per_call=24.829
+TIMING tree=lane kernel=wo_a_grouped shape=8x1024x4096 rep=1 us_per_call=13.083
+TIMING tree=lane kernel=wo_a_slices8 shape=8x1024x4096 rep=2 us_per_call=24.882
+TIMING tree=lane kernel=wo_a_grouped shape=8x1024x4096 rep=2 us_per_call=13.300
+TIMING tree=lane kernel=wo_a_slices8 shape=8x1024x4096 rep=3 us_per_call=24.925
+TIMING tree=lane kernel=wo_a_grouped shape=8x1024x4096 rep=3 us_per_call=13.517
+TIMING tree=lane kernel=wo_a_slices8 shape=8x1024x4096 rep=4 us_per_call=24.907
+TIMING tree=lane kernel=wo_a_grouped shape=8x1024x4096 rep=4 us_per_call=13.626
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.98s
+

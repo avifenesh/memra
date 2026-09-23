@@ -280,7 +280,10 @@ __global__ void dsv4_dense_exact_tail_dots_kernel(const float* __restrict__ x,
 // Reduction: p[t]+p[t+64], then + (p[t+32]+p[t+96]), then 16/8/4/2/1.
 // FP8 shares only the identical LUT among two rows. Dot unrolling schedules
 // loads across four loop iterations; it never uses independent accumulators.
-template <int ROWS>
+// GROUPED: n is rows per group and the grid covers every group's rows; a flat
+// row is group*n+row, the weight row stays flat, and only the activation and
+// output planes move by group. The launcher sizes the grid exactly.
+template <int ROWS, bool GROUPED = false>
 __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
                                        const float* __restrict__ sc, int sc_cols,
                                        const uint16_t* __restrict__ x, float* __restrict__ y,
@@ -289,10 +292,12 @@ __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
     constexpr int M = 1;
     const int leaf = threadIdx.x % 128;
     const int tile_row = threadIdx.x / 128;
-    const int row = blockIdx.x * ROWS + tile_row;
-    const int weight_row = row;
-    const uint16_t* x_group = x;
-    float* y_group = y;
+    const int flat = blockIdx.x * ROWS + tile_row;
+    const int group = GROUPED ? flat / n : 0;
+    const int row = GROUPED ? flat % n : flat;
+    const int weight_row = flat;
+    const uint16_t* x_group = x + (long)group * group_xstride;
+    float* y_group = y + (long)group * group_ystride;
     // smem e4m3 LUT — see dsv4_gemv_fp8_kernel's note (bit-inert decode transport).
     __shared__ float e4m3_tab[256];
     for (int i = threadIdx.x; i < 256; i += blockDim.x) e4m3_tab[i] = dsv4_e4m3((uint8_t)i);
