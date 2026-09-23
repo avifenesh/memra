@@ -1051,6 +1051,19 @@ diet is the code on the served plain step and multi-row rows keep the unfused ch
 the proof that plain and verify rows stay one numeric program. Receipts:
 `research/dsv4f-bringup-20260923/small-diet/`.
 
+### DSv4 batch-1 latency kernels (latency lane)
+
+`cargo test -p memra-engine --release --test dsv4_latency_kernels_gpu -- --ignored --test-threads=1 --skip latency_kernel_timing`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) checks the register-resident
+rmsnorm against the exact CPU oracle (240 cases, bit-identical), the one-warp expert prefix
+against a CPU oracle (1755 cases), and the one-warp router against a pinned output hash
+(`0xa883c1c05022dc87`, 360 cases) plus its structure (range, no duplicates, value-desc/index-asc
+order, no unpicked expert above the last pick, weights summing to `route_scale`, hash layers on
+their `tid2eid` row). Each has a red arm. `latency_kernel_timing` is the timing instrument (run
+it without `--skip`). The grouped `wo_a` dense-fast twin is checked by the ignored
+`dsv4_gpu::dense_wo_a_grouped_fp8_component_tests` in the lib test binary: 27 cells bit-exact
+against every slice program. Receipts: `research/dsv4f-bringup-20260923/latency/`.
+
 ### DSv4 deferred MoE route and mirror checks (#670)
 
 `cargo test -p memra-engine --release --lib cuda_deferred_moe_faults_match_the_synchronous_checks -- --ignored`
