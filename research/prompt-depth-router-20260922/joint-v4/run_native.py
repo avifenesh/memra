@@ -105,7 +105,7 @@ def validate(root, entry, arm):
             if len(rounds) != len(current):
                 raise ValueError("randomized confidence and depth inventory differ")
             for confidence, observed in zip(rounds, current):
-                chosen = int(observed["draft_depth"]) - 1
+                chosen = int(observed["draft_depth"])
                 if (
                     chosen not in (1, 2, 3, 4)
                     or int(confidence["drafted"]) != chosen
@@ -145,7 +145,7 @@ def check_inputs(args):
 
 
 def run_one(args, item, workloads, label, variant, arm, cap, cutoffs=None,
-            explore_seed=None):
+            explore_seed=None, depth_model=None):
     root = args.out / f"{label}-{variant}"
     command = [
         str(args.binary), str(args.model), "embedded",
@@ -156,9 +156,12 @@ def run_one(args, item, workloads, label, variant, arm, cap, cutoffs=None,
         command.append(f"explore-seed={explore_seed}")
     if arm == "fixed-c3":
         command.append(f"confidence-fixed={cutoffs}")
+    if depth_model is not None:
+        command.append(f"depth-model={depth_model}")
     environment = os.environ.copy()
     environment.update({
-        "MEMRA_SPEC_ADAPT": "0", "MEMRA_SPEC_ADAPT_FLOOR": "1",
+        "MEMRA_SPEC_ADAPT": "1" if arm == "native" else "0",
+        "MEMRA_SPEC_ADAPT_FLOOR": "1",
         "MEMRA_SPEC_CAPMAX": "7", "MEMRA_SPEC_PMIN": "0",
         "MEMRA_SPEC_PMIN0": "0", "MEMRA_SPEC_PMIN_INROUND": "0",
         "MEMRA_SPEC_STATS": "1",
@@ -174,6 +177,7 @@ def run_one(args, item, workloads, label, variant, arm, cap, cutoffs=None,
         "variant": variant,
         "cap": cap,
         "cutoffs": cutoffs,
+        "depth_model_sha256": sha(depth_model) if depth_model else None,
         "explore_seed": explore_seed,
         "memra_settings": {
             key: value for key, value in environment.items()
@@ -183,16 +187,22 @@ def run_one(args, item, workloads, label, variant, arm, cap, cutoffs=None,
     command_path = args.out / f"{root.name}.command.json"
     exit_path = args.out / f"{root.name}.exit.json"
     if root.exists():
+        previous = json.loads(command_path.read_text()) if command_path.exists() else {}
+        previous.setdefault("depth_model_sha256", None)
         if (
             not command_path.exists()
-            or json.loads(command_path.read_text()) != command_record
+            or previous != command_record
             or not exit_path.exists()
             or json.loads(exit_path.read_text())["returncode"] != 0
         ):
             raise ValueError(f"{root.name} is incomplete or has another pinned command")
         audit = validate(root, item, arm)
-        if json.loads((root / "audit.json").read_text()) != audit:
-            raise ValueError(f"{root.name} saved audit differs")
+        audit_path = root / "audit.json"
+        if audit_path.exists():
+            if json.loads(audit_path.read_text()) != audit:
+                raise ValueError(f"{root.name} saved audit differs")
+        else:
+            save(audit_path, audit)
         return record(root, variant, arm, audit)
     save(command_path, command_record)
     started = time.monotonic()
@@ -227,15 +237,107 @@ def record(root, variant, arm, audit):
     }
 
 
+def model_paths(path):
+    manifest = json.loads((path / "models.json").read_text())
+    if len(manifest) != 3:
+        raise ValueError("three nested model feature sets were not trained")
+    result = {}
+    for row in manifest:
+        variant = row["variant"]
+        model = path / f"depth-{variant}.tsv"
+        if variant not in ("token", "history", "prior") or (
+            variant in result or sha(model) != row["model_sha256"]
+        ):
+            raise ValueError("tiny model artifact differs from its frozen manifest")
+        result[variant] = model
+    return result
+
+
+def selected_fixed(args):
+    analysis = json.loads((args.out / "training-analysis.json").read_text())
+    winner = analysis["strongest_quality_qualified_fixed"]
+    controls = {name: (arm, cap, cutoffs) for name, arm, cap, cutoffs in TRAIN_ARMS}
+    if winner not in controls or winner in ("k4-random-d", "k3-trace"):
+        raise ValueError("training selected an unscored static control")
+    return winner, controls[winner]
+
+
+def scored_conversations(args, items, workloads, phase, variants):
+    fixed_name, (fixed_arm, fixed_cap, fixed_cutoffs) = selected_fixed(args)
+    models = model_paths(args.models)
+    if variants is not None and (len(variants) != 1 or variants[0] not in models):
+        raise ValueError("heldout needs exactly one frozen selected model")
+    evaluated = list(models) if variants is None else list(variants)
+    arms = [("k3-c0", "fixed:3", 3, None, None)]
+    if fixed_name != "k3-c0":
+        arms.append((fixed_name, fixed_arm, fixed_cap, fixed_cutoffs, None))
+    arms.append(("native-adapt", "native", 4, None, None))
+    for name in evaluated:
+        arms.append((f"{name}-trained", "trained-d", 4, None, models[name]))
+        arms.append((f"{name}-noop", "noop-d", 4, None, models[name]))
+    records = []
+    for index, item in enumerate(items):
+        order = arms[index % len(arms):] + arms[:index % len(arms)]
+        if index % 2:
+            order.reverse()
+        for label, arm, cap, cutoffs, depth_model in order:
+            records.append(run_one(
+                args, item, workloads, f"{phase}-{index}", label, arm, cap,
+                cutoffs=cutoffs, depth_model=depth_model,
+            ))
+    return records
+
+
+def select_model(args, records):
+    ranked = []
+    for variant in ("token", "history", "prior"):
+        chosen = [row for row in records if row["variant"] == f"{variant}-trained"]
+        noop = [row for row in records if row["variant"] == f"{variant}-noop"]
+        if len(chosen) != 3 or len(noop) != 3:
+            raise ValueError("model selection lacks matched conversations")
+        tokens = sum(row["tokens"] for row in chosen)
+        seconds = sum(row["seconds"] for row in chosen)
+        ranked.append({
+            "variant": variant,
+            "tok_s": tokens / seconds,
+            "tokens": tokens,
+            "seconds": seconds,
+            "format_pass": sum(row["format"] for row in chosen),
+            "loops": sum(row["loops"] for row in chosen),
+            "noop_tok_s": sum(row["tokens"] for row in noop)
+            / sum(row["seconds"] for row in noop),
+        })
+    qualified = [row for row in ranked if row["format_pass"] == 24 and row["loops"] == 0]
+    if not qualified:
+        raise ValueError("no learned D variant passes selection format and loop gates")
+    chosen = max(qualified, key=lambda row: row["tok_s"])
+    model = model_paths(args.models)[chosen["variant"]]
+    save(args.out / "selected-model.json", {
+        "schema": 1,
+        "source": "three held-back v3 development conversations",
+        "variant": chosen["variant"],
+        "model_sha256": sha(model),
+        "selection_scores": ranked,
+        "fixed_control": selected_fixed(args)[0],
+    })
+    return chosen
+
+
 def main():
     parser = argparse.ArgumentParser()
     for name in ("binary", "model", "development", "fresh", "out"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--source-sha", required=True)
-    parser.add_argument("--phase", choices=("qualification", "training"), required=True)
+    parser.add_argument("--models", type=Path)
+    parser.add_argument(
+        "--phase", choices=("qualification", "training", "selection", "heldout"),
+        required=True,
+    )
     args = parser.parse_args()
     for name in ("binary", "model", "development", "fresh", "out"):
         setattr(args, name, getattr(args, name).resolve())
+    if args.models is not None:
+        args.models = args.models.resolve()
     args.out.mkdir(exist_ok=True)
     development, fresh, seeds = check_inputs(args)
     if args.phase == "qualification":
@@ -245,7 +347,7 @@ def main():
         )]
         if records[0]["format"] != 8 or records[0]["loops"]:
             raise ValueError("fresh full-head Qwen code qualifier failed")
-    else:
+    elif args.phase == "training":
         records = []
         train = seeds["training"]
         topics = (development["groups"]["calibration"]
@@ -266,6 +368,30 @@ def main():
                     variant, arm, cap, cutoffs,
                     schedule.get("explore_seed") if arm == "explore-d" else None,
                 ))
+    elif args.phase == "selection":
+        if args.models is None:
+            raise ValueError("model selection requires frozen trained model files")
+        records = scored_conversations(
+            args, development["groups"]["heldout"][3:],
+            args.development, "selection", None,
+        )
+        select_model(args, records)
+    else:
+        if args.models is None:
+            raise ValueError("heldout requires a selected frozen model")
+        selected = json.loads((args.out / "selected-model.json").read_text())
+        models = model_paths(args.models)
+        if (
+            selected["schema"] != 1
+            or selected["fixed_control"] != selected_fixed(args)[0]
+            or selected["variant"] not in models
+            or sha(models[selected["variant"]]) != selected["model_sha256"]
+        ):
+            raise ValueError("selected model changed before fresh heldout")
+        records = scored_conversations(
+            args, fresh["groups"]["heldout"], args.fresh,
+            "heldout", [selected["variant"]],
+        )
     save(args.out / f"{args.phase}-summary.json", {
         "schema": 1, "phase": args.phase, "records": records,
     })

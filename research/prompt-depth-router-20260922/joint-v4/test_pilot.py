@@ -1,8 +1,11 @@
 """Checks the two failure boundaries in the observational pilot."""
 
 import unittest
+import json
+from pathlib import Path
 
 from pilot import features, make_labels
+from quality import CASES
 from static_oracle import optimal_actions, pooled
 
 
@@ -46,6 +49,18 @@ class PilotBoundaryTest(unittest.TestCase):
             pooled(conversations, ("B", "A")),
             pooled(conversations, ("A", "B")),
         )
+
+    def test_fresh_code_requests_all_have_functional_probes(self):
+        manifest = json.loads(
+            (Path(__file__).with_name("workloads-v4") / "manifest.json").read_text()
+        )
+        names = {
+            turn["function"]
+            for group in manifest["groups"].values()
+            for item in group
+            for turn in item["turns"]
+        }
+        self.assertEqual(set(CASES), names)
 
 
 if __name__ == "__main__":

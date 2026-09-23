@@ -65,7 +65,7 @@ def score(root):
             if (
                 observed["eligible"] != row["eligible_for_learning"]
                 or int(observed["elapsed_ns"]) != int(row["elapsed_ns"])
-                or int(observed["drafted"]) + 1 != int(row["draft_depth"])
+                or int(observed["drafted"]) != int(row["draft_depth"])
                 or int(span["k"]) != int(row["draft_depth"])
             ):
                 raise ValueError("randomized D receipt fields disagree")

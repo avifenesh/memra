@@ -85,7 +85,7 @@ def samples(root, classes, variant):
                 if (
                     d not in (1, 2, 3, 4)
                     or row["eligible"] != span["eligible"]
-                    or int(span["k"]) != d + 1
+                    or int(span["k"]) != d
                     or int(span["elapsed_ns"]) != int(row["elapsed_ns"])
                 ):
                     raise ValueError("sampled depth and accepted-prefix receipts disagree")
