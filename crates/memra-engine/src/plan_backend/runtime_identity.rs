@@ -23,6 +23,7 @@ fn numeric_env_key(key: &str) -> bool {
         || key.starts_with("CUDA_")
         || key.starts_with("NVIDIA_")
         || key.starts_with("CUBLAS_")
+        || key.starts_with("CUBLASLT_")
         || matches!(key, "LD_PRELOAD" | "LD_LIBRARY_PATH")
 }
 
@@ -439,6 +440,17 @@ mod tests {
         assert_ne!(hash_parts(["ab", "c"]), hash_parts(["a", "bc"]));
         assert!(numeric_env_key("MEMRA_FUTURE_NUMERIC_PROGRAM"));
         assert!(numeric_env_key("CUBLAS_WORKSPACE_CONFIG"));
+        // cuBLASLt reads its own prefix (for example its heuristics cache capacity).
+        assert!(numeric_env_key("CUBLASLT_HEURISTICS_CACHE_CAPACITY"));
+        assert!(numeric_env_key("CUBLASLT_LOG_LEVEL"));
+        assert_eq!(
+            vars(&[
+                ("CUBLASLT_HEURISTICS_CACHE_CAPACITY", "0"),
+                ("PATH", "/bin")
+            ])
+            .len(),
+            1
+        );
         assert_eq!(vars(&[("MEMRA_FAST", "0"), ("MEMRA_FAST", "1")]).len(), 1);
     }
 

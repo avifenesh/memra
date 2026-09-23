@@ -96,6 +96,11 @@ A later load now refuses such a write and names the variable to set for the whol
 process. Identity capture refuses when the environment disagrees with the latched
 policy. The first load in a process writes exactly as before.
 
+The captured numerical environment covers `MEMRA_*` (minus the four location
+controls), `CUDA_*`, `NVIDIA_*`, `CUBLAS_*`, `CUBLASLT_*`, `LD_PRELOAD` and
+`LD_LIBRARY_PATH`. cuBLASLt reads its own `CUBLASLT_` prefix, which `CUBLAS_` does
+not match.
+
 The native runner includes a separate `library-drift` probe using a real read/execute
 mapping (never executed) and a populated eager cache. It must refuse retained re-entry
 before token work and preserve cache hashes. Qualified graph/prime/worker probes and real environment-drift control are now
