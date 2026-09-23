@@ -1,0 +1,26 @@
+server bin /tmp/de641/server-base sha c0c573080301ed94
+-- C0 (solo yield=1) start 2026-09-23T08:36:58+03:00
+server pid 2275621
+server pid 2275621 exit 0
+REPRO641 C0: kind=solo yield=1 on_shape=None peer-b sha=06bfb5126effdd4c == R finish=length text='s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</' shas={'peer-cold-b': '06bfb5126effdd4c'}
+   C0 rc=0 end 2026-09-23T08:37:02+03:00 apps=[]
+-- Y0-1 (cell yield=0) start 2026-09-23T08:37:02+03:00
+server pid 2275845
+server pid 2275845 exit 0
+REPRO641 Y0-1: kind=cell yield=0 on_shape=True peer-b sha=85dbe38937836437 != R finish=length text='s \t</div>\n</body>\n</html>\n```\n\n## File: src/test/resources/10000000' shas={'long': '089d70f819696ba2', 'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '85dbe38937836437', 'peer-hit': '2c51dd24d89131a3'}
+   Y0-1 rc=0 end 2026-09-23T08:37:55+03:00 apps=[]
+-- Y1-1 (cell yield=1) start 2026-09-23T08:37:55+03:00
+server pid 2278439
+server pid 2278439 exit 0
+REPRO641 Y1-1: kind=cell yield=1 on_shape=False peer-b sha=06bfb5126effdd4c == R finish=length text='s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</' shas={'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '06bfb5126effdd4c', 'peer-hit': '2c51dd24d89131a3', 'long': '089d70f819696ba2'}
+   Y1-1 rc=0 end 2026-09-23T08:38:52+03:00 apps=[]
+-- Y0-2 (cell yield=0) start 2026-09-23T08:38:52+03:00
+server pid 2280269
+server pid 2280269 exit 0
+REPRO641 Y0-2: kind=cell yield=0 on_shape=True peer-b sha=85dbe38937836437 != R finish=length text='s \t</div>\n</body>\n</html>\n```\n\n## File: src/test/resources/10000000' shas={'long': '089d70f819696ba2', 'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '85dbe38937836437', 'peer-hit': '2c51dd24d89131a3'}
+   Y0-2 rc=0 end 2026-09-23T08:39:48+03:00 apps=[]
+-- Y1-2 (cell yield=1) start 2026-09-23T08:39:48+03:00
+server pid 2282587
+server pid 2282587 exit 0
+REPRO641 Y1-2: kind=cell yield=1 on_shape=False peer-b sha=06bfb5126effdd4c == R finish=length text='s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</' shas={'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '06bfb5126effdd4c', 'peer-hit': '2c51dd24d89131a3', 'long': '089d70f819696ba2'}
+   Y1-2 rc=0 end 2026-09-23T08:40:46+03:00 apps=[]
