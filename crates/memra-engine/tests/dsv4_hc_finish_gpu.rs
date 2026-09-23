@@ -12,7 +12,7 @@
 //! fixtures sweep magnitudes over many decades so every tree and division sees rounding in
 //! every exponent range.
 //!
-//! Red arms: a 2^-10 relative change to one HC weight, one gate scale and one norm weight must
+//! Red arms: a 2^-10 relative change to one HC weight row, one gate scale and one norm weight must
 //! each be caught on the output it feeds, so a PASS cannot come from comparing a buffer
 //! against itself.
 //!
@@ -406,12 +406,13 @@ fn dsv4_hc_finish_is_bit_identical_to_the_unfused_chain() {
     for i in [0usize, 1, 2, 3, 5, 6] {
         assert_bits_eq(NAMES[i], &without_y[i], &with_y[i], "null y");
     }
-    // Red arms: a 2^-10 relative change on an HC weight, a gate scale and a norm weight
-    // must reach the outputs they feed.
+    // Red arms: a 2^-10 relative change on an HC weight row, a gate scale and a norm weight
+    // must reach the outputs they feed. The weight arm moves a whole row: one element of a
+    // 16384-term dot moves the sum by less than its ulp and proves nothing.
     let clean = fused(&e, &c, 16, true);
     let bump = |v: &mut f32| *v = f32::from_bits(v.to_bits() + (1 << 13));
     let mut red = case(3, 0x5EED, (-4, 2), (-9, -4));
-    bump(&mut red.fn_w[5 * W + 777]);
+    red.fn_w[5 * W..6 * W].iter_mut().for_each(bump);
     assert_ne!(
         fused(&e, &red, 16, true)[0],
         clean[0],
