@@ -1,0 +1,18 @@
+== bins: server b806e1b780b22a8f pbg 0e69b6c71680534d dbg e30aef5b1f410daa 2026-09-23T08:47:38+03:00
+== prime-batch-gate exact-b3-p24 (--batch 3 --exact) 2026-09-23T08:47:38+03:00
+   rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths) 
+== prime-batch-gate exact-b4-p1100 (--batch 4 --plen 1100 --exact) 2026-09-23T08:47:42+03:00
+   rc=0 ALL GREEN: prime-batch gate (batch=4, uneven lengths) 
+== prime-batch-gate exact-b6-p600 (--batch 6 --plen 600 --exact) 2026-09-23T08:47:46+03:00
+   rc=0 ALL GREEN: prime-batch gate (batch=6, uneven lengths) 
+== prime-batch-gate carried-b3-exact (--batch 3 --plen 600 --carried --exact) 2026-09-23T08:47:51+03:00
+   rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths) 
+== decode-batch-gate config B=8 2026-09-23T08:47:55+03:00
+   rc=0 ALL GREEN: decode_step_batch exactness battery 
+== decode-batch-gate strict B=4 equalized 2026-09-23T08:48:06+03:00
+   rc=0 ALL GREEN: decode_step_batch exactness battery 
+== serve-smoke 2026-09-23T08:48:14+03:00
+   rc=0 == serve-smoke: Q35 coldhol arm SKIP (no model at /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf) serve-smoke: 0 failed 
+== prime-fairness-gate fix 2026-09-23T08:48:42+03:00
+   rc=0 PRIME-FAIRNESS: long=131072 peers=3x1 bytes=yes peer_p95=52.10/1.43s peer_max=52.10/1.43s tick_max=53608/2386ms long_ttft=53.61/56.36s yields=142 engaged=yes -> PASS 
+== done 2026-09-23T08:52:38+03:00
