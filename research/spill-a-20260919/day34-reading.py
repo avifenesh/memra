@@ -8,6 +8,9 @@ Input: ROOT/ab/o{1,2}/bNN-{d33,d34}/server.log and .../promote/receipt.json (sta
      N >= 20; every d34 H2D receipt names `KV checksums on the hash helper`.
 (d)  Per order: the intruder's e2e (`wall_ms` of every promote-arm run) median on d34 at most d33's plus 1.0 ms.
 Readings (not clauses): the same hold on the d33 boots, `promote_in`, poll counts, the helper's checksum time.
+--pro D33_EV D34_EV (DAY34 section 4, the target card): over the ON boots (`o*/b*-on/`) of the day-26 double-park runs
+of the day-33 and day-34 binaries in one hold: (c) the day-34 run's landing-poll hold, the same rule; (d) its ON
+intruder e2e median at most the day-33 run's plus 1.0 ms per order (DAY28 1b is read by `day28-reading.py`).
 """
 import glob
 import json
@@ -65,7 +68,47 @@ def boot(d):
     return out
 
 
+def pro(d33_ev, d34_ev):
+    rc = 0
+    runs = {}
+    for name, ev in (("d33", d33_ev), ("d34", d34_ev)):
+        for d in sorted(glob.glob(os.path.join(ev, "o*", "b*-on"))):
+            order = os.path.basename(os.path.dirname(d))
+            b = boot(d)
+            r = runs.setdefault((name, order), {"hold": [], "e2e": [], "promote_in": [], "receipts": 0,
+                                                "receipts_helper": 0, "helper_ms": []})
+            for k in ("hold", "e2e", "promote_in", "helper_ms"):
+                r[k].extend(b[k])
+            r["receipts"] += b["receipts"]
+            r["receipts_helper"] += b["receipts_helper"]
+    for name in ("d33", "d34"):
+        hold = [x for (n, o), v in runs.items() if n == name for x in v["hold"]]
+        pin = [x for (n, o), v in runs.items() if n == name for x in v["promote_in"]]
+        rec = sum(v["receipts"] for (n, o), v in runs.items() if n == name)
+        rech = sum(v["receipts_helper"] for (n, o), v in runs.items() if n == name)
+        hms = [x for (n, o), v in runs.items() if n == name for x in v["helper_ms"]]
+        line = (f"run={name} steady {stat('landing-poll-hold', hold)} | {stat('promote-in', pin)} | receipts={rec} "
+                f"on-helper={rech} {stat('helper-ms', hms)}")
+        if name == "d34":
+            ok = len(hold) >= 20 and med(hold) <= 1.5 and max(hold, default=99) <= 3.0 and rec > 0 and rech == rec
+            print(f"DAY34 PRO C {line} rule N>=20 median<=1.5 max<=3.0 every-receipt-on-helper -> "
+                  f"{'PASS' if ok else 'FAIL'}")
+            rc |= 0 if ok else 1
+        else:
+            print(f"DAY34 PRO READING {line}")
+    for order in ("o1", "o2"):
+        e33 = runs.get(("d33", order), {}).get("e2e", [])
+        e34 = runs.get(("d34", order), {}).get("e2e", [])
+        ok = bool(e33) and bool(e34) and med(e34) <= med(e33) + 1.0
+        print(f"DAY34 PRO D order={order} {stat('ON e2e d33', e33)} {stat('ON e2e d34', e34)} d34-minus-d33 "
+              f"{med(e34) - med(e33):+.2f} rule <=+1.0 -> {'PASS' if ok else 'FAIL'}")
+        rc |= 0 if ok else 1
+    return rc
+
+
 def main():
+    if sys.argv[1] == "--pro":
+        sys.exit(pro(sys.argv[2], sys.argv[3]))
     root = sys.argv[1]
     arms = {}
     for d in sorted(glob.glob(os.path.join(root, "ab", "o*", "b*-*"))):

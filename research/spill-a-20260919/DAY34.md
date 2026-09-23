@@ -116,3 +116,35 @@ the gates queue behind it with bounded waits.
 
 Checks on `201b48617`: tier contracts 98 passed, engine lib 547 passed, server lib 877 passed; clippy `-D warnings`
 all targets on tier, engine and server `clippy_rc=0`; the `DOCS_RS=1` pass `docsrs_rc=0`; `check-flags` clean.
+
+## 4. The target-card sitting, day 33 and day 34 together (pre-registered before it runs; BOX4)
+
+The target card is now BOX4, one RTX PRO 6000 Blackwell Workstation Edition (600 W). BOX3's numbers are not a baseline
+here: every comparison below is within one hold on BOX4. Queue: lane B's #680 boots first (marker `LANE-B-680-DONE`),
+then this sitting; the build runs after that marker (no build beside another lane's cells).
+
+**The hold.** One collector hold of `/tmp/memra-gpu.lock`: the day-26 double-park cell (`pro-single-day26/double-park.sh`,
+byte for byte; twenty boots, N=5 per arm per order, both orders) three times, on the day-32 H2D binary (`5ae139734`), the
+day-33 binary (`d7d54c7a9`: design F plus the log-only timeline) and the day-34 binary (the lane tip at the sitting:
+design F, the timeline and design K), in that order; then the gate set on the day-34 binary under the collector
+(identity x4, failure x2, the fault gate with all twelve cells, twin x2), the hit gate OFF and ON under its own `flock`,
+and the unit cells under the collector (the door's GPU cells, the engine's `d2d_`, `d2h_span` and `h2d_` cells serially,
+the CPU censuses and the tier bindings).
+
+**Day 33's acceptance, unchanged** (DAY33 section 2), read on the day-33 run against the day-32 run of the same hold:
+(a) DAY28 1a, 1b (at most +20.0 per order) and 1c on the day-33 run; (b) B2's rule on the day-33 run's owner segment
+(median at most 1.5 ms, max at most 3.0 ms, N at least 20, every submission filled); (c) B1, B4, B5 on the gate set
+(the gates run on the day-34 binary, which carries design F unchanged); (d) the day-33 run's owner segment median at
+most 0.90 ms and max at most 1.50 ms, and its census.
+
+**Day 34's target-card clauses** (DAY34 section 2's (a) and (b) as written; (c) and (d) restated for this card):
+(a) the failure gate's `digest` cell on the door ON arm, with the `plane host bytes differ from the D2H receipt as
+injected` line, and the GPU cell `option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused`;
+(b) the gate set and the unit cells ALL GREEN; (c) on the day-34 run, the landing poll's hold (`day34-reading.py`'s
+measure) median at most 1.5 ms and max at most 3.0 ms over at least 20 steady promotes; (d) on the day-34 run, DAY28 1b
+at most +20.0 per order, and its ON intruder e2e median at most the day-33 run's plus 1.0 ms per order.
+
+**Predictions.** The day-33 run: the copy stream's work (about 9.5 ms) inside the probe's tick (about 13.5 ms), one
+poll, `promote_in` about 16 to 18 ms, 1b about +6 to +12. The day-34 run: the helper's SHA-256 over cached leases about
+1 ms, the landing poll's hold about 0.5 ms, e2e within 1 ms of day 33's. If the day-33 run's copy misses the probe's tick,
+1b stays near the day-32 run's and that is the result.
