@@ -331,6 +331,7 @@ fn census_entry(name: &str, info: &StInfo) -> Result<TensorCensusEntry, String> 
         ));
     }
     Ok(TensorCensusEntry {
+        auxiliaries: Vec::new(),
         name: name.into(),
         shape: info.shape.clone(),
         storage: StorageLayout::Float(FloatType::F32),

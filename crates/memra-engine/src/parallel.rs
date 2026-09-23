@@ -5,14 +5,14 @@
 //! legal program, and then selects a registered numeric backend. Family packs remain responsible
 //! for semantic tensor/config validation; they do not carry per-layer placement lists.
 
-use std::fmt;
 use std::ops::Range;
 
 use memra_gguf::config::ModelConfig;
-use memra_gguf::model_plan::{MlpPlan, ModelPlan};
-use memra_gguf::placement::{LayerPlacementCost, PlacementRequest, plan_contiguous_stages};
+use memra_gguf::model_plan::ModelPlan;
+#[cfg(test)]
+use memra_gguf::placement::LayerPlacementCost;
+use memra_gguf::placement::{PlacementRequest, plan_contiguous_stages};
 use memra_gguf::source::{ExpertActivationPrecision, TensorSource};
-use memra_gguf::tensor_contract::{LayerTensor, TensorId, TensorOwner};
 
 /// The execution planner's supported rank envelope. Hardware qualification and tuned defaults
 /// remain model x rig evidence, but the placement/runtime contract must not stop at earlier
@@ -143,131 +143,9 @@ pub(crate) struct AutoParallelPlacement {
     pub device_capacity_bytes: Vec<u64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AutoArtifactCosts {
-    layers: Vec<LayerPlacementCost>,
-    first_fixed_bytes: u64,
-    last_fixed_bytes: u64,
-    trunk_expert_bytes: u64,
-    non_distributed_bytes: u64,
-}
-
-fn placement_first_stage_tensor(id: &TensorId) -> bool {
-    match id {
-        TensorId::TokenEmbedding | TensorId::RopeFactors | TensorId::Vision { .. } => true,
-        TensorId::QuantAux { tensor, .. } => placement_first_stage_tensor(tensor),
-        _ => false,
-    }
-}
-
-fn routed_expert_tensor(id: &TensorId) -> bool {
-    match id {
-        TensorId::Expert { .. } => true,
-        TensorId::Layer {
-            tensor:
-                LayerTensor::MoeExpertGateUpBank
-                | LayerTensor::MoeExpertGateBank
-                | LayerTensor::MoeExpertUpBank
-                | LayerTensor::MoeExpertDownBank
-                | LayerTensor::MoeExpertOutputScale,
-            ..
-        } => true,
-        TensorId::QuantAux { tensor, .. } => routed_expert_tensor(tensor),
-        _ => false,
-    }
-}
-
-fn checked_add_bytes(total: &mut u64, bytes: u64, label: &str) -> Result<(), TopologyError> {
-    *total = total
-        .checked_add(bytes)
-        .ok_or_else(|| TopologyError::new(format!("{label} byte total overflows u64")))?;
-    Ok(())
-}
-
-fn artifact_costs(
-    src: &dyn TensorSource,
-    cfg: &ModelConfig,
-    plan: &ModelPlan,
-) -> Result<AutoArtifactCosts, TopologyError> {
-    // The same boundary the loaders bind (memra#541): census, pack-declared head ownership,
-    // contract, bind. A checkpoint the loader would refuse is refused here with the same text.
-    let binding = memra_gguf::checkpoint_binding::bind_source(src, cfg, plan)
-        .map_err(|error| {
-            TopologyError::new(format!(
-                "automatic parallel placement cannot bind the tensor contract: {error}"
-            ))
-        })?
-        .bound;
-
-    let mut layers = vec![LayerPlacementCost::default(); plan.layers.len()];
-    let mut first_fixed_bytes = 0u64;
-    let mut last_fixed_bytes = 0u64;
-    let mut trunk_expert_bytes = 0u64;
-    let mut total_bytes = 0u64;
-    for (id, tensor) in &binding.tensors {
-        checked_add_bytes(
-            &mut total_bytes,
-            tensor.physical_bytes,
-            "automatic placement checkpoint",
-        )?;
-        match tensor.owner {
-            TensorOwner::Layer(layer) if (layer as usize) < layers.len() => {
-                checked_add_bytes(
-                    &mut layers[layer as usize].weight_bytes,
-                    tensor.physical_bytes,
-                    "automatic placement layer",
-                )?;
-            }
-            // Some legacy contracts retain the physical MTP index rather than rewriting the
-            // owner to TensorOwner::Mtp. It executes with the tail/head stage either way.
-            TensorOwner::Layer(_) => checked_add_bytes(
-                &mut last_fixed_bytes,
-                tensor.physical_bytes,
-                "automatic placement head stage",
-            )?,
-            TensorOwner::Vision(_) => checked_add_bytes(
-                &mut first_fixed_bytes,
-                tensor.physical_bytes,
-                "automatic placement first stage",
-            )?,
-            TensorOwner::Global if placement_first_stage_tensor(id) => checked_add_bytes(
-                &mut first_fixed_bytes,
-                tensor.physical_bytes,
-                "automatic placement first stage",
-            )?,
-            TensorOwner::Global | TensorOwner::Mtp(_) => checked_add_bytes(
-                &mut last_fixed_bytes,
-                tensor.physical_bytes,
-                "automatic placement head stage",
-            )?,
-        }
-
-        let trunk_expert = routed_expert_tensor(id)
-            && matches!(
-                tensor.owner,
-                TensorOwner::Layer(layer)
-                    if (layer as usize) < plan.layers.len()
-                        && matches!(plan.layers[layer as usize].mlp, MlpPlan::Moe(_))
-            );
-        if trunk_expert {
-            checked_add_bytes(
-                &mut trunk_expert_bytes,
-                tensor.physical_bytes,
-                "automatic placement trunk experts",
-            )?;
-        }
-    }
-    let non_distributed_bytes = total_bytes
-        .checked_sub(trunk_expert_bytes)
-        .ok_or_else(|| TopologyError::new("automatic placement expert bytes exceed total bytes"))?;
-    Ok(AutoArtifactCosts {
-        layers,
-        first_fixed_bytes,
-        last_fixed_bytes,
-        trunk_expert_bytes,
-        non_distributed_bytes,
-    })
-}
+mod costs;
+pub use costs::TopologyError;
+use costs::{AutoArtifactCosts, artifact_costs};
 
 fn auto_parallel_reserve_bytes() -> Result<u64, TopologyError> {
     let reserve_mb = match std::env::var("MEMRA_PARALLEL_RESERVE_MB") {
@@ -1178,11 +1056,14 @@ pub fn validate_fp8_expert_checkpoint(
     for layer in contract.dense_prefix_layers..contract.trunk_layers {
         for &(projection, expected_in, expected_out) in &projections {
             let name = format!("blk.{layer}.{projection}.weight");
-            let fp8 = src.find_fp8_stacked_native(&name).ok_or_else(|| {
-                TopologyError::new(format!(
-                    "{name} is not a checkpoint-faithful stacked block-128 E4M3 bank"
-                ))
-            })?;
+            let fp8 = src
+                .try_find_fp8_stacked_native(&name)
+                .map_err(TopologyError::new)?
+                .ok_or_else(|| {
+                    TopologyError::new(format!(
+                        "{name} is not a checkpoint-faithful stacked block-128 E4M3 bank"
+                    ))
+                })?;
             if fp8.n_expert != contract.expert_count {
                 return Err(TopologyError::new(format!(
                     "{name} carries {} experts, expected {}",
@@ -1261,7 +1142,10 @@ pub fn validate_nvfp4_expert_checkpoint(
     for layer in contract.dense_prefix_layers..contract.trunk_layers {
         for &(projection, expected_in, expected_out) in &projections {
             let name = format!("blk.{layer}.{projection}.weight");
-            if let Some(bank) = src.find_nvfp4_stacked_native(&name) {
+            if let Some(bank) = src
+                .try_find_nvfp4_stacked_native(&name)
+                .map_err(TopologyError::new)?
+            {
                 if bank.n_expert != contract.expert_count {
                     return Err(TopologyError::new(format!(
                         "{name} carries {} experts, expected {}",
@@ -1294,7 +1178,7 @@ pub fn validate_nvfp4_expert_checkpoint(
 
             for expert in 0..contract.expert_count {
                 let expert_name = format!("blk.{layer}.{projection}.{expert}.weight");
-                let tensor = src.find_nvfp4_native(&expert_name).ok_or_else(|| {
+                let tensor = src.try_find_nvfp4_native(&expert_name).map_err(TopologyError::new)?.ok_or_else(|| {
                     TopologyError::new(format!(
                         "{name} is neither a checkpoint-faithful stacked modelopt NVFP4 bank nor \
                          a complete per-expert NVFP4 set; missing {expert_name}"
@@ -1532,33 +1416,65 @@ fn split_range(total: usize, parts: usize, rank: usize) -> Option<Range<usize>> 
     Some(rank * width..(rank + 1) * width)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TopologyError {
-    message: String,
-}
-
-impl TopologyError {
-    fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
-    }
-}
-
-impl fmt::Display for TopologyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.message.fmt(f)
-    }
-}
-
-impl std::error::Error for TopologyError {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use memra_gguf::config::{Arch, HfConfig, MoeConfig, Step35Config};
     use memra_gguf::source::{Fp8StackedNative, TensorView};
     use std::path::Path;
+
+    #[test]
+    fn auto_placement_binds_the_actual_step_rope_extent() {
+        use memra_gguf::source::GgufSource;
+        let mut fixed_bytes = Vec::new();
+        for (case, shape, accepted) in [
+            ("compact", vec![32], true),
+            ("full", vec![64], true),
+            ("short", vec![1], false),
+            ("intermediate", vec![48], false),
+            ("oversized", vec![65], false),
+            ("matrix", vec![2, 16], false),
+            ("compact_rank2", vec![32, 1], false),
+            ("full_rank2", vec![64, 1], false),
+        ] {
+            let path = std::env::temp_dir().join(format!(
+                "memra-auto-step-rope-{case}-{}.gguf",
+                std::process::id()
+            ));
+            memra_gguf::micro_gguf::write_step35_rope_contract_fixture(&path, &shape).unwrap();
+            let file = memra_gguf::GgufFile::open(&path).unwrap();
+            std::fs::remove_file(&path).unwrap();
+            let source = GgufSource(&file);
+            let raw_config = source.config();
+            let plan = memra_gguf::model_packs::compile_for_load(&raw_config).unwrap();
+            // This is the real metadata/census binding entry used by plan_auto_parallel,
+            // before querying CUDA capacity or choosing a placement.
+            let raw = artifact_costs(&source, &raw_config, &plan);
+            if accepted {
+                let (config, plan) = memra_gguf::model_packs::compile_for_source(&source).unwrap();
+                let loaded = artifact_costs(&source, &config, &plan).unwrap();
+                let raw = raw.unwrap_or_else(|error| panic!("{case}: {error}"));
+                assert_eq!(raw.first_fixed_bytes, loaded.first_fixed_bytes, "{case}");
+                assert_eq!(
+                    raw.non_distributed_bytes, loaded.non_distributed_bytes,
+                    "{case}"
+                );
+                fixed_bytes.push(loaded.first_fixed_bytes);
+            } else {
+                let error = raw.unwrap_err().to_string();
+                assert!(
+                    error.contains("RopeFactors") && error.contains("shape mismatch"),
+                    "{case}: {error}"
+                );
+                assert!(memra_gguf::model_packs::compile_for_source(&source).is_err());
+            }
+        }
+        assert_eq!(
+            fixed_bytes[1] - fixed_bytes[0],
+            32 * 4,
+            "placement must account for actual bytes without padding/truncation"
+        );
+    }
 
     fn step37_contract() -> ModelParallelContract {
         let total_layers = 48;
@@ -1593,13 +1509,15 @@ mod tests {
             .map(|il| if il % 4 == 0 { 64 } else { 96 })
             .collect();
         ModelConfig {
+            tie_word_embeddings: None,
             arch: Arch::Step35,
             prefill_activation: None,
-            tie_word_embeddings: None,
             // step35 parses its own window into `step35.sliding_window`; the hints are for
             // packs whose plan does not consume one (see ModelConfig::window_hint).
             window_hint: None,
             rope_scaling_hint: None,
+            layer_rope_scaling: Vec::new(),
+            hidden_act: None,
             name: "Step-3.7-Flash-FP8".to_string(),
             n_layer: total_layers,
             n_embd: 4096,
@@ -1643,6 +1561,7 @@ mod tests {
                 rope_dims_full: 64,
                 rope_dims_swa: 128,
                 rope_freq_factors: None,
+                rope_freq_shape: None,
                 swiglu_clamp_exp: vec![0.0; total_layers as usize],
                 swiglu_clamp_shexp: vec![0.0; total_layers as usize],
                 sigmoid_routing: true,

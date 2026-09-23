@@ -1,0 +1,466 @@
+[
+  {
+    "case": "inspect-retained",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/memra",
+      "model",
+      "inspect",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "--against",
+      "qwen3",
+      "--out",
+      "/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle"
+    ],
+    "kind": "cpu-inspect",
+    "one_native_test_required": false,
+    "passed": true,
+    "required_marker": null,
+    "returncode": 0,
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_sha256": "b7c96b8d7184a2ed82f872950600e85a618f6e9038a68fe97dc4960c3d510be8"
+  },
+  {
+    "case": "retained-eg-capture",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "retained-eg-capture",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle"
+    ],
+    "kind": "native",
+    "one_native_test_required": false,
+    "passed": true,
+    "required_marker": "RETAINED_EAGER_GRAPH_CAPTURE_PASS",
+    "returncode": 0,
+    "stderr_sha256": "a9dc852a4b3d37d239fd53453c72fb1f38873a572977a60ca55061421049af3e",
+    "stdout_sha256": "f22373f81c9063880939666c653c681c044a8d499df6a497266d955f10c5f916"
+  },
+  {
+    "case": "retained-eg-step-library",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "retained-eg-step-library",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle"
+    ],
+    "kind": "native",
+    "one_native_test_required": false,
+    "passed": true,
+    "required_marker": "RETAINED_EAGER_GRAPH_CALLER_PASS",
+    "returncode": 0,
+    "stderr_sha256": "a9dc852a4b3d37d239fd53453c72fb1f38873a572977a60ca55061421049af3e",
+    "stdout_sha256": "afc96ea4437c9c24432e00103cf4cd56ddf9742cc990add544f5503b8120d258"
+  },
+  {
+    "case": "retained-eg-step-environment",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "retained-eg-step-environment",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle"
+    ],
+    "kind": "native",
+    "one_native_test_required": false,
+    "passed": true,
+    "required_marker": "RETAINED_EAGER_GRAPH_CALLER_PASS",
+    "returncode": 0,
+    "stderr_sha256": "a9dc852a4b3d37d239fd53453c72fb1f38873a572977a60ca55061421049af3e",
+    "stdout_sha256": "d8bc4673a9b6de21d5da851a03d86cc8113403616f2f910d911980eeaa7bac22"
+  },
+  {
+    "case": "retained-eg-prof-apply-library",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "retained-eg-prof-apply-library",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle"
+    ],
+    "kind": "native",
+    "one_native_test_required": false,
+    "passed": true,
+    "required_marker": "RETAINED_EAGER_GRAPH_CALLER_PASS",
+    "returncode": 0,
+    "stderr_sha256": "a9dc852a4b3d37d239fd53453c72fb1f38873a572977a60ca55061421049af3e",
+    "stdout_sha256": "c0e65f01833e5a73293999417cb1159060d10d61b2fb40352c97a62a38ff6985"
+  },
+  {
+    "case": "retained-eg-prof-apply-environment",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "retained-eg-prof-apply-environment",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle"
+    ],
+    "kind": "native",
+    "one_native_test_required": false,
+    "passed": true,
+    "required_marker": "RETAINED_EAGER_GRAPH_CALLER_PASS",
+    "returncode": 0,
+    "stderr_sha256": "a9dc852a4b3d37d239fd53453c72fb1f38873a572977a60ca55061421049af3e",
+    "stdout_sha256": "91353f7efad242d9982c55797dc9c205ef217fb7d111d0d8d8bbe4dec9fad7bb"
+  },
+  {
+    "case": "retained-eg-prof-launch-library",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "retained-eg-prof-launch-library",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle"
+    ],
+    "kind": "native",
+    "one_native_test_required": false,
+    "passed": true,
+    "required_marker": "RETAINED_EAGER_GRAPH_CALLER_PASS",
+    "returncode": 0,
+    "stderr_sha256": "a9dc852a4b3d37d239fd53453c72fb1f38873a572977a60ca55061421049af3e",
+    "stdout_sha256": "0273f0be0a6abb9f9e77681045c751a4c21f196344149a56f2b4e36a68c3830d"
+  },
+  {
+    "case": "retained-eg-prof-launch-environment",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "retained-eg-prof-launch-environment",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle"
+    ],
+    "kind": "native",
+    "one_native_test_required": false,
+    "passed": true,
+    "required_marker": "RETAINED_EAGER_GRAPH_CALLER_PASS",
+    "returncode": 0,
+    "stderr_sha256": "a9dc852a4b3d37d239fd53453c72fb1f38873a572977a60ca55061421049af3e",
+    "stdout_sha256": "b77fcde3504fa992e91cdf19c3d6bfd68f88e8a5a3e6bfda663d504de9aa2948"
+  },
+  {
+    "case": "retained-eg-prof-read-library",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "retained-eg-prof-read-library",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle"
+    ],
+    "kind": "native",
+    "one_native_test_required": false,
+    "passed": true,
+    "required_marker": "RETAINED_EAGER_GRAPH_CALLER_PASS",
+    "returncode": 0,
+    "stderr_sha256": "a9dc852a4b3d37d239fd53453c72fb1f38873a572977a60ca55061421049af3e",
+    "stdout_sha256": "a8b22f26f571da04f8873fac7051cac4edcb8d822a7d64ce8ac5d78442ae6cb7"
+  },
+  {
+    "case": "retained-eg-prof-read-environment",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "retained-eg-prof-read-environment",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle"
+    ],
+    "kind": "native",
+    "one_native_test_required": false,
+    "passed": true,
+    "required_marker": "RETAINED_EAGER_GRAPH_CALLER_PASS",
+    "returncode": 0,
+    "stderr_sha256": "a9dc852a4b3d37d239fd53453c72fb1f38873a572977a60ca55061421049af3e",
+    "stdout_sha256": "cec7a28685bd8da89a042b056f14f69c1e894124b0e6ce5d5eeb897ec522cadc"
+  },
+  {
+    "case": "worker-advance_sample_emit-library",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/memra_server-35f5785150dc3b55",
+      "worker::rewrite_native_tests::native_worker_boundary",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": "NATIVE_WORKER_BOUNDARY_PASS",
+    "returncode": 0,
+    "stderr_sha256": "39652a117213d84592499a643873a034ee3fae7861d62969e84f9f995fe93d44",
+    "stdout_sha256": "9e301a782294192a22cdb39168177fcfc6036bffe10944e6564661dfa9e68ca5"
+  },
+  {
+    "case": "worker-advance_sample_emit-env",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/memra_server-35f5785150dc3b55",
+      "worker::rewrite_native_tests::native_worker_boundary",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": "NATIVE_WORKER_BOUNDARY_PASS",
+    "returncode": 0,
+    "stderr_sha256": "cfc8e2026a0cba1ee091790187430da35bee977d931bdf5cb1c26cf526de1bfe",
+    "stdout_sha256": "270a4160bc2fa0a02c54171cceb9630ba5aa859b9d2f5835ae23f928e2b2e69a"
+  },
+  {
+    "case": "worker-advance_token_emit-library",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/memra_server-35f5785150dc3b55",
+      "worker::rewrite_native_tests::native_worker_boundary",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": "NATIVE_WORKER_BOUNDARY_PASS",
+    "returncode": 0,
+    "stderr_sha256": "c0c58a618b54a818eb87192a3a2ac335deb3295491404a03a9a6de3d193e67e4",
+    "stdout_sha256": "659baef55182da5c31b03323a0de30d4c2540b07c7ff37cf2e9133630859a69d"
+  },
+  {
+    "case": "worker-advance_token_emit-env",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/memra_server-35f5785150dc3b55",
+      "worker::rewrite_native_tests::native_worker_boundary",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": "NATIVE_WORKER_BOUNDARY_PASS",
+    "returncode": 0,
+    "stderr_sha256": "cfc8e2026a0cba1ee091790187430da35bee977d931bdf5cb1c26cf526de1bfe",
+    "stdout_sha256": "c847e7ecd1bf2a2d2c7ee1af868b4e9451eb63ce83c0a50da80f38c36f99f286"
+  },
+  {
+    "case": "worker-step_session-library",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/memra_server-35f5785150dc3b55",
+      "worker::rewrite_native_tests::native_worker_boundary",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": "NATIVE_WORKER_BOUNDARY_PASS",
+    "returncode": 0,
+    "stderr_sha256": "5b601bb3243c6729d690dbf03977a17645864da8ea8585679897f81fa8b7f9ca",
+    "stdout_sha256": "857bcc09c66da9b4aafdecd95e1c30c87e14063c5570a5b60f1b775bfa4cc34c"
+  },
+  {
+    "case": "worker-step_session-env",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/memra_server-35f5785150dc3b55",
+      "worker::rewrite_native_tests::native_worker_boundary",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": "NATIVE_WORKER_BOUNDARY_PASS",
+    "returncode": 0,
+    "stderr_sha256": "5b601bb3243c6729d690dbf03977a17645864da8ea8585679897f81fa8b7f9ca",
+    "stdout_sha256": "654f876b7a3affdb4e895fa2a11e1f3414a6dda900e90f5ee3991968b6cd5f03"
+  },
+  {
+    "case": "worker-step_session_prefill-library",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/memra_server-35f5785150dc3b55",
+      "worker::rewrite_native_tests::native_worker_boundary",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": "NATIVE_WORKER_BOUNDARY_PASS",
+    "returncode": 0,
+    "stderr_sha256": "5b601bb3243c6729d690dbf03977a17645864da8ea8585679897f81fa8b7f9ca",
+    "stdout_sha256": "cad2805621df8f3cf2a08dc460e051958c9f22273f0bf4e0375a5fc93bf3ec89"
+  },
+  {
+    "case": "worker-step_session_prefill-env",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/memra_server-35f5785150dc3b55",
+      "worker::rewrite_native_tests::native_worker_boundary",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": "NATIVE_WORKER_BOUNDARY_PASS",
+    "returncode": 0,
+    "stderr_sha256": "5b601bb3243c6729d690dbf03977a17645864da8ea8585679897f81fa8b7f9ca",
+    "stdout_sha256": "b55f7922b6866ca54f9512ac7fe081c44ca16ab1b8d5a371315c461a794924b7"
+  },
+  {
+    "case": "worker-prefill_tick-library",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/memra_server-35f5785150dc3b55",
+      "worker::rewrite_native_tests::native_worker_boundary",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": "NATIVE_WORKER_BOUNDARY_PASS",
+    "returncode": 0,
+    "stderr_sha256": "5b601bb3243c6729d690dbf03977a17645864da8ea8585679897f81fa8b7f9ca",
+    "stdout_sha256": "98d735c2cffed7ba08fd31dfc18132525b21063e8d4723e2ad52ac007f16a955"
+  },
+  {
+    "case": "worker-prefill_tick-env",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/memra_server-35f5785150dc3b55",
+      "worker::rewrite_native_tests::native_worker_boundary",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": "NATIVE_WORKER_BOUNDARY_PASS",
+    "returncode": 0,
+    "stderr_sha256": "5b601bb3243c6729d690dbf03977a17645864da8ea8585679897f81fa8b7f9ca",
+    "stdout_sha256": "0550cd11f56b075bb3f31922b6e56d79560e8fe1e1a9e4fd37d707e8c991c709"
+  },
+  {
+    "case": "worker-step_session_async_chain-library",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/memra_server-35f5785150dc3b55",
+      "worker::rewrite_native_tests::native_worker_boundary",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": "NATIVE_WORKER_BOUNDARY_PASS",
+    "returncode": 0,
+    "stderr_sha256": "6beacc4d921033e1b6c7f41df9e81bb43bc45c066c054cba65be643c28413933",
+    "stdout_sha256": "228d8d4c9899f41fe9a8523a94dba78b975cee21cd95ff119f95214501f3ab08"
+  },
+  {
+    "case": "worker-step_session_async_chain-env",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/memra_server-35f5785150dc3b55",
+      "worker::rewrite_native_tests::native_worker_boundary",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": "NATIVE_WORKER_BOUNDARY_PASS",
+    "returncode": 0,
+    "stderr_sha256": "6beacc4d921033e1b6c7f41df9e81bb43bc45c066c054cba65be643c28413933",
+    "stdout_sha256": "fe35b5f8d6e0569b556700c0f4f9e8d96c6e6c3fe5048e1b17701db4cf144951"
+  },
+  {
+    "case": "native_nvfp4_stacked_cache_lifecycle",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/native_repack_gpu-3554cc493c393a7e",
+      "native_nvfp4_stacked_cache_lifecycle",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": null,
+    "returncode": 0,
+    "stderr_sha256": "771e245d95678ee99c48a505252d527c22e52482f3af842cae615ac82e815610",
+    "stdout_sha256": "ac66f8b0099152e50bf887149b1b6ee0e0e0c547703fbba634becf14a0d5d75f"
+  },
+  {
+    "case": "native_nvfp4_per_expert_cache_lifecycle",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/test-target/release/deps/native_repack_gpu-3554cc493c393a7e",
+      "native_nvfp4_per_expert_cache_lifecycle",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "kind": "native",
+    "one_native_test_required": true,
+    "passed": true,
+    "required_marker": null,
+    "returncode": 0,
+    "stderr_sha256": "42e1eab53a22ec1fcb4ea320dc643ef2a43463877132f3b71cf52127f4831d89",
+    "stdout_sha256": "1aa868d3c364bba0a70a4fcf79769f4288c7af2cbd16c4b388188649b45caa00"
+  },
+  {
+    "case": "retained-eg-prime-api-refusal",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "retained-eg-prime-api-refusal",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle"
+    ],
+    "kind": "native",
+    "one_native_test_required": false,
+    "passed": true,
+    "required_marker": "UNQUALIFIED_PRIME_API_REFUSAL_PASS",
+    "returncode": 0,
+    "stderr_sha256": "68492b83c8bfbbe050d4a6c8f758565899950fbdab80ad7c160be026f97535a6",
+    "stdout_sha256": "7356044bfd567bb94bd0f02848c806d3dcc472911be694e2f2608200770f4bea"
+  },
+  {
+    "case": "retained-eg-prime-production-refusal",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "retained-eg-prime-production-refusal",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle"
+    ],
+    "kind": "native",
+    "one_native_test_required": false,
+    "passed": true,
+    "required_marker": "UNQUALIFIED_PRIME_PRODUCTION_REFUSAL_PASS",
+    "returncode": 0,
+    "stderr_sha256": "5b601bb3243c6729d690dbf03977a17645864da8ea8585679897f81fa8b7f9ca",
+    "stdout_sha256": "32b12a7cd1a0ba243830072315837554d45d78c62a77f93e42c37527102e3370"
+  },
+  {
+    "case": "retained-eg-prime-fallback",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "retained-eg-prime-fallback",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle"
+    ],
+    "kind": "native",
+    "one_native_test_required": false,
+    "passed": true,
+    "required_marker": "EAGER_PRIME_FALLBACK_PASS",
+    "returncode": 0,
+    "stderr_sha256": "4470a1daccb8dde33846acb5decf145a82f1651159dd52b3ff1e7e6b11f77e3a",
+    "stdout_sha256": "5b68fbd16242e5a3be64359629f2ab351db9033a672d301534834f920f0f1d43"
+  }
+]

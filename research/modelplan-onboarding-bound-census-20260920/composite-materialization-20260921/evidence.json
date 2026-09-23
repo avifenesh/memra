@@ -1,0 +1,453 @@
+{
+  "base_commit": "b45d065471d8e1c2498f9c5b6bb18b632ec7d95c",
+  "source_sha256": {
+    "crates/memra-gguf/src/bound_source/composite.rs": "14e9602572b7b7617140fc2595e7c47f962a4185c02bc7e1b1752f1e3dfc60a7",
+    "crates/memra-gguf/src/bound_source/composite/access.rs": "4ef08a90cd39272c88ffa89b85cbca858b46c386094c8d91bca001d105d2eded",
+    "crates/memra-gguf/src/bound_source/tests.rs": "ece93588923900c86235844521dcf260ebe24ffb037814d85da7e42d6f61d746",
+    "crates/memra-gguf/src/source.rs": "e6415f87f39d8a6c79c85058af8add75f283217f09a29c4138d067d570db7dda",
+    "crates/memra-gguf/src/source/bound.rs": "ea6f00891213b6e597285093bc17dd1a4c051e7fdd457edeabddc8f990a4c305",
+    "crates/memra-gguf/src/source/composite.rs": "5783f6f94802e7337dff3018a1f5ae84ddb58df8c0f168932d848a4eaf6d2daa",
+    "crates/memra-gguf/src/tensor_contract.rs": "9a5e5b5a329660980df8e87959ac68c5e825f070f30c530d8b1058a12d8c78ca",
+    "crates/memra-reference/tests/composite_source.rs": "ae507e005f2c897aa40e887dcb571f90d5792bd1c48e8a1a65880c314a2cc008"
+  },
+  "reviewed_config_dependency": "bb637184682216ea38cbb9eb79dab4841368eca1",
+  "source_review": "pass",
+  "source_GO": true,
+  "root_activation": false,
+  "native_gpu_execution": false,
+  "remote_execution": false,
+  "commands": [
+    {
+      "name": "composite-focused",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--lib",
+        "composite_",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 5.009105333010666
+    },
+    {
+      "name": "reference-composite",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-reference",
+        "--test",
+        "composite_source",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 4.748520958004519
+    },
+    {
+      "name": "compiler-cli",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 29.430352625087835
+    },
+    {
+      "name": "ordered-config",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--features",
+        "serde_json/preserve_order",
+        "--test",
+        "canonical_config"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 8.374372874968685
+    },
+    {
+      "name": "ordered-manifests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--features",
+        "serde_json/preserve_order",
+        "--lib",
+        "repack"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 11.296036458923481
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli",
+        "-p",
+        "memra-reference",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 7.04004054190591
+    },
+    {
+      "name": "identity-host",
+      "command": [
+        "python3",
+        "research/modelplan-onboarding-rewrite-identity-20260920/run-host-tests.py",
+        "--offline"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 11.507635500049219
+    },
+    {
+      "name": "linux-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "-p",
+        "memra-server",
+        "--lib",
+        "--bins",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0,
+      "wall_seconds": 55.30506204208359
+    },
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 3.9481042500119656
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "wall_seconds": 0.10106329200789332
+    }
+  ],
+  "raw": {
+    "raw/clippy.log.gz": {
+      "sha256": "b56614f5be40159a51f8be528f3a466a8fe413c99fe60f2c0c9adb6712eb9cd9",
+      "uncompressed_sha256": "6a7bb9c2f93ee5f0f4e06a188575f4cbdab8aa0ec9348c3085b4357210bd54b6",
+      "uncompressed_bytes": 550
+    },
+    "raw/compiler-cli.log.gz": {
+      "sha256": "4dcb75076b990005cdb3303276bc2cce8023cbc6aca3cda2a8fe48bfb2cc22cc",
+      "uncompressed_sha256": "e92adbae1f5adde12844808fe0a2dcfd80e2080c890d1d652341658bbafe42e5",
+      "uncompressed_bytes": 42268
+    },
+    "raw/composite-focused.log.gz": {
+      "sha256": "1e6c4c17fe30f3d35f0446ec52c36af4dee08291685cd6c50e64afd39c8f3a78",
+      "uncompressed_sha256": "2515b254c15278991c318002cb5dbeaf0ddb5cfcf4ab9f69e57970bd2dd9cd3b",
+      "uncompressed_bytes": 2856
+    },
+    "raw/diff.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/fmt.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/identity-host.log.gz": {
+      "sha256": "5b3f1cbb53d0c5c9f8133f9b58104b49c2abba8a16ab789ca7ea76228623d424",
+      "uncompressed_sha256": "ceef7ba2af4e326aa5e69d9d0d6c293603569df606fdbfd70572707748d4f823",
+      "uncompressed_bytes": 3133
+    },
+    "raw/linux-clippy.log.gz": {
+      "sha256": "b4b6532fa78e5ac22649ace26882f227e82b990e50638d7683f2519af69234f1",
+      "uncompressed_sha256": "1ece07ae32a95c1b1f5e769b501b2d6243ef70ff25d844ca134d66d2daf23926",
+      "uncompressed_bytes": 1173
+    },
+    "raw/ordered-config.log.gz": {
+      "sha256": "0a2cbc6d30411e59cf5c21f264c8d4f83e88eaf345e80b4d5d8ec900d8b3ee6a",
+      "uncompressed_sha256": "b4a484464bcb4ba3995231548c42b0a06892b722fd4f1d5534fd036462ef8ae3",
+      "uncompressed_bytes": 1308
+    },
+    "raw/ordered-manifests.log.gz": {
+      "sha256": "7ced611822718fbbad17432fa0823a8203a17dfaf6f66f6badf45f2181eb09d4",
+      "uncompressed_sha256": "3a8eb79fab7be1cc8f784e4e8b3c8538be4465f99f9d4980757cc7e61a585641",
+      "uncompressed_bytes": 3091
+    },
+    "raw/reference-composite.log.gz": {
+      "sha256": "23da6ada37ceec872775bf9b326b38f90422aea05a6e575ec45984e25ac0dc83",
+      "uncompressed_sha256": "d4194acba75245a36c6f5e08fed531dd3cab8bf4b45a3d42ecaae7b354b937f9",
+      "uncompressed_bytes": 728
+    },
+    "raw/result.json.gz": {
+      "sha256": "97df168d99963cab38210e4b2106ee5861ad56dbab1da015e54e811c0802f39c",
+      "uncompressed_sha256": "a4b9747606467b9717fc91660353e08e5e85523010c762224fce77c32177ef0d",
+      "uncompressed_bytes": 3039
+    }
+  },
+  "development": {
+    "development/541-composite-access-check.log.gz": {
+      "sha256": "3fd8b78f6098170a1b869b03c40e61956447a0775509ee8f4dde7ca5cdd687b8",
+      "uncompressed_sha256": "65d0198dbc3b8c9221c8a76152f6653205f9080758e3f609c75cb934a3615bb5",
+      "uncompressed_bytes": 187
+    },
+    "development/541-composite-access-tests-2.log.gz": {
+      "sha256": "e74933c6278236168350c84f977ce43d9ce09e80de9141dbfc8b1dc2f9d3c419",
+      "uncompressed_sha256": "8bb30cf20ddcf30df72b8fd772416993e108e5cea906d88543ed3657a076dcd5",
+      "uncompressed_bytes": 2643
+    },
+    "development/541-composite-access-tests-3.log.gz": {
+      "sha256": "182099425ec105aa028f611962b903611f3552f02924b1e57ac24415c535faed",
+      "uncompressed_sha256": "aa5db223c20f93407a079df5ec3430922a514165bf03298b3566cc261202ec14",
+      "uncompressed_bytes": 2741
+    },
+    "development/541-composite-access-tests.log.gz": {
+      "sha256": "48c190b361e060e377b2c954e5e0ecd22f9e2ff626eb97d2611b2564fba52e7b",
+      "uncompressed_sha256": "e62dda37e4b6101e61b0f05a3659bdeddbd6c2cd76911d62e3d9140d03d39a0d",
+      "uncompressed_bytes": 3017
+    },
+    "development/541-composite-masks-check.log.gz": {
+      "sha256": "8624c5679faadddf3a7c45af82352c2e9df9ebc9811bc449b2204ead5339b960",
+      "uncompressed_sha256": "1bfb6046e9d25f0b78a044eba46e88637e7d94c09d9142526f2cc24689d0a405",
+      "uncompressed_bytes": 722
+    },
+    "development/initial-composite-focused.log.gz": {
+      "sha256": "64e60567b2a8e5783f1661694249c7db26c5b321fe8b2e8ebc86326443f6ac89",
+      "uncompressed_sha256": "e0afbe13d6f56c4fd60d276a16105f8877e06ffdde119a786bbb57538fb12c53",
+      "uncompressed_bytes": 1411
+    },
+    "development/initial-result.json.gz": {
+      "sha256": "ef1976673ef768ffe3a091a10f9d19e1179ab7aa8d0443cc4fc7ba8c8a216daa",
+      "uncompressed_sha256": "5275582d21437af5943bf05e8b24956aaac5924f1a454f78071068859a8ee70c",
+      "uncompressed_bytes": 318
+    },
+    "development/541-composite-reference-2.log.gz": {
+      "sha256": "498249035b6e5bfb355c181b9519b616bf72832d75273970b6913bd68b0fe043",
+      "uncompressed_sha256": "845e54bebe51968f3ec581ebd893b83d141ee4ecc823eaecd9f0deb2f9eff7ff",
+      "uncompressed_bytes": 938
+    },
+    "development/541-composite-reference-3.log.gz": {
+      "sha256": "59c4f54318790260cf56116c148e4208b07ded898a202a3ecbf3d8dd6f976171",
+      "uncompressed_sha256": "9bd6bb4f1786d4fde7dcca204db847805543e9b962f77cdf5457da6ca07fa11e",
+      "uncompressed_bytes": 977
+    },
+    "development/541-composite-reference-4.log.gz": {
+      "sha256": "9a69ae24f65301d0f3537b1004d8ee0453d764f2ca11f0a8986bcb5614ec0a8a",
+      "uncompressed_sha256": "c3ba79bd4c751bd28aeeeb092a848ed8cc396e76e03fee34b9b9142572e8c791",
+      "uncompressed_bytes": 488
+    },
+    "development/541-composite-reference.log.gz": {
+      "sha256": "0937996ba958438ee7577b1ec27c0d251ef503092b3b0bd8601623127d5e3489",
+      "uncompressed_sha256": "5ddc72d397886947e2bfd550f4ab0022c32a69d41951d20dcc0cdd7f5780097d",
+      "uncompressed_bytes": 1177
+    }
+  },
+  "identity_compat": {
+    "identity-compat/baseline-fixture/a.bin.gz": {
+      "sha256": "06a14adfe7c0576e911e09ec2a8f07be4537afe06879075718056499f7bc1556",
+      "uncompressed_sha256": "7689d5d105a8d15a783c0e62431d57d2f9569807225db7afcb709633688038b7",
+      "uncompressed_bytes": 4100
+    },
+    "identity-compat/baseline-fixture/b.bin.gz": {
+      "sha256": "62c340133c098110399a85f8ed77092c5e76ed8aab92a1066c808f36c35f1e8d",
+      "uncompressed_sha256": "8dbe6bea5b329593e33668434e9ff515f49215dd88d1e923ef3e04d9b25fa2f1",
+      "uncompressed_bytes": 4096
+    },
+    "identity-compat/baseline-fixture/config.json.gz": {
+      "sha256": "afcabc395b3060eeac713aa06527391f7a12ed941ba05eba765217e284b19204",
+      "uncompressed_sha256": "db1da23eb3dabec00a79b0f4b4fa73660b51138a4456ff3cc1f51c8119fc292a",
+      "uncompressed_bytes": 263
+    },
+    "identity-compat/baseline-fixture/manifest.json.gz": {
+      "sha256": "5c4ce9ad6c29526a9e7f1e471ab2d29f81af60700ed559d16c6e996e85a80d22",
+      "uncompressed_sha256": "270c8bd1c47a147bcbbce0e64575e03e0fbb7766e98c82e11dda73bd0de898c7",
+      "uncompressed_bytes": 267
+    },
+    "identity-compat/baseline.log.gz": {
+      "sha256": "32d8926bcb1d13531723d60ba7e8115f5f74ee49a8c98b5331139ca4918c2c52",
+      "uncompressed_sha256": "e08a34387e8478c18a32e1d8ce1ddc8484cbb895c90d43491891c14b890dcd2f",
+      "uncompressed_bytes": 1241
+    },
+    "identity-compat/candidate-final-fixture/a.bin.gz": {
+      "sha256": "06a14adfe7c0576e911e09ec2a8f07be4537afe06879075718056499f7bc1556",
+      "uncompressed_sha256": "7689d5d105a8d15a783c0e62431d57d2f9569807225db7afcb709633688038b7",
+      "uncompressed_bytes": 4100
+    },
+    "identity-compat/candidate-final-fixture/b.bin.gz": {
+      "sha256": "62c340133c098110399a85f8ed77092c5e76ed8aab92a1066c808f36c35f1e8d",
+      "uncompressed_sha256": "8dbe6bea5b329593e33668434e9ff515f49215dd88d1e923ef3e04d9b25fa2f1",
+      "uncompressed_bytes": 4096
+    },
+    "identity-compat/candidate-final-fixture/config.json.gz": {
+      "sha256": "afcabc395b3060eeac713aa06527391f7a12ed941ba05eba765217e284b19204",
+      "uncompressed_sha256": "db1da23eb3dabec00a79b0f4b4fa73660b51138a4456ff3cc1f51c8119fc292a",
+      "uncompressed_bytes": 263
+    },
+    "identity-compat/candidate-final-fixture/manifest.json.gz": {
+      "sha256": "5c4ce9ad6c29526a9e7f1e471ab2d29f81af60700ed559d16c6e996e85a80d22",
+      "uncompressed_sha256": "270c8bd1c47a147bcbbce0e64575e03e0fbb7766e98c82e11dda73bd0de898c7",
+      "uncompressed_bytes": 267
+    },
+    "identity-compat/candidate-final.log.gz": {
+      "sha256": "cc4e2bf7775374750a3bb73fa49b8f0354bf3bb3687b26a5fe52db21f18c2a76",
+      "uncompressed_sha256": "1ae403593b87987bb3619b62188c69787ce96932c25b6630175665421e1b2b0c",
+      "uncompressed_bytes": 633
+    },
+    "identity-compat/candidate.log.gz": {
+      "sha256": "cb2f96dc91650863dc83c11dd71c23650ef4572ee62d7a30c54d896bb4623313",
+      "uncompressed_sha256": "f6f21097a92f5c14133f5aa9fe2c8788697e8207271e818a24f7d7be613dc6a8",
+      "uncompressed_bytes": 1198
+    },
+    "identity-compat/comparison.json.gz": {
+      "sha256": "e6f4e8f7ec315bc0a8737d52d312ab1de8a130b61a6af9368ead8281a5a2f9a9",
+      "uncompressed_sha256": "eb4db2accd4441b78e1f15450495974d3ba50b0ffff6268cdad7a439ac92fe22",
+      "uncompressed_bytes": 413
+    },
+    "identity-compat/final-comparison.json.gz": {
+      "sha256": "9b4ddae44257d03b1909e4560dcacf20e6e33052081013b414c49c2adfc5da04",
+      "uncompressed_sha256": "6df0f6912b915f2ff5b97a520b8fe122c8a4540c3b6d70cd18dcac74c2efb7f4",
+      "uncompressed_bytes": 1508
+    },
+    "identity-compat/inputs.json.gz": {
+      "sha256": "bbfce9fb7579b4384611c11bf9449995e88120a436726638a1c35ef459d82429",
+      "uncompressed_sha256": "58c0749a1e8dfbf4657be14914b40726ebe3b012b081e4b09b3d5a1c5c8a625a",
+      "uncompressed_bytes": 12024
+    },
+    "identity-compat/probe.rs.gz": {
+      "sha256": "ef0ed870b65947d1af64f142ad7e2514ad63d8653ab4af39e0b237b818b9665e",
+      "uncompressed_sha256": "5f704d8389dd6f5df5734641bdc31502c1dfafe6092e7badf16ecf5353e45c5a",
+      "uncompressed_bytes": 1248
+    },
+    "identity-compat/result.json.gz": {
+      "sha256": "6d61b62029fb5ce08978de08681481fc4d90fa1f483728f7a697e360ca579ef6",
+      "uncompressed_sha256": "555fb6b85f56a3142b72255aa2261e6b9334fbffd1b3fca71dbaa4468b5c92c1",
+      "uncompressed_bytes": 844
+    }
+  },
+  "binary_sha256": {
+    "target/debug/deps/memra_cli-1f97bc57df135346": "da2fd271d4da1a9a76c47395d46357f2cef14d4ba7f1330ad3aef2c8c9246ab5",
+    "target/debug/deps/memra-89f0c37d4a1c472f": "86b9e0f66b45204e568f8edb4aa6fd2944c5f0a2022391518e9ec0ca5bfca379",
+    "target/debug/deps/canonical_config-7f083a9ed16240c7": "f4a8b5a0a7a8d6e4da29fae3e1fa8789903632bad6b2a47ea42e58ecf293429e",
+    "target/debug/deps/step_rope_contract-797f6e6c5fefe3a8": "298a6b61010262075c25c94041cbd1e3abfdfa0d4a7c1d5e1110d439c911960d",
+    "target/debug/deps/memra_gguf-6290c3566524ed7c": "3d4359b5ba9c30d635ea45cc7dbdb989a88bca9f3be0462c252a5e5d761fc8ce",
+    "target/debug/deps/dsv4_census-3baf72979dfc1d7a": "330a7147671d5babe5b934a4cafc399b499ce25a2ee9555b4477332887d9119c",
+    "target/debug/deps/dsv4_decode_oracle_check-23231e890847b3d1": "788f10c2d478afdce39a1ab81fc5a3dcea0a7498093db770f787a8e49fb5bcf1",
+    "target/debug/deps/dsv4_dspark_gate-a3aa4a4af77a44b8": "8f60e51a43ed4c95c7a4fa456b993bcb75b1d8a3550448ac85254c2b65b5da59",
+    "target/debug/deps/dsv4_forward-76dd8ebd31d4de26": "a053e0b28da597427f019845c688054b2e6f1e088732beda8ed0abb32fc7c5fc",
+    "target/debug/deps/dsv4_greedy_verify-7681a9ea0c246e1a": "37ed4ba87aa536360cb0aebd1aecd089e5ab9b981a52168879e832094475da5d",
+    "target/debug/deps/dsv4_mtp_probe-8dbfecad269716a9": "c5a9987ad2fcdf1e5193814c3d3e8fa092f862c6adde6dd02b8182cac5778ae7",
+    "target/debug/deps/dsv4_mint-3436782cb8b371d6": "670b9f29fcd7760194c9b3732425022cbd9c6b33ab32fcb30c86644c65587e89",
+    "target/debug/deps/gguf_inspect-5decf429bae4471b": "61279bd88df93a2914ccb2e190d9f04179cd9ae6aae04692e75c09348fd72bf1",
+    "target/debug/deps/nvfp4_validate-b80dd2fcc3057c31": "eae913bd792dc117163d49d12aff04da2e6ea54390d7a2c3b43ab1f8731b13ba",
+    "target/debug/deps/canonical_config-be90c56389a381cc": "4f99ce2db71e3ad9b542ef86955bb63316f9c44e188eacf0659acade1a9b29cb",
+    "target/debug/deps/sealed_preflight-8c4cb0017a21b580": "15bccee3974f6b171840da596ec1b86829f71d90169d9df6dd11b01345da5afa",
+    "target/debug/deps/canonical_config-d5b78e0c3ee46048": "a4643ed48ee19a64c6fe765b6b43615c89cb4ec7dfc2454acc230cf8500dfcd3",
+    "target/debug/deps/memra_gguf-39e05b9d5843af5b": "14e62fb1c53ac32f7562e9c1ee38a295a005abf406d97aa61840ed083b9c24db",
+    "target/debug/deps/composite_source-2435da8331d98c32": "73165fcdfeba964c35d05b0666e2edc24af36393490eb1ae8a8c87fd46b81807"
+  },
+  "reported_test_summaries": {
+    "composite-focused.log": [
+      "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 389 filtered out; finished in 0.34s"
+    ],
+    "fmt.log": [],
+    "clippy.log": [],
+    "linux-clippy.log": [],
+    "identity-host.log": [
+      "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+    ],
+    "ordered-config.log": [
+      "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+    ],
+    "reference-composite.log": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+    ],
+    "compiler-cli.log": [
+      "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.96s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s",
+      "test result: ok. 411 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 4.74s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s"
+    ],
+    "diff.log": [],
+    "ordered-manifests.log": [
+      "test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 381 filtered out; finished in 1.99s"
+    ]
+  },
+  "source_commit": "5a805c39dd10d6c8858658ba27f6a0bdc8e40774",
+  "review_report": "../canonical-output-20260921/reviewed_input/issue-541-composite-materialization-5a805c39.json.gz"
+}

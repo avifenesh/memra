@@ -30,7 +30,7 @@ const MAX_ABS: f32 = 1e-4;
 const MAX_REL: f32 = 3e-3;
 const REL_FLOOR: f32 = 1e-2;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let ckpt = args
         .next()
@@ -44,7 +44,7 @@ fn main() {
     let dir = std::path::Path::new(&ckpt);
     let config_json =
         std::fs::read_to_string(dir.join("config.json")).expect("checkpoint config.json");
-    let cfg = ModelConfig::from_hf(&HfConfig::parse(&config_json));
+    let cfg = ModelConfig::from_hf(&HfConfig::try_parse(&config_json)?);
     let pack = memra_gguf::model_packs::for_config(&cfg)
         .expect("qwen4_exp pack must match the tiny config");
     assert_eq!(pack.family, "qwen4_exp", "pack resolution");
@@ -67,6 +67,7 @@ fn main() {
         .map(|name| {
             let (info, bytes) = st.raw(name).expect("census name resolves");
             TensorCensusEntry {
+                auxiliaries: Vec::new(),
                 name: name.clone(),
                 shape: info.shape.clone(),
                 storage: match info.dtype.as_str() {
@@ -135,6 +136,7 @@ fn main() {
         std::process::exit(1);
     }
     println!("\nTINY PARITY PASSED (max_abs<= {MAX_ABS}, max_rel <= {MAX_REL})");
+    Ok(())
 }
 
 fn argmax(values: &[f32]) -> usize {

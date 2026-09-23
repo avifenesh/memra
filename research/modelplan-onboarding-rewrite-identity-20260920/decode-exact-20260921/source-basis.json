@@ -1,0 +1,9 @@
+{
+  "current_main_snapshot": "21c5f932c7c3da5b3e6a0c611578601b0bdc76c6",
+  "failed_source": "68e5e520810fd105bf64f43048a3a88514f6a064",
+  "engine_lib_identical": true,
+  "engine_lib_sha256": "0bd0a66c7adc412a8f5553b9f3aad40eb5698de46cfcfee4f0c182d60288abde",
+  "classification": "pre-existing accepted-main decode-exact fallback crossover exposed by #542 FAST0 qualification; not a #542 numeric-kernel regression",
+  "runtime_failure": "004 identity drift;005 preload exposes same unchanged raw outputs and eager2 max_abs0.39977264 >fixed0.005",
+  "proposed_fix": "existing ExactScope at matmul_decode_exact entry suppresses ordinary prefill crossover in fallback, retaining T1 program; no new kernel/flag/tolerance"
+}

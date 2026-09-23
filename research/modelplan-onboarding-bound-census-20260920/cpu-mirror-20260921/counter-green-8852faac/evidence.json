@@ -1,0 +1,163 @@
+{
+  "source_commit": "8852faac7a88dba2493cc7d784deff06afbb3e0f",
+  "issue": "https://github.com/avifenesh/memra/issues/586",
+  "finding": "ARCH541-CPU-MIRROR-01",
+  "observed_commands_all_exit_zero": true,
+  "source_review": "pass",
+  "source_files_verified": 914,
+  "source_delta_from_red": [
+    "tools/memra_cpu_experts.cpp"
+  ],
+  "regression_sources_identical_to_red": true,
+  "cuda_executed": false,
+  "router_executed": false,
+  "raw": {
+    "aligned-buffered-pipeline-0.log.gz": {
+      "sha256": "c81ae729400fbe7e194872a8849ce783bae5afcecf47941fffbd2dc2b8daaf15",
+      "uncompressed_sha256": "2cf6ff42c49668141596dec18c9ee47a6260fb5142df51cc923c527ef9a51ce5",
+      "uncompressed_bytes": 5229
+    },
+    "aligned-buffered-pipeline-1.log.gz": {
+      "sha256": "7c12922dad13348966d121c57d978af55aefd0c031ac07b786078b251f4b2e1f",
+      "uncompressed_sha256": "9b0a057c95a944dbf033eb7828e12a8363f7e17536c4a1c4e1aa92f207e2b78f",
+      "uncompressed_bytes": 5229
+    },
+    "aligned-direct-pipeline-0.log.gz": {
+      "sha256": "48a14a1474fb58331b128093e4d52646bd42d7afdb313822ff44e8270082386d",
+      "uncompressed_sha256": "18941f63562946335902adc0042a168b82fdd798e02048d38f938a5fb6f103d9",
+      "uncompressed_bytes": 5227
+    },
+    "aligned-direct-pipeline-1.log.gz": {
+      "sha256": "0b084ec0e9ec2c016f53583037a43e79b63cd1a2ad0fe27d0dfd6706df2b75cc",
+      "uncompressed_sha256": "de6ec1d05741baf012c8ab64b5d0a552e26d1ee871560d890cef563a79b2a924",
+      "uncompressed_bytes": 5227
+    },
+    "companion-build.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "legacy-fixture-build.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "legacy-refusal.log.gz": {
+      "sha256": "79cec218d385f6945157841a0d77a620adc2817b13317a5c86d053eafbc8f087",
+      "uncompressed_sha256": "0acad6064f8a18b988b73eb62ae30da9c5c95c0794793d73b0fb1264bbdfbff0",
+      "uncompressed_bytes": 4361
+    },
+    "mirror-bytes.log.gz": {
+      "sha256": "48e11011140ecb83f89338731058616652c921d4ed8be25f1567c68d812ed25a",
+      "uncompressed_sha256": "91a786fd49cbe3a83322366bf93664e403ccf2966785ec20bf8c32dbcd1b30e6",
+      "uncompressed_bytes": 4392
+    },
+    "mirror-cached-generation.log.gz": {
+      "sha256": "7333f053b2ea85fa9f51097044e1e71c3715dec2875723485fbbbf694b83446b",
+      "uncompressed_sha256": "c42e39fe5ffaec9360007eb8fb6663e6b510e3e12de288808fbe80ed5f5d81fe",
+      "uncompressed_bytes": 4406
+    },
+    "mirror-counter-error-pipeline-0.log.gz": {
+      "sha256": "928290dc9c616b8034112fecad9a3ea4910dcce9779e2a2b8c0673b6da428382",
+      "uncompressed_sha256": "cfa4d1b0ea0b6535bf9cce2dd839b223a67a559eee52ed821528d303fed14a21",
+      "uncompressed_bytes": 5190
+    },
+    "mirror-counter-error-pipeline-1.log.gz": {
+      "sha256": "633274dd4117211eec5bbc10d8bc3b5e2240e0886c3a6c9a24b55018d4bdc4fd",
+      "uncompressed_sha256": "b6e92d19558215eaa83faf681457d18073ba73325809e386e1ea9b378036bece",
+      "uncompressed_bytes": 5190
+    },
+    "mirror-counter-pipeline-0.log.gz": {
+      "sha256": "509b73e215f22593c0a5e906324ea388c939f9e57dd68b699bde8436a5d2d577",
+      "uncompressed_sha256": "97bf7df6ce62b55c47084cff4c22b044965438505b1fa7eee43d06a06cbfcac8",
+      "uncompressed_bytes": 5680
+    },
+    "mirror-counter-pipeline-1.log.gz": {
+      "sha256": "1c16970c7bc1d080a2e6376b3b19d2d7d7a3e05b99ab5690855a784f4261fb9f",
+      "uncompressed_sha256": "cf5d73cf280b68e9271aafc4f7d3b1a81f89420dac6ad030ffcd8dace4bb6cd2",
+      "uncompressed_bytes": 5195
+    },
+    "mirror-same-fs.log.gz": {
+      "sha256": "a05b9526537a2942b3f677901f4e7fdb53b9503b1d3372221875f6296c4263a7",
+      "uncompressed_sha256": "a31e0b83a28184fb9ce2fe5494fd3e360cbc7e08cefaf1e82f798ee398ccd00b",
+      "uncompressed_bytes": 4397
+    },
+    "mirror-source-generation.log.gz": {
+      "sha256": "3cc8f7ae6de086db231ba2f8a3732666c56fe206e718c2e765d16d38ff6bb3e4",
+      "uncompressed_sha256": "5a9d5f35356a8150517f2aaecf03c351ea0f5c3cddae5d69d0f352d6c4f022a7",
+      "uncompressed_bytes": 4405
+    },
+    "mirror-target-generation.log.gz": {
+      "sha256": "5108822f3290054b17321d09f3ebfd8bd4256cb080700ed5d84f33ba3d5ff590",
+      "uncompressed_sha256": "4db9d8e770509b7ce67f906377456da4821bbeefbe497c99ffb31ba351b1244a",
+      "uncompressed_bytes": 4405
+    },
+    "mirrored-pipeline-0.log.gz": {
+      "sha256": "0313341a8926a62875ce2a7a223af673d257a5fa9986f50fd286fdbffb56b15c",
+      "uncompressed_sha256": "0a393631bce2d3da4b77f3f8f602db8d3e98a05475fc57e1ba147ebe1765e1f9",
+      "uncompressed_bytes": 5127
+    },
+    "mirrored-pipeline-1.log.gz": {
+      "sha256": "0e71f59f00e074db5af750fc8b3b44281731cf56ce4824fb2eb7e0e5be42895f",
+      "uncompressed_sha256": "116ded843a525f575d3715ed1cee98fd58d5fdb1fbf19ed1812a5073d8f1b147",
+      "uncompressed_bytes": 5127
+    },
+    "missing-mirror-map-refusal.log.gz": {
+      "sha256": "e0c9e106f469aa90fc1611cefb6fcee79837cc6d0510b53e71a1248750ba978c",
+      "uncompressed_sha256": "0490f5e083be6807143e5a8f5acbf3cb6a28e96d7a2f2742af18c40e45d86fab",
+      "uncompressed_bytes": 4354
+    },
+    "observer-build.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "observer-exports.log.gz": {
+      "sha256": "cee66f3e0cfa98181392c3a8deb7a4ee8104fa9455e3ce7a2c5d527328aefc7e",
+      "uncompressed_sha256": "b8e009626f4969ceb73ce4574ee76cab4f59be278014257fa5714fde1993567f",
+      "uncompressed_bytes": 13478
+    },
+    "original-parity.log.gz": {
+      "sha256": "0a75f3813f3efeb208ea3c53a64381b209a4185d0430a3df26d6bbfdaa141d23",
+      "uncompressed_sha256": "8c03738e5a20b16348ae21cb7ef27caad5540b5927eac5cba79bd1717b24c5a5",
+      "uncompressed_bytes": 4881
+    },
+    "prefetch-buffered-pipeline-0.log.gz": {
+      "sha256": "fa935df2c99c115f0ae846687924ee16d4adbb0eac83308fd583795f07743ed3",
+      "uncompressed_sha256": "e8cd0867c60108d8e8b5d01ecceaa0fa02ed2cea10642a70093e76ccfda7ef89",
+      "uncompressed_bytes": 5322
+    },
+    "prefetch-buffered-pipeline-1.log.gz": {
+      "sha256": "0c8e57bb6d52afc7fd907cbe9e9b91c3bdb6c925a9daadc864191f7f3dde3b1f",
+      "uncompressed_sha256": "2d23aa1e36b93cc2facddf94f2f41fadc3b3f149d05d8f6eed7eb1b22ae7366b",
+      "uncompressed_bytes": 5322
+    },
+    "prefetch-direct-pipeline-0.log.gz": {
+      "sha256": "37c89b9bfae496055f37bc38b6215187f38eeb27ae8ce5184d0f78223be6aa26",
+      "uncompressed_sha256": "6e7960717c4fe399565c9454621c8860a5c24b73ab330241d56d770a3236784c",
+      "uncompressed_bytes": 5320
+    },
+    "prefetch-direct-pipeline-1.log.gz": {
+      "sha256": "b926c858f41a2ebbd400e9fc8d6a767552ee7a18c1c6492fc5eb1eec2821c424",
+      "uncompressed_sha256": "ca69505c0801f6e9669611979e07d8895dc7b479bc0e36c41490dab0c3ec7193",
+      "uncompressed_bytes": 5320
+    },
+    "production-exports.log.gz": {
+      "sha256": "7b2a8adb2006e8f0cce07d6586af17fc9dec514784ef5fedd56fc5f2249827f9",
+      "uncompressed_sha256": "ed377deaf7f6452c7a8cc0aad062d4d190ac3c2e1099c1275288796dae5f97aa",
+      "uncompressed_bytes": 12995
+    },
+    "result.json.gz": {
+      "sha256": "dcf72a64e157988cab5f4b4e848ce8d2638873496237a31ef4eca172491b9ae0",
+      "uncompressed_sha256": "79c1c112063f88f1d695c4f455b98a4287ca5f168a69649021eeef8e6b7289c6",
+      "uncompressed_bytes": 134388
+    },
+    "source-manifest.json.gz": {
+      "sha256": "3a2eb2e3ddadcf002ee9ed981fe3200fda70cd79faaf6e7c7baafdc46b61fc1b",
+      "uncompressed_sha256": "dc0a7851b1cbe0ee0d08a952f3e20ac0ff161882cecf35d0a35a56a9fe0e41f8",
+      "uncompressed_bytes": 117062
+    }
+  },
+  "source_GO": true,
+  "review_bank": "../counter-review-8852faac/"
+}

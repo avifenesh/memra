@@ -956,6 +956,55 @@ explicit gate rollback and refusal, and verify a new thread's environment policy
 `tools/test-dsv4-dense-control-policy.sh` exercises the actual exact-tail and
 all five dense-TC drivers under unset, explicit S16 and zero before CUDA calls.
 
+### Rewrite identity admission (#542)
+
+`cargo test -p memra-gguf execution_manifest --lib` checks strict admission with correct,
+missing, stale, and mismatched artifact/executable/numerical-program identities, including
+internally rehashed bundles and duplicate fields. `cargo test -p memra-gguf artifact_sha256 --lib`
+checks identities from opened source bytes. `cargo test -p memra-cli --lib` checks receipt import.
+These CPU tests do not qualify CUDA rewrites. Raw reproduction and verification records live in
+`research/modelplan-onboarding-rewrite-identity-20260920/`.
+
+Runtime CPU admission regressions are in `memra-engine` under `plan_backend::runtime_identity`;
+`cargo test -p memra-engine --lib plan_backend::runtime_identity` runs them on a CUDA build host.
+They cover failed reinstall, stale program state, and eager-only graph/spec refusal.
+`python3 research/modelplan-onboarding-rewrite-identity-20260920/run-host-tests.py`
+also runs the protected-snapshot module without linking CUDA: repeated admissions,
+mutation/reinstall revocation, model binding, external drift and scope lifetime.
+`run-later-drift-regression.py --out NEW_DIRECTORY` runs the environment and library
+re-entry assertions against the frozen pre-fix activation body (expected failures)
+and current activation (expected passes), with recorded source/log hashes. The old
+body receives only an ignored callback argument to adapt its signature; its missing
+validation remains unchanged. Library drift uses the production file-stamp comparator
+with an injected inventory. The direct frozen reviewer reproduction is also retained.
+The unfiltered host suites run through `tools/skip-census.py` with zero skip budget;
+isolated children must each prove one passing test and do not export their filtered
+harness summaries into the parent census.
+
+`python3 crates/memra-engine/src/model/repack/run-host-tests.py` exercises the actual
+stacked and per-expert NVFP4 disk helpers using tiny opened safetensors fixtures. Both
+identity flags cover cold/cache-hit, same-size corruption, after-load mutation/truncation,
+source-path replacement and filesystem-object refusal. These are CPU loader/control
+regressions; exact-binary native qualification remains required.
+
+The native runner requires an owned build record. From a clean checkout, run
+`python3 research/modelplan-onboarding-rewrite-identity-20260920/native_build_record.py
+--out BUILD_DIR --cuda-arch 120a --nvcc /absolute/path/to/nvcc` before taking a GPU lease.
+Use a new `BUILD_DIR` outside the checkout; it retains Cargo events, compiler/input
+identities and exact executable hashes. Pass `--build-record BUILD_DIR/build.json
+--binary-dir BUILD_DIR/target/release` to `qualify-native.py` under the assigned GPU
+wrapper. Qualification output also stays outside the checkout. The runner rejects
+missing/incomplete records, changed clean source, binaries and relevant build inputs
+before GPU access; `test_qualify_native.py` covers those refusals with CPU fixtures.
+The runner also schedules `rewrite_identity_gate library-drift` after positive replay.
+That separate process checks real mapping drift, unchanged cache bytes and permanent
+origin revocation. `qualify-callers.py` now runs the actual graph/profile/prime and
+worker callers plus native NVFP4 cache fixtures. Build schema v2 seals their exact
+test executables separately from production tools. The environment controller's
+Linux CPU suite runs in CI with `--require-linux`; native cases still require the
+coordinator's reviewed final build and per-card lease. The separate `--phase battery`
+executes the authoritative generic release battery with verified owned executables.
+See the research `NATIVE-REFUSAL-PLAN.md` for commands, state witnesses and limits.
 
 ### Model-owned device admission and reclaim (#544)
 

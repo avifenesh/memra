@@ -229,6 +229,7 @@ struct StageBufs {
 /// Per-session pool: one [`StageGraphs`] per pipeline stage this cache has decoded through.
 #[derive(Default)]
 pub(crate) struct Glm5DecodeGraphs {
+    rewrite_execution: Option<crate::plan_backend::RewriteExecutionSnapshot>,
     stages: Vec<StageGraphs>,
     /// `(device ordinal, lo, hi)` keys that are latched to the eager walk for the rest of the
     /// session: a capture that FAILED once, or (since box run 3) a stage whose state signature
@@ -831,6 +832,12 @@ impl HybridModel {
         lo: usize,
         hi: usize,
     ) -> Option<String> {
+        if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph) {
+            return Some(
+                "decode-graph rewrite is not qualified for the current loaded runtime identity"
+                    .into(),
+            );
+        }
         if self.hyper.is_none() {
             return Some("model carries no HyperConnections topology".into());
         }
@@ -919,6 +926,19 @@ impl HybridModel {
         lo: usize,
         hi: usize,
     ) -> bool {
+        // Route a stale retained pool to the checked execution entry, where it errors.
+        // Returning false would silently turn a revoked graph session into an eager one.
+        if let Some(pool) = cache
+            .glm5_decode_graph
+            .as_ref()
+            .and_then(|pool| pool.downcast_ref::<Glm5DecodeGraphs>())
+            && pool
+                .rewrite_execution
+                .as_ref()
+                .is_none_or(|origin| self.check_rewrite_execution(origin).is_err())
+        {
+            return true;
+        }
         // A stage whose capture already failed once stays eager for the life of this session —
         // the reason was printed then, so this arm is silent by design.
         if cache
@@ -963,6 +983,14 @@ impl HybridModel {
         pos: usize,
         cache: &mut Cache,
     ) -> Res<CudaSlice<f32>> {
+        let _request = self.protect_rewrite_execution()?;
+        let origin = self
+            .glm5_graph_pool(cache)?
+            .rewrite_execution
+            .as_ref()
+            .ok_or("GLM decode graph pool has no originating snapshot")?
+            .clone();
+        let _origin = self.enter_rewrite_execution(&origin)?;
         let dev = e.ctx().ordinal();
         let n_embd = self.cfg.n_embd as usize;
         let width = topology.streams * n_embd;
@@ -992,7 +1020,7 @@ impl HybridModel {
         // is invalidated. See the flag's doc in lib.rs for why the default is what it is.
         let recapture_armed = crate::glm5_graph_recapture_on();
         let mut need_capture = {
-            let pool = self.glm5_graph_pool(cache);
+            let pool = self.glm5_graph_pool(cache)?;
             match pool
                 .stages
                 .iter()
@@ -1042,7 +1070,7 @@ impl HybridModel {
             // A stage already in the pool has to be torn down before its key can be captured
             // again; a first capture has nothing to remove and the drain is a no-op there.
             let present = {
-                let pool = self.glm5_graph_pool(cache);
+                let pool = self.glm5_graph_pool(cache)?;
                 pool.stages
                     .iter()
                     .position(|s| s.dev == dev && s.lo == lo && s.hi == hi)
@@ -1055,11 +1083,11 @@ impl HybridModel {
                         "eager from here on stage=[{lo}, {hi}) dev={dev}: the pre-teardown drain \
                          failed ({err}), so the stale execs are left alone"
                     ));
-                    self.glm5_graph_pool(cache).failed.push((dev, lo, hi));
+                    self.glm5_graph_pool(cache)?.failed.push((dev, lo, hi));
                     return self
                         .hyper_range_decode_eager(e, topology, x, lo, hi, pos_d, pos, cache);
                 }
-                let stale = self.glm5_graph_pool(cache).stages.remove(i);
+                let stale = self.glm5_graph_pool(cache)?.stages.remove(i);
                 crate::GLM5_DECODE_GRAPH_RECAPTURES.fetch_add(1, Ordering::Relaxed);
                 // BUFFER REUSE IS THE SAFETY ARGUMENT, so it has to actually happen (revuto
                 // MEDIUM on #116: `reuse` used to be hard-bound `None`, so the rebuild allocated
@@ -1116,7 +1144,7 @@ impl HybridModel {
                 note(&format!(
                     "eager from here on stage=[{lo}, {hi}) dev={dev}: the pre-capture warm walk failed ({err})"
                 ));
-                self.glm5_graph_pool(cache).failed.push((dev, lo, hi));
+                self.glm5_graph_pool(cache)?.failed.push((dev, lo, hi));
                 return self.hyper_range_decode_eager(e, topology, x, lo, hi, pos_d, pos, cache);
             }
         }
@@ -1134,14 +1162,14 @@ impl HybridModel {
             // The failed capture may have left transients queued; drain before eager work reuses
             // the stream, and record the refusal so `glm5_decode_graph_ready` yields immediately.
             let _ = e.stream().synchronize();
-            self.glm5_graph_pool(cache).failed.push((dev, lo, hi));
+            self.glm5_graph_pool(cache)?.failed.push((dev, lo, hi));
             return self.hyper_range_decode_eager(e, topology, x, lo, hi, pos_d, pos, cache);
         }
 
         // The captured graphs read the stage's own `pos_d` (rope inside an MLA PRE half);
         // refresh it for this token before the first replay. KDA-only runs ignore it.
         {
-            let pool = self.glm5_graph_pool(cache);
+            let pool = self.glm5_graph_pool(cache)?;
             if let Some(st) = pool
                 .stages
                 .iter_mut()
@@ -1159,7 +1187,7 @@ impl HybridModel {
             }
             // memra#131 SELF-CHECK, once per run per session, BEFORE the door may claim health.
             let unchecked = self
-                .glm5_graph_pool(cache)
+                .glm5_graph_pool(cache)?
                 .stages
                 .iter()
                 .find(|s| s.dev == dev && s.lo == lo && s.hi == hi)
@@ -1188,7 +1216,7 @@ impl HybridModel {
             trace_seg(e, dev, lo, hi, cursor, hi, "graph-gap", pos, &x);
         }
         {
-            let pool = self.glm5_graph_pool(cache);
+            let pool = self.glm5_graph_pool(cache)?;
             if let Some(st) = pool
                 .stages
                 .iter_mut()
@@ -1200,20 +1228,29 @@ impl HybridModel {
         Ok(x)
     }
 
-    fn glm5_graph_pool<'a>(&self, cache: &'a mut Cache) -> &'a mut Glm5DecodeGraphs {
+    fn glm5_graph_pool<'a>(&self, cache: &'a mut Cache) -> Res<&'a mut Glm5DecodeGraphs> {
         if cache
             .glm5_decode_graph
             .as_ref()
             .and_then(|b| b.downcast_ref::<Glm5DecodeGraphs>())
             .is_none()
         {
-            cache.glm5_decode_graph = Some(Box::new(Glm5DecodeGraphs::default()));
+            cache.glm5_decode_graph = Some(Box::new(Glm5DecodeGraphs {
+                rewrite_execution: Some(self.current_rewrite_execution_snapshot()?),
+                ..Glm5DecodeGraphs::default()
+            }));
         }
-        cache
+        let pool = cache
             .glm5_decode_graph
             .as_mut()
             .and_then(|b| b.downcast_mut::<Glm5DecodeGraphs>())
-            .expect("just installed")
+            .expect("just installed");
+        self.check_rewrite_execution(
+            pool.rewrite_execution
+                .as_ref()
+                .ok_or("GLM decode graph pool has no originating snapshot")?,
+        )?;
+        Ok(pool)
     }
 
     /// Capture every KDA run of `[lo, hi)` in both ping-pong phases.
@@ -1523,7 +1560,7 @@ impl HybridModel {
         } else {
             note(&line);
         }
-        self.glm5_graph_pool(cache).stages.push(stage);
+        self.glm5_graph_pool(cache)?.stages.push(stage);
         Ok(())
     }
 
@@ -1734,7 +1771,7 @@ impl HybridModel {
             }
         }
         let (nf_pool, nf_pool_first) = {
-            let pool = self.glm5_graph_pool(cache);
+            let pool = self.glm5_graph_pool(cache)?;
             let mut total = 0usize;
             let mut first = String::new();
             if let Some(st) = pool
@@ -1849,7 +1886,7 @@ impl HybridModel {
         };
         // Which verified replay this is for the run, and which ping-pong phase it will use.
         let (k, phase) = {
-            let pool = self.glm5_graph_pool(cache);
+            let pool = self.glm5_graph_pool(cache)?;
             pool.stages
                 .iter()
                 .find(|s| s.dev == dev && s.lo == lo && s.hi == hi)
@@ -1989,7 +2026,7 @@ impl HybridModel {
             restore(e, cache, &snaps)?;
             let x_real =
                 self.hyper_range_decode_eager(e, topology, x_keep, a, b, pos_d, pos, cache)?;
-            self.glm5_graph_pool(cache).failed.push((dev, lo, hi));
+            self.glm5_graph_pool(cache)?.failed.push((dev, lo, hi));
             return Ok((x_real, false));
         }
         let first_diff = h_ref
@@ -2050,7 +2087,7 @@ impl HybridModel {
         match first_diff.or(state_diff) {
             None => {
                 let n = selfcheck_n();
-                let pool = self.glm5_graph_pool(cache);
+                let pool = self.glm5_graph_pool(cache)?;
                 if let Some(st) = pool
                     .stages
                     .iter_mut()
@@ -2083,7 +2120,7 @@ impl HybridModel {
                 restore(e, cache, &snaps)?;
                 let x_real =
                     self.hyper_range_decode_eager(e, topology, x_keep, a, b, pos_d, pos, cache)?;
-                self.glm5_graph_pool(cache).failed.push((dev, lo, hi));
+                self.glm5_graph_pool(cache)?.failed.push((dev, lo, hi));
                 Ok((x_real, false))
             }
         }
@@ -2114,7 +2151,7 @@ impl HybridModel {
         }
         let phase;
         {
-            let pool = self.glm5_graph_pool(cache);
+            let pool = self.glm5_graph_pool(cache)?;
             let st = pool
                 .stages
                 .iter_mut()
@@ -2148,7 +2185,7 @@ impl HybridModel {
         // Pieces in order: graph pieces replay; an MLA middle runs eager on the stage's own
         // workspace (`ws.h` and `mixed` are lent out of the pool for the call and put back).
         let n_pieces = {
-            let pool = self.glm5_graph_pool(cache);
+            let pool = self.glm5_graph_pool(cache)?;
             let st = pool
                 .stages
                 .iter()
@@ -2158,7 +2195,7 @@ impl HybridModel {
         };
         for pi in 0..n_pieces {
             let middle = {
-                let pool = self.glm5_graph_pool(cache);
+                let pool = self.glm5_graph_pool(cache)?;
                 let st = pool
                     .stages
                     .iter_mut()
@@ -2201,7 +2238,7 @@ impl HybridModel {
             };
             if let Some((il, h, mut mixed)) = middle {
                 let prev = {
-                    let pool = self.glm5_graph_pool(cache);
+                    let pool = self.glm5_graph_pool(cache)?;
                     let st = pool
                         .stages
                         .iter_mut()
@@ -2210,7 +2247,7 @@ impl HybridModel {
                     e.f16_scratch_swap(st.f16.take())
                 };
                 let r = self.hyper_mla_mid_post_ws(e, il, &h, pos_d, cache, &mut mixed);
-                let pool = self.glm5_graph_pool(cache);
+                let pool = self.glm5_graph_pool(cache)?;
                 let st = pool
                     .stages
                     .iter_mut()
@@ -2235,7 +2272,7 @@ impl HybridModel {
         }
         let mids: Vec<usize>;
         {
-            let pool = self.glm5_graph_pool(cache);
+            let pool = self.glm5_graph_pool(cache)?;
             let st = pool
                 .stages
                 .iter_mut()
@@ -2294,7 +2331,7 @@ impl HybridModel {
         };
         let mut out = step(e, &out_ctx, "alloc(out)", e.uninit(width))?;
         {
-            let pool = self.glm5_graph_pool(cache);
+            let pool = self.glm5_graph_pool(cache)?;
             let st = pool
                 .stages
                 .iter()

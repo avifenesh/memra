@@ -2,16 +2,22 @@
 //! shared full-attention + SwiGLU forward graph. Arch-agnostic via ModelConfig; this path is
 //! exactly the dense-transformer graph (qwen3) and the full-attention layers of hybrids.
 
+use crate::spill_pread::DiskReadSource;
 use crate::{
     Engine, QT_BF16, QT_F8_E4M3, QT_F32, QT_IQ3_S, QT_IQ4_XS, QT_NVFP4, QT_NVFP4_RP, QT_Q2_K,
     QT_Q3_K, QT_Q4_0, QT_Q4_K, QT_Q5_K, QT_Q6_K, QT_Q8_0,
 };
 use cudarc::driver::CudaSlice;
+use memra_gguf::bound_disk::{BoundDiskView, ExpertDiskView};
 use memra_gguf::config::ModelConfig;
-use memra_gguf::source::{DiskExtent, GgufSource, TensorSource};
+use memra_gguf::source::{GgufSource, TensorSource};
 use memra_gguf::{GgmlType, GgufFile, dequant};
 use std::collections::HashMap;
-use std::path::Path;
+
+pub mod final_upload;
+mod nvfp4_scale;
+mod repack;
+use repack::ensure_repack_cache_dir;
 
 /// RESIDENCY CENSUS (lane/fp8-decode-v1, 2026-08-05) — per-qtype tally of the 2D matmul weights
 /// that actually went resident, keyed by `QT_*`. The FP8-ST decode arm's whole claim is about
@@ -86,37 +92,6 @@ pub fn residency_census_report() -> String {
     out
 }
 
-/// Refuse attacker-controlled filesystem objects in the model-local repack cache.
-///
-/// Repack artifacts are derived data, but they are opened by the serving process and therefore
-/// must not be allowed to follow a model-provided symlink into an arbitrary path. `create_dir_all`
-/// and ordinary `File::create` both follow links; use `symlink_metadata` for the directory and
-/// `O_NOFOLLOW` for the final file component on Unix. The non-Unix fallback still rejects existing
-/// symlinks and keeps the same behavior on platforms without that flag.
-fn ensure_repack_cache_dir(path: &Path) -> std::io::Result<()> {
-    match std::fs::symlink_metadata(path) {
-        Ok(meta) => {
-            if meta.file_type().is_symlink() || !meta.is_dir() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("repack cache directory is not a real directory: {path:?}"),
-                ));
-            }
-            Ok(())
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            match std::fs::create_dir(path) {
-                Ok(()) => Ok(()),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                    ensure_repack_cache_dir(path)
-                }
-                Err(error) => Err(error),
-            }
-        }
-        Err(error) => Err(error),
-    }
-}
-
 /// A memcpy fanned out over the host's cores. One thread moves a few GB/s; the pinned copies of
 /// a 171 GB expert bank (one per layer, 4 GB each) are load-time wall on their own, and memcpy
 /// scales with threads until the memory system saturates. Chunks are at least 16 MiB so small
@@ -138,246 +113,6 @@ pub(crate) fn par_copy_bytes(dst: &mut [u8], src: &[u8]) {
             s.spawn(move || d.copy_from_slice(sc));
         }
     });
-}
-
-fn repack_cache_is_fresh(path: &Path, expected_len: usize) -> bool {
-    std::fs::symlink_metadata(path)
-        .is_ok_and(|meta| meta.file_type().is_file() && meta.len() == expected_len as u64)
-}
-
-#[cfg(unix)]
-fn open_repack_cache_dir(path: &Path) -> std::io::Result<std::fs::File> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut options = std::fs::OpenOptions::new();
-    options
-        .read(true)
-        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW);
-    options.open(path)
-}
-
-#[cfg(not(unix))]
-fn open_repack_cache_dir(path: &Path) -> std::io::Result<std::fs::File> {
-    std::fs::OpenOptions::new().read(true).open(path)
-}
-
-#[cfg(unix)]
-fn open_repack_cache(path: &Path, write: bool) -> std::io::Result<std::fs::File> {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-    use std::os::unix::io::{AsRawFd, FromRawFd};
-
-    let parent = path.parent().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "repack cache has no parent",
-        )
-    })?;
-    let name = path.file_name().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "repack cache has no filename",
-        )
-    })?;
-    let name = CString::new(name.as_bytes()).map_err(|_| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "repack cache filename has NUL",
-        )
-    })?;
-    let dir = open_repack_cache_dir(parent)?;
-    let flags = if write {
-        libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW
-    } else {
-        libc::O_RDONLY | libc::O_NOFOLLOW
-    };
-    let fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), flags, 0o600) };
-    if fd < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    // SAFETY: openat returned a fresh, owned descriptor.
-    let file = unsafe { std::fs::File::from_raw_fd(fd) };
-    let metadata = file.metadata()?;
-    if !metadata.is_file() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("repack cache is not a regular file: {path:?}"),
-        ));
-    }
-    if std::os::unix::fs::MetadataExt::nlink(&metadata) > 1 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("repack cache refuses a multiply-linked file: {path:?}"),
-        ));
-    }
-    Ok(file)
-}
-
-#[cfg(not(unix))]
-fn open_repack_cache(path: &Path, write: bool) -> std::io::Result<std::fs::File> {
-    let metadata = std::fs::symlink_metadata(path)?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("repack cache is not a regular file: {path:?}"),
-        ));
-    }
-    let mut options = std::fs::OpenOptions::new();
-    options.read(!write).write(write);
-    options.open(path)
-}
-
-/// Write one repack artifact through a descriptor for its real parent directory. The payload is
-/// first written to an O_EXCL temporary sibling, fsynced, and atomically renamed into place; a
-/// pre-existing symlink, non-regular file, or hard link is rejected before the rename. Thus a
-/// malformed model cannot truncate a service-owned inode, and a crash cannot leave a fresh-sized
-/// partial cache that a later load would mistake for valid data.
-fn write_repack_cache<F>(path: &Path, write: F) -> std::io::Result<()>
-where
-    F: FnOnce(&mut std::io::BufWriter<std::fs::File>) -> std::io::Result<()>,
-{
-    use std::io::Write;
-
-    let parent = path.parent().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "repack cache has no parent",
-        )
-    })?;
-    let name = path.file_name().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "repack cache has no filename",
-        )
-    })?;
-    let dir = open_repack_cache_dir(parent)?;
-
-    #[cfg(unix)]
-    {
-        use std::ffi::CString;
-        use std::os::unix::ffi::OsStrExt;
-        use std::os::unix::io::{AsRawFd, FromRawFd};
-        static TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let name = CString::new(name.as_bytes()).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "repack cache filename has NUL",
-            )
-        })?;
-        let mut temp_name = None;
-        let mut temp_file = None;
-        for _ in 0..32 {
-            let suffix = TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let candidate = CString::new(format!(
-                ".{}.tmp-{}-{suffix}",
-                name.to_string_lossy(),
-                std::process::id()
-            ))
-            .map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "temporary filename has NUL",
-                )
-            })?;
-            let fd = unsafe {
-                libc::openat(
-                    dir.as_raw_fd(),
-                    candidate.as_ptr(),
-                    libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW,
-                    0o600,
-                )
-            };
-            if fd >= 0 {
-                temp_name = Some(candidate);
-                // SAFETY: openat returned a fresh, owned descriptor.
-                temp_file = Some(unsafe { std::fs::File::from_raw_fd(fd) });
-                break;
-            }
-            let error = std::io::Error::last_os_error();
-            if error.kind() != std::io::ErrorKind::AlreadyExists {
-                return Err(error);
-            }
-        }
-        let temp_name = temp_name.ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                "could not allocate a unique repack cache temporary",
-            )
-        })?;
-        let mut out = std::io::BufWriter::new(temp_file.expect("temporary file accompanies name"));
-        let result = write(&mut out).and_then(|()| {
-            out.flush()?;
-            out.get_ref().sync_all()?;
-            Ok(())
-        });
-        drop(out);
-        if let Err(error) = result {
-            unsafe {
-                libc::unlinkat(dir.as_raw_fd(), temp_name.as_ptr(), 0);
-            }
-            return Err(error);
-        }
-
-        // Never replace a caller-provided link or a hard-linked service inode. If a race swaps the
-        // final entry after this check, renameat only replaces that directory entry; it cannot
-        // write through the swapped inode, and the temporary remains private to this directory.
-        if let Ok(metadata) = std::fs::symlink_metadata(path)
-            && (metadata.file_type().is_symlink()
-                || !metadata.is_file()
-                || std::os::unix::fs::MetadataExt::nlink(&metadata) > 1)
-        {
-            unsafe {
-                libc::unlinkat(dir.as_raw_fd(), temp_name.as_ptr(), 0);
-            }
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("repack cache target is not a private regular file: {path:?}"),
-            ));
-        }
-        let status = unsafe {
-            libc::renameat(
-                dir.as_raw_fd(),
-                temp_name.as_ptr(),
-                dir.as_raw_fd(),
-                name.as_ptr(),
-            )
-        };
-        if status != 0 {
-            unsafe {
-                libc::unlinkat(dir.as_raw_fd(), temp_name.as_ptr(), 0);
-            }
-            return Err(std::io::Error::last_os_error());
-        }
-        dir.sync_all()
-    }
-
-    #[cfg(not(unix))]
-    {
-        let temp = parent.join(format!(
-            ".{}.tmp-{}",
-            name.to_string_lossy(),
-            std::process::id()
-        ));
-        let mut out = std::io::BufWriter::new(
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temp)?,
-        );
-        write(&mut out)?;
-        out.flush()?;
-        out.get_ref().sync_all()?;
-        drop(out);
-        if let Ok(metadata) = std::fs::symlink_metadata(path) {
-            if metadata.file_type().is_symlink() || !metadata.is_file() {
-                std::fs::remove_file(&temp).ok();
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("repack cache target is not a private regular file: {path:?}"),
-                ));
-            }
-        }
-        std::fs::rename(temp, path)
-    }
 }
 
 /// The calibrated prefill activation stamp a weight carries: its per-linear global dequant
@@ -496,6 +231,21 @@ pub struct Fp8BlockScales {
     pub scales: CudaSlice<f32>,
     pub rows: usize, // ceil(out_f/128)
     pub cols: usize, // ceil(in_f/128)
+}
+
+pub(crate) fn quant_type_for_trim(ty: GgmlType) -> Result<i32, String> {
+    Ok(match ty {
+        GgmlType::Q8_0 => QT_Q8_0,
+        GgmlType::Q4_K => QT_Q4_K,
+        GgmlType::Q6_K => QT_Q6_K,
+        GgmlType::Q5_K => QT_Q5_K,
+        GgmlType::Q3_K => QT_Q3_K,
+        GgmlType::IQ4_XS => QT_IQ4_XS,
+        GgmlType::IQ3_S => QT_IQ3_S,
+        GgmlType::NVFP4 => QT_NVFP4,
+        GgmlType::Q4_0 => QT_Q4_0,
+        other => return Err(format!("from_quant_bytes: unsupported dtype {other:?}")),
+    })
 }
 
 /// Host-side split-plane repack of NVFP4 GGUF block bytes (A6). Input: out_f rows of in_f/64
@@ -809,16 +559,12 @@ impl GpuTensor {
         if rp_enabled()
             && st_direct
             && !cutlass_wants_raw
-            && let Some(nv) = src.find_nvfp4_native(name)
+            && let Some(nv) = src.try_find_nvfp4_native(name)?
             && nv.in_f % 64 == 0
             && nv.out_f > 0
         {
             // Same post-matmul macro-scale sibling lookup as the GGUF-layout arm below.
-            let stem = name.strip_suffix(".weight").unwrap_or(name);
-            let scale = match src.find(&format!("{stem}.scale")) {
-                Some(sv) => f32::from_le_bytes(sv.bytes[..4].try_into().unwrap()),
-                None => 1.0,
-            };
+            let scale = nvfp4_scale::load(src, name)?;
             let bytes = e.htod_bytes(&memra_gguf::nvfp4_repack::repack_modelopt_to_split(
                 nv.wbytes, &nv.wscale, nv.out_f, nv.in_f,
             ))?;
@@ -853,7 +599,7 @@ impl GpuTensor {
         // family consumes ONE scalar weight scale, so a block-128 operand through it would
         // silently dequant every tile at scale 1.0.
         if crate::fp8_ffi::st_e4m3_enabled()
-            && let Some(f8) = src.find_fp8_native(name)
+            && let Some(f8) = src.try_find_fp8_native(name)?
             && f8.blk.is_none()
             && f8.in_f % 32 == 0
             && f8.out_f > 0
@@ -901,7 +647,7 @@ impl GpuTensor {
         // Real Qwen FP8 checkpoints carry none (the exporter saturates at +-448), so this is a
         // guard, not a cost centre: one linear pass over bytes already on the device.
         if crate::fp8_ffi::st_e4m3_blk_enabled()
-            && let Some(f8) = src.find_fp8_native(name)
+            && let Some(f8) = src.try_find_fp8_native(name)?
             && let Some(grid) = f8.blk.as_ref()
         {
             let (in_f, out_f) = (f8.in_f, f8.out_f);
@@ -970,7 +716,7 @@ impl GpuTensor {
         // arm above returns only when `f8.blk.is_none()`, this one runs only when `f8.blk` is
         // Some, so a tensor that reaches here was never eligible for native residency.
         if crate::fp8_ffi::fp8_blk_gpu_enabled()
-            && let Some(f8) = src.find_fp8_native(name)
+            && let Some(f8) = src.try_find_fp8_native(name)?
             && let Some(grid) = f8.blk.as_ref()
         {
             let (in_f, out_f) = (f8.in_f, f8.out_f);
@@ -994,7 +740,7 @@ impl GpuTensor {
             }
         }
         let v = src
-            .find(name)
+            .try_find(name)?
             .unwrap_or_else(|| panic!("missing tensor {name}"));
         let qtype = match v.ggml_type {
             GgmlType::Q8_0 => Some(QT_Q8_0),
@@ -1042,11 +788,7 @@ impl GpuTensor {
                 // (llama build_lora_mm: ggml_mul(res, w_s)). ".input_scale" is the W4A4 activation
                 // scale — UNUSED on our W4A16/f32 path. Only NVFP4 carries it; others -> 1.0 (no-op).
                 let scale = if qt == QT_NVFP4 {
-                    let stem = name.strip_suffix(".weight").unwrap_or(name);
-                    match src.find(&format!("{stem}.scale")) {
-                        Some(sv) => f32::from_le_bytes(sv.bytes[..4].try_into().unwrap()),
-                        None => 1.0,
-                    }
+                    nvfp4_scale::load(src, name)?
                 } else {
                     1.0
                 };
@@ -1118,7 +860,7 @@ impl GpuTensor {
                 let fp8 = if qt == QT_Q8_0
                     && (crate::fp8_ffi::pp_fp8_enabled() || crate::fp8_ffi::fp8_mmq_enabled())
                 {
-                    match src.find_fp8_native(name) {
+                    match src.try_find_fp8_native(name)? {
                         Some(f8)
                             if v.ne.len() == 2
                                 && f8.in_f as u64 == v.ne[0]
@@ -1297,31 +1039,55 @@ impl GpuTensor {
         ne1: u64,
         scale: f32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let qt = match ty {
-            GgmlType::Q8_0 => QT_Q8_0,
-            GgmlType::Q4_K => QT_Q4_K,
-            GgmlType::Q6_K => QT_Q6_K,
-            GgmlType::Q5_K => QT_Q5_K,
-            GgmlType::Q3_K => QT_Q3_K,
-            GgmlType::IQ4_XS => QT_IQ4_XS,
-            GgmlType::IQ3_S => QT_IQ3_S,
-            GgmlType::NVFP4 => QT_NVFP4,
-            GgmlType::Q4_0 => QT_Q4_0,
-            other => panic!("from_quant_bytes: unsupported dtype {other:?}"),
+        Ok(Self::from_quant_bytes_impl(e, bytes, ty, ne0, ne1, scale, false)?.0)
+    }
+
+    pub(crate) fn from_quant_bytes_recorded(
+        e: &Engine,
+        bytes: &[u8],
+        ty: GgmlType,
+        ne0: u64,
+        ne1: u64,
+        scale: f32,
+    ) -> Result<(Self, final_upload::FinalUploadIdentity), Box<dyn std::error::Error>> {
+        let (tensor, identity) = Self::from_quant_bytes_impl(e, bytes, ty, ne0, ne1, scale, true)?;
+        Ok((
+            tensor,
+            identity.ok_or("recorded quant upload did not produce identity")?,
+        ))
+    }
+
+    #[allow(clippy::too_many_arguments)] // allow: internal switch preserves the public constructor and opt-in capture path
+    fn from_quant_bytes_impl(
+        e: &Engine,
+        bytes: &[u8],
+        ty: GgmlType,
+        ne0: u64,
+        ne1: u64,
+        scale: f32,
+        record: bool,
+    ) -> Result<(Self, Option<final_upload::FinalUploadIdentity>), Box<dyn std::error::Error>> {
+        if record {
+            final_upload::validate_input(bytes, ty, [ne0, ne1])?;
+        }
+        // Only the proof path copies the host input, so the exact submitted buffer cannot
+        // change underneath hashing. Ordinary construction keeps its previous borrowing cost.
+        let captured = record.then(|| bytes.to_vec());
+        let bytes = captured.as_deref().unwrap_or(bytes);
+        let qt = if record {
+            quant_type_for_trim(ty)?
+        } else {
+            quant_type_for_trim(ty).unwrap_or_else(|error| panic!("{error}"))
         };
         let row_bytes = bytes.len() / ne1 as usize;
-        // Same A6 repack as load_from_source: callers pass GGUF-layout host bytes (the FR-Spec
-        // self-trim row-gathers from the source file bytes, which are always original layout).
         let rp = qt == QT_NVFP4
             && ne0.is_multiple_of(64)
             && row_bytes.is_multiple_of(36)
             && rp_enabled();
-        let dev = if rp {
-            e.htod_bytes(&repack_nvfp4_split(bytes, ne1 as usize))?
-        } else {
-            e.htod_bytes(bytes)?
-        };
-        Ok(GpuTensor::Quant {
+        let repacked = rp.then(|| repack_nvfp4_split(bytes, ne1 as usize));
+        let submitted = repacked.as_deref().unwrap_or(bytes);
+        let dev = e.htod_bytes(submitted)?;
+        let tensor = GpuTensor::Quant {
             bytes: dev,
             qtype: qt,
             row_bytes,
@@ -1335,7 +1101,20 @@ impl GpuTensor {
             f16: None,
             a4: None,
             rp4: None,
-        })
+        };
+        let identity = record
+            .then(|| {
+                final_upload::FinalUploadIdentity::after_upload(
+                    &tensor,
+                    bytes,
+                    submitted,
+                    ty,
+                    [ne0, ne1],
+                    scale,
+                )
+            })
+            .transpose()?;
+        Ok((tensor, identity))
     }
 
     pub fn load_opt(
@@ -1364,7 +1143,7 @@ impl GpuTensor {
         if !rp_enabled() || !st_direct {
             return Ok(None);
         }
-        let Some(nv) = src.find_nvfp4_native(name) else {
+        let Some(nv) = src.try_find_nvfp4_native(name)? else {
             return Ok(None);
         };
         if nv.in_f % 64 != 0 || nv.out_f == 0 {
@@ -1394,11 +1173,7 @@ impl GpuTensor {
             wb.extend_from_slice(&nv.wbytes[r * in_bytes + k0 / 2..r * in_bytes + k1 / 2]);
             ws.extend_from_slice(&nv.wscale[r * scl + k0 / 16..r * scl + k1 / 16]);
         }
-        let stem = name.strip_suffix(".weight").unwrap_or(name);
-        let scale = match src.find(&format!("{stem}.scale")) {
-            Some(sv) => f32::from_le_bytes(sv.bytes[..4].try_into().unwrap()),
-            None => 1.0,
-        };
+        let scale = nvfp4_scale::load(src, name)?;
         let bytes = e.htod_bytes(&memra_gguf::nvfp4_repack::repack_modelopt_to_split(
             &wb, &ws, out_f, in_f,
         ))?;
@@ -1424,7 +1199,7 @@ impl GpuTensor {
         src: &dyn TensorSource,
         name: &str,
     ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
-        if src.has(name) {
+        if src.try_has(name)? {
             Ok(Some(Self::load_from_source(e, src, name)?))
         } else {
             Ok(None)
@@ -1468,14 +1243,17 @@ impl EmbedHost {
         Self::from_source(&GgufSource(g), name)
     }
     pub fn from_source(src: &dyn TensorSource, name: &str) -> Self {
+        Self::try_from_source(src, name).unwrap_or_else(|e| panic!("{e}"))
+    }
+    pub fn try_from_source(src: &dyn TensorSource, name: &str) -> Result<Self, String> {
         let v = src
-            .find(name)
-            .unwrap_or_else(|| panic!("missing embed {name}"));
-        EmbedHost {
+            .try_find(name)?
+            .ok_or_else(|| format!("missing embed {name}"))?;
+        Ok(EmbedHost {
             raw: v.bytes.to_vec(),
             ggml_type: v.ggml_type,
             n_embd: v.ne[0] as usize,
-        }
+        })
     }
     /// QT int + row_bytes for this embed table's dtype (for the device embed-gather kernel).
     /// CUDA-GRAPH-PLAN Phase 1. Mirrors the GpuTensor qtype mapping.
@@ -1571,11 +1349,18 @@ impl Model {
         e: &Engine,
         src: &dyn TensorSource,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cfg = src.try_config().map_err(std::io::Error::other)?;
-        let plan = match memra_gguf::model_packs::for_config(&cfg) {
-            Some(pack) => pack.compile_plan(&cfg)?,
-            None => memra_gguf::model_plan::ModelPlan::compile(&cfg)?,
-        };
+        let prepared = memra_gguf::bound_source::PreparedModelSource::text(src)?;
+        prepared.with_runtime(|source| Self::load_dense_prepared(e, source))?
+    }
+
+    fn load_dense_prepared(
+        e: &Engine,
+        src: &dyn TensorSource,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        // Include source-backed preflight reads in the same consumption audit.
+        let recording = memra_gguf::checkpoint_binding::RecordingSource::new(src);
+        let src: &dyn TensorSource = &recording;
+        let (cfg, plan) = memra_gguf::model_packs::compile_for_source(src)?;
         if plan.layers.iter().any(|layer| {
             !matches!(
                 layer.attention,
@@ -1588,15 +1373,13 @@ impl Model {
         // byte is uploaded, then address every trunk tensor by its semantic id. Output-head
         // ownership comes from the binding (the pack declares whether an absent head may be the
         // embedding), never from a `has("output.weight")` probe.
-        use memra_gguf::checkpoint_binding::{self, RecordingSource};
+        use memra_gguf::checkpoint_binding;
         use memra_gguf::tensor_contract::{LayerTensor, TensorId};
-        let binding = checkpoint_binding::bind_source(src, &cfg, &plan)
+        let binding = checkpoint_binding::bind_loader_source(src, &cfg, &plan)
             .map_err(|error| std::io::Error::other(error.to_string()))?;
-        eprintln!("{}", checkpoint_binding::describe(&binding));
-        let recording = RecordingSource::new(src);
-        let src: &dyn TensorSource = &recording;
+        eprintln!("{}", binding.describe());
         let name = |id: TensorId| binding.require_ggml(&id).map_err(std::io::Error::other);
-        let embd = EmbedHost::from_source(src, &name(TensorId::TokenEmbedding)?);
+        let embd = EmbedHost::try_from_source(src, &name(TensorId::TokenEmbedding)?)?;
         let output_norm = GpuTensor::load_from_source(e, src, &name(TensorId::OutputNorm)?)?;
         let output = GpuTensor::load_from_source(
             e,
@@ -1605,7 +1388,7 @@ impl Model {
                 .output_head_ggml_name()
                 .map_err(std::io::Error::other)?,
         )?;
-        let mut resident = crate::hybrid::ResidentPlan::unsharded(e, src, &cfg);
+        let mut resident = crate::hybrid::ResidentPlan::unsharded(e, src, &cfg)?;
         let mut step_runtimes = crate::hybrid::StepParallelRuntimeRegistry::default();
 
         let mut layers = Vec::with_capacity(plan.layers.len());
@@ -1651,12 +1434,8 @@ impl Model {
                 ffn,
             });
         }
-        let unconsumed = binding.audit_consumption(&recording.requested(), &cfg, |id, tensor| {
-            checkpoint_binding::unread_by_design(id)
-                || checkpoint_binding::owned_by_vision(tensor)
-                || checkpoint_binding::unloaded_mtp(tensor, plan.layers.len() as u32, 0)
-        });
-        checkpoint_binding::settle_consumption(&binding, &unconsumed)
+        binding
+            .settle_consumption(&recording.requested(), plan.layers.len() as u32, 0)
             .map_err(std::io::Error::other)?;
         Ok(Model {
             cfg,
@@ -1717,6 +1496,8 @@ pub type TensorMap = HashMap<String, GpuTensor>;
 /// bytes are never read by the CPU on the hot path), but write-combined memory is SLOW for CPU reads.
 /// A future CPU-VNNI cold-expert fallback must NOT read from this buffer.
 pub enum HostBuf {
+    /// Compiler-authorized disk bytes; no unrestricted backing handle reaches the engine.
+    Bounded(BoundDiskView),
     Paged(Vec<u8>),
     /// Pinned host memory. We keep the `PinnedHostSlice` alive (it owns the allocation; Drop frees it)
     /// AND cache its raw base pointer + len so the hot-path `as_bytes()` needs no per-call event sync.
@@ -1740,7 +1521,8 @@ pub enum HostBuf {
     Mmap {
         map: std::sync::Arc<memmap2::Mmap>,
         /// The same opened inode backing `map`. It must outlive the loader source so future explicit
-        /// positioned reads cannot accidentally reopen a replaced path.
+        /// positioned reads cannot accidentally reopen a replaced path. Strict native NVFP4
+        /// repacks retain a private, unlinked, read-only file here, never the named cache.
         file: std::sync::Arc<std::fs::File>,
         /// Absolute byte offset within both the whole-file mmap and `file`.
         off: usize,
@@ -1754,10 +1536,23 @@ pub enum HostBuf {
 unsafe impl Send for HostBuf {}
 unsafe impl Sync for HostBuf {}
 impl HostBuf {
+    pub(crate) fn from_disk(view: ExpertDiskView) -> Result<Self, String> {
+        match view {
+            ExpertDiskView::Bound(view) => Ok(Self::Bounded(view)),
+            ExpertDiskView::Unbound(extent) => Ok(Self::Mmap {
+                off: usize::try_from(extent.offset)
+                    .map_err(|_| "disk offset exceeds address space")?,
+                map: extent.map,
+                file: extent.file,
+                len: extent.len,
+            }),
+        }
+    }
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             HostBuf::Paged(v) => v.as_slice(),
+            HostBuf::Bounded(view) => view.bytes(),
             // SAFETY: base+len are the pinned allocation's stable extent; written once at load, then
             // read-only. We avoid `as_slice()` here because it would synchronize the buffer's event
             // on every hot-path call.
@@ -1774,6 +1569,7 @@ impl HostBuf {
     pub fn len(&self) -> usize {
         match self {
             HostBuf::Paged(v) => v.len(),
+            HostBuf::Bounded(view) => view.len(),
             HostBuf::Pinned { len, .. } => *len,
             HostBuf::PinnedAlias { len, .. } => *len,
             HostBuf::Mmap { len, .. } => *len,
@@ -1786,6 +1582,9 @@ impl HostBuf {
     /// an unsupported/pressured kernel simply leaves the normal demand-fault path in place.
     #[inline]
     pub fn advise_willneed(&self, rel_off: usize, len: usize) -> bool {
+        if let Self::Bounded(view) = self {
+            return view.advise_willneed(rel_off, len);
+        }
         let HostBuf::Mmap {
             map,
             off,
@@ -1817,11 +1616,24 @@ impl HostBuf {
             HostBuf::Mmap { map, file, off, .. } => {
                 let offset = *off + rel_off;
                 ExpertSource::Disk {
-                    file,
-                    offset: offset as u64,
+                    read: DiskReadSource::Unbound {
+                        file,
+                        offset: offset as u64,
+                    },
                     len,
                     fallback: &map[offset..offset + len],
                     keepalive: ExpertKeepalive::Mmap(map.clone()),
+                }
+            }
+            HostBuf::Bounded(view) => {
+                let window = view
+                    .subrange(rel_off..rel_off + len)
+                    .expect("expert layout leaves its bound tensor");
+                ExpertSource::Disk {
+                    read: DiskReadSource::Bound(window.clone()),
+                    len,
+                    fallback: &view.bytes()[rel_off..rel_off + len],
+                    keepalive: ExpertKeepalive::Bounded(window),
                 }
             }
             HostBuf::Pinned { slice, .. } => ExpertSource::Memory {
@@ -1846,6 +1658,7 @@ impl HostBuf {
 /// read: keeping it alive is the contract.
 #[allow(dead_code)]
 pub(crate) enum ExpertKeepalive {
+    Bounded(BoundDiskView),
     Pinned(std::sync::Arc<cudarc::driver::PinnedHostSlice<u8>>),
     Buffer(std::sync::Arc<HostBuf>),
     Mmap(std::sync::Arc<memmap2::Mmap>),
@@ -1859,8 +1672,7 @@ pub(crate) enum ExpertSource<'a> {
         keepalive: Option<ExpertKeepalive>,
     },
     Disk {
-        file: &'a std::sync::Arc<std::fs::File>,
-        offset: u64,
+        read: DiskReadSource<'a>,
         len: usize,
         fallback: &'a [u8],
         keepalive: ExpertKeepalive,
@@ -1917,11 +1729,11 @@ fn staged_expert_row_bytes(ty: GgmlType, in_f: usize) -> Option<usize> {
 fn find_expert_disk_strict(
     src: &dyn TensorSource,
     name: &str,
-) -> Result<Option<DiskExtent>, Box<dyn std::error::Error>> {
-    if let Some(extent) = src.find_expert_disk(name) {
+) -> Result<Option<ExpertDiskView>, Box<dyn std::error::Error>> {
+    if let Some(extent) = src.try_find_expert_disk(name)? {
         return Ok(Some(extent));
     }
-    if src.find_expert_mmap(name).is_some() {
+    if src.try_has_expert_mmap(name)? {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!(
@@ -1990,7 +1802,7 @@ impl HostExps {
         row1: usize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let t = src
-            .find(name)
+            .try_find(name)?
             .unwrap_or_else(|| panic!("missing exps tensor {name}"));
         assert_eq!(t.ne.len(), 3, "{name} is not 3D (ne={:?})", t.ne);
         let qtype = match t.ggml_type {
@@ -2058,36 +1870,41 @@ impl HostExps {
     /// global scales, inverted to multipliers). Absent (every k-quant GGUF) => None.
     /// NOTE gemma4 consumes ffn_down_exps.scale through its OWN router-fold (Gemma4MoeBits) —
     /// its MoE forward does not read HostExps::macros, so a Some here is inert there.
-    fn stacked_macros(src: &dyn TensorSource, name: &str) -> Option<Vec<f32>> {
-        let stem = name.strip_suffix(".weight")?;
-        let sv = src.find(&format!("{stem}.scale"))?;
+    fn stacked_macros(src: &dyn TensorSource, name: &str) -> Result<Option<Vec<f32>>, String> {
+        let Some(stem) = name.strip_suffix(".weight") else {
+            return Ok(None);
+        };
+        let Some(sv) = src.try_find(&format!("{stem}.scale"))? else {
+            return Ok(None);
+        };
         if sv.ggml_type != GgmlType::F32 {
-            return None;
+            return Err(format!("{stem}.scale must be F32"));
         }
         let macros: Vec<f32> = sv
             .bytes
             .chunks_exact(4)
             .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
             .collect();
-        if macros.iter().all(|&m| m == 1.0) {
+        Ok(if macros.iter().all(|&m| m == 1.0) {
             None
         } else {
             Some(macros)
-        }
+        })
     }
 
     /// STACKED NVFP4-NATIVE ARM (Step-3.7-Flash-NVFP4 class, 2026-08-20): the checkpoint stores
     /// each routed projection as ONE stacked modelopt tensor `[E, out, in/2]` (not per-expert 2-D
     /// tensors — that class rides PATH B in `load_from_source`). Repack per expert into the GGUF
     /// 36B-block layout the staged qmatvec decodes, streaming into the same `.memra-repack`
-    /// disk-cache tier PATH B uses (peak RAM = one expert), and mmap the cache. Per-expert
+    /// disk-cache tier PATH B uses (peak RAM = one expert). Strict identity maps a private
+    /// canonical copy; legacy loads mmap the named cache. Per-expert
     /// `weight_scale_2` macros go to `macros` — the MoE forward folds them post-matmul; dropping
     /// them (~1e-5..1e-4 in the official artifact) produces garbage.
     fn load_nvfp4_stacked_native(
         src: &dyn TensorSource,
         name: &str,
     ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
-        let Some(bank) = src.find_nvfp4_stacked_native(name) else {
+        let Some(bank) = src.try_find_nvfp4_stacked_native(name)? else {
             return Ok(None);
         };
         let (n_expert, out_f, in_f) = (bank.n_expert, bank.out_f, bank.in_f);
@@ -2102,40 +1919,24 @@ impl HostExps {
         let code_stride = out_f * in_f / 2;
         let scale_stride = out_f * in_f / 16;
         let macros = bank.macros.clone();
-        let cache_path = if let Some(dir) = src.st_dir() {
+        let bytes = if let Some(view) = repack::load_bound(src, name, total)? {
+            let view = ExpertDiskView::Bound(view);
+            view.advise_expert_access();
+            view.populate_whole_slab(name);
+            HostBuf::from_disk(view)?
+        } else if let Some(dir) = src.st_dir() {
             let cache_dir = dir.join(".memra-repack");
             ensure_repack_cache_dir(&cache_dir)?;
-            Some(cache_dir.join(format!(
+            let cache = cache_dir.join(format!(
                 "{}-stacked-{n_expert}x{out_f}x{in_f}{}.nvfp4",
                 name.replace(['.', '/'], "-"),
-                src.nvfp4_cache_tag()
-            )))
-        } else {
-            None
-        };
-        let bytes = if let Some(cache) = cache_path.as_ref() {
-            let fresh = repack_cache_is_fresh(cache, total);
-            if !fresh {
-                write_repack_cache(cache, |out| {
-                    for expert in 0..n_expert {
-                        use std::io::Write;
-                        out.write_all(&memra_gguf::nvfp4_repack::repack_modelopt_to_gguf(
-                            &bank.codes[expert * code_stride..(expert + 1) * code_stride],
-                            &bank.scales[expert * scale_stride..(expert + 1) * scale_stride],
-                            out_f,
-                            in_f,
-                        ))?;
-                    }
-                    Ok(())
-                })?;
-            }
-            let file = std::sync::Arc::new(open_repack_cache(cache, false)?);
-            let map = unsafe { memmap2::Mmap::map(file.as_ref())? };
-            assert_eq!(map.len(), total, "repack cache {cache:?} size mismatch");
+                src.nvfp4_cache_tag(),
+            ));
+            let repack::MappedRepack { file, map } = repack::load_stacked(&cache, &bank)?;
             let _ = memra_gguf::source::apply_expert_mmap_advice(&map);
             memra_gguf::source::populate_expert_slab(&file, total, name);
             HostBuf::Mmap {
-                map: std::sync::Arc::new(map),
+                map,
                 file,
                 off: 0,
                 len: total,
@@ -2174,7 +1975,7 @@ impl HostExps {
         name: &str,
         native_enabled: bool,
     ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
-        let Some(f8) = src.find_fp8_stacked_native(name) else {
+        let Some(f8) = src.try_find_fp8_stacked_native(name)? else {
             return Ok(None);
         };
         if f8.scale_rows != f8.out_f.div_ceil(128) || f8.scale_cols != f8.in_f.div_ceil(128) {
@@ -2246,26 +2047,15 @@ impl HostExps {
         let expert_stride = f8.out_f * f8.in_f;
         let bytes = match find_expert_disk_strict(src, name)? {
             Some(extent) => {
-                if extent.len != f8.bytes.len() {
+                if extent.len() != f8.bytes.len() {
                     return Err(format!(
                         "{name} FP8 mmap length mismatch: extent={} tensor={}",
-                        extent.len,
+                        extent.len(),
                         f8.bytes.len()
                     )
                     .into());
                 }
-                let off = usize::try_from(extent.offset).map_err(|_| {
-                    format!(
-                        "{name} FP8 mmap offset {} does not fit usize",
-                        extent.offset
-                    )
-                })?;
-                HostBuf::Mmap {
-                    map: extent.map,
-                    file: extent.file,
-                    off,
-                    len: extent.len,
-                }
+                HostBuf::from_disk(extent)?
             }
             None => HostBuf::Paged(f8.bytes.to_vec()),
         };
@@ -2306,7 +2096,7 @@ impl HostExps {
         }
 
         let t = src
-            .find(name)
+            .try_find(name)?
             .unwrap_or_else(|| panic!("missing exps tensor {name}"));
         assert_eq!(
             t.ne.len(),
@@ -2323,15 +2113,8 @@ impl HostExps {
         // exactly like the proven M3 `.memra-repack` path (model.rs NVFP4 disk arm). Bit-identity:
         // `expert_bytes(e)` slices the same on-disk bytes the copy would have staged. The SLRU VRAM
         // cache stacks on top unchanged. The configured whole-map advice is applied at source open.
-        if let Some(DiskExtent {
-            map,
-            file,
-            offset,
-            len,
-        }) = find_expert_disk_strict(src, name)?
-        {
-            let off = usize::try_from(offset)
-                .map_err(|_| format!("{name} disk offset {offset} does not fit usize"))?;
+        if let Some(extent) = find_expert_disk_strict(src, name)? {
+            let len = extent.len();
             let qtype = match t.ggml_type {
                 GgmlType::Q8_0 => QT_Q8_0,
                 GgmlType::Q4_K => QT_Q4_K,
@@ -2360,12 +2143,7 @@ impl HostExps {
                 "{name} mmap len != n_expert*stride"
             );
             return Ok(HostExps {
-                bytes: HostBuf::Mmap {
-                    map,
-                    file,
-                    off,
-                    len,
-                },
+                bytes: HostBuf::from_disk(extent)?,
                 tiers: None,
                 qtype,
                 in_f,
@@ -2374,7 +2152,7 @@ impl HostExps {
                 row_bytes,
                 expert_stride,
                 layouts: None,
-                macros: Self::stacked_macros(src, name),
+                macros: Self::stacked_macros(src, name)?,
                 fp8_blk: None,
             });
         }
@@ -2435,7 +2213,7 @@ impl HostExps {
             row_bytes,
             expert_stride,
             layouts: None,
-            macros: Self::stacked_macros(src, name),
+            macros: Self::stacked_macros(src, name)?,
             fp8_blk: None,
         })
     }
@@ -2446,24 +2224,35 @@ impl HostExps {
     /// expert is `HostBuf::Mmap` into the GGUF (Tier 2, demand-faulted from disk on first H2D). The
     /// resulting bytes are bit-identical to the in-RAM path either way — `qmatvec_view` is untouched.
     ///
-    /// `ctx.file_map` is ONE shared `MAP_SHARED` mmap of the whole GGUF (`Arc`-cloned per spilled
-    /// expert), so the 120 expert tensors of a 40-layer MoE never open the file more than once.
     pub fn load_tiered(
         e: &Engine,
         g: &GgufFile,
         name: &str,
         ctx: &mut crate::spill::SpillCtx,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let t = g
-            .find(name)
-            .unwrap_or_else(|| panic!("missing exps tensor {name}"));
+        Self::load_tiered_from_source(e, &GgufSource(g), name, ctx)
+    }
+
+    pub(crate) fn load_tiered_from_source(
+        e: &Engine,
+        src: &dyn TensorSource,
+        name: &str,
+        ctx: &mut crate::spill::SpillCtx,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let t = src
+            .try_find(name)?
+            .ok_or_else(|| format!("missing exps tensor {name}"))?;
         assert_eq!(
             t.ne.len(),
             3,
             "{name} is not a 3D stacked-expert tensor (ne={:?})",
             t.ne
         );
-        let raw = g.tensor_data(t);
+        let view = ctx.tensor_view(src, name)?;
+        let raw = &t.bytes;
+        if view.len() != raw.len() {
+            return Err(format!("{name} bound spill extent differs from tensor bytes").into());
+        }
         let qtype = match t.ggml_type {
             GgmlType::Q8_0 => QT_Q8_0,
             GgmlType::Q4_K => QT_Q4_K,
@@ -2487,18 +2276,12 @@ impl HostExps {
             "{name} stride mismatch: stride={expert_stride} out_f={out_f} row_bytes={row_bytes}"
         );
 
-        // Byte offset of this tensor's data (start of expert 0) WITHIN ITS OWN SHARD's file; each
-        // expert is the next `expert_stride` bytes. The `Mmap` arm slices `ctx.file_maps[t.shard]`
-        // at these offsets — a split model's offsets are per-shard, not global.
-        let (file_start, _file_end) = g.tensor_file_range(t);
-
         // Per-expert tier decision under the shared running budget. `bytes` keeps a 0-byte sentinel
         // (`Paged(empty)`) since every read now goes through `tiers`.
         let mut tiers = Vec::with_capacity(n_expert);
         for ex in 0..n_expert {
-            let blk = &raw[ex * expert_stride..(ex + 1) * expert_stride];
-            let file_off = file_start + ex * expert_stride;
-            tiers.push(crate::spill::place_expert(ctx, e, blk, file_off, t.shard)?);
+            let expert = view.subrange(ex * expert_stride..(ex + 1) * expert_stride)?;
+            tiers.push(crate::spill::place_expert(ctx, e, expert)?);
         }
         Ok(HostExps {
             bytes: HostBuf::Paged(Vec::new()), // unused when `tiers` is Some
@@ -2510,7 +2293,7 @@ impl HostExps {
             row_bytes,
             expert_stride,
             layouts: None,
-            macros: Self::stacked_macros(&GgufSource(g), name),
+            macros: Self::stacked_macros(src, name)?,
             fp8_blk: None,
         })
     }
@@ -2559,11 +2342,11 @@ impl HostExps {
                 continue;
             }
             let name = format!("blk.{il}.ffn_{proj}_exps.{ex}.weight");
-            if let Some(nv) = src.find_nvfp4_native(&name) {
+            if let Some(nv) = src.try_find_nvfp4_native(&name)? {
                 signatures.push((QT_NVFP4, nv.in_f / 64 * 36));
             } else {
                 let v = src
-                    .find(&name)
+                    .try_find(&name)?
                     .unwrap_or_else(|| panic!("missing expert tensor {name}"));
                 let in_f = v.ne[0] as usize;
                 signatures.push(match staged_expert_row_bytes(v.ggml_type, in_f) {
@@ -2591,7 +2374,7 @@ impl HostExps {
         // Per-expert `weight_scale_2` macros go to `macros` (folded post-matmul by the MoE forward).
         {
             let name0 = format!("blk.{il}.ffn_{proj}_exps.0.weight");
-            if let Some(nv0) = src.find_nvfp4_native(&name0) {
+            if let Some(nv0) = src.try_find_nvfp4_native(&name0)? {
                 let (in_f, out_f) = (nv0.in_f, nv0.out_f);
                 let row_bytes = in_f / 64 * 36;
                 let expert_stride = out_f * row_bytes;
@@ -2600,72 +2383,52 @@ impl HostExps {
                 // at layer ~24), repack each layer ONCE into an on-disk cache file next to the
                 // checkpoint and mmap it (HostBuf::Mmap, MAP_SHARED no-populate — the same tier-2
                 // mechanism the GGUF spill path uses). Reloads hit the cache (size-checked), pay
-                // zero repack. MEMRA_ST_REPACK_DISK=0 forces the old in-RAM gather.
+                // zero repack in legacy mode. Strict identity always regenerates into private
+                // disk backing and verifies/repairs the cache. MEMRA_ST_REPACK_DISK=0 forces
+                // the old source-derived in-RAM gather.
                 let disk = std::env::var("MEMRA_ST_REPACK_DISK")
                     .map(|v| v != "0")
                     .unwrap_or(true)
                     && src.st_dir().is_some();
-                let cache_path = if let Some(dir) = src.st_dir() {
-                    let cache_dir = dir.join(".memra-repack");
-                    ensure_repack_cache_dir(&cache_dir)?;
-                    Some(cache_dir.join(format!(
-                        "blk{il}-{proj}-{n_expert}x{out_f}x{in_f}{}.nvfp4",
-                        src.nvfp4_cache_tag()
-                    )))
-                } else {
-                    None
-                };
                 let total = n_expert * expert_stride;
                 let mut macros = vec![1.0f32; n_expert];
-                let read_macros = |macros: &mut Vec<f32>| {
+                let read_macros = |macros: &mut Vec<f32>| -> Result<(), String> {
                     #[allow(clippy::needless_range_loop)]
                     // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                     for ex in 0..n_expert {
                         let stem = format!("blk.{il}.ffn_{proj}_exps.{ex}");
-                        if let Some(sv) = src.find(&format!("{stem}.scale")) {
+                        if let Some(sv) = src.try_find(&format!("{stem}.scale"))? {
                             macros[ex] = f32::from_le_bytes(sv.bytes[..4].try_into().unwrap());
                         }
                     }
+                    Ok(())
                 };
                 let bytes = if disk {
-                    let cp = cache_path.as_ref().unwrap();
-                    let fresh = repack_cache_is_fresh(cp, total);
-                    if !fresh {
-                        // stream one expert at a time to disk — peak RAM = one expert (~8MB)
-                        write_repack_cache(cp, |out| {
-                            for ex in 0..n_expert {
-                                use std::io::Write;
-                                let name = format!("blk.{il}.ffn_{proj}_exps.{ex}.weight");
-                                let nv = src.find_nvfp4_native(&name).unwrap_or_else(|| {
-                                    panic!("expert {name} lost NVFP4-native mid-gather")
-                                });
-                                assert_eq!(
-                                    (nv.in_f, nv.out_f),
-                                    (in_f, out_f),
-                                    "expert {ex} dims ({},{}) != expert 0 ({in_f},{out_f})",
-                                    nv.in_f,
-                                    nv.out_f
-                                );
-                                out.write_all(&memra_gguf::nvfp4_repack::repack_modelopt_to_gguf(
-                                    nv.wbytes, &nv.wscale, out_f, in_f,
-                                ))?;
-                            }
-                            Ok(())
-                        })?;
-                    }
-                    read_macros(&mut macros);
-                    let file = std::sync::Arc::new(open_repack_cache(cp, false)?);
-                    let map = unsafe { memmap2::Mmap::map(file.as_ref())? };
-                    assert_eq!(map.len(), total, "repack cache {cp:?} size mismatch");
-                    // Default random preserves the original policy; normal lets Linux readahead
-                    // within each multi-megabyte expert on the spill-bound path.
-                    let _ = memra_gguf::source::apply_expert_mmap_advice(&map);
-                    memra_gguf::source::populate_expert_slab(
-                        &file,
-                        total,
-                        &format!("blk{il}-{proj}"),
-                    );
-                    let map = std::sync::Arc::new(map);
+                    let bank_name = format!("blk.{il}.ffn_{proj}_exps.weight");
+                    let backing = if let Some(view) = repack::load_bound(src, &bank_name, total)? {
+                        ExpertDiskView::Bound(view)
+                    } else {
+                        let cache_dir = src
+                            .st_dir()
+                            .ok_or("disk repack source has no cache directory")?
+                            .join(".memra-repack");
+                        ensure_repack_cache_dir(&cache_dir)?;
+                        let cache = cache_dir.join(format!(
+                            "blk{il}-{proj}-{n_expert}x{out_f}x{in_f}{}.nvfp4",
+                            src.nvfp4_cache_tag()
+                        ));
+                        let repack::MappedRepack { file, map } =
+                            repack::load_experts(&cache, src, il, proj, n_expert, out_f, in_f)?;
+                        ExpertDiskView::Unbound(memra_gguf::source::DiskExtent {
+                            file,
+                            map,
+                            offset: 0,
+                            len: total,
+                        })
+                    };
+                    read_macros(&mut macros)?;
+                    backing.advise_expert_access();
+                    backing.populate_whole_slab(&format!("blk{il}-{proj}"));
                     // ST PINNED TIER (2026-07-07, the M3 1.5-tok/s lever): mmap-only backing makes
                     // every SLRU miss a page-cache (or NVMe) synchronous read into the H2D copy.
                     // Pin as many experts as the live budget allows (same MemBudget probe + 0.6
@@ -2703,7 +2466,7 @@ impl HostExps {
                             let mut pn = unsafe { e.ctx().alloc_pinned::<u8>(slab_len)? };
                             {
                                 let dst = pn.as_mut_slice()?;
-                                dst.copy_from_slice(&map[..slab_len]);
+                                dst.copy_from_slice(&backing.bytes()[..slab_len]);
                             }
                             let base = pn.as_ptr()?;
                             *rem -= slab_len;
@@ -2722,12 +2485,9 @@ impl HostExps {
                                         len: expert_stride,
                                     });
                                 } else {
-                                    tiers.push(HostBuf::Mmap {
-                                        map: map.clone(),
-                                        file: file.clone(),
-                                        off,
-                                        len: expert_stride,
-                                    });
+                                    tiers.push(HostBuf::from_disk(
+                                        backing.subrange(off..off + expert_stride)?,
+                                    )?);
                                 }
                             }
                             Some(tiers)
@@ -2738,12 +2498,7 @@ impl HostExps {
                     if let Some(tiers) = tiers {
                         let all_one = macros.iter().all(|&m| m == 1.0);
                         return Ok(HostExps {
-                            bytes: HostBuf::Mmap {
-                                map,
-                                file,
-                                off: 0,
-                                len: total,
-                            },
+                            bytes: HostBuf::from_disk(backing)?,
                             tiers: Some(tiers),
                             qtype: QT_NVFP4,
                             in_f,
@@ -2756,12 +2511,7 @@ impl HostExps {
                             fp8_blk: None,
                         });
                     }
-                    HostBuf::Mmap {
-                        map,
-                        file,
-                        off: 0,
-                        len: total,
-                    }
+                    HostBuf::from_disk(backing)?
                 } else {
                     // THE IN-RAM GATHER IS PARALLEL (2026-09-07). The sequential form ran every
                     // expert of every layer through ONE core: on GLM-5.3-Flash (42 MoE layers x
@@ -2778,15 +2528,15 @@ impl HostExps {
                             .clamp(1, n_expert.max(1));
                         let per = n_expert.div_ceil(workers).max(1);
                         std::thread::scope(|s| {
+                            let mut handles = Vec::new();
                             for (w, slab) in buf.chunks_mut(per * expert_stride).enumerate() {
-                                s.spawn(move || {
+                                handles.push(s.spawn(move || -> Result<(), String> {
                                     for (k, dst) in slab.chunks_mut(expert_stride).enumerate() {
                                         let ex = w * per + k;
                                         let name = format!("blk.{il}.ffn_{proj}_exps.{ex}.weight");
-                                        let nv =
-                                            src.find_nvfp4_native(&name).unwrap_or_else(|| {
-                                                panic!("expert {name} lost NVFP4-native mid-gather")
-                                            });
+                                        let nv = src.try_find_nvfp4_native(&name)?.unwrap_or_else(
+                                            || panic!("expert {name} lost NVFP4-native mid-gather"),
+                                        );
                                         assert_eq!(
                                             (nv.in_f, nv.out_f),
                                             (in_f, out_f),
@@ -2800,12 +2550,19 @@ impl HostExps {
                                             );
                                         dst.copy_from_slice(&packed);
                                     }
-                                });
+                                    Ok(())
+                                }));
                             }
-                        });
+                            for handle in handles {
+                                handle
+                                    .join()
+                                    .map_err(|_| "expert repack worker panicked")??;
+                            }
+                            Ok::<(), String>(())
+                        })?;
                     }
                     assert_eq!(buf.len(), total);
-                    read_macros(&mut macros);
+                    read_macros(&mut macros)?;
                     // MEMRA_MOE_HOST_PINNED=0 keeps the gathered bank PAGED: the pin is a
                     // cudaHostAlloc of every layer's 4 GB (GLM-5.3-Flash), seconds per layer
                     // on the load thread, and a bank the resident decision uploads once and
@@ -2856,7 +2613,7 @@ impl HostExps {
             // Per-expert ggml name; the source maps it to the HF expert tensor (ST-MOE-PLAN §1.3).
             let name = format!("blk.{il}.ffn_{proj}_exps.{ex}.weight");
             let v = src
-                .find(&name)
+                .try_find(&name)?
                 .unwrap_or_else(|| panic!("missing expert tensor {name}"));
             assert_eq!(v.ne.len(), 2, "expert {name} is not 2D (ne={:?})", v.ne);
             let (cur_in, cur_out) = (v.ne[0] as usize, v.ne[1] as usize);
@@ -2946,9 +2703,7 @@ impl HostExps {
         {
             return Ok(None);
         }
-        let mut first_map = None;
-        let mut first_file = None;
-        let mut base_offset = 0u64;
+        let mut joined: Option<ExpertDiskView> = None;
         let mut expert_stride = 0usize;
         let mut in_f = 0usize;
         let mut out_f = 0usize;
@@ -2960,16 +2715,11 @@ impl HostExps {
         for ex in 0..n_expert {
             let stem = format!("blk.{il}.ffn_{proj}_exps.{ex}");
             let name = format!("{stem}.weight");
-            let Some(DiskExtent {
-                map,
-                file,
-                offset,
-                len,
-            }) = find_expert_disk_strict(src, &name)?
-            else {
+            let Some(extent) = find_expert_disk_strict(src, &name)? else {
                 return Ok(None);
             };
-            let Some(v) = src.find(&name) else {
+            let len = extent.len();
+            let Some(v) = src.try_find(&name)? else {
                 return Ok(None);
             };
             if v.ne.len() != 2 {
@@ -2981,38 +2731,31 @@ impl HostExps {
             };
             let cur_qtype = staged_expert_qtype(v.ggml_type).unwrap();
             if ex == 0 {
-                base_offset = offset;
                 expert_stride = len;
                 in_f = cur_in;
                 out_f = cur_out;
                 qtype = cur_qtype;
                 row_bytes = cur_row_bytes;
-                first_map = Some(map);
-                first_file = Some(file);
-            } else if !std::sync::Arc::ptr_eq(first_map.as_ref().unwrap(), &map)
-                || !std::sync::Arc::ptr_eq(first_file.as_ref().unwrap(), &file)
-                || offset != base_offset + (ex * expert_stride) as u64
-                || len != expert_stride
+            } else if len != expert_stride
                 || (cur_in, cur_out, cur_qtype, cur_row_bytes) != (in_f, out_f, qtype, row_bytes)
             {
                 return Ok(None);
             }
-            if let Some(scale) = src.find(&format!("{stem}.scale")) {
+            joined = Some(match joined {
+                None => extent,
+                Some(previous) => match previous.join_adjacent(&extent) {
+                    Ok(combined) => combined,
+                    Err(_) => return Ok(None), // not coalescible; retain individual authorized windows
+                },
+            });
+            if let Some(scale) = src.try_find(&format!("{stem}.scale"))? {
                 macros[ex] = f32::from_le_bytes(scale.bytes[..4].try_into().unwrap());
             }
         }
         assert_eq!(expert_stride, out_f * row_bytes);
-        let total = n_expert * expert_stride;
-        let off = usize::try_from(base_offset)
-            .map_err(|_| format!("uniform expert disk offset {base_offset} does not fit usize"))?;
         let all_one = macros.iter().all(|&scale| scale == 1.0);
         Ok(Some(HostExps {
-            bytes: HostBuf::Mmap {
-                map: first_map.unwrap(),
-                file: first_file.unwrap(),
-                off,
-                len: total,
-            },
+            bytes: HostBuf::from_disk(joined.ok_or("empty expert bank")?)?,
             tiers: None,
             qtype,
             in_f,
@@ -3053,42 +2796,30 @@ impl HostExps {
             }
             let name = format!("blk.{il}.ffn_{proj}_exps.{ex}.weight");
             let stem = format!("blk.{il}.ffn_{proj}_exps.{ex}");
-            if let Some(scale) = src.find(&format!("{stem}.scale")) {
+            if let Some(scale) = src.try_find(&format!("{stem}.scale"))? {
                 macros[ex] = f32::from_le_bytes(scale.bytes[..4].try_into().unwrap());
             }
-            let (host, byte_len, qtype, row_bytes, cur_in, cur_out) = if let Some(DiskExtent {
-                map,
-                file,
-                offset,
-                len,
-            }) =
+            let (host, byte_len, qtype, row_bytes, cur_in, cur_out) = if let Some(extent) =
                 find_expert_disk_strict(src, &name)?
             {
+                let len = extent.len();
                 let v = src
-                    .find(&name)
+                    .try_find(&name)?
                     .unwrap_or_else(|| panic!("missing expert tensor {name}"));
                 assert_eq!(v.ne.len(), 2, "expert {name} is not 2D (ne={:?})", v.ne);
                 let (cur_in, cur_out) = (v.ne[0] as usize, v.ne[1] as usize);
                 let row_bytes = staged_expert_row_bytes(v.ggml_type, cur_in).ok_or_else(|| {
                     format!("mmap expert {name} has unsupported qtype {:?}", v.ggml_type)
                 })?;
-                let off = usize::try_from(offset).map_err(|_| {
-                    format!("expert {name} disk offset {offset} does not fit usize")
-                })?;
                 (
-                    HostBuf::Mmap {
-                        map,
-                        file,
-                        off,
-                        len,
-                    },
+                    HostBuf::from_disk(extent)?,
                     len,
                     staged_expert_qtype(v.ggml_type).unwrap(),
                     row_bytes,
                     cur_in,
                     cur_out,
                 )
-            } else if let Some(nv) = src.find_nvfp4_native(&name) {
+            } else if let Some(nv) = src.try_find_nvfp4_native(&name)? {
                 let bytes = memra_gguf::nvfp4_repack::repack_modelopt_to_gguf(
                     nv.wbytes, &nv.wscale, nv.out_f, nv.in_f,
                 );
@@ -3104,7 +2835,7 @@ impl HostExps {
                 )
             } else {
                 let v = src
-                    .find(&name)
+                    .try_find(&name)?
                     .unwrap_or_else(|| panic!("missing expert tensor {name}"));
                 assert_eq!(v.ne.len(), 2, "expert {name} is not 2D (ne={:?})", v.ne);
                 let (cur_in, cur_out) = (v.ne[0] as usize, v.ne[1] as usize);
@@ -3263,51 +2994,13 @@ impl HostExps {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExpertKeepalive, ExpertSource, HostBuf, HostExps, QT_BF16, QT_NVFP4, QT_Q2_K, QT_Q4_K,
-        ensure_repack_cache_dir, open_repack_cache, repack_cache_is_fresh, repack_nvfp4_split,
-        unpack_nvfp4_split, write_repack_cache,
+        DiskReadSource, ExpertKeepalive, ExpertSource, HostBuf, HostExps, QT_BF16, QT_NVFP4,
+        QT_Q2_K, QT_Q4_K, repack_nvfp4_split, unpack_nvfp4_split,
     };
     use memra_gguf::nvfp4_repack::{repack_modelopt_to_gguf, repack_modelopt_to_split};
     use memra_gguf::source::{DiskExtent, Fp8StackedNative, TensorSource, TensorView};
     use memra_gguf::{GgmlType, config::ModelConfig};
     use std::borrow::Cow;
-
-    #[cfg(unix)]
-    #[test]
-    fn repack_cache_refuses_symlinked_directory_and_file() {
-        use std::os::unix::fs::symlink;
-
-        let root = std::env::temp_dir().join(format!("memra-repack-links-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
-        let target_dir = root.join("target-dir");
-        std::fs::create_dir(&target_dir).unwrap();
-        let cache_dir = root.join(".memra-repack");
-        symlink(&target_dir, &cache_dir).unwrap();
-        let error = ensure_repack_cache_dir(&cache_dir).unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
-
-        std::fs::remove_file(&cache_dir).unwrap();
-        std::fs::create_dir(&cache_dir).unwrap();
-        let target = root.join("outside.bin");
-        std::fs::write(&target, b"keep").unwrap();
-        let cache_file = cache_dir.join("artifact.nvfp4");
-        symlink(&target, &cache_file).unwrap();
-        assert!(!repack_cache_is_fresh(&cache_file, 4));
-        let error = open_repack_cache(&cache_file, true).unwrap_err();
-        assert_ne!(error.kind(), std::io::ErrorKind::NotFound);
-        assert_eq!(std::fs::read(&target).unwrap(), b"keep");
-
-        let hardlink = cache_dir.join("hardlink.nvfp4");
-        std::fs::hard_link(&target, &hardlink).unwrap();
-        let error = write_repack_cache(&hardlink, |out| {
-            use std::io::Write;
-            out.write_all(b"replacement")
-        })
-        .unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
-        assert_eq!(std::fs::read(&target).unwrap(), b"keep");
-        std::fs::remove_dir_all(root).ok();
-    }
 
     struct MixedExpertSource {
         bf16: Vec<u8>,
@@ -3479,6 +3172,62 @@ mod tests {
                 ne: vec![256, 2],
             })
         }
+    }
+
+    #[test]
+    #[ignore = "requires a CUDA GPU; run after scoped-loader source and rig admission"]
+    fn scoped_gguf_spill_preserves_bytes_budget_and_ordinary_host_policy() {
+        use memra_gguf::{GgufFile, bound_source::BoundTensorSource, source::GgufSource};
+        let path =
+            std::env::temp_dir().join(format!("memra-scoped-tiered-{}.gguf", std::process::id()));
+        memra_gguf::micro_gguf::write_glm_dsa_micro(&path, 541).unwrap();
+        let engine = crate::Engine::new(0).unwrap();
+        let gguf = GgufFile::open(&path).unwrap();
+        let source = GgufSource(&gguf);
+        let bound = BoundTensorSource::compile(&source).unwrap();
+        let runtime = bound.runtime().unwrap();
+        let name = "blk.1.ffn_gate_exps.weight";
+        let tensor = gguf.find(name).unwrap();
+        let expected = gguf.tensor_data(tensor).to_vec();
+        let count = tensor.ne[2] as usize;
+        let stride = expected.len() / count;
+        let ordinary = HostExps::load_stacked_from_source(&engine, &runtime, name).unwrap();
+        assert!(matches!(
+            ordinary.bytes,
+            HostBuf::Pinned { .. } | HostBuf::Paged(_)
+        ));
+        assert_eq!(ordinary.bytes.as_bytes(), expected);
+        for pin_bytes in [0, stride, expected.len()] {
+            let budget = crate::spill::MemBudget {
+                free_vram: 0,
+                free_pinnable_ram: pin_bytes,
+            };
+            let mut raw_ctx = crate::spill::SpillCtx::open(&gguf, &budget).unwrap();
+            let mut bound_ctx = crate::spill::SpillCtx::from_source(&runtime, &budget).unwrap();
+            let raw = HostExps::load_tiered(&engine, &gguf, name, &mut raw_ctx).unwrap();
+            let scoped =
+                HostExps::load_tiered_from_source(&engine, &runtime, name, &mut bound_ctx).unwrap();
+            assert_eq!(raw.qtype, scoped.qtype);
+            assert_eq!(raw.row_bytes, scoped.row_bytes);
+            assert_eq!(raw.expert_stride, scoped.expert_stride);
+            assert_eq!(raw_ctx.n_pinned, pin_bytes / stride);
+            assert_eq!(bound_ctx.n_pinned, raw_ctx.n_pinned);
+            assert_eq!(bound_ctx.n_mmap, count - bound_ctx.n_pinned);
+            assert_eq!(bound_ctx.mmap_bytes, expected.len() - pin_bytes);
+            assert_eq!(bound_ctx.pinned_remaining, 0);
+            for ex in 0..count {
+                assert_eq!(raw.expert_bytes(ex), scoped.expert_bytes(ex));
+                assert_eq!(
+                    scoped.expert_bytes(ex),
+                    &expected[ex * stride..(ex + 1) * stride]
+                );
+                assert_eq!(
+                    matches!(&scoped.tiers.as_ref().unwrap()[ex], HostBuf::Bounded(_)),
+                    ex >= pin_bytes / stride
+                );
+            }
+        }
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -3654,8 +3403,11 @@ mod tests {
         assert_eq!(exps.expert_bytes(1), &bytes[base_offset + expert_len..]);
         match exps.expert_source(1) {
             ExpertSource::Disk {
-                file: got_file,
-                offset,
+                read:
+                    DiskReadSource::Unbound {
+                        file: got_file,
+                        offset,
+                    },
                 len,
                 fallback,
                 keepalive,
@@ -3671,7 +3423,7 @@ mod tests {
                     _ => panic!("mmap expert did not retain its mmap owner"),
                 }
             }
-            ExpertSource::Memory { .. } => panic!("mixed mmap tier lost its disk extent"),
+            _ => panic!("mixed mmap tier lost its disk extent"),
         }
         #[cfg(unix)]
         assert!(exps.prefetch_expert_pages(1));
@@ -3721,7 +3473,7 @@ mod tests {
         assert_eq!(exps.expert_layout(1).offset, expert_len);
         match exps.expert_source(1) {
             ExpertSource::Disk {
-                offset,
+                read: DiskReadSource::Unbound { offset, .. },
                 len,
                 fallback,
                 ..
@@ -3730,7 +3482,7 @@ mod tests {
                 assert_eq!(len, expert_len);
                 assert_eq!(fallback, &bytes[base_offset + expert_len..]);
             }
-            ExpertSource::Memory { .. } => panic!("tiered mmap expert lost its disk extent"),
+            _ => panic!("tiered mmap expert lost its disk extent"),
         }
         std::fs::remove_file(path).ok();
     }
@@ -3788,8 +3540,11 @@ mod tests {
         assert_eq!(exps.expert_bytes(1), &bytes[base_offset + expert_len..]);
         match exps.expert_source(1) {
             ExpertSource::Disk {
-                file: got_file,
-                offset,
+                read:
+                    DiskReadSource::Unbound {
+                        file: got_file,
+                        offset,
+                    },
                 len,
                 fallback,
                 ..
@@ -3799,7 +3554,7 @@ mod tests {
                 assert_eq!(len, expert_len);
                 assert_eq!(fallback, &bytes[base_offset + expert_len..]);
             }
-            ExpertSource::Memory { .. } => panic!("uniform mmap slab lost its disk extent"),
+            _ => panic!("uniform mmap slab lost its disk extent"),
         }
         #[cfg(unix)]
         assert!(exps.prefetch_expert_pages(1));

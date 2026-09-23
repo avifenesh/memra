@@ -1,0 +1,18 @@
+{
+  "engine_source_sha256": "278cd8482ad5d0debda017c165da8e79cb1024f0d879666127c095aed3788c32",
+  "extracted_actual_guard_and_existing_tests_sha256": "e3869a01dd81fe99e4cf45ce325c401751190b7605fd64fb101453aabed3d222",
+  "log_sha256": "74c6a2d7eb8322f86d76051f56f00bf571326a73117ce7c4861232dc17f87f83",
+  "command": [
+    "rustc",
+    "--edition=2024",
+    "--test",
+    "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/gpu/issue-542-580-local-preparation/actual-exact-scope-tests.rs",
+    "-o",
+    "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/gpu/issue-542-580-local-preparation/actual-exact-scope-tests"
+  ],
+  "native_execution": false,
+  "scope": "actual existing RAII error/nested/early-drop teeth, not a CUDA dispatch/parity test",
+  "platform_limitation": "Full engine lib test on macOS cannot compile existing Linux-only libc cpu_set_t/sched_setaffinity/posix_fadvise/O_DIRECT calls; no unrelated source edited.",
+  "log_file": "cpu-scope.log.gz",
+  "compressed_log_sha256": "de9db9d96ff305b51c78f20670a06e3f9d8210ff39805b44a510b74cdd7fe311"
+}

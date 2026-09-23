@@ -1,0 +1,23 @@
+SCOPE mode=retained-eg-prime-api-refusal native-caller-only support_promotion=false performance=not-measured pid=2654766
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-api-refusal-2654766/artifact.lock bytes=801 sha256=3d91ccb45bd39b446bb995630b628ba96e92a65c36bebbee519be647f8ce3be3
+SOURCE pin=Qwen/Qwen3-0.6B@c1899de289a04d12100db370d81485cdf75e47ca
+SOURCE_FILE name=model.safetensors bytes=1503300328 sha256=f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b
+SOURCE_FILE name=config.json bytes=726 sha256=660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd
+SOURCE_FILE name=generation_config.json bytes=239 sha256=2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2
+SOURCE_FILE name=tokenizer.json bytes=11422654 sha256=aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4
+SOURCE_FILE name=tokenizer_config.json bytes=9732 sha256=d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101
+SOURCE_FILE name=merges.txt bytes=1671853 sha256=8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5
+SOURCE_FILE name=vocab.json bytes=2776833 sha256=ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910
+SOURCE_FILE name=LICENSE bytes=11343 sha256=832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-api-refusal-2654766/identity.txt bytes=287 sha256=4c08d22d9dd8480e43eeb2b9d564406cb031257833bbf67171860f37ecd7ae48
+POLICY RewriteParityPolicy { max_abs: 0.005, max_rel: 0.005, require_argmax: true }
+QUALIFICATION_SCOPE EagerGraph surfaces=[DecodeEager, DecodeGraph] carried_prime_selected=false
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-api-refusal-2654766/prime-api-cache-before.txt bytes=64 sha256=10a8a7dec07223fa852b33c4d1f0d93d3a36a167fa8252b07c86d1a118739784
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-api-refusal-2654766/prime-api-logits-before.f32 bytes=607744 sha256=2334a38029173daf364e3e3d0f0a4aac081eb48c6aa64fac1361e227f29ccb6d
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-api-refusal-2654766/prime-api-seed-before.f32 bytes=4096 sha256=43d55cde954318bc0db3ea59c61b504be16b6513fe5db952bb93e6a9448a3914
+PRIME_REFUSAL api=prime_graph_new error=carried-prime rewrite is not qualified for the current loaded runtime identity
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-api-refusal-2654766/prime-api-cache-after.txt bytes=64 sha256=10a8a7dec07223fa852b33c4d1f0d93d3a36a167fa8252b07c86d1a118739784
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-api-refusal-2654766/prime-api-logits-after.f32 bytes=607744 sha256=2334a38029173daf364e3e3d0f0a4aac081eb48c6aa64fac1361e227f29ccb6d
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-api-refusal-2654766/prime-api-seed-after.f32 bytes=4096 sha256=43d55cde954318bc0db3ea59c61b504be16b6513fe5db952bb93e6a9448a3914
+PRIME_REFUSAL api=prime_chunk_captured error=carried-prime rewrite is not qualified for the current loaded runtime identity
+UNQUALIFIED_PRIME_API_REFUSAL_PASS constructor=true captured_entry=true cache_and_outputs_unchanged=true positive_prime_coverage=false

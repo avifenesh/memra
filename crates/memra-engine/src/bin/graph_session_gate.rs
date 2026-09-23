@@ -57,13 +57,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let n = 64.min(sess.bucket_max.saturating_sub(sess.cache.pos + 2));
         for _ in 0..n {
             let t0 = std::time::Instant::now();
-            sess.prof_apply(&e)?;
+            sess.prof_apply(&e, &model)?;
             t_apply += t0.elapsed().as_secs_f64();
             let t0 = std::time::Instant::now();
-            sess.prof_launch()?;
+            sess.prof_launch(&model)?;
             t_launch += t0.elapsed().as_secs_f64();
             let t0 = std::time::Instant::now();
-            let _ = sess.prof_read(&e)?;
+            let _ = sess.prof_read(&e, &model)?;
             t_d2h += t0.elapsed().as_secs_f64();
         }
         println!(

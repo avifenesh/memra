@@ -276,9 +276,11 @@ impl RouteContract {
             "host_capture_drain_at_shutdown(",
         )
         .implemented(PolicySurface::MemoryCost, "admit_memory::decide(")
+        // Every HybridModel loader installs MEMRA_REWRITE_BUNDLE itself; the worker's own call
+        // site is the refusal to start a model whose strict admission is absent or stale.
         .implemented(
             PolicySurface::RewriteQualification,
-            "install_rewrite_bundle(",
+            "model.rewrite_is_qualified()",
         )
         .implemented(PolicySurface::PrimeFairness, "PrimeService::default()")
         .implemented(PolicySurface::ServiceMetrics, "m.step_p50_ms = ")

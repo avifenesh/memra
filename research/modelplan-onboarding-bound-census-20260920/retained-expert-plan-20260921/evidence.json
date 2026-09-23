@@ -1,0 +1,287 @@
+{
+  "base_commit": "9615e986ba67ced0912466f957fd4920fbd6e7fc",
+  "source_sha256": {
+    "crates/memra-gguf/src/model_packs/glm5_next/mod.rs": "c3726f7375880f14b24201818b2ebb64f48eef6a22fb3656c8ba463da177f8fc",
+    "crates/memra-gguf/src/model_packs/glm_dsa/mod.rs": "5ecf9d13fc6222e3e25e1956fa6787edb35c21fae312a3c10f576d8a26006f4b",
+    "crates/memra-gguf/src/model_packs/step35/tensors.rs": "60803534f6f8af0ca4772865791035347b6d193ddb2b0f2a31ae049f095b2f39",
+    "crates/memra-gguf/src/model_plan.rs": "03b0b4c613b95ad9e3d0d3e58b91b76a03b028204a51c8ec87e0eae08df7290f",
+    "crates/memra-gguf/src/op_registry.rs": "5d0eb37830b0b25953102b2a672f7a2025bff5f8120e3c00282a02ce6f352230",
+    "crates/memra-gguf/src/tensor_contract.rs": "2b331a229f684f7778f6073f688f4b3212f2c4873ba5678fd71d3b6fd60f3f9d",
+    "crates/memra-reference/src/lib.rs": "b6db6b49805a90583eba098cddc92f77f11d20425e40968951d0f11c98901cf1",
+    "docs/EXECUTION-SURFACES.md": "99cdd0633f3e87c319beef22c7226ce7f9ca7030e34517cca1fcb66821a4dba5"
+  },
+  "commands": [
+    {
+      "name": "compiler-reference-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-reference",
+        "-p",
+        "memra-cli"
+      ],
+      "exit_code": 101,
+      "wall_seconds": 32.684145333012566
+    },
+    {
+      "name": "compiler-reference-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-reference",
+        "-p",
+        "memra-cli",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 5.135779207921587
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 3.85537333402317
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 0.2748562500346452
+    },
+    {
+      "name": "compiler-cli-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "reference-bins",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "memra-reference",
+        "--bins"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "reference-docs",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "memra-reference",
+        "--doc"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "linux-engine-server-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "-p",
+        "memra-server",
+        "--lib",
+        "--bins",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0
+    }
+  ],
+  "source_review": "pass",
+  "cuda_executed": false,
+  "root_activation": false,
+  "source_adapter_activation": false,
+  "full_reference_suite_green": false,
+  "inherited_reference_failure": {
+    "baseline": "82a28b225557f17ff80bb9a8daf08dec33daa752",
+    "same_actual_and_expected_bits": true,
+    "baseline_actual": "[3182242064, 1053299395, 3199800549, 3198737447, 3180184138, 3187768632, 1057556100, 1035812927]",
+    "candidate_actual": "[3182242064, 1053299395, 3199800549, 3198737447, 3180184138, 3187768632, 1057556100, 1035812927]",
+    "expected": "[3182242076, 1053299392, 3199800546, 3198737445, 3180184136, 3187768631, 1057556100, 1035812924]"
+  },
+  "raw": {
+    "raw/baseline-qwen35.log.gz": {
+      "sha256": "817e6172a386e6a810411b71a11ab0631fb1a2b28e4d9628be48f272bb8ad4f6",
+      "uncompressed_sha256": "ea8d1d313e8b27d64900dc2423f445807112778c3592f6c5c891886c8c943d0b",
+      "uncompressed_bytes": 2089
+    },
+    "raw/compiler-cli-tests.log.gz": {
+      "sha256": "4f0a18b29ea9d69749b8d2977c4fc4cf589fb54af462c07e5c38e1da13fbe115",
+      "uncompressed_sha256": "4ed88fa9492fbfbc9f6906231fc87d3a7b2f33e42e4ecc51ca7f99cf67ea3da7",
+      "uncompressed_bytes": 36449
+    },
+    "raw/compiler-reference-clippy.log.gz": {
+      "sha256": "7b826d1d8281c019ee47871554ab7cbe3f265fe58b34f770792abeb2ece33a07",
+      "uncompressed_sha256": "0ae26dc125b4e71ebba936c07764f1da346e166d2da3f934a60e2cf0f590132f",
+      "uncompressed_bytes": 550
+    },
+    "raw/compiler-reference-tests.log.gz": {
+      "sha256": "49ff1632968b395ee23161bef400d866c967110da4073e26431b15d18ad9e9f4",
+      "uncompressed_sha256": "d94f507cd3d07a1c69b2167f254953ecb7199a5e4dfb109fb8ef2e26b00713b1",
+      "uncompressed_bytes": 43182
+    },
+    "raw/diff.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/linux-engine-server-clippy.log.gz": {
+      "sha256": "9e4ef304a79662a3bc1ee152430a4a5d6ea5ea687c99334857b11cd737812f03",
+      "uncompressed_sha256": "07e6aaeedb659e8d8ee4a6770ea822e59ae2a4c2c51c4499d5d6081ca2adc50c",
+      "uncompressed_bytes": 1012
+    },
+    "raw/reference-bins.log.gz": {
+      "sha256": "e2e96ad4889ec98f153a5e34c81b764fc2a34387e8894509a04321b8f6a0139a",
+      "uncompressed_sha256": "9b3e90433edf977f1c2626d3a8ed5d6e545d302db91fe424315a82a7e731f8a2",
+      "uncompressed_bytes": 1554
+    },
+    "raw/reference-docs.log.gz": {
+      "sha256": "5f6ac0dcbd2afb93e63beabcf2d344298e46012cbd1cee5faf4c2b68f5b2af27",
+      "uncompressed_sha256": "2b4af18ac3a4c5247a28a92f245265ba264c3c8ebf4b4fa49e93aa1ceadc69f0",
+      "uncompressed_bytes": 215
+    },
+    "raw/serialization-baseline.log.gz": {
+      "sha256": "b2354dfeeb77b9f383182bee37cdcf3e302b6f910e029c23c8e13577da3f6892",
+      "uncompressed_sha256": "c9302c7d3419de5d1d3f9880b21f893defa37cd1a9c608adfba72ca123607a88",
+      "uncompressed_bytes": 1209
+    },
+    "raw/serialization-candidate.log.gz": {
+      "sha256": "203fe2e06e9be1e8d50c1f8da41e05105e348951256c230fb5e73f166ee64e95",
+      "uncompressed_sha256": "9dc3417cb1a7af2018be7db812f80c24105c3e0c68698a1f7208a76af4c4918f",
+      "uncompressed_bytes": 1097
+    },
+    "raw/baseline-qwen35-result.json.gz": {
+      "sha256": "d97afb9c588f864f982d79cb6e1edbf513170e6615a0ebce9be38706a40a7196",
+      "uncompressed_sha256": "6128c1efd30bc140f82963254d400fe74b3e3c41e2b8f2dc9fae4ea79fa50b85",
+      "uncompressed_bytes": 490
+    },
+    "raw/baseline-source-manifest.json.gz": {
+      "sha256": "6962e2179180b051422f830e5a0782ae893f5911305303f9b785de93e6e11b8d",
+      "uncompressed_sha256": "309ec5ce3047ce73c90c3492c2a527b3430890de129ecb8fbf80c98b27e22c38",
+      "uncompressed_bytes": 116185
+    },
+    "raw/qwen35-baseline-comparison.json.gz": {
+      "sha256": "6d737e2fd0f68dda1a22322d350eee371fad33e669c04409720bcb04175ee3e3",
+      "uncompressed_sha256": "2f43def04d66b3b312db36753f2c4e1e289590f98c04218d1829b64be26b668f",
+      "uncompressed_bytes": 459
+    },
+    "raw/result.json.gz": {
+      "sha256": "3bb3fab6087a474b76e6841eca35e022f719ed7dbda2a08493ea3d875595a34a",
+      "uncompressed_sha256": "04575c9bbdcfc040159d01014d937b95e9e67e9a03257882743e023dc38d2174",
+      "uncompressed_bytes": 966
+    },
+    "raw/serialization-result.json.gz": {
+      "sha256": "cfa972b086f8d56c57d5298687e3e51b9dc0c3bc670fa3dd34ecbbc1cad43792",
+      "uncompressed_sha256": "9bc910371ddcfbe903f26c45a9275ff886d289c9465b4eeab7c35b7df2a321d8",
+      "uncompressed_bytes": 1165
+    },
+    "raw/541-retained-experts-registry-render.log.gz": {
+      "sha256": "e589caf35200a8f1fe5352a5e759765774bf26f4b6b08d4df128cf0935a259e5",
+      "uncompressed_sha256": "ea3a0f6e48859a2bddb29daa6ed85d4fbf15a86acb311ecc641c3b783b183f02",
+      "uncompressed_bytes": 6183
+    },
+    "raw/541-retained-experts-targeted-final.log.gz": {
+      "sha256": "362aefdd7523a7f452e51560fe710aebda9cbd6c2fb73c8c1a51acad10c4fa64",
+      "uncompressed_sha256": "0c85a0830f7ff5f24056c6dbe1bfa5a85f68d54c68f9edfd724379dace66be64",
+      "uncompressed_bytes": 1210
+    },
+    "raw/541-retained-experts-targeted-initial.log.gz": {
+      "sha256": "72d80b8201425f35d6fb97cc1e3c113841eede6314fd5f76fa319a9013a1abf8",
+      "uncompressed_sha256": "c9f0db366f4f568a15f0d2327fe25987b48348e816b178c5e154bd96bf0fccbe",
+      "uncompressed_bytes": 1840
+    },
+    "raw/541-retained-experts-targeted-pass.log.gz": {
+      "sha256": "763d3f190f037cae8cc1d10641c5ee2430874a78cacccecf1920eaae3aabcbfc",
+      "uncompressed_sha256": "843e208add718f1399666abdcadfcd98f064b22c3e067cb147a86ad84e64cfed",
+      "uncompressed_bytes": 1377
+    },
+    "raw/541-retained-experts-targeted.log.gz": {
+      "sha256": "0bdd5ab6fea175b35887fbc5a0de72005f248e91d4fe00c87a06a4bff3061d82",
+      "uncompressed_sha256": "2d820e97ec58c974f7b7a9fe1816269b3ec75be3b85376a11423eaed97feb1c1",
+      "uncompressed_bytes": 1104
+    },
+    "raw/issue-548-comparison.json.gz": {
+      "sha256": "2e26980255d69a056dd67cd98b9479e8c0cfb08f849d25b11b42cc2cee4d813c",
+      "uncompressed_sha256": "20bad8c0077d3e7afd8693cabe39f8bbbd1dc6f27229d1120cac0800286f1991",
+      "uncompressed_bytes": 328
+    }
+  },
+  "test_binary_sha256": {
+    "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target/541-retained-experts/baseline-build/debug/deps/memra_reference-b551f67e4c21da42": "6ea24f66cf35749c0535c2d90265a25500a8d92b90c316425dc323b634167cdf",
+    "target/debug/deps/memra_cli-375522d27bfc8b2f": "e61088aa8a9982b67916d14560a6fafb3f018546b4eeed8a4280b2fef8eb7dad",
+    "target/debug/deps/memra-2a4bd065550b0f02": "ad2c56f7d94be7417df1a9738147cdf06b4079253ef6f37ad0a4955951a170b4",
+    "target/debug/deps/step_rope_contract-ca6b3875a3cc9aa5": "1173ad59717f9b44e4ce27850aaa18ffb65aa2f0b1fb43278c36586c275a79de",
+    "target/debug/deps/memra_gguf-e80b7f4edcbfcfe8": "718692147b70396100e605cf585182ab5768e27cc4ba9b93926e1578d9a8bc09",
+    "target/debug/deps/dsv4_census-353e10666af2f08d": "3e83ba97a3797df017fa35ce6dca1a730183e3a69d833f46d5e77ce92ec22d62",
+    "target/debug/deps/dsv4_decode_oracle_check-d17719eb5549a24e": "ebbe0e8098c8640b91e056ef340baa7241315e85dd6da757b85b73057b732ced",
+    "target/debug/deps/dsv4_dspark_gate-e2d6c08311bd10c0": "676b7cb3c511e44434e6fad65b12778f298d727594c47e4d35e8abf3c5086c15",
+    "target/debug/deps/dsv4_forward-f74ab49bb06b6ce0": "27d9e4e61f714a62ef74a53f598f81a7a1294ddb0c17e150ae2185b73e325eaf",
+    "target/debug/deps/dsv4_greedy_verify-fc4f8049ee68dcd4": "e54ccbe490549d9a96f88feb857e67af04bb210238edb23d7e3935c953ea8eee",
+    "target/debug/deps/dsv4_mtp_probe-ba7dd4be4b4c7382": "7f199845fcf40d3ded4a503087736f959eae1eda815d5490932adf06df326286",
+    "target/debug/deps/dsv4_mint-6a94b87ed0f226d5": "b9426742a6feb454b8e8c34b2338f7957bbdd8d806ed2bc4d813945657463a82",
+    "target/debug/deps/gguf_inspect-47df925150ce6d3c": "0d2518e6bc636839daad1b38b09d529d92c3bab07dede462fde5dd9f64feed95",
+    "target/debug/deps/nvfp4_validate-f53295fd4b7a0719": "342ca2fe49021fbfd0bc1c80f22aa53547f24dc66741d5fadc27ccf8b75a5b70",
+    "target/debug/deps/sealed_preflight-841bbeb6a86735f3": "13419039e5a4bf040b4c9561e0b9d1749428dc05c599ad5e17f45db06ed6517f",
+    "target/debug/deps/memra_reference-b551f67e4c21da42": "d953b587f3a572bbf11ce482c609c0ddb719153ec8a0174d1b0274a2932aacc1",
+    "target/debug/deps/glm5_checkpoint_runner-44c773acd0591fd9": "c537cd7f9c017ace081d39b247c3533ed7707615ec2b9fd5987087ddf8c1e6bb",
+    "target/debug/deps/llama_dense_checkpoint_runner-8c78914349b51f53": "6014008cda5f241e6edf1b31d0f59b0b64b9a926c1c26017c4efdab656c0acc4",
+    "target/debug/deps/qwen4exp_tiny_parity-580ae4143caac42e": "653f68e48eb111f6d224911cc0a0d277f9be20da57cd189d909623af72f2f7b9",
+    "target/debug/deps/rnnt_stage-56c0976910a06dae": "1a56b66915ac473486c4f67cc7cae6b39a47d62c01873d4a6ec83e8ad3ceb155",
+    "target/debug/deps/speech_text-e48c34ce316a60a0": "192fd16d3f034b83668d2e7d22a13169afcc8f6bd60713092e1543b2234d4b5c",
+    "target/debug/deps/whisper_stage-38ef8548ea6a15f8": "0245e700ef36c3c6b749f666b82bde6c713c446895cfe880ebf629caec02975d"
+  },
+  "source_commit": "2e7ce065aea400aa512dc5b587ff2c776344b639",
+  "existing_issue": "https://github.com/avifenesh/memra/issues/548",
+  "reviewed_source_commit": "2e7ce065aea400aa512dc5b587ff2c776344b639",
+  "source_GO": true,
+  "review_bank": "review/"
+}

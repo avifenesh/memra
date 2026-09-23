@@ -2531,6 +2531,8 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         cache.ensure_usable("decode_step_glm5_tp_device_logits")?;
         if !self.glm5_tp_device_sample_supported() {
             return Err("device logits require GLM TP-2 without pipeline stages".into());
@@ -5173,6 +5175,8 @@ impl HybridModel {
         e: &Engine,
         tokens: &[u32],
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::ForwardFreshKv)?;
         if self.hyper.is_some() {
             return self.forward_hyper(e, tokens, false);
         }
@@ -5273,6 +5277,8 @@ impl HybridModel {
         e: &Engine,
         tokens: &[u32],
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::ForwardFreshKv)?;
         if self.hyper.is_some() {
             return self.forward_hyper(e, tokens, true);
         }
@@ -5508,6 +5514,8 @@ impl HybridModel {
         queued_after: usize,
         overlay: Option<&crate::vision::EmbedOverlay>,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         // FORWARD PROGRESS (memra#50), the CALL-granularity half. Every chunked walk below
         // stamps `crate::progress` per chunk; a MONOLITHIC walk (a prompt at or under one
         // chunk, `MEMRA_PRIME_CHUNK=0`, gemma4 v0, the E4B arm) stamps nothing on its way
@@ -5519,7 +5527,17 @@ impl HybridModel {
         // beats between sessions.
         let events_before = crate::progress::events();
         let a4_before = self.a4_prime_receipt_begin();
-        let out = self.prime_cache_overlaid_inner(e, tokens, cache, queued_after, overlay);
+        // A DecodeEager receipt proves the tokenwise program, not the ordinary
+        // prefill projections/attention selected at PRIME_MIN_T. Missing prime
+        // permission must use that exact eager program for direct and batch calls.
+        let out =
+            if self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::CarriedPrime) {
+                self.prime_cache_overlaid_inner(e, tokens, cache, queued_after, overlay)
+            } else if overlay.is_some() {
+                Err("embedding-overlay prime requires a qualified carried-prime rewrite".into())
+            } else {
+                self.prime_cache_eager(e, tokens, cache)
+            };
         if out.is_ok() && crate::progress::events() == events_before {
             crate::progress::note_prime_rows(tokens.len());
         }
@@ -5530,6 +5548,61 @@ impl HybridModel {
             out.as_ref().ok().map(|o| &o.0),
         );
         out
+    }
+
+    /// Prime through the already-qualified tokenwise program, retaining every
+    /// hidden row in the convention selected by the prime API. No prefill kernel
+    /// or alternative activation/weight encoding is selected by this fallback.
+    #[allow(clippy::type_complexity)] // allow: mirrors the public prime return contract
+    fn prime_cache_eager(
+        &self,
+        e: &Engine,
+        tokens: &[u32],
+        cache: &mut Cache,
+    ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        cache.ensure_usable("prime_cache_eager")?;
+        if tokens.is_empty() || tokens.len() > cache.max_ctx.saturating_sub(cache.pos) {
+            return Err("eager prime requires nonempty tokens within cache capacity".into());
+        }
+        let n_embd = self.cfg.n_embd as usize;
+        let hidden_len = tokens
+            .len()
+            .checked_mul(n_embd)
+            .ok_or("eager prime hidden size overflow")?;
+        // Generic T1 already returns the selected HPOST convention. The Gemma
+        // T1 walk returns pre-norm rows, while its non-PLE text prime uses the
+        // generic epilogue's HPOST convention. PLE keeps its existing pre-norm
+        // contract. Adapt only exported rows; never feed this back into decode.
+        let normalize_hidden = self.uses_gemma_program()
+            && !self.has_plan_operation(memra_gguf::model_plan::OperationKind::PleNgramEmbedding)
+            && crate::spec::spec_hpost();
+        let mut hiddens = e.uninit(hidden_len)?;
+        let mut transaction = CacheTaintGuard::arm(&mut [cache]);
+        let mut last = None;
+        for (i, &token) in tokens.iter().enumerate() {
+            let (logits, hidden) = self.decode_step_h(e, token, cache)?;
+            let hidden = if normalize_hidden {
+                let mut normalized = e.uninit(n_embd)?;
+                e.rms_norm(
+                    &hidden,
+                    self.output_norm.float_data(),
+                    &mut normalized,
+                    n_embd,
+                    1,
+                    self.cfg.rms_eps,
+                )?;
+                normalized
+            } else {
+                hidden
+            };
+            e.copy_into(&mut hiddens, i * n_embd, &hidden, n_embd)?;
+            last = Some((logits, hidden));
+            crate::progress::note_prime_rows(1);
+            crate::progress::prime_cancel_point(i, i + 1, tokens.len())?;
+        }
+        let (logits, seed) = last.ok_or("eager prime produced no row")?;
+        transaction.commit();
+        Ok((logits, seed, hiddens))
     }
 
     /// Snapshot the calibrated-A4 slot counters if this model declares the activation program.
@@ -6549,7 +6622,7 @@ impl HybridModel {
     /// its OWN slabs on its own device (a dev0 slab dereferenced by a dev1 kernel would be
     /// a peer read per GEMM operand, the exact class Lever B removes). Single-device rigs
     /// see one entry, byte-identical behavior.
-    pub fn prime_slabs_get(
+    pub(crate) fn prime_slabs_get(
         &self,
         e: &Engine,
         t: usize,
@@ -7585,6 +7658,8 @@ impl HybridModel {
         logits_out: &mut CudaSlice<f32>,
         h_seed_out: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::CarriedPrime)?;
         self.refuse_hyper("prime_chunk_captured")?;
         cache.ensure_usable("prime_chunk_captured")?;
         let cfg = &self.cfg;
@@ -17430,35 +17505,7 @@ impl HybridModel {
         act: &mut CudaSlice<f32>,
         n: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(m3) = cfg.m3.as_ref() {
-            debug_assert!(
-                limit.is_none(),
-                "m3 swigluoai and the step35/glm5_next clamps are different archs"
-            );
-            return e.swigluoai_mul_scaled(
-                gate,
-                up,
-                gs,
-                us,
-                m3.swiglu_alpha,
-                m3.swiglu_limit,
-                act,
-                n,
-            );
-        }
-        match limit {
-            Some(SwigluClamp::Post(l)) => {
-                return e.swiglu_clamped_mul_scaled(gate, up, gs, us, l, act, n);
-            }
-            Some(SwigluClamp::Pre(l)) => {
-                return e.swiglu_preclamped_mul_scaled(gate, up, gs, us, l, act, n);
-            }
-            None => {}
-        }
-        if gs == 1.0 && us == 1.0 {
-            return e.silu_mul(gate, up, act, n);
-        }
-        e.silu_mul_scaled(gate, up, gs, us, act, n)
+        crate::ffn_activation::apply(e, cfg, gate, up, gs, us, limit, act, n)
     }
 
     /// The bare POST limit for the fused kernels whose epilogue HARDCODES step35's form
@@ -17654,7 +17701,7 @@ impl HybridModel {
             let build = |exps: &crate::model::HostExps| {
                 (0..n_expert)
                     .map(|expert| crate::cpu_experts::predictor_projection(exps, expert))
-                    .collect::<Vec<_>>()
+                    .collect::<Result<Vec<_>, String>>()
             };
             layers.push((
                 index as u16,
@@ -17670,9 +17717,9 @@ impl HybridModel {
                         .ok_or("prefetch predictor requires MoE config")?,
                     sig,
                     weights_n_expert: n_expert,
-                    gate: build(&m.gate_exps),
-                    up: build(&m.up_exps),
-                    down: build(&m.down_exps),
+                    gate: build(&m.gate_exps)?,
+                    up: build(&m.up_exps)?,
+                    down: build(&m.down_exps)?,
                 },
             ));
         }
@@ -23419,15 +23466,24 @@ impl HybridModel {
             // it fused; barrier + worst-segment occupancy net −0.3% (31B depth) / −2.3%
             // (E4B spec). Down's act dependency is all-to-all, so sentinel sync cannot
             // rescue segment C — the megakernel front is closed for the dense tail.
+            let pair_fast = e.uses_q8_1_fast(ffn_gate) && e.uses_q8_1_fast(ffn_up);
             let (gate, up) = if t == 1 {
                 let (zq, zd) = match zpair {
                     Some(p) => p,
                     None => e.quantize_q8_1(&zsh, 1, n_embd)?,
                 };
-                match e.matmul_q4_fused2(ffn_gate, ffn_up, &zq, &zd)? {
+                match if pair_fast {
+                    e.matmul_q4_fused2(ffn_gate, ffn_up, &zq, &zd)?
+                } else {
+                    None
+                } {
                     Some(p) => p,
                     // NVFP4mix dense trunk: gate/up are both NVFP4 (down stays Q8_0).
-                    None => match e.matmul_nvfp4_fused2(ffn_gate, ffn_up, &zq, &zd, 1)? {
+                    None => match if pair_fast {
+                        e.matmul_nvfp4_fused2(ffn_gate, ffn_up, &zq, &zd, 1)?
+                    } else {
+                        None
+                    } {
                         Some(p) => p,
                         None => (
                             e.matmul_pre(ffn_gate, &zq, &zd, &zsh, 1)?,
@@ -23442,7 +23498,7 @@ impl HybridModel {
                 // plateau; first positive after six falsified in-kernel variants).
                 static F2B: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
                 let f2b = *F2B.get_or_init(|| std::env::var("MEMRA_F2B").as_deref() != Ok("0"));
-                let fused = if f2b {
+                let fused = if f2b && pair_fast {
                     let (zq, zd) = e.quantize_q8_1(&zsh, t, n_embd)?;
                     e.matmul_q4_fused2_batched(ffn_gate, ffn_up, &zq, &zd, t)?
                 } else {
@@ -23956,16 +24012,47 @@ impl HybridModel {
         Ok((logits, h_seed, hiddens))
     }
 
+    /// Recover the real normalized operand only for projections which cannot consume q8_1.
+    /// Use the same 1024-thread reduction as the fused next-layer norm, never dequantize hq.
+    fn gemma4_attention_raw(
+        &self,
+        e: &Engine,
+        fa: &crate::hybrid::FullAttnLayer,
+        il: usize,
+        x: &CudaSlice<f32>,
+        t: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let swa = self.gemma4_geom(il).5;
+        if e.uses_q8_1_fast(&fa.wq)
+            && e.uses_q8_1_fast(&fa.wk)
+            && (!swa || e.uses_q8_1_fast(&fa.wv))
+        {
+            return e.zeros(0);
+        }
+        let n_embd = self.cfg.n_embd as usize;
+        let mut h = e.uninit(t * n_embd)?;
+        e.rms_norm_decode(
+            x,
+            self.layers[il].attn_norm.float_data(),
+            &mut h,
+            n_embd,
+            t,
+            self.cfg.rms_eps,
+        )?;
+        Ok(h)
+    }
+
     /// gemma4 T=1 decode attention: per-layer geometry, quantized-KV append + fa_decode
     /// (vec kernels at hd 256, generic scalar at the globals' hd 512), weightless V-norm,
     /// dual rope, scale 1.0. Takes the attn-normed input PRE-QUANTIZED (the cross-layer
-    /// fused norm emits q8 directly — the f32 h never materializes).
+    /// fused norm emits q8 directly); non-fast projections also retain the real F32 norm.
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn gemma4_decode_attn(
         &self,
         e: &Engine,
         fa: &crate::hybrid::FullAttnLayer,
         il: usize,
+        x: &CudaSlice<f32>,
         hq: &CudaSlice<i8>,
         hdq: &CudaSlice<f32>,
         pos_d: &CudaSlice<i32>,
@@ -23979,32 +24066,52 @@ impl HybridModel {
         crate::debug_assert_tensor_stream_device(ones, &e.stream(), "gemma4_decode_attn.ones");
         let (hq, hdq) = (hq, hdq);
         let h0 = e.zeros(0)?;
-        let h = &h0;
+        let h = self.gemma4_attention_raw(e, fa, il, x, 1)?;
+        // Keep fast siblings on their existing quantized path even when another needs F32.
+        let raw = |w: &crate::model::GpuTensor| if e.uses_q8_1_fast(w) { &h0 } else { &h };
+        let qk_fast = e.uses_q8_1_fast(&fa.wq) && e.uses_q8_1_fast(&fa.wk);
+        let qkv_fast = qk_fast && (!swa || e.uses_q8_1_fast(&fa.wv));
         let (q0, k0, v0) = if swa {
-            match e.matmul_q4_fused3(&fa.wq, &fa.wk, &fa.wv, hq, hdq)? {
+            match if qkv_fast {
+                e.matmul_q4_fused3(&fa.wq, &fa.wk, &fa.wv, hq, hdq)?
+            } else {
+                None
+            } {
                 Some(t3) => t3,
                 // NVFP4mix trio is MIXED-type (wv stays Q8_0), so fused3 can never
                 // match — fuse the uniform (q,k) pair and take v as its own single.
-                None => match e.matmul_nvfp4_fused2(&fa.wq, &fa.wk, hq, hdq, 1)? {
+                None => match if qk_fast {
+                    e.matmul_nvfp4_fused2(&fa.wq, &fa.wk, hq, hdq, 1)?
+                } else {
+                    None
+                } {
                     Some((q0, k0)) => {
-                        let v0 = e.matmul_pre(&fa.wv, hq, hdq, h, 1)?;
+                        let v0 = e.matmul_pre(&fa.wv, hq, hdq, raw(&fa.wv), 1)?;
                         (q0, k0, v0)
                     }
                     None => (
-                        e.matmul_pre(&fa.wq, hq, hdq, h, 1)?,
-                        e.matmul_pre(&fa.wk, hq, hdq, h, 1)?,
-                        e.matmul_pre(&fa.wv, hq, hdq, h, 1)?,
+                        e.matmul_pre(&fa.wq, hq, hdq, raw(&fa.wq), 1)?,
+                        e.matmul_pre(&fa.wk, hq, hdq, raw(&fa.wk), 1)?,
+                        e.matmul_pre(&fa.wv, hq, hdq, raw(&fa.wv), 1)?,
                     ),
                 },
             }
         } else {
-            let (q0, k0) = match e.matmul_q4_fused2(&fa.wq, &fa.wk, hq, hdq)? {
+            let (q0, k0) = match if qk_fast {
+                e.matmul_q4_fused2(&fa.wq, &fa.wk, hq, hdq)?
+            } else {
+                None
+            } {
                 Some(p) => p,
-                None => match e.matmul_nvfp4_fused2(&fa.wq, &fa.wk, hq, hdq, 1)? {
+                None => match if qk_fast {
+                    e.matmul_nvfp4_fused2(&fa.wq, &fa.wk, hq, hdq, 1)?
+                } else {
+                    None
+                } {
                     Some(p) => p,
                     None => (
-                        e.matmul_pre(&fa.wq, hq, hdq, h, 1)?,
-                        e.matmul_pre(&fa.wk, hq, hdq, h, 1)?,
+                        e.matmul_pre(&fa.wq, hq, hdq, raw(&fa.wq), 1)?,
+                        e.matmul_pre(&fa.wk, hq, hdq, raw(&fa.wk), 1)?,
                     ),
                 },
             };
@@ -24265,6 +24372,13 @@ impl HybridModel {
         cap_bucket_max: Option<(usize, usize)>,
         tok_out: &mut CudaSlice<u32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
+        // This q8-only twin is not authorized by the F32 Eager program. Refuse before
+        // embedding, KV append, output writes, or any device-counter advancement.
+        if Engine::stage_a_raw_needed() {
+            return Err("gemma4 device-counter decode has no qualified F32 program".into());
+        }
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let mut x = e.embed_gather_device(embd_gpu, token_d, n_embd, embd_qt, embd_rb)?;
@@ -24415,6 +24529,8 @@ impl HybridModel {
         tok_out: &mut CudaSlice<u32>,
         ring: Option<(&mut CudaSlice<u32>, usize)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         e.embed_gather_device_into(embd_gpu, token_d, &mut sl.x, n_embd, embd_qt, embd_rb)?;
@@ -25224,6 +25340,8 @@ impl HybridModel {
         eos: &[u32],
         mut on_token: impl FnMut(u32) -> bool,
     ) -> Result<(Vec<u32>, crate::decode::StopReason), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         if self.is_gemma4_e4b() {
             return Err(
                 "E4B graph serving is unwired (HANDOVER-E4B.md) — dc-eager is the serving arm"
@@ -25511,6 +25629,11 @@ impl HybridModel {
         let (mut ld, hn) = self.gemma4_verify_trunk(e, &vec![0u32; t], pos0, cache, Some(tok_d))?;
         let cap = self.cfg.gemma4.as_ref().unwrap().final_logit_softcapping;
         e.softcap(&mut ld, cap, t * self.output.out_features())?;
+        // The canonical F32 program applies the declared mask after softcap.
+        // Keep the previously unqualified fast program outside this correction.
+        if Engine::stage_a_raw_needed() {
+            self.gemma4_suppress(e, &mut ld, t)?;
+        }
         Ok((ld, hn))
     }
 
@@ -25527,6 +25650,11 @@ impl HybridModel {
         let t = tokens.len();
         let cap = self.cfg.gemma4.as_ref().unwrap().final_logit_softcapping;
         e.softcap(&mut ld, cap, t * self.output.out_features())?;
+        // The canonical F32 program applies the declared mask after softcap.
+        // Keep the previously unqualified fast program outside this correction.
+        if Engine::stage_a_raw_needed() {
+            self.gemma4_suppress(e, &mut ld, t)?;
+        }
         Ok((e.dtoh(&ld)?, hn))
     }
 
@@ -25563,6 +25691,9 @@ impl HybridModel {
         cache: &mut Cache,
         scr: &mut VerifyStreamScratch,
     ) -> Result<(CudaSlice<u32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        // FAST=0 requests the F32 decode program even across the prefill crossover.
+        // Restore the caller's exactness state on success, error, and unwind.
+        let _raw_scope = (t >= 16 && Engine::stage_a_raw_needed()).then(|| e.exact_scope(true));
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         assert!(t <= scr.row_ctrs.len() && t <= 64);
@@ -25589,8 +25720,9 @@ impl HybridModel {
             let Mixer::Full(fa) = &layer.mixer else {
                 panic!("gemma4 layer {il} not full-attn")
             };
-            let o = self
-                .gemma4_verify_attn_stream(e, fa, il, &hq, &hdq, pos_d, t, cache, hint, row_ctrs)?;
+            let o = self.gemma4_verify_attn_stream(
+                e, fa, il, &x, &hq, &hdq, pos_d, t, cache, hint, row_ctrs,
+            )?;
             let next_norm = if il + 1 < n_layers {
                 Some(self.layers[il + 1].attn_norm.float_data())
             } else {
@@ -25670,6 +25802,10 @@ impl HybridModel {
         cache: &mut Cache,
         tok_dev: Option<&CudaSlice<u32>>,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        // FAST=0 requests the F32 decode program even across the prefill crossover.
+        // Restore the caller's exactness state on success, error, and unwind.
+        let _raw_scope =
+            (tokens.len() >= 16 && Engine::stage_a_raw_needed()).then(|| e.exact_scope(true));
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let t = tokens.len();
@@ -25698,7 +25834,7 @@ impl HybridModel {
             let Mixer::Full(fa) = &layer.mixer else {
                 panic!("gemma4 layer {il} not full-attn")
             };
-            let o = self.gemma4_verify_attn(e, fa, il, &hq, &hdq, &pos_d, t, cache)?;
+            let o = self.gemma4_verify_attn(e, fa, il, &x, &hq, &hdq, &pos_d, t, cache)?;
             let next_norm = if il + 1 < n_layers {
                 Some(self.layers[il + 1].attn_norm.float_data())
             } else {
@@ -25730,6 +25866,7 @@ impl HybridModel {
         e: &Engine,
         fa: &crate::hybrid::FullAttnLayer,
         il: usize,
+        x: &CudaSlice<f32>,
         hq: &CudaSlice<i8>,
         hdq: &CudaSlice<f32>,
         pos_d: &CudaSlice<i32>,
@@ -25749,12 +25886,16 @@ impl HybridModel {
             "gemma4_verify_attn_stream.ones",
         );
         let h0 = e.zeros(0)?;
-        let h = &h0;
+        let h = self.gemma4_attention_raw(e, fa, il, x, t)?;
+        // Keep fast siblings on their existing quantized path even when another needs F32.
+        let raw = |w: &crate::model::GpuTensor| if e.uses_q8_1_fast(w) { &h0 } else { &h };
+        let qk_fast = e.uses_q8_1_fast(&fa.wq) && e.uses_q8_1_fast(&fa.wk);
+        let qkv_fast = qk_fast && (!swa || e.uses_q8_1_fast(&fa.wv));
         // BATCHED FUSED qkv (MEMRA_F2B=1, megakernel microcosm): swa layers fuse all three,
         // globals fuse q,k (v := k clone). Bit-identical per row; segments tail-fill.
         static F2B_QKV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let f2b = *F2B_QKV.get_or_init(|| std::env::var("MEMRA_F2B").as_deref() != Ok("0"));
-        let fused_qkv = if f2b {
+        let fused_qkv = if f2b && qkv_fast {
             if swa {
                 e.matmul_q4_fused3_batched(&fa.wq, &fa.wk, &fa.wv, hq, hdq, t)?
                     .map(|(a, b, c)| (a, b, Some(c)))
@@ -25774,10 +25915,10 @@ impl HybridModel {
                 (a, b, v)
             }
             None => {
-                let q0 = e.matmul_pre(&fa.wq, hq, hdq, h, t)?;
-                let k0 = e.matmul_pre(&fa.wk, hq, hdq, h, t)?;
+                let q0 = e.matmul_pre(&fa.wq, hq, hdq, raw(&fa.wq), t)?;
+                let k0 = e.matmul_pre(&fa.wk, hq, hdq, raw(&fa.wk), t)?;
                 let v0 = if swa {
-                    e.matmul_pre(&fa.wv, hq, hdq, h, t)?
+                    e.matmul_pre(&fa.wv, hq, hdq, raw(&fa.wv), t)?
                 } else {
                     e.clone_dtod(&k0)?
                 };
@@ -25965,6 +26106,7 @@ impl HybridModel {
         e: &Engine,
         fa: &crate::hybrid::FullAttnLayer,
         il: usize,
+        x: &CudaSlice<f32>,
         hq: &CudaSlice<i8>,
         hdq: &CudaSlice<f32>,
         pos_d: &CudaSlice<i32>,
@@ -25981,12 +26123,16 @@ impl HybridModel {
         let _ = n_embd;
 
         let h0 = e.zeros(0)?;
-        let h = &h0;
+        let h = self.gemma4_attention_raw(e, fa, il, x, t)?;
+        // Keep fast siblings on their existing quantized path even when another needs F32.
+        let raw = |w: &crate::model::GpuTensor| if e.uses_q8_1_fast(w) { &h0 } else { &h };
+        let qk_fast = e.uses_q8_1_fast(&fa.wq) && e.uses_q8_1_fast(&fa.wk);
+        let qkv_fast = qk_fast && (!swa || e.uses_q8_1_fast(&fa.wv));
         // BATCHED FUSED qkv (MEMRA_F2B=1, megakernel microcosm): swa layers fuse all three,
         // globals fuse q,k (v := k clone). Bit-identical per row; segments tail-fill.
         static F2B_QKV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let f2b = *F2B_QKV.get_or_init(|| std::env::var("MEMRA_F2B").as_deref() != Ok("0"));
-        let fused_qkv = if f2b {
+        let fused_qkv = if f2b && qkv_fast {
             if swa {
                 e.matmul_q4_fused3_batched(&fa.wq, &fa.wk, &fa.wv, hq, hdq, t)?
                     .map(|(a, b, c)| (a, b, Some(c)))
@@ -26006,10 +26152,10 @@ impl HybridModel {
                 (a, b, v)
             }
             None => {
-                let q0 = e.matmul_pre(&fa.wq, hq, hdq, h, t)?;
-                let k0 = e.matmul_pre(&fa.wk, hq, hdq, h, t)?;
+                let q0 = e.matmul_pre(&fa.wq, hq, hdq, raw(&fa.wq), t)?;
+                let k0 = e.matmul_pre(&fa.wk, hq, hdq, raw(&fa.wk), t)?;
                 let v0 = if swa {
-                    e.matmul_pre(&fa.wv, hq, hdq, h, t)?
+                    e.matmul_pre(&fa.wv, hq, hdq, raw(&fa.wv), t)?
                 } else {
                     e.clone_dtod(&k0)?
                 };
@@ -26316,7 +26462,7 @@ impl HybridModel {
             let Mixer::Full(fa) = &layer.mixer else {
                 panic!("gemma4 layer {il} not full-attn")
             };
-            let o = self.gemma4_decode_attn(e, fa, il, &hq, &hdq, &pos_d, cache)?;
+            let o = self.gemma4_decode_attn(e, fa, il, &x, &hq, &hdq, &pos_d, cache)?;
             let next_norm = if il + 1 < n_layers {
                 Some(self.layers[il + 1].attn_norm.float_data())
             } else {
@@ -26369,7 +26515,7 @@ impl HybridModel {
             let Mixer::Full(fa) = &layer.mixer else {
                 panic!("gemma4 layer {il} not full-attn")
             };
-            let o = self.gemma4_decode_attn(e, fa, il, &hq, &hdq, pos_d, cache)?;
+            let o = self.gemma4_decode_attn(e, fa, il, &x, &hq, &hdq, pos_d, cache)?;
             let next_norm = if il + 1 < hi {
                 Some(self.layers[il + 1].attn_norm.float_data())
             } else {
@@ -30199,6 +30345,10 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<(CudaSlice<u32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        // Shared teacher-forced/prefill rows need a live eager baseline. Speculative
+        // session entry points additionally require their MTP/GLM5 surface receipt.
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let pos: Vec<i32> = (0..t).map(|i| (pos0 + i) as i32).collect();
@@ -30262,6 +30412,8 @@ impl HybridModel {
         n_vocab: usize,
         bucket: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         let n_embd = self.cfg.n_embd as usize;
         let mut x = e.embed_gather_device(embd_gpu, token_d, n_embd, embd_qt, embd_rb)?;
         e.scale_inplace(&mut x, (n_embd as f32).sqrt(), n_embd)?;
@@ -30292,6 +30444,8 @@ impl HybridModel {
         cache: &mut Cache,
         n_vocab: usize,
     ) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let mut x = e.embed_gather_device(embd_gpu, token_d, n_embd, embd_qt, embd_rb)?;
@@ -31007,6 +31161,8 @@ impl HybridModel {
         {
             return Ok(None);
         }
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         // GRAPH-LAUNCH HEADROOM GUARD (see spec::GRAPH_LAUNCH_MIN_FREE): the eager
         // token step is this route's byte-identical twin — warmup and rebase tokens
         // already ride it — so below the driver-free floor the token goes eager

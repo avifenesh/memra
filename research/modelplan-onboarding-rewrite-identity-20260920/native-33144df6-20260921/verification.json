@@ -1,0 +1,928 @@
+{
+  "status": "verified",
+  "source_commit": "33144df6d12c58a7821b351e18490cf8eff38f3e",
+  "archive_sha256": "3768705e617d301cd4131426e48c0073915181c7151e8ed4a9398481ede489f3",
+  "verified_at_utc": "2026-09-21T14:17:16.471493+00:00",
+  "phases": {
+    "baseline": {
+      "status": "passed",
+      "payloads_verified": 60,
+      "lease_closed": true
+    },
+    "supported-callers": {
+      "status": "passed",
+      "payloads_verified": 1114,
+      "lease_closed": true
+    },
+    "transfer": {
+      "status": "passed",
+      "payloads_verified": 11,
+      "lease_closed": true
+    },
+    "battery": {
+      "status": "passed",
+      "payloads_verified": 9,
+      "lease_closed": true
+    },
+    "router": {
+      "status": "passed",
+      "payloads_verified": 8,
+      "lease_closed": true
+    },
+    "gemma-prime": {
+      "status": "passed",
+      "payloads_verified": 8,
+      "lease_closed": true
+    }
+  },
+  "selected": {
+    "status": "passed",
+    "passed": 27,
+    "failed": 0,
+    "unrun": 0,
+    "index_quarantined": false,
+    "worker_cases_verified": [
+      {
+        "case": "worker-advance_sample_emit-library",
+        "snapshots_sha256": {
+          "cache.bin": "22550d534f728ee7a695e6407d12a8179bab1add37ec9e9c1c4daec061bee0ac",
+          "state.json": "3ed3f0108197410ba450c8645e1fa086049e89bea95dfbacb7c391027b64923a"
+        },
+        "refusals_verified": true
+      },
+      {
+        "case": "worker-advance_sample_emit-env",
+        "snapshots_sha256": {
+          "cache.bin": "22550d534f728ee7a695e6407d12a8179bab1add37ec9e9c1c4daec061bee0ac",
+          "state.json": "3ed3f0108197410ba450c8645e1fa086049e89bea95dfbacb7c391027b64923a"
+        },
+        "refusals_verified": true
+      },
+      {
+        "case": "worker-advance_token_emit-library",
+        "snapshots_sha256": {
+          "cache.bin": "22550d534f728ee7a695e6407d12a8179bab1add37ec9e9c1c4daec061bee0ac",
+          "state.json": "3ed3f0108197410ba450c8645e1fa086049e89bea95dfbacb7c391027b64923a"
+        },
+        "refusals_verified": true
+      },
+      {
+        "case": "worker-advance_token_emit-env",
+        "snapshots_sha256": {
+          "cache.bin": "22550d534f728ee7a695e6407d12a8179bab1add37ec9e9c1c4daec061bee0ac",
+          "state.json": "3ed3f0108197410ba450c8645e1fa086049e89bea95dfbacb7c391027b64923a"
+        },
+        "refusals_verified": true
+      },
+      {
+        "case": "worker-step_session-library",
+        "snapshots_sha256": {
+          "cache.bin": "df93ecd5b4b232dc7993c7e9a8b7ecafaa9861de2a9d3709d6695bff19b61c0d",
+          "state.json": "901b3acf029f30230f254d14e2992ec8dd6767952ed8815b02272fab6ab83ade"
+        },
+        "refusals_verified": true
+      },
+      {
+        "case": "worker-step_session-env",
+        "snapshots_sha256": {
+          "cache.bin": "df93ecd5b4b232dc7993c7e9a8b7ecafaa9861de2a9d3709d6695bff19b61c0d",
+          "state.json": "901b3acf029f30230f254d14e2992ec8dd6767952ed8815b02272fab6ab83ade"
+        },
+        "refusals_verified": true
+      },
+      {
+        "case": "worker-step_session_prefill-library",
+        "snapshots_sha256": {
+          "cache.bin": "482f28948342918d1d0010c25c05972ef5645b9fae42b1e29f7e55f5a7a5d5cb",
+          "state.json": "60fa84af5a9f3430fc588e5001599955cf3743a24e1b7e48d42d67563aeaf902"
+        },
+        "refusals_verified": true
+      },
+      {
+        "case": "worker-step_session_prefill-env",
+        "snapshots_sha256": {
+          "cache.bin": "482f28948342918d1d0010c25c05972ef5645b9fae42b1e29f7e55f5a7a5d5cb",
+          "state.json": "60fa84af5a9f3430fc588e5001599955cf3743a24e1b7e48d42d67563aeaf902"
+        },
+        "refusals_verified": true
+      },
+      {
+        "case": "worker-prefill_tick-library",
+        "snapshots_sha256": {
+          "cache.bin": "482f28948342918d1d0010c25c05972ef5645b9fae42b1e29f7e55f5a7a5d5cb",
+          "state.json": "60fa84af5a9f3430fc588e5001599955cf3743a24e1b7e48d42d67563aeaf902"
+        },
+        "refusals_verified": true
+      },
+      {
+        "case": "worker-prefill_tick-env",
+        "snapshots_sha256": {
+          "cache.bin": "482f28948342918d1d0010c25c05972ef5645b9fae42b1e29f7e55f5a7a5d5cb",
+          "state.json": "60fa84af5a9f3430fc588e5001599955cf3743a24e1b7e48d42d67563aeaf902"
+        },
+        "refusals_verified": true
+      },
+      {
+        "case": "worker-step_session_async_chain-library",
+        "snapshots_sha256": {
+          "cache.bin": "094746b2c6557aa610fa076bc1c9c26a5be712e35ee326c21ef39ab360a1b605",
+          "state.json": "097c038e41458c89550354ff0dcf5685242d8f368a73ce9d7cb47848eaff9030"
+        },
+        "refusals_verified": true
+      },
+      {
+        "case": "worker-step_session_async_chain-env",
+        "snapshots_sha256": {
+          "cache.bin": "094746b2c6557aa610fa076bc1c9c26a5be712e35ee326c21ef39ab360a1b605",
+          "state.json": "097c038e41458c89550354ff0dcf5685242d8f368a73ce9d7cb47848eaff9030"
+        },
+        "refusals_verified": true
+      }
+    ],
+    "fallback_max_abs_from_raw": {
+      "seed": 0.0,
+      "0": 0.0,
+      "1": 0.0,
+      "2": 0.0,
+      "3": 0.0,
+      "4": 0.0
+    },
+    "greedy_tokens": [
+      2,
+      3,
+      2,
+      3,
+      2
+    ],
+    "ordinary_and_batch_fallback_bytes_equal": true,
+    "matrix": {
+      "fresh-t15": [
+        {
+          "stream": 0,
+          "comparisons": {
+            "ordinary-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            }
+          },
+          "tokens": [
+            5,
+            3,
+            2,
+            5,
+            3
+          ]
+        }
+      ],
+      "fresh-t17": [
+        {
+          "stream": 0,
+          "comparisons": {
+            "ordinary-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            }
+          },
+          "tokens": [
+            3,
+            2,
+            3,
+            5,
+            3
+          ]
+        }
+      ],
+      "carried-t15": [
+        {
+          "stream": 0,
+          "comparisons": {
+            "ordinary-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            }
+          },
+          "tokens": [
+            5,
+            3,
+            5,
+            3,
+            5
+          ]
+        }
+      ],
+      "carried-t16": [
+        {
+          "stream": 0,
+          "comparisons": {
+            "ordinary-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            }
+          },
+          "tokens": [
+            5,
+            7,
+            11,
+            17,
+            19
+          ]
+        }
+      ],
+      "carried-t17": [
+        {
+          "stream": 0,
+          "comparisons": {
+            "ordinary-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            }
+          },
+          "tokens": [
+            7,
+            11,
+            17,
+            19,
+            23
+          ]
+        }
+      ],
+      "batch-15-16-17": [
+        {
+          "stream": 0,
+          "comparisons": {
+            "ordinary-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            }
+          },
+          "tokens": [
+            5,
+            3,
+            2,
+            5,
+            3
+          ]
+        },
+        {
+          "stream": 1,
+          "comparisons": {
+            "ordinary-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            }
+          },
+          "tokens": [
+            5,
+            7,
+            11,
+            17,
+            19
+          ]
+        },
+        {
+          "stream": 2,
+          "comparisons": {
+            "ordinary-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            }
+          },
+          "tokens": [
+            3,
+            2,
+            3,
+            5,
+            3
+          ]
+        }
+      ],
+      "batch-17-16-15": [
+        {
+          "stream": 0,
+          "comparisons": {
+            "ordinary-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            }
+          },
+          "tokens": [
+            3,
+            2,
+            3,
+            5,
+            3
+          ]
+        },
+        {
+          "stream": 1,
+          "comparisons": {
+            "ordinary-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            }
+          },
+          "tokens": [
+            5,
+            7,
+            11,
+            17,
+            19
+          ]
+        },
+        {
+          "stream": 2,
+          "comparisons": {
+            "ordinary-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-seed": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-hiddens": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-0": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-1": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-2": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-3": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "ordinary-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            },
+            "candidate-4": {
+              "max_abs": 0.0,
+              "byte_equal": true
+            }
+          },
+          "tokens": [
+            5,
+            3,
+            2,
+            5,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  "old_0ea0_status": "failed; sixteen cases remain unrun in that historical attempt",
+  "scoped_selected_campaign_passed": true,
+  "global_native_qualification_GO": false,
+  "merge_GO": false,
+  "Gemma_HPOST_export_pooling": "separate required native qualification, not established by these groups"
+}

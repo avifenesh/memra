@@ -2,6 +2,8 @@ use super::*;
 use crate::config::HfConfig;
 
 pub static PACK: ModelPack = ModelPack {
+    inventory_schema: None,
+    default_output_head: crate::tensor_contract::OutputHead::TiedToEmbedding,
     family: "gemma4_moe",
     output_head: OutputHeadContract::TiedHeadAllowed,
     tensor_consumption: TensorConsumption::Report,

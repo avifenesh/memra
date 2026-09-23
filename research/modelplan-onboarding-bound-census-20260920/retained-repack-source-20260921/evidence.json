@@ -1,0 +1,209 @@
+{
+  "base_commit": "0641c85b26beecf5586bbc4adf3ec5d3ecc8737a",
+  "source_sha256": {
+    "crates/memra-gguf/src/bound_source.rs": "fb3d45d330acb644d6945bcbce5736cc002a8f1da64f9bf6ca15ee1963076226",
+    "crates/memra-gguf/src/bound_source/runtime.rs": "29f63331f3692e852ef93135e13c9ddc6911494d02c30092735181da06ea29db",
+    "crates/memra-gguf/src/bound_source/tests.rs": "52017ee634c3f90fc63f732f880e37576ad11481c2348e2f4d4ac3d4124445c1",
+    "crates/memra-gguf/src/config.rs": "a260d878a264ddb7ae5de5739790f9f349f528b9ae060a92d430284ef903a49c",
+    "crates/memra-gguf/src/safetensors.rs": "32ad4e5538dd3bd79156ffc3b08f35f52b0b252c3b19c99aad8193ff16fc820b",
+    "crates/memra-gguf/src/source.rs": "92cd5003332a5e8755e51c511d0e46998120551efa8ea5f3d23f3eaf682b5cc7",
+    "crates/memra-gguf/src/source/bound.rs": "6368399d3fdd78d5fa4e56aeaadb8e6b8252594168d0ea705c1450043fd761b2"
+  },
+  "commands": [
+    {
+      "name": "focused",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "memra-gguf",
+        "--lib",
+        "retained_repack",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 4.843181125004776
+    },
+    {
+      "name": "compiler-cli-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 26.66300229099579
+    },
+    {
+      "name": "compiler-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 3.4265057909069583
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 3.993654708028771
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 0.07810937508475035
+    },
+    {
+      "name": "runtime-identity-host",
+      "command": [
+        "python3",
+        "research/modelplan-onboarding-rewrite-identity-20260920/run-host-tests.py",
+        "--offline"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "linux-engine-server-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "-p",
+        "memra-server",
+        "--lib",
+        "--bins",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0
+    }
+  ],
+  "source_review": "changes_required",
+  "cuda_executed": false,
+  "root_activation": false,
+  "fallback_overlay_activation": false,
+  "raw": {
+    "raw/compiler-cli-tests.log.gz": {
+      "sha256": "4d459f6e50f126072d6035e6719e6fadb7575b0b684c77dec7a091070f2bdd17",
+      "uncompressed_sha256": "ca65979c6b29c9b43346b48370b95713a144d842e225523dd6e0f728020884df",
+      "uncompressed_bytes": 37418
+    },
+    "raw/compiler-clippy.log.gz": {
+      "sha256": "2d1fa4aed3ea699e8b95a068617d07c22451a5eb94d5f27f38ec7192113c5262",
+      "uncompressed_sha256": "8c0592bc72116f62372f8b8890b4c11e8c09f6b97a8954a244b6fe81f4b19781",
+      "uncompressed_bytes": 550
+    },
+    "raw/diff.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/focused.log.gz": {
+      "sha256": "8d294db86853ec339cb35a480af88379ed89ce6d29f2dcf17ec3defa7c9bc672",
+      "uncompressed_sha256": "47d142eb923cb68f232f0b0038c30b79abb6c6e6a9f5a858fe1fdb6e93d58b19",
+      "uncompressed_bytes": 968
+    },
+    "raw/format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/linux-engine-server-clippy.log.gz": {
+      "sha256": "5d20191aad5f89e37eb3b95583c62ef2b77b54071ad621ad0402921664eb0902",
+      "uncompressed_sha256": "137243c66c7b75cfeb17de334d9b8b3538a21b606ced77f8b668d94bb2008ca6",
+      "uncompressed_bytes": 1064
+    },
+    "raw/runtime-identity-host.log.gz": {
+      "sha256": "e75d6f5cc772a0c3e05a4ffb47bd8336b313294a9ff61238e48b6e38ba16d3c0",
+      "uncompressed_sha256": "ecf58e8a0f2159306f9c0be12d05f6b1cbfdf508d4ba46661d4c6add8e70989b",
+      "uncompressed_bytes": 3064
+    },
+    "raw/result.json.gz": {
+      "sha256": "0392c00cdea2c2ba72ce2d2fcaf2f67ba7df4f5b78765b83913e6d1da65b76b5",
+      "uncompressed_sha256": "2dbf0f822a77eeadf3a3ea3fbdbf99b3c1157665b023e6041ad8ec9a4a83e054",
+      "uncompressed_bytes": 1141
+    },
+    "raw/541-retained-repack-targeted-final.log.gz": {
+      "sha256": "bd451ef877e58320480a20b38da66828fe5c27b42e6ba3a2492a61666a892193",
+      "uncompressed_sha256": "f1058b9b705d2e3fc70419a4088c3f36541deb8585314e310d711d436861e436",
+      "uncompressed_bytes": 1443
+    },
+    "raw/541-retained-repack-targeted-fourth.log.gz": {
+      "sha256": "7e7a66eebdbb2d930c8e94cb72b74076f68b110d96db1cbcbc1804f972e637f0",
+      "uncompressed_sha256": "a6710d1a0acdc4d67a3b78bc6182c44faa1cccb3f213e676b0f47e22a5e9d1ea",
+      "uncompressed_bytes": 679
+    },
+    "raw/541-retained-repack-targeted-initial.log.gz": {
+      "sha256": "239cd83dbebc389f5455379b5e90c9456ed178acbfbd85263a2e4b26e52b2d51",
+      "uncompressed_sha256": "691ea76b81dd6360198b9210da883dd19f514d4124fa75ea96d85bca6f7c0cec",
+      "uncompressed_bytes": 2605
+    },
+    "raw/541-retained-repack-targeted-second.log.gz": {
+      "sha256": "9f45510b898828631f3992fc940bdc2afd11e4156ecf0977395a6970efa1657f",
+      "uncompressed_sha256": "1e883ddc8aa068e880e17a03f36b49b945e66749dca205f1da75cde6a72db4c0",
+      "uncompressed_bytes": 1687
+    },
+    "raw/541-retained-repack-targeted-third.log.gz": {
+      "sha256": "4f35c2fb5bf7025d61a965d3d95dadace128aed52b208acdbee9de5e0e801840",
+      "uncompressed_sha256": "8088d5da350256feb54264578a8537ee0f586b0592e5cf2b8828823c1f717045",
+      "uncompressed_bytes": 603
+    }
+  },
+  "test_binary_sha256": {
+    "target/debug/deps/memra_cli-375522d27bfc8b2f": "b6cba78c14b97d2a3e6af703490baace474ecd52275ca5ae8dd390ed3dbcb828",
+    "target/debug/deps/memra-2a4bd065550b0f02": "bec8c9215008f0d0dbd041ea0bb0b266e2dbeddf9d334c36ce5c3d51186be554",
+    "target/debug/deps/step_rope_contract-ca6b3875a3cc9aa5": "f70d542b2bb2ab2dd9dc1594894f9499825d5300931f3f9fe854e31b1a458c59",
+    "target/debug/deps/memra_gguf-e80b7f4edcbfcfe8": "2563c9fc8861375e9ff158a3142234e4c4969b93fae20932b79309a2e3668c43",
+    "target/debug/deps/dsv4_census-353e10666af2f08d": "c7ad770239762d2cbb3ffae60f145aff5c9b0b5111bcbdcc4d04dff6480ee7d4",
+    "target/debug/deps/dsv4_decode_oracle_check-d17719eb5549a24e": "bf20772c6cdaf4e4720f62ab1584e052320eb587f66b9d4fb258921d23d81d72",
+    "target/debug/deps/dsv4_dspark_gate-e2d6c08311bd10c0": "8b77c5c789da7f392a5377a31259a404dd50b11a355598f4540035feba273b42",
+    "target/debug/deps/dsv4_forward-f74ab49bb06b6ce0": "f5d175a63940fe28363693d45a8c4e817fc78c3b329039db629a6c229a9b2d40",
+    "target/debug/deps/dsv4_greedy_verify-fc4f8049ee68dcd4": "af0368a6f2c41d90847f679092ac1eafd1aeca711cd8a96d8b10a508d3e2c03d",
+    "target/debug/deps/dsv4_mtp_probe-ba7dd4be4b4c7382": "d845a7a3a712683c229bf4bcbb34a19ba86a89a13df8dc895c546a162cb13cd2",
+    "target/debug/deps/dsv4_mint-6a94b87ed0f226d5": "29eb08c8b40dc3c1cf34903500c1e4cbf3f3913922fe417eb30fd59afb8a4a9b",
+    "target/debug/deps/gguf_inspect-47df925150ce6d3c": "bb0ae43b81a99aac7f92d936934862ec92fcf03188d076e80db2318462146529",
+    "target/debug/deps/nvfp4_validate-f53295fd4b7a0719": "b32dec2fbabb23730c5128b477a6c732ceaeadb434c63d3637fdc76b61dc4991",
+    "target/debug/deps/sealed_preflight-841bbeb6a86735f3": "e9de96681fdc9fdc4b3c684cd6f8a200eaf48385d2f7ab89672fd7da81dbac01"
+  },
+  "source_commit": "86751a19cd577058453cfe70024484d7d28f0883",
+  "source_GO": false,
+  "open_finding": "escaped JSON declarations can disappear across structural validation and legacy interpretation",
+  "repair_bank": "../repack-json-repair-20260921/",
+  "finding_id": "ARCH541-REPACK-JSON-01"
+}

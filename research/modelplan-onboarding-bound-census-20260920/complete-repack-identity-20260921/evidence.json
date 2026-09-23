@@ -1,0 +1,175 @@
+{
+  "base_commit": "367b1eaf8dd854d3585cd8daad96c367cc6ad7d8",
+  "source_sha256": {
+    "crates/memra-gguf/src/source.rs": "33e3134469b28e6b8b60131331211110a5be9abf36becc20ba2469654fb67fc0",
+    "crates/memra-gguf/src/bound_source/tests.rs": "710761f519adece0c18e498cdb4a2ead165010f6768abd0a4d3dd57a4cf199b3",
+    "crates/memra-gguf/src/source/bound.rs": "08fe59b6a31dd5769e7c8d8499c48519bca887bf232f4ab7e4a45e1577869061",
+    "crates/memra-gguf/src/bound_source.rs": "bdd96a392601ce41d61046dd3db4a5f4eae92602a82843c0966209973242f0d3",
+    "crates/memra-gguf/src/bound_source/runtime.rs": "c2303207f4ba228ba5f828f23d22e50d4fac46a94134b41515ef787e8243b055"
+  },
+  "commands": [
+    {
+      "name": "compiler-tests",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 25.851053375052288
+    },
+    {
+      "name": "compiler-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 3.438602791982703
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 3.991917167091742
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 0.07098366704303771
+    },
+    {
+      "name": "targeted",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-gguf",
+        "--lib",
+        "artifact_sha256_repack",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "runtime-identity-host",
+      "command": [
+        "python3",
+        "research/modelplan-onboarding-rewrite-identity-20260920/run-host-tests.py",
+        "--offline"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "linux-engine-server-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "-p",
+        "memra-server",
+        "--lib",
+        "--bins",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0
+    }
+  ],
+  "source_review": "pass",
+  "cuda_executed": false,
+  "root_activation": false,
+  "raw": {
+    "raw/format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/linux-engine-server-clippy.log.gz": {
+      "sha256": "6a2179e519f5b26de5264b041aef09729c09f7f581269fad6a75bd69a4019d78",
+      "uncompressed_sha256": "6cebd6787731746a321dad8ef9f005f1e23179c7348d589d29b1992510b11b6b",
+      "uncompressed_bytes": 5648
+    },
+    "raw/compiler-clippy.log.gz": {
+      "sha256": "df36e4706cab4b04c5087960673741e62b25169862de542c428c667a96e52b53",
+      "uncompressed_sha256": "aa215a9336654a7a7598159547376acb9088a002ae33a69bad9d77ee22b0879f",
+      "uncompressed_bytes": 550
+    },
+    "raw/runtime-identity-host.log.gz": {
+      "sha256": "2faf9562aa0ae54d4106d2e2b32f38de8d6d670a64e5ca11a0409b2b43ab0123",
+      "uncompressed_sha256": "0ccda05a584346ecb5ee3868ff223d58bbe719b8a9f3d06340d07183bf4143e7",
+      "uncompressed_bytes": 3116
+    },
+    "raw/diff.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/compiler-tests.log.gz": {
+      "sha256": "f915a97a89c699af605fb6d2ea18915f387b8ac4cbf511dfb78dc5c23c90b5d4",
+      "uncompressed_sha256": "b493143dced9257cfd39820f3ed7baf9b2b995f3ed73f1d9ae62343f39cbccd5",
+      "uncompressed_bytes": 36510
+    },
+    "raw/result.json.gz": {
+      "sha256": "e6d3699d4005e5eb1858bbd73e3bc3d1e253eee1a9340cb0d6c53b9307375284",
+      "uncompressed_sha256": "f98908bc9260f4b866ea3818742203ca926ad321ee9c5126e335d62d4333150a",
+      "uncompressed_bytes": 836
+    },
+    "raw/541-complete-repack-identity-targeted.log.gz": {
+      "sha256": "91dafc27fc3a7fae6dc2dc928fecc01d44c25bdf827daa37d8ea61b94a06d39f",
+      "uncompressed_sha256": "ce6c2cfd4117431d30e4ab309d0b21fef7630239d6cf35e6139dead362e23236",
+      "uncompressed_bytes": 831
+    }
+  },
+  "test_binary_sha256": {
+    "target/debug/deps/memra_cli-375522d27bfc8b2f": "be472e69260db64833a146f024d1168847cfce61233fd4815c720b241a944c55",
+    "target/debug/deps/memra-2a4bd065550b0f02": "bd892ae7b08d10330f5101d13941393fee5a54ef50ea44a5203160d09c09600b",
+    "target/debug/deps/step_rope_contract-ca6b3875a3cc9aa5": "d9fbfa4b6849a1f2c5ead8267a569d5d5ce1da7aca452282d66b98449f9736dd",
+    "target/debug/deps/memra_gguf-e80b7f4edcbfcfe8": "4a622e65d041932ff3e35bda70e1e1359098be8ebbc78466d9e4404c515daafe",
+    "target/debug/deps/dsv4_census-353e10666af2f08d": "d93d510ae2597a1883d369a100581400b3bdb17ec50516bd7bc87f8f3ce8c253",
+    "target/debug/deps/dsv4_decode_oracle_check-d17719eb5549a24e": "166dbf8410bc433a01da30a4581802825ee1cf49f0a8edb02411bd0046c37a80",
+    "target/debug/deps/dsv4_dspark_gate-e2d6c08311bd10c0": "95f77dcdfecda3a2b26171a86180a7abe83dc6b687c7d6e41bc1dc6c0933a1f7",
+    "target/debug/deps/dsv4_forward-f74ab49bb06b6ce0": "b6ccedcca351e9966c4f156f53cdf16548cb444820efc7771dd3451d15ae16a6",
+    "target/debug/deps/dsv4_greedy_verify-fc4f8049ee68dcd4": "59902416b6d2b4ce46497b8fd83dabae6534f10923fd31b5bb15b5a9b3ff5d95",
+    "target/debug/deps/dsv4_mtp_probe-ba7dd4be4b4c7382": "2eb6af33305723f18b1e55d1dcce498db9c17694346e50f65a28924c7b115425",
+    "target/debug/deps/dsv4_mint-6a94b87ed0f226d5": "9752d88921f44ff1f6fea7877a98b67d61abe38b860a700e8cba68194f050768",
+    "target/debug/deps/gguf_inspect-47df925150ce6d3c": "cce6fad2d8fa62564848e4946a6e7b33db75cb93f5477bf5b580b7288acff4b9",
+    "target/debug/deps/nvfp4_validate-f53295fd4b7a0719": "6676bb31642726f6a31aba79a119c0c55b31382dab5870bdef455d106f5a5220",
+    "target/debug/deps/sealed_preflight-841bbeb6a86735f3": "66116119feecabce82dc676967f5472cd94291abde775e827b7a536991c49992"
+  },
+  "reviewed_source_commit": "82a28b225557f17ff80bb9a8daf08dec33daa752",
+  "source_GO": true,
+  "review_bank": "review/"
+}

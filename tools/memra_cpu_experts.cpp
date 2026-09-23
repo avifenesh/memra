@@ -3,6 +3,7 @@
 // quantizer, SIMD dot products, storage pipeline, and stable C ABI. No external inference runtime
 // is compiled, linked, or loaded.
 
+#include "memra_cpu_scoped_reader.h"
 #include <omp.h>
 #include <immintrin.h>
 #include <fcntl.h>
@@ -36,9 +37,19 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#ifdef MEMRA_CPU_SCOPED_TEST_OBSERVER
+extern "C" void memra_cpu_test_before_scoped_read(std::int32_t alternate, std::size_t length);
+extern "C" void memra_cpu_test_after_scoped_prefetch_job(std::int32_t alternate);
+#endif
+
+#ifdef MEMRA_CPU_QUEUE_TEST
+extern "C" void memra_cpu_test_before_queue_publish();
+#endif
 
 extern "C" {
 
@@ -1453,6 +1464,9 @@ struct ProjectionRuntime {
     std::int32_t read_fd = -1;
     std::int32_t alternate_read_fd = -1;
     CacheKey cache_key;
+    std::shared_ptr<MemraScopedReader> scoped_reader;
+    std::shared_ptr<MemraScopedReader> scoped_alternate;
+    bool mirrored() const { return bool(scoped_alternate) || alternate_read_fd >= 0; }
 };
 
 struct ExpertRuntime {
@@ -1601,6 +1615,15 @@ public:
 
     ~MirrorFiles() {
         for (const auto & [_, mirror] : files_) close(mirror.fd);
+    }
+
+    // Reuse the same immutable map for scoped readers without exporting an opened descriptor.
+    const MirrorSpec * declaration(const FileKey & source) const {
+        if (paths_.empty()) return nullptr;
+        const auto spec = paths_.find(source.inode);
+        if (spec == paths_.end()) throw std::runtime_error("CPU expert source inode is absent from mirror map");
+        if (!(spec->second.source == source)) throw std::runtime_error("CPU expert source generation differs from mirror map");
+        return &spec->second;
     }
 
     int resolve(int source_fd, const FileKey & source) {
@@ -2145,9 +2168,70 @@ void copy_error(char * dst, std::size_t capacity, const std::string & message) {
     dst[count] = '\0';
 }
 
+std::shared_ptr<MemraScopedReader> retain_scoped_reader(
+        const memra_cpu_projection_v2 & desc, const memra_scoped_disk_reader_v1 * scoped) {
+    if (!scoped) return {};
+    if (desc.file_fd >= 0) throw std::runtime_error("scoped CPU projection also exposes a raw fd");
+    auto reader = std::make_shared<MemraScopedReader>(*scoped);
+    const auto & info = reader->info();
+    if (info.len != desc.byte_len) throw std::runtime_error("scoped CPU projection length mismatch");
+    const bool direct = direct_io_enabled() && info.offset % 4096 == 0 && desc.byte_len % 4096 == 0;
+    if (bool(info.direct) != direct) throw std::runtime_error("scoped CPU reader I/O mode differs from backend policy");
+    return reader;
+}
+
+CacheKey projection_cache_key(const memra_cpu_projection_v2 & desc,
+                              const std::shared_ptr<MemraScopedReader> & scoped) {
+    if (!scoped) return CacheKey { file_key(desc.file_fd), desc.file_offset, desc.byte_len };
+    const auto & info = scoped->info();
+    return CacheKey { FileKey { InodeKey { info.device, info.inode }, info.file_bytes,
+                                info.ctime_seconds, info.ctime_nanoseconds }, info.offset, desc.byte_len };
+}
+
+void retain_scoped_mirror(ProjectionRuntime & runtime,
+                          const memra_scoped_disk_reader_v1 * alternate) {
+    if (!runtime.scoped_reader) {
+        if (alternate) throw std::runtime_error("scoped mirror has no scoped primary");
+        return;
+    }
+    const auto & info = runtime.scoped_reader->info();
+    const auto spec = info.direct ? mirror_files().declaration(runtime.cache_key.file) : nullptr;
+    if (!spec) {
+        if (alternate) throw std::runtime_error("scoped mirror has no active map declaration");
+        return;
+    }
+    if (!alternate) throw std::runtime_error("scoped CPU mirror needs its verified alternate reader");
+    auto reader = std::make_shared<MemraScopedReader>(*alternate);
+    const auto & a = reader->info();
+    const FileKey actual {InodeKey {a.device,a.inode},a.file_bytes,a.ctime_seconds,a.ctime_nanoseconds};
+    if (!(actual == spec->alternate) || a.device == info.device || a.file_bytes != info.file_bytes
+        || a.offset != info.offset || a.len != info.len || a.direct != 1) {
+        throw std::runtime_error("scoped CPU alternate differs from the mirror declaration or range");
+    }
+    runtime.scoped_alternate = std::move(reader);
+}
+
+void prepare_projection_read(ProjectionRuntime & runtime) {
+    const auto & desc = *runtime.desc;
+    const bool direct = direct_io_enabled()
+        && runtime.cache_key.offset % 4096 == 0 && desc.byte_len % 4096 == 0;
+    runtime.weight_owner = std::make_shared<AlignedBytes>();
+    runtime.weight_owner->resize(desc.byte_len, direct ? 4096 : 64);
+    if (!runtime.scoped_reader) {
+        runtime.read_fd = direct
+            ? direct_files().resolve(desc.file_fd, runtime.cache_key.file.inode) : desc.file_fd;
+        runtime.alternate_read_fd = direct
+            ? mirror_files().resolve(desc.file_fd, runtime.cache_key.file) : -1;
+    }
+    runtime.needs_read = true;
+}
+
 ProjectionRuntime prepare_projection(
-        const memra_cpu_projection_v2 & desc) {
-    if ((desc.weights == nullptr && desc.file_fd < 0)
+        const memra_cpu_projection_v2 & desc,
+        const memra_scoped_disk_reader_v1 * scoped = nullptr,
+        const memra_scoped_disk_reader_v1 * alternate = nullptr) {
+    if (alternate && !scoped) throw std::runtime_error("scoped mirror has no scoped primary");
+    if ((desc.weights == nullptr && desc.file_fd < 0 && scoped == nullptr)
         || desc.in_features <= 0 || desc.out_features <= 0) {
         throw std::runtime_error("invalid CPU expert projection descriptor");
     }
@@ -2170,10 +2254,11 @@ ProjectionRuntime prepare_projection(
     }
     ProjectionRuntime runtime;
     runtime.desc = &desc;
-    if (desc.file_fd >= 0) {
-        const FileKey source = file_key(desc.file_fd);
-        const CacheKey key { source, desc.file_offset, desc.byte_len };
+    if (scoped != nullptr || desc.file_fd >= 0) {
+        runtime.scoped_reader = retain_scoped_reader(desc, scoped);
+        const CacheKey key = projection_cache_key(desc, runtime.scoped_reader);
         runtime.cache_key = key;
+        retain_scoped_mirror(runtime, alternate);
         runtime.weight_owner = weight_cache().find(key);
         if (!runtime.weight_owner) {
             // Demand miss: promote a speculated buffer from the prefetch annex if one landed.
@@ -2183,18 +2268,9 @@ ProjectionRuntime prepare_projection(
             }
         }
         if (!runtime.weight_owner) {
-            runtime.weight_owner = std::make_shared<AlignedBytes>();
-            const bool direct = direct_io_enabled()
-                && desc.file_offset % 4096 == 0 && desc.byte_len % 4096 == 0;
-            runtime.weight_owner->resize(desc.byte_len, direct ? 4096 : 64);
-            runtime.read_fd = direct
-                ? direct_files().resolve(desc.file_fd, source.inode)
-                : desc.file_fd;
-            runtime.alternate_read_fd = direct
-                ? mirror_files().resolve(desc.file_fd, source)
-                : -1;
-            runtime.needs_read = true;
+            prepare_projection_read(runtime);
         }
+
         runtime.weights = static_cast<const std::uint8_t *>(runtime.weight_owner->data);
     } else {
         runtime.weights = desc.weights;
@@ -2203,7 +2279,15 @@ ProjectionRuntime prepare_projection(
 }
 
 int pread_exact(const ProjectionRuntime & projection, int fd, void * destination,
-                std::size_t relative_offset, std::size_t length) {
+                std::size_t relative_offset, std::size_t length, bool alternate = false) {
+    if (projection.scoped_reader) {
+#ifdef MEMRA_CPU_SCOPED_TEST_OBSERVER
+        memra_cpu_test_before_scoped_read(alternate ? 1 : 0, length);
+#endif
+        const auto & reader = alternate ? projection.scoped_alternate : projection.scoped_reader;
+        if (!reader) return EINVAL;
+        return reader->read_exact(destination, relative_offset, length);
+    }
     const auto & desc = *projection.desc;
     std::size_t done = 0;
     auto * bytes = static_cast<std::uint8_t *>(destination);
@@ -2229,6 +2313,7 @@ struct ReadRequest {
     int fd;
     std::size_t offset;
     std::size_t length;
+    bool alternate = false;
 };
 
 // ---- asynchronous read pipeline -------------------------------------------------------------
@@ -2284,6 +2369,7 @@ struct IoJob {
     int expert_index = -1;
     CallIoState * call = nullptr;
     PrefetchState * prefetch = nullptr;  // set instead of `call` for detached prefetch reads
+    bool alternate = false;
 };
 
 class IoPool {
@@ -2314,9 +2400,15 @@ public:
     }
 
     void submit(std::vector<IoJob> && jobs) {
+        if (jobs.empty()) return;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            for (auto & job : jobs) queue_.push_back(job);
+            // deque insertion has the strong guarantee with this noexcept-movable batch:
+            // either the whole owned vector is published or no job becomes visible.
+#ifdef MEMRA_CPU_QUEUE_TEST
+            memra_cpu_test_before_queue_publish();
+#endif
+            queue_.push_back(QueuedBatch { std::move(jobs), 0 });
         }
         queue_cv_.notify_all();
     }
@@ -2363,13 +2455,14 @@ private:
                 std::unique_lock<std::mutex> lock(mutex_);
                 queue_cv_.wait(lock, [this] { return stopping_ || !queue_.empty(); });
                 if (queue_.empty()) return;
-                job = queue_.front();
-                queue_.pop_front();
+                auto & batch = queue_.front();
+                job = batch.jobs[batch.next++];
+                if (batch.next == batch.jobs.size()) queue_.pop_front();
             }
             auto * destination = static_cast<std::uint8_t *>(
                 job.projection->weight_owner->data) + job.offset;
             const int status = pread_exact(
-                *job.projection, job.fd, destination, job.offset, job.length);
+                *job.projection, job.fd, destination, job.offset, job.length, job.alternate);
             if (job.prefetch != nullptr) {
                 auto * state = job.prefetch;
                 const std::size_t index = static_cast<std::size_t>(job.expert_index);
@@ -2393,6 +2486,9 @@ private:
                     // (memra#586, tools/test_cpu_expert_prefetch.sh).
                     prefetch_inflight().fetch_sub(1, std::memory_order_relaxed);
                 }
+#ifdef MEMRA_CPU_SCOPED_TEST_OBSERVER
+                if (job.projection->scoped_reader) memra_cpu_test_after_scoped_prefetch_job(job.alternate ? 1 : 0);
+#endif
                 if (state->outstanding.fetch_sub(1, std::memory_order_acq_rel) == 1) {
                     delete state;
                 }
@@ -2413,7 +2509,18 @@ private:
 
     std::mutex mutex_;
     std::condition_variable queue_cv_;
-    std::deque<IoJob> queue_;
+    struct QueuedBatch {
+        std::vector<IoJob> jobs;
+        std::size_t next;
+    };
+    static_assert(std::is_nothrow_move_constructible<QueuedBatch>::value,
+                  "queue publication requires a noexcept whole-batch move");
+#ifdef MEMRA_CPU_QUEUE_TEST
+    friend struct MemraCpuQueueTestAccess;
+    std::deque<QueuedBatch, MemraCpuQueueTestAllocator<QueuedBatch>> queue_;
+#else
+    std::deque<QueuedBatch> queue_;
+#endif
     std::vector<std::thread> workers_;
     bool stopping_ = false;
 };
@@ -2438,7 +2545,7 @@ void append_projection_jobs(
     if (!projection.needs_read) return;
     const std::size_t length = projection.desc->byte_len;
     int requests = 0;
-    if (projection.alternate_read_fd >= 0 && length >= 8192) {
+    if (projection.mirrored() && length >= 8192) {
         const std::size_t split = (length / 2) & ~std::size_t(4095);
         jobs.push_back(IoJob { &projection, projection.read_fd, 0, split, expert_index, &state });
         jobs.push_back(IoJob {
@@ -2448,6 +2555,8 @@ void append_projection_jobs(
             length - split,
             expert_index,
             &state,
+            nullptr,
+            true,
         });
         requests = 2;
     } else {
@@ -2463,7 +2572,7 @@ void load_projection_weights(std::vector<ProjectionRuntime *> & projections, int
     for (auto * projection : projections) {
         if (!projection->needs_read) continue;
         const std::size_t length = projection->desc->byte_len;
-        if (projection->alternate_read_fd >= 0 && length >= 8192) {
+        if (projection->mirrored() && length >= 8192) {
             const std::size_t split = (length / 2) & ~std::size_t(4095);
             reads.push_back(ReadRequest { projection, projection->read_fd, 0, split });
             reads.push_back(ReadRequest {
@@ -2471,6 +2580,7 @@ void load_projection_weights(std::vector<ProjectionRuntime *> & projections, int
                 projection->alternate_read_fd,
                 split,
                 length - split,
+                true,
             });
         } else {
             reads.push_back(ReadRequest { projection, projection->read_fd, 0, length });
@@ -2486,7 +2596,7 @@ void load_projection_weights(std::vector<ProjectionRuntime *> & projections, int
             auto * destination = static_cast<std::uint8_t *>(
                 read.projection->weight_owner->data) + read.offset;
             read_errors[index] = pread_exact(
-                *read.projection, read.fd, destination, read.offset, read.length);
+                *read.projection, read.fd, destination, read.offset, read.length, read.alternate);
         }
     }
     profile.io_ns.fetch_add(elapsed_ns(io_start), std::memory_order_relaxed);
@@ -2669,6 +2779,22 @@ std::uint64_t compute_call_single_region(
     return io_wait_ns;
 }
 
+struct ScopedCallReaders {
+    std::vector<ExpertRuntime> & runtime;
+    bool active;
+    ~ScopedCallReaders() {
+        if (!active) return;
+        for (auto & expert : runtime) {
+            expert.gate.scoped_reader.reset();
+            expert.up.scoped_reader.reset();
+            expert.down.scoped_reader.reset();
+            expert.gate.scoped_alternate.reset();
+            expert.up.scoped_alternate.reset();
+            expert.down.scoped_alternate.reset();
+        }
+    }
+};
+
 } // namespace
 
 int memra_cpu_moe_token_impl(
@@ -2678,7 +2804,9 @@ int memra_cpu_moe_token_impl(
         float * output,
         std::int32_t threads,
         char * error,
-        std::size_t error_capacity) try {
+        std::size_t error_capacity,
+        const memra_scoped_disk_reader_v1 * const * readers = nullptr,
+        const memra_scoped_disk_reader_v1 * const * alternates = nullptr) try {
     if (experts == nullptr || input == nullptr || output == nullptr || expert_count <= 0) {
         throw std::runtime_error("null or empty CPU expert invocation");
     }
@@ -2701,6 +2829,7 @@ int memra_cpu_moe_token_impl(
     thread_local std::vector<ExpertRuntime> runtime_scratch;
     auto & runtime = runtime_scratch;
     runtime.resize(static_cast<std::size_t>(n_experts));
+    ScopedCallReaders scoped_lifetimes { runtime, readers != nullptr };
     for (int expert = 0; expert < n_experts; ++expert) {
         const auto & desc = experts[expert];
         if (desc.gate.in_features != n_embd || desc.up.in_features != n_embd
@@ -2709,9 +2838,9 @@ int memra_cpu_moe_token_impl(
             throw std::runtime_error("inconsistent CPU expert projection dimensions");
         }
         auto & work = runtime[expert];
-        work.gate = prepare_projection(desc.gate);
-        work.up = prepare_projection(desc.up);
-        work.down = prepare_projection(desc.down);
+        work.gate = prepare_projection(desc.gate, readers ? readers[3 * expert] : nullptr, alternates ? alternates[3 * expert + 0] : nullptr);
+        work.up = prepare_projection(desc.up, readers ? readers[3 * expert + 1] : nullptr, alternates ? alternates[3 * expert + 1] : nullptr);
+        work.down = prepare_projection(desc.down, readers ? readers[3 * expert + 2] : nullptr, alternates ? alternates[3 * expert + 2] : nullptr);
         work.activation.resize(n_ff);
         work.gate_output.resize(n_ff);
         work.up_output.resize(n_ff);
@@ -2746,11 +2875,11 @@ int memra_cpu_moe_token_impl(
             }
         }
         io_state.outstanding_experts = static_cast<int>(missing_experts.size());
-        drain_guard.state = &io_state;
         if (!jobs.empty()) {
             auto & pool = IoPool::instance();
             pool.ensure_started(io_threads);
             pool.submit(std::move(jobs));
+            drain_guard.state = &io_state;
         }
     } else {
         std::vector<ProjectionRuntime *> projections;
@@ -2836,6 +2965,18 @@ extern "C" int memra_cpu_moe_token_v2(
         experts, expert_count, input, output, threads, error, error_capacity);
 }
 
+// Optional extension: existing v2 descriptors and numerical program, with one retained reader
+// per projection. Null entries retain the original memory/raw-source behavior.
+extern "C" int memra_cpu_moe_token_scoped_v1(
+        const memra_cpu_expert_v2 * experts, std::int32_t expert_count,
+        const float * input, float * output, std::int32_t threads,
+        char * error, std::size_t error_capacity,
+        const memra_scoped_disk_reader_v1 * const * readers) {
+    if (!readers) { copy_error(error, error_capacity, "missing scoped CPU readers"); return 1; }
+    return memra_cpu_moe_token_impl(experts, expert_count, input, output, threads,
+                                    error, error_capacity, readers);
+}
+
 // Lane-3 M3: one EXPERT evaluated for m_r activation rows in a single call. The weight
 // bytes stream through the caches once and each weight-row's decode is amortized across all
 // rows (dot_row_multi). `scaled` outputs are per-row down-projections times the expert's down
@@ -2857,7 +2998,9 @@ std::int32_t expert_rows_impl(
         float * outputs,
         std::int32_t threads,
         char * error,
-        std::size_t error_capacity) try {
+        std::size_t error_capacity,
+        const memra_scoped_disk_reader_v1 * const * readers = nullptr,
+        const memra_scoped_disk_reader_v1 * const * alternates = nullptr) try {
     if (expert == nullptr || inputs == nullptr || outputs == nullptr
         || (scaled && route_weights == nullptr) || m_r <= 0 || m_r > 64 || threads <= 0) {
         throw std::runtime_error("invalid CPU expert rows invocation (m_r must be 1..=64)");
@@ -2875,9 +3018,9 @@ std::int32_t expert_rows_impl(
         throw std::runtime_error("CPU expert dimensions must be positive multiples of 16");
     }
     ExpertRuntime work;
-    work.gate = prepare_projection(expert->gate);
-    work.up = prepare_projection(expert->up);
-    work.down = prepare_projection(expert->down);
+    work.gate = prepare_projection(expert->gate, readers ? readers[0] : nullptr, alternates ? alternates[0] : nullptr);
+    work.up = prepare_projection(expert->up, readers ? readers[1] : nullptr, alternates ? alternates[1] : nullptr);
+    work.down = prepare_projection(expert->down, readers ? readers[2] : nullptr, alternates ? alternates[2] : nullptr);
     omp_set_dynamic(0);
     omp_set_num_threads(threads);
     std::vector<ProjectionRuntime *> projections {
@@ -3009,15 +3152,46 @@ extern "C" std::int32_t memra_cpu_expert_rows_raw_v2(
                             error, error_capacity);
 }
 
+extern "C" std::int32_t memra_cpu_expert_rows_scoped_v1(
+        const memra_cpu_expert_v2 * expert, const float * inputs, std::int32_t rows,
+        const float * route_weights, float * outputs, std::int32_t threads,
+        char * error, std::size_t error_capacity,
+        const memra_scoped_disk_reader_v1 * const * readers) {
+    if (!readers) { copy_error(error, error_capacity, "missing scoped CPU readers"); return 1; }
+    return expert_rows_impl(expert, inputs, rows, route_weights, true, outputs,
+                                     threads, error, error_capacity, readers);
+}
+// Scoped raw rows retain the same bare down-projection program as raw_v2.
+// A unit route weight through the weighted ABI is not equivalent: it applies down.scale.
+extern "C" std::int32_t memra_cpu_expert_rows_raw_scoped_v1(
+        const memra_cpu_expert_v2 * expert, const float * inputs, std::int32_t rows,
+        float * outputs, std::int32_t threads, char * error, std::size_t capacity,
+        const memra_scoped_disk_reader_v1 * const * readers) {
+    if (!readers) { copy_error(error, capacity, "missing scoped CPU readers"); return 1; }
+    return expert_rows_impl(expert, inputs, rows, nullptr, false, outputs, threads,
+                            error, capacity, readers);
+}
+extern "C" std::int32_t memra_cpu_expert_rows_raw_scoped_mirrors_v1(
+        const memra_cpu_expert_v2 * expert, const float * inputs, std::int32_t rows,
+        float * outputs, std::int32_t threads, char * error, std::size_t capacity,
+        const memra_scoped_disk_reader_v1 * const * primary,
+        const memra_scoped_disk_reader_v1 * const * alternate) {
+    if (!primary || !alternate) { copy_error(error, capacity, "missing scoped mirror reader arrays"); return 1; }
+    return expert_rows_impl(expert, inputs, rows, nullptr, false, outputs, threads,
+                            error, capacity, primary, alternate);
+}
+
 // Detached speculative prefetch: reads the given projections into the RAM cache as cold
 // (evict-first) insertions and returns immediately. Cached projections are skipped; requests
 // beyond the in-flight cap are dropped, never queued — speculative traffic must not compound
 // under load. Returns the number of projections actually submitted, or -1 on invalid input.
-extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
+std::int32_t memra_cpu_expert_prefetch_impl(
         const memra_cpu_projection_v2 * projections,
         std::int32_t count,
         char * error,
-        std::size_t error_capacity) try {
+        std::size_t error_capacity,
+        const memra_scoped_disk_reader_v1 * const * readers = nullptr,
+        const memra_scoped_disk_reader_v1 * const * alternates = nullptr) try {
     if (projections == nullptr || count <= 0) {
         throw std::runtime_error("invalid CPU expert prefetch invocation");
     }
@@ -3030,10 +3204,19 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
     auto & annex = PrefetchAnnex::instance();
     auto state = std::make_unique<PrefetchState>();
     state->descs.reserve(static_cast<std::size_t>(count));
+    std::vector<const memra_scoped_disk_reader_v1 *> selected_readers;
+    selected_readers.reserve(static_cast<std::size_t>(count));
+    std::vector<const memra_scoped_disk_reader_v1 *> selected_alternates;
+    selected_alternates.reserve(static_cast<std::size_t>(count));
     for (std::int32_t index = 0; index < count; ++index) {
         const auto & desc = projections[index];
-        if (desc.file_fd < 0) continue;  // memory-backed projections need no prefetch
+        const auto * scoped = readers ? readers[index] : nullptr;
+        const auto * alternate = alternates ? alternates[index] : nullptr;
+        if (alternate && !scoped) throw std::runtime_error("scoped mirror has no primary");
+        if (desc.file_fd < 0 && !scoped) continue;  // memory-backed projections need no prefetch
         state->descs.push_back(desc);
+        selected_readers.push_back(scoped);
+        selected_alternates.push_back(alternate);
     }
     const std::size_t n = state->descs.size();
     if (n == 0) return 0;
@@ -3070,25 +3253,17 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
         if (prefetch_inflight().load(std::memory_order_relaxed) >= max_inflight) break;
         // Build the cache key without prepare_projection: the demand path's annex promotion
         // must never fire from a speculative probe, and cache stats must not count them.
-        const FileKey source = file_key(desc.file_fd);
-        const CacheKey key { source, desc.file_offset, desc.byte_len };
-        if (weight_cache().contains(key)) continue;
-        if (!annex.begin_read(key)) continue;  // already speculated or in flight (dedup)
-        claimed.push_back(key);
         ProjectionRuntime runtime;
         runtime.desc = &state->descs[index];
+        runtime.scoped_reader = retain_scoped_reader(desc, selected_readers[index]);
+        const CacheKey key = projection_cache_key(desc, runtime.scoped_reader);
         runtime.cache_key = key;
-        runtime.weight_owner = std::make_shared<AlignedBytes>();
-        const bool direct = direct_io_enabled()
-            && desc.file_offset % 4096 == 0 && desc.byte_len % 4096 == 0;
-        runtime.weight_owner->resize(desc.byte_len, direct ? 4096 : 64);
-        runtime.read_fd = direct
-            ? direct_files().resolve(desc.file_fd, source.inode)
-            : desc.file_fd;
-        runtime.alternate_read_fd = direct
-            ? mirror_files().resolve(desc.file_fd, source)
-            : -1;
-        runtime.needs_read = true;
+        retain_scoped_mirror(runtime, selected_alternates[index]);
+        if (weight_cache().contains(key)) continue;
+        if (!annex.begin_read(key)) continue;
+        claimed.push_back(key);
+        runtime.cache_key = key;
+        prepare_projection_read(runtime);
         state->runtimes.push_back(std::move(runtime));
         auto & stored = state->runtimes.back();
         const std::size_t slot = state->runtimes.size() - 1;
@@ -3096,12 +3271,12 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
         state->projection_pending[slot].store(0, std::memory_order_relaxed);
         state->projection_failed[slot].store(false, std::memory_order_relaxed);
         const std::size_t length = desc.byte_len;
-        if (stored.alternate_read_fd >= 0 && length >= 8192) {
+        if (stored.mirrored() && length >= 8192) {
             const std::size_t split = (length / 2) & ~std::size_t(4095);
             jobs.push_back(IoJob { &stored, stored.read_fd, 0, split,
                 static_cast<int>(slot), nullptr, state.get() });
             jobs.push_back(IoJob { &stored, stored.alternate_read_fd, split, length - split,
-                static_cast<int>(slot), nullptr, state.get() });
+                static_cast<int>(slot), nullptr, state.get(), true });
         } else {
             jobs.push_back(IoJob { &stored, stored.read_fd, 0, length,
                 static_cast<int>(slot), nullptr, state.get() });
@@ -3117,8 +3292,8 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
     state->outstanding.store(static_cast<int>(jobs.size()), std::memory_order_relaxed);
     auto & pool = IoPool::instance();
     pool.ensure_started(io_thread_count(8));
-    submit_guard.armed = false;  // the pool and the completion path own every release from here
     pool.submit(std::move(jobs));
+    submit_guard.armed = false;  // successful publication transfers every release to completion
     state.release();  // owned by the completion path from here
     if (error != nullptr && error_capacity != 0) error[0] = '\0';
     return submitted;
@@ -3129,6 +3304,64 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
     copy_error(error, error_capacity, "unknown CPU expert prefetch failure");
     return -1;
 }
+
+extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
+        const memra_cpu_projection_v2 * projections, std::int32_t count,
+        char * error, std::size_t error_capacity) {
+    return memra_cpu_expert_prefetch_impl(projections, count, error, error_capacity);
+}
+extern "C" std::int32_t memra_cpu_expert_prefetch_scoped_v1(
+        const memra_cpu_projection_v2 * projections, std::int32_t count,
+        char * error, std::size_t error_capacity,
+        const memra_scoped_disk_reader_v1 * const * readers) {
+    if (!readers) { copy_error(error, error_capacity, "missing scoped CPU readers"); return -1; }
+    return memra_cpu_expert_prefetch_impl(projections, count, error, error_capacity, readers);
+}
+
+// Optional mirrored scoped extension. Readers are prepared and byte-verified by the bound source.
+extern "C" int memra_cpu_moe_token_scoped_mirrors_v1(
+        const memra_cpu_expert_v2 * experts, std::int32_t count, const float * input, float * output,
+        std::int32_t threads, char * error, std::size_t capacity,
+        const memra_scoped_disk_reader_v1 * const * primary,
+        const memra_scoped_disk_reader_v1 * const * alternate) {
+    if (!primary || !alternate) { copy_error(error,capacity,"missing scoped mirror reader arrays"); return 1; }
+    return memra_cpu_moe_token_impl(experts,count,input,output,threads,error,capacity,primary,alternate);
+}
+extern "C" int memra_cpu_expert_rows_scoped_mirrors_v1(
+        const memra_cpu_expert_v2 * expert, const float * inputs, std::int32_t rows,
+        const float * weights, float * outputs, std::int32_t threads, char * error, std::size_t capacity,
+        const memra_scoped_disk_reader_v1 * const * primary,
+        const memra_scoped_disk_reader_v1 * const * alternate) {
+    if (!primary || !alternate) { copy_error(error,capacity,"missing scoped mirror reader arrays"); return 1; }
+    return expert_rows_impl(expert,inputs,rows,weights,true,outputs,threads,error,capacity,primary,alternate);
+}
+extern "C" int memra_cpu_expert_prefetch_scoped_mirrors_v1(
+        const memra_cpu_projection_v2 * projections, std::int32_t count, char * error, std::size_t capacity,
+        const memra_scoped_disk_reader_v1 * const * primary,
+        const memra_scoped_disk_reader_v1 * const * alternate) {
+    if (!primary || !alternate) { copy_error(error,capacity,"missing scoped mirror reader arrays"); return -1; }
+    return memra_cpu_expert_prefetch_impl(projections,count,error,capacity,primary,alternate);
+}
+// 0=no configured mirror, 1=declaration copied, 2=buffer too small, -1=invalid declaration.
+extern "C" int memra_cpu_expert_mirror_spec_v1(
+        const memra_scoped_disk_info_v1 * source, memra_scoped_disk_info_v1 * alternate,
+        char * path, std::size_t capacity, std::size_t * needed,
+        char * error, std::size_t error_capacity) noexcept try {
+    if (!source || !alternate || !needed) throw std::runtime_error("invalid scoped mirror query");
+    const FileKey key {InodeKey {source->device,source->inode},source->file_bytes,
+                       source->ctime_seconds,source->ctime_nanoseconds};
+    const auto spec=mirror_files().declaration(key);
+    *needed=0;
+    if (!spec) return 0;
+    *needed=spec->path.size()+1;
+    if (!path || capacity<*needed) return 2;
+    const auto & a=spec->alternate;
+    *alternate={a.inode.device,a.inode.inode,a.size,a.ctime_seconds,a.ctime_nanoseconds,
+                source->offset,source->len,1};
+    std::memcpy(path,spec->path.c_str(),*needed);
+    return 1;
+} catch(const std::exception & e) {copy_error(error,error_capacity,e.what());return -1;}
+catch(...) {copy_error(error,error_capacity,"unknown scoped mirror query failure");return -1;}
 
 // Model-independent correctness hook used by `cpu-native-check`. This intentionally exercises the
 // same activation quantizer and row-dot dispatch as production without constructing a full model.

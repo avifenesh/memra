@@ -1,0 +1,62 @@
+{
+  "failed_source_commit": "0ea0aaa2fcad84139b7fc1f4c02882846ba7ff8d",
+  "build_record_sha256": "6745eb8de56e681b6b170bc5aedd4f2467e6d3b4407482c1a8a48b95e912e0a2",
+  "status": "failed",
+  "selected_passed_cases": 10,
+  "failed_case": 11,
+  "remaining_unrun_cases": 16,
+  "admission_usage_and_actual_positive": "passed before refusal witness mismatch",
+  "actual_drift_refusal": "operator diagnostic names loaded executable mappings changed and never-executed.bin; public message stays redacted",
+  "restored_repeat_refusal": "unrun after witness assertion failure",
+  "selected_index_quarantined": true,
+  "failed_manifest_sha256": "43074dfb020a17d3cfec705528e01bd9e9c2f7cf5074c9a873ee9f4a55323db6",
+  "native_archive_sha256": "ec1307fd614d0dcc89f92d747a0ef4e38b9ce9a3b4f5f902e07ebf4e4f7f60ba",
+  "snapshots_sha256": {
+    "before-drift.cache.bin": "22550d534f728ee7a695e6407d12a8179bab1add37ec9e9c1c4daec061bee0ac",
+    "after-drift.cache.bin": "22550d534f728ee7a695e6407d12a8179bab1add37ec9e9c1c4daec061bee0ac",
+    "before-drift.state.json": "3ed3f0108197410ba450c8645e1fa086049e89bea95dfbacb7c391027b64923a",
+    "after-drift.state.json": "3ed3f0108197410ba450c8645e1fa086049e89bea95dfbacb7c391027b64923a",
+    "control-events.txt": "228d95a8e9296dd01a83414f5c02e8e1cb23885cd561885b92377bd0aedfa5bf"
+  },
+  "logs": {
+    "native-stdout.log": {
+      "file": "native-stdout.log.gz",
+      "raw_sha256": "91c6689e2759e96d291267760dd6ca46acdd3419c69d9cdb63e1b438d29625f5",
+      "archive_sha256": "33aaf289e11fd1f7091762d640319473631632d0c92c60b03e176d6a0b774874"
+    },
+    "native-stderr.log": {
+      "file": "native-stderr.log.gz",
+      "raw_sha256": "354f56a40a28bff8340bbc84b1aa6b1a441a7606533f56789d043a216081cb50",
+      "archive_sha256": "73cb835bcf9f678a21fb004965f2400f28550c0b101a1ede56272bdeca959442"
+    },
+    "cpu-actual.log": {
+      "file": "cpu-actual.log.gz",
+      "raw_sha256": "967dfc8574250b6c8bde75962b406ce7d105a28ff88dc3d464579c58763d4a98",
+      "archive_sha256": "127c56f67e70ff29a31376091e78ac90d5db543a9a802b0da5783e73f7d7109b"
+    },
+    "cpu-no-hook-negative.log": {
+      "file": "cpu-no-hook-negative.log.gz",
+      "raw_sha256": "7a2bc9dece45b65bedcf51666474aa7b6a3c0f9e8f784b256fdab4247a6a4509",
+      "archive_sha256": "58f88191213cf4648202a55450c7286ad484d0d39e57041e34c7880df37fa432"
+    },
+    "linux-clippy.log": {
+      "file": "linux-clippy.log.gz",
+      "raw_sha256": "8ccb8fa5498da5ec1e14eee507fa51dcf624e78eb9f50dcb163b7312cb672f01",
+      "archive_sha256": "75daa73bb2fd769a7e69ffe6d4b65b8302a534562205882a7b888c6ba8731384"
+    }
+  },
+  "CPU_controls": {
+    "actual_tests_passed": 4,
+    "no_hook_negative_tests_passed": 2,
+    "no_hook_negative_tests_failed": 2,
+    "scope": "actual constructor/redaction/channel/scoped capture; unrelated SpecUsage payload stand-in; no native model executed"
+  },
+  "source_sha256": {
+    "crates/memra-server/src/worker.rs": "fa1280b559a5b18230388d330ee72c047a9c3d67e210a911ded4b5579eff6fe1",
+    "crates/memra-server/src/worker/rewrite_native_tests.rs": "0aabf76ebe85c11c202a8ff29c93e9f0bf6b7d1833f5770b5f3df9d925cc2250",
+    "crates/memra-server/src/worker/rewrite_native_tests/diagnostics.rs": "cb8db485ef9a3ff87d7244bd0bc3009d0c64e376900da3d260684cc5c8168525",
+    "research/modelplan-onboarding-rewrite-identity-20260920/run-worker-diagnostic-tests.py": "466f7f77d671207a9842fbf23141018aea0cd4be67b914a32d01be740d6554bd"
+  },
+  "linux_clippy_fmt_diff": "passed",
+  "native_repair_qualification": "pending fresh exact-source build and all required cases"
+}

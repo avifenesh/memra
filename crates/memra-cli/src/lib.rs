@@ -294,29 +294,7 @@ fn verify_rewrite_receipt(
     }
     let manifest = std::fs::read_to_string(out_dir.join("execution-rewrites.tsv"))?;
     let receipt = std::fs::read_to_string(receipt_path)?;
-    let mut fields = BTreeMap::new();
-    for line in receipt.lines() {
-        let Some((key, value)) = line.split_once('\t') else {
-            return Err(format!("malformed rewrite receipt line {line:?}").into());
-        };
-        if fields.insert(key, value).is_some() {
-            return Err(format!("duplicate rewrite receipt field {key}").into());
-        }
-    }
-    for (key, expected) in [
-        ("format", "memra-rewrite-parity-v1"),
-        ("status", "passed"),
-        ("first_violation", "none"),
-    ] {
-        if fields.get(key).copied() != Some(expected) {
-            return Err(format!("rewrite receipt requires {key}={expected}").into());
-        }
-    }
-    match fields.get("value_kind").copied() {
-        Some("logits-f32") if fields.get("require_argmax").copied() == Some("true") => {}
-        Some("token-ids-u32") if fields.get("require_argmax").copied() == Some("false") => {}
-        _ => return Err("rewrite receipt has an invalid value_kind/argmax policy".into()),
-    }
+    let fields = memra_gguf::execution_manifest::parse_qualified_rewrite_receipt(&receipt)?;
     let rewrite_id = *fields.get("rewrite").ok_or("rewrite receipt has no id")?;
     let row = manifest
         .lines()
@@ -338,50 +316,6 @@ fn verify_rewrite_receipt(
     }
     if fields.get("artifact_lock_sha256").copied() != Some(artifact_lock_sha256.as_str()) {
         return Err("rewrite receipt does not match artifact.lock".into());
-    }
-    let reference = fields
-        .get("reference_sha256")
-        .ok_or("rewrite receipt has no reference hash")?;
-    let candidate = fields
-        .get("candidate_sha256")
-        .ok_or("rewrite receipt has no candidate hash")?;
-    let parse_nonnegative = |field: &str| -> Result<f32, Box<dyn std::error::Error>> {
-        let value = fields
-            .get(field)
-            .ok_or_else(|| format!("rewrite receipt has no {field}"))?
-            .parse::<f32>()?;
-        if !value.is_finite() || value < 0.0 {
-            return Err(format!("rewrite receipt {field} is not finite and nonnegative").into());
-        }
-        Ok(value)
-    };
-    let atol = parse_nonnegative("atol")?;
-    let rtol = parse_nonnegative("rtol")?;
-    let max_abs = parse_nonnegative("max_abs")?;
-    let _max_rel = parse_nonnegative("max_rel")?;
-    if atol == 0.0 && rtol == 0.0 && (max_abs != 0.0 || reference != candidate) {
-        return Err("exact rewrite receipt has nonzero error or different stream hashes".into());
-    }
-    for field in [
-        "implementation_sha256",
-        "reference_sha256",
-        "candidate_sha256",
-    ] {
-        let value = fields[field];
-        if value.len() != 64
-            || !value
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err(format!("rewrite receipt {field} is not a lowercase SHA-256").into());
-        }
-    }
-    if fields
-        .get("values")
-        .and_then(|value| value.parse::<usize>().ok())
-        .is_none_or(|values| values == 0)
-    {
-        return Err("rewrite receipt compared no values".into());
     }
     let receipt_hash = hex_sha256(receipt.as_bytes());
     let receipt_dir = out_dir.join("rewrite-receipts");
@@ -770,6 +704,7 @@ fn compare_checkpoint_oracles(
     }
     let mut max_abs = 0.0f32;
     let mut max_rel = 0.0f32;
+    let mut max_ref_abs = 0.0f32;
     let mut worst = 0usize;
     let mut first_violation = None;
     for (index, (&reference, &native)) in expected.logits.iter().zip(&actual.logits).enumerate() {
@@ -783,6 +718,7 @@ fn compare_checkpoint_oracles(
             worst = index;
         }
         max_rel = max_rel.max(relative);
+        max_ref_abs = max_ref_abs.max(reference.abs());
         let allowed = gate.max_abs + gate.max_rel * reference.abs();
         if absolute > allowed && first_violation.is_none() {
             first_violation = Some((index, absolute, allowed));
@@ -803,7 +739,7 @@ fn compare_checkpoint_oracles(
         .into());
     }
     Ok(format!(
-        "status\tpassed\nreference_engine\t{}\nnative_engine\t{}\nnumeric_class\t{}\ntokens\t{}\nvocab\t{}\nmax_abs\t{max_abs}\nmax_rel\t{max_rel}\nreference_argmax\t{reference_argmax}\nnative_argmax\t{native_argmax}\n",
+        "status\tpassed\nreference_engine\t{}\nnative_engine\t{}\nnumeric_class\t{}\ntokens\t{}\nvocab\t{}\nmax_abs\t{max_abs}\nmax_rel\t{max_rel}\nmax_ref_abs\t{max_ref_abs}\nreference_argmax\t{reference_argmax}\nnative_argmax\t{native_argmax}\n",
         expected.engine,
         actual.engine,
         expected.numeric_class,
@@ -982,8 +918,8 @@ pub fn inspect_model(
         &request.out_dir.join("execution-rewrites.tsv"),
         rewrite_manifest.as_bytes(),
     )?;
-    let (binding, binding_error) = match memra_gguf::checkpoint_binding::bind_census(
-        Some(pack),
+    let (binding, binding_error) = match memra_gguf::checkpoint_binding::bind_declared_census(
+        pack,
         &source.config,
         &plan,
         &source_census,
@@ -1107,14 +1043,14 @@ fn load_config_only(source: &str) -> Result<ModelConfig, Box<dyn std::error::Err
     }
     if path.is_dir() {
         let bytes = std::fs::read(path.join("config.json"))?;
-        return Ok(ModelConfig::from_hf(&HfConfig::parse(std::str::from_utf8(
-            &bytes,
-        )?)));
+        return Ok(ModelConfig::from_hf(&HfConfig::try_parse(
+            std::str::from_utf8(&bytes)?,
+        )?));
     }
     let (repo, revision) = parse_pinned_hf_source(source)?;
     let url = format!("https://huggingface.co/{repo}/resolve/{revision}/config.json");
     let config = http_text(&url)?.ok_or("pinned model has no config.json")?;
-    Ok(ModelConfig::from_hf(&HfConfig::parse(&config)))
+    Ok(ModelConfig::from_hf(&HfConfig::try_parse(&config)?))
 }
 
 fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
@@ -1158,7 +1094,7 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
 
     let config_bytes = std::fs::read(path.join("config.json"))?;
     let config_text = std::str::from_utf8(&config_bytes)?;
-    let config = ModelConfig::from_hf(&HfConfig::parse(config_text));
+    let config = ModelConfig::from_hf(&HfConfig::try_parse(config_text)?);
     let tokenizer = inspect_hf_tokenizer_dir(path);
     let model = StModel::open(path)?;
     let shards = local_shards(path)?;
@@ -1187,7 +1123,7 @@ fn load_remote(repo: &str, revision: &str) -> Result<SourceData, Box<dyn std::er
     let config_bytes = http_text(&format!("{base}/config.json"))?
         .ok_or("pinned model has no config.json")?
         .into_bytes();
-    let config = ModelConfig::from_hf(&HfConfig::parse(std::str::from_utf8(&config_bytes)?));
+    let config = ModelConfig::from_hf(&HfConfig::try_parse(std::str::from_utf8(&config_bytes)?)?);
     let tokenizer = inspect_remote_hf_tokenizer(&base);
     let index = http_text(&format!("{base}/model.safetensors.index.json"))?;
     let shards: Vec<String> = if let Some(index) = index {
@@ -1848,6 +1784,10 @@ fn format_gate_results(gates: &[Gate], passed: &[Gate], failed: &[Gate]) -> Stri
 }
 
 fn all_eligible_rewrites_have_receipts(out_dir: &Path) -> bool {
+    let Ok(lock) = std::fs::read(out_dir.join("artifact.lock")) else {
+        return false;
+    };
+    let lock_hash = hex_sha256(&lock);
     let Ok(manifest) = std::fs::read_to_string(out_dir.join("execution-rewrites.tsv")) else {
         return false;
     };
@@ -1855,14 +1795,21 @@ fn all_eligible_rewrites_have_receipts(out_dir: &Path) -> bool {
         return false;
     };
     let mut index = BTreeMap::new();
-    for line in index_text.lines().skip(1) {
+    let mut lines = index_text.lines();
+    if lines.next() != Some("rewrite\tplan_sha256\treceipt_sha256\tstatus") {
+        return false;
+    }
+    for line in lines {
         let columns: Vec<_> = line.split('\t').collect();
         if columns.len() != 4 || columns[3] != "passed" {
             return false;
         }
-        index.insert(columns[0], (columns[1], columns[2]));
+        if index.insert(columns[0], (columns[1], columns[2])).is_some() {
+            return false;
+        }
     }
     let mut eligible = 0usize;
+    let mut bundle_identity = None;
     for line in manifest.lines().skip(1) {
         let columns: Vec<_> = line.split('\t').collect();
         if columns.len() != 8 {
@@ -1888,6 +1835,37 @@ fn all_eligible_rewrites_have_receipts(out_dir: &Path) -> bool {
         if hex_sha256(&receipt) != receipt_hash {
             return false;
         }
+        let Ok(text) = std::str::from_utf8(&receipt) else {
+            return false;
+        };
+        let Ok(fields) = memra_gguf::execution_manifest::parse_qualified_rewrite_receipt(text)
+        else {
+            return false;
+        };
+        for (field, expected) in [
+            ("rewrite", columns[0]),
+            ("surface", columns[1]),
+            ("implementation", columns[2]),
+            ("plan_sha256", plan),
+            ("artifact_lock_sha256", lock_hash.as_str()),
+        ] {
+            if fields[field] != expected {
+                return false;
+            }
+        }
+        let identity = [
+            "artifact_sha256",
+            "implementation_sha256",
+            "numeric_program_sha256",
+        ]
+        .map(|key| fields[key].to_string());
+        if bundle_identity
+            .as_ref()
+            .is_some_and(|previous| previous != &identity)
+        {
+            return false;
+        }
+        bundle_identity = Some(identity);
     }
     eligible > 0
 }
@@ -1961,13 +1939,14 @@ fn format_gate_results_with_receipts(
             passed.push(gate);
         }
     }
-    if all_eligible_rewrites_have_receipts(out_dir)
-        && !passed.contains(&Gate::RewriteParity)
-        && !failed.contains(&Gate::RewriteParity)
-    {
-        passed.push(Gate::RewriteParity);
+    // Imported receipts establish evidence completeness only. This process has not loaded
+    // the checkpoint or the runner and cannot independently validate their identities.
+    let imported = all_eligible_rewrites_have_receipts(out_dir);
+    let mut output = format_gate_results(pack.gates, &passed, failed);
+    if imported {
+        output.push_str("rewrite_evidence=imported; runtime identity validation required\n");
     }
-    format_gate_results(pack.gates, &passed, failed)
+    output
 }
 
 fn format_tiny_fixture(
@@ -2548,9 +2527,53 @@ mod tests {
             max_rel: 2.0,
             require_argmax: true,
         };
-        assert!(compare_checkpoint_oracles(&reference, &native, gate).is_ok());
+        let receipt = compare_checkpoint_oracles(&reference, &native, gate).unwrap();
+        assert!(receipt.contains("\nmax_ref_abs\t1\n"));
         let failing = oracle("memra-native", &[2.0, 1.0, -1.0]);
         assert!(compare_checkpoint_oracles(&reference, &failing, gate).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn complete_imported_receipts_do_not_claim_runtime_qualification() {
+        use memra_gguf::execution_manifest::{RewriteIdentity, execution_rewrites};
+        let root = std::env::temp_dir().join(format!(
+            "memra-cli-imported-rewrites-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let pack = model_packs::by_alias("qwen3").unwrap();
+        let plan = pack.compile_tiny_plan().unwrap();
+        let rewrites = execution_rewrites(&plan);
+        let lock = b"format_version=2\nfamily=qwen3\n";
+        std::fs::write(root.join("artifact.lock"), lock).unwrap();
+        std::fs::write(
+            root.join("execution-rewrites.tsv"),
+            format_execution_rewrites(&rewrites),
+        )
+        .unwrap();
+        // These values are structurally valid and internally consistent, but this process
+        // has neither loaded nor executed the artifact they purport to qualify.
+        let claimed = RewriteIdentity {
+            artifact_sha256: "11".repeat(32),
+            implementation_sha256: "22".repeat(32),
+            numeric_program_sha256: "33".repeat(32),
+        };
+        let receipt_path = root.join("import.tsv");
+        for rewrite in rewrites.iter().filter(|rewrite| rewrite.eligible()) {
+            let receipt = rewrite
+                .verify_tokens(&claimed.implementation_sha256, &[1], &[1])
+                .unwrap()
+                .bind_artifact_lock(lock)
+                .bind_runtime_identity(&claimed)
+                .unwrap();
+            std::fs::write(&receipt_path, receipt.to_tsv()).unwrap();
+            verify_rewrite_receipt(pack, &receipt_path, &root).unwrap();
+        }
+        assert!(all_eligible_rewrites_have_receipts(&root));
+        let gates = std::fs::read_to_string(root.join("gates.txt")).unwrap();
+        assert!(gates.contains("RewriteParity=pending"), "{gates}");
+        assert!(gates.contains("rewrite_evidence=imported"), "{gates}");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -2592,6 +2615,12 @@ mod tests {
             )
             .unwrap()
             .bind_artifact_lock(artifact_lock)
+            .bind_runtime_identity(&memra_gguf::execution_manifest::RewriteIdentity {
+                artifact_sha256: "22".repeat(32),
+                implementation_sha256: "00".repeat(32),
+                numeric_program_sha256: "33".repeat(32),
+            })
+            .unwrap()
             .to_tsv();
         let receipt_path = root.join("receipt.tsv");
         std::fs::write(&receipt_path, &receipt).unwrap();
@@ -2606,6 +2635,28 @@ mod tests {
                 .unwrap()
                 .contains("decode-batch.v1")
         );
+
+        // The CLI shares the runtime parser: omitted identity and ambiguous records are
+        // errors before writing an index, rather than panics or successful imports.
+        for malformed in [
+            receipt.replace(&format!("implementation_sha256\t{}\n", "00".repeat(32)), ""),
+            receipt.replace(&format!("artifact_sha256\t{}\n", "22".repeat(32)), ""),
+            receipt.replace(
+                &format!("numeric_program_sha256\t{}\n", "33".repeat(32)),
+                "",
+            ),
+            format!("{receipt}status\tfailed\n"),
+        ] {
+            std::fs::write(&receipt_path, malformed).unwrap();
+            assert!(
+                verify_rewrite_receipt(
+                    model_packs::by_alias("qwen3").unwrap(),
+                    &receipt_path,
+                    &root
+                )
+                .is_err()
+            );
+        }
 
         let wrong = receipt.replace(&rewrite.plan_sha256, &"11".repeat(32));
         std::fs::write(&receipt_path, wrong).unwrap();

@@ -1,0 +1,39 @@
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (33 layers, nextn=1)
+prompt tokens: [1, 2, 3, 4]
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+
+[generate]   31 tok in 0.176s = 176.14 tok/s (gen-only; this run's prime 0.021s)
+  tokens: [5, 6, 24218, 10, 4838, 1665, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 33898, 2110, 30, 31, 73307, 25223, 87197, 62, 63, 65234, 44576, 92, 93, 1, 198]
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+
+[generate_spec K=1] 32 tok in 0.160s = 194.09 tok/s (1.10x vs generate; this run's prime 0.021s)
+  acceptance: 13/18 = 72.2%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=2] 32 tok in 0.149s = 207.53 tok/s (1.18x vs generate; this run's prime 0.021s)
+  acceptance: 16/30 = 53.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=3] 32 tok in 0.209s = 148.13 tok/s (0.84x vs generate; this run's prime 0.021s)
+  acceptance: 16/45 = 35.6%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=4] 32 tok in 0.186s = 166.98 tok/s (0.95x vs generate; this run's prime 0.021s)
+  acceptance: 17/56 = 30.4%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=5] 32 tok in 0.210s = 147.57 tok/s (0.84x vs generate; this run's prime 0.021s)
+  acceptance: 17/70 = 24.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=6] 32 tok in 0.236s = 131.46 tok/s (0.75x vs generate; this run's prime 0.021s)
+  acceptance: 17/84 = 20.2%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=7] 32 tok in 0.268s = 115.70 tok/s (0.66x vs generate; this run's prime 0.021s)
+  acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=8] 32 tok in 0.304s = 102.09 tok/s (0.58x vs generate; this run's prime 0.021s)
+  acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===

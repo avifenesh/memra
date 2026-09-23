@@ -1,0 +1,235 @@
+{
+  "source_commit": "fd7ce385b7861e6b96b98682906b5e8ff6ae31c2",
+  "log_sha256": "a2dbfc5fa2ba15ecbff11b1b9ff192953d9ba6bb4abb1dc7804a9465bb15e1c0",
+  "reported_total": 99,
+  "ran_count": 77,
+  "skipped_count": 22,
+  "not_an_all_kernel_inventory_claim": true,
+  "ran_cells": [
+    "B16-TIER",
+    "BATCHED",
+    "E4M3-BATCHED",
+    "E4M3-BLK-BATCHED",
+    "E4M3-BLK-MMQ-VIEW",
+    "E4M3-BLK-MMVQ",
+    "E4M3-FUSED2",
+    "E4M3-FUSED2-T",
+    "E4M3-FUSED3",
+    "E4M3-FUSED3-T",
+    "E4M3-MMVQ",
+    "FILTER-COOP-CHUNK",
+    "FILTER-COOP-VS-PLAIN",
+    "FUSED4",
+    "GEMM",
+    "MMVQ",
+    "Q8-FUSED3",
+    "Q8-FUSED3-B",
+    "add_rms_norm",
+    "add_rms_norm_q8_1",
+    "append_kv_seqs",
+    "attn_head_gate",
+    "dual-pp-default-flip",
+    "dual-pp-hostbounce-refusal",
+    "dual-pp-single-slot-refusal",
+    "dual-pp-wave-split",
+    "f16g-kq-direct",
+    "f16g-sk",
+    "f16g-sk-tail",
+    "fa_decode",
+    "fa_decode_rows",
+    "fa_decode_rows_v3",
+    "fa_decode_seqs_v4",
+    "fa_decode_vec_q",
+    "fa_decode_vec_q_v3",
+    "fa_prefill",
+    "fa_prefill_hd512",
+    "fa_prefill_hd512_sp",
+    "fa_prefill_hd512_sp16",
+    "fa_prefill_view_ws",
+    "fa_prefill_view_ws_w_hd128",
+    "fa_prefill_w",
+    "fp8-blk-gpu",
+    "gated_rmsnorm_q8_1",
+    "gdn_chunked",
+    "gdn_scan",
+    "iq",
+    "iq4xs-mmq",
+    "kv",
+    "kvq",
+    "l2_norm",
+    "mask_logits_col",
+    "moe",
+    "moe_router",
+    "nvfp4-fused4",
+    "peer-probe-off-refusal",
+    "pp-wave-grid",
+    "pp-wave-refusal",
+    "qmatvec",
+    "qmatvec_q8_0_fast",
+    "rms_norm",
+    "rms_norm_q8_1",
+    "rms_norm_qkv",
+    "rms_norm_qkv_w4",
+    "rope_neox",
+    "sdpa_naive",
+    "sdpa_naive_gmem",
+    "sdpa_naive_w_lo",
+    "sdpa_naive_w_quantized_view",
+    "sigmoid_dot",
+    "sigrouter-active-count",
+    "sigrouter-host-expf",
+    "silu_mul",
+    "silu_mul_q8_1",
+    "ssm_conv1d",
+    "swiglu_clamped",
+    "swiglu_preclamped"
+  ],
+  "manual_record_explanation": "nvfp4-fused4 is explicitly recorded after its FUSED4 output matrix in kernel_check.rs; other names use the native output observer grammar.",
+  "skipped_cells": [
+    {
+      "cell": "sigrouter-served-replay",
+      "reason": "MEMRA_SIG_ROUTER_REPLAY is not set to a run-gen capture",
+      "applicability": "Step sigmoid-router capture diagnostic; not Qwen dense or Ornith softmax. No served-logit capture supplied; not in Step required manifest."
+    },
+    {
+      "cell": "dtype5-NVFP4",
+      "reason": "missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "NVFP4/GDN/fused-aux mechanism relevant to selected Ornith, but named 9B/27B real-weight oracle absent. DUAL-BATCHED-AUX is required by the separate 27B manifest, not executed here."
+    },
+    {
+      "cell": "dtype5-Q5_K",
+      "reason": "missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "Q5_K occurs in selected Ornith and Step GGUF; named 9B/27B oracle cell not executed. End-to-end gates are separate evidence."
+    },
+    {
+      "cell": "dtype5-IQ3_S",
+      "reason": "missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "These stored dtypes are absent from the inspected selected GGUF artifacts; named 35B oracle absent."
+    },
+    {
+      "cell": "dtype5-IQ4_XS",
+      "reason": "missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "IQ4_XS mechanism relevant to Step; named Qwen35B real-weight oracle missing. Synthetic direct-loader checks ran, not this named real-weight cell."
+    },
+    {
+      "cell": "dtype5-Q3_K",
+      "reason": "missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "These stored dtypes are absent from the inspected selected GGUF artifacts; named 35B oracle absent."
+    },
+    {
+      "cell": "f16g-kq-direct-ornith",
+      "reason": "missing model ornith-1.0-35b-Q4_K_M.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "Older Ornith1.0 Q4_K/Q6_K expert oracle absent; selected Ornith1.5 experts are NVFP4 and Step experts IQ4_XS. No qualification of that older oracle."
+    },
+    {
+      "cell": "f16g-kq-direct-q35",
+      "reason": "missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "IQ4_XS mechanism relevant to Step; named Qwen35B real-weight oracle missing. Synthetic direct-loader checks ran, not this named real-weight cell."
+    },
+    {
+      "cell": "iq4xs-mmq-real",
+      "reason": "missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf; 6 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "Relevant to selected Step IQ4_XS. Initial dense invocation did not resolve Step artifact. Closing via explicit Step basename and --require-cell."
+    },
+    {
+      "cell": "nvfp4-gemm",
+      "reason": "missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf or Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf; 7 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "NVFP4/GDN/fused-aux mechanism relevant to selected Ornith, but named 9B/27B real-weight oracle absent. DUAL-BATCHED-AUX is required by the separate 27B manifest, not executed here."
+    },
+    {
+      "cell": "nvfp4-gemm:Q5_K",
+      "reason": "missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf or Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf; 7 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "Q5_K occurs in selected Ornith and Step GGUF; named 9B/27B oracle cell not executed. End-to-end gates are separate evidence."
+    },
+    {
+      "cell": "nvfp4-gemm:NVFP4",
+      "reason": "missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf or Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf; 7 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "NVFP4/GDN/fused-aux mechanism relevant to selected Ornith, but named 9B/27B real-weight oracle absent. DUAL-BATCHED-AUX is required by the separate 27B manifest, not executed here."
+    },
+    {
+      "cell": "q8mmq-gemm",
+      "reason": "missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 4 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "Q8_0 occurs in Qwen dense and external Step MTP; named 35B GEMM oracle not executed. The direct Q8 fast matvec cell ran."
+    },
+    {
+      "cell": "q4_0-mmq",
+      "reason": "missing model gemma-4-12b-it-qat-q4_0.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "Gemma Q4_0 oracle/program not selected; Q4_0 absent from inspected GGUF artifacts."
+    },
+    {
+      "cell": "nvfp4-27b-shape",
+      "reason": "missing model Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "Specific 27B geometry not selected; this does not qualify that model/shape."
+    },
+    {
+      "cell": "q4_0-sk-arm",
+      "reason": "missing model gemma-4-26B_q4_0-it.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "Gemma Q4_0 oracle/program not selected; Q4_0 absent from inspected GGUF artifacts."
+    },
+    {
+      "cell": "nvfp4-mmvq",
+      "reason": "missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "NVFP4/GDN/fused-aux mechanism relevant to selected Ornith, but named 9B/27B real-weight oracle absent. DUAL-BATCHED-AUX is required by the separate 27B manifest, not executed here."
+    },
+    {
+      "cell": "nvfp4-batched",
+      "reason": "missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "NVFP4/GDN/fused-aux mechanism relevant to selected Ornith, but named 9B/27B real-weight oracle absent. DUAL-BATCHED-AUX is required by the separate 27B manifest, not executed here."
+    },
+    {
+      "cell": "DUAL-BATCHED-AUX",
+      "reason": "missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "NVFP4/GDN/fused-aux mechanism relevant to selected Ornith, but named 9B/27B real-weight oracle absent. DUAL-BATCHED-AUX is required by the separate 27B manifest, not executed here."
+    },
+    {
+      "cell": "a6-split-plane",
+      "reason": "missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "NVFP4/GDN/fused-aux mechanism relevant to selected Ornith, but named 9B/27B real-weight oracle absent. DUAL-BATCHED-AUX is required by the separate 27B manifest, not executed here."
+    },
+    {
+      "cell": "d2-cache-bit-identity",
+      "reason": "missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "MoE cache/router mechanisms relevant to Ornith/Step; named Qwen35B fixture not available. Do not claim this cell passed."
+    },
+    {
+      "cell": "fast-router-batch",
+      "reason": "missing model Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; 4 candidates tried; set MEMRA_KC_MODELS_DIR",
+      "applicability": "MoE cache/router mechanisms relevant to Ornith/Step; named Qwen35B fixture not available. Do not claim this cell passed."
+    }
+  ],
+  "step_required_manifest": [
+    "fa_prefill_view_ws_w_hd128",
+    "attn_head_gate",
+    "swiglu_clamped",
+    "dual-pp-wave-split",
+    "dual-pp-single-slot-refusal",
+    "pp-wave-grid",
+    "pp-wave-refusal",
+    "dual-pp-hostbounce-refusal",
+    "peer-probe-off-refusal"
+  ],
+  "missing_from_step_required_manifest": [],
+  "separate_27b_required_cell_unexecuted": "DUAL-BATCHED-AUX",
+  "numeric_subcomparisons_excluded": [
+    "fa_prefill_w bf16-stage T=64: SKIPPED (hp door numeric class)",
+    "fa_prefill_w bf16-stage T=100: SKIPPED (hp door numeric class)"
+  ],
+  "numeric_subcomparison_note": "These two lines are not part of the22 CellTracker skips; hp uses f16 P/V rather than bf16, so the executed oracle-band gate applies instead of bf16 bit identity.",
+  "actual_gguf_dtypes": {
+    "dense": {
+      "F32": 113,
+      "Q8_0": 197
+    },
+    "ornith": {
+      "F32": 310,
+      "NVFP4": 441,
+      "Q5_K": 2
+    },
+    "step_gguf_trunk": {
+      "F32": 266,
+      "IQ4_XS": 442,
+      "Q5_K": 45,
+      "Q6_K": 1
+    }
+  }
+}

@@ -59,7 +59,9 @@ pub use memra_gguf;
 pub use memra_runtime;
 
 pub mod env_audit;
+mod ffn_activation;
 pub mod forward;
+mod head_trim;
 pub mod hybrid;
 pub mod hybrid_forward;
 pub mod hyper;
@@ -67,6 +69,7 @@ pub mod model;
 mod prime_receipt;
 pub mod prime_walker;
 pub mod sigrouter_contract;
+mod trim_ranks;
 pub mod vision;
 pub mod vision_gemma;
 pub mod vision_glm5;
@@ -18538,6 +18541,11 @@ impl Engine {
         m: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         use crate::model::GpuTensor;
+        // The non-fast fallback below also owes the T=1 arithmetic. At m>=16,
+        // ordinary matmul can otherwise select a prefill mirror/MMQ/GEMM before
+        // consulting MEMRA_FAST. Keep every fallback in this call decode-exact;
+        // the existing RAII guard restores an enclosing scope on return or error.
+        let _decode_exact = self.exact_scope(true);
         // FLOAT tensors (35B ssm_beta/ssm_alpha on every linear layer, F32 ne=[2048,32]): the
         // generic path is cuBLASLt, whose reduction splits are n-DEPENDENT — m=1 vs m=2 col-0
         // outputs differ in every bit (probe 2026-07-06: 32/32 bit-diff, maxdiff 3.5e-3), which
@@ -24587,8 +24595,20 @@ impl Engine {
     /// default OFF and gated by the run-gen argmax gate + boot battery like the other
     /// numeric-class doors (DEV_ROUTES precedent).
     pub(crate) fn bf16_mmv_on() -> bool {
+        *Self::bf16_mmv_latch()
+            .get_or_init(|| std::env::var("MEMRA_BF16_MMV").as_deref() == Ok("1"))
+    }
+
+    /// The `bf16_mmv_on` value latched at its first read, or `None` before that read.
+    /// Load-time placement and identity capture use it to refuse an environment that no
+    /// longer describes the running program.
+    pub(crate) fn bf16_mmv_latched() -> Option<bool> {
+        Self::bf16_mmv_latch().get().copied()
+    }
+
+    fn bf16_mmv_latch() -> &'static std::sync::OnceLock<bool> {
         static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *ON.get_or_init(|| std::env::var("MEMRA_BF16_MMV").as_deref() == Ok("1"))
+        &ON
     }
 
     /// One-block-per-row BF16 matvec: y[out_f] = W_bf16[out_f, in_f] @ x[in_f], f32 accumulate.

@@ -6,6 +6,7 @@ half — "we tried X and it lost by Y% on Z" cannot be reconstructed from the co
 
 | Record | Decides |
 |---|---|
+| [REWRITE-IDENTITY.md](REWRITE-IDENTITY.md) | bind strict rewrite admission to the opened artifact, executable, and numerical program |
 | [SAFETENSORS-DECISION.md](SAFETENSORS-DECISION.md) | safetensors as the semantic source, and what that does not mean for the compute format |
 | [FORMAT-DECISION.md](FORMAT-DECISION.md) | which artifact formats the engine imports and serves |
 | [QUANT-GEMM-DECISION.md](QUANT-GEMM-DECISION.md) | the quantized GEMM path |
@@ -16,6 +17,7 @@ half — "we tried X and it lost by Y% on Z" cannot be reconstructed from the co
 | [PUBLIC-BOUNDARY-DETECTION.md](PUBLIC-BOUNDARY-DETECTION.md) | what the public-boundary gate matches, which candidate rules were rejected as too noisy, and why published refs need their own scan |
 | [ORNITH-PAIR-OWNER.md](ORNITH-PAIR-OWNER.md) | why source-verbatim pair-owner MoE ordering stays out of the runtime while its receipts and exact candidate remain banked |
 | [PRO6000-MULTICARD.md](PRO6000-MULTICARD.md) | why PP is the 2–4 card PCIe baseline, and when dense TP or MoE TP/EP/ETP may replace it |
+| [BOUND-SEMANTIC-CENSUS.md](BOUND-SEMANTIC-CENSUS.md) | compiler-owned physical tensor binding and explicit output-head ownership; runtime activation pending |
 | [KV-PHYSICAL-RECLAIM.md](KV-PHYSICAL-RECLAIM.md) | VMM-backed KV planes for physical demote/reclaim (gate-only door); pool trim rejected by measurement |
 | [PREFIX-CACHE-POLICY.md](PREFIX-CACHE-POLICY.md) | plain LRU as the only prefix-cache eviction policy; the segmented (SLRU) arm and its two doors deleted after losing every pair of the incident-shape A/B |
 | [PINNED-DESTINATIONS.md](PINNED-DESTINATIONS.md) | the contract path's pinned host destinations cached on the RTX PRO 6000 Blackwell class and write-combined on the RTX 5090 class and elsewhere, a per-device default from two pre-registered A/B cells; an env door and a global flip rejected |

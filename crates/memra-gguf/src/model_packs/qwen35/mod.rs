@@ -4,6 +4,8 @@ use crate::config::HfConfig;
 pub mod activation;
 
 pub static PACK: ModelPack = ModelPack {
+    inventory_schema: None,
+    default_output_head: crate::tensor_contract::OutputHead::Separate,
     family: "qwen35",
     output_head: OutputHeadContract::TiedHeadAllowed,
     // Refuse is a qualification state: the 9B NVFP4 MTP GGUF loads with zero unconsumed bound

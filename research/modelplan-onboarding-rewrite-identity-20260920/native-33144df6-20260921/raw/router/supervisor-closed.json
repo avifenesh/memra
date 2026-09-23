@@ -1,0 +1,29 @@
+{
+  "phase": "router",
+  "status": "passed",
+  "command": [
+    "/usr/local/bin/memra-gpu-run",
+    "--gpus",
+    "GPU-0ef61756-6a47-f49f-7c77-4ea56a37dd41",
+    "--receipt",
+    "/data/receipts/issue-542-33144df6-router-lease-attempt-001",
+    "--wait-seconds",
+    "3600",
+    "--max-run-seconds",
+    "1800",
+    "--",
+    "python3",
+    "-B",
+    "/home/memra-five/owners/issue-542/run-extra-native-33144df6.py",
+    "--phase",
+    "router",
+    "--out",
+    "/data/receipts/issue-542-33144df6-router-attempt-001"
+  ],
+  "startup_environment": {},
+  "build_record_sha256": "bcc67cf106dd9d8899bd3d807087df58375c2e6286df6ea93a32f2903e6d4349",
+  "source_commit": "33144df6d12c58a7821b351e18490cf8eff38f3e",
+  "wrapper_returncode": 0,
+  "lease_sha256": "750bb4087ce1746586165b85d7b6cd3c5c8aea120ec2d30203ac7c0d2c7c714e",
+  "runner_result_sha256": "8019eb39e708b9bff44bbf8a7f476cd2cebc35c1285f3fa991d9947277955fce"
+}

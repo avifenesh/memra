@@ -10,6 +10,8 @@ use crate::model_plan::{
 /// Sinkhorn hyper-connections with mean collapse, sigmoid noaux_tc MoE, 1 NextN layer.
 /// Bring-up lane research/glm53-flash-bringup-20260827/ (census, plan design, oracle bank).
 pub static PACK: ModelPack = ModelPack {
+    inventory_schema: None,
+    default_output_head: crate::tensor_contract::OutputHead::Separate,
     family: "glm5_next",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
@@ -144,6 +146,7 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
                 pre_mlp_norm: norm,
                 mlp: MlpPlan::Moe(MoeMlpPlan {
                     expert_count: 4,
+                    retained_experts: None,
                     experts_per_token: 2,
                     expert_intermediate_size: 8,
                     router: RouterPlan::Sigmoid {

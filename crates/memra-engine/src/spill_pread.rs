@@ -16,6 +16,28 @@ use std::thread;
 use cudarc::driver::{CudaEvent, CudaStream, PinnedHostSlice};
 
 use crate::Engine;
+use memra_gguf::bound_disk::{BoundDiskReader, BoundDiskView, BoundReadMode};
+
+/// A source-owned expert range. Bound variants never expose a shard descriptor to a consumer.
+pub(crate) enum DiskReadSource<'a> {
+    Unbound { file: &'a Arc<File>, offset: u64 },
+    Bound(BoundDiskView),
+}
+
+enum PreparedRead {
+    Unbound { file: Arc<File>, offset: u64 },
+    Bound(BoundDiskReader),
+}
+impl PreparedRead {
+    fn read_exact(&self, dst: &mut [u8]) -> io::Result<()> {
+        match self {
+            Self::Unbound { file, offset } => pread_exact_at(file, dst, *offset),
+            Self::Bound(reader) => {
+                read_exact_with(dst, 0, |dst, offset| reader.read_at(dst, offset))
+            }
+        }
+    }
+}
 
 const DIRECT_IO_ALIGNMENT: usize = 4096;
 static CONFIG_FALLBACKS: AtomicU64 = AtomicU64::new(0);
@@ -113,9 +135,17 @@ pub(crate) fn configured_depth() -> usize {
     })
 }
 
-pub(crate) fn pread_exact_at(file: &File, mut dst: &mut [u8], mut offset: u64) -> io::Result<()> {
+pub(crate) fn pread_exact_at(file: &File, dst: &mut [u8], offset: u64) -> io::Result<()> {
+    read_exact_with(dst, offset, |dst, offset| file.read_at(dst, offset))
+}
+
+fn read_exact_with(
+    mut dst: &mut [u8],
+    mut offset: u64,
+    mut read: impl FnMut(&mut [u8], u64) -> io::Result<usize>,
+) -> io::Result<()> {
     while !dst.is_empty() {
-        match file.read_at(dst, offset) {
+        match read(dst, offset) {
             Ok(0) => {
                 return Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
@@ -283,8 +313,7 @@ impl WorkerReadError {
 struct ReadRequest {
     ticket: ReadTicket,
     index: usize,
-    file: Arc<File>,
-    offset: u64,
+    reader: PreparedRead,
     len: usize,
     data: PinnedHostSlice<u8>,
 }
@@ -366,13 +395,13 @@ fn read_worker(
         let ReadRequest {
             ticket,
             index,
-            file,
-            offset,
+            reader,
             len,
             mut data,
         } = request;
         let result = match data.as_mut_slice() {
-            Ok(dst) => pread_exact_at(file.as_ref(), &mut dst[..len], offset)
+            Ok(dst) => reader
+                .read_exact(&mut dst[..len])
                 .map_err(WorkerReadError::from_io),
             Err(err) => Err(WorkerReadError::other(err)),
         };
@@ -489,6 +518,9 @@ impl PreadPool {
     }
 
     fn io_file(&mut self, file: Arc<File>) -> Result<Arc<File>, Box<dyn std::error::Error>> {
+        if !self.mode.is_worker() {
+            return Ok(file);
+        }
         let metadata = file.metadata()?;
         let key = (metadata.dev(), metadata.ino());
         if self.mode == SpillIoMode::Worker {
@@ -504,9 +536,6 @@ impl PreadPool {
                     return Err(io::Error::from_raw_os_error(result).into());
                 }
             }
-            return Ok(file);
-        }
-        if self.mode != SpillIoMode::Direct {
             return Ok(file);
         }
         if let Some(direct) = self.direct_files.get(&key) {
@@ -525,6 +554,46 @@ impl PreadPool {
         }
         self.direct_files.insert(key, direct.clone());
         Ok(direct)
+    }
+
+    fn prepare_read(
+        &mut self,
+        source: &DiskReadSource<'_>,
+        len: usize,
+    ) -> Result<PreparedRead, Box<dyn std::error::Error>> {
+        match source {
+            DiskReadSource::Unbound { file, offset } => {
+                if self.mode == SpillIoMode::Direct && !direct_extent_aligned(*offset, len) {
+                    self.stats.read_errors += 1;
+                    return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                        format!("O_DIRECT expert extent requires {DIRECT_IO_ALIGNMENT}-byte aligned offset and length (offset={offset}, len={len})")).into());
+                }
+                Ok(PreparedRead::Unbound {
+                    file: self.io_file((*file).clone())?,
+                    offset: *offset,
+                })
+            }
+            DiskReadSource::Bound(view) => {
+                if view.len() != len {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "expert read length differs from its authorized window",
+                    )
+                    .into());
+                }
+                let mode = match self.mode {
+                    SpillIoMode::Direct => BoundReadMode::Direct,
+                    SpillIoMode::Worker => BoundReadMode::Random,
+                    SpillIoMode::Pread => BoundReadMode::Buffered,
+                    SpillIoMode::Mmap => {
+                        return Err(
+                            io::Error::other("positioned read requested in mmap mode").into()
+                        );
+                    }
+                };
+                Ok(PreparedRead::Bound(view.reader(mode)?))
+            }
+        }
     }
 
     fn reap_completed(&mut self) {
@@ -624,8 +693,7 @@ impl PreadPool {
     /// Read one exact demand extent on the caller thread. A full pool waits for one H2D event.
     pub(crate) fn read(
         &mut self,
-        file: &File,
-        offset: u64,
+        source: &DiskReadSource<'_>,
         len: usize,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         if len > self.capacity {
@@ -639,6 +707,7 @@ impl PreadPool {
             )
             .into());
         }
+        let reader = self.prepare_read(source, len)?;
         self.reap_completed();
         if !self
             .buffers
@@ -667,7 +736,7 @@ impl PreadPool {
                     return Err(err.into());
                 }
             };
-            pread_exact_at(file, &mut dst[..len], offset)
+            reader.read_exact(&mut dst[..len])
         };
         match result {
             Ok(()) => {
@@ -691,27 +760,24 @@ impl PreadPool {
     /// busy and the mmap fallback must handle the miss.
     pub(crate) fn submit_worker(
         &mut self,
-        file: Arc<File>,
-        offset: u64,
+        source: &DiskReadSource<'_>,
         len: usize,
     ) -> Result<Option<ReadTicket>, Box<dyn std::error::Error>> {
-        self.submit_worker_with_admission(file, offset, len, WorkerAdmission::Demand)
+        self.submit_worker_with_admission(source, len, WorkerAdmission::Demand)
     }
 
     /// Submit a known-future extent while reserving one pinned buffer for a demand miss.
     pub(crate) fn submit_worker_speculative(
         &mut self,
-        file: Arc<File>,
-        offset: u64,
+        source: &DiskReadSource<'_>,
         len: usize,
     ) -> Result<Option<ReadTicket>, Box<dyn std::error::Error>> {
-        self.submit_worker_with_admission(file, offset, len, WorkerAdmission::Speculative)
+        self.submit_worker_with_admission(source, len, WorkerAdmission::Speculative)
     }
 
     fn submit_worker_with_admission(
         &mut self,
-        file: Arc<File>,
-        offset: u64,
+        source: &DiskReadSource<'_>,
         len: usize,
         admission: WorkerAdmission,
     ) -> Result<Option<ReadTicket>, Box<dyn std::error::Error>> {
@@ -729,18 +795,7 @@ impl PreadPool {
             )
             .into());
         }
-        if self.mode == SpillIoMode::Direct && !direct_extent_aligned(offset, len) {
-            self.stats.read_errors += 1;
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!(
-                    "O_DIRECT expert extent requires {DIRECT_IO_ALIGNMENT}-byte aligned offset \
-                     and length (offset={offset}, len={len})"
-                ),
-            )
-            .into());
-        }
-        let file = self.io_file(file)?;
+        let reader = self.prepare_read(source, len)?;
         self.reap_completed();
         let free_count = self
             .buffers
@@ -773,8 +828,7 @@ impl PreadPool {
         let request = ReadRequest {
             ticket,
             index,
-            file,
-            offset,
+            reader,
             len,
             data,
         };
@@ -991,8 +1045,8 @@ impl Drop for PreadPool {
 #[cfg(test)]
 mod tests {
     use super::{
-        BufferPhase, SpillIoMode, config_fallbacks, configured_depth, configured_mode,
-        direct_extent_aligned, parse_depth, parse_spill_io, pread_exact_at,
+        BufferPhase, DiskReadSource, SpillIoMode, config_fallbacks, configured_depth,
+        configured_mode, direct_extent_aligned, parse_depth, parse_spill_io, pread_exact_at,
     };
 
     fn temp_file(name: &str, bytes: &[u8]) -> (std::path::PathBuf, std::fs::File) {
@@ -1152,8 +1206,26 @@ mod tests {
             "worker reservation test requires depth >= 2"
         );
 
-        let first = pool.submit_worker(file.clone(), 3, 37).unwrap().unwrap();
-        let second = pool.submit_worker(file.clone(), 51, 29).unwrap().unwrap();
+        let first = pool
+            .submit_worker(
+                &DiskReadSource::Unbound {
+                    file: &file,
+                    offset: 3,
+                },
+                37,
+            )
+            .unwrap()
+            .unwrap();
+        let second = pool
+            .submit_worker(
+                &DiskReadSource::Unbound {
+                    file: &file,
+                    offset: 51,
+                },
+                29,
+            )
+            .unwrap()
+            .unwrap();
         let second_buffer = pool.wait_worker(second).unwrap();
         assert_eq!(pool.bytes(second_buffer, 29).unwrap(), &bytes[51..80]);
         pool.abort_read(second_buffer);
@@ -1163,18 +1235,49 @@ mod tests {
 
         let speculative: Vec<_> = (1..pool.buffers.len())
             .map(|_| {
-                pool.submit_worker_speculative(file.clone(), 30, 17)
-                    .unwrap()
-                    .unwrap()
+                pool.submit_worker_speculative(
+                    &DiskReadSource::Unbound {
+                        file: &file,
+                        offset: 30,
+                    },
+                    17,
+                )
+                .unwrap()
+                .unwrap()
             })
             .collect();
         assert!(
-            pool.submit_worker_speculative(file.clone(), 0, 8)
-                .unwrap()
-                .is_none()
+            pool.submit_worker_speculative(
+                &DiskReadSource::Unbound {
+                    file: &file,
+                    offset: 0
+                },
+                8
+            )
+            .unwrap()
+            .is_none()
         );
-        let demand = pool.submit_worker(file.clone(), 11, 13).unwrap().unwrap();
-        assert!(pool.submit_worker(file.clone(), 0, 8).unwrap().is_none());
+        let demand = pool
+            .submit_worker(
+                &DiskReadSource::Unbound {
+                    file: &file,
+                    offset: 11,
+                },
+                13,
+            )
+            .unwrap()
+            .unwrap();
+        assert!(
+            pool.submit_worker(
+                &DiskReadSource::Unbound {
+                    file: &file,
+                    offset: 0
+                },
+                8
+            )
+            .unwrap()
+            .is_none()
+        );
         assert_eq!(pool.stats().ring_full, 2);
         let demand_buffer = pool.wait_worker(demand).unwrap();
         assert_eq!(pool.bytes(demand_buffer, 13).unwrap(), &bytes[11..24]);
@@ -1185,17 +1288,55 @@ mod tests {
             pool.abort_read(buffer);
         }
 
-        let canceled = pool.submit_worker(file.clone(), 7, 41).unwrap().unwrap();
+        let canceled = pool
+            .submit_worker(
+                &DiskReadSource::Unbound {
+                    file: &file,
+                    offset: 7,
+                },
+                41,
+            )
+            .unwrap()
+            .unwrap();
         let blockers: Vec<_> = (1..pool.buffers.len())
-            .map(|_| pool.submit_worker(file.clone(), 30, 17).unwrap().unwrap())
+            .map(|_| {
+                pool.submit_worker(
+                    &DiskReadSource::Unbound {
+                        file: &file,
+                        offset: 30,
+                    },
+                    17,
+                )
+                .unwrap()
+                .unwrap()
+            })
             .collect();
         let ring_full_before = pool.stats().ring_full;
-        assert!(pool.submit_worker(file.clone(), 0, 8).unwrap().is_none());
+        assert!(
+            pool.submit_worker(
+                &DiskReadSource::Unbound {
+                    file: &file,
+                    offset: 0
+                },
+                8
+            )
+            .unwrap()
+            .is_none()
+        );
         assert_eq!(pool.stats().ring_full, ring_full_before + 1);
         assert!(pool.cancel_worker(canceled));
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
         let after_cancel = loop {
-            if let Some(ticket) = pool.submit_worker(file.clone(), 11, 13).unwrap() {
+            if let Some(ticket) = pool
+                .submit_worker(
+                    &DiskReadSource::Unbound {
+                        file: &file,
+                        offset: 11,
+                    },
+                    13,
+                )
+                .unwrap()
+            {
                 break ticket;
             }
             assert!(
@@ -1213,13 +1354,31 @@ mod tests {
             pool.abort_read(blocker_buffer);
         }
 
-        let short = pool.submit_worker(file.clone(), 93, 8).unwrap().unwrap();
+        let short = pool
+            .submit_worker(
+                &DiskReadSource::Unbound {
+                    file: &file,
+                    offset: 93,
+                },
+                8,
+            )
+            .unwrap()
+            .unwrap();
         let err = pool.wait_worker(short).unwrap_err();
         assert_eq!(
             err.downcast_ref::<std::io::Error>().unwrap().kind(),
             std::io::ErrorKind::UnexpectedEof
         );
-        let reused = pool.submit_worker(file, 0, 8).unwrap().unwrap();
+        let reused = pool
+            .submit_worker(
+                &DiskReadSource::Unbound {
+                    file: &file,
+                    offset: 0,
+                },
+                8,
+            )
+            .unwrap()
+            .unwrap();
         let reused_buffer = pool.wait_worker(reused).unwrap();
         assert_eq!(pool.bytes(reused_buffer, 8).unwrap(), &bytes[..8]);
         pool.abort_read(reused_buffer);

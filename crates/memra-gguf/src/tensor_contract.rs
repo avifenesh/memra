@@ -229,6 +229,9 @@ pub enum LayerTensor {
     PreRoutedMlpNorm,
     PostRoutedMlpNorm,
     LayerScale,
+    /// Gemma's optional per-layer-embedding gate probe. Registered packs currently require
+    /// zero per-layer embedding width; naming this absent role does not add a storage schema.
+    PerLayerEmbeddingInputGate,
     MlpGate,
     MlpUp,
     MlpDown,
@@ -295,22 +298,27 @@ pub enum TensorMatch {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuantConstraint {
     FloatOnly,
+    UnquantizedFloat,
     Weight,
     ExactFloat(FloatType),
     Nvfp4,
     Mxfp4,
     Fp8Block128,
     I64,
+    I32OrI64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TensorCensusEntry {
+    /// Complete normalized auxiliary names, including auxiliaries of unquantized weights.
+    /// Quantized storage repeats this list as part of its codec; binding checks they agree.
+    pub auxiliaries: Vec<String>,
     pub name: String,
     /// Checkpoint-native dimension order: safetensors outer-to-inner, GGUF inner-to-outer.
     pub shape: Vec<u64>,
     pub storage: StorageLayout,
-    /// Exact checkpoint bytes represented by this row. Quantized safetensors rows include the
-    /// recognized auxiliary scale planes carried by `storage`; GGUF auxiliaries are separate rows.
+    /// Exact checkpoint bytes represented by this row. Safetensors rows include all recognized
+    /// auxiliary planes, including those of floating weights; GGUF auxiliaries are separate rows.
     pub physical_bytes: u64,
 }
 
@@ -331,6 +339,9 @@ pub enum FloatType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntegerType {
+    I8,
+    I16,
+    I32,
     I64,
 }
 
@@ -365,6 +376,10 @@ pub struct BoundTensor {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TensorContractError {
+    InvalidExpertSet {
+        layer: u32,
+        reason: &'static str,
+    },
     UnsupportedPlanOperation {
         operation: &'static str,
     },
@@ -416,6 +431,9 @@ pub enum TensorContractError {
 impl std::fmt::Display for TensorContractError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::InvalidExpertSet { layer, reason } => {
+                write!(f, "layer {layer} has an invalid expert set: {reason}")
+            }
             Self::UnsupportedPlanOperation { operation } => {
                 write!(
                     f,
@@ -479,6 +497,94 @@ impl std::fmt::Display for TensorContractError {
 impl std::error::Error for TensorContractError {}
 
 impl TensorContract {
+    /// Select the explicitly declared split GGUF encoding of a typed expert bank. This is a
+    /// storage schema choice, not a change to routing or a missing-tensor fallback.
+    pub(crate) fn declared_expert_members(
+        &mut self,
+        plan: &ModelPlan,
+        census: &[TensorCensusEntry],
+    ) -> Result<(), String> {
+        if self.dialect != CheckpointDialect::Gguf {
+            return Ok(());
+        }
+        let names: BTreeSet<_> = census.iter().map(|r| r.name.as_str()).collect();
+        for requirement in &mut self.requirements {
+            let Some(ids) = expert_member_ids(plan, &requirement.id) else {
+                continue;
+            };
+            if requirement.match_mode == TensorMatch::All {
+                continue;
+            }
+            if requirement.names.len() != 1 || requirement.shape.len() != 3 {
+                return Err(format!(
+                    "{:?}: unrepresented GGUF expert bank schema",
+                    requirement.id
+                ));
+            }
+            let stem = requirement.names[0]
+                .strip_suffix(".weight")
+                .ok_or_else(|| {
+                    format!(
+                        "{:?}: expert bank lacks canonical weight name",
+                        requirement.id
+                    )
+                })?;
+            let members: Vec<_> = ids.iter().map(|id| format!("{stem}.{id}.weight")).collect();
+            if !members.iter().any(|name| names.contains(name.as_str())) {
+                continue;
+            }
+            if names.contains(requirement.names[0].as_str()) {
+                return Err(format!(
+                    "{:?}: both stacked and split expert representations are declared",
+                    requirement.id
+                ));
+            }
+            requirement.names = members;
+            requirement.shape.truncate(2);
+            requirement.match_mode = TensorMatch::All;
+            requirement.transform = TensorTransform::StackExperts;
+        }
+        Ok(())
+    }
+
+    /// Validate every row in one sparse physical component without filling absent roles from
+    /// another component. Group membership stays in the original contract for final selection.
+    /// Only the composite compiler uses this; ordinary binding still requires a complete census.
+    #[allow(clippy::result_large_err)] // allow: same diagnostic type as the canonical binder
+    pub(crate) fn bind_fragment(
+        &self,
+        census: &[TensorCensusEntry],
+    ) -> Result<BoundTensorContract, TensorContractError> {
+        let names: BTreeSet<_> = census.iter().map(|row| row.name.as_str()).collect();
+        let mut ids = BTreeSet::new();
+        let mut requirements = Vec::new();
+        for requirement in &self.requirements {
+            if !ids.insert(&requirement.id) {
+                return Err(TensorContractError::DuplicateTensorId {
+                    id: requirement.id.clone(),
+                });
+            }
+            if !requirement
+                .names
+                .iter()
+                .any(|name| names.contains(name.as_str()))
+            {
+                continue;
+            }
+            let mut present = requirement.clone();
+            present.required = true;
+            if present.match_mode == TensorMatch::All {
+                present.names.retain(|name| names.contains(name.as_str()));
+            }
+            requirements.push(present);
+        }
+        Self {
+            dialect: self.dialect,
+            requirements,
+        }
+        .bind(census)
+    }
+
     #[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
     pub fn for_plan(
         plan: &ModelPlan,
@@ -489,6 +595,50 @@ impl TensorContract {
             return crate::model_packs::whisper::tensor_contract(speech, dialect);
         }
         let mut builder = ContractBuilder::new(dialect);
+        Self::add_plan_requirements(&mut builder, plan, options)?;
+        Ok(Self {
+            dialect,
+            requirements: builder.finish()?,
+        })
+    }
+
+    /// Engine names select semantic roles. This private path returns aliases only; it cannot
+    /// create a bindable GGUF contract for a program whose physical GGUF schema is unsupported.
+    #[allow(clippy::result_large_err)] // allow: preserve the canonical schema diagnostics
+    pub(crate) fn engine_abi_aliases(
+        plan: &ModelPlan,
+        options: ContractOptions,
+    ) -> Result<Vec<(String, TensorId)>, TensorContractError> {
+        let mut aliases = Vec::new();
+        let requirements = if plan.speech.is_some() {
+            Self::for_plan(plan, CheckpointDialect::Gguf, options)?.requirements
+        } else {
+            let mut builder = ContractBuilder::new(CheckpointDialect::Gguf);
+            builder.engine_aliases = Some(Vec::new());
+            Self::add_plan_requirements(&mut builder, plan, options)?;
+            aliases = builder.engine_aliases.take().unwrap();
+            builder.finish()?
+        };
+        for requirement in requirements {
+            if requirement.transform != TensorTransform::StackExperts {
+                aliases.extend(
+                    requirement
+                        .names
+                        .into_iter()
+                        .map(|name| (name, requirement.id.clone())),
+                );
+            }
+        }
+        Ok(aliases)
+    }
+
+    #[allow(clippy::result_large_err)] // allow: same diagnostic surface as the artifact compiler
+    fn add_plan_requirements(
+        builder: &mut ContractBuilder,
+        plan: &ModelPlan,
+        options: ContractOptions,
+    ) -> Result<(), TensorContractError> {
+        let dialect = builder.dialect;
         builder.weight(
             TensorId::TokenEmbedding,
             top_name(dialect, "token_embd.weight", "model.embed_tokens.weight"),
@@ -527,7 +677,7 @@ impl TensorContract {
         }
 
         for layer in &plan.layers {
-            add_layer(&mut builder, plan, layer)?;
+            add_layer(builder, plan, layer)?;
         }
         for block in &plan.mtp_blocks {
             if plan.arch == Arch::DeepSeekV4 {
@@ -536,7 +686,7 @@ impl TensorContract {
                 });
             }
             let first = builder.requirements.len();
-            add_layer(&mut builder, plan, &block.layer)?;
+            add_layer(builder, plan, &block.layer)?;
             rewrite_mtp_namespace(
                 &mut builder.requirements[first..],
                 plan,
@@ -544,13 +694,18 @@ impl TensorContract {
                 block.depth,
                 block.layer.index,
             );
-            add_mtp_glue(&mut builder, plan, block);
+            add_mtp_glue(builder, plan, block);
         }
 
-        Ok(Self {
-            dialect,
-            requirements: builder.finish()?,
-        })
+        if dialect == CheckpointDialect::HfSafetensors && plan.arch == Arch::Step35 {
+            let mut contract = Self {
+                dialect,
+                requirements: std::mem::take(&mut builder.requirements),
+            };
+            crate::model_packs::step35::tensors::normalize_hf_contract(&mut contract, plan);
+            builder.requirements = contract.requirements;
+        }
+        Ok(())
     }
 
     #[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
@@ -569,7 +724,13 @@ impl TensorContract {
 
         let mut claims: BTreeMap<&str, TensorId> = BTreeMap::new();
         let mut tensors = BTreeMap::new();
+        let mut ids = BTreeSet::new();
         for requirement in &self.requirements {
+            if !ids.insert(&requirement.id) {
+                return Err(TensorContractError::DuplicateTensorId {
+                    id: requirement.id.clone(),
+                });
+            }
             let matched: Vec<&TensorCensusEntry> = requirement
                 .names
                 .iter()
@@ -628,10 +789,17 @@ impl TensorContract {
                         actual: entry.storage.clone(),
                     });
                 }
-                let actual_auxiliaries = match &entry.storage {
-                    StorageLayout::Quantized(layout) => layout.auxiliaries.clone(),
-                    _ => Vec::new(),
-                };
+                if let StorageLayout::Quantized(layout) = &entry.storage
+                    && layout.auxiliaries != entry.auxiliaries
+                {
+                    return Err(TensorContractError::AuxiliaryLayoutMismatch {
+                        id: requirement.id.clone(),
+                        name: entry.name.clone(),
+                        expected: layout.auxiliaries.clone(),
+                        actual: entry.auxiliaries.clone(),
+                    });
+                }
+                let actual_auxiliaries = entry.auxiliaries.clone();
                 if let Some(expected) = requirement.auxiliaries.as_ref()
                     && actual_auxiliaries != *expected
                 {
@@ -676,7 +844,7 @@ impl TensorContract {
     }
 }
 
-fn rope_factor_width(plan: &ModelPlan) -> Option<u32> {
+pub(crate) fn rope_factor_width(plan: &ModelPlan) -> Option<u32> {
     plan.layers
         .iter()
         .chain(plan.mtp_blocks.iter().map(|block| &block.layer))
@@ -705,7 +873,14 @@ impl QuantConstraint {
     fn accepts(self, storage: &StorageLayout) -> bool {
         match self {
             Self::FloatOnly => matches!(storage, StorageLayout::Float(_)),
-            Self::Weight => true,
+            Self::UnquantizedFloat => matches!(
+                storage,
+                StorageLayout::Float(FloatType::F32 | FloatType::F16 | FloatType::Bf16)
+            ),
+            Self::Weight => matches!(
+                storage,
+                StorageLayout::Float(_) | StorageLayout::Quantized(_)
+            ),
             Self::ExactFloat(expected) => {
                 matches!(storage, StorageLayout::Float(actual) if *actual == expected)
             }
@@ -725,6 +900,10 @@ impl QuantConstraint {
                     if layout.format == "FP8_E4M3" && layout.block_shape == [128, 128]
             ),
             Self::I64 => matches!(storage, StorageLayout::Integer(IntegerType::I64)),
+            Self::I32OrI64 => matches!(
+                storage,
+                StorageLayout::Integer(IntegerType::I32 | IntegerType::I64)
+            ),
         }
     }
 }
@@ -732,6 +911,7 @@ impl QuantConstraint {
 struct ContractBuilder {
     dialect: CheckpointDialect,
     requirements: Vec<TensorRequirement>,
+    engine_aliases: Option<Vec<(String, TensorId)>>,
 }
 
 impl ContractBuilder {
@@ -739,6 +919,7 @@ impl ContractBuilder {
         Self {
             dialect,
             requirements: Vec::new(),
+            engine_aliases: None,
         }
     }
 
@@ -785,7 +966,9 @@ impl ContractBuilder {
             match_mode: TensorMatch::All,
             shape,
             owner,
-            transform: if self.dialect == CheckpointDialect::Gguf {
+            transform: if self.dialect == CheckpointDialect::Gguf
+                && transform != TensorTransform::StackExperts
+            {
                 TensorTransform::Identity
             } else {
                 transform
@@ -979,7 +1162,13 @@ fn add_layer(
     );
     match &layer.attention {
         AttentionPlan::Full(attention) | AttentionPlan::SlidingWindow { attention, .. } => {
-            add_full_attention(builder, plan, index, attention);
+            add_full_attention(
+                builder,
+                plan,
+                index,
+                attention,
+                layer.pre_attention_norm.weight_transform,
+            );
         }
         AttentionPlan::GatedDeltaNet(gdn) => add_gdn(builder, plan, index, *gdn),
         AttentionPlan::KimiDeltaNet(kda) => add_kda(builder, plan, index, *kda),
@@ -1083,6 +1272,46 @@ fn add_gemma_parallel_moe(
     moe: &MoeMlpPlan,
     parallel: crate::model_plan::GemmaParallelMoePlan,
 ) -> Result<(), TensorContractError> {
+    if moe.retained_experts.is_some() {
+        return Err(TensorContractError::UnsupportedPlanOperation {
+            operation: "retained experts with parallel routed-output scales",
+        });
+    }
+    if let Some(aliases) = builder.engine_aliases.as_mut() {
+        if moe.shared.is_none() {
+            return Err(TensorContractError::UnsupportedPlanOperation {
+                operation: "gemma parallel MoE without shared branch",
+            });
+        }
+        // These are the hybrid loader's semantic operands, not physical GGUF declarations.
+        // Its dense-spelled FFN is the parallel shared branch; its gate/up bank remains fused.
+        for (tensor, suffix) in [
+            (LayerTensor::SharedMlpGate, "ffn_gate.weight"),
+            (LayerTensor::SharedMlpUp, "ffn_up.weight"),
+            (LayerTensor::SharedMlpDown, "ffn_down.weight"),
+            (LayerTensor::MoeRouter, "ffn_gate_inp.weight"),
+            (LayerTensor::MoeExpertGateUpBank, "ffn_gate_up_exps.weight"),
+            (LayerTensor::MoeExpertDownBank, "ffn_down_exps.weight"),
+            (LayerTensor::PostSharedMlpNorm, "post_ffw_norm_1.weight"),
+            (LayerTensor::PreRoutedMlpNorm, "pre_ffw_norm_2.weight"),
+            (LayerTensor::PostRoutedMlpNorm, "post_ffw_norm_2.weight"),
+        ] {
+            aliases.push((format!("blk.{index}.{suffix}"), layer_id(index, tensor)));
+        }
+        if parallel.router_input_scale {
+            aliases.push((
+                format!("blk.{index}.ffn_gate_inp.scale"),
+                layer_id(index, LayerTensor::MoeRouterScale),
+            ));
+        }
+        if parallel.per_expert_output_scale {
+            aliases.push((
+                format!("blk.{index}.ffn_down_exps.scale"),
+                layer_id(index, LayerTensor::MoeExpertOutputScale),
+            ));
+        }
+        return Ok(());
+    }
     if builder.dialect != CheckpointDialect::HfSafetensors {
         return Err(TensorContractError::UnsupportedPlanOperation {
             operation: "gemma parallel MoE non-safetensors schema",
@@ -1323,6 +1552,7 @@ fn add_full_attention(
     plan: &ModelPlan,
     index: u32,
     attention: &crate::model_plan::FullAttentionPlan,
+    qk_weight_transform: WeightTransform,
 ) {
     let gate_multiplier = if attention.output_gate == AttentionGateKind::FusedQ {
         2
@@ -1390,7 +1620,7 @@ fn add_full_attention(
             ),
             vec![attention.key_head_dim as u64],
             TensorOwner::Layer(index),
-            TensorTransform::Identity,
+            norm_transform(qk_weight_transform),
             qk_required,
         );
         builder.float(
@@ -1403,7 +1633,7 @@ fn add_full_attention(
             ),
             vec![attention.key_head_dim as u64],
             TensorOwner::Layer(index),
-            TensorTransform::Identity,
+            norm_transform(qk_weight_transform),
             qk_required,
         );
     }
@@ -2110,8 +2340,21 @@ fn add_moe_mlp(
     index: u32,
     moe: &MoeMlpPlan,
 ) -> Result<(), TensorContractError> {
+    moe.validate_expert_set()
+        .map_err(|reason| TensorContractError::InvalidExpertSet {
+            layer: index,
+            reason,
+        })?;
+    if builder.dialect == CheckpointDialect::HfSafetensors && plan.arch == Arch::Step35 {
+        builder
+            .requirements
+            .extend(crate::model_packs::step35::tensors::hf_moe_requirements(
+                plan, index, moe,
+            )?);
+        return Ok(());
+    }
     if builder.dialect == CheckpointDialect::HfSafetensors
-        && matches!(plan.arch, Arch::Gemma4 | Arch::DeepSeekV4 | Arch::Step35)
+        && matches!(plan.arch, Arch::Gemma4 | Arch::DeepSeekV4)
     {
         return Err(TensorContractError::UnsupportedPlanOperation {
             operation: "family-specific HF MoE bank",
@@ -2311,13 +2554,26 @@ fn add_gguf_expert_banks(
             ],
         ),
     ] {
-        builder.weight(
-            layer_id(index, tensor),
-            format!("blk.{index}.{suffix}"),
-            shape,
-            owner,
-            TensorTransform::Identity,
-        );
+        if let Some(ids) = &moe.retained_experts {
+            let stem = suffix.strip_suffix(".weight").unwrap();
+            builder.weight_group(
+                layer_id(index, tensor),
+                ids.iter()
+                    .map(|id| format!("blk.{index}.{stem}.{id}.weight"))
+                    .collect(),
+                shape[..2].to_vec(),
+                owner,
+                TensorTransform::StackExperts,
+            );
+        } else {
+            builder.weight(
+                layer_id(index, tensor),
+                format!("blk.{index}.{suffix}"),
+                shape,
+                owner,
+                TensorTransform::Identity,
+            );
+        }
     }
 }
 
@@ -2349,6 +2605,7 @@ fn add_hf_expert_groups(
         ),
     ] {
         let names = (0..moe.expert_count)
+            .filter(|&expert| moe.expert_bank_row(expert).is_some())
             .map(|expert| crate::hf_mapping::hf_expert_name(index, expert, projection, &plan.arch))
             .collect();
         builder.weight_group(
@@ -2359,6 +2616,33 @@ fn add_hf_expert_groups(
             TensorTransform::StackExperts,
         );
     }
+}
+
+/// Canonical group slots retain original router IDs, including in compact retained banks.
+pub(crate) fn expert_member_ids(plan: &ModelPlan, id: &TensorId) -> Option<Vec<u32>> {
+    let TensorId::Layer {
+        index,
+        tensor:
+            LayerTensor::MoeExpertGateBank
+            | LayerTensor::MoeExpertUpBank
+            | LayerTensor::MoeExpertDownBank,
+    } = id
+    else {
+        return None;
+    };
+    let layer = plan
+        .layers
+        .iter()
+        .chain(plan.mtp_blocks.iter().map(|b| &b.layer))
+        .find(|layer| layer.index == *index)?;
+    let MlpPlan::Moe(moe) = &layer.mlp else {
+        return None;
+    };
+    Some(
+        moe.retained_experts
+            .clone()
+            .unwrap_or_else(|| (0..moe.expert_count).collect()),
+    )
 }
 
 fn layer_id(index: u32, tensor: LayerTensor) -> TensorId {
@@ -2482,6 +2766,7 @@ mod tests {
                     TensorMatch::All => requirement.names.as_slice(),
                 };
                 names.iter().map(|name| TensorCensusEntry {
+                    auxiliaries: Vec::new(),
                     name: name.clone(),
                     shape: requirement.shape.clone(),
                     storage: if requirement.quant == QuantConstraint::FloatOnly {
@@ -2516,6 +2801,7 @@ mod tests {
             }],
         };
         let entry = |name: &str, physical_bytes| TensorCensusEntry {
+            auxiliaries: Vec::new(),
             name: name.to_string(),
             shape: vec![1],
             storage: StorageLayout::Float(FloatType::F32),
@@ -2580,6 +2866,7 @@ mod tests {
 
         census.push(missing);
         census.push(TensorCensusEntry {
+            auxiliaries: Vec::new(),
             name: "unexpected.weight".to_string(),
             shape: vec![1],
             storage: StorageLayout::Float(FloatType::F32),
@@ -2637,12 +2924,14 @@ mod tests {
         };
         let entries = vec![
             TensorCensusEntry {
+                auxiliaries: Vec::new(),
                 name: ambiguous.requirements[0].names[0].clone(),
                 shape: vec![64],
                 storage: StorageLayout::Float(FloatType::Bf16),
                 physical_bytes: 128,
             },
             TensorCensusEntry {
+                auxiliaries: Vec::new(),
                 name: ambiguous.requirements[0].names[1].clone(),
                 shape: vec![64],
                 storage: StorageLayout::Float(FloatType::Bf16),
@@ -2722,6 +3011,84 @@ mod tests {
         assert_eq!(conv.shape, vec![256, 1, 4]);
         assert_eq!(conv.transform, TensorTransform::Conv1dSqueezeReorder);
         contract.bind(&census_for(&contract)).unwrap();
+    }
+
+    #[test]
+    fn retained_expert_contract_keeps_original_names_and_refuses_pruned_weights() {
+        let mut plan = qwen3_moe_plan();
+        let MlpPlan::Moe(moe) = &mut plan.layers[0].mlp else {
+            unreachable!()
+        };
+        moe.retained_experts = Some(vec![1, 3]);
+        assert!(
+            plan.operations()
+                .contains(&crate::model_plan::OperationKind::RetainedExpertRouting)
+        );
+        for rewrite in crate::execution_manifest::execution_rewrites(&plan) {
+            assert!(
+                rewrite
+                    .blockers
+                    .contains(&crate::model_plan::OperationKind::RetainedExpertRouting),
+                "{:?}",
+                rewrite.surface
+            );
+        }
+        for dialect in [CheckpointDialect::Gguf, CheckpointDialect::HfSafetensors] {
+            let contract =
+                TensorContract::for_plan(&plan, dialect, ContractOptions::default()).unwrap();
+            let gate_id = layer_id(0, LayerTensor::MoeExpertGateBank);
+            let gate = contract
+                .requirements
+                .iter()
+                .find(|r| r.id == gate_id)
+                .unwrap();
+            let expected = match dialect {
+                CheckpointDialect::Gguf => vec![
+                    "blk.0.ffn_gate_exps.1.weight",
+                    "blk.0.ffn_gate_exps.3.weight",
+                ],
+                CheckpointDialect::HfSafetensors => vec![
+                    "model.layers.0.mlp.experts.1.gate_proj.weight",
+                    "model.layers.0.mlp.experts.3.gate_proj.weight",
+                ],
+            };
+            assert_eq!(gate.names, expected);
+            assert_eq!(gate.transform, TensorTransform::StackExperts);
+            let mut census = census_for(&contract);
+            let bound = contract.bind(&census).unwrap();
+            assert_eq!(bound.tensors[&gate_id].checkpoint_names, expected);
+            let router = contract
+                .requirements
+                .iter()
+                .find(|r| r.id == layer_id(0, LayerTensor::MoeRouter))
+                .unwrap();
+            assert!(router.shape.contains(&4));
+            let mut pruned = census
+                .iter()
+                .find(|r| r.name == gate.names[0])
+                .unwrap()
+                .clone();
+            pruned.name = pruned.name.replace(".1.", ".0.");
+            census.push(pruned);
+            assert!(matches!(
+                contract.bind(&census),
+                Err(TensorContractError::Extra { .. })
+            ));
+            census.pop();
+            census.retain(|r| r.name != gate.names[1]);
+            assert!(matches!(
+                contract.bind(&census),
+                Err(TensorContractError::Missing { .. })
+            ));
+        }
+        let MlpPlan::Moe(moe) = &mut plan.layers[0].mlp else {
+            unreachable!()
+        };
+        moe.retained_experts = Some(vec![3, 1]);
+        assert!(matches!(
+            TensorContract::for_plan(&plan, CheckpointDialect::Gguf, ContractOptions::default()),
+            Err(TensorContractError::InvalidExpertSet { .. })
+        ));
     }
 
     #[test]
@@ -2894,6 +3261,7 @@ mod tests {
             .tensors
             .iter()
             .map(|tensor| TensorCensusEntry {
+                auxiliaries: Vec::new(),
                 name: tensor.name.clone(),
                 shape: tensor.ne.clone(),
                 storage: match tensor.ggml_type {

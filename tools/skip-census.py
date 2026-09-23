@@ -90,6 +90,104 @@ def literal_prefix(message: str) -> str:
     return message.split("{", 1)[0]
 
 
+def code_brace_deltas(text: str) -> list[tuple[bool, int]]:
+    """Per line: (starts in code, net `{` minus `}` counted in code only).
+
+    Braces inside string, raw-string, byte-string and char literals and inside comments are
+    not scope. Counting them moved every later module into the wrong parent the day a test
+    wrote `'{'` next to a JSON literal, and the census then reported a name libtest never
+    prints. Lifetimes (`'a`) are not char literals and are left as code.
+    """
+    out: list[tuple[bool, int]] = []
+    state = "code"  # code | block | str | raw
+    block_depth = 0
+    raw_hashes = 0
+    i = 0
+    n = len(text)
+    line_start_code = True
+    delta = 0
+
+    def ident(ch: str) -> bool:
+        return ch.isalnum() or ch == "_"
+
+    while i < n:
+        ch = text[i]
+        if ch == "\n":
+            out.append((line_start_code, delta))
+            line_start_code = state == "code"
+            delta = 0
+            i += 1
+            continue
+        if state == "code":
+            if text.startswith("//", i):
+                end = text.find("\n", i)
+                i = n if end < 0 else end
+                continue
+            if text.startswith("/*", i):
+                state, block_depth = "block", 1
+                i += 2
+                continue
+            if ch in "rb" and (i == 0 or not ident(text[i - 1])):
+                j = i + 1 if ch == "r" else i + (2 if text.startswith("br", i) else 1)
+                if ch == "r" or text.startswith("br", i):
+                    k = j
+                    while k < n and text[k] == "#":
+                        k += 1
+                    if k < n and text[k] == '"':
+                        state, raw_hashes = "raw", k - j
+                        i = k + 1
+                        continue
+            if ch == '"':
+                state = "str"
+                i += 1
+                continue
+            if ch == "'":
+                if text.startswith("\\", i + 1):
+                    end = text.find("'", i + 3)
+                    if end > 0 and "\n" not in text[i:end]:
+                        i = end + 1
+                        continue
+                elif i + 2 < n and text[i + 2] == "'" and text[i + 1] != "\n":
+                    i += 3
+                    continue
+                i += 1
+                continue
+            if ch == "{":
+                delta += 1
+            elif ch == "}":
+                delta -= 1
+            i += 1
+        elif state == "block":
+            if text.startswith("/*", i):
+                block_depth += 1
+                i += 2
+            elif text.startswith("*/", i):
+                block_depth -= 1
+                i += 2
+                if block_depth == 0:
+                    state = "code"
+            else:
+                i += 1
+        elif state == "str":
+            if ch == "\\":
+                # Skip the escaped char, but never a newline: it still ends a line.
+                i += 1 if text.startswith("\\\n", i) else 2
+            elif ch == '"':
+                state = "code"
+                i += 1
+            else:
+                i += 1
+        else:  # raw
+            if ch == '"' and text.startswith("#" * raw_hashes, i + 1):
+                state = "code"
+                i += 1 + raw_hashes
+            else:
+                i += 1
+    if not text.endswith("\n"):
+        out.append((line_start_code, delta))
+    return out
+
+
 def crate_src(crate: str) -> Path:
     path = ROOT / "crates" / crate / "src"
     if not path.is_dir():
@@ -150,19 +248,25 @@ def _census_tree(crate: str, root: Path, integration: bool) -> list[dict[str, st
         # be an equality. A suffix match would work today and would quietly accept the wrong
         # test the day two modules share a function name.
         file_mods = file_module_path(path.relative_to(root), integration)
-        lines = path.read_text(encoding="utf-8").splitlines()
-        # Module path by brace depth, so the census reports the same name libtest prints.
+        text = path.read_text(encoding="utf-8")
+        lines = text.split("\n")
+        if text.endswith("\n"):
+            lines.pop()
+        braces = code_brace_deltas(text)
+        if len(braces) != len(lines):
+            raise CensusError(f"{path}: brace scan saw {len(braces)} lines, file has {len(lines)}")
+        # Module path by code brace depth, so the census reports the same name libtest prints.
         mod_at_line: list[tuple[str, ...]] = []
         stack: list[tuple[str, int]] = []
         depth = 0
-        for line in lines:
+        for line, (in_code, delta) in zip(lines, braces):
             while stack and stack[-1][1] >= depth:
                 stack.pop()
             mod_at_line.append(tuple(name for name, _ in stack))
-            mod_match = MOD_RE.match(line)
+            mod_match = MOD_RE.match(line) if in_code else None
             if mod_match:
                 stack.append((mod_match.group(1), depth))
-            depth += line.count("{") - line.count("}")
+            depth += delta
         for index, line in enumerate(lines):
             match = SKIP_PRINT_RE.search(line)
             if not match:

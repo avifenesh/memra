@@ -1,0 +1,19 @@
+   Compiling memra-gguf v0.138.0 (<worktree>/crates/memra-gguf)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.74s
+     Running tests/canonical_config.rs (target/debug/deps/canonical_config-BUILD_ID)
+
+running 12 tests
+test malformed_and_duplicate_decoded_declarations_refuse_recursively ... ok
+test fractional_integer_fields_cannot_round_to_a_whole_number ... ok
+test glm_interval_one_preserves_the_existing_program_and_other_intervals_refuse ... ok
+test numeric_literals_are_not_rounded_through_f64_before_normalization ... ok
+test decoded_activation_declarations_cannot_disappear_before_pack_admission ... ok
+test explicit_config_override_does_not_hide_a_malformed_present_config_file ... ok
+test present_wrong_types_and_lossy_numeric_conversions_refuse ... ok
+test documented_absence_null_and_scalar_vector_forms_remain_distinct_from_errors ... ok
+test malformed_file_config_refuses_before_checkpoint_io ... ok
+test equivalent_decoded_keys_values_and_arrays_keep_the_same_plan ... ok
+test valid_literal_plan_hashes_match_frozen_pre_repair_ac3c39712 ... ok
+test integer_valued_decimals_preserve_range_without_float_casts ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s

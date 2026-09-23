@@ -1,0 +1,379 @@
+{
+  "base": "ab9dcfc00853d40c76bc842b77696e15d4509f73",
+  "recorded_utc": "2026-09-21T20:17:32.585147+00:00",
+  "source_review": "pending",
+  "source": {
+    "crates/memra-gguf/src/bound_source.rs": "2bf54532454c16272c80124e279b11e0b37ea67680b50a899df2b2e66b5c0d4b",
+    "crates/memra-gguf/src/bound_source/draft_pair.rs": "d30ad1d6fce23b765f178287b99138486438bd5e8ed74874d1ec6ba058c108c6",
+    "crates/memra-gguf/src/bound_source/tests.rs": "852059e267d001cb81f7e356f34c368b496eae18d6adf3ab97e3fabf474ca444",
+    "crates/memra-gguf/src/bound_source/tests/draft_pair.rs": "faf9c835df83e70b80dc32ae7cab3380ccd90424bb1cce1f0384a773123452d3",
+    "crates/memra-engine/src/hybrid.rs": "644b8ab24b21f6c1d2de18ecd5f75c8c1d400b452e41d351d8337d95f97f319c",
+    "research/modelplan-onboarding-bound-census-20260920/draft-pair-20260921/consumer-harness/Cargo.lock": "44871cdb159c3d699fdc41f2c3e2328791e4f490f6f1e59944b0708a437c6101",
+    "research/modelplan-onboarding-bound-census-20260920/draft-pair-20260921/consumer-harness/Cargo.toml": "f539ae4c62ad2bc2035d742b8e7a8e6a975946a8f46db52b5fdcd0178f5f462c",
+    "research/modelplan-onboarding-bound-census-20260920/draft-pair-20260921/consumer-harness/build.rs": "1db7278d734b91d687035a50ed16e6c56ed9953cd3eae872da623c28c4f06b43",
+    "research/modelplan-onboarding-bound-census-20260920/draft-pair-20260921/consumer-harness/src/lib.rs": "f033bb2ab35331837db31814f731c96f61c87ef2bee42656aba5b4eb090ad79b",
+    "research/modelplan-onboarding-bound-census-20260920/draft-repair-20260921/consumer-harness/src/fixture.rs": "88492db1c3474a278ff4857fca2dcc4705376837bca1b1c1487c45e8cc467eb7",
+    "research/modelplan-onboarding-bound-census-20260920/head-trim-20260921/consumer-harness/src/fixture.rs": "a7307cc265fdc45b16cb101f4e9da8c516dd2f745102f92dcea909a063c206ac",
+    "crates/memra-engine/src/model/nvfp4_scale.rs": "d27d048082bd2866edb7f5c961d77695e787a87f0dc95828f159d6fefeb9fa2c",
+    "crates/memra-engine/src/head_trim.rs": "bdd932a71bcd0fcbd48a067c7993ccd893b9c3ae866c55692be889bca8750094",
+    "crates/memra-engine/src/trim_ranks.rs": "5f73355f90d0865c405de0e459531891dc3936cfd40e510360a9ac0d68529605"
+  },
+  "commands": [
+    {
+      "name": "source-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--lib",
+        "bound_source::tests::draft_pair",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.1803159590344876
+    },
+    {
+      "name": "source-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 6.30076441692654
+    },
+    {
+      "name": "engine-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "--lib",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2",
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0,
+      "wall_seconds": 60.22591858403757
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 4.939542167005129
+    },
+    {
+      "name": "consumer-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/draft-pair-20260921/consumer-harness/Cargo.toml",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 4.185272458009422
+    },
+    {
+      "name": "consumer-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/draft-pair-20260921/consumer-harness/Cargo.toml",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.5493541660252959
+    },
+    {
+      "name": "consumer-format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/draft-pair-20260921/consumer-harness/Cargo.toml",
+        "--",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.13075770891737193
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.08799008396454155
+    }
+  ],
+  "raw": {
+    "raw/audit-preservation.py.gz": {
+      "sha256": "ffc4c48af32fe4f76b4e16d9ed1815cc6428a3a0fbbc919dd86ec82ea774aeba",
+      "uncompressed_sha256": "538106733a97d597c9c238c45346237571519b14c4dd7d252665987af6353b3c",
+      "uncompressed_bytes": 4037
+    },
+    "raw/consumer-clippy-final.log.gz": {
+      "sha256": "df6f4e375beb9b675c9130c141069cdca846fa87a96335b1b6ef7c32d08eba5f",
+      "uncompressed_sha256": "2dbcda9c93462c12265bf1347d0431c60f6d38edc29b12e707d54f7714a5ca87",
+      "uncompressed_bytes": 267
+    },
+    "raw/consumer-format-final.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/consumer-tests-final.log.gz": {
+      "sha256": "515c29f3f503ca517253b895f3e651f41b685c66bb669f291026906fc36645aa",
+      "uncompressed_sha256": "707d46fe94761771d8b8abaae6b3a3ec0b16f63f545d889a6928308aa431db0a",
+      "uncompressed_bytes": 10331
+    },
+    "raw/diff-final.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/engine-clippy-final.log.gz": {
+      "sha256": "a097e177ede751a08d40164ae5eb755ec95f8416963fa6a08b830f43aaaa794c",
+      "uncompressed_sha256": "da31fbaecddef7882326faf1d9f7c6e661c0e54cac0f7b142446e3b49dfbe084",
+      "uncompressed_bytes": 789
+    },
+    "raw/extracted-paired-entry.rs.gz": {
+      "sha256": "3df9f6d1c72bdbae73d44decaa67d7a9a912daadc5a95c6c112b09636b1b0b80",
+      "uncompressed_sha256": "5235b786839248c8d7bd17bbbfbc99b1d480f8397bbed041a80952e225112aa5",
+      "uncompressed_bytes": 1469
+    },
+    "raw/finish-format.py.gz": {
+      "sha256": "0a59ecd34ee1857a312e54a4d87c7d7076623d0d7dcd1985a46ac9907ebcdcea",
+      "uncompressed_sha256": "755f1d60477af5ded69ca11ed58094158e914fe5c5a66a358d9dcb3ed447cbb6",
+      "uncompressed_bytes": 2261
+    },
+    "raw/format-final.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/preservation-final.log.gz": {
+      "sha256": "c2440577552d3d829333a8f9cf811616baf654f3079172a0ae4808835c8c0afe",
+      "uncompressed_sha256": "443c66818d7116b5ad70d61f5f9e64d87f186048b589aa97aec0a25d608c849a",
+      "uncompressed_bytes": 113
+    },
+    "raw/preservation.json.gz": {
+      "sha256": "324d35add8d1d20dc9a05c600d3fe20dfd30f3d794cdb32abb7d5079d2641b2b",
+      "uncompressed_sha256": "8773264aad80a3228fa72a000d4074a2a180b16893b19333c77abe3ae2bd2167",
+      "uncompressed_bytes": 222533
+    },
+    "raw/results.json.gz": {
+      "sha256": "97c34a96fe67d272c9f3c7c30a903a9b175370821da639ae38dd0be38986594c",
+      "uncompressed_sha256": "868a2a83ba69f25efb1ecd22090d1a8cf262273a204b3214afd05762ba5b366b",
+      "uncompressed_bytes": 4047
+    },
+    "raw/resume-final.py.gz": {
+      "sha256": "b6c4f5618534378f1ade231e96dbd8858b85ffec7db898478b51ee1cfb330797",
+      "uncompressed_sha256": "dbebacb09f339c8d0f4e862607391dd077262cc771546deae829f964d1b2be10",
+      "uncompressed_bytes": 2435
+    },
+    "raw/run-final.py.gz": {
+      "sha256": "877b71287df4fb5caef2af5bbc40f17ff9cf1f713c2567cbd147c51fe4da94d9",
+      "uncompressed_sha256": "501b134182ebb07ac5f4e7d2cdd0d3ee2e85cd3275b48a3752667833b426aab2",
+      "uncompressed_bytes": 2980
+    },
+    "raw/source-clippy-final.log.gz": {
+      "sha256": "800da911c063ce16d057485cc79982bc147d4e1dac5df69c0b02827275a5e1b5",
+      "uncompressed_sha256": "a69e89f1ce46d19d59466fcaa8a2db13e09aa34446e361bcdc3f23ced9dc27de",
+      "uncompressed_bytes": 187
+    },
+    "raw/source-pin.json.gz": {
+      "sha256": "d0ee5aa4271c6cb14786979f5fe32527eeebe7a80aeeecf20ac977bbaaf3e2a4",
+      "uncompressed_sha256": "158c7a802168f167282985b65ca0e3fe9deefa5c7bef7f81d1e845aa94832420",
+      "uncompressed_bytes": 1972
+    },
+    "raw/source-stability.json.gz": {
+      "sha256": "100094198794661ae23285962b6306f39a286bf44e7876a854fb53538ae9f03f",
+      "uncompressed_sha256": "e5423f6baa5d91e6a0ab5a9ebe722f62164fb9a1e0b577be8d950312bbfafadb",
+      "uncompressed_bytes": 210
+    },
+    "raw/source-tests-final.log.gz": {
+      "sha256": "7d043cc1e3db2a72e597219d589a2748df9f46fa70abda405ac446b3dcfb73e1",
+      "uncompressed_sha256": "5c82bc6fce6b1cca491bbbacb91641d29cb4b38817227142e83a72fd5fa3379b",
+      "uncompressed_bytes": 2268
+    },
+    "raw/toolchain.txt.gz": {
+      "sha256": "1cbd37f890e43338815f171ec5885e8fca21383e2535c8d29450dc5703658d54",
+      "uncompressed_sha256": "cdd372f49763b7ad6faf8210706bc4f7212e18ebbd1abee8ab874ebbd588c4a3",
+      "uncompressed_bytes": 72
+    }
+  },
+  "development": {
+    "development/before-clippy-fix-consumer-clippy-final.log.gz": {
+      "sha256": "f58c4440c99ba4ffbd50b539c8e4564135f5e21340978043b2b51edac7fafc86",
+      "uncompressed_sha256": "4221574067018e8773bb7a786c797308584b3fa19c89b3015ad465592bd3fc9d",
+      "uncompressed_bytes": 906
+    },
+    "development/before-clippy-fix-consumer-tests-final.log.gz": {
+      "sha256": "11484a820005b52b2ae6b6acaa00baf0b6061fa9ae4ccd6c4eb44969eaf694c4",
+      "uncompressed_sha256": "a511ecca820b9a4335809976f8a61ac733ab7e63982dccd43d3d3cf291adc185",
+      "uncompressed_bytes": 10331
+    },
+    "development/before-clippy-fix-results.json.gz": {
+      "sha256": "c6e7fdd57767836342b364883dea0aee8896252e98edd7a006841adf7182de2a",
+      "uncompressed_sha256": "a3e8acfbb5174fcf30b010defdfa1e70f296cbbb61c6b1472812d4810e280473",
+      "uncompressed_bytes": 2211
+    },
+    "development/before-clippy-fix-source-pin.json.gz": {
+      "sha256": "17b85599d5f9edba8a0fd1d638b59b76f1f42cc9a8f5c17c609305e58580d6e3",
+      "uncompressed_sha256": "f5a6bf3950a1b27bcff9517ab04abe6f2b417e0faa7c020bf64b2f18235478e6",
+      "uncompressed_bytes": 1972
+    },
+    "development/before-format-fix-consumer-format-final.log.gz": {
+      "sha256": "88fc697a78cc77f3df8a1b3c0d95fe6434c0a43cb035ddc9a834933c54931409",
+      "uncompressed_sha256": "28881ddc76fbc74568c9f6dff1813dbd5db892603d03d9a805a07e740fecd5f5",
+      "uncompressed_bytes": 577
+    },
+    "development/before-format-fix-consumer-tests-final.log.gz": {
+      "sha256": "585cd765155566922d37ad88cd470205a31c8b9dddfa6fcad046e5b04206e54b",
+      "uncompressed_sha256": "2a802eebea5508e88a44f8b25e1d2c4e62fd1f59402b533b23493e710a427fb6",
+      "uncompressed_bytes": 10331
+    },
+    "development/before-format-fix-results.json.gz": {
+      "sha256": "0b9a4f60c053b1ed68a359230a793f83bbdfde2bfd721b9df2c1aa4b1997ab6a",
+      "uncompressed_sha256": "d53f842745f71c86bd8056ca6d7fa4934d4580c9fe9bb05ede379e2bb38d88c2",
+      "uncompressed_bytes": 3703
+    },
+    "development/before-format-fix-source-pin.json.gz": {
+      "sha256": "1086e00ae10eadef0e50a0a7c063da51933bde32be09f0dbe38d9590c71cff0a",
+      "uncompressed_sha256": "f5f52f723d30cc5a36095cf2bbed27f1a4437d98bb35a74466699a5da1358222",
+      "uncompressed_bytes": 1972
+    },
+    "development/consumer-tests-1.log.gz": {
+      "sha256": "a4e4d64639ba4e3090ac6b9dde72e439832fb1c94b42610ee4db348f8e1d09ce",
+      "uncompressed_sha256": "568913be2afd476862db3a0c4ed997a92e061990b17b8eaaaa5409bd9ef39572",
+      "uncompressed_bytes": 10446
+    },
+    "development/initial-source-check.log.gz": {
+      "sha256": "c53a19917e1a858e7105c994dbae24e51b206bd19ba1275aaf3b9121d45201f0",
+      "uncompressed_sha256": "02915f7958a65210e08e802ff5969d0179758d061f70f443d2a6aa1a8fa61fc3",
+      "uncompressed_bytes": 187
+    },
+    "development/source-tests-1.log.gz": {
+      "sha256": "de200b01afa0f345c72f7a43aa11159ad257cb0a6cf9d79353bee12aaa80184d",
+      "uncompressed_sha256": "b626a9846979892213bb8e7dc1620279d58ec8ba45e292cb0e75918088a6d9f5",
+      "uncompressed_bytes": 2384
+    }
+  },
+  "reviewed_input": {
+    "reviewed_input/issue-541-composite-draft-ab9dcfc0.json.gz": {
+      "sha256": "e76a5725fdc3135185de4ccf8d1f9e99843d018b0f0e20e0b1c0ba90cd2c7c63",
+      "uncompressed_sha256": "0e6bea31f40901a6cdb9e84ccf0f9d100d5273fd808ce4c01b4f812aae4e28ba",
+      "uncompressed_bytes": 5126
+    },
+    "reviewed_input/interface-handoff-541-opened-ranks-1cd7135d.json.gz": {
+      "sha256": "791fbd4ce7349e58f438ad831c1b6f1289632bcfd6cda9cb998f2d59b933919b",
+      "uncompressed_sha256": "20ee67bdbe3fd514861ae224703367ef35ad6885185cdfbce790c24923e8c475",
+      "uncompressed_bytes": 2574
+    },
+    "reviewed_input/interface-handoff-541-head-materialization-1cd7135d.json.gz": {
+      "sha256": "6566351364ca0a5b83f1ed5a532985c8a2263ec06b775aaca4e67b4e4db069fb",
+      "uncompressed_sha256": "169441b3920873a16e53ca88a074d39bc427923d3f99d94b9891452a74314c34",
+      "uncompressed_bytes": 2638
+    }
+  },
+  "binaries": {
+    "paired-consumer-tests": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/draft-pair/paired-consumer-tests-5e2bc67a906fe64e3db556f4b045365826ddd6a26ebf40ff2e8ca33ca27be4e8",
+      "sha256": "5e2bc67a906fe64e3db556f4b045365826ddd6a26ebf40ff2e8ca33ca27be4e8",
+      "bytes": 10628376,
+      "format": "Mach-O 64-bit executable arm64"
+    },
+    "paired-source-tests": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/draft-pair/paired-source-tests-5bc252f36cc33ed889cce04919f731ba5100b83cd1f87ea7353c78add2891b54",
+      "sha256": "5bc252f36cc33ed889cce04919f731ba5100b83cd1f87ea7353c78add2891b54",
+      "bytes": 20283720,
+      "format": "Mach-O 64-bit executable arm64"
+    }
+  },
+  "protected_crate_files": 930,
+  "test_counts": {
+    "paired_source_consumer": 7,
+    "paired_hf_composite_target": 2,
+    "failed": 0,
+    "ignored": 0,
+    "broad_root_rerun": false
+  },
+  "identity_scope": "Complete sealed target plus separately typed external program or immutable target-head host materialization. Whole raw components, selected bindings/head/macro/ranks remain separate. Before/after checks detect drift; no atomic snapshot, final upload, loaded-model, binary/numeric or admission proof."
+}
