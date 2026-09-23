@@ -1,0 +1,46 @@
+START utc=2026-09-23T21:38:49Z cmd=/root/lane/target-pipe/release/dsv4_pipeline_gate /data/dsv4f/nvfp4 /root/box/tape-rebuild.txt 256 5
+PROTOCOL {"sessions":2,"prompt_tokens":[256,256],"output_tokens":256,"repeats":5,"greedy":true,"order":"serial,pipelined per repeat","timing":"decode wall after drained prefills","source_sha256":"11e4bd80352f4a24504ffdee519b33bbc527b3b9bcfeb531815e5731b190cb8c"}
+[load] plain sampler: Host
+[load] sampled candidate order: Radix
+[load] placement: split_at=22 trunk_layers=43 dspark_tail_reserve=0.00 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: PpEp | layers=43 per-rank-resident=PP-owned
+[load] indexer score: Scalar
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 346.1ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 1 rank copies done t=10s
+[load] layer 7 -> 1 rank copies done t=21s
+[load] layer 11 -> 1 rank copies done t=40s
+[load] layer 15 -> 1 rank copies done t=62s
+[load] layer 19 -> 1 rank copies done t=72s
+[load] layer 23 -> 1 rank copies done t=83s
+[load] layer 27 -> 1 rank copies done t=93s
+[load] layer 31 -> 1 rank copies done t=104s
+[load] layer 35 -> 1 rank copies done t=114s
+[load] layer 39 -> 1 rank copies done t=125s
+[load] layer 42 -> 1 rank copies done t=151s
+[load] drafter: 3 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path off (set MEMRA_DSV4_DRAFTER=dspark); trunk-only
+[load] sink score: Scalar
+[load] expert program: matrix (grouped ModelOpt split-plane executor via dsv4_grouped; tensor-core MMA class, the loaded default since 2026-09-11), EP off
+[dsv4-doors] program=loaded door="replay cadence" env=MEMRA_DSV4_REPLAY_CADENCE merged=#374 declared_default=On resolved=NoServingCaller("full-token replay is armed per request by a gate binary only; no serving or eager request arms it, so the cadence choice has no caller") disposition=ReclassifyAsGateInput
+[dsv4-doors] program=loaded door="dense exact-tail transport" env=MEMRA_DSV4_DENSE_EXACT_TAIL merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="dense-fast" env=MEMRA_DSV4_DENSE_FAST merged=#404 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="HC dot split S16" env=MEMRA_DSV4_HC_DOT_SPLIT merged=#418 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+[dsv4-prefill-f16g] ENGAGED: t=1 pairs=6 expert_groups=256 max_rows_bound=6 device_routes=true FP8-QAT-mirrored half, split-plane ModelOpt NVFP4
+[moe-sk-form] dev=0 qt=108 sms=188 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=2048 n_active=256 max_m=1530
+SESSION 0 tokens=256 head=[1706, 337, 18598, 2838, 2366, 75374, 2366, 2054]
+SESSION 1 tokens=256 head=[12774, 3103, 1706, 337, 18598, 2838, 2366, 75374]
+TIME repeat=0 serial_s=11.1343 pipelined_s=7.3633 serial_tok_s=45.80 pipelined_tok_s=69.26 speedup=1.512 identical=true
+TIME repeat=1 serial_s=11.1317 pipelined_s=7.3619 serial_tok_s=45.81 pipelined_tok_s=69.28 speedup=1.512 identical=true
+TIME repeat=2 serial_s=11.1300 pipelined_s=7.3572 serial_tok_s=45.82 pipelined_tok_s=69.32 speedup=1.513 identical=true
+TIME repeat=3 serial_s=11.1268 pipelined_s=7.3572 serial_tok_s=45.84 pipelined_tok_s=69.32 speedup=1.512 identical=true
+TIME repeat=4 serial_s=11.1273 pipelined_s=7.2581 serial_tok_s=45.83 pipelined_tok_s=70.27 speedup=1.533 identical=true
+PASS pipelined greedy == serial greedy, 2 sessions x 256 tokens x 5 repeats
+GATE_DONE rc=0 utc=2026-09-23T21:43:32Z

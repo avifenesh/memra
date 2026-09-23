@@ -2517,6 +2517,16 @@ impl Dsv4Gpu {
         self.matrix_moe
     }
 
+    /// Whether plain steps can be pipelined across requests (`decode_step_greedy_enqueue` and
+    /// `decode_step_logits_enqueue`, memra #667): the PP matrix device program over at least two
+    /// stages, the only program whose steps queue with pinned readbacks and per-stage events.
+    pub fn pipelined_steps_supported(&self) -> bool {
+        !self.topology.is_tp_ep()
+            && self.matrix_moe
+            && self.decode_path == (DecodePath::Device { host_math: false })
+            && self.stages.len() > 1
+    }
+
     pub fn topology(&self) -> Dsv4TopologyPlan {
         self.topology
     }

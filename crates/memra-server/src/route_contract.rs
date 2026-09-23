@@ -320,7 +320,7 @@ impl RouteContract {
             .implemented(PolicySurface::FaultOwnership, "std::panic::catch_unwind(")
             .implemented(
                 PolicySurface::ShutdownOwnership,
-                "let Ok(mut req) = rx.recv() else { break };",
+                "let Ok(mut req) = next else { break };",
             )
             // memra#503: the route's own per-device charge through the shared decision rule,
             // before any allocation (dsv4_admit).

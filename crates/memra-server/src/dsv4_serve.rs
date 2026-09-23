@@ -158,10 +158,11 @@ fn env_text(name: &str, raw: Option<OsString>) -> Result<Option<String>, String>
 }
 
 /// `MEMRA_DSV4_SESSIONS` (memra #667): serving lanes that share the route's queue and launch
-/// turn. Unset or `1` is the serial route; `2..=4` pipeline plain greedy steps across sessions.
-fn resolve_sessions(raw: Option<&str>) -> Result<usize, String> {
+/// turn. `1` is the serial route; `2..=4` pipeline plain steps across sessions. Unset or empty
+/// takes `default`, which the load derives from the program it loaded.
+fn resolve_sessions(raw: Option<&str>, default: usize) -> Result<usize, String> {
     match raw.map(str::trim) {
-        None | Some("") => Ok(1),
+        None | Some("") => Ok(default),
         Some(text) => match text.parse::<usize>() {
             Ok(n @ 1..=4) => Ok(n),
             _ => Err(format!("MEMRA_DSV4_SESSIONS {text:?} must be 1..=4")),
@@ -169,9 +170,22 @@ fn resolve_sessions(raw: Option<&str>) -> Result<usize, String> {
     }
 }
 
-/// The configured serving lanes, read once per caller from the environment.
-pub fn sessions_from_env() -> Result<usize, String> {
-    resolve_sessions(configured_env_text("MEMRA_DSV4_SESSIONS")?.as_deref())
+/// The lanes a load of this program gets when `MEMRA_DSV4_SESSIONS` is unset: two on the
+/// plain PP matrix device program over two or more stages, where two requests' steps overlap
+/// on the two cards (+48% aggregate at c2 on 2x RTX PRO 6000,
+/// `research/dsv4f-bringup-20260923/pp-pipeline/`); one everywhere else. A DSpark route holds
+/// the launch turn for a whole request, so a second lane there would only wait, and it was
+/// not measured: it keeps one.
+fn default_sessions(pipelined_steps: bool, drafter: bool) -> usize {
+    if pipelined_steps && !drafter { 2 } else { 1 }
+}
+
+/// The serving lanes for a load: `MEMRA_DSV4_SESSIONS` when set, else [`default_sessions`].
+pub fn sessions_from_env(default: usize) -> Result<usize, String> {
+    resolve_sessions(
+        configured_env_text("MEMRA_DSV4_SESSIONS")?.as_deref(),
+        default,
+    )
 }
 
 fn configured_env_text(name: &str) -> Result<Option<String>, String> {
@@ -822,12 +836,23 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
             format!("{prefill_chunk} tokens")
         },
     );
-    let sessions = sessions_from_env()?;
-    if sessions > 1 && !gpu.matrix_moe_enabled() {
+    let pipelined = gpu.pipelined_steps_supported();
+    let sessions = sessions_from_env(default_sessions(pipelined, spec))?;
+    if sessions > 1 && !pipelined {
         return Err(format!(
-            "MEMRA_DSV4_SESSIONS={sessions} pipelines the PP matrix program only; this load runs another"
+            "MEMRA_DSV4_SESSIONS={sessions} pipelines the PP matrix device program only; this load runs another"
         ));
     }
+    eprintln!(
+        "[dsv4-serve] {name}: {sessions} serving lane(s){}",
+        if std::env::var_os("MEMRA_DSV4_SESSIONS").is_some() {
+            " (MEMRA_DSV4_SESSIONS)"
+        } else if sessions > 1 {
+            " (default on the plain PP matrix program; MEMRA_DSV4_SESSIONS=1 is the serial route)"
+        } else {
+            " (default)"
+        }
+    );
     let mut m = Dsv4Model {
         gpu: Arc::new(gpu),
         tok,
@@ -966,12 +991,11 @@ fn route_defer_budget_ms() -> u64 {
 /// The route's policy contract (memra#504): declared in `route_contract.rs`, not here, so the
 /// registry's wiring test greps THIS file for the call sites the declarations name without the
 /// declarations themselves satisfying it.
-pub fn contract(model: &str) -> crate::route_contract::RouteContract {
-    // An unreadable value refuses at load; the contract only needs the lane count.
-    crate::route_contract::RouteContract::dsv4_thread_sessions(
-        model,
-        sessions_from_env().unwrap_or(1),
-    )
+///
+/// `sessions` is the loaded route's lane count (`Dsv4Model::sessions`). Before the load only
+/// the environment is known, and the pre-load registry checks armed policies, not capacity.
+pub fn contract(model: &str, sessions: usize) -> crate::route_contract::RouteContract {
+    crate::route_contract::RouteContract::dsv4_thread_sessions(model, sessions)
 }
 
 /// ModelCaps for the /v1/models surface + the HTTP layer's gates — the same
@@ -2471,21 +2495,39 @@ mod declared_context_tests {
 #[cfg(test)]
 mod c4_host_budget_tests {
     use super::{
-        admit_c4_host_bytes, env_text, resolve_c4_host_bytes, resolve_env_mb, resolve_sessions,
+        admit_c4_host_bytes, default_sessions, env_text, resolve_c4_host_bytes, resolve_env_mb,
+        resolve_sessions,
     };
     use std::ffi::OsString;
 
     #[test]
     fn serving_lanes_resolve_literally() {
-        for raw in [None, Some(""), Some("1"), Some(" 1 ")] {
-            assert_eq!(resolve_sessions(raw), Ok(1));
+        for default in [1, 2] {
+            for raw in [None, Some("")] {
+                assert_eq!(resolve_sessions(raw, default), Ok(default));
+            }
+            for raw in [Some("1"), Some(" 1 ")] {
+                assert_eq!(resolve_sessions(raw, default), Ok(1));
+            }
+            for n in 2..=4 {
+                assert_eq!(resolve_sessions(Some(&n.to_string()), default), Ok(n));
+            }
+            for raw in ["0", "5", "two", "-1", "2.0"] {
+                assert!(resolve_sessions(Some(raw), default).is_err(), "{raw}");
+            }
         }
-        for n in 2..=4 {
-            assert_eq!(resolve_sessions(Some(&n.to_string())), Ok(n));
-        }
-        for raw in ["0", "5", "two", "-1", "2.0"] {
-            assert!(resolve_sessions(Some(raw)).is_err(), "{raw}");
-        }
+    }
+
+    #[test]
+    fn two_lanes_are_the_default_only_on_the_plain_pipelined_program() {
+        assert_eq!(default_sessions(true, false), 2);
+        assert_eq!(
+            default_sessions(true, true),
+            1,
+            "a DSpark route holds the turn per request"
+        );
+        assert_eq!(default_sessions(false, false), 1);
+        assert_eq!(default_sessions(false, true), 1);
     }
 
     #[test]

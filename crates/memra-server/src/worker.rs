@@ -22040,6 +22040,8 @@ pub fn run(
     // model name at Cmd dispatch; caps merged into the ready handoff below.
     let mut dsv4_routes: HashMap<String, std::sync::mpsc::Sender<Box<Request>>> = HashMap::new();
     let mut dsv4_caps: HashMap<String, ModelCaps> = HashMap::new();
+    // Each loaded dsv4 route's serving lanes (memra #667), for its post-load contract.
+    let mut dsv4_lanes: HashMap<String, usize> = HashMap::new();
     // REMOVED-DOORS REFUSAL (2026-08-29). Env-only, so it runs BEFORE any model load: the
     // old step37-scoped refusal needed the loaded model's class and therefore paid a full
     // multi-minute checkpoint load before refusing; this one needs nothing but the
@@ -22064,7 +22066,8 @@ pub fn run(
         for (name, path, _) in &models {
             let p = std::path::Path::new(path);
             if p.is_dir() && crate::dsv4_serve::is_dsv4_dir(p) {
-                planned.register(crate::dsv4_serve::contract(name));
+                // The lane count is the load's; the planned check reads armed policies only.
+                planned.register(crate::dsv4_serve::contract(name, 1));
             } else {
                 planned.register(crate::route_contract::RouteContract::hybrid_worker(
                     name,
@@ -22109,7 +22112,10 @@ pub fn run(
             // The route's own books (memra#500, #501): its load is get-or-create so tickets
             // outstanding across a respawn stay counted; its health record is fresh per spawn
             // so a predecessor's exit latch cannot mark this thread dead.
-            let cap = crate::dsv4_serve::contract(name).capacity.concurrency();
+            dsv4_lanes.insert(name.clone(), dm.sessions);
+            let cap = crate::dsv4_serve::contract(name, dm.sessions)
+                .capacity
+                .concurrency();
             let load = crate::route_telemetry::register(name, cap);
             let route_health = health.register_route(name, load.clone());
             dsv4_routes.insert(
@@ -22480,7 +22486,10 @@ pub fn run(
     let hybrid_sessions = crate::route_contract::hybrid_interactive_cap();
     for name in &order {
         if dsv4_routes.contains_key(name) {
-            route_registry.register(crate::dsv4_serve::contract(name));
+            route_registry.register(crate::dsv4_serve::contract(
+                name,
+                dsv4_lanes.get(name).copied().unwrap_or(1),
+            ));
         } else if loaded.contains_key(name) {
             route_registry.register(crate::route_contract::RouteContract::hybrid_worker(
                 name,
