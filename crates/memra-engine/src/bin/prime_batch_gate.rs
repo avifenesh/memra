@@ -8,7 +8,12 @@
 //!      different cache/recurrent state beyond numeric-config tolerance).
 //!
 //! usage: prime-batch-gate <model.gguf> [--batch 3] [--plen 24] [--steps 16]
-//!                         [--exact] [--require-pp-split]
+//!                         [--exact] [--require-pp-split] [--canary]
+//!
+//! --canary (teeth for `tools/prime-batch-exact-gate.sh`, memra#641): seq 0's first prompt token
+//! is changed inside the fresh batched prime only, so seq 0 must FAIL while every other sequence
+//! stays bit-identical to its individual prime (the comparator sees a changed world, and a
+//! batch-mate's prompt must not reach another sequence's rows).
 
 use memra_engine::Engine;
 use memra_engine::cache::Cache;
@@ -36,6 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exact = rest.iter().any(|a| a == "--exact");
     let require_pp_split = rest.iter().any(|a| a == "--require-pp-split");
     let carried = rest.iter().any(|a| a == "--carried");
+    let canary = rest.iter().any(|a| a == "--canary");
     let rewrite_receipt_path = std::env::var_os("MEMRA_REWRITE_RECEIPT");
     let mut rewrite_reference = Vec::new();
     let mut rewrite_candidate = Vec::new();
@@ -107,7 +113,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let batch0 = memra_engine::pp::step35_prime_batches();
     let split0 = memra_engine::pp::step35_prime_batch_splits();
     {
-        let prompt_refs: Vec<&[u32]> = prompts.iter().map(|p| p.as_slice()).collect();
+        let mut batched = prompts.clone();
+        if canary {
+            batched[0][0] ^= 1;
+            println!(
+                "canary: seq 0 token 0 {} -> {} inside the batched prime only",
+                prompts[0][0], batched[0][0]
+            );
+        }
+        let prompt_refs: Vec<&[u32]> = batched.iter().map(|p| p.as_slice()).collect();
         let mut cache_refs: Vec<&mut Cache> = caches.iter_mut().collect();
         let outs = model.prime_cache_batch(&e, &prompt_refs, &mut cache_refs)?;
         for (s, (logits, h_seed, hidden)) in outs.iter().enumerate() {

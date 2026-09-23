@@ -1,0 +1,65 @@
+{
+  "seed": {
+    "status": 200,
+    "text": " \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div",
+    "finish": "length",
+    "error": null,
+    "ttft_s": 0.7990944930061232,
+    "total_s": 0.9864199070143513,
+    "sha": "2c51dd24d89131a3"
+  },
+  "requests": {
+    "long": {
+      "status": 200,
+      "text": " \f",
+      "finish": "stop",
+      "error": null,
+      "ttft_s": 46.37765788799152,
+      "total_s": 46.9645159469801,
+      "sha": "089d70f819696ba2"
+    },
+    "peer-cold-a": {
+      "status": 200,
+      "text": "",
+      "finish": "stop",
+      "error": null,
+      "ttft_s": null,
+      "total_s": 45.593345414003124,
+      "sha": "e3b0c44298fc1c14"
+    },
+    "peer-cold-b": {
+      "status": 200,
+      "text": "s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 42.592683866998414,
+      "total_s": 43.31097146499087,
+      "sha": "06bfb5126effdd4c"
+    },
+    "peer-hit": {
+      "status": 200,
+      "text": " \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 40.04927659299574,
+      "total_s": 40.33430606900947,
+      "sha": "2c51dd24d89131a3"
+    }
+  },
+  "kind": "cell",
+  "tag": "Y0f-1",
+  "yield_value": "0",
+  "on_shape": true,
+  "shape": {
+    "spec_k_peer_b": [
+      "[spec-k] model=\"gate\" tenant=\"peer-b\" K=0 source=concurrency prompt=2048 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2"
+    ],
+    "prime_batch": [
+      "[prime-batch] B=3 tokens=3072 carried=0 partial=3 in 560.8ms",
+      "[prime-batch] B=3 tokens=3072 carried=3 partial=1 in 612.6ms"
+    ],
+    "panic": false
+  },
+  "peer_b_matches_R": true,
+  "extra_env": ""
+}

@@ -84,7 +84,7 @@ or nonempty receipt namespace before launching the synthetic NVFP4/FP8/kernel-ch
 |---|---|---|---|
 | 0 | seconds (~2 s kernel-check scoped + build) | workspace compile + kernel-check scoped to the touched sections | every edit-compile loop |
 | 1 | ~1–2 min | tier 0 + golden-token argmax probe on ONE model per affected kernel class (+ one single-K spec probe when the diff touches the spec pipeline) | before every dev-loop commit |
-| 2 | tens of minutes | the full battery, `tools/local-ci.sh`: kernel-check ALL GREEN (~4.5 min), prime-gate, run-gen argmax per model, VERIFY-GATE, `run-spec` K=1..8 self-consistency on the Qwen 35B target + external MTP draft (`MEMRA_CI_RUNSPEC=0` skips), Gemma-4 31B stream agreement 64/64, decode-batch-gate (config + Q8_0 strict, the serving tick's exactness, wired in 2026-08-05), graph-warmup stress (`tools/graph-warmup-stress-gate.sh`, pool-growth adversarial bit-identity behind the `MEMRA_GRAPH_WARMUPS=1` default, wired 2026-08-05), serve-smoke, health-fault-gate (`tools/health-fault-gate.sh`, readiness, panic-respawn, gpu-watch latch and drain arms on the real server, wired 2026-09-22; `MEMRA_CI_HEALTH_FAULT=0` skips), serve-stress (`tools/serve-stress-gate.sh`, the c=64 concurrency contract behind the admission spec-headroom fix, wired 2026-08-06; `MEMRA_CI_STRESS=0` skips), spec-ctx-edge (`tools/spec-ctx-edge-gate.sh`, open requests at their cap under default spec, wired 2026-09-23; `MEMRA_CI_SPEC_CTX_EDGE=0` skips), accept-gate (`tools/accept-gate.sh`, exact served-spec acceptance counts + a 128-token text sha at the production drafter/K, wired 2026-08-06; smoke cell by default, `--full` for the 6-cell matrix, `MEMRA_CI_ACCEPT=0` skips) | **every merge, every tag** (unchanged) |
+| 2 | tens of minutes | the full battery, `tools/local-ci.sh`: kernel-check ALL GREEN (~4.5 min), prime-gate, run-gen argmax per model, VERIFY-GATE, `run-spec` K=1..8 self-consistency on the Qwen 35B target + external MTP draft (`MEMRA_CI_RUNSPEC=0` skips), Gemma-4 31B stream agreement 64/64, decode-batch-gate (config + Q8_0 strict, the serving tick's exactness, wired in 2026-08-05), prime exactness on the 9B (`tools/prime-batch-exact-gate.sh` and `tools/prime-tick-exact-gate.sh`, each with its canary, memra#641, wired 2026-09-23; `MEMRA_CI_PRIME_EXACT=0` skips), graph-warmup stress (`tools/graph-warmup-stress-gate.sh`, pool-growth adversarial bit-identity behind the `MEMRA_GRAPH_WARMUPS=1` default, wired 2026-08-05), serve-smoke, health-fault-gate (`tools/health-fault-gate.sh`, readiness, panic-respawn, gpu-watch latch and drain arms on the real server, wired 2026-09-22; `MEMRA_CI_HEALTH_FAULT=0` skips), serve-stress (`tools/serve-stress-gate.sh`, the c=64 concurrency contract behind the admission spec-headroom fix, wired 2026-08-06; `MEMRA_CI_STRESS=0` skips), spec-ctx-edge (`tools/spec-ctx-edge-gate.sh`, open requests at their cap under default spec, wired 2026-09-23; `MEMRA_CI_SPEC_CTX_EDGE=0` skips), accept-gate (`tools/accept-gate.sh`, exact served-spec acceptance counts + a 128-token text sha at the production drafter/K, wired 2026-08-06; smoke cell by default, `--full` for the 6-cell matrix, `MEMRA_CI_ACCEPT=0` skips) | **every merge, every tag** (unchanged) |
 
 The battery's last correctness stage runs every memra-engine `#[ignore]` GPU test serially
 (`--test-threads=1`): the tests flip process-global gate doors and share one device, so
@@ -319,6 +319,27 @@ world, not the label) and must be caught. Note: the serve-level solo-vs-loaded b
 (`spec-gate` REF/REF_LOAD) is **not** this class: it is the `b_n==1` fused-trunk↔batched-body
 config flip at the co-residence boundary (`research/iso-gap-20260807/`); this arm pins the
 within-config isolation that any fix for that flip relies on.
+
+`ptick` / `ptickc` landed 2026-09-23 (`tools/prime-tick-exact-gate.sh`, memra#641,
+`research/decode-exact-641-20260923/`): the **prime-shape** axis of the one-program law. A peer's
+prompt primed inside a fresh then a carried `[A, B, C]` concat batch (`prime_cache_batch`), in
+solo tick calls, or followed by a `[B, C]` decode wave must give logits, hidden rows, cache
+digests and 32 teacher-forced decode steps bit-identical to `prime_cache(B)` in one call
+(`concat-prime-probe <model> tickshape`, the prime-fairness gate's exact ids, tick 1024). It was
+registered red on `9c07b398b`: the fresh batch's varlen FA arm attended bf16 of the
+pre-quantization K/V while the solo prime attends the quantized cache view, and greedy text
+diverged at token 8. The gate refuses a log where `prime_cache_batch` fell back to solo primes
+(the vacuous pass). `ptickc` changes B's first token inside the batches only and must see bp and
+bps DIFFER while ref2, tick and wave stay EXACT.
+
+`pbg9` / `pbg9c` landed 2026-09-23 beside them (`tools/prime-batch-exact-gate.sh`, memra#641):
+`prime-batch-gate --exact` on the 9B, `prime_cache_batch` against `prime_cache` bitwise per
+sequence (prefill logits, h_seed, the hidden stack, teacher-forced decode logits) at b3-p24,
+b4-p1100 and carried b3-p600. The binary already existed, but only step35's `pbatch35` rows ran
+it, so it sat red on the 9B at `9c07b398b` (`seq 0: exact logits diff 248320/248320`) in no
+battery. `pbg9c` changes seq 0's first token inside the batched prime only: seq 0 must differ and
+seqs 1 and 2 must stay bit-identical. Both pairs also run in `tools/local-ci.sh`
+(`MEMRA_CI_PRIME_EXACT=0` skips).
 
 `amargin` / `amarginc` landed 2026-08-06 (`tools/argmax-margin-gate.sh`, + its `--canary` teeth):
 run-gen's prefill-vs-decode argmax assert calibrated against the **top-2 margin at the deciding
@@ -1031,6 +1052,19 @@ require each row to equal both the unfused multi-row chain and the same row laun
 HC red arm moves one mix of row 5 and requires rows 0..5 to stay bit-equal. The diet is the code
 on every row count, so this is the proof that plain and verify rows stay one numeric program. Receipts:
 `research/dsv4f-bringup-20260923/small-diet/`.
+
+### DSv4 batch-1 latency kernels (latency lane)
+
+`cargo test -p memra-engine --release --test dsv4_latency_kernels_gpu -- --ignored --test-threads=1 --skip latency_kernel_timing`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) checks the register-resident
+rmsnorm against the exact CPU oracle (240 cases, bit-identical), the one-warp expert prefix
+against a CPU oracle (1755 cases), and the one-warp router against a pinned output hash
+(`0xa883c1c05022dc87`, 360 cases) plus its structure (range, no duplicates, value-desc/index-asc
+order, no unpicked expert above the last pick, weights summing to `route_scale`, hash layers on
+their `tid2eid` row). Each has a red arm. `latency_kernel_timing` is the timing instrument (run
+it without `--skip`). The grouped `wo_a` dense-fast twin is checked by the ignored
+`dsv4_gpu::dense_wo_a_grouped_fp8_component_tests` in the lib test binary: 27 cells bit-exact
+against every slice program. Receipts: `research/dsv4f-bringup-20260923/latency/`.
 
 ### DSv4 deferred MoE route and mirror checks (#670)
 

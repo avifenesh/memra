@@ -351,10 +351,9 @@ variants; other dims fall back to `sdpa_naive` (flash_attn.cu:72).
 |---|---|---|---|---|---|
 | `append_quantize_kv_q8_0_q5_1*` (rows/dc/seqs/inc) | KV append+quantize | K=q8_0, V=q5_1 defaults; fp8/q4_0 via KV fatbin variants | — | MEMRA_KV_K / MEMRA_KV_V select fatbin | fatbin/by-name |
 | `fa_prefill_f32*`, `fa_prefill_w_f32*`, `_pp`, `_w2`, `_hd128` | f32 FA prefill | f32 | — | MEMRA_FA_FLOOR etc. | fatbin/by-name |
-| `fa_prefill_*bf16*` (p1, p1h2, pp, g4, g4o2, bf16kv_pp, bf16kv_vl, hd512, hd512_sp*) | bf16 FA prefill incl. hd512 | bf16 | — | MEMRA_FA_SPW, MEMRA_FA_SP512, MEMRA_FA512_MIN, MEMRA_FA_F16PV | fatbin/by-name |
+| `fa_prefill_*bf16*` (p1, p1h2, pp, g4, g4o2, bf16kv_pp, hd512, hd512_sp*) | bf16 FA prefill incl. hd512 | bf16 | — | MEMRA_FA_SPW, MEMRA_FA_SP512, MEMRA_FA512_MIN, MEMRA_FA_F16PV | fatbin/by-name |
 | `fa_prefill_q*`, `fa_prefill_qw*` (_hd128, _db*) | FA prefill over quantized KV | q8_0/q5_1 KV | — | MEMRA_PRIME_DEQW_DB | fatbin/by-name |
 | `fa_decode_f32`, `fa_decode_vec_q*` (~30 variants) + `fa_decode_combine*` | split-K FA decode + combine | q8_0/q5_1 KV, f32/q8_1 out | — | MEMRA_FA_V2/V3/V4, MEMRA_FA_V4_MAX, MEMRA_NO_FA_VEC, MEMRA_FA_SMEM_TKV, MEMRA_FA_SPLIT | fatbin/by-name |
-| VL family (`fa_mirror_vl`, `q_gate_split_vl`, `attn_rms_vl`, `attn_rope_vl`, `append_kv_vl`, `fa_prefill_bf16kv_vl*`) | varlen batched-attention pre/post | f32/bf16 | — | UNKNOWN | fatbin/by-name |
 | conversions (`f32_to_f16_flat`, `bf16_to_f16_flat`, `f32_to_bf16_flat`, `fa_dequant_kv_ws_*`) | KV workspace dequant / dtype flat converts | — | — | UNKNOWN | fatbin/by-name |
 
 ### cu/qmatvec_gemm.cu — 10 symbols (fatbin `MEMRA_GEMM_FATBIN`)
@@ -536,12 +535,20 @@ contribution bits into original slots, without a reassociated partial sum.
 both reductions, 1/6/32 rows and real 4096/2048 dimensions against the original
 full-bank launcher. Full-model and serving/performance gates are pending.
 
-Gate-only dense wo_a grouping: `dsv4_gemv_fp8_m_kernel<1,true>` shares the
-original FP8 GEMV dot/reduction body, using global grouped weight/scale rows
-and separate activation/output strides. `memra_dsv4_gemv_fp8_grouped_m1`
+Dense wo_a grouping (default ON since 2026-09-23): `memra_dsv4_gemv_fp8_grouped_m1`
 replaces eight t=1 FP8 wo_a launches with one; BF16, prefill and wider verify
-rows keep the old loop. The process-local grouped gate defaults OFF and
-counts successful submissions. The ignored
+rows keep the old loop. When the per-group slices would take dense fast (exact
+tail and dense fast on, operands admitted) it launches
+`dsv4_dense_fast_fp8_kernel<2,true>` over all groups' rows (flat weight row,
+activation/output planes offset by group); otherwise
+`dsv4_gemv_fp8_m_kernel<1,true>`, which shares the original FP8 GEMV
+dot/reduction body with global grouped weight/scale rows and separate
+activation/output strides. The process-local seam counts successful
+submissions; `false` selects the per-group launches. The ignored
+`cuda_gemv_fp8_grouped_dense_fast_matches_every_slice_program` test checks all
+nine (slice program, grouped program) pairs bitwise at 8x1024, 2x128 and 3x256
+and the dense-fast enqueue count; `dsv4_latency_kernels_gpu` times both at the
+served shape. The ignored
 `cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue` test
 compares the real 8x1024x4096 shape and padded two-group case bitwise and
 checks invalid-stride refusals. Full-model gate: `dsv4_plain_perf_gate wo-a`,
@@ -742,7 +749,7 @@ target-card performance qualification is pending.
 | f16_prefill.cu | `memra_f16_pp_gemm[_pre]`, `memra_f16_cvt`, `memra_{q8_0,q4_0,q6_K,q4_K,q5_K}_dequant_f16` | cuBLASLt FP16 TN prefill on resident f16 dequant mirror of quantized weights Per-device cuBLASLt handle slots since 2026-09-02 (lane glm5-b200): a handle created on one device returned CUBLAS_STATUS_EXECUTION_FAILED from the other PP stage on a 2x B200 pair; plan caches key on the device. | host cuBLASLt | MEMRA_PP_F16, MEMRA_PP_F16_BUDGET_MB, MEMRA_W8A8_SIM | f16_ffi.rs:22-62 (+build_*_raw wrappers f16_ffi.rs:725-816) |
 | fp8_prefill.cu | `memra_fp8_pp_gemm` (:90) + `__global__` amax/scale/quant kernels | cuBLASLt FP8-E4M3 TN prefill + per-batch activation quantize Per-device cuBLASLt handle slots since 2026-09-02 (lane glm5-b200): a handle created on one device returned CUBLAS_STATUS_EXECUTION_FAILED from the other PP stage on a 2x B200 pair; plan caches key on the device. | — | MEMRA_PP_FP8, MEMRA_PP_FP8_BUDGET_MB, MEMRA_FP8_MMQ, MEMRA_ST_E4M3 (fp8_ffi.rs:27, 45-87, 239) | fp8_ffi.rs:27 |
 | fp8_blk_dequant.cu | `memra_fp8_blk_q8_0_bytes` (:220), `memra_fp8_blk_dequant_q8_0` (:228) | device-side dequant of block-128 FP8 weights into GGUF Q8_0 blocks at model load | — | MEMRA_FP8_BLK_GPU (fp8_ffi.rs:476) | fp8_ffi.rs:458-474 |
-| fa3_prefill.cu | `memra_fa3_prefill`, `memra_fa3_vl` (+stub twins rc=3, :19-23) | FA3 v10 engine shim, head_dim 256 only | wgmma/TMA sm_90a-only; `-DMEMRA_FA3_STUB` otherwise (build.rs:525-526) | promoted default-ON on hopper 2026-07-27, `MEMRA_FA3=0` reverts; engages only head_dim==256 causal t==t_kv (lib.rs:15399-15409; file header ":1-7 opt-in" is stale) | lib.rs:889-904 |
+| fa3_prefill.cu | `memra_fa3_prefill` (+stub twin rc=3, :18-20; the `memra_fa3_vl` batched twin was deleted 2026-09-23, memra#641) | FA3 v10 engine shim, head_dim 256 only | wgmma/TMA sm_90a-only; `-DMEMRA_FA3_STUB` otherwise (build.rs:525-526) | promoted default-ON on hopper 2026-07-27, `MEMRA_FA3=0` reverts; engages only head_dim==256 causal t==t_kv (lib.rs:28041-28053; file header ":1-7 opt-in" is stale) | lib.rs:2189-2202 |
 | moe_f16_grouped.cu | *(the M=1 split-K family: `memra_moe_m1_splitk`, `memra_moe_m1_graph_splitk`, `moe_m1_splitk_partial_kernel<1/2>`, `moe_m1_graph_splitk_partial_kernel<1/2>`, `moe_m1_splitk_fast_partial_kernel<1/2>`, all three reduce kernels and the component instruments)* | **DELETED 2026-09-11 (memra #392, #425, #458, #461).** Every entry dispatched behind the fused gate/up launch, whose only arm is a gate-only function called AFTER load, so no serving process could reach one. When the matrix expert program became the loaded default the doors had to serve or go. Verdict, receipts and the tombstone: `docs/FLAGS.md` "Removed doors, 2026-09-11". | n/a | REMOVED | Census red arm in five sites: a captured graph carrying any of these symbols now FAILS. |
 | moe_f16_grouped.cu | `memra_moe_f16g_{dequant,gemm,gemm_sk,gather_act,h2f,h2f_scaled,w_bytes,act_bytes}`, `memra_moe_kq_gemm_sk` | per-layer expert dequant to f16 + ONE grouped f16 GEMM per projection over CSR groups; per-qtype dequant kernels for Q4_0/IQ4_XS/IQ3_S/Q6_K/Q4_K/Q3_K (:109-246); "SASS portable across 89/90a/100a/120a" (:336) Per-device cuBLAS handle slots since 2026-09-02 (same B200 finding as f16_prefill.cu). | smem opt-in >48KB, 1 CTA/SM on sm_120a (:483-486) | MEMRA_MOE_F16G (=2 single-kernel, mmq_ffi.rs:394), MEMRA_F16G_SK/_TAIL/_DIRECT/_DEBUG | mmq_ffi.rs:348-424 |
 | moe_f16_grouped.cu | `memra_moe_kq_gemm_sk_grid` | **REMOVED 2026-09-06**. The bounded persistent-grid arm was bit-identical and engaged on the target pair, but full-model A/B was flat/no-go at 256 and 8192 contexts. The generic `memra_moe_kq_gemm_sk` path remains the only DSV4 matrix visitor. | Historical component/sanitizer and full-model receipt retained; no serving default was promoted. | Removed door receipt: `research/dsv4f-2card-1m-20260904/grouped-grid-bound.md` plus private `grouped-grid-perf-20260906` receipt | — |

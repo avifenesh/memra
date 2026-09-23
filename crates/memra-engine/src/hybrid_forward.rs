@@ -8236,8 +8236,10 @@ impl HybridModel {
     /// batch the projections/FFN/lm_head exactly like fresh; the mixer cores take the
     /// per-seq CONTINUATION arms (Full: core_inner with carried pos_d + fa_prefill_view
     /// over the quantized past; Linear: the stateful pad_view twin — the same state
-    /// carry the chunked single-seq prime rides). The fresh-only favl/gdn-vl fast paths
-    /// stay byte-identical (gated on !carried). gemma4 models have no continuation
+    /// carry the chunked single-seq prime rides). The fresh-only gdn-vl fast path stays
+    /// byte-identical to the solo scan. Full attention runs the per-seq core for every
+    /// batch, fresh or carried (memra#641: the fresh varlen FA arm was a second program
+    /// and is deleted). gemma4 models have no continuation
     /// prime (v0 monolithic fresh) — carried gemma4 batches return Err (caller falls
     /// back to single-chunk serving).
     /// NUMERIC CONFIG: a concat GEMM tiles K differently than per-seq GEMMs — same class
@@ -8324,7 +8326,6 @@ impl HybridModel {
         let b = prompts.len();
         assert!(b >= 1 && b == caches.len());
         let pos0s: Vec<usize> = caches.iter().map(|c| c.pos).collect();
-        let carried = pos0s.iter().any(|&p| p > 0);
         // gemma4: refuse UNCONDITIONALLY (2026-08-07, lane/gemma4-serve-gaps). The old guard
         // covered only `carried` — two concurrent FRESH gemma4 prompts batched into the
         // generic concat attn core below (uniform geometry, no per-layer swa window, no
@@ -8432,267 +8433,50 @@ impl HybridModel {
                         Some(&hx16),
                         total,
                     )?;
-                    // task #18 (attn side): the WHOLE attn core is varlen for fresh gated
-                    // batches — split/QK-norm/RoPE/append (attn_pre_vl8, view inputs: the
-                    // q/k/v split copies vanish) + ONE varlen FA. Per-block math identical
-                    // everywhere (bit-gateable); MEMRA_FA_VL=0 or a non-bf16kv config falls
-                    // back to the per-seq dispatch.
-                    let geometry = self.cfg.full_attention_geometry_at(il as u32);
-                    let (n_head, n_head_kv, head_dim) = (
-                        geometry.n_head as usize,
-                        geometry.n_head_kv as usize,
-                        geometry.head_dim_k as usize,
-                    );
-                    let fa_scale = geometry.attention_scale();
-                    let use_favl = !carried
-                        && (2..=8).contains(&b)
-                        && (head_dim == 256 || head_dim == 128)
-                        && geometry.attention_gate == memra_gguf::config::AttentionGateKind::FusedQ
-                        && std::env::var("MEMRA_NOFA").is_err()
-                        && std::env::var("MEMRA_FA_FLOOR").is_err()
-                        && std::env::var("MEMRA_FA_PP_W2").as_deref() != Ok("1")
-                        && std::env::var("MEMRA_FA_BF16KV").as_deref() != Ok("0")
-                        && std::env::var("MEMRA_FA_VL").as_deref() != Ok("0");
-                    if use_favl {
-                        let (qf_w, kf_w, vf_w) = (
-                            fa.wq.out_features(),
-                            fa.wk.out_features(),
-                            fa.wv.out_features(),
-                        );
-                        // Same bounds contract as `Engine::q_gate_split`, applied to the varlen
-                        // twin's PER-TOKEN stride. `attn_pre_vl8` takes raw device pointers so it
-                        // cannot check its own extents; `qf_w` is the wq out-features that set
-                        // them, and `q_gate_split_vl` reads 2*head_dim per head out of it.
-                        memra_gguf::config::check_fused_q_gate_extent(qf_w, head_dim, n_head, 1)?;
-                        struct APre {
-                            q: CudaSlice<f32>,
-                            gate: Option<CudaSlice<f32>>,
-                            qn: CudaSlice<f32>,
-                            kn: CudaSlice<f32>,
+                    // memra#641: every batch, fresh or carried, runs the per-sequence attention
+                    // core, the same program as the solo prime (quantize-then-attend through the
+                    // cache view). The fresh varlen arm (task #18, MEMRA_FA_VL) attended bf16
+                    // copies of the pre-quantization K/V instead, so a request primed inside a
+                    // fresh batch got different logits than the same request primed alone
+                    // (research/decode-exact-641-20260923). The arm and its kernels are deleted.
+                    let mut parts: Vec<Vec<CudaSlice<f32>>> = (0..b).map(|_| Vec::new()).collect();
+                    for (w, y) in [&fa.wq, &fa.wk, &fa.wv].iter().zip(g3) {
+                        for (s, ys) in split(e, &y, w.out_features())?.into_iter().enumerate() {
+                            parts[s].push(ys);
                         }
-                        let mut aps = Vec::with_capacity(b);
-                        for &t in ts.iter().take(b) {
-                            aps.push(APre {
-                                q: e.uninit(t * n_head * head_dim)?,
-                                gate: Some(e.uninit(t * n_head * head_dim)?),
-                                qn: e.uninit(t * n_head * head_dim)?,
-                                kn: e.uninit(t * n_head_kv * head_dim)?,
-                            });
-                        }
-                        let (kv_dim_k, kv_dim_v, ktb, vtb) = {
-                            let kvl = caches[0].kv[il].as_ref().unwrap();
-                            (kvl.kv_dim_k, kvl.kv_dim_v, kvl.k_tok_bytes, kvl.v_tok_bytes)
-                        };
-                        let pargs: Vec<crate::AttnPreVl> = (0..b)
-                            .map(|s| {
-                                let (o, t) = (offs[s], ts[s]);
-                                let kvl = caches[s].kv[il].as_ref().unwrap();
-                                assert!(
-                                    kvl.len == 0 && kvl.len + t <= caches[s].max_ctx,
-                                    "prime_cache_batch attn vl: fresh + capacity"
-                                );
-                                crate::AttnPreVl {
-                                    qf: e.addr_f32v(&g3[0].slice(o * qf_w..(o + t) * qf_w)),
-                                    kf: e.addr_f32v(&g3[1].slice(o * kf_w..(o + t) * kf_w)),
-                                    vf: e.addr_f32v(&g3[2].slice(o * vf_w..(o + t) * vf_w)),
-                                    q: e.addr_f32(&aps[s].q),
-                                    gate: e.addr_f32(aps[s].gate.as_ref().unwrap()),
-                                    qn: e.addr_f32(&aps[s].qn),
-                                    kn: e.addr_f32(&aps[s].kn),
-                                    kc: e.addr_u8(&kvl.k),
-                                    vc: e.addr_u8(&kvl.v),
-                                    t: t as i32,
-                                    pad: 0,
-                                }
-                            })
-                            .collect();
-                        e.attn_pre_vl8(
-                            &pargs,
-                            fa.q_norm_w(),
-                            fa.k_norm_w(),
-                            head_dim,
-                            geometry.n_rot as usize,
-                            n_head,
-                            n_head_kv,
-                            self.cfg.rms_eps,
-                            geometry.rope_base,
-                            1.0,
-                            kv_dim_k,
-                            kv_dim_v,
-                            ktb,
-                            vtb,
+                    }
+                    for (s, g3s) in parts.into_iter().enumerate() {
+                        // task #16 gather removal: wo writes into `mixed` at offs[s] directly.
+                        let (attn_g, ag16) = self.full_attn_prime_core_inner(
+                            e, fa, g3s, &pos_ds[s], ts[s], caches[s], il,
                         )?;
-                        for s in 0..b {
-                            let kvl = caches[s].kv[il].as_mut().unwrap();
-                            kvl.len += ts[s];
-                            let new_len = kvl.len as i32;
-                            e.set_i32_one(&mut kvl.len_d, new_len)?;
-                        }
-                        let mut attns = Vec::with_capacity(b);
-                        let mut mirrors = Vec::with_capacity(b);
-                        for &t in ts.iter().take(b) {
-                            attns.push(e.uninit(t * n_head * head_dim)?);
-                            let n = t * n_head_kv * head_dim;
-                            mirrors.push((e.alloc_u8_uninit(n * 2)?, e.alloc_u8_uninit(n * 2)?));
-                        }
-                        // FA3 batched twin (round 31): TMA-swizzled wgmma vl when the
-                        // promoted single-seq config is on; else the mma favl.
-                        let fa3_on = match std::env::var("MEMRA_FA3").as_deref() {
-                            Ok("0") => false,
-                            // Same refusal as the single-seq twin (lib.rs fa_prefill): the
-                            // batched bf16 stage reaches func("f32_to_bf16_bulk"), absent on a
-                            // portable build.
-                            Ok("1") => {
-                                crate::refuse_portable_force(
-                                    "MEMRA_FA3=1",
-                                    "the sm_90a fa3/bf16 kernels",
-                                );
-                                true
-                            }
-                            _ => cfg!(memra_hopper_mma),
-                        };
-                        if fa3_on {
-                            let mut q16s = Vec::with_capacity(b);
-                            let mut v16s = Vec::with_capacity(b);
-                            for s in 0..b {
-                                let t = ts[s];
-                                let mut q16 = e.alloc_u8_uninit(t * n_head * head_dim * 2)?;
-                                e.f32_to_bf16_into(&aps[s].qn, &mut q16, t * n_head * head_dim)?;
-                                let mut k16 = e.alloc_u8_uninit(t * n_head_kv * head_dim * 2)?;
-                                e.f32_to_bf16_into(&aps[s].kn, &mut k16, t * n_head_kv * head_dim)?;
-                                let mut v16 = e.alloc_u8_uninit(t * n_head_kv * head_dim * 2)?;
-                                e.f32_to_bf16_v(
-                                    &g3[2].slice(offs[s] * vf_w..(offs[s] + t) * vf_w),
-                                    &mut v16,
-                                    t * n_head_kv * head_dim,
-                                )?;
-                                q16s.push(q16);
-                                v16s.push((k16, v16));
-                            }
-                            let mut qp = [core::ptr::null::<core::ffi::c_void>(); 8];
-                            let mut kp = qp;
-                            let mut vp = qp;
-                            let mut op = [core::ptr::null_mut::<f32>(); 8];
-                            let mut tsv = [0i32; 8];
-                            for s in 0..b {
-                                qp[s] = e.addr_u8(&q16s[s]) as *const core::ffi::c_void;
-                                kp[s] = e.addr_u8(&v16s[s].0) as *const core::ffi::c_void;
-                                vp[s] = e.addr_u8(&v16s[s].1) as *const core::ffi::c_void;
-                                op[s] = e.addr_f32(&attns[s]) as *mut f32;
-                                tsv[s] = ts[s] as i32;
-                            }
-                            let rc = unsafe {
-                                crate::fa3_vl_raw(
-                                    qp.as_ptr(),
-                                    kp.as_ptr(),
-                                    vp.as_ptr(),
-                                    op.as_ptr(),
-                                    tsv.as_ptr(),
-                                    b as i32,
-                                    n_head as i32,
-                                    n_head_kv as i32,
-                                    head_dim as i32,
-                                    fa_scale,
-                                    e.stream().cu_stream() as *mut core::ffi::c_void,
-                                )
-                            };
-                            if rc != 0 {
-                                return Err(format!("memra_fa3_vl rc={rc}").into());
-                            }
-                        } else {
-                            let fargs: Vec<crate::FaSeqVl> = (0..b)
-                                .map(|s| crate::FaSeqVl {
-                                    q: e.addr_f32(&aps[s].qn),
-                                    k16: e.addr_u8(&mirrors[s].0),
-                                    v16: e.addr_u8(&mirrors[s].1),
-                                    o: e.addr_f32(&attns[s]),
-                                    kf: e.addr_f32(&aps[s].kn),
-                                    vf: e.addr_f32v(
-                                        &g3[2].slice(offs[s] * vf_w..(offs[s] + ts[s]) * vf_w),
-                                    ),
-                                    t: ts[s] as i32,
-                                    pad: 0,
-                                })
-                                .collect();
-                            e.fa_prefill_vl8(&fargs, head_dim, n_head, n_head_kv, fa_scale)?;
-                        }
-                        for (s, attn) in attns.into_iter().enumerate() {
-                            let (attn_g, ag16) = self.full_attn_prime_post_fa(
-                                e,
-                                attn,
-                                &aps[s].gate,
+                        let mut done = false;
+                        // AWQ (memra#253), as the solo `full_attn_prime_core`: the f16 epilogue
+                        // never applied o_proj's input scale, so a scaled artifact takes the
+                        // general path here too (one program per request, memra#641).
+                        if let Some(xh) = &ag16
+                            && fa.wo_pqs.is_none()
+                        {
+                            done = e.try_f16_gemm_pre_into_off_prefill(
+                                &fa.wo,
+                                xh,
                                 ts[s],
-                                n_head,
-                                head_dim,
+                                &mut mixed,
+                                offs[s] * n_embd,
                             )?;
-                            let mut done = false;
-                            if let Some(xh) = &ag16 {
-                                done = e.try_f16_gemm_pre_into_off_prefill(
-                                    &fa.wo,
-                                    xh,
-                                    ts[s],
-                                    &mut mixed,
-                                    offs[s] * n_embd,
-                                )?;
-                            }
-                            if !done {
-                                let m = {
-                                    // AWQ (memra#253): o_proj carries its own per-input-channel scale.
-                                    let __wpqs = e.pre_quant_scaled(
-                                        &attn_g,
-                                        fa.wo_pqs.as_ref(),
-                                        fa.wo.in_features(),
-                                        ts[s],
-                                    )?;
-                                    e.matmul_prefill(
-                                        &fa.wo,
-                                        __wpqs.as_ref().unwrap_or(&attn_g),
-                                        ts[s],
-                                    )
-                                }?;
-                                e.copy_into(&mut mixed, offs[s] * n_embd, &m, ts[s] * n_embd)?;
-                            }
                         }
-                    } else {
-                        let mut parts: Vec<Vec<CudaSlice<f32>>> =
-                            (0..b).map(|_| Vec::new()).collect();
-                        for (w, y) in [&fa.wq, &fa.wk, &fa.wv].iter().zip(g3) {
-                            for (s, ys) in split(e, &y, w.out_features())?.into_iter().enumerate() {
-                                parts[s].push(ys);
-                            }
-                        }
-                        for (s, g3s) in parts.into_iter().enumerate() {
-                            // task #16 gather removal: wo writes into `mixed` at offs[s] directly.
-                            let (attn_g, ag16) = self.full_attn_prime_core_inner(
-                                e, fa, g3s, &pos_ds[s], ts[s], caches[s], il,
-                            )?;
-                            let mut done = false;
-                            if let Some(xh) = &ag16 {
-                                done = e.try_f16_gemm_pre_into_off_prefill(
-                                    &fa.wo,
-                                    xh,
+                        if !done {
+                            let m = {
+                                // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                                let __wpqs = e.pre_quant_scaled(
+                                    &attn_g,
+                                    fa.wo_pqs.as_ref(),
+                                    fa.wo.in_features(),
                                     ts[s],
-                                    &mut mixed,
-                                    offs[s] * n_embd,
                                 )?;
-                            }
-                            if !done {
-                                let m = {
-                                    // AWQ (memra#253): o_proj carries its own per-input-channel scale.
-                                    let __wpqs = e.pre_quant_scaled(
-                                        &attn_g,
-                                        fa.wo_pqs.as_ref(),
-                                        fa.wo.in_features(),
-                                        ts[s],
-                                    )?;
-                                    e.matmul_prefill(
-                                        &fa.wo,
-                                        __wpqs.as_ref().unwrap_or(&attn_g),
-                                        ts[s],
-                                    )
-                                }?;
-                                e.copy_into(&mut mixed, offs[s] * n_embd, &m, ts[s] * n_embd)?;
-                            }
+                                e.matmul_prefill(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), ts[s])
+                            }?;
+                            e.copy_into(&mut mixed, offs[s] * n_embd, &m, ts[s] * n_embd)?;
                         }
                     }
                 }

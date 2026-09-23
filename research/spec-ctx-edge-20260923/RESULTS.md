@@ -37,6 +37,12 @@ Merged with main `580e8a4a1` (integ49, A day 31's `worker.rs` under its default-
 binary `395a42b9`, build line `memra-0.138.0-709466af1831 (id: source-tree, git: 1fc3034619f5)`:
 `SPEC-CTX-EDGE GATE: ALL GREEN`, 13 PASS (`rtx5090/merged-main/`).
 
+**Target card (the #668 PRO 6000 run, owed at merge).** Lane E ran the gate on BOX3's 27B during its #641
+qualification (tree `9e3b7250e`, main `d544c6b82` plus the #641 fix, `SCE_CTX=384`, a 73-token prompt):
+`SPEC-CTX-EDGE GATE: ALL GREEN`, 13 PASS and 0 FAIL, with the plain and spec messages equal (`0ba35b0ee89ade1d`) and the
+door-OFF runaways ending at 309, 311 and 309 of 311 tokens of room (`research/decode-exact-641-20260923/pro6000/run.log`). #668
+merged before this run on 5090 evidence alone. This line closes that gap.
+
 **Also owed by PREREG, done.** `run-spec` K=1..8 on the 9B (single-shot route, `MEMRA_SPEC_TEMP=0`,
 32 tokens, the tier-2 probe prompt): `self-consistency: PASS` 8 of 8 and `=== SELF-CONSISTENCY PASS ===`
 (`rtx5090/run-spec-9b/`). `run-gen` runs the plain route, which this change does not touch. CPU: the
