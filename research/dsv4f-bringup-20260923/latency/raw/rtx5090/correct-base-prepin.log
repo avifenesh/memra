@@ -1,0 +1,31 @@
+
+running 6 tests
+test grouped_routes_match_cpu_oracle ... grouped routes exact oracle: 1755 cases identical
+ok
+test grouped_routes_red_arm ... ok
+test rmsnorm_f32acc_matches_exact_oracle ... rmsnorm_f32acc exact oracle: 240 cases bit-identical
+ok
+test rmsnorm_f32acc_red_arm ... ok
+test route_m_matches_golden_and_structure ... route_m: 360 cases, golden 0xa883c1c05022dc87
+
+thread 'route_m_matches_golden_and_structure' (2971736) panicked at crates/memra-engine/tests/dsv4_latency_kernels_gpu.rs:760:5:
+assertion `left == right` failed: route_m outputs differ from the 31dd11455 capture: 0xa883c1c05022dc87
+  left: 12142762052043332743
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test route_m_red_arm ... 
+thread 'route_m_red_arm' (2971737) panicked at crates/memra-engine/tests/dsv4_latency_kernels_gpu.rs:778:5:
+assertion `left != right` failed: route_m red arm: selw comparator is blind
+  left: [1069547520]
+ right: [1069547520]
+FAILED
+
+failures:
+
+failures:
+    route_m_matches_golden_and_structure
+    route_m_red_arm
+
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.56s
+

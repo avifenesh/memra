@@ -274,9 +274,11 @@ pub fn dense_census_for_gate() -> (Vec<Dsv4DenseCensusRow>, u64) {
 #[path = "dsv4_small_kernel_gate.rs"]
 mod small_kernel_gate;
 
-// Gate-only dense wo_a launch fusion. It is process-local and deliberately
-// default OFF; no environment variable or serving default selects this arm.
-static DSV4_DENSE_WO_A_GROUPED: AtomicBool = AtomicBool::new(false);
+// Dense wo_a launch fusion: one grouped launch for the eight t=1 per-group GEMVs,
+// bit-identical to them. Default ON since 2026-09-23 (it takes the grouped dense-fast
+// twin); gates select the per-group program with the process-local seam below.
+const DSV4_DENSE_WO_A_GROUPED_DEFAULT: bool = true;
+static DSV4_DENSE_WO_A_GROUPED: AtomicBool = AtomicBool::new(DSV4_DENSE_WO_A_GROUPED_DEFAULT);
 static DSV4_DENSE_WO_A_GROUPED_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
 // Gate-only exact radix-cut selector for plain t=1, K=512 indexer rows. Default OFF and
@@ -2362,10 +2364,10 @@ impl Dsv4Gpu {
         crate::clear_moe_f16g_m1_tc_for_gate();
     }
 
-    /// Gate-only FP8 wo_a grouped launch. This replaces the eight t=1
-    /// per-group launches with one grouped launch while retaining the same
-    /// per-output accumulation/reduction body. It is process-local, default
-    /// OFF, and has no environment or serving default.
+    /// Gate seam for the FP8 wo_a grouped launch. The grouped launch replaces
+    /// the eight t=1 per-group launches with one while retaining the same
+    /// per-output accumulation/reduction body. Default ON; `false` selects the
+    /// per-group launches. Process-local, no environment variable.
     pub fn set_dense_wo_a_grouped_for_gate(&self, enabled: bool) -> bool {
         for stage in &self.stages {
             stage
@@ -2382,7 +2384,7 @@ impl Dsv4Gpu {
     }
 
     pub fn clear_dense_wo_a_grouped_for_gate(&self) {
-        self.set_dense_wo_a_grouped_for_gate(false);
+        self.set_dense_wo_a_grouped_for_gate(DSV4_DENSE_WO_A_GROUPED_DEFAULT);
     }
 
     /// Successful CUDA enqueues through the grouped FP8 wo_a entry point.
@@ -20650,6 +20652,65 @@ mod dense_wo_a_grouped_fp8_component_tests {
         );
         println!(
             "PASS grouped wo_a FP8: groups=8 rows/group=1024 k=4096 bit-exact, padding guarded, dispatch_delta=1, small=2x128, malformed strides refused"
+        );
+    }
+
+    unsafe extern "C" {
+        fn memra_dsv4_dense_fast_set_for_gate(enabled: i32) -> i32;
+        fn memra_dsv4_dense_fast_restore_default_for_gate() -> i32;
+        fn memra_dsv4_dense_fast_counts_for_gate(fp8: *mut u64, dots: *mut u64) -> i32;
+    }
+
+    fn dense_fast_fp8_enqueues() -> u64 {
+        let mut counts = [0u64; 2];
+        let rc = unsafe { memra_dsv4_dense_fast_counts_for_gate(&mut counts[0], &mut counts[1]) };
+        assert_eq!(rc, 0);
+        counts[0]
+    }
+
+    /// The grouped launch takes grouped dense fast exactly when the per-group
+    /// slices would take dense fast, and every (slice kernel, grouped kernel)
+    /// pair in the matrix is bit-identical: legacy, exact tail, and dense fast
+    /// slices against the legacy grouped and the grouped dense-fast launches.
+    #[test]
+    #[ignore = "requires an exclusively locked CUDA device; grouped dense-fast wo_a identity matrix"]
+    fn cuda_gemv_fp8_grouped_dense_fast_matches_every_slice_program() {
+        let gpu = memra_runtime::Gpu::new(0).expect("GPU");
+        let stream = gpu.stream();
+        // (exact tail, dense fast) for the slices, then for the grouped launch.
+        let programs = [(false, false), (true, false), (true, true)];
+        let mut cells = 0;
+        for (groups, rows) in [(8, 1024), (2, 128), (3, 256)] {
+            for &(slice_tail, slice_fast) in &programs {
+                for &(grouped_tail, grouped_fast) in &programs {
+                    let mut f = make_fixture(&stream, groups, rows, 4096);
+                    super::set_dense_exact_tail_for_gate(slice_tail).unwrap();
+                    assert_eq!(
+                        unsafe { memra_dsv4_dense_fast_set_for_gate(i32::from(slice_fast)) },
+                        0
+                    );
+                    unsafe { launch_old_grouped_slices(&stream, &mut f) };
+                    super::set_dense_exact_tail_for_gate(grouped_tail).unwrap();
+                    assert_eq!(
+                        unsafe { memra_dsv4_dense_fast_set_for_gate(i32::from(grouped_fast)) },
+                        0
+                    );
+                    let before = dense_fast_fp8_enqueues();
+                    unsafe { launch_new_grouped(&stream, &mut f) };
+                    assert_eq!(
+                        dense_fast_fp8_enqueues() - before,
+                        u64::from(grouped_tail && grouped_fast),
+                        "grouped dense fast engages once, only when the slices would take it"
+                    );
+                    assert_fixture_bit_identity(&stream, &f);
+                    cells += 1;
+                }
+            }
+        }
+        super::restore_dense_exact_tail_default_for_gate();
+        unsafe { memra_dsv4_dense_fast_restore_default_for_gate() };
+        println!(
+            "PASS grouped dense-fast wo_a FP8: cells={cells} shapes=8x1024,2x128,3x256 k=4096 slice programs=3 grouped programs=3 bit-exact, dense-fast enqueue=1 only on the dense-fast arm"
         );
     }
 }

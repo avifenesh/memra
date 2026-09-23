@@ -1,0 +1,42 @@
+lane 2a41f68bd6eeeaebb2a525b84ce68389a966970c base 7029cd67cd537d826212d1ab9fb9b4a0acd8851f test fc18e042645547e6
+BUILD latbase head=7029cd67cd537d826212d1ab9fb9b4a0acd8851f utc=2026-09-23T11:21:57Z SERVER_EXIT=0 ENGINE_EXIT=0 
+BUILD latlane head=2a41f68bd6eeeaebb2a525b84ce68389a966970c utc=2026-09-23T11:26:23Z SERVER_EXIT=0 ENGINE_EXIT=0 
+build-test base rc=0
+3c44c6ce9c97f917edf6167f12d64637d2802a829af7f7d27965e5a81976d499  /root/rcpt/lat2/lat-base.bin
+build-test lane rc=0
+bbc294e351efcf81bf1c8274bccbbe7f2d7f4ad42009b99e2a7089204044fdf1  /root/rcpt/lat2/lat-lane.bin
+build-lib lane rc=0
+ec7dd2690dca88fcdb3906f90432dc9add702fa7bf7fa43b75743fce506c10a9  /root/rcpt/lat2/lib-lane.bin
+correct base test route_m_matches_golden_and_structure ... route_m: 360 cases, golden 0xa883c1c05022dc87 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.86s GATE_DONE rc=0 utc=2026-09-23T11:31:13Z 
+correct lane test route_m_matches_golden_and_structure ... route_m: 360 cases, golden 0xa883c1c05022dc87 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.34s GATE_DONE rc=0 utc=2026-09-23T11:31:15Z 
+woa lane test dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_dense_fast_matches_every_slice_program ... PASS grouped dense-fast wo_a FP8: cells=27 shapes=8x1024,2x128,3x256 k=4096 slice programs=3 grouped programs=3 bit-exact, dense-fast enqueue=1 only on the dense-fast arm test dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue ... PASS grouped wo_a FP8: groups=8 rows/group=1024 k=4096 bit-exact, padding guarded, dispatch_delta=1, small=2x128, malformed strides refused test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 578 filtered out; finished in 1.07s GATE_DONE rc=0 utc=2026-09-23T11:31:16Z 
+timing r1 base rc=0
+timing r1 lane rc=0
+timing r2 lane rc=0
+timing r2 base rc=0
+timing r3 base rc=0
+timing r3 lane rc=0
+timing r4 lane rc=0
+timing r4 base rc=0
+timing r5 base rc=0
+timing r5 lane rc=0
+bin base 22397e5bc486d092
+bin lane 6cab3c388cb020fa
+dspark-served GPU DSPARK GATE [PASS] GATE_DONE rc=0 utc=2026-09-23T11:34:22Z 
+plain r1 base rc=0 CELL greedy-c1 c=1 ok=8/8 agg=53.80 tok/s decode_p50=55.94 tok/s ttft_p50=197 ms tpot_p50=17.88 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=49.47 tok/s decode_p50=51.27 tok/s ttft_p50=198 ms tpot_p50=19.50 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=53.70 tok/s decode_p50=55.86 tok/s ttft_p50=197 ms tpot_p50=17.90 ms errs=[] 
+plain r2 lane rc=0 CELL greedy-c1 c=1 ok=8/8 agg=60.60 tok/s decode_p50=63.29 tok/s ttft_p50=193 ms tpot_p50=15.80 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=55.13 tok/s decode_p50=57.35 tok/s ttft_p50=195 ms tpot_p50=17.44 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=60.53 tok/s decode_p50=63.30 tok/s ttft_p50=197 ms tpot_p50=15.80 ms errs=[] 
+plain r3 lane rc=0 CELL greedy-c1 c=1 ok=8/8 agg=60.67 tok/s decode_p50=63.36 tok/s ttft_p50=192 ms tpot_p50=15.78 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=55.16 tok/s decode_p50=57.36 tok/s ttft_p50=194 ms tpot_p50=17.43 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=60.56 tok/s decode_p50=63.28 tok/s ttft_p50=192 ms tpot_p50=15.80 ms errs=[] 
+plain r4 base rc=0 CELL greedy-c1 c=1 ok=8/8 agg=53.80 tok/s decode_p50=55.92 tok/s ttft_p50=197 ms tpot_p50=17.88 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=49.49 tok/s decode_p50=51.28 tok/s ttft_p50=198 ms tpot_p50=19.50 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=53.72 tok/s decode_p50=55.88 tok/s ttft_p50=197 ms tpot_p50=17.90 ms errs=[] 
+plain r5 base rc=0 CELL greedy-c1 c=1 ok=8/8 agg=53.78 tok/s decode_p50=55.91 tok/s ttft_p50=196 ms tpot_p50=17.88 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=49.45 tok/s decode_p50=51.24 tok/s ttft_p50=198 ms tpot_p50=19.52 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=53.67 tok/s decode_p50=55.83 tok/s ttft_p50=197 ms tpot_p50=17.91 ms errs=[] 
+plain r6 lane rc=0 CELL greedy-c1 c=1 ok=8/8 agg=60.67 tok/s decode_p50=63.35 tok/s ttft_p50=192 ms tpot_p50=15.78 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=55.23 tok/s decode_p50=57.44 tok/s ttft_p50=194 ms tpot_p50=17.41 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=60.57 tok/s decode_p50=63.30 tok/s ttft_p50=192 ms tpot_p50=15.80 ms errs=[] 
+plain r7 lane rc=0 CELL greedy-c1 c=1 ok=8/8 agg=60.66 tok/s decode_p50=63.32 tok/s ttft_p50=192 ms tpot_p50=15.79 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=55.17 tok/s decode_p50=57.41 tok/s ttft_p50=195 ms tpot_p50=17.42 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=60.57 tok/s decode_p50=63.30 tok/s ttft_p50=193 ms tpot_p50=15.80 ms errs=[] 
+plain r8 base rc=0 CELL greedy-c1 c=1 ok=8/8 agg=53.79 tok/s decode_p50=55.92 tok/s ttft_p50=196 ms tpot_p50=17.88 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=49.46 tok/s decode_p50=51.24 tok/s ttft_p50=198 ms tpot_p50=19.51 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=53.66 tok/s decode_p50=55.83 tok/s ttft_p50=197 ms tpot_p50=17.91 ms errs=[] 
+spec s1 base rc=0 CELL greedy-c1 c=1 ok=8/8 agg=68.29 tok/s decode_p50=73.26 tok/s ttft_p50=245 ms tpot_p50=13.65 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=58.50 tok/s decode_p50=60.44 tok/s ttft_p50=256 ms tpot_p50=16.54 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=67.61 tok/s decode_p50=73.03 tok/s ttft_p50=250 ms tpot_p50=13.69 ms errs=[] 
+spec s2 lane rc=0 CELL greedy-c1 c=1 ok=8/8 agg=70.89 tok/s decode_p50=76.21 tok/s ttft_p50=240 ms tpot_p50=13.12 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=60.45 tok/s decode_p50=62.50 tok/s ttft_p50=250 ms tpot_p50=16.00 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=70.32 tok/s decode_p50=76.04 tok/s ttft_p50=239 ms tpot_p50=13.15 ms errs=[] 
+spec s3 lane rc=0 CELL greedy-c1 c=1 ok=8/8 agg=70.58 tok/s decode_p50=75.75 tok/s ttft_p50=242 ms tpot_p50=13.20 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=60.39 tok/s decode_p50=62.38 tok/s ttft_p50=251 ms tpot_p50=16.03 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=70.21 tok/s decode_p50=75.96 tok/s ttft_p50=250 ms tpot_p50=13.16 ms errs=[] 
+spec s4 base rc=0 CELL greedy-c1 c=1 ok=8/8 agg=68.25 tok/s decode_p50=73.23 tok/s ttft_p50=244 ms tpot_p50=13.66 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=58.54 tok/s decode_p50=60.53 tok/s ttft_p50=256 ms tpot_p50=16.52 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=67.45 tok/s decode_p50=72.91 tok/s ttft_p50=248 ms tpot_p50=13.72 ms errs=[] 
+spec s5 base rc=0 CELL greedy-c1 c=1 ok=8/8 agg=68.22 tok/s decode_p50=73.22 tok/s ttft_p50=245 ms tpot_p50=13.66 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=58.39 tok/s decode_p50=60.34 tok/s ttft_p50=257 ms tpot_p50=16.57 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=67.70 tok/s decode_p50=73.12 tok/s ttft_p50=245 ms tpot_p50=13.68 ms errs=[] 
+spec s6 lane rc=0 CELL greedy-c1 c=1 ok=8/8 agg=70.89 tok/s decode_p50=76.14 tok/s ttft_p50=239 ms tpot_p50=13.13 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=60.32 tok/s decode_p50=62.46 tok/s ttft_p50=251 ms tpot_p50=16.01 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=70.33 tok/s decode_p50=76.05 tok/s ttft_p50=239 ms tpot_p50=13.15 ms errs=[] 
+spec s7 lane rc=0 CELL greedy-c1 c=1 ok=8/8 agg=70.82 tok/s decode_p50=76.01 tok/s ttft_p50=240 ms tpot_p50=13.16 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=60.33 tok/s decode_p50=62.47 tok/s ttft_p50=251 ms tpot_p50=16.01 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=70.32 tok/s decode_p50=76.00 tok/s ttft_p50=239 ms tpot_p50=13.16 ms errs=[] 
+spec s8 base rc=0 CELL greedy-c1 c=1 ok=8/8 agg=68.16 tok/s decode_p50=73.17 tok/s ttft_p50=245 ms tpot_p50=13.67 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=58.43 tok/s decode_p50=60.38 tok/s ttft_p50=257 ms tpot_p50=16.56 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=67.65 tok/s decode_p50=73.07 tok/s ttft_p50=246 ms tpot_p50=13.69 ms errs=[] 
+LAT2_DONE

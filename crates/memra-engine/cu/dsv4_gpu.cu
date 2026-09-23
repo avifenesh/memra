@@ -1262,16 +1262,45 @@ static __global__ void dsv4_grouped_count_kernel(const int* selected, int* count
     }
 }
 
+// One warp writes expert_ids and offsets[1..experts] and returns the total to every
+// lane: lane l owns a contiguous run of ceil(experts / 32) <= 16 experts and a shuffle
+// scan adds the runs before it. Integer sums, so the offsets equal a serial loop's.
+__device__ __forceinline__ int dsv4_warp_expert_prefix(const int* counts, int* offsets,
+    int* expert_ids, int experts) {
+    const int lane = threadIdx.x;
+    const int per = (experts + 31) / 32;
+    const int lo = lane * per;
+    int c[16];
+    int local = 0;
+#pragma unroll
+    for (int j = 0; j < 16; ++j) {
+        c[j] = j < per && lo + j < experts ? counts[lo + j] : 0;
+        local += c[j];
+    }
+    int incl = local;
+#pragma unroll
+    for (int off = 1; off < 32; off <<= 1) {
+        int v = __shfl_up_sync(0xffffffffu, incl, off);
+        if (lane >= off) incl += v;
+    }
+    int run = incl - local;
+#pragma unroll
+    for (int j = 0; j < 16; ++j) {
+        int e = lo + j;
+        if (j < per && e < experts) {
+            expert_ids[e] = e;
+            run += c[j];
+            offsets[e + 1] = run;
+        }
+    }
+    return __shfl_sync(0xffffffffu, incl, 31);
+}
+
 static __global__ void dsv4_grouped_prefix_kernel(const int* counts, int* offsets,
     int* expert_ids, int* status, int experts, int slots, int* fault, int fault_bit) {
+    const int sum = dsv4_warp_expert_prefix(counts, offsets, expert_ids, experts);
     if (threadIdx.x != 0) return;
-    int sum = 0;
     offsets[0] = 0;
-    for (int e = 0; e < experts; ++e) {
-        expert_ids[e] = e;
-        sum += counts[e];
-        offsets[e + 1] = sum;
-    }
     // Every valid input slot contributes exactly once. Invalid ids are never
     // dereferenced and are rejected before the caller uses this metadata.
     status[0] = sum == slots ? 0 : 1;
@@ -1352,18 +1381,14 @@ extern "C" int memra_dsv4_grouped_routes_fault(const int* selected, const float*
 static __global__ void dsv4_grouped_partition_prefix_kernel(const int* selected,
     const int* counts, int* offsets, int* expert_ids, int* status,
     int slots, int global_experts, int expert_count) {
-    if (threadIdx.x != 0) return;
-    int sum = 0;
-    offsets[0] = 0;
-    for (int e = 0; e < expert_count; ++e) {
-        expert_ids[e] = e;
-        sum += counts[e];
-        offsets[e + 1] = sum;
-    }
+    dsv4_warp_expert_prefix(counts, offsets, expert_ids, expert_count);
     int bad = 0;
-    for (int p = 0; p < slots; ++p) {
+    for (int p = threadIdx.x; p < slots; p += 32) {
         if (selected[p] < 0 || selected[p] >= global_experts) bad = 1;
     }
+    bad = __any_sync(0xffffffffu, bad) ? 1 : 0;
+    if (threadIdx.x != 0) return;
+    offsets[0] = 0;
     status[0] = bad;
 }
 
@@ -2946,8 +2971,55 @@ __device__ __forceinline__ float dsv4_block_sum_f32(float v, float* sh) {
     return sh[0];
 }
 
+// dsv4_block_sum_f32 at blockDim 128, same pairing: levels 64 and 32 through shared
+// memory, 16..1 by shuffle in warp 0 (lane t adds lane t+off, as sh[t] += sh[t+off]).
+__device__ __forceinline__ float dsv4_block_sum128_f32(float v, float* sh) {
+    int tid = threadIdx.x;
+    sh[tid] = v;
+    __syncthreads();
+    if (tid < 64) sh[tid] += sh[tid + 64];
+    __syncthreads();
+    if (tid < 32) {
+        float s = sh[tid] + sh[tid + 32];
+#pragma unroll
+        for (int off = 16; off > 0; off >>= 1) s += __shfl_down_sync(0xffffffffu, s, off);
+        if (tid == 0) sh[0] = s;
+    }
+    __syncthreads();
+    return sh[0];
+}
+
+// One 128-thread row with every owned x and w element loaded before the first add, so
+// the row pays one load latency where the loop form pays one per 8-load batch and one
+// per output. Same per-thread ascending element order, same tree, same expressions.
+template <int R>
+__device__ __forceinline__ void dsv4_rmsnorm_f32acc_regs(const float* xr, const float* w,
+                                                         float* dr, int ncols, float eps,
+                                                         float* sh) {
+    float xv[R], wv[R];
+#pragma unroll
+    for (int k = 0; k < R; ++k) {
+        int j = threadIdx.x + k * 128;
+        xv[k] = j < ncols ? xr[j] : 0.0f;
+        wv[k] = j < ncols && w ? w[j] : 1.0f;
+    }
+    float acc = 0.0f;
+#pragma unroll
+    for (int k = 0; k < R; ++k)
+        if (threadIdx.x + k * 128 < ncols) acc += xv[k] * xv[k];
+    float tot = dsv4_block_sum128_f32(acc, sh);
+    float mean = tot / (float)ncols;
+    float rsq = 1.0f / sqrtf(mean + eps);
+#pragma unroll
+    for (int k = 0; k < R; ++k) {
+        int j = threadIdx.x + k * 128;
+        if (j < ncols) dr[j] = wv[k] * (xv[k] * rsq);
+    }
+}
+
 // twin of dsv4_rmsnorm_kernel: float sum of squares (same 8-wide load batching, same
-// per-thread i order), mean and rsqrt in f32.
+// per-thread i order), mean and rsqrt in f32. Rows up to 4096 columns at 128 threads
+// take the register-resident form; its bits equal the loop form's.
 extern "C" __global__ void dsv4_rmsnorm_f32acc_kernel(const float* __restrict__ x,
                                                       const float* __restrict__ w,
                                                       float* __restrict__ dst, int ncols,
@@ -2956,6 +3028,12 @@ extern "C" __global__ void dsv4_rmsnorm_f32acc_kernel(const float* __restrict__ 
     int row = blockIdx.x;
     const float* xr = x + (long)row * ncols;
     float* dr = dst + (long)row * ncols;
+    extern __shared__ float shf32[];
+    if (blockDim.x == 128 && ncols <= 128 * 32) {
+        if (ncols <= 128 * 8) dsv4_rmsnorm_f32acc_regs<8>(xr, w, dr, ncols, eps, shf32);
+        else dsv4_rmsnorm_f32acc_regs<32>(xr, w, dr, ncols, eps, shf32);
+        return;
+    }
     float acc = 0.0f;
     int i = threadIdx.x;
     int B = blockDim.x;
@@ -2975,7 +3053,6 @@ extern "C" __global__ void dsv4_rmsnorm_f32acc_kernel(const float* __restrict__ 
         float v = xr[i];
         acc += v * v;
     }
-    extern __shared__ float shf32[];
     float tot = dsv4_block_sum_f32(acc, shf32);
     float mean = tot / (float)ncols;
     float rsq = 1.0f / sqrtf(mean + eps);
@@ -4075,7 +4152,10 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
 // the activation and output planes, while the weight rows remain contiguous across groups.
 // The arithmetic body is the same dsv4_gemv_fp8_m_kernel<1> body above; only the row/group
 // address calculation changes. This removes the eight host launches around wo_a without
-// changing any per-output accumulation or reduction order.
+// changing any per-output accumulation or reduction order. When the per-group slices
+// would take dense-fast (exact tail and dense fast on, operands admitted), the grouped
+// launch takes the grouped dense-fast twin, so one launch keeps the slices' kernel;
+// dense fast keeps the same 128 leaf sequences and halving tree.
 extern "C" int memra_dsv4_gemv_fp8_grouped_m1(
         const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16,
         float* y, int groups, int rows_per_group, int k, int x_group_stride,
@@ -4089,6 +4169,27 @@ extern "C" int memra_dsv4_gemv_fp8_grouped_m1(
     }
     long total = (long)groups * rows_per_group;
     if (total > 2147483647L || x_group_stride % 8 != 0) return 40011;
+    if (dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+        dsv4_dense_fast_enabled &&
+        dsv4_dense_exact_tail_fp8_admits(w_codes, sc_f32, sc_cols, x_bf16, y, 1,
+                                         rows_per_group, k)) {
+        if (dsv4_dense_fast_observer) {
+            for (int g = 0; g < groups; g++) {
+                long row0 = (long)g * rows_per_group;
+                int rc = dsv4_dense_fast_observer(0, (const uint8_t*)w_codes + row0 * k,
+                    sc_f32 + (row0 >> 7) * sc_cols, sc_cols,
+                    (const uint16_t*)x_bf16 + (long)g * x_group_stride, rows_per_group, k,
+                    stream_v);
+                if (rc) return rc;
+            }
+        }
+        dsv4_dense_fast_fp8_kernel<2, true><<<(unsigned)(total / 2), 256, 0, stream>>>(
+            (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y,
+            rows_per_group, k, k, rows_per_group, x_group_stride, y_group_stride);
+        DSV4_ERR();
+        ++dsv4_dense_fast_enqueues[0];
+        return 0;
+    }
     dsv4_gemv_fp8_m_kernel<1, true><<<(unsigned)total, 128, 0, stream>>>(
         (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y,
         rows_per_group, k, 0, 0, x_group_stride, y_group_stride);
@@ -5891,67 +5992,73 @@ extern "C" __global__ void dsv4_route_m_kernel(const float* __restrict__ raw_all
         bs[c] = (bias != nullptr) ? s + bias[c] : 0.0f;
     }
     __syncthreads();
+    // Warp 0 selects and finishes; no block barrier follows.
+    if (t >= 32) return;
+    __shared__ int ksel[32];
+    __shared__ float kw[32];
+    __shared__ int kord[32];
     if (tid2eid == nullptr) {
-        __shared__ float rv[128];
-        __shared__ int ri[128];
-        __shared__ unsigned long long mask[4];
-        if (t < 4) mask[t] = 0ull;
-        __syncthreads();
+        // Each round is the value-desc/index-asc argmax: a lane scans its columns
+        // ascending with strict >, and the butterfly takes the partner on a larger
+        // value or an equal value at a lower index. On NaN-free scores that order
+        // has one maximum, so every lane holds the pick the former 128-thread tree made.
+        unsigned taken = 0;  // bit j: column t + 32 * j is already selected
         for (int k = 0; k < topk; k++) {
             float bv = 0.0f;
             int bi = -1;
-            for (int c = t; c < ne; c += blockDim.x) {
-                if (mask[c >> 6] & (1ull << (c & 63))) continue;
+#pragma unroll
+            for (int j = 0; j < 8; j++) {
+                int c = t + 32 * j;
+                if (c >= ne || ((taken >> j) & 1u)) continue;
                 float v = bs[c];
                 if (bi < 0 || v > bv) {
                     bv = v;
                     bi = c;
                 }
             }
-            rv[t] = bv;
-            ri[t] = bi;
-            __syncthreads();
-            for (int off = blockDim.x >> 1; off > 0; off >>= 1) {
-                if (t < off) {
-                    bool take = (ri[t + off] >= 0) &&
-                                (ri[t] < 0 || rv[t + off] > rv[t] ||
-                                 (rv[t + off] == rv[t] && ri[t + off] < ri[t]));
-                    if (take) {
-                        rv[t] = rv[t + off];
-                        ri[t] = ri[t + off];
-                    }
+#pragma unroll
+            for (int off = 16; off > 0; off >>= 1) {
+                float ov = __shfl_xor_sync(0xffffffffu, bv, off);
+                int oi = __shfl_xor_sync(0xffffffffu, bi, off);
+                bool take = oi >= 0 && (bi < 0 || ov > bv || (ov == bv && oi < bi));
+                if (take) {
+                    bv = ov;
+                    bi = oi;
                 }
-                __syncthreads();
             }
-            if (t == 0) {
-                sel[k] = ri[0];
-                mask[ri[0] >> 6] |= (1ull << (ri[0] & 63));
-            }
-            __syncthreads();
+            if (t == 0) ksel[k] = bi;
+            if (bi >= 0 && (bi & 31) == t) taken |= 1u << (bi >> 5);
         }
+        __syncwarp();
     }
     if (t != 0) return;
+    // The tail runs on shared copies and writes each output once: the former
+    // global read-backs of sel/selw in the sort were dependent L2 round trips.
     if (tid2eid != nullptr) {
         const int* row = tid2eid + (long)tok[p] * topk;
-        for (int k = 0; k < topk; k++) sel[k] = row[k];
+        for (int k = 0; k < topk; k++) ksel[k] = row[k];
     }
     float sum = 0.0f;
     for (int k = 0; k < topk; k++) {
-        float w = sc[sel[k]];
-        selw[k] = w;
+        float w = sc[ksel[k]];
+        kw[k] = w;
         sum += w;
     }
-    for (int k = 0; k < topk; k++) selw[k] = selw[k] / sum * route_scale;
-    for (int k = 0; k < topk; k++) order[k] = k;
+    for (int k = 0; k < topk; k++) {
+        sel[k] = ksel[k];
+        selw[k] = kw[k] / sum * route_scale;
+    }
+    for (int k = 0; k < topk; k++) kord[k] = k;
     for (int a = 1; a < topk; a++) {
-        int o = order[a];
+        int o = kord[a];
         int b = a - 1;
-        while (b >= 0 && sel[order[b]] > sel[o]) {
-            order[b + 1] = order[b];
+        while (b >= 0 && ksel[kord[b]] > ksel[o]) {
+            kord[b + 1] = kord[b];
             b--;
         }
-        order[b + 1] = o;
+        kord[b + 1] = o;
     }
+    for (int k = 0; k < topk; k++) order[k] = kord[k];
 }
 
 extern "C" int memra_dsv4_route_m(const float* raw, const float* bias, const int* tid2eid,
