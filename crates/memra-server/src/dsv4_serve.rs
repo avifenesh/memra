@@ -1210,6 +1210,26 @@ fn greedy_step(
     m.gpu.decode_step_greedy_complete(state)
 }
 
+/// One plain step that returns the logits row (host-sampled and penalized routes), serial or
+/// pipelined exactly as [`greedy_step`].
+fn logits_step(
+    m: &Dsv4Model,
+    turn: &mut Turn,
+    tok: u32,
+    state: &mut DecodeState,
+) -> Result<Vec<f32>, String> {
+    if m.sessions <= 1 {
+        return m.gpu.decode_step(tok, state);
+    }
+    turn.acquire();
+    m.gpu.decode_step_logits_enqueue(tok, state)?;
+    turn.release();
+    let waited = m.gpu.decode_step_greedy_wait(state);
+    turn.acquire();
+    waited?;
+    m.gpu.decode_step_logits_complete(state)
+}
+
 /// Streaming state shared by every route: incremental detok, EOS, stop strings,
 /// budget — one place, so plain and spec paths cannot diverge on stop semantics.
 /// Snap a byte index backward to the nearest char boundary. Every byte cut into
@@ -2073,10 +2093,8 @@ fn serve_one(
                 }
                 t = if let Some(pc) = &pen_cfg {
                     // penalized greedy needs the full row (argmax AFTER penalties)
-                    let mut row = m
-                        .gpu
-                        .decode_step(t, &mut state)
-                        .map_err(EngineError::engine)?;
+                    let mut row =
+                        logits_step(m, turn, t, &mut state).map_err(EngineError::engine)?;
                     dsv4_penalize_row(&mut row, &window, pc);
                     argmax(&row)
                 } else {
@@ -2127,10 +2145,8 @@ fn serve_one(
                     m.gpu
                         .sample_device_logits(&state, sampler, &cfg, &window, pen_cfg.as_ref())
                 } else {
-                    let mut row = m
-                        .gpu
-                        .decode_step(t, &mut state)
-                        .map_err(EngineError::engine)?;
+                    let mut row =
+                        logits_step(m, turn, t, &mut state).map_err(EngineError::engine)?;
                     draw(&mut row, p0 + step, &window)
                 }
                 .map_err(EngineError::engine)?;
