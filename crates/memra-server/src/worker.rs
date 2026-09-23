@@ -8504,6 +8504,10 @@ struct HostPrefixCache {
     /// key and the host entry's tokens. The body's hook serves a request that would promote this
     /// entry cold instead of retrying synchronously; cleared at the next tick top.
     promote_cold: Option<(PoolKey, Vec<u32>)>,
+    /// WP-A day 33 (log only, the lead's ask on DAY33 section 4): the run loop's tick counter and the
+    /// instant its current tick began, stamped at the loop top before the tick-top polls; the
+    /// promote's timeline (its submission, each settle step) reads it.
+    tick_top: Option<(u64, Instant)>,
     tier: Option<HostTierContext>,
     arena: Option<memra_engine::PinnedHostArena>,
     arena_reserve_ms: f64,
@@ -10367,6 +10371,25 @@ struct PendingPromote {
     /// the `promote published off the tick` line at publication.
     copy_ms: f64,
     settled_by: String,
+    /// WP-A day 33 (log only): the promote's timeline from `t0`, one term per event: the submission
+    /// (its tick) and every settle step of the contract (its tick, that tick's start, the step's
+    /// instant, the outcome, the path). Printed on the `promote published off the tick` line.
+    timeline: Vec<String>,
+}
+
+/// WP-A day 33 (log only): `at` and the current tick as the promote timeline writes them.
+fn host_promote_mark(host: &HostPrefixCache, t0: Instant, at: Instant) -> String {
+    let ms = |i: Instant| {
+        if i >= t0 {
+            format!("+{:.2}", (i - t0).as_secs_f64() * 1e3)
+        } else {
+            format!("-{:.2}", (t0 - i).as_secs_f64() * 1e3)
+        }
+    };
+    match host.tick_top {
+        Some((n, top)) => format!("{}ms (tick {n}, its top {}ms)", ms(at), ms(top)),
+        None => format!("{}ms (no tick)", ms(at)),
+    }
 }
 
 /// WP-A day 32: staging buffers on their way back to the context's set. Every exit of the promote
@@ -14474,7 +14497,7 @@ fn host_promote_finish(
     mut e: PrefixEntry,
     t0: Instant,
     memo: bool,
-    off_tick: Option<(u32, f64, String)>,
+    off_tick: Option<(u32, f64, String, String)>,
 ) -> Option<PrefixPin> {
     let PromotePrepared {
         identity,
@@ -14544,10 +14567,13 @@ fn host_promote_finish(
     host.log_arena("promotion");
     host.promotions += 1;
     host.promote_ms_total += ms;
-    if let Some((polls, copy_ms, mode)) = off_tick {
+    if let Some((polls, copy_ms, mode, timeline)) = off_tick {
+        // WP-A day 33 (log only): the timeline follows the mode, so every reader of the mode keeps it.
         eprintln!(
             "[prefix-host] promote published off the tick: ticket complete after {polls} poll(s), \
-             {copy_ms:.1}ms from submission to completion ({mode})"
+             {copy_ms:.1}ms from submission to completion ({mode}); timeline from t0: {timeline}; \
+             published {}",
+            host_promote_mark(host, t0, Instant::now())
         );
     }
     eprintln!(
@@ -14785,6 +14811,7 @@ fn host_promote_park_probe(
         }
         Ok((shell, Some(contract))) => {
             let seq = contract.ticket.sequence;
+            let submitted_at = contract.submitted;
             let items = contract.sizes.len();
             let bytes = shell.bytes;
             let host_len = prepared.host_len;
@@ -14813,6 +14840,10 @@ fn host_promote_park_probe(
                 polls: 0,
                 copy_ms: 0.0,
                 settled_by: String::new(),
+                timeline: vec![format!(
+                    "submitted {}",
+                    host_promote_mark(host, t0, submitted_at)
+                )],
             });
             // WP-A day 32 (DAY31 section 2, B2's measure, log only): the promote's owner segment,
             // the owner thread's held time from `t0` to this line. The field sits before `request
@@ -15003,6 +15034,17 @@ fn host_promote_settle_with(
             "tier context gone under a Promoting entry".into(),
         )),
     };
+    // WP-A day 33 (log only): this settle step on the promote's timeline.
+    let outcome = match &settled {
+        Ok(PromoteSettle::Pending(_)) => "pending",
+        Ok(PromoteSettle::Done(..)) => "complete",
+        Err(_) => "failed",
+    };
+    let step = host_promote_mark(host, pending.t0, Instant::now());
+    pending.timeline.push(format!(
+        "poll {} at {step} {outcome} ({why})",
+        pending.polls
+    ));
     match settled {
         Ok(PromoteSettle::Pending(contract)) => {
             pending.contract = Some(contract);
@@ -15118,6 +15160,7 @@ fn host_promote_publish(
         polls,
         copy_ms,
         settled_by,
+        timeline,
         ..
     } = pending;
     let Some(e) = shell else {
@@ -15154,7 +15197,7 @@ fn host_promote_publish(
         e,
         t0,
         true,
-        Some((polls, copy_ms, settled_by)),
+        Some((polls, copy_ms, settled_by, timeline.join("; "))),
     ) {
         Some(pin) => {
             if let Some(old) = host.promoted_pin.replace(pin) {
@@ -22936,6 +22979,8 @@ pub fn run(
     health.mark_ready();
 
     'worker: loop {
+        // WP-A day 33 (log only): the tick counter and this tick's start, for the promote timeline.
+        hpx.tick_top = Some((hpx.tick_top.map_or(1, |(n, _)| n + 1), Instant::now()));
         // WP-A day 17 (memra#536 Move 1): the tick-top poll of the one `Demoting` entry. Its D2H
         // rides the transfer engine's copy stream; publication into the host prefix index happens
         // HERE, on the owner thread, once every item's event has completed, before admission so
@@ -45613,6 +45658,7 @@ mod tests {
             polls: 0,
             copy_ms: 0.0,
             settled_by: String::new(),
+            timeline: Vec::new(),
         });
         id
     }
@@ -46037,6 +46083,10 @@ mod tests {
             "definition, the hook, the probe's whole-entry arm, the publish"
         );
         let finish = body("fn host_promote_finish(");
+        // WP-A day 33 (log only): the timeline follows the parenthesized mode the readers parse.
+        assert!(
+            finish.contains("from submission to completion ({mode}); timeline from t0: {timeline}")
+        );
         let insert = finish.find("insert_pinned_demoting(").unwrap();
         assert!(finish.find("promote published off the tick").unwrap() > insert);
         assert!(finish.find("[prefix-host] promote: ").unwrap() > insert);
