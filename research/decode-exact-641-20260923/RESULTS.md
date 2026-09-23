@@ -238,10 +238,101 @@ diff-check rc=0  (git diff --check 9c07b398b..HEAD)
 shellcheck rc=0  (tools/prime-tick-exact-gate.sh)
 ```
 
+## Part 2: the merged tree, the 9B exact gate in the battery, the target card
+
+### Merge with main `d544c6b82` (`2cec07c15`)
+
+No code conflict. `lib.rs`, `FLAGS.md`, `TESTING.md` and `KERNELS.md` merged in separate regions;
+`research/INDEX.md` conflicted and is the union of both sides (set-diff against both parents
+empty, no conflict marker left). One behavior fix-up: main's `pub mod dsv4_source_tape;` line moves
+`lib.rs` by one line, so the `fa3_prefill.cu` row in `KERNELS.md` now cites `lib.rs:28008-28020`
+and `lib.rs:2156-2169`. Main's side (#665 `worker.rs`, #668 the spec round guards, #666, #556, the
+dsv4 PRs) touches no prime program: `git diff 9c07b398b d544c6b82 -- crates` has no line naming
+`prime_cache_batch`, `fa_prefill` or the varlen arm, and `hybrid_forward.rs` changed on this side
+only.
+
+### The 9B exact gate joins the battery (`47831292c`)
+
+`tools/prime-batch-exact-gate.sh` runs the three `prime-batch-gate --exact` rows (b3-p24,
+b4-p1100, carried b3-p600), unsets `MEMRA_REWRITE_BUNDLE` and refuses a log carrying
+`carried-prime.v1 unqualified`. Its `--canary` runs the new `prime-batch-gate --canary` (seq 0's
+first token changes inside the batched prime only): seq 0 must differ and seqs 1 and 2 must stay
+bit-identical. Wired as fast-gate rows `pbg9`/`pbg9c` (routes: prefill FA `.cu`,
+`hybrid_forward.rs`, `prime_batch_gate.rs`, the script) and as a `tools/local-ci.sh` stage after
+decode-batch-gate that runs both pairs, `prime-batch-exact-gate` and `prime-tick-exact-gate`, on
+the 9B (`MEMRA_CI_PRIME_EXACT=0` skips; FLAGS and TESTING rows). `prime-tick-exact-gate` now
+removes its scratch dir on a green run without `--log`. CPU battery on `9e3b7250e`
+(`raw/merged/cpu/`): clippy `-D warnings` rc=0, server tests 875 + 7 passed, engine lib 545
+passed, fmt, check-flags, `git diff --check origin/main..HEAD`, shellcheck and `bash -n
+tools/local-ci.sh` all rc=0.
+
+### Target card: one RTX PRO 6000 Blackwell, the 27B (`pro6000/`, `executed-not-qualified`)
+
+Order: the PRO card ran first (07:39:40 to 07:44:35 UTC), while lane B's order held the local 5090;
+the 5090 cells ran after (next section). One collector hold of `/tmp/memra-gpu.lock`
+(`pro6000/box/collector/`, lock proof `pro6000/box/out/LOCK.json`), card idle at start and end.
+RTX PRO 6000 Blackwell Server Edition, 600 W limit, driver 580.178.04, nvcc 13.2 on the box. Model
+`Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`, sha256 `1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a`.
+Fix tree `9e3b7250e`: `prime-batch-gate` `2d595076`, `concat-prime-probe` `9ec68ead`,
+`memra-server` `92576099`. Base tree main `d544c6b82`: `prime-batch-gate` `487d87ff`. Raw:
+`pro6000/run.log` (the box run log plus the done signal), `pro6000/box/out/`.
+
+Fix, green:
+
+```
+    exact-b3-p24 rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths)
+    exact-b4-p1100 rc=0 ALL GREEN: prime-batch gate (batch=4, uneven lengths)
+    carried-b3-exact rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths)
+prime-batch-exact-gate: PASS (every batched prime is bit-identical to its individual prime)
+prime-batch-exact-gate: CANARY OK (seq 0 DIFFERS: exact logits diff 248320/248320 h_seed diff 5120/5120 hidden diff 122880/122880; seqs 1 and 2 bit-identical)
+    arm bp prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/130 first=[]
+    tickshape verdict: ALL ARMS EXACT
+prime-tick-exact-gate: PASS (every prime shape is bit-identical to the solo prime; log /root/e641/out/ptick-naked.probe.log)
+prime-tick-exact-gate: CANARY OK (bp and bps DIFFER with B's batch prompt changed; log /root/e641/out/ptick-canary.probe.log)
+SPEC-CTX-EDGE GATE: ALL GREEN
+```
+
+The ptick gate applies: the 27B loads through `HybridModel` (the qwen hybrid family), 130 cache
+digests. spec-ctx-edge ran with `SCE_CTX=384` as pre-registered (the 27B's prompt is 73 tokens,
+under the 128-token switch): 13 PASS, 0 FAIL, door ON r1 to r4 `completion_tokens=64
+expected=64`, `SCE (plain) message equals the on arm's r1: plain=0ba35b0ee89ade1d
+spec=0ba35b0ee89ade1d -> PASS`, door OFF r1 to r3 `completion_tokens=309/311/309 room=311`, every
+boot census `panicked=0 argmax_sentinel=0 worker_fatal=0 respawn=0 verify_refused=0`.
+
+Base (main `d544c6b82`, the varlen arm live), red on this card as on the 5090:
+
+```
+   pbg-base-exact-b3-p24 rc=1
+    seq 0: exact logits diff 248320/248320 h_seed diff 5120/5120 hidden diff 122879/122880
+    Error: "prime-batch-gate: 6 FAIL(s)"
+   pbg-base-exact-b4-p1100 rc=1
+    Error: "prime-batch-gate: 8 FAIL(s)"
+   pbg-base-carried-b3-exact rc=1
+    Error: "prime-batch-gate: 8 FAIL(s)"
+```
+
+Cost A/B, `prime-batch-gate <27B> --batch 3 --bench 1024`, 6 pairs AB BA AB BA AB BA (A = base),
+one process per run, N=6 per arm, each figure that process's median of 5 alternating serial/batch
+reps. Regime: 250 ms telemetry (`pro6000/box/out/telemetry-250ms.csv`), SM 2355 to 2422 MHz,
+42 to 61 C, up to 503 W across the A/B window; run starts 45 to 51 C.
+
+| arm | batch_wall_ms median (N=6) | min | max | serial_wall_ms median | batched vs serial, median |
+|---|---|---|---|---|---|
+| base (main, varlen arm live) | 792.487 | 792.453 | 792.534 | 818.946 | +3.3% |
+| fix (per-seq core) | 790.772 | 790.756 | 790.811 | 818.926 | +3.6% |
+
+Paired fix minus base, per pair: -1.711, -1.735, -1.676, -1.678, -1.755, -1.718 ms; median
+-1.715 ms (-0.22%). By the pre-registered rule this is flat (under 1%), with the direction plain:
+on this card the fix is faster in all six pairs, both orders, by about 1.7 ms of 792. The removed
+varlen arm was not a PRO 6000 win at B=3, T=1024 on the 27B.
+
 ## Still owed
 
 - A varlen FA twin that attends the dequantized cache view (the solo program) could come back
-  only with its own bit-identity receipt against the solo prime; this lane measured no wall-time
-  loss from removing the old one at B=3, T=1024 on the 5090.
-- No PRO 6000 or H100 re-measure of the removal. The sm_90a `memra_fa3_vl` twin is deleted with
-  the door; Hopper batched primes now run the per-seq core too.
+  only with its own bit-identity receipt against the solo prime. Neither card shows a wall-time
+  loss from removing the old one at B=3, T=1024 (5090 9B: +0.19%, flat; PRO 6000 27B: -0.22%,
+  flat, the fix faster in 6 of 6 pairs), so the twin has no measured gap to recover at this shape.
+- No H100 re-measure. The sm_90a `memra_fa3_vl` twin is deleted with the door; Hopper batched
+  primes now run the per-seq core too.
+- The AWQ o_proj scale plus f16 mirror pairing (`53dac5a56`) has no receipt: no scaled artifact is
+  on either rig.
