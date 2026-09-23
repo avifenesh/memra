@@ -10,7 +10,9 @@ mod execution_snapshot;
 mod runtime_identity;
 mod target_trim;
 pub(crate) use execution_snapshot::{ProgramGeneration, TrackedProgram, active_execution};
-pub use execution_snapshot::{RewriteExecutionGuard, RewriteExecutionSnapshot};
+pub use execution_snapshot::{
+    RewriteBoundaryGuard, RewriteExecutionGuard, RewriteExecutionSnapshot,
+};
 pub use runtime_identity::running_implementation_sha256;
 use runtime_identity::{LoadedLibraries, hash_parts, numeric_environment, numeric_program_sha256};
 pub(crate) use runtime_identity::{

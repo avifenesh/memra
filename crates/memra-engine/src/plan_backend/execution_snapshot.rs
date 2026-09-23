@@ -106,11 +106,16 @@ impl RewriteExecutionSnapshot {
         pipeline: bool,
         validate_boundary: impl FnOnce() -> Result<(), String>,
     ) -> Result<Self, String> {
-        if let Err(error) = validate_boundary() {
+        // The snapshot keeps the epoch that was validated. A revocation during
+        // validation leaves it stale instead of blessing the newer epoch.
+        let epoch = generation.epoch.load(Ordering::Acquire);
+        if !boundary_validated(generation, epoch)
+            && let Err(error) = validate_boundary()
+        {
             generation.revoke();
             return Err(error);
         }
-        Ok(Self::new(generation, admission, pipeline))
+        Ok(Self::at_epoch(generation, admission, pipeline, epoch))
     }
     pub(crate) fn from_active(
         generation: &Arc<ProgramGeneration>,
@@ -141,6 +146,20 @@ impl RewriteExecutionSnapshot {
         admission: &RewriteAdmission,
         pipeline: bool,
     ) -> Self {
+        Self::at_epoch(
+            generation,
+            admission,
+            pipeline,
+            generation.epoch.load(Ordering::Acquire),
+        )
+    }
+
+    fn at_epoch(
+        generation: &Arc<ProgramGeneration>,
+        admission: &RewriteAdmission,
+        pipeline: bool,
+        epoch: u64,
+    ) -> Self {
         let mask = SURFACES.into_iter().fold(0, |mask, surface| {
             mask | if admission.allows(surface) {
                 surface_bit(surface)
@@ -150,7 +169,7 @@ impl RewriteExecutionSnapshot {
         });
         Self {
             generation: generation.clone(),
-            epoch: generation.epoch.load(Ordering::Acquire),
+            epoch,
             mask,
             pipeline,
             qualified: admission.is_qualified(),
@@ -172,9 +191,13 @@ impl RewriteExecutionSnapshot {
             return Err("rewrite execution snapshot was revoked; validate the current program at a request boundary".into());
         }
         // A retained origin cannot establish its own authority. Only an existing,
-        // current scope permits us to reuse validation. In particular, dropping the
-        // previous guard and resuming a graph or worker tick always checks again.
-        if active_execution(generation).is_none_or(|active| active.epoch != self.epoch) {
+        // current scope or a held boundary at this epoch permits us to reuse
+        // validation. Dropping the previous guard and resuming a graph or worker
+        // tick outside a held boundary always checks again.
+        let validated = active_execution(generation)
+            .is_some_and(|active| active.epoch == self.epoch)
+            || boundary_validated(generation, self.epoch);
+        if !validated {
             if let Err(error) = validate_boundary() {
                 generation.revoke();
                 return Err(error);
@@ -238,8 +261,91 @@ struct ActiveScopes {
     entries: Vec<(u64, ActiveExecution)>,
 }
 
+#[derive(Default)]
+struct BoundaryScopes {
+    next: u64,
+    /// (guard id, generation key, validated epoch).
+    entries: Vec<(u64, usize, u64)>,
+}
+
 thread_local! {
     static ACTIVE: RefCell<ActiveScopes> = RefCell::default();
+    static BOUNDARIES: RefCell<BoundaryScopes> = RefCell::default();
+}
+
+/// True only while this thread holds a boundary validated at `epoch` and the
+/// generation has not moved since. A boundary grants no surface.
+fn boundary_validated(generation: &Arc<ProgramGeneration>, epoch: u64) -> bool {
+    let key = Arc::as_ptr(generation) as usize;
+    epoch == generation.epoch.load(Ordering::Acquire)
+        && BOUNDARIES.with(|scopes| {
+            scopes
+                .borrow()
+                .entries
+                .iter()
+                .any(|&(_, held, validated)| held == key && validated == epoch)
+        })
+}
+
+/// One external-state validation for one model, held across a worker tick. While it
+/// is held, snapshots and scopes of that model that are still current at the
+/// validated epoch enter without rescanning libraries or the environment. It grants
+/// no rewrite surface. Every entry still checks its own snapshot generation, so a
+/// revoked session refuses and cannot borrow a peer's validation. External state
+/// must stay fixed for the tick; a change is detected at the next boundary.
+#[must_use]
+pub struct RewriteBoundaryGuard<'a> {
+    id: u64,
+    // Same reason as RewriteExecutionGuard: a leaked entry keeps its generation
+    // alive, so a later model cannot reuse the pointer key.
+    _generation: Arc<ProgramGeneration>,
+    _borrow: PhantomData<&'a ()>,
+    _thread: PhantomData<Rc<()>>,
+}
+
+impl RewriteBoundaryGuard<'_> {
+    pub(crate) fn hold<'a, T>(
+        generation: &Arc<ProgramGeneration>,
+        _program: &'a T,
+        validate_boundary: impl FnOnce() -> Result<(), String>,
+    ) -> Result<RewriteBoundaryGuard<'a>, String> {
+        let epoch = generation.epoch.load(Ordering::Acquire);
+        if !boundary_validated(generation, epoch) {
+            // Same policy as every other boundary: observed drift revokes.
+            if let Err(error) = validate_boundary() {
+                generation.revoke();
+                return Err(error);
+            }
+            if generation.epoch.load(Ordering::Acquire) != epoch {
+                return Err("rewrite boundary was revoked during validation".into());
+            }
+        }
+        let key = Arc::as_ptr(generation) as usize;
+        let id = BOUNDARIES.with(|scopes| {
+            let mut scopes = scopes.borrow_mut();
+            scopes.next += 1;
+            let id = scopes.next;
+            scopes.entries.push((id, key, epoch));
+            id
+        });
+        Ok(RewriteBoundaryGuard {
+            id,
+            _generation: generation.clone(),
+            _borrow: PhantomData,
+            _thread: PhantomData,
+        })
+    }
+}
+
+impl Drop for RewriteBoundaryGuard<'_> {
+    fn drop(&mut self) {
+        BOUNDARIES.with(|scopes| {
+            let mut scopes = scopes.borrow_mut();
+            if let Some(index) = scopes.entries.iter().position(|(id, _, _)| *id == self.id) {
+                scopes.entries.remove(index);
+            }
+        });
+    }
 }
 
 pub(crate) fn active_execution(generation: &Arc<ProgramGeneration>) -> Option<ActiveExecution> {
@@ -420,6 +526,170 @@ mod tests {
         assert!(active_execution(&generation).is_some());
         drop(second);
         assert!(active_execution(&generation).is_none());
+    }
+
+    /// One worker tick for N sessions of one model, in the order the scheduler runs
+    /// them: per-session sample/emit and token emit, a fallback capability probe, a
+    /// batched step (check every participant, enter the first), a protected graph
+    /// or prime call, and the retire sweep.
+    fn run_tick<T>(
+        generation: &Arc<ProgramGeneration>,
+        program: &T,
+        sessions: &[RewriteExecutionSnapshot],
+        validate: impl Fn() -> Result<(), String> + Copy,
+    ) {
+        let admission = RewriteAdmission::LegacyUnbundled;
+        for session in sessions {
+            let _sample_emit = session.enter(generation, program, validate).unwrap();
+            let active = active_execution(generation).unwrap();
+            let nested = RewriteExecutionSnapshot::from_active(generation, active);
+            let _nested = nested.enter(generation, program, validate).unwrap();
+        }
+        for session in sessions {
+            let _token_emit = session.enter(generation, program, validate).unwrap();
+        }
+        // An unscoped `rewrite_allowed` probe, as in the batched-prime candidate loop.
+        let probe =
+            RewriteExecutionSnapshot::validated(generation, &admission, false, validate).unwrap();
+        assert!(probe.allows(RewriteSurface::CarriedPrime));
+        for chunk in sessions.chunks(8) {
+            assert!(chunk.iter().all(|session| session.current(generation)));
+            let _batched = chunk[0].enter(generation, program, validate).unwrap();
+        }
+        let _graph =
+            RewriteExecutionSnapshot::protect(generation, &admission, false, program, validate)
+                .unwrap();
+        for session in sessions {
+            let _retire = session.enter(generation, program, validate).unwrap();
+        }
+    }
+
+    #[test]
+    fn one_boundary_per_model_per_tick_validates_once_for_n_sessions() {
+        let generation = Arc::default();
+        let program = TrackedProgram::new((), Arc::clone(&generation));
+        let inventories = Cell::new(0);
+        let validate = || {
+            inventories.set(inventories.get() + 1);
+            Ok(())
+        };
+        let admission = RewriteAdmission::LegacyUnbundled;
+        let sessions: Vec<_> = (0..64)
+            .map(|_| {
+                RewriteExecutionSnapshot::validated(&generation, &admission, false, validate)
+                    .unwrap()
+            })
+            .collect();
+        inventories.set(0);
+        // Without a boundary every outermost entry pays external validation.
+        run_tick(&generation, &program, &sessions, validate);
+        assert!(inventories.get() > sessions.len());
+        for _ in 0..100 {
+            inventories.set(0);
+            {
+                let _tick = RewriteBoundaryGuard::hold(&generation, &program, validate).unwrap();
+                run_tick(&generation, &program, &sessions, validate);
+            }
+            assert_eq!(inventories.get(), 1);
+        }
+        // The boundary ends with the tick. A later entry is a new boundary.
+        let _resume = sessions[0].enter(&generation, &program, validate).unwrap();
+        assert_eq!(inventories.get(), 2);
+    }
+
+    #[test]
+    fn tick_boundaries_are_per_model_and_do_not_depend_on_stack_order() {
+        let first: Arc<ProgramGeneration> = Arc::default();
+        let second: Arc<ProgramGeneration> = Arc::default();
+        let inventories = Cell::new(0);
+        let validate = || {
+            inventories.set(inventories.get() + 1);
+            Ok(())
+        };
+        let admission = RewriteAdmission::LegacyUnbundled;
+        let a = RewriteExecutionSnapshot::validated(&first, &admission, false, validate).unwrap();
+        let b = RewriteExecutionSnapshot::validated(&second, &admission, false, validate).unwrap();
+        inventories.set(0);
+        let _first_tick = RewriteBoundaryGuard::hold(&first, &(), validate).unwrap();
+        let _second_tick = RewriteBoundaryGuard::hold(&second, &(), validate).unwrap();
+        for _ in 0..1_000 {
+            let _a = a.enter(&first, &(), validate).unwrap();
+            let _b = b.enter(&second, &(), validate).unwrap();
+            let _a_again = a.enter(&first, &(), validate).unwrap();
+        }
+        assert_eq!(inventories.get(), 2);
+        // A boundary never lends one model's validation to another model.
+        let other: Arc<ProgramGeneration> = Arc::default();
+        let c = RewriteExecutionSnapshot::new(&other, &admission, false);
+        let _c = c.enter(&other, &(), validate).unwrap();
+        assert_eq!(inventories.get(), 3);
+    }
+
+    #[test]
+    fn revoked_session_refuses_inside_a_held_tick_boundary() {
+        let generation = Arc::default();
+        let inventories = Cell::new(0);
+        let validate = || {
+            inventories.set(inventories.get() + 1);
+            Ok(())
+        };
+        let admission = RewriteAdmission::LegacyUnbundled;
+        let old =
+            RewriteExecutionSnapshot::validated(&generation, &admission, false, validate).unwrap();
+        generation.revoke(); // A reinstall or a drift seen at an earlier boundary.
+        let newer =
+            RewriteExecutionSnapshot::validated(&generation, &admission, false, validate).unwrap();
+        inventories.set(0);
+        let tick = RewriteBoundaryGuard::hold(&generation, &(), validate).unwrap();
+        let error = old
+            .enter(&generation, &(), validate)
+            .err()
+            .expect("revoked session borrowed the tick boundary");
+        assert!(error.contains("was revoked"), "{error}");
+        assert!(active_execution(&generation).is_none());
+        // A current peer does not lend its scope to the revoked session.
+        let peer = newer.enter(&generation, &(), validate).unwrap();
+        assert!(old.enter(&generation, &(), validate).is_err());
+        assert!(!old.allows(RewriteSurface::DecodeEager));
+        assert!(![&old, &newer].iter().all(|s| s.current(&generation)));
+        drop(peer);
+        assert_eq!(inventories.get(), 1);
+        // A revocation during the tick ends the boundary's reuse at once.
+        generation.revoke();
+        assert!(newer.enter(&generation, &(), validate).is_err());
+        let fresh =
+            RewriteExecutionSnapshot::validated(&generation, &admission, false, validate).unwrap();
+        assert_eq!(inventories.get(), 2);
+        let _fresh = fresh.enter(&generation, &(), validate).unwrap();
+        assert_eq!(inventories.get(), 3);
+        drop(tick);
+    }
+
+    #[test]
+    fn failed_tick_boundary_holds_nothing_and_revokes() {
+        let generation = Arc::default();
+        let admission = RewriteAdmission::LegacyUnbundled;
+        let session =
+            RewriteExecutionSnapshot::validated(&generation, &admission, false, || Ok(())).unwrap();
+        let error = RewriteBoundaryGuard::hold(&generation, &(), || {
+            Err("library/environment changed".into())
+        })
+        .err()
+        .expect("drift held a tick boundary");
+        assert_eq!(error, "library/environment changed");
+        let epoch = generation.epoch.load(Ordering::Acquire);
+        assert!(!boundary_validated(&generation, epoch));
+        assert!(session.enter(&generation, &(), || Ok(())).is_err());
+        // A validator that revokes cannot leave a boundary behind either.
+        let error = RewriteBoundaryGuard::hold(&generation, &(), || {
+            generation.revoke();
+            Ok(())
+        })
+        .err()
+        .expect("revoked boundary was held");
+        assert!(error.contains("revoked during validation"));
+        let epoch = generation.epoch.load(Ordering::Acquire);
+        assert!(!boundary_validated(&generation, epoch));
     }
 }
 

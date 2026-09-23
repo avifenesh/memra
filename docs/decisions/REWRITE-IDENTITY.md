@@ -77,9 +77,17 @@ Nested eager, speculative, graph and pipeline admissions check only the generati
 and fixed surface mask, without rescanning libraries or serializing model/plan data.
 The 10,000-call test holds one continuous outer scope and observes one inventory
 validation; after that scope ends, re-entry requires another. Outermost standalone
-calls and worker ticks pay external validation. This is not a claim that a whole
-serving token step has constant cost or measured throughput improvement. Drift at a
-boundary revokes every older snapshot; restoring external state does not revive it.
+calls pay external validation. The worker pays one external validation per model
+per worker tick: at the start of the tick it holds a boundary for every model with
+an active session, through the retire sweep. Per-session sample/emit, token emit,
+batched, graph, speculative, prime and DFlash entries of that model then nest. The
+boundary grants no surface, so each entry still checks its own snapshot generation
+and a revoked request refuses without borrowing a peer's validation. A failed
+boundary holds nothing and revokes the model, and its sessions refuse at their own
+entries; the cause is logged once for the tick. External state must stay fixed
+within a tick; a change is detected at the next tick. This is not a claim that a
+whole serving token step has constant cost or measured throughput improvement. Drift
+at a boundary revokes every older snapshot; restoring external state does not revive it.
 
 The native runner includes a separate `library-drift` probe using a real read/execute
 mapping (never executed) and a populated eager cache. It must refuse retained re-entry

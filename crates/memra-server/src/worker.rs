@@ -24450,6 +24450,11 @@ pub fn run(
         //    (c) decoding sessions advance through BATCHED steps: sample+emit host-side, then
         //        decode_step_batch over survivors in chunks of <= 8.
         let batching = serve_batching();
+        // One external rewrite validation per model per tick. The boundary is held
+        // through the retire sweep, so per-session entries nest instead of rescanning.
+        // It grants nothing: every session still checks its own snapshot. A model
+        // whose boundary fails holds none, and its sessions refuse on their own paths.
+        let rewrite_boundaries = hold_tick_rewrite_boundaries(&loaded, &active);
         let mut finished: Vec<usize> = Vec::new();
         // STEP-OOM PARK (lane/admit-oom): requests parked out of a step-time CUDA OOM this
         // tick. Drained onto the FRONT of the admission queue after the retire sweep — the
@@ -26861,6 +26866,8 @@ pub fn run(
             let fused_epi = memra_engine::moe_fused_epilogue_dispatches();
             eprintln!("[moe-fused-epi] snapshot dispatches={fused_epi}");
         }
+        // The tick ends here. The next admission and tick validate again.
+        drop(rewrite_boundaries);
     }
     // WP-A day 20: shutdown drains the one `Capturing` entry (a host wait on its events, then
     // drop; no publication after a stop).
@@ -32832,6 +32839,31 @@ fn enter_session_rewrites<'a>(
         model.check_rewrite_execution(&sessions[index].rewrite_execution)?;
     }
     Ok(model.enter_rewrite_execution(&sessions[first].rewrite_execution)?)
+}
+
+/// Validate external state once per distinct model with an active session. The
+/// returned boundaries borrow only `loaded` and are held for the whole tick. A
+/// failed validation holds nothing for that model and is logged once here; the
+/// model is revoked, so each of its sessions refuses at its own entry.
+fn hold_tick_rewrite_boundaries<'a>(
+    loaded: &'a HashMap<String, LoadedModel>,
+    active: &[Session],
+) -> Vec<memra_engine::plan_backend::RewriteBoundaryGuard<'a>> {
+    let mut names: Vec<&str> = active.iter().map(|s| s.model.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    names
+        .into_iter()
+        .filter_map(
+            |name| match loaded.get(name)?.model.hold_rewrite_boundary() {
+                Ok(boundary) => Some(boundary),
+                Err(error) => {
+                    eprintln!("[worker] {name}: rewrite boundary refused for this tick: {error}");
+                    None
+                }
+            },
+        )
+        .collect()
 }
 
 fn group_chunks(

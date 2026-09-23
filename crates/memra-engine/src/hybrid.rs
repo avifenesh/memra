@@ -3991,6 +3991,18 @@ impl HybridModel {
         )
     }
 
+    /// Validate external process state once for a whole worker tick. While the guard
+    /// is held on this thread, entries of this model's current snapshots skip the
+    /// rescan. It grants no surface: each entry still checks its own snapshot, so a
+    /// revoked request refuses. On error nothing is held and the program is revoked.
+    pub fn hold_rewrite_boundary(
+        &self,
+    ) -> Result<crate::plan_backend::RewriteBoundaryGuard<'_>, String> {
+        crate::plan_backend::RewriteBoundaryGuard::hold(&self.rewrite_generation, self, || {
+            self.validate_rewrite_boundary()
+        })
+    }
+
     pub fn rewrite_is_qualified(&self) -> bool {
         if let Some(active) = crate::plan_backend::active_execution(&self.rewrite_generation) {
             return active.qualified();
