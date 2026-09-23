@@ -30,6 +30,10 @@ request lived long enough to reach the deferred-fill panic that lane B saw at a 
   the same for r2 and r3.
 - Every boot census `panicked=0 argmax_sentinel=0 worker_fatal=0 respawn=0 verify_refused=0 -> PASS`.
 
+**On main.** Rebased onto main `f69119ae0` (`e23adc70d`, binary `91e56c12`, build line
+`memra-0.138.0-8636637e872c (id: source-tree, git: e23adc70d21e)`): `SPEC-CTX-EDGE GATE: ALL GREEN`, 13 PASS
+(`rtx5090/rebased/`).
+
 **Also owed by PREREG, done.** `run-spec` K=1..8 on the 9B (single-shot route, `MEMRA_SPEC_TEMP=0`,
 32 tokens, the tier-2 probe prompt): `self-consistency: PASS` 8 of 8 and `=== SELF-CONSISTENCY PASS ===`
 (`rtx5090/run-spec-9b/`). `run-gen` runs the plain route, which this change does not touch. CPU: the
