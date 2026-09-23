@@ -38,9 +38,9 @@ Every completed request of every arm hashed the same as base in every cell: gree
 ## The one incomplete row
 
 `short/plain/r13-fused2` hung in the fourth `greedy-c1-ignore-eos` request. It streamed 181
-tokens at the normal cadence, an exact prefix of base's text for that request, then stopped; the
-row's controller killed the server at its deadline (row rc 143, `serve.log` ends in the SIGTERM
-drain). While hung, the `dsv4-serve` thread was running on the host (state R, 421 s of user time,
+tokens at the normal cadence, an exact prefix of base's text for that request, then stopped. The
+row has no deadline; after about 440 s of silence the thread states were captured and the server
+was stopped by hand (row rc 143, `serve.log` ends in the SIGTERM drain). While hung, the `dsv4-serve` thread was running on the host (state R, 421 s of user time,
 `short/plain/r13-fused2/hang-threads.txt`) and both GPUs sat idle at 0% utilization and 180 MHz
 (`telemetry-250ms.csv`). The pod refused ptrace, so no stack exists (`hang-bt.txt`). The cut
 text hashes differently (`96bbce86`); the three requests before it match base, and the row's
