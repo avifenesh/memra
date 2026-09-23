@@ -1,0 +1,7 @@
+DAY32 B2 before (pre-H2D binary) steady owner-segment N=90 median=4.58 min=4.46 max=5.11 boots_on=10 first-of-boot owner-segment N=10 median=4.57 min=4.54 max=4.97 (predicted 5 to 8 ms steady: did not hold)
+DAY32 B2 after (H2D binary) steady owner-segment N=90 median=0.70 min=0.65 max=1.22 boots_on=10 submissions=100 with_spans=100 rule N>=20 median<=1.5 max<=3.0 every-submission-with-spans -> PASS
+DAY32 B2 READING after first-of-boot owner-segment N=10 median=0.65 min=0.63 max=0.95
+DAY32 B3 READING promote in-ms steady before in N=90 median=20.70 min=20.50 max=22.00; after in N=90 median=31.00 min=30.90 max=32.30; after-minus-before median +10.30
+DAY32 B3 READING first promote of a boot before in N=10 median=21.20 min=21.10 max=21.90; after in N=10 median=31.60 min=31.50 max=32.30
+DAY32 B3 READING submission-to-completion steady before ms N=90 median=19.60 min=19.50 max=19.90; after ms N=90 median=16.00 min=16.00 max=16.40
+DAY32 B3 READING helper fill steady ms N=90 median=6.40 min=6.20 max=6.50; fill landed at poll [1] (counts [90])

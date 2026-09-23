@@ -1,0 +1,15 @@
+DAY26 DOUBLE-PARK ADMISSIBLE all_receipts=True
+DAY26 CLAUSE 1 arm=on N_runs=100 parked_per_run=[1] restore_submitted_per_run=[0] not_routed_per_run=[1] runs_with_parked_1_submitted_0_not_routed_1=100 -> PASS
+DAY26 CLAUSE 1 context arm=off N_runs=100 parked_per_run=[0] not_routed_per_run=[0]
+DAY26 TYPED LINE (one ON run, verbatim): [prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=2, 64 tokens, model gate); the tick program copies it
+DAY26 CLAUSE 2 e2e order=o1 on_median=127.3 off_median=115.2 on_minus_off=+12.2 unc=0.8 expected=+15.8 (day 25: +105.85 minus 90.1) |d-expected|=3.6 -> FAIL
+DAY26 CLAUSE 3 stall order=o1 on_stall_medians=[76.8, 76.8, 76.8, 76.9, 76.9] on_cell_median=76.8 IQR=0.0 off_cell_median=85.1 on_minus_off=-8.2 unc=0.1 -> isolated | against day 25's 149.4 (IQR 0.1): -72.6 -> FINDING (moved, reported with the decomposition, not tuned)
+DAY26 CLAUSE 2 e2e order=o2 on_median=127.5 off_median=115.3 on_minus_off=+12.1 unc=1.0 expected=+15.8 (day 25: +105.85 minus 90.1) |d-expected|=3.6 -> FAIL
+DAY26 CLAUSE 3 stall order=o2 on_stall_medians=[76.8, 76.9, 76.9, 77.3, 76.8] on_cell_median=76.9 IQR=0.0 off_cell_median=85.3 on_minus_off=-8.4 unc=0.2 -> isolated | against day 25's 149.4 (IQR 0.1): -72.5 -> FINDING (moved, reported with the decomposition, not tuned)
+DAY26 DECOMPOSITION arm=on N_runs=100 parked_per_run=[1] restore_readmission=[] promote_completion median=19.6 promote_in median=20.7 demote_completion median=nan demote_in median=179.2 demote_in-completion median=nan idle_p50(tick)=13.48 | tenant top gaps: largest median=90.3 second median=19.0 sum median=109.3
+DAY26 DECOMPOSITION arm=off N_runs=100 parked_per_run=[0] promote_in median=10.6 demote_in median=6.1 | tenant top gaps: largest median=98.5 second median=16.6
+DAY26 CLAUSE 4 restore-arm: NO RECEIPT -> FAIL
+DAY26 CLAUSE 5 hitgate-off: NO VERDICT LINE (ok=0 FAIL=0)
+DAY26 CLAUSE 5 hitgate-on: NO VERDICT LINE (ok=0 FAIL=0)
+DAY26 CLAUSE 5 hitgate-on counts against day 24: spec_on_census_equal=False spec_off_census_equal=False route_submissions=-1 (day 24: 30) spec_boundary_captures_with_draft_plane=0 (day 24: 11) not_routed_lines=0 (must be 0: the gate has no promote-then-hit shape) -> FAIL
+DAY26 ACCEPTANCE clauses (1) (2) (4) (5) = ['PASS', 'FAIL', 'FAIL', 'FAIL']; clause (3) is a finding either way (see CLAUSE 3 lines)

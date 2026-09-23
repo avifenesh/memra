@@ -149,3 +149,9 @@ pub use d2d_receipt::*;
 // refused attach hands every span back; a span error quarantines the ticket.
 mod d2h_span;
 pub use d2h_span::*;
+
+// Day-32 rule (WP-A, memra#536 Move 2 owed item 1, the H2D half): the typed f32 spans of a promote
+// batch, beside the frozen schedules, unversioned: one ticket and one landing with the KV items; a
+// destination is handed out only behind the reader wait; a span error quarantines the ticket.
+mod h2d_span;
+pub use h2d_span::*;
