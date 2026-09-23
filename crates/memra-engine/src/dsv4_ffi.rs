@@ -902,6 +902,41 @@ unsafe extern "C" {
         eps: f32,
         stream: *mut c_void,
     ) -> i32;
+    /// Partial half of the HC24 split dots: `m * 24 * slices` floats into `partial`.
+    pub fn memra_dsv4_hc_dot_split_partial(
+        x: *const f32,
+        w: *const f32,
+        partial: *mut f32,
+        partial_len: i32,
+        m: i32,
+        n: i32,
+        k: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Split-dot slice sum + small HC + entry rmsnorm (+ bf16 pack), one CTA per position.
+    /// `y` and `out_b` may be null.
+    pub fn memra_dsv4_hc_finish_f32_fixed_order(
+        partial: *const f32,
+        slices: i32,
+        x: *const f32,
+        mixes: *mut f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        y: *mut f32,
+        norm_w: *const f32,
+        out: *mut f32,
+        out_b: *mut c_void,
+        s: i32,
+        hc: i32,
+        d: i32,
+        iters: i32,
+        hc_eps: f32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_rmsnorm_f32acc(
         x: *const f32,
         w: *const f32,

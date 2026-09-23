@@ -13309,6 +13309,7 @@ pub struct VerifyWs {
     comb: CudaSlice<f32>,
     y_hc: CudaSlice<f32>,
     x: CudaSlice<f32>,
+    x_b: CudaSlice<u8>, // [tmax*hidden*2] bf16 pack of x for wq_a, wkv, indexer weights
     xf: CudaSlice<f32>,
     qr: CudaSlice<f32>,
     qr_b: CudaSlice<u8>,
@@ -14384,6 +14385,7 @@ impl Dsv4Gpu {
                 comb: f(tmax * hc * hc)?,
                 y_hc: f(tmax * hidden)?,
                 x: f(tmax * hidden)?,
+                x_b: b(tmax * hidden * 2)?,
                 xf: f(tmax * hidden)?,
                 qr: f(tmax * q_lora)?,
                 qr_b: b(tmax * q_lora * 2)?,
@@ -14864,6 +14866,112 @@ impl Dsv4Gpu {
     /// Other kernel families are outside this counter's scope.
     pub fn small_kernel_launches(&self) -> [u64; 2] {
         std::array::from_fn(|i| self.small_kernel_launches[i].load(Ordering::Relaxed))
+    }
+
+    /// hc_pre, the entry RMSNorm into `out`, and its bf16 pack into `out_b` when given.
+    /// The diet on the HC24 split-dot class takes the fused finish (partial dots, then
+    /// one CTA per position); every other program runs `hc_pre_batch_dev`, `rmsnorm_arm`
+    /// and one cvt. Both write the same bits.
+    #[allow(clippy::too_many_arguments)]
+    fn hc_pre_norm_batch_dev(
+        &self,
+        st: &Stage,
+        h_ptr: *const f32,
+        fn_w: &CudaSlice<f32>,
+        base_host: &[f32],
+        scale_host: &[f32],
+        base_dev: &CudaSlice<f32>,
+        scale_dev: &CudaSlice<f32>,
+        norm_w: &CudaSlice<f32>,
+        vws: &mut VerifyWs,
+        out: *mut f32,
+        out_b: Option<*mut c_void>,
+        t: usize,
+        hc: usize,
+        hidden: usize,
+        iters: u32,
+        hc_eps: f32,
+        eps: f32,
+        host_math: bool,
+    ) -> Res<()> {
+        let stream = st.gpu.stream();
+        let slices = unsafe { memra_dsv4_hc_dot_split_slices_for_gate() };
+        if self.small_kernel_diet
+            && !host_math
+            && self.dots_f32
+            && hc == 4
+            && hidden == 4096
+            && slices != 0
+            && !(t == 1 && self.small_component_pending(st.dev, 0))
+        {
+            unsafe {
+                ck(
+                    "HC24 split dot partials",
+                    k::memra_dsv4_hc_dot_split_partial(
+                        h_ptr,
+                        dpf!(fn_w, &stream),
+                        dpm!(vws.hc_dot_partial, &stream),
+                        vws.hc_dot_partial.len() as i32,
+                        t as i32,
+                        24,
+                        16384,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "HC finish f32 fixed order",
+                    k::memra_dsv4_hc_finish_f32_fixed_order(
+                        dpf!(vws.hc_dot_partial, &stream),
+                        slices,
+                        h_ptr,
+                        dpm!(vws.mixes, &stream),
+                        dpf!(scale_dev, &stream),
+                        dpf!(base_dev, &stream),
+                        dpm!(vws.pre, &stream),
+                        dpm!(vws.post, &stream),
+                        dpm!(vws.comb, &stream),
+                        std::ptr::null_mut(),
+                        dpf!(norm_w, &stream),
+                        out,
+                        out_b.unwrap_or(std::ptr::null_mut()),
+                        t as i32,
+                        hc as i32,
+                        hidden as i32,
+                        iters as i32,
+                        hc_eps,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            self.small_kernel_launches[0].fetch_add(1, Ordering::Relaxed);
+            return Ok(());
+        }
+        self.hc_pre_batch_dev(
+            st, h_ptr, fn_w, base_host, scale_host, base_dev, scale_dev, vws, t, hc, hidden, iters,
+            hc_eps, host_math,
+        )?;
+        unsafe {
+            ck(
+                "rmsnorm hc entry batch",
+                self.rmsnorm_arm(
+                    dpf!(vws.y_hc, &stream),
+                    dpf!(norm_w, &stream),
+                    out,
+                    t as i32,
+                    hidden as i32,
+                    eps,
+                    sp(&stream),
+                ),
+            )?;
+            if let Some(ob) = out_b {
+                ck(
+                    "cvt hc entry batch",
+                    k::memra_dsv4_cvt_bf16(out, ob, (t * hidden) as i64, sp(&stream)),
+                )?;
+            }
+        }
+        Ok(())
     }
 
     /// hc_pre for T rows: the `hc_pre_dev` program with every kernel taking the row
@@ -15477,8 +15585,11 @@ impl Dsv4Gpu {
         } else {
             vws.h_a.device_ptr(&stream).0 as *const f32
         };
-        // ---- attention sub-block
-        self.hc_pre_batch_dev(
+        // ---- attention sub-block: vws.x and its bf16 pack vws.x_b, which the
+        // wq_a, wkv and indexer weights projections share.
+        let x_out = vws.x.device_ptr_mut(&stream).0 as *mut f32;
+        let x_b_out = vws.x_b.device_ptr_mut(&stream).0 as *mut c_void;
+        self.hc_pre_norm_batch_dev(
             st,
             h_in_ptr,
             &layer.hc_attn_fn,
@@ -15486,39 +15597,30 @@ impl Dsv4Gpu {
             &layer.hc_attn_scale,
             &layer.hc_attn_base_dev,
             &layer.hc_attn_scale_dev,
+            &layer.attn_norm,
             vws,
+            x_out,
+            Some(x_b_out),
             t,
             hc,
             hidden,
             iters,
             hc_eps,
+            eps,
             host_math,
         )?;
-        unsafe {
-            ck(
-                "rmsnorm attn batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.y_hc, &stream),
-                    dpf!(layer.attn_norm, &stream),
-                    dpm!(vws.x, &stream),
-                    t as i32,
-                    hidden as i32,
-                    eps,
-                    sp(&stream),
-                ),
-            )?;
-        }
 
         // q path (weights read once for all t rows)
-        Self::gemm_m_dev(
+        Self::gemv_m_dev(
             st,
-            vws.x.device_ptr(&stream).0 as *const f32,
-            &mut vws.gemm_xb,
             dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
+            vws.x_b.device_ptr(&stream).0 as *const c_void,
+            vws.qr.device_ptr_mut(&stream).0 as *mut f32,
             t,
             q_lora,
             hidden,
-            vws.qr.device_ptr_mut(&stream).0 as *mut f32,
+            0,
+            0,
         )?;
         if t == 1 && !host_math && self.small_component_claim(st.dev, 1) {
             self.small_component_norm(st, &vws.qr, &layer.q_norm, q_lora, eps)?;
@@ -15619,18 +15721,17 @@ impl Dsv4Gpu {
             )?;
         }
 
-        // Q_b/head norm/rotary use qr_b and q only. gemm_xb still holds
-        // the attention-entry pack here; compressor scratch reuse starts later.
         // shared K==V latent rows + window QAT, then the TRANSIENT ring write
-        Self::gemm_m_dev(
+        Self::gemv_m_dev(
             st,
-            vws.x.device_ptr(&stream).0 as *const f32,
-            &mut vws.gemm_xb,
             dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
+            vws.x_b.device_ptr(&stream).0 as *const c_void,
+            vws.kv.device_ptr_mut(&stream).0 as *mut f32,
             t,
             hd,
             hidden,
-            vws.kv.device_ptr_mut(&stream).0 as *mut f32,
+            0,
+            0,
         )?;
         unsafe {
             ck(
@@ -15753,20 +15854,21 @@ impl Dsv4Gpu {
                     )?;
                 }
                 // indexer weights projection, batched
-                Self::gemm_m_dev(
+                Self::gemv_m_dev(
                     st,
-                    vws.x.device_ptr(&stream).0 as *const f32,
-                    &mut vws.gemm_xb,
                     dwsel(
                         self.dense_fp8,
                         &stream,
                         &ix.weights_proj,
                         &ix.weights_proj_fp8,
                     ),
+                    vws.x_b.device_ptr(&stream).0 as *const c_void,
+                    vws.wproj.device_ptr_mut(&stream).0 as *mut f32,
                     t,
                     ix.heads,
                     hidden,
-                    vws.wproj.device_ptr_mut(&stream).0 as *mut f32,
+                    0,
+                    0,
                 )?;
                 // indexer compressor: batched projections + position-ordered state machine
                 {
@@ -16466,7 +16568,8 @@ impl Dsv4Gpu {
 
         // ---- ffn sub-block (input vws.h_b, output vws.h_a)
         let h_b_ptr = vws.h_b.device_ptr(&stream).0 as *const f32;
-        self.hc_pre_batch_dev(
+        let xf_out = vws.xf.device_ptr_mut(&stream).0 as *mut f32;
+        self.hc_pre_norm_batch_dev(
             st,
             h_b_ptr,
             &layer.hc_ffn_fn,
@@ -16474,28 +16577,18 @@ impl Dsv4Gpu {
             &layer.hc_ffn_scale,
             &layer.hc_ffn_base_dev,
             &layer.hc_ffn_scale_dev,
+            &layer.ffn_norm,
             vws,
+            xf_out,
+            None,
             t,
             hc,
             hidden,
             iters,
             hc_eps,
+            eps,
             host_math,
         )?;
-        unsafe {
-            ck(
-                "rmsnorm ffn batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.y_hc, &stream),
-                    dpf!(layer.ffn_norm, &stream),
-                    dpm!(vws.xf, &stream),
-                    t as i32,
-                    hidden as i32,
-                    eps,
-                    sp(&stream),
-                ),
-            )?;
-        }
         self.moe_verify_dev(
             st,
             layer,
