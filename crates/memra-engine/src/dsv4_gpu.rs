@@ -3389,11 +3389,11 @@ impl Dsv4Gpu {
         } else {
             None
         };
-        if topology.is_tp_ep() && std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark") {
-            return Err(
-                "DSV4 TP/EP all-layer topology currently refuses MTP/DSpark state because the drafter is not replicated per rank"
-                    .into(),
-            );
+        if topology.is_tp_ep()
+            && std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark")
+            && model.has("mtp.0.e_proj.weight")
+        {
+            return Err("DSV4 TP/EP all-layer topology refuses the NextN MTP block".into());
         }
         if topology.is_tp_ep() && (!matrix_moe || !ep_requested) {
             return Err(
@@ -3953,7 +3953,8 @@ impl Dsv4Gpu {
         // name — measured on both artifacts: preview has e_proj.weight+.scale, 0731 has
         // no e_proj keys; the stem alone misses because `has` is raw-exact).
         let nextn = me.model.mc.nextn_predict_layers;
-        if !topology.is_tp_ep() && nextn > 0 && me.model.has("mtp.0.e_proj.weight") {
+        let has_mtp = me.model.has("mtp.0.e_proj.weight");
+        if !topology.is_tp_ep() && nextn > 0 && has_mtp {
             assert_eq!(
                 nextn, 1,
                 "multi-NextN chains not wired (single MTP layer expected)"
@@ -3977,12 +3978,14 @@ impl Dsv4Gpu {
                 hc_head_scale: me.model.tensor_f32(&format!("{p}.hc_head_scale")).1,
             };
             me.mtp = Some(mtp);
-        } else if !topology.is_tp_ep() && nextn > 0 {
+        } else if nextn > 0 && !has_mtp {
             if std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark") {
                 // iteration 3: the DSpark drafter, whole module on the LAST stage
                 // (tap layers 40/41/42 + shared head locality — VRAM plan in the
                 // iteration-3 receipts). Census pins + NextN refusal ride the CPU
                 // oracle's own config loader (one refusal program, two realizations).
+                // Under TP/EP the last stage is rank 1, the head rank: the blocks keep
+                // their full expert slab and run the PP drafter program unchanged.
                 let cfg = memra_gguf::dsv4_dspark::DsparkConfig::load(dir, &me.model);
                 let hidden = me.model.mc.n_embd as usize;
                 let mut blocks = Vec::with_capacity(cfg.n_blocks);
@@ -10540,11 +10543,11 @@ impl Dsv4Gpu {
         state: &mut DecodeState,
         want_logits: bool,
         device_logits: bool,
-        taps: Option<(&mut CudaSlice<f32>, usize)>,
+        mut taps: Option<(&mut CudaSlice<f32>, usize)>,
         replay_draw: bool,
     ) -> Res<(Option<Vec<f32>>, u32)> {
-        if taps.is_some() {
-            return Err("TP/EP vertical slice does not admit DSpark taps yet".into());
+        if taps.is_some() && replay_draw {
+            return Err("TP/EP replay does not capture DSpark taps".into());
         }
         let _walk_guard = self
             .tp_ep_walk_lock
@@ -10575,6 +10578,15 @@ impl Dsv4Gpu {
         let mut result = (|| -> Res<(Option<Vec<f32>>, u32)> {
             if work.failed || work.verify.open.is_some() {
                 return Err("TP/EP workspace has an unfinished transaction".into());
+            }
+            if let Some((dst, base)) = &taps {
+                let src = work.taps.as_ref().ok_or("TP/EP tap workspace missing")?;
+                if base
+                    .checked_add(src.len())
+                    .is_none_or(|end| end > dst.len())
+                {
+                    return Err("TP/EP tap destination outside allocation".into());
+                }
             }
             let replaying = work.replay.is_some();
             if replaying != replay_draw {
@@ -10718,7 +10730,11 @@ impl Dsv4Gpu {
                         capture,
                         replaying,
                         fault_inputs,
-                        None,
+                        if taps.is_some() {
+                            work.taps.as_mut()
+                        } else {
+                            None
+                        },
                     )?;
                 }
                 if capture {
@@ -10919,6 +10935,13 @@ impl Dsv4Gpu {
             self.head_logits_batch_dev(head_ws, 1, false)?;
             drop(head_phase);
             let stream = self.stages[1].gpu.stream();
+            if let Some((dst, base)) = taps.as_mut() {
+                // The walk wrote the tap rows on rank 1's stream; the drafter state lives there.
+                let src = work.taps.as_ref().expect("validated tap workspace");
+                stream
+                    .memcpy_dtod(src, &mut dst.slice_mut(*base..*base + src.len()))
+                    .map_err(e("TP/EP step tap copy"))?;
+            }
             if device_logits {
                 state.pos = pos0 + 1;
                 return Ok((None, 0));
