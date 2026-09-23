@@ -2699,18 +2699,26 @@ holds pinned buffers, is A's own stated limit in DAY31 section 1; it applies onl
 charge and the span-refusal fault cell; the H2D half, the D2D half and the strong-form receipt of Move 2 owed item 1
 remain owed.
 
-**Checks.** CPU battery on `40891cf2d`, 15 of 15 rc=0: fmt; portable suites (357 passed, 0 skipped of budget
-0); server 873 + 7 passed; engine lib 539 passed; tier 4; clippy `-D warnings` on the six crates and on engine, server
-and tier all targets; check-flags; publish census; docs registry; pytest battery 87; conflict markers; workflow keys;
-perf board; `git diff --check`. RTX 5090 on the merged binary (`5aa040c9`, tree `aceef3589`, one collector hold
-03:44Z to 03:52Z), verbatim: serve-smoke `serve-smoke: 0 failed`; the engine `d2d_` and `d2h_span` cells `6 passed`;
-the worker `option_b_` and `option_c_` cells `13 passed`; identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN
-(teeth=0)` (12 ok); fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (142 ok each, `refusal handed back
-48 span(s); the next copy-complete carries 48`, `byte-unequal request(s): none`); hit OFF and ON `SPEC-ON-CACHE-HIT
-GATE: ALL GREEN (qwen)` (61 and 68 ok). Receipts `integration-day12/integ49-cpu-battery/` and `integ49-5090/`. The
-first hold and one relaunch were stopped by the lead inside their lock waits, before any cell ran, so lane B's
-two-order chain and then its D4 cell kept the card (`battery.log`). BOX3 is not rerun on the merged tree: A's
-receipts are on `6d940a97c`, and the merged tree differs by #655's files only (the integ47 precedent).
+**Checks.** The branch was merged with main a second time before the PR (`d1760ac21`, main `f69119ae0`: #556 and
+the dsv4 PRs #661 to #663, `worker.rs` auto-merged), so every check ran on that tree. CPU battery on `d1760ac21`,
+15 of 15 rc=0: fmt; portable suites (360 passed, 0 skipped of budget 0); server 874 passed; engine lib 542 passed;
+tier 4; clippy `-D warnings` on the six crates and on engine, server and tier all targets; check-flags; publish
+census; docs registry; pytest battery 87; conflict markers; workflow keys; perf board; `git diff --check`
+(`integ49-cpu-battery-r2/`). RTX 5090 on `d1760ac21` (binary `09bbd855`, `memra-0.138.0-7eab7b8c2c2b (id:
+source-tree, git: d1760ac21d64)`, one collector hold 04:10Z to 04:18Z), verbatim: serve-smoke `serve-smoke: 0
+failed`; the engine `d2d_` and `d2h_span` cells `6 passed`; the worker `option_b_` and `option_c_` cells `13 passed`;
+identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok); fault default and plain
+`KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (142 ok each, `refusal handed back 48 span(s); the next copy-complete carries
+48`, `byte-unequal request(s): none`); hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 and 68 ok)
+(`integ49-5090-r2/`). The first run on the pre-main merge (`integ49-cpu-battery/`, `integ49-5090/`) read the same
+lines. One correction to that first run's receipt: its `binary.sha256` names the binary at the hold's start
+(`5aa040c9`, built at `40891cf2d`), but serve-smoke rebuilds `memra-server` unconditionally, so every later cell ran
+`920eebe9` (built at `aceef3589`: the same crate sources, a new git id). The r2 collector hashes the binary again
+after serve-smoke. It also records a foreign co-tenant (another project's python, 1390 MiB) instead of waiting it
+out; every cell here is a correctness verdict. Two earlier holds were stopped inside their lock waits, before any
+cell ran, so lane B's chain and D4 cell kept the card. BOX3 is not rerun on the merged tree. A's receipts are on
+`6d940a97c`, and the merged tree adds #655 and the main commits above, none of which touches the door's code (the
+integ47 precedent).
 
 **Running.** B day 31 (`MEMRA_ADMIT_BY_MEMORY`: the local two-order cell finished 03:08Z and its D4 cell 03:43Z; the
 target-card run continues; the survey). Lane E (memra#641, a pre-registered deterministic repro, then a bisect and a

@@ -32,17 +32,19 @@ Author's review of the full diff `main..lane/spill-integ49-20260923`, posted as 
   byte-compares r1 to r4 against a door-OFF boot; A ran its helpers red and green against a synthetic log.
 - One numeric program per request: nothing here changes a hashed, published or promoted byte. The cell's r1 to r4 are
   byte-equal to door OFF on both cards.
-- Merge: A's tip `979881aa0` on main `9c07b398b`, `worker.rs` auto-merged beside #655. The merged tree differs from
-  A's gate tree `6d940a97c` by #655's files only, so the 5090 battery on the merged binary is the merge check (the
-  integ47 precedent); BOX3 is not rerun.
-- CPU battery on `40891cf2d`: 15 of 15 rc=0 (fmt, portable suites 357 passed, server 873 + 7 passed, engine lib 539
-  passed, tier 4, clippy `-D warnings` twice, check-flags, publish census, docs registry, pytest 87, conflict markers,
-  workflow keys, perf board, `git diff --check`).
-- RTX 5090 on the merged binary (`5aa040c9`, one collector hold, 03:44Z to 03:52Z): serve-smoke `0 failed`; engine
-  `d2d_` and `d2h_span` cells 6 passed; worker `option_b_` and `option_c_` cells 13 passed; identity default ON ALL
-  GREEN (12 ok); fault default and plain ALL GREEN (142 ok each, `refusal handed back 48 span(s)`, `byte-unequal
-  request(s): none`); hit OFF and ON ALL GREEN (61 and 68 ok). Two earlier holds were stopped inside their lock
-  waits, before any cell ran, so lane B's chain and D4 cell kept the card.
+- Merge: A's tip `979881aa0` on main `9c07b398b` (`worker.rs` auto-merged beside #655), then main again at
+  `f69119ae0` (#556 and the dsv4 PRs #661 to #663; `worker.rs` auto-merged), giving `d1760ac21`. Neither merge
+  touches the door's code, so the 5090 battery on the merged binary is the merge check (the integ47 precedent);
+  BOX3 is not rerun.
+- CPU battery on `d1760ac21`: 15 of 15 rc=0 (fmt, portable suites 360 passed, server 874 passed, engine lib 542
+  passed, tier 4, clippy `-D warnings` twice, check-flags, publish census, docs registry, pytest 87, conflict
+  markers, workflow keys, perf board, `git diff --check`).
+- RTX 5090 on `d1760ac21` (binary `09bbd855`, hashed after serve-smoke's build; one collector hold, 04:10Z to
+  04:18Z): serve-smoke `0 failed`; engine `d2d_` and `d2h_span` cells 6 passed; worker `option_b_` and `option_c_`
+  cells 13 passed; identity default ON ALL GREEN (12 ok); fault default and plain ALL GREEN (142 ok each,
+  `refusal handed back 48 span(s)`, `byte-unequal request(s): none`); hit OFF and ON ALL GREEN (61 and 68 ok).
+  The first run on the pre-main merge read the same lines. Its `binary.sha256` names the pre-smoke binary: serve-smoke
+  rebuilds `memra-server`, so its later cells ran `920eebe9` (the same sources). The record states this.
 - No new `unsafe`. No em dash in authored lines; the ones in the added lines are verbatim server and tool output in
   receipts. `.gitattributes` in every new receipt dir.
 
