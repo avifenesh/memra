@@ -2175,6 +2175,308 @@ mod tests {
         }
     }
 
+    /// memra #17 lane: the fused one-token MoE pair writes the grouped chain's H, down
+    /// contribution and combined row bit for bit, and each fault the chain defers lands in
+    /// the same word bit.
+    #[test]
+    #[ignore = "requires one CUDA GPU; fused one-token MoE identity only"]
+    fn cuda_fused_one_token_moe_is_the_grouped_chain_bit_for_bit() {
+        use super::{
+            GroupedWork, MOE_FAULT_INPUT_MIRROR, MOE_FAULT_INTERMEDIATE_MIRROR, MOE_FAULT_ROUTE,
+            MoeFault, modelopt_table,
+        };
+        use crate::dsv4_ep::{EpCompute, EpScratch};
+        use crate::dsv4_ffi as k;
+        use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
+
+        fn view(x: &mut EpScratch) -> EpCompute<'_> {
+            EpCompute {
+                xq: &x.xq,
+                xs: &x.xs,
+                ids: &x.ids,
+                weights: &x.weights,
+                g1: &mut x.g1,
+                g3: &mut x.g3,
+                h: &mut x.h,
+                hq: &mut x.hq,
+                hs: &mut x.hs,
+                contribution: &mut x.contribution,
+            }
+        }
+        fn bits(values: &[f32]) -> Vec<u32> {
+            values.iter().map(|value| value.to_bits()).collect()
+        }
+
+        assert!(crate::moe_f16g_mode() >= 2);
+        assert!(crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT));
+        assert!(crate::moe_f16g_tail_on() && crate::dsv4_moe_m1_stream_on());
+        assert!(!crate::moe_f16g_m1_tc_on() && !crate::moe_f16g_down_m1_half2_on());
+        assert!(super::route_validation_enabled() && super::mirror_validation_enabled());
+        let gpu = memra_runtime::Gpu::new(0).unwrap();
+        let s = gpu.stream();
+
+        // DSV4-Flash shapes; 16 experts keep the fixture small.
+        let (ne, hidden, inter, topk, limit) = (16, 4096, 2048, 6, 10.0f32);
+        let wb = hidden * inter / 2;
+        let sb = hidden * inter / 16;
+        let mut state = 0x3c6e_f372_fe94_f82bu64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let weight_data: Vec<u8> = (0..ne * 3 * wb).map(|_| (next() >> 24) as u8).collect();
+        let scale_data: Vec<u8> = (0..ne * 3 * sb).map(|i| 0x30 + (i % 9) as u8).collect();
+        let weights = s.clone_htod(&weight_data).unwrap();
+        let scales = s.clone_htod(&scale_data).unwrap();
+        drop(weight_data);
+        drop(scale_data);
+        let table = modelopt_table(&s, &weights, &scales, ne, hidden, inter).unwrap();
+        let scale2_host: Vec<f32> = (0..ne * 3)
+            .map(|i| 2.0_f32.powi((i % 5) as i32 - 6))
+            .collect();
+        let scale2 = s.clone_htod(&scale2_host).unwrap();
+        let mut word = s.alloc_zeros::<i32>(1).unwrap();
+        let fault = MoeFault(word.device_ptr(&s).0);
+        let mut tile_cnt = s.alloc_zeros::<i32>(hidden / 32).unwrap();
+        let mut fused_h = s.alloc_zeros::<f32>(topk * inter).unwrap();
+        let mut fused_c = s.alloc_zeros::<f32>(topk * hidden).unwrap();
+        let mut fused_y = s.alloc_zeros::<f32>(hidden).unwrap();
+        let mut chain_y = s.alloc_zeros::<f32>(hidden).unwrap();
+        let take_word = |word: &mut CudaSlice<i32>| {
+            let mut host = [0i32];
+            s.memcpy_dtoh(word, &mut host[..]).unwrap();
+            s.synchronize().unwrap();
+            s.memset_zeros(word).unwrap();
+            host[0]
+        };
+
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        enum Red {
+            Clean,
+            Route,
+            Input,
+            Intermediate,
+        }
+        // Both mirrors share one row scale, 2^-7 of the largest group scale. A 1e4 group sets it
+        // to 0.25; in a group whose amax is 1e-4 the 1e-9 tail codes to E4M3 subnormals that
+        // fall below the half subnormal step once divided by that row scale, so the half mirror
+        // loses them.
+        fn lossy(row: &mut [f32]) {
+            for (i, v) in row.iter_mut().enumerate().take(256) {
+                *v = match i {
+                    0 => 1.0e-4,
+                    1..128 => 1.0e-9 * (1 + i % 3) as f32,
+                    _ => 1.0e4,
+                };
+            }
+        }
+        let input_row = |red: Red, seed: usize| -> Vec<f32> {
+            let mut row: Vec<f32> = (0..hidden)
+                .map(|i| (((i * 7919 + seed * 104_729) % 2001) as f32 - 1000.0) / 256.0)
+                .collect();
+            if red == Red::Input {
+                lossy(&mut row);
+            }
+            row
+        };
+
+        // Selections: slot order differs from expert order, and the combine order is a
+        // permutation, so a slot/pair or order mix-up cannot cancel.
+        let selections: [[i32; 6]; 4] = [
+            [3, 11, 0, 7, 15, 9],
+            [14, 2, 8, 5, 1, 12],
+            [0, 1, 2, 3, 4, 5],
+            [9, 4, 13, 6, 10, 15],
+        ];
+        let orders: [[i32; 6]; 4] = [
+            [0, 1, 2, 3, 4, 5],
+            [3, 0, 5, 1, 4, 2],
+            [5, 4, 3, 2, 1, 0],
+            [2, 5, 0, 3, 1, 4],
+        ];
+        let before = crate::dsv4_moe_fused_dispatches();
+        let mut launches = 0u64;
+        for (case, (sel, ord)) in selections.iter().zip(orders.iter()).enumerate() {
+            for red in [Red::Clean, Red::Route, Red::Input, Red::Intermediate] {
+                let mut selected = sel.to_vec();
+                if red == Red::Route {
+                    selected[4] = ne as i32 + 3;
+                }
+                let routing: Vec<f32> = (0..topk)
+                    .map(|p| (p % 7 + 1) as f32 / 16.0 + case as f32 / 64.0)
+                    .collect();
+                let x = s.clone_htod(&input_row(red, case)).unwrap();
+                let order = s.clone_htod(&ord.to_vec()).unwrap();
+                let mut scratch = EpScratch::new(&gpu, &gpu, 1, topk, hidden, inter, None).unwrap();
+                s.memcpy_htod(&selected, &mut scratch.ids.slice_mut(..topk))
+                    .unwrap();
+                s.memcpy_htod(&routing, &mut scratch.weights.slice_mut(..topk))
+                    .unwrap();
+
+                // The chain the served one-token step runs: FP8 x, device routes, deferred
+                // checks, stream visitor, scale, SwiGLU, FP8 h, down, scatter, combine.
+                unsafe {
+                    k::ck(
+                        "fused fixture FP8 input",
+                        k::memra_dsv4_act_quant_fp8(
+                            x.device_ptr(&s).0 as *const f32,
+                            scratch.xq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                            scratch.xs.device_ptr_mut(&s).0 as *mut f32,
+                            1,
+                            hidden as i32,
+                            s.cu_stream().cast(),
+                        ),
+                    )
+                    .unwrap();
+                }
+                let mut work = GroupedWork::new(&s, ne, topk, hidden, inter).unwrap();
+                work.defer_faults(Some(fault));
+                work.prepare(
+                    &gpu,
+                    &view(&mut scratch),
+                    &scale2,
+                    &scale2_host,
+                    1,
+                    topk,
+                    true,
+                )
+                .unwrap();
+                work.gate_up(&gpu, &table, &mut view(&mut scratch), limit)
+                    .unwrap();
+                if red == Red::Intermediate {
+                    // E4M3 NaN in the first live H row, which the down mirror gathers.
+                    s.memcpy_htod(&[0x7fu8], &mut scratch.hq.slice_mut(5..6))
+                        .unwrap();
+                }
+                work.down(&gpu, &table, &mut view(&mut scratch)).unwrap();
+                unsafe {
+                    k::ck(
+                        "fused fixture combine",
+                        k::memra_dsv4_combine_rows_m(
+                            scratch.contribution.device_ptr(&s).0 as *const f32,
+                            order.device_ptr(&s).0 as *const i32,
+                            topk as i32,
+                            chain_y.device_ptr_mut(&s).0 as *mut f32,
+                            hidden as i64,
+                            1,
+                            s.cu_stream().cast(),
+                        ),
+                    )
+                    .unwrap();
+                }
+                let chain_word = take_word(&mut word);
+                let pairs = s.clone_dtoh(&work.routes.pairs.slice(..topk)).unwrap();
+                let chain_h = s.clone_dtoh(&scratch.h.slice(..topk * inter)).unwrap();
+                let chain_c = s
+                    .clone_dtoh(&scratch.contribution.slice(..topk * hidden))
+                    .unwrap();
+                let chain_yv = s.clone_dtoh(&chain_y).unwrap();
+
+                // The fused pair.
+                let ids = &scratch.ids;
+                let gu = unsafe {
+                    k::memra_dsv4_moe_fused_gu(
+                        table.device_ptr(&s).0 as *const u64,
+                        ne as i32,
+                        ids.device_ptr(&s).0 as *const i32,
+                        scratch.weights.device_ptr(&s).0 as *const f32,
+                        scale2.device_ptr(&s).0 as *const f32,
+                        x.device_ptr(&s).0 as *const f32,
+                        fused_h.device_ptr_mut(&s).0 as *mut f32,
+                        topk as i32,
+                        hidden as i32,
+                        inter as i32,
+                        limit,
+                        word.device_ptr(&s).0 as *mut i32,
+                        s.cu_stream().cast(),
+                    )
+                };
+                assert_eq!(gu, 0, "fused gate/up rc");
+                if red == Red::Intermediate {
+                    // The fused down mirror reads f32 H, so the lossy row goes there.
+                    let mut row = vec![1.0f32; inter];
+                    lossy(&mut row);
+                    s.memcpy_htod(&row, &mut fused_h.slice_mut(..inter))
+                        .unwrap();
+                }
+                let down = unsafe {
+                    k::memra_dsv4_moe_fused_down(
+                        table.device_ptr(&s).0 as *const u64,
+                        ne as i32,
+                        ids.device_ptr(&s).0 as *const i32,
+                        scale2.device_ptr(&s).0 as *const f32,
+                        fused_h.device_ptr(&s).0 as *const f32,
+                        fused_c.device_ptr_mut(&s).0 as *mut f32,
+                        order.device_ptr(&s).0 as *const i32,
+                        fused_y.device_ptr_mut(&s).0 as *mut f32,
+                        tile_cnt.device_ptr_mut(&s).0 as *mut i32,
+                        topk as i32,
+                        inter as i32,
+                        hidden as i32,
+                        word.device_ptr(&s).0 as *mut i32,
+                        s.cu_stream().cast(),
+                    )
+                };
+                assert_eq!(down, 0, "fused down rc");
+                launches += 2;
+                let fused_word = take_word(&mut word);
+                let counters = s.clone_dtoh(&tile_cnt).unwrap();
+                assert!(counters.iter().all(|&c| c == 0), "tile counters left armed");
+
+                let want = match red {
+                    Red::Clean => 0,
+                    Red::Route => MOE_FAULT_ROUTE,
+                    Red::Input => MOE_FAULT_INPUT_MIRROR,
+                    Red::Intermediate => MOE_FAULT_INTERMEDIATE_MIRROR,
+                };
+                if red != Red::Clean {
+                    assert_ne!(
+                        chain_word & want,
+                        0,
+                        "chain {red:?} case={case} word={chain_word:#x}"
+                    );
+                    assert_ne!(
+                        fused_word & want,
+                        0,
+                        "fused {red:?} case={case} word={fused_word:#x}"
+                    );
+                    println!(
+                        "RED fused MoE {red:?} case={case} fused={fused_word:#x} chain={chain_word:#x}"
+                    );
+                    continue;
+                }
+                assert_eq!((chain_word, fused_word), (0, 0), "clean case={case}");
+                let fh = s.clone_dtoh(&fused_h).unwrap();
+                let fc = s.clone_dtoh(&fused_c).unwrap();
+                let fy = s.clone_dtoh(&fused_y).unwrap();
+                assert!(
+                    chain_yv.iter().all(|v| v.is_finite()),
+                    "clean fixture overflowed"
+                );
+                for (pair, &slot) in pairs.iter().enumerate() {
+                    let slot = slot as usize;
+                    assert_eq!(
+                        bits(&chain_h[pair * inter..(pair + 1) * inter]),
+                        bits(&fh[slot * inter..(slot + 1) * inter]),
+                        "H case={case} pair={pair} slot={slot}"
+                    );
+                }
+                assert_eq!(bits(&chain_c), bits(&fc), "contribution case={case}");
+                assert_eq!(bits(&chain_yv), bits(&fy), "y case={case}");
+                println!(
+                    "EXACT fused MoE case={case} sel={sel:?} order={ord:?} H/contribution/y word=0"
+                );
+            }
+        }
+        assert_eq!(
+            crate::dsv4_moe_fused_dispatches() - before,
+            launches,
+            "fused receipt"
+        );
+    }
+
     #[test]
     #[ignore = "requires one CUDA GPU; correctness only, run with matrix visitor enabled"]
     fn cuda_matrix_chain_full_bank_equals_two_partitions() {

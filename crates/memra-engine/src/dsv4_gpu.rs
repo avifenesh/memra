@@ -10901,6 +10901,7 @@ impl Dsv4Gpu {
                             d.swiglu_limit,
                             true,
                             Some(&ar_outputs[0]),
+                            false,
                         )?;
                         self.moe_verify_common_tail(
                             &self.stages[1],
@@ -10912,6 +10913,7 @@ impl Dsv4Gpu {
                             d.swiglu_limit,
                             true,
                             Some(&ar_outputs[1]),
+                            false,
                         )?;
                     }
                 }
@@ -13141,6 +13143,9 @@ pub struct VerifyWs {
     moe_fault: Option<CudaSlice<i32>>,
     moe_fault_host: Vec<i32>,
     moe_fault_armed: bool,
+    /// Column-tile arrival counters of the fused one-token down kernel, `hidden / 32` of
+    /// them, zeroed here once; the kernel's last arriver resets its own counter.
+    moe_tile_cnt: Option<CudaSlice<i32>>,
     c4_gather: Option<C4Gather>,
     pub tmax: usize,
     /// Phase identity, not inferred from row count. Spec verification never sets it.
@@ -14184,6 +14189,11 @@ impl Dsv4Gpu {
                 },
                 moe_fault_host: vec![0; n_trunk],
                 moe_fault_armed: false,
+                moe_tile_cnt: if !self.ep_enabled && self.matrix_moe && hidden % 32 == 0 {
+                    Some(i(hidden / 32)?)
+                } else {
+                    None
+                },
                 ep: if self.ep_enabled {
                     Some(EpScratch::new(
                         &st.gpu,
@@ -16400,8 +16410,9 @@ impl Dsv4Gpu {
         ])
     }
 
-    /// Routed contribution only. The caller ALWAYS combines original slot order
-    /// and adds the complete shared expert after either routed realization.
+    /// Routed contribution. Returns true when the routed rows are already combined into
+    /// `vws.y` in original slot order (the fused one-token program); otherwise the caller
+    /// combines them. The caller adds the complete shared expert either way.
     #[allow(clippy::too_many_arguments)]
     fn moe_verify_grouped(
         &self,
@@ -16415,7 +16426,7 @@ impl Dsv4Gpu {
         inter: usize,
         limit: f32,
         allow_gu_fuse: bool,
-    ) -> Res<()> {
+    ) -> Res<bool> {
         if crate::moe_f16g_mode() < 2
             || crate::dsv4_moe_f16g_sk_params().0 < 0
             || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)
@@ -16428,6 +16439,10 @@ impl Dsv4Gpu {
             .ok_or("matrix expert table missing")?;
         let stream = st.gpu.stream();
         let slots = t * topk;
+        if self.moe_fused_engages(vws, t, allow_gu_fuse) {
+            self.moe_verify_fused(st, layer, table, vws, hidden, ne, topk, inter, limit)?;
+            return Ok(true);
+        }
         unsafe {
             ck(
                 "grouped FP8-QAT x",
@@ -16504,6 +16519,103 @@ impl Dsv4Gpu {
                 "[dsv4-prefill-f16g] ENGAGED: t={t} pairs={slots} expert_groups={ne} max_rows_bound={max_m} device_routes={used_device} FP8-QAT-mirrored half, split-plane ModelOpt NVFP4"
             );
         }
+        Ok(false)
+    }
+
+    /// The fused one-token program replaces exactly the chain the served plain step runs:
+    /// device routes, every check on and deferred to the armed fault word (the fused kernels
+    /// write the same bits), the one-token stream visitor for all three projections. Any
+    /// other composition, including a gate that pins the GU_FUSE or M1 tensor-core tails,
+    /// keeps the chain.
+    fn moe_fused_engages(&self, vws: &VerifyWs, t: usize, allow_gu_fuse: bool) -> bool {
+        t == 1
+            && crate::dsv4_moe_fused_on()
+            && !self.grouped_fresh_storage_control
+            && vws.moe_fault_armed
+            && vws.moe_fault.is_some()
+            && vws.moe_tile_cnt.is_some()
+            && self.grouped_route_device
+            && crate::dsv4_grouped::route_validation_enabled()
+            && crate::dsv4_grouped::mirror_validation_enabled()
+            && crate::moe_f16g_tail_on()
+            && crate::dsv4_moe_m1_stream_on()
+            && !(allow_gu_fuse && crate::moe_f16g_gu_fuse_on())
+            && !crate::moe_f16g_m1_tc_on()
+            && !crate::moe_f16g_down_m1_half2_on()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn moe_verify_fused(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        table: &CudaSlice<u64>,
+        vws: &mut VerifyWs,
+        hidden: usize,
+        ne: usize,
+        topk: usize,
+        inter: usize,
+        limit: f32,
+    ) -> Res<()> {
+        let stream = st.gpu.stream();
+        let il = layer.il as usize;
+        let words = vws.moe_fault.as_ref().ok_or("MoE fault words missing")?;
+        if il >= words.len() {
+            return Err(format!("MoE fault word for layer {il} outside workspace"));
+        }
+        let fault =
+            (words.device_ptr(&stream).0 + (il * std::mem::size_of::<i32>()) as u64) as *mut i32;
+        let tile_cnt = vws
+            .moe_tile_cnt
+            .as_mut()
+            .ok_or("fused MoE tile counters missing")?;
+        unsafe {
+            ck(
+                "fused MoE gate/up",
+                k::memra_dsv4_moe_fused_gu(
+                    table.device_ptr(&stream).0 as *const u64,
+                    ne as i32,
+                    vws.sel.device_ptr(&stream).0 as *const i32,
+                    dpf!(vws.selw, &stream),
+                    dpf!(layer.experts_s2_dev, &stream),
+                    dpf!(vws.xf, &stream),
+                    dpm!(vws.hbuf, &stream),
+                    topk as i32,
+                    hidden as i32,
+                    inter as i32,
+                    limit,
+                    fault,
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "fused MoE down",
+                k::memra_dsv4_moe_fused_down(
+                    table.device_ptr(&stream).0 as *const u64,
+                    ne as i32,
+                    vws.sel.device_ptr(&stream).0 as *const i32,
+                    dpf!(layer.experts_s2_dev, &stream),
+                    dpf!(vws.hbuf, &stream),
+                    dpm!(vws.contrib, &stream),
+                    vws.order.device_ptr(&stream).0 as *const i32,
+                    dpm!(vws.y, &stream),
+                    tile_cnt.device_ptr_mut(&stream).0 as *mut i32,
+                    topk as i32,
+                    inter as i32,
+                    hidden as i32,
+                    fault,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        self.grouped_device_route_calls
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!(
+                "[dsv4-moe-fused] ENGAGED: t=1 slots={topk} experts={ne} hidden={hidden} inter={inter}, two launches, deferred faults"
+            );
+        }
         Ok(())
     }
 
@@ -16523,22 +16635,25 @@ impl Dsv4Gpu {
         limit: f32,
         include_hc_post: bool,
         joined_contribution: Option<&CudaSlice<f32>>,
+        routed_combined: bool,
     ) -> Res<()> {
         let stream = st.gpu.stream();
         let contribution = joined_contribution.unwrap_or(&vws.contrib);
         unsafe {
-            ck(
-                "combine_rows_m",
-                k::memra_dsv4_combine_rows_m(
-                    dpf!(contribution, &stream),
-                    vws.order.device_ptr(&stream).0 as *const i32,
-                    topk as i32,
-                    dpm!(vws.y, &stream),
-                    hidden as i64,
-                    t as i32,
-                    sp(&stream),
-                ),
-            )?;
+            if !routed_combined {
+                ck(
+                    "combine_rows_m",
+                    k::memra_dsv4_combine_rows_m(
+                        dpf!(contribution, &stream),
+                        vws.order.device_ptr(&stream).0 as *const i32,
+                        topk as i32,
+                        dpm!(vws.y, &stream),
+                        hidden as i64,
+                        t as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
             {
                 ck(
                     "cvt xb batch",
@@ -16766,6 +16881,7 @@ impl Dsv4Gpu {
             }
         }
 
+        let mut routed_combined = false;
         if let Some(ep) = &layer.ep {
             unsafe {
                 ck(
@@ -16890,7 +17006,7 @@ impl Dsv4Gpu {
                                         return Ok(());
                                     }
                                     self.moe_verify_common_tail(
-                                        st, layer, vws, t, topk, hidden, limit, true, None,
+                                        st, layer, vws, t, topk, hidden, limit, true, None, false,
                                     )
                                 })
                             }) {
@@ -16995,7 +17111,7 @@ impl Dsv4Gpu {
         } else if (self.matrix_moe || (self.prefill_grouped && vws.is_prefill))
             && layer.expert_kind == ExpertKind::Nvfp4
         {
-            self.moe_verify_grouped(
+            routed_combined = self.moe_verify_grouped(
                 st,
                 layer,
                 vws,
@@ -17104,6 +17220,7 @@ impl Dsv4Gpu {
             limit,
             include_hc_post,
             None,
+            routed_combined,
         )?;
         Ok(())
     }

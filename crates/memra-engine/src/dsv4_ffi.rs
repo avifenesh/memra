@@ -395,6 +395,46 @@ unsafe extern "C" {
         fault_bit: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// Fused one-token MoE, first half: the x FP8-QAT mirror, gate and up of every selected
+    /// slot, macro1/macro3 and the weighted SwiGLU into `h[topk][out_f]`. Bit-identical to the
+    /// grouped chain it replaces; fault bits 0x1 (dead slot) and 0x2 (lossy x mirror).
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_fused_gu(
+        table: *const u64,
+        n_expert: i32,
+        sel: *const i32,
+        selw: *const f32,
+        scale2: *const f32,
+        xf: *const f32,
+        h: *mut f32,
+        topk: i32,
+        in_f: i32,
+        out_f: i32,
+        limit: f32,
+        fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Fused one-token MoE, second half: the h mirror, down and macro2 into
+    /// `contrib[topk][out_f]`, then the slot sum in `order` into `y[out_f]`. `tile_cnt` holds
+    /// `out_f / 32` counters zeroed once; the kernel leaves them zero. Fault bit 0x4.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_fused_down(
+        table: *const u64,
+        n_expert: i32,
+        sel: *const i32,
+        scale2: *const f32,
+        h: *const f32,
+        contrib: *mut f32,
+        order: *const i32,
+        y: *mut f32,
+        tile_cnt: *mut i32,
+        topk: i32,
+        in_f: i32,
+        out_f: i32,
+        fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_moe_fused_dispatches() -> u64;
     pub fn memra_dsv4_scale_rows(
         y: *mut f32,
         scale: *const f32,
