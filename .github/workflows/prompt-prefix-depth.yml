@@ -366,7 +366,14 @@ jobs:
             "$lane/joint-v5/run_native.py" \
             "$lane/joint-v5/schedules.py" \
             "$lane/joint-v5/fit_models.py" \
-            "$lane/joint-v5/fit_topk.py"
+            "$lane/joint-v5/fit_topk.py" \
+            "$lane/joint-v5/fixed_grid.py" \
+            "$lane/joint-v5/joint_selection.py" \
+            "$lane/joint-v5/final_run.py" \
+            "$lane/joint-v5/quality.py" \
+            "$lane/joint-v5/analyze_final.py" \
+            "$lane/joint-v5/seal.py" \
+            "$lane/joint-v5/replay.py"
           python3 "$lane/joint-v5/patch_source.py" \
             --base "$lane/confidence/adaptive-v3/receipts-v3/runtime-source-adaptive-v3.tar.gz" \
             --out "$RUNNER_TEMP/joint-v5-native"

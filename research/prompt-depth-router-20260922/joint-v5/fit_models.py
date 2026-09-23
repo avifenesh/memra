@@ -42,6 +42,9 @@ def fit(root, models, views):
         ]
         if len(fixed) != 6 or len(randomized) != 6:
             raise ValueError(f"top-k={k} needs six matched fixed and random conversations")
+        if any(row["loops"] for row in fixed + randomized):
+            result[str(k)] = {"status": "looped-training-conversation-ineligible"}
+            continue
         view = views / f"topk{k}"
         view.mkdir()
         for row in fixed + randomized:

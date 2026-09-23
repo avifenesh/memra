@@ -68,6 +68,8 @@ def randomized_rows(root, summary, variant, allowed):
     if len(scheduled) != 6 and len(allowed) > 1:
         raise ValueError("K training lacks six randomized conversations")
     for record in scheduled:
+        if record["loops"]:
+            continue
         session = root / record["name"]
         previous = None
         turns = table(session / "turns.tsv")
@@ -122,6 +124,12 @@ def fit(root, models):
         raise ValueError("quality-eligible recommended K=20 is required")
     lam = max(fixed[str(k)]["tok_s"] for k in allowed)
     models.mkdir(exist_ok=True)
+    fallback = (
+        f"joint-v5-topk\t1\tfirst16\t{lam:.12g}\t20\n"
+        "K\t20\t0,0,0,0,0,0,0,0,0,0\n"
+    ).encode()
+    with (models / "topk-fixed20.tsv").open("xb") as target:
+        target.write(fallback)
     records = []
     for variant in FEATURES:
         data = randomized_rows(root, summary, variant, set(allowed))
@@ -150,6 +158,7 @@ def fit(root, models):
     save(root / "topk-training-summary.json", {
         "schema": 1, "scope": "first bounded user tokenizer prefix at temperature 1.0",
         "fixed": fixed, "quality_eligible_top_k": allowed,
+        "fixed20_model_sha256": hashlib.sha256(fallback).hexdigest(),
         "models": records,
     })
     return records
