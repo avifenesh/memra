@@ -1,13 +1,17 @@
 # Fast per-request depth routing
 
 On the tested Qwen code corpus, keep K=3/C=0 as the research control;
-neither prompt-prefix depth routing nor C=0.15 establishes a stable win.
+the positive-C sampler censors sampled picks before target verification,
+so its measured rates are diagnostics until sampled exactness is repaired.
+Bounded prompt-prefix depth routing also did not establish a universal win.
 The [confidence verdict](confidence/VERDICT.md) covers K=3 with confidence-based
 draft stopping. A development grid selected C=0.15 at +6.81% pooled
 tok/s, but the separately versioned code-only held-out comparison measured
 +1.03% pooled, with a 4K loss of 4.98%. A frozen offline policy replay
 did not beat its calibrated fixed C, and no live threshold learner or
-served default was promoted.
+served default was promoted. The [sampled exactness audit](confidence/EXACTNESS.md)
+explains why those positive-C rates cannot support a serving decision even
+if a future throughput cell improves.
 
 For the tested Qwen3.8 code requests, keep K=3 as the research control.
 The K=4 code setting in `prefix/prefix_policy.rs` is the frozen experimental

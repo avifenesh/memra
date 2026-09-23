@@ -1,7 +1,12 @@
 # Qwen code K=3 with confidence stopping
 
 **Decision: keep K=3/C=0 as the research control; do not promote the current
-confidence cutoff or an online C learner.** On the pinned Qwen3.8-27B
+confidence cutoff or an online C learner.** The [sampled exactness
+audit](EXACTNESS.md) found that positive C discards sampled low-confidence
+picks before target verification. This token-dependent censoring can
+change the target output distribution. Positive-C rates below are
+diagnostic measurements of that executed path, **not an exact-sampling
+speedup**. On the pinned Qwen3.8-27B
 NVFP4+Q5_K artifact and one non-production desktop RTX 5090, development
 selected C=0.15 at +6.81% pooled code output tok/s versus C=0. The
 preregistered code-only v2 held-out set measured only **+1.03%** pooled
@@ -29,10 +34,11 @@ metric still uses all returned tokens divided by complete native request
 seconds, including tokenization, prefill, drafting, verification and
 detokenization.
 
-The confidence cutoff controls how many draft candidates reach target
-verification; it is an efficiency setting, not a way to make the target
-reason better. The format checks confirm that code was returned, but this
-study did not test whether those functions pass task-specific assertions.
+An exact speculative confidence policy should control proposal work
+without changing the target's sampling distribution. The tested cutoff
+does not meet that requirement. Any output difference could reflect
+sampling bias; the format checks confirm only that code was returned,
+not whether those functions pass task-specific assertions.
 
 ## What the confidence probes establish
 
@@ -42,6 +48,8 @@ It measured +8.92% versus C=0 but **−0.17% versus its calibrated fixed
 C=0.15**, with two probes and zero C adoptions. It excludes policy CPU
 time and full-information calibration cost, and it does not switch C
 inside a live model session. It provides no learning-specific speed proof.
+Because it chooses among positive-C arms with the sampled exactness issue,
+it is also not an equal-distribution policy comparison.
 
 The [post-result phase diagnostic](PHASE-RESULTS.json) compared C=0 with an
 almost-zero cutoff that computes confidence but did not shorten any draft.
@@ -73,7 +81,8 @@ settle all confidence-aware drafting.
 - Target-only greedy identity and same-seed sampled reproducibility passed
   for every fixed-C arm at the study shape. Full 248,320-row Qwen target
   and embedded MTP heads engaged. Source, model, binary and GPU identities
-  and 250 ms telemetry are retained with every scored run.
+  and 250 ms telemetry are retained with every scored run. Those gates
+  do not establish sampled distribution parity across C settings.
 - The first all-format held-out qualifier stopped at **7/8** coverage: 4K
   prose used the full 8,192-token cap in reasoning with no final answer.
   [Its failure](FAILED-QUALIFICATION.json) remains unscored. A new,

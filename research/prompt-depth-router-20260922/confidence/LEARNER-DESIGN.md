@@ -6,6 +6,9 @@ change that gate only when the extra accepted output is worth its draft,
 confidence-read and verification cost on the running artifact and hardware.
 The completed fixed-C grid and code-only held-out set did not establish a
 stable win for the current raw-probability gate; see `VERDICT.md`.
+The [sampled exactness audit](EXACTNESS.md) also found token-dependent
+discard before target verification. Correcting that output-law error
+and passing a sampled distribution gate precede any C learner.
 
 ## What the learner may observe
 
@@ -65,11 +68,14 @@ filtered proposal probability is `exp((logit[token] - max) / T) / Z`, which
 a chosen-logit gather could compute without another full-vocabulary scan.
 This would change the C signal from raw to filtered proposal probability,
 so it needs a matched exactness gate, acceptance calibration and a direct
-cost/quality comparison; it is not an assumed optimization.
+cost/quality comparison; it is not an assumed optimization. A cheaper
+chosen-token probability does **not** repair token-dependent censoring
+if the selected token is still discarded before target verification.
 
 ## Controls and promotion boundary
 
-Establish a cost-inclusive oracle upper bound before fitting a controller:
+After sampled exactness is restored, establish a cost-inclusive oracle
+upper bound before fitting a controller:
 record full K=3 offers and verified accepted prefixes on disjoint code
 requests, then price the best hindsight stopping choices against the
 best fixed C on the same target-token tape. Never-offered slots have no

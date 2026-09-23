@@ -16,6 +16,14 @@ offering all three. The target still verifies every emitted token. A cutoff
 must not be used to change the target's acceptance rule or sampling
 distribution.
 
+The post-result [exactness audit](EXACTNESS.md) found that the measured
+positive-C path fails this distribution requirement: a low-confidence
+sampled pick is discarded before target verification, while retained
+picks use the unconditioned proposal in the acceptance test. The
+positive-C rate rows are diagnostic and cannot qualify a serving or
+learner policy. Greedy identity and same-seed sampled reproducibility
+did not test this distribution property.
+
 The first controls are genuinely fixed K=3 with `MEMRA_SPEC_ADAPT=0` and
 `MEMRA_SPEC_PMIN` at 0, 0.15, and 0.30; test the 0.30 cutoff both with and
 without `MEMRA_SPEC_PMIN0`. The `pmin=0` arm does not pay the confidence
@@ -75,7 +83,9 @@ pooled, with a 4K loss and no consistent gain across lengths. A frozen
 offline policy replay made zero C adoptions and was -0.17% versus its
 calibrated fixed C=0.15 even before policy CPU or calibration cost. The
 current raw-probability cutoff therefore did not advance to a live online
-controller. The failed first all-format qualifier, successful separate
+controller. Its sampled token-discard behavior is an independent
+correctness stop even if a future rate improves. The failed first
+all-format qualifier, successful separate
 code-only qualifier, fixed grid and offline replay remain banked in
 `FAILED-QUALIFICATION.json`, `CODE-ONLY-V2-PROTOCOL.md`, `RESULTS.md`,
 `HELDOUT-RESULTS.md` and `OFFLINE-RESULTS.json`.
