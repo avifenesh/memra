@@ -16,24 +16,28 @@
 
 memra-server naked on 2x RTX PRO 6000 Blackwell Workstation, NVFP4 checkpoint
 `tiyuvta/DeepSeek-V4-Flash-0731-NVFP4@bafd09f8`: PP-2 over the two cards, matrix expert program,
-host sampler, chunked prefill. 256 max tokens, medians of five boots, 2026-09-23, on a pair whose
-cards passed the effective-clock acceptance check (see below).
+host sampler, chunked prefill. 256 max tokens, medians of four boots per arm, 2026-09-23, on a pair
+whose cards passed the effective-clock acceptance check (see below).
 
 | arm | decode tok/s c1 greedy | decode tok/s c1 sampled | TTFT p50 ms |
 |---|---|---|---|
-| plain | 53.48 | 49.23 | 197 |
-| DSpark drafter (`MEMRA_DSV4_DRAFTER=dspark`) | 73.11 | 60.33 | 245 |
+| plain | 63.34 | 57.38 | 192 |
+| DSpark drafter (`MEMRA_DSV4_DRAFTER=dspark`) | 76.07 | 62.47 | 240 |
 
-Both rows carry the one-token MoE stream visitor (#664, +29.2% plain greedy over the sktail tail
-it replaced), the multi-row stream visitor on the verify rounds (#669, +26.8% DSpark greedy) and
-the deferred MoE checks (#670: one fault readback per transaction instead of 129 synchronizing
-reads per step, +6.8% plain greedy and +2.7% DSpark greedy). Every step kept the same text on
-every prompt.
+What the rows carry, each step measured against the tree before it with the same text on every
+prompt:
 
-The small-kernel diet (#339: one fused HC finish and one fused Q norm/pack per plain step,
-bit-identical to the unfused chain) is the code on every device program. It measured +4.3% plain
-greedy (50.08 -> 52.24) on the tree before #670, so the table above predates it; DSpark is flat
-because verify rows keep the unfused chain.
+| step | plain greedy | DSpark greedy |
+|---|---|---|
+| one-token MoE stream visitor (#664) | +29.2% over the sktail tail | |
+| multi-row stream visitor on the verify rounds (#669) | | +26.8% |
+| deferred MoE checks (#670): one fault readback per transaction instead of 129 synchronizing reads per step | +6.8% | +2.7% |
+| small-kernel diet (#339): one fused HC finish and one fused Q norm/pack per one-token step | +4.3% (measured before #670) | flat |
+| latency kernels: register-resident rmsnorm, one-warp router, one-warp expert prefix, grouped `wo_a` on the dense-fast program | +13.3% (55.92 -> 63.34) | +3.9% (73.23 -> 76.07) |
+
+The diet and grouped `wo_a` change one-token programs only; the other latency kernels run on
+verify rows too, where a round pays its layers once per 3.56 committed tokens. That is why
+DSpark gains less than plain from these steps.
 
 The TP/EP program on the same pair replays the 2026-09-08 anchor protocol at 50.04 tok/s eager
 and 50.68 graph with the anchor's exact bits (anchor: 42.80 / 44.01).
@@ -50,6 +54,6 @@ and 50.68 graph with the anchor's exact bits (anchor: 42.80 / 44.01).
   yet ([issue #454](https://github.com/avifenesh/memra/issues/454)).
 
 Receipts: `research/dsv4f-bringup-20260923/` (`REBASELINE.md`, `m1-stream-664/RESULTS.md`,
-`mrow-stream/RESULTS.md`, `moe-defer-670/RESULTS.md`, `small-diet/RESULTS.md`, `PRIOR-ART.md`, `power-brake/POWER-BRAKE.md`, `spec-identity-660/RESULTS.md`; `BASELINE.md` is the withdrawn braked-pair run).
+`mrow-stream/RESULTS.md`, `moe-defer-670/RESULTS.md`, `small-diet/RESULTS.md`, `latency/RESULTS.md`, `PRIOR-ART.md`, `power-brake/POWER-BRAKE.md`, `spec-identity-660/RESULTS.md`; `BASELINE.md` is the withdrawn braked-pair run).
 Deeper history: the [DeepSeek section](../MODELS.md#deepseek-v4-checkpoint-dirs-serve-through-their-own-door-lanedsv4-flash-revival-20260822).
 Do not infer production support from a successful load or prompt.
