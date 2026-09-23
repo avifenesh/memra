@@ -35,6 +35,12 @@ three old v3 topics as model selection. The six `joint-v4/workloads-v4`
 heldout conversations have not been used for model choice; reserve
 them for the final scored battery. Its qualifier is separate from
 those six.
+Freeze randomized per-turn K schedules independently of model
+sampling seeds before GPU output. Record actual sampler K on every
+turn, the first 32 tokenizer IDs of the current user turn and native
+cached/new tokens. A changed top-k invalidates the parked sampled
+draft graph by its full sampling key; its recapture cost remains in
+the request clock.
 
 ## Learned decisions
 

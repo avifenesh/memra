@@ -362,7 +362,10 @@ jobs:
       - name: Compile corrected sampler-top-k and learned C/D source
         run: |
           lane=research/prompt-depth-router-20260922
-          python3 -m py_compile "$lane/joint-v5/run_native.py"
+          python3 -m py_compile \
+            "$lane/joint-v5/run_native.py" \
+            "$lane/joint-v5/schedules.py" \
+            "$lane/joint-v5/fit_models.py"
           python3 "$lane/joint-v5/patch_source.py" \
             --base "$lane/confidence/adaptive-v3/receipts-v3/runtime-source-adaptive-v3.tar.gz" \
             --out "$RUNNER_TEMP/joint-v5-native"

@@ -58,9 +58,11 @@ def input_manifests(args):
     return development, fresh
 
 
-def record(root, label, k, arm, audit):
+def record(root, label, k, arm, audit, schedule=None):
     return {
-        "name": root.name, "variant": label, "sampler_top_k": k,
+        "name": root.name, "variant": label,
+        "sampler_top_k": k if schedule is None else "scheduled",
+        "sampler_schedule": list(schedule) if schedule is not None else None,
         "arm": arm, "tokens": sum(row["output_tokens"] for row in audit),
         "seconds": sum(row["elapsed_s"] for row in audit),
         "format": sum(bool(row["fenced_parseable_function"]) for row in audit),
@@ -101,7 +103,7 @@ def validate(root, entry, arm):
 
 
 def run_one(args, entry, workloads, topic, label, k, arm, cap, *,
-            temperature=1.0, extra=()):
+            temperature=1.0, extra=(), schedule=None):
     root = args.out / f"{topic}-{label}"
     command = [
         str(args.binary), str(args.model), "embedded",
@@ -109,6 +111,10 @@ def run_one(args, entry, workloads, topic, label, k, arm, cap, *,
         "8192", "65536", str(temperature), f"cap={cap}",
         f"sampler-top-k={k}", *extra,
     ]
+    if schedule is not None:
+        if len(schedule) != 8 or any(value not in TOP_K for value in schedule):
+            raise ValueError("sampler schedule needs eight allowed top-k actions")
+        command.append("sampler-schedule=" + ",".join(map(str, schedule)))
     environment = os.environ.copy()
     environment.update({
         "MEMRA_SPEC_ADAPT": "0", "MEMRA_SPEC_ADAPT_FLOOR": "1",
@@ -122,6 +128,7 @@ def run_one(args, entry, workloads, topic, label, k, arm, cap, *,
         "argv": command, "binary_sha256": args.binary_sha,
         "source_sha256": args.source_sha, "model_sha256": MODEL_SHA,
         "workload_sha256": entry["sha256"], "sampler_top_k": k,
+        "sampler_schedule": list(schedule) if schedule is not None else None,
         "temperature": temperature, "cap": cap,
         "memra_settings": {
             key: value for key, value in environment.items()
@@ -139,13 +146,17 @@ def run_one(args, entry, workloads, topic, label, k, arm, cap, *,
         ):
             raise ValueError("incomplete or changed native K cell: " + root.name)
         audit = validate(root, entry, arm)
+        if schedule is not None:
+            turns = v4.table(root / "turns.tsv")
+            if [int(row["sampler_top_k"]) for row in turns] != list(schedule):
+                raise ValueError("resumed sampler schedule was not executed")
         audit_path = root / "audit.json"
         if audit_path.exists():
             if json.loads(audit_path.read_text()) != audit:
                 raise ValueError("resumed native K audit differs")
         else:
             save(audit_path, audit)
-        return record(root, label, k, arm, audit)
+        return record(root, label, k, arm, audit, schedule)
     save(command_path, command_record)
     started = time.monotonic()
     with (args.out / f"{root.name}.stdout.log").open("x") as stdout, (
@@ -162,8 +173,12 @@ def run_one(args, entry, workloads, topic, label, k, arm, cap, *,
     ):
         raise ValueError("full-head sampler top-k engagement was not logged")
     audit = validate(root, entry, arm)
+    turns = v4.table(root / "turns.tsv")
+    expected = [k] * 8 if schedule is None else list(schedule)
+    if [int(row["sampler_top_k"]) for row in turns] != expected:
+        raise ValueError("actual sampled top-k differs from frozen schedule")
     save(root / "audit.json", audit)
-    return record(root, label, k, arm, audit)
+    return record(root, label, k, arm, audit, schedule)
 
 
 def qualify(args, fresh):
@@ -202,6 +217,13 @@ def qualify(args, fresh):
 
 def development(args, old):
     qualifier = json.loads((args.out / "qualification-result.json").read_text())
+    frozen = json.loads((Path(__file__).with_name("schedules.json")).read_text())
+    if (
+        frozen["schema"] != 1
+        or frozen["workloads_sha256"] != sha(args.development / "manifest.json")
+        or frozen["generator_sha256"] != sha(Path(__file__).with_name("schedules.py"))
+    ):
+        raise ValueError("frozen K assignments or generator differ")
     learnable = [
         k for k in TOP_K if qualifier["eligible"][str(k)]
     ]
@@ -210,6 +232,9 @@ def development(args, old):
     topics = old["groups"]["calibration"] + old["groups"]["heldout"][:3]
     records = []
     for index, entry in enumerate(topics):
+        assigned = frozen["training"][index]
+        if assigned["training_index"] != index or assigned["workload_sha256"] != entry["sha256"]:
+            raise ValueError("frozen sampler schedule differs from this conversation")
         arms = [
             (f"topk{k}-d3-c0", k, "fixed:3", 3, ())
             for k in TOP_K
@@ -226,6 +251,18 @@ def development(args, old):
             records.append(run_one(
                 args, entry, args.development, f"development-{index}",
                 label, k, arm, cap, extra=extra,
+            ))
+        action_set = set(learnable)
+        schedule_key = {
+            frozenset((3, 10, 20)): "topk_3_10_20",
+            frozenset((3, 20)): "topk_3_20",
+            frozenset((10, 20)): "topk_10_20",
+        }.get(frozenset(action_set))
+        if schedule_key is not None:
+            records.append(run_one(
+                args, entry, args.development, f"development-{index}",
+                "random-topk", 20, "fixed:3", 3,
+                schedule=assigned[schedule_key],
             ))
     for k in learnable:
         counts = defaultdict(int)

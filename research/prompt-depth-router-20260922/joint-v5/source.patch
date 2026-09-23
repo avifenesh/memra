@@ -695,16 +695,17 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 -    if !(10..=16).contains(&args.len()) {
 -        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
 +    if !(10..=18).contains(&args.len()) {
-+        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [cap=N] [sampler-top-k=3|10|20] [explore-seed=UINT64] [depth-model=PATH] [confidence-model=PATH] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
++        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [cap=N] [sampler-top-k=3|10|20] [sampler-schedule=K1,...,K8] [explore-seed=UINT64] [depth-model=PATH] [confidence-model=PATH] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
      }
      let arm = args[5].as_str();
      let seed: u64 = args[6].parse()?;
-@@ -115,8 +155,33 @@
+@@ -115,8 +155,45 @@
      let mut confidence_policy = None;
      let mut confidence_costs = None;
      let mut fixed_cutoffs = None;
 +    let mut requested_cap = None;
 +    let mut requested_top_k = None;
++    let mut sampler_schedule = None;
 +    let mut explore_seed = None;
 +    let mut depth_model = None;
 +    let mut confidence_model = None;
@@ -717,6 +718,17 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +        } else if let Some(value) = option.strip_prefix("sampler-top-k=") {
 +            if requested_top_k.replace(value.parse::<i32>()?).is_some() {
 +                return Err("duplicate sampler top-k".into());
++            }
++        } else if let Some(value) = option.strip_prefix("sampler-schedule=") {
++            let values = value
++                .split(',')
++                .map(str::parse::<i32>)
++                .collect::<Result<Vec<_>, _>>()?;
++            let schedule: [i32; 8] = values
++                .try_into()
++                .map_err(|_| "sampler schedule requires eight top-k actions")?;
++            if sampler_schedule.replace(schedule).is_some() {
++                return Err("duplicate sampler schedule".into());
 +            }
 +        } else if let Some(value) = option.strip_prefix("explore-seed=") {
 +            if explore_seed.replace(value.parse::<u64>()?).is_some() {
@@ -734,7 +746,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
              if path.is_empty() || confidence_policy.replace(path).is_some() {
                  return Err("invalid confidence policy path".into());
              }
-@@ -143,9 +208,22 @@
+@@ -143,9 +220,25 @@
              standard_args.push(option.clone());
          }
      }
@@ -742,6 +754,9 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +    let sampler_top_k = requested_top_k.unwrap_or(20);
 +    if !(1..=7).contains(&cap)
 +        || !matches!(sampler_top_k, 3 | 10 | 20)
++        || sampler_schedule.is_some_and(|values: [i32; 8]| {
++            values.iter().any(|&k| !matches!(k, 3 | 10 | 20))
++        })
 +        || (arm == "explore-d" && requested_cap.is_none())
 +        || (arm == "explore-d") != explore_seed.is_some()
 +        || matches!(arm, "trained-d" | "noop-d" | "joint-cd" | "noop-cd") != depth_model.is_some()
@@ -758,16 +773,16 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
      if confidence_policy.is_some() != live_confidence
          || confidence_costs.is_some() != live_confidence
          || (arm == "fixed-c3") != fixed_cutoffs.is_some()
-@@ -169,7 +247,7 @@
+@@ -169,7 +262,7 @@
      let mut rows = std::fs::File::create_new(output.join("turns.tsv"))?;
      writeln!(
          rows,
 -        "turn\tseed\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns"
-+        "turn\tseed\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns\tdepth_policy_ns\tconfidence_decisions\tconfidence_stops"
++        "turn\tseed\tsampler_top_k\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns\tdepth_policy_ns\tconfidence_decisions\tconfidence_stops"
      )?;
      let mut trace = std::fs::File::create_new(output.join("rounds.tsv"))?;
      writeln!(
-@@ -195,18 +273,20 @@
+@@ -195,18 +288,20 @@
      if mtp.d2t.is_some() || draft_vocab != model.output.out_features() {
          return Err("MTP draft and target heads must both use the full vocabulary".into());
      }
@@ -792,7 +807,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          top_p: 0.95,
          min_p: 0.0,
          penalty_last_n: 0,
-@@ -215,7 +295,7 @@
+@@ -215,7 +310,7 @@
          penalty_present: 0.0,
      };
      eprintln!(
@@ -801,7 +816,19 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          model.output.out_features(),
          draft_vocab,
          arm == "learned" || arm == "context",
-@@ -324,6 +404,14 @@
+@@ -255,6 +350,11 @@
+     for (index, user) in user_turns.iter().enumerate() {
+         let turn = index + 1;
+         let started = Instant::now();
++        let turn_top_k = sampler_schedule.map_or(sampler_top_k, |values| values[index]);
++        let turn_sampling = SpecSampling {
++            top_k: turn_top_k,
++            ..sampling
++        };
+         history.push(Turn {
+             role: "user".into(),
+             content: (*user).into(),
+@@ -324,6 +424,14 @@
          let new_input_tokens = prompt.len() - cached_tokens;
          let trace_start = sess.depth_rounds.len();
          let confidence_start = sess.confidence_rounds.len();
@@ -816,7 +843,20 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          let mut on_commit = |chunk: &[u32]| !chunk.iter().any(|id| eos.contains(id));
          let (mut ids, drafted, accepted) = model.generate_spec_session_sampled(
              &e,
-@@ -472,6 +560,10 @@
+@@ -331,10 +439,10 @@
+             &prompt[cached_tokens..],
+             max_new,
+             cap,
+-            Some(sampling),
++            Some(turn_sampling),
+             Some(&mut on_commit),
+         )?;
+-        model.spec_flush_pending(&e, &mut sess, Some(sampling))?;
++        model.spec_flush_pending(&e, &mut sess, Some(turn_sampling))?;
+         ids.truncate(max_new);
+         if let Some(end) = ids.iter().position(|id| eos.contains(id)) {
+             ids.truncate(end + 1);
+@@ -472,6 +580,10 @@
              Some(MtpDepthExperiment::Learned(p)) => Some(p),
              _ => None,
          };
@@ -827,15 +867,36 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          context_receipts.write(
              turn,
              user,
-@@ -506,7 +598,7 @@
+@@ -506,7 +618,7 @@
          };
          writeln!(
              rows,
 -            "{turn}\t{seed}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}",
-+            "{turn}\t{seed}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}\t{depth_policy_ns}\t{confidence_decisions}\t{confidence_stops}",
++            "{turn}\t{seed}\t{turn_top_k}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}\t{depth_policy_ns}\t{confidence_decisions}\t{confidence_stops}",
              prompt.len(),
              ids.len(),
              new_trace.len(),
+@@ -523,6 +635,11 @@
+         )?;
+         rows.flush()?;
+         trace.flush()?;
++        let user_ids = tok.encode(user, false);
++        save_ids(
++            &output.join(format!("turn-{turn}.user-prefix.ids")),
++            &user_ids[..user_ids.len().min(32)],
++        )?;
+         save_ids(&output.join(format!("turn-{turn}.prompt.ids")), &prompt)?;
+         save_ids(&output.join(format!("turn-{turn}.output.ids")), &ids)?;
+         std::fs::write(output.join(format!("turn-{turn}.raw.txt")), &raw)?;
+@@ -539,7 +656,7 @@
+         total_tokens += ids.len();
+         total_seconds += seconds;
+         eprintln!(
+-            "turn={turn} tokens={} seconds={seconds:.3} resumed={resumed} switches={switches}",
++            "turn={turn} sampler_top_k={turn_top_k} tokens={} seconds={seconds:.3} resumed={resumed} switches={switches}",
+             ids.len()
+         );
+     }
 diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
 --- a/crates/memra-engine/src/spec.rs
 +++ b/crates/memra-engine/src/spec.rs
