@@ -375,10 +375,7 @@ fn main() {
         args.len() >= 5,
         "usage: dsv4_ar_phase_gate <model-dir> <source-tape> <out-dir> <cell> [args]"
     );
-    for (name, value) in [
-        ("MEMRA_DSV4_SAMPLER", "device"),
-        ("MEMRA_DSV4_SMALL_KERNEL_DIET", "1"),
-    ] {
+    for (name, value) in [("MEMRA_DSV4_SAMPLER", "device")] {
         assert_eq!(
             std::env::var(name).as_deref(),
             Ok(value),
