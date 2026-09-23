@@ -341,6 +341,11 @@ struct Entry {
     spans: Option<SpanBatch>,
     /// The batch's spans were taken back (a second take is `AlreadyReleased`).
     spans_taken: bool,
+    /// WP-A day 32 (Move 2 owed item 1, the H2D half): the f32 spans attached to an H2D batch
+    /// (`submit_h2d_spans`), owned here from attach until `take_h2d_spans`.
+    h2d_spans: Option<H2dSpanBatch>,
+    /// The batch's H2D spans were taken back (a second take is `AlreadyReleased`).
+    h2d_spans_taken: bool,
 }
 impl Drop for Entry {
     fn drop(&mut self) {
@@ -353,6 +358,9 @@ impl Drop for Entry {
             // A span's copy may still read its source and write its destination: a leak, never
             // a free, exactly as the items.
             std::mem::forget(self.spans.take());
+            // WP-A day 32: the same for an H2D span (its destination may be written, its staging
+            // source read).
+            std::mem::forget(self.h2d_spans.take());
         }
     }
 }
@@ -378,6 +386,33 @@ impl std::fmt::Debug for D2hSpan {
 struct SpanBatch {
     slots: Vec<(D2hSpan, Option<CudaEvent>)>,
     landed: bool,
+}
+/// One typed f32 span of an H2D promote batch (WP-A day 32, memra#536 Move 2 owed item 1, the H2D
+/// half; `memra_tier::conformance::h2d_span_batch`): an OWNED, fully written cached pinned source
+/// (a staging buffer the hash helper filled from the resident image's recurrent plane) copied into
+/// the whole of an OWNED fresh device destination of exactly its byte length, allocated on the
+/// owner stream. Attached to a live H2D ticket by `CudaTransfers::submit_h2d_spans` and handed back,
+/// staging and landed destination, by `take_h2d_spans`, only behind the owner stream's wait on the
+/// span's completion event.
+pub struct H2dSpan {
+    pub source: PinnedHostBuf,
+    pub destination: CudaSlice<f32>,
+}
+impl std::fmt::Debug for H2dSpan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("H2dSpan")
+            .field("source_bytes", &self.source.len())
+            .field("destination_len", &self.destination.len())
+            .finish()
+    }
+}
+/// An H2D batch's spans in attach order, each with the completion event recorded after its copy
+/// on the copy stream (`None` when the enqueue or the record failed: the batch is quarantined);
+/// `fenced` once the owner stream waits on every span event (`install_consumer_wait`).
+struct H2dSpanBatch {
+    slots: Vec<(H2dSpan, Option<CudaEvent>)>,
+    landed: bool,
+    fenced: bool,
 }
 /// The receipt kernels of `cu/tier_receipt.cu`, loaded once per `CudaTransfers` with a copy stream.
 struct ReceiptKernels {
@@ -466,7 +501,8 @@ pub struct CudaTransfers {
     /// class delays its copy by this many nanoseconds and takes its destination digest from an
     /// unordered early reader on the owner stream. `None` in production.
     early_reader: Option<u64>,
-    /// Test only (the native `d2h_span` cells): the next span batch's second enqueue fails.
+    /// Test only (the native `d2h_span` and day-32 `h2d_span` cells): the next span batch's second
+    /// enqueue fails, whichever direction it is.
     #[cfg(test)]
     span_enqueue_fault: bool,
 }
@@ -1153,6 +1189,24 @@ impl CudaTransfers {
             s.consumer_fence = Some(fence);
             s.consumer_fenced = true;
         }
+        // WP-A day 32 (rule 3 of `h2d_span_batch`, rule 3 of `h2d_reader_fence` extended over the
+        // spans): the owner stream waits on every H2D span's completion event; only then does
+        // `take_h2d_spans` hand a destination out. A span without an event is quarantined.
+        if let Some(b) = &mut e.h2d_spans
+            && !b.fenced
+        {
+            for (_, event) in &b.slots {
+                let Some(event) = event.as_ref() else {
+                    e.unknown = true;
+                    return Err(Error::Quarantined);
+                };
+                if let Err(err) = cuda(stream.wait(event)) {
+                    e.unknown = true;
+                    return Err(err);
+                }
+            }
+            b.fenced = true;
+        }
         e.completion.consumer_fenced = e
             .completion
             .items
@@ -1256,6 +1310,8 @@ impl CudaTransfers {
             receipt: None,
             spans: None,
             spans_taken: false,
+            h2d_spans: None,
+            h2d_spans_taken: false,
         };
         for (i, op) in ops.into_iter().enumerate() {
             let mut s = SegmentCompletion {
@@ -1455,6 +1511,8 @@ impl CudaTransfers {
             receipt: None,
             spans: None,
             spans_taken: false,
+            h2d_spans: None,
+            h2d_spans_taken: false,
         };
         for (i, mut op) in ops.into_iter().enumerate() {
             let mut s = SegmentCompletion {
@@ -1623,6 +1681,12 @@ impl CudaTransfers {
                 cuda(event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;
             }
         }
+        // WP-A day 32: the same for the spans of an H2D batch (rule 2 of `h2d_span_batch`).
+        if let Some(b) = &e.h2d_spans {
+            for (_, event) in &b.slots {
+                cuda(event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;
+            }
+        }
         e.unknown = false;
         self.progress(ticket)
     }
@@ -1753,6 +1817,134 @@ impl CudaTransfers {
                 span
             })
             .collect())
+    }
+    /// WP-A day 32 (memra#536 Move 2 owed item 1, the H2D half; `memra_tier::conformance::
+    /// h2d_span_batch`): attach typed f32 spans to a live H2D batch right after its submission.
+    /// The copy stream waits on a fresh owner-stream event (every destination was allocated on the
+    /// owner stream, stream-ordered, so the allocation is ordered before the copy), then per span
+    /// one full-length `cuMemcpyHtoDAsync` from the fully written pinned source with no host wait
+    /// and one completion event. From here the engine OWNS each source and destination until
+    /// `take_h2d_spans`: the staging must not be rewritten or freed while the copy reads it, and the
+    /// destination must not be read or freed while the copy writes it (the engine context runs
+    /// without cudarc's event tracking). Rule 1, refusal before enqueue is whole: no copy stream
+    /// (`Unsupported`), an unknown, retired, cancelled or quarantined ticket, a ticket that is not
+    /// an H2D batch (`Unsupported`), one that already carries spans of either class (`Busy`), an
+    /// empty batch, a zero-length span, a source whose length is not the destination's or a source
+    /// not fully written (`InvalidLayout`), a destination of another stream (`WrongOwner`), or a
+    /// failed owner-stream record or copy-stream wait: every span comes back, nothing enqueued,
+    /// nothing quarantined. Rule 5: an enqueue or event error from the first enqueue on keeps every
+    /// span and quarantines the ticket (`Ok`: the batch was accepted and cannot land).
+    #[allow(clippy::result_large_err)]
+    pub fn submit_h2d_spans(
+        &mut self,
+        ticket: &TransferTicket,
+        spans: Vec<H2dSpan>,
+    ) -> std::result::Result<(), (Error, Vec<H2dSpan>)> {
+        let admitted = (|| {
+            self.check_thread()?;
+            let copy = self.copy.clone().ok_or(Error::Unsupported)?;
+            let e = self.entries.get(ticket).ok_or(Error::UnknownTicket)?;
+            if e.retired {
+                return Err(Error::AlreadyReleased);
+            }
+            if e.cancelled {
+                return Err(Error::Cancelled);
+            }
+            if e.unknown {
+                return Err(Error::Quarantined);
+            }
+            if e.h2d_spans.is_some() || e.h2d_spans_taken || e.spans.is_some() || e.spans_taken {
+                return Err(Error::Busy);
+            }
+            if e.receipt.is_some()
+                || e.items
+                    .iter()
+                    .flatten()
+                    .any(|i| i.direction != CopyDirection::HostToDevice)
+            {
+                return Err(Error::Unsupported);
+            }
+            if spans.is_empty() {
+                return Err(Error::EmptyBatch);
+            }
+            for s in &spans {
+                let bytes = s.destination.len().checked_mul(4).ok_or(Error::Overflow)?;
+                if bytes == 0 || s.source.len() != bytes || !s.source.is_written() {
+                    return Err(Error::InvalidLayout);
+                }
+                if !Arc::ptr_eq(s.destination.stream(), &self.stream) {
+                    return Err(Error::WrongOwner);
+                }
+            }
+            let fence = cuda(self.stream.record_event(None))?;
+            cuda(copy.wait(&fence))?;
+            Ok(copy)
+        })();
+        let copy = match admitted {
+            Ok(copy) => copy,
+            Err(error) => return Err((error, spans)),
+        };
+        #[cfg(test)]
+        let mut fault = std::mem::take(&mut self.span_enqueue_fault);
+        let mut failed = false;
+        let mut slots = Vec::with_capacity(spans.len());
+        for mut span in spans {
+            let event = if failed {
+                None
+            } else {
+                // SAFETY: the engine owns `span` (source and destination) from here until
+                // `take_h2d_spans`, which hands it back only after this span's event is observed
+                // complete (`progress`) and the owner stream's wait on it is installed
+                // (`install_consumer_wait`); the source was fully written before the attach (checked
+                // above) and nobody writes it while the engine owns it; the destination's allocation
+                // is on the owner stream, ordered before the copy by the copy stream's wait above.
+                #[allow(unused_mut)]
+                let mut enqueued = unsafe {
+                    span.source
+                        .enqueue_to_device_f32(&mut span.destination, &copy)
+                };
+                #[cfg(test)]
+                if fault && !slots.is_empty() {
+                    fault = false;
+                    enqueued = Err("injected span enqueue failure (test)".into());
+                }
+                enqueued.ok().and_then(|()| copy.record_event(None).ok())
+            };
+            failed |= event.is_none();
+            slots.push((span, event));
+        }
+        let e = self.entries.get_mut(ticket).unwrap();
+        e.h2d_spans = Some(H2dSpanBatch {
+            slots,
+            landed: false,
+            fenced: false,
+        });
+        if failed {
+            e.unknown = true;
+        }
+        Ok(())
+    }
+    /// WP-A day 32: the landed spans of an H2D batch, in attach order, each destination readable
+    /// on the owner stream. `NotReady` until every item's AND every span's event is observed
+    /// complete AND the owner stream's wait on every span event is installed
+    /// (`install_consumer_wait`; rule 3 of `h2d_span_batch`: landing is not a fence),
+    /// `Quarantined` after a span error, `AlreadyReleased` on a second take, `Unsupported` for a
+    /// batch that carries no H2D spans. The batch cannot retire until its spans are taken.
+    pub fn take_h2d_spans(&mut self, ticket: &TransferTicket) -> Result<Vec<H2dSpan>> {
+        self.progress(ticket)?;
+        let e = self.entries.get_mut(ticket).unwrap();
+        if e.retired || e.h2d_spans_taken {
+            return Err(Error::AlreadyReleased);
+        }
+        let Some(b) = &e.h2d_spans else {
+            return Err(Error::Unsupported);
+        };
+        if !b.landed || !e.completion.producer_done || !b.fenced {
+            return Err(Error::NotReady);
+        }
+        let b = e.h2d_spans.take().unwrap();
+        e.h2d_spans_taken = true;
+        Ok(b.slots.into_iter().map(|(span, _)| span).collect())
     }
     fn validate(&self, op: &TransferOp<CudaPinnedLease>, epochs: Epochs) -> Result<()> {
         let (o, direction) = match op {
@@ -1913,7 +2105,32 @@ impl CudaTransfers {
                 all
             }
         };
+        // WP-A day 32 (`h2d_span_batch` rule 2): the same fold over an H2D batch's spans.
+        let h2d_spans_landed = match &mut e.h2d_spans {
+            None => true,
+            Some(b) if b.landed => true,
+            Some(b) => {
+                let mut all = true;
+                for (_, event) in &b.slots {
+                    match event
+                        .as_ref()
+                        .ok_or(Error::Quarantined)
+                        .and_then(event_done)
+                    {
+                        Ok(true) => (),
+                        Ok(false) => all = false,
+                        Err(err) => {
+                            e.unknown = true;
+                            return Err(err);
+                        }
+                    }
+                }
+                b.landed = all;
+                all
+            }
+        };
         e.completion.producer_done = spans_landed
+            && h2d_spans_landed
             && e.completion
                 .items
                 .iter()
@@ -2056,6 +2273,8 @@ impl TransferEngine for CudaTransfers {
             receipt: None,
             spans: None,
             spans_taken: false,
+            h2d_spans: None,
+            h2d_spans_taken: false,
         };
         let mut acceptances = vec![];
         for (i, (op, error)) in ops.into_iter().zip(errors).enumerate() {
@@ -2302,6 +2521,10 @@ impl TransferEngine for CudaTransfers {
         }
         // WP-A day 30 (`d2h_span_batch` rule 4): landed spans not yet taken back keep the batch.
         if e.spans.is_some() {
+            return Err(Error::Busy);
+        }
+        // WP-A day 32 (`h2d_span_batch` rule 4): the same for an H2D batch's spans.
+        if e.h2d_spans.is_some() {
             return Err(Error::Busy);
         }
         if let Some(f) = consumer_done {
@@ -3324,8 +3547,8 @@ mod tests {
         assert_eq!(
             body.matches("event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;")
                 .count(),
-            3,
-            "items, receipt and (day 30) spans"
+            4,
+            "items, receipt, (day 30) D2H spans and (day 32) H2D spans"
         );
     }
 
@@ -3535,6 +3758,237 @@ mod tests {
         copy.synchronize().unwrap();
         assert_eq!(t.poll(&ticket).err(), Some(Error::Quarantined));
         assert_eq!(t.take_d2h_spans(&ticket).err(), Some(Error::Quarantined));
+        assert!(t.retire(&ticket, None).is_err());
+        stream.synchronize().unwrap();
+    }
+    /// WP-A day 32 (memra#536 Move 2 owed item 1, the H2D half): the H2D span class's order, by
+    /// source. The copy stream waits on a fresh owner-stream event before the first enqueue; each
+    /// span's event is recorded after its enqueue; `progress` folds the H2D span events into
+    /// `producer_done`; `install_consumer_wait` installs the owner stream's wait on every span
+    /// event; `take_h2d_spans` hands a destination out only once the batch landed AND that wait is
+    /// installed; `retire` is `Busy` while an H2D span is untaken; an unretired entry's drop forgets
+    /// its H2D spans. No host wait at attach.
+    #[test]
+    fn h2d_span_rules_are_as_stated() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let fn_body = |name: &str| {
+            let at = body.find(name).unwrap_or_else(|| panic!("{name} missing"));
+            &body[at..at + body[at..].find("\n    }\n").unwrap()]
+        };
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let submit = fn_body("pub fn submit_h2d_spans(");
+        assert!(
+            at(submit, "let fence = cuda(self.stream.record_event(None))?;")
+                < at(submit, "cuda(copy.wait(&fence))?;")
+        );
+        assert!(
+            at(submit, "cuda(copy.wait(&fence))?;")
+                < at(
+                    submit,
+                    "enqueue_to_device_f32(&mut span.destination, &copy)"
+                )
+        );
+        assert!(
+            at(
+                submit,
+                "enqueue_to_device_f32(&mut span.destination, &copy)"
+            ) < at(submit, "copy.record_event(None).ok()")
+        );
+        assert!(
+            at(submit, "Err(error) => return Err((error, spans)),")
+                < at(submit, "for mut span in spans {")
+        );
+        assert!(submit.contains("!s.source.is_written()"));
+        assert!(submit.contains("e.unknown = true;"));
+        assert!(!submit.contains("synchronize("), "no host wait at attach");
+        let take = fn_body("pub fn take_h2d_spans(");
+        assert!(take.contains("if !b.landed || !e.completion.producer_done || !b.fenced {"));
+        let install = fn_body("pub fn install_consumer_wait(");
+        assert!(at(install, "if let Some(b) = &mut e.h2d_spans") < at(install, "b.fenced = true;"));
+        assert_eq!(
+            body.matches("b.fenced = true;").count(),
+            1,
+            "one fencing site"
+        );
+        let progress = fn_body("fn progress(");
+        assert!(progress.contains("&& h2d_spans_landed"));
+        let retire = fn_body("fn retire(&mut self, ticket: &TransferTicket, consumer_done");
+        assert!(at(retire, "if e.h2d_spans.is_some() {") < at(retire, "e.retired = true;"));
+        let drop_at = body.find("impl Drop for Entry {").unwrap();
+        let drop_body = &body[drop_at..drop_at + body[drop_at..].find("\n}\n").unwrap()];
+        assert!(drop_body.contains("std::mem::forget(self.h2d_spans.take());"));
+    }
+
+    /// WP-A day 32 (memra#536 Move 2 owed item 1, the H2D half; `memra_tier::conformance::
+    /// h2d_span_batch`, `h2d_span_read_before_its_wait_is_unordered` and
+    /// `h2d_span_enqueue_failure_quarantines`, on a card). One KV item H2D batch; three fully
+    /// written cached pinned sources with patterns and three fresh owner-stream destinations. A
+    /// refused attach (a length mismatch, then an unwritten source) hands every span back and
+    /// quarantines nothing; a 300 ms spin on the copy stream between the item and the spans holds
+    /// the spans, so the item lands while they run: the batch is not landed, the take is
+    /// `NotReady`, the retire `Busy`. After the host wait the batch has landed and the take is
+    /// STILL `NotReady` (no reader wait yet); after `install_consumer_wait` the spans come back
+    /// once, the owner stream reads each destination bit for bit, and the ticket publishes,
+    /// retires and is acknowledged with its KV item landed. A second batch with an injected
+    /// second enqueue failure is quarantined and hands nothing back.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn h2d_span_batch_lands_with_its_ticket_on_the_copy_stream() {
+        use memra_tier::tier::governor::Governor;
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.new_stream().unwrap();
+        let cap = TierBudget {
+            version: 1,
+            device: vec![1 << 30],
+            peer: vec![0],
+            replicas: vec![0],
+            pinned: 1 << 30,
+            pageable: 1 << 30,
+            staging: 1 << 30,
+            loaders: 64,
+            inflight: 64,
+            nvme: 0,
+        };
+        let gov: SharedBudget = Rc::new(RefCell::new(
+            Governor::new(cap, TierBudget::zero(1), 64, 0, Arc::new(|| 0)).unwrap(),
+        ));
+        let mut t = CudaTransfers::new_with_copy_stream(stream.clone(), gov).unwrap();
+        let copy = t.copy_stream().unwrap().clone();
+        let epochs = Epochs {
+            state: 0,
+            src_gen: 1,
+            dst_gen: 1,
+        };
+        let kv_bytes = 1usize << 20;
+        let kv_pattern: Vec<u8> = (0..kv_bytes).map(|i| (i * 13 % 251) as u8).collect();
+        let submit_kv = |t: &mut CudaTransfers| {
+            let plane = stream.alloc_zeros::<u8>(kv_bytes).unwrap();
+            let keep = t.register_device(plane, 1, request()).unwrap();
+            let device = t.retain_device(&keep).unwrap();
+            let mut host = t.alloc_host(kv_bytes, request()).unwrap();
+            host.write(&kv_pattern).unwrap();
+            let producer = t.record_producer(1).unwrap();
+            let ticket = t
+                .h2d(CopyOp {
+                    host,
+                    device,
+                    bytes: kv_bytes as u64,
+                    epochs,
+                    producer_fence: Some(producer),
+                })
+                .unwrap();
+            (ticket, producer, keep)
+        };
+        let lens = [3usize << 18, 5 << 18, 1 << 20];
+        let patterns: Vec<Vec<f32>> = lens
+            .iter()
+            .enumerate()
+            .map(|(k, &n)| (0..n).map(|i| (i as f32) * 0.25 - k as f32).collect())
+            .collect();
+        // `bad`: 1 makes span 1's destination one f32 short; 2 leaves span 1's source unwritten.
+        let spans = |bad: u8| -> Vec<H2dSpan> {
+            patterns
+                .iter()
+                .enumerate()
+                .map(|(k, p)| {
+                    let mut source = PinnedHostBuf::new_unwritten(p.len() * 4).unwrap();
+                    if !(bad == 2 && k == 1) {
+                        source.copy_from_slice(f32_bytes(p)).unwrap();
+                    }
+                    let n = if bad == 1 && k == 1 {
+                        p.len() - 1
+                    } else {
+                        p.len()
+                    };
+                    H2dSpan {
+                        source,
+                        destination: stream.alloc_zeros::<f32>(n).unwrap(),
+                    }
+                })
+                .collect()
+        };
+        let (ticket, producer, keep) = submit_kv(&mut t);
+        // Rule 1: a refused attach hands every span back and quarantines nothing.
+        for bad in [1, 2] {
+            let (error, back) = t.submit_h2d_spans(&ticket, spans(bad)).unwrap_err();
+            assert_eq!((error, back.len()), (Error::InvalidLayout, 3), "bad={bad}");
+            assert!(t.poll(&ticket).is_ok());
+        }
+        // Hold the spans behind a 300 ms spin on the copy stream (after the KV item's copy).
+        t.delay_on(&copy, 300_000_000).unwrap();
+        t.submit_h2d_spans(&ticket, spans(0)).unwrap();
+        let (error, back) = t.submit_h2d_spans(&ticket, spans(0)).unwrap_err();
+        assert_eq!(
+            (error, back.len()),
+            (Error::Busy, 3),
+            "one span batch per ticket"
+        );
+        // Rule 2: the KV item lands while the spans run; the batch has not landed.
+        let t0 = std::time::Instant::now();
+        let c = loop {
+            let c = t.poll(&ticket).unwrap();
+            if c.items[0].segments[0].producer_done {
+                break c;
+            }
+            assert!(t0.elapsed().as_secs() < 5, "the KV item never landed");
+        };
+        assert!(
+            !c.producer_done,
+            "a batch with a running span has not landed"
+        );
+        assert_eq!(t.take_h2d_spans(&ticket).err(), Some(Error::NotReady));
+        assert_eq!(t.retire(&ticket, None), Err(Error::Busy));
+        // Rule 3: landed is not readable; the take waits for the reader wait.
+        t.synchronize(&ticket).unwrap();
+        assert!(t.poll(&ticket).unwrap().producer_done);
+        assert_eq!(
+            t.take_h2d_spans(&ticket).err(),
+            Some(Error::NotReady),
+            "the red arm: no destination before the owner stream's wait"
+        );
+        assert_eq!(t.retire(&ticket, None), Err(Error::Busy));
+        t.install_consumer_wait(&ticket).unwrap();
+        let landed = t.take_h2d_spans(&ticket).unwrap();
+        assert_eq!(landed.len(), 3);
+        for (span, p) in landed.iter().zip(&patterns) {
+            assert_eq!(
+                span.source.as_slice(),
+                f32_bytes(p),
+                "the staging comes back whole"
+            );
+            assert_eq!(
+                stream.clone_dtoh(&span.destination).unwrap(),
+                *p,
+                "the owner stream reads the span's destination bit for bit"
+            );
+        }
+        assert_eq!(
+            t.take_h2d_spans(&ticket).err(),
+            Some(Error::AlreadyReleased)
+        );
+        // Rule 4: the KV item publishes and the ticket retires and is acknowledged as before.
+        t.ready_view(&ticket, 0, epochs).unwrap();
+        let consumer = t.record_consumer(&ticket).unwrap();
+        stream.synchronize().unwrap();
+        t.retire_source(&ticket).unwrap();
+        t.release_producer(producer).unwrap();
+        t.retire(&ticket, Some(consumer)).unwrap();
+        t.acknowledge(&ticket).unwrap();
+        let plane = t.take_plane(&keep).unwrap().into_pooled().unwrap();
+        assert_eq!(stream.clone_dtoh(&plane).unwrap(), kv_pattern);
+        // Rule 5: an injected second-enqueue failure quarantines the ticket; nothing comes back.
+        let (ticket, _producer, _keep) = submit_kv(&mut t);
+        t.span_enqueue_fault = true;
+        t.submit_h2d_spans(&ticket, spans(0)).unwrap();
+        copy.synchronize().unwrap();
+        assert_eq!(t.poll(&ticket).err(), Some(Error::Quarantined));
+        assert_eq!(
+            t.install_consumer_wait(&ticket).err(),
+            Some(Error::Quarantined)
+        );
+        assert_eq!(t.take_h2d_spans(&ticket).err(), Some(Error::Quarantined));
         assert!(t.retire(&ticket, None).is_err());
         stream.synchronize().unwrap();
     }

@@ -1,5 +1,5 @@
 //! Fixed, portable pinned storage. Only startup/shutdown allocate/free CUDA host memory.
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DevicePtr, DeviceRepr};
+use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DevicePtr, DevicePtrMut, DeviceRepr};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
@@ -248,6 +248,47 @@ impl PinnedHostBuf {
             .result()?;
         }
         Ok(())
+    }
+    /// WP-A day 32 (the promote's f32 span source, `tier_transfer::H2dSpan`): enqueue a
+    /// full-length H2D of this buffer into `dst` on `stream` with NO host wait. The buffer must be
+    /// fully written (the hash helper's fill); nothing here changes it.
+    ///
+    /// # Safety
+    ///
+    /// `self` must stay alive, unmoved in memory and unwritten, and `dst` alive, unmoved and
+    /// neither read nor written by anyone else, until an event recorded on `stream` after this
+    /// call is observed complete; `dst`'s allocation must be ordered before the copy on `stream`
+    /// (the caller's stream wait), and a reader of `dst` on another stream must wait on that event.
+    pub(crate) unsafe fn enqueue_to_device_f32(
+        &self,
+        dst: &mut CudaSlice<f32>,
+        stream: &Arc<CudaStream>,
+    ) -> Result<(), Error> {
+        let n = dst.len().checked_mul(4).ok_or("pinned f32 size overflow")?;
+        if n != self.len || n == 0 {
+            return Err("pinned f32 span length mismatch".into());
+        }
+        if !self.written {
+            return Err("pinned f32 span source read before a full write".into());
+        }
+        let (device, _record_dst) = dst.device_ptr_mut(stream);
+        // SAFETY: documented FFI (`cuMemcpyHtoDAsync_v2(dst, src, bytes, stream)`): this buffer
+        // holds `len` initialized bytes and the destination spans exactly them; the caller's
+        // contract above keeps both alive and unaliased until the copy's event.
+        unsafe {
+            cudarc::driver::sys::cuMemcpyHtoDAsync_v2(
+                device,
+                self.ptr.cast_const().cast(),
+                self.len,
+                stream.cu_stream(),
+            )
+            .result()?;
+        }
+        Ok(())
+    }
+    /// WP-A day 32: every byte of the logical range was written (a span source must be).
+    pub(crate) fn is_written(&self) -> bool {
+        self.written
     }
     /// WP-A day 30: the span's copy landed; its bytes become readable.
     ///
