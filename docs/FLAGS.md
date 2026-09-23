@@ -1598,6 +1598,22 @@ dispositions are argued per case in darklanes
 `research/dsv4f-door-reach-20260910/LANE.md`, including both outcomes of the memra #461 matrix
 verdict for the two doors that depend on it.
 
+## Decided before merge, 2026-09-23 (the DSV4 one-token MoE stream visitor is the code)
+
+memra #664, receipt `research/dsv4f-bringup-20260923/m1-stream-664/RESULTS.md`. The lane measured
+the new `moe_kq_m1_stream_kernel<4>` visitor against the sktail tail it replaces through a
+lane-only `MEMRA_DSV4_MOE_M1_STREAM` read. That read never merged: under the 2026-09-10 owner
+ruling (a door is the default or it is deleted, and a same-class win with a clean receipt becomes
+the code) the stream is the naked default for the one-token plain step's gate, up and down
+projections, and there is no environment name. Served PP-2 plain greedy c1 on 2x RTX PRO 6000
+Blackwell, one boot per row in `A B B A A B B A A B` order: **50.10 tok/s (N=5, 50.06..50.13)
+against 38.79 (N=5, 38.77..38.83), +29.2%**, same text on all 8 prompts in every row, and the
+component test `cuda_m1_stream_matches_sktail_bit_for_bit` proves byte identity at the kernel
+boundary. A gate that arms the M1 tensor-core or half2 down tail keeps precedence over the stream
+(the TP/EP bench pins that program). Rollback is `git revert`; the gate setter
+`set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail reference arm in one loaded model for
+the component test and the DSpark gate's historical arm.
+
 ## Removed doors, 2026-09-21 (the prefix-cache policy door: decided on the incident's shape, the segmented arm deleted)
 
 memra#523 item 2, lane `research/spill-b-20260919/DAY15.md`, decision record
