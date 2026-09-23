@@ -6324,82 +6324,6 @@ extern "C" int memra_dsv4_sink_attn_dec_mq(const float* q, const float* kv, cons
     return 0;
 }
 
-// ---- sink attention, decode shape, batched queries, f32-accumulation arm (f32x).
-// Tile only storage/reuse, not the ordered head-dimension accumulation. The extra
-// shared-memory column prevents transposed stores from aliasing one bank.
-static constexpr int DSV4_SCORE_HT = 8;
-static constexpr int DSV4_SCORE_KT = 32;
-static constexpr int DSV4_SCORE_HD = 512;
-static constexpr int DSV4_SCORE_SMEM =
-    (DSV4_SCORE_HT * DSV4_SCORE_HD + DSV4_SCORE_HD * (DSV4_SCORE_KT + 1)) * sizeof(float)
-    + DSV4_SCORE_KT * sizeof(int);
-
-static __global__ void dsv4_sink_scores_tiled_f32acc_kernel(const float* __restrict__ q,
-    const float* __restrict__ kv, const int* __restrict__ idxs,
-    float* __restrict__ scores, int slots, int idx_stride, float scale) {
-    const int tid = threadIdx.x;
-    const int h0 = blockIdx.y * DSV4_SCORE_HT;
-    const int k0 = blockIdx.x * DSV4_SCORE_KT;
-    const int p = blockIdx.z;
-    extern __shared__ float tile[];
-    float* qs = tile;
-    float* ks = qs + DSV4_SCORE_HT * DSV4_SCORE_HD;
-    int* selected = reinterpret_cast<int*>(ks + DSV4_SCORE_HD * (DSV4_SCORE_KT + 1));
-    if (tid < DSV4_SCORE_KT)
-        selected[tid] = k0 + tid < slots ? idxs[(long)p * idx_stride + k0 + tid] : -1;
-    for (int i = tid; i < DSV4_SCORE_HT * DSV4_SCORE_HD; i += 256)
-        qs[i] = q[((long)p * 64 + h0) * DSV4_SCORE_HD + i];
-    __syncthreads();
-    for (int i = tid; i < DSV4_SCORE_KT * DSV4_SCORE_HD; i += 256) {
-        int key = i / DSV4_SCORE_HD;
-        int d = i % DSV4_SCORE_HD;
-        int ix = selected[key];
-        ks[d * (DSV4_SCORE_KT + 1) + key] = ix < 0 ? 0.0f : kv[(long)ix * DSV4_SCORE_HD + d];
-    }
-    __syncthreads();
-    int h = tid / DSV4_SCORE_KT;
-    int key = tid % DSV4_SCORE_KT;
-    int slot = k0 + key;
-    if (slot < slots) {
-        float score = -INFINITY;
-        if (selected[key] >= 0) {
-            float acc = 0.0f;
-            #pragma unroll 1
-            for (int d = 0; d < DSV4_SCORE_HD; ++d)
-                acc += qs[h * DSV4_SCORE_HD + d] * ks[d * (DSV4_SCORE_KT + 1) + key];
-            score = acc * scale;
-        }
-        scores[((long)p * 64 + h0 + h) * slots + slot] = score;
-    }
-}
-
-// Call explicitly before graph capture. No lazy attribute mutation in the launch.
-extern "C" int memra_dsv4_sink_scores_tiled_init() {
-    int dev = 0, available = 0;
-    cudaError_t rc = cudaGetDevice(&dev);
-    if (rc != cudaSuccess) return 10000 + (int)rc;
-    rc = cudaDeviceGetAttribute(&available, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
-    if (rc != cudaSuccess) return 10000 + (int)rc;
-    if (available < DSV4_SCORE_SMEM) return 40009;
-    rc = cudaFuncSetAttribute(dsv4_sink_scores_tiled_f32acc_kernel,
-        cudaFuncAttributeMaxDynamicSharedMemorySize, DSV4_SCORE_SMEM);
-    if (rc != cudaSuccess) return 10000 + (int)rc;
-    return 0;
-}
-
-extern "C" int memra_dsv4_sink_scores_tiled_f32acc(const float* q, const float* kv,
-    const int* idxs, float* scores, int nq, int heads, int hd, int slots,
-    int idx_stride, float scale, void* stream_v) {
-    if (!q || !kv || !idxs || !scores || nq < 1 || nq > 512 || heads != 64
-        || hd != DSV4_SCORE_HD || slots < 1 || idx_stride < slots) return 40010;
-    dim3 grid((unsigned)(slots / DSV4_SCORE_KT + (slots % DSV4_SCORE_KT != 0)),
-        64 / DSV4_SCORE_HT, (unsigned)nq);
-    dsv4_sink_scores_tiled_f32acc_kernel<<<grid, 256, DSV4_SCORE_SMEM, (cudaStream_t)stream_v>>>(
-        q, kv, idxs, scores, slots, idx_stride, scale);
-    DSV4_ERR();
-    return 0;
-}
-
 // q ARRIVES TRANSPOSED, [nq][hd][heads], staged once per (layer, chunk) by
 // dsv4_q_transpose_m_kernel below. The arithmetic is untouched: thread h still sums the same
 // 512 products in the same ascending x into the same single f32 accumulator, so this kernel is
@@ -6611,20 +6535,177 @@ extern "C" int memra_dsv4_sink_attn_dec_mq_f32acc(const float* q, const float* k
     return 0;
 }
 
-extern "C" int memra_dsv4_sink_attn_dec_mq_f32acc_tiled(const float* q, const float* kv,
-    const int* idxs, const float* sink, float* scores, float* evals, float* den,
-    float* o, int nq, int heads, int hd, int slots, int idx_stride, float scale,
-    void* stream_v) {
-    if (!sink || !evals || !den || !o) return 40010;
-    int rc = memra_dsv4_sink_scores_tiled_f32acc(q, kv, idxs, scores, nq, heads, hd,
-        slots, idx_stride, scale, stream_v);
-    if (rc != 0) return rc;
+// ---- sink attention, f32x, two launches instead of three (memra #683).
+// The program is the three-kernel split above, bit for bit. Score (h, sl) is one f32 accumulator
+// over x ascending, times scale, or -INF for a -1 slot. m is the max over slots floored at
+// -1e30 (fmaxf, so the order of the max is free). ev = expf(s - m), or 0 for -INF. den adds
+// every ev in ascending slot order and then expf(sink - m). o = (ascending sum of ev * kv over
+// the slots with ev != 0) / den. Only storage and launch shape move, taken from FlashInfer's
+// sparse_mla_sm120 decode: a (slot tile, head tile, query) score grid whose operands are
+// staged once per CTA by cp.async, and one CTA per (column tile, head tile, query) that
+// finishes max, den and PV in shared memory instead of a round trip through the evals/den
+// workspace. FlashInfer's split-K over slots and its exp2-domain merge change the sums, so
+// they are not taken. q is [heads][hd] (the dsv4_sink_scores_mq_f32acc_ref_kernel layout).
+// Geometry: heads and hd multiples of 16, hd <= 512, q and kv 16-byte aligned.
+static constexpr int DSV4_SA_HT = 8, DSV4_SA_KT = 8;    // score tile, 64 threads
+static constexpr int DSV4_SA_HB = 16, DSV4_SA_XB = 16;  // output tile, 256 threads
+static constexpr int DSV4_SA_TS = 128;                   // output slot tile
+
+__device__ __forceinline__ void dsv4_cp_async16(void* smem, const void* gmem) {
+    unsigned s = (unsigned)__cvta_generic_to_shared(smem);
+    asm volatile("cp.async.cg.shared.global [%0], [%1], 16;\n" ::"r"(s), "l"(gmem));
+}
+
+__device__ __forceinline__ void dsv4_cp_async_wait_all() {
+    asm volatile("cp.async.wait_all;\n" ::: "memory");
+}
+
+__device__ __forceinline__ int dsv4_sa_slots(int slots, const int* replay_pos, int win,
+                                             int ratio, int topk) {
+    return replay_pos ? win + (ratio ? min((*replay_pos + 1) / ratio, topk) : 0) : slots;
+}
+
+static __global__ void __launch_bounds__(64) dsv4_sink_scores_st_f32acc_kernel(
+    const float* __restrict__ q_all, const float* __restrict__ kv,
+    const int* __restrict__ idxs_all, float* __restrict__ scores_all, int heads, int hd,
+    int slots, int idx_stride, float scale, const int* replay_pos, int replay_win,
+    int replay_ratio, int replay_topk) {
+    slots = dsv4_sa_slots(slots, replay_pos, replay_win, replay_ratio, replay_topk);
+    const int k0 = blockIdx.x * DSV4_SA_KT;
+    if (k0 >= slots) return;
+    const int h0 = blockIdx.y * DSV4_SA_HT;
+    const int p = blockIdx.z;
+    const int tid = threadIdx.x;
+    const int ld = hd + 4;  // row start moves 4 banks per row: conflict-free float4 reads
+    const int n4 = hd >> 2;
+    extern __shared__ __align__(16) float sa_tile[];
+    float* qs = sa_tile;
+    float* ks = qs + DSV4_SA_HT * ld;
+    int* sel = reinterpret_cast<int*>(ks + DSV4_SA_KT * ld);
+    const float* q = q_all + ((long)p * heads + h0) * hd;
+    for (int i = tid; i < DSV4_SA_HT * n4; i += 64) {
+        int r = i / n4, c = (i - r * n4) << 2;
+        dsv4_cp_async16(qs + r * ld + c, q + (long)r * hd + c);
+    }
+    if (tid < DSV4_SA_KT)
+        sel[tid] = k0 + tid < slots ? idxs_all[(long)p * idx_stride + k0 + tid] : -1;
+    __syncthreads();
+    for (int i = tid; i < DSV4_SA_KT * n4; i += 64) {
+        int r = i / n4, c = (i - r * n4) << 2;
+        int ix = sel[r];
+        if (ix >= 0) dsv4_cp_async16(ks + r * ld + c, kv + (long)ix * hd + c);
+    }
+    dsv4_cp_async_wait_all();
+    __syncthreads();
+    const int hl = tid / DSV4_SA_KT, kl = tid % DSV4_SA_KT;
+    const int slot = k0 + kl;
+    if (slot >= slots) return;
+    float score = -INFINITY;
+    if (sel[kl] >= 0) {
+        const float* qr = qs + hl * ld;
+        const float* kr = ks + kl * ld;
+        float acc = 0.0f;
+        for (int x = 0; x < hd; x += 4) {
+            float4 a = *reinterpret_cast<const float4*>(qr + x);
+            float4 b = *reinterpret_cast<const float4*>(kr + x);
+            acc += a.x * b.x;
+            acc += a.y * b.y;
+            acc += a.z * b.z;
+            acc += a.w * b.w;
+        }
+        score = acc * scale;
+    }
+    scores_all[((long)p * heads + h0 + hl) * slots + slot] = score;
+}
+
+// A warp is two heads by 16 columns. The max runs on the 16 lanes of a head; den runs on the
+// lane of column 0 while the tile's kv rows are in flight, and reaches the other 15 lanes by
+// shuffle. Every CTA of a head tile computes the same m, ev and den from the same scores.
+static __global__ void __launch_bounds__(256) dsv4_sink_softout_st_f32acc_kernel(
+    const float* __restrict__ kv, const int* __restrict__ idxs_all,
+    const float* __restrict__ scores_all, const float* __restrict__ sink,
+    float* __restrict__ o_all, int heads, int hd, int slots, int idx_stride,
+    const int* replay_pos, int replay_win, int replay_ratio, int replay_topk) {
+    slots = dsv4_sa_slots(slots, replay_pos, replay_win, replay_ratio, replay_topk);
+    const int x0 = blockIdx.x * DSV4_SA_XB;
+    const int p = blockIdx.z;
+    const int tid = threadIdx.x;
+    const int hl = tid / DSV4_SA_XB, xl = tid % DSV4_SA_XB;
+    const int h = blockIdx.y * DSV4_SA_HB + hl;
+    const float* srow = scores_all + ((long)p * heads + h) * slots;
+    const int* idxs = idxs_all + (long)p * idx_stride;
+    __shared__ __align__(16) float kvs[DSV4_SA_TS * DSV4_SA_XB];
+    __shared__ float evs[DSV4_SA_HB * (DSV4_SA_TS + 1)];
+    __shared__ int sel[DSV4_SA_TS];
+    float* er = evs + hl * (DSV4_SA_TS + 1);
+    if (tid < DSV4_SA_TS) sel[tid] = tid < slots ? idxs[tid] : -1;
+    float m = -INFINITY;
+    for (int sl = xl; sl < slots; sl += DSV4_SA_XB) m = fmaxf(m, srow[sl]);
+    for (int off = DSV4_SA_XB / 2; off > 0; off >>= 1)
+        m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, off));
+    m = fmaxf(m, -1e30f);
+    float d = 0.0f;
+    float acc = 0.0f;
+    for (int t0 = 0; t0 < slots; t0 += DSV4_SA_TS) {
+        const int tl = min(DSV4_SA_TS, slots - t0);
+        if (t0 > 0) {
+            if (tid < tl) sel[tid] = idxs[t0 + tid];
+        }
+        __syncthreads();
+        for (int i = tid; i < tl * (DSV4_SA_XB / 4); i += 256) {
+            int r = i >> 2, c = (i & 3) << 2;
+            int ix = sel[r];
+            float* dst = kvs + r * DSV4_SA_XB + c;
+            if (ix >= 0) dsv4_cp_async16(dst, kv + (long)ix * hd + x0 + c);
+            else *reinterpret_cast<float4*>(dst) = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        }
+        for (int i = xl; i < tl; i += DSV4_SA_XB) {
+            float s = srow[t0 + i];
+            er[i] = (s == -INFINITY) ? 0.0f : expf(s - m);
+        }
+        __syncthreads();
+        if (xl == 0)
+            for (int i = 0; i < tl; i++) d += er[i];  // pads add +0.0
+        dsv4_cp_async_wait_all();
+        __syncthreads();
+        for (int i = 0; i < tl; i++) {
+            float ev = er[i];
+            if (ev == 0.0f) continue;
+            acc += ev * kvs[i * DSV4_SA_XB + xl];
+        }
+        __syncthreads();
+    }
+    if (xl == 0) d += expf(sink[h] - m);
+    d = __shfl_sync(0xffffffffu, d, threadIdx.x & 16);
+    o_all[((long)p * heads + h) * hd + x0 + xl] = acc / d;
+}
+
+extern "C" int memra_dsv4_sink_attn_st_admits(int heads, int hd) {
+    return heads > 0 && heads % DSV4_SA_HB == 0 && hd > 0 && hd % DSV4_SA_XB == 0 && hd <= 512;
+}
+
+// replay_pos null: `slots` live slots per query. replay_pos set (graph replay, nq 1): the grid
+// covers `slots` = slots_max and the kernels derive the live count from *replay_pos exactly as
+// the three-kernel replay program does.
+extern "C" int memra_dsv4_sink_attn_st_f32acc(const float* q, const float* kv, const int* idxs,
+    const float* sink, float* scores, float* o, int nq, int heads, int hd, int slots,
+    int idx_stride, float scale, const int* replay_pos, int replay_win, int replay_ratio,
+    int replay_topk, void* stream_v) {
+    if (!q || !kv || !idxs || !sink || !scores || !o || nq < 1 || slots < 1
+        || idx_stride < slots || !memra_dsv4_sink_attn_st_admits(heads, hd)
+        || (((unsigned long long)q | (unsigned long long)kv) & 15) != 0
+        || (replay_pos && (nq != 1 || slots < replay_win))) return 40011;
     cudaStream_t stream = (cudaStream_t)stream_v;
-    dim3 g2((unsigned)heads, (unsigned)nq);
-    dsv4_sink_soft_mq_f32acc_kernel<<<g2, 128, 0, stream>>>(scores, sink, evals, den, heads, slots);
+    size_t smem = (size_t)(DSV4_SA_HT + DSV4_SA_KT) * (hd + 4) * sizeof(float)
+        + DSV4_SA_KT * sizeof(int);
+    dim3 g1((unsigned)((slots + DSV4_SA_KT - 1) / DSV4_SA_KT), (unsigned)(heads / DSV4_SA_HT),
+        (unsigned)nq);
+    dsv4_sink_scores_st_f32acc_kernel<<<g1, 64, smem, stream>>>(q, kv, idxs, scores, heads, hd,
+        slots, idx_stride, scale, replay_pos, replay_win, replay_ratio, replay_topk);
     DSV4_ERR();
-    dim3 g3((unsigned)((hd + 7) / 8), (unsigned)((heads + 7) / 8), (unsigned)nq);
-    dsv4_sink_out_mq_f32acc_kernel<<<g3, 64, 0, stream>>>(kv, idxs, evals, den, o, heads, hd, slots, idx_stride);
+    dim3 g2((unsigned)(hd / DSV4_SA_XB), (unsigned)(heads / DSV4_SA_HB), (unsigned)nq);
+    dsv4_sink_softout_st_f32acc_kernel<<<g2, 256, 0, stream>>>(kv, idxs, scores, sink, o, heads,
+        hd, slots, idx_stride, replay_pos, replay_win, replay_ratio, replay_topk);
     DSV4_ERR();
     return 0;
 }

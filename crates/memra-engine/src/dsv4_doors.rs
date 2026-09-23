@@ -975,7 +975,6 @@ mod tests {
         ("MEMRA_DSV4_ROUND_PROFILE", "profiling"),
         ("MEMRA_DSV4_SAMPLER", "program selector"),
         ("MEMRA_DSV4_SAMPLE_SORT", "program selector"),
-        ("MEMRA_DSV4_SINK_SCORE", "program selector"),
         ("MEMRA_DSV4_SPEC_DEPTH", "spec parameter"),
         ("MEMRA_DSV4_VERIFY_TOPK", "program selector"),
         ("MEMRA_DSV4_VT", "spec threshold parameter"),

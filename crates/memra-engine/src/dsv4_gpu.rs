@@ -802,43 +802,6 @@ impl Dsv4IndexerScore {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Dsv4SinkScore {
-    #[default]
-    Scalar,
-    Tiled,
-}
-
-impl Dsv4SinkScore {
-    pub fn resolve(value: Option<&str>) -> Res<Self> {
-        match value {
-            None | Some("") | Some("scalar") => Ok(Self::Scalar),
-            Some("tiled") => Ok(Self::Tiled),
-            Some(other) => Err(format!(
-                "MEMRA_DSV4_SINK_SCORE '{other}' unknown (scalar | tiled)"
-            )),
-        }
-    }
-}
-
-#[cfg(test)]
-mod sink_score_tests {
-    use super::Dsv4SinkScore;
-    #[test]
-    fn sink_score_default_is_scalar_and_unknown_values_refuse() {
-        for raw in [None, Some(""), Some("scalar")] {
-            assert_eq!(Dsv4SinkScore::resolve(raw), Ok(Dsv4SinkScore::Scalar));
-        }
-        assert_eq!(
-            Dsv4SinkScore::resolve(Some("tiled")),
-            Ok(Dsv4SinkScore::Tiled)
-        );
-        for raw in ["TILED", "1", "auto", "tiled "] {
-            assert!(Dsv4SinkScore::resolve(Some(raw)).is_err());
-        }
-    }
-}
-
 fn resolve_prefill_moe(value: Option<&str>) -> Res<bool> {
     match value {
         None | Some("") | Some("reference") => Ok(false),
@@ -1077,8 +1040,7 @@ pub struct Dsv4Gpu {
     pub dspark_fused_moe: bool,
     /// Chosen per model, never a process-global mutable test switch.
     indexer_score: Dsv4IndexerScore,
-    sink_score: Dsv4SinkScore,
-    sink_tiled_calls: std::sync::atomic::AtomicU64,
+    sink_st_calls: std::sync::atomic::AtomicU64,
     verify_topk: Dsv4VerifyTopk,
     device_verify_topk_calls: std::sync::atomic::AtomicU64,
     prefill_grouped: bool,
@@ -2739,47 +2701,9 @@ impl Dsv4Gpu {
         Ok(previous)
     }
 
-    /// Exclusive gate seam; persistent graph users must key/rebuild on this arm.
-    /// Dynamic shared-memory attributes are configured before any capture.
-    pub fn set_sink_score_for_gate(&mut self, arm: Dsv4SinkScore) -> Res<Dsv4SinkScore> {
-        if arm == Dsv4SinkScore::Tiled
-            && (!matches!(self.decode_path, DecodePath::Device { host_math: false })
-                || !self.chains_f32
-                || self.model.mc.n_head != 64
-                || self.model.cfg().head_dim != 512)
-        {
-            return Err(
-                "tiled sink scores require native device f32x and 64 heads of width 512".into(),
-            );
-        }
-        for stage in &self.stages {
-            stage
-                .gpu
-                .ctx
-                .bind_to_thread()
-                .map_err(e("bind sink-score gate"))?;
-            stage
-                .gpu
-                .stream()
-                .synchronize()
-                .map_err(e("drain sink-score gate"))?;
-            if arm == Dsv4SinkScore::Tiled {
-                crate::dsv4_grouped::bind_matrix(&stage.gpu)?;
-                unsafe {
-                    ck(
-                        "initialize tiled sink shared memory",
-                        k::memra_dsv4_sink_scores_tiled_init(),
-                    )?;
-                }
-            }
-        }
-        let previous = self.sink_score;
-        self.sink_score = arm;
-        Ok(previous)
-    }
-
-    pub fn sink_tiled_calls(&self) -> u64 {
-        self.sink_tiled_calls
+    /// Two-launch sink attention launches (memra #683); gates assert engagement on it.
+    pub fn sink_st_calls(&self) -> u64 {
+        self.sink_st_calls
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
@@ -3327,12 +3251,6 @@ impl Dsv4Gpu {
             Err(err) => return Err(format!("MEMRA_DSV4_INDEXER_SCORE: {err}")),
         };
         let indexer_score = Dsv4IndexerScore::resolve(indexer_env.as_deref())?;
-        let sink_score_env = match std::env::var("MEMRA_DSV4_SINK_SCORE") {
-            Ok(value) => Some(value),
-            Err(std::env::VarError::NotPresent) => None,
-            Err(err) => return Err(format!("MEMRA_DSV4_SINK_SCORE: {err}")),
-        };
-        let sink_score = Dsv4SinkScore::resolve(sink_score_env.as_deref())?;
         let topk_env = match std::env::var("MEMRA_DSV4_VERIFY_TOPK") {
             Ok(value) => Some(value),
             Err(std::env::VarError::NotPresent) => None,
@@ -3573,16 +3491,6 @@ impl Dsv4Gpu {
                 "MEMRA_DSV4_INDEXER_SCORE=tiled requires device f32x and indexer 64x128".into(),
             );
         }
-        if sink_score == Dsv4SinkScore::Tiled
-            && (!matches!(decode_path, DecodePath::Device { host_math: false })
-                || !chains_f32
-                || mc.n_head != 64
-                || d.head_dim != 512)
-        {
-            return Err(
-                "MEMRA_DSV4_SINK_SCORE=tiled requires device f32x and attention 64x512".into(),
-            );
-        }
         if prefill_grouped
             && (!matches!(decode_path, DecodePath::Device { host_math: false })
                 || crate::moe_f16g_mode() < 2
@@ -3691,8 +3599,7 @@ impl Dsv4Gpu {
             dspark_head_f32,
             dspark_fused_moe,
             indexer_score,
-            sink_score: Dsv4SinkScore::Scalar,
-            sink_tiled_calls: std::sync::atomic::AtomicU64::new(0),
+            sink_st_calls: std::sync::atomic::AtomicU64::new(0),
             verify_topk,
             device_verify_topk_calls: std::sync::atomic::AtomicU64::new(0),
             prefill_grouped,
@@ -4059,10 +3966,6 @@ impl Dsv4Gpu {
             st.gpu.stream().synchronize().map_err(e("load sync"))?;
         }
         me.validate_matrix_program()?;
-        if sink_score == Dsv4SinkScore::Tiled {
-            me.set_sink_score_for_gate(sink_score)?;
-        }
-        eprintln!("[load] sink score: {:?}", me.sink_score);
         if ep_requested {
             if topology.is_tp_ep() {
                 me.enable_tp_ep_local_banks_for_gate()?;
@@ -8411,7 +8314,6 @@ impl Dsv4Gpu {
             || !self.dense_fp8
             || !self.small_kernel_diet
             || self.variant != ActQuantVariant::RefFp8Round
-            || self.sink_score != Dsv4SinkScore::Scalar
             || self.indexer_score != Dsv4IndexerScore::Scalar
             || self.verify_topk != Dsv4VerifyTopk::Device
             || (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) != 43
@@ -9034,6 +8936,14 @@ impl Dsv4Gpu {
         }
     }
 
+    /// The two-launch sink attention program (memra #683) takes every f32acc attention
+    /// launch whose geometry it admits. Same bits as the three-kernel split, so this is a
+    /// shape dispatch, not a program choice.
+    fn sink_attn_st(&self, heads: usize, hd: usize) -> bool {
+        self.chains_f32
+            && unsafe { k::memra_dsv4_sink_attn_st_admits(heads as i32, hd as i32) } != 0
+    }
+
     /// `den` is the f64 workspace either way; the f32acc twin rides a FLOAT view of the
     /// same allocation (K2 writes it, K3 reads it, within the one FFI entry).
     #[allow(clippy::too_many_arguments)]
@@ -9054,47 +8964,47 @@ impl Dsv4Gpu {
         sv: *mut c_void,
     ) -> i32 {
         unsafe {
-            if self.chains_f32 {
-                if self.sink_score == Dsv4SinkScore::Tiled {
-                    let rc = k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled(
-                        q,
-                        kv,
-                        idxs,
-                        sink,
-                        scores,
-                        evals,
-                        den as *mut f32,
-                        o,
-                        1,
-                        heads,
-                        hd,
-                        slots,
-                        slots,
-                        scale,
-                        sv,
-                    );
-                    if rc == 0 {
-                        self.sink_tiled_calls
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    }
-                    rc
-                } else {
-                    k::memra_dsv4_sink_attn_dec_f32acc(
-                        q,
-                        kv,
-                        idxs,
-                        sink,
-                        scores,
-                        evals,
-                        den as *mut f32,
-                        o,
-                        heads,
-                        hd,
-                        slots,
-                        scale,
-                        sv,
-                    )
+            if self.sink_attn_st(heads as usize, hd as usize) {
+                let rc = k::memra_dsv4_sink_attn_st_f32acc(
+                    q,
+                    kv,
+                    idxs,
+                    sink,
+                    scores,
+                    o,
+                    1,
+                    heads,
+                    hd,
+                    slots,
+                    slots,
+                    scale,
+                    std::ptr::null(),
+                    0,
+                    0,
+                    0,
+                    sv,
+                );
+                if rc == 0 {
+                    self.sink_st_calls
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
+                rc
+            } else if self.chains_f32 {
+                k::memra_dsv4_sink_attn_dec_f32acc(
+                    q,
+                    kv,
+                    idxs,
+                    sink,
+                    scores,
+                    evals,
+                    den as *mut f32,
+                    o,
+                    heads,
+                    hd,
+                    slots,
+                    scale,
+                    sv,
+                )
             } else {
                 k::memra_dsv4_sink_attn_dec(
                     q, kv, idxs, sink, scores, evals, den, o, heads, hd, slots, scale, sv,
@@ -15256,6 +15166,9 @@ impl Dsv4Gpu {
         };
         let heads = shard.map_or(mc.n_head as usize, |(plan, _)| plan.local_heads);
         let hd = d.head_dim as usize;
+        // Two-launch sink attention (memra #683): same program as the three-kernel f32acc
+        // split, reads q as [heads][hd], so the transpose below is staged only without it.
+        let sink_st = self.sink_attn_st(heads, hd);
         let rd = d.qk_rope_head_dim as usize;
         let q_lora = d.q_lora_rank as usize;
         let win = d.sliding_window as usize;
@@ -15285,7 +15198,6 @@ impl Dsv4Gpu {
                 || host_math
                 || cache.c4_host.is_some()
                 || !self.chains_f32
-                || self.sink_score != Dsv4SinkScore::Scalar
                 || self.indexer_score != Dsv4IndexerScore::Scalar)
         {
             return Err("full-token attention requires t=1 scalar f32 device-cache program".into());
@@ -15436,17 +15348,19 @@ impl Dsv4Gpu {
             )?;
             // rope is the last writer of q, so this is the one point where the f32acc
             // scorers' [hd][heads] operand can be staged. One launch per (layer, chunk).
-            ck(
-                "q transpose batch",
-                k::memra_dsv4_q_transpose_m(
-                    dpf!(vws.q, &stream),
-                    dpm!(vws.qt, &stream),
-                    t as i32,
-                    heads as i32,
-                    hd as i32,
-                    sp(&stream),
-                ),
-            )?;
+            if !sink_st {
+                ck(
+                    "q transpose batch",
+                    k::memra_dsv4_q_transpose_m(
+                        dpf!(vws.q, &stream),
+                        dpm!(vws.qt, &stream),
+                        t as i32,
+                        heads as i32,
+                        hd as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
         }
 
         // Q_b/head norm/rotary use qr_b and q only. gemm_xb still holds
@@ -16039,82 +15953,86 @@ impl Dsv4Gpu {
                         .replay_limit
                         .checked_div(layer.ratio)
                         .map_or(0, |n| n.min(topk as usize));
+                if sink_st {
+                    ck(
+                        "replay attention st",
+                        k::memra_dsv4_sink_attn_st_f32acc(
+                            dpf!(vws.q, &stream),
+                            attention_kv,
+                            attention_indices,
+                            sink,
+                            dpm!(vws.sink_scores, &stream),
+                            dpm!(vws.o, &stream),
+                            1,
+                            heads as i32,
+                            hd as i32,
+                            slots_max as i32,
+                            vws.idx_stride as i32,
+                            scale,
+                            pos_dev,
+                            win as i32,
+                            layer.ratio as i32,
+                            topk,
+                            sp(&stream),
+                        ),
+                    )?;
+                    self.sink_st_calls
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                } else {
+                    ck(
+                        "replay attention",
+                        k::memra_dsv4_replay_attention(
+                            dpf!(vws.qt, &stream),
+                            attention_kv,
+                            attention_indices,
+                            sink,
+                            dpm!(vws.sink_scores, &stream),
+                            dpm!(vws.sink_evals, &stream),
+                            vws.sink_den.device_ptr_mut(&stream).0 as *mut f32,
+                            dpm!(vws.o, &stream),
+                            pos_dev,
+                            heads as i32,
+                            hd as i32,
+                            slots_max as i32,
+                            vws.idx_stride as i32,
+                            scale,
+                            win as i32,
+                            layer.ratio as i32,
+                            topk,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+            } else if sink_st {
                 ck(
-                    "replay attention",
-                    k::memra_dsv4_replay_attention(
-                        dpf!(vws.qt, &stream),
+                    "sink_attn_st_f32acc",
+                    k::memra_dsv4_sink_attn_st_f32acc(
+                        dpf!(vws.q, &stream),
                         attention_kv,
                         attention_indices,
                         sink,
                         dpm!(vws.sink_scores, &stream),
-                        dpm!(vws.sink_evals, &stream),
-                        vws.sink_den.device_ptr_mut(&stream).0 as *mut f32,
                         dpm!(vws.o, &stream),
-                        pos_dev,
+                        t as i32,
                         heads as i32,
                         hd as i32,
-                        slots_max as i32,
+                        slots as i32,
                         vws.idx_stride as i32,
                         scale,
-                        win as i32,
-                        layer.ratio as i32,
-                        topk,
+                        std::ptr::null(),
+                        0,
+                        0,
+                        0,
                         sp(&stream),
                     ),
                 )?;
+                self.sink_st_calls
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             } else if self.chains_f32 {
-                // The tiled arm stages q itself out of the [heads][hd] form; the scalar arm
-                // is the one whose operand moved. The pointer travels with the launcher so
-                // the two can never be paired the wrong way round.
-                let (launch, q_ptr) = if self.sink_score == Dsv4SinkScore::Tiled {
-                    (
-                        k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled
-                            as unsafe extern "C" fn(
-                                *const f32,
-                                *const f32,
-                                *const i32,
-                                *const f32,
-                                *mut f32,
-                                *mut f32,
-                                *mut f32,
-                                *mut f32,
-                                i32,
-                                i32,
-                                i32,
-                                i32,
-                                i32,
-                                f32,
-                                *mut c_void,
-                            ) -> i32,
-                        dpf!(vws.q, &stream),
-                    )
-                } else {
-                    (
-                        k::memra_dsv4_sink_attn_dec_mq_f32acc
-                            as unsafe extern "C" fn(
-                                *const f32,
-                                *const f32,
-                                *const i32,
-                                *const f32,
-                                *mut f32,
-                                *mut f32,
-                                *mut f32,
-                                *mut f32,
-                                i32,
-                                i32,
-                                i32,
-                                i32,
-                                i32,
-                                f32,
-                                *mut c_void,
-                            ) -> i32,
-                        dpf!(vws.qt, &stream),
-                    )
-                };
                 ck(
                     "sink_attn_dec_mq_f32acc",
-                    launch(
-                        q_ptr,
+                    k::memra_dsv4_sink_attn_dec_mq_f32acc(
+                        dpf!(vws.qt, &stream),
                         attention_kv,
                         attention_indices,
                         sink,
@@ -16131,10 +16049,6 @@ impl Dsv4Gpu {
                         sp(&stream),
                     ),
                 )?;
-                if self.sink_score == Dsv4SinkScore::Tiled {
-                    self.sink_tiled_calls
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
             } else {
                 ck(
                     "sink_attn_dec_mq",
