@@ -31,6 +31,8 @@ HARNESS = {
     "harness/confidence/heldout_report.py",
     "harness/confidence/code_only_v2_workloads.py",
     "harness/confidence/heldout_pair_v2.py",
+    "harness/confidence/phase_diagnostic.sh",
+    "harness/confidence/analyze_phase.py",
 }
 SCIENCE = {
     "fixed-grid-v2-report.json",
@@ -59,6 +61,9 @@ SCIENCE = {
     "heldout-pair-v2/FREEZE.json",
     "heldout-pair-v2/status.json",
     "heldout-report-v2.json",
+    "phase-diagnostic.log",
+    "phase-diagnostic/exit.txt",
+    "phase-diagnostic/RESULTS.json",
 }
 SOURCE = "runtime-source-confidence.tar.gz"
 
@@ -118,6 +123,7 @@ def main():
                 "fixed-grid-v2/", "workloads/",
                 "heldout-workloads/", "heldout-pair/",
                 "heldout-workloads-v2/", "heldout-pair-v2/",
+                "phase-diagnostic/",
             )) or name in SCIENCE
         }
         source = json.loads((root / "source-confidence.json").read_text())
@@ -131,6 +137,7 @@ def main():
         v2_qualifier = json.loads(
             (root / "heldout-pair-v2/qwen/qualification/sampled-format-k3.audit.json").read_text()
         )
+        phase = json.loads((root / "phase-diagnostic/RESULTS.json").read_text())
         identity = json.loads((root / "fixed-grid-v2/identity.json").read_text())
         if (status["status"] != "completed"
                 or freeze["source_sha256"] != sha(root / "source-confidence.json")
@@ -156,7 +163,10 @@ def main():
                 or v2_status["status"] not in ("no-positive-development-c", "completed")
                 or sum(row["kind"] == "code" for row in v2_qualifier["requests"]) != 4
                 or any(not row["format"]["requested_format_covered"] or row["loop"]
-                       for row in v2_qualifier["requests"] if row["kind"] == "code")):
+                       for row in v2_qualifier["requests"] if row["kind"] == "code")
+                or not (root / "phase-diagnostic/exit.txt").read_text().startswith("exit=0 ")
+                or phase["status"] != "probability-overhead-isolated"
+                or not all(row["off_prob_equal_no_cut"] for row in phase["off_prob_identity"])):
             raise ValueError("versioned held-out qualification chain is incomplete")
         write_archive(out / "native-data.tar.gz", native)
         write_archive(
@@ -170,7 +180,7 @@ def main():
         }
         manifest = {
             "schema": 1,
-            "scope": "Qwen fixed K=3 confidence science with retained all-format failure and code-only v2; no serving qualification",
+            "scope": "Qwen fixed K=3 confidence science with retained all-format failure, code-only v2 and post-result phase diagnostic; no serving qualification",
             "operator_archive_sha256": sha(args.operator),
             "source_recipe_commit": source["base_source_recipe_commit"],
             "source_patch_sha256": source["source_patcher_sha256"],

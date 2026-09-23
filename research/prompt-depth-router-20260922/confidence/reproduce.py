@@ -11,6 +11,7 @@ import tarfile
 from verify_source import verify as verify_source
 from render_fixed import render as render_fixed
 from render_heldout import render as render_heldout
+from analyze_phase import analyze as replay_phase
 
 
 ARCHIVES = {
@@ -18,6 +19,7 @@ ARCHIVES = {
     "harness-source.tar.gz",
     "runtime-source-confidence.tar.gz",
 }
+MEASURED_PHASE_SOURCE_SHA256 = "b48f5f789fc4c556c31cdf97ae3bae5346ddecd70d2340655db8daba9430d998"
 
 
 def sha(path):
@@ -44,6 +46,27 @@ def unpack(archive, expected, out):
                 raise ValueError("scientific archive member digest differs")
     if seen != set(expected):
         raise ValueError("scientific archive is incomplete")
+
+
+def verify_phase_replay_adapter(measured):
+    current = Path(__file__).with_name("analyze_phase.py").read_text()
+    before = measured.read_text()
+    added = """    binary = root.parent / "binaries-confidence/qwen-prefix-study"
+    if binary.exists() and sha(binary) != source["binaries"]["qwen-prefix-study"]:
+        raise ValueError("phase diagnostic binary differs from the measured research binary")
+    archive = root.parent / "runtime-source-confidence.tar.gz"
+    if archive.exists() and sha(archive) != source["runtime_source_sha256"]:
+        raise ValueError("phase diagnostic runtime source differs")
+"""
+    original = """    if sha(root.parent / "binaries-confidence/qwen-prefix-study") != source["binaries"]["qwen-prefix-study"]:
+        raise ValueError("phase diagnostic binary differs from the measured research binary")
+    if sha(root.parent / "runtime-source-confidence.tar.gz") != source["runtime_source_sha256"]:
+        raise ValueError("phase diagnostic runtime source differs")
+"""
+    if (sha(measured) != MEASURED_PHASE_SOURCE_SHA256
+            or current.count(added) != 1
+            or current.replace(added, original) != before):
+        raise ValueError("public phase replay changed more than optional private input checks")
 
 
 def verify_heldout_raw(
@@ -201,6 +224,9 @@ def reproduce(candidate, manifest_sha256, base, out):
         if sha(data / name) != expected:
             raise ValueError("measured harness source differs: " + name)
     for name in manifest["harness_members"]:
+        if name == "harness/confidence/analyze_phase.py":
+            verify_phase_replay_adapter(data / name)
+            continue
         local = Path(__file__).resolve().parents[1] / name.removeprefix("harness/")
         if sha(local) != sha(data / name):
             raise ValueError("published harness differs from the measured source: " + name)
@@ -336,6 +362,12 @@ def reproduce(candidate, manifest_sha256, base, out):
         raise ValueError("code-only v2 report differs from independently audited records")
     (out / "HELDOUT-RESULTS.json").write_text(json.dumps(heldout, indent=2) + "\n")
     (out / "HELDOUT-RESULTS.md").write_text(render_heldout(heldout))
+    phase = replay_phase(data / "phase-diagnostic", repo)
+    if json.loads(json.dumps(phase)) != json.loads(
+        (data / "phase-diagnostic/RESULTS.json").read_text()
+    ):
+        raise ValueError("phase diagnostic differs from its raw token and time records")
+    (out / "PHASE-RESULTS.json").write_text(json.dumps(phase, indent=2) + "\n")
 
     receipt = {
         "status": "replayed-without-GPU",
@@ -350,6 +382,9 @@ def reproduce(candidate, manifest_sha256, base, out):
         "offline_results_sha256": sha(out / "OFFLINE-RESULTS.json"),
         "heldout_results_sha256": sha(out / "HELDOUT-RESULTS.json"),
         "heldout_markdown_sha256": sha(out / "HELDOUT-RESULTS.md"),
+        "phase_results_sha256": sha(out / "PHASE-RESULTS.json"),
+        "measured_phase_analyzer_sha256": MEASURED_PHASE_SOURCE_SHA256,
+        "public_phase_replay_adapter_sha256": sha(Path(__file__).with_name("analyze_phase.py")),
         "failed_qualification_sha256": sha(out / "FAILED-QUALIFICATION.json"),
     }
     (out / "REPLAY.json").write_text(json.dumps(receipt, indent=2) + "\n")

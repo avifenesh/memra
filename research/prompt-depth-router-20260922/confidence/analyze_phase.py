@@ -79,9 +79,11 @@ def analyze(root, repo):
     if not (root / "exit.txt").read_text().startswith("exit=0 "):
         raise ValueError("phase diagnostic did not complete")
     source = json.loads((root.parent / "source-confidence.json").read_text())
-    if sha(root.parent / "binaries-confidence/qwen-prefix-study") != source["binaries"]["qwen-prefix-study"]:
+    binary = root.parent / "binaries-confidence/qwen-prefix-study"
+    if binary.exists() and sha(binary) != source["binaries"]["qwen-prefix-study"]:
         raise ValueError("phase diagnostic binary differs from the measured research binary")
-    if sha(root.parent / "runtime-source-confidence.tar.gz") != source["runtime_source_sha256"]:
+    archive = root.parent / "runtime-source-confidence.tar.gz"
+    if archive.exists() and sha(archive) != source["runtime_source_sha256"]:
         raise ValueError("phase diagnostic runtime source differs")
     manifest = json.loads((root.parent / "heldout-workloads-v2/manifest.json").read_text())
     entry = manifest["scenarios"]["0"]
