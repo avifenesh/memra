@@ -158,6 +158,16 @@ fn main() {
         tp_ep && attention_tp,
         "no silent attention fallback"
     );
+    // Resident weights per stage: the headroom a replicated drafter or a wider KV has to fit.
+    for m in gpu.stage_memory().expect("stage memory") {
+        println!(
+            "MEMORY dev={} total_gib={:.2} effective_free_gib={:.2} pool_used_gib={:.2}",
+            m.dev,
+            m.total as f64 / (1u64 << 30) as f64,
+            m.effective_free() as f64 / (1u64 << 30) as f64,
+            m.pool_used as f64 / (1u64 << 30) as f64
+        );
+    }
     let calls0 = gpu.tp_ep_rank_layer_calls();
 
     let seq = seq_rows(&gpu, &tape);
