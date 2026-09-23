@@ -326,6 +326,40 @@ Paired fix minus base, per pair: -1.711, -1.735, -1.676, -1.678, -1.755, -1.718 
 on this card the fix is faster in all six pairs, both orders, by about 1.7 ms of 792. The removed
 varlen arm was not a PRO 6000 win at B=3, T=1024 on the 27B.
 
+### Local RTX 5090 on the merged tree (window 9, `raw/merged/window9.log`, `executed-not-qualified`)
+
+Run after the target card, once lane B's local day-32 chain logged `chain done` (10:57:13Z): one
+hold of `/tmp/memra-5090.lock` from 13:57:56 to 14:02:26 local, card idle at start and end, no
+co-tenant. Two earlier bounded waits (15 and then 30 x `flock -w 120`) sat behind B's order; the
+first gave up and the second was stopped by this lane so it could not take the lock between B's
+boots. Bins built at `9e3b7250e`: `concat-prime-probe` `cdc2d747`, `prime-batch-gate` `98b11407`,
+`decode-batch-gate` `621a87a0`. The tree at the hold was `ddb14abc2` (receipts only on top of
+`9e3b7250e`). serve-smoke re-linked `memra-server` for the moved HEAD, and spec-ctx-edge ran that
+binary: sha256 `a0b0a711b2f548e6` (`raw/merged/memra-server.sha256`), build line
+`memra-0.138.0-97cdff00ed9f (id: source-tree, git: ddb14abc2a0a)`. 250 ms telemetry in
+`raw/merged/telemetry-250ms.csv`.
+
+```
+prime-tick-exact-gate: PASS (every prime shape is bit-identical to the solo prime; log .../raw/merged/ptick-naked.probe.log)
+prime-tick-exact-gate: CANARY OK (bp and bps DIFFER with B's batch prompt changed; log .../raw/merged/ptick-canary.probe.log)
+    exact-b3-p24 rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths)
+    exact-b4-p1100 rc=0 ALL GREEN: prime-batch gate (batch=4, uneven lengths)
+    carried-b3-exact rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths)
+prime-batch-exact-gate: PASS (every batched prime is bit-identical to its individual prime)
+prime-batch-exact-gate: CANARY OK (seq 0 DIFFERS: exact logits diff 248320/248320 h_seed diff 4096/4096 hidden diff 98304/98304; seqs 1 and 2 bit-identical)
+   dbg-config rc=0 ALL GREEN: decode_step_batch exactness battery
+   dbg-strict rc=0 ALL GREEN: decode_step_batch exactness battery
+serve-smoke: 0 failed
+SPEC-CTX-EDGE GATE: ALL GREEN
+```
+
+decode-batch-gate config B=8 also printed `global setting = OFF; effective for this architecture = OFF`
+(the local-ci B1 policy line); strict B=4 ran under `MEMRA_SERVE_B1FAST=1 MEMRA_MMVQ=0
+MEMRA_NO_FUSE_NORMQ=1`. serve-smoke skipped its spec, gemma4 and Q35 arms (no draft or model on
+this rig). spec-ctx-edge on the 9B, `SCE_CTX=384`: 13 PASS, 0 FAIL; `SCE (plain) message equals
+the on arm's r1: plain=341ddf3169a9d21a spec=341ddf3169a9d21a -> PASS`, the same message hash as
+the memra#659 lane's green runs.
+
 ## Still owed
 
 - A varlen FA twin that attends the dequantized cache view (the solo program) could come back
