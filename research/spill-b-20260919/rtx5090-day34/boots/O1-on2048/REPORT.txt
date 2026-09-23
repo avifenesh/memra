@@ -1,0 +1,75 @@
+== shape
+order=AB n=5 model_key=q9 ctx=65536 lock=none warm=deferred park_compact=unset serve_spec=default client=day31-client.py args=--burst 32 admit_by_memory=1 open_output_tokens=2048 timeout_ms_max=3600000 max_sessions=unset kv_host_mb=unset
+== arm on2048
+== boot door line (verbatim)
+[admit-mem] door=ON open_output_tokens=2048 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+DAY31 V-BOOT boot=O1-on2048 arm=on2048 door_line=present -> PASS
+== shadow budget line (verbatim)
+[admit-predict] shadow armed: budget_bytes=12831671424 budget_src=derived(effective_free_bytes=16493823104 - prefix_cache_budget_bytes=2051538944 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+== fatal lines
+(none)
+== sequential requests: tag | status | finish | P | G | cached | path | bpt | booked_ctx | alloc_bytes | used_bytes | cost_src | message_sha256[:16]
+warmup | 200 | length | 90 | 32 | 0 | spec | 16704 | 186 | 2037888 | 2037888 | own | cbec9a51a14363b1
+i-L0-r0 | 200 | length | 1439 | 2048 | 0 | spec | 16704 | 3551 | 58246848 | 58246848 | own | 587714a934d5d386
+i-L0-r1 | 200 | length | 1439 | 2048 | 0 | spec | 16704 | 3551 | 58246848 | 58246848 | own | 1c86d866b5cfaa34
+i-L0-r2 | 200 | length | 1442 | 2048 | 0 | spec | 16704 | 3554 | 58296960 | 58296960 | own | 4d7174305fc37a8e
+i-L0-r3 | 200 | length | 1442 | 2048 | 0 | spec | 16704 | 3554 | 58296960 | 58296960 | own | 4693fedd316c7662
+i-L0-r4 | 200 | length | 1441 | 2048 | 0 | spec | 16704 | 3553 | 58280256 | 58280256 | own | cfe9a4fb0439893b
+ii-L0-r0 | 200 | length | 1673 | 96 | 0 | spec | 16704 | 1833 | 29549376 | 29549376 | own | 2e33a266a6139157
+ii-L0-r1 | 200 | length | 1672 | 96 | 0 | spec | 16704 | 1832 | 29532672 | 29532672 | own | 6d9fb7383d0b20e4
+ii-L0-r2 | 200 | length | 1671 | 96 | 0 | spec | 16704 | 1831 | 29515968 | 29515968 | own | 51db360e35d5efb1
+ii-L0-r3 | 200 | length | 1671 | 96 | 0 | spec | 16704 | 1831 | 29515968 | 29515968 | inherited | 483de37d0f96bac6
+ii-L0-r4 | 200 | length | 1668 | 96 | 0 | spec | 16704 | 1828 | 29465856 | 29465856 | own | 324b31f3ddaf48f5
+i-L1-r0 | 200 | length | 3096 | 2048 | 0 | spec | 16704 | 5208 | 85925376 | 85925376 | own | 0a2318f39dd1bba4
+i-L1-r1 | 200 | length | 3096 | 2048 | 0 | spec | 16704 | 5208 | 85925376 | 85925376 | own | d44fd11ebd32b3c3
+i-L1-r2 | 200 | length | 3097 | 2048 | 0 | spec | 16704 | 5209 | 85942080 | 85942080 | own | bffb0a23de2474a6
+i-L1-r3 | 200 | length | 3096 | 2048 | 0 | spec | 16704 | 5208 | 85925376 | 85925376 | own | 2ae87c2a6584cd37
+i-L1-r4 | 200 | length | 3094 | 2048 | 0 | spec | 16704 | 5206 | 85891968 | 85891968 | own | 171d363b12ba0154
+ii-L1-r0 | 200 | length | 2958 | 96 | 0 | spec | 16704 | 3118 | 51014016 | 51014016 | own | 21dbaf421378f431
+ii-L1-r1 | 200 | length | 2961 | 96 | 0 | spec | 16704 | 3121 | 51064128 | 51064128 | own | 8b379a9099eb8da1
+ii-L1-r2 | 200 | length | 2957 | 96 | 0 | spec | 16704 | 3117 | 50997312 | 50997312 | own | a45fb50c14cd0af0
+ii-L1-r3 | 200 | length | 2950 | 96 | 0 | spec | 16704 | 3110 | 50880384 | 50880384 | own | 0f22dacc4e2cae91
+ii-L1-r4 | 200 | length | 2949 | 96 | 0 | spec | 16704 | 3109 | 50863680 | 50863680 | own | a5f7851e0361642a
+i-L2-r0 | 200 | length | 5755 | 2048 | 0 | spec | 16704 | 7867 | 130341312 | 130341312 | own | 439ecb6c6c087160
+i-L2-r1 | 200 | length | 5761 | 2048 | 0 | spec | 16704 | 7873 | 130441536 | 130441536 | own | 32ce8c5631c2e36a
+i-L2-r2 | 200 | length | 5760 | 2048 | 0 | spec | 16704 | 7872 | 130424832 | 130424832 | own | eacb88f268b10d61
+i-L2-r3 | 200 | length | 5763 | 2048 | 0 | spec | 16704 | 7875 | 130474944 | 130474944 | own | af7106ca727e350d
+i-L2-r4 | 200 | length | 5761 | 2048 | 0 | spec | 16704 | 7873 | 130441536 | 130441536 | own | eb7cbc189df8922a
+ii-L2-r0 | 200 | length | 5664 | 96 | 0 | spec | 16704 | 5824 | 96215040 | 96215040 | own | ec06c52751a34d16
+ii-L2-r1 | 200 | length | 5660 | 96 | 0 | spec | 16704 | 5820 | 96148224 | 96148224 | own | bd9b9c850ea121dd
+ii-L2-r2 | 200 | length | 5653 | 96 | 0 | spec | 16704 | 5813 | 96031296 | 96031296 | own | 65b6e64492ef5599
+ii-L2-r3 | 200 | length | 5650 | 96 | 0 | spec | 16704 | 5810 | 95981184 | 95981184 | own | 1da311093ada6a0d
+ii-L2-r4 | 200 | length | 5647 | 96 | 0 | spec | 16704 | 5807 | 95931072 | 95931072 | own | ab6a9fa0530ed40a
+iii-L0-r0 | 200 | length | 1457 | 2048 | 0 | spec | 16704 | 3569 | 58547520 | 58547520 | own | 140d43a7972b753a
+iii-L0-r1 | 200 | length | 1457 | 2048 | 0 | spec | 16704 | 3569 | 58547520 | 58547520 | inherited | 32147ad78ebcb514
+iii-L0-r2 | 200 | length | 1460 | 2048 | 0 | spec | 16704 | 3572 | 58597632 | 58597632 | own | afd05b5d0ad494bf
+iii-L0-r3 | 200 | length | 1460 | 2048 | 0 | spec | 16704 | 3572 | 58597632 | 58597632 | inherited | c926420bbcd597dd
+iii-L0-r4 | 200 | length | 1459 | 2048 | 0 | spec | 16704 | 3571 | 58580928 | 58580928 | own | 2adb1cdf2ab8b716
+iii-L1-r0 | 200 | length | 3114 | 2048 | 0 | spec | 16704 | 5226 | 86226048 | 86226048 | own | 567af715b701464a
+iii-L1-r1 | 200 | length | 3114 | 2048 | 0 | spec | 16704 | 5226 | 86226048 | 86226048 | inherited | 301270e82e8a833d
+iii-L1-r2 | 200 | length | 3115 | 2048 | 0 | spec | 16704 | 5227 | 86242752 | 86242752 | own | 6032869e6077f383
+iii-L1-r3 | 200 | length | 3114 | 2048 | 0 | spec | 16704 | 5226 | 86226048 | 86226048 | own | c8673195901fb0f2
+iii-L1-r4 | 200 | length | 3112 | 2048 | 0 | spec | 16704 | 5224 | 86192640 | 86192640 | own | 7dcfe5bba77ec176
+iii-L2-r0 | 200 | length | 5773 | 2048 | 0 | spec | 16704 | 7885 | 130641984 | 130641984 | own | 70ec0211e6d7697f
+iii-L2-r1 | 200 | length | 5779 | 2048 | 0 | spec | 16704 | 7891 | 130742208 | 130742208 | own | b9683afa5bf6e3d6
+iii-L2-r2 | 200 | length | 5778 | 2048 | 0 | spec | 16704 | 7890 | 130725504 | 130725504 | own | 5c25bd783efb8336
+iii-L2-r3 | 200 | length | 5781 | 2048 | 0 | spec | 16704 | 7893 | 130775616 | 130775616 | own | d55d81c8a32cda51
+iii-L2-r4 | 200 | length | 5779 | 2048 | 0 | spec | 16704 | 7891 | 130742208 | 130742208 | own | b85676006c01c18d
+iv-a-r0 | 200 | length | 1619 | 2048 | 0 | spec | 16704 | 3731 | 61253568 | 61253568 | own | 20e6930af26ca8ba
+iv-a-r1 | 200 | length | 1619 | 2048 | 0 | spec | 16704 | 3731 | 61253568 | 61253568 | inherited | 73bd80d69a2ae01b
+iv-a-r2 | 200 | length | 1620 | 2048 | 0 | spec | 16704 | 3732 | 61270272 | 61270272 | own | 1a1dc9013bdf7961
+iv-b-r0 | 200 | length | 78 | 2048 | 0 | spec | 16704 | 2190 | 35512704 | 35512704 | own | c3bd802418124dfa
+iv-b-r1 | 200 | length | 78 | 2048 | 0 | spec | 16704 | 2190 | 35512704 | 35512704 | inherited | 8d99437cbd443251
+iv-b-r2 | 200 | length | 78 | 2048 | 0 | spec | 16704 | 2190 | 35512704 | 35512704 | inherited | 3f8fac33dd4c2254
+== burst
+window_ms=148088 B=32 status={200: 32} finish={'length': 32} retry_after={}
+active_sessions_max=32.0 admission_booked_bytes_max=20757033728.0 samples=593 shadow_budget_bytes=12831671424 burst_cost_lines=35 burst_cost_total_mb_median=649 arith_sessions=19
+admit_mem_id_lines=41 by_verdict={'admit': 32, 'defer': 9} reclaim_lines=0
+[admit-mem] id=chatcmpl-341ffb329ed0be9fb8eac2da33f77c4f model="q9" verdict=admit prompt=1334 output_bound=- charged_ctx=3446 est_bytes=2260184824 est_context=51166208 est_fixed=2209018616 device_free=14034014392 pending_prime=0 host_free=0 demotable=2047721472 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-4692d5fbf3706976cb39a3cbf0f17826 model="q9" verdict=admit prompt=1328 output_bound=- charged_ctx=3440 est_bytes=2257933048 est_context=51077120 est_fixed=2206855928 device_free=13762626180 pending_prime=111738880 host_free=0 demotable=2047721472 short_by=0 inflight=1 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-3a8e24e65bdcef165d0f12575b22d9fd model="q9" verdict=admit prompt=1333 output_bound=- charged_ctx=3445 est_bytes=2259809528 est_context=51151360 est_fixed=2208658168 device_free=13124402128 pending_prime=590413824 host_free=0 demotable=2047721472 short_by=0 inflight=2 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-9f3a154ad2c8bec96e920ab2e20f5fac model="q9" verdict=admit prompt=1332 output_bound=- charged_ctx=3444 est_bytes=2259434232 est_context=51136512 est_fixed=2208297720 device_free=12484292316 pending_prime=1070891008 host_free=0 demotable=2047721472 short_by=0 inflight=3 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-5086529f1ba13717028e4e9557c91510 model="q9" verdict=admit prompt=1333 output_bound=- charged_ctx=3445 est_bytes=2259809528 est_context=51151360 est_fixed=2208658168 device_free=11844559656 pending_prime=1551007744 host_free=0 demotable=2047721472 short_by=0 inflight=4 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-b124eb37d20e9d9b3b0501d4dea53b90 model="q9" verdict=admit prompt=1334 output_bound=- charged_ctx=3446 est_bytes=2260184824 est_context=51166208 est_fixed=2209018616 device_free=11204449844 pending_prime=2031484928 host_free=0 demotable=2047721472 short_by=0 inflight=5 cap=64 waited_ms=0 retry_after_s=-
+... 35 more [admit-mem] id= lines in server.log
+== open-class G (this boot): n=36 min=2048 p50=2048 max=2048 stop=0 length=36 other=0
