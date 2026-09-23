@@ -34,7 +34,7 @@ const RMS_EPS: f32 = 1e-6; // DeepSeek-V4-Flash rms_norm_eps
 
 /// FNV-1a 64 over the route_m outputs of every `route_m_cases()` case, captured from
 /// the former 128-thread tree kernel (base 31dd11455) on sm_120.
-const ROUTE_M_GOLDEN: u64 = 0;
+const ROUTE_M_GOLDEN: u64 = 0xa883_c1c0_5022_dc87;
 
 fn gpu_guard() -> std::sync::MutexGuard<'static, ()> {
     static GPU: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -815,7 +815,12 @@ fn route_m_red_arm() {
     force_true_f32();
     let _g = gpu_guard();
     let e = Engine::new(0).unwrap();
-    let mut c = route_m_cases().swap_remove(0);
+    // A one-pick case normalizes its weight to route_scale whatever the logit, so the red
+    // arm takes the first continuous-logit case with six picks.
+    let mut c = route_m_cases()
+        .into_iter()
+        .find(|c| c.topk == 6 && c.bias.is_some() && c.hash.is_none())
+        .expect("a six-pick biased case");
     let (sel, selw, _) = route_m_gpu(&e, &c);
     // Scale the first pick's logit by 2^-10: its weight and the normalizer move.
     let x = sel[0] as usize;
