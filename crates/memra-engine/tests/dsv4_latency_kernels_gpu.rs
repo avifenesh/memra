@@ -18,6 +18,10 @@
 //! Red arms: a 2^-10 relative change to one input must be caught by the comparator on
 //! the output it feeds, so a PASS cannot come from comparing a buffer against itself.
 //!
+//! - FP8 wo_a (tested in `dsv4_gpu.rs`): the grouped t=1 launch takes a grouped dense-fast
+//!   twin, so one launch replaces the eight per-group dense-fast launches. The instrument
+//!   below times both at the served 8x1024x4096 shape.
+//!
 //! `latency_kernel_timing` is the component instrument: CUDA event chains of back-to-back
 //! launches at the served shapes. Build it on the base tree and on the lane and run the
 //! two binaries interleaved; a served A/B at sub-2% size is swamped by run drift.
@@ -998,6 +1002,71 @@ fn latency_kernel_timing() {
             });
             println!(
                 "TIMING tree={tree} kernel={label} shape=slots{topk}_groups{groups} rep={rep} us_per_call={us:.3}"
+            );
+        }
+    }
+    // FP8 wo_a at the served t=1 shape: eight per-group GEMVs against the grouped launch.
+    // The weight (32 MiB) exceeds L2, so every call streams it from DRAM.
+    {
+        let (groups, rows, kdim) = (8usize, 1024usize, 4096usize);
+        let sc_cols = kdim / 128;
+        let codes: Vec<u8> = (0..groups * rows * kdim)
+            .map(|i| ((i * 37 + i / 4096) % 0x7e) as u8 | (((i / 3) & 1) << 7) as u8)
+            .collect();
+        let scales = fixture(groups * rows / 128 * sc_cols, 8, 1, 2);
+        let x: Vec<u16> = (0..groups * kdim)
+            .map(|i| 0x3c00 + ((i * 13) % 0x200) as u16)
+            .collect();
+        let st = e.stream();
+        let cd = st.clone_htod(&codes).unwrap();
+        let sd = e.htod(&scales).unwrap();
+        let xd = st.clone_htod(&x).unwrap();
+        let mut yd = e.uninit(groups * rows).unwrap();
+        let cp = cd.device_ptr(&st).0 as usize;
+        let spp = dp(&sd, &e) as usize;
+        let xp = xd.device_ptr(&st).0 as usize;
+        let yp = dpm(&mut yd, &e) as usize;
+        let launches = 1000;
+        for rep in 0..reps {
+            let slices = chain_us(&e, launches, || unsafe {
+                for g in 0..groups {
+                    let rc = k::memra_dsv4_gemv_fp8_m(
+                        (cp + g * rows * kdim) as *const c_void,
+                        (spp + g * rows / 128 * sc_cols * 4) as *const f32,
+                        sc_cols as i32,
+                        (xp + g * kdim * 2) as *const c_void,
+                        (yp + g * rows * 4) as *mut f32,
+                        1,
+                        rows as i32,
+                        kdim as i32,
+                        (groups * kdim) as i32,
+                        (groups * rows) as i32,
+                        sv(&e),
+                    );
+                    assert_eq!(rc, 0);
+                }
+            });
+            let grouped = chain_us(&e, launches, || unsafe {
+                let rc = k::memra_dsv4_gemv_fp8_grouped_m1(
+                    cp as *const c_void,
+                    spp as *const f32,
+                    sc_cols as i32,
+                    xp as *const c_void,
+                    yp as *mut f32,
+                    groups as i32,
+                    rows as i32,
+                    kdim as i32,
+                    kdim as i32,
+                    rows as i32,
+                    sv(&e),
+                );
+                assert_eq!(rc, 0);
+            });
+            println!(
+                "TIMING tree={tree} kernel=wo_a_slices8 shape={groups}x{rows}x{kdim} rep={rep} us_per_call={slices:.3}"
+            );
+            println!(
+                "TIMING tree={tree} kernel=wo_a_grouped shape={groups}x{rows}x{kdim} rep={rep} us_per_call={grouped:.3}"
             );
         }
     }

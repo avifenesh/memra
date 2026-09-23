@@ -535,12 +535,20 @@ contribution bits into original slots, without a reassociated partial sum.
 both reductions, 1/6/32 rows and real 4096/2048 dimensions against the original
 full-bank launcher. Full-model and serving/performance gates are pending.
 
-Gate-only dense wo_a grouping: `dsv4_gemv_fp8_m_kernel<1,true>` shares the
-original FP8 GEMV dot/reduction body, using global grouped weight/scale rows
-and separate activation/output strides. `memra_dsv4_gemv_fp8_grouped_m1`
+Dense wo_a grouping (default ON since 2026-09-23): `memra_dsv4_gemv_fp8_grouped_m1`
 replaces eight t=1 FP8 wo_a launches with one; BF16, prefill and wider verify
-rows keep the old loop. The process-local grouped gate defaults OFF and
-counts successful submissions. The ignored
+rows keep the old loop. When the per-group slices would take dense fast (exact
+tail and dense fast on, operands admitted) it launches
+`dsv4_dense_fast_fp8_kernel<2,true>` over all groups' rows (flat weight row,
+activation/output planes offset by group); otherwise
+`dsv4_gemv_fp8_m_kernel<1,true>`, which shares the original FP8 GEMV
+dot/reduction body with global grouped weight/scale rows and separate
+activation/output strides. The process-local seam counts successful
+submissions; `false` selects the per-group launches. The ignored
+`cuda_gemv_fp8_grouped_dense_fast_matches_every_slice_program` test checks all
+nine (slice program, grouped program) pairs bitwise at 8x1024, 2x128 and 3x256
+and the dense-fast enqueue count; `dsv4_latency_kernels_gpu` times both at the
+served shape. The ignored
 `cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue` test
 compares the real 8x1024x4096 shape and padded two-group case bitwise and
 checks invalid-stride refusals. Full-model gate: `dsv4_plain_perf_gate wo-a`,

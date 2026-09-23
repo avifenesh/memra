@@ -4151,7 +4151,10 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
 // the activation and output planes, while the weight rows remain contiguous across groups.
 // The arithmetic body is the same dsv4_gemv_fp8_m_kernel<1> body above; only the row/group
 // address calculation changes. This removes the eight host launches around wo_a without
-// changing any per-output accumulation or reduction order.
+// changing any per-output accumulation or reduction order. When the per-group slices
+// would take dense-fast (exact tail and dense fast on, operands admitted), the grouped
+// launch takes the grouped dense-fast twin, so one launch keeps the slices' kernel;
+// dense fast keeps the same 128 leaf sequences and halving tree.
 extern "C" int memra_dsv4_gemv_fp8_grouped_m1(
         const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16,
         float* y, int groups, int rows_per_group, int k, int x_group_stride,
@@ -4165,6 +4168,27 @@ extern "C" int memra_dsv4_gemv_fp8_grouped_m1(
     }
     long total = (long)groups * rows_per_group;
     if (total > 2147483647L || x_group_stride % 8 != 0) return 40011;
+    if (dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+        dsv4_dense_fast_enabled &&
+        dsv4_dense_exact_tail_fp8_admits(w_codes, sc_f32, sc_cols, x_bf16, y, 1,
+                                         rows_per_group, k)) {
+        if (dsv4_dense_fast_observer) {
+            for (int g = 0; g < groups; g++) {
+                long row0 = (long)g * rows_per_group;
+                int rc = dsv4_dense_fast_observer(0, (const uint8_t*)w_codes + row0 * k,
+                    sc_f32 + (row0 >> 7) * sc_cols, sc_cols,
+                    (const uint16_t*)x_bf16 + (long)g * x_group_stride, rows_per_group, k,
+                    stream_v);
+                if (rc) return rc;
+            }
+        }
+        dsv4_dense_fast_fp8_kernel<2, true><<<(unsigned)(total / 2), 256, 0, stream>>>(
+            (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y,
+            rows_per_group, k, k, rows_per_group, x_group_stride, y_group_stride);
+        DSV4_ERR();
+        ++dsv4_dense_fast_enqueues[0];
+        return 0;
+    }
     dsv4_gemv_fp8_m_kernel<1, true><<<(unsigned)total, 128, 0, stream>>>(
         (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y,
         rows_per_group, k, 0, 0, x_group_stride, y_group_stride);
