@@ -1026,8 +1026,10 @@ fused Q norm/pack against the unfused chains they replace and requires every out
 residual and three mix magnitude ranges), and the normalized row plus its bf16 pack over 128
 cases (eight row widths, including tails on both sides of the unrolled body). Red arms perturb
 each gate scale and one norm weight by 2^-10 relative and require the fed output to move. The
-diet is the code on the served plain step and multi-row rows keep the unfused chain, so this is
-the proof that plain and verify rows stay one numeric program. Receipts:
+multi-row cases run 2, 6, 7, 16, 17 and 64 rows with a different magnitude range per row and
+require each row to equal both the unfused multi-row chain and the same row launched alone; the
+HC red arm moves one mix of row 5 and requires rows 0..5 to stay bit-equal. The diet is the code
+on every row count, so this is the proof that plain and verify rows stay one numeric program. Receipts:
 `research/dsv4f-bringup-20260923/small-diet/`.
 
 ### DSv4 deferred MoE route and mirror checks (#670)
