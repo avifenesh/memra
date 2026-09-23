@@ -1,5 +1,11 @@
 # Input-conditioned speculative control: C, K and D
 
+**Notation correction, 2026-09-23:** The owner defines **K as sampler
+top-k**. This v4 collector uses `k3` in receipt names for a
+three-token *draft cap* and holds sampler top-k at 20 with temperature
+0.7. Its outputs are development diagnostics for C and draft depth,
+not the joint C/K/D verdict. The corrected experiment is `joint-v5/`.
+
 This continuation tests the owner's proposal to measure fixed settings
 on a bounded input corpus, then train a small controller that chooses
 settings from the current and previous tokens. The previous
