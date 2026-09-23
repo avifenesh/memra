@@ -1,8 +1,8 @@
 # DSv4 two-launch sink attention (memra #683)
 
-Status: in progress. The kernel-boundary bit gate and the component timing on the local RTX 5090
-are banked here. The PRO 6000 gate and the served A/B on 2x RTX PRO 6000 are queued; this file
-gets their rows when they land.
+Status: in progress. The kernel-boundary bit gate and the component timing on one RTX PRO 6000
+Blackwell and on the local RTX 5090 are banked here. The served A/B on 2x RTX PRO 6000 is queued;
+this file gets its rows when it lands.
 
 Scope: `tiyuvta/DeepSeek-V4-Flash-0731-NVFP4@bafd09f8cab4f4f4f25e1cdafbcdefc05b90ee38`, device
 f32x chains, sink attention at 64 heads x 512 (main attention) and 32 x 512 geometry. Lane
@@ -46,14 +46,31 @@ bit of the two-launch program against the three former entry points on the same 
 | `sink_attn_st_matches_three_kernel_single_query` | 26 cases against the eager single-query entry |
 | `sink_attn_st_red_arm` | a 2^-10 change to one live kv element is caught |
 
-Local RTX 5090 Laptop (`raw/rtx5090/gate-worktree.log`, the working tree before commit
-`713c21753`, st kernels as committed): **5 passed, 320 cases bit-identical, red arm caught.**
+- One RTX PRO 6000 Blackwell Workstation Edition, 600 W limit, committed tree `2f8e23c22`, test
+  binary `5eae971f380b3417` (`raw/pro6000/summary`, `raw/pro6000/gate-r{1,2,3}.log`, script
+  `raw/pro6000/sink-pro.sh`): **5 passed in each of 3 runs, 320 cases bit-identical, red arm
+  caught.**
+- Local RTX 5090 Laptop (`raw/rtx5090/gate-worktree.log`, the working tree before the kernels
+  were committed, st kernels as committed): 5 passed, 320 cases bit-identical, red arm caught.
 
 ## Component timing
 
-`sink_attn_st_timing`: one layer's sink attention, old program (q transpose plus the three
-kernels) against the two launches, 5 reps each, us per layer, medians of 5. Local RTX 5090
-Laptop, same log:
+`sink_attn_st_timing`: one layer's sink attention on the graph replay entry, old program (q
+transpose plus the three kernels) against the two launches, 2000 launches per rep after 64 warmup
+launches, us per layer.
+
+RTX PRO 6000, 3 runs x 5 reps, medians of 15 (two-launch range across the 15 in brackets):
+
+| shape | old | two-launch | change |
+|---|---|---|---|
+| 64 heads, ratio 0, 128 live | 26.578 | 8.639 (8.601..8.641) | -67.5% |
+| 64 heads, ratio 4, 187 live | 32.250 | 11.753 (11.720..11.760) | -63.6% |
+| 64 heads, ratio 4, 640 live | 65.260 | 28.785 (28.776..28.816) | -55.9% |
+| 32 heads, ratio 0, 128 live | 26.115 | 8.355 (8.353..8.357) | -68.0% |
+| 32 heads, ratio 4, 187 live | 31.176 | 11.006 (11.002..11.012) | -64.7% |
+| 32 heads, ratio 4, 640 live | 64.600 | 23.777 (23.771..23.783) | -63.2% |
+
+Local RTX 5090 Laptop, 5 reps, medians of 5:
 
 | shape | old | two-launch | change |
 |---|---|---|---|
@@ -69,7 +86,6 @@ gain.
 
 ## Pending
 
-- The same test on one RTX PRO 6000 Blackwell, on the committed tree.
 - `dsv4-gpu-dspark-gate --served` on the lane binary.
 - Served plain and DSpark A/B on 2x RTX PRO 6000, one boot per row, order `l b b l l b b l l b`,
   N=5 per arm, the fixed prompt hashes of `../latency/RESULTS.md`.
