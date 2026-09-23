@@ -308,5 +308,5 @@ the hit gate to 22:08:25Z; the unit cells ran in attempt 1 (20:49:30Z to 20:54:3
   behind other lanes on both cards.
 - Cleanup: BOX4 `/root/wt-a` is this lane's own clone at `afd58bbde`, left for later sittings; `/root/spill-receipts/a-day34/`
   mirrored to `pro-single-day34/box/` (binaries excluded; their sha256 in each run's `binary.sha256` and
-  `gates/binary.sha256`); iproute2 installed there (attempt 1); no process of this lane on the box after 22:08:25Z;
+  `gates/binary.sha256`), the mirror checked file for file (903 of 903), then removed from the box; iproute2 installed there (attempt 1); no process of this lane on the box after 22:08:25Z;
   `LANE-A-BOX4-DONE` written. Local: the 5090 carries no process of this lane; `/tmp/wt-a-d33` removed at close.
