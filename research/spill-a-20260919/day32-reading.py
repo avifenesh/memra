@@ -14,7 +14,9 @@ B3  (printed with --b2, a reading, not a clause): `[prefix-host] promote: .. in 
 B4  --b4 ROOT --spans N --kv A,B: every `contracts door H2D receipt: ticket issuer=..` line under ROOT names N f32 spans
     (`; N f32 spans landed under the ticket and taken back before the retire`) and keeps `items=` in {A, B} with
     `items=` equal to twice the KV plane count (plus the draft pair). The flip-demote note line (`.. host bytes
-    differ ..`) is not a receipt.
+    differ ..`) is not a receipt. `--exclude NAME` skips every directory of that name (added after the first run over
+    the day-32 box root, which walked into `pre/`, the pre-H2D binary's run, whose receipts carry no span term by
+    construction; the clause is unchanged).
 """
 import argparse
 import glob
@@ -99,10 +101,12 @@ def b2(before_ev, after_ev):
     return 0 if ok else 1
 
 
-def b4(root, spans, kv):
+def b4(root, spans, kv, exclude=()):
     n = bad = 0
     tally = {}
     for log in sorted(glob.glob(os.path.join(root, "**", "*.log"), recursive=True)):
+        if any(part in exclude for part in os.path.relpath(log, root).split(os.sep)[:-1]):
+            continue
         for ln in open(log, errors="replace"):
             m = RECEIPT.search(ln)
             if not m:
@@ -129,12 +133,13 @@ def main():
     ap.add_argument("--b4")
     ap.add_argument("--spans", type=int, default=96)
     ap.add_argument("--kv", default="32,34")
+    ap.add_argument("--exclude", action="append", default=[])
     a = ap.parse_args()
     rc = 0
     if a.b2:
         rc |= b2(*a.b2)
     if a.b4:
-        rc |= b4(a.b4, a.spans, {int(x) for x in a.kv.split(",")})
+        rc |= b4(a.b4, a.spans, {int(x) for x in a.kv.split(",")}, tuple(a.exclude))
     sys.exit(rc)
 
 
