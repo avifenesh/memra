@@ -1970,6 +1970,17 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   once with `a batch with a running span has not landed`; the two cells share the primary context and each
   holds its copy stream 300 ms; the serial run was green 3 of 3; the cause is not isolated). Evidence:
   `research/spill-a-20260919/DAY31.md`, `DAY32.md`, `DAY33.md`.
+- The promote's KV completion checksums on the hash helper (WP-A day 34, `research/spill-a-20260919/DAY34.md`,
+  `memra_tier::conformance::h2d_deferred_checksum_lands_with_its_digests`): under the door the off-tick promote
+  defers its H2D items' checksums (`CudaTransfers::defer_h2d_checksums`), the helper digests each item's host
+  source with the engine's own program, and the settle supplies them (`supply_h2d_checksums`) before the receipt
+  `require` against the demote-time checksums. CPU binding `h2d_deferred_checksum_bindings` (with its red arm: an
+  item that lands on its copy alone); engine cells `h2d_deferred_checksum_rules_are_as_stated` (CPU) and
+  `h2d_deferred_checksum_lands_with_the_supplied_digests` (a card: the digest on another thread, a wrong digest
+  `Corrupt` at the gate); GPU cell `option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused`
+  (a flipped lease byte refused `ReceiptMismatch`, nothing published). The failure gate's `digest` cell on the door ON
+  arm is the served-path check: the settle's `plane host bytes differ from the D2H receipt as injected` line is the
+  helper's digest seeing the flipped byte, and `VERIFY FAILED` refuses the entry.
 - The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
   hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
   Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity
