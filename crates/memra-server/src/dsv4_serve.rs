@@ -2056,9 +2056,22 @@ fn serve_one(
                 .request_state(session_capacity, None)
                 .map_err(EngineError::engine)?;
             let logits = if m.prefill_chunk > 0 && !short_monolithic {
-                m.gpu
-                    .prefill_with_cache_chunked(&prompt, &mut state, m.prefill_chunk)
-                    .map_err(EngineError::engine)?
+                if m.sessions > 1 {
+                    // Give the turn up between chunks so another session's steps keep going.
+                    m.gpu.prefill_with_cache_chunked_yielding(
+                        &prompt,
+                        &mut state,
+                        m.prefill_chunk,
+                        &mut || {
+                            turn.release();
+                            turn.acquire();
+                        },
+                    )
+                } else {
+                    m.gpu
+                        .prefill_with_cache_chunked(&prompt, &mut state, m.prefill_chunk)
+                }
+                .map_err(EngineError::engine)?
             } else {
                 m.gpu
                     .prefill_with_cache(&prompt, &mut state)

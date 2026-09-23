@@ -6322,6 +6322,19 @@ impl Dsv4Gpu {
         state: &mut DecodeState,
         chunk: usize,
     ) -> Res<Vec<f32>> {
+        self.prefill_with_cache_chunked_yielding(ids, state, chunk, &mut || {})
+    }
+
+    /// [`Self::prefill_with_cache_chunked`], calling `between` after every committed chunk but
+    /// the last. A pipelined serve loop gives its launch turn up there, so another session's
+    /// step is not stalled for the whole prompt. Same transactions, same bits.
+    pub fn prefill_with_cache_chunked_yielding(
+        &self,
+        ids: &[u32],
+        state: &mut DecodeState,
+        chunk: usize,
+        between: &mut dyn FnMut(),
+    ) -> Res<Vec<f32>> {
         assert_eq!(state.pos, 0, "chunked prefill needs a fresh DecodeState");
         if ids.is_empty() {
             return Err("empty dsv4 chunked prefill".into());
@@ -6347,7 +6360,8 @@ impl Dsv4Gpu {
         if ids.len() == 1 {
             return Ok(first);
         }
-        self.continue_prefix_chunked(&ids[1..], state, chunk)
+        between();
+        self.continue_prefix_chunked_yielding(&ids[1..], state, chunk, between)
     }
 
     /// Teacher-force a non-empty suffix through bounded batched transactions and return
@@ -6357,6 +6371,18 @@ impl Dsv4Gpu {
         suffix: &[u32],
         state: &mut DecodeState,
         chunk: usize,
+    ) -> Res<Vec<f32>> {
+        self.continue_prefix_chunked_yielding(suffix, state, chunk, &mut || {})
+    }
+
+    /// [`Self::continue_prefix_chunked`] with a `between` hook after every committed chunk but
+    /// the last (see [`Self::prefill_with_cache_chunked_yielding`]).
+    pub fn continue_prefix_chunked_yielding(
+        &self,
+        suffix: &[u32],
+        state: &mut DecodeState,
+        chunk: usize,
+        between: &mut dyn FnMut(),
     ) -> Res<Vec<f32>> {
         if suffix.is_empty() {
             return Err("dsv4 chunked continuation needs a non-empty suffix".into());
@@ -6390,6 +6416,9 @@ impl Dsv4Gpu {
             // the stamp attests enqueue only, the final chunk's `Last` readback being the
             // completion point (a wedge is then caught one stall bound after that stamp).
             crate::progress::note_prime_rows(toks.len());
+            if !final_chunk {
+                between();
+            }
             if let Some(rows) = logits {
                 last_logits = Some(if output == VerifyOutput::Last {
                     rows
