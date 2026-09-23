@@ -1,0 +1,382 @@
+{
+  "all_source_inputs_sha256": "b7e12aacf3a572b8b083b4f4e8d81bb042da4f0bb5c21abc50e74bb93309e707",
+  "base_commit": "ac3c39712486170ce2beb77527df50eede07070c",
+  "changed_source_sha256": {
+    ".github/workflows/ci.yml": "240d6f7196d4bcfd2947f4d2148a57926787c1f725d914bf96a7f0dff67e3346",
+    "Cargo.lock": "ca13568596b005f63aac2fa73ac7f4b10bc9f2b43bfa9cc602da973dae6e3407",
+    "crates/memra-cli/src/lib.rs": "a1cd2d864f3086de46cf5e9c771edfabdf5f74a69becc639938c421521e5efd2",
+    "crates/memra-cli/tests/canonical_config.rs": "b8650ff22918263596b8a71a2133ae1447d4a0d98e3e4906db7820e4c7116b0d",
+    "crates/memra-engine/src/bin/modelplan_reference_gate.rs": "d77997170a8506cd9cdf2285984d6a46eff76128a752c381a917ff30a7e51842",
+    "crates/memra-engine/src/qwen4exp_gpu.rs": "b0086e892c51650275556c85d361709e21f3bdc8e2bb6d9502d6832995386c4b",
+    "crates/memra-gguf/Cargo.toml": "a960bc2ad47fe61fbc025ee21acd2d3134095bdb0ee733f51028e1e71a41f290",
+    "crates/memra-gguf/src/config.rs": "0a8ac98fe032e6b1325597fd9dd5aeebfbc1a4572c29db4c1742be5ced8a43f1",
+    "crates/memra-gguf/src/config_json.rs": "99ce5129f8ca410aedfd9b7ec27d29569c97235106a2cb4ab47737d1aed16854",
+    "crates/memra-gguf/src/lib.rs": "7167aabe4f340cc9ac41d465107a2f1a4dbf49ecaff2a786d1c8e4faea1fffc2",
+    "crates/memra-gguf/src/source.rs": "7a5d92297756b1972d90355cc311e57007e025ce7bfeaa330c410fdb1d3e2c3b",
+    "crates/memra-gguf/src/strict_json.rs": "40b6fd05d9b243cf6e0fae658e39abe3a2fe05e31f3faedb82f0482987b95ee1",
+    "crates/memra-gguf/tests/canonical_config.rs": "ba52154e9bc30976af52c15004d2431953bd7690de698b452a734680f54bb61a",
+    "crates/memra-gguf/tests/fixtures/canonical-config-plans.tsv": "a7007fe474b28681d724f836c4a094224464159afd648f5e382e0c5c19220d09",
+    "crates/memra-reference/src/bin/glm5_checkpoint_runner.rs": "72260a80db27e24475fed989aebe63f8353914904b52ffb3923b2f12c8d0312b",
+    "crates/memra-reference/src/bin/llama_dense_checkpoint_runner.rs": "46696c76bcc22d405d8d39436b845b78c81e35bc3ac4e66a323b03b485eb07b3",
+    "crates/memra-reference/src/bin/qwen4exp_tiny_parity.rs": "0834af97116ea6f3945a1fdea858c24a2cc079605a2bc8d3925b8e6f18351225",
+    "crates/memra-reference/src/lib.rs": "c78a08928b6dadb6480e1be3b1aecad7c7e82f1f53c865c7d782f620419db37d",
+    "crates/memra-server/Cargo.toml": "94764f45af62f971d2bf12b790839c6ed1342068be54cf20c7bedede1dbd956d"
+  },
+  "commands_without_json_receipt": {
+    "gguf-skip-census": {
+      "argv": [
+        "python3",
+        "tools/skip-census.py",
+        "run",
+        "--budget-var",
+        "MEMRA_GGUF_SKIP_BUDGET",
+        "--min-passed",
+        "300",
+        "--",
+        "cargo",
+        "test",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--lib"
+      ],
+      "environment": {
+        "MEMRA_GGUF_SKIP_BUDGET": "12"
+      },
+      "exit_code": 0
+    },
+    "linux-typecheck": {
+      "argv": [
+        "cargo",
+        "clippy",
+        "--offline",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "-p",
+        "memra-server",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_TARGET_DIR": "target/docs-linux-check",
+        "CUDA_VISIBLE_DEVICES": "",
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0
+    }
+  },
+  "corpus": {
+    "byte_identical": true,
+    "cases": 5,
+    "sha256": "eddd6d36e1f0ddaf3a4dd85da86937980ed88b73f738473480bab19b8be0e354"
+  },
+  "gguf_skips": {
+    "artifact_skips": 12,
+    "budget": 12,
+    "ignored": 2,
+    "reported_passed": 315
+  },
+  "logs": [
+    {
+      "file": "logs/before-decoding.log",
+      "original_sha256": "1e9a9bf6846bb920d5af4c532f519baf05b9d7d2920b3c85bccddd1ca15f43c2",
+      "published_sha256": "bdf20c10801fecb79d152517a5748d3b1b35738e730a808ddec76af6c5b6c3d1",
+      "redactions": [
+        {
+          "from": "<base-worktree> path",
+          "occurrences": 1
+        },
+        {
+          "from": "<audit> path",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "file": "logs/before-numeric-normalization.log",
+      "original_sha256": "462a191288742b7719b878a6a027d559a19a88ed56d4f11112a5e501bbca3f18",
+      "published_sha256": "aae275dc98d1bcaf07df74d582fe0eaf483486125156b21de6cc1c54ddc8d061",
+      "redactions": [
+        {
+          "from": "<worktree> path",
+          "occurrences": 1
+        },
+        {
+          "from": "Rust executable build-id suffix",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "file": "logs/base-reference.log",
+      "original_sha256": "cd8e0e591595e23d918e413be2d61870387714de0445d6de21f6f77aebe57dda",
+      "published_sha256": "87950808927bc7e1be2fcaf68f57ac9edf7e8a6bbb915f8e71ff4d1bdbb29a3c",
+      "redactions": [
+        {
+          "from": "<base-worktree> path",
+          "occurrences": 3
+        },
+        {
+          "from": "<audit> path",
+          "occurrences": 1
+        },
+        {
+          "from": "Rust executable build-id suffix",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "file": "logs/base-corpus.log",
+      "original_sha256": "eddd6d36e1f0ddaf3a4dd85da86937980ed88b73f738473480bab19b8be0e354",
+      "published_sha256": "eddd6d36e1f0ddaf3a4dd85da86937980ed88b73f738473480bab19b8be0e354",
+      "redactions": []
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli",
+        "-p",
+        "memra-reference",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "file": "logs/clippy.log",
+      "original_sha256": "1223ce71b5fd559d6708d7415bfbbc27bb3aa4e40800ddba2c813f2287cdc3a3",
+      "published_sha256": "7a08ec90b140ba0172a24a96fa6d9aa1d7897ea7411c9093e1e66161e296615f",
+      "redactions": [
+        {
+          "from": "<worktree> path",
+          "occurrences": 4
+        }
+      ]
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli",
+        "--no-fail-fast"
+      ],
+      "exit_code": 0,
+      "file": "logs/compiler-tests.log",
+      "original_sha256": "9da5049d86b68d8b2701619a7f578bf929442bebd2aae7cf484c1f7365a130ce",
+      "published_sha256": "da10baf4257fbc2d15aee7c20515e01d517758116c39eb5f55bfbf4dbe2bdc19",
+      "redactions": [
+        {
+          "from": "<worktree> path",
+          "occurrences": 4
+        },
+        {
+          "from": "Rust executable build-id suffix",
+          "occurrences": 15
+        },
+        {
+          "from": "trailing blank lines",
+          "removed_bytes": 1
+        }
+      ]
+    },
+    {
+      "command": [
+        "cargo",
+        "run",
+        "--offline",
+        "--quiet",
+        "--manifest-path",
+        "<audit>/candidate-probe/Cargo.toml",
+        "--bin",
+        "corpus",
+        "--",
+        "research/mla-bringup-20260801/glm-5.2-config.pinned.json",
+        "research/glm53-flash-bringup-20260827/glm-config.json",
+        "research/qwen4exp-bringup-20260829/tinyparity/tiny-config.json",
+        "research/step37-bringup-20260802/raw/config.json",
+        "research/qwen4exp-bringup-20260829/raw/config.json"
+      ],
+      "exit_code": 0,
+      "file": "logs/corpus.log",
+      "original_sha256": "eddd6d36e1f0ddaf3a4dd85da86937980ed88b73f738473480bab19b8be0e354",
+      "published_sha256": "eddd6d36e1f0ddaf3a4dd85da86937980ed88b73f738473480bab19b8be0e354",
+      "redactions": []
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "file": "logs/diff-check.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "redactions": []
+    },
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "file": "logs/fmt.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "redactions": []
+    },
+    {
+      "file": "logs/gguf-skip-census.log",
+      "original_sha256": "570a16f5e290d4256da53ca801c64b75bb2ffed5a3bfdb4c6208c5e4d547fd39",
+      "published_sha256": "570a16f5e290d4256da53ca801c64b75bb2ffed5a3bfdb4c6208c5e4d547fd39",
+      "redactions": []
+    },
+    {
+      "file": "logs/linux-typecheck.log",
+      "original_sha256": "91df6743620c53785e5f4268ec86029234cbb112bc60dd71d966a27c08b7c923",
+      "published_sha256": "9fb9e490ad2616f7da281328c2d66026120acba072802cc53e2c6145b4c4c2e5",
+      "redactions": [
+        {
+          "from": "<worktree> path",
+          "occurrences": 7
+        }
+      ]
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--features",
+        "serde_json/preserve_order",
+        "--test",
+        "canonical_config"
+      ],
+      "exit_code": 0,
+      "file": "logs/ordered-config.log",
+      "original_sha256": "071f2092ed19ad6da6f9cf9865cb4a6ff7ca3a390aef3df0fbb39b62beebe8a4",
+      "published_sha256": "30b54f663cc569adeb1b2ae88364d3415f78e438ae9f627dd50507b7cd19d134",
+      "redactions": [
+        {
+          "from": "<worktree> path",
+          "occurrences": 1
+        },
+        {
+          "from": "Rust executable build-id suffix",
+          "occurrences": 1
+        },
+        {
+          "from": "trailing blank lines",
+          "removed_bytes": 1
+        }
+      ]
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--features",
+        "serde_json/preserve_order",
+        "--lib",
+        "strict_json::tests"
+      ],
+      "exit_code": 0,
+      "file": "logs/ordered-json.log",
+      "original_sha256": "a480f0be18652a46e582f487cf07c92b9d0e6fc0fb99b64e894f85240217e116",
+      "published_sha256": "a57102ec42e6fc3059de0e0b1439cdf759133619e31955cfd1a79cd2c85c55bd",
+      "redactions": [
+        {
+          "from": "<worktree> path",
+          "occurrences": 1
+        },
+        {
+          "from": "Rust executable build-id suffix",
+          "occurrences": 1
+        },
+        {
+          "from": "trailing blank lines",
+          "removed_bytes": 1
+        }
+      ]
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "-p",
+        "memra-reference",
+        "-p",
+        "memra-tokenizer",
+        "-p",
+        "memra-sampling",
+        "-p",
+        "memra-validate",
+        "--lib",
+        "--no-fail-fast"
+      ],
+      "exit_code": 101,
+      "file": "logs/related-cpu.log",
+      "original_sha256": "bd1234adf36600be11a6af39d05290db7a11597f79d3c3a960966a88152049ec",
+      "published_sha256": "e17ce7bacc0ed9a0e27613655593c9d04c0c7e26817582b5db110139fd8bc3b8",
+      "redactions": [
+        {
+          "from": "<worktree> path",
+          "occurrences": 2
+        },
+        {
+          "from": "Rust executable build-id suffix",
+          "occurrences": 4
+        }
+      ]
+    }
+  ],
+  "native_evidence_reused": false,
+  "reference_failure": {
+    "actual_bits": [
+      3182242064,
+      1053299395,
+      3199800549,
+      3198737447,
+      3180184138,
+      3187768632,
+      1057556100,
+      1035812927
+    ],
+    "expected_bits": [
+      3182242076,
+      1053299392,
+      3199800546,
+      3198737445,
+      3180184136,
+      3187768631,
+      1057556100,
+      1035812924
+    ],
+    "identical_to_base": true,
+    "test": "qwen35_fixture_executes_mixed_gdn_and_full_attention_state"
+  },
+  "scope": "CPU-only canonical JSON/config decoding; pending independent source review"
+}
