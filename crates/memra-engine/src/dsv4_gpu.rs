@@ -13419,6 +13419,34 @@ fn pinned_i32(buf: &crate::PinnedHostBuf, len: usize) -> Res<&[i32]> {
 /// device-realized: full pending snapshot + the per-position RAW (kv, score) rows that
 /// were written, plus the store high-water mark. `dst` and `emitted` are pure functions
 /// of the position, so nothing has to come back to the host to replay.
+/// The overlap compressor's cur -> prev shift: copies `pend[half..2*half]` over
+/// `pend[0..half]`. The halves are disjoint, so one direct copy replaces the two copies
+/// through a scratch buffer that a borrow of both halves of one slice would otherwise need.
+fn cmp_shift_halves(
+    stream: &std::sync::Arc<CudaStream>,
+    pend: &mut CudaSlice<f32>,
+    half: usize,
+    label: &'static str,
+) -> Res<()> {
+    if pend.len() < 2 * half {
+        return Err(format!(
+            "{label}: pending buffer {} < 2 x {half}",
+            pend.len()
+        ));
+    }
+    let bytes = half * std::mem::size_of::<f32>();
+    let base = pend.device_ptr_mut(stream).0;
+    unsafe {
+        cudarc::driver::result::memcpy_dtod_async(
+            base,
+            base + bytes as u64,
+            bytes,
+            stream.cu_stream(),
+        )
+    }
+    .map_err(e(label))
+}
+
 struct CmpCkptDev {
     kv_snap: CudaSlice<f32>,
     sc_snap: CudaSlice<f32>,
@@ -13428,6 +13456,8 @@ struct CmpCkptDev {
     ratio: usize,
     overlap: bool,
     n_blocks0: usize,
+    /// `kv_snap`/`sc_snap` hold this round's pre-write state. A rollback without it refuses.
+    snap_live: bool,
 }
 
 /// One trunk layer's verify-round checkpoint: the two compressor payloads. The window
@@ -14500,6 +14530,7 @@ impl Dsv4Gpu {
                     ratio: cmp.ratio,
                     overlap: cmp.overlap,
                     n_blocks0: 0,
+                    snap_live: false,
                 })
             };
             let cmp = match &layer.cmp {
@@ -14556,6 +14587,7 @@ impl Dsv4Gpu {
                         ratio: cmp.ratio,
                         overlap: cmp.overlap,
                         n_blocks0: 0,
+                        snap_live: false,
                     })
                 };
                 let cmp = layer.cmp.as_ref().map(mk).transpose()?;
@@ -15066,14 +15098,40 @@ impl Dsv4Gpu {
         }
         let stream = st.gpu.stream();
         let (ratio, d, latent) = (cmp.ratio, cmp.d, cmp.latent);
-        // snapshot + high-water mark BEFORE anything is written
-        stream
-            .memcpy_dtod(pend_kv, &mut ck_dev.kv_snap)
-            .map_err(e("ckpt snap kv"))?;
-        stream
-            .memcpy_dtod(pend_score, &mut ck_dev.sc_snap)
-            .map_err(e("ckpt snap sc"))?;
+        // Snapshot + high-water mark BEFORE anything is written. Only a rollback reads the
+        // snapshot, and a one-row round always commits its row (commit_verify_dev requires
+        // n_commit >= 1), so it is skipped there; the TP/EP refusal path rolls a round back
+        // to zero rows at any width and keeps it.
+        ck_dev.snap_live = t > 1 || self.topology.is_tp_ep();
+        if ck_dev.snap_live {
+            stream
+                .memcpy_dtod(pend_kv, &mut ck_dev.kv_snap)
+                .map_err(e("ckpt snap kv"))?;
+            stream
+                .memcpy_dtod(pend_score, &mut ck_dev.sc_snap)
+                .map_err(e("ckpt snap sc"))?;
+        }
         ck_dev.n_blocks0 = *blocks;
+        // A one-row round projects straight into its pending slot: rollback replay is the
+        // only other reader of the row record and a one-row round never replays a row.
+        // The full-token replay program appends from the record on the device.
+        let direct = t == 1 && replay_pos.is_none();
+        let (kv_rows, sc_rows) = if direct {
+            let slot = if cmp.overlap {
+                ratio + pos0 % ratio
+            } else {
+                pos0 % ratio
+            };
+            (
+                (pend_kv.device_ptr_mut(&stream).0 as *mut f32).wrapping_add(slot * latent),
+                (pend_score.device_ptr_mut(&stream).0 as *mut f32).wrapping_add(slot * latent),
+            )
+        } else {
+            (
+                ck_dev.rows_kv.device_ptr_mut(&stream).0 as *mut f32,
+                ck_dev.rows_sc.device_ptr_mut(&stream).0 as *mut f32,
+            )
+        };
         self.dots_m_dev(
             st,
             x_ptr,
@@ -15082,7 +15140,7 @@ impl Dsv4Gpu {
             t,
             hidden,
             latent,
-            ck_dev.rows_kv.device_ptr_mut(&stream).0 as *mut f32,
+            kv_rows,
         )?;
         self.dots_m_dev(
             st,
@@ -15092,7 +15150,7 @@ impl Dsv4Gpu {
             t,
             hidden,
             latent,
-            ck_dev.rows_sc.device_ptr_mut(&stream).0 as *mut f32,
+            sc_rows,
         )?;
         for i in 0..t {
             let pos = pos0 + i;
@@ -15152,12 +15210,14 @@ impl Dsv4Gpu {
                 *blocks = (pos + 1) / ratio;
                 continue;
             } else {
-                let src = ck_dev.rows_kv.slice(i * latent..(i + 1) * latent);
-                let mut dst = pend_kv.slice_mut(slot * latent..(slot + 1) * latent);
-                stream.memcpy_dtod(&src, &mut dst).map_err(e("pend kv b"))?;
-                let src = ck_dev.rows_sc.slice(i * latent..(i + 1) * latent);
-                let mut dst = pend_score.slice_mut(slot * latent..(slot + 1) * latent);
-                stream.memcpy_dtod(&src, &mut dst).map_err(e("pend sc b"))?;
+                if !direct {
+                    let src = ck_dev.rows_kv.slice(i * latent..(i + 1) * latent);
+                    let mut dst = pend_kv.slice_mut(slot * latent..(slot + 1) * latent);
+                    stream.memcpy_dtod(&src, &mut dst).map_err(e("pend kv b"))?;
+                    let src = ck_dev.rows_sc.slice(i * latent..(i + 1) * latent);
+                    let mut dst = pend_score.slice_mut(slot * latent..(slot + 1) * latent);
+                    stream.memcpy_dtod(&src, &mut dst).map_err(e("pend sc b"))?;
+                }
                 if (pos + 1) % ratio != 0 {
                     continue;
                 }
@@ -15245,26 +15305,8 @@ impl Dsv4Gpu {
                 }
             }
             if cmp.overlap {
-                {
-                    let src = pend_kv.slice(ratio * latent..2 * ratio * latent);
-                    let mut dst = shift.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("bshift1"))?;
-                }
-                {
-                    let src = shift.slice(0..ratio * latent);
-                    let mut dst = pend_kv.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("bshift2"))?;
-                }
-                {
-                    let src = pend_score.slice(ratio * latent..2 * ratio * latent);
-                    let mut dst = shift.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("bshift3"))?;
-                }
-                {
-                    let src = shift.slice(0..ratio * latent);
-                    let mut dst = pend_score.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("bshift4"))?;
-                }
+                cmp_shift_halves(&stream, pend_kv, ratio * latent, "bshift kv")?;
+                cmp_shift_halves(&stream, pend_score, ratio * latent, "bshift sc")?;
             }
             *blocks = j + 1;
         }
@@ -15285,13 +15327,17 @@ impl Dsv4Gpu {
         n_commit: usize,
         t: usize,
         pos0: usize,
-        shift: &mut CudaSlice<f32>,
         pend_kv: &mut CudaSlice<f32>,
         pend_score: &mut CudaSlice<f32>,
         blocks: &mut usize,
     ) -> Res<()> {
         if n_commit == t {
             return Ok(()); // fully committed: the in-place batch state is already exact
+        }
+        if !ck_dev.snap_live {
+            return Err(format!(
+                "compressor rollback of {n_commit}/{t} rows without a snapshot of this round"
+            ));
         }
         let stream = st.gpu.stream();
         let (ratio, latent, overlap) = (ck_dev.ratio, ck_dev.latent, ck_dev.overlap);
@@ -15321,26 +15367,8 @@ impl Dsv4Gpu {
                 continue;
             }
             if overlap {
-                {
-                    let src = pend_kv.slice(ratio * latent..2 * ratio * latent);
-                    let mut dst = shift.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("rbshift1"))?;
-                }
-                {
-                    let src = shift.slice(0..ratio * latent);
-                    let mut dst = pend_kv.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("rbshift2"))?;
-                }
-                {
-                    let src = pend_score.slice(ratio * latent..2 * ratio * latent);
-                    let mut dst = shift.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("rbshift3"))?;
-                }
-                {
-                    let src = shift.slice(0..ratio * latent);
-                    let mut dst = pend_score.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("rbshift4"))?;
-                }
+                cmp_shift_halves(&stream, pend_kv, ratio * latent, "rbshift kv")?;
+                cmp_shift_halves(&stream, pend_score, ratio * latent, "rbshift sc")?;
             }
             *blocks += 1;
         }
@@ -18319,7 +18347,6 @@ impl Dsv4Gpu {
                     n_commit,
                     t,
                     pos0,
-                    &mut vws.cmp_shift,
                     cache.pend_kv.as_mut().expect("pend kv"),
                     cache.pend_score.as_mut().expect("pend sc"),
                     &mut cache.n_blocks,
@@ -18332,7 +18359,6 @@ impl Dsv4Gpu {
                     n_commit,
                     t,
                     pos0,
-                    &mut vws.cmp_shift,
                     cache.ipend_kv.as_mut().expect("ipend kv"),
                     cache.ipend_score.as_mut().expect("ipend sc"),
                     &mut cache.i_blocks,
