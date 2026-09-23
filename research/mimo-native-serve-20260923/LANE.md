@@ -93,8 +93,9 @@ Current fail-closed implementation slice in this worktree:
   the 48-layer trunk and reads `v_head_dim=128` rather than defaulting to
   the 192-wide key.
 - The config retains the source's full/SWA pattern, SWA KV geometry, RoPE
-  base, attention value scale, sink declarations, dense/MoE pattern, and
-  separately stored MTP depth without fabricating missing values.
+  base, fused-QKV layout, attention value scale, sink declarations,
+  sigmoid/noaux routing mode and dtype, dense/MoE pattern, and separately
+  stored MTP depth without fabricating missing values.
 - The exact 8,068-byte pinned source `config.json` is a fixture at
   `crates/memra-gguf/src/model_packs/mimo_v2/fixtures/config.json`
   (SHA-256 above). A unit test checks those values, 64 rotary dimensions,

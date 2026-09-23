@@ -1113,13 +1113,19 @@ impl MlaConfig {
 #[derive(Debug, Clone)]
 pub struct MiMoV2Config {
     pub hybrid_layer_pattern: Option<Vec<u32>>,
+    pub swa_num_attention_heads: Option<u32>,
     pub swa_num_key_value_heads: Option<u32>,
     pub swa_head_dim: Option<u32>,
     pub swa_v_head_dim: Option<u32>,
     pub swa_rope_theta: Option<f32>,
+    pub attention_projection_layout: Option<String>,
     pub attention_value_scale: Option<f32>,
     pub add_swa_attention_sink_bias: Option<bool>,
     pub add_full_attention_sink_bias: Option<bool>,
+    pub scoring_func: Option<String>,
+    pub topk_method: Option<String>,
+    pub norm_topk_prob: Option<bool>,
+    pub moe_router_dtype: Option<String>,
     pub moe_layer_freq: Option<Vec<u32>>,
     pub separate_mtp_layers: Option<u32>,
 }
@@ -2348,13 +2354,19 @@ impl ModelConfig {
         };
         let mimo = matches!(arch, Arch::MiMoV2).then(|| MiMoV2Config {
             hybrid_layer_pattern: c.hybrid_layer_pattern.clone(),
+            swa_num_attention_heads: c.swa_num_attention_heads,
             swa_num_key_value_heads: c.swa_num_key_value_heads,
             swa_head_dim: c.swa_head_dim,
             swa_v_head_dim: c.swa_v_head_dim,
             swa_rope_theta: c.swa_rope_theta,
+            attention_projection_layout: c.attention_projection_layout.clone(),
             attention_value_scale: c.attention_value_scale,
             add_swa_attention_sink_bias: c.add_swa_attention_sink_bias,
             add_full_attention_sink_bias: c.add_full_attention_sink_bias,
+            scoring_func: c.scoring_func.clone(),
+            topk_method: c.topk_method.clone(),
+            norm_topk_prob: c.norm_topk_prob,
+            moe_router_dtype: c.moe_router_dtype.clone(),
             moe_layer_freq: c.moe_layer_freq.clone(),
             separate_mtp_layers: c.num_nextn_predict_layers,
         });
@@ -2880,13 +2892,16 @@ pub struct HfConfig {
     pub moe_layer_freq: Option<Vec<u32>>, // per-layer 0=dense 1=moe
     // ---- MiMo-V2.6 (`mimo_v2`) ----
     pub hybrid_layer_pattern: Option<Vec<u32>>, // 0=global, 1=windowed
+    pub swa_num_attention_heads: Option<u32>,
     pub swa_num_key_value_heads: Option<u32>,
     pub swa_head_dim: Option<u32>,
     pub swa_v_head_dim: Option<u32>,
     pub swa_rope_theta: Option<f32>,
+    pub attention_projection_layout: Option<String>,
     pub attention_value_scale: Option<f32>,
     pub add_swa_attention_sink_bias: Option<bool>,
     pub add_full_attention_sink_bias: Option<bool>,
+    pub moe_router_dtype: Option<String>,
     // ---- Hy3 (`hy_v3`) ----
     pub first_k_dense_replace: Option<u32>,
     pub moe_router_use_sigmoid: Option<bool>,
@@ -3043,13 +3058,16 @@ impl Default for HfConfig {
             swiglu_limit: None,
             moe_layer_freq: None,
             hybrid_layer_pattern: None,
+            swa_num_attention_heads: None,
             swa_num_key_value_heads: None,
             swa_head_dim: None,
             swa_v_head_dim: None,
             swa_rope_theta: None,
+            attention_projection_layout: None,
             attention_value_scale: None,
             add_swa_attention_sink_bias: None,
             add_full_attention_sink_bias: None,
+            moe_router_dtype: None,
             first_k_dense_replace: None,
             moe_router_use_sigmoid: None,
             moe_router_enable_expert_bias: None,
@@ -3662,6 +3680,9 @@ impl HfConfig {
         if let Some(v) = o.u32_array("hybrid_layer_pattern")? {
             self.hybrid_layer_pattern = Some(v);
         }
+        if let Some(v) = o.u32("swa_num_attention_heads")? {
+            self.swa_num_attention_heads = Some(v);
+        }
         if let Some(v) = o.u32("swa_num_key_value_heads")? {
             self.swa_num_key_value_heads = Some(v);
         }
@@ -3674,6 +3695,9 @@ impl HfConfig {
         if let Some(v) = o.f32("swa_rope_theta")? {
             self.swa_rope_theta = Some(v);
         }
+        if let Some(v) = o.string("attention_projection_layout")? {
+            self.attention_projection_layout = Some(v);
+        }
         if let Some(v) = o.f32("attention_value_scale")? {
             self.attention_value_scale = Some(v);
         }
@@ -3682,6 +3706,9 @@ impl HfConfig {
         }
         if let Some(v) = o.boolean("add_full_attention_sink_bias")? {
             self.add_full_attention_sink_bias = Some(v);
+        }
+        if let Some(v) = o.string("moe_router_dtype")? {
+            self.moe_router_dtype = Some(v);
         }
         // ---- Hy3 keys ----
         if let Some(v) = o.u32("first_k_dense_replace")? {
@@ -4181,12 +4208,21 @@ pub(crate) mod hf_tests {
         assert_eq!(pattern[0], 0);
         assert_eq!(pattern[47], 0);
         assert_eq!(mimo.swa_num_key_value_heads, Some(8));
+        assert_eq!(mimo.swa_num_attention_heads, Some(64));
         assert_eq!(mimo.swa_head_dim, Some(192));
         assert_eq!(mimo.swa_v_head_dim, Some(128));
         assert_eq!(mimo.swa_rope_theta, Some(10_000.0));
+        assert_eq!(
+            mimo.attention_projection_layout.as_deref(),
+            Some("fused_qkv")
+        );
         assert_eq!(mimo.attention_value_scale, Some(0.707));
         assert_eq!(mimo.add_swa_attention_sink_bias, Some(true));
         assert_eq!(mimo.add_full_attention_sink_bias, Some(false));
+        assert_eq!(mimo.scoring_func.as_deref(), Some("sigmoid"));
+        assert_eq!(mimo.topk_method.as_deref(), Some("noaux_tc"));
+        assert_eq!(mimo.norm_topk_prob, Some(true));
+        assert_eq!(mimo.moe_router_dtype.as_deref(), Some("bfloat16"));
         assert_eq!(mimo.moe_layer_freq.as_ref().unwrap().len(), 48);
         assert_eq!(mimo.separate_mtp_layers, Some(3));
         assert!(crate::model_packs::for_config(&config).is_none());
