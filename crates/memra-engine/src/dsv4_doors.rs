@@ -15,9 +15,10 @@
 //! served path is PP-2 with a resident DSpark drafter and chunked prefill, and
 //! TP/EP refused both a drafter and a batched prime (memra #457). Memra #454
 //! removed both refusals (TP/EP chunks, verifies, carries DSpark on the head
-//! rank and parks both rank planes, bit-equal to sequential), but its served
-//! A/B lost to PP-2 at batch 1 (`research/dsv4f-bringup-20260923/tpep-serve/RESULTS.md`), so the
-//! server has no TP/EP selector and TP/EP still takes no customer request.
+//! rank and parks both rank planes, bit-equal to sequential). Its served A/B
+//! (`research/dsv4f-bringup-20260923/tpep-serve/RESULTS.md`) beats PP-2 on plain
+//! decode, but DSpark does not fit under TP/EP and PP-2 DSpark stays faster, so
+//! the server has no TP/EP selector and TP/EP still takes no customer request.
 //!
 //! A door admitted only under TP/EP is not "inert today", it is unreachable on
 //! the served path until a TP/EP program wins its served A/B and the server
@@ -127,8 +128,9 @@ pub enum AdmittingProgram {
     /// whether these doors ever engage is the memra #461 matrix verdict.
     MatrixExecutor,
     /// Only the all-layer TP/EP topology admits it, and TP/EP serves no
-    /// customer request: the server has no TP/EP selector since its #454 A/B
-    /// lost to PP-2. Only a winning TP/EP program makes these reachable.
+    /// customer request: the server has no TP/EP selector until a TP/EP
+    /// program beats PP-2 DSpark (memra #454, #679). Only that makes these
+    /// reachable.
     TpEpOnly,
     /// Only a gate binary arming an instrument reaches it. No serving caller
     /// exists on any program.
@@ -205,7 +207,8 @@ pub struct Dsv4Program {
     pub hc_geometry_24x16384: bool,
     /// Whether this program can serve a customer request AT ALL. TP/EP cannot:
     /// memra #454 taught it to chunk and carry DSpark, but the server has no
-    /// TP/EP selector because the served A/B lost to PP-2 at batch 1.
+    /// TP/EP selector: DSpark does not fit under TP/EP, and PP-2 DSpark beats
+    /// every plain TP/EP arm.
     pub can_serve: bool,
 }
 
