@@ -637,7 +637,103 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
 diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engine/src/bin/mtp_depth_study.rs
 --- a/crates/memra-engine/src/bin/mtp_depth_study.rs
 +++ b/crates/memra-engine/src/bin/mtp_depth_study.rs
-@@ -16,10 +16,50 @@
+@@ -13,17 +13,151 @@
+ 
+ mod depth_study_io;
+ 
++struct KRouter {
++    features: usize,
++    window_size: usize,
++    weights: Vec<(i32, [f64; 11])>,
++}
++
++impl KRouter {
++    fn parse(text: &str) -> Result<Self, &'static str> {
++        let mut lines = text.lines();
++        let header: Vec<_> = lines
++            .next()
++            .ok_or("missing sampler K model header")?
++            .split('\t')
++            .collect();
++        if header.len() != 5 || header[0] != "joint-v5-topk" || header[1] != "1" {
++            return Err("invalid sampler K model header");
++        }
++        let (features, window_size) = match header[2] {
++            "first16" => (10, 16),
++            "first32" => (10, 32),
++            "prior" => (11, 32),
++            _ => return Err("unknown sampler K feature version"),
++        };
++        let lambda: f64 = header[3].parse().map_err(|_| "invalid K target rate")?;
++        let alpha: f64 = header[4].parse().map_err(|_| "invalid K fit penalty")?;
++        if !lambda.is_finite() || lambda <= 0.0 || !alpha.is_finite() || alpha <= 0.0 {
++            return Err("invalid K rate or fit penalty");
++        }
++        let mut weights = Vec::new();
++        for line in lines {
++            let fields: Vec<_> = line.split('\t').collect();
++            if fields.len() != 3 || fields[0] != "K" {
++                return Err("invalid sampler K action row");
++            }
++            let k: i32 = fields[1].parse().map_err(|_| "invalid sampled K action")?;
++            if !matches!(k, 3 | 10 | 20) || weights.iter().any(|(old, _)| *old == k) {
++                return Err("duplicate or unsupported sampler K action");
++            }
++            let coefficients = fields[2]
++                .split(',')
++                .map(|value| value.parse::<f64>().map_err(|_| "invalid K weight"))
++                .collect::<Result<Vec<_>, _>>()?;
++            if coefficients.len() != features || coefficients.iter().any(|w| !w.is_finite()) {
++                return Err("sampler K weights differ from feature version");
++            }
++            let mut row = [0.0; 11];
++            row[..features].copy_from_slice(&coefficients);
++            weights.push((k, row));
++        }
++        if !weights.iter().any(|(k, _)| *k == 20) {
++            return Err("sampler K model lacks recommended default action");
++        }
++        Ok(Self { features, window_size, weights })
++    }
++
++    fn select(&self, prefix: &[u32], previous_accept: Option<f64>) -> i32 {
++        let mut x = [0.0; 11];
++        x[0] = 1.0;
++        let count = self.window_size;
++        let window = &prefix[..prefix.len().min(count)];
++        if !window.is_empty() {
++            for &token in window {
++                let bucket = token.wrapping_mul(0x9e37_79b1) % 8;
++                x[1 + bucket as usize] += 1.0 / window.len() as f64;
++            }
++        }
++        x[9] = window.len() as f64 / count as f64;
++        if self.features == 11 {
++            x[10] = previous_accept.unwrap_or(0.0);
++        }
++        let value = |row: &[f64; 11]| {
++            row[..self.features]
++                .iter()
++                .zip(x)
++                .map(|(weight, feature)| weight * feature)
++                .sum::<f64>()
++        };
++        let mut best = 20;
++        let mut best_score = value(
++            &self.weights.iter().find(|(k, _)| *k == 20).expect("checked K20").1,
++        );
++        for (k, row) in &self.weights {
++            let score = value(row);
++            if score > best_score + 1e-9 {
++                best = *k;
++                best_score = score;
++            }
++        }
++        std::hint::black_box(best_score);
++        best
++    }
++}
++
  fn experiment(
      arm: &str,
      cap: usize,
@@ -688,24 +784,31 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
      let arm = match arm {
          "trace-c1" => "fixed:1",
          "trace-c2" => "fixed:2",
-@@ -103,8 +143,8 @@
+-        "trace-c3" | "learn-c3" | "monitor-c3" | "fixed-c3" => "fixed:3",
++        "trace-c3" | "learn-c3" | "monitor-c3" | "fixed-c3"
++        | "learn-topk" | "noop-topk" => "fixed:3",
+         other => other,
+     };
+     Ok(match arm {
+@@ -103,8 +237,8 @@
          println!("{}", prompt.len());
          return Ok(());
      }
 -    if !(10..=16).contains(&args.len()) {
 -        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
 +    if !(10..=18).contains(&args.len()) {
-+        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [cap=N] [sampler-top-k=3|10|20] [sampler-schedule=K1,...,K8] [explore-seed=UINT64] [depth-model=PATH] [confidence-model=PATH] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
++        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [cap=N] [sampler-top-k=3|10|20] [sampler-schedule=K1,...,K8] [topk-model=PATH] [explore-seed=UINT64] [depth-model=PATH] [confidence-model=PATH] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
      }
      let arm = args[5].as_str();
      let seed: u64 = args[6].parse()?;
-@@ -115,8 +155,45 @@
+@@ -115,8 +249,50 @@
      let mut confidence_policy = None;
      let mut confidence_costs = None;
      let mut fixed_cutoffs = None;
 +    let mut requested_cap = None;
 +    let mut requested_top_k = None;
 +    let mut sampler_schedule = None;
++    let mut topk_model_path = None;
 +    let mut explore_seed = None;
 +    let mut depth_model = None;
 +    let mut confidence_model = None;
@@ -730,6 +833,10 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +            if sampler_schedule.replace(schedule).is_some() {
 +                return Err("duplicate sampler schedule".into());
 +            }
++        } else if let Some(path) = option.strip_prefix("topk-model=") {
++            if path.is_empty() || topk_model_path.replace(path).is_some() {
++                return Err("invalid sampler K model path".into());
++            }
 +        } else if let Some(value) = option.strip_prefix("explore-seed=") {
 +            if explore_seed.replace(value.parse::<u64>()?).is_some() {
 +                return Err("duplicate randomized depth seed".into());
@@ -746,7 +853,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
              if path.is_empty() || confidence_policy.replace(path).is_some() {
                  return Err("invalid confidence policy path".into());
              }
-@@ -143,9 +220,25 @@
+@@ -143,9 +319,28 @@
              standard_args.push(option.clone());
          }
      }
@@ -757,6 +864,9 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +        || sampler_schedule.is_some_and(|values: [i32; 8]| {
 +            values.iter().any(|&k| !matches!(k, 3 | 10 | 20))
 +        })
++        || (sampler_schedule.is_some() && topk_model_path.is_some())
++        || matches!(arm, "learn-topk" | "noop-topk") != topk_model_path.is_some()
++        || (topk_model_path.is_some() && cap != 3)
 +        || (arm == "explore-d" && requested_cap.is_none())
 +        || (arm == "explore-d") != explore_seed.is_some()
 +        || matches!(arm, "trained-d" | "noop-d" | "joint-cd" | "noop-cd") != depth_model.is_some()
@@ -773,16 +883,16 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
      if confidence_policy.is_some() != live_confidence
          || confidence_costs.is_some() != live_confidence
          || (arm == "fixed-c3") != fixed_cutoffs.is_some()
-@@ -169,7 +262,7 @@
+@@ -169,7 +364,7 @@
      let mut rows = std::fs::File::create_new(output.join("turns.tsv"))?;
      writeln!(
          rows,
 -        "turn\tseed\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns"
-+        "turn\tseed\tsampler_top_k\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns\tdepth_policy_ns\tconfidence_decisions\tconfidence_stops"
++        "turn\tseed\tsampler_top_k\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns\tdepth_policy_ns\tconfidence_decisions\tconfidence_stops\tk_model_ns"
      )?;
      let mut trace = std::fs::File::create_new(output.join("rounds.tsv"))?;
      writeln!(
-@@ -195,18 +288,20 @@
+@@ -195,18 +390,25 @@
      if mtp.d2t.is_some() || draft_vocab != model.output.out_features() {
          return Err("MTP draft and target heads must both use the full vocabulary".into());
      }
@@ -795,6 +905,11 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +        &initial_arm, cap, explore_seed, &tok, model.output.out_features(), priors,
 +        depth_model, confidence_model,
 +    )?;
++    let k_router = if let Some(path) = topk_model_path {
++        Some(KRouter::parse(&std::fs::read_to_string(path)?)?)
++    } else {
++        None
++    };
      let mut routing_log = std::fs::File::create_new(output.join("routing.tsv"))?;
 -    writeln!(routing_log, "turn\tsource\tkind\tk\trouting_ns")?;
 +    writeln!(routing_log, "turn\tsource\tkind\tdraft_depth\trouting_ns")?;
@@ -807,7 +922,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          top_p: 0.95,
          min_p: 0.0,
          penalty_last_n: 0,
-@@ -215,7 +310,7 @@
+@@ -215,7 +417,7 @@
          penalty_present: 0.0,
      };
      eprintln!(
@@ -816,11 +931,30 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          model.output.out_features(),
          draft_vocab,
          arm == "learned" || arm == "context",
-@@ -255,6 +350,11 @@
+@@ -252,9 +454,30 @@
+     let mut total_tokens = 0usize;
+     let mut total_seconds = 0f64;
+     let mut measured_rounds = 0usize;
++    let mut previous_accept = None;
      for (index, user) in user_turns.iter().enumerate() {
          let turn = index + 1;
          let started = Instant::now();
-+        let turn_top_k = sampler_schedule.map_or(sampler_top_k, |values| values[index]);
++        let mut routed_prefix = None;
++        let mut k_model_ns = 0_u128;
++        let turn_top_k = if let Some(router) = &k_router {
++            let decision_start = Instant::now();
++            let ids = tok.encode(user, false);
++            let prefix = ids[..ids.len().min(32)].to_vec();
++            if prefix.is_empty() {
++                return Err("K selector needs at least one user tokenizer token".into());
++            }
++            let predicted = router.select(&prefix, previous_accept);
++            routed_prefix = Some(prefix);
++            k_model_ns = decision_start.elapsed().as_nanos();
++            if arm == "noop-topk" { sampler_top_k } else { predicted }
++        } else {
++            sampler_schedule.map_or(sampler_top_k, |values| values[index])
++        };
 +        let turn_sampling = SpecSampling {
 +            top_k: turn_top_k,
 +            ..sampling
@@ -828,7 +962,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          history.push(Turn {
              role: "user".into(),
              content: (*user).into(),
-@@ -324,6 +424,14 @@
+@@ -324,6 +547,14 @@
          let new_input_tokens = prompt.len() - cached_tokens;
          let trace_start = sess.depth_rounds.len();
          let confidence_start = sess.confidence_rounds.len();
@@ -843,7 +977,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          let mut on_commit = |chunk: &[u32]| !chunk.iter().any(|id| eos.contains(id));
          let (mut ids, drafted, accepted) = model.generate_spec_session_sampled(
              &e,
-@@ -331,10 +439,10 @@
+@@ -331,10 +562,10 @@
              &prompt[cached_tokens..],
              max_new,
              cap,
@@ -856,7 +990,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          ids.truncate(max_new);
          if let Some(end) = ids.iter().position(|id| eos.contains(id)) {
              ids.truncate(end + 1);
-@@ -472,6 +580,10 @@
+@@ -472,6 +703,10 @@
              Some(MtpDepthExperiment::Learned(p)) => Some(p),
              _ => None,
          };
@@ -867,20 +1001,20 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          context_receipts.write(
              turn,
              user,
-@@ -506,7 +618,7 @@
+@@ -506,7 +741,7 @@
          };
          writeln!(
              rows,
 -            "{turn}\t{seed}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}",
-+            "{turn}\t{seed}\t{turn_top_k}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}\t{depth_policy_ns}\t{confidence_decisions}\t{confidence_stops}",
++            "{turn}\t{seed}\t{turn_top_k}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}\t{depth_policy_ns}\t{confidence_decisions}\t{confidence_stops}\t{k_model_ns}",
              prompt.len(),
              ids.len(),
              new_trace.len(),
-@@ -523,6 +635,11 @@
+@@ -523,6 +758,11 @@
          )?;
          rows.flush()?;
          trace.flush()?;
-+        let user_ids = tok.encode(user, false);
++        let user_ids = routed_prefix.unwrap_or_else(|| tok.encode(user, false));
 +        save_ids(
 +            &output.join(format!("turn-{turn}.user-prefix.ids")),
 +            &user_ids[..user_ids.len().min(32)],
@@ -888,7 +1022,15 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
          save_ids(&output.join(format!("turn-{turn}.prompt.ids")), &prompt)?;
          save_ids(&output.join(format!("turn-{turn}.output.ids")), &ids)?;
          std::fs::write(output.join(format!("turn-{turn}.raw.txt")), &raw)?;
-@@ -539,7 +656,7 @@
+@@ -536,10 +776,15 @@
+         )?;
+         history.push(answer);
+         parked = Some(sess);
++        previous_accept = if drafted > 0 {
++            Some(accepted as f64 / drafted as f64)
++        } else {
++            None
++        };
          total_tokens += ids.len();
          total_seconds += seconds;
          eprintln!(
@@ -897,6 +1039,36 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
              ids.len()
          );
      }
+@@ -578,6 +823,29 @@
+     );
+     println!("PERF_METRICS_END");
+     Ok(())
++}
++
++#[cfg(test)]
++mod k_model_tests {
++    use super::KRouter;
++
++    #[test]
++    fn k_router_uses_only_the_bounded_user_token_prefix() {
++        let mut k3 = [0.0_f64; 10];
++        k3[8] = 10.0; // token id 7 hashes to bucket 7
++        let zero = [0.0_f64; 10];
++        let text = format!(
++            "joint-v5-topk\t1\tfirst16\t100\t20\nK\t3\t{}\nK\t20\t{}\n",
++            k3.iter().map(ToString::to_string).collect::<Vec<_>>().join(","),
++            zero.iter().map(ToString::to_string).collect::<Vec<_>>().join(","),
++        );
++        let router = KRouter::parse(&text).unwrap();
++        assert_eq!(router.select(&[7], None), 3);
++        assert_eq!(router.select(&[1], None), 20);
++        let mut later = vec![1_u32; 16];
++        later.push(7);
++        assert_eq!(router.select(&later, None), 20);
++    }
+ }
+ 
+ #[cfg(test)]
 diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
 --- a/crates/memra-engine/src/spec.rs
 +++ b/crates/memra-engine/src/spec.rs

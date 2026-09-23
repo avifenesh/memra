@@ -365,13 +365,16 @@ jobs:
           python3 -m py_compile \
             "$lane/joint-v5/run_native.py" \
             "$lane/joint-v5/schedules.py" \
-            "$lane/joint-v5/fit_models.py"
+            "$lane/joint-v5/fit_models.py" \
+            "$lane/joint-v5/fit_topk.py"
           python3 "$lane/joint-v5/patch_source.py" \
             --base "$lane/confidence/adaptive-v3/receipts-v3/runtime-source-adaptive-v3.tar.gz" \
             --out "$RUNNER_TEMP/joint-v5-native"
           cd "$RUNNER_TEMP/joint-v5-native/repo"
           cargo check --locked -p memra-engine --bin mtp-depth-study
           cargo test --locked -p memra-engine --lib learned_depth::tests
+          cargo test --locked -p memra-engine --bin mtp-depth-study \
+            k_router_uses_only_the_bounded_user_token_prefix
           MEMRA_CUDA_ARCH=120a cargo build --release --locked \
             -p memra-engine --bin mtp-depth-study
           sha256sum target/release/mtp-depth-study \
