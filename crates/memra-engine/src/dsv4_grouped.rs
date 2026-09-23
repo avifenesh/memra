@@ -1739,7 +1739,7 @@ mod tests {
         );
         assert!(super::modelopt_pointers(w, s, 6 * wb - 1, 6 * sb, 2, 128, 256).is_err());
         assert!(super::modelopt_pointers(w, s, 6 * wb, 6 * sb + 1, 2, 128, 256).is_err());
-        let top = u64::MAX & !15;
+        let top = !15u64;
         assert!(super::modelopt_pointers(top, s, 6 * wb, 6 * sb, 2, 128, 256).is_err());
         assert!(super::modelopt_pointers(w, top, 6 * wb, 6 * sb, 2, 128, 256).is_err());
         assert!(super::modelopt_pointers(w + 8, s, 6 * wb, 6 * sb, 2, 128, 256).is_err());
