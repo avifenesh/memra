@@ -41,10 +41,11 @@ its output was 4.0% shorter and aggregate wall time 2.6% lower.
 Neither shorter drafts nor higher acceptance alone was the score.
 
 All arms returned fenced, parseable final code on 48/48 heldout turns.
-One valid-domain function check per request passed 47/48 for live C,
-46/48 for K=3/C=0, 48/48 for calibrated fixed C, 46/48 for the
-monitor, and 47/48 for K=2/C=0. That narrow probe does not establish
-general code quality. There were **zero matched exact-loop
+After correcting the probe's `bin` allowance and using a shared
+endpoint for `merge_touching`, one valid-domain function check per
+request passed 48/48 in **every** arm. That narrow probe does not
+establish a code-quality gain or general correctness. There were
+**zero matched exact-loop
 exclusions**. [RESULTS.md](RESULTS.md) retains output/wait ratios,
 per-length rates and calibration numbers; [RESULTS.json](RESULTS.json)
 retains every C decision, controller time, native offered-round

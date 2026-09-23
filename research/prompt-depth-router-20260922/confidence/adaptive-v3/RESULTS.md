@@ -6,11 +6,11 @@ The earlier C=0/0.15/0.30 grid used preset cutoffs. This run tested a live cutof
 
 | Arm | tok/s | Gain vs K=3/C=0 (95% conversation bootstrap) | Output ratio | Time ratio | Fenced code | One-case function probes |
 |---|---:|---:|---:|---:|---:|---:|
-| Live learned C, K=3 | 120.96 | -13.44% [-14.58, -11.83] | 1.045 | 1.207 | 48/48 | 47/48 |
-| Monitor control, K=3/C=0 | 121.75 | -12.87% [-13.13, -12.41] | 1.000 | 1.148 | 48/48 | 46/48 |
+| Live learned C, K=3 | 120.96 | -13.44% [-14.58, -11.83] | 1.045 | 1.207 | 48/48 | 48/48 |
+| Monitor control, K=3/C=0 | 121.75 | -12.87% [-13.13, -12.41] | 1.000 | 1.148 | 48/48 | 48/48 |
 | Calibrated fixed C, K=3 | 137.72 | -1.44% [-4.05, +0.48] | 0.960 | 0.974 | 48/48 | 48/48 |
-| Fixed K=3/C=0 | 139.74 | +0.00% [+0.00, +0.00] | 1.000 | 1.000 | 48/48 | 46/48 |
-| Fixed K=2/C=0 | 132.87 | -4.91% [-6.07, -3.52] | 1.421 | 1.495 | 48/48 | 47/48 |
+| Fixed K=3/C=0 | 139.74 | +0.00% [+0.00, +0.00] | 1.000 | 1.000 | 48/48 | 48/48 |
+| Fixed K=2/C=0 | 132.87 | -4.91% [-6.07, -3.52] | 1.421 | 1.495 | 48/48 | 48/48 |
 
 Live learned C versus the calibrated fixed C: -12.17%, conversation bootstrap [-13.63%, -9.33%]. Versus the equal-budget monitor: -0.65%, [-1.88%, +1.01%].
 
