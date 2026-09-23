@@ -957,6 +957,18 @@ explicit gate rollback and refusal, and verify a new thread's environment policy
 all five dense-TC drivers under unset, explicit S16 and zero before CUDA calls.
 
 
+### DSv4 gate source tape (#657)
+
+The DSv4 perf and identity gates take `<source.txt>`, the prompt tape. The originally pinned
+tape (sha256 `f6e175a6...`) was cut from a dirty tree and no reachable machine holds it.
+Rebuild the clean tape with `tools/dsv4-source-tape.py <out.txt>` from any checkout that has
+commit 9e3c8b550; it refuses a digest other than `11e4bd80...`. The two tapes share their first
+3,736,115 bytes, and `memra_engine::dsv4_source_tape::SourceTape` tokenizes only that prefix and
+asserts a 4096-token margin, so both tapes give the same gate prompt tokens. The one mode that
+reads past the prefix, the `dsv4_hc_dot_split_gate` 64-window sampler, still requires the pinned
+tape and refuses the rebuild.
+
+
 ### Model-owned device admission and reclaim (#544)
 
 `tools/qualify-model-device-memory.py` runs the named native ownership/memory stages

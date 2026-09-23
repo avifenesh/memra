@@ -3,6 +3,7 @@
 //! Qualification precedes one A5/B5/B5/A5 envelope with first captures included.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg, dsv4_pos_uniform, dsv4_prof_on};
 use memra_engine::dsv4_sampler::{Dsv4DeviceSampler, Dsv4Sampler, dsv4_sampler};
+use memra_engine::dsv4_source_tape::SourceTape;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -17,7 +18,6 @@ const PRIME: usize = 256;
 mod default_engagement;
 const OUTPUT: usize = 256;
 const CAPACITY: usize = PRIME + OUTPUT + 8;
-const SOURCE_SHA: &str = "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded";
 const FP8_NODES: &str = "dsv4_dense_exact_tail_fp8_kernel";
 const DOT_NODES: &str = "dsv4_dense_exact_tail_dots_kernel";
 const CONTROL_FP8: &str = "dsv4_gemv_fp8_m_kernel";
@@ -783,17 +783,13 @@ fn main() {
         "COMPOSE_PROGRAMS before_model_creation=true arms={programs:?} sampler=device sampling_fixed=true dense_selector=capture_only"
     );
     // GU N32 is absent from the pinned source; the controller must bind it.
-    let source = std::fs::read_to_string(&args[2]).expect("source tape");
-    assert_eq!(
-        format!("{:x}", Sha256::digest(source.as_bytes())),
-        SOURCE_SHA
-    );
+    let tape = SourceTape::read(&args[2]).expect("source tape");
     let tokenizer = Tokenizer::from_hf_dir(Path::new(&args[1])).expect("tokenizer");
-    let prompt = tokenizer.encode(
-        &format!("Review this inference engine source:\n\n{source}"),
-        true,
+    let prompt = tape.prompt(
+        &tokenizer,
+        "Review this inference engine source:\n\n",
+        PRIME,
     );
-    assert!(prompt.len() >= PRIME);
     let output = PathBuf::from(&args[3]);
     std::fs::create_dir(&output).expect("new output directory");
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
