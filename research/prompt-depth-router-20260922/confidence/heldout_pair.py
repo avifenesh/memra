@@ -118,8 +118,21 @@ def main():
         # The development report stays unopened until the disjoint prompt
         # corpus and its independent format qualification are frozen.
         development = json.loads(args.development_report.read_text())
-        if development["status"] != "measured-fixed-cutoff-only":
-            raise ValueError("fixed-C development result is incomplete")
+        development_identity = json.loads(
+            (args.development_report.parent / "fixed-grid-v2/identity.json").read_text()
+        )
+        heldout_identity = json.loads((args.out / "identity.json").read_text())
+        if (development["status"] != "measured-fixed-cutoff-only"
+                or development["freeze"]["source_sha256"] != sha(args.source)
+                or development["freeze"]["runtime_source_sha256"] != source["runtime_source_sha256"]
+                or development["freeze"]["k"] != 3
+                or development["freeze"]["sampling"] != freeze["sampler"]
+                or development_identity["source"] != source
+                or development_identity["artifacts"]["qwen"] != json.loads(
+                    (args.models / "qwen/artifacts.lock.json").read_text()
+                )
+                or development_identity["gpu"] != heldout_identity["gpu"]):
+            raise ValueError("fixed-C development result differs from the held-out source, model or GPU")
         selected = choose_c(development)
         freeze["development_report_sha256"] = sha(args.development_report)
         freeze["selected_c"] = selected
