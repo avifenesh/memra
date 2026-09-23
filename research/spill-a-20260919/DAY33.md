@@ -123,3 +123,68 @@ the target card's.
 **Budget.** 0.5 agent-day plus card time: the conformance rule and binding, the engine call and its native cell, the
 server's probe submission and the removal, the gate cell's one assertion, the 5090 half; the target-card sitting waits
 for the restore. If budget remains after the 5090 half: the D2D half's pre-registration only (no code).
+
+## 3. What landed, in the pre-registered order, one census each
+
+1. **Tier rule 6** (`f814af107`): `conformance/h2d_span.rs`
+   gains `H2dFillFixture` and `h2d_span_fill_ordered_before_its_copy` (additive, unversioned, `WIRE_VERSION` stays 1);
+   the CPU binding's red arm is a binding whose copies run when offered, before the fill (`h2d_span_red_arm_a_copy_before_its_fill_fails`).
+   Tier contracts `h2d_span` 5 passed.
+2. **The engine call** (`82472ff12`): both H2D span attaches share one body (`attach_h2d_spans`);
+   `submit_h2d_spans_filled` runs the rule-1 admission (a source need not be written; each fill exactly its source's
+   length), the owner-stream event and the copy stream's wait, ONE `cuLaunchHostFunc` whose task copies every resident
+   plane into its staging buffer, then one copy and one event per span; a launch error hands every span and fill back;
+   `take_h2d_spans` marks each source written. `unsafe` is confined to `pinned_host.rs` (`fill_target`,
+   `enqueue_to_device_f32_after_fill`) and the task; the trampoline never unwinds across the FFI. Census
+   `h2d_span_rules_are_as_stated` (rule 6's order, one launch site); native cell
+   `h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies` (a wrong-length fill refused whole; a 300 ms
+   copy-stream hold keeps the fill and copies queued while the KV item lands; after the reader wait each staging source
+   reads its plane's bytes and each destination the plane, bit for bit; the attach under 100 ms; the injected
+   second-enqueue fault quarantines).
+3. **The server** (`045ab57d4`): the probe takes the staging (`host_promote_stage`) and submits in its own step through
+   the unchanged route, the spans through `submit_h2d_spans_filled`; the submitted line reads `.. 48 f32 spans filled on
+   the copy stream (52.7MB); owner segment 0.47ms; request parked` (9B). Removed with it: the day-32 Filling phase, the
+   helper's Fill job and reply channel, `HostHelperJob`, the `promote staging fill off the tick` line and the two day-32
+   Filling CPU cells. The fault gate's `promote-span-refusal` cell swaps its one day-32 assertion for `the next promote's
+   submission carries its spans filled on the copy stream` (DAY33 item 8; the helper run red and green,
+   `rtx5090-day33/gatecheck/helper-red-green.txt`). Census `day33_the_promote_submits_its_filled_spans_in_the_probes_tick`
+   (the probe's order; no `synchronize(`, `recv_timeout(`, `reply_within(` or `ContractWait::Block` on the path from t0
+   to the line, the census half of (d); nothing of the Filling phase left). Server lib 876 passed; clippy `-D warnings`
+   clean on tier, engine and server.
+4. **The owner-hold cell** (`aad1e1797`): `h2d_fill_host_function_does_not_hold_the_owner_thread`, written after the
+   5090 stall reading (section 4), queued for the card's next free window.
+
+## 4. The 5090 half (`rtx5090-day33/`, binary `1f890107872d21722cf7ed596ee831b719e2bb7d3f6a53d1ce99659d1e7bde1c` at `045ab57d4`)
+
+Unit cells under `/tmp/memra-5090.lock`, serial: the door's GPU cells `test result: ok. 16 passed` (with
+`option_c_spans_ride_the_promote_ticket_and_land_bitwise`: the promoted planes bitwise equal to the resident bytes
+through the copy-stream fill); the engine's span cells `ok. 3 passed` (`d2h_span_batch_..`, `h2d_span_batch_..`,
+`h2d_span_filled_batch_..`). A lane B `memra-server` was resident on the card during the engine cells (the lock was free;
+`unit/card-apps-at-engine-cells.txt`); correctness cells only, recorded.
+
+The battery (`battery.log`, 16:00:33Z to 16:05:29Z, each gate under its own `flock`, the 9B NVFP4 MTP artifact):
+identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok; `verify ok: promoted state digest
+matches demote digest`, the H2D receipt `checksums_sha256=ed284403..` equal to day 32's); fault default and plain
+`KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (160 ok each; the new assertion `refusal at 74, filled span submissions 1,
+after the refusal 1`, `byte-unequal request(s): none`); hit OFF `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok), hit
+ON the same (68 ok). `DAY32 B4 receipts=13 bad=0 by (items, spans)=[((16, 48), 6), ((18, 48), 7)] ... -> PASS`;
+`DAY30 A3 ... receipts_paired=88 ... -> PASS`. **(c) on the 5090: B1 and B4 hold; B5's native cell holds.**
+
+The promote-mode stall reading (`stall/`, one hold 16:07:14Z to 16:09:50Z, five boots, `STALL REPLAY: PASS` 5 of 5;
+`reading-day33-stall.log`), verbatim:
+
+- `DAY33 5090 READING arm=d32-on boots=2 owner-segment N=20 median=0.41 ... | completion ms N=18 median=8.85 min=8.70
+  max=9.90 polls [1] (counts [18]) | promote-in N=18 median=16.90 ... | intruder-e2e N=20 median=78.04 ...`
+- `DAY33 5090 READING arm=d33-on boots=2 owner-segment N=20 median=0.41 min=0.37 max=0.67 submissions=20 filled=20 |
+  completion ms N=18 median=16.40 min=16.00 max=18.50 polls [1] (counts [18]) | promote-in N=18 median=17.10 ... |
+  intruder-e2e N=20 median=78.53 ...`
+- `DAY33 5090 READING arm=off ... promote-in N=9 median=10.40 ... | intruder-e2e N=10 median=62.11 ...`
+
+**The lever did not move on the 5090.** `promote_in` 16.90 (day 32) against 17.10 ms (day 33), the intruder's e2e
+78.04 against 78.53 ms. The owner segment is the same 0.41 ms. What changed is where the time sits: on the day-33
+binary the ticket is complete at the FIRST tick-top poll after the submission, but that poll comes 16.4 ms after it
+(one poll, not two), while the tenant's tick here is about 7.4 ms. The owner loop took about two ticks to come back
+around after the probe that submitted. The prediction of section 2 assumed the copy stream starts at the probe and the
+next tick top comes one tick later; the reading says the tick that carries the submission is about twice as long.
+Section 5 tests the one mechanism the code can hold responsible (the host function holding the owner thread's CUDA
+work) before any target-card time is spent.
