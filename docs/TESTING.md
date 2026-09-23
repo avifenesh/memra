@@ -1001,6 +1001,31 @@ for any change that touches a DSv4 dense, HC, verify or commit path. Before #660
 failed every bit-gate cell: the HC24 split ran only on one-row calls, so verify rows took the
 sequential class. Receipts: `research/dsv4f-bringup-20260923/`.
 
+### DSv4 one-token MoE stream visitor (#664)
+
+`cargo test -p memra-engine --release --lib cuda_m1_stream_matches_sktail_bit_for_bit -- --ignored`
+(one CUDA card) compares the stream visitor against the sktail launch bit for bit: an exhaustive
+B-value probe over every E4M3FN scale byte and E2M1 code, then gate, up, H and the down
+contribution over a full bank and both EP halves, four route patterns (empty groups, one shard
+owning every route, duplicate routes, contiguous). It also pins engagement (3 enqueues per live
+step ON, 0 OFF) and precedence (a gate-armed half2 down tail keeps down; the stream takes gate
+and up). On the pair, `dsv4-gpu-dspark-gate ... --served` takes the stream and fails unless arm
+P enqueued it; without `--served` the historical pins hold the sktail program and fail if it did.
+Both invocations must PASS every DSpark bit gate.
+
+### DSv4 multi-row MoE stream visitor (#669)
+
+`cargo test -p memra-engine --release --lib cuda_mrow_stream_matches_sktail_bit_for_bit -- --ignored`
+(one CUDA card) compares the multi-row visitor against the sktail launch bit for bit on steps of
+2, 3, 5, 8, 16 and 17 rows: gate, up, H and the down contribution over a full bank and both EP
+halves, five route patterns (scattered distinct experts, every token on the same six, one shard
+owning every route, a within-token duplicate, seeded random top-6), with at least one group wider
+than a 16-row chunk. It pins engagement (3 enqueues per live step for 2..=16 rows, 0 at 17 rows
+and with the gate setter off) and that the one-token visitor never enqueues on a multi-row step.
+On the pair, `dsv4-gpu-dspark-gate ... --served` must PASS every DSpark bit gate and its batched
+arm DB must log a nonzero `mrow stream ON dispatches` count; without `--served` the historical
+pins must log zero.
+
 
 ### DSv4 gate source tape (#657)
 
@@ -1012,6 +1037,30 @@ commit 9e3c8b550; it refuses a digest other than `11e4bd80...`. The two tapes sh
 asserts a 4096-token margin, so both tapes give the same gate prompt tokens. The one mode that
 reads past the prefix, the `dsv4_hc_dot_split_gate` 64-window sampler, still requires the pinned
 tape and refuses the rebuild.
+
+### DSv4 small-kernel diet at the kernel boundary (#339)
+
+`cargo test -p memra-engine --release --test dsv4_small_diet_gpu -- --ignored --test-threads=1`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) runs the fused HC finish and the
+fused Q norm/pack against the unfused chains they replace and requires every output to compare
+`to_bits`-equal: scaled mixes, pre, post, comb and the collapsed row over 96 HC cases (four
+residual and three mix magnitude ranges), and the normalized row plus its bf16 pack over 128
+cases (eight row widths, including tails on both sides of the unrolled body). Red arms perturb
+each gate scale and one norm weight by 2^-10 relative and require the fed output to move. The
+diet is the code on the served plain step and multi-row rows keep the unfused chain, so this is
+the proof that plain and verify rows stay one numeric program. Receipts:
+`research/dsv4f-bringup-20260923/small-diet/`.
+
+### DSv4 deferred MoE route and mirror checks (#670)
+
+`cargo test -p memra-engine --release --lib cuda_deferred_moe_faults_match_the_synchronous_checks -- --ignored`
+(one CUDA card) runs one routed MoE chain (`prepare`, `gate_up`, `down`) with the synchronous
+checks and again with the checks routed to a device fault word. On valid routes at 1, 2, 5 and
+16 rows, gate, up, H and the down contribution must be bit-equal and the word must stay 0. Three
+red arms must each set their own bit while the synchronous arm refuses the same input: an expert
+id outside the bank (route), an E4M3 NaN code in the routed input (input mirror) and one in the H
+row before down (intermediate mirror). On the pair, `dsv4-gpu-dspark-gate ... --served` covers
+the served transaction with the deferred checks on.
 
 
 ### Model-owned device admission and reclaim (#544)

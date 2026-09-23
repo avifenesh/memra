@@ -14,7 +14,7 @@ catalog advertising `capacity.concurrency 8` (darklanes
 
 | Flag | Default, arms, rollback and receipt |
 | --- | --- |
-| `MEMRA_ADMIT_BY_MEMORY` | **OFF (default `0`), decide-by: 2026-09-23.** Strict `1` arms memory-shaped admission on the batched worker's own admission seam, in three parts. (a) OPEN-OUTPUT CHARGE: a request bounding neither `max_tokens` nor `max_ctx` is charged `prompt + MEMRA_ADMIT_OPEN_OUTPUT_TOKENS + 8`, clamped to the model's trained context, instead of `request_ctx_cap`'s `MEMRA_CTX` envelope arm, and its output budget is `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` so the 8 slack rows stay free as on a bounded request (memra#659, 2026-09-23: the budget used to be the whole charge, and a speculative round's overshoot then wrote past the session cache); on the 1M route that is 12,200 charged tokens instead of 1,048,576 for the same 4k request, 85.9x less KV booked. A registry that pins `default_output_length`/`max_output_length` bounds `max_new` at the HTTP layer first and never reaches this arm; every other arm of `request_ctx_cap` (a given `max_tokens`, a given `max_ctx`) is byte-identical under the door. (b) HOST-TIER DEMOTION: the admission reclaim ladder's device prefix flush demotes entries into the pinned host tier (`host_demote_prefix_ref`, the existing `#325` path) before dropping them, bounded by THIS arrival's shortfall so a tick never stalls behind more synchronous D2H than the admission needs; entries the tier refuses (off, latched off, tenant share cap, copy failure) and everything past the budget are dropped exactly as today, so the flush always frees what it was called to free. Off the door this is byte-identical to `PrefixCache::evict_all`. (c) BOUNDED DEFER: a memory-deferred request keeps requeuing FIFO while either tier could still make room or its defer budget is unspent, and once BOTH tiers are exhausted AND `MEMRA_ADMIT_DEFER_BUDGET_MS` is spent it is refused with a 429 + `Retry-After` (the earliest predicted in-flight completion, clamped to the shed contract's 1..=60 s window; 5 s when unknown) instead of dying as a pre-header timeout. RECEIPT: every decision emits one grep-stable `[admit-mem] id=… verdict=admit\|demote-then-admit\|defer\|refuse … est_bytes=… est_context=… est_fixed=… device_free=… host_free=… demotable=… short_by=… waited_ms=… retry_after_s=…` line, and the boot log carries `[admit-mem] door=ON open_output_tokens=… defer_budget_ms=…`. RED ARM: `MEMRA_ADMIT_BY_MEMORY` unset or `0` restores today's behaviour on all three parts. ROLLBACK: unset and redeploy the launcher (which must also restore `MEMRA_MAX_SESSIONS=4`; the two move together). GATE: CPU `cargo test -p memra-server admit_memory` plus the worker wiring tests, and the card cell `cargo test -p memra-server memory_admission_admits -- --ignored` (1 x 900k + 8 x 4k concurrently admissible on one B200 against live `mem_get_info`, with the tenth 900k arrival refusing). Receipt pointer: darklanes `research/glm5-1m-b200-ship-20260906/` (requalification cell for the production pair) and this PR. |
+| `MEMRA_ADMIT_BY_MEMORY` | **OFF (default `0`), decide-by: 2026-10-07** (was 2026-09-23; owner 2026-09-23: measure now; the OFF/ON cell, the open-output value sweep and the open-output survey, lane B day 31; 8192 is not accepted as a default until measured; research `spill-b-20260919/DAY31.md`, `OPEN-OUTPUT-SURVEY.md`). Strict `1` arms memory-shaped admission on the batched worker's own admission seam, in three parts. (a) OPEN-OUTPUT CHARGE: a request bounding neither `max_tokens` nor `max_ctx` is charged `prompt + MEMRA_ADMIT_OPEN_OUTPUT_TOKENS + 8`, clamped to the model's trained context, instead of `request_ctx_cap`'s `MEMRA_CTX` envelope arm, and its output budget is `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` so the 8 slack rows stay free as on a bounded request (memra#659, 2026-09-23: the budget used to be the whole charge, and a speculative round's overshoot then wrote past the session cache); on the 1M route that is 12,200 charged tokens instead of 1,048,576 for the same 4k request, 85.9x less KV booked. A registry that pins `default_output_length`/`max_output_length` bounds `max_new` at the HTTP layer first and never reaches this arm; every other arm of `request_ctx_cap` (a given `max_tokens`, a given `max_ctx`) is byte-identical under the door. (b) HOST-TIER DEMOTION: the admission reclaim ladder's device prefix flush demotes entries into the pinned host tier (`host_demote_prefix_ref`, the existing `#325` path) before dropping them, bounded by THIS arrival's shortfall so a tick never stalls behind more synchronous D2H than the admission needs; entries the tier refuses (off, latched off, tenant share cap, copy failure) and everything past the budget are dropped exactly as today, so the flush always frees what it was called to free. Off the door this is byte-identical to `PrefixCache::evict_all`. (c) BOUNDED DEFER: a memory-deferred request keeps requeuing FIFO while either tier could still make room or its defer budget is unspent, and once BOTH tiers are exhausted AND `MEMRA_ADMIT_DEFER_BUDGET_MS` is spent it is refused with a 429 + `Retry-After` (the earliest predicted in-flight completion, clamped to the shed contract's 1..=60 s window; 5 s when unknown) instead of dying as a pre-header timeout. RECEIPT: every decision emits one grep-stable `[admit-mem] id=… verdict=admit\|demote-then-admit\|defer\|refuse … est_bytes=… est_context=… est_fixed=… device_free=… host_free=… demotable=… short_by=… waited_ms=… retry_after_s=…` line, and the boot log carries `[admit-mem] door=ON open_output_tokens=… defer_budget_ms=…`. RED ARM: `MEMRA_ADMIT_BY_MEMORY` unset or `0` restores today's behaviour on all three parts. ROLLBACK: unset and redeploy the launcher (which must also restore `MEMRA_MAX_SESSIONS=4`; the two move together). GATE: CPU `cargo test -p memra-server admit_memory` plus the worker wiring tests, and the card cell `cargo test -p memra-server memory_admission_admits -- --ignored` (1 x 900k + 8 x 4k concurrently admissible on one B200 against live `mem_get_info`, with the tenth 900k arrival refusing). Receipt pointer: darklanes `research/glm5-1m-b200-ship-20260906/` (requalification cell for the production pair) and this PR. |
 | `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` | **8192 (default), read only when `MEMRA_ADMIT_BY_MEMORY=1`.** The output a naked open-output request is charged. 8192 is a floor, not a claim about the fleet: the registries differ, and the box this door is built for pins `default_output_length = 32768` (`ops/serving/snapshots/glm53-b200-list-6464cdca9c1f.toml` in darklanes, `max_output_length = 131072`). What matters is the ORDER: a naked open-output request is charged its prompt plus an output length, not the whole `MEMRA_CTX` envelope, which on the 1M route is 1,048,576 tokens and about 13 GB of latent KV. Any of these numbers agrees with the registry path instead of disagreeing with it by two orders of magnitude. A deployment whose advertised `max_output` differs sets this to that number: the qualification-env law means it is DERIVED from the registry the launcher ships, never hand-typed to a different value. Rollback: unset (8192) or unset the door. |
 | `MEMRA_ADMIT_DEFER_BUDGET_MS` | **8000 (default), read by the batched worker only when `MEMRA_ADMIT_BY_MEMORY=1`; the DSv4 route (memra#503) reads it always, clamped to half of `MEMRA_HEALTH_STALL_S`, with `0` meaning that half-bound (the route cannot wait unboundedly without reading stalled).** How long one arrival may sit memory-deferred before a refusal is preferred to silence. 8 s sits inside the pre-header budget the darklanes edge gives a request, so the client reads a 429 it can retry rather than a timeout it cannot. That budget is 10 s on the cap-4 slot proxy and 60 s wherever this door is armed (darklanes #565 raises `MEMRA_SSE_PREFILL_COMMIT_MS` with the ceiling, because cap 32 with a 10 s commit is the one combination the dev-pair data refutes); 8 s is inside both, so the refusal arm stays the thing the client hears first on either. `0` disables the refusal arm entirely and restores today's unbounded FIFO defer while keeping (a) and (b). The stamp is LATCHED on the FIRST memory defer of a request and carried across a step-OOM park replay: a per-tick stamp would reset the budget forever and bound nothing. |
 
@@ -64,12 +64,6 @@ measured on a GPU, because no speech operation has a CUDA kernel yet (§1).
 ### Removed experiments in this lane
 
 `MEMRA_PRIME_QW8`: removed before merge. Exact but flat at chunk 1024 (29.082/29.145 ms at 131070 depth); a 4096-only serving control subsequently OOMed after prefix publication. Superseded by the three-plane staging candidate at unchanged chunk 1024. Probability-fragment load reuse alone was also flat and removed. Receipts: `research/qwen-prefill-20260909/`.
-
-## DSV4 small-kernel diet
-
-| Flag | Default, arms, gate and rollback |
-| --- | --- |
-| `MEMRA_DSV4_SMALL_KERNEL_DIET` | **Default 0**, decide-by: **2026-09-21**. Parsed at model load; accepts only `0` or `1`. `0` retains the separate f32x HC finish (rowsq, Sinkhorn, collapse) and Q-LoRA norm/pack. `1` fuses each HC finish into one launch and Q norm/pack into one launch on all-layer TP/EP, t=1, HC4, hidden4096. Other topology or f64 chains refuse at load; unsupported HC shape refuses before its fused enqueue. Multirow work retains the old path. Both reductions retain the 128-thread tree; Sinkhorn gathers ascending row/column sums with the original iteration count. Expected bitwise classes: `dsv4_hc_f32_fixed_order`, `dsv4_norm_pack_f32_fixed_order`; no tolerance admission. Rollback: restart with `=0`. Gate: `dsv4_tp_ep_sampled_perf_gate --small-kernel-components` on live checkpoint tensors, then `--small-kernel-abba` (10 cycles, radix, sampled envelope, all state digests, actual HC/Q enqueue assertions). The gate's exclusive model setter changes arms between complete walks. Receipt pointer: private Darklanes `research/dsv4f-devpair-20260905/small-kernel-diet-20260907.md`, namespace `small-kernel-diet-29a73db-r1`: both components bit-equal on both ranks; ten sampled ABBA cycles give 35.404649 OFF to 36.850968 ON tok/s (+4.085112%), all 40 rows eligible and digest-identical. Targeted enqueues fall 344 to 129 per step per rank. Code source and binary hash are pinned in the tracked lane report. |
 
 > **A new `MEMRA_*` read needs a row here IN THE SAME COMMIT.** `tools/hooks/pre-push` runs
 > `tools/check-flags.sh` on every push (+0.55 s) and refuses one that adds an uncovered name. That
@@ -1597,6 +1591,76 @@ deleted them (darklanes `research/dsv4f-norm-pp2-port-20260911/LANE.md`). The re
 dispositions are argued per case in darklanes
 `research/dsv4f-door-reach-20260910/LANE.md`, including both outcomes of the memra #461 matrix
 verdict for the two doors that depend on it.
+
+## Decided before merge, 2026-09-23 (the DSV4 one-token MoE stream visitor is the code)
+
+memra #664, receipt `research/dsv4f-bringup-20260923/m1-stream-664/RESULTS.md`. The lane measured
+the new `moe_kq_m1_stream_kernel<4>` visitor against the sktail tail it replaces through a
+lane-only `MEMRA_DSV4_MOE_M1_STREAM` read. That read never merged: under the 2026-09-10 owner
+ruling (a door is the default or it is deleted, and a same-class win with a clean receipt becomes
+the code) the stream is the naked default for the one-token plain step's gate, up and down
+projections, and there is no environment name. Served PP-2 plain greedy c1 on 2x RTX PRO 6000
+Blackwell, one boot per row in `A B B A A B B A A B` order: **50.10 tok/s (N=5, 50.06..50.13)
+against 38.79 (N=5, 38.77..38.83), +29.2%**, same text on all 8 prompts in every row, and the
+component test `cuda_m1_stream_matches_sktail_bit_for_bit` proves byte identity at the kernel
+boundary. A gate that arms the M1 tensor-core or half2 down tail keeps precedence over the stream
+(the TP/EP bench pins that program). Rollback is `git revert`; the gate setter
+`set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail reference arm in one loaded model for
+the component test and the DSpark gate's historical arm.
+
+## Removed doors, 2026-09-23 (the DSV4 small-kernel diet is the code on every f32x device program)
+
+memra#339, lane `research/dsv4f-bringup-20260923/small-diet/RESULTS.md`. Owner ruling 2026-09-10:
+a door is either the default or it is deleted, and a same-class win with a clean receipt becomes
+the code. The diet was a TP/EP-only door (default 0, decide-by 2026-09-21, passed without a
+decision) with a +4.09% sampled ABBA receipt on that program. It is now the unconditional program
+on every device f32x HC4 / hidden 4096 load, PP-2 included:
+
+- Kernel boundary, local RTX 5090: `dsv4_small_diet_gpu` (96 HC cases over four residual and
+  three mix magnitude ranges, 128 norm/pack cases over eight row widths, red arms on each gate
+  scale and one weight) `DSV4_SMALL_HC_DIET EXACT cases=96 outputs=5 red_arms=3`,
+  `DSV4_SMALL_NORM_PACK_DIET EXACT cases=128 outputs=2 red_arms=1`. The same test on the target
+  pair, card 0: the same two lines, EXACT.
+- Served PP-2 plain greedy c1 on 2x RTX PRO 6000 Blackwell WS, one boot per row, order
+  `on off off on on off off on on off`, on the tree before the one-token MoE stream visitor:
+  **40.11 tok/s (N=5, 40.08..40.12) against 38.78 (N=5, 38.77..38.82), +3.4%**, TPOT p50
+  -0.85 ms, same text on all 8 prompts in every row. Re-measured on the lane merged with the
+  one-token stream visitor, order `on off off on on off`: **52.24 (N=3, 52.21..52.27) against
+  50.08 (N=3, 50.05..50.09), +4.3%**, TPOT p50 -0.83 ms, same hashes.
+- Served DSpark: flat (-0.1%, N=2 each; verify rows keep the unfused kernels).
+  `dsv4-gpu-dspark-gate --served`: PASS.
+
+`MEMRA_DSV4_SMALL_KERNEL_DIET`: **DELETED**, with its load-time parse, its TP/EP-only refusal and
+its exempt row in `src/dsv4_doors.rs`, and the `("MEMRA_DSV4_SMALL_KERNEL_DIET", "1")` entries in
+five gate env lists. `Dsv4Gpu::small_kernel_diet_shape` (device decode path, f32x chains,
+`hc_mult == 4`, `n_embd == 4096`) decides it at load. Multi-row verify and prefill rows keep the
+unfused chain, which the fused kernels match bit for bit, so a request never changes numeric
+program across plain and verify. The gate-bin setter `set_small_kernel_diet_for_gate` stays as the
+measurement seam of `dsv4_tp_ep_sampled_perf_gate --small-kernel-abba`; it can no longer arm the
+diet on a shape the fused launchers refuse.
+
+The row as it stood:
+
+> ## DSV4 small-kernel diet
+>
+> | Flag | Default, arms, gate and rollback |
+> | --- | --- |
+> | `MEMRA_DSV4_SMALL_KERNEL_DIET` | **Default 0**, decide-by: **2026-09-21**. Parsed at model load; accepts only `0` or `1`. `0` retains the separate f32x HC finish (rowsq, Sinkhorn, collapse) and Q-LoRA norm/pack. `1` fuses each HC finish into one launch and Q norm/pack into one launch on all-layer TP/EP, t=1, HC4, hidden4096. Other topology or f64 chains refuse at load; unsupported HC shape refuses before its fused enqueue. Multirow work retains the old path. Both reductions retain the 128-thread tree; Sinkhorn gathers ascending row/column sums with the original iteration count. Expected bitwise classes: `dsv4_hc_f32_fixed_order`, `dsv4_norm_pack_f32_fixed_order`; no tolerance admission. Rollback: restart with `=0`. Gate: `dsv4_tp_ep_sampled_perf_gate --small-kernel-components` on live checkpoint tensors, then `--small-kernel-abba` (10 cycles, radix, sampled envelope, all state digests, actual HC/Q enqueue assertions). The gate's exclusive model setter changes arms between complete walks. Receipt pointer: private Darklanes `research/dsv4f-devpair-20260905/small-kernel-diet-20260907.md`, namespace `small-kernel-diet-29a73db-r1`: both components bit-equal on both ranks; ten sampled ABBA cycles give 35.404649 OFF to 36.850968 ON tok/s (+4.085112%), all 40 rows eligible and digest-identical. Targeted enqueues fall 344 to 129 per step per rank. Code source and binary hash are pinned in the tracked lane report. |
+
+## Decided before merge, 2026-09-23 (the DSV4 multi-row MoE stream visitor is the code)
+
+memra #669, receipt `research/dsv4f-bringup-20260923/mrow-stream/RESULTS.md`. The lane measured
+the new `moe_kq_mrow_stream_kernel<4>` visitor against the sktail tail on 2..=16-row MoE steps
+(DSpark verify rounds) through a lane-only `MEMRA_DSV4_MOE_MROW_STREAM` read. That read never
+merged: under the 2026-09-10 owner ruling the multi-row visitor is the naked default for those
+steps and there is no environment name. Served PP-2 DSpark greedy c1 on 2x RTX PRO 6000
+Blackwell, one boot per row in `A B B A A B B A A B` order: **71.13 tok/s (N=5, 71.08..71.20)
+against 56.08 (N=5, 56.06..56.12), +26.8%**, sampled c1 58.88 against 47.48 (+24.0%), same text on
+all 20 requests in every row, and `cuda_mrow_stream_matches_sktail_bit_for_bit` proves byte
+identity at the kernel boundary. The lane also routed the one-token plain step through the
+multi-row kernel: it lost 1.3% (49.42 against 50.07), so the one-token visitor keeps `rows == 1`.
+Rollback is `git revert`; the gate setter `set_dsv4_moe_m1_stream_for_gate(false)` runs the
+sktail reference arm for both visitors.
 
 ## Removed doors, 2026-09-23 (the fresh varlen prefill FA: a second program for the batched prime, memra#641)
 

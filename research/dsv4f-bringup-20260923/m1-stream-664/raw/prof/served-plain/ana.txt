@@ -1,0 +1,41 @@
+capture span 14091.1 ms over 510 steps = 27.63 ms/step
+dev0: kernels 872504 (1711/step) kernel-sum 12.18 ms/step busy-union 12.41 ms/step memcpys 294/step
+dev1: kernels 847580 (1662/step) kernel-sum 11.97 ms/step busy-union 12.20 ms/step memcpys 300/step
+--- dev0 top kernels (ms/step, count/step, share)
+    5.087     67  41.8%  moe_kq_sktail_kernel
+    2.430    341  20.0%  dsv4_dense_fast_fp8_kernel
+    0.733     94   6.0%  dsv4_rmsnorm_f32acc_kernel
+    0.686     44   5.6%  dsv4_hc_sinkhorn_m_kernel
+    0.538     82   4.4%  dsv4_dense_fast_dots_kernel
+    0.338     22   2.8%  dsv4_sink_scores_mq_f32acc_kernel
+    0.241     22   2.0%  dsv4_sink_out_mq_f32acc_kernel
+    0.217     44   1.8%  dsv4_fp8_gather_half_kernel
+    0.208     22   1.7%  dsv4_grouped_prefix_kernel
+    0.198     22   1.6%  dsv4_route_m_kernel
+--- dev1 top kernels (ms/step, count/step, share)
+    4.406     63  36.8%  moe_kq_sktail_kernel
+    2.321    327  19.4%  dsv4_dense_fast_fp8_kernel
+    1.218     87  10.2%  dsv4_dense_fast_dots_kernel
+    0.710     92   5.9%  dsv4_rmsnorm_f32acc_kernel
+    0.651     42   5.4%  dsv4_hc_sinkhorn_m_kernel
+    0.317     21   2.7%  dsv4_sink_scores_mq_f32acc_kernel
+    0.233     21   1.9%  dsv4_sink_out_mq_f32acc_kernel
+    0.206     21   1.7%  dsv4_route_m_kernel
+    0.203     42   1.7%  dsv4_fp8_gather_half_kernel
+    0.198     21   1.7%  dsv4_grouped_prefix_kernel
+memcpy kind: count/step bytes/step ms/step {1: (47.61176470588235, 24149, 0.014), 8: (414.4, 13353596, 0.374), 2: (131.01960784313727, 79609, 0.076), 10: (1.007843137254902, 75302, 0.002)}
+--- runtime API (count/step, ms/step)
+       131   15.670  cuMemcpyDtoHAsync_v2
+      3373    8.178  cudaLaunchKernel_v7000
+       414    1.275  cuMemcpyDtoDAsync_v2
+      3373    0.286  cuKernelGetName
+        48    0.099  cuMemcpyHtoDAsync_v2
+       133    0.078  cuStreamSynchronize
+         4    0.009  cuMemsetD8Async
+         0    0.005  cuMemHostAlloc
+         1    0.004  cuMemcpyPeerAsync
+         0    0.003  cuMemFreeHost
+         1    0.003  cuStreamWaitEvent
+         4    0.003  cuMemFreeAsync
+         4    0.003  cuMemAllocAsync
+         8    0.001  cuCtxSetCurrent

@@ -442,6 +442,11 @@ fn main() {
         // an exported instrument or null collective from the environment.
         std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
     }
+    // The M1 stream visitor (memra #664) has no environment read; the historical pins keep
+    // the sktail program it replaced, so the two invocations are the OFF and ON arms.
+    if !served {
+        memra_engine::set_dsv4_moe_m1_stream_for_gate(false);
+    }
 
     let args: Vec<String> = std::env::args().filter(|a| a != "--served").collect();
     if args.len() < 4 {
@@ -576,12 +581,26 @@ fn main() {
     }
 
     // ---- arm P
+    // The one-token streaming visitor (memra #664) is an engagement claim as much as an
+    // identity one: a forced-ON run whose plain arm never took it proves nothing, and an OFF
+    // run that took it is not the OFF program.
+    let stream_before = memra_engine::dsv4_moe_m1_stream_dispatches();
     let plain = run_plain(&gpu, &prompt, n_new);
+    let stream_taken = memra_engine::dsv4_moe_m1_stream_dispatches() - stream_before;
+    let stream_on = memra_engine::dsv4_moe_m1_stream_on();
     println!(
-        "arm P (plain device greedy): {} tokens t={:.0}s",
+        "arm P (plain device greedy): {} tokens t={:.0}s | m1 stream {} dispatches {}",
         plain.len(),
-        t0.elapsed().as_secs_f64()
+        t0.elapsed().as_secs_f64(),
+        if stream_on { "ON" } else { "OFF" },
+        stream_taken
     );
+    if stream_on == (stream_taken == 0) {
+        fails.push(format!(
+            "M1 STREAM ENGAGEMENT: stream {} but the plain arm took {stream_taken} dispatches",
+            if stream_on { "ON" } else { "OFF" }
+        ));
+    }
 
     // ---- arm P + per-position ring writes (verdict (d) reference)
     let plain_rings = run_plain_with_rings(&gpu, &prompt, n_new);
@@ -606,6 +625,9 @@ fn main() {
     );
 
     // ---- arm DB (batched verify) x runs
+    // The multi-row visitor (memra #669) takes the T=k+1 verify rows under the same switch, so
+    // the batched arm carries the same engagement claim arm P carries for the one-token one.
+    let mrow_before = memra_engine::dsv4_moe_mrow_stream_dispatches();
     let mut db_runs: Vec<DraftedOut> = Vec::new();
     for r in 0..runs {
         let d = run_drafted_batched(&gpu, &prompt, n_new);
@@ -623,6 +645,17 @@ fn main() {
             t0.elapsed().as_secs_f64()
         );
         db_runs.push(d);
+    }
+    let mrow_taken = memra_engine::dsv4_moe_mrow_stream_dispatches() - mrow_before;
+    println!(
+        "arm DB mrow stream {} dispatches {mrow_taken}",
+        if stream_on { "ON" } else { "OFF" }
+    );
+    if stream_on == (mrow_taken == 0) {
+        fails.push(format!(
+            "MROW STREAM ENGAGEMENT: stream {} but the batched arm took {mrow_taken} dispatches",
+            if stream_on { "ON" } else { "OFF" }
+        ));
     }
     vram_line(&gpu, "post-drafted");
 

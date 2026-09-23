@@ -1,0 +1,20 @@
+tree 8d423ced37f1ee7d96e88f6f5c90cc9a566566a7 + diet-lane.patch 3cb6803e44de5de6
+BUILD diet head=8d423ced37f1ee7d96e88f6f5c90cc9a566566a7 utc=2026-09-23T06:59:33Z SERVER_EXIT=0 ENGINE_EXIT=0 
+test-bin /root/lane/target-diet/release/deps/dsv4_small_diet_gpu-fade922ab743c817
+component test dsv4_small_hc_diet_is_bit_identical_to_the_unfused_chain ... DSV4_SMALL_HC_DIET EXACT cases=96 outputs=5 red_arms=3 test dsv4_small_norm_pack_diet_is_bit_identical_to_the_unfused_pair ... DSV4_SMALL_NORM_PACK_DIET EXACT cases=128 outputs=2 red_arms=1 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s GATE_DONE rc=0 utc=2026-09-23T07:04:01Z 
+r1 on rc=0 CELL greedy-c1 c=1 ok=8/8 agg=39.08 tok/s decode_p50=40.12 tok/s ttft_p50=206 ms tpot_p50=24.93 ms errs=[]
+r2 off rc=0 CELL greedy-c1 c=1 ok=8/8 agg=37.82 tok/s decode_p50=38.77 tok/s ttft_p50=206 ms tpot_p50=25.79 ms errs=[]
+r3 off rc=0 CELL greedy-c1 c=1 ok=8/8 agg=37.82 tok/s decode_p50=38.79 tok/s ttft_p50=207 ms tpot_p50=25.78 ms errs=[]
+r4 on rc=0 CELL greedy-c1 c=1 ok=8/8 agg=39.07 tok/s decode_p50=40.08 tok/s ttft_p50=205 ms tpot_p50=24.95 ms errs=[]
+r5 on rc=0 CELL greedy-c1 c=1 ok=8/8 agg=39.07 tok/s decode_p50=40.08 tok/s ttft_p50=205 ms tpot_p50=24.95 ms errs=[]
+r6 off rc=0 CELL greedy-c1 c=1 ok=8/8 agg=37.82 tok/s decode_p50=38.78 tok/s ttft_p50=206 ms tpot_p50=25.79 ms errs=[]
+r7 off rc=0 CELL greedy-c1 c=1 ok=8/8 agg=37.85 tok/s decode_p50=38.82 tok/s ttft_p50=206 ms tpot_p50=25.76 ms errs=[]
+r8 on rc=0 CELL greedy-c1 c=1 ok=8/8 agg=39.10 tok/s decode_p50=40.11 tok/s ttft_p50=205 ms tpot_p50=24.93 ms errs=[]
+r9 on rc=0 CELL greedy-c1 c=1 ok=8/8 agg=39.09 tok/s decode_p50=40.11 tok/s ttft_p50=205 ms tpot_p50=24.93 ms errs=[]
+r10 off rc=0 CELL greedy-c1 c=1 ok=8/8 agg=37.82 tok/s decode_p50=38.78 tok/s ttft_p50=206 ms tpot_p50=25.78 ms errs=[]
+dspark-served GPU DSPARK GATE [PASS] GATE_DONE rc=0 utc=2026-09-23T07:36:25Z 
+s1 on rc=0 CELL greedy-c1 c=1 ok=8/8 agg=52.72 tok/s decode_p50=55.97 tok/s ttft_p50=267 ms tpot_p50=17.87 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=46.12 tok/s decode_p50=47.36 tok/s ttft_p50=279 ms tpot_p50=21.11 ms errs=[] 
+s2 off rc=0 CELL greedy-c1 c=1 ok=8/8 agg=52.79 tok/s decode_p50=56.04 tok/s ttft_p50=267 ms tpot_p50=17.84 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=46.16 tok/s decode_p50=47.43 tok/s ttft_p50=280 ms tpot_p50=21.08 ms errs=[] 
+s3 off rc=0 CELL greedy-c1 c=1 ok=8/8 agg=52.76 tok/s decode_p50=56.00 tok/s ttft_p50=267 ms tpot_p50=17.86 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=46.15 tok/s decode_p50=47.43 tok/s ttft_p50=280 ms tpot_p50=21.08 ms errs=[] 
+s4 on rc=0 CELL greedy-c1 c=1 ok=8/8 agg=52.71 tok/s decode_p50=55.96 tok/s ttft_p50=267 ms tpot_p50=17.87 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=46.15 tok/s decode_p50=47.39 tok/s ttft_p50=279 ms tpot_p50=21.10 ms errs=[] 
+DIET_DONE
