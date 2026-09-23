@@ -715,7 +715,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +                return Err("duplicate draft ceiling".into());
 +            }
 +        } else if let Some(value) = option.strip_prefix("sampler-top-k=") {
-+            if requested_top_k.replace(value.parse::<usize>()?).is_some() {
++            if requested_top_k.replace(value.parse::<i32>()?).is_some() {
 +                return Err("duplicate sampler top-k".into());
 +            }
 +        } else if let Some(value) = option.strip_prefix("explore-seed=") {
