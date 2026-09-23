@@ -4,9 +4,11 @@
 run: complete native prompt/output/round/timing/telemetry records, exact
 measured harness source, and the buildable runtime source archive. The
 external `manifest.sha256` pins `manifest.json`; the manifest pins each
-archive and every expanded data and harness member. Model weights,
-provider commands, pod identifiers and credentials stay in private
-custody. A source recipe and its one-file fixed-C guard patch identify
+archive and every expanded data and harness member. The projection
+excludes model weights and this task's provider API records, pod
+identifier and runtime credentials. The measured source snapshot
+includes dated provider identifiers in separately reviewed source blobs.
+A source recipe and its one-file fixed-C guard patch identify
 the measured binary without publishing that binary.
 
 The private publication scan checks all three compressed archives and
