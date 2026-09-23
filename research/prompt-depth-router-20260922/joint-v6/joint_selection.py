@@ -11,7 +11,7 @@ from run_native import (
 )
 
 
-FIXED = re.compile(r"topk(3|10|20)-d([234])-c(?:0|-(.+))$")
+FIXED = re.compile(r"topk(3|10|20)-d([1234])-c(?:0|-(.+))$")
 
 
 def fixed_arm(root, name):

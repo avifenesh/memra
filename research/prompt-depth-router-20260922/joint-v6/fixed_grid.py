@@ -27,7 +27,7 @@ def depth_grid(args, old):
     for index, entry in enumerate(entries(old)):
         arms = [
             (f"topk{k}-d{d}-c0", k, d)
-            for k in allowed for d in (2, 4)
+            for k in allowed for d in (1, 2, 4)
         ]
         order = arms[index % len(arms):] + arms[:index % len(arms)]
         if index % 2:
