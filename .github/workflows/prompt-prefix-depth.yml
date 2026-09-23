@@ -221,3 +221,32 @@ jobs:
             ${{ runner.temp }}/confidence-v3-replay/RESULTS.md
           if-no-files-found: ignore
           retention-days: 7
+
+  joint-v4-history-pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check causal accepted-prefix and history-feature boundaries
+        run: |
+          python3 -m unittest discover \
+            -s research/prompt-depth-router-20260922/joint-v4 \
+            -p 'test_*.py' -v
+      - name: Fit tiny acceptance predictors on archived development conversations
+        run: |
+          lane=research/prompt-depth-router-20260922
+          python3 "$lane/joint-v4/pilot.py" \
+            --archive "$lane/confidence/adaptive-v3/receipts-v3/native-data.tar.gz" \
+            --workloads "$lane/confidence/adaptive-v3/workloads-v3/manifest.json" \
+            --out "$RUNNER_TEMP/joint-v4-pilot.json"
+      - name: Retain observational feature pilot
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: joint-v4-history-pilot-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/joint-v4-pilot.json
+          if-no-files-found: ignore
+          retention-days: 7
