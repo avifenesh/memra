@@ -2797,6 +2797,190 @@ three doc comments, so no binary program changes (the integ48 precedent for rese
 - 2026-10-05: the contracts door (C day 39 and A day 31 are new input).
 - 2026-10-06: the park door.
 
+## integ51 (`lane/spill-integ51-20260923`): B day 32 (the `MEMRA_ADMIT_BY_MEMORY` rerun on the fixed tree, both cards; V-DOOR FAIL on V-ALLOC only; memra#680 found)
+Lane tip: B `214f2a8a5`, which already carries main `c3eb41d12` (#677 included), so the branch is a fast-forward.
+Research only: `git diff origin/main HEAD` touches `research/` and nothing else.
+
+**B day 32.** Pre-registration `51c113659` was committed at 06:32:14Z, and the first boot started at 06:33:04Z. Same
+arms, workloads and orders as day 31, run on binaries built from `d544c6b82` (#668). The truncation band is G = v
+exactly, and the three day-31 reader gaps are closed (a crash term, a non-vacuous retry, the twin-failed rows counted).
+No crash-pattern line on any of the 16 boots. V-ID is `differ=0` on all 12 ON arms, and every ON `length` row, burst
+included, ends at exactly G = v. Verbatim: `DAY32 V-DOOR card=rtx5090 boots=8 excluded=0 v_crash_all=True
+v_id_all=True v_alloc_all=False v_trunc_band_all=True v_trunc_conserved_all=True v_retry_all=True -> FAIL` and the
+same line for `card=pro6000`. The FAIL is V-ALLOC alone, on all 12 ON boots, every mismatch exactly -8 (first at
+`rtx5090-day32/boots/O1-on2048/server.log:46`, `ctx=3551` against the registered 3559). The pre-registered expectation
+kept day 31's `P + v + 72`. With #668's budget `v`, the engine books `max(ctx_cap, P + budget + 64)` = `P + v + 64`,
+while the allocation `P + v + 8` is unchanged. Selection rules as printed, none chosen: `DAY32 SELECT card=rtx5090
+R1_smallest_zero_truncation=8192 ... R2_smallest_v_ge_max_natural_G=8192 (max_natural_G=6405)`, `DAY32 SELECT
+card=pro6000 R1_smallest_zero_truncation=none ... R2_smallest_v_ge_max_natural_G=none of [2048, 8192, 32768]
+(max_natural_G=193178)`, and R3 `32768` and R4 `context` on both cards. Every reading matches what was written
+before the first boot. Truncation and concurrency per card are in DAY32 2.5. In short:
+- 5090, burst of 32:
+  - 2048 cuts all 15 (i) requests and 3 (iv-a) requests, where OFF lets them stop naturally.
+  - 8192 and 32768 cut nothing.
+  - Bursts peak at 11 in flight OFF and 32 at 2048 and 8192. At 32768: 19 in flight, 11 refused with 429 and 2 lost
+    to 503 prefill OOM.
+- PRO 6000, burst of 64:
+  - 2048 and 8192 each cut 5 requests that stop under OFF at 18,443 to 193,178 tokens; 32768 cuts 4.
+  - OFF peaks at 9 in flight, 2048 and 8192 at 64. At 32768 the burst loses 46 (O1) and 47 (O2) of 64 to 503 prefill
+    OOM.
+
+Pre-fix against post-fix, as observed (50 main commits apart, so nothing is attributed to one commit):
+- Day 31's crash lines in all 16 boots are gone, and the ON FATALs are gone.
+- Every ON `length` row ends at v (day 31: `v + 4` to `v + 8`).
+- The OFF runaways end 200 `length` instead of 500.
+
+**memra#680, filed from these receipts.** At 32768 on the PRO 6000 the door let the 64-request burst reach 58 in
+flight, against its own estimate of `est_bytes=4353602568` per request. The log has 109 `[admission] request cost`
+lines but only 12 `[admit-mem] id=` lines (6 `defer`, 6 `refuse`, no `admit`). A `reclaim-on-defer` evicted 52 prefix
+entries (13.3 GB) at the first defer. Then 46 and 47 of 64 died in prefill with `CUDA_ERROR_OUT_OF_MEMORY` and
+returned 503. The 5090 shows the same shape at a smaller scale (2 prefill-OOM 503s per order on both days). B day 33
+owns the repro, the diagnosis and the fix, with an engine change under the door authorized.
+
+**Lead review of B day 32.** The arms, values, orders and reader match `51c113659`. I checked the V-ALLOC delta
+against #668's change: `SPEC_SHRINK_SLACK` 64 on top of the new budget `v` gives exactly the observed booking, so the
+reader's expectation was stale and the door's arithmetic is consistent. The FAIL stands as recorded. It is not
+re-read. The identity, crash, band and retry terms are clean on both cards. The 32768 target-card burst is a real
+defect that no pre-registered verdict judges (V-RETRY does not judge 503s), and B quoted it without diagnosing it,
+as its scope said. No finding against B's work.
+
+**Ruling 46:**
+- Day 32 is read as registered: V-DOOR FAIL on V-ALLOC alone, the cause stated above.
+- The door does not qualify. Independently of V-ALLOC, #680 is a disqualifying defect of the door as built.
+- No open-output value is selected, and the door stays OFF. The owner decides by 2026-10-07.
+- That decision waits for two things: B day 33's fix of #680, and a clean rerun under a fresh pre-registration with
+  the booking formula written as `max(ctx_cap, P + budget + 64)`.
+- The owner's inputs: R3 reads 32768 and R4 reads `context` on both cards; the 5090 reads R1 and R2 at 8192, while
+  the PRO 6000 has no swept value that avoids truncation.
+
+**Checks.** Research-only diff:
+- check-flags passed and conflict markers are clean.
+- `update-perf-board.py --check`: up to date.
+- `git diff --check origin/main HEAD` is clean (B's receipt dirs mark their width-cut quotes `-whitespace`).
+- No em dash in authored lines. The public boundary runs in the pre-push hook.
+- No battery was run: no code moves.
+
+**Running.** A day 32: the H2D half; its code and 5090 receipts are pushed, and its BOX3 sitting is next. B day 33:
+memra#680, on the 5090 first, and on BOX3 after A's `LANE-A-PRO-DONE`.
+
+**Owner decisions flagged.**
+- `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-10-07): after #680's fix and the clean rerun.
+- 2026-10-04: MoE slot cache, VMM.
+- 2026-10-05: the contracts door (C day 39 and A day 31 are new input; A day 32 is pending).
+- 2026-10-06: the park door.
+
+## integ52 (`lane/spill-integ52-20260923`): A day 32 (the H2D half of Move 2 owed item 1, design H: B1 to B5 PASS on the target card; DAY28 clause 1b now over its bound)
+Lane tip: A `e009df6d3`, which already carries main `649d96210`, so the branch is a fast-forward. Engine change, all
+behind the default-OFF door `MEMRA_KV_HOST_CONTRACTS`:
+- `crates/memra-engine/src/tier_transfer.rs` (`submit_h2d_spans` / `take_h2d_spans`) and `pinned_host.rs`
+  (`enqueue_to_device_f32`).
+- `crates/memra-server/src/worker.rs`: the log-only owner-segment field, the resident `Arc` form, the `Fill` job and
+  the parked `Filling` phase, and the settle's take-back.
+- `crates/memra-tier` `conformance/h2d_span.rs` with its binding.
+- The `contract-promote-spans` value on the existing `MEMRA_KV_HOST_FAULT` row, and the fault gate's
+  `promote-span-refusal` cell.
+
+No new `MEMRA_*` name. The new `unsafe` covers three things, each under a stated ownership contract: the documented
+`cuMemcpyHtoDAsync_v2` enqueue, its one call site, and `Engine::alloc_f32_uninit`, an uninitialized device
+destination beside the engine's existing `uninit` helpers, handed out only after the copy lands.
+
+**A day 32.** The work landed in DAY31 section 2's order, one census each (DAY32 section 1). Two departures are
+named: the resident form is `Arc<Vec<f32>>` (converting to `Arc<[f32]>` would copy the bytes on the door-OFF demote's
+owner thread), and `take_h2d_spans` also waits for the owner stream's wait on every span event, stricter than
+registered. The target-card sitting (BOX3, one hold after lane B's chain) ran the pre-H2D binary `71d21057c` and the
+H2D binary together. Verbatim:
+- B1:
+  - identity x4 `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`, 12 ok each;
+  - failure x2 `KV-HOST-SPILL FAILURE GATE: ALL GREEN`;
+  - `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 160 ok over twelve cells, with `promote-span-refusal`;
+  - twin x2 `-> PASS`;
+  - hit OFF/ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 / 68 ok, with the day-24 census `-> PASS`;
+  - unit cells 16 + 7 + 2 + 17 + 6, all green.
+- B2: `DAY32 B2 before (pre-H2D binary) steady owner-segment N=90 median=4.58 min=4.46 max=5.11` and `DAY32 B2 after
+  (H2D binary) steady owner-segment N=90 median=0.70 min=0.65 max=1.22 boots_on=10 submissions=100 with_spans=100 rule
+  N>=20 median<=1.5 max<=3.0 every-submission-with-spans -> PASS`.
+- B3 (a reading): `promote in-ms ... after-minus-before median +10.30`, with the helper fill `median=6.40` and every
+  fill landing at its first poll.
+- B4: `DAY32 B4 receipts=109 bad=0 by (items, spans)=[((32, 96), 101), ((34, 96), 8)] ... -> PASS`, and on the 5090
+  `receipts=13 bad=0 ... -> PASS`.
+- B5: the identity digests are unchanged in kind, `verify ok` appears on the ON arms, and
+  `option_c_spans_ride_the_promote_ticket_and_land_bitwise` passes on both cards.
+- The 5090 half on the H2D tree: identity default ON, fault default and plain (160 ok each), and hit OFF/ON, all
+  ALL GREEN.
+
+**Readers of earlier days over the same hold** (their own clauses, not day 32's acceptance; DAY32 section 5):
+- DAY28 clause 1b (e2e ON minus OFF, `<=+20.0`) reads `+12.2`, `+12.1 -> PASS` on the pre-H2D binary and `+22.5`,
+  `+22.2 -> FAIL` on the H2D binary, so `DAY28 VERDICT clauses_failed=2 -> FAIL`. Clauses 1a and 1c pass on both.
+- DAY25's tenant stall ON minus OFF improves from `-8.2`, `-8.4` to `-9.1`, `-9.2`, `isolated`.
+- DAY26 clause 2 fails on both binaries, as on days 30 and 31.
+
+**Lead review of A day 32.**
+- `submit_h2d_spans` refuses wholly before any enqueue, handing every span back. The copy stream waits on a fresh
+  owner-stream event, so each destination's allocation is ordered before its copy. An enqueue or event error after
+  the first enqueue keeps every span and quarantines the ticket (rule 5, the D2H twin's shape from day 30).
+  `take_h2d_spans` returns spans only after every item's and span's event is observed and the owner-side wait is
+  installed.
+- `enqueue_to_device_f32` refuses a length mismatch or an unwritten source before the FFI call, and keeps the
+  destination's write record alive across the enqueue.
+- The `Filling` step goes through the existing contract settle callers and the `Poll` / `Block` wait. A fill past
+  `HOST_HASH_DEADLINE`, or a helper that is gone, latches the tier (the day-28 rule), so a parked request cannot wait
+  unbounded. B3 shows every fill landing at its first poll.
+- One numeric program per request holds: the promoted planes read bitwise equal to the resident bytes (B5's native
+  cell on both cards), and the identity gates are unchanged.
+- I did not re-derive every line of the 1591-line `worker.rs` diff; its censuses, the twelve-cell fault gate and
+  B1 carry it.
+- A's finding 5 is owed, not waived: the two native span cells fail once when run in parallel in one process
+  (`a batch with a running span has not landed`), and pass serially 3 of 3. Every battery here runs them serially.
+
+**Ruling 47:**
+- A day 32 is read as registered, and B1 to B5 PASS on the target card. The H2D half is the door's serving path and
+  closes the H2D half of Move 2 owed item 1. The D2D half and the strong-form receipt remain owed, as do Move 1
+  items 1, 3 and 4.
+- The DAY28 clause 1b FAIL is a reading of an earlier day's clause that day 32 did not re-register. It is recorded
+  as it reads, with no threshold moved.
+- It is the design's trade, and it goes to the owner as input to the contracts-door decision (2026-10-05): about
+  3.9 ms less owner-thread time per promote, which every peer's tick gains, against about 10.3 ms more end-to-end
+  on the one parked promoting request.
+- The lever that would close the gap is landing the fill inside the same tick instead of at the next poll. It is
+  named, not built. The door stays default OFF.
+
+**Checks.**
+- CPU battery on `e009df6d3`, 15 of 15 rc=0:
+  - portable suites: 363 passed, 0 skipped;
+  - tests: server 878, engine lib 546, tier 8, pytest 87 passed;
+  - clippy `-D warnings` twice;
+  - fmt, check-flags, publish census, docs registry, conflict markers, workflow keys, perf board, `git diff --check`
+    (`integ52-cpu-battery/`).
+- RTX 5090 on the same tree, binary `de9a0888` hashed after serve-smoke's build, one collector hold from 15:20Z to
+  15:25Z (`integ52-5090/`), verbatim:
+  - serve-smoke `serve-smoke: 0 failed`;
+  - the engine `d2d_`, `d2h_span` and `h2d_span` cells `7 passed`, serial;
+  - the worker `option_b_` and `option_c_` cells `16 passed`, serial;
+  - identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`, 12 ok;
+  - fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 160 ok each, with `promote refusal handed back
+    48 span(s); the next H2D receipt landed 48` and `byte-unequal request(s): none`;
+  - hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 and 68 ok.
+- BOX3 is not rerun on the merged tree. A's sitting ran the lane's code (the tree adds only main's #677, #681 and
+  records around it), and the box was reclaimed after the sitting (below).
+
+**BOX3 lost.** The rented spot instance behind BOX3 was reclaimed at about 14:52Z, after lane A's sitting ended at 14:46:24Z.
+The provider's API reads it `discontinued`, and the address now answers with a different host key, so it belongs to
+another machine. Nobody accepted the key or reconnected. Lane B day 33's box chain, which started at 14:51:38Z,
+died with the instance and is recorded NOT RUN. The OS volume is kept detached, with the staged models, builds and
+receipts on it. A restore boots the identical spot type on that volume. The type was unavailable when checked, and
+the lead polls for it read-only. The only single-card offer, a confidential-compute variant at about twice the
+price, is a different card mode and the owner's call.
+
+**Running.** B day 33: memra#680, the door's prefill OOM at 32768. The fix is at `30a5ab697`: red on main at G2
+(35 prefill-OOM 503s), and the green arms clean so far on the 5090. Its PRO 6000 part is owed until the target card
+is restored.
+
+**Owner decisions flagged.**
+- 2026-10-05, the contracts door: C day 39, A day 31, and A day 32's TTFT trade and clause 1b reading.
+- `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-10-07): after #680's fix and a clean rerun.
+- 2026-10-04: MoE slot cache, VMM.
+- 2026-10-06: the park door.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

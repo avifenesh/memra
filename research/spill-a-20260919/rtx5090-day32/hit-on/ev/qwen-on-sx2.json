@@ -1,0 +1,29 @@
+{
+ "object": "text_completion",
+ "model": "gate",
+ "choices": [
+  {
+   "index": 0,
+   "text": "\nOutput in Markdown.\n\n<think>\n\n</think>\n\n# Observatory Maintenance Log: Monthly Inspection Schedule\n\n### January\n| Task | Tool Required | Duration (min) | Sign-off Role | Failure Symptom |\n| :--- | :---",
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 119,
+  "completion_tokens": 48,
+  "total_tokens": 167,
+  "prompt_tokens_details": {
+   "cached_tokens": 96
+  },
+  "elapsed_s": 0.35555785,
+  "spec": {
+   "rounds": 20,
+   "drafted": 60,
+   "accepted": 29,
+   "acceptance_rate": 0.48333333333333334
+  }
+ },
+ "id": "cmpl-f957ca6a660a04bb12b4d28091081c10",
+ "created": 1790166805,
+ "system_fingerprint": "memra-0.138.0-d6f92992a45a"
+}

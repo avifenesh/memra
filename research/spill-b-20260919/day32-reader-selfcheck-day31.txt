@@ -1,0 +1,140 @@
+## python3 day32-compare.py --card rtx5090 --served-ctx 65536 --model-ctx 262144 --registry-value 32768 --survey context O1:rtx5090-day31/boots/O1-off ... O2:rtx5090-day31/boots/O2-on32768
+== card rtx5090 served_ctx=65536 model_ctx=262144
+DAY32 V-BOOT boot=O1-off arm=off door_line=present -> PASS
+DAY32 V-BOOT boot=O1-on2048 arm=on2048 door_line=present -> PASS
+DAY32 V-BOOT boot=O1-on8192 arm=on8192 door_line=present -> PASS
+DAY32 V-BOOT boot=O1-on32768 arm=on32768 door_line=present -> PASS
+DAY32 V-BOOT boot=O2-off arm=off door_line=present -> PASS
+DAY32 V-BOOT boot=O2-on2048 arm=on2048 door_line=present -> PASS
+DAY32 V-BOOT boot=O2-on8192 arm=on8192 door_line=present -> PASS
+DAY32 V-BOOT boot=O2-on32768 arm=on32768 door_line=present -> PASS
+== V-CRASH
+DAY32 V-CRASH card=rtx5090 boot=O1-off arm=off lines=4 by_pattern={'panicked': 1, 'worker_PANIC': 1, 'respawn': 1, 'argmax_sentinel': 1} first=server.log.gz:10286 1790120504487 thread 'memra-gpu-worker' (456749) panicked at crates/memra-engine/src/spec.rs:4590:9: -> FAIL
+DAY32 V-CRASH card=rtx5090 boot=O1-on2048 arm=on2048 lines=9 by_pattern={'panicked': 2, 'worker_PANIC': 2, 'respawn': 1, 'argmax_sentinel': 3, 'worker_FATAL': 1} first=server.log:116 1790122645384 thread 'memra-gpu-worker' (906328) panicked at crates/memra-engine/src/spec.rs:4590:9: -> FAIL
+DAY32 V-CRASH card=rtx5090 boot=O1-on8192 arm=on8192 lines=7 by_pattern={'panicked': 2, 'worker_PANIC': 2, 'respawn': 1, 'argmax_sentinel': 1, 'worker_FATAL': 1} first=server.log:3928 1790123356932 thread 'memra-gpu-worker' (913698) panicked at crates/memra-engine/src/spec.rs:4590:9: -> FAIL
+DAY32 V-CRASH card=rtx5090 boot=O1-on32768 arm=on32768 lines=3 by_pattern={'argmax_sentinel': 3} first=server.log:4688 1790124375338 [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 5 col 0/4 pos=38594: verify-logits col NaN 248320/248320 -> FAIL
+DAY32 V-CRASH card=rtx5090 boot=O2-off arm=off lines=4 by_pattern={'panicked': 1, 'worker_PANIC': 1, 'respawn': 1, 'argmax_sentinel': 1} first=server.log.gz:9733 1790130444081 thread 'memra-gpu-worker' (1449051) panicked at crates/memra-engine/src/spec.rs:4590:9: -> FAIL
+DAY32 V-CRASH card=rtx5090 boot=O2-on2048 arm=on2048 lines=9 by_pattern={'panicked': 2, 'worker_PANIC': 2, 'respawn': 1, 'argmax_sentinel': 3, 'worker_FATAL': 1} first=server.log:165 1790128484717 thread 'memra-gpu-worker' (1443572) panicked at crates/memra-engine/src/spec.rs:4590:9: -> FAIL
+DAY32 V-CRASH card=rtx5090 boot=O2-on8192 arm=on8192 lines=7 by_pattern={'panicked': 2, 'worker_PANIC': 2, 'respawn': 1, 'argmax_sentinel': 1, 'worker_FATAL': 1} first=server.log:3929 1790128306731 thread 'memra-gpu-worker' (1350897) panicked at crates/memra-engine/src/spec.rs:4590:9: -> FAIL
+DAY32 V-CRASH card=rtx5090 boot=O2-on32768 arm=on32768 lines=3 by_pattern={'argmax_sentinel': 3} first=server.log:4689 1790126358241 [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 5 col 0/4 pos=38594: verify-logits col NaN 248320/248320 -> FAIL
+== V-ALLOC
+DAY32 V-ALLOC card=rtx5090 boot=O1-off arm=off judged=44 match=44 mismatch=0 -> PASS
+DAY32 V-ALLOC card=rtx5090 boot=O1-on2048 arm=on2048 judged=3 match=3 mismatch=0 -> PASS
+DAY32 V-ALLOC card=rtx5090 boot=O1-on8192 arm=on8192 judged=46 match=46 mismatch=0 -> PASS
+DAY32 V-ALLOC card=rtx5090 boot=O1-on32768 arm=on32768 judged=44 match=44 mismatch=0 -> PASS
+DAY32 V-ALLOC card=rtx5090 boot=O2-off arm=off judged=44 match=44 mismatch=0 -> PASS
+DAY32 V-ALLOC card=rtx5090 boot=O2-on2048 arm=on2048 judged=7 match=7 mismatch=0 -> PASS
+DAY32 V-ALLOC card=rtx5090 boot=O2-on8192 arm=on8192 judged=44 match=44 mismatch=0 -> PASS
+DAY32 V-ALLOC card=rtx5090 boot=O2-on32768 arm=on32768 judged=44 match=44 mismatch=0 -> PASS
+== V-ID / V-TRUNC
+DAY32 V-ID card=rtx5090 order=O1 arm=on2048 vs=off eligible=1 equal=1 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=rtx5090 order=O1 arm=on2048 on_length_rows=2 truncated_with_twin=2 length_both=0 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=34 i-L0-r1:500,i-L0-r2:500,i-L0-r3:500,i-L1-r0:None,i-L1-r1:None,i-L1-r2:None,i-L1-r3:None,i-L1-r4:None G_outside_band_v=2 i-L0-r0:G=2056,i-L0-r4:G=2056
+DAY32 V-ID card=rtx5090 order=O1 arm=on8192 vs=off eligible=48 equal=48 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=rtx5090 order=O1 arm=on8192 on_length_rows=3 truncated_with_twin=0 length_both=2 length_prompt_differs=0 length_twin_failed=1 length_twin_other_finish=0 length_without_twin=1 conserved=True deadline_cut=0 open_non200=1 iv-b-r1:500 G_outside_band_v=3 iii-L2-r3:G=8200,iv-b-r0:G=8199,iv-b-r2:G=8200
+DAY32 V-ID card=rtx5090 order=O1 arm=on32768 vs=off eligible=48 equal=48 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=rtx5090 order=O1 arm=on32768 on_length_rows=1 truncated_with_twin=0 length_both=0 length_prompt_differs=0 length_twin_failed=1 length_twin_other_finish=0 length_without_twin=1 conserved=True deadline_cut=0 open_non200=3 iii-L2-r3:500,iv-b-r0:500,iv-b-r1:500 G_outside_band_v=3 iv-b-r2:G=32772,burst-b23:G=32776,burst-b8:G=32776
+DAY32 V-ID card=rtx5090 order=O2 arm=on2048 vs=off eligible=6 equal=6 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=rtx5090 order=O2 arm=on2048 on_length_rows=2 truncated_with_twin=2 length_both=0 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=34 i-L0-r1:500,i-L0-r2:500,i-L0-r3:500,i-L1-r0:None,i-L1-r1:None,i-L1-r2:None,i-L1-r3:None,i-L1-r4:None G_outside_band_v=2 i-L0-r0:G=2056,i-L0-r4:G=2056
+DAY32 V-ID card=rtx5090 order=O2 arm=on8192 vs=off eligible=45 equal=45 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=rtx5090 order=O2 arm=on8192 on_length_rows=3 truncated_with_twin=0 length_both=2 length_prompt_differs=0 length_twin_failed=1 length_twin_other_finish=0 length_without_twin=1 conserved=True deadline_cut=0 open_non200=4 iv-b-r1:500,iv-a-r0:None,iv-a-r1:None,iv-a-r2:None G_outside_band_v=3 iii-L2-r3:G=8200,iv-b-r0:G=8199,iv-b-r2:G=8200
+DAY32 V-ID card=rtx5090 order=O2 arm=on32768 vs=off eligible=48 equal=48 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=rtx5090 order=O2 arm=on32768 on_length_rows=1 truncated_with_twin=0 length_both=0 length_prompt_differs=0 length_twin_failed=1 length_twin_other_finish=0 length_without_twin=1 conserved=True deadline_cut=0 open_non200=3 iii-L2-r3:500,iv-b-r0:500,iv-b-r1:500 G_outside_band_v=5 iv-b-r2:G=32772,burst-b26:G=32776,burst-b23:G=32776,burst-b8:G=32776,burst-b16:G=32776
+== G-NATURAL (door OFF, open classes, both orders, admissible OFF boots)
+DAY32 G-NATURAL card=rtx5090 off_boots=[]
+DAY32 G-NATURAL card=rtx5090 class=i n=0 finish={}
+DAY32 G-NATURAL card=rtx5090 class=iii n=0 finish={}
+DAY32 G-NATURAL card=rtx5090 class=iv-a n=0 finish={}
+DAY32 G-NATURAL card=rtx5090 class=iv-b n=0 finish={}
+DAY32 G-NATURAL card=rtx5090 class=all-open n=0 finish={}
+== V-CONC / V-RETRY
+DAY32 V-CONC card=rtx5090 order=O1 arm=off window_ms=1669989 B=32 status={200: 32} finish={'stop': 27, 'length': 5} retry_after={} active_sessions_max=6.0 admission_booked_bytes_max=10075702352.0 samples=6680 shadow_budget_bytes=12831671424 burst_cost_lines=444759 burst_cost_total_mb_median=1678 arith_sessions=7
+DAY32 V-RETRY card=rtx5090 order=O1 arm=off burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-CONC card=rtx5090 order=O1 arm=on2048 window_ms=16 B=32 status={None: 32} finish={} retry_after={None: 32} active_sessions_max=None admission_booked_bytes_max=None samples=0 shadow_budget_bytes=12831671424 burst_cost_lines=0 burst_cost_total_mb_median=None arith_sessions=None
+DAY32 V-RETRY card=rtx5090 order=O1 arm=on2048 burst_responses=0/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=32 -> FAIL
+DAY32 V-CONC card=rtx5090 order=O1 arm=on8192 window_ms=16 B=32 status={None: 32} finish={} retry_after={None: 32} active_sessions_max=None admission_booked_bytes_max=None samples=0 shadow_budget_bytes=12831671424 burst_cost_lines=0 burst_cost_total_mb_median=None arith_sessions=None
+DAY32 V-RETRY card=rtx5090 order=O1 arm=on8192 burst_responses=0/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=32 -> FAIL
+DAY32 V-CONC card=rtx5090 order=O1 arm=on32768 window_ms=524356 B=32 status={503: 2, 429: 11, 200: 19} finish={'stop': 17, 'length': 2} retry_after={'5': 2, '60': 11} active_sessions_max=19.0 admission_booked_bytes_max=22075472424.0 samples=2098 shadow_budget_bytes=12831671424 burst_cost_lines=254 burst_cost_total_mb_median=1162.0 arith_sessions=11
+DAY32 V-RETRY card=rtx5090 order=O1 arm=on32768 burst_responses=32/32 r429=11 refuse_lines=11 retry_after_in_1_60=True other_non200=2 -> PASS
+DAY32 V-CONC card=rtx5090 order=O2 arm=off window_ms=1913825 B=32 status={200: 32} finish={'stop': 27, 'length': 5} retry_after={} active_sessions_max=6.0 admission_booked_bytes_max=10074621008.0 samples=7656 shadow_budget_bytes=12831671424 burst_cost_lines=322633 burst_cost_total_mb_median=1679 arith_sessions=7
+DAY32 V-RETRY card=rtx5090 order=O2 arm=off burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-CONC card=rtx5090 order=O2 arm=on2048 window_ms=17 B=32 status={None: 32} finish={} retry_after={None: 32} active_sessions_max=None admission_booked_bytes_max=None samples=0 shadow_budget_bytes=12831671424 burst_cost_lines=0 burst_cost_total_mb_median=None arith_sessions=None
+DAY32 V-RETRY card=rtx5090 order=O2 arm=on2048 burst_responses=0/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=32 -> FAIL
+DAY32 V-CONC card=rtx5090 order=O2 arm=on8192 window_ms=14 B=32 status={None: 32} finish={} retry_after={None: 32} active_sessions_max=None admission_booked_bytes_max=None samples=0 shadow_budget_bytes=12831671424 burst_cost_lines=0 burst_cost_total_mb_median=None arith_sessions=None
+DAY32 V-RETRY card=rtx5090 order=O2 arm=on8192 burst_responses=0/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=32 -> FAIL
+DAY32 V-CONC card=rtx5090 order=O2 arm=on32768 window_ms=641206 B=32 status={503: 2, 429: 11, 200: 19} finish={'stop': 15, 'length': 4} retry_after={'5': 2, '60': 11} active_sessions_max=19.0 admission_booked_bytes_max=22183181304.0 samples=2565 shadow_budget_bytes=12831671424 burst_cost_lines=301 burst_cost_total_mb_median=1162 arith_sessions=11
+DAY32 V-RETRY card=rtx5090 order=O2 arm=on32768 burst_responses=32/32 r429=11 refuse_lines=11 retry_after_in_1_60=True other_non200=2 -> PASS
+== SELECT (stated, not chosen)
+DAY32 SELECT card=rtx5090 R1_smallest_zero_truncation=none admissible=[] inadmissible=['2048:O1:crash+O1:open_non200=34+O2:crash+O2:open_non200=34', '8192:O1:crash+O1:open_non200=1+O2:crash+O2:open_non200=4', '32768:O1:crash+O1:open_non200=3+O2:crash+O2:open_non200=3'] truncating=[]
+DAY32 SELECT card=rtx5090 R2_smallest_v_ge_max_natural_G=none (no admissible OFF boot)
+DAY32 SELECT card=rtx5090 R3_registry=32768 R4_survey=context
+DAY32 V-DOOR card=rtx5090 boots=8 excluded=0 v_crash_all=False v_id_all=True v_alloc_all=True v_trunc_band_all=False v_trunc_conserved_all=True v_retry_all=False -> FAIL
+## python3 day32-compare.py --card pro6000 --served-ctx 262144 --model-ctx 262144 --registry-value 32768 --survey context O1:pro-single-day31/box/boots/O1-off ... O2:pro-single-day31/box/boots/O2-on32768
+== card pro6000 served_ctx=262144 model_ctx=262144
+DAY32 V-BOOT boot=O1-off arm=off door_line=present -> PASS
+DAY32 V-BOOT boot=O1-on2048 arm=on2048 door_line=present -> PASS
+DAY32 V-BOOT boot=O1-on8192 arm=on8192 door_line=present -> PASS
+DAY32 V-BOOT boot=O1-on32768 arm=on32768 door_line=present -> PASS
+DAY32 V-BOOT boot=O2-off arm=off door_line=present -> PASS
+DAY32 V-BOOT boot=O2-on2048 arm=on2048 door_line=present -> PASS
+DAY32 V-BOOT boot=O2-on8192 arm=on8192 door_line=present -> PASS
+DAY32 V-BOOT boot=O2-on32768 arm=on32768 door_line=present -> PASS
+== V-CRASH
+DAY32 V-CRASH card=pro6000 boot=O1-off arm=off lines=1 by_pattern={'argmax_sentinel': 1} first=server.log.gz:12173 1790126262505 [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 7 col 0/4 pos=262142: verify-logits col NaN 248320/248320 -> FAIL
+DAY32 V-CRASH card=pro6000 boot=O1-on2048 arm=on2048 lines=6 by_pattern={'argmax_sentinel': 6} first=server.log:981 1790130416322 [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 5 col 0/4 pos=3714: verify-logits col NaN 248320/248320 -> FAIL
+DAY32 V-CRASH card=pro6000 boot=O1-on8192 arm=on8192 lines=7 by_pattern={'argmax_sentinel': 1, 'panicked': 2, 'worker_PANIC': 2, 'respawn': 1, 'worker_FATAL': 1} first=server.log:1167 1790130863078 [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 4 col 0/4 pos=9858: verify-logits col NaN 248320/248320 -> FAIL
+DAY32 V-CRASH card=pro6000 boot=O1-on32768 arm=on32768 lines=6 by_pattern={'panicked': 1, 'worker_PANIC': 1, 'respawn': 1, 'argmax_sentinel': 3} first=server.log:1917 1790131524593 thread 'memra-gpu-worker' (364685) panicked at crates/memra-engine/src/spec.rs:4590:9: -> FAIL
+DAY32 V-CRASH card=pro6000 boot=O2-off arm=off lines=1 by_pattern={'argmax_sentinel': 1} first=server.log.gz:20399 1790141671039 [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 7 j=2 pos=262142: head-out NaN 5120/5120, round-input-seed NaN 0/5120 -> FAIL
+DAY32 V-CRASH card=pro6000 boot=O2-on2048 arm=on2048 lines=6 by_pattern={'argmax_sentinel': 6} first=server.log:983 1790134631162 [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 4 col 0/4 pos=2173: verify-logits col NaN 248320/248320 -> FAIL
+DAY32 V-CRASH card=pro6000 boot=O2-on8192 arm=on8192 lines=7 by_pattern={'panicked': 2, 'worker_PANIC': 2, 'respawn': 1, 'argmax_sentinel': 1, 'worker_FATAL': 1} first=server.log:1682 1790134308671 thread 'memra-gpu-worker' (387982) panicked at crates/memra-engine/src/spec.rs:4590:9: -> FAIL
+DAY32 V-CRASH card=pro6000 boot=O2-on32768 arm=on32768 lines=6 by_pattern={'argmax_sentinel': 3, 'panicked': 1, 'worker_PANIC': 1, 'respawn': 1} first=server.log:2494 1790133037087 [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 5 j=2 pos=32894: head-out NaN 5120/5120, round-input-seed NaN 0/5120 -> FAIL
+== V-ALLOC
+DAY32 V-ALLOC card=pro6000 boot=O1-off arm=off judged=45 match=45 mismatch=0 -> PASS
+DAY32 V-ALLOC card=pro6000 boot=O1-on2048 arm=on2048 judged=44 match=44 mismatch=0 -> PASS
+DAY32 V-ALLOC card=pro6000 boot=O1-on8192 arm=on8192 judged=46 match=46 mismatch=0 -> PASS
+DAY32 V-ALLOC card=pro6000 boot=O1-on32768 arm=on32768 judged=46 match=46 mismatch=0 -> PASS
+DAY32 V-ALLOC card=pro6000 boot=O2-off arm=off judged=45 match=45 mismatch=0 -> PASS
+DAY32 V-ALLOC card=pro6000 boot=O2-on2048 arm=on2048 judged=44 match=44 mismatch=0 -> PASS
+DAY32 V-ALLOC card=pro6000 boot=O2-on8192 arm=on8192 judged=46 match=46 mismatch=0 -> PASS
+DAY32 V-ALLOC card=pro6000 boot=O2-on32768 arm=on32768 judged=46 match=46 mismatch=0 -> PASS
+== V-ID / V-TRUNC
+DAY32 V-ID card=pro6000 order=O1 arm=on2048 vs=off eligible=46 equal=46 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=pro6000 order=O1 arm=on2048 on_length_rows=0 truncated_with_twin=0 length_both=0 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=6 iv-a-r0:500,iv-a-r1:500,iv-a-r2:500,iv-b-r0:500,iv-b-r1:500,iv-b-r2:500 G_outside_band_v=3 burst-b41:G=2056,burst-b25:G=2056,burst-b62:G=2056
+DAY32 V-ID card=pro6000 order=O1 arm=on8192 vs=off eligible=46 equal=46 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=pro6000 order=O1 arm=on8192 on_length_rows=5 truncated_with_twin=4 length_both=0 length_prompt_differs=0 length_twin_failed=1 length_twin_other_finish=0 length_without_twin=1 conserved=True deadline_cut=0 open_non200=1 iv-a-r0:500 G_outside_band_v=5 iv-a-r1:G=8200,iv-a-r2:G=8200,iv-b-r0:G=8198,iv-b-r1:G=8197,iv-b-r2:G=8200
+DAY32 V-ID card=pro6000 order=O1 arm=on32768 vs=off eligible=47 equal=47 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=pro6000 order=O1 arm=on32768 on_length_rows=2 truncated_with_twin=2 length_both=0 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=3 iv-a-r1:500,iv-a-r2:500,iv-b-r1:500 G_outside_band_v=2 iv-a-r0:G=32776,iv-b-r2:G=32773
+DAY32 V-ID card=pro6000 order=O2 arm=on2048 vs=off eligible=46 equal=46 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=pro6000 order=O2 arm=on2048 on_length_rows=0 truncated_with_twin=0 length_both=0 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=6 iv-b-r0:500,iv-b-r1:500,iv-b-r2:500,iv-a-r0:500,iv-a-r1:500,iv-a-r2:500 G_outside_band_v=3 burst-b25:G=2056,burst-b41:G=2056,burst-b62:G=2056
+DAY32 V-ID card=pro6000 order=O2 arm=on8192 vs=off eligible=46 equal=46 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=pro6000 order=O2 arm=on8192 on_length_rows=4 truncated_with_twin=3 length_both=0 length_prompt_differs=0 length_twin_failed=1 length_twin_other_finish=0 length_without_twin=1 conserved=True deadline_cut=0 open_non200=2 iv-a-r0:500,iv-a-r2:None G_outside_band_v=4 iv-b-r0:G=8198,iv-b-r1:G=8197,iv-b-r2:G=8200,iv-a-r1:G=8200
+DAY32 V-ID card=pro6000 order=O2 arm=on32768 vs=off eligible=47 equal=47 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=pro6000 order=O2 arm=on32768 on_length_rows=2 truncated_with_twin=2 length_both=0 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=3 iv-b-r1:500,iv-a-r1:500,iv-a-r2:500 G_outside_band_v=2 iv-b-r2:G=32773,iv-a-r0:G=32776
+== G-NATURAL (door OFF, open classes, both orders, admissible OFF boots)
+DAY32 G-NATURAL card=pro6000 off_boots=[]
+DAY32 G-NATURAL card=pro6000 class=i n=0 finish={}
+DAY32 G-NATURAL card=pro6000 class=iii n=0 finish={}
+DAY32 G-NATURAL card=pro6000 class=iv-a n=0 finish={}
+DAY32 G-NATURAL card=pro6000 class=iv-b n=0 finish={}
+DAY32 G-NATURAL card=pro6000 class=all-open n=0 finish={}
+== V-CONC / V-RETRY
+DAY32 V-CONC card=pro6000 order=O1 arm=off window_ms=167951 B=64 status={200: 64} finish={'stop': 64} retry_after={} active_sessions_max=9.0 admission_booked_bytes_max=83743021720.0 samples=672 shadow_budget_bytes=65881157328 burst_cost_lines=114939 burst_cost_total_mb_median=9239 arith_sessions=7
+DAY32 V-RETRY card=pro6000 order=O1 arm=off burst_responses=64/64 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-CONC card=pro6000 order=O1 arm=on2048 window_ms=129140 B=64 status={200: 64} finish={'stop': 61, 'length': 3} retry_after={} active_sessions_max=64.0 admission_booked_bytes_max=69424286208.0 samples=517 shadow_budget_bytes=65881157328 burst_cost_lines=63 burst_cost_total_mb_median=1084 arith_sessions=60
+DAY32 V-RETRY card=pro6000 order=O1 arm=on2048 burst_responses=64/64 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-CONC card=pro6000 order=O1 arm=on8192 window_ms=20 B=64 status={None: 64} finish={} retry_after={None: 64} active_sessions_max=None admission_booked_bytes_max=None samples=0 shadow_budget_bytes=65881157328 burst_cost_lines=0 burst_cost_total_mb_median=None arith_sessions=None
+DAY32 V-RETRY card=pro6000 order=O1 arm=on8192 burst_responses=0/64 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=64 -> FAIL
+DAY32 V-CONC card=pro6000 order=O1 arm=on32768 window_ms=96283 B=64 status={429: 17, 200: 47} finish={'stop': 47} retry_after={'60': 17} active_sessions_max=47.0 admission_booked_bytes_max=96260417960.0 samples=385 shadow_budget_bytes=65881157328 burst_cost_lines=74 burst_cost_total_mb_median=2046.0 arith_sessions=32
+DAY32 V-RETRY card=pro6000 order=O1 arm=on32768 burst_responses=64/64 r429=17 refuse_lines=17 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-CONC card=pro6000 order=O2 arm=off window_ms=180369 B=64 status={200: 64} finish={'stop': 64} retry_after={} active_sessions_max=9.0 admission_booked_bytes_max=83744459416.0 samples=721 shadow_budget_bytes=65881157328 burst_cost_lines=109189 burst_cost_total_mb_median=9239 arith_sessions=7
+DAY32 V-RETRY card=pro6000 order=O2 arm=off burst_responses=64/64 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-CONC card=pro6000 order=O2 arm=on2048 window_ms=129111 B=64 status={200: 64} finish={'stop': 61, 'length': 3} retry_after={} active_sessions_max=64.0 admission_booked_bytes_max=69424286208.0 samples=516 shadow_budget_bytes=65881157328 burst_cost_lines=60 burst_cost_total_mb_median=1084.5 arith_sessions=60
+DAY32 V-RETRY card=pro6000 order=O2 arm=on2048 burst_responses=64/64 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-CONC card=pro6000 order=O2 arm=on8192 window_ms=21 B=64 status={None: 64} finish={} retry_after={None: 64} active_sessions_max=None admission_booked_bytes_max=None samples=0 shadow_budget_bytes=65881157328 burst_cost_lines=0 burst_cost_total_mb_median=None arith_sessions=None
+DAY32 V-RETRY card=pro6000 order=O2 arm=on8192 burst_responses=0/64 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=64 -> FAIL
+DAY32 V-CONC card=pro6000 order=O2 arm=on32768 window_ms=108450 B=64 status={429: 17, 200: 47} finish={'stop': 47} retry_after={'60': 17} active_sessions_max=47.0 admission_booked_bytes_max=96267554088.0 samples=434 shadow_budget_bytes=65881157328 burst_cost_lines=77 burst_cost_total_mb_median=2046 arith_sessions=32
+DAY32 V-RETRY card=pro6000 order=O2 arm=on32768 burst_responses=64/64 r429=17 refuse_lines=17 retry_after_in_1_60=True other_non200=0 -> PASS
+== SELECT (stated, not chosen)
+DAY32 SELECT card=pro6000 R1_smallest_zero_truncation=none admissible=[] inadmissible=['2048:O1:crash+O1:open_non200=6+O2:crash+O2:open_non200=6', '8192:O1:crash+O1:open_non200=1+O2:crash+O2:open_non200=2', '32768:O1:crash+O1:open_non200=3+O2:crash+O2:open_non200=3'] truncating=[]
+DAY32 SELECT card=pro6000 R2_smallest_v_ge_max_natural_G=none (no admissible OFF boot)
+DAY32 SELECT card=pro6000 R3_registry=32768 R4_survey=context
+DAY32 V-DOOR card=pro6000 boots=8 excluded=0 v_crash_all=False v_id_all=True v_alloc_all=True v_trunc_band_all=False v_trunc_conserved_all=True v_retry_all=False -> FAIL

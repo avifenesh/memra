@@ -1,0 +1,307 @@
+== O1-off: panics=0 respawns=0 fatal=False engine_errors=0
+  non-200 rows=0 status_none=0 first_no_status=None
+== O1-on2048: panics=0 respawns=0 fatal=False engine_errors=0
+  non-200 rows=0 status_none=0 first_no_status=None
+== O1-on8192: panics=0 respawns=0 fatal=False engine_errors=0
+  non-200 rows=0 status_none=0 first_no_status=None
+== O1-on32768: panics=0 respawns=0 fatal=False engine_errors=46
+  server.log:6785 t=1790160152349 in=burst-b38 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6786 t=1790160152349 in=burst-b38 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6787 t=1790160152349 in=burst-b38 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6788 t=1790160152350 in=burst-b38 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6789 t=1790160152350 in=burst-b38 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6790 t=1790160152350 in=burst-b38 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6791 t=1790160152350 in=burst-b38 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6792 t=1790160152350 in=burst-b38 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6793 t=1790160152350 in=burst-b38 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6794 t=1790160152350 in=burst-b38 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6795 t=1790160152350 in=burst-b38 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6796 t=1790160152351 in=burst-b30 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6797 t=1790160152351 in=burst-b30 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6798 t=1790160152351 in=burst-b30 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6799 t=1790160152351 in=burst-b30 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6800 t=1790160152351 in=burst-b30 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6801 t=1790160152351 in=burst-b30 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6802 t=1790160152351 in=burst-b30 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6803 t=1790160152352 in=burst-b4 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6804 t=1790160152352 in=burst-b4 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6805 t=1790160152352 in=burst-b4 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6806 t=1790160152352 in=burst-b4 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6807 t=1790160152352 in=burst-b4 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6808 t=1790160152352 in=burst-b4 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6809 t=1790160152352 in=burst-b4 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6810 t=1790160152352 in=burst-b4 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6811 t=1790160152353 in=burst-b43 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6812 t=1790160152353 in=burst-b43 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6813 t=1790160152353 in=burst-b43 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6814 t=1790160152353 in=burst-b43 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6815 t=1790160152353 in=burst-b43 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6816 t=1790160152353 in=burst-b43 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6817 t=1790160152354 in=burst-b19 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6818 t=1790160152354 in=burst-b19 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6819 t=1790160152354 in=burst-b19 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6820 t=1790160152354 in=burst-b19 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6821 t=1790160152354 in=burst-b19 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6822 t=1790160152354 in=burst-b19 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6823 t=1790160152354 in=burst-b19 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6824 t=1790160152354 in=burst-b19 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6825 t=1790160152354 in=burst-b19 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6826 t=1790160152354 in=burst-b19 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6827 t=1790160152354 in=burst-b19 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6828 t=1790160152355 in=burst-b42 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6829 t=1790160152355 in=burst-b42 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6830 t=1790160152355 in=burst-b42 prev=iv-b-r2 P=120 G=32768 finish=length P+G=32888 booked-64=32888
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  non-200 rows=52 status_none=0 first_no_status=None
+    burst-b44 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b52 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b33 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b20 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b3 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b24 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b38 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b26 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b21 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b34 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b30 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b55 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b10 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b4 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b35 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b6 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b43 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b57 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b47 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b39 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b40 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b53 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b19 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b48 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b0 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b22 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b42 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b54 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b49 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b11 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b23 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b1 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b8 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b7 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b16 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b28 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b9 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b41 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b15 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b13 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b27 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b58 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b12 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b31 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b56 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b25 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b51 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b60 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b29 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b59 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b14 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b37 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+== O2-on32768: panics=0 respawns=0 fatal=False engine_errors=47
+  server.log:6790 t=1790161532388 in=burst-b17 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6791 t=1790161532388 in=burst-b17 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6792 t=1790161532388 in=burst-b17 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6793 t=1790161532388 in=burst-b17 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6794 t=1790161532388 in=burst-b17 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6795 t=1790161532389 in=burst-b12 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6796 t=1790161532389 in=burst-b12 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6797 t=1790161532389 in=burst-b12 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6798 t=1790161532389 in=burst-b12 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6799 t=1790161532389 in=burst-b12 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6800 t=1790161532389 in=burst-b12 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6801 t=1790161532389 in=burst-b12 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6802 t=1790161532389 in=burst-b12 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6803 t=1790161532390 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6804 t=1790161532390 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6805 t=1790161532390 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6806 t=1790161532390 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6807 t=1790161532390 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6808 t=1790161532390 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6809 t=1790161532390 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6810 t=1790161532390 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6811 t=1790161532391 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6812 t=1790161532391 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6813 t=1790161532391 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6814 t=1790161532391 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6815 t=1790161532391 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6816 t=1790161532391 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6817 t=1790161532391 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6818 t=1790161532391 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6819 t=1790161532391 in=burst-b53 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6820 t=1790161532392 in=burst-b14 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6821 t=1790161532392 in=burst-b14 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6822 t=1790161532392 in=burst-b14 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6823 t=1790161532392 in=burst-b14 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6824 t=1790161532392 in=burst-b14 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6825 t=1790161532393 in=burst-b48 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6826 t=1790161532393 in=burst-b48 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6827 t=1790161532394 in=burst-b55 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6828 t=1790161532394 in=burst-b55 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6829 t=1790161532394 in=burst-b55 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6830 t=1790161532394 in=burst-b55 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6831 t=1790161532394 in=burst-b55 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6832 t=1790161532394 in=burst-b55 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6833 t=1790161532394 in=burst-b55 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6834 t=1790161532394 in=burst-b55 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6835 t=1790161532395 in=burst-b58 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:6836 t=1790161532395 in=burst-b58 prev=iv-a-r2 P=1662 G=32768 finish=length P+G=34430 booked-64=34430
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  non-200 rows=53 status_none=0 first_no_status=None
+    burst-b35 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b15 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b56 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b9 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b28 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b11 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b17 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b63 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b12 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b37 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b34 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b42 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b53 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b46 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b10 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b19 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b14 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b1 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b60 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b48 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b31 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b4 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b55 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b2 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b39 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b50 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b47 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b61 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b40 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b58 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b23 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b38 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b49 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b3 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b24 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b52 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b62 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b44 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b33 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b20 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b36 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b57 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b26 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b51 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b13 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b43 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b18 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b21 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b25 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b32 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b6 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b7 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b0 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+== O2-on8192: panics=0 respawns=0 fatal=False engine_errors=0
+  non-200 rows=0 status_none=0 first_no_status=None
+== O2-on2048: panics=0 respawns=0 fatal=False engine_errors=0
+  non-200 rows=0 status_none=0 first_no_status=None
+== O2-off: panics=0 respawns=0 fatal=False engine_errors=0
+  non-200 rows=0 status_none=0 first_no_status=None
