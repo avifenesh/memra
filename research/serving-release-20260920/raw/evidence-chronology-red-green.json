@@ -1,0 +1,79 @@
+{
+  "old": {
+    "files": {
+      "serving-release.cells.json": "90c03281164603802e5af9db87062f6be5c4696f16aa24f40e8af13d814796f6",
+      "serving_cache.py": "efdffe40237283374d1f1f8aa802d36963a4a953078d5fbff939f721e00c2286",
+      "serving_capture.py": "023ee6039307227cb0c54de222b154a881f5eff5a95239bf9d095cbc04e6ad91",
+      "serving_completion.py": "bf0d4dd9c569884133d0516e128bfa625cd83d993d62bdda41cb4f1dea3aa1fa",
+      "serving_evidence.py": "c00b9510d19da0db0a43db17aa5b62e045e05f5355de82cb9282764644906e4e",
+      "serving_http.py": "287e493db1678b503106c3ce662601d553229062670244c716369a2b619569d8",
+      "serving_lifecycle.py": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3",
+      "serving_listener.py": "e71bf54a25ed91f2549ff690ee2a96cbd9db902c8c3af1651f4958f7e196f58e",
+      "serving_manifest.py": "12b7f252fb9b40670d53bd751e83992f46b79237cb1e12bf361444fdd5551b6f",
+      "serving_policy.py": "d7cb92568dbd45b4433159ee98d216405d76b12cc42a579062298c741b2243c7",
+      "serving_process.py": "22dca5e161a926fa8c9382c762223af0b8029ae2cf0c13f16bef7f5066df984a",
+      "serving_recovery.py": "ddb271f43d6a36e4f8fc4d26f9ac83b37d8ff2525d6f48c50a651d5a4760152e",
+      "serving_release.py": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c",
+      "test_serving_cache.py": "4b9e8487d6af989ee4f5993a928e269b43dc813024d5bfac7171a3f25712364a",
+      "test_serving_capture.py": "d226fc6fd60620ce2a5101781ead7524d2a726c59a23b6b0a8436e538d5d2cde",
+      "test_serving_completion.py": "43e2f9b5eb92a303538766834569a14a6425b5936c7d3f939ecba5f429f03ece",
+      "test_serving_evidence.py": "2d981f1baa5a785a0f1c586b789081b5903d14691fc7347ef402a7a86e806345",
+      "test_serving_http.py": "4fd7dd2a6600a83aff8548386f542097e4cec7884632280ccb81be5a7cad8037",
+      "test_serving_lifecycle.py": "37006bd0e7ccc4cbb1626e35a8b9f033528820585394bc0a4a6d2e094ce9a2a1",
+      "test_serving_listener.py": "d52cfb3d0b9e372c1ed05814c09afb29db607ceba2b5b5ae8fa9e2fa3305d834",
+      "test_serving_manifest.py": "db189ad35082ce1fb40c91e8cecd8d8638be5531d16c763932341e8cf403fe6d",
+      "test_serving_policy.py": "662af13d2d36f2d0fe011c3920d3e54977671d729b5fbce0fcbf9b602fc2d527",
+      "test_serving_process.py": "eac3ef971cb7639a676207e0400e05f3c4f70c261f7634bcf3996feb14b4a4ad",
+      "test_serving_recovery.py": "7936e089166953e0a9efc9f08c35c5c8b9e9c3710aadd8f73a09ba144310507f",
+      "test_serving_release.py": "749eac9fdfca15a88600b57e6dc65e361cb16281fbcf2f670821884dd9860aa8"
+    },
+    "exit_code": 1,
+    "command": [
+      "/opt/homebrew/opt/python@3.14/bin/python3.14",
+      "-m",
+      "unittest",
+      "test_serving_evidence.EvidenceTests.test_group_must_follow_startup_and_finish_before_capture_complete_stop",
+      "test_serving_evidence.EvidenceTests.test_serial_and_sequential_group_chronology",
+      "-v"
+    ],
+    "log_sha256": "331e4d1e27e561400a50bb1fb19eb3b79671d1d1138e1d808f9965ce7202aa03"
+  },
+  "new": {
+    "files": {
+      "serving-release.cells.json": "90c03281164603802e5af9db87062f6be5c4696f16aa24f40e8af13d814796f6",
+      "serving_cache.py": "efdffe40237283374d1f1f8aa802d36963a4a953078d5fbff939f721e00c2286",
+      "serving_capture.py": "023ee6039307227cb0c54de222b154a881f5eff5a95239bf9d095cbc04e6ad91",
+      "serving_completion.py": "bf0d4dd9c569884133d0516e128bfa625cd83d993d62bdda41cb4f1dea3aa1fa",
+      "serving_evidence.py": "144bcd0a1a911bec27e57ab7cf30bc96de6fbf8539d81684e0152e0566a6e8c8",
+      "serving_http.py": "287e493db1678b503106c3ce662601d553229062670244c716369a2b619569d8",
+      "serving_lifecycle.py": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3",
+      "serving_listener.py": "e71bf54a25ed91f2549ff690ee2a96cbd9db902c8c3af1651f4958f7e196f58e",
+      "serving_manifest.py": "12b7f252fb9b40670d53bd751e83992f46b79237cb1e12bf361444fdd5551b6f",
+      "serving_policy.py": "d7cb92568dbd45b4433159ee98d216405d76b12cc42a579062298c741b2243c7",
+      "serving_process.py": "22dca5e161a926fa8c9382c762223af0b8029ae2cf0c13f16bef7f5066df984a",
+      "serving_recovery.py": "ddb271f43d6a36e4f8fc4d26f9ac83b37d8ff2525d6f48c50a651d5a4760152e",
+      "serving_release.py": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c",
+      "test_serving_cache.py": "4b9e8487d6af989ee4f5993a928e269b43dc813024d5bfac7171a3f25712364a",
+      "test_serving_capture.py": "d226fc6fd60620ce2a5101781ead7524d2a726c59a23b6b0a8436e538d5d2cde",
+      "test_serving_completion.py": "43e2f9b5eb92a303538766834569a14a6425b5936c7d3f939ecba5f429f03ece",
+      "test_serving_evidence.py": "2d981f1baa5a785a0f1c586b789081b5903d14691fc7347ef402a7a86e806345",
+      "test_serving_http.py": "4fd7dd2a6600a83aff8548386f542097e4cec7884632280ccb81be5a7cad8037",
+      "test_serving_lifecycle.py": "37006bd0e7ccc4cbb1626e35a8b9f033528820585394bc0a4a6d2e094ce9a2a1",
+      "test_serving_listener.py": "d52cfb3d0b9e372c1ed05814c09afb29db607ceba2b5b5ae8fa9e2fa3305d834",
+      "test_serving_manifest.py": "db189ad35082ce1fb40c91e8cecd8d8638be5531d16c763932341e8cf403fe6d",
+      "test_serving_policy.py": "662af13d2d36f2d0fe011c3920d3e54977671d729b5fbce0fcbf9b602fc2d527",
+      "test_serving_process.py": "eac3ef971cb7639a676207e0400e05f3c4f70c261f7634bcf3996feb14b4a4ad",
+      "test_serving_recovery.py": "7936e089166953e0a9efc9f08c35c5c8b9e9c3710aadd8f73a09ba144310507f",
+      "test_serving_release.py": "749eac9fdfca15a88600b57e6dc65e361cb16281fbcf2f670821884dd9860aa8"
+    },
+    "exit_code": 0,
+    "command": [
+      "/opt/homebrew/opt/python@3.14/bin/python3.14",
+      "-m",
+      "unittest",
+      "test_serving_evidence",
+      "-v"
+    ],
+    "log_sha256": "0002aa724d292349cf3e82e0d92cf3a0f2fcdef03b57275ef9c2b5ec2a9f9e10"
+  }
+}

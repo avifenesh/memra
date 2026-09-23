@@ -5,3 +5,6 @@ research/gateway-20260812/raw/** -text
 # A unified diff encodes blank context lines as one literal space.
 # Preserve the hash-pinned research patch instead of rewriting those bytes.
 research/mtp-calibrated-depth-20260920/prototype.patch -text whitespace=-blank-at-eol
+
+# Preserve the exact archived lifecycle CPU harness, including its captured EOF.
+research/serving-release-20260920/lifecycle-producer-20260921/harness-lib.rs -text whitespace=-blank-at-eof

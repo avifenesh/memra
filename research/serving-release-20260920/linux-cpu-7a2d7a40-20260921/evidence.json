@@ -1,0 +1,89 @@
+{
+  "source": "7a2d7a40e685ca59341ac8c974e8e93c87707acf",
+  "scope": "Full Linux CPU server package and targeted controls, not native serving/model qualification",
+  "full_server": {
+    "passed": 785,
+    "failed": 0,
+    "ignored": 8
+  },
+  "targeted": {
+    "HTTP_middleware": 6,
+    "Trace": 23,
+    "event_queue": 1
+  },
+  "targeted_overlap_full_suite": true,
+  "source_files": 59183,
+  "source_before_sha256": "780671faea6e6b0e64d1ee3f4d213ea594c6978cf20b0022ae8763dc1bd67b47",
+  "source_after_sha256": "780671faea6e6b0e64d1ee3f4d213ea594c6978cf20b0022ae8763dc1bd67b47",
+  "source_before_after_equal": true,
+  "logs": {
+    "http": {
+      "raw_sha256": "8170d976bae77e89ce85a1a479442f0168da01a519913c743ba60b7c1d3ecd23",
+      "gzip_sha256": "39d6eef06ef6035e6eefc0a36d922a90e7c49b30ad726851674aee168fd237d2"
+    },
+    "trace": {
+      "raw_sha256": "b158cd339420837048bbc03bf91ebd44eb50961a77c056b0e36de22a15db23ae",
+      "gzip_sha256": "68f1012bd4aedd2f77021224f69cc0a9b3f02aed9d6194ea03140ff8ce8498cf"
+    },
+    "queue": {
+      "raw_sha256": "ff2be25c6fd075eb8bfa138230dde27263668541b194a405cb6fd75740f58949",
+      "gzip_sha256": "9cdee7166f44ce520801949d9d20bf306357b92c7b75a0728fadb1369f8dc8a3"
+    },
+    "server": {
+      "raw_sha256": "89ca0e43d8eee44024d364a7c8d193f1114212e440e78392307190b5868d919e",
+      "gzip_sha256": "0c622b52d5149d8d4c373cd04a6adb28d8d97fc0522cab6b245efbae2833ab1f"
+    }
+  },
+  "linked_CPU_test_ELFs": [
+    {
+      "sha256": "186f40e89bf4acc2e7da97b89748b5ca3e86097b9c17a53f45f67126cd868419",
+      "bytes": 15582344,
+      "ELF_type": 3
+    },
+    {
+      "sha256": "3bf7c4a651b473345f740530b8a048225c2e880e7d41cfabc01a03e605d910ad",
+      "bytes": 86670736,
+      "ELF_type": 3
+    }
+  ],
+  "archive_sha256": "b009c60e0e00783cc11fcd7c69b311f1f707313d352ebbfd8a9f43e96164ab1a",
+  "archive_bytes": 33119354,
+  "toolchain": {
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
+    "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)\n",
+    "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_Dec_16_07:23:41_PM_PST_2025\nCuda compilation tools, release 13.1, V13.1.115\nBuild cuda_13.1.r13.1/compiler.37061995_0\n"
+  },
+  "controlled_flags": {
+    "DOCS_RS": "absent",
+    "CUDA_VISIBLE_DEVICES": "",
+    "MEMRA_CUDA_ARCH": "120a",
+    "CARGO_BUILD_JOBS": "4",
+    "CARGO_INCREMENTAL": "0",
+    "profile": "release",
+    "locked": true,
+    "offline": true
+  },
+  "ignored_tests": [
+    "test tests::prefill_proxy_fixture ... ignored, manual loopback fixture for external proxy qualification",
+    "test worker::host_glm::tests::host_generic_arena_all_planes_and_handoff ... ignored, requires one CUDA device; run on the lane tune box",
+    "test worker::host_glm::tests::host_glm_two_device_roundtrip_ownership_and_namespace ... ignored, requires two CUDA devices; run the host-cache qualification gate explicitly",
+    "test worker::tests::dflash_retained_gpu_plan_fault_matrix ... ignored, requires an exclusively locked CUDA device and DFlash restore profile",
+    "test worker::tests::memory_admission_admits_one_900k_and_eight_4k_on_one_card ... ignored, requires an exclusively locked CUDA device with >= 32 GiB free (the mixed-load admission cell)",
+    "test worker::tests::native_glm_peer_admission_trim_preserves_lease ... ignored, requires native CUDA on a non-serving pair with stable-order exclusive per-card locks for devices 0 and 1",
+    "test worker::tests::option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on ... ignored, requires one CUDA device; run on the target card under the rig lock",
+    "test worker::tests::option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on ... ignored, requires one CUDA device; run on the target card under the rig lock"
+  ],
+  "independent_source_review": {
+    "head": "7a2d7a40e685ca59341ac8c974e8e93c87707acf",
+    "finding": "AD526-LIFECYCLE-1",
+    "status": "resolved, source-evidence GO",
+    "report_sha256": "0ba1a9c1bdcba5d4e85cd52e73bd361c2ad2f620a294200d32ac90986f5a8f96"
+  },
+  "first_attempt": {
+    "head": "a74d9bc633ffca7465ec9c5e5b497541a62f03c2",
+    "status": "compile failed E0433 missing test Duration import",
+    "tests_executed": 0,
+    "preserved_archive_sha256": "2485eb1ac4b96f26d7ec0b4d9b8099c697a799603acfa81e141ae30535f0ef4a"
+  },
+  "native_qualification": false
+}

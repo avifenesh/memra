@@ -1,0 +1,41 @@
+F.FF.F
+======================================================================
+FAIL: test_bare_lifecycle_JSON_with_escaped_schema_must_refuse (__main__.FramingRegression.test_bare_lifecycle_JSON_with_escaped_schema_must_refuse)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-de777117-evidence/framing_repro.py", line 48, in test_bare_lifecycle_JSON_with_escaped_schema_must_refuse
+    with self.assertRaises(ServingGateError):
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+AssertionError: ServingGateError not raised
+
+======================================================================
+FAIL: test_displaced_post_end_record_must_not_disappear (__main__.FramingRegression.test_displaced_post_end_record_must_not_disappear)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-de777117-evidence/framing_repro.py", line 42, in test_displaced_post_end_record_must_not_disappear
+    with self.assertRaises(ServingGateError):
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+AssertionError: ServingGateError not raised
+
+======================================================================
+FAIL: test_malformed_displaced_lifecycle_record_must_refuse (__main__.FramingRegression.test_malformed_displaced_lifecycle_record_must_refuse)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-de777117-evidence/framing_repro.py", line 22, in test_malformed_displaced_lifecycle_record_must_refuse
+    with self.assertRaises(ServingGateError):
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+AssertionError: ServingGateError not raised
+
+======================================================================
+FAIL: test_unknown_schema_displaced_lifecycle_record_must_refuse (__main__.FramingRegression.test_unknown_schema_displaced_lifecycle_record_must_refuse)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-de777117-evidence/framing_repro.py", line 29, in test_unknown_schema_displaced_lifecycle_record_must_refuse
+    with self.assertRaises(ServingGateError):
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+AssertionError: ServingGateError not raised
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.005s
+
+FAILED (failures=4)

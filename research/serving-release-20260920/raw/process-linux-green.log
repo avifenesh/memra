@@ -1,0 +1,20 @@
+test_cancel_does_not_signal_unrelated_child (test_serving_process.OwnedServerTests.test_cancel_does_not_signal_unrelated_child) ... ok
+test_context_exception_and_wait_timeout_cleanup (test_serving_process.OwnedServerTests.test_context_exception_and_wait_timeout_cleanup) ... ok
+test_controller_death_triggers_owned_cleanup (test_serving_process.OwnedServerTests.test_controller_death_triggers_owned_cleanup) ... ok
+test_explicit_inputs_and_existing_evidence_refuse (test_serving_process.OwnedServerTests.test_explicit_inputs_and_existing_evidence_refuse) ... ok
+test_graceful_drain_keeps_needed_worker_alive (test_serving_process.OwnedServerTests.test_graceful_drain_keeps_needed_worker_alive) ... ok
+test_http_boolean_and_foreign_identity_cannot_mark_ready (test_serving_process.OwnedServerTests.test_http_boolean_and_foreign_identity_cannot_mark_ready) ... ok
+test_killed_supervisor_fails_closed_and_stops_known_server (test_serving_process.OwnedServerTests.test_killed_supervisor_fails_closed_and_stops_known_server) ... ok
+test_launch_environment_is_explicit_not_ambient (test_serving_process.OwnedServerTests.test_launch_environment_is_explicit_not_ambient) ... ok
+test_launch_failure_is_recorded_and_private_supervisor_reaped (test_serving_process.OwnedServerTests.test_launch_failure_is_recorded_and_private_supervisor_reaped) ... ok
+test_linux_reaps_orphan_and_session_escaped_grandchild (test_serving_process.OwnedServerTests.test_linux_reaps_orphan_and_session_escaped_grandchild) ... ok
+test_normal_exit_and_combined_raw_output (test_serving_process.OwnedServerTests.test_normal_exit_and_combined_raw_output) ... ok
+test_original_nonzero_exit_and_signal_are_not_cleanup_status (test_serving_process.OwnedServerTests.test_original_nonzero_exit_and_signal_are_not_cleanup_status) ... ok
+test_sigterm_drains_real_child_and_grandchild (test_serving_process.OwnedServerTests.test_sigterm_drains_real_child_and_grandchild) ... ok
+test_startup_and_autonomous_overall_deadlines (test_serving_process.OwnedServerTests.test_startup_and_autonomous_overall_deadlines) ... ok
+test_stuck_server_escalates_and_preserves_signal (test_serving_process.OwnedServerTests.test_stuck_server_escalates_and_preserves_signal) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 5.517s
+
+OK

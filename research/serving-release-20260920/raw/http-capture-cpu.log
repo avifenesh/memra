@@ -1,0 +1,14 @@
+test_body_limit_refuses_and_preserves_bounded_prefix (test_serving_http.HttpCaptureTests.test_body_limit_refuses_and_preserves_bounded_prefix) ... ok
+test_cancelled_socket_keeps_partial_output_without_claiming_worker_cleanup (test_serving_http.HttpCaptureTests.test_cancelled_socket_keeps_partial_output_without_claiming_worker_cleanup) ... ok
+test_chunked_body_retains_payload_and_requires_terminator (test_serving_http.HttpCaptureTests.test_chunked_body_retains_payload_and_requires_terminator) ... ok
+test_complete_response_retains_headers_bytes_and_timestamps (test_serving_http.HttpCaptureTests.test_complete_response_retains_headers_bytes_and_timestamps) ... ok
+test_early_content_length_eof_is_a_failure_with_partial_body (test_serving_http.HttpCaptureTests.test_early_content_length_eof_is_a_failure_with_partial_body) ... ok
+test_non_loopback_and_invalid_budgets_refuse_before_connect (test_serving_http.HttpCaptureTests.test_non_loopback_and_invalid_budgets_refuse_before_connect) ... ok
+test_pre_cancel_does_not_open_a_connection (test_serving_http.HttpCaptureTests.test_pre_cancel_does_not_open_a_connection) ... ok
+test_slow_drip_body_cannot_reset_wall_deadline (test_serving_http.HttpCaptureTests.test_slow_drip_body_cannot_reset_wall_deadline) ... ok
+test_slow_drip_headers_are_also_bounded (test_serving_http.HttpCaptureTests.test_slow_drip_headers_are_also_bounded) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 1.084s
+
+OK

@@ -1,0 +1,42 @@
+{
+  "scope": "24 CPU component tests: actual extracted HTTP middleware/lifetime code and actual ttft.rs, with fakebackend. Not full server/worker or native qualification.",
+  "tests_passed": 24,
+  "failed": 0,
+  "ignored": 0,
+  "warnings_denied": true,
+  "source_sha256": {
+    "crates/memra-server/src/lib.rs": "17f92fe6f042e0aeca35852f2bca34e472e85943b0d4592195756b513355281c",
+    "crates/memra-server/src/ttft.rs": "a77cba6018f41c06963c8c5303d2138f3f257476c1523b546bdedfb155a7f627"
+  },
+  "exact_HTTP_region_sha256": "01e3ada58c4893aaf8961acaecd2c77158275f4175f230cfdb2fc1aa04eabd64",
+  "dependency_versions": {
+    "axum": "0.7.9",
+    "async-stream": "0.3.6",
+    "futures-core": "0.3.32",
+    "tokio": "1.52.3",
+    "serde_json": "1.0.150",
+    "tower": "0.5.3"
+  },
+  "dependency_features": "actualmemra-serverCargo.toml",
+  "command": [
+    "cargo",
+    "test",
+    "--offline",
+    "--lib",
+    "--",
+    "--test-threads=1"
+  ],
+  "source_HEAD_when_tested": "1a04ffc76a3a74e387e89319fd0c512719832fa4",
+  "HTTP_worker_integration_was_uncommitted": true,
+  "compiler_observed_after_run": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: aarch64-apple-darwin\nrelease: 1.95.0\nLLVM version: 22.1.2\n",
+  "cargo_observed_after_run": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+  "raw_log_sha256": "4f6f2456b26ba7919bf12fbe5f324ff0165be5e629b48f5a85e6151eb503cd32",
+  "raw_gzip_sha256": "d0a79b0eafc5cb3d6a4bdf6bd78ec74ea63e3d5e8922d9028b19665f6dad620b",
+  "CPU_test_executable_sha256": "2bf832487c1a708d111f3e6c70f12b6b3992060371bd57935cf5eeb7c0827337",
+  "CPU_executable_format": "Mach-O 64-bit executable arm64",
+  "private_run_record_sha256": "7f5d11363f91778849773be9d480ce849d71712c71916df827de63a78b534b5a",
+  "native_qualification": false,
+  "full_server_worker_tests": "pending",
+  "retirement_scope": "mainworkerqueued/abortedrequests only; constrainedcompile/DSv4/normalcompletion notqualified",
+  "quantum_route_hooks": "APIpresent;521callersnotwiredyet"
+}

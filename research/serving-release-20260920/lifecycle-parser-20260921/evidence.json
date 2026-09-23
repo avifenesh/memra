@@ -1,0 +1,119 @@
+{
+  "schema": "memra-serving-lifecycle-parser-cpu-v1",
+  "source": "7b130073c72f7abbebab9ddeba88ea0d6081e135",
+  "base": "de777117a929594303c1b59dbf5f0dc3322393a8",
+  "runtime_source": "aa25e9356b49f4f1f7ee11def8247f4745118c89",
+  "finding": "AD526-TRACE-1",
+  "priority": "P2",
+  "review": "resolved; scoped source GO; no findings",
+  "red": {
+    "tests": 6,
+    "failed_expected_refusals": 4,
+    "modes": [
+      "normal",
+      "optimized"
+    ]
+  },
+  "green": {
+    "supplied_tests": 53,
+    "retained_original_finder_tests": 6,
+    "independent_limit_and_producer_controls": 5,
+    "failures": 0,
+    "modes": [
+      "normal",
+      "optimized"
+    ]
+  },
+  "source_files": {
+    "tools/serving_trace.py": {
+      "sha256": "986eefdee5bc30cb0c8f56b1618554128c69fa9002440bae6d705de118e90db4",
+      "bytes": 26200
+    },
+    "tools/test_serving_trace.py": {
+      "sha256": "e4e4f60d9ef58515ee76ffad2f29590a54e16aac01210943a18533b70f1a8564",
+      "bytes": 27133
+    }
+  },
+  "raw_files": {
+    "red-normal.stdout": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "red-normal.stderr": {
+      "sha256": "134eee1dd6732ac40caa6838f389838d4fb3995522010f6a8f371c79ada4db6b",
+      "bytes": 2845
+    },
+    "final-supplied-normal.stdout": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "final-supplied-normal.stderr": {
+      "sha256": "bd84e5e4256d4e8e28618410fa158c83aa7a1ec8b7510bf860e06a46ebfdb54d",
+      "bytes": 152
+    },
+    "final-retained-repro-normal.stdout": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "final-retained-repro-normal.stderr": {
+      "sha256": "065c7d15facfd20f14fb9182747be315f3349fa1d5e1a0e966047509f4bfa9b1",
+      "bytes": 104
+    },
+    "final-focused-normal.stdout": {
+      "sha256": "a431a15367080571ed754f9a679814987202b1ea540147067c0cc17e20697a98",
+      "bytes": 988
+    },
+    "final-focused-normal.stderr": {
+      "sha256": "155dda43db94aecd75e5523204dca4e5b1ece2870f9a736f3d82b6a3aff4177a",
+      "bytes": 103
+    },
+    "red-optimized.stdout": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "red-optimized.stderr": {
+      "sha256": "f87d106fc8c4a1ed597d4ff5c2e3356b6fb0fc361f668d8f611a2df7c8074e6d",
+      "bytes": 2845
+    },
+    "final-supplied-optimized.stdout": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "final-supplied-optimized.stderr": {
+      "sha256": "7b7ca0a5a081990334e09142ed29da47dcddeb829d9f3a81c43aaa0768cf4523",
+      "bytes": 152
+    },
+    "final-retained-repro-optimized.stdout": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "final-retained-repro-optimized.stderr": {
+      "sha256": "065c7d15facfd20f14fb9182747be315f3349fa1d5e1a0e966047509f4bfa9b1",
+      "bytes": 104
+    },
+    "final-focused-optimized.stdout": {
+      "sha256": "a431a15367080571ed754f9a679814987202b1ea540147067c0cc17e20697a98",
+      "bytes": 988
+    },
+    "final-focused-optimized.stderr": {
+      "sha256": "d293fad5433d8340e93642cf85e44e9684c94f6fe00713fced2e7418cefa3da4",
+      "bytes": 103
+    },
+    "framing_repro.py": {
+      "sha256": "f78d5aef1e54c44a57af48e9e5ebd915e3de2c03939dbcce3e386bab90b4d7ce",
+      "bytes": 2338
+    },
+    "issue-526-serving-trace-repair-7b130073.json": {
+      "sha256": "7b64aa7df0e097d140e5169069ee16cfebf523d7c153f7e52cb45f9817d7f41c",
+      "bytes": 21486
+    }
+  },
+  "native": false,
+  "outer_C4": false,
+  "limitations": [
+    "Target lifecycle facts only; no process/source/binary/controller authentication.",
+    "Related peer/recovery wire outcomes and complete attempt denominator require outer collector integration.",
+    "Host return and retirement-site observations do not independently prove GPU quiescence.",
+    "The banked producer replay is a CPU API fixture, not a fresh HTTP/model/GPU run."
+  ]
+}

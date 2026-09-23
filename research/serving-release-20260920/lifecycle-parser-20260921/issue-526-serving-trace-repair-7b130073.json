@@ -1,0 +1,323 @@
+{
+  "issue": 526,
+  "domain": "architecture-devops: original lifecycle-framing finder closure",
+  "reviewed_head": "7b130073c72f7abbebab9ddeba88ea0d6081e135",
+  "base_snapshot": "de777117a929594303c1b59dbf5f0dc3322393a8",
+  "code_review": "pass",
+  "source_evidence_go": true,
+  "scoped_go": true,
+  "findings": [],
+  "native_go": false,
+  "outer_C4_go": false,
+  "merge_go": false,
+  "security_domain_go": false,
+  "conclusion": "Scoped source GO at exact7b130073. AD526-TRACE-1 is resolved for the reviewed framing contract: displaced reserved markers refuse independently of schema validity, and token discovery recognizes escaped bare current-schema keys/values despite later malformed or duplicate members. Original unchanged6 finder controls now pass in both normal and optimizedPython, along with53 supplied tests,5 retained producer/limit controls and2 additional compatibility controls. No actionable remaining or new defect found in this bounded repair. No native, outerC4 or merge approval.",
+  "resolved_findings": [
+    {
+      "id": "AD526-TRACE-1",
+      "status": "resolved",
+      "original_head": "de777117a929594303c1b59dbf5f0dc3322393a8",
+      "repair_head": "7b130073c72f7abbebab9ddeba88ea0d6081e135",
+      "original_report": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-de777117.json",
+      "original_report_sha256": "f304ba2141d1e471b42adeab9c1ad4fa2bf183a99451fc19718df93982e880e2",
+      "unchanged_repro": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-de777117-evidence/framing_repro.py",
+      "repro_sha256": "f78d5aef1e54c44a57af48e9e5ebd915e3de2c03939dbcce3e386bab90b4d7ce",
+      "red": "Preserved originalde777 normal/-O runs each have4 failed refusal assertions among6 controls; owner red.json confirms same exact repro hash.",
+      "green": "Independent exact7b normal/-O runs each pass all6 unchanged controls. No original probe edited or weakened."
+    }
+  ],
+  "assessment": [
+    {
+      "file": "tools/serving_trace.py",
+      "line": 210,
+      "code_quote": "_need(b\"[request-lifecycle\" not in line and not _bare_lifecycle_schema(line),",
+      "result": "Any reserved marker outside exact prefix framing now refuses before the ordinary-line count, including mid-line truncated JSON, foreign schema and displaced escaped post-end records. Correctly prefixed records still use unchanged strict full JSON/schema/transition validation."
+    },
+    {
+      "file": "tools/serving_trace.py",
+      "line": 181,
+      "code_quote": "def _bare_lifecycle_schema(line):",
+      "result": "The refusal-only scanner decodes string-token spellings of the key and value and checks the intervening colon. Recognition does not depend on parsing later members, so later malformed data and duplicate keys cannot hide the reserved schema. Ordinary text, unrelated schema/value combinations, arrays and quoted embedded JSON strings remain ordinary in independent controls."
+    },
+    {
+      "file": "tools/serving_trace.py",
+      "line": 60,
+      "code_quote": "_STRING_TOKEN = re.compile(rb'\"(?:[^\"\\\\]|\\\\.)*(?:\"|\\\\?\\Z)')",
+      "result": "On an LF-split line, token bodies consume either a non-quote/non-backslash byte or an escape pair; the terminator also consumes an unterminated final span and optional trailing slash. finditer therefore advances past each span instead of restarting at its escaped quotes. The new public-API subprocess control independently passes for262KiB escaped strings with and without finalslash within5seconds, in normal/-O. The rejected pair-regex attempt was not substituted or rerun."
+    },
+    {
+      "boundary": "Preserved accepted-record behavior and bounds",
+      "result": "_schema, _target_history, validate_cancel_trace and supporting validators are byte-identical tode777. Prior numeric/string/event enums and byte/record/trace limits are unchanged. The only production changes are json import, refusal scanner/token matcher and the non-prefix framing predicate; accepted-record decoding and target reconstruction retain their prior requirements."
+    },
+    {
+      "boundary": "Runtime and outer trust boundary",
+      "result": "Git confirms all crates remain unchanged fromaa25. Parser facts still require independently supplied expected process/model/routes/epoch, retain unrelated recognized records as syntax-only census and do not authenticate process birth, source, binaries, wire or GPU quiescence. No outer consumer or runtime code is included in this repair."
+    }
+  ],
+  "tests": [
+    {
+      "name": "Frozen supplied parser/wire suite",
+      "status": "pass",
+      "normal": {
+        "passed": 53,
+        "failed": 0,
+        "skipped": 0
+      },
+      "optimized": {
+        "passed": 53,
+        "failed": 0,
+        "skipped": 0
+      },
+      "parser_methods": 36,
+      "wire_methods": 17,
+      "includes": "Real public-API subprocess test with262KiB escaped unterminated strings, both trailing-slash variants, timeout5s and expected ordinary-line counts."
+    },
+    {
+      "name": "Original unchanged framing repro",
+      "status": "pass",
+      "normal_passed": 6,
+      "optimized_passed": 6,
+      "original_failed_refusals": 4,
+      "proof": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/independent-results.json"
+    },
+    {
+      "name": "Retained independent producer/bounds controls",
+      "status": "pass",
+      "normal_passed": 5,
+      "optimized_passed": 5,
+      "repro_sha256": "fa2b559f50c73a333d5b98996aa774bc02e8915fe7bd1ec9217c0ab19f68e78f",
+      "scope": "Exact8192 ordinary+final acceptance; one extra ordinary event refusal; literal64MiB+1byte refusal; deepJSON normalized error; saved actual current-producer capture positives/refusals with all7 traces retained. Producer replay is not a new native run."
+    },
+    {
+      "name": "Additional escape/ordinary compatibility",
+      "status": "pass",
+      "normal_passed": 2,
+      "optimized_passed": 2,
+      "reserved_schema_cases_each_mode": 225,
+      "ordinary_lines_each_mode": 6,
+      "cases": "Literal, all-escaped, alternating and leading-escaped key/value spellings with whitespace variants and valid/malformed/duplicate suffixes; ordinary quoted text, unrelated JSON, arrays and escaped embedded JSON string payloads preserved.",
+      "proof": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/escape-compatibility-results.json"
+    },
+    {
+      "name": "Source identity, unchanged validation and exact diff",
+      "status": "pass",
+      "source_proof": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/source-proof.json",
+      "preservation_proof": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/preservation-check.json",
+      "diff_check": true,
+      "owner_final_hashes_match": true
+    }
+  ],
+  "unpublished_attempt": {
+    "status": "parent_rejected_before_commit; preserved_history_only",
+    "record": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/performance-scratch/serving-cancel/trace-framing-repair-01/unpublished-pair-regex-attempt.json",
+    "record_sha256": "da53e8df3ca3c80b1be9bd67ee72f23d90d9e4a4aac100f799339277d99cf673",
+    "reported_source_sha256": "53018657129b37fee6bc1badeacaa59b76e1b3f82d4b0a276e0ab55f93caf980",
+    "reported_failure": "32KiB unterminated escaped-string input exceeded5seconds with the abandoned pair regex.",
+    "independently_reexecuted": false,
+    "distinction": "This failure remains a failure of unpublished source; it is neither discarded nor relabeled as the committed repair."
+  },
+  "validation_gaps": [
+    {
+      "kind": "outer_C4_and_native_integration",
+      "blocks_pure_parser_source_go": false,
+      "status": "separate_pending_work",
+      "description": "Parent owns complete peer/recovery denominator, wire/client cancellation, process/source/binary/controller binding, leases and native outcome. Pure parser CPU success does not establish those."
+    },
+    {
+      "kind": "resource_scope",
+      "blocks_pure_parser_source_go": false,
+      "description": "Timing proof covers the supplied262KiB public-API malformed-string cases with5-second timeout. Literal64MiB ceiling refusal and exact event-count boundaries were verified; no full native throughput or universal latency bound is asserted."
+    }
+  ],
+  "source_identity": {
+    "tools/test_serving_release.py": {
+      "sha256": "749eac9fdfca15a88600b57e6dc65e361cb16281fbcf2f670821884dd9860aa8",
+      "blob": "6f7e6f4e8d469d1bc4623e0d8bc4fd223c0b4bf9"
+    },
+    "tools/serving_release.py": {
+      "sha256": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c",
+      "blob": "dac3460e5095ce95cd77c984a6f8276055121cc3"
+    },
+    "tools/test_serving_trace.py": {
+      "sha256": "e4e4f60d9ef58515ee76ffad2f29590a54e16aac01210943a18533b70f1a8564",
+      "blob": "e92748bfb7a22b5b5fd5df64d4f954059e7a919a"
+    },
+    "tools/serving_trace.py": {
+      "sha256": "986eefdee5bc30cb0c8f56b1618554128c69fa9002440bae6d705de118e90db4",
+      "blob": "8cfc91a5d9a082ae4dfa1ed14835c87a469a6661"
+    },
+    "tools/serving_completion.py": {
+      "sha256": "bf0d4dd9c569884133d0516e128bfa625cd83d993d62bdda41cb4f1dea3aa1fa",
+      "blob": "b5cd89e0d6dd5bb629578a0931b7a14c46a36e16"
+    },
+    "tools/serving_policy.py": {
+      "sha256": "d7cb92568dbd45b4433159ee98d216405d76b12cc42a579062298c741b2243c7",
+      "blob": "49d6faf58bea5e8232c27b909830c5d6911acb37"
+    },
+    "tools/serving_lifecycle.py": {
+      "sha256": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3",
+      "blob": "ecdba39dd7fb945646ae9168d015802cbd04a0a7"
+    },
+    "crates/memra-server/src/ttft.rs": {
+      "sha256": "4653e63b9be0c5da5336162d3d95f0cc366e6bc42d0bb405505079d6ef25aa82",
+      "blob": "b304cbc37202ea35bca68f986b87ee56d875ff44"
+    },
+    "crates/memra-server/src/prime_observation.rs": {
+      "sha256": "0aec0fea48994498c2233969a8c68c411461bb4749407cd64612eec348fa9dbe",
+      "blob": "8813980715ae8f9c59224a31f7835a5a73985656"
+    }
+  },
+  "exact_diff": {
+    "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/exact.patch",
+    "sha256": "881a288015e382d6fac7cdf738ad73a6b559de9a08a5ede64375216b2ced00e2",
+    "files": 2,
+    "insertions": 80,
+    "deletions": 2
+  },
+  "tests_or_reads": [
+    "Exact de777..7b Git diff and candidate parser/test source.",
+    "Unchanged original report/repros and owner red/final/unpublished-attempt records.",
+    "Frozen imported serving_* dependency closure, current producer and521 observer hashes.",
+    "Normal/-O independently rerun supplied, original and focused controls; no mutable worktree imports."
+  ],
+  "artifacts": {
+    "optimized-escape-compatibility.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/optimized-escape-compatibility.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "test_serving_trace.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/test_serving_trace.py",
+      "sha256": "e4e4f60d9ef58515ee76ffad2f29590a54e16aac01210943a18533b70f1a8564"
+    },
+    "normal-escape-compatibility.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/normal-escape-compatibility.stderr",
+      "sha256": "10d0e29d761aff4acb65d0f59602275c1c2b15e837f143ce9e9d27200cc6bdde"
+    },
+    "independent_controls.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/independent_controls.py",
+      "sha256": "fa2b559f50c73a333d5b98996aa774bc02e8915fe7bd1ec9217c0ab19f68e78f"
+    },
+    "optimized-supplied.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/optimized-supplied.stderr",
+      "sha256": "44d3102e8c68041d8ab37b3b7a497840ae38768b033344e3785bd4f3c1ad3e94"
+    },
+    "normal-focused.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/normal-focused.stdout",
+      "sha256": "a431a15367080571ed754f9a679814987202b1ea540147067c0cc17e20697a98"
+    },
+    "serving_trace.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/serving_trace.py",
+      "sha256": "986eefdee5bc30cb0c8f56b1618554128c69fa9002440bae6d705de118e90db4"
+    },
+    "serving_policy.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/serving_policy.py",
+      "sha256": "d7cb92568dbd45b4433159ee98d216405d76b12cc42a579062298c741b2243c7"
+    },
+    "serving_release.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/serving_release.py",
+      "sha256": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c"
+    },
+    "normal-focused.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/normal-focused.stderr",
+      "sha256": "fed2302f8fe750485a0562988e3a43cc4d21d29679e3da25fa3198738633a057"
+    },
+    "independent-results.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/independent-results.json",
+      "sha256": "ecf99d544dcaf61ef69a25f03328d126224b622459cf50ae9cb43e66552c6da3"
+    },
+    "normal-escape-compatibility.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/normal-escape-compatibility.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "optimized-escape-compatibility.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/optimized-escape-compatibility.stderr",
+      "sha256": "67c735b32b475af0caae566e3020e0801bd923c6f21eaf898bf0b8d851fe27ab"
+    },
+    "optimized-supplied.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/optimized-supplied.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "escape-compatibility-results.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/escape-compatibility-results.json",
+      "sha256": "6acf4e11bfd158b8fea83551894e09fda195d6645bf4f5f97a02c7ebe92bd19f"
+    },
+    "normal-supplied.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/normal-supplied.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "ttft.rs": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/ttft.rs",
+      "sha256": "4653e63b9be0c5da5336162d3d95f0cc366e6bc42d0bb405505079d6ef25aa82"
+    },
+    "exact.patch": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/exact.patch",
+      "sha256": "881a288015e382d6fac7cdf738ad73a6b559de9a08a5ede64375216b2ced00e2"
+    },
+    "optimized-focused.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/optimized-focused.stderr",
+      "sha256": "cb710be7ff9052d19a4e1f85794c7b569073a31981d647f2e68c7e8e58af3b2b"
+    },
+    "preservation-check.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/preservation-check.json",
+      "sha256": "6322428668613ad275b49a2f704b48e723cb30e2416a62c1b6cd916186bb837d"
+    },
+    "framing_repro.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/framing_repro.py",
+      "sha256": "f78d5aef1e54c44a57af48e9e5ebd915e3de2c03939dbcce3e386bab90b4d7ce"
+    },
+    "optimized-original-framing.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/optimized-original-framing.stderr",
+      "sha256": "f0b451b51b951a6e771b69f73cd1e4ac6748ad97242cfdde2fdb120f0ecef18d"
+    },
+    "normal-original-framing.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/normal-original-framing.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "prime_observation.rs": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/prime_observation.rs",
+      "sha256": "0aec0fea48994498c2233969a8c68c411461bb4749407cd64612eec348fa9dbe"
+    },
+    "serving_lifecycle.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/serving_lifecycle.py",
+      "sha256": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3"
+    },
+    "source-proof.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/source-proof.json",
+      "sha256": "5b1bd91ceac075e53c57b0ec49e0f6df65dbfbd2855d01ff9219606a4374d007"
+    },
+    "serving_completion.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/serving_completion.py",
+      "sha256": "bf0d4dd9c569884133d0516e128bfa625cd83d993d62bdda41cb4f1dea3aa1fa"
+    },
+    "normal-original-framing.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/normal-original-framing.stderr",
+      "sha256": "f0b451b51b951a6e771b69f73cd1e4ac6748ad97242cfdde2fdb120f0ecef18d"
+    },
+    "escape_compatibility.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/escape_compatibility.py",
+      "sha256": "c442d0bc8ca06525cab2a74b05b96ba253a529b702e9c2894f520ac74198423e"
+    },
+    "optimized-focused.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/optimized-focused.stdout",
+      "sha256": "a431a15367080571ed754f9a679814987202b1ea540147067c0cc17e20697a98"
+    },
+    "optimized-original-framing.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/optimized-original-framing.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "test_serving_release.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/test_serving_release.py",
+      "sha256": "749eac9fdfca15a88600b57e6dc65e361cb16281fbcf2f670821884dd9860aa8"
+    },
+    "normal-supplied.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-serving-trace-repair-7b130073-evidence/normal-supplied.stderr",
+      "sha256": "bd284a212d77167d429458165aca2187618f3eee73adfadc82e024415076268a"
+    }
+  },
+  "limits": [
+    "No owner source edits, remote/GPU use, rental, Cargo build/cache work, public post or merge.",
+    "Small independent artifacts stay outside the case-sensitive image. All original reports/repros/raw failures remain unchanged.",
+    "No fullC4/native, external-record-authentication, security-service or whole-release approval."
+  ],
+  "recorded_utc": "2026-09-21T20:53:25.812741+00:00"
+}

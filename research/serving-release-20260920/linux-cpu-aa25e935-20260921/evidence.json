@@ -1,0 +1,78 @@
+{
+  "source": "aa25e9356b49f4f1f7ee11def8247f4745118c89",
+  "scope": "Strict production/all-target Clippy and full Linux CPU server tests; not native serving qualification",
+  "strict_clippy": "--release --all-targets -D warnings passed",
+  "full_server": {
+    "passed": 799,
+    "failed": 0,
+    "ignored": 8
+  },
+  "targeted_overlap_full_suite": {
+    "http": 6,
+    "trace": 28,
+    "observer": 9,
+    "queue": 1
+  },
+  "source_files": 59190,
+  "source_before_sha256": "19eac73dd0e4054065865e9b48f93b32899c272f310521c0c16b3322c288a296",
+  "source_after_sha256": "19eac73dd0e4054065865e9b48f93b32899c272f310521c0c16b3322c288a296",
+  "source_equal": true,
+  "toolchain": {
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
+    "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)\n",
+    "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_Dec_16_07:23:41_PM_PST_2025\nCuda compilation tools, release 13.1, V13.1.115\nBuild cuda_13.1.r13.1/compiler.37061995_0\n"
+  },
+  "controlled_flags": {
+    "DOCS_RS": "absent",
+    "CUDA_VISIBLE_DEVICES": "",
+    "MEMRA_CUDA_ARCH": "120a",
+    "jobs": 4,
+    "profile": "release",
+    "locked": true,
+    "offline": true
+  },
+  "linked_CPU_ELFs": [
+    {
+      "bytes": 15582344,
+      "sha256": "86246e9cf4dba464144ba23d2592145bd88b53bb7ed94d6d7467f1c5c2749fc9",
+      "ELF_type": 3
+    },
+    {
+      "bytes": 84801752,
+      "sha256": "51a74ab9797230d2eb9fd1813abef727b1157107945b652467432dd0498c1d3e",
+      "ELF_type": 3
+    }
+  ],
+  "archive_sha256": "1667e752e08029d17be7e24446e4d15b354f6b2f5f4325c5b21256ece786b544",
+  "archive_bytes": 32926513,
+  "logs": {
+    "clippy": {
+      "raw_sha256": "bb8c276be60bc51db766f07cc42ae4532e622bc9952e89f23f13db26cfdb34df",
+      "gzip_sha256": "8d9c06f4a830f53893cda6837a70781084d7629831cff38150658be34cb28c95"
+    },
+    "http": {
+      "raw_sha256": "01934840e7d8562cf4187ecbb03d4dfab749d69516a6eb2d4cb5dfea1feda042",
+      "gzip_sha256": "7f55d82d6b3e40bb8f5f5e8eb7d385a2d97ea455e0a6078e8101c31cbfcdacb7"
+    },
+    "trace": {
+      "raw_sha256": "72b17acf2bfe090fade35efea138cb2c71a36da43a33c7ae231de064fb2ee39c",
+      "gzip_sha256": "f404cca5e7f9f08cef1924433dc2ae1105bb0461630d465107bd53bd004b384e"
+    },
+    "observer": {
+      "raw_sha256": "97cc3b54552c9c3d2247786b6eba7d0cda4c43d3be995717e7b31675c3c40bcb",
+      "gzip_sha256": "83529ae93fa8f75baa3d45e9def791c763723d7a14caee46ea638a7573d5db0f"
+    },
+    "queue": {
+      "raw_sha256": "a1e97ef3365a768f50c243d09b08059aea8716036716a5b7327ea634debdade2",
+      "gzip_sha256": "51db47feaa8e752a12d8343e78b27dbb90e265716ef2096ff530b6324ed2f34e"
+    },
+    "server": {
+      "raw_sha256": "ff0386a18b5d75461d492ae06cf025ca9ee981d9217f64613fc65fbd2e2430b9",
+      "gzip_sha256": "fa20bf4ce1574e4c07d1d56e63473fc4a3adeeb44df2ef74ccd83ffa18dc9d6d"
+    }
+  },
+  "independent_source_review_sha256": "7f828fae7911aeae14b534b4676c2892ddf71a1d13c9d49c0a94f0af2b9ca697",
+  "CPU_addendum_sha256": "e0845a97cc523908b15578b465bf63fb4a16b0a482919f82197e397055337bf9",
+  "native_qualification": false,
+  "prior_failures": "E0433 and earlier strict-Clippy failures remain separately preserved; cached artifacts in failed attempts were not counted as executed tests"
+}

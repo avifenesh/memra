@@ -2821,13 +2821,47 @@ contract above; the valid assertions everywhere are per-program determinism, gri
 byte-identity, and confinement + near-tie-only flips across programs.
 
 
-## Serving-contract guarantees, and the receipt for each
+## Required serving gate mapping
+
+The full-release gate is `tools/serving_run.py` via `tools/serving-run.py` and
+sealed release record v2. Each row is required for **each** reviewed roster
+model/route in `tools/serving-release.programs.json`; absence of that policy or a
+required native result refuses qualification. These mappings identify predicates,
+not a claim that this source already has native receipts.
+
+| Contract | Required cell | Raw verifier |
+|---|---|---|
+| Short exact answer and long input completion | `short_prompt`, `long_prompt` | `serving_group_gate.py` → `serving_completion.py` |
+| Four wire formats, terminal and usage | `wire_completion` | `serving_group_gate.py` → `serving_completion.py` |
+| Cold/restored accounting and same-program output | `cache_restore` | `serving_group_gate.py` → `serving_cache.py` |
+| Full concurrent request denominator | `concurrent_completion` | `serving_group_gate.py` → `serving_completion.py` |
+| Typed overload, completed peer and recovery | `overload_recovery` | `serving_overload_gate.py` → `serving_recovery.py` |
+| Request-bound queued/prime/decode cancellation and recovery | `cancel_queued`, `cancel_prime`, `cancel_decode` | `serving_cancel_evidence.py` → `serving_trace.py` and wire predicates |
+| Inflight drain, admission refusal and owned clean exit | `drain` | `serving_drain_evidence.py` → `serving_policy.py` |
+| One-shot worker panic, typed victim failures, generation recovery | `worker_failure_recovery` | `serving_worker_failure_evidence.py` → `serving_worker_failure.py` |
+
+Drain preserves complete buffered responses even when the client finishes reading
+after server exit within the declared allowance; it does not require impossible
+post-exit health probes. Cancellation requires observed per-request phase and
+actual cleanup, not client disconnect alone. Worker failure is a worker-generation
+transition, not request-scoped fault injection. Unobserved generation tails remain
+unknown. No row establishes throughput, latency/SLOs, general model support,
+GPU quiescence or another numerical/hardware program.
+
+## Serving-contract guarantees: historical receipt-only list
+
+**Receipt-only:** every item in the following historical list is supported only
+within its linked receipt's source/model/hardware scope unless separately covered
+by a current required gate above. The list does not grant current v2 qualification
+and historical receipts are not transferred to a rebuilt binary.
+
+
 
 Not a changelog — the changelog is generated from conventional commits into
 [releases](https://github.com/avifenesh/memra/releases) by `tools/changelog.sh`, and "what
-changed recently" belongs there and nowhere else. This is the standing list of what the serving
-contract promises and which measurement proves it, written in the present tense because a
-guarantee is not news. The receipts below are the only doc pointers those directories have.
+changed recently" belongs there and nowhere else. This list preserves the historical serving claims and their measurements. The
+receipt-only scope above applies to each item. The receipts below are the doc
+pointers for those directories.
 
 - Serving fails closed on exposure: a non-loopback bind without a configured key source refuses
   to boot, `/metrics` and `/yield/metrics` require bearer auth whenever keys are configured or
