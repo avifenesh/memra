@@ -7,7 +7,7 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
-prompt-depth-router-20260922 | On the tested Qwen code corpus, keep K=3/C=0 as the research control; the positive-C sampler censors sampled picks before target verification, so its measured rates are diagnostics until sampled exactness is repaired. | prompt-depth-router-20260922/README.md
+prompt-depth-router-20260922 | This versioned experiment measured a genuinely live, data-derived confidence cutoff. It did not improve the pinned Qwen code workload. | prompt-depth-router-20260922/confidence/adaptive-v3/VERDICT.md
 
 mtp-continuing-session-20260921 | The cost learner did not beat the calibrated fixed-depth control on either artifact. | mtp-continuing-session-20260921/RESULTS.md
 

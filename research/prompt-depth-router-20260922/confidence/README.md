@@ -1,10 +1,13 @@
 # Qwen code K=3 confidence study
 
 **Owner correction, 2026-09-23:** the fixed-C grid and offline replay
-below did not test non-hardcoded confidence learning. The
-[versioned live-C protocol](adaptive-v3/PROTOCOL.md) and hosted CPU
-source preflight are in progress. This page remains the completed
-fixed-control record; no learned-C performance result is claimed here.
+below did not test non-hardcoded confidence learning. The separate,
+[versioned live-C experiment](adaptive-v3/VERDICT.md) did: its
+data-derived learner was **−13.44%** versus K=3/C=0 on six heldout
+eight-turn code conversations, while the same-budget C=0 monitor was
+−12.87%. This page remains the fixed-control record; the corrected
+source, warm native KV receipts and live result are in
+`adaptive-v3/`.
 
 **Keep K=3/C=0 as the research control. Positive-C throughput rows are
 diagnostic, not equal-distribution speedups.** The sampled positive-C

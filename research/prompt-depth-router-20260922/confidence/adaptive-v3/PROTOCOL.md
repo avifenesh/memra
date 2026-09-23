@@ -86,8 +86,8 @@ prefixes and committed output only**; estimates the conditional
 chance the next offered slot pays; combines that estimate with
 measured marginal draft/verify cost; and chooses the cutoff that
 maximizes predicted committed tokens per complete round second.
-Its candidate cutpoints are observed confidence values, including
-C=0. Probe a full K=3 offer when the expected value of reducing
+Its candidate cutpoints are boundaries between observed confidence
+values, plus C=0. Probe a full K=3 offer when the expected value of reducing
 uncertainty exceeds its measured probe cost, and include that probe
 time in the primary score. Every movement, unchanged decision,
 sample count, estimated reward, controller CPU time and uncensored

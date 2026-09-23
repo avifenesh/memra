@@ -1,8 +1,9 @@
 # Qwen code K=3 with confidence stopping
 
 This verdict covers the fixed-cutoff baseline. It does **not** answer
-the owner's non-hardcoded C question; that live native test is tracked
-in [adaptive-v3/PROTOCOL.md](adaptive-v3/PROTOCOL.md).
+the owner's non-hardcoded C question; the separate live native test
+and its negative result are in
+[adaptive-v3/VERDICT.md](adaptive-v3/VERDICT.md).
 
 **Decision: keep K=3/C=0 as the research control; do not promote the current
 confidence cutoff or an online C learner.** The [sampled exactness

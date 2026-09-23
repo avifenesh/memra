@@ -185,3 +185,39 @@ jobs:
             --out "$RUNNER_TEMP/confidence-v3-source"
           cd "$RUNNER_TEMP/confidence-v3-source/repo"
           cargo check --locked -p memra-engine --bin mtp-depth-study
+
+  confidence-v3-replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Replay sealed live-confidence native requests and code probes
+        run: |
+          lane=research/prompt-depth-router-20260922/confidence/adaptive-v3
+          python3 "$lane/patch_source.py" \
+            --base research/prompt-depth-router-20260922/confidence/receipts-v1/runtime-source-confidence.tar.gz \
+            --out "$RUNNER_TEMP/confidence-v3-source-replay"
+          cmp "$RUNNER_TEMP/confidence-v3-source-replay/runtime-source-adaptive-v3.tar.gz" \
+            "$lane/receipts-v3/runtime-source-adaptive-v3.tar.gz"
+          python3 "$lane/quality.py" --self-check
+          python3 "$lane/replay.py" \
+            --candidate "$lane/receipts-v3" \
+            --workloads "$lane/workloads-v3" \
+            --out "$RUNNER_TEMP/confidence-v3-replay"
+          cmp "$RUNNER_TEMP/confidence-v3-replay/RESULTS.json" "$lane/RESULTS.json"
+          cmp "$RUNNER_TEMP/confidence-v3-replay/QUALITY.json" "$lane/QUALITY.json"
+          cmp "$RUNNER_TEMP/confidence-v3-replay/RESULTS.md" "$lane/RESULTS.md"
+      - name: Retain independently replayed v3 result files
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qwen-confidence-v3-replay-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/confidence-v3-replay/RESULTS.json
+            ${{ runner.temp }}/confidence-v3-replay/QUALITY.json
+            ${{ runner.temp }}/confidence-v3-replay/RESULTS.md
+          if-no-files-found: ignore
+          retention-days: 7
