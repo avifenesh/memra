@@ -1260,17 +1260,32 @@ diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
          // A sampled zero-draft choice must be made before drawing a proposal.
          // This research source retains low-confidence sampled picks, so it refuses
          // positive PMIN0 until a separate pre-draw rule is qualified.
-@@ -12074,6 +12094,9 @@
+@@ -12074,10 +12094,20 @@
              pure_temp,
              s_capturable,
          } = match prepared.as_mut() {
-+            Some(_) if session_draft_top_k.is_some_and(|draft_k| draft_k != sp.top_k) => {
-+                return Err("draft-only K cannot reuse a preprepared target-sampler draft graph".into());
+-            Some(p) => p
+-                .draft_setup
+-                .take()
+-                .ok_or("MTP prepared draft context consumed")?,
++            Some(p) => {
++                let setup = p
++                    .draft_setup
++                    .take()
++                    .ok_or("MTP prepared draft context consumed")?;
++                if session_draft_top_k.is_some()
++                    && setup.s_key != SampledGraphKey::new(
++                        sp.seed, sp.temp, k, draft_sp.top_k, sp.top_p, sp.min_p, pen_on,
++                    )
++                {
++                    return Err("preprepared draft graph has another draft-only K".into());
++                }
++                setup
 +            }
-             Some(p) => p
-                 .draft_setup
-                 .take()
-@@ -12085,7 +12108,7 @@
+             None => self.prepare_spec_draft(
+                 e,
+                 scratch,
+@@ -12085,7 +12115,7 @@
                  base,
                  k,
                  graph_draft,
@@ -1279,7 +1294,7 @@ diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
                  pen_on,
                  sess_capture_disabled,
                  constraint
-@@ -12785,7 +12808,7 @@
+@@ -12785,7 +12815,7 @@
                          eprintln!(
                              "[skey] chain=graph_chain_s round={round} capturable={} top_k={} \
                               top_p={} min_p={} s_key_parked={:?}",
@@ -1288,7 +1303,7 @@ diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
                          );
                      }
                      // SAMPLED CHAIN GRAPH: the greedy chain arm's launch order with the
-@@ -12873,7 +12896,16 @@
+@@ -12873,7 +12903,16 @@
                          chain_tokens.push(d);
                          chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
                          // Retaining this pick keeps the verifier's proposal law unchanged.
@@ -1306,7 +1321,7 @@ diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
                              break;
                          }
                      }
-@@ -12896,7 +12928,7 @@
+@@ -12896,7 +12935,7 @@
                                  d_vocab,
                                  1,
                                  sp_temp,
@@ -1315,7 +1330,7 @@ diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
                                  sp.top_p,
                                  sp.min_p,
                              )?;
-@@ -13018,7 +13050,7 @@
+@@ -13018,7 +13057,7 @@
                               top_k={} top_p={} min_p={} s_key_parked={:?}",
                              pure_temp as u8,
                              s_capturable as u8,
@@ -1324,7 +1339,7 @@ diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
                              sp.top_p,
                              sp.min_p,
                              dctx.s_key,
-@@ -13113,7 +13145,7 @@
+@@ -13113,7 +13152,7 @@
                                  d_vocab,
                                  1,
                                  sp_temp,
@@ -1333,7 +1348,7 @@ diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
                                  sp.top_p,
                                  sp.min_p,
                              )?;
-@@ -13129,7 +13161,7 @@
+@@ -13129,7 +13168,7 @@
                          eprintln!(
                              "[skey] chain=eager round={round} pure_temp={} top_k={} \
                               top_p={} min_p={} s_key_parked={:?}",
@@ -1342,7 +1357,7 @@ diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
                          );
                      }
                      // EAGER DRAFT (fallback: MoE head/trunk, huge k, MEMRA_SPEC_NOGRAPH, capture fail).
-@@ -13222,7 +13254,7 @@
+@@ -13222,7 +13261,7 @@
                                  (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
                              e.filter_stats(
                                  &q_row, d_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, d_vocab,
@@ -1351,7 +1366,7 @@ diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
                              )?;
                              let (th, z, mx) =
                                  (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0]);
-@@ -13305,7 +13337,16 @@
+@@ -13305,7 +13344,16 @@
                          {
                              break;
                          }
@@ -1369,7 +1384,7 @@ diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
                              break;
                          }
                      }
-@@ -14177,8 +14218,9 @@
+@@ -14177,8 +14225,9 @@
                  }
                  let (policy, traces) = depth_study.as_mut().expect("study timer has policy");
                  if let MtpDepthExperiment::Learned(learner) = &mut **policy {
@@ -1380,3 +1395,30 @@ diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
                          output_before,
                          &out,
                          elapsed,
+diff --git a/crates/memra-engine/src/spec/prime.rs b/crates/memra-engine/src/spec/prime.rs
+--- a/crates/memra-engine/src/spec/prime.rs
++++ b/crates/memra-engine/src/spec/prime.rs
+@@ -455,6 +455,14 @@
+             };
+         }
+         let sp = s.sampling;
++        let draft_sp = if let Some(k) = self.sess.draft_top_k_override {
++            if sp.temp <= 0.0 || sp.top_k != 20 || !matches!(k, 3 | 10 | 20) {
++                return Err("draft-only prime requires sampled target top-k=20".into());
++            }
++            SpecSampling { top_k: k, ..sp }
++        } else {
++            sp
++        };
+         let pen_on = sp.temp > 0.0
+             && sp.penalty_last_n > 0
+             && (sp.penalty_repeat != 1.0 || sp.penalty_freq != 0.0 || sp.penalty_present != 0.0);
+@@ -516,7 +524,7 @@
+             s.base,
+             s.k,
+             s.graph_draft,
+-            sp,
++            draft_sp,
+             pen_on,
+             self.sess.capture_disabled,
+             self.constraint

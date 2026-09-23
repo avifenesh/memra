@@ -40,6 +40,14 @@ Compare the learned K-only and joint K/C/D policies with the
 strongest executed fixed K/D/C vector and feature-cost no-op
 twins, rotating order on the same GPU.
 
+The first v6 binary proved K=20 byte identity with the prior
+target-20/draft-20 qualifier, then rejected K=10 because prime
+prepares the draft graph before the round loop. The next source
+version passes draft K into prime-time graph capture and checks the
+prepared graph's complete sampled key before use. Bank this failed
+K=10 bring-up separately; it supplies no performance or quality
+verdict for draft K=10.
+
 The primary score is pooled returned output tokens divided by
 complete native request seconds. Report total elapsed time,
 output-token ratio, paired whole-conversation uncertainty, actual
