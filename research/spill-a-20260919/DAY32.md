@@ -13,6 +13,11 @@ Every cell `executed-not-qualified`. Every push in the announced `MEMRA_RELEASE_
 - `origin/main` then moved to `db5929017` (#677, memra#641: the fresh batched prime runs the per-seq solo attention
   core; `hybrid_forward.rs` `prime_cache_batch_inner`, no host-tier path). Merged as `71d21057c` before the first
   engine push; no conflict (#677 touches no file this lane touches).
+- After the records, `origin/main` moved to `649d96210` (#681, integ51: lane B day 32, plus #678 dsv4 latency kernels).
+  Merged as `17be62a14`, no conflict (both sides' `research/INDEX.md` rows present, the `docs/FLAGS.md` row with
+  `contract-promote-spans` intact, `docs/TESTING.md` carries both additions); #681 moves no file of the host-tier path
+  (the dsv4 kernels and their docs), so the sitting's verdicts stand on the code they name. `cargo check -p
+  memra-server --tests`, `cargo fmt --all -- --check`, `check-flags` and `check-conflict-markers` clean on the merge.
 
 ## 1. What landed, in DAY31 section 2's order, one census each
 
