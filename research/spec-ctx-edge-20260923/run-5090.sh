@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # memra#659 on the local RTX 5090: the red arm (the unfixed integ49 merge tree 40891cf2d) then the
 # green arm twice (the fix tree), all under ONE hold of /tmp/memra-5090.lock (15 x `flock -w 120`),
-# then an idle check under the hold (no compute app, >= 20000 MiB free, 15 x 60 s). Either bound
+# then an idle check under the hold (no memra-server compute app, >= 20000 MiB free, 15 x 60 s; a
+# foreign process is recorded, not waited out, because this gate reads no timing). Either bound
 # running out records NOT RUN. Pre-registration: PREREG.md in this directory.
 # usage: run-5090.sh <out_root> <model.gguf> <red_bin> <green_bin>
 set -uo pipefail
@@ -20,7 +21,10 @@ idle=0
 for attempt in $(seq 1 15); do
     apps=$(nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader 2>&1)
     free_mib=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
-    if [ -z "$apps" ] && [ "${free_mib:-0}" -ge 20000 ]; then idle=1; break; fi
+    if ! grep -q 'memra-server' <<<"$apps" && [ "${free_mib:-0}" -ge 20000 ]; then
+        [ -n "$apps" ] && echo "$(date -u +%FT%TZ) foreign co-tenant recorded: [${apps//$'\n'/; }]" | tee -a "$ROOT/run.log"
+        idle=1; break
+    fi
     echo "$(date -u +%FT%TZ) idle wait $attempt: free=${free_mib}MiB apps=[${apps//$'\n'/; }]" | tee -a "$ROOT/run.log"
     sleep 60
 done
