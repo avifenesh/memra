@@ -6,6 +6,9 @@
 #      collector already holds the canonical lock), MEMRA_CTX (unset = the checkpoint's declared context), N (reps).
 #      Day 27: MEMRA_KV_PARK_COMPACT and MEMRA_SERVE_SPEC pass through to the server (recorded in shape.txt); the
 #      client records a sha256 per completion so arms compare byte-for-byte (day27-compare.py).
+#      Day 31: CLIENT (default day26-client.py), CLIENT_ARGS (extra client flags) and PARSER (default day26-parse.py)
+#      select the day-31 workload; the door env (MEMRA_ADMIT_BY_MEMORY, MEMRA_ADMIT_OPEN_OUTPUT_TOKENS) and
+#      MEMRA_TIMEOUT_MS_MAX pass through to the server and are recorded in shape.txt. Unset, every default is day 26's.
 set -uo pipefail
 cell=${1:?cell}; order=${2:?AB|BA}
 WT=${WT:-$HOME/projects/wt-spill-b}
@@ -26,7 +29,8 @@ cd "$WT" || exit 1
 C=$RIGDIR/$cell; rm -rf "$C"; mkdir -p "$C"
 sha256sum "$BIN" > "$C/binary.sha256"; git rev-parse HEAD > "$C/source.txt"; git status --short > "$C/dirty.txt"
 sha256sum "$MODEL" > "$C/model.sha256" &
-echo "order=$order n=$N model_key=$MODEL_KEY ctx=${MEMRA_CTX:-unset} lock=$LOCK warm=${WARM_IMMEDIATE:+immediate}${WARM_IMMEDIATE:-deferred} park_compact=${MEMRA_KV_PARK_COMPACT:-unset} serve_spec=${MEMRA_SERVE_SPEC:-default}" > "$C/shape.txt"
+echo "order=$order n=$N model_key=$MODEL_KEY ctx=${MEMRA_CTX:-unset} lock=$LOCK warm=${WARM_IMMEDIATE:+immediate}${WARM_IMMEDIATE:-deferred} park_compact=${MEMRA_KV_PARK_COMPACT:-unset} serve_spec=${MEMRA_SERVE_SPEC:-default}${CLIENT:+ client=$CLIENT args=${CLIENT_ARGS:-none} admit_by_memory=${MEMRA_ADMIT_BY_MEMORY:-unset} open_output_tokens=${MEMRA_ADMIT_OPEN_OUTPUT_TOKENS:-unset} timeout_ms_max=${MEMRA_TIMEOUT_MS_MAX:-unset} max_sessions=${MEMRA_MAX_SESSIONS:-unset} kv_host_mb=${MEMRA_KV_HOST_MB:-unset}}" > "$C/shape.txt"
+[ -n "${CLIENT:-}" ] && sha256sum docs/SERVING.md "research/spill-b-20260919/$CLIENT" "research/spill-b-20260919/${PARSER:-day26-parse.py}" > "$C/inputs.sha256"
 if [ "$LOCK" != none ]; then
   exec 9>"$LOCK"
   echo "$(date -u +%FT%TZ) waiting for $LOCK (flock -w 3600)" | tee "$C/lock.txt"
@@ -59,8 +63,8 @@ done
 [ -n "$ready_ms" ] || { echo "server never ready"; tail -20 "$C/server.log"; echo 5 > "$C.exit"; exit 5; }
 echo "$ready_ms" > "$C/ready_ms.txt"
 curl -s -m 5 "$BASE/metrics" > "$C/metrics-ready.json"
-run python3 "$WT/research/spill-b-20260919/day26-client.py" --base "$BASE" --out "$C" --model "$MODEL_KEY" \
-  --order "$order" --n "$N" ${WARM_IMMEDIATE:+--warm-immediate} > "$C/client.log" 2>&1
+run python3 "$WT/research/spill-b-20260919/${CLIENT:-day26-client.py}" --base "$BASE" --out "$C" --model "$MODEL_KEY" \
+  --order "$order" --n "$N" ${WARM_IMMEDIATE:+--warm-immediate} ${CLIENT_ARGS:-} > "$C/client.log" 2>&1
 rc=$?; echo $rc > "$C.exit"
 curl -s -m 5 "$BASE/metrics" > "$C/metrics-end.json"
 stop_server; trap - EXIT
@@ -68,6 +72,6 @@ sleep 2
 date -u +%FT%TZ > "$C/finished.txt"
 nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$C/compute-apps-after.csv"
 nvidia-smi --query-gpu=name,memory.used,memory.total,temperature.gpu,power.draw,power.limit --format=csv > "$C/gpu-after.csv"
-python3 "$WT/research/spill-b-20260919/day26-parse.py" "$C" > "$C/REPORT.txt" 2>&1
+python3 "$WT/research/spill-b-20260919/${PARSER:-day26-parse.py}" "$C" > "$C/REPORT.txt" 2>&1
 tail -40 "$C/REPORT.txt"
 exit $rc

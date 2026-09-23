@@ -27332,6 +27332,29 @@ fn request_ctx_cap(
     }
 }
 
+/// The request's output budget inside its cap. Bounded requests carry 8 rows of slack past the
+/// budget (`request_ctx_cap`'s `prompt + max_new + 8`). memra#659: the open-output door charges
+/// `prompt + open + CTX_SLACK` the same way, so its budget is the charged output and the slack
+/// stays free, as on the bounded arm; the budget used to be the whole cap (`open + 8`), which
+/// left a speculative round no row to land its overshoot in. The door-OFF open arm keeps the
+/// whole cap: the engine's round guards stop a speculative burst before it overruns the cache.
+fn request_budget(
+    ctx_cap: usize,
+    prompt_len: usize,
+    max_ctx: Option<usize>,
+    max_new: usize,
+    open_output_tokens: Option<usize>,
+) -> usize {
+    let room = ctx_cap - prompt_len;
+    let room = match (max_ctx, max_new, open_output_tokens) {
+        (None, MAX_NEW_CTX_BOUNDED, Some(_)) if room > crate::admit_memory::CTX_SLACK => {
+            room - crate::admit_memory::CTX_SLACK
+        }
+        _ => room,
+    };
+    max_new.min(room)
+}
+
 fn enforce_prompt_limit(
     prompt_len: usize,
     max_prompt_tokens: Option<usize>,
@@ -27464,7 +27487,13 @@ fn prepare_request(
             "prompt ({prompt_len} tok) >= context cap ({ctx_cap})"
         )));
     }
-    let budget = req.params.max_new.min(ctx_cap - prompt_len);
+    let budget = request_budget(
+        ctx_cap,
+        prompt_len,
+        req.params.max_ctx,
+        req.params.max_new,
+        open_output_tokens,
+    );
     let need = prompt_len
         .saturating_add(budget)
         .saturating_add(SPEC_SHRINK_SLACK);
@@ -35664,7 +35693,7 @@ mod tests {
         is_cuda_oom, oldest_parked_candidate, parallel_device_requirements, parked_entry_count,
         pp_admission_stage_count, pp_boundary_slot_bytes, pp_boundary_token_cap_resolve,
         pp_device_requirements, pp_stage_admissions, pp_stage_observed_residuals, prepare_park,
-        prompt_source_limit_error, request_ctx_cap, resolve_ctx,
+        prompt_source_limit_error, request_budget, request_ctx_cap, resolve_ctx,
     };
     use super::{
         DecodeChunkPolicy, resolve_decode_chunk_policy, resolve_pp_wave_chunk_policy,
@@ -37602,6 +37631,55 @@ mod tests {
         assert_eq!(result.sent, burst.len());
         assert_eq!(events.len(), burst.len());
         assert_eq!(remaining, requested_max - burst.len());
+    }
+
+    /// memra#659: the open door's budget is its charged output, leaving CTX_SLACK rows past it as
+    /// the bounded arm does; the other arms are unchanged.
+    #[test]
+    fn request_budget_keeps_the_slack_on_the_open_door_arm() {
+        let slack = crate::admit_memory::CTX_SLACK;
+        // Bounded: cap = P + max_tokens + 8, budget = max_tokens.
+        let cap = request_ctx_cap(65_536, 262_144, 1_439, None, 2_048, None);
+        assert_eq!(cap, 1_439 + 2_048 + slack);
+        assert_eq!(request_budget(cap, 1_439, None, 2_048, None), 2_048);
+        // Door ON, open: cap = P + open + 8 (lane B day 31's O1-on2048 shape), budget = open.
+        let cap = request_ctx_cap(
+            65_536,
+            262_144,
+            1_439,
+            None,
+            MAX_NEW_CTX_BOUNDED,
+            Some(2_048),
+        );
+        assert_eq!(cap, 3_495);
+        assert_eq!(
+            request_budget(cap, 1_439, None, MAX_NEW_CTX_BOUNDED, Some(2_048)),
+            2_048
+        );
+        // Door ON, open, clamped at the model context: the slack still comes off the room.
+        let cap = request_ctx_cap(65_536, 4_096, 3_000, None, MAX_NEW_CTX_BOUNDED, Some(2_048));
+        assert_eq!(cap, 4_096);
+        assert_eq!(
+            request_budget(cap, 3_000, None, MAX_NEW_CTX_BOUNDED, Some(2_048)),
+            4_096 - 3_000 - slack
+        );
+        // Door ON, open, a room no wider than the slack keeps the room.
+        assert_eq!(
+            request_budget(3_000 + slack, 3_000, None, MAX_NEW_CTX_BOUNDED, Some(2_048)),
+            slack
+        );
+        // Door ON with a request-supplied hard cap: the cap is authoritative, unchanged.
+        assert_eq!(
+            request_budget(8_192, 1_000, Some(8_192), MAX_NEW_CTX_BOUNDED, Some(2_048)),
+            7_192
+        );
+        // Door OFF, open: the whole cap, unchanged (the engine's round guards bound spec).
+        let cap = request_ctx_cap(65_536, 262_144, 1_439, None, MAX_NEW_CTX_BOUNDED, None);
+        assert_eq!(cap, 65_536);
+        assert_eq!(
+            request_budget(cap, 1_439, None, MAX_NEW_CTX_BOUNDED, None),
+            65_536 - 1_439
+        );
     }
 
     #[test]

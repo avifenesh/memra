@@ -2729,6 +2729,74 @@ its red/green gate runs on the 5090 next.
 **Owner decisions flagged.** Unchanged from integ48: `MEMRA_ADMIT_BY_MEMORY` measuring (decide-by moving to
 2026-10-07); 2026-10-04 (MoE slot cache, VMM), 2026-10-05 (the contracts door), 2026-10-06 (the park door).
 
+## integ50 (`lane/spill-integ50-20260923`): B day 31 (`MEMRA_ADMIT_BY_MEMORY` OFF against ON at 2048, 8192 and 32768 on both cards, the open-output survey, D4), the door-ON arm reaching memra#659, and #668
+Lane tip merged: B `0fb202f2d` (day 31) on main `d544c6b82` (#668) as `a0201500c`. One conflict: the door's
+`docs/FLAGS.md` row carried B's decide-by move and #668's budget sentence, and the merge keeps both. Also on this
+branch: `584cbe2cf`, comment-only, B's owed item 3. The `DEFAULT_OPEN_OUTPUT_TOKENS` doc now says 8192 is a
+placeholder under measurement, and the two request-struct comments in `lib.rs` now state the door's bound and that the
+OpenAI contract pins none. No code line, flag or default changes.
+
+**B day 31.** Pre-registration `ee53f7117` was committed at 23:09:14Z; the first boot started at 23:09:33Z. It ran
+the full order on both cards, eight boots each: the 9B on the local RTX 5090 (served 65,536, burst of 32) and the 27B
+on BOX3 (served 262,144, burst of 64). Verbatim: `DAY31 V-DOOR card=rtx5090 boots=8 excluded=0 v_id_all=True
+v_alloc_all=True v_trunc_g_all=True v_retry_all=True -> PASS` and the same line for `card=pro6000`. V-ID is `differ=0`
+on all 12 ON boot/order pairs, and `DAY31 D4-ID twins=49 equal=49 differ=0 -> PASS`: where both sides returned, the
+door moved no token. `DAY31 D4-C r429=11 refuse_lines=11 retry_after_in_1_60=True ... -> PASS`. The selection rules,
+stated and not chosen: `DAY31 SELECT card=rtx5090 R1_smallest_zero_truncation=8192
+R2_smallest_v_ge_max_natural_G=8192 (max_natural_G=6405) R3_registry=32768 R4_survey=context` and `DAY31 SELECT
+card=pro6000 R1_smallest_zero_truncation=2048 R2_smallest_v_ge_max_natural_G=none of [2048, 8192, 32768]
+(max_natural_G=193178) R3_registry=32768 R4_survey=context`. The survey (`OPEN-OUTPUT-SURVEY.md`, each surface
+pinned by tag, SHA and file:line) finds vLLM, SGLang, llama.cpp and TensorRT-LLM all bound an omitted `max_tokens`
+by the remaining context, and the OpenAI contract pins no bound. **The finding: the open-output bound reaches an
+engine defect under default spec.**
+- 2048 and 8192 on the 5090, and 8192 on BOX3, went FATAL before their bursts. At 2048 on BOX3 all six long requests
+  per order returned 500 a few rows below their allocation. The 32768 arms reached their bursts (5090: 19 x 200,
+  11 x 429, 2 x 503 prefill OOM; BOX3: 47 x 200, 17 x 429). The first panic on each rig is
+  `spec.rs:4590 mtp_kv_fill: scratch overflow` (5090 `O1-on2048/server.log:116`, BOX3 `O1-on8192/server.log:1423`).
+- The door OFF reaches the same edge through runaways (`O1-off/server.log.gz:10286`, and the 500 at pos 65533).
+- The two V-DOOR PASS lines are literal readings of the rows that returned. B names three reader gaps, left unchanged
+  as ruled (DAY31 2.2): V-DOOR has no crash term, V-RETRY passes vacuously on the six boots whose bursts got no
+  response, and V-TRUNC skips ON `length` rows whose OFF twin returned 500.
+
+**#668 (memra#659), merged `d544c6b82` before this integration.**
+- The qwen round loop and both gemma burst loops end a burst at a round boundary when the next round cannot land
+  inside the cache (glm5's guard form). The verify funnel refuses a window past the cache with a typed error.
+- The door-ON budget is `v`, so the 8 slack rows stay free as on a bounded request. Client-visible: an open request
+  under the door now emits exactly `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` tokens (it emitted `v + 8`, then crashed at the
+  cap), and a door-OFF speculative runaway ends inside the cap.
+- Gate `tools/spec-ctx-edge-gate.sh`, pre-registered and now in `tools/local-ci.sh`: red on the unfixed tree
+  (10 FAIL through the NaN trap), green twice on the fix and again on each main merge. Receipts:
+  `research/spec-ctx-edge-20260923/`.
+
+**Lead review of B day 31.** The arms, values, orders and reader match the pre-registration. The two V-DOOR PASS
+lines do not qualify the door: they carry no crash term, and every ON arm that crashed ran the pre-fix program. The
+truncation and concurrency readings for the arms that survived stand as observations of that program. The identity
+gate's `differ=0` stands for every row both sides returned. The survey is the missing half of the owner's "checked
+over other engines" and needs no rerun. No finding against B's work.
+
+**Ruling 45:**
+- Day 31 is read as registered and qualifies nothing.
+- Its ON arm is superseded by B day 32: the same cell on the fixed tree, both cards, with G = v exactly and the three
+  reader gaps closed in a fresh pre-registration.
+- No open-output value is selected. The door stays OFF.
+- Decide-by is 2026-10-07 (the owner's 2026-09-23 call, now in the FLAGS row). The owner decides on day 32's
+  receipts, with R4 reading `context` on both cards as input.
+
+**Checks.** CPU battery on `584cbe2cf`: 14 of 15 rc=0 (fmt; portable suites 360 passed, 0 skipped; server 875 passed;
+engine lib 545 passed; tier 4; clippy `-D warnings` twice; check-flags; publish census; docs registry; pytest 87;
+conflict markers; workflow keys; perf board). `git diff --check` was rc=2 on trailing whitespace inside B's
+`FAULTS.txt` files, which quote server lines cut at a fixed width. They are now marked `-whitespace` like the
+`SUMMARY.txt` beside them, and the check is clean on the branch head (`integ50-cpu-battery/`). No GPU battery. The diff is research receipts, one FLAGS row and
+three doc comments, so no binary program changes (the integ48 precedent for research-only integrations).
+
+**Running.** B day 32: the rerun on the fixed tree. Lane E: memra#641, a fix in progress with its serving cell.
+
+**Owner decisions flagged.**
+- `MEMRA_ADMIT_BY_MEMORY`: on B day 32's receipts, decide-by 2026-10-07.
+- 2026-10-04: MoE slot cache and VMM.
+- 2026-10-05: the contracts door (C day 39 and A day 31 are new input).
+- 2026-10-06: the park door.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

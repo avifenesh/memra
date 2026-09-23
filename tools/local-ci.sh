@@ -687,6 +687,27 @@ else
     echo "request-fault gate: SKIP (no 9B NVFP4 model at $FAULT_MODEL or MEMRA_CI_FAULTGATE=0)"
 fi
 
+# SPECULATIVE CONTEXT EDGE (memra#659): open requests driven to their cap back to back under the
+# default spec route, door ON (open output 64: four open requests and a bounded control) and door
+# OFF (MEMRA_CTX=384: three runaways), plus a plain boot whose message must equal the spec one.
+# Before the fix the last speculative round of a request whose budget spans its cap wrote past the
+# session cache: every such request took the #87 NaN trap and a later admission panicked the
+# worker (`mtp_kv_fill: scratch overflow`). Wired after two consecutive green runs on the local
+# RTX 5090 (research/spec-ctx-edge-20260923/). About 20 s on the 9B NVFP4.
+# MEMRA_CI_SPEC_CTX_EDGE=0 skips.
+EDGE_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_SPEC_CTX_EDGE:-1}" = "1" ] && [ -f "$EDGE_MODEL" ]; then
+    echo "== local-ci: speculative context-edge gate (memra#659) =="
+    EDGE_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-spec-ctx-edge.XXXXXX")
+    if tools/spec-ctx-edge-gate.sh "$EDGE_MODEL" target/release/memra-server "$EDGE_OUT"; then
+        rm -rf "$EDGE_OUT"
+    else
+        echo "spec-ctx-edge gate FAIL (receipt kept at $EDGE_OUT)"; exit 1
+    fi
+else
+    echo "spec-ctx-edge gate: SKIP (no 9B NVFP4 model at $EDGE_MODEL or MEMRA_CI_SPEC_CTX_EDGE=0)"
+fi
+
 # PRIME FAIRNESS (memra#521): one 131k cold prime beside three peers, both MEMRA_PRIME_YIELD
 # arms on the 9B's default spec route; bytes identical across arms, peers' first token bounded on
 # the yielding arm, tick_max_ms bounded, walker engaged. About 4 minutes. MEMRA_CI_FAIRGATE=0 skips.

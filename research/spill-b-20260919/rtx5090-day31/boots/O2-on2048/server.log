@@ -1,0 +1,479 @@
+1790128463928 [server] build: memra-0.138.0-30ec0f1a0594 (id: source-tree, git: 9562192b509b)
+1790128463928 [server] starting; models config = [("q9", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+1790128463928 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1790128463928 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790128464129 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1790128464195 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790128464195 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1790128464195 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1790128464195 [worker] loading model "q9" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+1790128464235 [tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1790128465536 [q8rp] split-plane decode mirrors built: 92 tensors
+1790128465690 [worker]   loaded "q9": 33 layers, eos=248046, stop=[248046]
+1790128465690 [worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1790128465690 [route-contract] model="q9" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1790128465690 [worker] q9: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1790128465690 [prefix-cache] on: budget 2052MB (2051538944 B, derived: 2 x 1025769472 B max entry for model "q9" at served ctx 65536 (from MEMRA_CTX; MEMRA_CTX set), requested 2051538944 B; boot driver free 18244501504 B, post-reserve clamp 16633888768 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1790128465690 [admission] "q9": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+1790128465690 [prime-walk] model="q9" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1790128466525 [fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+1790128466533 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1790128466533 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+1790128466534 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1790128466534 [fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+1790128466534 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1790128466534 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1790128466534 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1790128466534 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1790128466537 [spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+1790128466576 [fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+1790128466875 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":8327347072,"pool_reserved_bytes":8455716864,"pool_cached_bytes":128369792,"driver_free_bytes":16365453312,"synchronization_errors":[]}
+1790128466875 [admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+1790128466875 [admit-cal] boot calibration done: model="q9" route=mtp transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9440MB rest-mapped 8064MB charged 109MB -> 1266MB]; 1.2s)
+1790128466875 [admit-predict] shadow armed: budget_bytes=12831671424 budget_src=derived(effective_free_bytes=16493823104 - prefix_cache_budget_bytes=2051538944 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+1790128466875 [admit-mem] door=ON open_output_tokens=2048 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1790128466875 [server] worker ready; serving models: ["q9"]
+1790128466875 [server] listening on http://127.0.0.1:18526
+1790128467990 [meter] admit id=chatcmpl-2281df1cfdbdf9ccfdaac692c4438a5d tenant=default lane=interactive model="q9"
+1790128467990 [admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+1790128467990 [admission] request cost: model="q9" ctx=186 path=spec = 16704 B/token x ctx + 32MB prefill-workspace + 0MB fixed = 36MB
+1790128467990 [admit-predict] id=chatcmpl-2281df1cfdbdf9ccfdaac692c4438a5d tenant="" model="q9" verdict=admit reason=maxtok-fallback prompt=90 predicted_completion=32 kv_hat=78516624 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790128467991 [spec-k] model="q9" tenant="" K=3 source=cold-short prompt=90 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790128467991 [admission] fixed residual high-water: model="q9" 103MB (observed 105MB at ctx 130 path=spec)
+1790128468202 [spec-acc] ctx=90 burst=24/27 cum=24/27=0.889
+1790128470207 [meter] admit id=chatcmpl-13882e79ef99428706d64af106399f96 tenant=default lane=interactive model="q9"
+1790128470208 [admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+1790128470208 [admission] request cost: model="q9" ctx=1833 path=spec = 16704 B/token x ctx + 603MB prefill-workspace + 103MB fixed = 737MB
+1790128470208 [admit-predict] id=chatcmpl-13882e79ef99428706d64af106399f96 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1673 predicted_completion=32 kv_hat=778812296 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790128470210 [worker] spec-affinity: declined (history diverged at 4 of checkpoint 64; 1 parked, 1673 prompt tokens; model q9)
+1790128470210 [spec-k] model="q9" tenant="" K=3 source=cold-long prompt=1673 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790128470210 [admission] fixed residual high-water: model="q9" 106MB (observed 136MB at ctx 1777 path=spec)
+1790128470732 [spec-acc] ctx=1673 burst=23/30 cum=23/30=0.767
+1790128470732 [prefix-cache] insert (spec-boundary): 1632 tokens, 80.0MB (resident 80.0MB / 2052MB, model q9)
+1790128470933 [spec-acc] ctx=1707 burst=18/42 cum=41/72=0.569
+1790128471078 [spec-acc] ctx=1739 burst=22/30 cum=63/102=0.618
+1790128471082 [meter] admit id=chatcmpl-6081630d274aab897282647568681fe2 tenant=default lane=interactive model="q9"
+1790128471088 [admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+1790128471088 [admission] request cost: model="q9" ctx=1832 path=spec = 16704 B/token x ctx + 603MB prefill-workspace + 106MB fixed = 740MB
+1790128471088 [admit-predict] id=chatcmpl-6081630d274aab897282647568681fe2 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1672 predicted_completion=96 kv_hat=782561032 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790128471089 [worker] spec-affinity: declined (history diverged at 4 of checkpoint 64; 2 parked, 1672 prompt tokens; model q9)
+1790128471089 [spec-k] model="q9" tenant="" K=3 source=cold-long prompt=1672 cached=0 lcp=6 active=1 wave=1 placement=single-or-non-pp2
+1790128471605 [spec-acc] ctx=1672 burst=24/27 cum=24/27=0.889
+1790128471606 [prefix-cache] insert (spec-boundary): 1632 tokens, 80.0MB (resident 159.9MB / 2052MB, model q9)
+1790128471793 [spec-acc] ctx=1706 burst=22/39 cum=46/66=0.697
+1790128471907 [spec-acc] ctx=1741 burst=20/24 cum=66/90=0.733
+1790128471911 [meter] admit id=chatcmpl-12754982ddc671db61e52f4273f1c492 tenant=default lane=interactive model="q9"
+1790128471917 [admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+1790128471917 [admission] request cost: model="q9" ctx=1831 path=spec = 16704 B/token x ctx + 602MB prefill-workspace + 106MB fixed = 739MB
+1790128471917 [admit-predict] id=chatcmpl-12754982ddc671db61e52f4273f1c492 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1671 predicted_completion=96 kv_hat=782183880 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790128471918 [worker] spec-affinity: declined (history diverged at 6 of checkpoint 1632; 2 parked, 1671 prompt tokens; model q9)
+1790128471918 [spec-k] model="q9" tenant="" K=3 source=cold-long prompt=1671 cached=0 lcp=6 active=1 wave=1 placement=single-or-non-pp2
+1790128472449 [spec-acc] ctx=1671 burst=23/30 cum=23/30=0.767
+1790128472449 [prefix-cache] insert (spec-boundary): 1632 tokens, 80.0MB (resident 239.9MB / 2052MB, model q9)
+1790128472638 [spec-acc] ctx=1705 burst=21/39 cum=44/69=0.638
+1790128472769 [spec-acc] ctx=1739 burst=19/27 cum=63/96=0.656
+1790128472772 [meter] admit id=chatcmpl-e1e3a5e1879cc709b8d01170e92c3c15 tenant=default lane=interactive model="q9"
+1790128472780 [admit-predict] id=chatcmpl-e1e3a5e1879cc709b8d01170e92c3c15 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1671 predicted_completion=96 kv_hat=782183880 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790128472781 [worker] spec-affinity: declined (history diverged at 6 of checkpoint 1632; 2 parked, 1671 prompt tokens; model q9)
+1790128472782 [spec-k] model="q9" tenant="" K=3 source=cold-long prompt=1671 cached=0 lcp=6 active=1 wave=1 placement=single-or-non-pp2
+1790128473295 [spec-acc] ctx=1671 burst=23/27 cum=23/27=0.852
+1790128473295 [prefix-cache] insert (spec-boundary): 1632 tokens, 80.0MB (resident 319.9MB / 2052MB, model q9)
+1790128473455 [spec-acc] ctx=1704 burst=22/33 cum=45/60=0.750
+1790128473571 [spec-acc] ctx=1737 burst=22/24 cum=67/84=0.798
+1790128473575 [meter] admit id=chatcmpl-db54448288cb909cda2756521f078813 tenant=default lane=interactive model="q9"
+1790128473581 [admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+1790128473581 [admission] request cost: model="q9" ctx=1828 path=spec = 16704 B/token x ctx + 601MB prefill-workspace + 106MB fixed = 738MB
+1790128473581 [admit-predict] id=chatcmpl-db54448288cb909cda2756521f078813 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1668 predicted_completion=96 kv_hat=781052424 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790128473582 [worker] spec-affinity: declined (history diverged at 6 of checkpoint 1632; 2 parked, 1668 prompt tokens; model q9)
+1790128473583 [spec-k] model="q9" tenant="" K=3 source=cold-long prompt=1668 cached=0 lcp=6 active=1 wave=1 placement=single-or-non-pp2
+1790128474095 [spec-acc] ctx=1668 burst=22/27 cum=22/27=0.815
+1790128474095 [prefix-cache] insert (spec-boundary): 1632 tokens, 80.0MB (resident 399.8MB / 2052MB, model q9)
+1790128474314 [spec-acc] ctx=1700 burst=19/45 cum=41/72=0.569
+1790128474445 [spec-acc] ctx=1734 burst=22/27 cum=63/99=0.636
+1790128474447 [meter] admit id=chatcmpl-f00b0f63e92281ff01e572fa9fbdb63e tenant=default lane=interactive model="q9"
+1790128474456 [admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+1790128474456 [admission] request cost: model="q9" ctx=3559 path=spec = 16704 B/token x ctx + 519MB prefill-workspace + 106MB fixed = 684MB
+1790128474456 [admit-predict] id=chatcmpl-f00b0f63e92281ff01e572fa9fbdb63e tenant="" model="q9" verdict=admit reason=global-p95 prompt=1439 predicted_completion=96 kv_hat=694684616 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790128474457 [worker] spec-affinity: declined (history diverged at 4 of checkpoint 1632; 2 parked, 1439 prompt tokens; model q9)
+1790128474457 [spec-k] model="q9" tenant="" K=3 source=cold-long prompt=1439 cached=0 lcp=4 active=1 wave=1 placement=single-or-non-pp2
+1790128474457 [admission] fixed residual high-water: model="q9" 110MB (observed 168MB at ctx 3495 path=spec)
+1790128474916 [spec-acc] ctx=1439 burst=22/27 cum=22/27=0.815
+1790128474916 [prefix-cache] insert (spec-boundary): 1408 tokens, 76.2MB (resident 476.1MB / 2052MB, model q9)
+1790128475104 [spec-acc] ctx=1471 burst=19/39 cum=41/66=0.621
+1790128475237 [spec-acc] ctx=1503 burst=25/27 cum=66/93=0.710
+1790128475398 [spec-acc] ctx=1537 burst=24/33 cum=90/126=0.714
+1790128475556 [spec-acc] ctx=1572 burst=22/33 cum=112/159=0.704
+1790128475714 [spec-acc] ctx=1605 burst=22/33 cum=134/192=0.698
+1790128475916 [spec-acc] ctx=1638 burst=19/42 cum=153/234=0.654
+1790128476061 [spec-acc] ctx=1671 burst=23/30 cum=176/264=0.667
+1790128476223 [spec-acc] ctx=1704 burst=21/33 cum=197/297=0.663
+1790128476398 [spec-acc] ctx=1736 burst=20/36 cum=217/333=0.652
+1790128476615 [spec-acc] ctx=1768 burst=19/45 cum=236/378=0.624
+1790128476775 [spec-acc] ctx=1802 burst=22/33 cum=258/411=0.628
+1790128476949 [spec-acc] ctx=1835 burst=23/36 cum=281/447=0.629
+1790128477169 [spec-acc] ctx=1870 burst=20/45 cum=301/492=0.612
+1790128477358 [spec-acc] ctx=1905 burst=20/39 cum=321/531=0.605
+1790128477489 [spec-acc] ctx=1938 burst=25/27 cum=346/558=0.620
+1790128477665 [spec-acc] ctx=1972 burst=23/36 cum=369/594=0.621
+1790128477813 [spec-acc] ctx=2007 burst=23/30 cum=392/624=0.628
+1790128478032 [spec-acc] ctx=2040 burst=18/45 cum=410/669=0.613
+1790128478193 [spec-acc] ctx=2073 burst=22/33 cum=432/702=0.615
+1790128478342 [spec-acc] ctx=2106 burst=24/30 cum=456/732=0.623
+1790128478547 [spec-acc] ctx=2140 burst=20/42 cum=476/774=0.615
+1790128478724 [spec-acc] ctx=2174 burst=21/36 cum=497/810=0.614
+1790128478886 [spec-acc] ctx=2207 burst=21/33 cum=518/843=0.614
+1790128479033 [spec-acc] ctx=2239 burst=22/30 cum=540/873=0.619
+1790128479209 [spec-acc] ctx=2271 burst=21/36 cum=561/909=0.617
+1790128479358 [spec-acc] ctx=2304 burst=22/30 cum=583/939=0.621
+1790128479519 [spec-acc] ctx=2336 burst=23/33 cum=606/972=0.623
+1790128479666 [spec-acc] ctx=2370 burst=24/30 cum=630/1002=0.629
+1790128479814 [spec-acc] ctx=2404 burst=24/30 cum=654/1032=0.634
+1790128480005 [spec-acc] ctx=2438 burst=22/39 cum=676/1071=0.631
+1790128480151 [spec-acc] ctx=2473 burst=25/30 cum=701/1101=0.637
+1790128480301 [spec-acc] ctx=2508 burst=22/30 cum=723/1131=0.639
+1790128480447 [spec-acc] ctx=2540 burst=22/30 cum=745/1161=0.642
+1790128480609 [spec-acc] ctx=2572 burst=23/33 cum=768/1194=0.643
+1790128480787 [spec-acc] ctx=2606 burst=22/36 cum=790/1230=0.642
+1790128480950 [spec-acc] ctx=2640 burst=21/33 cum=811/1263=0.642
+1790128481112 [spec-acc] ctx=2672 burst=21/33 cum=832/1296=0.642
+1790128481261 [spec-acc] ctx=2704 burst=22/30 cum=854/1326=0.644
+1790128481393 [spec-acc] ctx=2736 burst=24/27 cum=878/1353=0.649
+1790128481555 [spec-acc] ctx=2769 burst=21/33 cum=899/1386=0.649
+1790128481705 [spec-acc] ctx=2801 burst=23/30 cum=922/1416=0.651
+1790128481852 [spec-acc] ctx=2834 burst=25/30 cum=947/1446=0.655
+1790128482032 [spec-acc] ctx=2869 burst=20/36 cum=967/1482=0.652
+1790128482194 [spec-acc] ctx=2901 burst=24/33 cum=991/1515=0.654
+1790128482313 [spec-acc] ctx=2936 burst=24/24 cum=1015/1539=0.660
+1790128482491 [spec-acc] ctx=2968 burst=22/36 cum=1037/1575=0.658
+1790128482625 [spec-acc] ctx=3002 burst=26/27 cum=1063/1602=0.664
+1790128482776 [spec-acc] ctx=3037 burst=24/30 cum=1087/1632=0.666
+1790128482940 [spec-acc] ctx=3071 burst=21/33 cum=1108/1665=0.665
+1790128483091 [spec-acc] ctx=3103 burst=25/30 cum=1133/1695=0.668
+1790128483269 [spec-acc] ctx=3138 burst=21/36 cum=1154/1731=0.667
+1790128483404 [spec-acc] ctx=3171 burst=24/27 cum=1178/1758=0.670
+1790128483552 [spec-acc] ctx=3204 burst=23/30 cum=1201/1788=0.672
+1790128483704 [spec-acc] ctx=3237 burst=23/30 cum=1224/1818=0.673
+1790128483838 [spec-acc] ctx=3270 burst=23/27 cum=1247/1845=0.676
+1790128484004 [spec-acc] ctx=3302 burst=24/33 cum=1271/1878=0.677
+1790128484138 [spec-acc] ctx=3337 burst=23/27 cum=1294/1905=0.679
+1790128484304 [spec-acc] ctx=3369 burst=22/33 cum=1316/1938=0.679
+1790128484438 [spec-acc] ctx=3402 burst=26/27 cum=1342/1965=0.683
+1790128484587 [spec-acc] ctx=3437 burst=24/30 cum=1366/1995=0.685
+1790128484709 [spec-acc] ctx=3471 burst=17/24 cum=1383/2019=0.685
+1790128484711 [meter] admit id=chatcmpl-b40632c80da0bd49b513f5bea6eef123 tenant=default lane=interactive model="q9"
+1790128484717 
+1790128484717 thread 'memra-gpu-worker' (1443572) panicked at crates/memra-engine/src/spec.rs:4590:9:
+1790128484717 mtp_kv_fill: scratch overflow
+1790128484717 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+1790128484741 [worker] PANIC in the GPU worker thread: mtp_kv_fill: scratch overflow
+1790128484741 [worker] respawn attempt 1/1 in 2s (reloading weights)
+1790128486741 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790128486748 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790128486748 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1790128486748 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1790128486748 [worker] loading model "q9" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+1790128486784 [tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1790128487911 [q8rp] split-plane decode mirrors built: 92 tensors
+1790128487992 [worker]   loaded "q9": 33 layers, eos=248046, stop=[248046]
+1790128487992 [worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1790128487992 [route-contract] model="q9" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1790128487992 [worker] q9: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1790128487992 [prefix-cache] on: budget 2052MB (2051538944 B, derived: 2 x 1025769472 B max entry for model "q9" at served ctx 65536 (from MEMRA_CTX; MEMRA_CTX set), requested 2051538944 B; boot driver free 18244501504 B, post-reserve clamp 16633888768 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1790128487992 [admission] "q9": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+1790128487992 [prime-walk] model="q9" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1790128488825 [fa-pool] grow #3 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+1790128488834 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1790128488834 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+1790128488834 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1790128488834 [fa-pool] grow #4 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+1790128488834 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1790128488834 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1790128488834 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1790128488834 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1790128488838 [spec] draft-session state high-water: 9MB (max of parked delta 9MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+1790128488874 [fa-pool] grow #5 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+1790128489166 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":8327347072,"pool_reserved_bytes":8455716864,"pool_cached_bytes":128369792,"driver_free_bytes":16365453312,"synchronization_errors":[]}
+1790128489166 [admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+1790128489166 [admit-cal] boot calibration done: model="q9" route=mtp transient floor 1536MB (static was 1536MB; measured 1298MB; probe kv charge 67MB, draft-state 9MB, drafted 48 accepted 47; [dev0 peak-mapped 9440MB rest-mapped 8064MB charged 77MB -> 1298MB]; 1.2s)
+1790128489166 [admit-predict] shadow armed: budget_bytes=12831671424 budget_src=derived(effective_free_bytes=16493823104 - prefix_cache_budget_bytes=2051538944 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+1790128489166 [admit-mem] door=ON open_output_tokens=2048 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1790128489169 [admission] per-session draft-state charge: model="q9" +10MB (measured capture high-water)
+1790128489169 [admission] request cost: model="q9" ctx=3559 path=spec = 16704 B/token x ctx + 519MB prefill-workspace + 0MB fixed = 578MB
+1790128489169 [admit-predict] id=chatcmpl-b40632c80da0bd49b513f5bea6eef123 tenant="" model="q9" verdict=admit reason=maxtok-fallback prompt=1439 predicted_completion=0 kv_hat=553205712 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790128489170 [spec-k] model="q9" tenant="" K=3 source=cold-long prompt=1439 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790128489170 [admission] fixed residual high-water: model="q9" 110MB (observed 168MB at ctx 3495 path=spec)
+1790128489628 [spec-acc] ctx=1439 burst=22/27 cum=22/27=0.815
+1790128489628 [prefix-cache] insert (spec-boundary): 1408 tokens, 76.2MB (resident 76.2MB / 2052MB, model q9)
+1790128489801 [spec-acc] ctx=1471 burst=23/36 cum=45/63=0.714
+1790128489949 [spec-acc] ctx=1506 burst=24/30 cum=69/93=0.742
+1790128490132 [spec-acc] ctx=1540 burst=21/36 cum=90/129=0.698
+1790128490276 [spec-acc] ctx=1573 burst=22/30 cum=112/159=0.704
+1790128490449 [spec-acc] ctx=1605 burst=22/36 cum=134/195=0.687
+1790128490640 [spec-acc] ctx=1639 burst=19/39 cum=153/234=0.654
+1790128490770 [spec-acc] ctx=1671 burst=23/27 cum=176/261=0.674
+1790128490930 [spec-acc] ctx=1703 burst=21/33 cum=197/294=0.670
+1790128491078 [spec-acc] ctx=1735 burst=22/30 cum=219/324=0.676
+1790128491299 [spec-acc] ctx=1767 burst=19/45 cum=238/369=0.645
+1790128491473 [spec-acc] ctx=1801 burst=22/36 cum=260/405=0.642
+1790128491604 [spec-acc] ctx=1835 burst=23/27 cum=283/432=0.655
+1790128491763 [spec-acc] ctx=1867 burst=24/33 cum=307/465=0.660
+1790128491926 [spec-acc] ctx=1902 burst=22/33 cum=329/498=0.661
+1790128492073 [spec-acc] ctx=1935 burst=23/30 cum=352/528=0.667
+1790128492250 [spec-acc] ctx=1968 burst=23/36 cum=375/564=0.665
+1790128492384 [spec-acc] ctx=2003 burst=24/27 cum=399/591=0.675
+1790128492574 [spec-acc] ctx=2036 burst=22/39 cum=421/630=0.668
+1790128492734 [spec-acc] ctx=2071 burst=21/33 cum=442/663=0.667
+1790128492867 [spec-acc] ctx=2103 burst=23/27 cum=465/690=0.674
+1790128493031 [spec-acc] ctx=2135 burst=21/33 cum=486/723=0.672
+1790128493208 [spec-acc] ctx=2167 burst=22/36 cum=508/759=0.669
+1790128493387 [spec-acc] ctx=2201 burst=20/36 cum=528/795=0.664
+1790128493519 [spec-acc] ctx=2233 burst=23/27 cum=551/822=0.670
+1790128493680 [spec-acc] ctx=2265 burst=21/33 cum=572/855=0.669
+1790128493815 [spec-acc] ctx=2297 burst=26/27 cum=598/882=0.678
+1790128493962 [spec-acc] ctx=2332 burst=24/30 cum=622/912=0.682
+1790128494142 [spec-acc] ctx=2366 burst=23/36 cum=645/948=0.680
+1790128494290 [spec-acc] ctx=2401 burst=22/30 cum=667/978=0.682
+1790128494437 [spec-acc] ctx=2433 burst=22/30 cum=689/1008=0.684
+1790128494588 [spec-acc] ctx=2465 burst=22/30 cum=711/1038=0.685
+1790128494735 [spec-acc] ctx=2497 burst=22/30 cum=733/1068=0.686
+1790128494882 [spec-acc] ctx=2529 burst=22/30 cum=755/1098=0.688
+1790128495091 [spec-acc] ctx=2561 burst=20/42 cum=775/1140=0.680
+1790128495239 [spec-acc] ctx=2595 burst=25/30 cum=800/1170=0.684
+1790128495373 [spec-acc] ctx=2630 burst=25/27 cum=825/1197=0.689
+1790128495536 [spec-acc] ctx=2664 burst=21/33 cum=846/1230=0.688
+1790128495716 [spec-acc] ctx=2696 burst=22/36 cum=868/1266=0.686
+1790128495878 [spec-acc] ctx=2730 burst=23/33 cum=891/1299=0.686
+1790128496027 [spec-acc] ctx=2764 burst=25/30 cum=916/1329=0.689
+1790128496176 [spec-acc] ctx=2799 burst=23/30 cum=939/1359=0.691
+1790128496339 [spec-acc] ctx=2832 burst=21/33 cum=960/1392=0.690
+1790128496489 [spec-acc] ctx=2864 burst=25/30 cum=985/1422=0.693
+1790128496652 [spec-acc] ctx=2899 burst=23/33 cum=1008/1455=0.693
+1790128496801 [spec-acc] ctx=2933 burst=22/30 cum=1030/1485=0.694
+1790128496996 [spec-acc] ctx=2965 burst=21/39 cum=1051/1524=0.690
+1790128497132 [spec-acc] ctx=2999 burst=24/27 cum=1075/1551=0.693
+1790128497266 [spec-acc] ctx=3032 burst=24/27 cum=1099/1578=0.696
+1790128497463 [spec-acc] ctx=3065 burst=20/39 cum=1119/1617=0.692
+1790128497612 [spec-acc] ctx=3098 burst=22/30 cum=1141/1647=0.693
+1790128497778 [spec-acc] ctx=3130 burst=23/33 cum=1164/1680=0.693
+1790128497927 [spec-acc] ctx=3164 burst=25/30 cum=1189/1710=0.695
+1790128498063 [spec-acc] ctx=3199 burst=23/27 cum=1212/1737=0.698
+1790128498228 [spec-acc] ctx=3231 burst=21/33 cum=1233/1770=0.697
+1790128498364 [spec-acc] ctx=3263 burst=25/27 cum=1258/1797=0.700
+1790128498528 [spec-acc] ctx=3297 burst=21/33 cum=1279/1830=0.699
+1790128498710 [spec-acc] ctx=3329 burst=22/36 cum=1301/1866=0.697
+1790128498874 [spec-acc] ctx=3363 burst=23/33 cum=1324/1899=0.697
+1790128499026 [spec-acc] ctx=3397 burst=25/30 cum=1349/1929=0.699
+1790128499176 [spec-acc] ctx=3432 burst=23/30 cum=1372/1959=0.700
+1790128499327 [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 9 col 0/4 pos=3492: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to name: pp_cuts() returns None without MEMRA_PP_STAGES, so decode_step_t_core_ppn never runs unless that variable is set.
+1790128499329 [meter] admit id=chatcmpl-4adad2664d4f7d33c32a3265bb12afb5 tenant=default lane=interactive model="q9"
+1790128499333 [admission] per-session draft-state charge: model="q9" +10MB (measured capture high-water)
+1790128499333 [admission] request cost: model="q9" ctx=3562 path=spec = 16704 B/token x ctx + 520MB prefill-workspace + 110MB fixed = 689MB
+1790128499333 [admit-predict] id=chatcmpl-4adad2664d4f7d33c32a3265bb12afb5 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1442 predicted_completion=2026 kv_hat=697688968 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790128499336 [spec-k] model="q9" tenant="" K=3 source=cold-long prompt=1442 cached=0 lcp=6 active=1 wave=1 placement=single-or-non-pp2
+1790128499336 [admission] fixed residual high-water: model="q9" 110MB (observed 168MB at ctx 3498 path=spec)
+1790128499816 [spec-acc] ctx=1442 burst=22/30 cum=22/30=0.733
+1790128499816 [prefix-cache] insert (spec-boundary): 1408 tokens, 76.2MB (resident 152.5MB / 2052MB, model q9)
+1790128499978 [spec-acc] ctx=1475 burst=21/33 cum=43/63=0.683
+1790128500109 [spec-acc] ctx=1507 burst=23/27 cum=66/90=0.733
+1790128500270 [spec-acc] ctx=1539 burst=22/33 cum=88/123=0.715
+1790128500430 [spec-acc] ctx=1572 burst=22/33 cum=110/156=0.705
+1790128500595 [spec-acc] ctx=1605 burst=23/33 cum=133/189=0.704
+1790128500785 [spec-acc] ctx=1639 burst=20/39 cum=153/228=0.671
+1790128500975 [spec-acc] ctx=1672 burst=20/39 cum=173/267=0.648
+1790128501153 [spec-acc] ctx=1705 burst=20/36 cum=193/303=0.637
+1790128501328 [spec-acc] ctx=1737 burst=23/36 cum=216/339=0.637
+1790128501489 [spec-acc] ctx=1772 burst=21/33 cum=237/372=0.637
+1790128501683 [spec-acc] ctx=1804 burst=19/39 cum=256/411=0.623
+1790128501873 [spec-acc] ctx=1836 burst=21/39 cum=277/450=0.616
+1790128502066 [spec-acc] ctx=1870 burst=21/39 cum=298/489=0.609
+1790128502226 [spec-acc] ctx=1904 burst=22/33 cum=320/522=0.613
+1790128502373 [spec-acc] ctx=1937 burst=23/30 cum=343/552=0.621
+1790128502537 [spec-acc] ctx=1970 burst=23/33 cum=366/585=0.626
+1790128502684 [spec-acc] ctx=2004 burst=23/30 cum=389/615=0.633
+1790128502876 [spec-acc] ctx=2037 burst=22/39 cum=411/654=0.628
+1790128503114 [spec-acc] ctx=2072 burst=19/48 cum=430/702=0.613
+1790128503292 [spec-acc] ctx=2107 burst=23/36 cum=453/738=0.614
+1790128503485 [spec-acc] ctx=2142 burst=19/39 cum=472/777=0.607
+1790128503707 [spec-acc] ctx=2174 burst=19/45 cum=491/822=0.597
+1790128503842 [spec-acc] ctx=2208 burst=26/27 cum=517/849=0.609
+1790128503975 [spec-acc] ctx=2243 burst=23/27 cum=540/876=0.616
+1790128504125 [spec-acc] ctx=2275 burst=25/30 cum=565/906=0.624
+1790128504272 [spec-acc] ctx=2310 burst=24/30 cum=589/936=0.629
+1790128504420 [spec-acc] ctx=2344 burst=22/30 cum=611/966=0.633
+1790128504569 [spec-acc] ctx=2376 burst=24/30 cum=635/996=0.638
+1790128504732 [spec-acc] ctx=2410 burst=23/33 cum=658/1029=0.639
+1790128504880 [spec-acc] ctx=2444 burst=24/30 cum=682/1059=0.644
+1790128505017 [spec-acc] ctx=2478 burst=24/27 cum=706/1086=0.650
+1790128505135 [spec-acc] ctx=2511 burst=24/24 cum=730/1110=0.658
+1790128505287 [spec-acc] ctx=2543 burst=22/30 cum=752/1140=0.660
+1790128505481 [spec-acc] ctx=2575 burst=19/39 cum=771/1179=0.654
+1790128505661 [spec-acc] ctx=2607 burst=23/36 cum=794/1215=0.653
+1790128505873 [spec-acc] ctx=2642 burst=19/42 cum=813/1257=0.647
+1790128506006 [spec-acc] ctx=2675 burst=26/27 cum=839/1284=0.653
+1790128506129 [spec-acc] ctx=2710 burst=24/24 cum=863/1308=0.660
+1790128506247 [spec-acc] ctx=2742 burst=24/24 cum=887/1332=0.666
+1790128506396 [spec-acc] ctx=2774 burst=24/30 cum=911/1362=0.669
+1790128506562 [spec-acc] ctx=2808 burst=21/33 cum=932/1395=0.668
+1790128506710 [spec-acc] ctx=2840 burst=24/30 cum=956/1425=0.671
+1790128506892 [spec-acc] ctx=2874 burst=21/36 cum=977/1461=0.669
+1790128507103 [spec-acc] ctx=2907 burst=21/42 cum=998/1503=0.664
+1790128507296 [spec-acc] ctx=2942 burst=20/39 cum=1018/1542=0.660
+1790128507419 [spec-acc] ctx=2975 burst=24/24 cum=1042/1566=0.665
+1790128507553 [spec-acc] ctx=3007 burst=25/27 cum=1067/1593=0.670
+1790128507734 [spec-acc] ctx=3041 burst=21/36 cum=1088/1629=0.668
+1790128507899 [spec-acc] ctx=3074 burst=24/33 cum=1112/1662=0.669
+1790128508035 [spec-acc] ctx=3109 burst=26/27 cum=1138/1689=0.674
+1790128508185 [spec-acc] ctx=3144 burst=24/30 cum=1162/1719=0.676
+1790128508366 [spec-acc] ctx=3178 burst=21/36 cum=1183/1755=0.674
+1790128508519 [spec-acc] ctx=3211 burst=22/30 cum=1205/1785=0.675
+1790128508654 [spec-acc] ctx=3243 burst=24/27 cum=1229/1812=0.678
+1790128508821 [spec-acc] ctx=3276 burst=24/33 cum=1253/1845=0.679
+1790128508972 [spec-acc] ctx=3311 burst=24/30 cum=1277/1875=0.681
+1790128509107 [spec-acc] ctx=3345 burst=25/27 cum=1302/1902=0.685
+1790128509291 [spec-acc] ctx=3379 burst=21/36 cum=1323/1938=0.683
+1790128509502 [spec-acc] ctx=3412 burst=18/42 cum=1341/1980=0.677
+1790128509668 [spec-acc] ctx=3444 burst=23/33 cum=1364/2013=0.678
+1790128509750 [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 5 j=2 pos=3496: head-out NaN 4096/4096, round-input-seed NaN 0/4096 — refusing to dereference the embed row (#87 trap)
+1790128509752 [meter] admit id=chatcmpl-fdc0a0a8aec7cd08f75a3cc864d1f706 tenant=default lane=interactive model="q9"
+1790128509754 [admission] per-session draft-state charge: model="q9" +10MB (measured capture high-water)
+1790128509754 [admission] request cost: model="q9" ctx=3562 path=spec = 16704 B/token x ctx + 520MB prefill-workspace + 110MB fixed = 689MB
+1790128509754 [admit-predict] id=chatcmpl-fdc0a0a8aec7cd08f75a3cc864d1f706 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1442 predicted_completion=2036 kv_hat=697861576 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790128509756 [spec-k] model="q9" tenant="" K=3 source=cold-long prompt=1442 cached=0 lcp=6 active=1 wave=1 placement=single-or-non-pp2
+1790128510281 [spec-acc] ctx=1442 burst=19/36 cum=19/36=0.528
+1790128510281 [prefix-cache] insert (spec-boundary): 1408 tokens, 76.2MB (resident 228.7MB / 2052MB, model q9)
+1790128510431 [spec-acc] ctx=1474 burst=23/30 cum=42/66=0.636
+1790128510578 [spec-acc] ctx=1507 burst=25/30 cum=67/96=0.698
+1790128510724 [spec-acc] ctx=1542 burst=22/30 cum=89/126=0.706
+1790128510884 [spec-acc] ctx=1574 burst=22/33 cum=111/159=0.698
+1790128511061 [spec-acc] ctx=1607 burst=21/36 cum=132/195=0.677
+1790128511282 [spec-acc] ctx=1640 burst=20/45 cum=152/240=0.633
+1790128511429 [spec-acc] ctx=1675 burst=22/30 cum=174/270=0.644
+1790128511621 [spec-acc] ctx=1707 burst=22/39 cum=196/309=0.634
+1790128511812 [spec-acc] ctx=1742 burst=19/39 cum=215/348=0.618
+1790128511972 [spec-acc] ctx=1774 burst=21/33 cum=236/381=0.619
+1790128512194 [spec-acc] ctx=1806 burst=18/45 cum=254/426=0.596
+1790128512371 [spec-acc] ctx=1839 burst=20/36 cum=274/462=0.593
+1790128512564 [spec-acc] ctx=1871 burst=21/39 cum=295/501=0.589
+1790128512770 [spec-acc] ctx=1905 burst=19/42 cum=314/543=0.578
+1790128512960 [spec-acc] ctx=1938 burst=21/39 cum=335/582=0.576
+1790128513094 [spec-acc] ctx=1972 burst=23/27 cum=358/609=0.588
+1790128513256 [spec-acc] ctx=2004 burst=21/33 cum=379/642=0.590
+1790128513451 [spec-acc] ctx=2036 burst=20/39 cum=399/681=0.586
+1790128513599 [spec-acc] ctx=2069 burst=22/30 cum=421/711=0.592
+1790128513732 [spec-acc] ctx=2101 burst=23/27 cum=444/738=0.602
+1790128513881 [spec-acc] ctx=2133 burst=23/30 cum=467/768=0.608
+1790128514013 [spec-acc] ctx=2166 burst=24/27 cum=491/795=0.618
+1790128514176 [spec-acc] ctx=2199 burst=22/33 cum=513/828=0.620
+1790128514341 [spec-acc] ctx=2232 burst=24/33 cum=537/861=0.624
+1790128514519 [spec-acc] ctx=2267 burst=22/36 cum=559/897=0.623
+1790128514686 [spec-acc] ctx=2301 burst=21/33 cum=580/930=0.624
+1790128514833 [spec-acc] ctx=2333 burst=23/30 cum=603/960=0.628
+1790128514997 [spec-acc] ctx=2366 burst=21/33 cum=624/993=0.628
+1790128515131 [spec-acc] ctx=2398 burst=24/27 cum=648/1020=0.635
+1790128515267 [spec-acc] ctx=2431 burst=23/27 cum=671/1047=0.641
+1790128515400 [spec-acc] ctx=2463 burst=24/27 cum=695/1074=0.647
+1790128515579 [spec-acc] ctx=2496 burst=20/36 cum=715/1110=0.644
+1790128515759 [spec-acc] ctx=2528 burst=21/36 cum=736/1146=0.642
+1790128515907 [spec-acc] ctx=2561 burst=23/30 cum=759/1176=0.645
+1790128516027 [spec-acc] ctx=2594 burst=24/24 cum=783/1200=0.652
+1790128516191 [spec-acc] ctx=2626 burst=24/33 cum=807/1233=0.655
+1790128516327 [spec-acc] ctx=2661 burst=23/27 cum=830/1260=0.659
+1790128516521 [spec-acc] ctx=2693 burst=21/39 cum=851/1299=0.655
+1790128516657 [spec-acc] ctx=2727 burst=25/27 cum=876/1326=0.661
+1790128516792 [spec-acc] ctx=2761 burst=23/27 cum=899/1353=0.664
+1790128516943 [spec-acc] ctx=2793 burst=23/30 cum=922/1383=0.667
+1790128517092 [spec-acc] ctx=2826 burst=25/30 cum=947/1413=0.670
+1790128517228 [spec-acc] ctx=2861 burst=24/27 cum=971/1440=0.674
+1790128517408 [spec-acc] ctx=2894 burst=20/36 cum=991/1476=0.671
+1790128517560 [spec-acc] ctx=2926 burst=22/30 cum=1013/1506=0.673
+1790128517710 [spec-acc] ctx=2958 burst=24/30 cum=1037/1536=0.675
+1790128517891 [spec-acc] ctx=2992 burst=20/36 cum=1057/1572=0.672
+1790128518026 [spec-acc] ctx=3024 burst=24/27 cum=1081/1599=0.676
+1790128518192 [spec-acc] ctx=3057 burst=21/33 cum=1102/1632=0.675
+1790128518330 [spec-acc] ctx=3089 burst=23/27 cum=1125/1659=0.678
+1790128518480 [spec-acc] ctx=3121 burst=23/30 cum=1148/1689=0.680
+1790128518632 [spec-acc] ctx=3154 burst=22/30 cum=1170/1719=0.681
+1790128518798 [spec-acc] ctx=3186 burst=22/33 cum=1192/1752=0.680
+1790128518933 [spec-acc] ctx=3219 burst=24/27 cum=1216/1779=0.684
+1790128519071 [spec-acc] ctx=3252 burst=24/27 cum=1240/1806=0.687
+1790128519221 [spec-acc] ctx=3285 burst=25/30 cum=1265/1836=0.689
+1790128519403 [spec-acc] ctx=3320 burst=20/36 cum=1285/1872=0.686
+1790128519524 [spec-acc] ctx=3352 burst=24/24 cum=1309/1896=0.690
+1790128519692 [spec-acc] ctx=3384 burst=21/33 cum=1330/1929=0.689
+1790128519890 [spec-acc] ctx=3416 burst=19/39 cum=1349/1968=0.685
+1790128520025 [spec-acc] ctx=3448 burst=24/27 cum=1373/1995=0.688
+1790128520107 [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 5 j=2 pos=3496: head-out NaN 4096/4096, round-input-seed NaN 0/4096 — refusing to dereference the embed row (#87 trap)
+1790128520109 [meter] admit id=chatcmpl-6c0fd7232e788a3e95bcfae073e314e2 tenant=default lane=interactive model="q9"
+1790128520113 [admission] per-session draft-state charge: model="q9" +10MB (measured capture high-water)
+1790128520113 [admission] request cost: model="q9" ctx=3561 path=spec = 16704 B/token x ctx + 519MB prefill-workspace + 110MB fixed = 688MB
+1790128520113 [admit-predict] id=chatcmpl-6c0fd7232e788a3e95bcfae073e314e2 tenant="" model="q9" verdict=admit reason=global-p95 prompt=1441 predicted_completion=2039 kv_hat=697534536 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=12831671424 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790128520115 [spec-k] model="q9" tenant="" K=3 source=cold-long prompt=1441 cached=0 lcp=6 active=1 wave=1 placement=single-or-non-pp2
+1790128520666 [spec-acc] ctx=1441 burst=20/33 cum=20/33=0.606
+1790128520666 [prefix-cache] insert (spec-boundary): 1408 tokens, 76.2MB (resident 304.9MB / 2052MB, model q9)
+1790128520844 [spec-acc] ctx=1473 burst=24/33 cum=44/66=0.667
+1790128520987 [spec-acc] ctx=1508 burst=23/27 cum=67/93=0.720
+1790128521128 [spec-acc] ctx=1540 burst=24/27 cum=91/120=0.758
+1790128521316 [spec-acc] ctx=1573 burst=22/36 cum=113/156=0.724
+1790128521469 [spec-acc] ctx=1607 burst=23/30 cum=136/186=0.731
+1790128521712 [spec-acc] ctx=1640 burst=16/48 cum=152/234=0.650
+1790128521895 [spec-acc] ctx=1672 burst=20/36 cum=172/270=0.637
+1790128522046 [spec-acc] ctx=1704 burst=24/30 cum=196/300=0.653
+1790128522209 [spec-acc] ctx=1738 burst=22/33 cum=218/333=0.655
+1790128522374 [spec-acc] ctx=1771 burst=21/33 cum=239/366=0.653
+1790128522523 [spec-acc] ctx=1803 burst=24/30 cum=263/396=0.664
+1790128522671 [spec-acc] ctx=1837 burst=23/30 cum=286/426=0.671
+1790128522882 [spec-acc] ctx=1870 burst=21/42 cum=307/468=0.656
+1790128523031 [spec-acc] ctx=1905 burst=22/30 cum=329/498=0.661
+1790128523228 [spec-acc] ctx=1937 burst=20/39 cum=349/537=0.650
+1790128523449 [spec-acc] ctx=1970 burst=19/42 cum=368/579=0.636
+1790128523613 [spec-acc] ctx=2003 burst=22/33 cum=390/612=0.637
+1790128523768 [spec-acc] ctx=2036 burst=23/30 cum=413/642=0.643
+1790128523968 [spec-acc] ctx=2069 burst=20/39 cum=433/681=0.636
+1790128524118 [spec-acc] ctx=2102 burst=22/30 cum=455/711=0.640
+1790128524284 [spec-acc] ctx=2134 burst=24/33 cum=479/744=0.644
+1790128524453 [spec-acc] ctx=2169 burst=23/33 cum=502/777=0.646
+1790128524588 [spec-acc] ctx=2203 burst=23/27 cum=525/804=0.653
+1790128524723 [spec-acc] ctx=2235 burst=24/27 cum=549/831=0.661
+1790128524874 [spec-acc] ctx=2268 burst=22/30 cum=571/861=0.663
+1790128525055 [spec-acc] ctx=2300 burst=21/36 cum=592/897=0.660
+1790128525269 [spec-acc] ctx=2333 burst=19/42 cum=611/939=0.651
+1790128525434 [spec-acc] ctx=2366 burst=24/33 cum=635/972=0.653
+1790128525649 [spec-acc] ctx=2401 burst=18/42 cum=653/1014=0.644
+1790128525845 [spec-acc] ctx=2433 burst=19/39 cum=672/1053=0.638
+1790128525996 [spec-acc] ctx=2465 burst=23/30 cum=695/1083=0.642
+1790128526133 [spec-acc] ctx=2498 burst=23/27 cum=718/1110=0.647
+1790128526317 [spec-acc] ctx=2530 burst=22/36 cum=740/1146=0.646
+1790128526454 [spec-acc] ctx=2564 burst=24/27 cum=764/1173=0.651
+1790128526606 [spec-acc] ctx=2597 burst=22/30 cum=786/1203=0.653
+1790128526742 [spec-acc] ctx=2629 burst=25/27 cum=811/1230=0.659
+1790128526940 [spec-acc] ctx=2663 burst=20/39 cum=831/1269=0.655
+1790128527153 [spec-acc] ctx=2696 burst=18/42 cum=849/1311=0.648
+1790128527303 [spec-acc] ctx=2728 burst=22/30 cum=871/1341=0.650
+1790128527456 [spec-acc] ctx=2760 burst=24/30 cum=895/1371=0.653
+1790128527577 [spec-acc] ctx=2794 burst=24/24 cum=919/1395=0.659
+1790128527759 [spec-acc] ctx=2826 burst=23/36 cum=942/1431=0.658
+1790128527927 [spec-acc] ctx=2861 burst=22/33 cum=964/1464=0.658
+1790128528078 [spec-acc] ctx=2894 burst=23/30 cum=987/1494=0.661
+1790128528245 [spec-acc] ctx=2927 burst=22/33 cum=1009/1527=0.661
+1790128528369 [spec-acc] ctx=2960 burst=24/24 cum=1033/1551=0.666
+1790128528536 [spec-acc] ctx=2992 burst=22/33 cum=1055/1584=0.666
+1790128528721 [spec-acc] ctx=3025 burst=23/36 cum=1078/1620=0.665
+1790128528844 [spec-acc] ctx=3060 burst=24/24 cum=1102/1644=0.670
+1790128528988 [spec-acc] ctx=3092 burst=24/27 cum=1126/1671=0.674
+1790128529157 [spec-acc] ctx=3125 burst=25/30 cum=1151/1701=0.677
+1790128529338 [spec-acc] ctx=3160 burst=21/33 cum=1172/1734=0.676
+1790128529537 [spec-acc] ctx=3192 burst=21/36 cum=1193/1770=0.674
+1790128529683 [spec-acc] ctx=3225 burst=24/27 cum=1217/1797=0.677
+1790128529890 [spec-acc] ctx=3258 burst=22/39 cum=1239/1836=0.675
+1790128530066 [spec-acc] ctx=3293 burst=24/33 cum=1263/1869=0.676
+1790128530192 [spec-acc] ctx=3328 burst=24/24 cum=1287/1893=0.680
+1790128530335 [spec-acc] ctx=3360 burst=24/27 cum=1311/1920=0.683
+1790128530510 [spec-acc] ctx=3393 burst=21/33 cum=1332/1953=0.682
+1790128530703 [spec-acc] ctx=3425 burst=20/36 cum=1352/1989=0.680
+1790128530925 [spec-acc] ctx=3457 burst=20/42 cum=1372/2031=0.676
+1790128530958 [spec-acc] ctx=3491 burst=5/6 cum=1377/2037=0.676
+1790128530966 
+1790128530966 thread 'memra-gpu-worker' (1443572) panicked at crates/memra-engine/src/spec.rs:4590:9:
+1790128530966 mtp_kv_fill: scratch overflow
+1790128530987 [worker] PANIC in the GPU worker thread: mtp_kv_fill: scratch overflow
+1790128530987 [worker] FATAL: worker unrecoverable after 1 respawn attempt(s) — exiting the process so the supervisor can restart it whole (CUDA errors are sticky per process; a live HTTP listener with a dead worker serves nothing)

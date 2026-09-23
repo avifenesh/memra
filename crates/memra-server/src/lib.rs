@@ -3224,8 +3224,10 @@ struct CompletionReq {
     /// raw token-id prompt (the exact-token validation-gate path; bypasses the tokenizer).
     #[serde(default)]
     prompt_ids: Vec<u32>,
-    /// Omitted (gap-scan F2) => context-bounded (session ctx - prompt, model-capped), the
-    /// OpenAI default-when-omitted semantics — NOT a silent 128-token truncation.
+    /// Omitted (gap-scan F2) => context-bounded (session ctx - prompt, model-capped), never a
+    /// silent 128-token truncation. Under `MEMRA_ADMIT_BY_MEMORY=1` the bound is the charged open
+    /// output instead (`admit_memory::charged_ctx_tokens`, `worker::request_budget`). The OpenAI
+    /// contract does not pin this bound (`research/spill-b-20260919/OPEN-OUTPUT-SURVEY.md`).
     #[serde(default)]
     max_tokens: Option<usize>,
     /// Omitted (dogfood F4) => NOT 0.0/greedy. `serde(default)` on an f32 yielded 0.0, which
@@ -3425,8 +3427,10 @@ impl StopSequences {
 struct ChatCompletionReq {
     model: String,
     messages: Vec<ChatMessage>,
-    /// Omitted (gap-scan F2) => context-bounded (session ctx - prompt, model-capped), the
-    /// OpenAI default-when-omitted semantics — NOT a silent 128-token truncation.
+    /// Omitted (gap-scan F2) => context-bounded (session ctx - prompt, model-capped), never a
+    /// silent 128-token truncation. Under `MEMRA_ADMIT_BY_MEMORY=1` the bound is the charged open
+    /// output instead (`admit_memory::charged_ctx_tokens`, `worker::request_budget`). The OpenAI
+    /// contract does not pin this bound (`research/spill-b-20260919/OPEN-OUTPUT-SURVEY.md`).
     #[serde(default, alias = "max_completion_tokens")]
     max_tokens: Option<usize>,
     /// Kept as Option so loaded-model capabilities can apply a provider-published default only
