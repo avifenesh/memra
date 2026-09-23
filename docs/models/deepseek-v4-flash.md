@@ -16,18 +16,19 @@
 
 memra-server naked on 2x RTX PRO 6000 Blackwell Workstation, NVFP4 checkpoint
 `tiyuvta/DeepSeek-V4-Flash-0731-NVFP4@bafd09f8`: PP-2 over the two cards, matrix expert program,
-host sampler, chunked prefill. 256 max tokens, single runs, 2026-09-23, on a pair whose cards passed
-the effective-clock acceptance check (see below).
+host sampler, chunked prefill. 256 max tokens, medians of five boots, 2026-09-23, on a pair whose
+cards passed the effective-clock acceptance check (see below).
 
 | arm | decode tok/s c1 greedy | decode tok/s c1 sampled | TTFT p50 ms |
 |---|---|---|---|
-| plain | 50.10 | 46.47 | 200 |
-| DSpark drafter (`MEMRA_DSV4_DRAFTER=dspark`) | 56.11 | 47.45 | 261 |
+| plain | 53.48 | 49.23 | 197 |
+| DSpark drafter (`MEMRA_DSV4_DRAFTER=dspark`) | 73.11 | 60.33 | 245 |
 
-Plain greedy is the median of five boots with the one-token MoE stream visitor (#664, +29.2% over
-the 38.79 tok/s sktail tail it replaced, same text on every prompt). The other cells are single
-naked boots of the shipped #664 tree. DSpark verify rows still run the sktail tail; the stream
-visitor does not reach them yet.
+Both rows carry the one-token MoE stream visitor (#664, +29.2% plain greedy over the sktail tail
+it replaced), the multi-row stream visitor on the verify rounds (#669, +26.8% DSpark greedy) and
+the deferred MoE checks (#670: one fault readback per transaction instead of 129 synchronizing
+reads per step, +6.8% plain greedy and +2.7% DSpark greedy). Every step kept the same text on
+every prompt.
 
 The TP/EP program on the same pair replays the 2026-09-08 anchor protocol at 50.04 tok/s eager
 and 50.68 graph with the anchor's exact bits (anchor: 42.80 / 44.01).
@@ -44,6 +45,6 @@ and 50.68 graph with the anchor's exact bits (anchor: 42.80 / 44.01).
   yet ([issue #454](https://github.com/avifenesh/memra/issues/454)).
 
 Receipts: `research/dsv4f-bringup-20260923/` (`REBASELINE.md`, `m1-stream-664/RESULTS.md`,
-`power-brake/POWER-BRAKE.md`, `spec-identity-660/RESULTS.md`; `BASELINE.md` is the withdrawn braked-pair run).
+`mrow-stream/RESULTS.md`, `moe-defer-670/RESULTS.md`, `PRIOR-ART.md`, `power-brake/POWER-BRAKE.md`, `spec-identity-660/RESULTS.md`; `BASELINE.md` is the withdrawn braked-pair run).
 Deeper history: the [DeepSeek section](../MODELS.md#deepseek-v4-checkpoint-dirs-serve-through-their-own-door-lanedsv4-flash-revival-20260822).
 Do not infer production support from a successful load or prompt.

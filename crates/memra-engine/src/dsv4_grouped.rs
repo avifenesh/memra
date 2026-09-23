@@ -6,6 +6,7 @@ use crate::mmq_ffi::{
     memra_bind_device, memra_moe_kq_gemm_sk, memra_moe_kq_gemm_sk_gu,
     memra_moe_kq_gemm_sk_gu_half2, memra_moe_kq_gemm_sk_gu_m1, memra_moe_kq_gemm_sk_gu_m1_half2,
     memra_moe_kq_gemm_sk_m1, memra_moe_kq_gemm_sk_m1_half2, memra_moe_kq_m1_stream,
+    memra_moe_kq_mrow_stream,
 };
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
 use memra_runtime::Gpu;
@@ -64,6 +65,36 @@ pub(crate) fn route_validation_enabled() -> bool {
 
 pub(crate) fn set_route_validation_for_gate(enabled: bool) -> bool {
     ROUTE_VALIDATE.swap(enabled, Ordering::SeqCst)
+}
+
+/// Device address of one MoE layer's fault word. When a caller arms it, the route prefix and
+/// the two FP8-to-half mirrors OR a failure bit into the word on the device instead of each
+/// reading its status back and synchronizing. The caller reads every armed word once per
+/// transaction and fails the transaction closed before anything commits or leaves the engine.
+/// The checks themselves, and every bit the kernels write, are the same as the synchronous arm.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct MoeFault(pub u64);
+
+pub(crate) const MOE_FAULT_ROUTE: i32 = 1;
+pub(crate) const MOE_FAULT_INPUT_MIRROR: i32 = 2;
+pub(crate) const MOE_FAULT_INTERMEDIATE_MIRROR: i32 = 4;
+
+/// The synchronous arm's refusal text for every bit set in `word`.
+pub(crate) fn moe_fault_reason(word: i32) -> String {
+    let mut reasons = Vec::new();
+    if word & MOE_FAULT_ROUTE != 0 {
+        reasons.push("grouped route contains an invalid expert id");
+    }
+    if word & MOE_FAULT_INPUT_MIRROR != 0 {
+        reasons.push("FP8-QAT half mirror is not lossless (routed input)");
+    }
+    if word & MOE_FAULT_INTERMEDIATE_MIRROR != 0 {
+        reasons.push("FP8-QAT half mirror is not lossless (intermediate)");
+    }
+    if word & !(MOE_FAULT_ROUTE | MOE_FAULT_INPUT_MIRROR | MOE_FAULT_INTERMEDIATE_MIRROR) != 0 {
+        reasons.push("unknown fault bits");
+    }
+    reasons.join("; ")
 }
 
 pub(crate) fn ensure_program(runtime_matrix: bool, state_matrix: bool) -> Res<()> {
@@ -136,6 +167,7 @@ impl HalfMirror {
 
     /// `row_ids`, when present, comes from successfully validated GroupedRoutes;
     /// its token ids are in the source's admitted row range by construction.
+    #[cfg(test)]
     pub fn gather(
         &mut self,
         s: &Arc<CudaStream>,
@@ -143,6 +175,21 @@ impl HalfMirror {
         scales: &CudaSlice<f32>,
         row_ids: Option<&CudaSlice<i32>>,
         rows: usize,
+    ) -> Res<()> {
+        self.gather_with(s, codes, scales, row_ids, rows, None)
+    }
+
+    /// With `fault`, a validated gather ORs its bit into the fault word instead of reading the
+    /// row status back. Deferred-route row ids are still in range: the scatter writes only
+    /// `slot / topk` or leaves the -1 the count kernel cleared.
+    pub fn gather_with(
+        &mut self,
+        s: &Arc<CudaStream>,
+        codes: &CudaSlice<u8>,
+        scales: &CudaSlice<f32>,
+        row_ids: Option<&CudaSlice<i32>>,
+        rows: usize,
+        fault: Option<(MoeFault, i32)>,
     ) -> Res<()> {
         if rows == 0
             || rows > self.rows
@@ -154,23 +201,47 @@ impl HalfMirror {
         {
             return Err("FP8 half mirror input/workspace shape mismatch".into());
         }
+        let validate = mirror_validation_enabled();
+        let deferred = fault.filter(|_| validate);
         let rc = unsafe {
-            dsv4_ffi::memra_dsv4_fp8_gather_half(
-                codes.device_ptr(s).0 as *const std::ffi::c_void,
-                scales.device_ptr(s).0 as *const f32,
-                row_ids.map_or(std::ptr::null(), |ids| ids.device_ptr(s).0 as *const i32),
-                self.half.device_ptr_mut(s).0 as *mut std::ffi::c_void,
-                self.scale.device_ptr_mut(s).0 as *mut f32,
-                self.status.device_ptr_mut(s).0 as *mut i32,
-                rows as i32,
-                self.cols as i32,
-                s.cu_stream() as *mut std::ffi::c_void,
-            )
+            let codes = codes.device_ptr(s).0 as *const std::ffi::c_void;
+            let scales = scales.device_ptr(s).0 as *const f32;
+            let row_ids = row_ids.map_or(std::ptr::null(), |ids| ids.device_ptr(s).0 as *const i32);
+            let half = self.half.device_ptr_mut(s).0 as *mut std::ffi::c_void;
+            let scale = self.scale.device_ptr_mut(s).0 as *mut f32;
+            let status = self.status.device_ptr_mut(s).0 as *mut i32;
+            let stream = s.cu_stream() as *mut std::ffi::c_void;
+            match deferred {
+                Some((word, bit)) => dsv4_ffi::memra_dsv4_fp8_gather_half_fault(
+                    codes,
+                    scales,
+                    row_ids,
+                    half,
+                    scale,
+                    status,
+                    rows as i32,
+                    self.cols as i32,
+                    word.0 as *mut i32,
+                    bit,
+                    stream,
+                ),
+                None => dsv4_ffi::memra_dsv4_fp8_gather_half(
+                    codes,
+                    scales,
+                    row_ids,
+                    half,
+                    scale,
+                    status,
+                    rows as i32,
+                    self.cols as i32,
+                    stream,
+                ),
+            }
         };
         if rc != 0 {
             return Err(format!("FP8 half mirror kernel rc={rc}"));
         }
-        if mirror_validation_enabled() {
+        if validate && deferred.is_none() {
             s.memcpy_dtoh(&self.status.slice(..rows), &mut self.host_status[..rows])
                 .map_err(|e| format!("FP8 mirror status read: {e}"))?;
             s.synchronize()
@@ -193,9 +264,17 @@ pub(crate) struct GroupedWork {
     pub contribution: CudaSlice<f32>,
     pub bytes: u64,
     plain_single: bool,
+    /// A multi-row step small enough for the multi-row stream visitor (a verify round).
+    stream_rows: bool,
     gu_fuse: bool,
+    /// The fault word the next chain's checks defer to, set by [`Self::defer_faults`].
+    fault: Option<MoeFault>,
     phase: MatrixPhase,
 }
+
+/// Largest step the multi-row stream visitor takes. Verify rounds sit far below it; wider
+/// prefill chunks keep sktail's 32-row tiles, which this lane did not measure against.
+pub(crate) const MROW_STREAM_MAX_ROWS: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MatrixPhase {
@@ -332,9 +411,17 @@ impl GroupedWork {
                 .map_err(|e| format!("grouped contribution allocation: {e}"))?,
             bytes,
             plain_single: false,
+            stream_rows: false,
             gu_fuse: false,
+            fault: None,
             phase: MatrixPhase::Idle,
         })
+    }
+
+    /// Route the next chain's route and mirror checks to `fault` (`None`: read each back).
+    /// Only full-bank work defers; a partition keeps its observed live count.
+    pub fn defer_faults(&mut self, fault: Option<MoeFault>) {
+        self.fault = fault;
     }
 
     /// Source FP8 codes/scales are already produced on the token's owner.
@@ -356,6 +443,7 @@ impl GroupedWork {
         self.phase = MatrixPhase::Failed;
         let slots = rows.checked_mul(topk).ok_or("matrix slot count overflow")?;
         self.plain_single = rows == 1;
+        self.stream_rows = rows > 1 && rows <= MROW_STREAM_MAX_ROWS;
         let hidden = self.input.cols;
         let inter = self.intermediate.cols;
         if rows == 0
@@ -374,7 +462,7 @@ impl GroupedWork {
         }
         bind_matrix(gpu)?;
         let s = gpu.stream();
-        let used_device = self.routes.prepare(
+        let used_device = self.routes.prepare_with(
             &s,
             source.ids,
             source.weights,
@@ -383,14 +471,16 @@ impl GroupedWork {
             slots,
             topk,
             device_routes,
+            self.fault,
         )?;
         if self.routes.live_slots > 0 {
-            self.input.gather(
+            self.input.gather_with(
                 &s,
                 source.xq,
                 source.xs,
                 Some(&self.routes.tokens),
                 self.routes.live_slots,
+                self.fault.map(|word| (word, MOE_FAULT_INPUT_MIRROR)),
             )?;
         }
         self.phase = MatrixPhase::Prepared;
@@ -480,12 +570,19 @@ impl GroupedWork {
                     );
                 }
             } else {
-                let stream = self.plain_single
-                    && crate::moe_f16g_tail_on()
-                    && crate::dsv4_moe_m1_stream_on();
+                let stream = crate::moe_f16g_tail_on() && crate::dsv4_moe_m1_stream_on();
                 for (projection, dst) in [(0, &mut *out.g1), (2, &mut *out.g3)] {
-                    if stream {
+                    if stream && self.plain_single {
                         self.routes.project_stream(
+                            &s,
+                            table,
+                            projection,
+                            &self.input,
+                            self.intermediate.cols,
+                            dst,
+                        )?;
+                    } else if stream && self.stream_rows {
+                        self.routes.project_mrow(
                             &s,
                             table,
                             projection,
@@ -564,7 +661,14 @@ impl GroupedWork {
         let s = gpu.stream();
         let live = self.routes.live_slots;
         if live > 0 {
-            self.intermediate.gather(&s, out.hq, out.hs, None, live)?;
+            self.intermediate.gather_with(
+                &s,
+                out.hq,
+                out.hs,
+                None,
+                live,
+                self.fault.map(|word| (word, MOE_FAULT_INTERMEDIATE_MIRROR)),
+            )?;
 
             // A gate that armed the M1 tensor-core or half2 down tail asked for that program
             // (the TP/EP bench pins it and counts its enqueues), so it keeps precedence; the
@@ -586,6 +690,18 @@ impl GroupedWork {
                 && crate::dsv4_moe_m1_stream_on()
             {
                 self.routes.project_stream(
+                    &s,
+                    table,
+                    1,
+                    &self.intermediate,
+                    self.input.cols,
+                    &mut self.contribution,
+                )?;
+            } else if self.stream_rows
+                && crate::moe_f16g_tail_on()
+                && crate::dsv4_moe_m1_stream_on()
+            {
+                self.routes.project_mrow(
                     &s,
                     table,
                     1,
@@ -772,6 +888,54 @@ impl GroupedRoutes {
         Ok(())
     }
 
+    /// Multi-row streaming visitor: `project_stream`'s program for groups of any size, the
+    /// rows of each 16-row chunk sharing one pass over the expert.
+    fn project_mrow(
+        &self,
+        s: &Arc<CudaStream>,
+        table: &CudaSlice<u64>,
+        projection: i32,
+        input: &HalfMirror,
+        out_f: usize,
+        output: &mut CudaSlice<f32>,
+    ) -> Res<()> {
+        if table.len() != self.experts * 6
+            || output.len() < self.live_slots * out_f
+            || crate::moe_f16g_mode() < 2
+            || crate::dsv4_moe_f16g_sk_params().0 < 0
+            || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)
+        {
+            return Err(
+                "matrix multi-row stream projection requires a complete local table and direct visitor"
+                    .into(),
+            );
+        }
+        let rc = unsafe {
+            memra_moe_kq_mrow_stream(
+                table.device_ptr(s).0 as *const u64,
+                projection,
+                self.experts as i32,
+                self.ids.device_ptr(s).0 as *const i32,
+                input.half.device_ptr(s).0 as *const std::ffi::c_void,
+                output.device_ptr_mut(s).0 as *mut f32,
+                input.scale.device_ptr(s).0 as *const f32,
+                self.offsets.device_ptr(s).0 as *const i32,
+                self.experts as i32,
+                self.live_slots as i32,
+                input.cols as i32,
+                out_f as i32,
+                (input.cols / 2) as i64,
+                s.cu_stream().cast(),
+            )
+        };
+        if rc != 0 {
+            return Err(format!(
+                "matrix multi-row stream projection {projection} rc={rc}"
+            ));
+        }
+        Ok(())
+    }
+
     fn project_m1(
         &self,
         s: &Arc<CudaStream>,
@@ -857,6 +1021,7 @@ impl GroupedRoutes {
         })
     }
 
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub fn prepare(
         &mut self,
@@ -868,6 +1033,35 @@ impl GroupedRoutes {
         slots: usize,
         topk: usize,
         device: bool,
+    ) -> Res<bool> {
+        self.prepare_with(
+            s,
+            selected,
+            weights,
+            scale2,
+            scale2_host,
+            slots,
+            topk,
+            device,
+            None,
+        )
+    }
+
+    /// With `fault` on a full-bank device route, a validated route ORs
+    /// [`MOE_FAULT_ROUTE`] into the fault word instead of reading its status back. A valid
+    /// full-bank route places every slot, so the launch count is `slots` either way.
+    #[allow(clippy::too_many_arguments)]
+    pub fn prepare_with(
+        &mut self,
+        s: &Arc<CudaStream>,
+        selected: &CudaSlice<i32>,
+        weights: &CudaSlice<f32>,
+        scale2: &CudaSlice<f32>,
+        scale2_host: &[f32],
+        slots: usize,
+        topk: usize,
+        device: bool,
+        fault: Option<MoeFault>,
     ) -> Res<bool> {
         self.live_slots = 0;
         self.live_slots_observed = false;
@@ -887,6 +1081,7 @@ impl GroupedRoutes {
         }
         self.host_offsets = None;
         self.max_m = slots as i32; // Device arm uses this only as a nonzero upper bound.
+        let deferred = fault.filter(|_| !partition && route_validation_enabled());
         if device {
             let rc = if partition {
                 unsafe {
@@ -914,29 +1109,73 @@ impl GroupedRoutes {
                 }
             } else {
                 unsafe {
-                    dsv4_ffi::memra_dsv4_grouped_routes(
-                        selected.device_ptr(s).0 as *const i32,
-                        weights.device_ptr(s).0 as *const f32,
-                        scale2.device_ptr(s).0 as *const f32,
-                        self.counts.device_ptr_mut(s).0 as *mut i32,
-                        self.offsets.device_ptr_mut(s).0 as *mut i32,
-                        self.ids.device_ptr_mut(s).0 as *mut i32,
-                        self.pairs.device_ptr_mut(s).0 as *mut i32,
-                        self.tokens.device_ptr_mut(s).0 as *mut i32,
-                        self.weights.device_ptr_mut(s).0 as *mut f32,
-                        self.macro1.device_ptr_mut(s).0 as *mut f32,
-                        self.macro2.device_ptr_mut(s).0 as *mut f32,
-                        self.macro3.device_ptr_mut(s).0 as *mut f32,
-                        self.status.device_ptr_mut(s).0 as *mut i32,
-                        slots as i32,
-                        self.experts as i32,
-                        topk as i32,
-                        s.cu_stream() as *mut std::ffi::c_void,
-                    )
+                    let selected = selected.device_ptr(s).0 as *const i32;
+                    let weights = weights.device_ptr(s).0 as *const f32;
+                    let scale2 = scale2.device_ptr(s).0 as *const f32;
+                    let counts = self.counts.device_ptr_mut(s).0 as *mut i32;
+                    let offsets = self.offsets.device_ptr_mut(s).0 as *mut i32;
+                    let ids = self.ids.device_ptr_mut(s).0 as *mut i32;
+                    let pairs = self.pairs.device_ptr_mut(s).0 as *mut i32;
+                    let tokens = self.tokens.device_ptr_mut(s).0 as *mut i32;
+                    let route_weights = self.weights.device_ptr_mut(s).0 as *mut f32;
+                    let macro1 = self.macro1.device_ptr_mut(s).0 as *mut f32;
+                    let macro2 = self.macro2.device_ptr_mut(s).0 as *mut f32;
+                    let macro3 = self.macro3.device_ptr_mut(s).0 as *mut f32;
+                    let status = self.status.device_ptr_mut(s).0 as *mut i32;
+                    let stream = s.cu_stream() as *mut std::ffi::c_void;
+                    match deferred {
+                        Some(word) => dsv4_ffi::memra_dsv4_grouped_routes_fault(
+                            selected,
+                            weights,
+                            scale2,
+                            counts,
+                            offsets,
+                            ids,
+                            pairs,
+                            tokens,
+                            route_weights,
+                            macro1,
+                            macro2,
+                            macro3,
+                            status,
+                            slots as i32,
+                            self.experts as i32,
+                            topk as i32,
+                            word.0 as *mut i32,
+                            MOE_FAULT_ROUTE,
+                            stream,
+                        ),
+                        None => dsv4_ffi::memra_dsv4_grouped_routes(
+                            selected,
+                            weights,
+                            scale2,
+                            counts,
+                            offsets,
+                            ids,
+                            pairs,
+                            tokens,
+                            route_weights,
+                            macro1,
+                            macro2,
+                            macro3,
+                            status,
+                            slots as i32,
+                            self.experts as i32,
+                            topk as i32,
+                            stream,
+                        ),
+                    }
                 }
             };
             if rc != 0 {
                 return Err(format!("grouped route kernel rc={rc}"));
+            }
+            if deferred.is_some() {
+                // The status word is on its way to the fault word; the caller reads it
+                // before the transaction commits. Not an observed live count.
+                self.live_slots = slots;
+                self.live_slots_observed = false;
+                return Ok(true);
             }
             if !route_validation_enabled() {
                 // The device prefix remains authoritative for the visitor. The
@@ -1491,6 +1730,449 @@ mod tests {
         assert_eq!(crate::dsv4_moe_m1_stream_dispatches() - stream_before, 2);
         assert_eq!(crate::moe_f16g_down_m1_half2_dispatches() - half2_before, 1);
         drop((shard_tables, shard_w, shard_s));
+    }
+
+    #[test]
+    #[ignore = "requires one CUDA GPU; multi-row streaming visitor identity only"]
+    fn cuda_mrow_stream_matches_sktail_bit_for_bit() {
+        use super::{GroupedWork, MROW_STREAM_MAX_ROWS, modelopt_table};
+        use crate::dsv4_ep::{EpCompute, EpScratch};
+        use crate::dsv4_ffi as k;
+        use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
+
+        fn view(x: &mut EpScratch) -> EpCompute<'_> {
+            EpCompute {
+                xq: &x.xq,
+                xs: &x.xs,
+                ids: &x.ids,
+                weights: &x.weights,
+                g1: &mut x.g1,
+                g3: &mut x.g3,
+                h: &mut x.h,
+                hq: &mut x.hq,
+                hs: &mut x.hs,
+                contribution: &mut x.contribution,
+            }
+        }
+        fn bits(values: &[f32]) -> Vec<u32> {
+            values.iter().map(|value| value.to_bits()).collect()
+        }
+
+        assert!(crate::moe_f16g_mode() >= 2);
+        assert!(crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT));
+        assert!(crate::moe_f16g_tail_on());
+        let gpu = memra_runtime::Gpu::new(0).unwrap();
+        let s = gpu.stream();
+
+        let (ne, hidden, inter, topk) = (16, 4096, 2048, 6);
+        let wb = hidden * inter / 2;
+        let sb = hidden * inter / 16;
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let weight_data: Vec<u8> = (0..ne * 3 * wb).map(|_| (next() >> 24) as u8).collect();
+        // Every scale byte appears in every projection, including 0x00, 0x80, 0x7f and 0xff.
+        let scale_data: Vec<u8> = (0..ne * 3 * sb)
+            .map(|i| {
+                let expert = i / (3 * sb);
+                let projection = (i / sb) % 3;
+                ((i * 167 + expert * 29 + projection * 71) % 256) as u8
+            })
+            .collect();
+        let weights = s.clone_htod(&weight_data).unwrap();
+        let scales = s.clone_htod(&scale_data).unwrap();
+        drop(weight_data);
+        drop(scale_data);
+        let full_table = modelopt_table(&s, &weights, &scales, ne, hidden, inter).unwrap();
+        let mut shard_w = Vec::new();
+        let mut shard_s = Vec::new();
+        let mut shard_tables = Vec::new();
+        for first in [0, ne / 2] {
+            let mut w = s.alloc_zeros::<u8>(ne / 2 * 3 * wb).unwrap();
+            let mut sc = s.alloc_zeros::<u8>(ne / 2 * 3 * sb).unwrap();
+            s.memcpy_dtod(
+                &weights.slice(first * 3 * wb..(first + ne / 2) * 3 * wb),
+                &mut w,
+            )
+            .unwrap();
+            s.memcpy_dtod(
+                &scales.slice(first * 3 * sb..(first + ne / 2) * 3 * sb),
+                &mut sc,
+            )
+            .unwrap();
+            shard_tables.push(modelopt_table(&s, &w, &sc, ne / 2, hidden, inter).unwrap());
+            shard_w.push(w);
+            shard_s.push(sc);
+        }
+        let scale2_host: Vec<f32> = (0..ne * 3)
+            .map(|i| 2.0_f32.powi((i % 7) as i32 - 4))
+            .collect();
+        let scale2 = s.clone_htod(&scale2_host).unwrap();
+
+        let configs: [(usize, usize, &CudaSlice<u64>); 3] = [
+            (0, ne, &full_table),
+            (0, ne / 2, &shard_tables[0]),
+            (ne / 2, ne / 2, &shard_tables[1]),
+        ];
+        // Route patterns over tokens i: scattered distinct experts, every token on the same six
+        // (groups of `rows` rows), one shard owning every route, a within-token duplicate that
+        // grows one group past a 16-row chunk, and seeded random distinct top-6.
+        let pattern = |kind: usize, rows: usize, seed: &mut u64| -> Vec<i32> {
+            let mut out = Vec::with_capacity(rows * topk);
+            for i in 0..rows {
+                let mut picked: Vec<i32> = match kind {
+                    0 => (0..topk).map(|j| ((i * 3 + j * 5) % ne) as i32).collect(),
+                    1 => (0..topk as i32).collect(),
+                    2 => (0..topk).map(|j| (9 + (i + j) % 6) as i32).collect(),
+                    3 => vec![5, 5, 5, 5, 5, ((i * 7) % ne) as i32],
+                    _ => {
+                        let mut v = Vec::new();
+                        while v.len() < topk {
+                            *seed ^= *seed << 13;
+                            *seed ^= *seed >> 7;
+                            *seed ^= *seed << 17;
+                            let e = (*seed % ne as u64) as i32;
+                            if !v.contains(&e) {
+                                v.push(e);
+                            }
+                        }
+                        v
+                    }
+                };
+                out.append(&mut picked);
+            }
+            out
+        };
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut engaged = 0u64;
+        let mut chunked = false;
+        for rows in [2usize, 3, 5, 8, 16, 17] {
+            let slots = rows * topk;
+            let input: Vec<f32> = (0..rows * hidden)
+                .map(|n| {
+                    let (r, i) = (n / hidden, n % hidden);
+                    (((i * 7919 + r * 104_729) % 2001) as f32 - 1000.0) / 64.0
+                        * 2.0_f32.powi((i / 128 % 9) as i32 - 4)
+                })
+                .collect();
+            let x = s.clone_htod(&input).unwrap();
+            let routing: Vec<f32> = (0..slots)
+                .map(|p| {
+                    if p == 4 {
+                        -0.0
+                    } else {
+                        (p % 13 + 1) as f32 / 32.0
+                    }
+                })
+                .collect();
+            for kind in 0..5 {
+                let selected = pattern(kind, rows, &mut seed);
+                for (first, count, table) in configs {
+                    let mut arms = Vec::new();
+                    for stream in [false, true] {
+                        let mut scratch =
+                            EpScratch::new(&gpu, &gpu, rows, topk, hidden, inter, None).unwrap();
+                        for dst in [&mut scratch.g1, &mut scratch.g3, &mut scratch.h] {
+                            s.memcpy_htod(&vec![f32::NAN; dst.len()], dst).unwrap();
+                        }
+                        s.memcpy_htod(&selected, &mut scratch.ids.slice_mut(..slots))
+                            .unwrap();
+                        s.memcpy_htod(&routing, &mut scratch.weights.slice_mut(..slots))
+                            .unwrap();
+                        unsafe {
+                            k::ck(
+                                "mrow stream fixture FP8 input",
+                                k::memra_dsv4_act_quant_fp8(
+                                    x.device_ptr(&s).0 as *const f32,
+                                    scratch.xq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                                    scratch.xs.device_ptr_mut(&s).0 as *mut f32,
+                                    rows as i32,
+                                    hidden as i32,
+                                    s.cu_stream().cast(),
+                                ),
+                            )
+                            .unwrap();
+                        }
+                        let mut work =
+                            GroupedWork::new_partition(&s, ne, first, count, slots, hidden, inter)
+                                .unwrap();
+                        crate::set_dsv4_moe_m1_stream_for_gate(stream);
+                        let (m1_before, mrow_before) = (
+                            crate::dsv4_moe_m1_stream_dispatches(),
+                            crate::dsv4_moe_mrow_stream_dispatches(),
+                        );
+                        work.prepare(
+                            &gpu,
+                            &view(&mut scratch),
+                            &scale2,
+                            &scale2_host,
+                            rows,
+                            topk,
+                            true,
+                        )
+                        .unwrap();
+                        work.gate_up(&gpu, table, &mut view(&mut scratch), 6.0)
+                            .unwrap();
+                        work.down(&gpu, table, &mut view(&mut scratch)).unwrap();
+                        let live = work.routes.live_slots;
+                        let m1 = crate::dsv4_moe_m1_stream_dispatches() - m1_before;
+                        let mrow = crate::dsv4_moe_mrow_stream_dispatches() - mrow_before;
+                        crate::clear_dsv4_moe_m1_stream_for_gate();
+                        let expected = if stream && live > 0 && rows <= MROW_STREAM_MAX_ROWS {
+                            3
+                        } else {
+                            0
+                        };
+                        assert_eq!(m1, 0, "one-token visitor on a {rows}-row step");
+                        assert_eq!(
+                            mrow, expected,
+                            "mrow engagement rows={rows} first={first} kind={kind}"
+                        );
+                        engaged += mrow;
+                        let take =
+                            |v: &CudaSlice<f32>, n: usize| s.clone_dtoh(&v.slice(..n)).unwrap();
+                        arms.push((
+                            live,
+                            take(&scratch.g1, live * inter),
+                            take(&scratch.g3, live * inter),
+                            take(&scratch.h, live * inter),
+                            take(&scratch.contribution, slots * hidden),
+                        ));
+                    }
+                    let (reference, candidate) = (&arms[0], &arms[1]);
+                    assert_eq!(reference.0, candidate.0);
+                    assert!(reference.1.iter().all(|v| v.is_finite()));
+                    let tag = format!("rows={rows} first={first} kind={kind}");
+                    assert_eq!(bits(&reference.1), bits(&candidate.1), "gate {tag}");
+                    assert_eq!(bits(&reference.2), bits(&candidate.2), "up {tag}");
+                    assert_eq!(bits(&reference.3), bits(&candidate.3), "H {tag}");
+                    assert_eq!(
+                        bits(&reference.4),
+                        bits(&candidate.4),
+                        "down contribution {tag}"
+                    );
+                    let local = |e: &i32| (first..first + count).contains(&(*e as usize));
+                    let widest = (0..ne as i32)
+                        .map(|e| selected.iter().filter(|&&v| v == e && local(&v)).count())
+                        .max()
+                        .unwrap_or(0);
+                    chunked |= widest > 16 && rows <= MROW_STREAM_MAX_ROWS;
+                    println!(
+                        "EXACT mrow stream {tag} count={count} live={} widest_group={widest}",
+                        reference.0
+                    );
+                }
+            }
+        }
+        assert!(engaged > 0);
+        assert!(chunked, "no group crossed a 16-row chunk");
+        drop((shard_tables, shard_w, shard_s));
+    }
+
+    /// memra #670: the deferred checks write the same bits as the synchronous ones, and each
+    /// fault the synchronous arm refuses lands in the fault word instead.
+    #[test]
+    #[ignore = "requires one CUDA GPU; deferred MoE fault identity only"]
+    fn cuda_deferred_moe_faults_match_the_synchronous_checks() {
+        use super::{
+            GroupedWork, MOE_FAULT_INPUT_MIRROR, MOE_FAULT_INTERMEDIATE_MIRROR, MOE_FAULT_ROUTE,
+            MoeFault, modelopt_table,
+        };
+        use crate::dsv4_ep::{EpCompute, EpScratch};
+        use crate::dsv4_ffi as k;
+        use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
+
+        fn view(x: &mut EpScratch) -> EpCompute<'_> {
+            EpCompute {
+                xq: &x.xq,
+                xs: &x.xs,
+                ids: &x.ids,
+                weights: &x.weights,
+                g1: &mut x.g1,
+                g3: &mut x.g3,
+                h: &mut x.h,
+                hq: &mut x.hq,
+                hs: &mut x.hs,
+                contribution: &mut x.contribution,
+            }
+        }
+        fn bits(values: &[f32]) -> Vec<u32> {
+            values.iter().map(|value| value.to_bits()).collect()
+        }
+
+        assert!(crate::moe_f16g_mode() >= 2);
+        assert!(crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT));
+        assert!(super::route_validation_enabled() && super::mirror_validation_enabled());
+        let gpu = memra_runtime::Gpu::new(0).unwrap();
+        let s = gpu.stream();
+
+        let (ne, hidden, inter, topk) = (16, 4096, 2048, 6);
+        let wb = hidden * inter / 2;
+        let sb = hidden * inter / 16;
+        let mut state = 0x6a09_e667_f3bc_c908u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let weight_data: Vec<u8> = (0..ne * 3 * wb).map(|_| (next() >> 24) as u8).collect();
+        // Finite UE4M3 block scales near one, so the clean fixture stays lossless.
+        let scale_data: Vec<u8> = (0..ne * 3 * sb).map(|i| 0x30 + (i % 9) as u8).collect();
+        let weights = s.clone_htod(&weight_data).unwrap();
+        let scales = s.clone_htod(&scale_data).unwrap();
+        drop(weight_data);
+        drop(scale_data);
+        let table = modelopt_table(&s, &weights, &scales, ne, hidden, inter).unwrap();
+        let scale2_host: Vec<f32> = (0..ne * 3)
+            .map(|i| 2.0_f32.powi((i % 5) as i32 - 6))
+            .collect();
+        let scale2 = s.clone_htod(&scale2_host).unwrap();
+        let mut word = s.alloc_zeros::<i32>(1).unwrap();
+        let fault = MoeFault(word.device_ptr(&s).0);
+
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        enum Red {
+            Clean,
+            Route,
+            Input,
+            Intermediate,
+        }
+        // One arm: Ok(outputs) or the synchronous refusal text, plus the fault word after it.
+        type Outputs = (usize, Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>);
+        let mut run = |rows: usize, red: Red, deferred: bool| -> (Result<Outputs, String>, i32) {
+            let slots = rows * topk;
+            let input: Vec<f32> = (0..rows * hidden)
+                .map(|n| {
+                    let (r, i) = (n / hidden, n % hidden);
+                    (((i * 7919 + r * 104_729) % 2001) as f32 - 1000.0) / 256.0
+                })
+                .collect();
+            let x = s.clone_htod(&input).unwrap();
+            let mut selected: Vec<i32> = (0..slots)
+                .map(|p| ((p / topk * 5 + p % topk * 3) % ne) as i32)
+                .collect();
+            let routing: Vec<f32> = (0..slots).map(|p| (p % 7 + 1) as f32 / 16.0).collect();
+            if red == Red::Route {
+                selected[slots - 2] = ne as i32 + 3;
+            }
+            let mut scratch = EpScratch::new(&gpu, &gpu, rows, topk, hidden, inter, None).unwrap();
+            s.memcpy_htod(&selected, &mut scratch.ids.slice_mut(..slots))
+                .unwrap();
+            s.memcpy_htod(&routing, &mut scratch.weights.slice_mut(..slots))
+                .unwrap();
+            unsafe {
+                k::ck(
+                    "deferred fault fixture FP8 input",
+                    k::memra_dsv4_act_quant_fp8(
+                        x.device_ptr(&s).0 as *const f32,
+                        scratch.xq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                        scratch.xs.device_ptr_mut(&s).0 as *mut f32,
+                        rows as i32,
+                        hidden as i32,
+                        s.cu_stream().cast(),
+                    ),
+                )
+                .unwrap();
+            }
+            if red == Red::Input {
+                // E4M3 NaN (0x7f) in token 0, which every route of that token gathers.
+                s.memcpy_htod(&[0x7fu8], &mut scratch.xq.slice_mut(37..38))
+                    .unwrap();
+            }
+            let mut work = GroupedWork::new(&s, ne, slots, hidden, inter).unwrap();
+            work.defer_faults(deferred.then_some(fault));
+            let result = (|| {
+                work.prepare(
+                    &gpu,
+                    &view(&mut scratch),
+                    &scale2,
+                    &scale2_host,
+                    rows,
+                    topk,
+                    true,
+                )?;
+                assert_eq!(work.routes.live_slots, slots, "full-bank launch count");
+                assert_eq!(work.routes.live_slots_observed, !deferred);
+                work.gate_up(&gpu, &table, &mut view(&mut scratch), 6.0)?;
+                if red == Red::Intermediate {
+                    // E4M3 NaN in the first live H row, which the down mirror gathers.
+                    s.memcpy_htod(&[0x7fu8], &mut scratch.hq.slice_mut(5..6))
+                        .unwrap();
+                }
+                work.down(&gpu, &table, &mut view(&mut scratch))?;
+                let take = |v: &CudaSlice<f32>, n: usize| s.clone_dtoh(&v.slice(..n)).unwrap();
+                Ok((
+                    work.routes.live_slots,
+                    take(&scratch.g1, slots * inter),
+                    take(&scratch.g3, slots * inter),
+                    take(&scratch.h, slots * inter),
+                    take(&scratch.contribution, slots * hidden),
+                ))
+            })();
+            let mut host = [0i32];
+            s.memcpy_dtoh(&word, &mut host[..]).unwrap();
+            s.synchronize().unwrap();
+            s.memset_zeros(&mut word).unwrap();
+            (result, host[0])
+        };
+
+        for rows in [1usize, 2, 5, 16] {
+            let (sync, sync_word) = run(rows, Red::Clean, false);
+            let (defer, defer_word) = run(rows, Red::Clean, true);
+            let (sync, defer) = (sync.unwrap(), defer.unwrap());
+            assert_eq!((sync_word, defer_word), (0, 0), "clean rows={rows}");
+            assert_eq!(sync.0, defer.0);
+            assert!(
+                sync.4.iter().all(|v| v.is_finite()),
+                "clean fixture overflowed"
+            );
+            for (what, a, b) in [
+                ("gate", &sync.1, &defer.1),
+                ("up", &sync.2, &defer.2),
+                ("H", &sync.3, &defer.3),
+                ("down contribution", &sync.4, &defer.4),
+            ] {
+                assert_eq!(bits(a), bits(b), "{what} rows={rows}");
+            }
+            println!(
+                "EXACT deferred MoE checks rows={rows} slots={} word=0",
+                sync.0
+            );
+        }
+        for (red, bit, refusal) in [
+            (Red::Route, MOE_FAULT_ROUTE, "invalid expert id"),
+            (Red::Input, MOE_FAULT_INPUT_MIRROR, "not lossless"),
+            (
+                Red::Intermediate,
+                MOE_FAULT_INTERMEDIATE_MIRROR,
+                "not lossless",
+            ),
+        ] {
+            for rows in [1usize, 5] {
+                let (sync, sync_word) = run(rows, red, false);
+                let err = sync.expect_err("synchronous arm accepted a red fixture");
+                assert!(err.contains(refusal), "{red:?} rows={rows}: {err}");
+                assert_eq!(sync_word, 0, "synchronous arm wrote the fault word");
+                let (defer, defer_word) = run(rows, red, true);
+                assert!(
+                    defer.is_ok(),
+                    "{red:?} rows={rows}: deferred arm refused early"
+                );
+                assert_ne!(
+                    defer_word & bit,
+                    0,
+                    "{red:?} rows={rows}: word {defer_word:#x}"
+                );
+                println!(
+                    "RED deferred MoE {red:?} rows={rows} word={defer_word:#x} sync=\"{err}\""
+                );
+            }
+        }
     }
 
     #[test]

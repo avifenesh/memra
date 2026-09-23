@@ -207,6 +207,28 @@ unsafe extern "C" {
         topk: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// `memra_dsv4_grouped_routes` that also ORs `fault_bit` into `*fault` when a slot is lost.
+    pub fn memra_dsv4_grouped_routes_fault(
+        selected: *const i32,
+        weights: *const f32,
+        scale2: *const f32,
+        counts: *mut i32,
+        offsets: *mut i32,
+        expert_ids: *mut i32,
+        pairs: *mut i32,
+        tokens: *mut i32,
+        route_weights: *mut f32,
+        macro1: *mut f32,
+        macro2: *mut f32,
+        macro3: *mut f32,
+        status: *mut i32,
+        slots: i32,
+        experts: i32,
+        topk: i32,
+        fault: *mut i32,
+        fault_bit: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_fp4_gemm_sel_ep(
         a: *const c_void,
         a_scales: *const f32,
@@ -356,6 +378,21 @@ unsafe extern "C" {
         row_status: *mut i32,
         rows: i32,
         cols: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_fp8_gather_half` that also ORs `fault_bit` into `*fault` on a lossy row.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_fp8_gather_half_fault(
+        codes: *const c_void,
+        scales: *const f32,
+        row_ids: *const i32,
+        out: *mut c_void,
+        row_scale: *mut f32,
+        row_status: *mut i32,
+        rows: i32,
+        cols: i32,
+        fault: *mut i32,
+        fault_bit: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_scale_rows(

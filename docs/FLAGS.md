@@ -1647,6 +1647,21 @@ The row as it stood:
 > | --- | --- |
 > | `MEMRA_DSV4_SMALL_KERNEL_DIET` | **Default 0**, decide-by: **2026-09-21**. Parsed at model load; accepts only `0` or `1`. `0` retains the separate f32x HC finish (rowsq, Sinkhorn, collapse) and Q-LoRA norm/pack. `1` fuses each HC finish into one launch and Q norm/pack into one launch on all-layer TP/EP, t=1, HC4, hidden4096. Other topology or f64 chains refuse at load; unsupported HC shape refuses before its fused enqueue. Multirow work retains the old path. Both reductions retain the 128-thread tree; Sinkhorn gathers ascending row/column sums with the original iteration count. Expected bitwise classes: `dsv4_hc_f32_fixed_order`, `dsv4_norm_pack_f32_fixed_order`; no tolerance admission. Rollback: restart with `=0`. Gate: `dsv4_tp_ep_sampled_perf_gate --small-kernel-components` on live checkpoint tensors, then `--small-kernel-abba` (10 cycles, radix, sampled envelope, all state digests, actual HC/Q enqueue assertions). The gate's exclusive model setter changes arms between complete walks. Receipt pointer: private Darklanes `research/dsv4f-devpair-20260905/small-kernel-diet-20260907.md`, namespace `small-kernel-diet-29a73db-r1`: both components bit-equal on both ranks; ten sampled ABBA cycles give 35.404649 OFF to 36.850968 ON tok/s (+4.085112%), all 40 rows eligible and digest-identical. Targeted enqueues fall 344 to 129 per step per rank. Code source and binary hash are pinned in the tracked lane report. |
 
+## Decided before merge, 2026-09-23 (the DSV4 multi-row MoE stream visitor is the code)
+
+memra #669, receipt `research/dsv4f-bringup-20260923/mrow-stream/RESULTS.md`. The lane measured
+the new `moe_kq_mrow_stream_kernel<4>` visitor against the sktail tail on 2..=16-row MoE steps
+(DSpark verify rounds) through a lane-only `MEMRA_DSV4_MOE_MROW_STREAM` read. That read never
+merged: under the 2026-09-10 owner ruling the multi-row visitor is the naked default for those
+steps and there is no environment name. Served PP-2 DSpark greedy c1 on 2x RTX PRO 6000
+Blackwell, one boot per row in `A B B A A B B A A B` order: **71.13 tok/s (N=5, 71.08..71.20)
+against 56.08 (N=5, 56.06..56.12), +26.8%**, sampled c1 58.88 against 47.48 (+24.0%), same text on
+all 20 requests in every row, and `cuda_mrow_stream_matches_sktail_bit_for_bit` proves byte
+identity at the kernel boundary. The lane also routed the one-token plain step through the
+multi-row kernel: it lost 1.3% (49.42 against 50.07), so the one-token visitor keeps `rows == 1`.
+Rollback is `git revert`; the gate setter `set_dsv4_moe_m1_stream_for_gate(false)` runs the
+sktail reference arm for both visitors.
+
 ## Removed doors, 2026-09-21 (the prefix-cache policy door: decided on the incident's shape, the segmented arm deleted)
 
 memra#523 item 2, lane `research/spill-b-20260919/DAY15.md`, decision record
