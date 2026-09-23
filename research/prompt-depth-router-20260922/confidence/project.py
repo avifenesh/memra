@@ -16,6 +16,8 @@ from archive_io import write_archive  # noqa: E402
 HARNESS = {
     "harness/prefix/audit.py",
     "harness/prefix/run.py",
+    "harness/prefix/workloads.py",
+    "harness/prefix/workloads_simple.py",
     "harness/confidence/fixed_grid.py",
     "harness/confidence/report_fixed.py",
     "harness/confidence/patch_source.py",
@@ -26,6 +28,7 @@ HARNESS = {
     "harness/confidence/postscore_blind.sh",
     "harness/confidence/heldout_workloads.py",
     "harness/confidence/heldout_pair.py",
+    "harness/confidence/heldout_report.py",
 }
 SCIENCE = {
     "fixed-grid-v2-report.json",
@@ -49,6 +52,7 @@ SCIENCE = {
     "heldout-pair/PRESELECTION-FREEZE.json",
     "heldout-pair/FREEZE.json",
     "heldout-pair/status.json",
+    "heldout-report.json",
 }
 SOURCE = "runtime-source-confidence.tar.gz"
 

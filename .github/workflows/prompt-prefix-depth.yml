@@ -140,6 +140,7 @@ jobs:
           cmp "$RUNNER_TEMP/confidence-replay/RESULTS.json" "$lane/RESULTS.json"
           cmp "$RUNNER_TEMP/confidence-replay/RESULTS.md" "$lane/RESULTS.md"
           cmp "$RUNNER_TEMP/confidence-replay/OFFLINE-RESULTS.json" "$lane/OFFLINE-RESULTS.json"
+          cmp "$RUNNER_TEMP/confidence-replay/HELDOUT-RESULTS.json" "$lane/HELDOUT-RESULTS.json"
       - name: Retain exact replay receipt
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -149,5 +150,6 @@ jobs:
             ${{ runner.temp }}/confidence-replay/RESULTS.json
             ${{ runner.temp }}/confidence-replay/RESULTS.md
             ${{ runner.temp }}/confidence-replay/OFFLINE-RESULTS.json
+            ${{ runner.temp }}/confidence-replay/HELDOUT-RESULTS.json
           if-no-files-found: error
           retention-days: 7

@@ -105,6 +105,8 @@ def reproduce(candidate, manifest_sha256, base, out):
     from run_study import metrics_from_log  # noqa: PLC0415
     from report_fixed import report  # noqa: PLC0415
     from offline_adaptive import replay as offline_replay  # noqa: PLC0415
+    from heldout_report import report as heldout_report  # noqa: PLC0415
+    from fixed_grid import ARMS as confidence_arms  # noqa: PLC0415
 
     root = data / "fixed-grid-v2"
     status = json.loads((root / "status.json").read_text())
@@ -175,14 +177,95 @@ def reproduce(candidate, manifest_sha256, base, out):
     if json.loads(json.dumps(offline)) != json.loads((data / "offline-adaptive.json").read_text()):
         raise ValueError("offline adaptive-C replay differs from its recorded outcome")
     (out / "OFFLINE-RESULTS.json").write_text(json.dumps(offline, indent=2) + "\n")
+
+    if not (data / "postscore-blind.exit").read_text().startswith("exit=0 "):
+        raise ValueError("blinded qualification did not close")
+    heldout_root = data / "heldout-pair"
+    heldout_workloads = data / "heldout-workloads"
+    heldout_manifest = json.loads((heldout_workloads / "manifest.json").read_text())
+    heldout_status = json.loads((heldout_root / "status.json").read_text())
+    heldout_freeze = json.loads((heldout_root / "FREEZE.json").read_text())
+    if (sha(heldout_workloads / "manifest.json") != heldout_freeze["workloads_sha256"]
+            or heldout_freeze["source_sha256"] != sha(data / "source-confidence.json")
+            or heldout_freeze["runner_sha256"] != sha(data / "harness/confidence/heldout_pair.py")
+            or heldout_manifest["generator_sha256"]
+            != sha(data / "harness/confidence/heldout_workloads.py")
+            or heldout_manifest["prefix_helper_sha256"]
+            != sha(data / "harness/prefix/workloads.py")
+            or heldout_manifest["prompt_helper_sha256"]
+            != sha(data / "harness/prefix/workloads_simple.py")
+            or heldout_manifest["binary_sha256"] != source["binaries"]["qwen-prefix-study"]):
+        raise ValueError("held-out workload or source identity differs")
+    for entry in (
+        heldout_manifest["qualification"], *heldout_manifest["scenarios"].values()
+    ):
+        if sha(heldout_workloads / entry["file"]) != entry["sha256"]:
+            raise ValueError("held-out prompt bytes differ: " + entry["file"])
+    heldout_identity = json.loads((heldout_root / "identity.json").read_text())
+    if (heldout_identity["source"] != source
+            or heldout_identity["artifacts"]["qwen"] != locked
+            or heldout_identity["gpu"] != identity["gpu"]):
+        raise ValueError("held-out model or GPU differs from development")
+    heldout_checked = 0
+    for relative in heldout_status["completed"]:
+        family, phase, label = relative.split("/")
+        if family != "qwen" or phase not in ("qualification", "heldout"):
+            raise ValueError("unexpected held-out native record")
+        entry = (
+            heldout_manifest["qualification"] if phase == "qualification"
+            else heldout_manifest["scenarios"][str(int(label.split("-")[0]))]
+        )
+        kind = label.split("-")[-1]
+        expected_arm = "fixed:2" if kind == "k2off" else "fixed:3"
+        pmin, pmin0 = (
+            confidence_arms[heldout_freeze["selected_c"]]
+            if kind == "selected" else (0.0, False)
+        )
+        run = heldout_root / relative
+        saved = json.loads(run.with_name(run.name + ".audit.json").read_text())
+        command = json.loads(run.with_name(run.name + ".command.json").read_text())
+        exit_row = json.loads(run.with_name(run.name + ".exit.json").read_text())
+        settings = command["settings"]
+        if (saved["arm"] != expected_arm or saved["seed"] != entry["seed"]
+                or float(settings["MEMRA_SPEC_PMIN"]) != pmin
+                or settings["MEMRA_SPEC_PMIN0"] != ("1" if pmin0 else "0")
+                or settings["MEMRA_SPEC_ADAPT"] != "0"
+                or settings["MEMRA_SPEC_STATS"] != "1"
+                or settings["MEMRA_SPEC_PMIN_INROUND"] != "0"
+                or command["binary_sha256"] != source["binaries"]["qwen-prefix-study"]
+                or command["workload_sha256"] != entry["sha256"]
+                or command["seed"] != entry["seed"]
+                or exit_row["returncode"] != 0 or exit_row["contamination"]
+                or run.with_name(run.name + ".gpu.csv").stat().st_size == 0):
+            raise ValueError("held-out native command or result differs: " + relative)
+        metrics = metrics_from_log(
+            run.with_name(run.name + ".log").read_text()
+        )[expected_arm]
+        independent = audit_run(
+            run, entry, expected_arm, entry["seed"], metrics, audit_context, loop_candidate
+        )
+        if (saved["requests"] != independent["requests"]
+                or saved["context_accounting"] != independent["context_accounting"]
+                or saved["metrics"] != metrics):
+            raise ValueError("held-out request audit differs: " + relative)
+        heldout_checked += 1
+    heldout = heldout_report(
+        heldout_root, heldout_workloads, data / "fixed-grid-v2-report.json"
+    )
+    if json.loads(json.dumps(heldout)) != json.loads((data / "heldout-report.json").read_text()):
+        raise ValueError("held-out report differs from independently audited records")
+    (out / "HELDOUT-RESULTS.json").write_text(json.dumps(heldout, indent=2) + "\n")
+
     receipt = {
         "status": "replayed-without-GPU",
         "native_runs": checked,
+        "heldout_native_runs": heldout_checked,
         "code_pairs": result["all_code"]["pairs"],
         "source": source_receipt,
         "results_sha256": sha(out / "RESULTS.json"),
         "markdown_sha256": sha(out / "RESULTS.md"),
         "offline_results_sha256": sha(out / "OFFLINE-RESULTS.json"),
+        "heldout_results_sha256": sha(out / "HELDOUT-RESULTS.json"),
     }
     (out / "REPLAY.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt
