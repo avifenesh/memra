@@ -308,9 +308,9 @@ fn routes_oracle(
         vec![0.0f32; slots],
         vec![0.0f32; slots],
     ];
-    for g in 0..groups {
+    for (g, &off) in offsets.iter().take(groups).enumerate() {
         let expert = first + g;
-        let mut dst = offsets[g] as usize;
+        let mut dst = off as usize;
         for p in 0..slots {
             if selected[p] == expert as i32 {
                 pairs[dst] = p as i32;
@@ -506,7 +506,7 @@ fn grouped_routes_match_cpu_oracle() {
     force_true_f32();
     let _g = gpu_guard();
     let e = Engine::new(0).unwrap();
-    let mut r = Lcg(0x6007_e5);
+    let mut r = Lcg(0x6007e5);
     let mut cases = 0;
     for experts in [1usize, 7, 31, 32, 33, 64, 255, 256, 257, 511, 512] {
         let scale2 = fixture(experts * 3, 0x5ca1e + experts as u64, -8, 8);
@@ -548,7 +548,7 @@ fn grouped_routes_match_cpu_oracle() {
     }
     // TP/EP partitions of the 256-expert bank, including a rank that owns nothing routed.
     let global = 256usize;
-    let scale2 = fixture(global * 3, 0x5ca1e_256, -8, 8);
+    let scale2 = fixture(global * 3, 0x5ca1e256, -8, 8);
     for (first, groups) in [
         (0usize, 256usize),
         (0, 128),
@@ -597,7 +597,7 @@ fn grouped_routes_red_arm() {
     force_true_f32();
     let _g = gpu_guard();
     let e = Engine::new(0).unwrap();
-    let mut r = Lcg(0x6007_bad);
+    let mut r = Lcg(0x6007bad);
     let (experts, topk, tokens) = (256usize, 6usize, 17usize);
     let scale2 = fixture(experts * 3, 7, -8, 8);
     let sel = selection(&mut r, tokens, topk, experts, false);
