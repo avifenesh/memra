@@ -620,6 +620,16 @@ checks/synchronizes; it is not a production or graph-admission claim. Component 
 `tools/dsv4-grouped-route-gate.cu`; full-model gate:
 `dsv4_wide_prefill_gate` host/device/host routes at widths 32/128/512.
 
+Deferred checks (#670): `memra_dsv4_grouped_routes_fault` is the same full-bank route launch
+with `dsv4_grouped_prefix_kernel` also ORing a fault bit into a caller-owned device word when
+the placed count differs from `slots`, and `memra_dsv4_fp8_gather_half_fault` is the same
+mirror with a lossy row ORing its bit into that word. The served PP-2 matrix program and the
+grouped prefill give each stage one word per layer and read it once, before the verify
+transaction commits and before any token leaves the engine, instead of one status readback
+plus synchronize per route and per mirror. Partitioned (EP) routes keep their synchronized
+live count. Component: `cuda_deferred_moe_faults_match_the_synchronous_checks`
+(`src/dsv4_grouped.rs`).
+
 The native matrix/EP preparation component adds
 `memra_dsv4_grouped_routes_partition` (`dsv4_ffi.rs`), using the partitioned
 count/scatter specializations plus `dsv4_grouped_partition_prefix_kernel`.
@@ -645,7 +655,7 @@ Full execution contract and candidate pins:
 
 | symbol | purpose | dispatch flag | FFI binding |
 |---|---|---|---|
-| `dsv4_fp8_gather_half_kernel` | Reorders the existing FP8-QAT codes and per-128 scales into a half matrix with a power-of-two row scale. Every value is round-tripped exactly; a row-status vector rejects nonrepresentable/NaN values before grouped GEMM. | `MEMRA_DSV4_PREFILL_MOE=grouped`, default OFF | `memra_dsv4_fp8_gather_half`; gate `tools/dsv4-fp8-half-mirror-gate.cu` covers duplicate row mapping, finite values, tails and underflow/NaN refusals. |
+| `dsv4_fp8_gather_half_kernel` | Reorders the existing FP8-QAT codes and per-128 scales into a half matrix with a power-of-two row scale. Every value is round-tripped exactly; a row-status vector rejects nonrepresentable/NaN values before grouped GEMM. | `MEMRA_DSV4_PREFILL_MOE=grouped`, default OFF | `memra_dsv4_fp8_gather_half`, `memra_dsv4_fp8_gather_half_fault` (#670: a lossy row also sets a bit in a device fault word); gate `tools/dsv4-fp8-half-mirror-gate.cu` covers duplicate row mapping, finite values, tails and underflow/NaN refusals. |
 | `moe_kq_sk{32,128,tail}v_kernel<QT_NVFP4_MODELOPT>` | Reads consecutive E2M1 codes and separate signed-E4M3/16 scales from six pointer planes, with FP32 macro weight scale applied after projection. No GGUF or duplicate weight bank. Grouped MMA changes reduction order; routed slot restoration, combine and the entire shared expert remain explicit common work. | `MEMRA_DSV4_PREFILL_MOE=grouped`, default OFF, mode-2 visitor/direct loader required | `memra_moe_kq_gemm_sk`; actual-model `dsv4_grouped_prefill_gate` verifies total=routed+shared and characterizes forced-path logits. No production qualification yet. |
 | `moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT>` | DSV4 matrix plain-decode `m_e=1` gate/up pair: one shared FP8-QAT-mirrored f16 A tile, two unchanged ModelOpt NVFP4 f32-MMA accumulators, then exact macro/clamp/SiLU/route-weight epilogue into the intermediate H row. Down, FP8 intermediate quantization, macro2 and original-slot scatter remain common. | `MEMRA_F16G_GU_FUSE=1`, default OFF; ModelOpt qtype 108, one-row transaction, deep tail only | `memra_moe_kq_gemm_sk_gu`; component gate must compare H/FP8 codes/full routed output bitwise against the shipped two-projection path. No target timing receipt yet. |
 | `moe_kq_sktail_kernel<QT_NVFP4_MODELOPT,true>` | DSV4 gate-only m_e=1 tensor-core down candidate: same B tile and valid-row m16n8k16 chain as the shipped deep tail, with invalid-row warps and duplicate A-stage loads elided. Existing FP8 mirror, macro2 and scatter remain the comparison path; this is not the removed scalar visitor. | `MEMRA_F16G_M1_TC=1` or gate setter, default OFF; one-row/deep-tail candidate only | `memra_moe_kq_gemm_sk_m1`; full-model identity/sanitizer/rate gates required before dispatch. |
