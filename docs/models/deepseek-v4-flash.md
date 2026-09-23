@@ -21,12 +21,13 @@ the effective-clock acceptance check (see below).
 
 | arm | decode tok/s c1 greedy | decode tok/s c1 sampled | TTFT p50 ms |
 |---|---|---|---|
-| plain | 50.10 | 36.54 (before #664) | 200 |
-| DSpark drafter (`MEMRA_DSV4_DRAFTER=dspark`) | 56.01 (before #664) | 47.47 (before #664) | 267 |
+| plain | 50.10 | 46.47 | 200 |
+| DSpark drafter (`MEMRA_DSV4_DRAFTER=dspark`) | 56.11 | 47.45 | 261 |
 
 Plain greedy is the median of five boots with the one-token MoE stream visitor (#664, +29.2% over
-the 38.79 tok/s sktail tail it replaced, same text on every prompt). The other cells are the
-rebaseline before #664 and are re-measured on top of it as the lane lands.
+the 38.79 tok/s sktail tail it replaced, same text on every prompt). The other cells are single
+naked boots of the shipped #664 tree. DSpark verify rows still run the sktail tail; the stream
+visitor does not reach them yet.
 
 The TP/EP program on the same pair replays the 2026-09-08 anchor protocol at 50.04 tok/s eager
 and 50.68 graph with the anchor's exact bits (anchor: 42.80 / 44.01).
