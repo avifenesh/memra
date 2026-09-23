@@ -93,6 +93,7 @@ def main():
         "ctx": 32768,
         "scope": "Qwen code/prose independent native held-out requests on one research RTX 5090",
     }
+    save(args.out / "PRESELECTION-FREEZE.json", freeze)
     save(args.out / "FREEZE.json", freeze)
     state = {"status": "qualifying", "completed": []}
     save(args.out / "status.json", state)
