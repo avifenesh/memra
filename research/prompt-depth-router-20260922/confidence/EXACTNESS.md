@@ -48,8 +48,11 @@ Memra issue #412 separately records the analogous chosen-token PMIN
 bias in GLM DFlash2 and an archived pre-draw max-probability candidate;
 that issue does not repair the MTP path. Memra issue #673 owns the
 sampled MTP correction and served-configuration audit. Memra's
-registered default C=0 path does not take the cutoff branch. **Do not
-promote positive sampled C or an adaptive C learner until a
+registered default C=0 path does not take the cutoff branch. The
+`qwen4exp_gpu` gate has a different sampler: draft argmax is
+deterministic and target rows are sampled directly, so this
+rejection-sampling counterexample does not assess that gate. **Do not
+promote this MTP positive sampled C or an adaptive C learner until a
 distribution-preserving stopping rule and a sampled correctness gate
 pass on the exact model and request shape.** A minimal candidate is
 to verify the sampled
