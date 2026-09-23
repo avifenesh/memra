@@ -14930,7 +14930,7 @@ impl Dsv4Gpu {
                 st, h_ptr, &vws.mixes, scale_dev, base_dev, hidden, iters, hc_eps,
             )?;
         }
-        if self.small_kernel_diet && t == 1 && !host_math {
+        if self.small_kernel_diet && !host_math {
             unsafe {
                 ck(
                     "small HC f32 fixed order",
@@ -15523,7 +15523,7 @@ impl Dsv4Gpu {
         if t == 1 && !host_math && self.small_component_claim(st.dev, 1) {
             self.small_component_norm(st, &vws.qr, &layer.q_norm, q_lora, eps)?;
         }
-        if self.small_kernel_diet && t == 1 && !host_math {
+        if self.small_kernel_diet && !host_math {
             unsafe {
                 ck(
                     "small Q norm pack f32 fixed order",
