@@ -100,6 +100,12 @@ calibration-selected C=(0.434978, 0.850344). Keep the strongest
 executed fixed control from calibration for held-out comparison.
 Report any per-input best-of-arm oracle as **hindsight over different
 sampled outputs**, not a deployable policy or a same-tape E2E result.
+An input's highest individual tok/s can lower the pooled ratio after
+switching arms: use the globally optimal ratio `λ` and label an
+input by `argmax_a(tokens(input,a) − λ·seconds(input,a))`, then
+independently validate that this choice improves pooled
+`sum(tokens)/sum(seconds)`. Never train an action classifier on
+per-input tok/s argmax as if it were the E2E objective.
 The v3 same-tape +9.12% oracle and −1.44% executed fixed-C result
 show why acceptance-derived oracle gains cannot stand in for
 throughput.

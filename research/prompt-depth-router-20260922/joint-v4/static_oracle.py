@@ -4,6 +4,7 @@ import argparse
 import csv
 import hashlib
 import io
+from itertools import product
 import json
 from pathlib import Path
 import tarfile
@@ -27,6 +28,27 @@ def total(rows):
     if any(int(row["turn"]) != index for index, row in enumerate(rows, 1)):
         raise ValueError("fixed control turn order differs")
     return {"tokens": tokens, "seconds": seconds, "tokens_per_s": tokens / seconds}
+
+
+def pooled(conversations, actions):
+    tokens = sum(
+        row["controls"][arm]["tokens"]
+        for row, arm in zip(conversations, actions)
+    )
+    seconds = sum(
+        row["controls"][arm]["seconds"]
+        for row, arm in zip(conversations, actions)
+    )
+    if seconds <= 0 or len(conversations) != len(actions):
+        raise ValueError("incomplete or invalid pooled action list")
+    return tokens / seconds
+
+
+def optimal_actions(conversations, arms):
+    return max(
+        product(arms, repeat=len(conversations)),
+        key=lambda actions: pooled(conversations, actions),
+    )
 
 
 def report(archive_path, workload_path):
@@ -57,14 +79,18 @@ def report(archive_path, workload_path):
                     / controls["fixed:3"]["tokens_per_s"] - 1
                 ),
             })
-    def pooled(chosen):
-        chosen = list(chosen)
-        tokens = sum(row["controls"][arm]["tokens"] for row, arm in chosen)
-        seconds = sum(row["controls"][arm]["seconds"] for row, arm in chosen)
-        return tokens / seconds
-    k3 = pooled((row, "fixed:3") for row in conversations)
-    hindsight = pooled((row, row["hindsight_best"]) for row in conversations)
-    fixed = {arm: pooled((row, arm) for row in conversations) for arm in ARMS}
+    k3 = pooled(conversations, ["fixed:3"] * len(conversations))
+    local_best = pooled(
+        conversations, [row["hindsight_best"] for row in conversations],
+    )
+    optimized = optimal_actions(conversations, ARMS)
+    hindsight = pooled(conversations, optimized)
+    fixed = {
+        arm: pooled(conversations, [arm] * len(conversations))
+        for arm in ARMS
+    }
+    if hindsight + 1e-10 < max(fixed.values()):
+        raise ValueError("joint action search missed a fixed control")
     return {
         "schema": 1,
         "status": "development-only whole-conversation hindsight, not a live controller",
@@ -74,8 +100,11 @@ def report(archive_path, workload_path):
         "conversations": conversations,
         "pooled_fixed_tok_s": fixed,
         "pooled_hindsight_tok_s": hindsight,
+        "pooled_local_best_tok_s": local_best,
         "hindsight_gain_vs_k3c0_percent": 100 * (hindsight / k3 - 1),
-        "winner_counts": {
+        "pooled_optimal_actions": list(optimized),
+        "pooled_action_objective": "maximize sum(output_tokens) / sum(complete_request_seconds)",
+        "local_winner_counts": {
             arm: sum(row["hindsight_best"] == arm for row in conversations)
             for arm in ARMS
         },
@@ -95,7 +124,7 @@ def main():
     print(json.dumps({
         "fixed_tok_s": result["pooled_fixed_tok_s"],
         "hindsight_gain_percent": result["hindsight_gain_vs_k3c0_percent"],
-        "winner_counts": result["winner_counts"],
+        "local_winner_counts": result["local_winner_counts"],
     }, sort_keys=True))
 
 

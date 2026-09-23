@@ -3,6 +3,7 @@
 import unittest
 
 from pilot import features, make_labels
+from static_oracle import optimal_actions, pooled
 
 
 class PilotBoundaryTest(unittest.TestCase):
@@ -27,6 +28,23 @@ class PilotBoundaryTest(unittest.TestCase):
         self.assertNotEqual(
             features(row, "prior_round", {}, [7]),
             features(other, "prior_round", {}, [7]),
+        )
+
+    def test_best_per_input_rate_can_reduce_pooled_throughput(self):
+        conversations = [
+            {"controls": {
+                "A": {"tokens": 100, "seconds": 1.0},
+                "B": {"tokens": 200, "seconds": 2.1},
+            }},
+            {"controls": {
+                "A": {"tokens": 1, "seconds": 1.0},
+                "B": {"tokens": 5, "seconds": 2.0},
+            }},
+        ]
+        self.assertEqual(optimal_actions(conversations, ("A", "B")), ("B", "A"))
+        self.assertGreater(
+            pooled(conversations, ("B", "A")),
+            pooled(conversations, ("A", "B")),
         )
 
 
