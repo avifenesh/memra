@@ -77,14 +77,20 @@ K=3/C=0 action.
 
 ## Labels, static controls and training
 
-First freeze a new eight-turn corpus before its outputs exist:
-disjoint qualification, calibration, model-selection and held-out
-conversations with code, prose and structured output represented in
-each split. Require real final-output coverage, not only prompts
-requesting a format. Group every turn and every static arm of a
-conversation in one split. Freeze seeds, format/loop rules, prompt
-hashes, context budget, model/binary hashes and balanced arm order
-before any held-out request.
+The primary Qwen question is **code**. Re-run six v3 development
+topics (three old calibration topics and heldout topics 0–2) for
+training, and use the remaining three v3 topics for model selection;
+none is a v4 heldout result. `workloads-v4/manifest.json` freezes
+one new qualifier and six new heldout eight-turn code conversations
+before their outputs exist. Require actual final code and cover
+reasoning-to-code transitions. Do not claim prose, JSON or another
+model family from this code-only experiment; those need separate
+fresh splits after this result.
+
+Group every turn and every static arm of a conversation in one
+split. Freeze seeds, format/loop rules, prompt hashes, context
+budget, model/binary hashes and balanced arm order before any
+held-out request.
 
 On calibration only, execute fixed K/D/C settings on matched input
 conversations. Include K=3/C=0, fixed K=2 and K=4 at C=0, native

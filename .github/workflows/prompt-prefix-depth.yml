@@ -242,11 +242,24 @@ jobs:
             --archive "$lane/confidence/adaptive-v3/receipts-v3/native-data.tar.gz" \
             --workloads "$lane/confidence/adaptive-v3/workloads-v3/manifest.json" \
             --out "$RUNNER_TEMP/joint-v4-pilot.json"
+          cmp "$RUNNER_TEMP/joint-v4-pilot.json" "$lane/joint-v4/PILOT.json"
+      - name: Replay whole-conversation fixed controls and frozen fresh prompts
+        run: |
+          lane=research/prompt-depth-router-20260922
+          python3 "$lane/joint-v4/static_oracle.py" \
+            --archive "$lane/confidence/adaptive-v3/receipts-v3/native-data.tar.gz" \
+            --workloads "$lane/confidence/adaptive-v3/workloads-v3/manifest.json" \
+            --out "$RUNNER_TEMP/joint-v4-static-oracle.json"
+          python3 "$lane/joint-v4/workloads.py" \
+            --out "$RUNNER_TEMP/joint-v4-workloads"
+          diff -r "$RUNNER_TEMP/joint-v4-workloads" "$lane/joint-v4/workloads-v4"
       - name: Retain observational feature pilot
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: joint-v4-history-pilot-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/joint-v4-pilot.json
+          path: |
+            ${{ runner.temp }}/joint-v4-pilot.json
+            ${{ runner.temp }}/joint-v4-static-oracle.json
           if-no-files-found: ignore
           retention-days: 7
