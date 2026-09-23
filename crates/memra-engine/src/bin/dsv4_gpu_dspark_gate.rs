@@ -46,7 +46,12 @@
 //!
 //! Requires MEMRA_DSV4_DRAFTER=dspark and MEMRA_DSV4_DECODE_PATH=device.
 //!
+//! `--tpep` runs every arm on the all-layer TP/EP walk (memra #454), the drafter resident on
+//! rank 1 with its full expert slab; it needs the TP/EP load environment
+//! (`MEMRA_DSV4_EP=pair` and the matrix program).
+//!
 //! Usage: dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1]
+//! [--served] [--tpep]
 
 use memra_engine::dsv4_gpu::{DSV4_BATCH_WIDTH_MAX, DecodeState, DsparkState, Dsv4Gpu, resolve_vt};
 use memra_gguf::dsv4_dspark::DsparkFixtureSpec;
@@ -432,6 +437,7 @@ fn main() {
     // `--served` runs the program a served request runs: the current default doors.
     // Without it the historical instrument stays frozen on the pre-door numeric class.
     let served = std::env::args().any(|a| a == "--served");
+    let tp_ep = std::env::args().any(|a| a == "--tpep");
     // This is process startup, before any model or worker threads exist.
     unsafe {
         if !served {
@@ -448,11 +454,13 @@ fn main() {
         memra_engine::set_dsv4_moe_m1_stream_for_gate(false);
     }
 
-    let args: Vec<String> = std::env::args().filter(|a| a != "--served").collect();
+    let args: Vec<String> = std::env::args()
+        .filter(|a| a != "--served" && a != "--tpep")
+        .collect();
     if args.len() < 4 {
         eprintln!(
             "usage: dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1] \
-             [--served]"
+             [--served] [--tpep]"
         );
         std::process::exit(2);
     }
@@ -508,9 +516,16 @@ fn main() {
         other => panic!("the spec==plain identity gate runs the REF contract, got {other:?}"),
     };
     let max_seq = (p0 + n_new + 32).max(256);
+    Dsv4Gpu::set_tp_ep_topology_for_gate(tp_ep);
     let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq).expect("load");
+    assert_eq!(
+        gpu.topology().is_tp_ep(),
+        tp_ep,
+        "no silent topology fallback"
+    );
     println!(
-        "loaded: split at layer {}, verify tmax {}, t={:.0}s",
+        "loaded: topology {}, split at layer {}, verify tmax {}, t={:.0}s",
+        if tp_ep { "tp_ep" } else { "pp" },
         gpu.split_at,
         gpu.verify_tmax(),
         t0.elapsed().as_secs_f64()

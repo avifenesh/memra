@@ -1343,9 +1343,9 @@ These are explicit in-process gate APIs, not environment or serving defaults.
 
 | Control | Default | Scope, rollback and evidence |
 | --- | --- | --- |
-| `set_attention_tp_for_gate` / `MEMRA_DSV4_ATTENTION_TP_GATE` | **OFF**; decide-by: 2026-09-21 | Before-load in-process control; model and sampled gate binaries accept selector 0 or 1, never serving requests. Requires explicit all-layer expert-ID EP, native matrix/device math, FP8 projections and configuration-derived aligned whole-head/group partitions. Rank-local Q_b/wo_a rows and wo_b half-K columns feed a native out-of-place f32 rank sum before HC/FFN; latent KV/compressor/indexer stay replicated. Numeric class: `dsv4_attention_wo_b_input_split_f32_rank_reduce`, not full-width identity. Full source planes remain resident; no memory-saving claim. OFF plus fresh load restores replicated attention. Initial model join/refusal gate passes its named scope; `attention-tp-runtime-20260907.md` records the binding. Sampled mode requires five eligible repeats from one load, per-group wo_a and the entire sample-plus-forward timing envelope; it reports the configured sampler (radix by default), with `MEMRA_DSV4_SAMPLE_SORT=comparison` available for byte-identity oracle rows. The Comparison pin applied to the first receipt only. Sampled plan: `research/dsv4f-2card-1m-20260904/attention-tp-sampled-20260907.md`; no sampled result yet. |
+| `set_attention_tp_for_gate` / `MEMRA_DSV4_ATTENTION_TP_GATE` | **OFF**; decide-by: 2026-10-07 (served A/B of 2026-09-23, `research/dsv4f-bringup-20260923/tpep-serve/RESULTS.md`: after memra #679, 69.11 against PP-2 63.38 tok/s plain greedy, +9.0%, own text; DSpark does not boot. Missing gates, memra #679: DSpark fits under TP/EP at the served context, the attention split keeps the PP-2 bits, and the TP step is not launch bound) | Before-load in-process control; gate binaries accept selector 0 or 1; the server has no selector (the lane patch `tpep-serve/raw/topology-lane.patch` served the A/B). Requires explicit all-layer expert-ID EP, native matrix/device math, FP8 projections and configuration-derived aligned whole-head/group partitions. Rank-local Q_b/wo_a rows and wo_b half-K columns feed a native out-of-place f32 rank sum before HC/FFN; latent KV/compressor/indexer stay replicated. Numeric class: `dsv4_attention_wo_b_input_split_f32_rank_reduce`, not full-width identity. Full source planes remain resident; no memory-saving claim. OFF plus fresh load restores replicated attention. Initial model join/refusal gate passes its named scope; `attention-tp-runtime-20260907.md` records the binding. Sampled mode requires five eligible repeats from one load, per-group wo_a and the entire sample-plus-forward timing envelope; it reports the configured sampler (radix by default), with `MEMRA_DSV4_SAMPLE_SORT=comparison` available for byte-identity oracle rows. The Comparison pin applied to the first receipt only. Sampled plan: `research/dsv4f-2card-1m-20260904/attention-tp-sampled-20260907.md`; no sampled result yet. |
 | `arm_attention_tp_join_refusal_for_gate` / `attention_tp_last_join_for_gate` | Unarmed / no readback (diagnostic gate APIs) | First API injects 40043/40044 once after the selected real attention join, into the same sticky plane used by MoE; precommit refusal restores both cache planes and poisons retry. The second reads preserved final-layer partials and dedicated GPU joined outputs, never a reused MoE buffer. Used only by the attention gate, including the six rank/position refusal cells. No runtime or serving selector. Source, gate scope and current validation: `research/dsv4f-2card-1m-20260904/attention-tp-runtime-20260907.md`. |
-| `set_tp_ep_topology_for_gate` | **OFF**; decide-by: 2026-09-21 | Before load only. ON selects all-layer expert-ID EP with replicated attention/cache planes and a named rank-order FP32 slot sum; it does not select attention TP. Plain t=1 only, with unsupported drafter, batch and host-cache paths refusing. OFF plus a fresh load restores the ordinary topology. Gate: `dsv4_tp_ep_gate`; sampled scope: `research/dsv4f-2card-1m-20260904/tp-ep-sampled-perf-gate-20260907.md`. Internal consistency is not checkpoint-oracle or serving qualification. |
+| `set_tp_ep_topology_for_gate` | **OFF**; decide-by: 2026-10-07 (served A/B of 2026-09-23, `research/dsv4f-bringup-20260923/tpep-serve/RESULTS.md`: after memra #679, 65.02 against PP-2 63.38 tok/s plain greedy, +2.6%, PP-2 text on every request; DSpark does not boot. Missing gates, memra #679: DSpark fits under TP/EP at the served context and the TP step is not launch bound) | Before load only. ON selects all-layer expert-ID EP with replicated attention/cache planes and a named rank-order FP32 slot sum; it does not select attention TP. Plain decode, multi-row verify (width 1..=6) and chunked prefill run one shared walk; DSpark is resident on the head rank and the eager step writes its taps; park/restore writes both rank planes; batch and host-resident C4 refuse. OFF plus a fresh load restores the ordinary topology. The server has no selector (the lane patch served the A/B). Gates: `dsv4_tp_ep_gate` (plain, refusal boundary), `dsv4_tp_ep_verify_gate` (verify, chunk and restore rows bit-equal to sequential, PP control arm), `dsv4-gpu-dspark-gate --tpep` (spec==plain); sampled scope: `research/dsv4f-2card-1m-20260904/tp-ep-sampled-perf-gate-20260907.md`. Internal consistency is not checkpoint-oracle or serving qualification. |
 | `set_matrix_ep_graph_for_gate` | **OFF**; decide-by: 2026-09-21 | Older matrix-EP expert/shared-tail graph primitive under layer ownership. ON requires fixed t=1 device workspaces and route/mirror host validation disabled; successful replays increment `matrix_ep_graph_dispatches`. OFF stops replay selection. This is not the all-layer TP/EP graph path and is unqualified; no PP-shell performance run is queued. Source: `dsv4_ep_graph.rs`; scope: `research/dsv4f-2card-1m-20260904/TP-EP-PR.md`. |
 | `set_tp_ep_ar_refusal_words_for_gate` | **No injection** (red-arm diagnostic) | Exclusive walk-lock control for the sticky reduction error words. The gate injects rank-0 40043 and rank-1 40044, then requires no cache/position commit and no retry enqueue. Setting `[0, 0]` clears the diagnostic words after draining, never the failed-request state. Gate: `dsv4_tp_ep_gate`; confirmed six-cell boundary receipt at positions 1/3/127 on both ranks: source tree `cd6bfae8c6a3d1868b408a7c7ac68c96018d3202`, binary `469251df...`, log `628ea2dd5876108c5cdb36cdab9b9832283923b9586ef5bfc7fa95653dad910a`. |
 
@@ -1501,6 +1501,12 @@ owner-gated accuracy decision (w8a8-class numerics change model outputs).
 
 ## DSV4F door reach on the served path, 2026-09-10 (memra #454, #458)
 
+**UPDATED 2026-09-23.** #454 removed both refusals this section cites: TP/EP now chunks a
+batched prime and runs a DSpark verify round, and `dsv4_tp_ep_verify_gate` holds those rows bit-equal
+to sequential. The served A/B then lost (see "Decided before merge, 2026-09-23 (DSV4 served TP/EP
+selector)"), so the server still selects no TP/EP program and the doors below stay unreachable for
+a customer request, now by choice of program rather than by refusal.
+
 **UPDATED 2026-09-11.** The matrix expert program is the served program now (memra #461), so the
 "different expert program" half of this section's complaint is CLOSED, and the two doors that
 depended on it are deleted rather than rescued: see "Removed doors, 2026-09-11". What survives
@@ -1646,6 +1652,32 @@ The row as it stood:
 > | Flag | Default, arms, gate and rollback |
 > | --- | --- |
 > | `MEMRA_DSV4_SMALL_KERNEL_DIET` | **Default 0**, decide-by: **2026-09-21**. Parsed at model load; accepts only `0` or `1`. `0` retains the separate f32x HC finish (rowsq, Sinkhorn, collapse) and Q-LoRA norm/pack. `1` fuses each HC finish into one launch and Q norm/pack into one launch on all-layer TP/EP, t=1, HC4, hidden4096. Other topology or f64 chains refuse at load; unsupported HC shape refuses before its fused enqueue. Multirow work retains the old path. Both reductions retain the 128-thread tree; Sinkhorn gathers ascending row/column sums with the original iteration count. Expected bitwise classes: `dsv4_hc_f32_fixed_order`, `dsv4_norm_pack_f32_fixed_order`; no tolerance admission. Rollback: restart with `=0`. Gate: `dsv4_tp_ep_sampled_perf_gate --small-kernel-components` on live checkpoint tensors, then `--small-kernel-abba` (10 cycles, radix, sampled envelope, all state digests, actual HC/Q enqueue assertions). The gate's exclusive model setter changes arms between complete walks. Receipt pointer: private Darklanes `research/dsv4f-devpair-20260905/small-kernel-diet-20260907.md`, namespace `small-kernel-diet-29a73db-r1`: both components bit-equal on both ranks; ten sampled ABBA cycles give 35.404649 OFF to 36.850968 ON tok/s (+4.085112%), all 40 rows eligible and digest-identical. Targeted enqueues fall 344 to 129 per step per rank. Code source and binary hash are pinned in the tracked lane report. |
+
+## Decided before merge, 2026-09-23 (DSV4 served TP/EP selector)
+
+memra #454 and #679, receipt `research/dsv4f-bringup-20260923/tpep-serve/RESULTS.md`. The lane
+added a load-time `MEMRA_DSV4_TOPOLOGY` read (`pp`, `tp_ep`, `tp_ep_attn`) to `memra-server` and
+served each topology against PP-2 on 2x RTX PRO 6000 Blackwell. That read never merged: under the
+2026-09-10 owner ruling a door is the default or it is deleted, and no TP/EP arm can be the
+default yet.
+
+Run 1 (lane `979ef9cab`), plain greedy c1, one boot per row: PP-2 50.05 tok/s (N=5,
+50.04..50.07), `tp_ep_attn` 36.54 (N=5, -27%), `tp_ep` 28.65 (N=2, -43%). The nsys profile put
+the loss on the host: 6548 launches per TP step against 3373 for PP, and 347 D2H copies per TP
+step from per-layer partition live counts. memra #679 moved those checks to one step-end read.
+
+Run 2 (lane `874d3667e` with main `c3eb41d12`): **PP-2 63.38 tok/s (N=5), `tp_ep_attn` 69.11
+(N=5, +9.0%), `tp_ep` 65.02 (N=3, +2.6%)**. `tp_ep` produced the PP-2 text on every request;
+`tp_ep_attn` produced its own (`dsv4_attention_wo_b_input_split_f32_rank_reduce`). DSpark did not
+boot on either TP/EP arm ("FP8 pack code allocation" and "dsv4 memory calibration: vws f32" ran
+out of memory at `max_seq 1048576` with the drafter on stage 1), and PP-2 DSpark served 76.12.
+`dsv4_tp_ep_verify_gate` held sequential, chunked, verify and restore rows bit-equal on the PP arm
+and on both TP/EP arms, and `dsv4-gpu-dspark-gate --tpep` passed.
+
+The engine program and its gate setters stay until 2026-10-07. The missing gates, tracked in
+memra #679: DSpark fits under TP/EP at the served context, the attention split keeps the PP-2 bits,
+and the TP step stops being launch bound (6131 launches per step in run 2). The selector returns
+with the receipt that passes them, by applying `tpep-serve/raw/topology-lane.patch`.
 
 ## Decided before merge, 2026-09-23 (the DSV4 multi-row MoE stream visitor is the code)
 

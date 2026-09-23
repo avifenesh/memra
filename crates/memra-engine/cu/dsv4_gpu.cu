@@ -1149,10 +1149,10 @@ extern "C" __global__ void dsv4_fp8_gather_half_kernel(
     const uint8_t* __restrict__ codes, const float* __restrict__ scales,
     const int* __restrict__ row_ids, __half* __restrict__ out,
     float* __restrict__ row_scale, int* __restrict__ row_status, int cols,
-    int* __restrict__ fault, int fault_bit) {
+    int* __restrict__ fault, int fault_bit, const int* __restrict__ live) {
     const int row = blockIdx.x, src = row_ids ? row_ids[row] : row;
     const int groups = cols / 128;
-    if (src < 0) {
+    if (src < 0 || (live && row >= *live)) {
         for (int x = threadIdx.x; x < cols; x += blockDim.x)
             out[(long)row * cols + x] = __float2half(0.0f);
         if (threadIdx.x == 0) {
@@ -1195,21 +1195,24 @@ extern "C" int memra_dsv4_fp8_gather_half(
     if (rows < 1 || cols < 128 || cols % 128 != 0) return 40004;
     dsv4_fp8_gather_half_kernel<<<rows, 256, 0, (cudaStream_t)stream_v>>>(
         (const uint8_t*)codes, scales, row_ids, (__half*)out, row_scale, row_status, cols,
-        nullptr, 0);
+        nullptr, 0, nullptr);
     DSV4_ERR();
     return 0;
 }
 
 // Same mirror, and a lossy row also ORs `fault_bit` into the device word `fault`, so the
 // caller can check a whole step's mirrors with one readback instead of one per gather.
+// `live`, when set, is the route's device live-row count: rows at or past it are the route's
+// inert tail, written as zero rows and never checked, so a launch sized to the slot bound
+// checks exactly the rows the synchronous arm would.
 extern "C" int memra_dsv4_fp8_gather_half_fault(
     const void* codes, const float* scales, const int* row_ids, void* out,
     float* row_scale, int* row_status, int rows, int cols, int* fault, int fault_bit,
-    void* stream_v) {
+    const int* live, void* stream_v) {
     if (rows < 1 || cols < 128 || cols % 128 != 0 || !fault || fault_bit == 0) return 40004;
     dsv4_fp8_gather_half_kernel<<<rows, 256, 0, (cudaStream_t)stream_v>>>(
         (const uint8_t*)codes, scales, row_ids, (__half*)out, row_scale, row_status, cols,
-        fault, fault_bit);
+        fault, fault_bit, live);
     DSV4_ERR();
     return 0;
 }
@@ -1379,7 +1382,7 @@ extern "C" int memra_dsv4_grouped_routes_fault(const int* selected, const float*
 // Only that prefix of the slot arrays is written. Consumers must not use its tail.
 static __global__ void dsv4_grouped_partition_prefix_kernel(const int* selected,
     const int* counts, int* offsets, int* expert_ids, int* status,
-    int slots, int global_experts, int expert_count) {
+    int slots, int global_experts, int expert_count, int* fault, int fault_bit) {
     dsv4_warp_expert_prefix(counts, offsets, expert_ids, expert_count);
     int bad = 0;
     for (int p = threadIdx.x; p < slots; p += 32) {
@@ -1389,13 +1392,15 @@ static __global__ void dsv4_grouped_partition_prefix_kernel(const int* selected,
     if (threadIdx.x != 0) return;
     offsets[0] = 0;
     status[0] = bad;
+    if (bad && fault) atomicOr(fault, fault_bit);
 }
 
-extern "C" int memra_dsv4_grouped_routes_partition(const int* selected,
+static int dsv4_grouped_routes_partition_launch(const int* selected,
     const float* weights, const float* scale2, int* counts, int* offsets,
     int* expert_ids, int* pairs, int* tokens, float* route_weights,
     float* macro1, float* macro2, float* macro3, int* status, int slots,
-    int global_experts, int first, int expert_count, int topk, void* stream_v) {
+    int global_experts, int first, int expert_count, int topk, int* fault, int fault_bit,
+    void* stream_v) {
     if (slots < 1 || global_experts < 1 || global_experts > 512 || first < 0
         || first >= global_experts || expert_count < 1
         || expert_count > global_experts - first || topk < 1
@@ -1408,13 +1413,39 @@ extern "C" int memra_dsv4_grouped_routes_partition(const int* selected,
         selected, counts, slots, pairs, tokens, route_weights, macro1, macro2, macro3, first);
     DSV4_ERR();
     dsv4_grouped_partition_prefix_kernel<<<1, 32, 0, stream>>>(
-        selected, counts, offsets, expert_ids, status, slots, global_experts, expert_count);
+        selected, counts, offsets, expert_ids, status, slots, global_experts, expert_count,
+        fault, fault_bit);
     DSV4_ERR();
     dsv4_grouped_scatter_kernel<true><<<expert_count, 32, 0, stream>>>(
         selected, weights, scale2, offsets, pairs, tokens, route_weights,
         macro1, macro2, macro3, slots, topk, first);
     DSV4_ERR();
     return 0;
+}
+
+extern "C" int memra_dsv4_grouped_routes_partition(const int* selected,
+    const float* weights, const float* scale2, int* counts, int* offsets,
+    int* expert_ids, int* pairs, int* tokens, float* route_weights,
+    float* macro1, float* macro2, float* macro3, int* status, int slots,
+    int global_experts, int first, int expert_count, int topk, void* stream_v) {
+    return dsv4_grouped_routes_partition_launch(selected, weights, scale2, counts, offsets,
+        expert_ids, pairs, tokens, route_weights, macro1, macro2, macro3, status, slots,
+        global_experts, first, expert_count, topk, nullptr, 0, stream_v);
+}
+
+// Same partition metadata, and an out-of-range id also ORs `fault_bit` into the device word
+// `fault` (memra #679). The caller does not read the live count back: offsets[expert_count]
+// stays the device bound the visitors, the mirror and the scatter already honor.
+extern "C" int memra_dsv4_grouped_routes_partition_fault(const int* selected,
+    const float* weights, const float* scale2, int* counts, int* offsets,
+    int* expert_ids, int* pairs, int* tokens, float* route_weights,
+    float* macro1, float* macro2, float* macro3, int* status, int slots,
+    int global_experts, int first, int expert_count, int topk, int* fault, int fault_bit,
+    void* stream_v) {
+    if (!fault || fault_bit == 0) return 40004;
+    return dsv4_grouped_routes_partition_launch(selected, weights, scale2, counts, offsets,
+        expert_ids, pairs, tokens, route_weights, macro1, macro2, macro3, status, slots,
+        global_experts, first, expert_count, topk, fault, fault_bit, stream_v);
 }
 
 // Native quantized expert GEMM: out[g, n] f32 = A_fp8[g, K] @ W_fp4[n, K]^T, the
