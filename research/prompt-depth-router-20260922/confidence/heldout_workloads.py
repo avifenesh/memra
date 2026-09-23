@@ -104,11 +104,11 @@ def build(binary, model, out):
         prompts, cells = [], []
         for length in LENGTHS:
             for kind in ("prose", "code"):
-            prompt, cell = make_cell(
-                counter, instruction(QUALIFICATION, kind), context, length, kind
-            )
-            cell.pop("predictions", None)
-            prompts.append(prompt)
+                prompt, cell = make_cell(
+                    counter, instruction(QUALIFICATION, kind), context, length, kind
+                )
+                cell.pop("predictions", None)
+                prompts.append(prompt)
                 cells.append(cell)
         path = out / "qwen-c-heldout-qualification.txt"
         path.write_text("\n---TURN---\n".join(prompts) + "\n")
