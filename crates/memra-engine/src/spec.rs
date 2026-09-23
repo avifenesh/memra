@@ -5170,6 +5170,19 @@ impl HybridModel {
         vtok_dev: Option<&CudaSlice<u32>>,
         graphs: Option<&mut DsparkVerifyGraphs>,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        // memra#659: a verify window never writes past the session cache. The round loops bound
+        // their rounds before they call here; this turns a missed bound into a typed refusal
+        // instead of an out-of-bounds KV row. Host-len appends land at cache.pos..; the
+        // round-stream arm's device counter is bounded where that arm is chosen.
+        if stream.is_none() && cache.pos + tokens.len() > cache.max_ctx {
+            return Err(format!(
+                "spec verify refused: rows {}..{} would land past the session cache ({} rows)",
+                cache.pos,
+                cache.pos + tokens.len(),
+                cache.max_ctx
+            )
+            .into());
+        }
         // PP DOOR (lane/pp2-spec 2026-08-06): the verify trunk now takes its OWN stage split,
         // exactly as the eager and batched steps do. This is the single funnel every verify
         // forward reaches (decode_step_t / _h / _h_emb / _h_emb_dev / _core all land here), so
@@ -12607,6 +12620,18 @@ impl HybridModel {
             .unwrap_or(0);
         let mut graph_guard_noted = false;
         while keep_going && out.len() < max_new {
+            // CONTEXT-EDGE GUARD (memra#659): a round writes the verify window (the pending
+            // token plus up to k_this drafts) at rows cache.pos.., and a sampled tail commits
+            // its bonus one row past that. A round that cannot land inside the cache ends the
+            // burst here, at a round boundary, before anything of the round runs (the same exit
+            // as the admission yield); the worker's `committed + k + 3 >= cache_max_ctx` check
+            // then finishes the request ContextFull. Without it a request whose budget spans its
+            // whole cap (max_tokens omitted) wrote its last round past the cache: the
+            // out-of-bounds KV row poisoned later verifies and the deferred draft-KV fill
+            // asserted. The glm5 route's guard has the same form.
+            if cache.pos + (if adapt { kc } else { k }) + 2 > cache.max_ctx {
+                break;
+            }
             // GRAPH-LAUNCH HEADROOM GUARD (see GRAPH_LAUNCH_MIN_FREE): below the floor,
             // every captured-graph arm in this round yields to its byte-identical eager
             // twin instead of feeding cuGraphLaunch a card it segfaults on.
@@ -12630,7 +12655,14 @@ impl HybridModel {
             // ROUND-STREAM BURST: from round 1 (pending guaranteed by every non-replay arm),
             // issue M rounds with zero readbacks, then drain the ring + reconcile mirrors.
             if let (true, Some(sg), Some(ptrs)) = (
-                stream_active && round >= 1 && pending.is_some() && graph_round_ok,
+                stream_active
+                    && round >= 1
+                    && pending.is_some()
+                    && graph_round_ok
+                    // memra#659: M rounds of up to k+1 rows each, plus the tail's row, must
+                    // land inside the cache; otherwise this round takes the eager arm, whose
+                    // own guard above bounds one round.
+                    && cache.pos + m_rounds * t_v_s + 1 <= cache.max_ctx,
                 &stream_graph,
                 &stream_ptrs,
             ) {
@@ -15570,6 +15602,101 @@ mod day23_restored_draft_census {
             "truncated draft plane:",
         ] {
             assert!(alloc_body.contains(msg), "missing OFF message: {msg}");
+        }
+    }
+}
+
+/// memra#659 (the context edge): no speculative round writes past the session cache. The qwen
+/// round loop's first statement is the room guard, the round-stream arm is chosen only with room
+/// for its M rounds, the verify funnel refuses a window past the cache before any dispatch, and
+/// both gemma burst loops guard before their round runs. Source census, CPU.
+#[cfg(test)]
+mod ctx_edge_659_census {
+    fn after<'a>(body: &'a str, needle: &str) -> &'a str {
+        let at = body
+            .find(needle)
+            .unwrap_or_else(|| panic!("missing: {needle}"));
+        &body[at + needle.len()..]
+    }
+
+    fn first_code_line(tail: &str) -> &str {
+        tail.lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty() && !l.starts_with("//"))
+            .unwrap()
+    }
+
+    #[test]
+    fn the_qwen_round_loop_opens_with_the_room_guard() {
+        let src = include_str!("spec.rs");
+        let body = &src[..src.find("mod ctx_edge_659_census").unwrap()];
+        assert_eq!(
+            body.matches("while keep_going && out.len() < max_new {")
+                .count(),
+            1,
+            "one round loop"
+        );
+        let tail = after(body, "while keep_going && out.len() < max_new {");
+        assert_eq!(
+            first_code_line(tail),
+            "if cache.pos + (if adapt { kc } else { k }) + 2 > cache.max_ctx {"
+        );
+        let guard = &tail[tail.find("if cache.pos + (if adapt").unwrap()..];
+        assert_eq!(first_code_line(after(guard, "> cache.max_ctx {")), "break;");
+        // The stream arm's choice carries its M-round bound.
+        assert!(tail.contains("&& cache.pos + m_rounds * t_v_s + 1 <= cache.max_ctx,"));
+        let stream = tail
+            .find("&& cache.pos + m_rounds * t_v_s + 1 <= cache.max_ctx,")
+            .unwrap();
+        let engaged = tail.find("ROUND-STREAM burst engaged").unwrap();
+        assert!(stream < engaged, "the bound is part of the arm's condition");
+    }
+
+    #[test]
+    fn the_verify_funnel_refuses_a_window_past_the_cache_before_dispatch() {
+        let src = include_str!("spec.rs");
+        let body = &src[..src.find("mod ctx_edge_659_census").unwrap()];
+        let f = after(body, "    fn decode_step_t_core_stream(");
+        let f = &f[..f.find("\n    }\n").unwrap()];
+        let refuse = f
+            .find("if stream.is_none() && cache.pos + tokens.len() > cache.max_ctx {")
+            .expect("the refusal");
+        let pp = f.find("crate::pp::pp_cuts(").unwrap();
+        let walk = f.find("self.verify_layers(").unwrap();
+        assert!(
+            refuse < pp && pp < walk,
+            "refusal, then the PP dispatch, then the walk"
+        );
+        assert!(f.contains("spec verify refused: rows {}..{} would land past the session cache"));
+    }
+
+    #[test]
+    fn both_gemma_burst_loops_guard_before_their_round() {
+        let src = include_str!("gemma_spec.rs");
+        for (head, kr) in [
+            (
+                "pub fn gemma_spec_session_burst(",
+                "let mut kr = if adapt { kc } else { k_cap };",
+            ),
+            (
+                "pub fn gemma_spec_session_burst_sampled(",
+                "let kr = if adapt { kc } else { k_cap };",
+            ),
+        ] {
+            let f = after(src, head);
+            let f = &f[..f.find("\n    }\n").unwrap()];
+            let tail = after(f, "while burst_out.len() < target && !ended {");
+            assert_eq!(first_code_line(tail), kr, "{head}");
+            let guard = after(tail, kr);
+            assert_eq!(
+                first_code_line(guard),
+                "if sess.cache.pos + kr + 1 > sess.cache.max_ctx {",
+                "{head}"
+            );
+            assert_eq!(
+                first_code_line(after(guard, "> sess.cache.max_ctx {")),
+                "break;"
+            );
         }
     }
 }
