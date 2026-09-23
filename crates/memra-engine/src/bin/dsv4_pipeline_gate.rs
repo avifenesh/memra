@@ -20,6 +20,8 @@ use memra_tokenizer::Tokenizer;
 use std::{path::Path, time::Instant};
 
 const PROMPT: usize = 256;
+/// The served matrix program primes through chunked prefill (the monolithic API refuses it).
+const CHUNK: usize = 256;
 
 fn drain(gpu: &Dsv4Gpu) {
     for stage in &gpu.stages {
@@ -44,12 +46,14 @@ struct Session {
 
 fn prime(gpu: &Dsv4Gpu, prompt: &[u32], capacity: usize) -> Session {
     let mut state = gpu
-        .alloc_decode_state_for_transient(capacity, prompt.len().max(gpu.verify_tmax()))
+        .alloc_decode_state_for_transient(capacity, CHUNK.max(gpu.verify_tmax()))
         .expect("decode state");
-    let out = gpu.prefill_with_cache(prompt, &mut state).expect("prefill");
+    let logits = gpu
+        .prefill_with_cache_chunked(prompt, &mut state, CHUNK)
+        .expect("prefill");
     Session {
         state,
-        tokens: vec![argmax(&out.logits)],
+        tokens: vec![argmax(&logits)],
     }
 }
 
@@ -124,17 +128,20 @@ fn main() {
     let dir = Path::new(&args[1]);
     let tape = SourceTape::read(&args[2]).expect("source tape");
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
+    // `SourceTape::prompt` returns the whole tokenized tape; each session takes its head.
     let prompts = [
         tape.prompt(
             &tokenizer,
             "Review this inference engine source:\n\n",
             PROMPT,
-        ),
+        )[..PROMPT]
+            .to_vec(),
         tape.prompt(
             &tokenizer,
             "Explain what this inference engine source does:\n\n",
             PROMPT,
-        ),
+        )[..PROMPT]
+            .to_vec(),
     ];
     assert_ne!(
         prompts[0], prompts[1],
