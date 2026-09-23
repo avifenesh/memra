@@ -2654,10 +2654,12 @@ impl Dsv4Gpu {
             drafter_resident: self.dspark.is_some() || self.mtp.is_some(),
             gate_armed_gu_fuse: crate::moe_f16g_gu_fuse_on(),
             hc_geometry_24x16384: (2 + hc) * hc == 24 && hc * hidden == 16384,
-            // TP/EP takes a customer request since memra #454: chunked prefill and
-            // verify ride the TP/EP walk, DSpark sits on the head rank, and park/restore
-            // write both rank planes. The NextN MTP block loads on PP-2 only.
-            can_serve: true,
+            // TP/EP is engine-capable since memra #454 (chunked prefill and verify ride
+            // the TP/EP walk, DSpark sits on the head rank, park/restore write both rank
+            // planes), but it is not served: the server has no TP/EP selector until the
+            // memra #679 gates pass. `PROGRAM_FACTS` is the one answer for both.
+            can_serve: !self.topology.is_tp_ep()
+                || crate::dsv4_doors::PROGRAM_FACTS.tp_ep_can_serve,
         }
     }
 
