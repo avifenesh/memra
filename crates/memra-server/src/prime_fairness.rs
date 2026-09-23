@@ -520,8 +520,10 @@ mod tests {
         let policy = PrimePolicy::default();
         let t0 = Instant::now();
         let mut long = PrimeService::default();
-        let mut other = PrimeService::default();
-        other.pending = true;
+        let other = PrimeService {
+            pending: true,
+            ..Default::default()
+        };
         measured_chunk(&mut long, t0, 1000, 3);
         assert!(policy.defer_for_peer(1, [(0, &long), (1, &other)], true, t0));
         // The worker leaves finished rows out, so a cancelled owner holds nothing.
