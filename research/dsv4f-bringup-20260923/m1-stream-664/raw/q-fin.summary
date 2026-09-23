@@ -1,0 +1,9 @@
+tree 093f96627d65cf9aad74598130395ba52fc91ff9
+BUILD fin head=093f96627d65cf9aad74598130395ba52fc91ff9 utc=2026-09-23T05:17:05Z SERVER_EXIT=0 ENGINE_EXIT=0 
+test-bin /root/lane/target-fin/release/deps/memra_engine-88d7a4f71e6f66fa
+component test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 573 filtered out; finished in 0.83s GATE_DONE rc=0 utc=2026-09-23T05:21:57Z 
+dspark-served program: served defaults REFUSE: this gate requires MEMRA_DSV4_DRAFTER=dspark GATE_DONE rc=2 utc=2026-09-23T05:21:57Z 
+dspark-hist program: historical pins REFUSE: this gate requires MEMRA_DSV4_DRAFTER=dspark GATE_DONE rc=2 utc=2026-09-23T05:21:58Z 
+plain rc=0 CELL greedy-c1 c=1 ok=8/8 agg=48.36 tok/s decode_p50=50.08 tok/s ttft_p50=200 ms tpot_p50=19.97 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=45.00 tok/s decode_p50=46.47 tok/s ttft_p50=201 ms tpot_p50=21.52 ms errs=[] CELL sampled-c4 c=4 ok=16/16 agg=44.93 tok/s decode_p50=46.46 tok/s ttft_p50=17270 ms tpot_p50=21.53 ms errs=[] CELL sampled-c16 c=16 ok=9/32 agg=44.63 tok/s decode_p50=46.38 tok/s ttft_p50=17272 ms tpot_p50=21.56 ms errs=['HTTP Error 429: Too Many Requests', 'HTTP Error 429: Too Many Requests', 'HTTP Error 429: Too Many Requests'] 
+spec rc=0 CELL greedy-c1 c=1 ok=8/8 agg=52.88 tok/s decode_p50=56.11 tok/s ttft_p50=261 ms tpot_p50=17.82 ms errs=[] CELL sampled-c1 c=1 ok=8/8 agg=46.25 tok/s decode_p50=47.45 tok/s ttft_p50=273 ms tpot_p50=21.08 ms errs=[] CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=52.50 tok/s decode_p50=55.95 tok/s ttft_p50=262 ms tpot_p50=17.87 ms errs=[] 
+FIN_DONE

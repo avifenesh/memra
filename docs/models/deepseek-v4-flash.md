@@ -21,12 +21,14 @@ the effective-clock acceptance check (see below).
 
 | arm | decode tok/s c1 greedy | decode tok/s c1 sampled | TTFT p50 ms |
 |---|---|---|---|
-| plain | 50.10 | 36.54 (before #664) | 200 |
-| DSpark drafter (`MEMRA_DSV4_DRAFTER=dspark`) | 56.01 (before #664) | 47.47 (before #664) | 267 |
+| plain | 50.10 | 46.47 | 200 |
+| DSpark drafter (`MEMRA_DSV4_DRAFTER=dspark`) | 71.13 | 58.88 | 250 |
 
 Plain greedy is the median of five boots with the one-token MoE stream visitor (#664, +29.2% over
-the 38.79 tok/s sktail tail it replaced, same text on every prompt). The other cells are the
-rebaseline before #664 and are re-measured on top of it as the lane lands.
+the 38.79 tok/s sktail tail it replaced, same text on every prompt); plain sampled is a single
+naked boot of that tree. The DSpark row is the median of five boots with the multi-row stream
+visitor on the verify rounds (#669, +26.8% greedy and +24.0% sampled over the sktail tail, same
+text on all 20 requests).
 
 The TP/EP program on the same pair replays the 2026-09-08 anchor protocol at 50.04 tok/s eager
 and 50.68 graph with the anchor's exact bits (anchor: 42.80 / 44.01).
@@ -43,6 +45,6 @@ and 50.68 graph with the anchor's exact bits (anchor: 42.80 / 44.01).
   yet ([issue #454](https://github.com/avifenesh/memra/issues/454)).
 
 Receipts: `research/dsv4f-bringup-20260923/` (`REBASELINE.md`, `m1-stream-664/RESULTS.md`,
-`power-brake/POWER-BRAKE.md`, `spec-identity-660/RESULTS.md`; `BASELINE.md` is the withdrawn braked-pair run).
+`mrow-stream/RESULTS.md`, `PRIOR-ART.md`, `power-brake/POWER-BRAKE.md`, `spec-identity-660/RESULTS.md`; `BASELINE.md` is the withdrawn braked-pair run).
 Deeper history: the [DeepSeek section](../MODELS.md#deepseek-v4-checkpoint-dirs-serve-through-their-own-door-lanedsv4-flash-revival-20260822).
 Do not infer production support from a successful load or prompt.

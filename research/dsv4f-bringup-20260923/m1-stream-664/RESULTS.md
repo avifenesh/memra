@@ -69,7 +69,74 @@ started twice, so the skip line is in the summary twice.)
 
 ## DSpark on top
 
-Pending: `raw/q-m1spec.sh` (served DSpark stream vs sktail, order `A B B A`).
+Same lane binary, `MEMRA_DSV4_DRAFTER=dspark`, one boot per row, order `A B B A` (A = stream),
+cells `raw/cells-spec.txt` (32-token warmup, greedy c1 8 prompts, sampled c1 8 prompts, greedy c1
+ignore-eos 4 prompts). Queue `raw/q-m1spec.sh`, summary `raw/q-m1spec.summary`, receipts
+`raw/spec/s<N>-<arm>/`.
+
+| row | arm | greedy c1 tok/s | sampled c1 tok/s | ignore-eos tok/s | greedy TPOT p50 / p95 / p99 ms | greedy TTFT p50 ms |
+|---|---|---|---|---|---|---|
+| s1 | stream | 56.07 | 47.47 | 56.00 | 17.83 / 20.60 / 20.90 | 261 |
+| s2 | sktail | 55.98 | 47.49 | 55.94 | 17.86 / 20.60 / 20.89 | 267 |
+| s3 | sktail | 56.07 | 47.50 | 55.94 | 17.84 / 20.58 / 20.88 | 267 |
+| s4 | stream | 56.12 | 47.48 | 56.01 | 17.82 / 20.59 / 20.89 | 261 |
+
+**Flat: greedy 56.10 vs 56.03 (+0.1%), sampled 47.48 vs 47.50, ignore-eos 56.01 vs 55.94.** Both
+arms are N=2, so this is a no-effect reading, not a measured delta. It is the expected shape: a
+DSpark step is a T=k+1 verify transaction plus drafter rows, and the stream only takes the
+one-token plain step, so the verify rows still ride sktail. The multi-row visitor lane
+(`lane/dsv4-moe-mrow-20260923`) is the one that moves the spec step. Every row returned the same
+text as sktail on all 20 requests (greedy `aea6e69e ... 937f04d8`, sampled `53944095 73fe7f91
+6329ee94 827c0b56 437a4427 07de3a97 8a59518d b424bd80`), so spec output equals plain output under
+both arms.
+
+## Final tree
+
+Tree `093f96627` (the shipped code: no read, the stream is the default), binary `3f587f24...`,
+receipts `raw/fin/`, summary `raw/q-fin.summary`.
+
+- Component: `cuda_m1_stream_matches_sktail_bit_for_bit` passes on the box (`raw/fin/component/`).
+- Naked plain server: greedy c1 50.08 tok/s (TPOT p50 19.97 ms), sampled c1 46.47, the same
+  hashes as every A/B row. Naked DSpark server: greedy c1 56.11, sampled c1 47.45, ignore-eos
+  55.95.
+- DSpark identity gate (`dsv4-gpu-dspark-gate`, `MEMRA_DSV4_DRAFTER=dspark
+  MEMRA_DSV4_DECODE_PATH=device`): PASS on served defaults and on historical pins, binary
+  `633d3422...` (`raw/gates/fin-served/`, `raw/gates/fin-hist/`, `raw/q-gates.summary`). Greedy
+  spec equals plain on 160/160 tokens in the sequential and batched arms, batched verify equals
+  sequential bit for bit on 14 cells (77 logit rows, 3206 cache classes), accepted-position ring
+  writes are bit-identical, two batched runs are identical. Arm P logs 20640 stream dispatches,
+  so the stream visitor is the kernel under test. The first attempt (`raw/fin/dspark-served/`,
+  `raw/fin/dspark-hist/`) refused at rc=2 because the queue did not set the drafter; the gate
+  refuses rather than running the wrong program.
+
+The plain server cell also recorded the serve route's concurrency shape on this tree:
+
+| cell | ok | agg tok/s | TTFT p50 / p95 ms | TPOT p50 ms |
+|---|---|---|---|---|
+| sampled c1 | 8/8 | 45.00 | 201 / 218 | 21.52 |
+| sampled c4 | 16/16 | 44.93 | 17,270 / 17,315 | 21.53 |
+| sampled c16 | 9/32 (23 got 429) | 44.63 | 17,272 / 21,084 | 21.56 |
+
+The route is still one request at a time, so aggregate throughput is flat in concurrency and the
+queue shows up as TTFT. That is memra #667, not this lane.
+
+## Where the step goes now
+
+nsys over 510 served plain steps on the final binary, same prompts (`raw/prof/served-plain-m1/ana.txt`;
+the 1.1 GB captures stay off the repo). The capture runs 22.06 ms per step under the profiler.
+
+| | kernels / step | kernel-sum ms | busy-union ms |
+|---|---|---|---|
+| dev0 (layers 0..22) | 1,711 | 9.06 | 9.29 |
+| dev1 (layers 23..42 + head) | 1,662 | 9.41 | 9.64 |
+
+Before the stream (`raw/prof/served-plain/ana.txt`) the two cards were 12.41 and 12.20 ms busy.
+The two cards' busy time adds up to the whole step, because PP-2 at one request in flight leaves
+each card idle while the other runs. Top kernels on dev0 now: `dsv4_dense_fast_fp8_kernel` 2.43 ms
+(341 launches), `moe_kq_m1_stream_kernel` 1.79 ms (66), `dsv4_rmsnorm_f32acc_kernel` 0.73 ms (94),
+`dsv4_hc_sinkhorn_m_kernel` 0.69 ms (44, one 32-thread CTA each), `dsv4_dense_fast_dots_kernel`
+0.54 ms. The host issues 3,373 launches and 131 D2H copies per step. The small-kernel diet (#339)
+targets the rmsnorm, Sinkhorn, rowsq and bf16 pack share.
 
 ## Against the bound
 

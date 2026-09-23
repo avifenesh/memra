@@ -1,0 +1,9 @@
+START utc=2026-09-23T06:44:23Z bin=/root/lane/target-mrow/release/memra-server env=MEMRA_DSV4_MOE_MROW_STREAM=1 MEMRA_ENV_AUDIT=warn
+READY after=120s port=41525
+CELL warmup c=1 ok=1/1 agg=37.24 tok/s decode_p50=50.30 tok/s ttft_p50=242 ms tpot_p50=19.88 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=48.35 tok/s decode_p50=50.09 tok/s ttft_p50=202 ms tpot_p50=19.96 ms errs=[]
+CELL sampled-c1 c=1 ok=8/8 agg=44.91 tok/s decode_p50=46.38 tok/s ttft_p50=202 ms tpot_p50=21.56 ms errs=[]
+CELL sampled-c4 c=4 ok=16/16 agg=44.87 tok/s decode_p50=46.36 tok/s ttft_p50=17298 ms tpot_p50=21.57 ms errs=[]
+CELL sampled-c16 c=16 ok=9/32 agg=44.55 tok/s decode_p50=46.32 tok/s ttft_p50=17316 ms tpot_p50=21.59 ms errs=['HTTP Error 429: Too Many Requests', 'HTTP Error 429: Too Many Requests', 'HTTP Error 429: Too Many Requests']
+CELLS_DONE utc=2026-09-23T06:50:16Z
+TERMINAL rc=0 utc=2026-09-23T06:50:18Z
