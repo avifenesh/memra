@@ -90,3 +90,29 @@ about 1 ms of owner time per promote, read at the restore's sitting.
 
 **Budget.** 0.5 agent-day plus card time. The 5090 is held by lane B day 34's O2 order until about 20:45Z; the A/B and
 the gates queue behind it with bounded waits.
+
+## 3. What landed, in the pre-registered order, one census each
+
+1. **The tier rule** (`88b734bc9`):
+   `h2d_deferred_checksum_lands_with_its_digests`, `h2d_deferred_checksum_mismatch_is_corrupt` and the red arm
+   `h2d_deferred_checksum_copy_alone_is_not_landed` (additive, unversioned, `WIRE_VERSION` stays 1); CPU binding 3
+   passed (the red arm: a binding that lands a deferred item on its copy alone fails the schedule).
+2. **The engine** (`e3424be24`): `defer_h2d_checksums` (one `H2dSourceView` per accepted H2D item, taken WITHOUT the
+   tracking event's host wait: `bytes()` would wait for the item's own copy, whose event is recorded after it; the view
+   and the copy only read) and `supply_h2d_checksums` (every view checked before any digest is taken; each digest
+   becomes its item's completion checksum and expectation, the assignment `progress` makes for an undeferred item);
+   `progress` lands a deferred item only with its digest; `recover_source` refuses while a view is out, and the
+   source's retire and the ticket's wait on the landing. `H2dSourceView::digest` is the same `checksum` program over
+   the same bytes; `Send`, its `unsafe` confined to the engine. Census `h2d_deferred_checksum_rules_are_as_stated`;
+   native cell `h2d_deferred_checksum_lands_with_the_supplied_digests`.
+3. **The server** (`100214477`): the off-tick route's last submission step (after the spans) hands the KV items' views
+   to the hash helper as one `Sources` job (the helper's second job kind, its own reply channel); the settle takes the
+   reply and supplies the digests before the completion step (under `Poll` an unlanded reply hands the ticket back;
+   helper gone, a reply that does not describe the ticket, or the deadline latch); the H2D receipt line gains `; N KV
+   checksums on the hash helper (X MB in Y ms)`. Census `day34_the_promote_checksums_ride_the_hash_helper_in_the_stated_order`;
+   GPU cell `option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused`. The day-33 census now
+   names `HostHelperJob::Fill` (gone) rather than the enum (back with the `Sources` kind). Server lib 877 passed.
+4. `docs/TESTING.md` line (`201b48617`). No new `MEMRA_*` name, no new numeric program.
+
+Checks on `201b48617`: tier contracts 98 passed, engine lib 547 passed, server lib 877 passed; clippy `-D warnings`
+all targets on tier, engine and server `clippy_rc=0`; the `DOCS_RS=1` pass `docsrs_rc=0`; `check-flags` clean.
