@@ -71,6 +71,19 @@
 #                  `tier span staging:` line in the boot) and publishes; r4 P_B hits E_B on the host and promotes.
 #                  The OFF boot serves the same four requests; r1..r4 are byte-equal across the two boots.
 #
+# WP-A day 32 (memra#536 Move 2 owed item 1, the H2D half, research/spill-a-20260919/DAY32.md): the off-tick
+# promote's f32 span attach. One cell, two boots (door ON with the fault, then door OFF as the byte reference),
+# the promote cells' shape:
+#   promote-span-refusal  MEMRA_KV_HOST_FAULT=contract-promote-spans: r1 P_A seeds E_A; r2 P_B evicts E_A (a clean
+#                  demote, whose spans fill the staging set: the boot's one `tier span staging:` line); r3 P_A hits E_A
+#                  on the host, the hash helper fills the promote's staging from the resident planes, and the tick-top
+#                  submission builds every recurrent plane into an H2D span and takes the injected attach refusal:
+#                  every span back, every staging buffer to the set, the KV ticket unwound typed, the host entry kept,
+#                  the tier on, `N f32 spans handed back` with N the span count of the next H2D receipt; the cold path
+#                  serves r3 and its insert evicts E_B into a clean demote; r4 P_B hits E_B on the host and its promote
+#                  lands with N spans under the ticket and publishes. The OFF boot serves the same four requests (r3
+#                  and r4 promote synchronously there); r1..r4 are byte-equal across the two boots.
+#
 # usage: kv-host-contract-fault-gate.sh [--external-lock FD] <model.gguf> <server_bin> <evidence_dir>
 # env:   MEMRA_HOSTGATE_CACHE_MB (default 256)  device prefix budget; must hold ONE seed entry but not two
 #        MEMRA_HOSTGATE_HOST_MB  (default 8192) host tier budget
@@ -612,6 +625,86 @@ scell() { # WP-A day 31: MEMRA_KV_HOST_FAULT=contract-spans (door ON), then the 
     chk "$name: r1..r4 byte-equal to the door-OFF boot" texts_equal_arms "$EV/$name" "$EV/$name-off" 4
 }
 
+promote_spans_refusal_matches_receipt() { # $1 log: the promote refusal's `N f32 spans handed back` N is >= 1 and equals the
+                                         # span count of the first H2D receipt after it
+    python3 - "$1" <<'PYEOF'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+rx = re.compile(r"promote refused \(contracts door\): tier H2D spans refused: injected failure \(MEMRA_KV_HOST_FAULT=contract-promote-spans\) \(([0-9]+) f32 spans handed back\); serving without the host entry")
+hit = next(((i, int(m.group(1))) for i, l in enumerate(lines) if (m := rx.search(l))), None)
+if hit is None:
+    print("no injected promote spans refusal"); sys.exit(1)
+i, n = hit
+rr = re.compile(r"contracts door H2D receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* require=ok .* published retired acknowledged; ([0-9]+) f32 spans landed under the ticket and taken back before the retire")
+got = next((int(m.group(1)) for l in lines[i + 1:] if (m := rr.search(l))), None)
+print(f"promote refusal handed back {n} span(s); the next H2D receipt landed {got}")
+sys.exit(0 if n >= 1 and got == n else 1)
+PYEOF
+}
+one_staging_fill_promote() { # $1 log: exactly one `tier span staging:` line in the boot (r2's demote filled the set; the
+                             # refused promote, the next demote and the next promote reused it) and its fresh-buffer count
+                             # equals the promote refusal's N (the entry's recurrent plane count)
+    python3 - "$1" <<'PYEOF'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+fills = [int(m.group(1)) for l in lines if (m := re.search(r"tier span staging: ([0-9]+) fresh pinned buffer\(s\), [0-9]+ bytes charged", l))]
+ref = next((int(m.group(1)) for l in lines if "MEMRA_KV_HOST_FAULT=contract-promote-spans" in l and (m := re.search(r"\(([0-9]+) f32 spans handed back\)", l))), None)
+print(f"staging fill line(s) {fills}, promote refusal N {ref}")
+sys.exit(0 if len(fills) == 1 and ref is not None and fills[0] == ref else 1)
+PYEOF
+}
+fill_before_refusal() { # $1 log: the refused promote's staging fill line precedes the refusal, and a second fill line
+                        # precedes the next promote's submission (the fill runs on the helper for every contract promote)
+    python3 - "$1" <<'PYEOF'
+import sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+fills = [i for i, l in enumerate(lines) if "promote staging fill off the tick:" in l]
+ref = next((i for i, l in enumerate(lines) if "MEMRA_KV_HOST_FAULT=contract-promote-spans" in l and "promote refused" in l), None)
+subs = [i for i, l in enumerate(lines) if "promote submitted off the tick:" in l and "f32 spans from the staging fill" in l]
+print(f"fill lines {len(fills)}, refusal at {ref}, span submissions {len(subs)}")
+sys.exit(0 if ref is not None and len(fills) >= 2 and fills[0] < ref and subs and fills[1] < subs[0] and subs[0] > ref else 1)
+PYEOF
+}
+pscell() { # WP-A day 32: MEMRA_KV_HOST_FAULT=contract-promote-spans (door ON), then the same four requests door OFF
+    local name=promote-span-refusal fault=contract-promote-spans log="$EV/promote-span-refusal-server.log"
+    local offlog="$EV/promote-span-refusal-off-server.log"
+    local refusal="promote refused (contracts door): tier H2D spans refused: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-spans) ("
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, the off-tick promote span attach's red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_B" "$EV/$name-r2.json"
+    req "$P_A" "$EV/$name-r3.json"
+    req "$P_B" "$EV/$name-r4.json"
+    local settled=0
+    await_settled "$log" || settled=$?  # a timed-out wait is a failed check below, never an abort under set -e
+    stop
+    echo "== cell $name: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) =="
+    boot "MEMRA_KV_HOST_CONTRACTS=0" "$offlog"
+    req "$P_A" "$EV/$name-off-r1.json"
+    req "$P_B" "$EV/$name-off-r2.json"
+    req "$P_A" "$EV/$name-off-r3.json"
+    req "$P_B" "$EV/$name-off-r4.json"
+    stop
+    chk "$name: every submitted demote published before stop (bounded 15 s wait)" test "$settled" -eq 0
+    chk "$name: four completions served" four_served "$EV/$name"
+    chk "$name: door ON with the transfer engine on both sides" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine.*KV plane H2D through the same engine on promote" "$log"
+    chk "$name: exactly one typed injected promote spans refusal" count_eq "$refusal" "$log" 1
+    chk "$name: the refusal's N spans handed back equals the next H2D receipt's span count (N >= 1)" promote_spans_refusal_matches_receipt "$log"
+    chk "$name: the staging fill ran on the helper before the refused submission and before the next one" fill_before_refusal "$log"
+    chk "$name: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)" after_any "$refusal" "contracts door D2H receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* require=ok" "$log"
+    chk "$name: the next promote publishes" after_any "$refusal" "\\[prefix-host\\] promote: " "$log"
+    chk "$name: the staging set filled once and every later demote and promote reused it" one_staging_fill_promote "$log"
+    chk "$name: the promote refusal kept the host entry" absent "host entry dropped" "$log"
+    chk "$name: the tier never latched off" absent "TIER DISABLED" "$log"
+    chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+    chk "$name: no host-tier refusal line beyond the injected one" one_refusal_only "$log" "$refusal"
+    chk "$name: OFF boot: four completions served" four_served "$EV/$name-off"
+    chk "$name: OFF boot: the contracts door is off" absent "contracts door ON" "$offlog"
+    chk "$name: OFF boot: the host hits promoted (the same route shape)" grep -q "\\[prefix-host\\] promote: " "$offlog"
+    chk "$name: r1..r4 byte-equal to the door-OFF boot" texts_equal_arms "$EV/$name" "$EV/$name-off" 4
+}
+
 # WP-A day 22: the D2D receipt's red arm, one cell per class.
 dcell_capture
 dcell_restore
@@ -620,6 +713,8 @@ hcell hash-helper-gone hash-helper-gone "helper gone" 0
 hcell hash-never-lands hash-never-lands "digests never landed" 1
 # WP-A day 31: the off-tick span attach's red arm, byte-compared with the door-OFF boot.
 scell
+# WP-A day 32: the off-tick promote span attach's red arm, byte-compared with the door-OFF boot.
+pscell
 
 if [ "$FAILS" -eq 0 ]; then
     echo "KV-HOST-CONTRACT-FAULT GATE: ALL GREEN"
