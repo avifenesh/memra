@@ -994,6 +994,17 @@ asserts a 4096-token margin, so both tapes give the same gate prompt tokens. The
 reads past the prefix, the `dsv4_hc_dot_split_gate` 64-window sampler, still requires the pinned
 tape and refuses the rebuild.
 
+### DSv4 deferred MoE route and mirror checks (#670)
+
+`cargo test -p memra-engine --release --lib cuda_deferred_moe_faults_match_the_synchronous_checks -- --ignored`
+(one CUDA card) runs one routed MoE chain (`prepare`, `gate_up`, `down`) with the synchronous
+checks and again with the checks routed to a device fault word. On valid routes at 1, 2, 5 and
+16 rows, gate, up, H and the down contribution must be bit-equal and the word must stay 0. Three
+red arms must each set their own bit while the synchronous arm refuses the same input: an expert
+id outside the bank (route), an E4M3 NaN code in the routed input (input mirror) and one in the H
+row before down (intermediate mirror). On the pair, `dsv4-gpu-dspark-gate ... --served` covers
+the served transaction with the deferred checks on.
+
 
 ### Model-owned device admission and reclaim (#544)
 

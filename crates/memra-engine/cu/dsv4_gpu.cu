@@ -1148,7 +1148,8 @@ extern "C" int memra_dsv4_act_quant_fp8(const float* x, void* codes, float* scal
 extern "C" __global__ void dsv4_fp8_gather_half_kernel(
     const uint8_t* __restrict__ codes, const float* __restrict__ scales,
     const int* __restrict__ row_ids, __half* __restrict__ out,
-    float* __restrict__ row_scale, int* __restrict__ row_status, int cols) {
+    float* __restrict__ row_scale, int* __restrict__ row_status, int cols,
+    int* __restrict__ fault, int fault_bit) {
     const int row = blockIdx.x, src = row_ids ? row_ids[row] : row;
     const int groups = cols / 128;
     if (src < 0) {
@@ -1181,7 +1182,11 @@ extern "C" __global__ void dsv4_fp8_gather_half_kernel(
         out[(long)row * cols + x] = h;
     }
     __syncthreads();
-    if (threadIdx.x == 0) { row_scale[row] = rs; row_status[row] = bad; }
+    if (threadIdx.x == 0) {
+        row_scale[row] = rs;
+        row_status[row] = bad;
+        if (bad && fault) atomicOr(fault, fault_bit);
+    }
 }
 
 extern "C" int memra_dsv4_fp8_gather_half(
@@ -1189,7 +1194,22 @@ extern "C" int memra_dsv4_fp8_gather_half(
     float* row_scale, int* row_status, int rows, int cols, void* stream_v) {
     if (rows < 1 || cols < 128 || cols % 128 != 0) return 40004;
     dsv4_fp8_gather_half_kernel<<<rows, 256, 0, (cudaStream_t)stream_v>>>(
-        (const uint8_t*)codes, scales, row_ids, (__half*)out, row_scale, row_status, cols);
+        (const uint8_t*)codes, scales, row_ids, (__half*)out, row_scale, row_status, cols,
+        nullptr, 0);
+    DSV4_ERR();
+    return 0;
+}
+
+// Same mirror, and a lossy row also ORs `fault_bit` into the device word `fault`, so the
+// caller can check a whole step's mirrors with one readback instead of one per gather.
+extern "C" int memra_dsv4_fp8_gather_half_fault(
+    const void* codes, const float* scales, const int* row_ids, void* out,
+    float* row_scale, int* row_status, int rows, int cols, int* fault, int fault_bit,
+    void* stream_v) {
+    if (rows < 1 || cols < 128 || cols % 128 != 0 || !fault || fault_bit == 0) return 40004;
+    dsv4_fp8_gather_half_kernel<<<rows, 256, 0, (cudaStream_t)stream_v>>>(
+        (const uint8_t*)codes, scales, row_ids, (__half*)out, row_scale, row_status, cols,
+        fault, fault_bit);
     DSV4_ERR();
     return 0;
 }
@@ -1242,7 +1262,7 @@ static __global__ void dsv4_grouped_count_kernel(const int* selected, int* count
 }
 
 static __global__ void dsv4_grouped_prefix_kernel(const int* counts, int* offsets,
-    int* expert_ids, int* status, int experts, int slots) {
+    int* expert_ids, int* status, int experts, int slots, int* fault, int fault_bit) {
     if (threadIdx.x != 0) return;
     int sum = 0;
     offsets[0] = 0;
@@ -1254,6 +1274,7 @@ static __global__ void dsv4_grouped_prefix_kernel(const int* counts, int* offset
     // Every valid input slot contributes exactly once. Invalid ids are never
     // dereferenced and are rejected before the caller uses this metadata.
     status[0] = sum == slots ? 0 : 1;
+    if (sum != slots && fault) atomicOr(fault, fault_bit);
 }
 
 template<bool Partition = false>
@@ -1281,10 +1302,11 @@ static __global__ void dsv4_grouped_scatter_kernel(const int* selected,
     }
 }
 
-extern "C" int memra_dsv4_grouped_routes(const int* selected, const float* weights,
+static int dsv4_grouped_routes_launch(const int* selected, const float* weights,
     const float* scale2, int* counts, int* offsets, int* expert_ids, int* pairs,
     int* tokens, float* route_weights, float* macro1, float* macro2, float* macro3,
-    int* status, int slots, int experts, int topk, void* stream_v) {
+    int* status, int slots, int experts, int topk, int* fault, int fault_bit,
+    void* stream_v) {
     if (slots < 1 || experts < 1 || experts > 512 || topk < 1 || topk > experts
         || slots % topk != 0) return 40004;
     cudaStream_t stream = (cudaStream_t)stream_v;
@@ -1292,12 +1314,34 @@ extern "C" int memra_dsv4_grouped_routes(const int* selected, const float* weigh
         selected, counts, slots, pairs, tokens, route_weights, macro1, macro2, macro3);
     DSV4_ERR();
     dsv4_grouped_prefix_kernel<<<1, 32, 0, stream>>>(counts, offsets, expert_ids,
-                                                   status, experts, slots);
+                                                   status, experts, slots, fault, fault_bit);
     DSV4_ERR();
     dsv4_grouped_scatter_kernel<false><<<experts, 32, 0, stream>>>(selected, weights, scale2,
         offsets, pairs, tokens, route_weights, macro1, macro2, macro3, slots, topk);
     DSV4_ERR();
     return 0;
+}
+
+extern "C" int memra_dsv4_grouped_routes(const int* selected, const float* weights,
+    const float* scale2, int* counts, int* offsets, int* expert_ids, int* pairs,
+    int* tokens, float* route_weights, float* macro1, float* macro2, float* macro3,
+    int* status, int slots, int experts, int topk, void* stream_v) {
+    return dsv4_grouped_routes_launch(selected, weights, scale2, counts, offsets, expert_ids,
+        pairs, tokens, route_weights, macro1, macro2, macro3, status, slots, experts, topk,
+        nullptr, 0, stream_v);
+}
+
+// Same metadata, and a route that lost a slot also ORs `fault_bit` into the device word
+// `fault` (see memra_dsv4_fp8_gather_half_fault).
+extern "C" int memra_dsv4_grouped_routes_fault(const int* selected, const float* weights,
+    const float* scale2, int* counts, int* offsets, int* expert_ids, int* pairs,
+    int* tokens, float* route_weights, float* macro1, float* macro2, float* macro3,
+    int* status, int slots, int experts, int topk, int* fault, int fault_bit,
+    void* stream_v) {
+    if (!fault || fault_bit == 0) return 40004;
+    return dsv4_grouped_routes_launch(selected, weights, scale2, counts, offsets, expert_ids,
+        pairs, tokens, route_weights, macro1, macro2, macro3, status, slots, experts, topk,
+        fault, fault_bit, stream_v);
 }
 
 // Partition-local group ids address a local pointer table; source selections and
