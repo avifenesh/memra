@@ -10014,6 +10014,47 @@ struct HostHashReply {
     helper_ms: f64,
 }
 
+/// WP-A day 34 (`DAY34.md` design K): one promote's H2D completion checksums, the views of its KV
+/// items' host sources (`CudaTransfers::defer_h2d_checksums`); `seq` is the ticket's sequence.
+struct HostSourcesJob {
+    seq: u64,
+    views: Vec<memra_engine::tier_transfer::H2dSourceView>,
+}
+
+/// The helper's answer to a sources job: every view back with its digest (the engine's own
+/// `checksum` program over the same bytes), in the order handed over.
+struct HostSourcesReply {
+    seq: u64,
+    digests: Vec<(
+        memra_engine::tier_transfer::H2dSourceView,
+        memra_engine::cache::tiered::Digest,
+    )>,
+    bytes: usize,
+    helper_ms: f64,
+}
+
+/// What the owner thread hands the one helper: a demote's bundle hash (day 28) or, since day 34, a
+/// promote's H2D source checksums. One job channel; one reply channel per kind.
+enum HostHelperJob {
+    Hash(HostHashJob),
+    Sources(HostSourcesJob),
+}
+impl From<HostHashJob> for HostHelperJob {
+    fn from(job: HostHashJob) -> Self {
+        Self::Hash(job)
+    }
+}
+#[cfg(test)]
+impl HostHelperJob {
+    /// The hash job a test expects the owner thread to have handed over.
+    fn hash(self) -> HostHashJob {
+        match self {
+            Self::Hash(job) => job,
+            Self::Sources(job) => panic!("expected a hash job, got sources seq={}", job.seq),
+        }
+    }
+}
+
 /// The digests `bind_tier_image` consumes instead of hashing: per slot, the byte count hashed and
 /// the digest. A slot absent here is hashed on the owner thread as before the helper existed.
 #[derive(Default)]
@@ -10129,8 +10170,10 @@ const HOST_HASH_DEADLINE: Duration = Duration::from_secs(10);
 /// job channel; inside a job it is busy for as long as the hash takes, which is unbounded when the
 /// helper is starved or wedged (the deadline's cause), so `close` never waits past its bound.
 struct HostHashWorker {
-    jobs: std::cell::RefCell<Option<std::sync::mpsc::Sender<HostHashJob>>>,
+    jobs: std::cell::RefCell<Option<std::sync::mpsc::Sender<HostHelperJob>>>,
     replies: std::cell::RefCell<Option<std::sync::mpsc::Receiver<HostHashReply>>>,
+    /// WP-A day 34: the promote's source-checksum replies (the H2D settle reads this one).
+    sources: std::cell::RefCell<Option<std::sync::mpsc::Receiver<HostSourcesReply>>>,
     handle: std::cell::RefCell<Option<std::thread::JoinHandle<()>>>,
 }
 
@@ -10140,8 +10183,9 @@ struct HostHashWorker {
 const HOST_HASH_LATCH_JOIN: Duration = Duration::from_millis(50);
 impl HostHashWorker {
     fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {
-        let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<HostHashJob>();
+        let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<HostHelperJob>();
         let (reply_tx, reply_rx) = std::sync::mpsc::channel::<HostHashReply>();
+        let (sources_tx, sources_rx) = std::sync::mpsc::channel::<HostSourcesReply>();
         let handle = std::thread::Builder::new()
             .name("memra-host-hash".into())
             .spawn(move || {
@@ -10152,6 +10196,32 @@ impl HostHashWorker {
                         // thread finds the reply channel closed.
                         return;
                     }
+                    let job = match job {
+                        HostHelperJob::Hash(job) => job,
+                        HostHelperJob::Sources(job) => {
+                            // WP-A day 34: the promote's H2D completion checksums, off the tick.
+                            let t = Instant::now();
+                            let bytes = job.views.iter().map(|v| v.len()).sum();
+                            let digests = job
+                                .views
+                                .into_iter()
+                                .map(|v| {
+                                    let d = v.digest();
+                                    (v, d)
+                                })
+                                .collect();
+                            let reply = HostSourcesReply {
+                                seq: job.seq,
+                                digests,
+                                bytes,
+                                helper_ms: t.elapsed().as_secs_f64() * 1e3,
+                            };
+                            if sources_tx.send(reply).is_err() {
+                                return;
+                            }
+                            continue;
+                        }
+                    };
                     let t = Instant::now();
                     let hashed = job
                         .payloads
@@ -10185,18 +10255,20 @@ impl HostHashWorker {
         Ok(Self {
             jobs: std::cell::RefCell::new(Some(jobs_tx)),
             replies: std::cell::RefCell::new(Some(reply_rx)),
+            sources: std::cell::RefCell::new(Some(sources_rx)),
             handle: std::cell::RefCell::new(Some(handle)),
         })
     }
     /// A worker over caller-owned channels (the forged-reply cell): no thread, nothing to join.
     #[cfg(test)]
     fn from_channels(
-        jobs: std::sync::mpsc::Sender<HostHashJob>,
+        jobs: std::sync::mpsc::Sender<HostHelperJob>,
         replies: std::sync::mpsc::Receiver<HostHashReply>,
     ) -> Self {
         Self {
             jobs: std::cell::RefCell::new(Some(jobs)),
             replies: std::cell::RefCell::new(Some(replies)),
+            sources: std::cell::RefCell::new(None),
             handle: std::cell::RefCell::new(None),
         }
     }
@@ -10204,7 +10276,7 @@ impl HostHashWorker {
     /// latch).
     #[cfg(test)]
     fn from_thread(
-        jobs: std::sync::mpsc::Sender<HostHashJob>,
+        jobs: std::sync::mpsc::Sender<HostHelperJob>,
         replies: std::sync::mpsc::Receiver<HostHashReply>,
         handle: std::thread::JoinHandle<()>,
     ) -> Self {
@@ -10212,13 +10284,52 @@ impl HostHashWorker {
         *worker.handle.borrow_mut() = Some(handle);
         worker
     }
-    fn submit(&self, job: HostHashJob) -> Result<(), String> {
+    fn submit(&self, job: impl Into<HostHelperJob>) -> Result<(), String> {
         self.jobs
             .borrow()
             .as_ref()
             .ok_or_else(|| "the hash helper was closed".to_string())?
-            .send(job)
+            .send(job.into())
             .map_err(|_| "the job channel closed".to_string())
+    }
+    /// WP-A day 34: a promote's source checksums; `Err` when the helper is closed or gone (the
+    /// views drop with the job: their sources stay with the transfer engine, a leak, the caller latches).
+    fn submit_sources(&self, job: HostSourcesJob) -> Result<(), String> {
+        self.jobs
+            .borrow()
+            .as_ref()
+            .ok_or_else(|| "the hash helper was closed".to_string())?
+            .send(HostHelperJob::Sources(job))
+            .map_err(|_| "the job channel closed".to_string())
+    }
+    /// WP-A day 34: `Poll` for the source checksums; `None` while the helper works, an error when
+    /// the channel closed or the worker has none.
+    fn try_sources_reply(&self) -> Result<Option<HostSourcesReply>, String> {
+        let sources = self.sources.borrow();
+        let sources = sources
+            .as_ref()
+            .ok_or_else(|| "the hash helper was closed".to_string())?;
+        match sources.try_recv() {
+            Ok(r) => Ok(Some(r)),
+            Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err("the sources reply channel closed".to_string())
+            }
+        }
+    }
+    /// WP-A day 34: `Block`: the same with a bounded wait; `None` is the deadline.
+    fn sources_reply_within(&self, timeout: Duration) -> Result<Option<HostSourcesReply>, String> {
+        let sources = self.sources.borrow();
+        let sources = sources
+            .as_ref()
+            .ok_or_else(|| "the hash helper was closed".to_string())?;
+        match sources.recv_timeout(timeout) {
+            Ok(r) => Ok(Some(r)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Ok(None),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                Err("the sources reply channel closed".to_string())
+            }
+        }
     }
     /// `Poll`: a landed reply, `None` while the helper still works, an error when the reply
     /// channel closed (the helper exited or panicked).
@@ -10261,6 +10372,7 @@ impl HostHashWorker {
         };
         drop(tx);
         drop(self.replies.borrow_mut().take());
+        drop(self.sources.borrow_mut().take());
         if let Some(handle) = self.handle.borrow_mut().take() {
             let t = Instant::now();
             while !handle.is_finished() && t.elapsed() < bound {
@@ -10328,6 +10440,17 @@ struct PendingContractPromote {
     /// as f32 H2D spans, in attach order: the slot and the plane's f32 count (the span's receipt
     /// term). Empty when no span was attached.
     spans: Vec<(HostHashSlot, usize)>,
+    /// WP-A day 34 (`DAY34.md` design K): `Some` when the KV items' completion checksums are on the
+    /// hash helper (the off-tick route); the settle takes the reply before its completion step.
+    helper_sums: Option<PendingSources>,
+}
+
+/// WP-A day 34: the hash helper's source-checksum job of one promote: how many views went, when,
+/// and (once supplied to the ticket) the bytes it hashed and its time.
+struct PendingSources {
+    views: usize,
+    handed: Instant,
+    landed: Option<(usize, f64)>,
 }
 
 /// What one settle step of a contract-routed H2D produced.
@@ -11614,6 +11737,51 @@ fn host_kv_planes_from_contract(
     }
 }
 
+/// WP-A day 34 (`DAY34.md` design K, `memra_tier::conformance::h2d_deferred_checksum_lands_with_its_digests`):
+/// the promote's KV item checksums go to the hash helper. The ticket defers them
+/// (`defer_h2d_checksums`: one view per item's host source, no host wait) and the views go to the
+/// helper as ONE `Sources` job; the settle supplies the digests before its completion step. A refused
+/// defer unwinds the ticket typed, nothing out; a helper that is gone at the hand-off latches (the
+/// views dropped with the job: the transfer engine keeps their sources, a leak, never a free).
+fn host_h2d_sources_handoff(
+    tier: &HostTierContext,
+    mut pending: PendingContractPromote,
+) -> Result<PendingContractPromote, HostPromoteFailure> {
+    let Some(transfers) = &tier.transfers else {
+        return Err(HostPromoteFailure::Latched(
+            "tier H2D transfer engine missing at the checksum hand-off".into(),
+        ));
+    };
+    let mut t = transfers.borrow_mut();
+    let views = match t.defer_h2d_checksums(&pending.ticket) {
+        Ok(views) => views,
+        Err(e) => {
+            return Err(host_promote_contract_abort(
+                &mut t,
+                pending.registered,
+                Some(pending.ticket),
+                Some(pending.producer),
+                &pending.sources,
+                &format!("tier H2D checksums not deferred ({e:?})"),
+            ));
+        }
+    };
+    let n = views.len();
+    let seq = pending.ticket.sequence;
+    if let Err(why) = tier.hasher.submit_sources(HostSourcesJob { seq, views }) {
+        return Err(HostPromoteFailure::Latched(format!(
+            "tier hash helper gone at the H2D checksum hand-off ({why}); ticket seq={seq}'s {n} \
+             source views dropped, the transfer engine keeps their sources"
+        )));
+    }
+    pending.helper_sums = Some(PendingSources {
+        views: n,
+        handed: Instant::now(),
+        landed: None,
+    });
+    Ok(pending)
+}
+
 /// WP-A day 32 (memra#536 Move 2 owed item 1, the H2D half; `memra_tier::conformance::
 /// h2d_span_batch`): attach the promote's staging to its submitted KV ticket as typed f32 H2D
 /// spans, one per recurrent plane, each into a fresh uninitialized owner-stream destination of the
@@ -12116,6 +12284,7 @@ fn host_kv_planes_submit_promote(
         fault,
         submitted: Instant::now(),
         spans: Vec::new(),
+        helper_sums: None,
     })
 }
 
@@ -12143,6 +12312,7 @@ fn host_kv_planes_settle_promote(
         fault,
         submitted,
         spans,
+        mut helper_sums,
     } = pending;
     let Some(transfers) = &tier.transfers else {
         return Err(Latched(
@@ -12150,6 +12320,73 @@ fn host_kv_planes_settle_promote(
         ));
     };
     let mut t = transfers.borrow_mut();
+    // 5b. WP-A day 34 (`DAY34.md` design K, `h2d_deferred_checksum` rules 1 and 2): the KV items'
+    //     completion checksums come from the hash helper and are supplied to the ticket BEFORE the
+    //     completion step, so every check below (the receipt `require` included) reads them as it
+    //     read the engine's own. `Poll`: not landed yet, the ticket is handed back as a running copy
+    //     is; `Block`: a bounded wait within the helper's deadline. A helper gone, a reply that does
+    //     not describe this ticket, or the deadline latch (the views' sources stay with the engine).
+    if let Some(p) = helper_sums.as_mut()
+        && p.landed.is_none()
+    {
+        let reply = match wait {
+            ContractWait::Poll => tier.hasher.try_sources_reply(),
+            ContractWait::Block => tier
+                .hasher
+                .sources_reply_within(HOST_HASH_DEADLINE.saturating_sub(p.handed.elapsed())),
+        };
+        let seq = ticket.sequence;
+        match reply {
+            Ok(Some(r)) => {
+                if r.seq != seq || r.digests.len() != p.views {
+                    return Err(Latched(format!(
+                        "tier H2D checksum reply seq={} with {} digests does not describe ticket \
+                         seq={seq} of {} sources",
+                        r.seq,
+                        r.digests.len(),
+                        p.views
+                    )));
+                }
+                if let Err(e) = t.supply_h2d_checksums(&ticket, r.digests) {
+                    return Err(Latched(format!(
+                        "tier H2D checksums not supplied ({e:?}); the transfer engine keeps the \
+                         sources"
+                    )));
+                }
+                p.landed = Some((r.bytes, r.helper_ms));
+            }
+            Ok(None) if wait == ContractWait::Poll && p.handed.elapsed() < HOST_HASH_DEADLINE => {
+                return Ok(PromoteSettle::Pending(PendingContractPromote {
+                    ticket,
+                    producer,
+                    registered,
+                    planned,
+                    sources,
+                    sizes,
+                    kv_slots,
+                    fault,
+                    submitted,
+                    spans,
+                    helper_sums,
+                }));
+            }
+            Ok(None) => {
+                return Err(Latched(format!(
+                    "tier H2D checksums never landed: ticket seq={seq}'s {} sources handed {:.1}ms \
+                     ago, past the {}s deadline; the transfer engine keeps the sources",
+                    p.views,
+                    p.handed.elapsed().as_secs_f64() * 1e3,
+                    HOST_HASH_DEADLINE.as_secs()
+                )));
+            }
+            Err(e) => {
+                return Err(Latched(format!(
+                    "tier hash helper gone before the H2D checksums of ticket seq={seq} landed \
+                     ({e}); the transfer engine keeps the sources"
+                )));
+            }
+        }
+    }
     // 6. Completion: the engine's event per item, then its status and its checksum of each
     //    SOURCE after the copy (for an H2D the completion checksum is the host bytes the DMA read).
     //    `Block`: a host wait on every item's event (the day-16 program). `Poll` (WP-A day 18, the
@@ -12184,6 +12421,7 @@ fn host_kv_planes_settle_promote(
             fault,
             submitted,
             spans,
+            helper_sums,
         }));
     }
     // 6b. Rule 3 (WP-A day 19, `memra_tier::conformance::h2d_reader_fence`, the at-settle install):
@@ -12487,10 +12725,22 @@ fn host_kv_planes_settle_promote(
             recur.len()
         )
     };
+    // WP-A day 34: where the KV items' checksums ran, after the span term.
+    let sums_term = match &helper_sums {
+        Some(PendingSources {
+            views,
+            landed: Some((bytes, ms)),
+            ..
+        }) => format!(
+            "; {views} KV checksums on the hash helper ({:.1}MB in {ms:.1}ms)",
+            *bytes as f64 / 1e6
+        ),
+        _ => String::new(),
+    };
     eprintln!(
         "[prefix-host] contracts door H2D receipt: ticket issuer={} seq={} epochs={}/{}/{} \
          items={} ({kv_planes} KV planes{}) complete={complete} require=ok \
-         checksums_sha256={} published retired acknowledged{span_term}",
+         checksums_sha256={} published retired acknowledged{span_term}{sums_term}",
         ticket.issuer,
         ticket.sequence,
         ticket.epochs.state,
@@ -14100,11 +14350,14 @@ fn device_entry_from_host_parts(
                 }
                 ContractH2d::OffTick => {
                     let pending = host_kv_planes_submit_promote(engine, tier, src, class)?;
-                    ContractKv::Deferred(if staged.bufs.is_empty() {
+                    let pending = if staged.bufs.is_empty() {
                         pending
                     } else {
                         host_h2d_spans_submit(engine, tier, pending, &mut staged, fills)?
-                    })
+                    };
+                    // WP-A day 34 (design K): the last step of the submission, so no submit-side
+                    // unwind can meet a view that is out.
+                    ContractKv::Deferred(host_h2d_sources_handoff(tier, pending)?)
                 }
             }
         }
@@ -45642,6 +45895,7 @@ mod tests {
             fault: None,
             submitted: std::time::Instant::now(),
             spans: Vec::new(),
+            helper_sums: None,
         };
         host.promoting = Some(super::PendingPromote {
             pool_key: pool_key.clone(),
@@ -46305,7 +46559,7 @@ mod tests {
     fn cpu_door_host_with_channels() -> (
         HostPrefixCache,
         PoolKey,
-        std::sync::mpsc::Receiver<super::HostHashJob>,
+        std::sync::mpsc::Receiver<super::HostHelperJob>,
         std::sync::mpsc::Sender<super::HostHashReply>,
     ) {
         let (mut host, key) = cpu_door_host();
@@ -46392,7 +46646,7 @@ mod tests {
         // The reply lands; the next poll reaches publication and consumes the state (on the CPU
         // the bind refuses by name, the day-17 proof); the park predicate is false afterwards, so
         // the re-admitted request goes to the promote decision.
-        let job = jobs.try_recv().unwrap();
+        let job = jobs.try_recv().unwrap().hash();
         let hashed = job
             .payloads
             .into_iter()
@@ -46476,7 +46730,7 @@ mod tests {
             assert!(host.armed());
         }
         // The test plays the helper: THE program over the payloads it received, the reply lands.
-        let job = jobs.try_recv().expect("the job was handed over");
+        let job = jobs.try_recv().expect("the job was handed over").hash();
         assert_eq!(job.seq, 3);
         assert_eq!(job.payloads.len(), 6);
         let hashed = job
@@ -46514,7 +46768,7 @@ mod tests {
         // The `Block` shape with the reply already landed: the same publication step at once.
         let (mut host, key, jobs, replies) = cpu_door_host_with_channels();
         cpu_pending_hashing(&mut host, &key, 4);
-        let job = jobs.try_recv().unwrap();
+        let job = jobs.try_recv().unwrap().hash();
         let hashed = job
             .payloads
             .into_iter()
@@ -46639,7 +46893,7 @@ mod tests {
         // helper is the deadline's cause), so the owner thread must not wait for that job. The
         // stand-in helper holds its job until released, then tries to reply.
         let (mut host, _key) = cpu_door_host();
-        let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<super::HostHashJob>();
+        let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
         let (reply_tx, reply_rx) = std::sync::mpsc::channel::<super::HostHashReply>();
         let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
         let (sent_tx, sent_rx) = std::sync::mpsc::channel::<bool>();
@@ -46690,7 +46944,7 @@ mod tests {
         let forge = |mutate: &dyn Fn(&mut super::HostHashReply)| {
             let (mut host, key, jobs, replies) = cpu_door_host_with_channels();
             cpu_pending_hashing(&mut host, &key, 8);
-            let job = jobs.try_recv().unwrap();
+            let job = jobs.try_recv().unwrap().hash();
             let hashed = job
                 .payloads
                 .into_iter()
@@ -47224,6 +47478,78 @@ mod tests {
         );
     }
 
+    // ---- WP-A day 34 (`DAY34.md` design K: the promote's H2D checksums on the hash helper) ----
+
+    /// WP-A day 34, the order by source: the off-tick route hands the KV items' source views to the
+    /// helper as the submission's last step (after the spans); the helper's `Sources` arm runs the
+    /// engine's own digest; the settle takes the reply and supplies it BEFORE its completion step (the
+    /// host wait, the poll, the reader wait, the receipt `require` and publication), hands the ticket
+    /// back while the reply has not landed under `Poll`, and names where the checksums ran on the
+    /// receipt line; the helper's second job kind has its own reply channel.
+    #[test]
+    fn day34_the_promote_checksums_ride_the_hash_helper_in_the_stated_order() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let body = |name: &str| {
+            let at = production
+                .find(name)
+                .unwrap_or_else(|| panic!("{name} missing"));
+            let end = production[at..].find("\n}\n").unwrap();
+            &production[at..at + end]
+        };
+        let at = |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle}"));
+        let parts = body("fn device_entry_from_host_parts(");
+        assert!(
+            at(
+                parts,
+                "host_h2d_spans_submit(engine, tier, pending, &mut staged, fills)?"
+            ) < at(parts, "host_h2d_sources_handoff(tier, pending)?")
+        );
+        let handoff = body("fn host_h2d_sources_handoff(");
+        assert!(
+            at(handoff, "t.defer_h2d_checksums(&pending.ticket)")
+                < at(
+                    handoff,
+                    "tier.hasher.submit_sources(HostSourcesJob { seq, views })"
+                )
+        );
+        let settle = body("fn host_kv_planes_settle_promote(");
+        for (a, b) in [
+            (
+                "t.supply_h2d_checksums(&ticket, r.digests)",
+                "t.synchronize(&ticket)",
+            ),
+            (
+                "t.supply_h2d_checksums(&ticket, r.digests)",
+                "let completion = match t.poll(&ticket) {",
+            ),
+            (
+                "t.supply_h2d_checksums(&ticket, r.digests)",
+                "completion.require(&ticket, &receipts, true)",
+            ),
+            (
+                "ContractWait::Poll => tier.hasher.try_sources_reply(),",
+                "t.supply_h2d_checksums(&ticket, r.digests)",
+            ),
+            (
+                "KV checksums on the hash helper",
+                "Ok(PromoteSettle::Done(kv, draft, recur))",
+            ),
+        ] {
+            assert!(at(settle, a) < at(settle, b), "{a} before {b}");
+        }
+        assert!(settle.contains("if r.seq != seq || r.digests.len() != p.views {"));
+        assert_eq!(
+            settle.matches("helper_sums,\n").count(),
+            3,
+            "the destructure and both Pending returns keep it"
+        );
+        let helper = body("impl HostHashWorker {");
+        assert!(helper.contains("HostHelperJob::Sources(job) => {"));
+        assert!(helper.contains("let d = v.digest();"));
+        assert!(helper.contains("if sources_tx.send(reply).is_err() {"));
+    }
+
     // ---- WP-A day 33 (memra#536 Move 2 owed item 1, the H2D half, `DAY33.md` design F) ----
 
     /// WP-A day 33, the order by source: the probe takes the staging and submits in the same step
@@ -47299,7 +47625,7 @@ mod tests {
             "fn host_promote_fill_step(",
             "fn host_promote_fill_handoff(",
             "struct PendingFill",
-            "enum HostHelperJob",
+            "HostHelperJob::Fill",
             "promote staging fill off the tick",
             "fn submit_fill(",
         ] {
@@ -48788,6 +49114,80 @@ mod tests {
         assert_eq!(gpu_used(&host), (3 * 8 * 58 + span_bytes, 0, 0));
         drop(image);
         host.disable("day-32 cell: the latch releases the staging charge");
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// WP-A day 34 (`DAY34.md` acceptance (a) on a card, design K): the OFF-TICK route with its KV
+    /// checksums on the real hash helper. A clean promote lands with every KV plane whole and the
+    /// receipt required against the demote-time checksums (the helper's digests); a corrupted lease byte
+    /// (a V plane flipped after the demote) is refused `ReceiptMismatch` naming the H2D receipt, nothing
+    /// published, the ledger back to the image's leases, the entry's handle the sole owner again (the
+    /// views came back, the twins were recovered), and the next clean promote lands.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let mut image = gpu_contract_image(&engine, &mut host, &mut entry);
+        let settle = |host: &super::HostPrefixCache, image: &super::HostPrefixEntry| {
+            let tier = host.tier.as_ref().unwrap();
+            let (shell, pending) = super::device_entry_from_host_parts(
+                &engine,
+                image,
+                Some((tier, super::HostTierEntryClass::MtpDraft)),
+                super::ContractH2d::OffTick,
+                None,
+            )?;
+            let pending = pending.expect("the contract route");
+            assert!(
+                pending.helper_sums.is_some(),
+                "the off-tick route hands its checksums to the helper"
+            );
+            match super::host_kv_planes_settle_promote(tier, pending, super::ContractWait::Block)? {
+                super::PromoteSettle::Done(kv, draft, _) => Ok((shell, kv, draft)),
+                super::PromoteSettle::Pending(_) => panic!("a blocking settle came back pending"),
+            }
+        };
+        let (mut shell, kv, draft) = settle(&host, &image).expect("a clean off-tick promote");
+        shell.kv = kv;
+        shell.draft = draft;
+        assert!(
+            gpu_entry_whole(&engine, &shell, &want),
+            "every KV plane whole"
+        );
+        drop(shell);
+        // A corrupted lease byte: refused, nothing published.
+        image.kv[2].as_mut().unwrap().v.flip_first_byte().unwrap();
+        let why = match settle(&host, &image) {
+            Err(super::HostPromoteFailure::ReceiptMismatch(why)) => why,
+            Err(other) => panic!("a corrupt lease was not typed a receipt mismatch: {other:?}"),
+            Ok(_) => panic!("the corrupt lease was published"),
+        };
+        assert!(why.contains("tier H2D receipt refused (Corrupt)"), "{why}");
+        assert!(!why.contains("leaked"), "{why}");
+        image.kv[2]
+            .as_mut()
+            .unwrap()
+            .v
+            .flip_first_byte()
+            .expect("sole owner again: the views came back and the twins were recovered");
+        gpu_image_intact_and_sole_owner(&mut image, &want);
+        assert_eq!(
+            gpu_used(&host),
+            (3 * 8 * 58, 0, 0),
+            "nothing in flight, nothing leaked"
+        );
+        let (mut shell, kv, draft) = settle(&host, &image).expect("the next clean promote");
+        shell.kv = kv;
+        shell.draft = draft;
+        assert!(gpu_entry_whole(&engine, &shell, &want));
+        drop(shell);
+        drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
 
