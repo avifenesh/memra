@@ -591,6 +591,28 @@ elif [ -n "${MEMRA_CI_DBG_Q8:-}" ]; then
 else
     echo "decode-batch-gate Q8_0: SKIP (no model at $DBG_Q8)"
 fi
+# PRIME EXACTNESS ON THE 9B (memra#641, research/decode-exact-641-20260923/): one numeric
+# program per request across the prime shapes. prime-batch-exact-gate runs prime-batch-gate
+# --exact (prime_cache_batch vs prime_cache bitwise per sequence, b3-p24, b4-p1100, carried
+# b3-p600) plus its canary; prime-tick-exact-gate replays the scheduler's #641 trace (fresh then
+# carried [A, B, C] 1024-row batches, solo ticks, a [B, C] wave) plus its canary. The exact gate
+# existed but no battery ran it on the 9B, and it was red there on 9c07b398b for as long as the
+# fresh varlen FA arm lived. Bins are built EXPLICITLY (the graph-lane precedent below). About
+# 1 min on the 9B NVFP4. MEMRA_CI_PRIME_EXACT=0 skips.
+PEX_MODEL="${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}"
+if [ "${MEMRA_CI_PRIME_EXACT:-1}" = "1" ] && [ -f "$PEX_MODEL" ]; then
+    echo "== local-ci: prime exactness on the 9B (memra#641) =="
+    cargo build --release -p memra-engine --bin prime-batch-gate --bin concat-prime-probe \
+        || { echo "prime-exact bins BUILD FAIL: refusing to gate on stale binaries"; exit 1; }
+    tools/prime-batch-exact-gate.sh "$PEX_MODEL" || { echo "prime-batch-exact-gate FAIL"; exit 1; }
+    tools/prime-batch-exact-gate.sh "$PEX_MODEL" --canary \
+        || { echo "prime-batch-exact-gate CANARY FAIL"; exit 1; }
+    tools/prime-tick-exact-gate.sh "$PEX_MODEL" || { echo "prime-tick-exact-gate FAIL"; exit 1; }
+    tools/prime-tick-exact-gate.sh "$PEX_MODEL" --canary \
+        || { echo "prime-tick-exact-gate CANARY FAIL"; exit 1; }
+else
+    echo "prime exactness: SKIP (no 9B NVFP4 model at $PEX_MODEL or MEMRA_CI_PRIME_EXACT=0)"
+fi
 # GRAPH-WARMUP STRESS (lane/graph-warmups, 2026-08-05): the pool-growth adversarial gate
 # behind the MEMRA_GRAPH_WARMUPS=1 default. Large<->small session cycles + overlap arm force
 # captures over freed async-pool blocks; every stream must be bit-identical to eager (the #68
