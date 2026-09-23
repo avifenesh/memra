@@ -33,6 +33,9 @@ request lived long enough to reach the deferred-fill panic that lane B saw at a 
 **On main.** Rebased onto main `f69119ae0` (`e23adc70d`, binary `91e56c12`, build line
 `memra-0.138.0-8636637e872c (id: source-tree, git: e23adc70d21e)`): `SPEC-CTX-EDGE GATE: ALL GREEN`, 13 PASS
 (`rtx5090/rebased/`).
+Merged with main `580e8a4a1` (integ49, A day 31's `worker.rs` under its default-OFF door) at `1fc303461`,
+binary `395a42b9`, build line `memra-0.138.0-709466af1831 (id: source-tree, git: 1fc3034619f5)`:
+`SPEC-CTX-EDGE GATE: ALL GREEN`, 13 PASS (`rtx5090/merged-main/`).
 
 **Also owed by PREREG, done.** `run-spec` K=1..8 on the 9B (single-shot route, `MEMRA_SPEC_TEMP=0`,
 32 tokens, the tier-2 probe prompt): `self-consistency: PASS` 8 of 8 and `=== SELF-CONSISTENCY PASS ===`
