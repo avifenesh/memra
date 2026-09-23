@@ -189,6 +189,21 @@ next tick top comes one tick later; the reading says the tick that carries the s
 Section 5 tests the one mechanism the code can hold responsible (the host function holding the owner thread's CUDA
 work) before any target-card time is spent.
 
+## 5. The owner-hold cell, and what it rules out
+
+`h2d_fill_host_function_does_not_hold_the_owner_thread` on the local RTX 5090 (18:21:43Z, one hold of
+`/tmp/memra-5090.lock`, no compute app on the card; `rtx5090-day33/owner-hold/owner-not-held.log`), verbatim:
+`owner-thread work while the copy stream's host function sleeps: 3.55 ms; the copy behind the host function still
+pending: true`, `test result: ok. 1 passed`. A 200 ms host function on the copy stream does not hold the owner thread's
+CUDA work in the same context (an allocation, a 4 MB pageable H2D and D2H, an event, a stream sync). **The hypothesis
+that the host function holds the owner thread is refuted; design F is not refuted by it.** The second tick of section 4
+stays unplaced.
+
+The two Nsight Systems boots queued with the cell did not run: `Failed to create directory "/tmp/nvidia/nsight_systems":
+Permission denied` (its temp directory; TMPDIR was not set). The job then held the lock, waiting for a server that
+could not come up, until it was stopped at about 18:27:30Z (`owner-hold/gap.log`); the lead's integ53 battery took the
+lock at 18:27.
+
 ## 6. The D2D half of Move 2 owed item 1, pre-registered (no code)
 
 **The read (file:line at `045ab57d4`).** The capture route copies each layer's recurrent state on the OWNER stream at
