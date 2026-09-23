@@ -360,6 +360,32 @@ this rig). spec-ctx-edge on the 9B, `SCE_CTX=384`: 13 PASS, 0 FAIL; `SCE (plain)
 the on arm's r1: plain=341ddf3169a9d21a spec=341ddf3169a9d21a -> PASS`, the same message hash as
 the memra#659 lane's green runs.
 
+### Second merge, with main `7029cd67c` (`7090b14c0`), and window 10 on it
+
+Main moved while the lane waited on the 5090 (#674, #675, #676: dsv4 kernels, `moe_f16_grouped.cu`,
+33 dispatch-counter lines in `lib.rs`, `admit_memory.rs`), none of it on a prime program (`git diff
+d544c6b82 7029cd67c -- crates` names no `prime_cache_batch`, `fa_prefill` or
+`full_attn_prime`). Conflicts: `docs/FLAGS.md`, where both sides appended a "Removed doors,
+2026-09-23" section at the same point (both kept, main's DSV4 small-kernel diet first), and
+`research/INDEX.md` (union). Set-diff against both parents: the only lines absent are the ones each
+side deleted itself (main's diet rows, this lane's `MEMRA_FA_VL=0` row). `KERNELS.md`: the
+`fa3_prefill.cu` row now cites `lib.rs:28041-28053` and `lib.rs:2189-2202`. CPU battery on
+`7090b14c0` (`raw/merged2/cpu/`): clippy `-D warnings`, server tests 875 + 7, engine lib 545,
+fmt, check-flags, diff-check, shellcheck, `bash -n tools/local-ci.sh`, all rc=0.
+
+Window 10 (`raw/merged2/window10.log`), one hold of `/tmp/memra-5090.lock` from 14:19:25 to
+14:23:36, card idle, tree `31ad5c953` (receipts only on top of `7090b14c0`); bins `concat-prime-probe`
+`748e0652`, `prime-batch-gate` `da8a4d12`, `decode-batch-gate` `999761c0`; serve-smoke re-linked
+`memra-server` to `6f978b9b228a6750` (`memra-0.138.0-6b16dd6b7259 (id: source-tree, git:
+31ad5c9537fe)`) and spec-ctx-edge ran that binary. The same lines as window 9, verbatim:
+`prime-tick-exact-gate: PASS`, `CANARY OK`; the three exact rows `ALL GREEN` and
+`prime-batch-exact-gate: PASS`; `prime-batch-exact-gate: CANARY OK (seq 0 DIFFERS: exact logits
+diff 248320/248320 h_seed diff 4096/4096 hidden diff 98304/98304; seqs 1 and 2 bit-identical)`;
+decode-batch-gate config B=8 and strict B=4 `ALL GREEN: decode_step_batch exactness battery`;
+`serve-smoke: 0 failed`; `SPEC-CTX-EDGE GATE: ALL GREEN` (13 PASS, 0 FAIL, plain = spec
+`341ddf3169a9d21a`). The target-card cells ran on the first merge (`9e3b7250e`); the second merge
+changes no code on the 27B's prime or spec path.
+
 ## Still owed
 
 - A varlen FA twin that attends the dequantized cache view (the solo program) could come back
