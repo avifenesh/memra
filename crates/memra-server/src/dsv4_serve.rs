@@ -155,20 +155,6 @@ fn env_text(name: &str, raw: Option<OsString>) -> Result<Option<String>, String>
     }
 }
 
-/// `MEMRA_DSV4_TOPOLOGY`: `pp` (unset) is the PP-2 program; `tp_ep` runs every trunk layer on
-/// both cards with whole-expert EP and replicated attention; `tp_ep_attn` also splits attention
-/// heads. Returns (TP/EP, attention TP). TP/EP loads also require `MEMRA_DSV4_EP=pair`.
-fn resolve_topology(raw: Option<&str>) -> Result<(bool, bool), String> {
-    match raw.map(str::trim) {
-        None | Some("") | Some("pp") => Ok((false, false)),
-        Some("tp_ep") => Ok((true, false)),
-        Some("tp_ep_attn") => Ok((true, true)),
-        Some(other) => Err(format!(
-            "MEMRA_DSV4_TOPOLOGY {other:?} unknown (pp | tp_ep | tp_ep_attn)"
-        )),
-    }
-}
-
 fn configured_env_text(name: &str) -> Result<Option<String>, String> {
     env_text(name, std::env::var_os(name))
 }
@@ -781,29 +767,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     if c4_host_bytes > 0 && prefill_chunk == 0 {
         return Err("MEMRA_DSV4_C4_HOST_MB requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
     }
-    let topology_raw = configured_env_text("MEMRA_DSV4_TOPOLOGY")?;
-    let (tp_ep, attention_tp) = resolve_topology(topology_raw.as_deref())?;
-    if tp_ep && c4_host_bytes > 0 {
-        return Err(
-            "MEMRA_DSV4_TOPOLOGY TP/EP does not carry host-resident C4 (MEMRA_DSV4_C4_HOST_MB)"
-                .into(),
-        );
-    }
-    // The topology is a load-time program choice: armed around this load only, so no later
-    // load in the process inherits it.
-    let armed = (
-        Dsv4Gpu::set_tp_ep_topology_for_gate(tp_ep),
-        Dsv4Gpu::set_attention_tp_for_gate(attention_tp),
-    );
-    let loaded = Dsv4Gpu::load(dir, &devices, variant, max_seq);
-    Dsv4Gpu::set_attention_tp_for_gate(armed.1);
-    Dsv4Gpu::set_tp_ep_topology_for_gate(armed.0);
-    let gpu = loaded?;
-    if gpu.topology().is_tp_ep() != tp_ep || gpu.attention_tp_geometry().is_some() != attention_tp {
-        return Err(format!(
-            "dsv4 model {name:?}: loaded topology differs from MEMRA_DSV4_TOPOLOGY {topology_raw:?}"
-        ));
-    }
+    let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq)?;
     if gpu.matrix_moe_enabled() && prefill_chunk == 0 {
         return Err("experimental matrix program requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
     }
@@ -820,14 +784,9 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     let spec = gpu.dspark.is_some();
     let eos = tok.eos_id();
     eprintln!(
-        "[dsv4-serve] {name}: loaded on devices {devices:?}, topology {}, contract {variant:?}, \
+        "[dsv4-serve] {name}: loaded on devices {devices:?}, contract {variant:?}, \
          max_seq {max_seq}, drafter {}, parked-host-cache {}, chunked-prefill {}, \
          active-C4-host-budget {c4_host_bytes} bytes (0=OFF; separate from parked cache)",
-        match (tp_ep, attention_tp) {
-            (false, _) => "pp",
-            (true, false) => "tp_ep",
-            (true, true) => "tp_ep_attn",
-        },
         if spec {
             "RESIDENT (spec route armed)"
         } else {
@@ -2146,21 +2105,6 @@ mod calibration_tests {
             vec![(0, 300), (1, 80)],
             "each card's charge is its measured delta"
         );
-    }
-}
-
-#[cfg(test)]
-mod topology_tests {
-    use super::resolve_topology;
-
-    #[test]
-    fn topology_door_values() {
-        assert_eq!(resolve_topology(None), Ok((false, false)));
-        assert_eq!(resolve_topology(Some("")), Ok((false, false)));
-        assert_eq!(resolve_topology(Some("pp")), Ok((false, false)));
-        assert_eq!(resolve_topology(Some("tp_ep")), Ok((true, false)));
-        assert_eq!(resolve_topology(Some("tp_ep_attn")), Ok((true, true)));
-        assert!(resolve_topology(Some("tp2")).is_err());
     }
 }
 

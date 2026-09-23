@@ -10670,6 +10670,29 @@ impl Dsv4Gpu {
                 });
                 pair.upload(tok, state.pos, fault)?;
             }
+            if !replaying {
+                // Each rank's MoE route and mirror checks land in its fault words (memra
+                // #679); they are read with the one-shot refusal words, before either plane
+                // commits. The replay program admits only the unchecked arm.
+                for (rank, vws) in work.verify.ws.iter_mut().enumerate() {
+                    let Some(words) = vws.moe_fault.as_mut() else {
+                        continue;
+                    };
+                    let st = &self.stages[rank];
+                    st.gpu
+                        .ctx
+                        .bind_to_thread()
+                        .map_err(e("TP/EP bind MoE faults"))?;
+                    if vws.moe_fault_armed {
+                        // A step that ended in an error never read its words back.
+                        st.gpu
+                            .stream()
+                            .memset_zeros(words)
+                            .map_err(e("clear stale MoE faults"))?;
+                    }
+                    vws.moe_fault_armed = true;
+                }
+            }
             drop(input_phase);
             let forward_phase = full_token_profile_phase("FULL_TOKEN_FORWARD_SUBMIT\0");
             use crate::dsv4_graph::ReplayCadence;
@@ -10838,8 +10861,9 @@ impl Dsv4Gpu {
             drop(forward_phase);
             let refusal_phase = full_token_profile_phase("FULL_TOKEN_REFUSAL_READ_DRAIN\0");
             let refusals = self.tp_ep_ar_refusal_words()?;
+            let moe_faults = self.take_moe_faults(&mut work.verify.ws);
             drop(refusal_phase);
-            if refusals != [0, 0] {
+            if refusals != [0, 0] || moe_faults.is_err() {
                 // All layers completed their snapshots, but compressors already
                 // mutated pending rows/high-water marks speculatively. Restore
                 // both planes with zero committed rows before quarantining the
@@ -10867,7 +10891,13 @@ impl Dsv4Gpu {
                     1,
                     0,
                 );
-                let mut error = format!("TP/EP one-shot reduction refused: {refusals:?}");
+                let mut error = match moe_faults {
+                    Err(fault) if refusals == [0, 0] => fault,
+                    Err(fault) => {
+                        format!("TP/EP one-shot reduction refused: {refusals:?}; {fault}")
+                    }
+                    Ok(()) => format!("TP/EP one-shot reduction refused: {refusals:?}"),
+                };
                 for (rank, rollback) in [rollback0, rollback1].into_iter().enumerate() {
                     if let Err(rollback_error) = rollback {
                         error.push_str(&format!("; rank {rank} rollback: {rollback_error}"));
@@ -14311,7 +14341,11 @@ impl Dsv4Gpu {
                 } else {
                     None
                 },
-                moe_fault: if !self.ep_enabled && (self.prefill_grouped || self.matrix_moe) {
+                // Peer-dispatch EP keeps its synchronous checks: its coverage check reads the
+                // observed live counts. A TP/EP rank owns its partition's words (memra #679).
+                moe_fault: if (!self.ep_enabled || self.topology.is_tp_ep())
+                    && (self.prefill_grouped || self.matrix_moe)
+                {
                     Some(i(n_trunk)?)
                 } else {
                     None
@@ -16925,6 +16959,25 @@ impl Dsv4Gpu {
                                 .into(),
                         );
                     }
+                    let fault = match &vws.moe_fault {
+                        Some(words) if vws.moe_fault_armed => {
+                            let il = layer.il as usize;
+                            if il >= words.len() {
+                                return Err(format!(
+                                    "TP/EP MoE fault word for layer {il} outside workspace"
+                                ));
+                            }
+                            Some(crate::dsv4_grouped::MoeFault(
+                                words.device_ptr(&stream).0
+                                    + (il * std::mem::size_of::<i32>()) as u64,
+                            ))
+                        }
+                        _ => None,
+                    };
+                    vws.grouped_work
+                        .as_mut()
+                        .ok_or("TP/EP local grouped workspace missing")?
+                        .defer_faults(fault);
                     let mut compute = EpCompute {
                         xq: &vws.xq,
                         xs: &vws.xs,

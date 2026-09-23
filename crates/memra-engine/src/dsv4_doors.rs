@@ -11,18 +11,18 @@
 //! **Half of that gap closed on 2026-09-11** (memra #461, owner ruling): the
 //! matrix expert program is the SERVED program now, not a default-OFF door, so
 //! `SERVED_PROGRAM.matrix_moe` is true and the expert-program axis no longer
-//! separates the bench from the served path. The other half was structural
-//! until memra #454: the served path is PP-2 with a resident DSpark drafter and
-//! chunked prefill, and TP/EP refused both a drafter and a batched prime (memra
-//! #457). Since #454 TP/EP chunks, verifies, carries DSpark on the head rank and
-//! parks both rank planes, and the server selects it with `MEMRA_DSV4_TOPOLOGY`;
-//! PP-2 stays the default the served program pins.
+//! separates the bench from the served path. The other half did not move: the
+//! served path is PP-2 with a resident DSpark drafter and chunked prefill, and
+//! TP/EP refused both a drafter and a batched prime (memra #457). Memra #454
+//! removed both refusals (TP/EP chunks, verifies, carries DSpark on the head
+//! rank and parks both rank planes, bit-equal to sequential), but its served
+//! A/B lost to PP-2 at batch 1 (`research/dsv4f-bringup-20260923/tpep-serve/RESULTS.md`), so the
+//! server has no TP/EP selector and TP/EP still takes no customer request.
 //!
-//! A door admitted only under a program that cannot serve is not "inert today",
-//! it is PERMANENTLY unreachable on the served path, so no program decision
-//! rescues it. TP/EP was that program until #454; a TP/EP-only door is now an
-//! admission question. `AdmittingProgram` is that axis and `served_disposition`
-//! is where the futures are decided.
+//! A door admitted only under TP/EP is not "inert today", it is unreachable on
+//! the served path until a TP/EP program wins its served A/B and the server
+//! gains a selector; no door-level change rescues it. `AdmittingProgram` is
+//! that axis and `served_disposition` is where the futures are decided.
 //!
 //! What the two flips did to the counts, written down because the counts are
 //! the claim: six of nine merged default-ON doors were inert, the matrix flip
@@ -126,9 +126,9 @@ pub enum AdmittingProgram {
     /// sibling lane measured it on the served path at +42% to +140% prefill, so
     /// whether these doors ever engage is the memra #461 matrix verdict.
     MatrixExecutor,
-    /// Only the all-layer TP/EP topology admits it. TP/EP could not serve a
-    /// customer request until memra #454 (memra #457, two refusals); it is now
-    /// an operator-selected topology, so these doors follow its admission.
+    /// Only the all-layer TP/EP topology admits it, and TP/EP serves no
+    /// customer request: the server has no TP/EP selector since its #454 A/B
+    /// lost to PP-2. Only a winning TP/EP program makes these reachable.
     TpEpOnly,
     /// Only a gate binary arming an instrument reaches it. No serving caller
     /// exists on any program.
@@ -170,10 +170,9 @@ pub struct ProgramFacts {
     pub matrix_can_serve: bool,
 }
 
-/// Today's facts: TP/EP serves when the operator selects it (`MEMRA_DSV4_TOPOLOGY`, memra
-/// #454), the matrix program serves.
+/// Today's facts: the server selects no TP/EP program, the matrix program serves.
 pub const PROGRAM_FACTS: ProgramFacts = ProgramFacts {
-    tp_ep_can_serve: true,
+    tp_ep_can_serve: false,
     matrix_can_serve: true,
 };
 
@@ -204,11 +203,9 @@ pub struct Dsv4Program {
     pub gate_armed_gu_fuse: bool,
     /// This checkpoint's HC geometry is `rows == 24 && w == 16384`.
     pub hc_geometry_24x16384: bool,
-    /// Whether this program can serve a customer request AT ALL. TP/EP could not
-    /// until memra #454 (a single-token prime only, and no drafter, memra #457);
-    /// it now chunks, verifies, carries DSpark on the head rank and parks both
-    /// rank planes, and the server selects it with `MEMRA_DSV4_TOPOLOGY`. A
-    /// program pinned to a gate-only arm still cannot.
+    /// Whether this program can serve a customer request AT ALL. TP/EP cannot:
+    /// memra #454 taught it to chunk and carry DSpark, but the server has no
+    /// TP/EP selector because the served A/B lost to PP-2 at batch 1.
     pub can_serve: bool,
 }
 
@@ -250,8 +247,7 @@ pub const TUNED_BENCH_PROGRAM: Dsv4Program = Dsv4Program {
     drafter_resident: false,
     gate_armed_gu_fuse: true,
     hc_geometry_24x16384: true,
-    // The whole point: the gate-only fused-GU arm keeps this program off every
-    // customer request, whichever topology it runs.
+    // The whole point: this program cannot take a customer request.
     can_serve: false,
 };
 
@@ -718,9 +714,9 @@ mod tests {
     ///
     /// So the stand-in is defined here, depends on nothing else in this file,
     /// and stays correct whichever real doors exist: a door admitted only under
-    /// all-layer TP/EP, which the served program is not. Its permanence arm runs
-    /// on the facts from before memra #454, when TP/EP could not serve. Unlike a
-    /// real door, nobody can fix it, because there is nothing behind it to fix.
+    /// all-layer TP/EP, which the served program is not and cannot become
+    /// without a served TP/EP selector. Unlike a real door, nobody can fix it,
+    /// because there is nothing behind it to fix.
     ///
     /// Taken verbatim from the norm-fuse PP-2 port lane's trial branch
     /// (`trial-normpp2-on-482`, `c3a4099b2`) rather than re-invented, so the two
@@ -1139,22 +1135,11 @@ mod tests {
                 "{door}"
             );
         }
-        // TP/EP serves since memra #454, so the permanence rule is asserted on the
-        // fact that used to hold rather than on today's.
-        let if_tp_ep_could_not_serve = ProgramFacts {
-            tp_ep_can_serve: false,
-            ..PROGRAM_FACTS
-        };
         assert_eq!(
-            served_disposition(&SYNTHETIC_TP_EP_ONLY_ROW, &if_tp_ep_could_not_serve),
+            served_disposition(&SYNTHETIC_TP_EP_ONLY_ROW, &PROGRAM_FACTS),
             DoorDisposition::PermanentlyUnreachable,
             "the permanence disposition must still be asserted with no real \
              TP/EP-only row left in the registry"
-        );
-        assert_eq!(
-            served_disposition(&SYNTHETIC_TP_EP_ONLY_ROW, &PROGRAM_FACTS),
-            DoorDisposition::PortAdmissionOrRedeclare,
-            "a TP/EP-only door is an admission question once TP/EP serves"
         );
         for door in ENGAGED {
             assert_eq!(disposition(door), DoorDisposition::Engaged, "{door}");
@@ -1163,15 +1148,14 @@ mod tests {
 
     /// Red arm for the permanence claim, which is the claim doing the most work
     /// in the recommendation. "Permanently unreachable" is keyed to a FACT about
-    /// the program (memra #457: TP/EP refused a batched prime and refused the
-    /// drafter), not hard-coded per door. TP/EP learned to serve in memra #454,
-    /// and the same door stops being removable on its own evidence and becomes
-    /// an ordinary admission question.
+    /// the program (TP/EP has no served selector: memra #457, then the #454
+    /// served A/B), not hard-coded per door. Let TP/EP serve and the same three
+    /// doors stop being removable on their own evidence and become an ordinary
+    /// admission question.
     #[test]
     fn permanence_is_keyed_to_the_program_fact_not_to_the_door() {
-        assert!(PROGRAM_FACTS.tp_ep_can_serve, "memra #454");
-        let if_tp_ep_could_not_serve = ProgramFacts {
-            tp_ep_can_serve: false,
+        let if_tp_ep_could_serve = ProgramFacts {
+            tp_ep_can_serve: true,
             ..PROGRAM_FACTS
         };
         // This arm ran over the three real TP/EP-only doors until 2026-09-11.
@@ -1196,11 +1180,11 @@ mod tests {
             "the arm is vacuous unless the stand-in is inert on the served program"
         );
         assert_eq!(
-            served_disposition(&TP_EP_ONLY, &if_tp_ep_could_not_serve),
+            served_disposition(&TP_EP_ONLY, &PROGRAM_FACTS),
             DoorDisposition::PermanentlyUnreachable
         );
         assert_eq!(
-            served_disposition(&TP_EP_ONLY, &PROGRAM_FACTS),
+            served_disposition(&TP_EP_ONLY, &if_tp_ep_could_serve),
             DoorDisposition::PortAdmissionOrRedeclare
         );
     }
