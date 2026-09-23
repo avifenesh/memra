@@ -45,6 +45,123 @@ def unpack(archive, expected, out):
         raise ValueError("scientific archive is incomplete")
 
 
+def verify_heldout_raw(
+    data, version, source, locked, gpu, audit_run, audit_context,
+    loop_candidate, metrics_from_log, confidence_arms,
+):
+    suffix = "" if version == 1 else "-v2"
+    root = data / f"heldout-pair{suffix}"
+    workloads = data / f"heldout-workloads{suffix}"
+    manifest = json.loads((workloads / "manifest.json").read_text())
+    status = json.loads((root / "status.json").read_text())
+    freeze = json.loads((root / "FREEZE.json").read_text())
+    prior = json.loads((root / "PRESELECTION-FREEZE.json").read_text())
+    generator = "heldout_workloads.py" if version == 1 else "code_only_v2_workloads.py"
+    runner = "heldout_pair.py" if version == 1 else "heldout_pair_v2.py"
+    if (manifest["schema"] != version or freeze["schema"] != version
+            or sha(workloads / "manifest.json") != freeze["workloads_sha256"]
+            or freeze["source_sha256"] != sha(data / "source-confidence.json")
+            or freeze["runner_sha256"] != sha(data / "harness/confidence" / runner)
+            or manifest["generator_sha256"]
+            != sha(data / "harness/confidence" / generator)
+            or manifest["prefix_helper_sha256"]
+            != sha(data / "harness/prefix/workloads.py")
+            or manifest["prompt_helper_sha256"]
+            != sha(data / "harness/prefix/workloads_simple.py")
+            or manifest["binary_sha256"] != source["binaries"]["qwen-prefix-study"]
+            or prior["selected_c"] is not None
+            or prior["development_report_sha256"] is not None
+            or prior["workloads_sha256"] != freeze["workloads_sha256"]):
+        raise ValueError("versioned held-out source or preselection differs")
+    if version == 2:
+        original = data / "heldout-workloads"
+        previous = json.loads((original / "manifest.json").read_text())
+        if manifest["original_manifest_sha256"] != sha(original / "manifest.json"):
+            raise ValueError("v2 did not name the original scenario set")
+        for index in range(6):
+            old = previous["scenarios"][str(index)]
+            new = manifest["scenarios"][str(index)]
+            if old != new or sha(original / old["file"]) != sha(workloads / new["file"]):
+                raise ValueError("v2 changed an untouched held-out scenario")
+    for entry in (manifest["qualification"], *manifest["scenarios"].values()):
+        if sha(workloads / entry["file"]) != entry["sha256"]:
+            raise ValueError("versioned held-out prompt bytes differ: " + entry["file"])
+    identity = json.loads((root / "identity.json").read_text())
+    if (identity["source"] != source or identity["artifacts"]["qwen"] != locked
+            or identity["gpu"] != gpu):
+        raise ValueError("held-out source, model or GPU changed")
+    checked = 0
+    for relative in status["completed"]:
+        family, phase, label = relative.split("/")
+        if family != "qwen" or phase not in ("qualification", "heldout"):
+            raise ValueError("unexpected held-out native record")
+        entry = (
+            manifest["qualification"] if phase == "qualification"
+            else manifest["scenarios"][str(int(label.split("-")[0]))]
+        )
+        kind = label.split("-")[-1]
+        expected_arm = "fixed:2" if kind == "k2off" else "fixed:3"
+        pmin, pmin0 = (
+            confidence_arms[freeze["selected_c"]]
+            if kind == "selected" else (0.0, False)
+        )
+        run = root / relative
+        saved = json.loads(run.with_name(run.name + ".audit.json").read_text())
+        command = json.loads(run.with_name(run.name + ".command.json").read_text())
+        exit_row = json.loads(run.with_name(run.name + ".exit.json").read_text())
+        settings = command["settings"]
+        if (saved["arm"] != expected_arm or saved["seed"] != entry["seed"]
+                or float(settings["MEMRA_SPEC_PMIN"]) != pmin
+                or settings["MEMRA_SPEC_PMIN0"] != ("1" if pmin0 else "0")
+                or settings["MEMRA_SPEC_ADAPT"] != "0"
+                or settings["MEMRA_SPEC_STATS"] != "1"
+                or settings["MEMRA_SPEC_PMIN_INROUND"] != "0"
+                or command["binary_sha256"] != source["binaries"]["qwen-prefix-study"]
+                or command["workload_sha256"] != entry["sha256"]
+                or command["seed"] != entry["seed"]
+                or exit_row["returncode"] != 0 or exit_row["contamination"]
+                or run.with_name(run.name + ".gpu.csv").stat().st_size == 0):
+            raise ValueError("held-out native command or result differs: " + relative)
+        metrics = metrics_from_log(
+            run.with_name(run.name + ".log").read_text()
+        )[expected_arm]
+        independent = audit_run(
+            run, entry, expected_arm, entry["seed"], metrics, audit_context, loop_candidate
+        )
+        if (saved["requests"] != independent["requests"]
+                or saved["context_accounting"] != independent["context_accounting"]
+                or saved["metrics"] != metrics):
+            raise ValueError("held-out request audit differs: " + relative)
+        checked += 1
+    qualifier = json.loads(
+        (root / "qwen/qualification/sampled-format-k3.audit.json").read_text()
+    )
+    rows = qualifier["requests"]
+    if version == 1:
+        failed = rows[4]
+        if (status["status"] != "failed"
+                or status["completed"] != ["qwen/qualification/sampled-format-k3"]
+                or "held-out format qualification failed" not in status["error"]
+                or freeze["selected_c"] is not None
+                or freeze["development_report_sha256"] is not None
+                or sum(row["format"]["requested_format_covered"] for row in rows) != 7
+                or (failed["kind"], failed["length_target"], failed["output_tokens"])
+                != ("prose", 4096, 8192)
+                or failed["format"]["answer_bytes"] != 0
+                or any(not row["format"]["requested_format_covered"] or row["loop"]
+                       for row in rows if row["kind"] == "code")):
+            raise ValueError("original all-format qualification failure was not retained")
+    elif (status["status"] not in ("no-positive-development-c", "completed")
+          or freeze["qualification_scope"] != "code-only-v2"
+          or freeze["development_report_sha256"]
+          != sha(data / "fixed-grid-v2-report.json")
+          or sum(row["kind"] == "code" for row in rows) != 4
+          or any(not row["format"]["requested_format_covered"] or row["loop"]
+                 for row in rows if row["kind"] == "code")):
+        raise ValueError("code-only v2 qualification or selection did not pass")
+    return checked
+
+
 def reproduce(candidate, manifest_sha256, base, out):
     if sha(candidate / "manifest.json") != manifest_sha256:
         raise ValueError("scientific manifest differs from its external pin")
@@ -178,94 +295,59 @@ def reproduce(candidate, manifest_sha256, base, out):
         raise ValueError("offline adaptive-C replay differs from its recorded outcome")
     (out / "OFFLINE-RESULTS.json").write_text(json.dumps(offline, indent=2) + "\n")
 
-    if not (data / "postscore-blind.exit").read_text().startswith("exit=0 "):
-        raise ValueError("blinded qualification did not close")
-    heldout_root = data / "heldout-pair"
-    heldout_workloads = data / "heldout-workloads"
-    heldout_manifest = json.loads((heldout_workloads / "manifest.json").read_text())
-    heldout_status = json.loads((heldout_root / "status.json").read_text())
-    heldout_freeze = json.loads((heldout_root / "FREEZE.json").read_text())
-    if (sha(heldout_workloads / "manifest.json") != heldout_freeze["workloads_sha256"]
-            or heldout_freeze["source_sha256"] != sha(data / "source-confidence.json")
-            or heldout_freeze["runner_sha256"] != sha(data / "harness/confidence/heldout_pair.py")
-            or heldout_manifest["generator_sha256"]
-            != sha(data / "harness/confidence/heldout_workloads.py")
-            or heldout_manifest["prefix_helper_sha256"]
-            != sha(data / "harness/prefix/workloads.py")
-            or heldout_manifest["prompt_helper_sha256"]
-            != sha(data / "harness/prefix/workloads_simple.py")
-            or heldout_manifest["binary_sha256"] != source["binaries"]["qwen-prefix-study"]):
-        raise ValueError("held-out workload or source identity differs")
-    for entry in (
-        heldout_manifest["qualification"], *heldout_manifest["scenarios"].values()
-    ):
-        if sha(heldout_workloads / entry["file"]) != entry["sha256"]:
-            raise ValueError("held-out prompt bytes differ: " + entry["file"])
-    heldout_identity = json.loads((heldout_root / "identity.json").read_text())
-    if (heldout_identity["source"] != source
-            or heldout_identity["artifacts"]["qwen"] != locked
-            or heldout_identity["gpu"] != identity["gpu"]):
-        raise ValueError("held-out model or GPU differs from development")
-    heldout_checked = 0
-    for relative in heldout_status["completed"]:
-        family, phase, label = relative.split("/")
-        if family != "qwen" or phase not in ("qualification", "heldout"):
-            raise ValueError("unexpected held-out native record")
-        entry = (
-            heldout_manifest["qualification"] if phase == "qualification"
-            else heldout_manifest["scenarios"][str(int(label.split("-")[0]))]
-        )
-        kind = label.split("-")[-1]
-        expected_arm = "fixed:2" if kind == "k2off" else "fixed:3"
-        pmin, pmin0 = (
-            confidence_arms[heldout_freeze["selected_c"]]
-            if kind == "selected" else (0.0, False)
-        )
-        run = heldout_root / relative
-        saved = json.loads(run.with_name(run.name + ".audit.json").read_text())
-        command = json.loads(run.with_name(run.name + ".command.json").read_text())
-        exit_row = json.loads(run.with_name(run.name + ".exit.json").read_text())
-        settings = command["settings"]
-        if (saved["arm"] != expected_arm or saved["seed"] != entry["seed"]
-                or float(settings["MEMRA_SPEC_PMIN"]) != pmin
-                or settings["MEMRA_SPEC_PMIN0"] != ("1" if pmin0 else "0")
-                or settings["MEMRA_SPEC_ADAPT"] != "0"
-                or settings["MEMRA_SPEC_STATS"] != "1"
-                or settings["MEMRA_SPEC_PMIN_INROUND"] != "0"
-                or command["binary_sha256"] != source["binaries"]["qwen-prefix-study"]
-                or command["workload_sha256"] != entry["sha256"]
-                or command["seed"] != entry["seed"]
-                or exit_row["returncode"] != 0 or exit_row["contamination"]
-                or run.with_name(run.name + ".gpu.csv").stat().st_size == 0):
-            raise ValueError("held-out native command or result differs: " + relative)
-        metrics = metrics_from_log(
-            run.with_name(run.name + ".log").read_text()
-        )[expected_arm]
-        independent = audit_run(
-            run, entry, expected_arm, entry["seed"], metrics, audit_context, loop_candidate
-        )
-        if (saved["requests"] != independent["requests"]
-                or saved["context_accounting"] != independent["context_accounting"]
-                or saved["metrics"] != metrics):
-            raise ValueError("held-out request audit differs: " + relative)
-        heldout_checked += 1
-    heldout = heldout_report(
-        heldout_root, heldout_workloads, data / "fixed-grid-v2-report.json"
+    if not (data / "postscore-blind.exit").read_text().startswith("exit=1 "):
+        raise ValueError("original all-format qualification failure was not retained")
+    rejected_runs = verify_heldout_raw(
+        data, 1, source, locked, identity["gpu"], audit_run, audit_context,
+        loop_candidate, metrics_from_log, confidence_arms,
     )
-    if json.loads(json.dumps(heldout)) != json.loads((data / "heldout-report.json").read_text()):
-        raise ValueError("held-out report differs from independently audited records")
+    heldout_checked = verify_heldout_raw(
+        data, 2, source, locked, identity["gpu"], audit_run, audit_context,
+        loop_candidate, metrics_from_log, confidence_arms,
+    )
+    rejected = json.loads(
+        (data / "heldout-pair/qwen/qualification/sampled-format-k3.audit.json").read_text()
+    )
+    failure = rejected["requests"][4]
+    failure_record = {
+        "status": "rejected-all-format-qualification",
+        "covered": 7,
+        "required": 8,
+        "failed_request": {
+            "requested_kind": failure["kind"],
+            "prompt_tokens": failure["length_target"],
+            "output_tokens": failure["output_tokens"],
+            "answer_bytes": failure["format"]["answer_bytes"],
+        },
+        "code_requests_covered": 4,
+        "loop_exclusions": 0,
+    }
+    (out / "FAILED-QUALIFICATION.json").write_text(
+        json.dumps(failure_record, indent=2) + "\n"
+    )
+    heldout = heldout_report(
+        data / "heldout-pair-v2", data / "heldout-workloads-v2",
+        data / "fixed-grid-v2-report.json",
+    )
+    if json.loads(json.dumps(heldout)) != json.loads(
+        (data / "heldout-report-v2.json").read_text()
+    ):
+        raise ValueError("code-only v2 report differs from independently audited records")
     (out / "HELDOUT-RESULTS.json").write_text(json.dumps(heldout, indent=2) + "\n")
 
     receipt = {
         "status": "replayed-without-GPU",
         "native_runs": checked,
+        "rejected_qualification_runs": rejected_runs,
         "heldout_native_runs": heldout_checked,
+        "heldout_status": heldout["status"],
         "code_pairs": result["all_code"]["pairs"],
         "source": source_receipt,
         "results_sha256": sha(out / "RESULTS.json"),
         "markdown_sha256": sha(out / "RESULTS.md"),
         "offline_results_sha256": sha(out / "OFFLINE-RESULTS.json"),
         "heldout_results_sha256": sha(out / "HELDOUT-RESULTS.json"),
+        "failed_qualification_sha256": sha(out / "FAILED-QUALIFICATION.json"),
     }
     (out / "REPLAY.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt

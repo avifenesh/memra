@@ -115,22 +115,51 @@ def report(root, workloads, development_report):
     manifest = json.loads((workloads / "manifest.json").read_text())
     development = json.loads(development_report.read_text())
     selected = choose_c(development)
+    version = manifest["schema"]
+    if version not in (1, 2):
+        raise ValueError("unknown held-out qualifier version")
+    code_only = version == 2
+    generator = "code_only_v2_workloads.py" if code_only else "heldout_workloads.py"
+    runner = "heldout_pair_v2.py" if code_only else "heldout_pair.py"
     if (freeze["orders"] != orders()
+            or freeze["schema"] != version
             or freeze["workloads_sha256"] != sha(workloads / "manifest.json")
+            or freeze["runner_sha256"] != sha(Path(__file__).with_name(runner))
             or freeze["development_report_sha256"] != sha(development_report)
             or freeze["selected_c"] != selected
+            or manifest["generator_sha256"] != sha(Path(__file__).with_name(generator))
             or prior["selected_c"] is not None
             or prior["development_report_sha256"] is not None
             or prior["status"] != "registered-before-development-selection"
             or prior["workloads_sha256"] != freeze["workloads_sha256"]
             or prior["runner_sha256"] != freeze["runner_sha256"]):
         raise ValueError("held-out registration or development choice changed")
+    if code_only:
+        original = workloads.parent / "heldout-workloads"
+        original_manifest = json.loads((original / "manifest.json").read_text())
+        if (freeze["qualification_scope"] != "code-only-v2"
+                or manifest["original_manifest_sha256"] != sha(original / "manifest.json")):
+            raise ValueError("code-only v2 changed its versioned qualification scope")
+        for index in range(6):
+            previous = original_manifest["scenarios"][str(index)]
+            current = manifest["scenarios"][str(index)]
+            if previous != current or sha(original / previous["file"]) != sha(workloads / current["file"]):
+                raise ValueError("code-only v2 changed a preregistered scenario")
     qualifier = json.loads(
         (root / "qwen/qualification/sampled-format-k3.audit.json").read_text()
     )
-    if not all(row["format"]["requested_format_covered"] and not row["loop"]
-               for row in qualifier["requests"]):
+    relevant = (
+        [row for row in qualifier["requests"] if row["kind"] == "code"]
+        if code_only else qualifier["requests"]
+    )
+    if (len(relevant) != (4 if code_only else 8)
+            or not all(row["format"]["requested_format_covered"] and not row["loop"]
+                       for row in relevant)):
         raise ValueError("held-out format qualification did not pass")
+    prose_covered = sum(
+        row["format"]["requested_format_covered"]
+        for row in qualifier["requests"] if row["kind"] == "prose"
+    )
     if status["status"] == "no-positive-development-c":
         if selected is not None or len(status["completed"]) != 1:
             raise ValueError("held-out no-go status differs from the development selection")
@@ -138,6 +167,8 @@ def report(root, workloads, development_report):
             "status": "no-positive-development-c",
             "selected_c": None,
             "qualification": qualifier["path"],
+            "qualification_scope": "code-only-v2" if code_only else "all-formats-v1",
+            "qualification_prose_covered": prose_covered,
             "workloads_sha256": freeze["workloads_sha256"],
             "scope": "no held-out speed claim",
         }
@@ -223,10 +254,13 @@ def report(root, workloads, development_report):
                 if key[0] == "code":
                     all_code.append(matched)
     return {
-        "status": "measured-heldout-fixed-c",
+        "status": "measured-heldout-code-v2" if code_only else "measured-heldout-fixed-c",
         "selected_c": selected,
         "selected_pmin": ARMS[selected][0],
         "selected_pmin0": ARMS[selected][1],
+        "qualification_scope": "code-only-v2" if code_only else "all-formats-v1",
+        "qualification_code_covered": 4,
+        "qualification_prose_covered": prose_covered,
         "workloads_sha256": freeze["workloads_sha256"],
         "development_report_sha256": freeze["development_report_sha256"],
         "matched_loop_exclusions": exclusions,
@@ -242,7 +276,7 @@ def report(root, workloads, development_report):
             ])
             for length in (256, 1024, 4096, 16384)
         },
-        "scope": "six disjoint synthetic scenarios, independent native code requests; no online C, warm-KV or HTTP claim",
+        "scope": "six disjoint synthetic scenarios, requested-code native rate; prose diagnostic only under v2; no online C, warm-KV or HTTP claim",
     }
 
 

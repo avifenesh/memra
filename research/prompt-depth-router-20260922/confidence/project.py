@@ -29,6 +29,8 @@ HARNESS = {
     "harness/confidence/heldout_workloads.py",
     "harness/confidence/heldout_pair.py",
     "harness/confidence/heldout_report.py",
+    "harness/confidence/code_only_v2_workloads.py",
+    "harness/confidence/heldout_pair_v2.py",
 }
 SCIENCE = {
     "fixed-grid-v2-report.json",
@@ -52,7 +54,11 @@ SCIENCE = {
     "heldout-pair/PRESELECTION-FREEZE.json",
     "heldout-pair/FREEZE.json",
     "heldout-pair/status.json",
-    "heldout-report.json",
+    "heldout-workloads-v2/manifest.json",
+    "heldout-pair-v2/PRESELECTION-FREEZE.json",
+    "heldout-pair-v2/FREEZE.json",
+    "heldout-pair-v2/status.json",
+    "heldout-report-v2.json",
 }
 SOURCE = "runtime-source-confidence.tar.gz"
 
@@ -104,19 +110,27 @@ def main():
             raise ValueError("operator study did not close successfully")
         if not (root / "sampled-gate.exit").read_text().startswith("exit=0 "):
             raise ValueError("sampled cutoff gate did not close successfully")
-        if not (root / "postscore-blind.exit").read_text().startswith("exit=0 "):
-            raise ValueError("blinded held-out preparation did not close successfully")
+        if not (root / "postscore-blind.exit").read_text().startswith("exit=1 "):
+            raise ValueError("original all-format qualification failure was not retained")
         native = {
             name: root / name for name in seen
             if name.startswith((
                 "fixed-grid-v2/", "workloads/",
                 "heldout-workloads/", "heldout-pair/",
+                "heldout-workloads-v2/", "heldout-pair-v2/",
             )) or name in SCIENCE
         }
         source = json.loads((root / "source-confidence.json").read_text())
         freeze = json.loads((root / "fixed-grid-v2/FREEZE.json").read_text())
         status = json.loads((root / "fixed-grid-v2/status.json").read_text())
         heldout_status = json.loads((root / "heldout-pair/status.json").read_text())
+        original_qualifier = json.loads(
+            (root / "heldout-pair/qwen/qualification/sampled-format-k3.audit.json").read_text()
+        )
+        v2_status = json.loads((root / "heldout-pair-v2/status.json").read_text())
+        v2_qualifier = json.loads(
+            (root / "heldout-pair-v2/qwen/qualification/sampled-format-k3.audit.json").read_text()
+        )
         identity = json.loads((root / "fixed-grid-v2/identity.json").read_text())
         if (status["status"] != "completed"
                 or freeze["source_sha256"] != sha(root / "source-confidence.json")
@@ -133,8 +147,17 @@ def main():
                 or source["source_patcher_sha256"] != sha(root / "harness/confidence/patch_source.py")
                 or source["source_patch_receipt_sha256"] != sha(root / "source-patch.json")):
             raise ValueError("operator result is incomplete or source bindings changed")
-        if heldout_status["status"] not in ("no-positive-development-c", "completed"):
-            raise ValueError("held-out qualification or selected C study is incomplete")
+        if (heldout_status["status"] != "failed"
+                or "held-out format qualification failed" not in heldout_status["error"]
+                or sum(row["format"]["requested_format_covered"]
+                       for row in original_qualifier["requests"]) != 7
+                or any(not row["format"]["requested_format_covered"] or row["loop"]
+                       for row in original_qualifier["requests"] if row["kind"] == "code")
+                or v2_status["status"] not in ("no-positive-development-c", "completed")
+                or sum(row["kind"] == "code" for row in v2_qualifier["requests"]) != 4
+                or any(not row["format"]["requested_format_covered"] or row["loop"]
+                       for row in v2_qualifier["requests"] if row["kind"] == "code")):
+            raise ValueError("versioned held-out qualification chain is incomplete")
         write_archive(out / "native-data.tar.gz", native)
         write_archive(
             out / "harness-source.tar.gz",
@@ -147,7 +170,7 @@ def main():
         }
         manifest = {
             "schema": 1,
-            "scope": "Qwen fixed K=3 confidence-cutoff science; no serving qualification",
+            "scope": "Qwen fixed K=3 confidence science with retained all-format failure and code-only v2; no serving qualification",
             "operator_archive_sha256": sha(args.operator),
             "source_recipe_commit": source["base_source_recipe_commit"],
             "source_patch_sha256": source["source_patcher_sha256"],
