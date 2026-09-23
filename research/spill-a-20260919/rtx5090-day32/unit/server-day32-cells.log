@@ -1,0 +1,14 @@
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-a/crates/memra-engine)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-a/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 07s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-4cd9b829515be66d)
+
+running 3 tests
+test worker::tests::option_c_span_attach_fault_hands_every_span_back ... ok
+test worker::tests::option_c_span_postpublish_refusal_returns_the_staging_to_the_set ... ok
+test worker::tests::option_c_spans_ride_the_promote_ticket_and_land_bitwise ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 897 filtered out; finished in 0.23s
+

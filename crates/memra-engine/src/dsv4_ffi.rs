@@ -195,6 +195,32 @@ unsafe extern "C" {
         topk: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// `memra_dsv4_grouped_routes_partition` that also ORs `fault_bit` into `*fault` when an
+    /// id is outside the global table (memra #679).
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_grouped_routes_partition_fault(
+        selected: *const i32,
+        weights: *const f32,
+        scale2: *const f32,
+        counts: *mut i32,
+        offsets: *mut i32,
+        expert_ids: *mut i32,
+        pairs: *mut i32,
+        tokens: *mut i32,
+        route_weights: *mut f32,
+        macro1: *mut f32,
+        macro2: *mut f32,
+        macro3: *mut f32,
+        status: *mut i32,
+        slots: i32,
+        global_experts: i32,
+        first: i32,
+        expert_count: i32,
+        topk: i32,
+        fault: *mut i32,
+        fault_bit: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_grouped_routes(
         selected: *const i32,
         weights: *const f32,
@@ -388,6 +414,7 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     /// `memra_dsv4_fp8_gather_half` that also ORs `fault_bit` into `*fault` on a lossy row.
+    /// A non-null `live` (the route's device live-row count) makes rows at or past it inert.
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_fp8_gather_half_fault(
         codes: *const c_void,
@@ -400,6 +427,7 @@ unsafe extern "C" {
         cols: i32,
         fault: *mut i32,
         fault_bit: i32,
+        live: *const i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_scale_rows(

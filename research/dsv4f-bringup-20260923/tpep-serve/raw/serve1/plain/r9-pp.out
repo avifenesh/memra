@@ -1,0 +1,8 @@
+START utc=2026-09-23T11:03:55Z bin=/root/lane/target-mrow/release/memra-server env=MEMRA_ENV_AUDIT=warn
+READY after=123s port=46787
+CELL warmup c=1 ok=1/1 agg=37.35 tok/s decode_p50=50.40 tok/s ttft_p50=241 ms tpot_p50=19.84 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=48.32 tok/s decode_p50=50.04 tok/s ttft_p50=200 ms tpot_p50=19.98 ms errs=[]
+CELL sampled-c1 c=1 ok=8/8 agg=44.81 tok/s decode_p50=46.29 tok/s ttft_p50=202 ms tpot_p50=21.60 ms errs=[]
+CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=48.29 tok/s decode_p50=50.04 tok/s ttft_p50=201 ms tpot_p50=19.98 ms errs=[]
+CELLS_DONE utc=2026-09-23T11:07:48Z
+TERMINAL rc=0 utc=2026-09-23T11:07:50Z
