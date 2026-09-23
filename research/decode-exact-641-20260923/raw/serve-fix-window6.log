@@ -1,0 +1,46 @@
+server bin /tmp/de641/fix-memra-server sha 53f9a109c9ca7cc0
+-- C0f (solo yield=1) start 2026-09-23T08:58:32+03:00
+server pid 2333852
+server pid 2333852 exit 0
+REPRO641 C0f: kind=solo yield=1 on_shape=None peer-b sha=06bfb5126effdd4c == R finish=length text='s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</' shas={'peer-cold-b': '06bfb5126effdd4c'}
+   C0f rc=0 end 2026-09-23T08:58:36+03:00 apps=[]
+-- Y0f-1 (cell yield=0) start 2026-09-23T08:58:36+03:00
+server pid 2334051
+server pid 2334051 exit 0
+REPRO641 Y0f-1: kind=cell yield=0 on_shape=True peer-b sha=06bfb5126effdd4c == R finish=length text='s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</' shas={'long': '089d70f819696ba2', 'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '06bfb5126effdd4c', 'peer-hit': '2c51dd24d89131a3'}
+   Y0f-1 rc=0 end 2026-09-23T08:59:29+03:00 apps=[]
+-- Y1f-1 (cell yield=1) start 2026-09-23T08:59:29+03:00
+server pid 2336522
+server pid 2336522 exit 0
+REPRO641 Y1f-1: kind=cell yield=1 on_shape=False peer-b sha=06bfb5126effdd4c == R finish=length text='s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</' shas={'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '06bfb5126effdd4c', 'peer-hit': '2c51dd24d89131a3', 'long': '089d70f819696ba2'}
+   Y1f-1 rc=0 end 2026-09-23T09:00:26+03:00 apps=[]
+-- Y0f-2 (cell yield=0) start 2026-09-23T09:00:26+03:00
+server pid 2339392
+server pid 2339392 exit 0
+REPRO641 Y0f-2: kind=cell yield=0 on_shape=True peer-b sha=06bfb5126effdd4c == R finish=length text='s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</' shas={'long': '089d70f819696ba2', 'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '06bfb5126effdd4c', 'peer-hit': '2c51dd24d89131a3'}
+   Y0f-2 rc=0 end 2026-09-23T09:01:24+03:00 apps=[]
+-- Y1f-2 (cell yield=1) start 2026-09-23T09:01:24+03:00
+server pid 2343530
+server pid 2343530 exit 0
+REPRO641 Y1f-2: kind=cell yield=1 on_shape=False peer-b sha=06bfb5126effdd4c == R finish=length text='s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</' shas={'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '06bfb5126effdd4c', 'peer-hit': '2c51dd24d89131a3', 'long': '089d70f819696ba2'}
+   Y1f-2 rc=0 end 2026-09-23T09:02:23+03:00 apps=[]
+-- Y0f-3 (cell yield=0) start 2026-09-23T09:02:23+03:00
+server pid 2345895
+server pid 2345895 exit 0
+REPRO641 Y0f-3: kind=cell yield=0 on_shape=True peer-b sha=06bfb5126effdd4c == R finish=length text='s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</' shas={'long': '089d70f819696ba2', 'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '06bfb5126effdd4c', 'peer-hit': '2c51dd24d89131a3'}
+   Y0f-3 rc=0 end 2026-09-23T09:03:21+03:00 apps=[]
+-- Y1f-3 (cell yield=1) start 2026-09-23T09:03:21+03:00
+server pid 2351054
+server pid 2351054 exit 0
+REPRO641 Y1f-3: kind=cell yield=1 on_shape=False peer-b sha=06bfb5126effdd4c == R finish=length text='s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</' shas={'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '06bfb5126effdd4c', 'peer-hit': '2c51dd24d89131a3', 'long': '089d70f819696ba2'}
+   Y1f-3 rc=0 end 2026-09-23T09:04:20+03:00 apps=[]
+-- Y0f-4 (cell yield=0) start 2026-09-23T09:04:20+03:00
+server pid 2354350
+server pid 2354350 exit 0
+REPRO641 Y0f-4: kind=cell yield=0 on_shape=True peer-b sha=06bfb5126effdd4c == R finish=length text='s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</' shas={'long': '089d70f819696ba2', 'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '06bfb5126effdd4c', 'peer-hit': '2c51dd24d89131a3'}
+   Y0f-4 rc=0 end 2026-09-23T09:05:18+03:00 apps=[]
+-- Y0f-5 (cell yield=0) start 2026-09-23T09:05:18+03:00
+server pid 2356704
+server pid 2356704 exit 0
+REPRO641 Y0f-5: kind=cell yield=0 on_shape=True peer-b sha=06bfb5126effdd4c == R finish=length text='s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</' shas={'long': '089d70f819696ba2', 'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '06bfb5126effdd4c', 'peer-hit': '2c51dd24d89131a3'}
+   Y0f-5 rc=0 end 2026-09-23T09:06:17+03:00 apps=[]
