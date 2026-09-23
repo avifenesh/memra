@@ -1607,6 +1607,29 @@ boundary. A gate that arms the M1 tensor-core or half2 down tail keeps precedenc
 `set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail reference arm in one loaded model for
 the component test and the DSpark gate's historical arm.
 
+## Removed doors, 2026-09-23 (the tiled sink scorer: superseded by the two-launch sink attention)
+
+memra #683, lane `research/dsv4f-bringup-20260923/sink-attn/RESULTS.md`. The tiled scorer landed
+2026-09-06 default-OFF with component and full-model identity receipts and no served receipt. Its
+14-day window closed 2026-09-20 without a decision. The two-launch sink attention of memra #683
+(`memra_dsv4_sink_attn_st_f32acc`) now takes every f32x shape the tiled arm admitted (64 heads x
+512) plus 32 x 512, on eager, batched/verify and graph replay, and is bit-identical to the
+three-kernel program the tiled arm composed with, so the arm had no reachable shape left. The
+tiled scorer was not measured against the two-launch kernel.
+
+`MEMRA_DSV4_SINK_SCORE`: **DELETED**, with the `Dsv4SinkScore` selector and its parser tests, the
+load-time parse and refusals, `set_sink_score_for_gate`, `sink_tiled_calls` (the EP gates assert
+`sink_st_calls` instead), the `dsv4_sink_scores_tiled_f32acc_kernel` kernel and its
+`memra_dsv4_sink_scores_tiled_init` / `memra_dsv4_sink_scores_tiled_f32acc` /
+`memra_dsv4_sink_attn_dec_mq_f32acc_tiled` bindings, the `dsv4_sink_score_gate` bin, the
+`tools/dsv4-sink-score-tiled-gate.cu` component gate, its exempt row in `src/dsv4_doors.rs` and
+the `("MEMRA_DSV4_SINK_SCORE", "tiled")` entries in three gate env lists. The 2026-09-06 receipt
+stays at `research/dsv4f-2card-1m-20260904/sink-score-tiled.md` with a superseded banner.
+
+The row as it stood:
+
+> | `MEMRA_DSV4_SINK_SCORE` | **scalar (tiled OFF)** | Experimental exact attention-score storage rewrite for device f32x, 64 heads x 512 dimensions. `tiled` reuses 8 query heads and 32 selected keys in 84096 bytes of explicitly initialized shared memory; dimension accumulation, masks, scale, softmax and output arithmetic stay unchanged. Covers single-query and batched/verify paths; unsupported geometry/path and unknown/non-Unicode values refuse. `set_sink_score_for_gate` drains both devices and configures the dynamic-shared limit before capture; future persistent graph users must key/rebuild on this arm. `sink_tiled_calls` records successful launches. Both PRO cards pass the component, live-input graph replay, plain twin and sanitizer gates; full-model scalar/tiled/scalar passes through width 512, including sampled output, warm restore and active C4. The matched single-run profile is banked; balanced serving performance remains pending. Gate: `dsv4_sink_score_gate`; receipt: `research/dsv4f-2card-1m-20260904/sink-score-tiled.md`. Rollback: unset or `scalar`; no default promotion. |
+
 ## Removed doors, 2026-09-23 (the DSV4 small-kernel diet is the code on every f32x device program)
 
 memra#339, lane `research/dsv4f-bringup-20260923/small-diet/RESULTS.md`. Owner ruling 2026-09-10:
