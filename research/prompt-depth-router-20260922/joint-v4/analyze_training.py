@@ -35,7 +35,7 @@ def score(root):
         }
     qualified = {
         name: row for name, row in fixed_score.items()
-        if row["format_pass"] == 48 and row["loops"] == 0
+        if name != "k3-trace" and row["format_pass"] == 48 and row["loops"] == 0
     }
     if "k3-c0" not in qualified:
         raise ValueError("K3/C0 development control failed the format/loop gate")
@@ -83,7 +83,7 @@ def score(root):
                         else "high" if prior >= 0.5 else "low"
                     ),
                 })
-            prior = int(observed["accepted_prefix"]) / int(observed["drafted"])
+                prior = int(observed["accepted_prefix"]) / int(observed["drafted"])
     if len({row["session"] for row in trials}) != 6:
         raise ValueError("randomized D lacks all six training conversations")
 

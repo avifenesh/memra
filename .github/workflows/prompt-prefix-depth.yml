@@ -283,13 +283,14 @@ jobs:
           lane=research/prompt-depth-router-20260922
           python3 -m py_compile \
             "$lane/joint-v4/run_native.py" \
-            "$lane/joint-v4/analyze_training.py"
+            "$lane/joint-v4/analyze_training.py" \
+            "$lane/joint-v4/train_depth.py"
           python3 "$lane/joint-v4/patch_source.py" \
             --base "$lane/confidence/adaptive-v3/receipts-v3/runtime-source-adaptive-v3.tar.gz" \
             --out "$RUNNER_TEMP/joint-v4-native"
           cd "$RUNNER_TEMP/joint-v4-native/repo"
           cargo check --locked -p memra-engine --bin mtp-depth-study
-          cargo test --locked -p memra-engine --lib learned_depth::tests::randomized_training_depths_keep_exposure_and_survive_a_new_request
+          cargo test --locked -p memra-engine --lib learned_depth::tests
       - name: Retain pinned source preflight
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

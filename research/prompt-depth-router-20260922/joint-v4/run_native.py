@@ -17,14 +17,15 @@ LANE = Path(__file__).resolve().parent.parent
 MODEL_SHA = "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a"
 FORMAT = re.compile(r"^```(?:python|py)\n(?P<code>[\s\S]+?)\n```\s*$")
 TRAIN_ARMS = (
-    ("k3-c0", "trace-c3", 3, None),
-    ("k2-c0", "trace-c2", 2, None),
+    ("k4-random-d", "explore-d", 4, None),
+    ("k3-c0", "fixed:3", 3, None),
+    ("k3-trace", "trace-c3", 3, None),
+    ("k2-c0", "fixed:2", 2, None),
     ("k4-c0", "fixed:4", 4, None),
-    ("k4-d3-c0", "trace-c3", 4, None),
+    ("k4-d3-c0", "fixed:3", 4, None),
     ("k3-c-cal", "fixed-c3", 3, "0.434978,0.850344"),
     ("k3-c-first", "fixed-c3", 3, "0.434978,0"),
     ("k3-c-second", "fixed-c3", 3, "0,0.850344"),
-    ("k4-random-d", "explore-d", 4, None),
 )
 
 
@@ -146,8 +147,6 @@ def check_inputs(args):
 def run_one(args, item, workloads, label, variant, arm, cap, cutoffs=None,
             explore_seed=None):
     root = args.out / f"{label}-{variant}"
-    if root.exists():
-        raise ValueError(f"refusing to reuse {root}")
     command = [
         str(args.binary), str(args.model), "embedded",
         str(workloads / item["file"]), str(root), arm,
@@ -166,7 +165,7 @@ def run_one(args, item, workloads, label, variant, arm, cap, cutoffs=None,
     })
     if environment.get("MEMRA_CAPTURE_DIR"):
         raise ValueError("research pod has capture enabled")
-    save(args.out / f"{root.name}.command.json", {
+    command_record = {
         "argv": command,
         "binary_sha256": args.binary_sha,
         "source_sha256": args.source_sha,
@@ -180,13 +179,28 @@ def run_one(args, item, workloads, label, variant, arm, cap, cutoffs=None,
             key: value for key, value in environment.items()
             if key.startswith("MEMRA_")
         },
-    })
+    }
+    command_path = args.out / f"{root.name}.command.json"
+    exit_path = args.out / f"{root.name}.exit.json"
+    if root.exists():
+        if (
+            not command_path.exists()
+            or json.loads(command_path.read_text()) != command_record
+            or not exit_path.exists()
+            or json.loads(exit_path.read_text())["returncode"] != 0
+        ):
+            raise ValueError(f"{root.name} is incomplete or has another pinned command")
+        audit = validate(root, item, arm)
+        if json.loads((root / "audit.json").read_text()) != audit:
+            raise ValueError(f"{root.name} saved audit differs")
+        return record(root, variant, arm, audit)
+    save(command_path, command_record)
     started = time.monotonic()
     with (args.out / f"{root.name}.stdout.log").open("x") as stdout, (
         args.out / f"{root.name}.stderr.log"
     ).open("x") as stderr:
         result = subprocess.run(command, env=environment, stdout=stdout, stderr=stderr)
-    save(args.out / f"{root.name}.exit.json", {
+    save(exit_path, {
         "returncode": result.returncode,
         "wall_s": time.monotonic() - started,
     })
@@ -198,6 +212,10 @@ def run_one(args, item, workloads, label, variant, arm, cap, cutoffs=None,
         raise ValueError("native run did not log full MTP head engagement")
     audit = validate(root, item, arm)
     save(root / "audit.json", audit)
+    return record(root, variant, arm, audit)
+
+
+def record(root, variant, arm, audit):
     return {
         "name": root.name,
         "variant": variant,

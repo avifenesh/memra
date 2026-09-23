@@ -1,11 +1,157 @@
 diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/learned_depth.rs
 --- a/crates/memra-engine/src/learned_depth.rs
 +++ b/crates/memra-engine/src/learned_depth.rs
-@@ -16,8 +16,24 @@
+@@ -1,6 +1,144 @@
+ //! Explicit study policies: a fixed control or a persistent contextual controller.
+ use std::sync::Arc;
+ use std::time::Duration;
++use std::collections::HashMap;
++use std::time::Instant;
++
++const DEPTH_FEATURES: usize = 37;
++
++#[derive(Clone, Debug)]
++pub struct TinyDepthModel {
++    variant: usize,
++    lambda: f64,
++    accepted: [[f64; DEPTH_FEATURES]; 4],
++    elapsed_ms: [[f64; DEPTH_FEATURES]; 4],
++    classes: HashMap<u32, u8>,
++}
++
++impl TinyDepthModel {
++    pub fn parse(text: &str) -> Result<Self, &'static str> {
++        let mut lines = text.lines();
++        let header: Vec<_> = lines.next().ok_or("missing tiny depth header")?.split('\t').collect();
++        if header.len() != 6 || header[0] != "joint-v4-linear" || header[1] != "1"
++            || header[3] != "4"
++        {
++            return Err("invalid tiny depth header");
++        }
++        let variant = match header[2] {
++            "token" => 23,
++            "history" => 35,
++            "prior" => 37,
++            _ => return Err("unknown tiny depth feature version"),
++        };
++        let lambda: f64 = header[4].parse().map_err(|_| "invalid tiny depth target rate")?;
++        let alpha: f64 = header[5].parse().map_err(|_| "invalid tiny depth penalty")?;
++        if !lambda.is_finite() || lambda <= 0.0 || !alpha.is_finite() || alpha <= 0.0 {
++            return Err("nonpositive tiny depth rate or penalty");
++        }
++        let mut model = Self {
++            variant,
++            lambda,
++            accepted: [[0.0; DEPTH_FEATURES]; 4],
++            elapsed_ms: [[0.0; DEPTH_FEATURES]; 4],
++            classes: HashMap::new(),
++        };
++        let mut seen = [[false; 4]; 2];
++        for line in lines {
++            let fields: Vec<_> = line.split('\t').collect();
++            if fields.len() != 3 {
++                return Err("invalid tiny depth row");
++            }
++            match fields[0] {
++                "A" | "T" => {
++                    let d: usize = fields[1].parse().map_err(|_| "invalid tiny depth action")?;
++                    if !(1..=4).contains(&d) {
++                        return Err("tiny depth action outside 1..=4");
++                    }
++                    let kind = usize::from(fields[0] == "T");
++                    if seen[kind][d - 1] {
++                        return Err("duplicate tiny depth weight row");
++                    }
++                    let weights = fields[2]
++                        .split(',')
++                        .map(|value| value.parse::<f64>().map_err(|_| "invalid tiny depth weight"))
++                        .collect::<Result<Vec<_>, _>>()?;
++                    if weights.len() != variant || weights.iter().any(|w| !w.is_finite()) {
++                        return Err("tiny depth weights differ from the feature version");
++                    }
++                    let target = if kind == 0 {
++                        &mut model.accepted[d - 1]
++                    } else {
++                        &mut model.elapsed_ms[d - 1]
++                    };
++                    target[..variant].copy_from_slice(&weights);
++                    seen[kind][d - 1] = true;
++                }
++                "B" => {
++                    let token: u32 = fields[1].parse().map_err(|_| "invalid tiny depth token id")?;
++                    let class: u8 = fields[2].parse().map_err(|_| "invalid tiny depth token class")?;
++                    if class >= 6 || model.classes.insert(token, class).is_some() {
++                        return Err("duplicate or invalid tiny depth token class");
++                    }
++                }
++                _ => return Err("unknown tiny depth row kind"),
++            }
++        }
++        if seen.iter().flatten().any(|&value| !value) {
++            return Err("tiny depth lacks a learned action");
++        }
++        Ok(model)
++    }
++
++    fn class(&self, token: u32) -> usize {
++        usize::from(*self.classes.get(&token).unwrap_or(&5))
++    }
++
++    fn features(&self, output: &[u32], prior: Option<(f64, f64)>) -> [f64; DEPTH_FEATURES] {
++        let mut x = [0.0; DEPTH_FEATURES];
++        x[0] = 1.0;
++        if let Some(&last) = output.last() {
++            x[1 + self.class(last)] = 1.0;
++            x[7 + (last.wrapping_mul(0x9e37_79b1) % 16) as usize] = 1.0;
++        }
++        if self.variant >= 35 {
++            for (start, size) in [(23, 4), (29, 16)] {
++                let window = output.iter().rev().take(size);
++                let n = output.len().min(size);
++                if n > 0 {
++                    for &token in window {
++                        x[start + self.class(token)] += 1.0 / n as f64;
++                    }
++                }
++            }
++        }
++        if self.variant == 37 {
++            if let Some((accepted, ms)) = prior {
++                x[35] = accepted;
++                x[36] = (ms / 80.0).min(1.0);
++            }
++        }
++        x
++    }
++
++    fn score(&self, d: usize, x: &[f64; DEPTH_FEATURES]) -> f64 {
++        let dot = |weights: &[f64; DEPTH_FEATURES]| {
++            weights[..self.variant].iter().zip(x).map(|(w, v)| w * v).sum::<f64>()
++        };
++        let accepted = dot(&self.accepted[d - 1]).clamp(0.0, d as f64);
++        let ms = dot(&self.elapsed_ms[d - 1]).max(0.01);
++        1.0 + accepted - self.lambda * ms / 1000.0
++    }
++}
++
++#[derive(Clone, Debug)]
++struct TinyDepthPolicy {
++    model: Arc<TinyDepthModel>,
++    noop: bool,
++    current_depth: usize,
++    prior: Option<(f64, f64)>,
++    switches: u64,
++    inference_ns: u128,
++}
+ 
+ #[derive(Clone, Debug)]
+ pub struct DepthStats {
+@@ -16,8 +154,25 @@
  #[derive(Clone, Debug)]
  pub struct LearnedDepth {
      context: Option<Box<crate::context_depth::ContextDepth>>,
 +    exploration: Option<Box<DepthExploration>>,
++    tiny: Option<Box<TinyDepthPolicy>>,
      stats: Vec<DepthStats>,
      fixed_depth: usize,
 +}
@@ -26,11 +172,12 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
  }
  
  fn stat(depth: usize) -> DepthStats {
-@@ -38,8 +54,28 @@
+@@ -38,8 +193,30 @@
          }
          Ok(Self {
              context: None,
 +            exploration: None,
++            tiny: None,
              stats: vec![stat(depth)],
              fixed_depth: depth,
 +        })
@@ -50,40 +197,70 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
 +                current_depth: 2,
 +                switches: 0,
 +            })),
++            tiny: None,
 +            stats: (2..=max_k + 1).map(stat).collect(),
 +            fixed_depth: 2,
          })
      }
  
-@@ -56,6 +92,7 @@
+@@ -56,6 +233,8 @@
          Ok(Self {
              stats: (2..=priors.cap + 1).map(stat).collect(),
              fixed_depth: priors.global_k + 1,
 +            exploration: None,
++            tiny: None,
              context: Some(Box::new(crate::context_depth::ContextDepth::new(
                  priors,
                  token_bytes,
-@@ -65,6 +102,9 @@
+@@ -64,7 +243,30 @@
+         })
      }
  
++    pub fn trained(model: TinyDepthModel, noop: bool) -> Self {
++        Self {
++            context: None,
++            exploration: None,
++            tiny: Some(Box::new(TinyDepthPolicy {
++                model: Arc::new(model),
++                noop,
++                current_depth: 4,
++                prior: None,
++                switches: 0,
++                inference_ns: 0,
++            })),
++            stats: (2..=5).map(stat).collect(),
++            fixed_depth: 4,
++        }
++    }
++
      pub fn depth(&self) -> usize {
 +        if let Some(exploration) = &self.exploration {
 +            return exploration.current_depth;
 +        }
++        if let Some(tiny) = &self.tiny {
++            return tiny.current_depth;
++        }
          self.context
              .as_ref()
              .map_or(self.fixed_depth, |c| c.depth())
-@@ -73,6 +113,9 @@
+@@ -73,7 +275,16 @@
          &self.stats
      }
      pub fn switches(&self) -> u64 {
 +        if let Some(exploration) = &self.exploration {
 +            return exploration.switches;
 +        }
++        if let Some(tiny) = &self.tiny {
++            return tiny.switches;
++        }
          self.context.as_ref().map_or(0, |c| c.switches())
++    }
++    pub fn inference_ns(&self) -> u128 {
++        self.tiny.as_ref().map_or(0, |tiny| tiny.inference_ns)
      }
      pub fn context(&self) -> Option<&crate::context_depth::ContextDepth> {
-@@ -84,6 +127,17 @@
+         self.context.as_deref()
+@@ -84,6 +295,37 @@
          }
      }
      pub fn prepare_output(&mut self, output: &[u32]) -> Result<(), &'static str> {
@@ -98,10 +275,43 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
 +            exploration.current_depth = next;
 +            exploration.rounds += 1;
 +        }
++        if let Some(tiny) = &mut self.tiny {
++            let start = Instant::now();
++            let x = tiny.model.features(output, tiny.prior);
++            let mut best = 3;
++            let mut best_score = tiny.model.score(best, &x);
++            for d in [1, 2, 4] {
++                let score = tiny.model.score(d, &x);
++                if score > best_score + 1e-12 {
++                    best = d;
++                    best_score = score;
++                }
++            }
++            std::hint::black_box(best_score);
++            let next = if tiny.noop { 4 } else { best + 1 };
++            if next != tiny.current_depth {
++                tiny.switches += 1;
++            }
++            tiny.current_depth = next;
++            tiny.inference_ns += start.elapsed().as_nanos();
++        }
          if let Some(c) = &mut self.context {
              c.prepare_output(output)?;
          }
-@@ -151,4 +205,25 @@
+@@ -118,6 +360,12 @@
+             s.elapsed += elapsed;
+             s.blocks = s.rounds / 8;
+             s.tokens_per_second = Some(s.tokens as f64 / s.elapsed.as_secs_f64());
++            if let Some(tiny) = &mut self.tiny {
++                tiny.prior = Some((
++                    (emitted - 1) as f64 / (depth - 1) as f64,
++                    elapsed.as_secs_f64() * 1000.0,
++                ));
++            }
+         }
+         Ok(())
+     }
+@@ -151,4 +399,59 @@
          assert_eq!(p.stats()[0].tokens, 1);
          assert_eq!(p.depth(), 3);
      }
@@ -127,11 +337,45 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
 +        assert_eq!(p.stats().iter().map(|s| s.rounds).sum::<u64>(), 128);
 +        assert!(p.switches() > 0);
 +    }
++    #[test]
++    fn tiny_depth_uses_only_available_token_and_noop_pays_inference() {
++        let mut text = "joint-v4-linear\t1\ttoken\t4\t100\t100\n".to_string();
++        for d in 1..=4 {
++            let mut accepted = [0.0_f64; 23];
++            if d == 3 {
++                accepted[0] = 2.0;
++            }
++            if d == 4 {
++                accepted[1] = 4.0;
++            }
++            let mut ms = [0.0_f64; 23];
++            ms[0] = 10.0;
++            for (kind, weights) in [("A", accepted), ("T", ms)] {
++                text.push_str(&format!(
++                    "{kind}\t{d}\t{}\n",
++                    weights.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")
++                ));
++            }
++        }
++        text.push_str("B\t42\t0\n");
++        let model = TinyDepthModel::parse(&text).unwrap();
++        let mut learned = LearnedDepth::trained(model.clone(), false);
++        learned.prepare_output(&[42]).unwrap();
++        assert_eq!(learned.depth(), 5);
++        learned.observe_output(5, 0, &[42], Duration::from_millis(10), true).unwrap();
++        learned.begin_request("next user turn");
++        learned.prepare_output(&[17]).unwrap();
++        assert_eq!(learned.depth(), 4);
++        let mut noop = LearnedDepth::trained(model, true);
++        noop.prepare_output(&[42]).unwrap();
++        assert_eq!(noop.depth(), 4);
++        assert!(noop.inference_ns() > 0);
++    }
 +}
 diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engine/src/bin/mtp_depth_study.rs
 --- a/crates/memra-engine/src/bin/mtp_depth_study.rs
 +++ b/crates/memra-engine/src/bin/mtp_depth_study.rs
-@@ -16,10 +16,19 @@
+@@ -16,10 +16,29 @@
  fn experiment(
      arm: &str,
      cap: usize,
@@ -139,7 +383,17 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
      tok: &Tokenizer,
      vocabulary: usize,
      priors: Option<&str>,
++    depth_model: Option<&str>,
  ) -> Result<Option<MtpDepthExperiment>, Box<dyn std::error::Error>> {
++    if matches!(arm, "trained-d" | "noop-d") {
++        let text = std::fs::read_to_string(depth_model.ok_or("trained depth needs model file")?)?;
++        return Ok(Some(MtpDepthExperiment::Learned(
++            memra_engine::learned_depth::LearnedDepth::trained(
++                memra_engine::learned_depth::TinyDepthModel::parse(&text)?,
++                arm == "noop-d",
++            ),
++        )));
++    }
 +    if arm == "explore-d" {
 +        return Ok(Some(MtpDepthExperiment::Learned(
 +            memra_engine::learned_depth::LearnedDepth::randomized(
@@ -151,23 +405,24 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
      let arm = match arm {
          "trace-c1" => "fixed:1",
          "trace-c2" => "fixed:2",
-@@ -103,8 +112,8 @@
+@@ -103,8 +122,8 @@
          println!("{}", prompt.len());
          return Ok(());
      }
 -    if !(10..=16).contains(&args.len()) {
 -        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
 +    if !(10..=18).contains(&args.len()) {
-+        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [cap=N] [explore-seed=UINT64] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
++        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [cap=N] [explore-seed=UINT64] [depth-model=PATH] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
      }
      let arm = args[5].as_str();
      let seed: u64 = args[6].parse()?;
-@@ -115,8 +124,18 @@
+@@ -115,8 +134,23 @@
      let mut confidence_policy = None;
      let mut confidence_costs = None;
      let mut fixed_cutoffs = None;
 +    let mut requested_cap = None;
 +    let mut explore_seed = None;
++    let mut depth_model = None;
      for option in &args[10..] {
 -        if let Some(path) = option.strip_prefix("confidence-policy=") {
 +        if let Some(value) = option.strip_prefix("cap=") {
@@ -178,11 +433,15 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +            if explore_seed.replace(value.parse::<u64>()?).is_some() {
 +                return Err("duplicate randomized depth seed".into());
 +            }
++        } else if let Some(path) = option.strip_prefix("depth-model=") {
++            if path.is_empty() || depth_model.replace(path).is_some() {
++                return Err("invalid tiny depth model path".into());
++            }
 +        } else if let Some(path) = option.strip_prefix("confidence-policy=") {
              if path.is_empty() || confidence_policy.replace(path).is_some() {
                  return Err("invalid confidence policy path".into());
              }
-@@ -143,9 +162,16 @@
+@@ -143,9 +177,18 @@
              standard_args.push(option.clone());
          }
      }
@@ -190,6 +449,8 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +    if !(1..=7).contains(&cap)
 +        || (arm == "explore-d" && requested_cap.is_none())
 +        || (arm == "explore-d") != explore_seed.is_some()
++        || matches!(arm, "trained-d" | "noop-d") != depth_model.is_some()
++        || (depth_model.is_some() && cap != 4)
 +    {
 +        return Err("explicit randomized draft ceiling must be in 1..=7".into());
 +    }
@@ -200,7 +461,16 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
      if confidence_policy.is_some() != live_confidence
          || confidence_costs.is_some() != live_confidence
          || (arm == "fixed-c3") != fixed_cutoffs.is_some()
-@@ -195,11 +221,12 @@
+@@ -169,7 +212,7 @@
+     let mut rows = std::fs::File::create_new(output.join("turns.tsv"))?;
+     writeln!(
+         rows,
+-        "turn\tseed\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns"
++        "turn\tseed\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns\tdepth_policy_ns"
+     )?;
+     let mut trace = std::fs::File::create_new(output.join("rounds.tsv"))?;
+     writeln!(
+@@ -195,11 +238,13 @@
      if mtp.d2t.is_some() || draft_vocab != model.output.out_features() {
          return Err("MTP draft and target heads must both use the full vocabulary".into());
      }
@@ -211,7 +481,36 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 -    let initial_experiment = experiment(&initial_arm, cap, &tok, model.output.out_features(), priors)?;
 +    let initial_experiment = experiment(
 +        &initial_arm, cap, explore_seed, &tok, model.output.out_features(), priors,
++        depth_model,
 +    )?;
      let mut routing_log = std::fs::File::create_new(output.join("routing.tsv"))?;
      writeln!(routing_log, "turn\tsource\tkind\tk\trouting_ns")?;
      let eos = tok.eog_ids();
+@@ -324,6 +369,10 @@
+         let new_input_tokens = prompt.len() - cached_tokens;
+         let trace_start = sess.depth_rounds.len();
+         let confidence_start = sess.confidence_rounds.len();
++        let depth_policy_start = match &sess.depth_experiment {
++            Some(MtpDepthExperiment::Learned(policy)) => policy.inference_ns(),
++            _ => 0,
++        };
+         let mut on_commit = |chunk: &[u32]| !chunk.iter().any(|id| eos.contains(id));
+         let (mut ids, drafted, accepted) = model.generate_spec_session_sampled(
+             &e,
+@@ -472,6 +521,7 @@
+             Some(MtpDepthExperiment::Learned(p)) => Some(p),
+             _ => None,
+         };
++        let depth_policy_ns = policy_ref.map_or(0, |p| p.inference_ns() - depth_policy_start);
+         context_receipts.write(
+             turn,
+             user,
+@@ -506,7 +556,7 @@
+         };
+         writeln!(
+             rows,
+-            "{turn}\t{seed}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}",
++            "{turn}\t{seed}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}\t{depth_policy_ns}",
+             prompt.len(),
+             ids.len(),
+             new_trace.len(),
