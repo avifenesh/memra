@@ -4184,10 +4184,14 @@ fn read_value_raw(b: &[u8], i: &mut usize) -> String {
 pub(crate) mod hf_tests {
     use super::*;
 
-    #[test]
-    fn mimo_v2_source_trunk_is_not_mistaken_for_51_layers_or_192_wide_values() {
+    fn pinned_mimo_config() -> ModelConfig {
         let c = HfConfig::parse(include_str!("model_packs/mimo_v2/fixtures/config.json"));
-        let config = ModelConfig::from_hf(&c);
+        ModelConfig::from_hf(&c)
+    }
+
+    #[test]
+    fn mimo_v2_source_trunk_and_head_geometry() {
+        let config = pinned_mimo_config();
         assert_eq!(config.arch, Arch::MiMoV2);
         assert_eq!(config.n_layer, 48);
         assert_eq!(config.n_layer_total, 48);
@@ -4195,8 +4199,6 @@ pub(crate) mod hf_tests {
         assert_eq!(config.head_dim_k, 192);
         assert_eq!(config.head_dim_v, 128);
         assert_eq!(config.rope_dim_count, 64);
-        assert_eq!(config.moe.as_ref().unwrap().expert_count, 256);
-        assert_eq!(config.moe.as_ref().unwrap().expert_used_count, 8);
         let mimo = config.mimo.as_ref().unwrap();
         let pattern = mimo.hybrid_layer_pattern.as_ref().unwrap();
         assert_eq!(pattern.len(), 48);
@@ -4208,6 +4210,12 @@ pub(crate) mod hf_tests {
         assert_eq!(mimo.swa_head_dim, Some(192));
         assert_eq!(mimo.swa_v_head_dim, Some(128));
         assert_eq!(mimo.swa_rope_theta, Some(10_000.0));
+    }
+
+    #[test]
+    fn mimo_v2_source_attention_scaling_and_sinks() {
+        let config = pinned_mimo_config();
+        let mimo = config.mimo.as_ref().unwrap();
         assert_eq!(
             mimo.attention_projection_layout.as_deref(),
             Some("fused_qkv")
@@ -4215,12 +4223,25 @@ pub(crate) mod hf_tests {
         assert_eq!(mimo.attention_value_scale, Some(0.707));
         assert_eq!(mimo.add_swa_attention_sink_bias, Some(true));
         assert_eq!(mimo.add_full_attention_sink_bias, Some(false));
+    }
+
+    #[test]
+    fn mimo_v2_source_router_and_separate_draft() {
+        let config = pinned_mimo_config();
+        assert_eq!(config.moe.as_ref().unwrap().expert_count, 256);
+        assert_eq!(config.moe.as_ref().unwrap().expert_used_count, 8);
+        let mimo = config.mimo.as_ref().unwrap();
         assert_eq!(mimo.scoring_func.as_deref(), Some("sigmoid"));
         assert_eq!(mimo.topk_method.as_deref(), Some("noaux_tc"));
         assert_eq!(mimo.norm_topk_prob, Some(true));
         assert_eq!(mimo.moe_router_dtype.as_deref(), Some("bfloat16"));
         assert_eq!(mimo.moe_layer_freq.as_ref().unwrap().len(), 48);
         assert_eq!(mimo.separate_mtp_layers, Some(3));
+    }
+
+    #[test]
+    fn mimo_v2_source_remains_unregistered() {
+        let config = pinned_mimo_config();
         assert!(crate::model_packs::for_config(&config).is_none());
         assert!(crate::model_packs::compile_for_load(&config).is_err());
     }

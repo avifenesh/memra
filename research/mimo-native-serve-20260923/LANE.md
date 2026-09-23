@@ -106,5 +106,9 @@ Current fail-closed implementation slice in this worktree:
   PR #682 carries this fail-closed slice. Its first exact-head hosted CI
   reported a duplicated existing `moe_router_dtype` field and a missing
   `MiMoV2` arm in the attention-gate match; both were corrected in-lane
-  for a fresh exact-head run. The root
+  for a fresh exact-head run. That run compiled and passed Clippy/portable
+  checks but the pinned config fixture test failed. The wrapper retained
+  only the test name, so the pinned assertions are separated by geometry,
+  attention math, router/draft, and continued refusal for the next hosted
+  diagnostic run. No acceptance criterion was relaxed. The root
   Memra checkout remains on `main` with its unrelated edits untouched.
