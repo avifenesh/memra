@@ -11754,7 +11754,7 @@ impl Dsv4Gpu {
                 .expect("landing completed above")
                 .argmax
                 .words(1)[0] as u32;
-            self.commit_verify_dev(state, &mut work.verify, 1)?;
+            self.commit_verify_dev_opts(state, &mut work.verify, 1, false)?;
             Ok(token)
         })();
         if result.is_err() {
@@ -11795,7 +11795,7 @@ impl Dsv4Gpu {
                 .ok_or("logits landing missing")?
                 .words(vocab)
                 .to_vec();
-            self.commit_verify_dev(state, &mut work.verify, 1)?;
+            self.commit_verify_dev_opts(state, &mut work.verify, 1, false)?;
             Ok(row)
         })();
         if result.is_err() {
@@ -13631,6 +13631,10 @@ pub struct VerifyWs {
     /// not a valid replay source even when the first capture launch succeeds.
     tok_host: crate::PinnedHostBuf,
     pos_host: crate::PinnedHostBuf,
+    /// Page-locked source of a commit's ring slot rows. The pipelined commit uploads from
+    /// here: a pageable upload would block the host until the stream reached it, behind
+    /// another session's queued step.
+    slot_rows_host: crate::PinnedHostBuf,
     /// Gate-only scalar-pointer arm. It is set only for a selected window-only
     /// layer capture; normal serving keeps the original ABI and launch sequence.
     graph_scalars: bool,
@@ -14707,6 +14711,8 @@ impl Dsv4Gpu {
                     .map_err(e("vws token host scalar"))?,
                 pos_host: crate::PinnedHostBuf::new(tmax * std::mem::size_of::<i32>())
                     .map_err(e("vws position host scalar"))?,
+                slot_rows_host: crate::PinnedHostBuf::new(tmax * std::mem::size_of::<i32>())
+                    .map_err(e("vws slot rows host"))?,
                 graph_scalars: false,
                 full_token_replay: false,
                 replay_cadence: None,
@@ -18548,6 +18554,20 @@ impl Dsv4Gpu {
         vstate: &mut VerifyState,
         n_commit: usize,
     ) -> Res<()> {
+        self.commit_verify_dev_opts(state, vstate, n_commit, true)
+    }
+
+    /// [`Self::commit_verify_dev`]; `drain = false` (the pipelined plain step, PP only) leaves
+    /// the stage streams undrained and uploads the ring slot rows from pinned memory, so the
+    /// commit never waits for another session's work queued on the same streams. Stream order
+    /// still sequences this request's next step after the commit.
+    fn commit_verify_dev_opts(
+        &self,
+        state: &mut DecodeState,
+        vstate: &mut VerifyState,
+        n_commit: usize,
+        drain: bool,
+    ) -> Res<()> {
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, vstate.matrix_moe)?;
         let (pos0, t) = vstate
@@ -18599,7 +18619,7 @@ impl Dsv4Gpu {
             state.pos = pos0 + n_commit;
             return Ok(());
         }
-        self.commit_verify_dev_plane(
+        self.commit_verify_dev_plane_drain(
             &mut state.caches,
             &mut vstate.layers,
             &mut vstate.ws,
@@ -18607,18 +18627,13 @@ impl Dsv4Gpu {
             pos0,
             t,
             n_commit,
+            drain,
         )?;
         state.pos = pos0 + n_commit;
         Ok(())
     }
 
-    /// Commit one explicit cache/checkpoint/workspace plane without changing the shared
-    /// [`DecodeState::pos`].  `stage_override` is `None` for the ordinary PP ownership map;
-    /// TP/EP passes `Some(0)` or `Some(1)` so every layer uses that rank's stream and its own
-    /// persistent ring/checkpoint plane.  The caller must commit all planes before exposing the
-    /// new position. Zero rows with an explicit TP rank restores the pending
-    /// compressor snapshots/high-water marks without writing the persistent ring.
-    #[allow(clippy::too_many_arguments)] // Explicit plane borrows and transaction coordinates.
+    #[allow(clippy::too_many_arguments)]
     fn commit_verify_dev_plane(
         &self,
         caches: &mut [LayerCache],
@@ -18628,6 +18643,36 @@ impl Dsv4Gpu {
         pos0: usize,
         t: usize,
         n_commit: usize,
+    ) -> Res<()> {
+        self.commit_verify_dev_plane_drain(
+            caches,
+            checkpoints,
+            ws,
+            stage_override,
+            pos0,
+            t,
+            n_commit,
+            true,
+        )
+    }
+
+    /// Commit one explicit cache/checkpoint/workspace plane without changing the shared
+    /// [`DecodeState::pos`].  `stage_override` is `None` for the ordinary PP ownership map;
+    /// TP/EP passes `Some(0)` or `Some(1)` so every layer uses that rank's stream and its own
+    /// persistent ring/checkpoint plane.  The caller must commit all planes before exposing the
+    /// new position. Zero rows with an explicit TP rank restores the pending
+    /// compressor snapshots/high-water marks without writing the persistent ring.
+    #[allow(clippy::too_many_arguments)] // Explicit plane borrows and transaction coordinates.
+    fn commit_verify_dev_plane_drain(
+        &self,
+        caches: &mut [LayerCache],
+        checkpoints: &mut [LayerCkptDev],
+        ws: &mut [VerifyWs],
+        stage_override: Option<usize>,
+        pos0: usize,
+        t: usize,
+        n_commit: usize,
+        drain: bool,
     ) -> Res<()> {
         let d = self.model.cfg();
         let mc = &self.model.mc;
@@ -18691,10 +18736,19 @@ impl Dsv4Gpu {
                         .map_err(e("commit bounce"))?;
                 }
                 if !graph_commit {
-                    let mut dst = vws.slot_rows.slice_mut(0..ring_keep);
-                    stream
-                        .memcpy_htod(&slot_rows, &mut dst)
-                        .map_err(e("htod slot rows"))?;
+                    if drain {
+                        let mut dst = vws.slot_rows.slice_mut(0..ring_keep);
+                        stream
+                            .memcpy_htod(&slot_rows, &mut dst)
+                            .map_err(e("htod slot rows"))?;
+                    } else {
+                        write_pinned_i32(&mut vws.slot_rows_host, &slot_rows)?;
+                        let host = pinned_i32(&vws.slot_rows_host, ring_keep)?;
+                        let mut dst = vws.slot_rows.slice_mut(0..ring_keep);
+                        stream
+                            .memcpy_htod(host, &mut dst)
+                            .map_err(e("htod slot rows pinned"))?;
+                    }
                 }
                 unsafe {
                     ck(
@@ -18737,9 +18791,10 @@ impl Dsv4Gpu {
                 )?;
             }
         }
-        if graph_commit {
+        if graph_commit || !drain {
             return Ok(());
-        } // caller captures enqueue-only, then drains both ranks
+        } // graph: the caller captures enqueue-only, then drains both ranks; pipelined: the
+        // next step's own events observe completion
         let sync_stages: Vec<usize> = match stage_override {
             Some(stage) => vec![stage],
             None => (0..self.stages.len()).collect(),
