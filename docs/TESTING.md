@@ -1017,6 +1017,19 @@ asserts a 4096-token margin, so both tapes give the same gate prompt tokens. The
 reads past the prefix, the `dsv4_hc_dot_split_gate` 64-window sampler, still requires the pinned
 tape and refuses the rebuild.
 
+### DSv4 small-kernel diet at the kernel boundary (#339)
+
+`cargo test -p memra-engine --release --test dsv4_small_diet_gpu -- --ignored --test-threads=1`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) runs the fused HC finish and the
+fused Q norm/pack against the unfused chains they replace and requires every output to compare
+`to_bits`-equal: scaled mixes, pre, post, comb and the collapsed row over 96 HC cases (four
+residual and three mix magnitude ranges), and the normalized row plus its bf16 pack over 128
+cases (eight row widths, including tails on both sides of the unrolled body). Red arms perturb
+each gate scale and one norm weight by 2^-10 relative and require the fed output to move. The
+diet is the code on the served plain step and multi-row rows keep the unfused chain, so this is
+the proof that plain and verify rows stay one numeric program. Receipts:
+`research/dsv4f-bringup-20260923/small-diet/`.
+
 ### DSv4 deferred MoE route and mirror checks (#670)
 
 `cargo test -p memra-engine --release --lib cuda_deferred_moe_faults_match_the_synchronous_checks -- --ignored`

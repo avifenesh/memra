@@ -117,9 +117,12 @@ Evidence: `research/glm5-tp-indexer-split-20260908/DESIGN.md`, and the 2026-09-1
 
 ## DSV4 small-kernel diet, 2026-09-07
 
-Both kernels live in `cu/dsv4_gpu.cu`, compiled with `-fmad=false`, and use
-`MEMRA_DSV4_SMALL_KERNEL_DIET` (default OFF). Gate status and receipt routing:
-`research/dsv4f-small-kernel-diet-20260907/README.md`.
+Both kernels live in `cu/dsv4_gpu.cu`, compiled with `-fmad=false`. Since 2026-09-23 (#339)
+they are the code on every device f32x HC4 / hidden 4096 load, PP-2 and TP/EP alike, with no
+door (`Dsv4Gpu::small_kernel_diet_shape`); multi-row rows keep the unfused kernels, which match
+bit for bit. Kernel-boundary gate: `tests/dsv4_small_diet_gpu.rs`. Receipts:
+`research/dsv4f-small-kernel-diet-20260907/README.md` (TP/EP),
+`research/dsv4f-bringup-20260923/small-diet/RESULTS.md` (PP-2 served).
 
 | Kernel | Replaced launches and numeric contract | Geometry |
 | --- | --- | --- |

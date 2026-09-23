@@ -3640,14 +3640,6 @@ impl Dsv4Gpu {
             on_device,
         )?;
 
-        let small_kernel_diet = match std::env::var("MEMRA_DSV4_SMALL_KERNEL_DIET").as_deref() {
-            Err(std::env::VarError::NotPresent) | Ok("0") => false,
-            Ok("1") => true,
-            _ => return Err("MEMRA_DSV4_SMALL_KERNEL_DIET requires 0 or 1".into()),
-        };
-        if small_kernel_diet && (!topology.is_tp_ep() || !chains_f32) {
-            return Err("small-kernel diet requires all-layer TP/EP and f32x".into());
-        }
         // Read once at load, like every other door. An unarmed process that exported the name
         // refuses here rather than loading with an instrument or a null collective in it.
         let ar_phase = ar_phase_environment_policy(
@@ -3690,7 +3682,7 @@ impl Dsv4Gpu {
             decode_path,
             dots_f32,
             chains_f32,
-            small_kernel_diet,
+            small_kernel_diet: false,
             ar_phase,
             small_kernel_launches: std::array::from_fn(|_| AtomicU64::new(0)),
             small_kernel_component_mask: AtomicU64::new(u64::MAX),
@@ -3718,6 +3710,12 @@ impl Dsv4Gpu {
             hc_head_base: Vec::new(),
             hc_head_scale: Vec::new(),
         };
+        // The fixed-order HC finish and Q norm/pack (#339) are the code on every f32x
+        // device program of this shape, PP-2 and TP/EP alike: each fused kernel keeps the
+        // unfused kernels' 128-thread tree and ascending sums, so the plain t=1 step and a
+        // multi-row verify row stay one numeric program. Other shapes keep the unfused
+        // kernels, which the fused launchers refuse.
+        me.small_kernel_diet = me.small_kernel_diet_shape();
         eprintln!(
             "[load] expert arm: {:?} | decode path: {:?} | dots arm: {}",
             me.expert_arm,
@@ -14674,10 +14672,17 @@ impl Dsv4Gpu {
         self.small_kernel_diet
     }
 
+    fn small_kernel_diet_shape(&self) -> bool {
+        matches!(self.decode_path, DecodePath::Device { .. })
+            && self.chains_f32
+            && self.model.cfg().hc_mult == 4
+            && self.model.mc.n_embd == 4096
+    }
+
     /// Same-loaded-model ABBA seam. Exclusive borrow prevents a concurrent walk.
     pub fn set_small_kernel_diet_for_gate(&mut self, enabled: bool) -> Res<()> {
-        if !self.topology.is_tp_ep() || !self.chains_f32 {
-            return Err("small-kernel gate requires TP/EP f32x".into());
+        if enabled && !self.small_kernel_diet_shape() {
+            return Err("small-kernel gate requires device f32x HC4 hidden 4096".into());
         }
         self.small_kernel_diet = enabled;
         Ok(())

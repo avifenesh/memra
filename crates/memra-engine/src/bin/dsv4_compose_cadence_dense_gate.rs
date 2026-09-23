@@ -754,7 +754,6 @@ fn main() {
         ("MEMRA_DSV4_VERIFY_TOPK", "device"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
         ("MEMRA_DSV4_DRAFTER", "off"),
-        ("MEMRA_DSV4_SMALL_KERNEL_DIET", "1"),
         ("MEMRA_MOE_F16G", "2"),
         ("MEMRA_F16G_SK", "32"),
     ] {
