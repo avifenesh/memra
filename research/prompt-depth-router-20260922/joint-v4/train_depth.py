@@ -68,9 +68,6 @@ def samples(root, classes, variant):
         }
         prior = None
         for turn in range(1, 9):
-            prompt = [int(value) for value in (
-                session / f"turn-{turn}.prompt.ids"
-            ).read_text().split()]
             output = [int(value) for value in (
                 session / f"turn-{turn}.output.ids"
             ).read_text().split()]
@@ -95,7 +92,8 @@ def samples(root, classes, variant):
                         or not 0 <= accepted <= d or elapsed_ms <= 0
                     ):
                         raise ValueError("eligible randomized D cannot train utility")
-                    history = (prompt[-16:] + output[:start])[-16:]
+                    # Native prepare_output sees only already emitted `out`.
+                    history = output[:start][-16:]
                     data.append((
                         d, features(history, prior, classes, variant),
                         float(accepted), elapsed_ms,

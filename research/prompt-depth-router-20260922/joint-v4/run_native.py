@@ -117,7 +117,15 @@ def validate(root, entry, arm):
                     counts[chosen] += 1
         if min(counts.values(), default=0) < 25 or len(counts) != 4:
             raise ValueError("randomized D lacks per-action eligible exposure")
-        save(root / "exposure.json", dict(sorted(counts.items())))
+        exposure = dict(sorted(counts.items()))
+        exposure_path = root / "exposure.json"
+        if exposure_path.exists():
+            if json.loads(exposure_path.read_text()) != {
+                str(key): value for key, value in exposure.items()
+            }:
+                raise ValueError("saved randomized exposure changed")
+        else:
+            save(exposure_path, exposure)
     return audit
 
 

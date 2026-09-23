@@ -59,6 +59,10 @@ and identity of a newly sampled draft token become available only
 at the after-offer C decision. Never feed a future target logit, a
 rejected suffix, a later output token, a later round's acceptance, or
 an unmeasured cache state into a decision.
+The first tiny D implementation receives the native `out` slice at
+`prepare_output`: the already emitted output prefix of the current
+generation. Its trainer uses exactly `output[:output_start][-16:]`;
+it does not splice in prompt tokens that the Rust policy cannot see.
 
 Train and ablate three nested feature sets:
 
@@ -94,9 +98,10 @@ held-out request.
 
 On calibration only, execute fixed K/D/C settings on matched input
 conversations. Include K=3/C=0, fixed K=2 and K=4 at C=0, native
-depth adaptation, and fixed C candidates derived from the v3
-development q-distribution, with a control at the v3
-calibration-selected C=(0.434978, 0.850344). Keep the strongest
+depth adaptation, K=4/D=3 to isolate the allocated ceiling, a
+K=3/C=0 tracing cost twin, and three fixed C candidates from the
+v3 calibration-selected C=(0.434978, 0.850344): both positions,
+first only and second only. Keep the strongest
 executed fixed control from calibration for held-out comparison.
 Report any per-input best-of-arm oracle as **hindsight over different
 sampled outputs**, not a deployable policy or a same-tape E2E result.
@@ -126,6 +131,14 @@ survival/cycle utility and select actions with measured marginal
 cost. Export an in-process Rust inference program: no Python
 subprocess, per-turn JSON rewrite, extra target forward, or new
 GPU-to-host hidden-state transfer in the scored arm.
+The first frozen learner is a tiny ridge model with action-specific
+accepted-prefix and round-time estimates. Its nested feature sets
+use the last token's byte class and 16-way identity hash, then class
+counts over 4/16 prior output tokens, then the prior eligible
+round's acceptance fraction and elapsed time. It scores
+`1 + predicted_accepted - fixed_E2E_tok_per_s * predicted_round_s`
+at each round boundary. The no-op twin computes the same scores but
+applies D=3.
 
 Use model-selection conversations only to choose one controller and
 its hyperparameters. Compare token-only, +history and +prior-round
@@ -151,6 +164,8 @@ task-specific functional coverage, prompt-length and output-phase
 cells, actual action distributions, and exact-loop exclusions.
 Acceptance, predicted survival, classifier F1 and per-round cost
 are explanatory diagnostics.
+Functional coverage is one bounded case per requested Python
+function, run in a fresh CPU subprocess after native timing.
 
 Later turns must prove native checkpoint/KV reuse through stable
 prefix digests and positive cached/new-token receipts. Run all gates
