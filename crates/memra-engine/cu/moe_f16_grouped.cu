@@ -2000,7 +2000,7 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int 
 // Shape contract: in_f % 128 == 0, out_f % 8 == 0, row_bytes == in_f / 2, 16-byte aligned plane
 // bases (modelopt_pointers refuses anything else). Groups larger than one row stay correct (each
 // row is an independent GEMV) but re-stream the expert per row; the Rust caller dispatches only
-// the one-token plain step.
+// the one-token plain step, and multi-row steps take the multi-row visitor below.
 #define KQS_WARPS 4
 #define KQS_CHUNK 128                // k values per ring stage
 #define KQS_ROW 80                   // 64 code bytes + 8 scale bytes + 8 pad per row stage
@@ -2157,6 +2157,119 @@ moe_kq_m1_stream_kernel(
         float* y = Y + (size_t)r * out_f + n0 + 2 * t;
         y[0] = acc[0] * s;
         y[1] = acc[1] * s;
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// DSV4 multi-row streaming visitor, the speculative-verify companion of the one-token visitor.
+//
+// A verify round routes a few tokens at once, so a live CSR group holds a handful of rows and
+// sktail still pads each group to a 32x64 tile. Here the CTA at the first row of each 16-row chunk
+// of a group owns that chunk (every other CTA of the group exits): the chunk's rows fill the MMA's
+// m16 dimension, so the expert streams once per chunk through the same per-warp cp.async ring and
+// in-register dequant as the one-token visitor.
+//
+// Bit identity with sktail rests on one more fact on top of the one-token argument: an MMA output
+// row depends only on its own A row, the B fragment and its own C row. Each row therefore runs the
+// chain sktail runs for it (the same B values, k16 blocks ascending from acc = 0, y = acc *
+// row_scale) whichever rows share the instruction; chunk rows past the group end are zero and
+// never stored. A comes straight from global memory: 16 rows of in_f = 4096 f16 are 128 KiB, past
+// the shared stage the one-token visitor uses, and every warp of the CTA reads the same words, so
+// they stay L1 resident. The component test compares it with sktail bit for bit on multi-row
+// routes, duplicate experts across tokens and a group longer than one chunk.
+static std::atomic<unsigned long long> g_moe_kq_mrow_stream_dispatches{0};
+
+template<int WARPS>
+static __global__ void __launch_bounds__(WARPS * 32)
+moe_kq_mrow_stream_kernel(
+        const unsigned long long* __restrict__ table, int proj, int n_expert,
+        const int* __restrict__ ex_ids, const __half* __restrict__ A,
+        float* __restrict__ Y, const float* __restrict__ row_scale,
+        const int* __restrict__ ex_off, int n_active, int in_f, int out_f, long row_bytes){
+    __shared__ __align__(16) unsigned char kqm_ring[WARPS * KQS_WARP_RING];
+    const int r = blockIdx.y;
+    if(r >= ex_off[n_active]) return;                              // block-uniform exits only
+    int lo_i = 1, hi_i = n_active;
+    while(lo_i < hi_i){
+        const int mid = (lo_i + hi_i) >> 1;
+        if(ex_off[mid] > r) hi_i = mid; else lo_i = mid + 1;
+    }
+    const int g_begin = ex_off[lo_i - 1], g_end = ex_off[lo_i];
+    if((r - g_begin) & 15) return;                                 // not a chunk start
+    const int mrows = min(16, g_end - r);
+    const int eid = ex_ids[lo_i - 1];
+    const uint8_t* Wq  = (const uint8_t*)table[(size_t)(2 * proj) * n_expert + eid];
+    const uint8_t* Wsc = (const uint8_t*)table[(size_t)(2 * proj + 1) * n_expert + eid];
+
+    const int lane = threadIdx.x, warp = threadIdx.y;
+    const int n0 = (blockIdx.x * WARPS + warp) * 8;
+    if(n0 >= out_f) return;
+    unsigned char* ring = kqm_ring + (size_t)warp * KQS_WARP_RING;
+    const int nch = in_f / KQS_CHUNK;
+    const int sc_row = in_f / 16;
+    const uint8_t* cp_q = Wq + (size_t)(n0 + (lane >> 2)) * row_bytes + (lane & 3) * 16;
+    const uint8_t* cp_s = Wsc + (size_t)(n0 + (lane & 7)) * sc_row;
+    const int cp_qoff = (lane >> 2) * KQS_ROW + (lane & 3) * 16;
+    const int cp_soff = (lane & 7) * KQS_ROW + 64;
+    auto issue = [&](int c){
+        if(c < nch){
+            unsigned char* st = ring + (c % KQS_STAGES) * (8 * KQS_ROW);
+            sk_cp16(st + cp_qoff, cp_q + (size_t)c * (KQS_CHUNK / 2));
+            if(lane < 8) kqs_cp8(st + cp_soff, cp_s + (size_t)c * (KQS_CHUNK / 16));
+        }
+        asm volatile("cp.async.commit_group;" ::: "memory");
+    };
+    #pragma unroll
+    for(int c = 0; c < KQS_STAGES - 1; c++) issue(c);
+
+    const int gq = lane >> 2, t = lane & 3;
+    const bool lo_ok = gq < mrows, hi_ok = gq + 8 < mrows;
+    // Lane (gq, t) feeds A rows gq (a0, a2) and gq + 8 (a1, a3), words t and t + 4 of each k16
+    // block; a row past the chunk reads nothing and contributes zeros to its own output row only.
+    const uint32_t* alo = reinterpret_cast<const uint32_t*>(A + (size_t)(r + (lo_ok ? gq : 0)) * in_f) + t;
+    const uint32_t* ahi = reinterpret_cast<const uint32_t*>(A + (size_t)(r + (hi_ok ? gq + 8 : 0)) * in_f) + t;
+    const uint32_t pick = (uint32_t)t | ((uint32_t)(t + 4) << 4);
+    float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    for(int c = 0; c < nch; c++){
+        issue(c + KQS_STAGES - 1);
+        asm volatile("cp.async.wait_group %0;" :: "n"(KQS_STAGES - 1) : "memory");
+        __syncwarp();
+        const unsigned char* rowp = ring + (c % KQS_STAGES) * (8 * KQS_ROW) + gq * KQS_ROW;
+        const uint2 scw = *reinterpret_cast<const uint2*>(rowp + 64);
+        const uint32_t sw[2] = {kqs_e4m3fn_clear_nan(scw.x), kqs_e4m3fn_clear_nan(scw.y)};
+        #pragma unroll
+        for(int q = 0; q < 4; q++){
+            const uint4 v = *reinterpret_cast<const uint4*>(rowp + q * 16);
+            const uint32_t s01 = kqs_e4m3x2_f16x2(q & 1 ? sw[q >> 1] >> 16 : sw[q >> 1]);
+            #pragma unroll
+            for(int h = 0; h < 2; h++){
+                const uint32_t x = __byte_perm(h ? v.z : v.x, h ? v.w : v.y, pick);
+                const uint32_t s2 = __byte_perm(s01, 0u, h ? 0x3232u : 0x1010u);
+                uint32_t b0, b1;
+                kqs_e2m1_f16x4(x, b0, b1);
+                b0 = kqs_hmul2(b0, s2);
+                b1 = kqs_hmul2(b1, s2);
+                const int w = (c * 8 + q * 2 + h) * 8;
+                const unsigned a[4] = {lo_ok ? __ldg(alo + w) : 0u, hi_ok ? __ldg(ahi + w) : 0u,
+                                       lo_ok ? __ldg(alo + w + 4) : 0u,
+                                       hi_ok ? __ldg(ahi + w + 4) : 0u};
+                sk_mma(acc, a, b0, b1);
+            }
+        }
+        __syncwarp();
+    }
+    asm volatile("cp.async.wait_group 0;" ::: "memory");
+    if(lo_ok){
+        const float s = row_scale[r + gq];
+        float* y = Y + (size_t)(r + gq) * out_f + n0 + 2 * t;
+        y[0] = acc[0] * s;
+        y[1] = acc[1] * s;
+    }
+    if(hi_ok){
+        const float s = row_scale[r + gq + 8];
+        float* y = Y + (size_t)(r + gq + 8) * out_f + n0 + 2 * t;
+        y[0] = acc[2] * s;
+        y[1] = acc[3] * s;
     }
 }
 
@@ -2584,6 +2697,31 @@ int memra_moe_kq_m1_stream(
 
 unsigned long long memra_moe_kq_m1_stream_dispatches(){
     return g_moe_kq_m1_stream_dispatches.load(std::memory_order_relaxed);
+}
+
+// Multi-row streaming visitor: the one-token visitor's contract, any CSR group size (16-row
+// chunks). `slots` bounds grid.y; rows past the CSR end and rows inside a chunk exit on the device.
+int memra_moe_kq_mrow_stream(
+        const unsigned long long* table, int proj, int n_expert, const int* ex_ids,
+        const void* act_f16, float* y, const float* row_scale, const int* ex_off_dev,
+        int n_active, int slots, int in_f, int out_f, long row_bytes, void* stream){
+    if(!table || !ex_ids || !act_f16 || !y || !row_scale || !ex_off_dev
+       || proj < 0 || proj > 2 || n_expert <= 0 || n_active <= 0 || slots <= 0
+       || slots > 65535 || in_f <= 0 || out_f <= 0 || in_f % KQS_CHUNK || out_f % 8
+       || row_bytes != in_f / 2)
+        return 40004;
+    const dim3 grid((unsigned)((out_f / 8 + KQS_WARPS - 1) / KQS_WARPS), (unsigned)slots, 1);
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    moe_kq_mrow_stream_kernel<KQS_WARPS><<<grid, dim3(32, KQS_WARPS, 1), 0, st>>>(
+        table, proj, n_expert, ex_ids, (const __half*)act_f16, y, row_scale, ex_off_dev,
+        n_active, in_f, out_f, row_bytes);
+    cudaError_t e = cudaGetLastError();
+    if(!e) g_moe_kq_mrow_stream_dispatches.fetch_add(1, std::memory_order_relaxed);
+    return e ? 1000 + (int)e : 0;
+}
+
+unsigned long long memra_moe_kq_mrow_stream_dispatches(){
+    return g_moe_kq_mrow_stream_dispatches.load(std::memory_order_relaxed);
 }
 
 // Component-test entry: fills out/ref (16 codes x 256 scale bytes, f16 bits) on the device.

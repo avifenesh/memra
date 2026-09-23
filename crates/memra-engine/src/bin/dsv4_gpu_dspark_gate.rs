@@ -625,6 +625,9 @@ fn main() {
     );
 
     // ---- arm DB (batched verify) x runs
+    // The multi-row visitor (memra #669) takes the T=k+1 verify rows under the same switch, so
+    // the batched arm carries the same engagement claim arm P carries for the one-token one.
+    let mrow_before = memra_engine::dsv4_moe_mrow_stream_dispatches();
     let mut db_runs: Vec<DraftedOut> = Vec::new();
     for r in 0..runs {
         let d = run_drafted_batched(&gpu, &prompt, n_new);
@@ -642,6 +645,17 @@ fn main() {
             t0.elapsed().as_secs_f64()
         );
         db_runs.push(d);
+    }
+    let mrow_taken = memra_engine::dsv4_moe_mrow_stream_dispatches() - mrow_before;
+    println!(
+        "arm DB mrow stream {} dispatches {mrow_taken}",
+        if stream_on { "ON" } else { "OFF" }
+    );
+    if stream_on == (mrow_taken == 0) {
+        fails.push(format!(
+            "MROW STREAM ENGAGEMENT: stream {} but the batched arm took {mrow_taken} dispatches",
+            if stream_on { "ON" } else { "OFF" }
+        ));
     }
     vram_line(&gpu, "post-drafted");
 

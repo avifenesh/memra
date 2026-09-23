@@ -510,6 +510,12 @@ pub fn dsv4_moe_m1_stream_dispatches() -> u64 {
     unsafe { mmq_ffi::memra_moe_kq_m1_stream_dispatches() }
 }
 
+/// Snapshot of the CUDA-side successful enqueue receipt for the multi-row streaming visitor,
+/// which small multi-row steps (verify rounds) take under the same switch.
+pub fn dsv4_moe_mrow_stream_dispatches() -> u64 {
+    unsafe { mmq_ffi::memra_moe_kq_mrow_stream_dispatches() }
+}
+
 /// Per-model door for the gemma-MoE (gelu) grouped path: round 49's Hopper default
 /// REGRESSED g26 board-2048 prefill -8.3% interleaved x5 on-box (def median 10380,
 /// wild 8.9k-11.7k spread; off 11317, ±0.13%) — the +6-15% probe verdict didn't

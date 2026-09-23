@@ -992,6 +992,19 @@ and up). On the pair, `dsv4-gpu-dspark-gate ... --served` takes the stream and f
 P enqueued it; without `--served` the historical pins hold the sktail program and fail if it did.
 Both invocations must PASS every DSpark bit gate.
 
+### DSv4 multi-row MoE stream visitor (#669)
+
+`cargo test -p memra-engine --release --lib cuda_mrow_stream_matches_sktail_bit_for_bit -- --ignored`
+(one CUDA card) compares the multi-row visitor against the sktail launch bit for bit on steps of
+2, 3, 5, 8, 16 and 17 rows: gate, up, H and the down contribution over a full bank and both EP
+halves, five route patterns (scattered distinct experts, every token on the same six, one shard
+owning every route, a within-token duplicate, seeded random top-6), with at least one group wider
+than a 16-row chunk. It pins engagement (3 enqueues per live step for 2..=16 rows, 0 at 17 rows
+and with the gate setter off) and that the one-token visitor never enqueues on a multi-row step.
+On the pair, `dsv4-gpu-dspark-gate ... --served` must PASS every DSpark bit gate and its batched
+arm DB must log a nonzero `mrow stream ON dispatches` count; without `--served` the historical
+pins must log zero.
+
 
 ### DSv4 gate source tape (#657)
 
