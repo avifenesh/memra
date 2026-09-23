@@ -1,7 +1,7 @@
 diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/learned_depth.rs
 --- a/crates/memra-engine/src/learned_depth.rs
 +++ b/crates/memra-engine/src/learned_depth.rs
-@@ -1,6 +1,144 @@
+@@ -1,6 +1,280 @@
  //! Explicit study policies: a fixed control or a persistent contextual controller.
  use std::sync::Arc;
  use std::time::Duration;
@@ -9,6 +9,38 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
 +use std::time::Instant;
 +
 +const DEPTH_FEATURES: usize = 37;
++
++fn feature_vector(
++    variant: usize,
++    classes: &HashMap<u32, u8>,
++    output: &[u32],
++    prior: Option<(f64, f64)>,
++) -> [f64; DEPTH_FEATURES] {
++    let class = |token: u32| usize::from(*classes.get(&token).unwrap_or(&5));
++    let mut x = [0.0; DEPTH_FEATURES];
++    x[0] = 1.0;
++    if let Some(&last) = output.last() {
++        x[1 + class(last)] = 1.0;
++        x[7 + (last.wrapping_mul(0x9e37_79b1) % 16) as usize] = 1.0;
++    }
++    if variant >= 35 {
++        for (start, size) in [(23, 4), (29, 16)] {
++            let n = output.len().min(size);
++            if n > 0 {
++                for &token in output.iter().rev().take(size) {
++                    x[start + class(token)] += 1.0 / n as f64;
++                }
++            }
++        }
++    }
++    if variant == 37 {
++        if let Some((accepted, ms)) = prior {
++            x[35] = accepted;
++            x[36] = (ms / 80.0).min(1.0);
++        }
++    }
++    x
++}
 +
 +#[derive(Clone, Debug)]
 +pub struct TinyDepthModel {
@@ -93,35 +125,8 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
 +        Ok(model)
 +    }
 +
-+    fn class(&self, token: u32) -> usize {
-+        usize::from(*self.classes.get(&token).unwrap_or(&5))
-+    }
-+
 +    fn features(&self, output: &[u32], prior: Option<(f64, f64)>) -> [f64; DEPTH_FEATURES] {
-+        let mut x = [0.0; DEPTH_FEATURES];
-+        x[0] = 1.0;
-+        if let Some(&last) = output.last() {
-+            x[1 + self.class(last)] = 1.0;
-+            x[7 + (last.wrapping_mul(0x9e37_79b1) % 16) as usize] = 1.0;
-+        }
-+        if self.variant >= 35 {
-+            for (start, size) in [(23, 4), (29, 16)] {
-+                let window = output.iter().rev().take(size);
-+                let n = output.len().min(size);
-+                if n > 0 {
-+                    for &token in window {
-+                        x[start + self.class(token)] += 1.0 / n as f64;
-+                    }
-+                }
-+            }
-+        }
-+        if self.variant == 37 {
-+            if let Some((accepted, ms)) = prior {
-+                x[35] = accepted;
-+                x[36] = (ms / 80.0).min(1.0);
-+            }
-+        }
-+        x
++        feature_vector(self.variant, &self.classes, output, prior)
 +    }
 +
 +    fn score(&self, d: usize, x: &[f64; DEPTH_FEATURES]) -> f64 {
@@ -143,15 +148,147 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
 +    switches: u64,
 +    inference_ns: u128,
 +}
++
++#[derive(Clone, Debug)]
++pub struct TinyConfidenceModel {
++    variant: usize,
++    lambda: f64,
++    weights: [[f64; DEPTH_FEATURES + 1]; 3],
++    next_rate: [f64; 3],
++    marginal_ms: [f64; 3],
++    classes: HashMap<u32, u8>,
++}
++
++impl TinyConfidenceModel {
++    pub fn parse(text: &str) -> Result<Self, &'static str> {
++        let mut lines = text.lines();
++        let header: Vec<_> = lines
++            .next()
++            .ok_or("missing tiny confidence header")?
++            .split('\t')
++            .collect();
++        if header.len() != 4 || header[0] != "joint-v4-confidence" || header[1] != "1" {
++            return Err("invalid tiny confidence header");
++        }
++        let variant = match header[2] {
++            "token" => 23,
++            "history" => 35,
++            "prior" => 37,
++            _ => return Err("unknown tiny confidence feature version"),
++        };
++        let lambda: f64 = header[3].parse().map_err(|_| "invalid tiny confidence rate")?;
++        if !lambda.is_finite() || lambda <= 0.0 {
++            return Err("invalid tiny confidence target rate");
++        }
++        let mut model = Self {
++            variant,
++            lambda,
++            weights: [[0.0; DEPTH_FEATURES + 1]; 3],
++            next_rate: [0.0; 3],
++            marginal_ms: [0.0; 3],
++            classes: HashMap::new(),
++        };
++        let mut seen = [false; 3];
++        for line in lines {
++            let fields: Vec<_> = line.split('\t').collect();
++            match fields.first().copied() {
++                Some("C") if fields.len() == 5 => {
++                    let position: usize = fields[1]
++                        .parse()
++                        .map_err(|_| "invalid confidence decision position")?;
++                    if position >= 3 || seen[position] {
++                        return Err("duplicate or unknown confidence position");
++                    }
++                    let next: f64 = fields[2]
++                        .parse()
++                        .map_err(|_| "invalid next-slot acceptance rate")?;
++                    let ms: f64 = fields[3]
++                        .parse()
++                        .map_err(|_| "invalid confidence marginal cost")?;
++                    if !next.is_finite() || !(0.0..=1.0).contains(&next) || !ms.is_finite() {
++                        return Err("invalid confidence marginal evidence");
++                    }
++                    let weights = fields[4]
++                        .split(',')
++                        .map(|value| value.parse::<f64>().map_err(|_| "invalid confidence weight"))
++                        .collect::<Result<Vec<_>, _>>()?;
++                    if weights.len() != variant + 1 || weights.iter().any(|w| !w.is_finite()) {
++                        return Err("confidence weights differ from the feature version");
++                    }
++                    model.weights[position][..variant + 1].copy_from_slice(&weights);
++                    model.next_rate[position] = next;
++                    model.marginal_ms[position] = ms;
++                    seen[position] = true;
++                }
++                Some("B") if fields.len() == 3 => {
++                    let token: u32 = fields[1]
++                        .parse()
++                        .map_err(|_| "invalid confidence token id")?;
++                    let class: u8 = fields[2]
++                        .parse()
++                        .map_err(|_| "invalid confidence token class")?;
++                    if class >= 6 || model.classes.insert(token, class).is_some() {
++                        return Err("duplicate or invalid confidence token class");
++                    }
++                }
++                _ => return Err("invalid tiny confidence row"),
++            }
++        }
++        if seen.iter().any(|&value| !value) {
++            return Err("tiny confidence lacks a learned stop position");
++        }
++        Ok(model)
++    }
++
++    fn features(&self, output: &[u32], prior: Option<(f64, f64)>) -> [f64; DEPTH_FEATURES] {
++        feature_vector(self.variant, &self.classes, output, prior)
++    }
++
++    fn accepted_chance(
++        &self,
++        position: usize,
++        features: &[f64; DEPTH_FEATURES],
++        q: f32,
++    ) -> f64 {
++        let q = f64::from(q).clamp(1e-6, 1.0 - 1e-6);
++        let q_logit = (q / (1.0 - q)).ln().clamp(-12.0, 12.0) / 12.0;
++        let row = &self.weights[position];
++        let value: f64 = row[..self.variant]
++            .iter()
++            .zip(features)
++            .map(|(w, x)| w * x)
++            .sum::<f64>()
++            + row[self.variant] * q_logit;
++        if value >= 0.0 {
++            1.0 / (1.0 + (-value).exp())
++        } else {
++            let exponent = value.exp();
++            exponent / (1.0 + exponent)
++        }
++    }
++}
++
++#[derive(Clone, Debug)]
++struct TinyConfidencePolicy {
++    model: Arc<TinyConfidenceModel>,
++    noop: bool,
++    prior: Option<(f64, f64)>,
++    features: [f64; DEPTH_FEATURES],
++    chain: f64,
++    decisions: u64,
++    stops: u64,
++    inference_ns: u128,
++}
  
  #[derive(Clone, Debug)]
  pub struct DepthStats {
-@@ -16,8 +154,25 @@
+@@ -16,8 +290,26 @@
  #[derive(Clone, Debug)]
  pub struct LearnedDepth {
      context: Option<Box<crate::context_depth::ContextDepth>>,
 +    exploration: Option<Box<DepthExploration>>,
 +    tiny: Option<Box<TinyDepthPolicy>>,
++    confidence: Option<Box<TinyConfidencePolicy>>,
      stats: Vec<DepthStats>,
      fixed_depth: usize,
 +}
@@ -172,12 +309,13 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
  }
  
  fn stat(depth: usize) -> DepthStats {
-@@ -38,8 +193,30 @@
+@@ -38,8 +330,32 @@
          }
          Ok(Self {
              context: None,
 +            exploration: None,
 +            tiny: None,
++            confidence: None,
              stats: vec![stat(depth)],
              fixed_depth: depth,
 +        })
@@ -198,21 +336,23 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
 +                switches: 0,
 +            })),
 +            tiny: None,
++            confidence: None,
 +            stats: (2..=max_k + 1).map(stat).collect(),
 +            fixed_depth: 2,
          })
      }
  
-@@ -56,6 +233,8 @@
+@@ -56,6 +372,9 @@
          Ok(Self {
              stats: (2..=priors.cap + 1).map(stat).collect(),
              fixed_depth: priors.global_k + 1,
 +            exploration: None,
 +            tiny: None,
++            confidence: None,
              context: Some(Box::new(crate::context_depth::ContextDepth::new(
                  priors,
                  token_bytes,
-@@ -64,7 +243,30 @@
+@@ -64,7 +383,79 @@
          })
      }
  
@@ -228,9 +368,58 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
 +                switches: 0,
 +                inference_ns: 0,
 +            })),
++            confidence: None,
 +            stats: (2..=5).map(stat).collect(),
 +            fixed_depth: 4,
 +        }
++    }
++
++    pub fn with_confidence(mut self, model: TinyConfidenceModel, noop: bool) -> Self {
++        self.confidence = Some(Box::new(TinyConfidencePolicy {
++            model: Arc::new(model),
++            noop,
++            prior: None,
++            features: [0.0; DEPTH_FEATURES],
++            chain: 1.0,
++            decisions: 0,
++            stops: 0,
++            inference_ns: 0,
++        }));
++        self
++    }
++
++    pub fn has_confidence_policy(&self) -> bool {
++        self.confidence.is_some()
++    }
++
++    pub fn confidence_counts(&self) -> (u64, u64) {
++        self.confidence.as_ref().map_or((0, 0), |c| (c.decisions, c.stops))
++    }
++
++    /// Called only after the sampled draft token has been offered.
++    pub fn confidence_stop(&mut self, position: usize, q: f32) -> Result<bool, &'static str> {
++        let Some(confidence) = &mut self.confidence else {
++            return Ok(false);
++        };
++        if position >= 3 || !q.is_finite() || !(0.0..=1.0).contains(&q) {
++            return Err("invalid offered confidence position or probability");
++        }
++        let started = Instant::now();
++        let chance = confidence.model.accepted_chance(
++            position, &confidence.features, q,
++        );
++        confidence.chain *= chance;
++        let expected_gain = confidence.chain * confidence.model.next_rate[position];
++        let expected_cost = confidence.model.lambda
++            * confidence.model.marginal_ms[position] / 1000.0;
++        let stop = expected_gain < expected_cost;
++        std::hint::black_box(stop);
++        confidence.decisions += 1;
++        if stop && !confidence.noop {
++            confidence.stops += 1;
++        }
++        confidence.inference_ns += started.elapsed().as_nanos();
++        Ok(stop && !confidence.noop)
 +    }
 +
      pub fn depth(&self) -> usize {
@@ -243,7 +432,7 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
          self.context
              .as_ref()
              .map_or(self.fixed_depth, |c| c.depth())
-@@ -73,7 +275,16 @@
+@@ -73,7 +464,17 @@
          &self.stats
      }
      pub fn switches(&self) -> u64 {
@@ -257,10 +446,11 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
 +    }
 +    pub fn inference_ns(&self) -> u128 {
 +        self.tiny.as_ref().map_or(0, |tiny| tiny.inference_ns)
++            + self.confidence.as_ref().map_or(0, |c| c.inference_ns)
      }
      pub fn context(&self) -> Option<&crate::context_depth::ContextDepth> {
          self.context.as_deref()
-@@ -84,6 +295,37 @@
+@@ -84,6 +485,43 @@
          }
      }
      pub fn prepare_output(&mut self, output: &[u32]) -> Result<(), &'static str> {
@@ -295,23 +485,67 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
 +            tiny.current_depth = next;
 +            tiny.inference_ns += start.elapsed().as_nanos();
 +        }
++        if let Some(confidence) = &mut self.confidence {
++            let started = Instant::now();
++            confidence.features = confidence.model.features(output, confidence.prior);
++            confidence.chain = 1.0;
++            confidence.inference_ns += started.elapsed().as_nanos();
++        }
          if let Some(c) = &mut self.context {
              c.prepare_output(output)?;
          }
-@@ -118,6 +360,12 @@
+@@ -97,11 +535,29 @@
+         elapsed: Duration,
+         eligible: bool,
+     ) -> Result<(), &'static str> {
+-        if depth != self.depth() || output_start > output.len() || elapsed.is_zero() {
++        self.observe_output_with_offered(
++            depth, depth.saturating_sub(1), output_start, output, elapsed, eligible,
++        )
++    }
++    pub fn observe_output_with_offered(
++        &mut self,
++        depth: usize,
++        offered: usize,
++        output_start: usize,
++        output: &[u32],
++        elapsed: Duration,
++        eligible: bool,
++    ) -> Result<(), &'static str> {
++        if depth != self.depth()
++            || offered > depth.saturating_sub(1)
++            || (eligible && offered == 0)
++            || output_start > output.len()
++            || elapsed.is_zero()
++        {
+             return Err("invalid depth observation");
+         }
+         let emitted = output.len() - output_start;
+-        if eligible && (emitted == 0 || emitted > depth) {
++        if eligible && (emitted == 0 || emitted > offered + 1) {
+             return Err("invalid committed-token count");
+         }
+         if let Some(context) = &mut self.context {
+@@ -118,6 +574,18 @@
              s.elapsed += elapsed;
              s.blocks = s.rounds / 8;
              s.tokens_per_second = Some(s.tokens as f64 / s.elapsed.as_secs_f64());
 +            if let Some(tiny) = &mut self.tiny {
 +                tiny.prior = Some((
-+                    (emitted - 1) as f64 / (depth - 1) as f64,
++                    (emitted - 1) as f64 / offered as f64,
++                    elapsed.as_secs_f64() * 1000.0,
++                ));
++            }
++            if let Some(confidence) = &mut self.confidence {
++                confidence.prior = Some((
++                    (emitted - 1) as f64 / offered as f64,
 +                    elapsed.as_secs_f64() * 1000.0,
 +                ));
 +            }
          }
          Ok(())
      }
-@@ -151,4 +399,59 @@
+@@ -151,4 +619,87 @@
          assert_eq!(p.stats()[0].tokens, 1);
          assert_eq!(p.depth(), 3);
      }
@@ -371,11 +605,39 @@ diff --git a/crates/memra-engine/src/learned_depth.rs b/crates/memra-engine/src/
 +        assert_eq!(noop.depth(), 4);
 +        assert!(noop.inference_ns() > 0);
 +    }
++    #[test]
++    fn after_offer_confidence_can_stop_and_noop_pays_the_same_model() {
++        let mut text = "joint-v4-confidence\t1\ttoken\t100\n".to_string();
++        for position in 0..3 {
++            let mut weights = [0.0_f64; 24];
++            weights[23] = 10.0;
++            text.push_str(&format!(
++                "C\t{position}\t0.8\t4\t{}\n",
++                weights.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")
++            ));
++        }
++        let model = TinyConfidenceModel::parse(&text).unwrap();
++        let mut live = LearnedDepth::fixed(4).unwrap().with_confidence(model.clone(), false);
++        live.prepare_output(&[42]).unwrap();
++        assert!(live.confidence_stop(0, 0.1).unwrap());
++        live.observe_output_with_offered(
++            4, 1, 0, &[42], Duration::from_millis(10), true,
++        )
++        .unwrap();
++        live.prepare_output(&[42]).unwrap();
++        assert!(!live.confidence_stop(0, 0.99).unwrap());
++        assert_eq!(live.confidence_counts(), (2, 1));
++        let mut noop = LearnedDepth::fixed(4).unwrap().with_confidence(model, true);
++        noop.prepare_output(&[42]).unwrap();
++        assert!(!noop.confidence_stop(0, 0.1).unwrap());
++        assert_eq!(noop.confidence_counts(), (1, 0));
++        assert!(noop.inference_ns() > 0);
++    }
 +}
 diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engine/src/bin/mtp_depth_study.rs
 --- a/crates/memra-engine/src/bin/mtp_depth_study.rs
 +++ b/crates/memra-engine/src/bin/mtp_depth_study.rs
-@@ -16,10 +16,29 @@
+@@ -16,10 +16,50 @@
  fn experiment(
      arm: &str,
      cap: usize,
@@ -384,7 +646,28 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
      vocabulary: usize,
      priors: Option<&str>,
 +    depth_model: Option<&str>,
++    confidence_model: Option<&str>,
  ) -> Result<Option<MtpDepthExperiment>, Box<dyn std::error::Error>> {
++    if matches!(arm, "learn-c" | "noop-c" | "joint-cd" | "noop-cd") {
++        let base = if matches!(arm, "joint-cd" | "noop-cd") {
++            let text = std::fs::read_to_string(depth_model.ok_or("joint arm needs D model")?)?;
++            memra_engine::learned_depth::LearnedDepth::trained(
++                memra_engine::learned_depth::TinyDepthModel::parse(&text)?,
++                arm == "noop-cd",
++            )
++        } else {
++            memra_engine::learned_depth::LearnedDepth::fixed(4)?
++        };
++        let text = std::fs::read_to_string(
++            confidence_model.ok_or("learned confidence needs C model")?,
++        )?;
++        return Ok(Some(MtpDepthExperiment::Learned(
++            base.with_confidence(
++                memra_engine::learned_depth::TinyConfidenceModel::parse(&text)?,
++                matches!(arm, "noop-c" | "noop-cd"),
++            ),
++        )));
++    }
 +    if matches!(arm, "trained-d" | "noop-d") {
 +        let text = std::fs::read_to_string(depth_model.ok_or("trained depth needs model file")?)?;
 +        return Ok(Some(MtpDepthExperiment::Learned(
@@ -405,24 +688,25 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
      let arm = match arm {
          "trace-c1" => "fixed:1",
          "trace-c2" => "fixed:2",
-@@ -103,8 +122,8 @@
+@@ -103,8 +143,8 @@
          println!("{}", prompt.len());
          return Ok(());
      }
 -    if !(10..=16).contains(&args.len()) {
 -        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
 +    if !(10..=18).contains(&args.len()) {
-+        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [cap=N] [explore-seed=UINT64] [depth-model=PATH] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
++        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [cap=N] [explore-seed=UINT64] [depth-model=PATH] [confidence-model=PATH] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
      }
      let arm = args[5].as_str();
      let seed: u64 = args[6].parse()?;
-@@ -115,8 +134,23 @@
+@@ -115,8 +155,28 @@
      let mut confidence_policy = None;
      let mut confidence_costs = None;
      let mut fixed_cutoffs = None;
 +    let mut requested_cap = None;
 +    let mut explore_seed = None;
 +    let mut depth_model = None;
++    let mut confidence_model = None;
      for option in &args[10..] {
 -        if let Some(path) = option.strip_prefix("confidence-policy=") {
 +        if let Some(value) = option.strip_prefix("cap=") {
@@ -437,11 +721,15 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +            if path.is_empty() || depth_model.replace(path).is_some() {
 +                return Err("invalid tiny depth model path".into());
 +            }
++        } else if let Some(path) = option.strip_prefix("confidence-model=") {
++            if path.is_empty() || confidence_model.replace(path).is_some() {
++                return Err("invalid tiny confidence model path".into());
++            }
 +        } else if let Some(path) = option.strip_prefix("confidence-policy=") {
              if path.is_empty() || confidence_policy.replace(path).is_some() {
                  return Err("invalid confidence policy path".into());
              }
-@@ -143,9 +177,18 @@
+@@ -143,9 +203,20 @@
              standard_args.push(option.clone());
          }
      }
@@ -449,8 +737,10 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +    if !(1..=7).contains(&cap)
 +        || (arm == "explore-d" && requested_cap.is_none())
 +        || (arm == "explore-d") != explore_seed.is_some()
-+        || matches!(arm, "trained-d" | "noop-d") != depth_model.is_some()
++        || matches!(arm, "trained-d" | "noop-d" | "joint-cd" | "noop-cd") != depth_model.is_some()
++        || matches!(arm, "learn-c" | "noop-c" | "joint-cd" | "noop-cd") != confidence_model.is_some()
 +        || (depth_model.is_some() && cap != 4)
++        || (matches!(arm, "learn-c" | "noop-c") && cap != 3)
 +    {
 +        return Err("explicit randomized draft ceiling must be in 1..=7".into());
 +    }
@@ -461,16 +751,16 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
      if confidence_policy.is_some() != live_confidence
          || confidence_costs.is_some() != live_confidence
          || (arm == "fixed-c3") != fixed_cutoffs.is_some()
-@@ -169,7 +212,7 @@
+@@ -169,7 +240,7 @@
      let mut rows = std::fs::File::create_new(output.join("turns.tsv"))?;
      writeln!(
          rows,
 -        "turn\tseed\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns"
-+        "turn\tseed\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns\tdepth_policy_ns"
++        "turn\tseed\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns\tdepth_policy_ns\tconfidence_decisions\tconfidence_stops"
      )?;
      let mut trace = std::fs::File::create_new(output.join("rounds.tsv"))?;
      writeln!(
-@@ -195,11 +238,13 @@
+@@ -195,11 +266,13 @@
      if mtp.d2t.is_some() || draft_vocab != model.output.out_features() {
          return Err("MTP draft and target heads must both use the full vocabulary".into());
      }
@@ -481,12 +771,12 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 -    let initial_experiment = experiment(&initial_arm, cap, &tok, model.output.out_features(), priors)?;
 +    let initial_experiment = experiment(
 +        &initial_arm, cap, explore_seed, &tok, model.output.out_features(), priors,
-+        depth_model,
++        depth_model, confidence_model,
 +    )?;
      let mut routing_log = std::fs::File::create_new(output.join("routing.tsv"))?;
      writeln!(routing_log, "turn\tsource\tkind\tk\trouting_ns")?;
      let eos = tok.eog_ids();
-@@ -324,6 +369,10 @@
+@@ -324,6 +397,14 @@
          let new_input_tokens = prompt.len() - cached_tokens;
          let trace_start = sess.depth_rounds.len();
          let confidence_start = sess.confidence_rounds.len();
@@ -494,23 +784,92 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +            Some(MtpDepthExperiment::Learned(policy)) => policy.inference_ns(),
 +            _ => 0,
 +        };
++        let confidence_counts_start = match &sess.depth_experiment {
++            Some(MtpDepthExperiment::Learned(policy)) => policy.confidence_counts(),
++            _ => (0, 0),
++        };
          let mut on_commit = |chunk: &[u32]| !chunk.iter().any(|id| eos.contains(id));
          let (mut ids, drafted, accepted) = model.generate_spec_session_sampled(
              &e,
-@@ -472,6 +521,7 @@
+@@ -472,6 +553,10 @@
              Some(MtpDepthExperiment::Learned(p)) => Some(p),
              _ => None,
          };
 +        let depth_policy_ns = policy_ref.map_or(0, |p| p.inference_ns() - depth_policy_start);
++        let confidence_counts = policy_ref.map_or((0, 0), |p| p.confidence_counts());
++        let confidence_decisions = confidence_counts.0 - confidence_counts_start.0;
++        let confidence_stops = confidence_counts.1 - confidence_counts_start.1;
          context_receipts.write(
              turn,
              user,
-@@ -506,7 +556,7 @@
+@@ -506,7 +591,7 @@
          };
          writeln!(
              rows,
 -            "{turn}\t{seed}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}",
-+            "{turn}\t{seed}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}\t{depth_policy_ns}",
++            "{turn}\t{seed}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}\t{depth_policy_ns}\t{confidence_decisions}\t{confidence_stops}",
              prompt.len(),
              ids.len(),
              new_trace.len(),
+diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
+--- a/crates/memra-engine/src/spec.rs
++++ b/crates/memra-engine/src/spec.rs
+@@ -12043,7 +12043,10 @@
+         if collect_confidence && (depth_study.is_none() || !sampled) {
+             return Err("confidence observations require a sampled depth-study session".into());
+         }
+-        let confidence_on = p_min > 0.0 || collect_confidence;
++        let learned_confidence = depth_study.as_ref().is_some_and(|(policy, _)| {
++            matches!(&**policy, MtpDepthExperiment::Learned(learner) if learner.has_confidence_policy())
++        });
++        let confidence_on = p_min > 0.0 || collect_confidence || learned_confidence;
+         // A sampled zero-draft choice must be made before drawing a proposal.
+         // This research source retains low-confidence sampled picks, so it refuses
+         // positive PMIN0 until a separate pre-draw rule is qualified.
+@@ -12873,7 +12876,16 @@
+                         chain_tokens.push(d);
+                         chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
+                         // Retaining this pick keeps the verifier's proposal law unchanged.
+-                        if draft_p.is_some_and(|p| cutoff_for_slot(j) > 0.0 && p < cutoff_for_slot(j)) {
++                        let learned_stop = if learned_confidence && j + 1 < k_this {
++                            let (policy, _) = depth_study.as_mut().ok_or("missing confidence policy")?;
++                            let MtpDepthExperiment::Learned(learner) = &mut **policy else {
++                                return Err("confidence study has another policy".into());
++                            };
++                            learner.confidence_stop(j, draft_p.ok_or("missing offered probability")?)?
++                        } else {
++                            false
++                        };
++                        if learned_stop || draft_p.is_some_and(|p| cutoff_for_slot(j) > 0.0 && p < cutoff_for_slot(j)) {
+                             break;
+                         }
+                     }
+@@ -13305,7 +13317,16 @@
+                         {
+                             break;
+                         }
+-                        if sampled && draft_p.is_some_and(|p| cutoff_for_slot(j) > 0.0 && p < cutoff_for_slot(j)) {
++                        let learned_stop = if learned_confidence && sampled && j + 1 < k_this {
++                            let (policy, _) = depth_study.as_mut().ok_or("missing confidence policy")?;
++                            let MtpDepthExperiment::Learned(learner) = &mut **policy else {
++                                return Err("confidence study has another policy".into());
++                            };
++                            learner.confidence_stop(j, draft_p.ok_or("missing offered probability")?)?
++                        } else {
++                            false
++                        };
++                        if learned_stop || sampled && draft_p.is_some_and(|p| cutoff_for_slot(j) > 0.0 && p < cutoff_for_slot(j)) {
+                             break;
+                         }
+                     }
+@@ -14177,8 +14198,9 @@
+                 }
+                 let (policy, traces) = depth_study.as_mut().expect("study timer has policy");
+                 if let MtpDepthExperiment::Learned(learner) = &mut **policy {
+-                    learner.observe_output(
++                    learner.observe_output_with_offered(
+                         k_this + 1,
++                        k_round,
+                         output_before,
+                         &out,
+                         elapsed,

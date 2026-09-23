@@ -13,6 +13,7 @@ import tarfile
 RUST = (
     "crates/memra-engine/src/learned_depth.rs",
     "crates/memra-engine/src/bin/mtp_depth_study.rs",
+    "crates/memra-engine/src/spec.rs",
 )
 PYTHON = ()
 DESTINATION = "research/prompt-depth-router-20260922/joint-v4"
