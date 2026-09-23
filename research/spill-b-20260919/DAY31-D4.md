@@ -59,3 +59,63 @@ day-31 boot `O1-on32768` on the same card: same binary, same arm, same order, ho
 
 As DAY31.md 1.8: causes quoted from the captured stderr, a rerun only as the whole boot under a new cell name with
 the reason recorded in section 2.
+
+## 2. Results
+
+Written after the boot; section 1 is unchanged. Receipts: `rtx5090-day31-d4/` (`chain.log`, `order.log`,
+`LOCK-D4.json`, `collector-D4/`, `boots/D4-host/`), reading `rtx5090-day31-d4/SUMMARY.txt`
+(`d4-read.py boots/D4-host ../rtx5090-day31/boots/O1-on32768`), fault list `rtx5090-day31-d4/FAULTS.txt`.
+
+### 2.1 Run
+
+One boot, `D4-host`, 2026-09-23T03:08:58Z to 03:42:51Z, after the day-31 local chain printed `chain done` at
+03:08:25Z. One collector hold on `/tmp/memra-5090.lock` (lock proof rc=0); `compute-apps-before.csv` and
+`compute-apps-after.csv` list no process. Binary `daccda3b...c4efef` (the day-31 binary); `source.txt` is
+`c426a8be2`, a research-only commit on top of the pre-registration. Boot lines:
+`[admit-mem] door=ON open_output_tokens=32768 defer_budget_ms=8000` and `[prefix-host] on: budget 8590MB pinned
+cacheable host RAM (MEMRA_KV_HOST_MB, startup budget policy), plain byte-LRU, demote on device capacity eviction,
+promote on exact-prefix probe; verify=off (MEMRA_KV_HOST_VERIFY); tenant share cap 50% = 4295MB
+(MEMRA_KV_HOST_TENANT_PCT)` (server.log line 16). `V-BOOT ... -> PASS`.
+
+### 2.2 Verdict and reading lines, verbatim
+
+```
+DAY31 D4-B reclaim#1 t=1790134397255 burst=True demoted=1 of=17 kept_warm_MB=104 host_MB=4234/8590 flush_window_ms=57 prefix_host_lines=1 copy_ms_sum=0.0 settle_ms_sum=0.0
+DAY31 D4-B totals reclaim_lines=1 demoted=1 evicted=17 kept_warm_MB=104 flush_window_ms_sum=57
+DAY31 D4-B D4-host vram_defer_lines_in_burst=36
+DAY31 D4-B control vram_defer_lines_in_burst=40
+DAY31 D4-C r429=11 refuse_lines=11 retry_after_in_1_60=True refuse_predicate_all=True host_tier_seen_armed=True sent_retry_after={'60': 11} logged_retry_after_s={'60': 11} -> PASS
+DAY31 D4-ID twins=49 equal=49 differ=0 -> PASS
+DAY31 D4-BURST D4-host B=32 status={503: 2, 429: 11, 200: 19} retry_after={'5': 2, '60': 11}
+DAY31 D4-BURST control B=32 status={503: 2, 429: 11, 200: 19} retry_after={'5': 2, '60': 11}
+```
+
+### 2.3 What they say
+
+- (b) observed. One reclaim flush, at the burst's first memory defer: server.log line 8569
+  `[admit-mem] reclaim demoted 1 of 17 device prefix entries to the host tier (104MB kept warm; host 4234MB of 8590MB
+  resident)`. The flush window is 57 ms. The line inside it is `[prefix-host] demote: 3072 tokens, 105.0MB in 55.6ms
+  (host resident 4234.3MB / 8590MB, model q9)` (line 8568). `copy_ms_sum` and `settle_ms_sum` read 0.0 because
+  this boot ran the synchronous demote path (`verify=off`), which prints `demote: ... in X ms`, not the off-tick
+  `demote copy complete` and `settled synchronously` lines that 1.1 and the reader name. By hand, the tick cost of
+  the flush is that one 55.6 ms copy. The demote budget was the shortfall, so one 105 MB entry covered it and the
+  other 16 were dropped. Across the whole boot the tier took 50 demotes (5145.5 MB, 2360.0 ms, at most 88.6 ms each)
+  and 15 promotes (1643.0 MB, 894.7 ms, at most 96.7 ms); the other 49 demotes fall before the burst, outside any
+  reclaim flush. The host tier already held 4234.3 MB when the burst began (the last demote before it, stamp 1790134227760, reports that resident size), and the flush demote's own line reports the same 4234.3 MB after adding 105.0 MB, under the 4295 MB tenant share cap.
+- (c) observed. 11 burst 429s, each `Retry-After: 60` equal to the logged `retry_after_s=60`, one `verdict=refuse`
+  line per 429. Every refuse line has `waited_ms` 8001 to 8042, `demotable=0` and `host_free=4355682560`, for
+  example `short_by=133309460 device_free=2738572004 demotable=0 host_free=4355682560 waited_ms=8002
+  retry_after_s=60`. So the host tier was armed and had 4.36 GB free, but nothing was left to demote: the flush had
+  already emptied the device prefix cache, and the shortfall is live-session KV, which the host tier does not hold.
+  That is what "both tiers exhausted" means in this code (1.1 (c)).
+- Identity. 49 non-burst twins equal to the control in `message_sha256`, G and `finish_reason`. Arming the host tier
+  changed no token.
+- Burst. Statuses and `Retry-After` values are the same as the control's: 19 x 200, 11 x 429 (60 s), 2 x 503 (5 s).
+  The two 503s are again prefill OOMs (lines 8651 and 8652,
+  `[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")`).
+- The same pre-fix defect shows here as in the control: `iv-b-r0` and `iv-b-r1` returned 500 on the #87 trap at
+  pos 32851 and 32852 (lines 6439 and 7464), the allocation being 32854. No panic in this boot.
+
+D4 (b) and D4 (c) are not owed any more. Both were read on the pre-fix program (DAY31.md 2.5). No panic occurred in
+this boot, and the flush and the refusals are decided at admission, within about 9 s of the burst's release, long before
+any burst request can reach its 32,776-token allocation.
