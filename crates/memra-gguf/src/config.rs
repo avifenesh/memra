@@ -1220,6 +1220,12 @@ pub struct MiMoV2Config {
     pub separate_mtp_layers: Option<u32>,
     pub vision_config: Option<MiMoVisionConfig>,
     pub audio_config: Option<MiMoAudioConfig>,
+    pub vision_model_type: Option<String>,
+    pub vision_start_token_id: Option<u32>,
+    pub vision_end_token_id: Option<u32>,
+    pub audio_token_id: Option<u32>,
+    pub audio_start_token_id: Option<u32>,
+    pub audio_end_token_id: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -2470,6 +2476,12 @@ impl ModelConfig {
             separate_mtp_layers: c.num_nextn_predict_layers,
             vision_config: c.mimo_vision.clone(),
             audio_config: c.mimo_audio.clone(),
+            vision_model_type: c.vision_model_type.clone(),
+            vision_start_token_id: c.vision_start_token_id,
+            vision_end_token_id: c.vision_end_token_id,
+            audio_token_id: c.audio_token_id,
+            audio_start_token_id: c.audio_start_token_id,
+            audio_end_token_id: c.audio_end_token_id,
         });
 
         ModelConfig {
@@ -3015,6 +3027,12 @@ pub struct HfConfig {
     pub topk_group: Option<u32>,
     pub mimo_vision: Option<MiMoVisionConfig>,
     pub mimo_audio: Option<MiMoAudioConfig>,
+    pub vision_model_type: Option<String>,
+    pub vision_start_token_id: Option<u32>,
+    pub vision_end_token_id: Option<u32>,
+    pub audio_token_id: Option<u32>,
+    pub audio_start_token_id: Option<u32>,
+    pub audio_end_token_id: Option<u32>,
     // ---- Hy3 (`hy_v3`) ----
     pub first_k_dense_replace: Option<u32>,
     pub moe_router_use_sigmoid: Option<bool>,
@@ -3184,6 +3202,12 @@ impl Default for HfConfig {
             topk_group: None,
             mimo_vision: None,
             mimo_audio: None,
+            vision_model_type: None,
+            vision_start_token_id: None,
+            vision_end_token_id: None,
+            audio_token_id: None,
+            audio_start_token_id: None,
+            audio_end_token_id: None,
             first_k_dense_replace: None,
             moe_router_use_sigmoid: None,
             moe_router_enable_expert_bias: None,
@@ -3915,6 +3939,24 @@ impl HfConfig {
         if let Some(v) = o.u32("topk_group")? {
             self.topk_group = Some(v);
         }
+        if let Some(v) = o.string("vision_model_type")? {
+            self.vision_model_type = Some(v);
+        }
+        if let Some(v) = o.u32("vision_start_token_id")? {
+            self.vision_start_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("vision_end_token_id")? {
+            self.vision_end_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("audio_token_id")? {
+            self.audio_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("audio_start_token_id")? {
+            self.audio_start_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("audio_end_token_id")? {
+            self.audio_end_token_id = Some(v);
+        }
         // ---- Hy3 keys ----
         if let Some(v) = o.u32("first_k_dense_replace")? {
             self.first_k_dense_replace = Some(v);
@@ -4501,6 +4543,13 @@ pub(crate) mod hf_tests {
         assert_eq!(vision.vit_window_attn_types.len(), 28);
         assert_eq!(vision.vit_window_attn_types[0], -1);
         assert_eq!(vision.vit_window_attn_types[5], 1);
+        let mimo = config.mimo.as_ref().unwrap();
+        assert_eq!(mimo.vision_model_type.as_deref(), Some("mimovl"));
+        assert_eq!(mimo.vision_start_token_id, Some(151652));
+        assert_eq!(mimo.vision_end_token_id, Some(151653));
+        assert_eq!(mimo.audio_token_id, Some(151669));
+        assert_eq!(mimo.audio_start_token_id, Some(151673));
+        assert_eq!(mimo.audio_end_token_id, Some(151674));
         let audio = config.mimo.as_ref().unwrap().audio_config.as_ref().unwrap();
         assert_eq!(audio.audio_channels, 20);
         assert_eq!(audio.input_local_layers, 6);
