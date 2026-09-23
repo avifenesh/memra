@@ -191,3 +191,239 @@ memra#659, so a difference is attributed to the tree, never to one commit.
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
+Every number below is read from the committed receipts named next to it, and every quote is the captured server log.
+
+### 2.1 Commits and timeline (UTC)
+
+| commit | time | what |
+|---|---|---|
+| `e4328912f` | 06:20:49 | origin/main `d544c6b82` merged into the lane (the `docs/FLAGS.md` door row resolved as the union of main's memra#659 sentence and the lane's decide-by 2026-10-07) |
+| `51c113659` | 06:32:14 (pushed before 06:33) | section 1, the reader, the reader's self-check on day 31, both chains, both build records, before any boot |
+| (first boot) | 06:33:04 | local `O1-off` start (`rtx5090-day32/order.log` line 2) |
+| `9cba34e73`, `d083eb32c` | 06:51:37, 06:51:46 | origin/main `711be12c3` (integ50, comment-only engine changes) merged; `FAULTS.txt -whitespace` added to both day-32 receipt dirs. No driver, reader or binary changed |
+| (BOX3 start) | 07:46:07 | the lead's ordering: BOX3 waited for lane E's `LANE-E-PRO-DONE` (seen 07:46:05, `pro-single-day32/start.log`), then its chain took the card on its own idle check |
+| `589e15dc1` | 08:50:44 | local O1 receipts |
+| `b9863f836` | 11:04:10 | local O2 receipts, local `SUMMARY.txt` and `FAULTS.txt` |
+| `3f8b0c3ab` | 11:05:02 | BOX3 O1 receipts |
+| this commit | after 13:40:42 | BOX3 O2 receipts, box `SUMMARY.txt` and `FAULTS.txt`, this section, `STATE.md`, the INDEX row |
+
+Local chain 06:33:04 to 10:57:13 (O1 06:33:04 to 08:42:45, O2 08:43:15 to 10:57:13). BOX3 chain 07:46:07 to 13:40:42 (O1
+to 10:43:25, O2 to 13:40:42). Each collector's lock proof is rc=0 (`LOCK-O1.json`, `LOCK-O2.json`), and no compute
+app was on either card before a hold or after the last boot.
+
+### 2.2 Notes on section 1 (no rule, arm, value or reader changed)
+
+- **1.1 misstated the booked charge, and V-ALLOC fails on it.** 1.1 says "the charge and the allocation are
+  unchanged". The allocation is unchanged (`ctx_cap = min(P + v + 8, model_ctx)`), but the `[admission] request cost`
+  line that V-ALLOC reads prints `admission_cap = max(ctx_cap, need)` (worker.rs `fn admission_cap`, line 2798 at
+  `d544c6b82`), with `need = P + budget + SPEC_SHRINK_SLACK` and `SPEC_SHRINK_SLACK = 64`. On day 31 the budget was
+  `v + 8`, so the line read `P + v + 72`, which is the form the day-31 rule and 1.6 carry. On this tree the budget is
+  `v`, so the line reads `P + v + 64`. Checked by hand over every open ON row of all 12 ON boots: every mismatch is
+  exactly -8, and every row equals `max(min(P + v + 8, model_ctx), P + v + 64)`. Warmup, (ii) and every OFF row match
+  1.6. The verdict stands as printed: V-ALLOC FAIL on every ON boot on both cards, so V-DOOR FAIL on both cards, on
+  this term alone. What it means for the door: an open ON request books 8 tokens less than 1.6 predicted, which is
+  133,632 B on the 9B (16,704 B/token) and 252,416 B on the 27B (31,552 B/token), and still 56 tokens more than it
+  allocates.
+- Each boot's `source.txt` is the worktree HEAD at that boot's start: `51c113659` (local `O1-off`), `d083eb32c` (local
+  O1 ON boots, local `O2-on32768`, all 8 BOX3 boots) and `589e15dc1` (local `O2-on8192`, `O2-on2048`, `O2-off`). The
+  commits in between touch research files, docs and comments only. The binaries did not move: every local
+  `binary-O*.sha256` is `d92b6cde...484ea7`, every BOX3 one is `5bbe4857...b88a8`, both built from `d544c6b82`.
+- The spec-ctx-edge lane's `SPEC-CTX-EDGE-5090-DONE` marker (DAY31.md 2.12) no longer exists: that lane merged as #668
+  and its worktree is gone. The lead's day-32 brief said it needs no card, and local O1 found the 5090 idle.
+
+### 2.3 Verdict lines, verbatim
+
+From `rtx5090-day32/SUMMARY.txt` and `pro-single-day32/box/SUMMARY.txt` (the command lines of 1.5). V-BOOT is PASS on
+all 16 boots. V-ALLOC is PASS on the 4 OFF boots and FAIL on the 12 ON boots, each with `mismatch` = the open rows
+(2.2). The files carry every line.
+
+```
+DAY32 V-CRASH card=rtx5090 boot=O1-off arm=off lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=rtx5090 boot=O1-on2048 arm=on2048 lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=rtx5090 boot=O1-on8192 arm=on8192 lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=rtx5090 boot=O1-on32768 arm=on32768 lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=rtx5090 boot=O2-off arm=off lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=rtx5090 boot=O2-on2048 arm=on2048 lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=rtx5090 boot=O2-on8192 arm=on8192 lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=rtx5090 boot=O2-on32768 arm=on32768 lines=0 by_pattern={} first=none -> PASS
+DAY32 V-ALLOC card=rtx5090 boot=O1-on2048 arm=on2048 judged=45 match=15 mismatch=30 i-L0-r0:3551!=3559,i-L0-r1:3551!=3559,i-L0-r2:3554!=3562,i-L0-r3:3554!=3562,i-L0-r4:3553!=3561,i-L1-r0:5208!=5216 -> FAIL
+DAY32 V-ID card=rtx5090 order=O1 arm=on2048 vs=off eligible=16 equal=16 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=rtx5090 order=O1 arm=on2048 on_length_rows=36 truncated_with_twin=18 length_both=3 length_prompt_differs=15 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=15 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY32 V-ID card=rtx5090 order=O1 arm=on8192 vs=off eligible=48 equal=48 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=rtx5090 order=O1 arm=on8192 on_length_rows=4 truncated_with_twin=0 length_both=4 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY32 V-ID card=rtx5090 order=O1 arm=on32768 vs=off eligible=48 equal=48 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=rtx5090 order=O1 arm=on32768 on_length_rows=4 truncated_with_twin=0 length_both=4 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY32 V-ID card=rtx5090 order=O2 arm=on2048 vs=off eligible=16 equal=16 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=rtx5090 order=O2 arm=on2048 on_length_rows=36 truncated_with_twin=18 length_both=3 length_prompt_differs=15 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=15 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY32 V-ID card=rtx5090 order=O2 arm=on8192 vs=off eligible=48 equal=48 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=rtx5090 order=O2 arm=on8192 on_length_rows=4 truncated_with_twin=0 length_both=4 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY32 V-ID card=rtx5090 order=O2 arm=on32768 vs=off eligible=48 equal=48 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=rtx5090 order=O2 arm=on32768 on_length_rows=4 truncated_with_twin=0 length_both=4 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY32 V-RETRY card=rtx5090 order=O1 arm=off burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-RETRY card=rtx5090 order=O1 arm=on2048 burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-RETRY card=rtx5090 order=O1 arm=on8192 burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-RETRY card=rtx5090 order=O1 arm=on32768 burst_responses=32/32 r429=11 refuse_lines=11 retry_after_in_1_60=True other_non200=2 -> PASS
+DAY32 V-RETRY card=rtx5090 order=O2 arm=off burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-RETRY card=rtx5090 order=O2 arm=on2048 burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-RETRY card=rtx5090 order=O2 arm=on8192 burst_responses=32/32 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-RETRY card=rtx5090 order=O2 arm=on32768 burst_responses=32/32 r429=11 refuse_lines=11 retry_after_in_1_60=True other_non200=2 -> PASS
+DAY32 SELECT card=rtx5090 R1_smallest_zero_truncation=8192 admissible=[2048, 8192, 32768] inadmissible=[] truncating=['2048:66']
+DAY32 SELECT card=rtx5090 R2_smallest_v_ge_max_natural_G=8192 (max_natural_G=6405)
+DAY32 SELECT card=rtx5090 R3_registry=32768 R4_survey=context
+DAY32 V-DOOR card=rtx5090 boots=8 excluded=0 v_crash_all=True v_id_all=True v_alloc_all=False v_trunc_band_all=True v_trunc_conserved_all=True v_retry_all=True -> FAIL
+
+DAY32 V-CRASH card=pro6000 boot=O1-off arm=off lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=pro6000 boot=O1-on2048 arm=on2048 lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=pro6000 boot=O1-on8192 arm=on8192 lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=pro6000 boot=O1-on32768 arm=on32768 lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=pro6000 boot=O2-off arm=off lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=pro6000 boot=O2-on2048 arm=on2048 lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=pro6000 boot=O2-on8192 arm=on8192 lines=0 by_pattern={} first=none -> PASS
+DAY32 V-CRASH card=pro6000 boot=O2-on32768 arm=on32768 lines=0 by_pattern={} first=none -> PASS
+DAY32 V-ALLOC card=pro6000 boot=O1-on2048 arm=on2048 judged=47 match=15 mismatch=32 i-L0-r0:3593!=3601,i-L0-r1:3593!=3601,i-L0-r2:3596!=3604,i-L0-r3:3596!=3604,i-L0-r4:3595!=3603,i-L1-r0:5250!=5258 -> FAIL
+DAY32 V-ID card=pro6000 order=O1 arm=on2048 vs=off eligible=46 equal=46 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=pro6000 order=O1 arm=on2048 on_length_rows=6 truncated_with_twin=5 length_both=1 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY32 V-ID card=pro6000 order=O1 arm=on8192 vs=off eligible=46 equal=46 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=pro6000 order=O1 arm=on8192 on_length_rows=6 truncated_with_twin=5 length_both=1 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY32 V-ID card=pro6000 order=O1 arm=on32768 vs=off eligible=47 equal=47 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=pro6000 order=O1 arm=on32768 on_length_rows=5 truncated_with_twin=4 length_both=1 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY32 V-ID card=pro6000 order=O2 arm=on2048 vs=off eligible=46 equal=46 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=pro6000 order=O2 arm=on2048 on_length_rows=6 truncated_with_twin=5 length_both=1 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY32 V-ID card=pro6000 order=O2 arm=on8192 vs=off eligible=46 equal=46 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=pro6000 order=O2 arm=on8192 on_length_rows=6 truncated_with_twin=5 length_both=1 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY32 V-ID card=pro6000 order=O2 arm=on32768 vs=off eligible=47 equal=47 differ=0 boundary_equal=0 boundary_differ=0 -> PASS
+DAY32 V-TRUNC card=pro6000 order=O2 arm=on32768 on_length_rows=5 truncated_with_twin=4 length_both=1 length_prompt_differs=0 length_twin_failed=0 length_twin_other_finish=0 length_without_twin=0 conserved=True deadline_cut=0 open_non200=0 G_outside_band_v=0
+DAY32 V-RETRY card=pro6000 order=O1 arm=off burst_responses=64/64 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-RETRY card=pro6000 order=O1 arm=on2048 burst_responses=64/64 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-RETRY card=pro6000 order=O1 arm=on8192 burst_responses=64/64 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-RETRY card=pro6000 order=O1 arm=on32768 burst_responses=64/64 r429=6 refuse_lines=6 retry_after_in_1_60=True other_non200=46 -> PASS
+DAY32 V-RETRY card=pro6000 order=O2 arm=off burst_responses=64/64 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-RETRY card=pro6000 order=O2 arm=on2048 burst_responses=64/64 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-RETRY card=pro6000 order=O2 arm=on8192 burst_responses=64/64 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY32 V-RETRY card=pro6000 order=O2 arm=on32768 burst_responses=64/64 r429=6 refuse_lines=6 retry_after_in_1_60=True other_non200=47 -> PASS
+DAY32 SELECT card=pro6000 R1_smallest_zero_truncation=none admissible=[2048, 8192, 32768] inadmissible=[] truncating=['2048:10', '8192:10', '32768:8']
+DAY32 SELECT card=pro6000 R2_smallest_v_ge_max_natural_G=none of [2048, 8192, 32768] (max_natural_G=193178)
+DAY32 SELECT card=pro6000 R3_registry=32768 R4_survey=context
+DAY32 V-DOOR card=pro6000 boots=8 excluded=0 v_crash_all=True v_id_all=True v_alloc_all=False v_trunc_band_all=True v_trunc_conserved_all=True v_retry_all=True -> FAIL
+```
+
+### 2.4 First failure line per failing boot
+
+No boot failed V-CRASH, and the fault lister (`FAULTS.txt`) shows no panic, respawn or FATAL on either card. The
+failing verdicts and their first lines:
+
+- V-ALLOC, local: `rtx5090-day32/boots/O1-on2048/server.log` line 46, `[admission] request cost: model="q9" ctx=3551
+  path=spec = 16704 B/token x ctx + 519MB prefill-workspace + 103MB fixed = 681MB` (`i-L0-r0`, P=1439; 1.6 expects
+  3559). Every other ON boot fails the same way on its first open row.
+- V-ALLOC, target: `pro-single-day32/box/boots/O1-on2048/server.log` line 44, `... model="q38" ctx=3593 path=spec =
+  31552 B/token x ctx + 710MB prefill-workspace + 308MB fixed = 1131MB` (`i-L0-r0`, P=1481; 1.6 expects 3601).
+- Not a verdict failure, but the one engine failure of the cell: every burst 503 is `[engine-error] class=Overloaded
+  prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")`. Target `O1-on32768/server.log` line 6785 is
+  the first of 46, and `O2-on32768/server.log` line 6790 the first of 47. Local `O1-on32768/server.log` line 8608 is
+  the first of 2 (and 2 in O2, as on day 31).
+
+### 2.5 Per-value truncation and concurrency, per card
+
+`tw` = `truncated_with_twin`, `lb` = `length_both`, `pd` = `length_prompt_differs`; `length_twin_failed` and
+`length_twin_other_finish` are 0 and `open_non200` is 0 on every ON boot. Every ON `length` row, sequential and burst,
+has G = v exactly. Concurrency is the V-CONC burst reading.
+
+Local RTX 5090, Qwen3.5-9B, B = 32. Both orders are the same row, except that the 32768 burst finished 17 `stop` and
+2 `length` in O1 and 14 and 5 in O2:
+
+| v | V-ID eq/eligible | tw | lb | pd | burst statuses | burst finish | active max | arith |
+|---|---|---|---|---|---|---|---|---|
+| off | | | | | 32 x 200 | 27 `stop`, 5 `length` at the cap | 11 | 7 |
+| 2048 | 16/16 | 18 | 3 | 15 | 32 x 200 | 32 `length` (G 2048) | 32 | 19 |
+| 8192 | 48/48 | 0 | 4 | 0 | 32 x 200 | 27 `stop`, 5 `length` (G 8192) | 32 | 17 |
+| 32768 | 48/48 | 0 | 4 | 0 | 19 x 200, 11 x 429 (Retry-After 60), 2 x 503 (prefill OOM, 5) | see above | 19 | 11 |
+
+- 2048 cuts every (i) request (15 of 15; the 9B's (i) stops at 2413 to 5048) and all 3 `iv-a`. All 15 (iii) then carry
+  a cut parent (`pd`), and the 3 `iv-b` are runaways under OFF too (`lb`).
+- 8192 and 32768 cut no request that stops under OFF. The 4 `length` rows per order are `iii-L2-r3` and `iv-b-r0..r2`,
+  which under OFF run to the 65,536 cap.
+
+Target card, one RTX PRO 6000 Blackwell, Qwen3.8-27B, B = 64. Both orders are the same row, except where the cell
+reads "O1/O2":
+
+| v | V-ID eq/eligible | tw | lb | burst statuses | burst finish | active max | arith |
+|---|---|---|---|---|---|---|---|
+| off | | | | 64 x 200 | 64 `stop` (G 186 to 2680) | 9 | 7 |
+| 2048 | 46/46 | 5 | 1 | 64 x 200 | 61 `stop`, 3 `length` (G 2048) | 64 | 60 |
+| 8192 | 46/46 | 5 | 1 | 64 x 200 | 64 `stop` | 64 | 51 |
+| 32768 | 47/47 | 4 | 1 | 12/11 x 200, 6 x 429 (Retry-After 60), 46/47 x 503 (prefill OOM, Retry-After 5) | 12/11 `stop` | 12/11 | 32 |
+
+- 2048 and 8192 cut 5 requests per order that stop under OFF at 18,443 to 193,178 tokens (`iv-a-r0` 102,441,
+  `iv-a-r2` 134,383, `iv-b-r0` 18,443, `iv-b-r1` 58,001, `iv-b-r2` 193,178). 32768 cuts 4: all but `iv-b-r0`. The `lb`
+  row is `iv-a-r1`, which under OFF runs to 262,143 of the 262,144 served tokens.
+- The 32768 burst, both orders. The door put 58 requests in flight (`inflight=58` on its `[admit-mem]` defer lines),
+  deferred 6 and refused those 6 with 429 after `waited_ms` 15,615 to 15,646. 46 (O1) and 47 (O2) of the admitted
+  requests then failed their prefill with CUDA OOM and returned 503 with `Retry-After: 5`. No `[admit-mem] reclaim`
+  line printed. At the burst's release the 250 ms sampler read `prefix_cache_bytes` 13,091,303,424 and
+  `cuda_driver_free_bytes` 65,244,102,656 (O1) and 65,076,330,496 (O2); the smallest driver-free reading inside the
+  burst was 14,286,848 in both orders. This is quoted, not diagnosed; the engine is the lead's.
+
+### 2.6 Natural G (door OFF, both orders)
+
+The two OFF boots of each card agree on all 52 non-burst rows (status, G, `message_sha256`).
+
+- 9B: the largest G of a request that stopped is 6405 (`iv-a-r1`), the same as day 31. The runaways end `length`:
+  `iii-L2-r3` P+G = 65,536, `iv-b-r0` 65,536, `iv-b-r1` 65,533, `iv-b-r2` 65,534. Burst: 27 `stop`, 5 `length`, G p50
+  4073, max 64,206.
+- 27B: the largest G of a request that stopped is 193,178 (`iv-b-r2`), the same as day 31. `iv-a-r1` ends `length` at
+  G = 260,482 (P+G = 262,143). Burst: 64 `stop`, G 186 to 2680, p50 424.5.
+
+### 2.7 Identity
+
+V-ID PASS on every ON arm in both orders on both cards, `differ=0`, no boundary row. Locally that is 16/16, 48/48 and
+48/48 per order; on the target card 46/46, 46/46 and 47/47. Where both sides returned 200 on the same prompt and the
+OFF request stopped under v, the door changed no token on the fixed tree.
+
+### 2.8 Selection rules, as printed (not chosen)
+
+- 5090: R1 = 8192 (all three values admissible; 2048 truncates 66 rows over both orders), R2 = 8192 (largest natural
+  stop 6405), R3 = 32768, R4 = `context`.
+- Target card: R1 = none (all three admissible; they truncate 10, 10 and 8 rows over both orders), R2 = none of
+  [2048, 8192, 32768] (largest natural stop 193,178), R3 = 32768, R4 = `context`.
+
+All four match the expectations stated in 1.7. Which rule applies is the owner's call.
+
+### 2.9 Pre-fix against post-fix, as observed
+
+The two programs differ by 50 main commits (1.10); every line below is an observation on the receipts, not an
+attribution to one commit.
+
+| reading | day 31 (engine `5f1b0eda4`) | day 32 (main `d544c6b82`) |
+|---|---|---|
+| crash lines (V-CRASH patterns) | every one of the 16 boots (`day32-reader-selfcheck-day31.txt`) | none on the 16 boots |
+| processes | FATAL at 2048 and 8192 locally and at 8192 on the target card, both orders; panic and respawn on both local OFF boots and both target 32768 boots | no panic, respawn or FATAL |
+| ON open non-200 | local 34, 1 to 4 and 3 per order at 2048, 8192 and 32768; target 6, 1 to 2 and 3 | 0 on every ON boot |
+| ON `length` G | `v + 4` to `v + 8` | `v` exactly |
+| OFF long rows at the cap | local `iv-b-r2` 500 at pos 65533; target `iv-a-r1` 500 at pos 262142 | local `iv-b-r2` 200 `length` at P+G 65,534; target `iv-a-r1` 200 `length` at 262,143 |
+| booked ctx, open ON request | `P + v + 72` | `P + v + 64` (2.2) |
+| local bursts at 2048 and 8192 | no status (process dead) | 32 x 200, 32 in flight |
+| local burst at 32768 | 19 x 200, 11 x 429, 2 x 503 | the same |
+| local OFF burst, active max | 6 | 11 |
+| target bursts at 2048 | 64 x 200, 3 `length` at 2056 | 64 x 200, 3 `length` at 2048 |
+| target burst at 8192 | no status (process dead) | 64 x 200, 64 in flight |
+| target burst at 32768 | 47 x 200, 17 x 429; entered after a worker respawn, prefix cache 0.9 GB (O1) and 0.4 GB (O2), smallest driver free 2.43 GB | 12/11 x 200, 6 x 429, 46/47 x 503 prefill OOM; prefix cache 13.1 GB, smallest driver free 14 MB |
+| target refusals, `waited_ms` | 12,301 to 12,337 | 15,615 to 15,646 (local: 8011 to 8034) |
+| target R1 as printed | 2048 (a literal reading; every long request died at the bound) | none |
+| local R1 as printed | 8192 (none by 1.6's text, gap rows) | 8192, no gap row |
+
+### 2.10 Owed
+
+| item | why | price |
+|---|---|---|
+| The target-card 32768 burst: 46 and 47 of 64 admitted requests die in prefill on CUDA OOM (2.5) | the door's bounded defer (c) is meant to answer with a 429 before the card runs out; here it admitted 58 with 13.1 GB of prefix cache resident and no reclaim line | engine, the lead's. A lane-B repro cell on the target card (the ON 32768 boot alone, the prefix-cache and `[admit-mem]` lines kept) is 0.2 agent-day plus about 25 minutes of card time |
+| The door decision | decide-by 2026-10-07 (FLAGS.md); the owner decides on these receipts | owner |
+| V-ALLOC's arithmetic | 1.6 carried day 31's `P + v + 72` form; the fixed program books `max(ctx_cap, P + budget + 64)` | nothing to rerun; a later cell pre-registers the `need` form |
+
+### 2.11 Cleanup and rig state
+
+- Local: `target/day32/memra-server` deleted after the reads (its sha256 stays in `rtx5090-day32/binary.sha256`); the
+  detached build worktree `wt-b32-main` removed; the scratch scripts and chain outputs under `/tmp` deleted. The 5090
+  lock was released at 10:57:13.
+- Target card: the detached build worktree `/root/wt-b32-main` removed, and the chain output file deleted. The receipt
+  root `/root/spill-receipts/b-day32` stays, including `bins/` (binary `5bbe4857...b88a8`). No process of this lane is
+  left on either card.
