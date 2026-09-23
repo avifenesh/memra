@@ -189,9 +189,8 @@ function, run in a fresh CPU subprocess after native timing.
 Later turns must prove native checkpoint/KV reuse through stable
 prefix digests and positive cached/new-token receipts. Run all gates
 and benches on an explicitly non-production rented GPU, never the
-local rig or a production Memra host. Before renting compare Nebius,
-Verda and Jarvis spot/on-demand and applicable Israel AWS/GCP
-offers; no Vast or RunPod use. Verify a real CUDA allocation before
+local rig or a production Memra host. Follow the private Darklanes
+procurement rules. Verify a real CUDA allocation before
 staging, keep the pod on goal-linked work, and destroy it with a
 direct provider-list absence check when receipts are banked. No
 served policy moves without Memra #673's exact sampled and
