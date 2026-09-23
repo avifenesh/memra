@@ -9,8 +9,8 @@ limit, 2026-09-23. Served program: PP-2, matrix expert program, host sampler, DS
 
 ## What changed
 
-A DSpark verify round runs the target on T = k+1 = 5 tokens, so each routed expert's CSR group
-holds a handful of rows (one to five on a verify step, often one or two). The one-token visitor
+A DSpark verify round runs the target on T = k+1 = 6 tokens (the gate logs `mean T forwarded
+6.0000`), so each routed expert's CSR group holds one to six rows. The one-token visitor
 only takes `m = 1` steps, so these rows still rode sktail, which pads each group to a 32-row tile.
 The multi-row visitor (`moe_kq_mrow_stream_kernel<4>` in `cu/moe_f16_grouped.cu`) takes steps of
 2..=16 rows under the same switch:
