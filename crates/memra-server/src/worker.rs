@@ -4896,7 +4896,7 @@ fn host_tier_context(
         inflight,
         fault: std::cell::Cell::new(HostContractFault::from_door(kv_host_fault())),
         hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,
-        staging: std::cell::RefCell::new(Vec::new()),
+        staging: std::cell::RefCell::new(HostStaging::default()),
     })
 }
 
@@ -9211,9 +9211,43 @@ struct HostTierContext {
     /// WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half): the staging set of the demote's
     /// f32 spans, cached pinned buffers (`PinnedHostBuf::new_unwritten`, no zero fill) keyed by
     /// exact byte length, allocated by the first demote that needs one and returned with the
-    /// hash helper's reply. About one image's recurrent bytes per context; not charged to the
-    /// governor's pinned ledger (owed, DAY30). Freed at the tier's latch.
-    staging: std::cell::RefCell<Vec<memra_engine::PinnedHostBuf>>,
+    /// hash helper's reply. About one image's recurrent bytes per context. Since day 31 every
+    /// buffer is charged to the governor's pinned ledger when it is allocated (`HostStaging`);
+    /// the set and its charges free at the tier's latch.
+    staging: std::cell::RefCell<HostStaging>,
+}
+/// WP-A day 31 (DAY30 owed items: the governor charge of the staging, the staging back on every
+/// post-take refusal): the context's span staging set and its pinned charges. A buffer is
+/// charged ONCE, when it is allocated (`HostTierContext::staging_take`), and stays charged while
+/// the set owns it: idle here, in flight on a ticket, or with the hash helper. Every exit of a
+/// live tier puts it back (`staging_put`); only the latch (`clear`) frees the set and releases
+/// the charges, bytes first. After the latch a take refuses and a put frees.
+#[derive(Default)]
+struct HostStaging {
+    /// Idle buffers; a take matches an exact byte length.
+    idle: Vec<memra_engine::PinnedHostBuf>,
+    /// One pinned charge per buffer this set allocated, held until the latch.
+    charges: Vec<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
+    /// The bytes `charges` hold (the sum of the allocated buffers' lengths).
+    charged: u64,
+    /// Set by `clear`: the tier latched off.
+    latched: bool,
+}
+/// The staging set's ledger tenant. The set belongs to the context and serves every request's
+/// demote, so its charge names its own digest, in a domain disjoint from every `tenant_salt`.
+fn host_staging_tenant() -> [u8; 32] {
+    memra_engine::cache::record::digest("host-tier-staging", b"span staging set")
+}
+impl HostStaging {
+    /// The tier's latch: the idle buffers free, then their charges release (a buffer still on a
+    /// quarantined ticket or with a detached helper frees with its holder; the latched tier takes
+    /// no new charge on this set).
+    fn clear(&mut self) {
+        self.latched = true;
+        self.idle.clear();
+        self.charges.clear();
+        self.charged = 0;
+    }
 }
 /// One loaded model's programs under the door: the plain program (day 13) and, for a model with
 /// an MTP head, the draft-bearing program (day 14, `host_tier_draft_program`).
@@ -9224,18 +9258,47 @@ struct HostTierPrograms {
 }
 impl HostTierContext {
     /// WP-A day 30: one staging buffer of exactly `bytes`, from the set or freshly allocated
-    /// (unreadable until a span lands in it). The caller has bound the owner context.
-    fn staging_take(&self, bytes: usize) -> Result<memra_engine::PinnedHostBuf, String> {
+    /// (unreadable until a span lands in it). The caller has bound the owner context. Day 31: a
+    /// fresh buffer is charged to the governor's pinned ledger BEFORE it is allocated (a refused
+    /// charge allocates nothing; a failed allocation releases its charge); the flag says fresh.
+    fn staging_take(&self, bytes: usize) -> Result<(memra_engine::PinnedHostBuf, bool), String> {
+        use memra_engine::cache::tiered::*;
         let mut set = self.staging.borrow_mut();
-        if let Some(i) = set.iter().position(|b| b.len() == bytes) {
-            return Ok(set.swap_remove(i));
+        if set.latched {
+            return Err("the staging set is closed (the tier latched off)".into());
         }
-        memra_engine::PinnedHostBuf::new_unwritten(bytes).map_err(|e| e.to_string())
+        if let Some(i) = set.idle.iter().position(|b| b.len() == bytes) {
+            return Ok((set.idle.swap_remove(i), false));
+        }
+        let dimensions = self
+            .governor
+            .lock()
+            .map_err(|_| "tier governor poisoned")?
+            .used()
+            .device
+            .len();
+        let mut request = BudgetRequest {
+            bytes: TierBudget::zero(dimensions),
+            priority: Priority::Backup,
+            deadline: Deadline(u64::MAX),
+            tenant: host_staging_tenant(),
+        };
+        request.bytes.pinned = bytes as u64;
+        let charge = hostprefix::ResidentCharge::reserve(self.governor.clone(), &request)
+            .map_err(|e| format!("the governor's pinned ledger refused {bytes} bytes ({e:?})"))?;
+        let buf = memra_engine::PinnedHostBuf::new_unwritten(bytes).map_err(|e| e.to_string())?;
+        set.charges.push(charge);
+        set.charged += bytes as u64;
+        Ok((buf, true))
     }
     /// WP-A day 30: a staging buffer back into the set (its bytes are never read again: the next
-    /// span that takes it overwrites the whole range before its landing makes it readable).
+    /// span that takes it overwrites the whole range before its landing makes it readable). Day
+    /// 31: after the latch the buffer frees here instead (its charge released at `clear`).
     fn staging_put(&self, buf: memra_engine::PinnedHostBuf) {
-        self.staging.borrow_mut().push(buf);
+        let mut set = self.staging.borrow_mut();
+        if !set.latched {
+            set.idle.push(buf);
+        }
     }
     /// The program identity of one pool key and entry class: the model's base identity for that
     /// class with `tenant_salt` derived by the ONE memra-kv helper (lead ruling 13) from the pool
@@ -9902,6 +9965,28 @@ struct HostHashPayload {
     staged: Option<memra_engine::PinnedHostBuf>,
 }
 
+/// WP-A day 31 (spill-c DAY38 section 3, the separating line): the hand-off's heap payload count
+/// and bytes by slot class (conv, ssm, hidden, logits), the same byte rule as the line's total.
+/// The copy-complete line carries it; no behavior reads it.
+fn host_hash_class_tally(payloads: &[HostHashPayload]) -> String {
+    let mut by = [(0usize, 0usize); 4];
+    for p in payloads {
+        let class = match p.slot {
+            HostHashSlot::Conv(_) => 0,
+            HostHashSlot::Ssm(_) => 1,
+            HostHashSlot::Hidden => 2,
+            HostHashSlot::Logits => 3,
+        };
+        by[class].0 += 1;
+        by[class].1 += p.staged.as_ref().map_or(p.data.len() * 4, |s| s.len());
+    }
+    let [c, s, h, l] = by;
+    format!(
+        "by slot class: conv {} ({} B), ssm {} ({} B), hidden {} ({} B), logits {} ({} B)",
+        c.0, c.1, s.0, s.1, h.0, h.1, l.0, l.1
+    )
+}
+
 /// One demote's hash job; the ticket sequence names it in every line and in the reply.
 struct HostHashJob {
     seq: u64,
@@ -10438,6 +10523,11 @@ enum HostContractFault {
     /// The same fault on the first RESTORE of the boot: nothing is primed on the destination, the
     /// cache drops, the pin is released, the tier and the restore route latch.
     D2dDelayRestore,
+    /// WP-A day 31 (DAY30 owed: the span-refusal cell): the off-tick demote's f32 span attach
+    /// refuses after every span was built (`host_spans_submit`); every source must return to its
+    /// slot, every staging buffer to the set, the KV ticket unwind typed (`tier D2H spans
+    /// refused: ...`), the tier stay on, and the next demote complete.
+    SpanAttach,
 }
 impl HostContractFault {
     fn from_door(fault: &str) -> Option<Self> {
@@ -10450,12 +10540,13 @@ impl HostContractFault {
             "contract-promote-readyview" => Some(Self::PromoteReadyView),
             "d2d-delay-capture" => Some(Self::D2dDelayCapture),
             "d2d-delay-restore" => Some(Self::D2dDelayRestore),
+            "contract-spans" => Some(Self::SpanAttach),
             _ => None,
         }
     }
     /// The demote (D2H) side, as opposed to the promote (H2D) side.
     fn is_demote(self) -> bool {
-        matches!(self, Self::PreSubmit | Self::PostPublish)
+        matches!(self, Self::PreSubmit | Self::PostPublish | Self::SpanAttach)
     }
     /// A Move 1 fault (the D2H or H2D route), as opposed to a D2D fault (day 22).
     fn is_move1(self) -> bool {
@@ -10854,6 +10945,7 @@ fn host_spans_submit(
     let planes = (dead.conv.iter_mut().enumerate())
         .map(|(i, p)| (HostHashSlot::Conv(i), p))
         .chain((dead.ssm.iter_mut().enumerate()).map(|(i, p)| (HostHashSlot::Ssm(i), p)));
+    let (mut fresh, mut fresh_bytes) = (0usize, 0u64);
     for (slot, plane) in planes {
         if refused.is_some() {
             break;
@@ -10863,7 +10955,11 @@ fn host_spans_submit(
             _ => continue,
         };
         match tier.staging_take(bytes) {
-            Ok(destination) => {
+            Ok((destination, allocated)) => {
+                if allocated {
+                    fresh += 1;
+                    fresh_bytes += bytes as u64;
+                }
                 let source = plane.take().expect("matched Some above");
                 spans.push(D2hSpan {
                     source,
@@ -10873,6 +10969,23 @@ fn host_spans_submit(
             }
             Err(e) => refused = Some(format!("a {bytes}-byte staging buffer: {e}")),
         }
+    }
+    // WP-A day 31: every fresh staging buffer was charged to the governor's pinned ledger before
+    // it was allocated; the charge stays with the set (idle, in flight, or with the helper).
+    if fresh > 0 {
+        eprintln!(
+            "[prefix-host] tier span staging: {fresh} fresh pinned buffer(s), {fresh_bytes} bytes \
+             charged to the governor's pinned ledger; the set holds {} bytes charged",
+            tier.staging.borrow().charged
+        );
+    }
+    // WP-A day 31: `MEMRA_KV_HOST_FAULT=contract-spans` refuses the attach after every span was
+    // built, so the unwind below hands the whole set back.
+    if refused.is_none()
+        && !spans.is_empty()
+        && pending.fault == Some(HostContractFault::SpanAttach)
+    {
+        refused = Some("injected failure (MEMRA_KV_HOST_FAULT=contract-spans)".into());
     }
     let attached = match refused {
         Some(why) => Err((why, spans)),
@@ -10981,28 +11094,39 @@ fn host_kv_planes_settle_contract(
     // WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half): `producer_done` covers the f32
     // spans with the items. Take them back FIRST, so every source is in its slot of `dead`
     // before any refusal below unwinds the entry, and the landed staging travels to the helper.
-    let mut staged = Vec::with_capacity(spans.len());
+    // Day 31 (DAY30 finding 4): every landed staging buffer goes into `staged` before any check,
+    // and `staged` puts each one back into the context's set when it drops, so every `return
+    // Err` below returns the staging; only the `Done` arm takes it out (`StagedSpans::landed`).
+    let mut staged = StagedSpans {
+        tier,
+        bufs: Vec::with_capacity(spans.len()),
+    };
     if !spans.is_empty() {
         let landed = match t.take_d2h_spans(&ticket) {
-            Ok(landed) if landed.len() == spans.len() => landed,
-            Ok(landed) => {
-                return Err(SourceQuarantined(format!(
-                    "tier D2H spans came back {} of {}; the source shell is not whole",
-                    landed.len(),
-                    spans.len()
-                )));
-            }
+            Ok(landed) => landed,
             Err(e) => {
                 return Err(SourceQuarantined(format!(
                     "tier D2H spans not taken back ({e:?}); the transfer engine keeps the spans"
                 )));
             }
         };
-        for (slot, span) in spans.iter().zip(landed) {
+        let mut sources = Vec::with_capacity(landed.len());
+        for span in landed {
             let memra_engine::tier_transfer::D2hSpan {
                 source,
                 destination,
             } = span;
+            staged.bufs.push(destination);
+            sources.push(source);
+        }
+        if sources.len() != spans.len() {
+            return Err(SourceQuarantined(format!(
+                "tier D2H spans came back {} of {}; the source shell is not whole",
+                sources.len(),
+                spans.len()
+            )));
+        }
+        for (slot, source) in spans.iter().zip(sources) {
             let home = match *slot {
                 HostHashSlot::Conv(i) => dead.conv.get_mut(i),
                 HostHashSlot::Ssm(i) => dead.ssm.get_mut(i),
@@ -11016,7 +11140,6 @@ fn host_kv_planes_settle_contract(
                     )));
                 }
             }
-            staged.push((*slot, destination));
         }
     }
     let mut destinations = Vec::with_capacity(sizes.len());
@@ -11194,16 +11317,44 @@ fn host_kv_planes_settle_contract(
         sizes.len(),
         if draft.is_some() { ", draft" } else { "" },
         digest_hex(&digest("host-prefix-d2h-receipt", &receipt)),
-        if staged.is_empty() {
+        if staged.bufs.is_empty() {
             String::new()
         } else {
             format!(
                 "; {} f32 spans landed under the ticket and taken back before the retire",
-                staged.len()
+                staged.bufs.len()
             )
         },
     );
-    Ok(ContractSettle::Done(kv, draft, staged))
+    Ok(ContractSettle::Done(kv, draft, staged.landed(&spans)))
+}
+
+/// WP-A day 31 (DAY30 finding 4): the landed staging of one settle. Dropped on any refusal, it
+/// puts every buffer back into the context's set (which frees it once the tier has latched);
+/// `landed` hands the buffers out by slot on the settle's one success exit.
+struct StagedSpans<'a> {
+    tier: &'a HostTierContext,
+    bufs: Vec<memra_engine::PinnedHostBuf>,
+}
+impl StagedSpans<'_> {
+    /// The success exit: each buffer with its slot, in attach order (the count was checked).
+    fn landed(
+        mut self,
+        slots: &[HostHashSlot],
+    ) -> Vec<(HostHashSlot, memra_engine::PinnedHostBuf)> {
+        slots
+            .iter()
+            .copied()
+            .zip(std::mem::take(&mut self.bufs))
+            .collect()
+    }
+}
+impl Drop for StagedSpans<'_> {
+    fn drop(&mut self) {
+        for buf in self.bufs.drain(..) {
+            self.tier.staging_put(buf);
+        }
+    }
 }
 
 /// Take every registered plane back out of the transfer engine into its slot of `dead`. Every
@@ -13072,16 +13223,29 @@ fn host_demote_settle_with_deadline(
                 ContractWait::Poll => "tick-top poll".to_string(),
                 ContractWait::Block => format!("settled synchronously by {why}"),
             };
+            // WP-A day 31: the two exits before the hand-off put the landed staging back (a put
+            // after the latch frees the buffer; its charge released at the latch).
+            let unstage =
+                |host: &HostPrefixCache,
+                 staged: Vec<(HostHashSlot, memra_engine::PinnedHostBuf)>| {
+                    if let Some(tier) = &host.tier {
+                        for (_, buf) in staged {
+                            tier.staging_put(buf);
+                        }
+                    }
+                };
             if !host.armed() {
                 eprintln!(
                     "[prefix-host] demote dropped: the tier latched off while ticket seq={seq} was \
                      Demoting ({mode}); nothing published"
                 );
+                unstage(host, staged);
                 host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "tier latched off");
                 return Some(HostDemoteOutcome::Failed);
             }
             if let Err(err) = apply_flip_demote_fault(&mut kv) {
                 eprintln!("[prefix-host] demote failed ({err}); nothing published");
+                unstage(host, staged);
                 host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "flip fault");
                 return Some(HostDemoteOutcome::Failed);
             }
@@ -13131,6 +13295,7 @@ fn host_demote_settle_with_deadline(
                 .iter()
                 .map(|p| p.staged.as_ref().map_or(p.data.len() * 4, |s| s.len()))
                 .sum();
+            let tally = host_hash_class_tally(&payloads);
             let submitted = match host.tier.as_ref() {
                 Some(tier) => tier.hasher.submit(HostHashJob { seq, payloads }),
                 None => Err("tier context gone under a Demoting entry".to_string()),
@@ -13152,7 +13317,7 @@ fn host_demote_settle_with_deadline(
                 "[prefix-host] demote copy complete off the tick: ticket seq={seq} complete after {} \
                  poll(s), {copy_ms:.1}ms from submission to completion ({mode}); items={} \
                  ({kv_items} KV, {span_items} f32 spans); {n} heap payloads ({:.1}MB) handed to \
-                 the hash helper",
+                 the hash helper; {tally}",
                 pending.polls,
                 kv_items + span_items,
                 bytes as f64 / 1e6
@@ -22399,7 +22564,7 @@ pub fn run(
     // what makes a respawn's success observable.
     health.mark_ready();
 
-    loop {
+    'worker: loop {
         // WP-A day 17 (memra#536 Move 1): the tick-top poll of the one `Demoting` entry. Its D2H
         // rides the transfer engine's copy stream; publication into the host prefix index happens
         // HERE, on the owner thread, once every item's event has completed, before admission so
@@ -22551,7 +22716,7 @@ pub fn run(
                         &mut pending_handoffs,
                     ),
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,
                 }
             }
         }
@@ -22575,7 +22740,7 @@ pub fn run(
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     if active.is_empty() {
-                        return;
+                        break 'worker;
                     } else {
                         break;
                     }
@@ -24419,7 +24584,7 @@ pub fn run(
                     &mut pending_handoffs,
                 ),
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,
             }
         }
 
@@ -27167,6 +27332,29 @@ fn request_ctx_cap(
     }
 }
 
+/// The request's output budget inside its cap. Bounded requests carry 8 rows of slack past the
+/// budget (`request_ctx_cap`'s `prompt + max_new + 8`). memra#659: the open-output door charges
+/// `prompt + open + CTX_SLACK` the same way, so its budget is the charged output and the slack
+/// stays free, as on the bounded arm; the budget used to be the whole cap (`open + 8`), which
+/// left a speculative round no row to land its overshoot in. The door-OFF open arm keeps the
+/// whole cap: the engine's round guards stop a speculative burst before it overruns the cache.
+fn request_budget(
+    ctx_cap: usize,
+    prompt_len: usize,
+    max_ctx: Option<usize>,
+    max_new: usize,
+    open_output_tokens: Option<usize>,
+) -> usize {
+    let room = ctx_cap - prompt_len;
+    let room = match (max_ctx, max_new, open_output_tokens) {
+        (None, MAX_NEW_CTX_BOUNDED, Some(_)) if room > crate::admit_memory::CTX_SLACK => {
+            room - crate::admit_memory::CTX_SLACK
+        }
+        _ => room,
+    };
+    max_new.min(room)
+}
+
 fn enforce_prompt_limit(
     prompt_len: usize,
     max_prompt_tokens: Option<usize>,
@@ -27299,7 +27487,13 @@ fn prepare_request(
             "prompt ({prompt_len} tok) >= context cap ({ctx_cap})"
         )));
     }
-    let budget = req.params.max_new.min(ctx_cap - prompt_len);
+    let budget = request_budget(
+        ctx_cap,
+        prompt_len,
+        req.params.max_ctx,
+        req.params.max_new,
+        open_output_tokens,
+    );
     let need = prompt_len
         .saturating_add(budget)
         .saturating_add(SPEC_SHRINK_SLACK);
@@ -35499,7 +35693,7 @@ mod tests {
         is_cuda_oom, oldest_parked_candidate, parallel_device_requirements, parked_entry_count,
         pp_admission_stage_count, pp_boundary_slot_bytes, pp_boundary_token_cap_resolve,
         pp_device_requirements, pp_stage_admissions, pp_stage_observed_residuals, prepare_park,
-        prompt_source_limit_error, request_ctx_cap, resolve_ctx,
+        prompt_source_limit_error, request_budget, request_ctx_cap, resolve_ctx,
     };
     use super::{
         DecodeChunkPolicy, resolve_decode_chunk_policy, resolve_pp_wave_chunk_policy,
@@ -37437,6 +37631,55 @@ mod tests {
         assert_eq!(result.sent, burst.len());
         assert_eq!(events.len(), burst.len());
         assert_eq!(remaining, requested_max - burst.len());
+    }
+
+    /// memra#659: the open door's budget is its charged output, leaving CTX_SLACK rows past it as
+    /// the bounded arm does; the other arms are unchanged.
+    #[test]
+    fn request_budget_keeps_the_slack_on_the_open_door_arm() {
+        let slack = crate::admit_memory::CTX_SLACK;
+        // Bounded: cap = P + max_tokens + 8, budget = max_tokens.
+        let cap = request_ctx_cap(65_536, 262_144, 1_439, None, 2_048, None);
+        assert_eq!(cap, 1_439 + 2_048 + slack);
+        assert_eq!(request_budget(cap, 1_439, None, 2_048, None), 2_048);
+        // Door ON, open: cap = P + open + 8 (lane B day 31's O1-on2048 shape), budget = open.
+        let cap = request_ctx_cap(
+            65_536,
+            262_144,
+            1_439,
+            None,
+            MAX_NEW_CTX_BOUNDED,
+            Some(2_048),
+        );
+        assert_eq!(cap, 3_495);
+        assert_eq!(
+            request_budget(cap, 1_439, None, MAX_NEW_CTX_BOUNDED, Some(2_048)),
+            2_048
+        );
+        // Door ON, open, clamped at the model context: the slack still comes off the room.
+        let cap = request_ctx_cap(65_536, 4_096, 3_000, None, MAX_NEW_CTX_BOUNDED, Some(2_048));
+        assert_eq!(cap, 4_096);
+        assert_eq!(
+            request_budget(cap, 3_000, None, MAX_NEW_CTX_BOUNDED, Some(2_048)),
+            4_096 - 3_000 - slack
+        );
+        // Door ON, open, a room no wider than the slack keeps the room.
+        assert_eq!(
+            request_budget(3_000 + slack, 3_000, None, MAX_NEW_CTX_BOUNDED, Some(2_048)),
+            slack
+        );
+        // Door ON with a request-supplied hard cap: the cap is authoritative, unchanged.
+        assert_eq!(
+            request_budget(8_192, 1_000, Some(8_192), MAX_NEW_CTX_BOUNDED, Some(2_048)),
+            7_192
+        );
+        // Door OFF, open: the whole cap, unchanged (the engine's round guards bound spec).
+        let cap = request_ctx_cap(65_536, 262_144, 1_439, None, MAX_NEW_CTX_BOUNDED, None);
+        assert_eq!(cap, 65_536);
+        assert_eq!(
+            request_budget(cap, 1_439, None, MAX_NEW_CTX_BOUNDED, None),
+            65_536 - 1_439
+        );
     }
 
     #[test]
@@ -43398,7 +43641,7 @@ mod tests {
             inflight: 4,
             fault: std::cell::Cell::new(None),
             hasher: super::HostHashWorker::spawn(None).unwrap(),
-            staging: std::cell::RefCell::new(Vec::new()),
+            staging: std::cell::RefCell::new(super::HostStaging::default()),
         }
     }
 
@@ -44140,6 +44383,73 @@ mod tests {
         assert!(kept.ready && kept.pool_key == b);
     }
 
+    #[test]
+    fn channel_disconnects_reach_pending_d2d_shutdown_drains() {
+        let worker = include_str!("worker.rs");
+        let run = &worker[worker.find("pub fn run(").unwrap()..];
+        let run = &run[..run.find("\nfn fail_request(").unwrap()];
+        let loop_start = run
+            .find("health.mark_ready();\n\n    'worker: loop {")
+            .expect("disconnect breaks target the worker loop");
+        let timed = loop_start
+            + run[loop_start..]
+                .find("match rx.recv_timeout(wait)")
+                .unwrap();
+        let drain = timed + run[timed..].find("match rx.try_recv()").unwrap();
+        let receive_end = drain
+            + run[drain..]
+                .find("\n        resolve_constraint_compiles(")
+                .unwrap();
+        let parked = run
+            .find("match rx.recv_timeout(Duration::from_millis(2))")
+            .unwrap();
+        let capture = run
+            .find("host_capture_drain_at_shutdown(&mut hpx);")
+            .unwrap();
+        let restore = run
+            .find("host_restore_drain_at_shutdown(&mut hpx);")
+            .unwrap();
+        let loop_body = &run[loop_start..capture];
+        // Inventory the whole command-channel receive surface, including the two idle
+        // exits before `timed` and the parked-only receive after `receive_end`.
+        assert_eq!(loop_body.matches("match rx.").count(), 5);
+        assert_eq!(loop_body.matches("rx.try_recv()").count(), 2);
+        assert_eq!(loop_body.matches("rx.recv()").count(), 1);
+        assert_eq!(loop_body.matches("rx.recv_timeout(").count(), 2);
+        assert!(
+            run[loop_start..timed].contains("Err(_) => break, // all senders dropped -> shutdown")
+        );
+        assert!(
+            run[loop_start..timed]
+                .contains("Err(std::sync::mpsc::TryRecvError::Disconnected) => break,")
+        );
+        assert!(
+            run[timed..drain]
+                .contains("Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,"),
+            "timed receive must leave through the shutdown tail"
+        );
+        assert!(
+            run[drain..receive_end].contains(
+                "Err(std::sync::mpsc::TryRecvError::Disconnected) => {\n                    if active.is_empty() {\n                        break 'worker;"
+            ),
+            "empty-active disconnect must drain even with a queued pending restore"
+        );
+        assert!(
+            run[parked..capture]
+                .contains("Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,"),
+            "parked-only disconnect must drain the pending restore"
+        );
+        assert_eq!(
+            loop_body
+                .matches("Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'worker,")
+                .count(),
+            2
+        );
+        assert!(!loop_body.contains("=> return"));
+        assert!(!loop_body.contains("return;"));
+        assert!(receive_end < parked && parked < capture && capture < restore);
+    }
+
     /// Every path that meets a `Capturing` entry does what the pre-registration says (a source
     /// census over the run loop and the route): the tick top polls it after the demote and promote
     /// polls; the idle waits count it; a tenant purge settles it and drops the revoked tenant's; the
@@ -44729,15 +45039,23 @@ mod tests {
         let promote_probe = body.find("&& host_promote_park_probe(").unwrap();
         let restore_probe = body.find("&& host_restore_park_probe(").unwrap();
         assert!(promote_probe < restore_probe && restore_probe - promote_probe < 1200);
-        assert!(body[restore_probe..restore_probe + 600].contains(
+        let restore_guard_end = restore_probe
+            + body[restore_probe..]
+                .find("\n            }\n")
+                .expect("the restore park guard closes before admission");
+        let restore_guard = &body[restore_probe..restore_guard_end];
+        assert!(restore_guard.contains(
             "requeue.push_back(req); // waits (FIFO), never shed: its restore is in flight"
         ));
-        let admit_call = body[restore_probe..]
-            .find("ensure_driver_headroom(&engine, &loaded, \"prime\");")
-            .unwrap();
-        assert!(
-            admit_call < 1000,
-            "the probe sits immediately before admission"
+        assert!(restore_guard.trim_end().ends_with("continue;"));
+        let after_guard = &body[restore_guard_end + "\n            }\n".len()..];
+        assert_eq!(
+            after_guard
+                .lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty() && !line.starts_with("//")),
+            Some("ensure_driver_headroom(&engine, &loaded, \"prime\");"),
+            "admission follows the complete restore park guard"
         );
         // The reclaim and every trim settle it first.
         let reclaim = body
@@ -45259,7 +45577,7 @@ mod tests {
         // The run loop: pin release, memo clear and the promote poll follow the demote poll at the
         // tick top; the idle block requires no Promoting entry.
         let run = worker.find("pub fn run(").unwrap();
-        let loop_at = run + worker[run..].find("\n    loop {\n").unwrap();
+        let loop_at = run + worker[run..].find("\n    'worker: loop {\n").unwrap();
         let top = &worker[loop_at..loop_at + 2500];
         let demote_poll = top
             .find("host_demote_settle_pending(&mut hpx, ContractWait::Poll, \"the tick top\")")
@@ -46186,7 +46504,7 @@ mod tests {
         // The run loop: the poll is the first statement of the loop body, and the indefinite idle
         // block requires no Demoting entry.
         let run = worker.find("pub fn run(").unwrap();
-        let loop_at = run + worker[run..].find("\n    loop {\n").unwrap();
+        let loop_at = run + worker[run..].find("\n    'worker: loop {\n").unwrap();
         let poll = worker[loop_at..]
             .find("host_demote_settle_pending(&mut hpx, ContractWait::Poll, \"the tick top\")")
             .unwrap();
@@ -46287,7 +46605,7 @@ mod tests {
         assert!(take < at(settle, "completion.require(&ticket"));
         assert!(take < at(settle, "t.retire_source(&ticket)"));
         assert!(take < at(settle, ".and_then(|_| t.retire(&ticket, Some(consumer)))"));
-        assert!(settle.contains("Ok(ContractSettle::Done(kv, draft, staged))"));
+        assert!(settle.contains("Ok(ContractSettle::Done(kv, draft, staged.landed(&spans)))"));
         assert_eq!(production.matches(".take_d2h_spans(").count(), 1);
         assert_eq!(production.matches(".submit_d2h_spans(").count(), 1);
         let driver = body("fn host_demote_settle_with_deadline(");
@@ -46311,6 +46629,157 @@ mod tests {
         );
         let disable = body("    fn disable(&mut self, why: &str) {");
         assert!(disable.contains("tier.staging.borrow_mut().clear();"));
+    }
+
+    /// WP-A day 31 (DAY30 finding 4 and the owed governor charge; CPU census): the staging goes
+    /// back to the context's set on every exit after the take, and every fresh buffer is charged.
+    /// (a) In the settle, the guard exists before `take_d2h_spans`, every landed destination goes
+    /// into it before the first check, the guard's `Drop` puts each buffer back, and its buffers
+    /// leave it only through `landed` on the one `Ok(Done)` exit: so no `return Err` after the
+    /// take can drop a staging buffer. The driver's two exits between the settle and the helper
+    /// hand-off put the landed staging back too. (b) A fresh buffer is charged before it is
+    /// allocated, the charge is kept with the set, and the latch frees the bytes before it
+    /// releases the charges; after the latch a take refuses and a put frees. (c) The span-attach
+    /// fault refuses after the span loop and before `submit_d2h_spans`, through the one typed arm.
+    #[test]
+    fn day31_the_staging_goes_back_on_every_exit_and_is_charged_once() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let body = |start: &str| {
+            let a = production
+                .find(start)
+                .unwrap_or_else(|| panic!("{start} missing"));
+            let b = a + production[a..].find("\n}\n").unwrap();
+            &production[a..b]
+        };
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        // (a) The settle.
+        let settle = body("fn host_kv_planes_settle_contract(");
+        let guard = at(settle, "let mut staged = StagedSpans {");
+        let take = at(settle, "t.take_d2h_spans(&ticket)");
+        let hold = at(settle, "staged.bufs.push(destination);");
+        let count = at(settle, "if sources.len() != spans.len() {");
+        let first_home = at(
+            settle,
+            "Some(home) if home.is_none() => *home = Some(source),",
+        );
+        assert!(guard < take && take < hold && hold < count && count < first_home);
+        let after_take = &settle[take..];
+        // The census: eleven `return Err` exits after the take (the take itself, the count, the
+        // slot, two destination refusals, the receipt, the consumer fence, the source retire, the
+        // planes back, the ticket retire, the receipt shape), each with the guard in scope. A new
+        // exit changes this count and is read against the guard before it is pinned.
+        assert_eq!(after_take.matches("return Err(").count(), 11);
+        // The guard's buffers are touched only by the push, two reads, and `landed`.
+        assert_eq!(settle.matches("staged.bufs").count(), 3, "{settle}");
+        assert_eq!(settle.matches("staged.bufs.push(destination);").count(), 1);
+        assert_eq!(settle.matches("staged.bufs.is_empty()").count(), 1);
+        assert_eq!(settle.matches("staged.bufs.len()").count(), 1);
+        assert_eq!(settle.matches("staged.landed(&spans)").count(), 1);
+        assert!(settle.contains("Ok(ContractSettle::Done(kv, draft, staged.landed(&spans)))"));
+        assert!(!settle.contains("mem::forget"));
+        let guard_drop = body("impl Drop for StagedSpans<'_> {");
+        assert!(guard_drop.contains("for buf in self.bufs.drain(..) {"));
+        assert!(guard_drop.contains("self.tier.staging_put(buf);"));
+        let landed = body("impl StagedSpans<'_> {");
+        assert!(landed.contains(".zip(std::mem::take(&mut self.bufs))"));
+        assert_eq!(
+            production.matches("std::mem::take(&mut self.bufs)").count(),
+            1
+        );
+        // The driver: both exits before the hand-off return the staging.
+        let driver = body("fn host_demote_settle_with_deadline(");
+        let done = at(
+            driver,
+            "Ok(ContractSettle::Done(mut kv, draft, staged)) => {",
+        );
+        let arm = &driver[done..];
+        let armed = at(arm, "if !host.armed() {");
+        let flip = at(arm, "if let Err(err) = apply_flip_demote_fault(&mut kv) {");
+        let into_payloads = at(arm, "for (slot, buf) in staged {");
+        assert_eq!(arm.matches("unstage(host, staged);").count(), 2);
+        let first = at(arm, "unstage(host, staged);");
+        let second = flip + at(&arm[flip..], "unstage(host, staged);");
+        assert!(armed < first && first < flip && flip < second && second < into_payloads);
+        // (b) The charge.
+        let take_fn = body("    fn staging_take(&self, bytes: usize)");
+        let latched = at(take_fn, "if set.latched {");
+        let reuse = at(take_fn, "set.idle.iter().position(|b| b.len() == bytes)");
+        let charge = at(
+            take_fn,
+            "hostprefix::ResidentCharge::reserve(self.governor.clone(), &request)",
+        );
+        let alloc = at(take_fn, "memra_engine::PinnedHostBuf::new_unwritten(bytes)");
+        let kept = at(take_fn, "set.charges.push(charge);");
+        assert!(latched < reuse && reuse < charge && charge < alloc && alloc < kept);
+        assert!(take_fn.contains("request.bytes.pinned = bytes as u64;"));
+        assert!(take_fn.contains("tenant: host_staging_tenant(),"));
+        let put_fn = body("    fn staging_put(&self, buf: memra_engine::PinnedHostBuf) {");
+        assert!(put_fn.contains("if !set.latched {\n            set.idle.push(buf);"));
+        let clear = body("impl HostStaging {");
+        assert!(
+            at(clear, "self.latched = true;") < at(clear, "self.idle.clear();")
+                && at(clear, "self.idle.clear();") < at(clear, "self.charges.clear();")
+        );
+        assert_ne!(
+            super::host_staging_tenant(),
+            memra_engine::cache::tiered::hostprefix::tenant_salt(""),
+            "the set's tenant is not the default namespace's"
+        );
+        // Exactly one charge site for the staging, and the only allocation is behind it.
+        assert_eq!(
+            production.matches("PinnedHostBuf::new_unwritten(").count(),
+            1
+        );
+        // (c) The span-attach fault: after the loop, before the submit, into the one typed arm.
+        let submit = body("fn host_spans_submit(");
+        let fault = at(
+            submit,
+            "pending.fault == Some(HostContractFault::SpanAttach)",
+        );
+        assert!(at(submit, "match tier.staging_take(bytes) {") < fault);
+        assert!(fault < at(submit, ".submit_d2h_spans(&pending.ticket, spans)"));
+        assert!(
+            submit.contains("\"injected failure (MEMRA_KV_HOST_FAULT=contract-spans)\".into()")
+        );
+        assert!(submit.contains("tier D2H spans refused: {why} ({n} f32 spans handed back)"));
+    }
+
+    /// WP-A day 31 (spill-c DAY38 section 3): the copy-complete line's class tally counts and sums
+    /// the hand-off's payloads by slot class with the line's own byte rule (a staged payload's
+    /// staging length, otherwise its heap bytes), and the line carries it after the total.
+    #[test]
+    fn day31_the_copy_complete_line_tallies_the_payload_bytes_by_class() {
+        let heap = |slot, n: usize| super::HostHashPayload {
+            slot,
+            data: vec![0.0; n],
+            staged: None,
+        };
+        let payloads = vec![
+            heap(super::HostHashSlot::Conv(0), 3),
+            heap(super::HostHashSlot::Conv(2), 5),
+            heap(super::HostHashSlot::Ssm(1), 7),
+            heap(super::HostHashSlot::Logits, 11),
+            heap(super::HostHashSlot::Hidden, 13),
+        ];
+        assert_eq!(
+            super::host_hash_class_tally(&payloads),
+            "by slot class: conv 2 (32 B), ssm 1 (28 B), hidden 1 (52 B), logits 1 (44 B)"
+        );
+        assert_eq!(
+            super::host_hash_class_tally(&[]),
+            "by slot class: conv 0 (0 B), ssm 0 (0 B), hidden 0 (0 B), logits 0 (0 B)"
+        );
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert!(production.contains("the hash helper; {tally}\",\n                pending.polls,"));
+        assert_eq!(
+            production
+                .matches("host_hash_class_tally(&payloads)")
+                .count(),
+            1
+        );
     }
 
     /// GPU-only helper: a real `CudaTransfers` on the engine's owner stream over the server's
@@ -46356,7 +46825,7 @@ mod tests {
             inflight,
             fault: std::cell::Cell::new(None),
             hasher: super::HostHashWorker::spawn(None).unwrap(),
-            staging: std::cell::RefCell::new(Vec::new()),
+            staging: std::cell::RefCell::new(super::HostStaging::default()),
         }
     }
 
@@ -46683,7 +47152,25 @@ mod tests {
             );
             assert!(p.staged.is_some(), "{slot:?}: the staging comes back");
         }
-        drop((kv, draft, image, reply));
+        // WP-A day 31: the staging goes back to the set as the driver puts it; the set's charge
+        // (every buffer charged once, at allocation) is the ledger's only pinned bytes once the
+        // KV planes drop, and the latch frees the set and releases it.
+        let span_bytes: u64 = recur.iter().map(|(_, p)| p.len() as u64 * 4).sum();
+        for (p, _, _) in reply.hashed {
+            tier.staging_put(p.staged.expect("the staging came back"));
+        }
+        drop((kv, draft, image));
+        {
+            let set = tier.staging.borrow();
+            assert_eq!(set.charged, span_bytes, "one charge per allocated buffer");
+            assert_eq!(set.idle.len(), recur.len(), "every buffer back in the set");
+        }
+        assert_eq!(
+            gpu_used(&host),
+            (span_bytes, 0, 0),
+            "the staging set's charge alone"
+        );
+        host.disable("day-31 cell: the latch releases the staging charge");
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
 
@@ -46733,10 +47220,18 @@ mod tests {
             gpu_entry_whole(&engine, &entry, &want),
             "every KV plane back"
         );
+        // WP-A day 31: the unwind put every staging buffer back; the set's charge is the ledger's
+        // only pinned bytes, and the next demote reuses the set (no fresh charge).
+        let span_bytes: u64 = recur.iter().map(|(_, p)| p.len() as u64 * 4).sum();
+        assert_eq!(
+            host.tier.as_ref().unwrap().staging.borrow().idle.len(),
+            recur.len(),
+            "every staging buffer back in the set"
+        );
         assert_eq!(
             gpu_used(&host),
-            (0, 0, 0),
-            "nothing charged after the unwind"
+            (span_bytes, 0, 0),
+            "only the staging set's charge after the unwind"
         );
         // The same planes on the owner stream: the next demote attaches and settles.
         for (slot, pattern) in &recur {
@@ -46771,7 +47266,358 @@ mod tests {
         assert_eq!(staged.len(), recur.len());
         assert!(gpu_recurrent_whole(&engine, &entry, &recur));
         assert!(gpu_entry_whole(&engine, &entry, &want));
-        drop((kv, draft, staged, image));
+        assert_eq!(
+            tier.staging.borrow().charged,
+            span_bytes,
+            "the set was reused: no fresh charge"
+        );
+        for (_, buf) in staged {
+            tier.staging_put(buf);
+        }
+        drop((kv, draft, image));
+        assert_eq!(gpu_used(&host), (span_bytes, 0, 0));
+        host.disable("day-31 cell: the latch releases the staging charge");
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// WP-A day 31 (DAY30 finding 4): a refusal AFTER the spans were taken back (the injected
+    /// post-publish receipt refusal, on the off-tick route with spans) puts every landed staging
+    /// buffer back into the context's set: the set's charge is unchanged and the ledger's only
+    /// pinned bytes, every source and KV plane is back in its slot, the refusal is typed with the
+    /// tier on, and the next demote reuses the whole set (no fresh charge) and completes.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_span_postpublish_refusal_returns_the_staging_to_the_set() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let recur = gpu_recurrent(&engine, &mut entry, None);
+        let span_bytes: u64 = recur.iter().map(|(_, p)| p.len() as u64 * 4).sum();
+        host.tier
+            .as_ref()
+            .unwrap()
+            .fault
+            .set(Some(super::HostContractFault::PostPublish));
+        let Ok(super::HostImage::Demoting(image, pending)) = super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OffTick,
+        ) else {
+            panic!("the off-tick demote did not submit");
+        };
+        assert_eq!(pending.spans.len(), recur.len());
+        let tier = host.tier.as_ref().unwrap();
+        assert_eq!(
+            tier.staging.borrow().charged,
+            span_bytes,
+            "charged at allocation"
+        );
+        assert_eq!(
+            tier.staging.borrow().idle.len(),
+            0,
+            "every buffer on the ticket"
+        );
+        let why = match super::host_kv_planes_settle_contract(
+            tier,
+            &mut entry,
+            pending,
+            super::ContractWait::Block,
+        ) {
+            Err(super::HostContractFailure::Refused(why)) => why,
+            Err(
+                super::HostContractFailure::Alloc(why)
+                | super::HostContractFailure::SourceQuarantined(why)
+                | super::HostContractFailure::TicketLeaked(why),
+            ) => panic!("the post-take refusal was not a plain refusal: {why}"),
+            Ok(_) => panic!("the injected post-publish refusal did not fire"),
+        };
+        assert!(
+            why.contains(
+                "tier D2H receipt refused: injected failure \
+                 (MEMRA_KV_HOST_FAULT=contract-postpublish)"
+            ),
+            "{why}"
+        );
+        drop(image);
+        assert_eq!(
+            tier.staging.borrow().idle.len(),
+            recur.len(),
+            "every landed staging buffer back in the set"
+        );
+        assert_eq!(tier.staging.borrow().charged, span_bytes);
+        assert!(
+            gpu_recurrent_whole(&engine, &entry, &recur),
+            "every source back"
+        );
+        assert!(
+            gpu_entry_whole(&engine, &entry, &want),
+            "every KV plane back"
+        );
+        assert_eq!(
+            gpu_used(&host),
+            (span_bytes, 0, 0),
+            "the ticket retired; only the staging set's charge remains"
+        );
+        assert!(!host.disabled, "the tier stays on");
+        let Ok(super::HostImage::Demoting(image, pending)) = super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OffTick,
+        ) else {
+            panic!("the demote after the refusal did not submit");
+        };
+        let tier = host.tier.as_ref().unwrap();
+        assert_eq!(tier.staging.borrow().idle.len(), 0, "the whole set reused");
+        assert_eq!(tier.staging.borrow().charged, span_bytes, "no fresh charge");
+        let Ok(super::ContractSettle::Done(kv, draft, staged)) =
+            super::host_kv_planes_settle_contract(
+                tier,
+                &mut entry,
+                pending,
+                super::ContractWait::Block,
+            )
+        else {
+            panic!("the settle after the refusal did not complete");
+        };
+        for ((slot, buf), (want_slot, pattern)) in staged.iter().zip(&recur) {
+            assert_eq!(slot, want_slot);
+            assert_eq!(f32_bits(buf.as_f32_slice()), f32_bits(pattern), "{slot:?}");
+        }
+        for (_, buf) in staged {
+            tier.staging_put(buf);
+        }
+        drop((kv, draft, image));
+        assert_eq!(gpu_used(&host), (span_bytes, 0, 0));
+        host.disable("day-31 cell: the latch releases the staging charge");
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+        assert_eq!(
+            host.tier.as_ref().unwrap().staging.borrow().idle.len(),
+            0,
+            "the latch freed the set"
+        );
+    }
+
+    /// WP-A day 31 (the owed governor charge of the staging): a fresh staging buffer the
+    /// governor's pinned ledger cannot hold refuses the span attach through the existing typed arm
+    /// (`tier D2H spans refused: a N-byte staging buffer: the governor's pinned ledger refused N
+    /// bytes (Capacity) (k f32 spans handed back)`): nothing is allocated for it, the spans taken so
+    /// far go back (sources to their slots, staging to the set), the KV ticket unwinds, the tier
+    /// stays on. Once the ledger has room the next demote completes, reusing the returned buffer and
+    /// charging only the fresh ones. After the latch a take refuses and a put frees.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_span_staging_charge_refusal_refuses_the_attach_and_keeps_the_tier_on() {
+        use memra_engine::cache::tiered::*;
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let recur = gpu_recurrent(&engine, &mut entry, None);
+        let span_bytes: u64 = recur.iter().map(|(_, p)| p.len() as u64 * 4).sum();
+        let first = recur[0].1.len() as u64 * 4;
+        assert_eq!(
+            recur[1].1.len() as u64 * 4,
+            first,
+            "the second span needs a second buffer"
+        );
+        // A co-tenant charge that leaves room for the six KV destinations and ONE staging buffer.
+        let kv_bytes = 3 * 8 * 58;
+        let governor = host.tier.as_ref().unwrap().governor.clone();
+        let hog = {
+            let dimensions = governor.lock().unwrap().used().device.len();
+            let mut request = BudgetRequest {
+                bytes: TierBudget::zero(dimensions),
+                priority: Priority::Backup,
+                deadline: Deadline(u64::MAX),
+                tenant: hostprefix::tenant_salt("co-tenant"),
+            };
+            request.bytes.pinned = 2 * (1u64 << 30) - kv_bytes - first;
+            hostprefix::ResidentCharge::reserve(governor.clone(), &request).unwrap()
+        };
+        let why = match super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OffTick,
+        ) {
+            Err(super::HostImageFailure::Failed(why)) => why,
+            Err(super::HostImageFailure::SourceQuarantined(why)) => {
+                panic!("a refused staging charge escalated to quarantine: {why}")
+            }
+            Ok(_) => panic!("a staging buffer over the ledger was charged"),
+        };
+        assert!(
+            why.contains(&format!(
+                "tier D2H spans refused: a {first}-byte staging buffer: the governor's pinned \
+                 ledger refused {first} bytes (Capacity) (1 f32 spans handed back)"
+            )),
+            "{why}"
+        );
+        assert!(!host.disabled, "the tier stays on");
+        assert!(
+            gpu_recurrent_whole(&engine, &entry, &recur),
+            "every source back"
+        );
+        assert!(
+            gpu_entry_whole(&engine, &entry, &want),
+            "every KV plane back"
+        );
+        {
+            let set = host.tier.as_ref().unwrap().staging.borrow();
+            assert_eq!(
+                set.idle.len(),
+                1,
+                "the one charged buffer is back in the set"
+            );
+            assert_eq!(set.charged, first);
+        }
+        assert_eq!(
+            gpu_used(&host),
+            (2 * (1u64 << 30) - kv_bytes, 0, 0),
+            "the KV destinations released; the co-tenant and the one buffer's charge remain"
+        );
+        drop(hog);
+        let Ok(super::HostImage::Demoting(image, pending)) = super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OffTick,
+        ) else {
+            panic!("the demote after the ledger freed did not submit");
+        };
+        let tier = host.tier.as_ref().unwrap();
+        assert_eq!(
+            tier.staging.borrow().charged,
+            span_bytes,
+            "fresh charges only"
+        );
+        let Ok(super::ContractSettle::Done(kv, draft, staged)) =
+            super::host_kv_planes_settle_contract(
+                tier,
+                &mut entry,
+                pending,
+                super::ContractWait::Block,
+            )
+        else {
+            panic!("the settle did not complete");
+        };
+        assert!(gpu_recurrent_whole(&engine, &entry, &recur));
+        for (_, buf) in staged {
+            tier.staging_put(buf);
+        }
+        drop((kv, draft, image));
+        assert_eq!(gpu_used(&host), (span_bytes, 0, 0));
+        host.disable("day-31 cell: the latch releases the staging charge");
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+        let tier = host.tier.as_ref().unwrap();
+        let refused = tier.staging_take(first as usize).err();
+        assert_eq!(
+            refused.as_deref(),
+            Some("the staging set is closed (the tier latched off)")
+        );
+        assert_eq!(gpu_used(&host), (0, 0, 0), "a latched take charges nothing");
+    }
+
+    /// WP-A day 31 (`MEMRA_KV_HOST_FAULT=contract-spans`, the unit half of the span-refusal
+    /// cell): the injected attach refusal fires after every span was built; every span comes back
+    /// (the sources to their slots, the staging to the set), the KV ticket unwinds as a typed
+    /// `Failed`, the tier stays on, the fault is one-shot, and the next demote reuses the set.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_span_attach_fault_hands_every_span_back() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let recur = gpu_recurrent(&engine, &mut entry, None);
+        let span_bytes: u64 = recur.iter().map(|(_, p)| p.len() as u64 * 4).sum();
+        host.tier
+            .as_ref()
+            .unwrap()
+            .fault
+            .set(super::HostContractFault::from_door("contract-spans"));
+        let why = match super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OffTick,
+        ) {
+            Err(super::HostImageFailure::Failed(why)) => why,
+            Err(super::HostImageFailure::SourceQuarantined(why)) => {
+                panic!("the injected span refusal escalated to quarantine: {why}")
+            }
+            Ok(_) => panic!("the injected span refusal did not fire"),
+        };
+        assert_eq!(
+            why,
+            format!(
+                "tier D2H spans refused: injected failure (MEMRA_KV_HOST_FAULT=contract-spans) \
+                 ({} f32 spans handed back)",
+                recur.len()
+            )
+        );
+        assert!(!host.disabled, "the tier stays on");
+        assert_eq!(host.tier.as_ref().unwrap().fault.get(), None, "one-shot");
+        assert!(
+            gpu_recurrent_whole(&engine, &entry, &recur),
+            "every source back"
+        );
+        assert!(
+            gpu_entry_whole(&engine, &entry, &want),
+            "every KV plane back"
+        );
+        assert_eq!(
+            host.tier.as_ref().unwrap().staging.borrow().idle.len(),
+            recur.len()
+        );
+        assert_eq!(gpu_used(&host), (span_bytes, 0, 0));
+        let Ok(super::HostImage::Demoting(image, pending)) = super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OffTick,
+        ) else {
+            panic!("the demote after the injected refusal did not submit");
+        };
+        let tier = host.tier.as_ref().unwrap();
+        let Ok(super::ContractSettle::Done(kv, draft, staged)) =
+            super::host_kv_planes_settle_contract(
+                tier,
+                &mut entry,
+                pending,
+                super::ContractWait::Block,
+            )
+        else {
+            panic!("the settle after the injected refusal did not complete");
+        };
+        assert_eq!(
+            tier.staging.borrow().charged,
+            span_bytes,
+            "the set was reused"
+        );
+        for (_, buf) in staged {
+            tier.staging_put(buf);
+        }
+        drop((kv, draft, image));
+        host.disable("day-31 cell: the latch releases the staging charge");
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
 
@@ -47212,8 +48058,10 @@ mod tests {
             F::from_door("contract-promote-readyview"),
             Some(F::PromoteReadyView)
         );
+        assert_eq!(F::from_door("contract-spans"), Some(F::SpanAttach));
         assert_eq!(F::from_door("flip-demote"), None);
         assert!(F::PreSubmit.is_demote() && F::PostPublish.is_demote());
+        assert!(F::SpanAttach.is_demote() && F::SpanAttach.is_move1());
         assert!(!F::PromotePreSubmit.is_demote() && !F::PromotePostPublish.is_demote());
         assert!(!F::PromoteReject.is_demote() && !F::PromoteReadyView.is_demote());
         let tier = contracts_context("m", Arc::new(()), 1 << 20);

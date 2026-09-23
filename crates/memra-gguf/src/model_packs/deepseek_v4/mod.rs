@@ -532,6 +532,30 @@ mod tests {
     }
 
     #[test]
+    fn explicit_yarn_type_preserves_the_compressed_rope_program() {
+        use crate::model_plan::{AttentionPlan, MlaAttentionPlan, RopeFactors};
+        let mut config = config();
+        let expected = PACK.compile_plan(&config).unwrap();
+        config.rope_scaling_hint = Some("yarn".into());
+        let plan = super::super::compile_for_load(&config).unwrap();
+        assert_eq!(plan, expected);
+        let AttentionPlan::Mla(MlaAttentionPlan::CompressedKv { rope, .. }) =
+            &plan.layers[1].attention
+        else {
+            panic!("expected compressed attention")
+        };
+        assert_eq!(
+            rope.factors,
+            RopeFactors::Yarn {
+                factor: 4.0,
+                original_context: 1024,
+                beta_fast: 32.0,
+                beta_slow: 1.0,
+            }
+        );
+    }
+
+    #[test]
     fn generated_schema_binds_all_three_quant_recipes_and_auxiliaries() {
         let config = config();
         let plan = PACK.compile_plan(&config).unwrap();

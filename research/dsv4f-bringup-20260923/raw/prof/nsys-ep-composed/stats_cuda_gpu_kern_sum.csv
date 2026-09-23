@@ -1,0 +1,44 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+30.1,736400839,2752,267587.5,269757.0,11776,355356,30023.2,"void moe_kq_sktail_gu_kernel<(int)108, (bool)1, (bool)1>(const unsigned long long *, int, const int *, long, const __half *, float *, const float *, const float *, const float *, const float *, const int *, int, int, int, int, float)"
+11.2,272951912,2752,99183.1,106910.0,15200,135838,15746.9,"void moe_kq_sktail_kernel<(int)108, (bool)1, (bool)1>(const unsigned long long *, int, int, const int *, long, const __half *, float *, const float *, const int *, int, int, int, int, int, int)"
+10.3,253309764,10304,24583.6,13056.0,6687,81279,23668.8,"void dsv4_dense_exact_tail_fp8_kernel<(int)1, (bool)0>(const unsigned char *, const float *, int, const unsigned short *, float *, int, int, int, int, int, int)"
+6.6,161216087,2752,58581.4,58623.0,58175,58943,125.3,dsv4_hc_sinkhorn_m_kernel
+4.7,115089482,1376,83640.6,88927.0,77055,90591,5979.1,"dsv4_sink_scores_tiled_f32acc_kernel(const float *, const float *, const int *, float *, int, int, float)"
+4.6,112827118,1376,81996.5,40448.0,27775,127934,44050.2,dsv4_sink_out_mq_f32acc_kernel
+4.5,109655330,8160,13438.2,13248.0,6335,648665,39920.3,"void dsv4_dense_exact_tail_dots_kernel<(int)1>(const float *, const void *, int, float *, int, int)"
+3.7,91530495,5872,15587.6,9120.0,4575,25408,8606.6,dsv4_rmsnorm_f32acc_kernel
+3.5,85815279,5504,15591.4,12192.0,3263,20959,3918.4,dsv4_fp8_gather_half_kernel
+2.6,62705687,1376,45571.0,45567.0,45120,46207,159.5,"void dsv4_gemv_fp8_m_kernel<(int)1, (bool)1>(const unsigned char *, const float *, int, const unsigned short *, float *, int, int, int, int, int, int)"
+2.3,56253273,672,83710.2,83711.0,82655,84543,356.4,dsv4_indexer_score_tiled_kernel
+2.1,50690742,672,75432.7,75759.0,51200,106911,8250.6,dsv4_topk_idx_radix_m1_kernel
+2.0,49819771,2752,18103.1,17632.0,17503,19776,795.9,"dsv4_grouped_partition_prefix_kernel(const int *, const int *, int *, int *, int *, int, int, int)"
+1.9,47293104,1376,34370.0,36063.0,10688,37279,6262.6,dsv4_route_m_kernel
+1.1,27229691,2784,9780.8,9792.0,9504,10144,64.4,dsv4_rowsq_scale_f32acc_kernel
+0.9,22871240,10304,2219.6,2208.0,2144,2528,20.5,dsv4_cvt_bf16_kernel
+0.8,20210838,4128,4896.0,4864.0,4671,5408,159.5,dsv4_act_quant_fp8_kernel
+0.6,15655605,1376,11377.6,7744.0,6240,15712,3983.1,dsv4_sink_soft_mq_f32acc_kernel
+0.6,15639108,4800,3258.1,3136.0,3007,3840,224.5,dsv4_rope_kernel
+0.6,15506207,672,23074.7,23072.0,22975,23264,52.2,"dsv4_c4_gather_kernel(const float *, const float *, const int *, float *, int *, int, int, int, int, int)"
+0.5,12319062,4128,2984.3,2976.0,2176,3296,98.0,dsv4_scatter_rows_kernel
+0.5,11991064,1376,8714.4,8768.0,1984,9696,824.5,"dsv4_ep_merge_slots_kernel(float *, const float *, const int *, int, int, int)"
+0.4,10731107,2752,3899.4,3904.0,2592,4608,302.7,"void dsv4_grouped_scatter_kernel<(bool)1>(const int *, const float *, const float *, const int *, int *, int *, float *, float *, float *, float *, int, int, int)"
+0.4,9834260,2752,3573.5,3584.0,3328,3968,109.6,dsv4_hc_post_kernel
+0.4,9465054,2752,3439.3,3424.0,3263,3776,122.9,"void dsv4_grouped_count_kernel<(bool)1>(const int *, int *, int, int *, int *, float *, float *, float *, float *, int)"
+0.3,7513293,2784,2698.7,2720.0,2560,2944,57.4,dsv4_hc_collapse_kernel
+0.3,7459050,2048,3642.1,3712.0,3392,3904,126.7,dsv4_q_transpose_m_kernel
+0.3,6945266,1376,5047.4,5056.0,4992,5088,21.3,dsv4_headrms_f32acc_kernel
+0.3,6704724,2752,2436.3,2432.0,2368,2912,24.0,dsv4_scale_rows_kernel
+0.3,6134436,336,18257.3,18335.5,17184,19232,647.6,dsv4_compressor_pool_kernel
+0.2,5519333,840,6570.6,6592.0,6432,6624,54.5,dsv4_hadamard_kernel
+0.2,5490779,1376,3990.4,4000.0,3840,4448,45.6,dsv4_combine_rows_m_kernel
+0.2,5475357,1544,3546.2,3552.0,3488,3584,18.3,dsv4_act_quant_kernel
+0.2,4106317,672,6110.6,6080.0,5951,6560,109.8,"void dsv4_gemv_bf16_m_kernel<(int)1>(const unsigned short *, const unsigned short *, float *, int, int, int, int)"
+0.1,3556213,1376,2584.5,2592.0,2528,2624,18.2,dsv4_swiglu_kernel
+0.1,3486165,840,4150.2,4160.0,4064,4319,35.8,dsv4_fp4_act_quant_kernel
+0.1,3101989,1376,2254.4,2240.0,2207,2304,17.4,dsv4_add_inplace_kernel
+0.1,2090891,704,2970.0,2976.0,2911,3104,41.2,dsv4_build_idx_redirect_m_kernel
+0.1,1788919,672,2662.1,2656.0,2624,2688,16.2,dsv4_build_idx_redirect_kernel
+0.0,927509,336,2760.4,2751.5,2592,3008,115.1,dsv4_rope_at_kernel
+0.0,114142,32,3566.9,3520.0,3264,4000,182.7,dsv4_embed_rows_kernel
+0.0,95872,32,2996.0,3008.0,2944,3072,24.0,dsv4_hc_head_pre_m_kernel
+0.0,94592,32,2956.0,3008.0,2752,3104,111.7,dsv4_repeat_hc_kernel

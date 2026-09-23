@@ -724,7 +724,7 @@ target-card performance qualification is pending.
 | f16_prefill.cu | `memra_f16_pp_gemm[_pre]`, `memra_f16_cvt`, `memra_{q8_0,q4_0,q6_K,q4_K,q5_K}_dequant_f16` | cuBLASLt FP16 TN prefill on resident f16 dequant mirror of quantized weights Per-device cuBLASLt handle slots since 2026-09-02 (lane glm5-b200): a handle created on one device returned CUBLAS_STATUS_EXECUTION_FAILED from the other PP stage on a 2x B200 pair; plan caches key on the device. | host cuBLASLt | MEMRA_PP_F16, MEMRA_PP_F16_BUDGET_MB, MEMRA_W8A8_SIM | f16_ffi.rs:22-62 (+build_*_raw wrappers f16_ffi.rs:725-816) |
 | fp8_prefill.cu | `memra_fp8_pp_gemm` (:90) + `__global__` amax/scale/quant kernels | cuBLASLt FP8-E4M3 TN prefill + per-batch activation quantize Per-device cuBLASLt handle slots since 2026-09-02 (lane glm5-b200): a handle created on one device returned CUBLAS_STATUS_EXECUTION_FAILED from the other PP stage on a 2x B200 pair; plan caches key on the device. | — | MEMRA_PP_FP8, MEMRA_PP_FP8_BUDGET_MB, MEMRA_FP8_MMQ, MEMRA_ST_E4M3 (fp8_ffi.rs:27, 45-87, 239) | fp8_ffi.rs:27 |
 | fp8_blk_dequant.cu | `memra_fp8_blk_q8_0_bytes` (:220), `memra_fp8_blk_dequant_q8_0` (:228) | device-side dequant of block-128 FP8 weights into GGUF Q8_0 blocks at model load | — | MEMRA_FP8_BLK_GPU (fp8_ffi.rs:476) | fp8_ffi.rs:458-474 |
-| fa3_prefill.cu | `memra_fa3_prefill` (+stub twin rc=3, :18-20; the `memra_fa3_vl` batched twin was deleted 2026-09-23, memra#641) | FA3 v10 engine shim, head_dim 256 only | wgmma/TMA sm_90a-only; `-DMEMRA_FA3_STUB` otherwise (build.rs:525-526) | promoted default-ON on hopper 2026-07-27, `MEMRA_FA3=0` reverts; engages only head_dim==256 causal t==t_kv (lib.rs:28007-28019; file header ":1-7 opt-in" is stale) | lib.rs:2155-2168 |
+| fa3_prefill.cu | `memra_fa3_prefill` (+stub twin rc=3, :18-20; the `memra_fa3_vl` batched twin was deleted 2026-09-23, memra#641) | FA3 v10 engine shim, head_dim 256 only | wgmma/TMA sm_90a-only; `-DMEMRA_FA3_STUB` otherwise (build.rs:525-526) | promoted default-ON on hopper 2026-07-27, `MEMRA_FA3=0` reverts; engages only head_dim==256 causal t==t_kv (lib.rs:28008-28020; file header ":1-7 opt-in" is stale) | lib.rs:2156-2169 |
 | moe_f16_grouped.cu | *(the M=1 split-K family: `memra_moe_m1_splitk`, `memra_moe_m1_graph_splitk`, `moe_m1_splitk_partial_kernel<1/2>`, `moe_m1_graph_splitk_partial_kernel<1/2>`, `moe_m1_splitk_fast_partial_kernel<1/2>`, all three reduce kernels and the component instruments)* | **DELETED 2026-09-11 (memra #392, #425, #458, #461).** Every entry dispatched behind the fused gate/up launch, whose only arm is a gate-only function called AFTER load, so no serving process could reach one. When the matrix expert program became the loaded default the doors had to serve or go. Verdict, receipts and the tombstone: `docs/FLAGS.md` "Removed doors, 2026-09-11". | n/a | REMOVED | Census red arm in five sites: a captured graph carrying any of these symbols now FAILS. |
 | moe_f16_grouped.cu | `memra_moe_f16g_{dequant,gemm,gemm_sk,gather_act,h2f,h2f_scaled,w_bytes,act_bytes}`, `memra_moe_kq_gemm_sk` | per-layer expert dequant to f16 + ONE grouped f16 GEMM per projection over CSR groups; per-qtype dequant kernels for Q4_0/IQ4_XS/IQ3_S/Q6_K/Q4_K/Q3_K (:109-246); "SASS portable across 89/90a/100a/120a" (:336) Per-device cuBLAS handle slots since 2026-09-02 (same B200 finding as f16_prefill.cu). | smem opt-in >48KB, 1 CTA/SM on sm_120a (:483-486) | MEMRA_MOE_F16G (=2 single-kernel, mmq_ffi.rs:394), MEMRA_F16G_SK/_TAIL/_DIRECT/_DEBUG | mmq_ffi.rs:348-424 |
 | moe_f16_grouped.cu | `memra_moe_kq_gemm_sk_grid` | **REMOVED 2026-09-06**. The bounded persistent-grid arm was bit-identical and engaged on the target pair, but full-model A/B was flat/no-go at 256 and 8192 contexts. The generic `memra_moe_kq_gemm_sk` path remains the only DSV4 matrix visitor. | Historical component/sanitizer and full-model receipt retained; no serving default was promoted. | Removed door receipt: `research/dsv4f-2card-1m-20260904/grouped-grid-bound.md` plus private `grouped-grid-perf-20260906` receipt | — |
@@ -773,25 +773,29 @@ receipts: `research/kernel-dedup-20260821/RECEIPTS.md`; every modified TU × arc
 
 `cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_hc_dot_split_partial_kernel<S>`
 and `dsv4_hc_dot_split_reduce_kernel<S>` for S=8/16/32. Only the device HC-24
-pre-attention/pre-FFN sites with F32 N=24,K=16384 dispatch this pair. Other
-dots shapes retain their current kernel. Existing CUDA kernels are unchanged.
+pre-attention/pre-FFN sites with F32 N=24,K=16384 dispatch this pair, for
+every row count. Token rows ride `blockIdx.y` in the partial kernel and
+`blockIdx.x` in the reducer through the one kernel body, so an M-row verify,
+prefill or batched call gives each row the bits of that row decoded alone
+(#660; until 2026-09-23 only one-row calls split and verify rows took the
+sequential class). Other dots shapes retain their current kernel.
 
-Each of 24*S blocks has 128 threads. A contiguous K slice retains increasing
+Each of 24*S blocks per token row has 128 threads. A contiguous K slice retains increasing
 eight-element per-lane multiply/add order and the exact-tail 128-leaf tree.
 S=32 has 64 zero leaves because its slice has 512 elements. One 32-thread
-second-stage block sums each row's partials in ascending slice order with
+second-stage block per token row sums each row's partials in ascending slice order with
 explicit round-to-nearest f32 adds. No atomics or fused multiply-add.
 This is the **HC24 split dots** numeric class, not bit-identity with the
 exact-tail dots class: restarting accumulators and summing slices changes
 association. Each S is a distinct class and must be pinned in its receipt.
 
-Scratch is 24*32 F32 elements per decode state and rank, allocated before
-capture. Every call writes all partials it reads, both stages use the same
+Scratch is 24*32 F32 elements per decode state and rank and `tmax`*24*32 per
+verify workspace, allocated before capture. Every call writes all partials it reads, both stages use the same
 stream, and graphs retain stable scratch addresses. `MEMRA_DSV4_HC_DOT_SPLIT`
 is ON when unset; exact `1` or `16` also selects the owner-chosen S=16.
 Explicit `0` restores sequential dots after a fresh process/state capture.
 S8 and S32 remain explicit opt-in classes; other strings select OFF.
-Rollback seam decide-by: 2026-09-23, owner accepted 2026-09-09.
+Rollback seam decide-by: 2026-10-07 (used on 2026-09-23 to bisect #660), owner accepted 2026-09-09.
 S32 was component-fastest but its 1.407% advantage over S16 did not justify
 rebuilding and re-review; only S16 has the model campaign receipts.
 

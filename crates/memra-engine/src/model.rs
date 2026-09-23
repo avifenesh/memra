@@ -1571,11 +1571,10 @@ impl Model {
         e: &Engine,
         src: &dyn TensorSource,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cfg = src.try_config().map_err(std::io::Error::other)?;
-        let plan = match memra_gguf::model_packs::for_config(&cfg) {
-            Some(pack) => pack.compile_plan(&cfg)?,
-            None => memra_gguf::model_plan::ModelPlan::compile(&cfg)?,
-        };
+        // Keep any source-backed preflight reads in the same consumption audit as the loader.
+        let recording = memra_gguf::checkpoint_binding::RecordingSource::new(src);
+        let src: &dyn TensorSource = &recording;
+        let (cfg, plan) = memra_gguf::model_packs::compile_for_source(src)?;
         if plan.layers.iter().any(|layer| {
             !matches!(
                 layer.attention,
@@ -1588,13 +1587,11 @@ impl Model {
         // byte is uploaded, then address every trunk tensor by its semantic id. Output-head
         // ownership comes from the binding (the pack declares whether an absent head may be the
         // embedding), never from a `has("output.weight")` probe.
-        use memra_gguf::checkpoint_binding::{self, RecordingSource};
+        use memra_gguf::checkpoint_binding;
         use memra_gguf::tensor_contract::{LayerTensor, TensorId};
         let binding = checkpoint_binding::bind_source(src, &cfg, &plan)
             .map_err(|error| std::io::Error::other(error.to_string()))?;
         eprintln!("{}", checkpoint_binding::describe(&binding));
-        let recording = RecordingSource::new(src);
-        let src: &dyn TensorSource = &recording;
         let name = |id: TensorId| binding.require_ggml(&id).map_err(std::io::Error::other);
         let embd = EmbedHost::from_source(src, &name(TensorId::TokenEmbedding)?);
         let output_norm = GpuTensor::load_from_source(e, src, &name(TensorId::OutputNorm)?)?;
