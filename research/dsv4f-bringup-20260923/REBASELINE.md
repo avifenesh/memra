@@ -7,7 +7,7 @@ GPU telemetry per cell, single runs unless a row says otherwise.
 
 This replaces `BASELINE.md`, which was measured on a pair with the hardware power brake latched
 (effective SM clock 722 MHz behind a reported 2865 MHz). Finding and proof:
-`power-brake/POWER-BRAKE.md`. Card acceptance on this pair before any weights were staged:
+`power-brake/POWER-BRAKE.md`. Card acceptance on this pair:
 effective SM clock 2839..2861 MHz on both cards, HW Slowdown and HW Power Brake Not Active,
 braking counter 0 us (`power-brake/raw/healthy/`).
 
