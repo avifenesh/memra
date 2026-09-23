@@ -882,8 +882,84 @@ enum VerifyOutput {
     Device,
     Full,
     Argmax,
+    /// The argmax and the MoE fault words land in pinned memory behind events, with no host
+    /// wait; [`Dsv4Gpu::decode_step_greedy_complete`] reads them.
+    ArgmaxDeferred,
     None,
     Last,
+}
+
+/// Cached pinned host words for one async D2H readback. Portable, so every stage context
+/// can copy into it. Read only after the event recorded behind the copy has completed.
+struct PinnedWords {
+    ptr: *mut i32,
+    len: usize,
+}
+
+// SAFETY: the allocation is owned here and only read after its copy's event completed.
+unsafe impl Send for PinnedWords {}
+unsafe impl Sync for PinnedWords {}
+
+impl PinnedWords {
+    fn new(len: usize) -> Res<Self> {
+        let bytes = len.max(1) * std::mem::size_of::<i32>();
+        // CU_MEMHOSTALLOC_PORTABLE: pinned for every context, not only the current one.
+        let ptr = unsafe { cudarc::driver::result::malloc_host(bytes, 1) }
+            .map_err(e("pinned readback words"))?
+            .cast::<i32>();
+        unsafe { ptr.write_bytes(0, len.max(1)) };
+        Ok(Self { ptr, len })
+    }
+
+    /// # Safety
+    /// `src` must stay alive and unwritten until an event recorded on `stream` after this
+    /// call has completed, and nothing may read these words before that.
+    unsafe fn enqueue_from(
+        &mut self,
+        src: &CudaSlice<i32>,
+        n: usize,
+        stream: &std::sync::Arc<CudaStream>,
+    ) -> Res<()> {
+        if n == 0 || n > self.len || n > src.len() {
+            return Err(format!(
+                "pinned readback of {n} words outside {} / {}",
+                self.len,
+                src.len()
+            ));
+        }
+        let (device, _record) = src.device_ptr(stream);
+        unsafe {
+            cudarc::driver::sys::cuMemcpyDtoHAsync_v2(
+                self.ptr.cast(),
+                device,
+                n * std::mem::size_of::<i32>(),
+                stream.cu_stream(),
+            )
+            .result()
+        }
+        .map_err(e("pinned readback enqueue"))
+    }
+
+    fn words(&self, n: usize) -> &[i32] {
+        unsafe { std::slice::from_raw_parts(self.ptr, n.min(self.len)) }
+    }
+}
+
+impl Drop for PinnedWords {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = cudarc::driver::result::free_host(self.ptr.cast());
+        }
+    }
+}
+
+/// A deferred plain step's readbacks: the argmax on the head stage and each armed stage's MoE
+/// fault words, each behind an event recorded on that stage's stream after its copies.
+struct StepLanding {
+    argmax: PinnedWords,
+    faults: Vec<PinnedWords>,
+    events: Vec<Option<cudarc::driver::CudaEvent>>,
+    rows: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -11545,6 +11621,71 @@ impl Dsv4Gpu {
     /// device path the argmax runs on-device and 4 bytes cross back. Legacy path
     /// falls back to the full-logits step + host argmax (same value by the argmax
     /// tie-rule equivalence).
+    /// Pipelined plain greedy step, first half: queue the whole step (every stage, the device
+    /// argmax, the MoE fault words) with no host wait. The readbacks land in pinned memory
+    /// behind one event per stage, so the host can queue another session's step on the same
+    /// stage streams before this one finishes; each stage runs the two steps in stream order,
+    /// the same kernels on each request's own buffers. [`Self::decode_step_greedy_complete`]
+    /// finishes it. PP matrix device program only.
+    pub fn decode_step_greedy_enqueue(&self, tok: u32, state: &mut DecodeState) -> Res<()> {
+        if self.topology.is_tp_ep()
+            || !self.matrix_moe
+            || self.decode_path != (DecodePath::Device { host_math: false })
+        {
+            return Err("pipelined greedy step requires the PP matrix device program".into());
+        }
+        self.ensure_walk_topology_ready()?;
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
+        let mut work = state
+            .matrix_step
+            .take()
+            .ok_or("matrix one-row workspace missing")?;
+        let result = (|| {
+            if work.failed || work.verify.open.is_some() {
+                return Err("matrix one-row workspace has an unfinished transaction".into());
+            }
+            self.verify_batch_dev_output(
+                &[tok],
+                state,
+                &mut work.verify,
+                None,
+                VerifyOutput::ArgmaxDeferred,
+            )?;
+            Ok(())
+        })();
+        if result.is_err() {
+            work.failed = true;
+        }
+        state.matrix_step = Some(work);
+        result
+    }
+
+    /// Pipelined plain greedy step, second half: wait for this step's own readbacks (not for
+    /// whatever else the stage streams hold), refuse on a MoE fault before anything commits,
+    /// then commit the one row and return its token. Same bits as [`Self::decode_step_greedy`].
+    pub fn decode_step_greedy_complete(&self, state: &mut DecodeState) -> Res<u32> {
+        let mut work = state
+            .matrix_step
+            .take()
+            .ok_or("matrix one-row workspace missing")?;
+        let result = (|| {
+            if work.failed {
+                return Err("matrix one-row workspace failed".into());
+            }
+            let rows = self.complete_step_landing(&mut work.verify)?;
+            if rows.len() != 1 {
+                return Err(format!("pipelined greedy step landed {} rows", rows.len()));
+            }
+            self.commit_verify_dev(state, &mut work.verify, 1)?;
+            Ok(rows[0])
+        })();
+        if result.is_err() {
+            work.failed = true;
+        }
+        state.matrix_step = Some(work);
+        result
+    }
+
     pub fn decode_step_greedy(&self, tok: u32, state: &mut DecodeState) -> Res<u32> {
         match self.decode_path {
             DecodePath::Legacy => {
@@ -13468,6 +13609,9 @@ pub struct VerifyState {
     matrix_ep_graphs: Vec<MatrixEpGraphSlot>,
     ws: Vec<VerifyWs>,
     layers: Vec<LayerCkptDev>,
+    /// The deferred plain step's pinned readbacks (`decode_step_greedy_enqueue`), allocated on
+    /// first use. `Some` rows while a step is in flight.
+    landing: Option<StepLanding>,
     tp_ep_layers: Option<Vec<LayerCkptDev>>,
     tp_ep_ar_outputs: Option<[CudaSlice<f32>; 2]>,
     tp_ep_attention_outputs: Option<[CudaSlice<f32>; 2]>,
@@ -14640,6 +14784,7 @@ impl Dsv4Gpu {
             matrix_ep_graphs: (0..n_trunk).map(|_| MatrixEpGraphSlot::empty()).collect(),
             ws,
             layers,
+            landing: None,
             tp_ep_layers,
             tp_ep_ar_outputs,
             tp_ep_attention_outputs,
@@ -18086,6 +18231,11 @@ impl Dsv4Gpu {
                     )?;
                 }
             }
+            if output == VerifyOutput::ArgmaxDeferred {
+                self.enqueue_step_landing(vstate, t)?;
+                vstate.open = Some((pos0, t));
+                return Ok((None, Vec::new()));
+            }
             let view = vws.argmax.slice(0..t);
             stream_last
                 .memcpy_dtoh(&view, &mut am[..])
@@ -18095,6 +18245,121 @@ impl Dsv4Gpu {
         self.take_moe_faults(&mut vstate.ws)?;
         vstate.open = Some((pos0, t));
         Ok((logits, am.into_iter().map(|x| x as u32).collect()))
+    }
+
+    /// Queue the deferred step's readbacks: each armed stage's MoE fault words, and on the head
+    /// stage the argmax too, then one event per stage behind them. Nothing waits here, so the
+    /// host can queue another session's step before this one finishes.
+    fn enqueue_step_landing(&self, vstate: &mut VerifyState, t: usize) -> Res<()> {
+        let n_stages = self.stages.len();
+        let last = n_stages - 1;
+        if vstate.landing.is_none() {
+            let words = vstate
+                .ws
+                .iter()
+                .map(|vws| vws.moe_fault.as_ref().map_or(1, |w| w.len()))
+                .collect::<Vec<_>>();
+            vstate.landing = Some(StepLanding {
+                argmax: PinnedWords::new(vstate.tmax)?,
+                faults: words
+                    .into_iter()
+                    .map(PinnedWords::new)
+                    .collect::<Res<Vec<_>>>()?,
+                events: (0..n_stages).map(|_| None).collect(),
+                rows: 0,
+            });
+        }
+        let landing = vstate.landing.as_mut().expect("landing allocated above");
+        if landing.rows != 0 {
+            return Err("deferred step readback already in flight".into());
+        }
+        for si in 0..n_stages {
+            let st = &self.stages[si];
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind deferred readback"))?;
+            let stream = st.gpu.stream();
+            let vws = &vstate.ws[si];
+            let mut queued = false;
+            if vws.moe_fault_armed
+                && let Some(words) = vws.moe_fault.as_ref()
+            {
+                // SAFETY: the fault words live in this request's workspace and nothing writes
+                // them before `complete_step_landing` observes this stage's event.
+                unsafe { landing.faults[si].enqueue_from(words, words.len(), &stream)? };
+                queued = true;
+            }
+            if si == last {
+                // SAFETY: as above, for this request's argmax rows.
+                unsafe { landing.argmax.enqueue_from(&vws.argmax, t, &stream)? };
+                queued = true;
+            }
+            landing.events[si] = if queued {
+                let flags = Some(cudarc::driver::sys::CUevent_flags::CU_EVENT_DISABLE_TIMING);
+                Some(
+                    stream
+                        .record_event(flags)
+                        .map_err(e("deferred readback event"))?,
+                )
+            } else {
+                None
+            };
+        }
+        landing.rows = t;
+        Ok(())
+    }
+
+    /// Wait for the deferred step's readbacks and apply them: a nonzero MoE fault word fails the
+    /// step closed with the synchronous arm's reason and clears the words, as
+    /// [`Self::take_moe_faults`] does; otherwise the stages disarm and the argmax rows return.
+    fn complete_step_landing(&self, vstate: &mut VerifyState) -> Res<Vec<u32>> {
+        let landing = vstate
+            .landing
+            .as_mut()
+            .ok_or("deferred step completion without a queued readback")?;
+        let rows = std::mem::replace(&mut landing.rows, 0);
+        if rows == 0 {
+            return Err("deferred step completion without a queued readback".into());
+        }
+        for (si, event) in landing.events.iter_mut().enumerate() {
+            if let Some(event) = event.take() {
+                self.stages[si]
+                    .gpu
+                    .ctx
+                    .bind_to_thread()
+                    .map_err(e("bind deferred completion"))?;
+                event.synchronize().map_err(e("deferred readback wait"))?;
+            }
+        }
+        let mut first = None;
+        for (si, vws) in vstate.ws.iter_mut().enumerate() {
+            if !vws.moe_fault_armed {
+                continue;
+            }
+            let Some(words) = vws.moe_fault.as_mut() else {
+                continue;
+            };
+            let host = landing.faults[si].words(words.len());
+            if let Some(il) = host.iter().position(|&w| w != 0) {
+                first.get_or_insert((il, host[il]));
+                let stream = self.stages[si].gpu.stream();
+                stream.memset_zeros(words).map_err(e("clear MoE faults"))?;
+            }
+            vws.moe_fault_armed = false;
+        }
+        if let Some((il, word)) = first {
+            return Err(format!(
+                "DSV4 grouped MoE layer {il}: {}",
+                crate::dsv4_grouped::moe_fault_reason(word)
+            ));
+        }
+        Ok(landing
+            .argmax
+            .words(rows)
+            .iter()
+            .map(|&x| x as u32)
+            .collect())
     }
 
     /// Read each armed stage's MoE fault words once and disarm them (memra #670). The
