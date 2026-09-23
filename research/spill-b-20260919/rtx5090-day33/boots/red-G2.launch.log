@@ -1,0 +1,42 @@
+2026-09-23T14:23:04Z waiting for /tmp/memra-5090.lock (flock -w 3600)
+2026-09-23T14:23:04Z lock acquired
+== fatal lines
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+== sequential requests: tag | status | finish | P | G | cached | path | bpt | booked_ctx | alloc_bytes | used_bytes | cost_src | message_sha256[:16]
+warmup | 200 | length | 90 | 32 | 0 | spec | 16704 | 186 | 2037888 | 2037888 | own | cbec9a51a14363b1
+i-L0-r0 | 200 | stop | 1439 | 3921 | 0 | spec | 16704 | 9695 | 160876224 | 89533440 | own | be76c8efe8b20a79
+i-L0-r1 | 200 | stop | 1439 | 4363 | 0 | spec | 16704 | 9695 | 160876224 | 96916608 | own | e8e007a00f20896e
+i-L0-r2 | 200 | stop | 1442 | 4123 | 0 | spec | 16704 | 9698 | 160926336 | 92957760 | own | 8fd172978d5caa1c
+i-L0-r3 | 200 | stop | 1442 | 4761 | 0 | spec | 16704 | 9698 | 160926336 | 103614912 | own | 8f084f7491dd0f3f
+i-L0-r4 | 200 | stop | 1441 | 5048 | 0 | spec | 16704 | 9697 | 160909632 | 108392256 | own | 81c4de7cf0a6b75e
+ii-L0-r0 | 200 | length | 1673 | 96 | 0 | spec | 16704 | 1833 | 29549376 | 29549376 | own | 2e33a266a6139157
+ii-L0-r1 | 200 | length | 1672 | 96 | 0 | spec | 16704 | 1832 | 29532672 | 29532672 | own | 6d9fb7383d0b20e4
+ii-L0-r2 | 200 | length | 1671 | 96 | 0 | spec | 16704 | 1831 | 29515968 | 29515968 | own | 51db360e35d5efb1
+ii-L0-r3 | 200 | length | 1671 | 96 | 0 | spec | 16704 | 1831 | 29515968 | 29515968 | inherited | 483de37d0f96bac6
+ii-L0-r4 | 200 | length | 1668 | 96 | 0 | spec | 16704 | 1828 | 29465856 | 29465856 | own | 324b31f3ddaf48f5
+iii-L0-r0 | 200 | stop | 1486 | 2173 | 1408 | spec | 16704 | 9742 | 161661312 | 61119936 | own | 8ee8bd098e12efe7
+iii-L0-r1 | 200 | stop | 1500 | 4715 | 1408 | spec | 16704 | 9756 | 161895168 | 103815360 | own | deb805f1ec388d15
+iii-L0-r2 | 200 | stop | 1519 | 4038 | 1408 | spec | 16704 | 9775 | 162212544 | 92824128 | own | e6b8bef522873724
+iii-L0-r3 | 200 | stop | 1498 | 2606 | 1408 | spec | 16704 | 9754 | 161861760 | 68553216 | own | 7f674c1d4dc0bce0
+iii-L0-r4 | 200 | stop | 1492 | 4473 | 1408 | spec | 16704 | 9748 | 161761536 | 99639360 | own | 3666e62bb6a3c6bb
+== burst
+window_ms=214939 B=64 status={429: 10, 503: 35, 200: 19} finish={'stop': 16, 'length': 3} retry_after={'25': 10, '5': 35}
+active_sessions_max=19.0 admission_booked_bytes_max=14192298168.0 samples=860 shadow_budget_bytes=12831671424 burst_cost_lines=67 burst_cost_total_mb_median=744 arith_sessions=17
+admit_mem_id_lines=20 by_verdict={'defer': 10, 'refuse': 10} reclaim_lines=0
+[admit-mem] id=chatcmpl-5804abeb363f53e4c55e7a9f579e507e model="q9" verdict=defer prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2353043832 est_context=142318080 est_fixed=2210725752 device_free=2195697624 host_free=0 demotable=0 short_by=157346208 inflight=54 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-edfac5dfdd0a52eca20c6729eee05bdd model="q9" verdict=defer prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352668536 est_context=142303232 est_fixed=2210365304 device_free=2195697624 host_free=0 demotable=0 short_by=156970912 inflight=54 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-d7a14fbd4925c390ff7f5b446161edbf model="q9" verdict=defer prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353794424 est_context=142347776 est_fixed=2211446648 device_free=2195697624 host_free=0 demotable=0 short_by=158096800 inflight=54 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-b89143a6a947a4b776f0b58c14f4a02f model="q9" verdict=defer prompt=1333 output_bound=- charged_ctx=9589 est_bytes=2354545016 est_context=142377472 est_fixed=2212167544 device_free=2195697624 host_free=0 demotable=0 short_by=158847392 inflight=54 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-a8d260165383020118e27521c0484c30 model="q9" verdict=defer prompt=1334 output_bound=- charged_ctx=9590 est_bytes=2354920312 est_context=142392320 est_fixed=2212527992 device_free=2195697624 host_free=0 demotable=0 short_by=159222688 inflight=54 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-15019f3e98b14f66a58490c902955b3f model="q9" verdict=defer prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352668536 est_context=142303232 est_fixed=2210365304 device_free=2195697624 host_free=0 demotable=0 short_by=156970912 inflight=54 cap=64 waited_ms=0 retry_after_s=-
+... 14 more [admit-mem] id= lines in server.log
+== open-class G (this boot): n=10 min=2173 p50=4363 max=5048 stop=10 length=0 other=0
