@@ -132,6 +132,7 @@ struct Fix {
     idx: CudaSlice<i32>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fix(
     e: &Engine,
     nq: usize,
@@ -317,11 +318,9 @@ fn sink_attn_st_matches_three_kernel_replay() {
                 }
                 let pos_d = e.htod_i32(&[pos as i32]).unwrap();
                 let live = win
-                    + if ratio == 0 {
-                        0
-                    } else {
-                        ((pos + 1) / ratio).min(topk as usize)
-                    };
+                    + (pos + 1)
+                        .checked_div(ratio)
+                        .map_or(0, |n| n.min(topk as usize));
                 let case = format!(
                     "replay heads={heads} ratio={ratio} topk={topk} slots_max={slots_max} pos={pos} live={live}"
                 );
@@ -508,11 +507,9 @@ fn sink_attn_st_timing() {
         ] {
             let slots_max = win + limit.checked_div(ratio).map_or(0, |n| n.min(topk as usize));
             let live = win
-                + if ratio == 0 {
-                    0
-                } else {
-                    ((pos + 1) / ratio).min(topk as usize)
-                };
+                + (pos + 1)
+                    .checked_div(ratio)
+                    .map_or(0, |n| n.min(topk as usize));
             let idx = indices(1, slots_max, slots_max, rows, 0, false, 9);
             let f = fix(&e, 1, heads, hd, rows, &idx, (-2, 2), 9);
             let pos_d = e.htod_i32(&[pos as i32]).unwrap();
