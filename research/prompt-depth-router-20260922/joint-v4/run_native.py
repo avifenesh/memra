@@ -153,7 +153,7 @@ def check_inputs(args):
 
 
 def run_one(args, item, workloads, label, variant, arm, cap, cutoffs=None,
-            explore_seed=None, depth_model=None):
+            explore_seed=None, depth_model=None, confidence_model=None):
     root = args.out / f"{label}-{variant}"
     command = [
         str(args.binary), str(args.model), "embedded",
@@ -166,6 +166,8 @@ def run_one(args, item, workloads, label, variant, arm, cap, cutoffs=None,
         command.append(f"confidence-fixed={cutoffs}")
     if depth_model is not None:
         command.append(f"depth-model={depth_model}")
+    if confidence_model is not None:
+        command.append(f"confidence-model={confidence_model}")
     environment = os.environ.copy()
     environment.update({
         "MEMRA_SPEC_ADAPT": "1" if arm == "native" else "0",
@@ -186,6 +188,7 @@ def run_one(args, item, workloads, label, variant, arm, cap, cutoffs=None,
         "cap": cap,
         "cutoffs": cutoffs,
         "depth_model_sha256": sha(depth_model) if depth_model else None,
+        "confidence_model_sha256": sha(confidence_model) if confidence_model else None,
         "explore_seed": explore_seed,
         "memra_settings": {
             key: value for key, value in environment.items()
@@ -197,6 +200,7 @@ def run_one(args, item, workloads, label, variant, arm, cap, cutoffs=None,
     if root.exists():
         previous = json.loads(command_path.read_text()) if command_path.exists() else {}
         previous.setdefault("depth_model_sha256", None)
+        previous.setdefault("confidence_model_sha256", None)
         if (
             not command_path.exists()
             or previous != command_record
@@ -261,6 +265,22 @@ def model_paths(path):
     return result
 
 
+def confidence_paths(path):
+    manifest = json.loads((path / "confidence-models.json").read_text())
+    if len(manifest) != 3:
+        raise ValueError("three nested confidence feature sets were not trained")
+    result = {}
+    for row in manifest:
+        variant = row["variant"]
+        model = path / f"confidence-{variant}.tsv"
+        if variant not in ("token", "history", "prior") or (
+            variant in result or sha(model) != row["model_sha256"]
+        ):
+            raise ValueError("confidence artifact differs from its frozen manifest")
+        result[variant] = model
+    return result
+
+
 def selected_fixed(args):
     analysis = json.loads((args.out / "training-analysis.json").read_text())
     winner = analysis["strongest_quality_qualified_fixed"]
@@ -276,22 +296,35 @@ def scored_conversations(args, items, workloads, phase, variants):
     if variants is not None and (len(variants) != 1 or variants[0] not in models):
         raise ValueError("heldout needs exactly one frozen selected model")
     evaluated = list(models) if variants is None else list(variants)
-    arms = [("k3-c0", "fixed:3", 3, None, None)]
+    arms = [("k3-c0", "fixed:3", 3, None, None, None)]
     if fixed_name != "k3-c0":
-        arms.append((fixed_name, fixed_arm, fixed_cap, fixed_cutoffs, None))
-    arms.append(("native-adapt", "native", 4, None, None))
+        arms.append((fixed_name, fixed_arm, fixed_cap, fixed_cutoffs, None, None))
+    arms.append(("native-adapt", "native", 4, None, None, None))
     for name in evaluated:
-        arms.append((f"{name}-trained", "trained-d", 4, None, models[name]))
-        arms.append((f"{name}-noop", "noop-d", 4, None, models[name]))
+        arms.append((f"{name}-trained", "trained-d", 4, None, models[name], None))
+        arms.append((f"{name}-noop", "noop-d", 4, None, models[name], None))
+    if phase == "heldout":
+        selected_c = json.loads((args.out / "selected-confidence.json").read_text())
+        confidence = confidence_paths(args.models)[selected_c["variant"]]
+        if sha(confidence) != selected_c["model_sha256"]:
+            raise ValueError("selected confidence model changed before fresh evaluation")
+        chosen_d = models[evaluated[0]]
+        arms.extend((
+            ("c-trained", "learn-c", 3, None, None, confidence),
+            ("c-noop", "noop-c", 3, None, None, confidence),
+            ("cd-trained", "joint-cd", 4, None, chosen_d, confidence),
+            ("cd-noop", "noop-cd", 4, None, chosen_d, confidence),
+        ))
     records = []
     for index, item in enumerate(items):
         order = arms[index % len(arms):] + arms[:index % len(arms)]
         if index % 2:
             order.reverse()
-        for label, arm, cap, cutoffs, depth_model in order:
+        for label, arm, cap, cutoffs, depth_model, confidence_model in order:
             records.append(run_one(
                 args, item, workloads, f"{phase}-{index}", label, arm, cap,
                 cutoffs=cutoffs, depth_model=depth_model,
+                confidence_model=confidence_model,
             ))
     return records
 
@@ -331,6 +364,112 @@ def select_model(args, records):
     return chosen
 
 
+def select_confidence(args, development):
+    selected_d = json.loads((args.out / "selected-model.json").read_text())
+    models = model_paths(args.models)
+    confidence = confidence_paths(args.models)
+    d_variant = selected_d["variant"]
+    if d_variant not in models or sha(models[d_variant]) != selected_d["model_sha256"]:
+        raise ValueError("selected D model changed before C selection")
+    fixed_name, (fixed_arm, fixed_cap, fixed_cutoffs) = selected_fixed(args)
+    arms = [("k3-c0", "fixed:3", 3, None, None, None)]
+    if fixed_name != "k3-c0":
+        arms.append((fixed_name, fixed_arm, fixed_cap, fixed_cutoffs, None, None))
+    arms.append(("d-selected", "trained-d", 4, None, models[d_variant], None))
+    for variant, model in confidence.items():
+        arms.append((f"c-{variant}", "learn-c", 3, None, None, model))
+        arms.append((f"cd-{variant}", "joint-cd", 4, None, models[d_variant], model))
+    records = []
+    for index, item in enumerate(development["groups"]["heldout"][3:]):
+        order = arms[index % len(arms):] + arms[:index % len(arms)]
+        if index % 2:
+            order.reverse()
+        for label, arm, cap, cutoffs, depth_model, confidence_model in order:
+            records.append(run_one(
+                args, item, args.development, f"confidence-selection-{index}",
+                label, arm, cap, cutoffs=cutoffs, depth_model=depth_model,
+                confidence_model=confidence_model,
+            ))
+    scores = []
+    for variant in confidence:
+        matched = [row for row in records if row["variant"] == f"cd-{variant}"]
+        if len(matched) != 3:
+            raise ValueError("confidence selection lacks matched joint conversations")
+        tokens = sum(row["tokens"] for row in matched)
+        seconds = sum(row["seconds"] for row in matched)
+        scores.append({
+            "variant": variant, "tokens": tokens, "seconds": seconds,
+            "tok_s": tokens / seconds,
+            "format_pass": sum(row["format"] for row in matched),
+            "loops": sum(row["loops"] for row in matched),
+        })
+    qualified = [row for row in scores if row["format_pass"] == 24 and row["loops"] == 0]
+    if not qualified:
+        raise ValueError("no joint C/D policy passes development code-format gate")
+    chosen = max(qualified, key=lambda row: row["tok_s"])
+    chosen_c = confidence[chosen["variant"]]
+    for index, item in enumerate(development["groups"]["heldout"][3:]):
+        for label, arm, depth_model in (
+            ("c-noop", "noop-c", None),
+            ("cd-noop", "noop-cd", models[d_variant]),
+        ):
+            records.append(run_one(
+                args, item, args.development, f"confidence-selection-{index}",
+                label, arm, 3 if depth_model is None else 4,
+                depth_model=depth_model, confidence_model=chosen_c,
+            ))
+    save(args.out / "selected-confidence.json", {
+        "schema": 1,
+        "source": "three held-back v3 development conversations",
+        "variant": chosen["variant"],
+        "model_sha256": sha(chosen_c),
+        "selected_depth_variant": d_variant,
+        "selected_depth_sha256": sha(models[d_variant]),
+        "joint_selection_scores": scores,
+        "fixed_control": fixed_name,
+    })
+    return records
+
+
+def qualify_policies(args, fresh):
+    d = json.loads((args.out / "selected-model.json").read_text())
+    c = json.loads((args.out / "selected-confidence.json").read_text())
+    depth = model_paths(args.models)[d["variant"]]
+    confidence = confidence_paths(args.models)[c["variant"]]
+    if sha(depth) != d["model_sha256"] or sha(confidence) != c["model_sha256"]:
+        raise ValueError("policy qualifier model digest differs")
+    item = fresh["groups"]["qualification"][0]
+    arms = (
+        ("k3-c0", "fixed:3", 3, None, None),
+        ("c-noop", "noop-c", 3, None, confidence),
+        ("cd-noop", "noop-cd", 4, depth, confidence),
+    )
+    records = [
+        run_one(
+            args, item, args.fresh, "policy-qualification-0",
+            label, arm, cap, depth_model=depth_model,
+            confidence_model=confidence_model,
+        )
+        for label, arm, cap, depth_model, confidence_model in arms
+    ]
+    roots = [args.out / row["name"] for row in records]
+    for turn in range(1, 9):
+        tapes = [
+            (root / f"turn-{turn}.output.ids").read_bytes()
+            for root in roots
+        ]
+        if tapes[0] != tapes[1] or tapes[0] != tapes[2]:
+            raise ValueError("no-op probability/model path changed sampled target output")
+    if any(row["format"] != 8 or row["loops"] for row in records):
+        raise ValueError("policy qualifier failed its code and loop gate")
+    save(args.out / "policy-qualification-result.json", {
+        "schema": 1, "status": "eight-turn-sampled-byte-identical",
+        "depth_model_sha256": sha(depth),
+        "confidence_model_sha256": sha(confidence),
+    })
+    return records
+
+
 def main():
     parser = argparse.ArgumentParser()
     for name in ("binary", "model", "development", "fresh", "out"):
@@ -338,7 +477,10 @@ def main():
     parser.add_argument("--source-sha", required=True)
     parser.add_argument("--models", type=Path)
     parser.add_argument(
-        "--phase", choices=("qualification", "training", "selection", "heldout"),
+        "--phase", choices=(
+            "qualification", "training", "selection",
+            "confidence-selection", "policy-qualification", "heldout",
+        ),
         required=True,
     )
     args = parser.parse_args()
@@ -384,6 +526,14 @@ def main():
             args.development, "selection", None,
         )
         select_model(args, records)
+    elif args.phase == "confidence-selection":
+        if args.models is None:
+            raise ValueError("confidence selection requires frozen C and D models")
+        records = select_confidence(args, development)
+    elif args.phase == "policy-qualification":
+        if args.models is None:
+            raise ValueError("policy qualifier requires frozen C and D models")
+        records = qualify_policies(args, fresh)
     else:
         if args.models is None:
             raise ValueError("heldout requires a selected frozen model")
@@ -396,6 +546,26 @@ def main():
             or sha(models[selected["variant"]]) != selected["model_sha256"]
         ):
             raise ValueError("selected model changed before fresh heldout")
+        selected_c = json.loads((args.out / "selected-confidence.json").read_text())
+        confidence = confidence_paths(args.models)
+        if (
+            selected_c["schema"] != 1
+            or selected_c["selected_depth_variant"] != selected["variant"]
+            or selected_c["selected_depth_sha256"] != selected["model_sha256"]
+            or selected_c["fixed_control"] != selected_fixed(args)[0]
+            or selected_c["variant"] not in confidence
+            or sha(confidence[selected_c["variant"]]) != selected_c["model_sha256"]
+        ):
+            raise ValueError("selected confidence model changed before fresh heldout")
+        qualified = json.loads(
+            (args.out / "policy-qualification-result.json").read_text()
+        )
+        if (
+            qualified["status"] != "eight-turn-sampled-byte-identical"
+            or qualified["depth_model_sha256"] != selected["model_sha256"]
+            or qualified["confidence_model_sha256"] != selected_c["model_sha256"]
+        ):
+            raise ValueError("sampled no-op policy qualifier is missing")
         records = scored_conversations(
             args, fresh["groups"]["heldout"], args.fresh,
             "heldout", [selected["variant"]],

@@ -97,12 +97,13 @@ budget, model/binary hashes and balanced arm order before any
 held-out request.
 
 On calibration only, execute fixed K/D/C settings on matched input
-conversations. Include K=3/C=0, fixed K=2 and K=4 at C=0, native
-depth adaptation, K=4/D=3 to isolate the allocated ceiling, a
+conversations. Include K=3/C=0, fixed K=2 and K=4 at C=0,
+K=4/D=3 to isolate the allocated ceiling, a
 K=3/C=0 tracing cost twin, and three fixed C candidates from the
 v3 calibration-selected C=(0.434978, 0.850344): both positions,
 first only and second only. Keep the strongest
 executed fixed control from calibration for held-out comparison.
+Compare native depth adaptation on the selection and held-out splits.
 Report any per-input best-of-arm oracle as **hindsight over different
 sampled outputs**, not a deployable policy or a same-tape E2E result.
 An input's highest individual tok/s can lower the pooled ratio after
@@ -139,6 +140,15 @@ round's acceptance fraction and elapsed time. It scores
 `1 + predicted_accepted - fixed_E2E_tok_per_s * predicted_round_s`
 at each round boundary. The no-op twin computes the same scores but
 applies D=3.
+For C, fit conditional acceptance of the current sampled proposal
+from its probability and the same causal token/history features.
+Rows beyond the first rejected proposal are censored. The model
+maintains the predicted survival of the current offered prefix and
+compares the next slot's expected committed token benefit with
+`fixed_E2E_tok_per_s * measured_marginal_round_s`. A stop retains
+the already offered token for verification. The C no-op reads the
+same probability scalar and computes the same prediction, then
+continues drafting. Joint C+D runs both learners in-process.
 
 Use model-selection conversations only to choose one controller and
 its hyperparameters. Compare token-only, +history and +prior-round
@@ -151,9 +161,12 @@ and equal-cost controls.
 
 ## Final decision
 
-Execute the frozen learned controller on fresh held-out continuing
-conversations against K=3/C=0, the strongest calibrated fixed C/K/D
-setting, native adaptation and the same-budget no-op controller.
+Before fresh scoring, prove on the reserved qualifier conversation
+that K=3/C=0, C no-op and joint no-op return byte-identical sampled
+output on all eight turns. Execute frozen D-only, C-only and joint
+C+D learners on fresh held-out continuing conversations against
+K=3/C=0, the strongest calibrated fixed C/K/D setting, native
+adaptation and each learner's same-budget no-op controller.
 Interleave both orders on the same model, GPU, source, prompts, seeds
 and sampled decode. The **primary metric is pooled returned output
 tokens divided by complete native request seconds**, including

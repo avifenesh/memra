@@ -16,12 +16,14 @@ def table(path):
 def score(root):
     summary = json.loads((root / "heldout-summary.json").read_text())
     selected = json.loads((root / "selected-model.json").read_text())
+    selected_c = json.loads((root / "selected-confidence.json").read_text())
     quality_report = json.loads((root / "quality.json").read_text())
     if summary["schema"] != selected["schema"] != 1 or summary["phase"] != "heldout":
         raise ValueError("fresh evaluation or frozen model schema differs")
     expected = {
         "k3-c0", "native-adapt",
         f"{selected['variant']}-trained", f"{selected['variant']}-noop",
+        "c-trained", "c-noop", "cd-trained", "cd-noop",
     }
     if selected["fixed_control"] != "k3-c0":
         expected.add(selected["fixed_control"])
@@ -69,6 +71,8 @@ def score(root):
         quality = sum(by_variant[arm][index]["format"] for index in range(6))
         depth = Counter()
         policy_ns = 0
+        confidence_decisions = confidence_stops = 0
+        offered = accepted = rounds = 0
         for index in included:
             session = root / by_variant[arm][index]["name"]
             for row in table(session / "rounds.tsv"):
@@ -76,6 +80,11 @@ def score(root):
                     depth[int(row["draft_depth"])] += 1
             for row in table(session / "turns.tsv"):
                 policy_ns += int(row["depth_policy_ns"])
+                confidence_decisions += int(row["confidence_decisions"])
+                confidence_stops += int(row["confidence_stops"])
+                offered += int(row["drafted"])
+                accepted += int(row["accepted"])
+                rounds += int(row["policy_rounds"])
         rows[arm] = {
             "tokens": tokens,
             "seconds": seconds,
@@ -88,6 +97,12 @@ def score(root):
             "loops_all_six": sum(by_variant[arm][index]["loops"] for index in range(6)),
             "eligible_d_distribution": dict(sorted(depth.items())),
             "depth_policy_seconds": policy_ns / 1e9,
+            "confidence_decisions": confidence_decisions,
+            "confidence_stops": confidence_stops,
+            "offered_draft_tokens": offered,
+            "accepted_draft_tokens": accepted,
+            "accepted_over_offered": accepted / offered if offered else None,
+            "policy_rounds": rounds,
         }
     base_tokens, base_seconds, base_rate = totals(control, included)
     rng = random.Random(20779001)
@@ -121,13 +136,16 @@ def score(root):
                 for index in included
             ],
         }
-    learned = f"{selected['variant']}-trained"
+    learned_d = f"{selected['variant']}-trained"
+    learned = "cd-trained"
     return {
         "schema": 1,
         "scope": "fresh Qwen code native eight-turn conversations on one GPU",
         "objective": "sum returned output tokens / sum complete native request seconds",
         "selected_model_sha256": selected["model_sha256"],
         "selected_variant": selected["variant"],
+        "selected_confidence_sha256": selected_c["model_sha256"],
+        "selected_confidence_variant": selected_c["variant"],
         "excluded_conversation_indices_due_to_any_loop": excluded,
         "included_conversation_indices": included,
         "arms": rows,
@@ -135,6 +153,14 @@ def score(root):
         "learned_quality_gate": (
             rows[learned]["all_48_format_pass"]
             and rows[learned]["functional_pass"] == 48
+        ),
+        "depth_only_quality_gate": (
+            rows[learned_d]["all_48_format_pass"]
+            and rows[learned_d]["functional_pass"] == 48
+        ),
+        "confidence_only_quality_gate": (
+            rows["c-trained"]["all_48_format_pass"]
+            and rows["c-trained"]["functional_pass"] == 48
         ),
         "learned_beats_all_executed_fixed": (
             rows[learned]["tok_s"] > max(
