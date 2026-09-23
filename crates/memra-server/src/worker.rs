@@ -10741,6 +10741,13 @@ enum HostContractFault {
     /// slot, every staging buffer to the set, the KV ticket unwind typed (`tier D2H spans
     /// refused: ...`), the tier stay on, and the next demote complete.
     SpanAttach,
+    /// WP-A day 32 (DAY31 section 2 design H item 4, the H2D half's red arm): the off-tick
+    /// promote's f32 span attach refuses after every span was built from the filled staging
+    /// (`host_h2d_spans_submit`); every destination must be released, every staging buffer go
+    /// back to the set, the KV ticket unwind through `host_promote_contract_abort` typed (`tier
+    /// H2D spans refused: ...`), the host entry stay, the tier stay on, and the next promote
+    /// complete with its spans.
+    PromoteSpanAttach,
 }
 impl HostContractFault {
     fn from_door(fault: &str) -> Option<Self> {
@@ -10754,6 +10761,7 @@ impl HostContractFault {
             "d2d-delay-capture" => Some(Self::D2dDelayCapture),
             "d2d-delay-restore" => Some(Self::D2dDelayRestore),
             "contract-spans" => Some(Self::SpanAttach),
+            "contract-promote-spans" => Some(Self::PromoteSpanAttach),
             _ => None,
         }
     }
@@ -11809,6 +11817,14 @@ fn host_h2d_spans_submit(
                 staged.bufs.push((slot, source));
             }
         }
+    }
+    // `MEMRA_KV_HOST_FAULT=contract-promote-spans` refuses the attach after every span was built,
+    // so the unwind below hands the whole set back.
+    if refused.is_none()
+        && !spans.is_empty()
+        && pending.fault == Some(HostContractFault::PromoteSpanAttach)
+    {
+        refused = Some("injected failure (MEMRA_KV_HOST_FAULT=contract-promote-spans)".into());
     }
     let attached = match refused {
         Some(why) => Err((why, spans)),
@@ -47840,6 +47856,18 @@ mod tests {
                 < at(attach, "Err(host_promote_contract_abort(")
         );
         assert!(attach.contains("staged.bufs.push((slot, span.source));"));
+        let fault = at(
+            attach,
+            "pending.fault == Some(HostContractFault::PromoteSpanAttach)",
+        );
+        assert!(at(attach, "engine.alloc_f32_uninit(len)") < fault);
+        assert!(fault < at(attach, ".submit_h2d_spans(&pending.ticket, spans)"));
+        assert!(
+            attach.contains(
+                "\"injected failure (MEMRA_KV_HOST_FAULT=contract-promote-spans)\".into()"
+            )
+        );
+        assert!(attach.contains("tier H2D spans refused: {why} ({n} f32 spans handed back)"));
         let settle = body("fn host_kv_planes_settle_promote(");
         for (a, b) in [
             (
@@ -49314,6 +49342,96 @@ mod tests {
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
 
+    /// WP-A day 32 (design H item 4, the red arm on a card; `MEMRA_KV_HOST_FAULT=contract-promote-spans`):
+    /// the promote's span attach refuses after every span was built from the filled staging. The
+    /// route ends typed `Refused` naming the injected failure and the span count handed back,
+    /// every staging buffer is back in the set, no destination stays charged, the ticket retired
+    /// (in-flight zero), the host twin intact and sole owner, the fault one-shot, and the next
+    /// promote reuses the set and lands bitwise.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_c_span_attach_fault_hands_every_span_back() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let recur = gpu_recurrent(&engine, &mut entry, None);
+        let mut image = gpu_contract_image(&engine, &mut host, &mut entry);
+        let span_bytes: u64 = recur.iter().map(|(_, p)| p.len() as u64 * 4).sum();
+        let staged = gpu_staging_fill(&host, &image);
+        let tier = host.tier.as_ref().unwrap();
+        tier.fault.set(super::HostContractFault::from_door(
+            "contract-promote-spans",
+        ));
+        assert_eq!(
+            tier.fault.get(),
+            Some(super::HostContractFault::PromoteSpanAttach)
+        );
+        match super::device_entry_from_host_parts(
+            &engine,
+            &image,
+            Some((tier, super::HostTierEntryClass::MtpDraft)),
+            super::ContractH2d::OffTick,
+            Some(staged),
+        ) {
+            Err(super::HostPromoteFailure::Refused(why)) => assert_eq!(
+                why,
+                format!(
+                    "tier H2D spans refused: injected failure \
+                     (MEMRA_KV_HOST_FAULT=contract-promote-spans) ({} f32 spans handed back)",
+                    recur.len()
+                )
+            ),
+            Err(e) => panic!("expected a typed Refused, got {e:?}"),
+            Ok(_) => panic!("the injected span refusal did not fire"),
+        }
+        assert_eq!(tier.fault.get(), None, "one-shot");
+        {
+            let set = tier.staging.borrow();
+            assert_eq!(set.idle.len(), recur.len(), "every staging buffer back");
+            assert_eq!(set.charged, span_bytes);
+        }
+        assert_eq!(
+            gpu_used(&host),
+            (3 * 8 * 58 + span_bytes, 0, 0),
+            "nothing in flight, no destination charged"
+        );
+        gpu_image_intact_and_sole_owner(&mut image, &want);
+        let staged = gpu_staging_fill(&host, &image);
+        let tier = host.tier.as_ref().unwrap();
+        let (_shell, pending) = super::device_entry_from_host_parts(
+            &engine,
+            &image,
+            Some((tier, super::HostTierEntryClass::MtpDraft)),
+            super::ContractH2d::OffTick,
+            Some(staged),
+        )
+        .expect("the next promote submits");
+        let landed = match super::host_kv_planes_settle_promote(
+            tier,
+            pending.unwrap(),
+            super::ContractWait::Block,
+        ) {
+            Ok(super::PromoteSettle::Done(_, _, landed)) => landed,
+            _ => panic!("the next promote did not land"),
+        };
+        assert_eq!(landed.len(), recur.len());
+        for ((slot, destination), (_, pattern)) in landed.iter().zip(&recur) {
+            assert_eq!(
+                f32_bits(&engine.stream().clone_dtoh(destination).unwrap()),
+                f32_bits(pattern),
+                "{slot:?}"
+            );
+        }
+        drop(landed);
+        drop(image);
+        host.disable("day-32 cell");
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
     /// WP-A day 32 (the settle's take-back, design H item 3): a refusal AFTER the spans came back
     /// (`contract-promote-postpublish`, after `ready_view`) returns every staging buffer to the set
     /// through the guard, drops the landed destinations, ends typed `Refused` with the ledger
@@ -49426,6 +49544,12 @@ mod tests {
             Some(F::PromoteReadyView)
         );
         assert_eq!(F::from_door("contract-spans"), Some(F::SpanAttach));
+        // WP-A day 32: the promote side's span attach fault, taken by the promote route only.
+        assert_eq!(
+            F::from_door("contract-promote-spans"),
+            Some(F::PromoteSpanAttach)
+        );
+        assert!(!F::PromoteSpanAttach.is_demote() && F::PromoteSpanAttach.is_move1());
         assert_eq!(F::from_door("flip-demote"), None);
         assert!(F::PreSubmit.is_demote() && F::PostPublish.is_demote());
         assert!(F::SpanAttach.is_demote() && F::SpanAttach.is_move1());
