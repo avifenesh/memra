@@ -193,5 +193,120 @@ B's O2 order, never inside it), no compute app at the start. Binaries: the day-3
 - The hit gates did not run in that hold: the gate's own `stop` addresses its server under an external lock only while
   `/proc/<pid>/comm` reads `memra-server` (C day 28's rule), and the binary was named `memra-server-d34`; its spec-on
   server outlived the stop and the spec-off twin refused the port (`hit-off/gate.log`). The orphan (this lane's own
-  binary on port 18099, its environment read from `/proc`) was stopped by pid. The rerun under that name, the same
-  bytes (`hit-rerun.sh`), waits for the lock behind another lane.
+  binary on port 18099, its environment read from `/proc`) was stopped by pid. The rerun under the name `memra-server`,
+  the same bytes (`hit-rerun.sh`; `binary 3d3b96bf4652e9a2`), took the hold at 21:26:25Z after four bounded busy
+  attempts: `gate hit-off-rerun rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok) and `gate hit-on-rerun rc=0
+  SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (68 ok, with the day-24 census `capture_submitted=12 capture_published=12
+  restore_submitted=13 restore_landed=13`); released 21:27:15Z.
+
+## 7. The BOX4 sitting's verdicts (`pro-single-day34/box/`)
+
+**Resync note.** The session stopped on a server-side API error during the sitting (about 21:55Z) and resumed at
+22:07Z. Post-block resync: `git fetch` and `git log` (the lane tip `22363f29d` equal to origin; nothing lost), DAY33 and
+DAY34 re-read (design K is DAY34 section 2's registered design, committed at `a40ade417` before any day-34 code; its
+tier, engine and server code were in before the stop), the running driver (`driver-rerun.sh`) left to finish; no second
+driver. `origin/main` `25bbb91f5` (#692, integ53) merged as `37c08c06b` after the sitting: its `worker.rs` hunks are the
+admission's memory bound, not the host-tier paths; server lib 885 passed, clippy clean on the merge.
+
+**The hold** (collector, `/tmp/memra-gpu.lock`, zero lock retries, every `CELL.jsonl` closing row
+`executed-not-qualified False 0`): the three double-park runs 20:54:42Z to 21:53:50Z (`STALL REPLAY: PASS` 20 of 20 in
+each, `errors=0` on all 180 receipt lines, `compute_apps: []` before and after; 45 to 76 C, 15.4 to 348.8 W), the gates 21:53:50Z to 22:06:34Z,
+the hit gate to 22:08:25Z; the unit cells ran in attempt 1 (20:49:30Z to 20:54:35Z). Binaries: day-32
+`62766088afd996b6..` (`5ae139734`), day-33 `81d3db48c97a8f0d..` (`d7d54c7a9`), day-34
+`ded36fa2c5d50ac8e1256139c1dafb46da0c071dca316bc2a860fd07c8a5d1ef` (`afd58bbde`; the gates' binary).
+
+**Day 33's acceptance on BOX4, verbatim** (`reading-day33-d32-vs-d33.log`, `d33/reading-day28.log`):
+
+- (a) `DAY28 CLAUSE 1a stall order=o1 .. on_cell_median=76.8 off_cell_median=93.1 rule on<=off+2.0 -> PASS` (o2 the
+  same); `DAY28 CLAUSE 1b e2e order=o1 N_runs_on=50 N_runs_off=50 on=133.4 off=120.4 on_minus_off=+13.0 rule <=+20.0 ->
+  PASS` (o2 `+13.0`); `DAY28 CLAUSE 1c owner in-completion N=100 median=2.30 .. rule <=12.0 -> PASS`; `DAY28 VERDICT
+  clauses_failed=0 -> ALL PASS`.
+- (b) `DAY33 B2 after (day-33 binary) steady owner-segment N=90 median=0.76 min=0.70 max=0.82 boots_on=10
+  submissions=100 filled=100 rule N>=20 median<=1.5 max<=3.0 every-submission-filled -> PASS`.
+- (c) B1: the gate set on the day-34 binary (design F unchanged in it) ALL GREEN (below); B4 `DAY32 B4 receipts=209 bad=0
+  by (items, spans)=[((32, 96), 201), ((34, 96), 8)] .. -> PASS`; B5 identity x4 `teeth=0`, the `verify ok` round trips,
+  the native cells.
+- (d) `DAY33 D after steady owner-segment N=90 median=0.76 min=0.70 max=0.82 rule median<=0.90 max<=1.50 -> PASS`, with its
+  census.
+- Section 4's prediction for the day-33 run (one poll, `promote_in` 16 to 18 ms) missed; its stated miss branch ("1b
+  stays near the day-32 run's") is what ran: two polls, `promote_in` 28.40, 1b +13.0 against the day-32 run's +12.8.
+  The day-34 predictions: helper about 1 ms (read 1.40), landing poll about 0.5 ms (read 0.35), e2e within 1 ms of day
+  33's (read 1.07 and 1.05 lower).
+- **Day 33's acceptance holds on BOX4, and BOX4 cannot credit the lever with it.** The day-32 binary in the same hold also
+  meets 1b: `on_minus_off=+12.8` / `+12.7 -> PASS` (`d32/reading-day28.log`). On this box design F's copy misses the
+  probe's tick: `DAY33 READING submission-to-completion steady before ms N=90 median=14.70 .. polls [2] (counts [90]);
+  after ms N=90 median=27.30 .. polls [2] (counts [90])`, `promote in-ms steady before in N=90 median=28.40; after in
+  N=90 median=28.40; after-minus-before median +0.00`. The timeline says why: `submitted +0.36ms (tick 6503, its top
+  -0.64ms); poll 1 at +14.54ms (tick 6504, its top +13.45ms) pending`. On this CPU the day-32 binary's helper fill of the
+  same bytes reads `156.9MB filled by the hash helper in 11.4ms` (the median of 200), so on the copy stream the fill
+  plus the 96 spans outlast the 13.1 ms from submission to the next tick top, and the ticket lands one tick later.
+  Nothing here is compared against BOX3.
+
+**Day 34's target-card clauses, verbatim** (`reading-day34-pro.log`, `reading-day28.log`):
+
+- (a) the failure gate's `digest` cell on the door ON arm: `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (15 ok), with
+  `contracts door H2D receipt: Kv(3) K plane host bytes differ from the D2H receipt as injected (MEMRA_KV_HOST_FAULT=flip-demote);
+  the verify arm catches it at promote`, the receipt naming `KV checksums on the hash helper (2.0MB in 1.1ms)`, and `VERIFY
+  FAILED: promoted digest .. != demote digest ..`; the GPU cell
+  `option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused ... ok`. **PASS.**
+- (b) identity x4 `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok each); failure x2 `ALL GREEN` (15 ok each);
+  `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (160 ok, twelve cells); twin x2 `PREFIX-NEWEST-TURN-FITS: .. -> PASS`; hit OFF
+  `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok) and ON (68 ok) with the day-24 census (`capture_submitted=12
+  capture_published=12 restore_submitted=13 restore_landed=13 ..`, `30 route submission(s)`); unit: the door's GPU cells
+  `ok. 17 passed`, the engine's `d2d_`, `d2h_span` and `h2d_` cells `ok. 10 passed` (the owner-hold cell: `owner-thread
+  work while the copy stream's host function sleeps: 0.42 ms; the copy behind the host function still pending: true`),
+  the engine censuses `ok. 6 passed`, the CPU cells `ok. 16 passed`, the tier bindings `ok. 13 passed`. **PASS.**
+- (c) `DAY34 PRO C run=d34 steady landing-poll-hold N=90 median=0.35 min=0.33 max=0.37 | promote-in N=90 median=27.40 ..
+  | receipts=100 on-helper=100 helper-ms N=100 median=1.40 min=1.10 max=1.70 rule N>=20 median<=1.5 max<=3.0
+  every-receipt-on-helper -> PASS`.
+- (d) `DAY28 CLAUSE 1b e2e order=o1 .. on=132.4 off=120.3 on_minus_off=+12.0 rule <=+20.0 -> PASS` (o2 `+12.0`); `DAY34 PRO
+  D order=o1 ON e2e d33 N=50 median=133.42 .. ON e2e d34 N=50 median=132.36 .. d34-minus-d33 -1.07 rule <=+1.0 -> PASS`
+  (o2 `-1.05`). **PASS.**
+- Where day 34's millisecond comes from on this card (`reading-poll1.log`, `poll1-reading.py`, log only, added after
+  the sitting, no clause): `run=d33/double-park/ev poll1-end-minus-its-top N=100 median=1.10 min=1.08 max=1.13 |
+  poll2-end-minus-its-top N=100 median=0.35` and `run=double-park/ev poll1-end-minus-its-top N=100 median=0.03 min=0.02
+  max=0.04 | poll2-end-minus-its-top N=100 median=0.35`. The poll stamp is taken after the settle returns. On the
+  day-33 binary the pending first poll checksums the items already landed on the owner thread (about 1.1 ms on this
+  card's cached leases); on day 34 those checksums ride the helper (`32 KV checksums on the hash helper (1.9MB in
+  1.1ms)`). The completing poll reads 0.35 on both, which is why PRO C's landing-poll hold did not move here while
+  `promote_in` went 28.40 to 27.40 and the e2e -1.07 / -1.05. On the 5090 the checksums fell in the landing poll
+  (write-combined reads, 8.50 to 0.12 ms).
+
+## 8. Findings
+
+1. **Design K works on both cards as registered.** The 5090's landing poll 8.50 to 0.12 ms (write-combined leases); the
+   target card's owner checksum time about 1.1 ms off the tick and the promote about 1 ms earlier end to end.
+2. **Design F's one-tick landing is box-dependent and did not happen on either card measured.** On the 5090 the
+   copy lands in the probe's tick, but the landing poll's write-combined checksums (now moved by K) cost what the tick
+   saved; on BOX4 the 11.4 ms single-thread fill plus the spans outlast the 13.1 ms to the next tick top, and the copy
+   lands a tick later. No card where the fill fits inside the tick has been measured on the day-33 binary.
+3. **On BOX4 the day-32 binary already meets DAY28 1b**: `on=133.5 off=120.7 on_minus_off=+12.8` (o1) and `on=133.6
+   off=120.9 on_minus_off=+12.7` (o2). The day-32 BOX3 FAIL stands as that box's result; no cross-box reading is drawn
+   from the pair.
+4. The hit gate's own `stop` addresses its server only under the name `memra-server` (a 5090 run with a renamed binary
+   left its spec-on server up; section 6). Named for any cell that renames binaries.
+
+## 9. What is owed, and integrability
+
+- **Integrable: yes** for day 34 (design K) and for day 33's code (design F): every pre-registered clause holds on BOX4
+  and on the 5090. Day 33's lever is integrable as correct code whose one-tick landing is unproven on the cards measured
+  (finding 2); the lead decides whether F stays or the day-32 helper fill comes back (F removed the day-32 Filling phase;
+  both pass every clause on BOX4).
+- Owed: the demote's two KV hashes on the owner thread (DAY34 section 1: hash 1 in `progress`, hash 2 in the bind,
+  about 10 to 13 ms of owner time per demote on the 5090, their own ordering rule); the fill's speed on slower CPUs if
+  the one-tick landing is wanted (a multi-threaded or chunked fill on the copy stream, not pre-registered); the D2D half
+  (DAY33 section 6: the restore's price cell decides; the capture refuted by construction); the strong-form receipt.
+
+## 10. Checks, budget, cleanup
+
+- Checks on the merged tree `37c08c06b`: `cargo fmt --all -- --check` clean; clippy `-D warnings` all targets on tier,
+  engine and server `clippy_rc=0`; server lib 885 passed; on `201b48617`: tier contracts 98, engine lib 547, the
+  `DOCS_RS=1` pass `docsrs_rc=0`; `check-flags` and `check-conflict-markers: OK`; `git diff --check` clean;
+  `.gitattributes` in `rtx5090-day34/` and `pro-single-day34/box/`; no em dashes in this lane's lines; no new `MEMRA_*`
+  name.
+- Budget: about 3 agent-hours of work for day 34 (19:00Z to 22:30Z wall, the stop included), plus about 1.5 h queued
+  behind other lanes on both cards.
+- Cleanup: BOX4 `/root/wt-a` is this lane's own clone at `afd58bbde`, left for later sittings; `/root/spill-receipts/a-day34/`
+  mirrored to `pro-single-day34/box/` (binaries excluded; their sha256 in each run's `binary.sha256` and
+  `gates/binary.sha256`); iproute2 installed there (attempt 1); no process of this lane on the box after 22:08:25Z;
+  `LANE-A-BOX4-DONE` written. Local: the 5090 carries no process of this lane; `/tmp/wt-a-d33` removed at close.
