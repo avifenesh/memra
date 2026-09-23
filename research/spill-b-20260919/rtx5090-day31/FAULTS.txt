@@ -77,3 +77,82 @@
     burst-b4 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
     burst-b17 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
     burst-b15 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+== O2-on32768: panics=0 respawns=0 fatal=False engine_errors=5
+  server.log:4689 t=1790126358241 in=iii-L2-r3 prev=iii-L2-r2 P=5822 G=3246 finish=stop P+G=9068 booked-64=38598
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 5 col 0/4 pos=38594: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to 
+  server.log:5839 t=1790126552380 in=iv-b-r0 prev=iii-L2-r4 P=5812 G=3724 finish=stop P+G=9536 booked-64=38588
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 2 col 0/4 pos=32851: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to 
+  server.log:6864 t=1790126721391 in=iv-b-r1 prev=iii-L2-r4 P=5812 G=3724 finish=stop P+G=9536 booked-64=38588
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 5 col 0/4 pos=32852: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to 
+  server.log:8612 t=1790126997271 in=burst-b17 prev=iv-a-r2 P=1620 G=5848 finish=stop P+G=7468 booked-64=34396
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  server.log:8613 t=1790126997271 in=burst-b17 prev=iv-a-r2 P=1620 G=5848 finish=stop P+G=7468 booked-64=34396
+    [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  non-200 rows=16 status_none=0 first_no_status=None
+    iii-L2-r3 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-b-r0 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    iv-b-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    burst-b17 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b22 status=503 err={"error":{"message":"the model is temporarily at capacity; retry after the Retry-After delay","type":"server_error","param":null,"code":"overloaded"}}
+    burst-b20 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b15 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b1 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b29 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b21 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b2 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b3 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b19 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b10 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b13 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+    burst-b5 status=429 err={"error":{"message":"the box has no free KV for this request's context on either the device or the host tier; retry after the Retry-After delay","type":"rate_li
+== O2-on8192: panics=2 respawns=1 fatal=True engine_errors=1
+  server.log:3929 t=1790128306731 in=iii-L2-r4 prev=iii-L2-r3 P=5821 G=8200 finish=length P+G=14021 booked-64=14021
+    thread 'memra-gpu-worker' (1350897) panicked at crates/memra-engine/src/spec.rs:4590:9:
+  server.log:3932 t=1790128306778 in=iii-L2-r4 prev=iii-L2-r3 P=5821 G=8200 finish=length P+G=14021 booked-64=14021
+    [worker] PANIC in the GPU worker thread: mtp_kv_fill: scratch overflow
+  server.log:3933 t=1790128306778 in=iii-L2-r4 prev=iii-L2-r3 P=5821 G=8200 finish=length P+G=14021 booked-64=14021
+    [worker] respawn attempt 1/1 in 2s (reloading weights)
+  server.log:4605 t=1790128406945 in=iv-b-r1 prev=iv-b-r0 P=78 G=8199 finish=length P+G=8277 booked-64=8278
+    [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 5 j=2 pos=8276: head-out NaN 4096/4096, round-input-seed NaN 0/4096 — refusing to dereference the embed row (#87 trap)
+  server.log:4866 t=1790128443641 in=iv-a-r0 prev=iv-b-r2 P=78 G=8200 finish=length P+G=8278 booked-64=8278
+    thread 'memra-gpu-worker' (1350897) panicked at crates/memra-engine/src/spec.rs:4590:9:
+  server.log:4868 t=1790128443663 in=iv-a-r0 prev=iv-b-r2 P=78 G=8200 finish=length P+G=8278 booked-64=8278
+    [worker] PANIC in the GPU worker thread: mtp_kv_fill: scratch overflow
+  server.log:4869 t=1790128443663 in=iv-a-r0 prev=iv-b-r2 P=78 G=8200 finish=length P+G=8278 booked-64=8278
+    [worker] FATAL: worker unrecoverable after 1 respawn attempt(s) — exiting the process so the supervisor can restart it whole (CUDA errors are sticky per process; a live HTTP listener with a dead worker serves nothing)
+  non-200 rows=36 status_none=35 first_no_status=iv-a-r0
+    iv-b-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+== O2-on2048: panics=2 respawns=1 fatal=True engine_errors=3
+  server.log:165 t=1790128484717 in=i-L0-r1 prev=i-L0-r0 P=1439 G=2056 finish=length P+G=3495 booked-64=3495
+    thread 'memra-gpu-worker' (1443572) panicked at crates/memra-engine/src/spec.rs:4590:9:
+  server.log:168 t=1790128484741 in=i-L0-r1 prev=i-L0-r0 P=1439 G=2056 finish=length P+G=3495 booked-64=3495
+    [worker] PANIC in the GPU worker thread: mtp_kv_fill: scratch overflow
+  server.log:169 t=1790128484741 in=i-L0-r1 prev=i-L0-r0 P=1439 G=2056 finish=length P+G=3495 booked-64=3495
+    [worker] respawn attempt 1/1 in 2s (reloading weights)
+  server.log:267 t=1790128499327 in=i-L0-r1 prev=i-L0-r0 P=1439 G=2056 finish=length P+G=3495 booked-64=3495
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 9 col 0/4 pos=3492: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to n
+  server.log:336 t=1790128509750 in=i-L0-r2 prev=i-L0-r0 P=1439 G=2056 finish=length P+G=3495 booked-64=3495
+    [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 5 j=2 pos=3496: head-out NaN 4096/4096, round-input-seed NaN 0/4096 — refusing to dereference the embed row (#87 trap)
+  server.log:405 t=1790128520107 in=i-L0-r3 prev=i-L0-r0 P=1439 G=2056 finish=length P+G=3495 booked-64=3495
+    [engine-error] class=Engine step error: draft(graph) argmax sentinel 0x7fffffff >= d_vocab 248320 at round 5 j=2 pos=3496: head-out NaN 4096/4096, round-input-seed NaN 0/4096 — refusing to dereference the embed row (#87 trap)
+  server.log:476 t=1790128530966 in=- prev=i-L0-r4 P=1441 G=2056 finish=length P+G=3497 booked-64=3497
+    thread 'memra-gpu-worker' (1443572) panicked at crates/memra-engine/src/spec.rs:4590:9:
+  server.log:478 t=1790128530987 in=- prev=i-L0-r4 P=1441 G=2056 finish=length P+G=3497 booked-64=3497
+    [worker] PANIC in the GPU worker thread: mtp_kv_fill: scratch overflow
+  server.log:479 t=1790128530987 in=- prev=i-L0-r4 P=1441 G=2056 finish=length P+G=3497 booked-64=3497
+    [worker] FATAL: worker unrecoverable after 1 respawn attempt(s) — exiting the process so the supervisor can restart it whole (CUDA errors are sticky per process; a live HTTP listener with a dead worker serves nothing)
+  non-200 rows=76 status_none=73 first_no_status=ii-L1-r0
+    i-L0-r1 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    i-L0-r2 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+    i-L0-r3 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
+== O2-off: panics=1 respawns=1 fatal=False engine_errors=1
+  server.log:9733 t=1790130444081 in=iv-b-r2 prev=iv-b-r1 P=78 G=65458 finish=length P+G=65536 booked-64=65536
+    thread 'memra-gpu-worker' (1449051) panicked at crates/memra-engine/src/spec.rs:4590:9:
+  server.log:9736 t=1790130444190 in=iv-b-r2 prev=iv-b-r1 P=78 G=65458 finish=length P+G=65536 booked-64=65536
+    [worker] PANIC in the GPU worker thread: mtp_kv_fill: scratch overflow
+  server.log:9737 t=1790130444190 in=iv-b-r2 prev=iv-b-r1 P=78 G=65458 finish=length P+G=65536 booked-64=65536
+    [worker] respawn attempt 1/1 in 2s (reloading weights)
+  server.log:11816 t=1790130874779 in=iv-b-r2 prev=iv-b-r1 P=78 G=65458 finish=length P+G=65536 booked-64=65536
+    [engine-error] class=Engine step error: verify argmax sentinel 0x7fffffff >= n_vocab 248320 at round 3 col 0/4 pos=65533: verify-logits col NaN 248320/248320 — the verify TRUNK produced a poisoned column (#87 trap). Run MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split that layer into attention and routed MoE). NOT the draft head, and NOT the PP stage split this message used to 
+  non-200 rows=1 status_none=0 first_no_status=None
+    iv-b-r2 status=500 err={"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"eng
