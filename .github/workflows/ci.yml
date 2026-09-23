@@ -107,6 +107,9 @@ jobs:
         run: |
           python3 tools/test_release_input_view.py
 
+      - name: Cooperative prefill scheduler and frozen walker controls (CPU-only)
+        run: python3 tools/test_prime_fairness.py
+
       - name: Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)
         run: tools/unittest-floor.sh tools test_cache_qualification.py 15
 

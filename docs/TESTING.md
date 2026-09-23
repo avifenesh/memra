@@ -136,6 +136,12 @@ token within the bar (8 s) and the peers' p95 at most half the non-yielding arm'
 `tick_max_ms` on the yielding arm at most 6,000 ms; every request finished; the yielding boot logs
 `[prime-walk] supported=true yield_door=true` and at least one `[prime-yield]`. `--reps 3`
 interleaves the arms for a receipt. Receipts: `research/prime-fairness-default-20260922/`.
+`--shape service --arm base=BIN_A --arm cand=BIN_B` is the saved-prime service-interval A/B (not in
+local-ci): two cold decoders with 4,096-token outputs, then the 131k prime, a second 32k prime and
+a cold peer; per arm the decoders' event rate and ITL inside each prime's window, TPOT, and every
+request's TTFT/E2E at p50/p95/p99, with bytes identical across arms, 250 ms `nvidia-smi` CSV per
+boot and binary/model sha256. Declared clauses: the candidate's decoder rate in the long prime's
+window at least 2x the base's, and each prime's median TTFT at most 2x the base's plus 5 s.
 
 Route policy contract (memra#504, `route_contract.rs`): every serve route declares each of the
 nine policy surfaces as implemented or refused by name; `RouteRegistry::check` runs before the
@@ -919,6 +925,12 @@ The serve-path mode-switch exactness harness and its verdicts:
 [`research/spec-gate-20260806/`](../research/spec-gate-20260806/) (`RESULTS.md` §2, `exactness.py`).
 
 ### Cooperative prime state (default-OFF diagnostic)
+
+`python3 tools/test_prime_fairness.py` compiles the actual generic walker and
+scheduler modules without CUDA. Its continuous-arrival and non-runnable-peer
+controls cover the scheduling policy, not GPU latency or full server compilation.
+See [PREFILL-FAIRNESS.md](PREFILL-FAIRNESS.md) for the current route matrix, SLO
+interval semantics, refusals and source-bound native qualification plan.
 
 `run-spec <model.gguf> --prime-walker-check`, with `MEMRA_PROMPT_FILE` naming a
 multi-chunk real prompt, first compares the MTP walker against ordinary unyielded

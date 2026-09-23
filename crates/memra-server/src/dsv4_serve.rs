@@ -729,6 +729,10 @@ impl MemoryProbe for LiveProbe<'_> {
 /// the nvidia preview ships clamp-only => ClampOnly; an undetectable revision
 /// REFUSES — a numeric contract is never guessed (lane-2/3 law).
 pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, String> {
+    crate::prime_fairness::PrimeRoute::Unsupported(
+        "DSv4 serves through a serial request loop; internal chunking does not yield to peer requests",
+    )
+    .require_cooperative(memra_engine::prime_walker::prime_yield_mode())?;
     let devices: Vec<usize> = match std::env::var("MEMRA_DSV4_DEVICES") {
         Err(_) => vec![0, 1],
         Ok(s) => s
