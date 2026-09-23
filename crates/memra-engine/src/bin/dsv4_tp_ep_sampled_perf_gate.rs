@@ -232,9 +232,8 @@ fn assert_engagement(gpu: &Dsv4Gpu, c: Counters, prime: usize, decode: usize) {
         c.gu_m1, c.gu_half2, c.down_half2
     );
     assert_eq!(
-        c.wo_a,
-        if attention_mode { 0 } else { local_steps },
-        "attention TP uses per-group wo_a; replicated attention uses qualified grouped wo_a"
+        c.wo_a, local_steps,
+        "both attention programs take the grouped wo_a launch (8 groups replicated, 4 per rank)"
     );
     // At prompt+output <= 512, the radix selector's N=2048 eligibility is
     // intentionally inert. The arm is still reported and checked as zero.
@@ -662,7 +661,7 @@ fn main() {
     memra_engine::set_moe_f16g_gu_m1_tc_for_gate(true);
     memra_engine::set_moe_f16g_gu_half2_for_gate(true);
     memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
-    gpu.set_dense_wo_a_grouped_for_gate(!attention_mode);
+    gpu.set_dense_wo_a_grouped_for_gate(true);
     gpu.set_index_topk_radix_for_gate(true);
 
     if full_replay {

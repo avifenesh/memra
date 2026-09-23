@@ -203,11 +203,11 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     let expected_attention = u64::from(attention_mode) * steps * trunk_layers;
     assert_eq!(attention_rank_calls, [expected_attention; 2]);
     assert_eq!(attention_ar_calls, expected_attention);
-    if attention_mode {
+    if attention_mode && gpu.dense_wo_a_grouped_for_gate() {
         assert_eq!(
-            gpu.dense_wo_a_grouped_dispatches(),
-            grouped_wo_a_before,
-            "attention TP2 uses the qualified per-group GEMV, not unqualified grouped-4"
+            gpu.dense_wo_a_grouped_dispatches() - grouped_wo_a_before,
+            2 * steps * trunk_layers,
+            "attention TP2 takes the grouped wo_a launch on both ranks at every layer"
         );
     }
     let ar_refusals = gpu

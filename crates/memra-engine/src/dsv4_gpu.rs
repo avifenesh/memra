@@ -16434,10 +16434,9 @@ impl Dsv4Gpu {
             || dwsel(self.dense_fp8, &stream, &layer.wo_a, &layer.wo_a_fp8),
             |(_, bank)| packed_dense(&bank.wo_a, &stream),
         );
-        // The packed rank-half has only local groups. Its per-group GEMV is qualified
-        // by the component gate; the distinct grouped_m1 8-to-4 shape still needs a
-        // target receipt and must not inherit the full-attention accelerator flag.
-        let grouped_wo_a = if shard.is_none() && t == 1 && !vws.is_prefill {
+        // The packed rank-half has only local groups; the grouped launch takes them too
+        // (the 4x1024x4096 rank shape is in the grouped component test).
+        let grouped_wo_a = if t == 1 && !vws.is_prefill {
             Self::gemv_wo_a_grouped_fp8_m1_dev(
                 st,
                 wo_a_dw,
@@ -21014,6 +21013,12 @@ mod dense_wo_a_grouped_fp8_component_tests {
         unsafe { launch_old_grouped_slices(&stream, &mut small) };
         unsafe { launch_new_grouped(&stream, &mut small) };
         assert_fixture_bit_identity(&stream, &small);
+
+        // The attention TP2 rank shape: four local groups of 1024 rows over 4096.
+        let mut rank_half = make_fixture(&stream, 4, 1024, 4096);
+        unsafe { launch_old_grouped_slices(&stream, &mut rank_half) };
+        unsafe { launch_new_grouped(&stream, &mut rank_half) };
+        assert_fixture_bit_identity(&stream, &rank_half);
 
         let bad_stride_rc = unsafe {
             k::memra_dsv4_gemv_fp8_grouped_m1(
