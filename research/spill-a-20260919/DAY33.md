@@ -280,3 +280,30 @@ the host median under 0.5 ms per restore, the D2D half closes as not worth a doo
 `OWNER-THREAD-OFFLOAD.md` and the verdicts ledger; no code). Otherwise a restore-recurrent design is pre-registered
 with its own acceptance (its ordering rule is the day-21 reader fence, extended over the recurrent planes, as day 32
 extended it over the H2D spans). The strong-form receipt stays owed separately.
+
+## 7. What is owed, and integrability
+
+- **The target-card sitting of section 2** (the day-32 H2D binary against the day-33 binary, the double-park pair in one
+  hold, then the gate set, the hit gate and the unit cells; scripts fixed in `pro-single-day33/`), waiting for the box's
+  restore. It is the only test of (a) and (d)'s measured half; the 5090 cannot stand in for it (section 5a).
+- **Integrable: not as a delivered lever yet.** On the 5090 the code meets (c) (B1, B4 and B5 hold), (b) (the owner
+  segment median 0.41 ms, max 0.67) and (d)'s census, and removes the day-32 Filling phase; (a) is unread on the card it
+  is registered for. The lead integrates it with the sitting's verdict, or earlier as code whose lever is pending.
+- Named, not built: the 5090's write-combined KV lease checksums on the owner thread (section 5a; the lead set the
+  helper-side checksum as day 34). Still owed from Move 2 item 1: the D2D half (section 6: the restore half's price cell
+  decides it; the capture half is refuted by construction) and the strong-form receipt.
+
+## 8. Checks, budget, cleanup
+
+- Checks on the final tree: `cargo fmt --all -- --check` clean; clippy `-D warnings` all targets on tier, engine and
+  server `clippy_rc=0`; the `DOCS_RS=1 --target x86_64-unknown-linux-gnu` pass `docsrs_rc=0`; server lib `876 passed`,
+  engine lib `546 passed`, tier contracts `95 passed`; `check-flags: every runtime MEMRA_* name resolves against
+  'docs/FLAGS.md' (no grandfather list)`; `check-conflict-markers: OK`; `git diff --check` clean; `.gitattributes`
+  (`*.log -whitespace`, `SUMMARY.txt -whitespace`) in `rtx5090-day33/`; no em dashes in this lane's lines. No new
+  `MEMRA_*` name.
+- Budget: about 3.5 agent-hours of work between 15:30Z and 18:55Z wall, plus about 1.5 h queued behind other lanes'
+  holds of the 5090 (card time).
+- 5090 holds of this lane, all bounded and none inside another lane's: the engine span cells (15:4xZ), the door cells
+  (15:55Z), the battery gates under their own `flock` (16:00Z to 16:05Z), the stall pair (16:07Z to 16:09Z), the owner-hold
+  cell (18:21Z to 18:27:30Z, the lesson of section 5), the nsys pair (18:39Z to 18:40Z). Scratch under `/tmp/wt-a-d33`,
+  removed at close.
