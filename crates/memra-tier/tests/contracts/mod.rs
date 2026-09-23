@@ -26,3 +26,6 @@ mod d2d_receipt_bindings;
 
 // Day 30 (WP-A, memra#536 Move 2 owed item 1): the typed f32 spans of a demote batch.
 mod d2h_span_bindings;
+
+// Day 32 (WP-A, memra#536 Move 2 owed item 1, the H2D half): the typed f32 spans of a promote batch.
+mod h2d_span_bindings;

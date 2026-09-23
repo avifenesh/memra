@@ -176,12 +176,15 @@ impl HalfMirror {
         row_ids: Option<&CudaSlice<i32>>,
         rows: usize,
     ) -> Res<()> {
-        self.gather_with(s, codes, scales, row_ids, rows, None)
+        self.gather_with(s, codes, scales, row_ids, rows, None, None)
     }
 
     /// With `fault`, a validated gather ORs its bit into the fault word instead of reading the
     /// row status back. Deferred-route row ids are still in range: the scatter writes only
-    /// `slot / topk` or leaves the -1 the count kernel cleared.
+    /// `slot / topk` or leaves the -1 the count kernel cleared. `live` is the device address of
+    /// the route's live-row count when the host did not read it back: rows past it are the
+    /// route's inert tail and are neither mirrored nor checked.
+    #[allow(clippy::too_many_arguments)]
     pub fn gather_with(
         &mut self,
         s: &Arc<CudaStream>,
@@ -190,6 +193,7 @@ impl HalfMirror {
         row_ids: Option<&CudaSlice<i32>>,
         rows: usize,
         fault: Option<(MoeFault, i32)>,
+        live: Option<u64>,
     ) -> Res<()> {
         if rows == 0
             || rows > self.rows
@@ -223,6 +227,7 @@ impl HalfMirror {
                     self.cols as i32,
                     word.0 as *mut i32,
                     bit,
+                    live.map_or(std::ptr::null(), |p| p as *const i32),
                     stream,
                 ),
                 None => dsv4_ffi::memra_dsv4_fp8_gather_half(
@@ -419,7 +424,7 @@ impl GroupedWork {
     }
 
     /// Route the next chain's route and mirror checks to `fault` (`None`: read each back).
-    /// Only full-bank work defers; a partition keeps its observed live count.
+    /// A deferred partition (memra #679) also leaves its live count on the device.
     pub fn defer_faults(&mut self, fault: Option<MoeFault>) {
         self.fault = fault;
     }
@@ -481,6 +486,7 @@ impl GroupedWork {
                 Some(&self.routes.tokens),
                 self.routes.live_slots,
                 self.fault.map(|word| (word, MOE_FAULT_INPUT_MIRROR)),
+                None,
             )?;
         }
         self.phase = MatrixPhase::Prepared;
@@ -668,6 +674,7 @@ impl GroupedWork {
                 None,
                 live,
                 self.fault.map(|word| (word, MOE_FAULT_INTERMEDIATE_MIRROR)),
+                (!self.routes.live_slots_observed).then(|| self.routes.live_count_ptr(&s)),
             )?;
 
             // A gate that armed the M1 tensor-core or half2 down tail asked for that program
@@ -788,6 +795,12 @@ fn partition_shape(global: usize, first: usize, count: usize, slots: usize) -> R
 }
 
 impl GroupedRoutes {
+    /// Device address of `offsets[experts]`, the route's live-row count, full-bank and
+    /// partition alike.
+    pub fn live_count_ptr(&self, s: &Arc<CudaStream>) -> u64 {
+        self.offsets.device_ptr(s).0 + (self.experts * std::mem::size_of::<i32>()) as u64
+    }
+
     pub fn matches_partition(&self, global: usize, first: usize, count: usize) -> bool {
         self.global_experts == global && self.first == first && self.experts == count
     }
@@ -1047,9 +1060,12 @@ impl GroupedRoutes {
         )
     }
 
-    /// With `fault` on a full-bank device route, a validated route ORs
-    /// [`MOE_FAULT_ROUTE`] into the fault word instead of reading its status back. A valid
-    /// full-bank route places every slot, so the launch count is `slots` either way.
+    /// With `fault` on a device route, a validated route ORs [`MOE_FAULT_ROUTE`] into the
+    /// fault word instead of reading its status back. A valid full-bank route places every
+    /// slot, so the launch count is `slots` either way. A deferred partition (memra #679) does
+    /// not read its live count back either: the launch count is the `slots` bound, the device
+    /// prefix bounds every visitor, and the count kernel's -1 tail is inert in gather and
+    /// scatter, as on the unchecked gate arm.
     #[allow(clippy::too_many_arguments)]
     pub fn prepare_with(
         &mut self,
@@ -1081,31 +1097,70 @@ impl GroupedRoutes {
         }
         self.host_offsets = None;
         self.max_m = slots as i32; // Device arm uses this only as a nonzero upper bound.
-        let deferred = fault.filter(|_| !partition && route_validation_enabled());
+        let deferred = fault.filter(|_| route_validation_enabled());
         if device {
             let rc = if partition {
                 unsafe {
-                    dsv4_ffi::memra_dsv4_grouped_routes_partition(
-                        selected.device_ptr(s).0 as *const i32,
-                        weights.device_ptr(s).0 as *const f32,
-                        scale2.device_ptr(s).0 as *const f32,
-                        self.counts.device_ptr_mut(s).0 as *mut i32,
-                        self.offsets.device_ptr_mut(s).0 as *mut i32,
-                        self.ids.device_ptr_mut(s).0 as *mut i32,
-                        self.pairs.device_ptr_mut(s).0 as *mut i32,
-                        self.tokens.device_ptr_mut(s).0 as *mut i32,
-                        self.weights.device_ptr_mut(s).0 as *mut f32,
-                        self.macro1.device_ptr_mut(s).0 as *mut f32,
-                        self.macro2.device_ptr_mut(s).0 as *mut f32,
-                        self.macro3.device_ptr_mut(s).0 as *mut f32,
-                        self.status.device_ptr_mut(s).0 as *mut i32,
-                        slots as i32,
-                        self.global_experts as i32,
-                        self.first as i32,
-                        self.experts as i32,
-                        topk as i32,
-                        s.cu_stream() as *mut std::ffi::c_void,
-                    )
+                    let selected = selected.device_ptr(s).0 as *const i32;
+                    let weights = weights.device_ptr(s).0 as *const f32;
+                    let scale2 = scale2.device_ptr(s).0 as *const f32;
+                    let counts = self.counts.device_ptr_mut(s).0 as *mut i32;
+                    let offsets = self.offsets.device_ptr_mut(s).0 as *mut i32;
+                    let ids = self.ids.device_ptr_mut(s).0 as *mut i32;
+                    let pairs = self.pairs.device_ptr_mut(s).0 as *mut i32;
+                    let tokens = self.tokens.device_ptr_mut(s).0 as *mut i32;
+                    let route_weights = self.weights.device_ptr_mut(s).0 as *mut f32;
+                    let macro1 = self.macro1.device_ptr_mut(s).0 as *mut f32;
+                    let macro2 = self.macro2.device_ptr_mut(s).0 as *mut f32;
+                    let macro3 = self.macro3.device_ptr_mut(s).0 as *mut f32;
+                    let status = self.status.device_ptr_mut(s).0 as *mut i32;
+                    let stream = s.cu_stream() as *mut std::ffi::c_void;
+                    match deferred {
+                        Some(word) => dsv4_ffi::memra_dsv4_grouped_routes_partition_fault(
+                            selected,
+                            weights,
+                            scale2,
+                            counts,
+                            offsets,
+                            ids,
+                            pairs,
+                            tokens,
+                            route_weights,
+                            macro1,
+                            macro2,
+                            macro3,
+                            status,
+                            slots as i32,
+                            self.global_experts as i32,
+                            self.first as i32,
+                            self.experts as i32,
+                            topk as i32,
+                            word.0 as *mut i32,
+                            MOE_FAULT_ROUTE,
+                            stream,
+                        ),
+                        None => dsv4_ffi::memra_dsv4_grouped_routes_partition(
+                            selected,
+                            weights,
+                            scale2,
+                            counts,
+                            offsets,
+                            ids,
+                            pairs,
+                            tokens,
+                            route_weights,
+                            macro1,
+                            macro2,
+                            macro3,
+                            status,
+                            slots as i32,
+                            self.global_experts as i32,
+                            self.first as i32,
+                            self.experts as i32,
+                            topk as i32,
+                            stream,
+                        ),
+                    }
                 }
             } else {
                 unsafe {
@@ -2475,6 +2530,268 @@ mod tests {
             launches,
             "fused receipt"
         );
+    }
+
+    /// memra #679: a deferred TP/EP partition leaves its live count on the device and launches
+    /// over every input slot, yet writes the synchronous arm's bits, keeps its fault word clear
+    /// while every inert row past the live prefix is poisoned, and reports each red fixture's
+    /// bit where the synchronous arm refuses.
+    #[test]
+    #[ignore = "requires one CUDA GPU; deferred partition MoE fault identity only"]
+    fn cuda_deferred_partition_faults_match_the_synchronous_checks() {
+        use super::{
+            GroupedWork, MOE_FAULT_INPUT_MIRROR, MOE_FAULT_INTERMEDIATE_MIRROR, MOE_FAULT_ROUTE,
+            MoeFault, modelopt_table,
+        };
+        use crate::dsv4_ep::{EpCompute, EpScratch};
+        use crate::dsv4_ffi as k;
+        use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
+
+        fn view(x: &mut EpScratch) -> EpCompute<'_> {
+            EpCompute {
+                xq: &x.xq,
+                xs: &x.xs,
+                ids: &x.ids,
+                weights: &x.weights,
+                g1: &mut x.g1,
+                g3: &mut x.g3,
+                h: &mut x.h,
+                hq: &mut x.hq,
+                hs: &mut x.hs,
+                contribution: &mut x.contribution,
+            }
+        }
+        fn bits(values: &[f32]) -> Vec<u32> {
+            values.iter().map(|value| value.to_bits()).collect()
+        }
+
+        assert!(crate::moe_f16g_mode() >= 2);
+        assert!(crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT));
+        assert!(super::route_validation_enabled() && super::mirror_validation_enabled());
+        let gpu = memra_runtime::Gpu::new(0).unwrap();
+        let s = gpu.stream();
+
+        let (ne, hidden, inter, topk) = (16, 4096, 2048, 6);
+        let wb = hidden * inter / 2;
+        let sb = hidden * inter / 16;
+        let mut state = 0xbb67_ae85_84ca_a73bu64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let weight_data: Vec<u8> = (0..ne * 3 * wb).map(|_| (next() >> 24) as u8).collect();
+        // Finite UE4M3 block scales near one, so the clean fixture stays lossless.
+        let scale_data: Vec<u8> = (0..ne * 3 * sb).map(|i| 0x30 + (i % 9) as u8).collect();
+        let weights = s.clone_htod(&weight_data).unwrap();
+        let scales = s.clone_htod(&scale_data).unwrap();
+        drop(weight_data);
+        drop(scale_data);
+        let mut shard_w = Vec::new();
+        let mut shard_s = Vec::new();
+        let mut shard_tables = Vec::new();
+        for first in [0, ne / 2] {
+            let mut w = s.alloc_zeros::<u8>(ne / 2 * 3 * wb).unwrap();
+            let mut sc = s.alloc_zeros::<u8>(ne / 2 * 3 * sb).unwrap();
+            s.memcpy_dtod(
+                &weights.slice(first * 3 * wb..(first + ne / 2) * 3 * wb),
+                &mut w,
+            )
+            .unwrap();
+            s.memcpy_dtod(
+                &scales.slice(first * 3 * sb..(first + ne / 2) * 3 * sb),
+                &mut sc,
+            )
+            .unwrap();
+            shard_tables.push(modelopt_table(&s, &w, &sc, ne / 2, hidden, inter).unwrap());
+            shard_w.push(w);
+            shard_s.push(sc);
+        }
+        let scale2_host: Vec<f32> = (0..ne * 3)
+            .map(|i| 2.0_f32.powi((i % 5) as i32 - 6))
+            .collect();
+        let scale2 = s.clone_htod(&scale2_host).unwrap();
+        let mut word = s.alloc_zeros::<i32>(1).unwrap();
+        let fault = MoeFault(word.device_ptr(&s).0);
+
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        enum Red {
+            Clean,
+            Route,
+            Input,
+            Intermediate,
+        }
+        // One arm on one partition: Ok(outputs) or the synchronous refusal text, plus the
+        // fault word after it.
+        type Outputs = (usize, Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>);
+        let mut run = |part: usize,
+                       rows: usize,
+                       red: Red,
+                       deferred: bool|
+         -> (Result<Outputs, String>, i32) {
+            let slots = rows * topk;
+            let input: Vec<f32> = (0..rows * hidden)
+                .map(|n| {
+                    let (r, i) = (n / hidden, n % hidden);
+                    (((i * 7919 + r * 104_729) % 2001) as f32 - 1000.0) / 256.0
+                })
+                .collect();
+            let x = s.clone_htod(&input).unwrap();
+            // Token 0 routes to 0, 3, 6 (first half) and 9, 12, 15 (second half), so both
+            // partitions own a slot of it and the input red arm reaches both.
+            let mut selected: Vec<i32> = (0..slots)
+                .map(|p| ((p / topk * 5 + p % topk * 3) % ne) as i32)
+                .collect();
+            let routing: Vec<f32> = (0..slots).map(|p| (p % 7 + 1) as f32 / 16.0).collect();
+            if red == Red::Route {
+                selected[slots - 2] = ne as i32 + 3;
+            }
+            let mut scratch = EpScratch::new(&gpu, &gpu, rows, topk, hidden, inter, None).unwrap();
+            s.memcpy_htod(&selected, &mut scratch.ids.slice_mut(..slots))
+                .unwrap();
+            s.memcpy_htod(&routing, &mut scratch.weights.slice_mut(..slots))
+                .unwrap();
+            unsafe {
+                k::ck(
+                    "deferred partition fixture FP8 input",
+                    k::memra_dsv4_act_quant_fp8(
+                        x.device_ptr(&s).0 as *const f32,
+                        scratch.xq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                        scratch.xs.device_ptr_mut(&s).0 as *mut f32,
+                        rows as i32,
+                        hidden as i32,
+                        s.cu_stream().cast(),
+                    ),
+                )
+                .unwrap();
+            }
+            if red == Red::Input {
+                // E4M3 NaN (0x7f) in token 0, which both partitions gather.
+                s.memcpy_htod(&[0x7fu8], &mut scratch.xq.slice_mut(37..38))
+                    .unwrap();
+            }
+            // Every row past the live prefix is stale: NaN in gate, up and H, and E4M3 NaN
+            // codes in the H mirror source. A check that looked past the device live count
+            // would fault on a clean route.
+            for dst in [&mut scratch.g1, &mut scratch.g3, &mut scratch.h] {
+                s.memcpy_htod(&vec![f32::NAN; dst.len()], dst).unwrap();
+            }
+            s.memcpy_htod(&vec![0x7fu8; scratch.hq.len()], &mut scratch.hq)
+                .unwrap();
+            s.memset_zeros(&mut scratch.contribution).unwrap();
+            let mut work =
+                GroupedWork::new_partition(&s, ne, part * (ne / 2), ne / 2, slots, hidden, inter)
+                    .unwrap();
+            work.defer_faults(deferred.then_some(fault));
+            let table = &shard_tables[part];
+            let result = (|| {
+                work.prepare(
+                    &gpu,
+                    &view(&mut scratch),
+                    &scale2,
+                    &scale2_host,
+                    rows,
+                    topk,
+                    true,
+                )?;
+                if deferred {
+                    assert_eq!(work.routes.live_slots, slots, "deferred launch bound");
+                }
+                assert_eq!(work.routes.live_slots_observed, !deferred);
+                work.gate_up(&gpu, table, &mut view(&mut scratch), 6.0)?;
+                if red == Red::Intermediate {
+                    // E4M3 NaN in the first live H row, which the down mirror gathers.
+                    s.memcpy_htod(&[0x7fu8], &mut scratch.hq.slice_mut(5..6))
+                        .unwrap();
+                }
+                work.down(&gpu, table, &mut view(&mut scratch))?;
+                let take = |v: &CudaSlice<f32>, n: usize| s.clone_dtoh(&v.slice(..n)).unwrap();
+                Ok((
+                    work.routes.live_slots,
+                    take(&scratch.g1, slots * inter),
+                    take(&scratch.g3, slots * inter),
+                    take(&scratch.h, slots * inter),
+                    take(&scratch.contribution, slots * hidden),
+                ))
+            })();
+            let mut host = [0i32];
+            s.memcpy_dtoh(&word, &mut host[..]).unwrap();
+            s.synchronize().unwrap();
+            s.memset_zeros(&mut word).unwrap();
+            (result, host[0])
+        };
+
+        for rows in [1usize, 2, 5, 16] {
+            let mut observed = 0;
+            for part in 0..2 {
+                let (sync, sync_word) = run(part, rows, Red::Clean, false);
+                let (defer, defer_word) = run(part, rows, Red::Clean, true);
+                let (sync, defer) = (sync.unwrap(), defer.unwrap());
+                assert_eq!(
+                    (sync_word, defer_word),
+                    (0, 0),
+                    "clean part={part} rows={rows}"
+                );
+                assert!(sync.0 > 0, "part={part} rows={rows} owns no slot");
+                observed += sync.0;
+                assert!(
+                    sync.4.iter().all(|v| v.is_finite()),
+                    "clean fixture overflowed"
+                );
+                // Gate, up and H compare over the live prefix: past it the deferred launch
+                // may rewrite a poisoned row with another NaN, which no consumer reads.
+                let live = sync.0 * inter;
+                for (what, a, b) in [
+                    ("gate", &sync.1[..live], &defer.1[..live]),
+                    ("up", &sync.2[..live], &defer.2[..live]),
+                    ("H", &sync.3[..live], &defer.3[..live]),
+                    ("down contribution", &sync.4[..], &defer.4[..]),
+                ] {
+                    assert_eq!(bits(a), bits(b), "{what} part={part} rows={rows}");
+                }
+                println!(
+                    "EXACT deferred partition MoE checks part={part} rows={rows} live={} launch={} word=0",
+                    sync.0, defer.0
+                );
+            }
+            assert_eq!(observed, rows * topk, "partitions tile the slots");
+        }
+        for (red, bit, refusal) in [
+            (Red::Route, MOE_FAULT_ROUTE, "invalid expert id"),
+            (Red::Input, MOE_FAULT_INPUT_MIRROR, "not lossless"),
+            (
+                Red::Intermediate,
+                MOE_FAULT_INTERMEDIATE_MIRROR,
+                "not lossless",
+            ),
+        ] {
+            for part in 0..2 {
+                for rows in [1usize, 5] {
+                    let (sync, sync_word) = run(part, rows, red, false);
+                    let err = sync.expect_err("synchronous arm accepted a red fixture");
+                    assert!(
+                        err.contains(refusal),
+                        "{red:?} part={part} rows={rows}: {err}"
+                    );
+                    assert_eq!(sync_word, 0, "synchronous arm wrote the fault word");
+                    let (defer, defer_word) = run(part, rows, red, true);
+                    assert!(
+                        defer.is_ok(),
+                        "{red:?} part={part} rows={rows}: deferred arm refused early"
+                    );
+                    assert_ne!(
+                        defer_word & bit,
+                        0,
+                        "{red:?} part={part} rows={rows}: word {defer_word:#x}"
+                    );
+                    println!(
+                        "RED deferred partition MoE {red:?} part={part} rows={rows} word={defer_word:#x} sync=\"{err}\""
+                    );
+                }
+            }
+        }
+        drop((shard_tables, shard_w, shard_s));
     }
 
     #[test]

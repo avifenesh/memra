@@ -7492,6 +7492,18 @@ impl Engine {
         Ok(s)
     }
 
+    /// WP-A day 32 (the promote's f32 H2D span destinations, `tier_transfer::H2dSpan`):
+    /// uninitialized f32 device memory on the owner stream, no memset. ONLY for a destination whose
+    /// whole range the span's copy writes before any reader: `take_h2d_spans` hands it out only
+    /// after the copy's event is observed complete and the owner stream waits on it.
+    #[track_caller]
+    pub fn alloc_f32_uninit(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(n * 4);
+        let s = unsafe { self.gpu.stream().alloc::<f32>(n)? };
+        self.keep_if_capturing(&s);
+        Ok(s)
+    }
+
     /// Uninitialized u8 scratch — skips alloc_zeros' memset. ONLY for staging buffers whose read
     /// range is fully overwritten by a stage_expert H2D before any kernel reads it (LAUNCH-STRUCTURE
     /// STAGE 2: the per-layer MoE scratch trio was 3 dead ~1MB memsets per layer per decode token).

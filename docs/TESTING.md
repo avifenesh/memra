@@ -1047,8 +1047,10 @@ fused Q norm/pack against the unfused chains they replace and requires every out
 residual and three mix magnitude ranges), and the normalized row plus its bf16 pack over 128
 cases (eight row widths, including tails on both sides of the unrolled body). Red arms perturb
 each gate scale and one norm weight by 2^-10 relative and require the fed output to move. The
-diet is the code on the served plain step and multi-row rows keep the unfused chain, so this is
-the proof that plain and verify rows stay one numeric program. Receipts:
+multi-row cases run 2, 6, 7, 16, 17 and 64 rows with a different magnitude range per row and
+require each row to equal both the unfused multi-row chain and the same row launched alone; the
+HC red arm moves one mix of row 5 and requires rows 0..5 to stay bit-equal. The diet is the code
+on every row count, so this is the proof that plain and verify rows stay one numeric program. Receipts:
 `research/dsv4f-bringup-20260923/small-diet/`.
 
 ### DSv4 batch-1 latency kernels (latency lane)
@@ -1953,6 +1955,23 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   all; the aborted ticket's sequence number is consumed, no `TIER DISABLED`, no drop, no `Capacity`, no
   leaked wording). Evidence: `research/spill-c-20260919/DAY16.md` (review section), `pro-single-day16-review/`,
   replay `verify-day16-review.py`.
+- The recurrent f32 state's span cells of the same door (WP-A days 31 and 32, memra#536 Move 2 owed item 1):
+  `tools/kv-host-contract-fault-gate.sh` cells `span-refusal` (`MEMRA_KV_HOST_FAULT=contract-spans`, the
+  demote's D2H span attach refused after every span was built) and `promote-span-refusal`
+  (`MEMRA_KV_HOST_FAULT=contract-promote-spans`, the promote's H2D span attach refused after the hash helper
+  filled the staging and every span was built). Each is two boots, door ON with the one-shot fault and door
+  OFF as the byte reference, and asserts one typed refusal naming `N f32 spans handed back` with N the span
+  count of the next receipt of the same direction, one `tier span staging:` fill in the boot, the next
+  demote or promote landing its spans and publishing, no latch, quarantine, leak or other refusal, and the
+  four responses byte-equal to the door-OFF boot. GPU cells (`worker::tests`, `#[ignore]` without a device):
+  `option_b_span_attach_fault_hands_every_span_back`, `option_c_span_attach_fault_hands_every_span_back`,
+  `option_c_spans_ride_the_promote_ticket_and_land_bitwise` (the promoted planes read bitwise equal to the
+  resident bytes) and `option_c_span_postpublish_refusal_returns_the_staging_to_the_set`; engine cells
+  `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream` and `h2d_span_batch_lands_with_its_ticket_on_the_copy_stream`
+  (run with `--test-threads=1`: run in parallel in one process on the local RTX 5090 the H2D cell failed
+  once with `a batch with a running span has not landed`; the two cells share the primary context and each
+  holds its copy stream 300 ms; the serial run was green 3 of 3; the cause is not isolated). Evidence:
+  `research/spill-a-20260919/DAY31.md`, `DAY32.md`.
 - The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
   hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
   Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity

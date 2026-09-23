@@ -880,11 +880,9 @@ fn calibrate_memory(m: &Dsv4Model) -> Result<Dsv4Memory, String> {
     let base = gpu.stage_memory()?;
     let devs: Vec<usize> = base.iter().map(|s| s.dev).collect();
     let (cache, _) = gpu.plan_session_cache_bytes(cap, m.transient_rows(), m.c4_host_bytes > 0)?;
-    // Chunked prefill runs batched transactions only on the PP device path; the TP/EP slice
-    // admits a single-token prime and the legacy path has no transaction.
-    let transactions = m.prefill_chunk > 0
-        && !gpu.topology.is_tp_ep()
-        && matches!(gpu.decode_path, DecodePath::Device { .. });
+    // Chunked prefill runs batched transactions on the device path, PP or TP/EP; the legacy
+    // path has no transaction.
+    let transactions = m.prefill_chunk > 0 && matches!(gpu.decode_path, DecodePath::Device { .. });
     let state = m.request_state(cap, None)?;
     let prefill = if transactions {
         Some(gpu.alloc_prefill_state_for(cap, m.prefill_chunk)?)

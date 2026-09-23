@@ -119,15 +119,16 @@ Evidence: `research/glm5-tp-indexer-split-20260908/DESIGN.md`, and the 2026-09-1
 
 Both kernels live in `cu/dsv4_gpu.cu`, compiled with `-fmad=false`. Since 2026-09-23 (#339)
 they are the code on every device f32x HC4 / hidden 4096 load, PP-2 and TP/EP alike, with no
-door (`Dsv4Gpu::small_kernel_diet_shape`); multi-row rows keep the unfused kernels, which match
-bit for bit. Kernel-boundary gate: `tests/dsv4_small_diet_gpu.rs`. Receipts:
+door (`Dsv4Gpu::small_kernel_diet_shape`). Since the multi-row lane (2026-09-23) they take every
+row count, one block per row: plain steps, DSpark verify rows and prefill rows. Each row matches
+the unfused kernels and the same row launched alone, bit for bit. Kernel-boundary gate: `tests/dsv4_small_diet_gpu.rs`. Receipts:
 `research/dsv4f-small-kernel-diet-20260907/README.md` (TP/EP),
 `research/dsv4f-bringup-20260923/small-diet/RESULTS.md` (PP-2 served).
 
 | Kernel | Replaced launches and numeric contract | Geometry |
 | --- | --- | --- |
-| `dsv4_small_hc_f32_fixed_order_kernel` | rowsq f32x + Sinkhorn + collapse, 3 to 1. `dsv4_hc_f32_fixed_order`: same 128-thread rowsq tree, register Sinkhorn with ascending sums, same iteration count, ascending collapse. Bitwise gate required. | One block of 128, t=1, HC4, hidden4096. |
-| `dsv4_small_norm_pack_f32_fixed_order_kernel` | Q-LoRA RMSNorm f32x + bf16 conversion, 2 to 1. `dsv4_norm_pack_f32_fixed_order`: same 128-thread reduction tree and f32 intermediate, bf16 RNE. Retains normalized f32 Q as well as packed Q. Bitwise gate required. | One block of 128, t=1. |
+| `dsv4_small_hc_f32_fixed_order_kernel` | rowsq f32x + Sinkhorn + collapse, 3 to 1. `dsv4_hc_f32_fixed_order`: same 128-thread rowsq tree, register Sinkhorn with ascending sums, same iteration count, ascending collapse. Bitwise gate required. | One block of 128 per row, HC4, hidden4096. |
+| `dsv4_small_norm_pack_f32_fixed_order_kernel` | Q-LoRA RMSNorm f32x + bf16 conversion, 2 to 1. `dsv4_norm_pack_f32_fixed_order`: same 128-thread reduction tree and f32 intermediate, bf16 RNE. Retains normalized f32 Q as well as packed Q. Bitwise gate required. | One block of 128 per row. |
 
 The gate counts successful enqueues in the replaced families and requires 8 to
 3 launches per layer per rank. This counter excludes all other kernels; total
@@ -636,9 +637,15 @@ the placed count differs from `slots`, and `memra_dsv4_fp8_gather_half_fault` is
 mirror with a lossy row ORing its bit into that word. The served PP-2 matrix program and the
 grouped prefill give each stage one word per layer and read it once, before the verify
 transaction commits and before any token leaves the engine, instead of one status readback
-plus synchronize per route and per mirror. Partitioned (EP) routes keep their synchronized
-live count. Component: `cuda_deferred_moe_faults_match_the_synchronous_checks`
-(`src/dsv4_grouped.rs`).
+plus synchronize per route and per mirror. The TP/EP ranks defer too (#679):
+`memra_dsv4_grouped_routes_partition_fault` is the partition launch with
+`dsv4_grouped_partition_prefix_kernel` ORing the route bit on an out-of-range id, the host
+leaves the live count on the device and launches over every input slot, and the intermediate
+mirror takes `offsets[local_expert_count]` as its `live` bound so the inert tail is neither
+mirrored nor checked. Each rank reads its words with the one-shot refusal words, before
+either cache plane commits. Peer-dispatch EP keeps its synchronized live count for its
+coverage check. Components: `cuda_deferred_moe_faults_match_the_synchronous_checks` and
+`cuda_deferred_partition_faults_match_the_synchronous_checks` (`src/dsv4_grouped.rs`).
 
 The native matrix/EP preparation component adds
 `memra_dsv4_grouped_routes_partition` (`dsv4_ffi.rs`), using the partitioned
@@ -665,7 +672,7 @@ Full execution contract and candidate pins:
 
 | symbol | purpose | dispatch flag | FFI binding |
 |---|---|---|---|
-| `dsv4_fp8_gather_half_kernel` | Reorders the existing FP8-QAT codes and per-128 scales into a half matrix with a power-of-two row scale. Every value is round-tripped exactly; a row-status vector rejects nonrepresentable/NaN values before grouped GEMM. | `MEMRA_DSV4_PREFILL_MOE=grouped`, default OFF | `memra_dsv4_fp8_gather_half`, `memra_dsv4_fp8_gather_half_fault` (#670: a lossy row also sets a bit in a device fault word); gate `tools/dsv4-fp8-half-mirror-gate.cu` covers duplicate row mapping, finite values, tails and underflow/NaN refusals. |
+| `dsv4_fp8_gather_half_kernel` | Reorders the existing FP8-QAT codes and per-128 scales into a half matrix with a power-of-two row scale. Every value is round-tripped exactly; a row-status vector rejects nonrepresentable/NaN values before grouped GEMM. | `MEMRA_DSV4_PREFILL_MOE=grouped`, default OFF | `memra_dsv4_fp8_gather_half`, `memra_dsv4_fp8_gather_half_fault` (#670: a lossy row also sets a bit in a device fault word; #679: an optional device `live` count zeroes rows past it without checking them); gate `tools/dsv4-fp8-half-mirror-gate.cu` covers duplicate row mapping, finite values, tails and underflow/NaN refusals. |
 | `moe_kq_sk{32,128,tail}v_kernel<QT_NVFP4_MODELOPT>` | Reads consecutive E2M1 codes and separate signed-E4M3/16 scales from six pointer planes, with FP32 macro weight scale applied after projection. No GGUF or duplicate weight bank. Grouped MMA changes reduction order; routed slot restoration, combine and the entire shared expert remain explicit common work. | `MEMRA_DSV4_PREFILL_MOE=grouped`, default OFF, mode-2 visitor/direct loader required | `memra_moe_kq_gemm_sk`; actual-model `dsv4_grouped_prefill_gate` verifies total=routed+shared and characterizes forced-path logits. No production qualification yet. |
 | `moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT>` | DSV4 matrix plain-decode `m_e=1` gate/up pair: one shared FP8-QAT-mirrored f16 A tile, two unchanged ModelOpt NVFP4 f32-MMA accumulators, then exact macro/clamp/SiLU/route-weight epilogue into the intermediate H row. Down, FP8 intermediate quantization, macro2 and original-slot scatter remain common. | `MEMRA_F16G_GU_FUSE=1`, default OFF; ModelOpt qtype 108, one-row transaction, deep tail only | `memra_moe_kq_gemm_sk_gu`; component gate must compare H/FP8 codes/full routed output bitwise against the shipped two-projection path. No target timing receipt yet. |
 | `moe_kq_sktail_kernel<QT_NVFP4_MODELOPT,true>` | DSV4 gate-only m_e=1 tensor-core down candidate: same B tile and valid-row m16n8k16 chain as the shipped deep tail, with invalid-row warps and duplicate A-stage loads elided. Existing FP8 mirror, macro2 and scatter remain the comparison path; this is not the removed scalar visitor. | `MEMRA_F16G_M1_TC=1` or gate setter, default OFF; one-row/deep-tail candidate only | `memra_moe_kq_gemm_sk_m1`; full-model identity/sanitizer/rate gates required before dispatch. |
