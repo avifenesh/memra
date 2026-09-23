@@ -1,0 +1,40 @@
+== window 10 lock acquired 2026-09-23T14:19:25+03:00
+tree 31ad5c9537fe504765830fe5d59c032c5eb74395 dirty=[?? research/decode-exact-641-20260923/raw/merged2/window10.log ]
+bins: probe 748e06521c920f9d pbg da8a4d12137671a1 dbg 999761c0556c1b89 server-before-smoke 765b9ef24103360a
+model: /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf (5657607424 bytes; sha256 52c9cceb...a8f39de per RESULTS.md, not re-hashed)
+card at start: apps=[] mem/temp/clock=[15 MiB, 24463 MiB, 55, 180 MHz]
+-- ptick start 2026-09-23T14:19:26+03:00 apps=[]
+   ptick rc=0
+prime-tick-exact-gate: PASS (every prime shape is bit-identical to the solo prime; log /home/avifenesh/projects/wt-decode-exact-641/research/decode-exact-641-20260923/raw/merged2/ptick-naked.probe.log)
+-- ptickc start 2026-09-23T14:19:37+03:00 apps=[]
+   ptickc rc=0
+prime-tick-exact-gate: CANARY OK (bp and bps DIFFER with B's batch prompt changed; log /home/avifenesh/projects/wt-decode-exact-641/research/decode-exact-641-20260923/raw/merged2/ptick-canary.probe.log)
+-- pbg9 start 2026-09-23T14:19:46+03:00 apps=[]
+   pbg9 rc=0
+    exact-b3-p24 rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths)
+    exact-b4-p1100 rc=0 ALL GREEN: prime-batch gate (batch=4, uneven lengths)
+    carried-b3-exact rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths)
+prime-batch-exact-gate: PASS (every batched prime is bit-identical to its individual prime)
+-- pbg9c start 2026-09-23T14:19:58+03:00 apps=[]
+   pbg9c rc=0
+    canary-b3-p24 rc=1 Error: "prime-batch-gate: 4 FAIL(s)"
+prime-batch-exact-gate: CANARY OK (seq 0 DIFFERS: exact logits diff 248320/248320 h_seed diff 4096/4096 hidden diff 98304/98304; seqs 1 and 2 bit-identical)
+-- dbg-config start 2026-09-23T14:20:00+03:00 apps=[]
+   dbg-config rc=0
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; global setting = OFF; effective for this architecture = OFF)
+ALL GREEN: decode_step_batch exactness battery
+-- dbg-strict start 2026-09-23T14:20:11+03:00 apps=[]
+   dbg-strict rc=0
+ALL GREEN: decode_step_batch exactness battery
+-- serve-smoke start 2026-09-23T14:20:19+03:00 apps=[]
+   serve-smoke rc=0
+== serve-smoke: spec arm SKIP (no draft at /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+== serve-smoke: gemma4 arm SKIP (no model at /data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf)
+== serve-smoke: Q35 coldhol arm SKIP (no model at /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf)
+serve-smoke: 0 failed
+server after serve-smoke: 6f978b9b228a6750 build line: memra-0.138.0-6b16dd6b7259 (id: source-tree, git: 31ad5c9537fe)
+-- spec-ctx-edge start 2026-09-23T14:23:20+03:00 apps=[]
+   spec-ctx-edge rc=0
+SPEC-CTX-EDGE GATE: ALL GREEN
+card at end: apps=[]
+== window 10 done 2026-09-23T14:23:36+03:00

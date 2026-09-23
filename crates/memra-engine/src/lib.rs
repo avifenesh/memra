@@ -483,6 +483,39 @@ pub fn moe_f16g_down_m1_half2_dispatches() -> u64 {
     unsafe { mmq_ffi::memra_moe_kq_gemm_sk_m1_half2_dispatches() }
 }
 
+/// DSV4 one-token streaming MoE visitor (memra #664). Same ModelOpt f16-MMA numeric program
+/// as the sktail tail, one warp per n8 column tile; the grouped caller takes it for the
+/// one-token plain step's gate, up and down projections. It is the code, not a door: a
+/// same-class win with a clean receipt (owner ruling 2026-09-10), measured +29% served plain
+/// decode on 2x RTX PRO 6000 (`research/dsv4f-bringup-20260923/m1-stream-664/`). There is no
+/// environment read. The gate override runs the sktail reference arm in one loaded model.
+static DSV4_MOE_M1_STREAM_OVERRIDE: AtomicI8 = AtomicI8::new(-1);
+
+pub fn dsv4_moe_m1_stream_on() -> bool {
+    DSV4_MOE_M1_STREAM_OVERRIDE.load(Ordering::Acquire) != 0
+}
+
+pub fn set_dsv4_moe_m1_stream_for_gate(enabled: bool) -> bool {
+    let previous = dsv4_moe_m1_stream_on();
+    DSV4_MOE_M1_STREAM_OVERRIDE.store(enabled as i8, Ordering::Release);
+    previous
+}
+
+pub fn clear_dsv4_moe_m1_stream_for_gate() {
+    DSV4_MOE_M1_STREAM_OVERRIDE.store(-1, Ordering::Release);
+}
+
+/// Snapshot of the CUDA-side successful enqueue receipt for the streaming visitor.
+pub fn dsv4_moe_m1_stream_dispatches() -> u64 {
+    unsafe { mmq_ffi::memra_moe_kq_m1_stream_dispatches() }
+}
+
+/// Snapshot of the CUDA-side successful enqueue receipt for the multi-row streaming visitor,
+/// which small multi-row steps (verify rounds) take under the same switch.
+pub fn dsv4_moe_mrow_stream_dispatches() -> u64 {
+    unsafe { mmq_ffi::memra_moe_kq_mrow_stream_dispatches() }
+}
+
 /// Per-model door for the gemma-MoE (gelu) grouped path: round 49's Hopper default
 /// REGRESSED g26 board-2048 prefill -8.3% interleaved x5 on-box (def median 10380,
 /// wild 8.9k-11.7k spread; off 11317, ±0.13%) — the +6-15% probe verdict didn't
@@ -2153,9 +2186,6 @@ pub use pinned_host::{PinnedHostArena, PinnedHostBuf};
 /// x 256 threads = 65536 threads covering the 248K-vocab scan in ~4 strided loads/thread.
 pub const ARGMAX_NB: usize = 256;
 
-/// crate-visible alias for the batched FA3 shim entry (hybrid_forward's batch arm).
-pub(crate) use memra_fa3_vl as fa3_vl_raw;
-
 unsafe extern "C" {
     /// FA3 v10 shim (cu/fa3_prefill.cu): TMA-swizzled wgmma FA, fresh causal hd256.
     fn memra_fa3_prefill(
@@ -2164,20 +2194,6 @@ unsafe extern "C" {
         v16: *const core::ffi::c_void,
         o: *mut f32,
         t: i32,
-        h: i32,
-        hkv: i32,
-        d: i32,
-        scale: f32,
-        stream: *mut core::ffi::c_void,
-    ) -> i32;
-    /// batched varlen twin: host arrays of device pointers per seq (B <= 8).
-    pub(crate) fn memra_fa3_vl(
-        q16s: *const *const core::ffi::c_void,
-        k16s: *const *const core::ffi::c_void,
-        v16s: *const *const core::ffi::c_void,
-        os: *const *mut f32,
-        ts: *const i32,
-        b: i32,
         h: i32,
         hkv: i32,
         d: i32,
@@ -2272,47 +2288,6 @@ unsafe impl cudarc::driver::DeviceRepr for GdnPrepVl {}
 #[derive(Clone, Copy)]
 pub struct GdnPrepVl8(pub [GdnPrepVl; 8]);
 unsafe impl cudarc::driver::DeviceRepr for GdnPrepVl8 {}
-
-/// task #18 (attn side): per-seq varlen FA args (CUDA `faseq_t`/`favl_t`).
-#[repr(C)]
-#[derive(Clone, Copy, Default)]
-pub struct FaSeqVl {
-    pub q: u64,
-    pub k16: u64,
-    pub v16: u64,
-    pub o: u64,
-    pub kf: u64,
-    pub vf: u64,
-    pub t: i32,
-    pub pad: i32,
-}
-unsafe impl cudarc::driver::DeviceRepr for FaSeqVl {}
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct FaVl8(pub [FaSeqVl; 8]);
-unsafe impl cudarc::driver::DeviceRepr for FaVl8 {}
-
-/// task #18 (attn pre-FA): per-seq split/norm/rope/append args (CUDA `attnpre_t`).
-#[repr(C)]
-#[derive(Clone, Copy, Default)]
-pub struct AttnPreVl {
-    pub qf: u64,
-    pub kf: u64,
-    pub vf: u64,
-    pub q: u64,
-    pub gate: u64,
-    pub qn: u64,
-    pub kn: u64,
-    pub kc: u64,
-    pub vc: u64,
-    pub t: i32,
-    pub pad: i32,
-}
-unsafe impl cudarc::driver::DeviceRepr for AttnPreVl {}
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AttnPreVl8(pub [AttnPreVl; 8]);
-unsafe impl cudarc::driver::DeviceRepr for AttnPreVl8 {}
 
 /// task #18 increment 2: one sequence's FULL chunk-buffer set (alloc-only; the
 /// varlen K1-K5 chain fills them).
@@ -29261,180 +29236,6 @@ impl Engine {
         b.arg(xb).arg(y).arg(&n2);
         unsafe {
             b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// task #18 (attn side): varlen FA — bf16 K/V mirrors (2 launches) + ONE
-    /// fa_prefill_bf16kv launch for every fresh sequence. Same per-block math as the
-    /// per-seq path (bit-gateable). Caller guarantees: fresh causal (T_kv == T),
-    /// head_dim in {256, 128}, bf16kv lane on.
-    #[allow(clippy::too_many_arguments)]
-    pub fn fa_prefill_vl8(
-        &self,
-        seqs: &[FaSeqVl],
-        head_dim: usize,
-        n_head: usize,
-        n_head_kv: usize,
-        scale: f32,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        const BK: usize = 32;
-        let b = seqs.len();
-        assert!((1..=8).contains(&b));
-        let mut packed = [FaSeqVl::default(); 8];
-        packed[..b].copy_from_slice(seqs);
-        let v = FaVl8(packed);
-        let max_t = seqs.iter().map(|s| s.t).max().unwrap() as u32;
-        let ept = (n_head_kv * head_dim) as i32;
-        {
-            let f = self.func("fa_mirror_vl");
-            let max_n = (max_t as i64) * ept as i64;
-            let blocks = ((max_n as u32).div_ceil(4)).div_ceil(256);
-            for which in 0..2i32 {
-                let cfg = LaunchConfig {
-                    grid_dim: (blocks, 1, b as u32),
-                    block_dim: (256, 1, 1),
-                    shared_mem_bytes: 0,
-                };
-                let __s_lb = self.gpu.stream();
-                let mut lb = __s_lb.launch_builder(&f);
-                lb.arg(&v).arg(&ept).arg(&which);
-                unsafe {
-                    lb.launch(cfg)?;
-                }
-            }
-        }
-        let hd_sfx = fa_hd_suffix(head_dim)?;
-        let f = self.func(&format!("fa_prefill_bf16kv_vl{hd_sfx}"));
-        let block_q = 64usize;
-        let kv_stages = 2usize;
-        let shmem = (2 * (kv_stages * 2 * BK * head_dim + block_q * BK)
-            + 4 * (block_q * BK + 2 * block_q)) as u32;
-        use cudarc::driver::sys::CUfunction_attribute_enum as A;
-        f.set_attribute(
-            A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-            shmem as i32,
-        )?;
-        let cfg = LaunchConfig {
-            grid_dim: (max_t.div_ceil(block_q as u32), n_head as u32, b as u32),
-            block_dim: (32, 4, 1),
-            shared_mem_bytes: shmem,
-        };
-        let (hd, nh, nhkv) = (head_dim as i32, n_head as i32, n_head_kv as i32);
-        let __s_lb = self.gpu.stream();
-        let mut lb = __s_lb.launch_builder(&f);
-        lb.arg(&v).arg(&hd).arg(&nh).arg(&nhkv).arg(&scale);
-        unsafe {
-            lb.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// task #18 (attn pre-FA): varlen split + QK-norm + RoPE + KV-append — FOUR launches
-    /// for every fresh sequence (was 6 x B, plus the q/k/v split copies which the view
-    /// inputs remove entirely). Fresh-only (append at t0=0, RoPE pos = token index).
-    #[allow(clippy::too_many_arguments)]
-    pub fn attn_pre_vl8(
-        &self,
-        seqs: &[AttnPreVl],
-        wq: Option<&CudaSlice<f32>>,
-        wk: Option<&CudaSlice<f32>>,
-        head_dim: usize,
-        rope_dims: usize,
-        n_head: usize,
-        n_head_kv: usize,
-        eps: f32,
-        freq_base: f32,
-        freq_scale: f32,
-        kv_dim_k: usize,
-        kv_dim_v: usize,
-        k_tok_bytes: usize,
-        v_tok_bytes: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        // 0 = this family has no such norm; every kernel here reads a null
-        // weight as "pass the row through" (an all-ones weight would not be).
-        let __wq_ptr: u64 = wq.map(|t| self.addr_f32(t)).unwrap_or(0);
-        let __wk_ptr: u64 = wk.map(|t| self.addr_f32(t)).unwrap_or(0);
-        let b = seqs.len();
-        assert!((1..=8).contains(&b));
-        let mut packed = [AttnPreVl::default(); 8];
-        packed[..b].copy_from_slice(seqs);
-        let v = AttnPreVl8(packed);
-        let max_t = seqs.iter().map(|s| s.t).max().unwrap() as u32;
-        let (hd, nh, nhkv) = (head_dim as i32, n_head as i32, n_head_kv as i32);
-        {
-            let f = self.func("q_gate_split_vl");
-            let n = max_t * (n_head * head_dim) as u32;
-            let cfg = LaunchConfig {
-                grid_dim: (n.div_ceil(256), 1, b as u32),
-                block_dim: (256, 1, 1),
-                shared_mem_bytes: 0,
-            };
-            let __s_lb = self.gpu.stream();
-            let mut lb = __s_lb.launch_builder(&f);
-            lb.arg(&v).arg(&hd).arg(&nh);
-            unsafe {
-                lb.launch(cfg)?;
-            }
-        }
-        {
-            let f = self.func("attn_rms_vl");
-            let cfg = LaunchConfig {
-                grid_dim: (max_t * n_head as u32, 2, b as u32),
-                block_dim: (rms_block(), 1, 1),
-                shared_mem_bytes: 0,
-            };
-            let __s_lb = self.gpu.stream();
-            let mut lb = __s_lb.launch_builder(&f);
-            lb.arg(&v)
-                .arg(&__wq_ptr)
-                .arg(&__wk_ptr)
-                .arg(&hd)
-                .arg(&nh)
-                .arg(&nhkv)
-                .arg(&eps);
-            unsafe {
-                lb.launch(cfg)?;
-            }
-        }
-        {
-            let f = self.func("attn_rope_vl");
-            let theta_scale = freq_base.powf(-2.0 / rope_dims as f32);
-            let nd = rope_dims as i32;
-            let cfg = LaunchConfig {
-                grid_dim: (max_t * n_head as u32, 2, b as u32),
-                block_dim: ((head_dim / 2) as u32, 1, 1),
-                shared_mem_bytes: 0,
-            };
-            let __s_lb = self.gpu.stream();
-            let mut lb = __s_lb.launch_builder(&f);
-            lb.arg(&v)
-                .arg(&hd)
-                .arg(&nd)
-                .arg(&nh)
-                .arg(&nhkv)
-                .arg(&theta_scale)
-                .arg(&freq_scale);
-            unsafe {
-                lb.launch(cfg)?;
-            }
-        }
-        {
-            let f = self.func("append_kv_vl");
-            let nblk = (kv_dim_k.max(kv_dim_v) / 32) as u32;
-            let cfg = LaunchConfig {
-                grid_dim: (nblk, max_t, b as u32),
-                block_dim: (32, 1, 1),
-                shared_mem_bytes: 0,
-            };
-            let (kdk, kdv) = (kv_dim_k as i32, kv_dim_v as i32);
-            let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
-            let __s_lb = self.gpu.stream();
-            let mut lb = __s_lb.launch_builder(&f);
-            lb.arg(&v).arg(&kdk).arg(&kdv).arg(&ktb).arg(&vtb);
-            unsafe {
-                lb.launch(cfg)?;
-            }
         }
         Ok(())
     }

@@ -274,9 +274,11 @@ pub fn dense_census_for_gate() -> (Vec<Dsv4DenseCensusRow>, u64) {
 #[path = "dsv4_small_kernel_gate.rs"]
 mod small_kernel_gate;
 
-// Gate-only dense wo_a launch fusion. It is process-local and deliberately
-// default OFF; no environment variable or serving default selects this arm.
-static DSV4_DENSE_WO_A_GROUPED: AtomicBool = AtomicBool::new(false);
+// Dense wo_a launch fusion: one grouped launch for the eight t=1 per-group GEMVs,
+// bit-identical to them. Default ON since 2026-09-23 (it takes the grouped dense-fast
+// twin); gates select the per-group program with the process-local seam below.
+const DSV4_DENSE_WO_A_GROUPED_DEFAULT: bool = true;
+static DSV4_DENSE_WO_A_GROUPED: AtomicBool = AtomicBool::new(DSV4_DENSE_WO_A_GROUPED_DEFAULT);
 static DSV4_DENSE_WO_A_GROUPED_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
 // Gate-only exact radix-cut selector for plain t=1, K=512 indexer rows. Default OFF and
@@ -2362,10 +2364,10 @@ impl Dsv4Gpu {
         crate::clear_moe_f16g_m1_tc_for_gate();
     }
 
-    /// Gate-only FP8 wo_a grouped launch. This replaces the eight t=1
-    /// per-group launches with one grouped launch while retaining the same
-    /// per-output accumulation/reduction body. It is process-local, default
-    /// OFF, and has no environment or serving default.
+    /// Gate seam for the FP8 wo_a grouped launch. The grouped launch replaces
+    /// the eight t=1 per-group launches with one while retaining the same
+    /// per-output accumulation/reduction body. Default ON; `false` selects the
+    /// per-group launches. Process-local, no environment variable.
     pub fn set_dense_wo_a_grouped_for_gate(&self, enabled: bool) -> bool {
         for stage in &self.stages {
             stage
@@ -2382,7 +2384,7 @@ impl Dsv4Gpu {
     }
 
     pub fn clear_dense_wo_a_grouped_for_gate(&self) {
-        self.set_dense_wo_a_grouped_for_gate(false);
+        self.set_dense_wo_a_grouped_for_gate(DSV4_DENSE_WO_A_GROUPED_DEFAULT);
     }
 
     /// Successful CUDA enqueues through the grouped FP8 wo_a entry point.
@@ -3640,14 +3642,6 @@ impl Dsv4Gpu {
             on_device,
         )?;
 
-        let small_kernel_diet = match std::env::var("MEMRA_DSV4_SMALL_KERNEL_DIET").as_deref() {
-            Err(std::env::VarError::NotPresent) | Ok("0") => false,
-            Ok("1") => true,
-            _ => return Err("MEMRA_DSV4_SMALL_KERNEL_DIET requires 0 or 1".into()),
-        };
-        if small_kernel_diet && (!topology.is_tp_ep() || !chains_f32) {
-            return Err("small-kernel diet requires all-layer TP/EP and f32x".into());
-        }
         // Read once at load, like every other door. An unarmed process that exported the name
         // refuses here rather than loading with an instrument or a null collective in it.
         let ar_phase = ar_phase_environment_policy(
@@ -3690,7 +3684,7 @@ impl Dsv4Gpu {
             decode_path,
             dots_f32,
             chains_f32,
-            small_kernel_diet,
+            small_kernel_diet: false,
             ar_phase,
             small_kernel_launches: std::array::from_fn(|_| AtomicU64::new(0)),
             small_kernel_component_mask: AtomicU64::new(u64::MAX),
@@ -3718,6 +3712,12 @@ impl Dsv4Gpu {
             hc_head_base: Vec::new(),
             hc_head_scale: Vec::new(),
         };
+        // The fixed-order HC finish and Q norm/pack (#339) are the code on every f32x
+        // device program of this shape, PP-2 and TP/EP alike: each fused kernel keeps the
+        // unfused kernels' 128-thread tree and ascending sums, so the plain t=1 step and a
+        // multi-row verify row stay one numeric program. Other shapes keep the unfused
+        // kernels, which the fused launchers refuse.
+        me.small_kernel_diet = me.small_kernel_diet_shape();
         eprintln!(
             "[load] expert arm: {:?} | decode path: {:?} | dots arm: {}",
             me.expert_arm,
@@ -13137,6 +13137,12 @@ impl Dsv4Gpu {
 pub struct VerifyWs {
     ep: Option<EpScratch>,
     grouped_work: Option<crate::dsv4_grouped::GroupedWork>,
+    /// One MoE fault word per trunk layer for full-bank grouped work (memra #670): the route
+    /// and mirror checks of a transaction land here and are read once, see
+    /// [`Dsv4Gpu::take_moe_faults`]. Zero whenever `moe_fault_armed` is false.
+    moe_fault: Option<CudaSlice<i32>>,
+    moe_fault_host: Vec<i32>,
+    moe_fault_armed: bool,
     c4_gather: Option<C4Gather>,
     pub tmax: usize,
     /// Phase identity, not inferred from row count. Spec verification never sets it.
@@ -14173,6 +14179,13 @@ impl Dsv4Gpu {
                 } else {
                     None
                 },
+                moe_fault: if !self.ep_enabled && (self.prefill_grouped || self.matrix_moe) {
+                    Some(i(n_trunk)?)
+                } else {
+                    None
+                },
+                moe_fault_host: vec![0; n_trunk],
+                moe_fault_armed: false,
                 ep: if self.ep_enabled {
                     Some(EpScratch::new(
                         &st.gpu,
@@ -14661,10 +14674,17 @@ impl Dsv4Gpu {
         self.small_kernel_diet
     }
 
+    fn small_kernel_diet_shape(&self) -> bool {
+        matches!(self.decode_path, DecodePath::Device { .. })
+            && self.chains_f32
+            && self.model.cfg().hc_mult == 4
+            && self.model.mc.n_embd == 4096
+    }
+
     /// Same-loaded-model ABBA seam. Exclusive borrow prevents a concurrent walk.
     pub fn set_small_kernel_diet_for_gate(&mut self, enabled: bool) -> Res<()> {
-        if !self.topology.is_tp_ep() || !self.chains_f32 {
-            return Err("small-kernel gate requires TP/EP f32x".into());
+        if enabled && !self.small_kernel_diet_shape() {
+            return Err("small-kernel gate requires device f32x HC4 hidden 4096".into());
         }
         self.small_kernel_diet = enabled;
         Ok(())
@@ -16431,10 +16451,23 @@ impl Dsv4Gpu {
         } else {
             None
         };
+        let fault = match (&fresh, &vws.moe_fault) {
+            (None, Some(words)) if vws.moe_fault_armed => {
+                let il = layer.il as usize;
+                if il >= words.len() {
+                    return Err(format!("MoE fault word for layer {il} outside workspace"));
+                }
+                Some(crate::dsv4_grouped::MoeFault(
+                    words.device_ptr(&stream).0 + (il * std::mem::size_of::<i32>()) as u64,
+                ))
+            }
+            _ => None,
+        };
         let work = fresh
             .as_mut()
             .or(vws.grouped_work.as_mut())
             .ok_or("grouped workspace missing")?;
+        work.defer_faults(fault);
         let mut compute = EpCompute {
             xq: &vws.xq,
             xs: &vws.xs,
@@ -17330,6 +17363,15 @@ impl Dsv4Gpu {
                 vstate.bytes[si] +=
                     C4Gather::ensure(&mut vws.c4_gather, &stream, vstate.tmax, vws.idx_stride)?;
             }
+            if let Some(words) = vws.moe_fault.as_mut() {
+                // A round that ended in an error never read its words back; clear them.
+                if vws.moe_fault_armed {
+                    stream
+                        .memset_zeros(words)
+                        .map_err(e("clear stale MoE faults"))?;
+                }
+                vws.moe_fault_armed = true;
+            }
             write_pinned_i32(&mut vws.tok_host, &tok_i32)?;
             write_pinned_i32(&mut vws.pos_host, &pos_i32)?;
             let tok_host = pinned_i32(&vws.tok_host, t)?;
@@ -17597,6 +17639,7 @@ impl Dsv4Gpu {
                 self.head_logits_dev(step, host_math)?;
                 dtoh_f32(&stream, &step.logits)?
             };
+            self.take_moe_faults(&mut vstate.ws)?;
             self.prefill_head_counts
                 .last_rows
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -17677,8 +17720,48 @@ impl Dsv4Gpu {
                 .map_err(e("dtoh argmax batch"))?;
             stream_last.synchronize().map_err(e("sync argmax batch"))?;
         }
+        self.take_moe_faults(&mut vstate.ws)?;
         vstate.open = Some((pos0, t));
         Ok((logits, am.into_iter().map(|x| x as u32).collect()))
+    }
+
+    /// Read each armed stage's MoE fault words once and disarm them (memra #670). The
+    /// transaction's route and FP8-to-half mirror checks all landed there, so a nonzero word
+    /// fails it closed with the synchronous arm's reason: nothing has committed yet and no
+    /// token has left the engine. The synced output exits call this after their readback;
+    /// [`Self::commit_verify_dev`] calls it for the exits that return without one.
+    fn take_moe_faults(&self, ws: &mut [VerifyWs]) -> Res<()> {
+        let mut first = None;
+        for (si, vws) in ws.iter_mut().enumerate() {
+            if !vws.moe_fault_armed {
+                continue;
+            }
+            let Some(words) = vws.moe_fault.as_mut() else {
+                continue;
+            };
+            let st = &self.stages[si];
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind MoE fault read"))?;
+            let stream = st.gpu.stream();
+            stream
+                .memcpy_dtoh(words, &mut vws.moe_fault_host[..])
+                .map_err(e("MoE fault read"))?;
+            stream.synchronize().map_err(e("MoE fault sync"))?;
+            if let Some(il) = vws.moe_fault_host.iter().position(|&w| w != 0) {
+                first.get_or_insert((il, vws.moe_fault_host[il]));
+                stream.memset_zeros(words).map_err(e("clear MoE faults"))?;
+            }
+            vws.moe_fault_armed = false;
+        }
+        match first {
+            Some((il, word)) => Err(format!(
+                "DSV4 grouped MoE layer {il}: {}",
+                crate::dsv4_grouped::moe_fault_reason(word)
+            )),
+            None => Ok(()),
+        }
     }
 
     /// Commit the first `n_commit` positions of the open round and roll the rest back
@@ -17705,6 +17788,7 @@ impl Dsv4Gpu {
             n_commit >= 1 && n_commit <= t,
             "commit {n_commit} outside round width {t}"
         );
+        self.take_moe_faults(&mut vstate.ws)?;
         self.commit_verify_dev_plane(
             &mut state.caches,
             &mut vstate.layers,
@@ -20451,6 +20535,65 @@ mod dense_wo_a_grouped_fp8_component_tests {
         );
         println!(
             "PASS grouped wo_a FP8: groups=8 rows/group=1024 k=4096 bit-exact, padding guarded, dispatch_delta=1, small=2x128, malformed strides refused"
+        );
+    }
+
+    unsafe extern "C" {
+        fn memra_dsv4_dense_fast_set_for_gate(enabled: i32) -> i32;
+        fn memra_dsv4_dense_fast_restore_default_for_gate() -> i32;
+        fn memra_dsv4_dense_fast_counts_for_gate(fp8: *mut u64, dots: *mut u64) -> i32;
+    }
+
+    fn dense_fast_fp8_enqueues() -> u64 {
+        let mut counts = [0u64; 2];
+        let rc = unsafe { memra_dsv4_dense_fast_counts_for_gate(&mut counts[0], &mut counts[1]) };
+        assert_eq!(rc, 0);
+        counts[0]
+    }
+
+    /// The grouped launch takes grouped dense fast exactly when the per-group
+    /// slices would take dense fast, and every (slice kernel, grouped kernel)
+    /// pair in the matrix is bit-identical: legacy, exact tail, and dense fast
+    /// slices against the legacy grouped and the grouped dense-fast launches.
+    #[test]
+    #[ignore = "requires an exclusively locked CUDA device; grouped dense-fast wo_a identity matrix"]
+    fn cuda_gemv_fp8_grouped_dense_fast_matches_every_slice_program() {
+        let gpu = memra_runtime::Gpu::new(0).expect("GPU");
+        let stream = gpu.stream();
+        // (exact tail, dense fast) for the slices, then for the grouped launch.
+        let programs = [(false, false), (true, false), (true, true)];
+        let mut cells = 0;
+        for (groups, rows) in [(8, 1024), (2, 128), (3, 256)] {
+            for &(slice_tail, slice_fast) in &programs {
+                for &(grouped_tail, grouped_fast) in &programs {
+                    let mut f = make_fixture(&stream, groups, rows, 4096);
+                    super::set_dense_exact_tail_for_gate(slice_tail).unwrap();
+                    assert_eq!(
+                        unsafe { memra_dsv4_dense_fast_set_for_gate(i32::from(slice_fast)) },
+                        0
+                    );
+                    unsafe { launch_old_grouped_slices(&stream, &mut f) };
+                    super::set_dense_exact_tail_for_gate(grouped_tail).unwrap();
+                    assert_eq!(
+                        unsafe { memra_dsv4_dense_fast_set_for_gate(i32::from(grouped_fast)) },
+                        0
+                    );
+                    let before = dense_fast_fp8_enqueues();
+                    unsafe { launch_new_grouped(&stream, &mut f) };
+                    assert_eq!(
+                        dense_fast_fp8_enqueues() - before,
+                        u64::from(grouped_tail && grouped_fast),
+                        "grouped dense fast engages once, only when the slices would take it"
+                    );
+                    assert_fixture_bit_identity(&stream, &f);
+                    cells += 1;
+                }
+            }
+        }
+        super::restore_dense_exact_tail_default_for_gate();
+        unsafe { memra_dsv4_dense_fast_restore_default_for_gate() };
+        println!(
+            "PASS grouped dense-fast wo_a FP8: cells={cells} shapes=8x1024,2x128,3x256 k=4096 slice programs=3 grouped programs=3 bit-exact, dense-fast enqueue=1 only on the dense-fast arm"
         );
     }
 }

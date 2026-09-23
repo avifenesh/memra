@@ -1,0 +1,8 @@
+START utc=2026-09-23T11:45:09Z bin=/root/lane/target-latbase/release/memra-server env=MEMRA_ENV_AUDIT=warn
+READY after=120s port=43323
+CELL warmup c=1 ok=1/1 agg=40.33 tok/s decode_p50=56.38 tok/s ttft_p50=243 ms tpot_p50=17.74 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=53.80 tok/s decode_p50=55.92 tok/s ttft_p50=197 ms tpot_p50=17.88 ms errs=[]
+CELL sampled-c1 c=1 ok=8/8 agg=49.49 tok/s decode_p50=51.28 tok/s ttft_p50=198 ms tpot_p50=19.50 ms errs=[]
+CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=53.72 tok/s decode_p50=55.88 tok/s ttft_p50=197 ms tpot_p50=17.90 ms errs=[]
+CELLS_DONE utc=2026-09-23T11:48:50Z
+TERMINAL rc=0 utc=2026-09-23T11:48:52Z

@@ -1329,6 +1329,53 @@ unsafe extern "C" {
     ) -> i32;
     pub fn memra_moe_kq_gemm_sk_gu_half2_dispatches() -> u64;
     pub fn memra_moe_kq_gemm_sk_m1_half2_dispatches() -> u64;
+    // DSV4 one-token streaming visitor (memra #664, the plain one-row default): one warp per
+    // n8 column tile over the full K, the same m16n8k16 chain and epilogue as the sktail
+    // visitor, bit for bit. `slots` bounds grid.y; rows past the CSR end exit on the device.
+    pub fn memra_moe_kq_m1_stream(
+        table: *const u64,
+        proj: i32,
+        n_expert: i32,
+        ex_ids: *const i32,
+        act_f16: *const core::ffi::c_void,
+        y_f32: *mut f32,
+        row_scale: *const f32,
+        ex_off_dev: *const i32,
+        n_active: i32,
+        slots: i32,
+        in_f: i32,
+        out_f: i32,
+        row_bytes: i64,
+        stream: *mut core::ffi::c_void,
+    ) -> i32;
+    pub fn memra_moe_kq_m1_stream_dispatches() -> u64;
+    // DSV4 multi-row streaming visitor (the verify-round companion): the CTA at each 16-row
+    // chunk start of a CSR group puts the chunk's rows in the MMA m16 dimension; the same chain and
+    // epilogue as sktail per row, bit for bit. `slots` bounds grid.y.
+    pub fn memra_moe_kq_mrow_stream(
+        table: *const u64,
+        proj: i32,
+        n_expert: i32,
+        ex_ids: *const i32,
+        act_f16: *const core::ffi::c_void,
+        y_f32: *mut f32,
+        row_scale: *const f32,
+        ex_off_dev: *const i32,
+        n_active: i32,
+        slots: i32,
+        in_f: i32,
+        out_f: i32,
+        row_bytes: i64,
+        stream: *mut core::ffi::c_void,
+    ) -> i32;
+    pub fn memra_moe_kq_mrow_stream_dispatches() -> u64;
+    // Component-test probe: 16 codes x 256 scale bytes of the visitor's f16 B value (`out`)
+    // and the sktail store's value (`ref`).
+    pub fn memra_moe_kq_m1_stream_dequant_probe(
+        out: *mut u16,
+        reference: *mut u16,
+        stream: *mut core::ffi::c_void,
+    ) -> i32;
 }
 
 /// W4A8-MMQ DEFAULT-FLIP seam (2026-07-05): the vendored MMQ prefill suite is DEFAULT-ON — NVFP4

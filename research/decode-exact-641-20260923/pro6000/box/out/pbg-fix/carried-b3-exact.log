@@ -1,0 +1,23 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); batch=3
+[fa-pool] grow #0 dev=0 o_len 0 -> 233472 ml_len 0 -> 912 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 233472 -> 466944 ml_len 912 -> 1824 (retired kept, zero=false)
+seq 0 (T=600): prefill argmax batched=198 individual=198 MATCH
+seq 0: exact logits diff 0/248320 h_seed diff 0/5120 hidden diff 0/3072000
+seq 1 (T=617): prefill argmax batched=220 individual=220 MATCH
+seq 1: exact logits diff 0/248320 h_seed diff 0/5120 hidden diff 0/3159040
+seq 2 (T=634): prefill argmax batched=75 individual=75 MATCH
+seq 2: exact logits diff 0/248320 h_seed diff 0/5120 hidden diff 0/3246080
+seq 0: decode-16 stream MATCH
+seq 0: teacher-forced decode logit diff 0
+seq 1: decode-16 stream MATCH
+seq 1: teacher-forced decode logit diff 0
+seq 2: decode-16 stream MATCH
+seq 2: teacher-forced decode logit diff 0
+carried seq 0 (P=40,S=18): suffix argmax batched=220 single=220 MATCH
+carried seq 1 (P=53,S=25): suffix argmax batched=220 single=220 MATCH
+carried seq 2 (P=66,S=32): suffix argmax batched=13 single=13 MATCH
+carried seq 0: decode-16 stream MATCH
+carried seq 1: decode-16 stream MATCH
+carried seq 2: decode-16 stream MATCH
+ALL GREEN: prime-batch gate (batch=3, uneven lengths)
