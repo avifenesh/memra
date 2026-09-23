@@ -57,10 +57,12 @@ servable speedup of the same output.
 |---|---|---|---|---|---|---|---|---|
 | plain = DSpark | aea6e69e | 26ac8df7 | 850f75ed | a7784b9a | 7568f9b3 | 9dd1aedd | 4fd72390 | 937f04d8 |
 
-**Acceptance** (`[dspark-acc]` lines in `raw/spec-dspark-r1/serve.log`): greedy 2178 of 4471
-drafted over 913 rounds (0.487, 4.90 drafted per round, 3.39 committed per round); sampled 1403
-of 3140 over 637 rounds (0.447). A greedy round costs 3.39 x 17.85 = 60.5 ms, 2.35 plain steps,
-so DSpark buys 1.44x plain greedy and 1.30x plain sampled.
+**Acceptance** (`[dspark-acc]` lines in `raw/spec-dspark-r1/serve.log`, per cell): greedy c1
+(serve.log lines 57..78, the 8 cell requests) 1437 of 2961 drafted over 603 rounds (0.485, 4.91
+drafted per round, 3.38 committed per round); sampled c1 1403 of 3140 over 637 rounds (0.447).
+The log also holds the warmup request (6 rounds) and the ignore-eos cell (304 rounds), which are
+not in either figure. A greedy round costs 3.38 x 17.85 = 60.4 ms, 2.34 plain steps, so DSpark
+buys 1.44x plain greedy and 1.30x plain sampled.
 
 **Concurrency.** The route is serial (`capacity=serial`): c4 and c16 aggregate equal c1 and the
 queue shows up as TTFT, and at c16 23 of 32 requests got 429 from the admission book. This part
