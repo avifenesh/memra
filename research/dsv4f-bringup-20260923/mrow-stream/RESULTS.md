@@ -98,7 +98,11 @@ rows returned the same greedy and sampled hashes as the DSpark rows above.
   MEMRA_DSV4_DECODE_PATH=device`) on the lane tree: PASS on served defaults (`raw/gates/mrow-served/`,
   binary `0c521c7e...`). The first attempt (`raw/dspark-served/`) refused at rc=2 because the queue
   did not set the drafter.
-- MROWGATE_RECEIPTS
+- Rerun on the engagement-asserting tree `515178145` (`raw/gates/mrowgate/`, binary `97d8a1c6...`,
+  queue summary `raw/gates/q-mrowgate.summary`): served defaults (`--served`) PASS with arm DB
+  reporting 11352 multi-row dispatches; historical pins PASS with 0 dispatches. Both arms: 160/160
+  spec==plain literal in the sequential and batched arms, batched==sequential on 14 cells (77 logit
+  rows, 3206 cache classes), bit for bit.
 
 ## Against the bound
 
