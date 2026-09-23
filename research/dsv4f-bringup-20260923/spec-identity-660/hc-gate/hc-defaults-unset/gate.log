@@ -1,0 +1,102 @@
+START utc=2026-09-23T01:59:07Z cmd=/root/lane/target-comb/release/dsv4_hc_dot_split_gate /data/dsv4f/nvfp4 /root/box/tape-rebuild.txt /root/rcpt/hc-defaults-unset/out --defaults
+DEFAULT_POLICY before_override=true hc_dot_split=true slices=16
+HC_DOT_SPLIT_POLICY on=true
+[load] plain sampler: Device
+[load] sampled candidate order: Radix
+[load] placement: split_at=22 trunk_layers=43 dspark_tail_reserve=0.00 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: TpEpAllLayers | layers=43 per-rank-resident=all
+[load] indexer score: Scalar
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 526.4ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 2 rank copies done t=23s
+[load] layer 7 -> 2 rank copies done t=46s
+[load] layer 11 -> 2 rank copies done t=69s
+[load] layer 15 -> 2 rank copies done t=92s
+[load] layer 19 -> 2 rank copies done t=116s
+[load] layer 23 -> 2 rank copies done t=139s
+[load] layer 27 -> 2 rank copies done t=162s
+[load] layer 31 -> 2 rank copies done t=185s
+[load] layer 35 -> 2 rank copies done t=208s
+[load] layer 39 -> 2 rank copies done t=231s
+[load] layer 42 -> 2 rank copies done t=249s
+[load] sink score: Scalar
+[TP/EP load] local expert banks resident by ID: rank0=0..128, rank1=128..256; peer dispatch disabled
+[load] expert program: matrix (grouped ModelOpt split-plane executor via dsv4_grouped; tensor-core MMA class, the loaded default since 2026-09-11), EP pair (all-layer TP/EP local banks)
+[attention-TP2] packed rank-local Q_b/wo_a/wo_b: heads=32 groups=4 wo_b_k=4096 numeric_class=dsv4_attention_wo_b_input_split_f32_rank_reduce
+[dsv4-doors] program=loaded door="replay cadence" env=MEMRA_DSV4_REPLAY_CADENCE merged=#374 declared_default=On resolved=NoServingCaller("full-token replay is armed per request by a gate binary only; no serving or eager request arms it, so the cadence choice has no caller") disposition=ReclassifyAsGateInput
+[dsv4-doors] program=loaded door="dense exact-tail transport" env=MEMRA_DSV4_DENSE_EXACT_TAIL merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="dense-fast" env=MEMRA_DSV4_DENSE_FAST merged=#404 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="HC dot split S16" env=MEMRA_DSV4_HC_DOT_SPLIT merged=#418 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+[dsv4-prefill-f16g] GU_FUSE ENGAGED: rows=1 live_slots=6 hidden=4096 inter=2048 ModelOpt NVFP4 f16-MMA class
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=86 sha256=7f6e764ab39d386d2e2d1a3d750e9fdc9274daa2fa0d3ebeaed178afaf342180
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=f93b8bfc25288da396d32dec53cf6ba5795d91cb2d9965c2d2604f2f1a233ad0
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=86 sha256=47c6ab8af83e1e2a89835c8537cd4d74a706fc134d7f0324aa5962f65772ac30
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=86 sha256=b397fde8627465bceca254a24c13474b115954f7bde705d4a1ee82b716cc3c3e
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=86 sha256=447d1ec1bfcd2ef9c359dbadcfdfc60c1cd30e8843c5c31c11e190a9510da9cc
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=41c0783a58f5247c07bf1d273f23ad145cbbaf35bde7f91710da747ca9eeedd3
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=86 sha256=06e751e4165421f5c5dcee43bffcd53b0812036dd4e34fa5b38a0a57dca1b9f9
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=86 sha256=e702de1cd646c612567df6eb69adb2c25acc23719afe128ee0d4638ca920af06
+REFUSAL rank=0 layer=0 position=258 cache_unchanged=true no_commit=true quarantined=true
+REFUSAL rank=0 layer=0 position=259 cache_unchanged=true no_commit=true quarantined=true
+REFUSAL rank=0 layer=21 position=383 cache_unchanged=true no_commit=true quarantined=true
+REFUSAL rank=0 layer=42 position=511 cache_unchanged=true no_commit=true quarantined=true
+REFUSAL rank=1 layer=0 position=258 cache_unchanged=true no_commit=true quarantined=true
+REFUSAL rank=1 layer=0 position=259 cache_unchanged=true no_commit=true quarantined=true
+REFUSAL rank=1 layer=21 position=383 cache_unchanged=true no_commit=true quarantined=true
+REFUSAL rank=1 layer=42 position=511 cache_unchanged=true no_commit=true quarantined=true
+QUALIFIED {"hc_dot_split":true,"generated_sha256":"a2ae752218e6ce56284df762d6b1cd2f42642139c090215985f4bfef76d7c36c","final_logits_sha256":"a38276b67eef9c473d6fc915f03b72d33e0da7907a4bc35930be9083f0534b60","final_cache_digest":[8592032092042834658, 8592032092042834658],"final_hidden_digest":[16853998025571769515, 16853998025571769515],"positions":256,"within_class":true}
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=86 sha256=6128096eb67831623ab339997c70d8fa134b58ff3149c34154ff5be542b33aef
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=01ed1590416155d3013a139221a7dac58eef66c5cabb7c947d39dfd8bc36226f
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=86 sha256=975d79eecbf8f4b91e34be065262bfa4e1750f117f5ba6fa288df596e895125c
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=86 sha256=800e6feb590d10fdfe3285b259cd6a73b105e0e35e50da0fed5bda788ca2fe34
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=86 sha256=f054f6820a6aab81bc8b9a82302fe9e17864707a5416d80ef3f7ee96bc23c822
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=367be3949eb6f517975f8445a0b9f57d68ee7248716a4a95249cc10be5ea7cf0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=86 sha256=80333c281b3949109e5eaab12f339cb652732305ae78524d23cc030fbf9c1700
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=86 sha256=672d3ab6aede950c94d02d53ae860200a133291fa06b699a21d44f521230e50c
+MEASURE {"row":0,"arm_row":0,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":11832421496,"decode_tok_s":21.635469974302545,"eligible":true,"looped":false,"generated_sha256":"a2ae752218e6ce56284df762d6b1cd2f42642139c090215985f4bfef76d7c36c","final_logits_sha256":"a38276b67eef9c473d6fc915f03b72d33e0da7907a4bc35930be9083f0534b60","final_cache_digest":[8592032092042834658, 8592032092042834658],"final_hidden_digest":[16853998025571769515, 16853998025571769515],"first_capture_inside_timing":true,"captures_before":[0, 0],"captures":[3, 1],"device_replays":[[256, 256], [256, 256]]}
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=86 sha256=6128096eb67831623ab339997c70d8fa134b58ff3149c34154ff5be542b33aef
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=01ed1590416155d3013a139221a7dac58eef66c5cabb7c947d39dfd8bc36226f
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=86 sha256=975d79eecbf8f4b91e34be065262bfa4e1750f117f5ba6fa288df596e895125c
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=86 sha256=800e6feb590d10fdfe3285b259cd6a73b105e0e35e50da0fed5bda788ca2fe34
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=86 sha256=f054f6820a6aab81bc8b9a82302fe9e17864707a5416d80ef3f7ee96bc23c822
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=367be3949eb6f517975f8445a0b9f57d68ee7248716a4a95249cc10be5ea7cf0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=86 sha256=80333c281b3949109e5eaab12f339cb652732305ae78524d23cc030fbf9c1700
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=86 sha256=672d3ab6aede950c94d02d53ae860200a133291fa06b699a21d44f521230e50c
+MEASURE {"row":1,"arm_row":1,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":11769971233,"decode_tok_s":21.750265564136743,"eligible":true,"looped":false,"generated_sha256":"a2ae752218e6ce56284df762d6b1cd2f42642139c090215985f4bfef76d7c36c","final_logits_sha256":"a38276b67eef9c473d6fc915f03b72d33e0da7907a4bc35930be9083f0534b60","final_cache_digest":[8592032092042834658, 8592032092042834658],"final_hidden_digest":[16853998025571769515, 16853998025571769515],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[512, 512], [512, 512]]}
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=86 sha256=6128096eb67831623ab339997c70d8fa134b58ff3149c34154ff5be542b33aef
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=01ed1590416155d3013a139221a7dac58eef66c5cabb7c947d39dfd8bc36226f
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=86 sha256=975d79eecbf8f4b91e34be065262bfa4e1750f117f5ba6fa288df596e895125c
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=86 sha256=800e6feb590d10fdfe3285b259cd6a73b105e0e35e50da0fed5bda788ca2fe34
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=86 sha256=f054f6820a6aab81bc8b9a82302fe9e17864707a5416d80ef3f7ee96bc23c822
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=367be3949eb6f517975f8445a0b9f57d68ee7248716a4a95249cc10be5ea7cf0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=86 sha256=80333c281b3949109e5eaab12f339cb652732305ae78524d23cc030fbf9c1700
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=86 sha256=672d3ab6aede950c94d02d53ae860200a133291fa06b699a21d44f521230e50c
+MEASURE {"row":2,"arm_row":2,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":11769476086,"decode_tok_s":21.75118060730983,"eligible":true,"looped":false,"generated_sha256":"a2ae752218e6ce56284df762d6b1cd2f42642139c090215985f4bfef76d7c36c","final_logits_sha256":"a38276b67eef9c473d6fc915f03b72d33e0da7907a4bc35930be9083f0534b60","final_cache_digest":[8592032092042834658, 8592032092042834658],"final_hidden_digest":[16853998025571769515, 16853998025571769515],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[768, 768], [768, 768]]}
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=86 sha256=6128096eb67831623ab339997c70d8fa134b58ff3149c34154ff5be542b33aef
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=01ed1590416155d3013a139221a7dac58eef66c5cabb7c947d39dfd8bc36226f
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=86 sha256=975d79eecbf8f4b91e34be065262bfa4e1750f117f5ba6fa288df596e895125c
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=86 sha256=800e6feb590d10fdfe3285b259cd6a73b105e0e35e50da0fed5bda788ca2fe34
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=86 sha256=f054f6820a6aab81bc8b9a82302fe9e17864707a5416d80ef3f7ee96bc23c822
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=367be3949eb6f517975f8445a0b9f57d68ee7248716a4a95249cc10be5ea7cf0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=86 sha256=80333c281b3949109e5eaab12f339cb652732305ae78524d23cc030fbf9c1700
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=86 sha256=672d3ab6aede950c94d02d53ae860200a133291fa06b699a21d44f521230e50c
+MEASURE {"row":3,"arm_row":3,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":11768949408,"decode_tok_s":21.752154005011082,"eligible":true,"looped":false,"generated_sha256":"a2ae752218e6ce56284df762d6b1cd2f42642139c090215985f4bfef76d7c36c","final_logits_sha256":"a38276b67eef9c473d6fc915f03b72d33e0da7907a4bc35930be9083f0534b60","final_cache_digest":[8592032092042834658, 8592032092042834658],"final_hidden_digest":[16853998025571769515, 16853998025571769515],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[1024, 1024], [1024, 1024]]}
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=86 sha256=6128096eb67831623ab339997c70d8fa134b58ff3149c34154ff5be542b33aef
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=01ed1590416155d3013a139221a7dac58eef66c5cabb7c947d39dfd8bc36226f
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=86 sha256=975d79eecbf8f4b91e34be065262bfa4e1750f117f5ba6fa288df596e895125c
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=86 sha256=800e6feb590d10fdfe3285b259cd6a73b105e0e35e50da0fed5bda788ca2fe34
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=86 sha256=f054f6820a6aab81bc8b9a82302fe9e17864707a5416d80ef3f7ee96bc23c822
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=367be3949eb6f517975f8445a0b9f57d68ee7248716a4a95249cc10be5ea7cf0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=86 sha256=80333c281b3949109e5eaab12f339cb652732305ae78524d23cc030fbf9c1700
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=86 sha256=672d3ab6aede950c94d02d53ae860200a133291fa06b699a21d44f521230e50c
+MEASURE {"row":4,"arm_row":4,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":11767851294,"decode_tok_s":21.754183801636337,"eligible":true,"looped":false,"generated_sha256":"a2ae752218e6ce56284df762d6b1cd2f42642139c090215985f4bfef76d7c36c","final_logits_sha256":"a38276b67eef9c473d6fc915f03b72d33e0da7907a4bc35930be9083f0534b60","final_cache_digest":[8592032092042834658, 8592032092042834658],"final_hidden_digest":[16853998025571769515, 16853998025571769515],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[1280, 1280], [1280, 1280]]}
+PASS defaults hc_dot_split=true identity_steps=256 refusals=8 sanity_rows=5 first_capture_rows=1 performance_claim=false
+GATE_DONE rc=0 utc=2026-09-23T02:06:02Z

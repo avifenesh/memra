@@ -956,6 +956,20 @@ explicit gate rollback and refusal, and verify a new thread's environment policy
 `tools/test-dsv4-dense-control-policy.sh` exercises the actual exact-tail and
 all five dense-TC drivers under unset, explicit S16 and zero before CUDA calls.
 
+### DSv4 DSpark spec == plain on the served program (#660)
+
+`dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1] --served` runs plain,
+sequential-verify and batched T=k+1 verify arms in one process on the served defaults
+(`MEMRA_DSV4_DRAFTER=dspark MEMRA_DSV4_DECODE_PATH=device`, chunked prefill and prime, the
+matrix expert program, the serve route's depth cap and verify threshold). It requires greedy
+spec == plain byte-exact, batched verify logits and every live cache class after commit bit-equal
+to sequential decode over every compressor phase and accept count, accepted-position ring writes,
+and determinism across runs. Without `--served` it pins `MEMRA_DSV4_HC_DOT_SPLIT=0` and
+`MEMRA_DSV4_DENSE_FAST=0`, the historical program. Run it on the pair under `/tmp/memra-gpu.lock`
+for any change that touches a DSv4 dense, HC, verify or commit path. Before #660 the served run
+failed every bit-gate cell: the HC24 split ran only on one-row calls, so verify rows took the
+sequential class. Receipts: `research/dsv4f-bringup-20260923/`.
+
 
 ### DSv4 gate source tape (#657)
 
