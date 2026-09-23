@@ -157,3 +157,140 @@ the reason in section 2.
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
+
+Every number below is read from the committed receipts named next to it; every quote is the captured server log.
+
+### 2.1 Commits and timeline (UTC, 2026-09-23)
+
+| commit | time | what |
+|---|---|---|
+| `9491bc5d9` | 14:08:50 (pushed before 14:09) | section 1, the client, the reader, the driver, the red build record, before any boot |
+| (first boot) | 14:09:07 | `red-G1` start (`rtx5090-day33/run.log` line 1) |
+| `30a5ab697` | 14:26:57 | `fix(server)`: the door-armed booking, admit line and prefill-OOM park, the CPU tests, the gate script (not wired), the `docs/FLAGS.md` door row |
+| `9b4b764a8` | 14:33:14 | the local chain after the red phase, the target-card chain, the green build record |
+| this commit | after 15:49:23 | the local receipts, `SUMMARY.txt`, `FAULTS.txt`, the gate wiring, this section, `STATE.md`, the INDEX row |
+
+Local boots, one lock hold each: red 14:09:07 to 14:49:18, the red gate run 14:49:25 to 14:53:41, green 14:53:41 to 15:35:55, the two
+green gate runs 15:36:00 to 15:49:23. Waits for the 5090 lock were other lanes' holds between boots (a dsv4 GPU test
+at 14:30:31, integ52 at 15:20:29), never inside a boot.
+
+### 2.2 Notes on section 1 (no rule, arm, value or reader changed)
+
+- **Driver correction.** `day33-run.sh` as pre-registered named the binaries `target/day33/memra-server-<role>`.
+  `run-day26-cell.sh` stops its server with `pgrep -x memra-server`, which cannot match that name, so after
+  `red-G1`'s client finished its whole workload (14:15:44) the cell waited on a server it could not stop. I stopped
+  my own driver and then my own server (SIGTERM, pid and cwd checked), and the cell completed its receipts
+  (`REPORT.txt`, `finished.txt`). I moved the binary to `target/day33/red/memra-server` (same sha256
+  `7497071e...36b7b3`) and restarted the driver on the remaining boots. The fix is in `day33-run.sh` at `30a5ab697`,
+  and `run.log` line 2 records it. `red-G1`'s receipts are those of a finished client.
+- **Target card NOT RUN.** The chain started at 14:51:38, 3 s after lane A's `LANE-A-PRO-DONE`
+  (`pro-single-day33/start.log`). By 15:31 the address answered with a different SSH host key; the lead confirmed
+  that the BOX3 spot instance is gone from the account and that the address now belongs to another machine. The key
+  was not accepted, `known_hosts` was not edited, and nothing more was sent to the address. No target-card receipt
+  exists beyond the launch record. The PRO 6000 part of memra#680 is owed (2.6).
+- The reader counts `[admit-mem] id=` lines only. A plain grep for `verdict=admit ` also matches the predictive
+  shadow's `[admit-predict]` lines.
+
+### 2.3 Verdict lines, verbatim (`rtx5090-day33/SUMMARY.txt`)
+
+V-BOOT is PASS on all 8 boots. The `G-NOOM` and `G-BOOK` lines of the red boots (FAIL, by construction on main)
+are in the file.
+
+```
+== R-OOM / G-NOOM / G-BOOK (ON boots)
+DAY33 R-OOM card=rtx5090 boot=red-G1 role=red shape=G1 v=2048 oom_lines=0 burst={200: 64} first_oom=none -> NOT-RED
+DAY33 R-OOM card=rtx5090 boot=red-G2 role=red shape=G2 v=8192 oom_lines=35 burst={429: 10, 503: 35, 200: 19} first_oom=server.log:1704 1790173620107 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") -> RED
+DAY33 R-OOM card=rtx5090 boot=red-R32 role=red shape=R32 v=32768 oom_lines=2 burst={503: 2, 429: 11, 200: 19} first_oom=server.log:1560 1790174205208 [engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") -> RED
+DAY33 R-OOM card=rtx5090 boot=green-G2-r1 role=green shape=G2 v=8192 oom_lines=0 burst={429: 28, 200: 36} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=rtx5090 boot=green-G2-r1 role=green shape=G2 oom_lines=0 burst_503=0 crash_lines=0 burst_200=36 other_non200=0 r429=28 refuse_lines=28 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=rtx5090 boot=green-G2-r1 role=green shape=G2 admit_lines=52 admit_lines_in_burst=36 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=rtx5090 boot=green-G2-r2 role=green shape=G2 v=8192 oom_lines=0 burst={429: 28, 200: 36} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=rtx5090 boot=green-G2-r2 role=green shape=G2 oom_lines=0 burst_503=0 crash_lines=0 burst_200=36 other_non200=0 r429=28 refuse_lines=28 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=rtx5090 boot=green-G2-r2 role=green shape=G2 admit_lines=52 admit_lines_in_burst=36 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=rtx5090 boot=green-R32 role=green shape=R32 v=32768 oom_lines=0 burst={429: 13, 200: 19} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=rtx5090 boot=green-R32 role=green shape=R32 oom_lines=0 burst_503=0 crash_lines=0 burst_200=19 other_non200=0 r429=13 refuse_lines=13 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=rtx5090 boot=green-R32 role=green shape=R32 admit_lines=35 admit_lines_in_burst=19 est_over_booked_free=0 -> PASS
+== V-ID-FIX (green ON against red ON, same shape, sequential rows)
+DAY33 V-ID-FIX card=rtx5090 shape=G2 green=green-G2-r1 red=red-G2 eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID-FIX card=rtx5090 shape=G2 green=green-G2-r2 red=red-G2 eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID-FIX card=rtx5090 shape=R32 green=green-R32 red=red-R32 eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID card=rtx5090 shape=G2 on=green-G2-r1 off=green-off eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID card=rtx5090 shape=G2 on=green-G2-r2 off=green-off eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID card=rtx5090 shape=R32 on=green-R32 off=green-off eligible=16 equal=16 differ=0 -> PASS
+== V-OFF (green OFF against red OFF: the default-OFF program unchanged)
+DAY33 V-OFF card=rtx5090 green=green-off red=red-off rows=16 equal=16 differ=0 admit_mem_lines=0 -> PASS
+DAY33 VERDICT card=rtx5090 boots=8 v_boot_all=True green_noom_book_all=True v_id_fix_all=True v_id_all=True v_off_all=True -> GREEN
+```
+
+The gate script, `tools/admit-mem-burst-gate.sh` at G2 (8192, B = 64), `rtx5090-day33/gate/<run>/VERDICTS.txt`:
+
+```
+## red (7497071ead123e99)
+AMB no prefill OOM: oom_lines=34 status={503: 34, 200: 20, 429: 10} -> FAIL
+AMB typed refusals: served=20 r429=10 refuse_lines=10 retry_after_in_1_60=True other_non200=34 -> FAIL
+AMB booked admits: admit_lines=0 est_over_booked_free=0 served=20 -> FAIL
+AMB boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 [worker]_FATAL=0 [worker]_respawn=0 spec_verify_refused=0 -> PASS
+## green-1 (07a15cff81513314)
+AMB no prefill OOM: oom_lines=0 status={200: 40, 429: 24} -> PASS
+AMB typed refusals: served=40 r429=24 refuse_lines=24 retry_after_in_1_60=True other_non200=0 -> PASS
+AMB booked admits: admit_lines=40 est_over_booked_free=0 served=40 -> PASS
+AMB boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 [worker]_FATAL=0 [worker]_respawn=0 spec_verify_refused=0 -> PASS
+## green-2 (07a15cff81513314)
+AMB no prefill OOM: oom_lines=0 status={200: 36, 429: 28} -> PASS
+AMB typed refusals: served=36 r429=28 refuse_lines=28 retry_after_in_1_60=True other_non200=0 -> PASS
+AMB booked admits: admit_lines=36 est_over_booked_free=0 served=36 -> PASS
+AMB boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 [worker]_FATAL=0 [worker]_respawn=0 spec_verify_refused=0 -> PASS
+```
+
+### 2.4 Unit tests (CPU, `cargo test -p memra-server`)
+
+`--lib` 883 passed, 0 failed; `--tests --no-fail-fast` rc 0 (883 unit, 7 `argv_boot`); `cargo clippy -p memra-server
+--all-targets -- -D warnings` clean; `cargo fmt --all -- --check` clean. The new tests, one per arm:
+
+- `admit_memory::tests::booked_reading_admits_when_the_need_fits_after_the_owed_prime`
+- `admit_memory::tests::booked_reading_defers_what_the_live_reading_would_admit` (the memra#680 arm)
+- `admit_memory::tests::booked_reading_refuses_once_the_budget_is_spent`
+- `admit_memory::tests::zero_pending_is_the_identity` (the door-OFF byte-identity)
+- `admit_memory::tests::admit_arm_renders_the_booked_reading`
+- `worker::tests::pending_prime_rows_are_the_queue_while_priming_only`
+- `worker::tests::booked_headroom_subtracts_the_owed_prime_on_the_primary_device`
+- `worker::tests::prefill_oom_park_is_armed_oom_and_pre_emission_only`
+- `worker::tests::step_oom_park_guard_reads_the_streamed_marker_every_flush_advances` extended: it now counts the
+  prefill predicate's call and pins both prefill arms feeding it the session's own markers.
+
+One whole-suite `--tests` run failed two tests outside the change: `health::tests::no_progress_source_is_the_pre_fix_beat_age_verdict`
+(`left: 41, right: 40`, a wall-clock age) and `tests::responses_carry_rate_limit_headers_and_slot_frees` (`left: 429,
+right: 200`). Each passed 3 of 3 alone, and the next whole run passed. Neither file is touched here.
+
+### 2.5 What the rows say
+
+| shape | red (main `c3eb41d12`) burst | green (the fix `30a5ab697`) burst |
+|---|---|---|
+| G1, 2048, B = 64 | 64 x 200, no OOM (NOT-RED) | not run (not the gate shape) |
+| G2, 8192, B = 64 | 19 x 200, 10 x 429, 35 x 503 (prefill OOM) | 36 x 200, 28 x 429, no OOM (both runs) |
+| R32, 32768, B = 32 | 19 x 200, 11 x 429, 2 x 503 (prefill OOM) | 19 x 200, 13 x 429, no OOM |
+| gate G2, burst only | 20 x 200, 10 x 429, 34 x 503 | 40 x 200, 24 x 429; then 36 x 200, 28 x 429 |
+
+- On the fixed tree every request the card cannot hold is refused with a typed 429 carrying Retry-After, and every
+  admission prints its decision against the booked reading. At G2 the card serves more of the burst than on main (36
+  against 19), because no admitted request dies in prefill.
+- The largest `pending_prime` on any `[admit-mem]` line was 9.24 GB in `green-G2-r1` (9.12 GB in `green-G2-r2`, 5.87 GB
+  in `green-R32`), on a 32 GB card: that is the workspace the live reading could not see.
+- The prefill-OOM park never fired: no `prefill OOM parked` line in any green boot or gate run. It is defense in
+  depth, exercised by its CPU test only.
+- The fix moved no token: V-ID-FIX 16/16 on every green ON boot against red, V-ID 16/16 against green OFF, and V-OFF
+  16/16 with no `[admit-mem] id=` line on the green OFF boot.
+
+### 2.6 Owed
+
+| item | why | price |
+|---|---|---|
+| The PRO 6000 part: `red-R64`, `red-off`, `green-R64`, `green-off` (1.3) on a replacement target card | BOX3 was lost before its first boot (2.2); memra#680 was filed from the target card | 0.1 agent-day plus about 1.5 h of card time, including both builds. The lead is providing the card |
+| The full battery with the wired gate | integration | the lead's integ |
+
+### 2.7 Cleanup and rig state
+
+- Local: the detached worktrees `wt-b33-main` and `wt-b33-fix` removed, `target/day33/` and `target-check/` deleted
+  (the binary hashes stay in `build-red/binary.sha256` and `build-green/binary.sha256`), scratch under `/tmp`
+  deleted. The 5090 lock was released at 15:49:23.
+- Target card: nothing to clean; the instance is gone.

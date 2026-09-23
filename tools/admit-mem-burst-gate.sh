@@ -19,7 +19,9 @@
 #                    `[worker] FATAL`, `[worker] respawn` or `spec verify refused` line.
 #
 # Usage: tools/admit-mem-burst-gate.sh <model.gguf> <memra-server binary> [out_dir]
-#   AMB_PORT (8194), AMB_OPEN (the open-output value), AMB_BURST (requests), AMB_CTX (MEMRA_CTX).
+#   AMB_PORT (8194), AMB_OPEN (8192), AMB_BURST (64), AMB_CTX (65536, MEMRA_CTX). The defaults are the
+#   shape that reproduced memra#680 on the local RTX 5090 (lane B day 33, shape G2: 34 prefill-OOM 503s of 64
+#   on the unfixed tree).
 #   The binary is an argument, not built here, so the red arm (the unfixed tree) and the green arm
 #   run the same gate. Run under the rig lock (`flock /tmp/memra-5090.lock`); the gate boots one
 #   server and never takes the lock itself. Exit 0 when no verdict FAILED; 1 on any FAIL; 2 on setup.
@@ -33,8 +35,8 @@ MODEL="${1:-}"; BIN="${2:-}"
 PORT="${AMB_PORT:-8194}"
 ADDR=127.0.0.1:$PORT
 BASE=http://$ADDR
-OPEN="${AMB_OPEN:-32768}"
-BURST="${AMB_BURST:-32}"
+OPEN="${AMB_OPEN:-8192}"
+BURST="${AMB_BURST:-64}"
 CTX="${AMB_CTX:-65536}"
 OUT="${3:-/tmp/admit-mem-burst-gate-$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$OUT"
