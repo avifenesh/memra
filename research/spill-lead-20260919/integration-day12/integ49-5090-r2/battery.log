@@ -1,0 +1,20 @@
+2026-09-23T04:10:11Z collector hold taken on /tmp/memra-5090.lock (fd 9) tree=d1760ac21d648905f9f61780fe1eab20c6cce501
+2026-09-23T04:10:11Z foreign co-tenant recorded: [1923091, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-23T04:10:11Z start serve-smoke env=[]
+2026-09-23T04:13:54Z done serve-smoke rc=0 serve-smoke: 0 failed
+2026-09-23T04:13:54Z binary after serve-smoke's build: 09bbd855d865374e
+2026-09-23T04:13:54Z start engine-gpu-cells env=[]
+2026-09-23T04:13:58Z done engine-gpu-cells rc=0 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 567 filtered out; finished in 4.07s
+2026-09-23T04:13:58Z start worker-span-cells env=[]
+2026-09-23T04:13:59Z done worker-span-cells rc=0 test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 880 filtered out; finished in 0.35s
+2026-09-23T04:13:59Z start identity-default-on env=[MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-23T04:14:14Z done identity-default-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-23T04:14:14Z start fault-default env=[MEMRA_HOSTGATE_CACHE_MB=64]
+2026-09-23T04:16:01Z done fault-default rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-23T04:16:01Z start fault-plain env=[MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_SERVE_SPEC=0]
+2026-09-23T04:17:41Z done fault-plain rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-23T04:17:41Z start hit-off env=[]
+2026-09-23T04:18:06Z done hit-off rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-23T04:18:06Z start hit-on env=[MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-23T04:18:35Z done hit-on rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-23T04:18:35Z collector hold released; INTEG49-5090-R2-DONE

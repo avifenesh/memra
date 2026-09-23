@@ -948,3 +948,49 @@ boot pays the staging allocation, 29.69 ms.
    span-refusal cell in the fault gate** (covered today by a GPU unit cell only), and returning the staging to the pool
    on the post-take abort (DAY30 finding 4).
 2. to 4. Unchanged.
+
+## Move 2, day 31: DAY30's small owed items closed, the H2D half pre-registered (`DAY31.md`)
+
+**What landed (`33b1285e0`).** Four of the day-30 owed items, one census each (DAY31 section 1). (1a) The settle
+builds a `StagedSpans` guard before `take_d2h_spans`; its `Drop` puts every landed staging buffer back into the
+context's set, and `StagedSpans::landed` (called once, on the `Done` return) is the only way out with the buffers, so
+every one of the 11 `return Err(` after the take returns the staging; the driver's two early exits of `Done` put the
+landed buffers back too. (1b) A fresh staging buffer is charged to the tier governor's pinned ledger on allocation
+(`ResidentCharge::reserve`, the staging tenant, `Priority::Backup`) and released only at the latch's `clear()`; a
+reused buffer is not charged again; a refused charge refuses the span attach through the existing typed arm (`tier D2H
+spans refused: a N-byte staging buffer: the governor's pinned ledger refused N bytes (Capacity) (k f32 spans handed
+back)`): sources back, staging back, the KV ticket unwound, the tier stays on. On one 27B demote the KV leases (about
+1.9 MB) and the pageable residency (159.8 MB) are unchanged; the 157.9 MB staging set moves from uncharged to charged
+once. (1c) A one-shot value of the existing door, `MEMRA_KV_HOST_FAULT=contract-spans`, refuses the served span attach
+before the submit, and the fault gate's `span-refusal` cell asserts the typed line, the tier on, the next demote
+completing and publishing, one staging fill per boot, and r1 to r4 byte-equal to a door-OFF boot. (1d) The
+`demote copy complete off the tick` line ends with `by slot class: conv C (B B), ssm S (B B), hidden H (B B), logits L
+(B B)`, log only. No new `MEMRA_*` name, no new numeric program.
+
+**The H2D half, pre-registered, not landed (DAY31 section 2).** Design H: the helper fills the promote's staging from
+the resident planes (`HostF32::Heap(Arc<[f32]>)`), the request parked; the owner submits the KV batch and 96 typed
+`H2dSpan`s on one ticket at the tick top; the settle takes the spans back before the retire; fail closed, with a new
+fault value `contract-promote-spans` and its gate cell. Options P (an owner memcpy into the staging, 8 to 16 ms, more
+than today's pageable htod) and R (pinned residency) priced and not taken. Acceptance B1 to B5 stated before any code;
+B2 is the promote's owner segment, predicted 5 to 8 ms steady before, median at most 1.5 ms and max at most 3.0 ms after,
+over at least 20 steady promotes.
+
+**The gates (target card, one sitting on `6d940a97c`, `pro-single-day31/box/`).** Identity x4 `ALL GREEN (teeth=0)`,
+failure x2 `ALL GREEN`, `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (142 ok, eleven cells with `span-refusal`: `refusal
+handed back 96 span(s); the next copy-complete carries 96`, `byte-unequal request(s): none`), twin x2 `-> PASS`, hit
+OFF/ON `ALL GREEN (qwen)` with the day-24 census, unit 13 + 6 + 13 + 3, the double-park cell 20 of 20 replays with
+`DAY30 A2 pre-submit steady N=80 median=0.63 ... -> PASS` and `DAY28 VERDICT clauses_failed=0 -> ALL PASS`. Local RTX
+5090: identity default ON `ALL GREEN (teeth=0)`, fault default and plain `ALL GREEN` (142 ok, 48 spans), hit OFF/ON
+`ALL GREEN (qwen)`. The `postpublish` cell's next demote reads `pre-submit 0.93` (day 30 28.71): DAY30 finding 4
+closed. The slot-class line puts the SSM state at 95.6 percent of the 27B image's heap bytes (93.7 to 93.8 on the 9B).
+
+**What Move 2 still owes, in order.**
+
+1. **The recurrent f32 state off the tick**, the remaining halves: **the H2D half** (pre-registered, DAY31 section 2;
+   in order: the log-only owner-segment field and its baseline read, `conformance/h2d_span.rs` and its binding,
+   `submit_h2d_spans` / `take_h2d_spans` with the native cell, the `Arc` resident form, the `Fill` job and the parked
+   state, the settle's take-back, the `contract-promote-spans` fault value and its gate cell, then the sitting against B1
+   to B5), **the D2D half** (the capture and restore recurrent copies; the capture races the next decode, so its
+   ordering needs its own rule), and **the strong-form receipt**. Closed on day 31: the governor charge of the staging,
+   the span-refusal cell in the fault gate, and returning the staging on every post-take refusal.
+2. to 4. Unchanged.
