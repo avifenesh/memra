@@ -59,7 +59,8 @@ fn forward_kernel_census() -> [(usize, u64); 3] {
     // terms (43 for the KV norm/RoPE fusion, a net 215 for the activation
     // packing) went with the three norm doors, which the served ABBA deleted, so
     // the unfused chains are the only chains and these are their counts.
-    [(0, 2741), (2, 3140), (3, 3240)]
+    // Exact attention TP (2026-09-23): two row gathers replace one attention reduction, +43.
+    [(0, 2784), (2, 3183), (3, 3283)]
 }
 
 /// With the split-K doors deleted (memra #461 flip, 2026-09-11) the forward
@@ -102,8 +103,8 @@ fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
     let census = gpu.full_token_replay_census_for_gate(state).unwrap();
     for rank in census {
         assert_eq!(
-            rank[0][2], 86,
-            "all 43 layers' paired collectives must be captured"
+            rank[0][2], 129,
+            "all 43 layers' collectives must be captured: the expert reduction and two attention row gathers"
         );
         assert_eq!(rank[0][3], 1, "embedding capture");
         assert_eq!(rank[0][4], 86, "both HC posts in every layer");
@@ -123,7 +124,7 @@ fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
                 );
                 assert_eq!(
                     [rank[slot][2], rank[slot][3], rank[slot][4], rank[slot][6]],
-                    [86, 1, 86, 0]
+                    [129, 1, 86, 0]
                 );
             }
         }
