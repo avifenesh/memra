@@ -25,6 +25,14 @@ to the learner.
 - One explicitly non-production GPU, real CUDA allocation before staging,
   sampled temperature 0.7/top-k 20/top-p 0.95 and default thinking.
   No local-rig gate, bench or smoke server.
+- `workloads-v3/manifest.json` freezes one disjoint eight-turn code
+  qualifier, three calibration conversations and six heldout
+  conversations, with distinct seeds and exact user-prompt hashes.
+  Use `max_new=8192` and `ctx=65536` for all native arms. The C=0
+  qualifier must reach a fenced parseable final Python function on
+  8/8 turns, with no exact output loop, before opening any heldout
+  throughput result. A context/OOM or format failure stops this
+  version; a changed budget needs a new protocol and corpus freeze.
 
 ## Correctness before learning
 

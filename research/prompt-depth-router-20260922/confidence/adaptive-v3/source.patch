@@ -55,6 +55,15 @@ diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
          embd_gpu: Option<&CudaSlice<u8>>,
          embd_qt: i32,
          embd_rb: usize,
+@@ -10443,7 +10463,7 @@
+                     e.htod_u32_into(g_dmask, &vec![u32::MAX; dmask_words])?;
+                 }
+                 let g_dmask_ro: &CudaSlice<u32> = &*g_dmask;
+-                let with_prob = p_min > 0.0;
++                let with_prob = confidence_on;
+                 // CAPTURE-RETAIN (#68 fix): one keeper for the whole chain — every graph's
+                 // warmup transients stay pinned as long as any of them replays.
+                 let cap_res = (|| -> Result<DraftChainGraphs, Box<dyn std::error::Error>> {
 @@ -10621,7 +10641,7 @@
                          g_p,
                          &mut *scratch,
@@ -354,6 +363,24 @@ diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
                  let (policy, traces) = depth_study.as_mut().expect("study timer has policy");
                  if let MtpDepthExperiment::Learned(learner) = &mut **policy {
                      learner.observe_output(
+diff --git a/crates/memra-engine/src/spec/prime.rs b/crates/memra-engine/src/spec/prime.rs
+--- a/crates/memra-engine/src/spec/prime.rs
++++ b/crates/memra-engine/src/spec/prime.rs
+@@ -522,7 +522,13 @@
+             self.constraint
+                 .as_deref()
+                 .is_some_and(|c| c.draft_mask_enabled()),
+-            p_min,
++            self.sess.collect_confidence
++                || self
++                    .sess
++                    .confidence_cutoff
++                    .as_ref()
++                    .map(|cutoffs| cutoffs.iter().any(|c| *c > 0.0))
++                    .unwrap_or(p_min > 0.0),
+             embd_gpu,
+             qt,
+             rb,
 diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engine/src/bin/mtp_depth_study.rs
 --- a/crates/memra-engine/src/bin/mtp_depth_study.rs
 +++ b/crates/memra-engine/src/bin/mtp_depth_study.rs

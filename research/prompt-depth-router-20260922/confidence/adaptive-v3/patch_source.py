@@ -12,6 +12,7 @@ import tarfile
 
 RUST = (
     "crates/memra-engine/src/spec.rs",
+    "crates/memra-engine/src/spec/prime.rs",
     "crates/memra-engine/src/bin/mtp_depth_study.rs",
 )
 PYTHON = ("learn.py", "costs.py", "oracle.py")

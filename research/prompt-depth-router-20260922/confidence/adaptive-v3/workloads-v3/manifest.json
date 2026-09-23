@@ -1,0 +1,664 @@
+{
+  "schema": 1,
+  "generator_sha256": "3f81cf138b92230855cd1a56c388346dc363c206421fa48dede809bd1b5c002a",
+  "scope": "disjoint eight-turn code conversations; fixed source before native model output",
+  "requested_format": "one fenced Python function per turn",
+  "padding_chars_after_first": [
+    4096,
+    256,
+    1024,
+    4096,
+    256,
+    1024,
+    4096,
+    256
+  ],
+  "groups": {
+    "qualification": [
+      {
+        "file": "qualification-0.txt",
+        "sha256": "1a95b4f87d83eea288ff3d6f6faa61cbfc86550d0a5165f07e55bcc8f22c19f2",
+        "seed": 20771000,
+        "topic": "integer rectangles",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "rect_area",
+            "signature": "width: int, height: int -> int",
+            "padding_chars": 4096,
+            "user_sha256": "2ac39713ace8f82d2a979b4ec48075189d702d8d16165dae711e89692b9e316c"
+          },
+          {
+            "turn": 2,
+            "function": "rect_perimeter",
+            "signature": "width: int, height: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "1215eb544107bed11b20713d6d98f407b20c856c4170453c433c929b97eb5520"
+          },
+          {
+            "turn": 3,
+            "function": "is_square",
+            "signature": "width: int, height: int -> bool",
+            "padding_chars": 1024,
+            "user_sha256": "f88c9044935c1aa318a067eb58eb0bf34454eb03ead80be466ae6f6ce9e8935e"
+          },
+          {
+            "turn": 4,
+            "function": "scale_rect",
+            "signature": "width: int, height: int, factor: int -> tuple[int, int]",
+            "padding_chars": 4096,
+            "user_sha256": "b0c1a38a5430f48bbae7db56a994207a1688eb3fc28cc0f2aae13247c9827c22"
+          },
+          {
+            "turn": 5,
+            "function": "rect_fits",
+            "signature": "width: int, height: int, max_width: int, max_height: int -> bool",
+            "padding_chars": 256,
+            "user_sha256": "ee32db3b3a7085581177efad5caedf1b4fff27fd820348086d8ad7b02f0afbc2"
+          },
+          {
+            "turn": 6,
+            "function": "swap_rect",
+            "signature": "width: int, height: int -> tuple[int, int]",
+            "padding_chars": 1024,
+            "user_sha256": "1f92e57aaf6c5fd5dd9042e5b25582f74402aca4c3f9dd2a619ffbfadd40fbf7"
+          },
+          {
+            "turn": 7,
+            "function": "rect_diagonal_squared",
+            "signature": "width: int, height: int -> int",
+            "padding_chars": 4096,
+            "user_sha256": "47a69c0ccf951bd6dd55118e5d5908626b6f414ea6724e8a55702f254e347ed4"
+          },
+          {
+            "turn": 8,
+            "function": "rect_border_cells",
+            "signature": "width: int, height: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "c4d0b5687c42c9ec7640f59b5f98ea82245e13fa2887e02844b46a36818f25c5"
+          }
+        ]
+      }
+    ],
+    "calibration": [
+      {
+        "file": "calibration-0.txt",
+        "sha256": "575f34040466677ac814051b877f10d1c2a240da7c079a45ce90836fc7622d3b",
+        "seed": 20772000,
+        "topic": "set operations",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "insert_value",
+            "signature": "values: set[int], value: int -> set[int]",
+            "padding_chars": 4096,
+            "user_sha256": "0394ccc25162a8c1b7830dccc08ccbce444e6ef270067e0fed9c9db934628924"
+          },
+          {
+            "turn": 2,
+            "function": "remove_value",
+            "signature": "values: set[int], value: int -> set[int]",
+            "padding_chars": 256,
+            "user_sha256": "000f1a76faa9f570cab5405eddabccf7a46c499313bb0afb78d727b74655c9a1"
+          },
+          {
+            "turn": 3,
+            "function": "union_values",
+            "signature": "left: set[int], right: set[int] -> set[int]",
+            "padding_chars": 1024,
+            "user_sha256": "c8aa3466b41b00c8e73ad62e798ca6816e1f6323931130f100a728edb1dd229a"
+          },
+          {
+            "turn": 4,
+            "function": "common_values",
+            "signature": "left: set[int], right: set[int] -> set[int]",
+            "padding_chars": 4096,
+            "user_sha256": "9c4650ecdbd57ce229e3dbe5d709aef85469c1945bc504db9d87b69d7c2ddc7d"
+          },
+          {
+            "turn": 5,
+            "function": "only_left",
+            "signature": "left: set[int], right: set[int] -> set[int]",
+            "padding_chars": 256,
+            "user_sha256": "393100c8c4435fc8da4b2aa0731a4e8d03c1ff3a547969f3fa9ceb7acb95e31a"
+          },
+          {
+            "turn": 6,
+            "function": "symmetric_values",
+            "signature": "left: set[int], right: set[int] -> set[int]",
+            "padding_chars": 1024,
+            "user_sha256": "315eaada689ec41f1ffa8df945c2b926699027de7f4bb4e3ff870eb862ecf6eb"
+          },
+          {
+            "turn": 7,
+            "function": "is_subset",
+            "signature": "left: set[int], right: set[int] -> bool",
+            "padding_chars": 4096,
+            "user_sha256": "332e18689792346d6e80aa9f7897bc2e33f40c94362b33077cf7a539b10d7627"
+          },
+          {
+            "turn": 8,
+            "function": "sorted_values",
+            "signature": "values: set[int] -> list[int]",
+            "padding_chars": 256,
+            "user_sha256": "2a832c9b0ad8329ed1321452053d224750658461c714527aeb1dd585cfaf6519"
+          }
+        ]
+      },
+      {
+        "file": "calibration-1.txt",
+        "sha256": "79b777bbc09f23f9bf3f3acf7e278a223aa2c0d4c25b742ce158d905140dd274",
+        "seed": 20772001,
+        "topic": "index operations",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "last_index",
+            "signature": "values: list[int] -> int | None",
+            "padding_chars": 16384,
+            "user_sha256": "937ed46480dae6dfb9e04a1633366d785ab568b4febf3cbf17723bcb28c99f6d"
+          },
+          {
+            "turn": 2,
+            "function": "valid_index",
+            "signature": "values: list[int], index: int -> bool",
+            "padding_chars": 256,
+            "user_sha256": "0231b7699d7731c6e8aa01dd7fac8b09c30ec09b25165803643199d9c7488fc0"
+          },
+          {
+            "turn": 3,
+            "function": "value_at",
+            "signature": "values: list[int], index: int -> int | None",
+            "padding_chars": 1024,
+            "user_sha256": "0eeac1db4887f92632a2b139df334d8cc604535c7ba8f7e2b9e8f29dea33db1a"
+          },
+          {
+            "turn": 4,
+            "function": "indices_of",
+            "signature": "values: list[int], target: int -> list[int]",
+            "padding_chars": 4096,
+            "user_sha256": "7cbe5cc419b9a88ec5c1667803beea648ef04559f49e4b6b8157d1a1b6c7d301"
+          },
+          {
+            "turn": 5,
+            "function": "index_pairs",
+            "signature": "values: list[int] -> list[tuple[int, int]]",
+            "padding_chars": 256,
+            "user_sha256": "b4abb0991179851890633b4a0353035aeb959f518840f00c3028caaa1e640528"
+          },
+          {
+            "turn": 6,
+            "function": "even_indices",
+            "signature": "values: list[int] -> list[int]",
+            "padding_chars": 1024,
+            "user_sha256": "6abf2040e456e5a28bb562308c5c59284184562ad6963bf608792ce728ffa911"
+          },
+          {
+            "turn": 7,
+            "function": "odd_indices",
+            "signature": "values: list[int] -> list[int]",
+            "padding_chars": 4096,
+            "user_sha256": "9929a3b3210df44740f8e1472f3bd45f26c04e766307ac9888c3672652a977c3"
+          },
+          {
+            "turn": 8,
+            "function": "reverse_indices",
+            "signature": "values: list[int] -> list[int]",
+            "padding_chars": 256,
+            "user_sha256": "776b45fafcf5fe993ba2076edca13a60594a1c19fda5350bf131d2b36f47962a"
+          }
+        ]
+      },
+      {
+        "file": "calibration-2.txt",
+        "sha256": "69e9262524c7c9048b9112ba4b68f544d198e8259a3ad5316ead7cab3962144e",
+        "seed": 20772002,
+        "topic": "pair comparisons",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "pair_min",
+            "signature": "pair: tuple[int, int] -> int",
+            "padding_chars": 4096,
+            "user_sha256": "ea008322cf260cea8736fdbc03c3cbf879d28d9c81276e77ecf7100f5c910415"
+          },
+          {
+            "turn": 2,
+            "function": "pair_max",
+            "signature": "pair: tuple[int, int] -> int",
+            "padding_chars": 256,
+            "user_sha256": "8c0ba6457edda9004b20dbe877fb0be44b76853ee845915064bf1033832f4b45"
+          },
+          {
+            "turn": 3,
+            "function": "pair_diff",
+            "signature": "pair: tuple[int, int] -> int",
+            "padding_chars": 1024,
+            "user_sha256": "37dd1372dd00cf19e78b141ae15edbd3436cddb3b26dc1fdc16fcf7dc85e27ed"
+          },
+          {
+            "turn": 4,
+            "function": "pair_equal",
+            "signature": "pair: tuple[int, int] -> bool",
+            "padding_chars": 4096,
+            "user_sha256": "0f855485977c6fff4b3e3513ec8f48ac6f01e2efbac47de0b4412757205315b5"
+          },
+          {
+            "turn": 5,
+            "function": "pair_sorted",
+            "signature": "pair: tuple[int, int] -> tuple[int, int]",
+            "padding_chars": 256,
+            "user_sha256": "42b7512a8f65a391c74dac5c105580a905fbf901d6e9e8662bce59cbe3c9c268"
+          },
+          {
+            "turn": 6,
+            "function": "pair_product",
+            "signature": "pair: tuple[int, int] -> int",
+            "padding_chars": 1024,
+            "user_sha256": "5d6ae35a5f54af9f699f73d1cac04ef61bf785777088ebe92903524f8590000a"
+          },
+          {
+            "turn": 7,
+            "function": "pair_nonnegative",
+            "signature": "pair: tuple[int, int] -> bool",
+            "padding_chars": 4096,
+            "user_sha256": "b01e4e80861daa2b25a206958680d717cfc3650a2ffc4d628343de4601dcae5c"
+          },
+          {
+            "turn": 8,
+            "function": "pair_sum_abs",
+            "signature": "pair: tuple[int, int] -> int",
+            "padding_chars": 256,
+            "user_sha256": "71e5eca39d946e5f815cd49689126d0fe64fb57ddf7238731ee0c4c7c601d150"
+          }
+        ]
+      }
+    ],
+    "heldout": [
+      {
+        "file": "heldout-0.txt",
+        "sha256": "0c8147cc20406a1825b23944c96b68dea26b844ec40b9d51590bf23dd5543283",
+        "seed": 20773000,
+        "topic": "bit flags",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "set_bit",
+            "signature": "value: int, bit: int -> int",
+            "padding_chars": 4096,
+            "user_sha256": "4d535e60dfe66c5a31837d7da7af88ae35367383f94e9307a9992d2a7148e8f9"
+          },
+          {
+            "turn": 2,
+            "function": "clear_bit",
+            "signature": "value: int, bit: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "59470b8a719a75ba71a7d04aadff65c8b63af845678efc61318b67072f84ce89"
+          },
+          {
+            "turn": 3,
+            "function": "has_bit",
+            "signature": "value: int, bit: int -> bool",
+            "padding_chars": 1024,
+            "user_sha256": "85ade7e8a4d4d3b2d27f390ac97e2efc698067a6b2ad91f620b575743efada04"
+          },
+          {
+            "turn": 4,
+            "function": "toggle_bit",
+            "signature": "value: int, bit: int -> int",
+            "padding_chars": 4096,
+            "user_sha256": "48eb51565674fb6e0cccf0f8ad93686cced680b9ebe15074f60f5cce798930f2"
+          },
+          {
+            "turn": 5,
+            "function": "count_ones",
+            "signature": "value: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "81d2d2116140c8a82d03e18e4c1ab6e483ba1e0e02c0e1a6673e70196881ab9a"
+          },
+          {
+            "turn": 6,
+            "function": "is_power_of_two",
+            "signature": "value: int -> bool",
+            "padding_chars": 1024,
+            "user_sha256": "21c571a4e7e171d1aeb00dae4bb36ae103c53bcce6c2bb49d200065a3422dfd1"
+          },
+          {
+            "turn": 7,
+            "function": "lowest_set_bit",
+            "signature": "value: int -> int",
+            "padding_chars": 4096,
+            "user_sha256": "830c8cde7261fd0d5385e13f808c4c210776064ac13c084dd2552cccc99ae927"
+          },
+          {
+            "turn": 8,
+            "function": "mask_below",
+            "signature": "bit: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "2f3386d9c6f946ebc57bea36bceceee5353f6c2d4c0719aba85299cb5c1d8292"
+          }
+        ]
+      },
+      {
+        "file": "heldout-1.txt",
+        "sha256": "8c292c1dd51b54d07d8fddf505314163da1db9fac630031003c782754b91056b",
+        "seed": 20773001,
+        "topic": "closed intervals",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "clamp_int",
+            "signature": "value: int, low: int, high: int -> int",
+            "padding_chars": 16384,
+            "user_sha256": "fd8d085de08dfd4aa19395a67ed9dfbe496668e11f735632b51db0e7c55a4d74"
+          },
+          {
+            "turn": 2,
+            "function": "in_closed_range",
+            "signature": "value: int, low: int, high: int -> bool",
+            "padding_chars": 256,
+            "user_sha256": "c489b3c93ae4c47af237e28c98139119b6f4984a78e59c773d4f9b3ddcbc5271"
+          },
+          {
+            "turn": 3,
+            "function": "range_size",
+            "signature": "low: int, high: int -> int",
+            "padding_chars": 1024,
+            "user_sha256": "4623fbec29c50c8f1013da887c2dd283bff53cecb64465ddf77979ab6da63e22"
+          },
+          {
+            "turn": 4,
+            "function": "shift_range",
+            "signature": "low: int, high: int, delta: int -> tuple[int, int]",
+            "padding_chars": 4096,
+            "user_sha256": "8a77a9bc5de7b8e8fa32d7abc69952b1b621594bad02d2593308df028268b0ff"
+          },
+          {
+            "turn": 5,
+            "function": "overlap_range",
+            "signature": "a: tuple[int, int], b: tuple[int, int] -> bool",
+            "padding_chars": 256,
+            "user_sha256": "0d17b96aaf4bb2ac2bdd761a77dd06b5c886069036744e6a277b8ca80db47c86"
+          },
+          {
+            "turn": 6,
+            "function": "contains_range",
+            "signature": "outer: tuple[int, int], inner: tuple[int, int] -> bool",
+            "padding_chars": 1024,
+            "user_sha256": "7c58c6744b3b350622bed3d9eb3352e2330aca925525f65ed97ad74f6e3d5984"
+          },
+          {
+            "turn": 7,
+            "function": "intersect_range",
+            "signature": "a: tuple[int, int], b: tuple[int, int] -> tuple[int, int] | None",
+            "padding_chars": 4096,
+            "user_sha256": "77fc510e83a16b5e83d7595c15318647006ed2df56e3191fd63df5ef71dbbe03"
+          },
+          {
+            "turn": 8,
+            "function": "merge_touching",
+            "signature": "a: tuple[int, int], b: tuple[int, int] -> tuple[int, int] | None",
+            "padding_chars": 256,
+            "user_sha256": "dc538e05d6360cf4ecadc6c3fa63de74df4dc6046a93fc1f0f5fa0ce27ba0885"
+          }
+        ]
+      },
+      {
+        "file": "heldout-2.txt",
+        "sha256": "4614c16f6aca0e6cc46b95dfe82bbd89777407aa8b495d9d067b9926183ecedf",
+        "seed": 20773002,
+        "topic": "sequence slices",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "take_prefix",
+            "signature": "values: list[int], count: int -> list[int]",
+            "padding_chars": 4096,
+            "user_sha256": "fcae17d2d9a5717b66b48e07c42595e0bd483fd68b61fba843be5c486af1e351"
+          },
+          {
+            "turn": 2,
+            "function": "take_suffix",
+            "signature": "values: list[int], count: int -> list[int]",
+            "padding_chars": 256,
+            "user_sha256": "8ea392ff33e8355d944faf6f375920c3aee58e4a136f046fc1f993beb6b19c58"
+          },
+          {
+            "turn": 3,
+            "function": "drop_prefix",
+            "signature": "values: list[int], count: int -> list[int]",
+            "padding_chars": 1024,
+            "user_sha256": "87e662af84a1ee6ddfb5e9bb8c59a8a6485c77c6379b614a8094cae97a5e83b6"
+          },
+          {
+            "turn": 4,
+            "function": "drop_suffix",
+            "signature": "values: list[int], count: int -> list[int]",
+            "padding_chars": 4096,
+            "user_sha256": "3bf06b6b005d6c2c9ef32c8b2db54afefebbde3146199ea385c460330509fe20"
+          },
+          {
+            "turn": 5,
+            "function": "rotate_left",
+            "signature": "values: list[int], count: int -> list[int]",
+            "padding_chars": 256,
+            "user_sha256": "7ad40950eeb3cafbf7f0ac307b93f29ef4479fcece4917f32258ed969362b733"
+          },
+          {
+            "turn": 6,
+            "function": "rotate_right",
+            "signature": "values: list[int], count: int -> list[int]",
+            "padding_chars": 1024,
+            "user_sha256": "f481be913e33d088e34e8f5c0fa2efcdf46608166bcecc22dfc5e38536892257"
+          },
+          {
+            "turn": 7,
+            "function": "every_other",
+            "signature": "values: list[int] -> list[int]",
+            "padding_chars": 4096,
+            "user_sha256": "ca833f01322cc66e5092ee343b52b54dafe0c3ea9282251d961dc45988e408c2"
+          },
+          {
+            "turn": 8,
+            "function": "adjacent_pairs",
+            "signature": "values: list[int] -> list[tuple[int, int]]",
+            "padding_chars": 256,
+            "user_sha256": "b41a96381ed2f1d2ea04fbbcd256e5f856b5f3ad1c1eec137e2ff4f809a167fb"
+          }
+        ]
+      },
+      {
+        "file": "heldout-3.txt",
+        "sha256": "32819ec79142332246fedccc4dfcc587734eab75213db42b7295e11ed04b25e3",
+        "seed": 20773003,
+        "topic": "mapping counts",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "merge_counts",
+            "signature": "left: dict[str, int], right: dict[str, int] -> dict[str, int]",
+            "padding_chars": 16384,
+            "user_sha256": "b103650a72a7ad0b56c7fad7bf7973e44f7aa2c7914a2c7c856ab7ae5b812101"
+          },
+          {
+            "turn": 2,
+            "function": "keys_sorted",
+            "signature": "counts: dict[str, int] -> list[str]",
+            "padding_chars": 256,
+            "user_sha256": "745570381f044c2d44348056d4c495551e2ba12186a0a8498e65cb694cb75bac"
+          },
+          {
+            "turn": 3,
+            "function": "filter_positive",
+            "signature": "counts: dict[str, int] -> dict[str, int]",
+            "padding_chars": 1024,
+            "user_sha256": "17e121219becfc3a0d31bd1eea93988209294596a6356ffa17f54c14fd5ded53"
+          },
+          {
+            "turn": 4,
+            "function": "rename_key",
+            "signature": "counts: dict[str, int], old: str, new: str -> dict[str, int]",
+            "padding_chars": 4096,
+            "user_sha256": "71bb9124c3ff2e532b2b34b9186c3f23020c7f0d3856be39dfd0728e422a320d"
+          },
+          {
+            "turn": 5,
+            "function": "get_or_zero",
+            "signature": "counts: dict[str, int], key: str -> int",
+            "padding_chars": 256,
+            "user_sha256": "0412b9b4a540b924ae7ca88165b3c0bbd5c26b47861a9bbeb25516f4b414731f"
+          },
+          {
+            "turn": 6,
+            "function": "increment_key",
+            "signature": "counts: dict[str, int], key: str -> dict[str, int]",
+            "padding_chars": 1024,
+            "user_sha256": "c076e6c56cdba597ab273ecc8c877eefff5ee4ee69b1aa555f1808d14ec3ba25"
+          },
+          {
+            "turn": 7,
+            "function": "count_values",
+            "signature": "counts: dict[str, int] -> int",
+            "padding_chars": 4096,
+            "user_sha256": "e4ecd6b56a98e7888c94fd999a989b7fa893015817f9b1cf7ce8283df4c7ba3e"
+          },
+          {
+            "turn": 8,
+            "function": "invert_unique",
+            "signature": "mapping: dict[str, int] -> dict[int, str]",
+            "padding_chars": 256,
+            "user_sha256": "aa5ab70544141b9b15c81dae84bb2fd11d6a8c19487b3ca7d3a9ddc163be42f3"
+          }
+        ]
+      },
+      {
+        "file": "heldout-4.txt",
+        "sha256": "e99fb1a16b9c114f40b5e19b2ea451efbba61513f4e2c8f52c705fd346faec47",
+        "seed": 20773004,
+        "topic": "whitespace text",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "normalize_spaces",
+            "signature": "text: str -> str",
+            "padding_chars": 4096,
+            "user_sha256": "ff7da834b7bf57b4ff7dc3078a4a16d920ea8585f5cb967c7a7c4f718384947d"
+          },
+          {
+            "turn": 2,
+            "function": "strip_prefix_once",
+            "signature": "text: str, prefix: str -> str",
+            "padding_chars": 256,
+            "user_sha256": "6a081533b3d2a7f2a938a1d2dde1b1eaf85e2cbc0fdd19590d73dfdacf3dd6c1"
+          },
+          {
+            "turn": 3,
+            "function": "strip_suffix_once",
+            "signature": "text: str, suffix: str -> str",
+            "padding_chars": 1024,
+            "user_sha256": "21dc2e1959d6fa1d35726b10712bc381c6599e12b9b9f98427f3a247484dffab"
+          },
+          {
+            "turn": 4,
+            "function": "line_count",
+            "signature": "text: str -> int",
+            "padding_chars": 4096,
+            "user_sha256": "4621897b35e4ab9cd22b4eae66d5fe17aa55bbe25807e5c46aa12b62737fda9f"
+          },
+          {
+            "turn": 5,
+            "function": "first_line",
+            "signature": "text: str -> str",
+            "padding_chars": 256,
+            "user_sha256": "6e75db164e8292a418a1e77d2b00cec3dd5a7aa9ccbd12dabb47f1959b4677e0"
+          },
+          {
+            "turn": 6,
+            "function": "last_line",
+            "signature": "text: str -> str",
+            "padding_chars": 1024,
+            "user_sha256": "0f4c28efbff9b36928b092797edf631f7b1d22a6dbd0b634da2e01e91ea39ad6"
+          },
+          {
+            "turn": 7,
+            "function": "nonempty_lines",
+            "signature": "text: str -> list[str]",
+            "padding_chars": 4096,
+            "user_sha256": "aed3b7339973c97a7486d3cdbb5c34bf59fb74d2233867f3d3728745767d4689"
+          },
+          {
+            "turn": 8,
+            "function": "join_lines",
+            "signature": "lines: list[str] -> str",
+            "padding_chars": 256,
+            "user_sha256": "c957584322ae03eee55349baea30561e7fe44efb2eaa627fa70d7b6792944cfe"
+          }
+        ]
+      },
+      {
+        "file": "heldout-5.txt",
+        "sha256": "d5b9303647e4af5a52ac88670022a9f9bc510b559e6438d3dda4a7a02d1a3aa0",
+        "seed": 20773005,
+        "topic": "integer arithmetic",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "ceil_div",
+            "signature": "value: int, divisor: int -> int",
+            "padding_chars": 16384,
+            "user_sha256": "8dbe6873dac12851d2464f583c2010c2430aafb7d5a45b9559b8f1ee7cbee3fa"
+          },
+          {
+            "turn": 2,
+            "function": "floor_div",
+            "signature": "value: int, divisor: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "7120592b8d408e6bfbafba3923e4b00078337f5c94283c8d45f286cad0c74558"
+          },
+          {
+            "turn": 3,
+            "function": "divides",
+            "signature": "divisor: int, value: int -> bool",
+            "padding_chars": 1024,
+            "user_sha256": "6c99420b13fcc2633223b7b377ef45940c3a45a072df9427c9bd856ff2c10254"
+          },
+          {
+            "turn": 4,
+            "function": "gcd_pair",
+            "signature": "left: int, right: int -> int",
+            "padding_chars": 4096,
+            "user_sha256": "fb300c4476f5e5b4faee339c88580e21e712d42e6fab8c1b1f3fc73cfbd686a4"
+          },
+          {
+            "turn": 5,
+            "function": "lcm_pair",
+            "signature": "left: int, right: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "9be71027e3584734c1cfa70950c69f0b49dd4df0f4978e342d30b408e78372c1"
+          },
+          {
+            "turn": 6,
+            "function": "digit_sum",
+            "signature": "value: int -> int",
+            "padding_chars": 1024,
+            "user_sha256": "50676de368f59e0ca9703ea669f2bbec5164b04cbcba12f14cb5e8b437651312"
+          },
+          {
+            "turn": 7,
+            "function": "reverse_digits",
+            "signature": "value: int -> int",
+            "padding_chars": 4096,
+            "user_sha256": "62ff4c4494dd5a5e8f961b6dc875bbb4727f759aafe7b876998a17afa9dfd275"
+          },
+          {
+            "turn": 8,
+            "function": "signum",
+            "signature": "value: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "64ce50dfbbd9bfd9e44075e2fe6811b1700971eecde53cfafc1df5eecfbab237"
+          }
+        ]
+      }
+    ]
+  }
+}
