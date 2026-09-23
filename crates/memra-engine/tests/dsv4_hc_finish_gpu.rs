@@ -260,8 +260,10 @@ fn launch_chain(e: &Engine, b: &mut Bufs, rows: usize) {
     }
 }
 
-/// The t=1 diet on main: split dots, the one-CTA small HC, rmsnorm, pack.
-fn launch_diet(e: &Engine, b: &mut Bufs) {
+/// The diet on main (every row count since #690): split dots, the one-CTA-per-row small HC,
+/// rmsnorm, pack.
+fn launch_diet(e: &Engine, b: &mut Bufs, rows: usize) {
+    let m = rows as i32;
     let stream = e.stream();
     unsafe {
         let plen = b.partial.len() as i32;
@@ -271,7 +273,7 @@ fn launch_diet(e: &Engine, b: &mut Bufs) {
             dpm(&mut b.partial, e),
             plen,
             dpm(&mut b.mixes, e),
-            1,
+            m,
             ROWS as i32,
             W as i32,
             sv(e),
@@ -286,7 +288,7 @@ fn launch_diet(e: &Engine, b: &mut Bufs) {
             dpm(&mut b.post, e),
             dpm(&mut b.comb, e),
             dpm(&mut b.y, e),
-            1,
+            m,
             HC as i32,
             D as i32,
             ITERS,
@@ -298,7 +300,7 @@ fn launch_diet(e: &Engine, b: &mut Bufs) {
             dp(&b.y, e),
             dp(&b.norm_w, e),
             dpm(&mut b.out, e),
-            1,
+            m,
             D as i32,
             RMS_EPS,
             sv(e),
@@ -307,7 +309,7 @@ fn launch_diet(e: &Engine, b: &mut Bufs) {
         let rc = k::memra_dsv4_cvt_bf16(
             dp(&b.out, e),
             b.packed.device_ptr_mut(&stream).0 as *mut c_void,
-            D as i64,
+            (rows * D) as i64,
             sv(e),
         );
         assert_eq!(rc, 0, "cvt_bf16");
@@ -450,7 +452,7 @@ fn chain_us(e: &Engine, launches: usize, mut f: impl FnMut()) -> f64 {
 }
 
 /// Device time per HC entry site, as a CUDA event chain of back-to-back sites (kernels plus
-/// inter-kernel gaps): the unfused chain, main's t=1 diet, and the fused pair, at the served
+/// inter-kernel gaps): the unfused chain, main's diet, and the fused pair, at the served
 /// plain (1) and DSpark verify (6) row counts. Correctness is the test above.
 #[test]
 #[ignore = "needs a CUDA device; run under flock /tmp/memra-5090.lock"]
@@ -465,11 +467,7 @@ fn dsv4_hc_finish_timing() {
         let mut b = bufs(&e, &c);
         for rep in 0..reps {
             let chain = chain_us(&e, sites, || launch_chain(&e, &mut b, rows));
-            let diet = if rows == 1 {
-                chain_us(&e, sites, || launch_diet(&e, &mut b))
-            } else {
-                f64::NAN
-            };
+            let diet = chain_us(&e, sites, || launch_diet(&e, &mut b, rows));
             let fused = chain_us(&e, sites, || launch_fused(&e, &mut b, rows, 16, false));
             println!(
                 "TIMING hc_entry rows={rows} rep={rep} chain_us={chain:.3} diet_us={diet:.3} fused_us={fused:.3}"
