@@ -1,0 +1,51 @@
+capture span 12190.5 ms over 510 steps = 23.90 ms/step
+dev0: kernels 1561858 (3062/step) kernel-sum 14.93 ms/step busy-union 15.36 ms/step memcpys 462/step
+dev1: kernels 1564946 (3069/step) kernel-sum 12.97 ms/step busy-union 13.40 ms/step memcpys 463/step
+--- dev0 top kernels (ms/step, count/step, share)
+    3.181     87  21.3%  memra_tp_ar_1stage_kernel
+    3.134    496  21.0%  dsv4_dense_fast_fp8_kernel
+    1.803    130  12.1%  moe_kq_m1_stream_kernel
+    1.102    168   7.4%  dsv4_dense_fast_dots_kernel
+    0.849     86   5.7%  dsv4_small_hc_f32_fixed_order_kernel
+    0.642     43   4.3%  dsv4_sink_scores_mq_f32acc_kernel
+    0.471     43   3.2%  dsv4_sink_out_mq_f32acc_kernel
+    0.419     87   2.8%  dsv4_fp8_gather_half_kernel
+    0.231    281   1.5%  dsv4_cvt_bf16_kernel
+    0.215     21   1.4%  dsv4_indexer_score_f32acc_kernel
+    0.214    142   1.4%  dsv4_rmsnorm_f32acc_kernel
+    0.201     43   1.3%  dsv4_route_m_kernel
+    0.192     87   1.3%  dsv4_hc_dot_split_partial_kernel
+    0.185     43   1.2%  dsv4_small_norm_pack_f32_fixed_order_kernel
+--- dev1 top kernels (ms/step, count/step, share)
+    3.119    496  24.1%  dsv4_dense_fast_fp8_kernel
+    1.777    130  13.7%  moe_kq_m1_stream_kernel
+    1.753    170  13.5%  dsv4_dense_fast_dots_kernel
+    0.817     86   6.3%  dsv4_small_hc_f32_fixed_order_kernel
+    0.685     87   5.3%  memra_tp_ar_1stage_kernel
+    0.634     43   4.9%  dsv4_sink_scores_mq_f32acc_kernel
+    0.465     43   3.6%  dsv4_sink_out_mq_f32acc_kernel
+    0.416     87   3.2%  dsv4_fp8_gather_half_kernel
+    0.226    281   1.7%  dsv4_cvt_bf16_kernel
+    0.211    143   1.6%  dsv4_rmsnorm_f32acc_kernel
+    0.208     21   1.6%  dsv4_indexer_score_f32acc_kernel
+    0.199     43   1.5%  dsv4_route_m_kernel
+    0.190     87   1.5%  dsv4_hc_dot_split_partial_kernel
+    0.185     43   1.4%  dsv4_small_norm_pack_f32_fixed_order_kernel
+    0.165    151   1.3%  dsv4_rope_kernel
+    0.163      1   1.3%  moe_kq_sktail_kernel
+memcpy kind: count/step bytes/step ms/step {1: (91.1921568627451, 48280, 0.026), 8: (828.8, 26707192, 0.744), 2: (5.03921568627451, 594535, 0.019)}
+--- runtime API (count/step, ms/step)
+      6131   14.922  cudaLaunchKernel_v7000
+       829    2.706  cuMemcpyDtoDAsync_v2
+         5    0.707  cuMemcpyDtoHAsync_v2
+      6131    0.538  cuKernelGetName
+        94    0.236  cuMemsetD8Async
+        91    0.186  cuMemcpyHtoDAsync_v2
+       357    0.029  cuCtxSetCurrent
+         7    0.011  cuStreamSynchronize
+         0    0.006  cuMemHostAlloc
+         7    0.005  cuMemFreeAsync
+         7    0.005  cuMemAllocAsync
+         0    0.004  cuMemFreeHost
+         0    0.000  cuMemGetInfo_v2
+         0    0.000  cuEventDestroy_v2
