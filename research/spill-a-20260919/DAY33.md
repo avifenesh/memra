@@ -188,3 +188,35 @@ around after the probe that submitted. The prediction of section 2 assumed the c
 next tick top comes one tick later; the reading says the tick that carries the submission is about twice as long.
 Section 5 tests the one mechanism the code can hold responsible (the host function holding the owner thread's CUDA
 work) before any target-card time is spent.
+
+## 6. The D2D half of Move 2 owed item 1, pre-registered (no code)
+
+**The read (file:line at `045ab57d4`).** The capture route copies each layer's recurrent state on the OWNER stream at
+the boundary: `prefix_capture_off_tick`, `engine.clone_dtod(&r.conv_state)` / `(&r.ssm_state)` (`worker.rs:15233`),
+96 planes, 156.9 MB on the 27B; the capture law is why: the next decode writes the live state. The spec-boundary
+publisher takes the recurrent state from the spec engine at the prime stop (already owned; no copy at publish). The
+restore route copies the entry's recurrent planes into the request's fresh cache on the owner stream before the KV
+batch: `host_restore_submit`, `copy_into(&mut dst.conv_state, ..)` (`worker.rs:16749`), the line's own words
+`recurrent state copied on the owner stream; request parked`. The tick programs (`prefix_snapshot` `:18755`,
+`prefix_restore_at` `:19070`) do the same with the door off.
+
+**Priced by arithmetic, before any design.**
+
+- Host time cannot leave the owner thread in either class: every CUDA call is the owner thread's (`check_thread`),
+  so a copy-stream placement issues the same 96 allocations and copies plus one event and one copy-stream wait.
+- The capture: the next decode WRITES the planes the copy reads, so a copy-stream capture needs the owner stream to wait
+  on every copy event before that decode (a write-after-read fence). The owner stream's critical path keeps the copy's
+  GPU time (about 0.2 ms: 2 x 156.9 MB at about 1.5 TB/s on the target card). **No owner time of either kind can
+  leave by construction: the capture half is refuted as a design.**
+- The restore: the reader is the parked request's prime at its re-admission, one tick later; a copy-stream restore of
+  the recurrent planes would overlap that tick's decode step and free at most the copy's owner-stream GPU time (about
+  0.2 ms per restore on the target card), no host time.
+
+**The one cell owed before any restore design (log only, pre-registered).** A field on the `restore submitted off the
+tick` line: `recurrent copy H.HHms host, G.GGms owner stream` (host time around the copy loop; owner-stream GPU time
+between two events around it), read on the existing restore arm (`stall_cell.py --mode restore`, day 21) on the target
+card and the 5090. **Decision rule, stated now:** if on the target card the owner-stream GPU median is under 0.5 ms and
+the host median under 0.5 ms per restore, the D2D half closes as not worth a door (the verdict and the receipt in
+`OWNER-THREAD-OFFLOAD.md` and the verdicts ledger; no code). Otherwise a restore-recurrent design is pre-registered
+with its own acceptance (its ordering rule is the day-21 reader fence, extended over the recurrent planes, as day 32
+extended it over the H2D spans). The strong-form receipt stays owed separately.
