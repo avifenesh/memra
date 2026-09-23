@@ -14556,9 +14556,14 @@ fn host_promote_park_probe(
                 copy_ms: 0.0,
                 settled_by: String::new(),
             });
+            // WP-A day 32 (DAY31 section 2, B2's measure, log only): the promote's owner segment,
+            // the owner thread's held time from `t0` to this line. The field sits before `request
+            // parked` so every reader that keys on the line's end still matches it.
+            let owner_ms = t0.elapsed().as_secs_f64() * 1e3;
             eprintln!(
                 "[prefix-host] promote submitted off the tick: {host_len} tokens, {:.1}MB, ticket \
-                 seq={seq}, {items} items on the contracts door's copy stream; request parked",
+                 seq={seq}, {items} items on the contracts door's copy stream; owner segment \
+                 {owner_ms:.2}ms; request parked",
                 bytes as f64 / 1e6
             );
             true
@@ -45624,9 +45629,15 @@ mod tests {
             "host_demote_settle_pending(host, ContractWait::Block, \"a promote\")",
             "ContractH2d::OffTick",
             "promote submitted off the tick:",
+            "{owner_ms:.2}ms; request parked",
         ] {
             assert!(probe.contains(needle), "the probe lacks {needle}");
         }
+        // WP-A day 32 (B2's measure): the owner segment is `t0` to the line, read right before it.
+        assert!(
+            probe.find("let owner_ms = t0.elapsed()").unwrap()
+                < probe.find("promote submitted off the tick:").unwrap()
+        );
         // OffTick: the probe and the route selector in device_entry_from_host_parts, nobody else.
         let production = &worker[..worker.find("\nmod tests {").unwrap()];
         let code: Vec<&str> = production
