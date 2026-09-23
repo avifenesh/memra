@@ -23,6 +23,9 @@ HARNESS = {
     "harness/confidence/remote_job_v2.sh",
     "harness/confidence/offline_adaptive.py",
     "harness/confidence/sampled_gate.sh",
+    "harness/confidence/postscore_blind.sh",
+    "harness/confidence/heldout_workloads.py",
+    "harness/confidence/heldout_pair.py",
 }
 SCIENCE = {
     "fixed-grid-v2-report.json",
@@ -41,6 +44,11 @@ SCIENCE = {
     "sampled-oracle-c015.log",
     "sampled-oracle-c030.log",
     "sampled-oracle-c030zero.log",
+    "postscore-blind.exit",
+    "heldout-workloads/manifest.json",
+    "heldout-pair/PRESELECTION-FREEZE.json",
+    "heldout-pair/FREEZE.json",
+    "heldout-pair/status.json",
 }
 SOURCE = "runtime-source-confidence.tar.gz"
 
@@ -92,13 +100,19 @@ def main():
             raise ValueError("operator study did not close successfully")
         if not (root / "sampled-gate.exit").read_text().startswith("exit=0 "):
             raise ValueError("sampled cutoff gate did not close successfully")
+        if not (root / "postscore-blind.exit").read_text().startswith("exit=0 "):
+            raise ValueError("blinded held-out preparation did not close successfully")
         native = {
             name: root / name for name in seen
-            if name.startswith(("fixed-grid-v2/", "workloads/")) or name in SCIENCE
+            if name.startswith((
+                "fixed-grid-v2/", "workloads/",
+                "heldout-workloads/", "heldout-pair/",
+            )) or name in SCIENCE
         }
         source = json.loads((root / "source-confidence.json").read_text())
         freeze = json.loads((root / "fixed-grid-v2/FREEZE.json").read_text())
         status = json.loads((root / "fixed-grid-v2/status.json").read_text())
+        heldout_status = json.loads((root / "heldout-pair/status.json").read_text())
         identity = json.loads((root / "fixed-grid-v2/identity.json").read_text())
         if (status["status"] != "completed"
                 or freeze["source_sha256"] != sha(root / "source-confidence.json")
@@ -115,6 +129,8 @@ def main():
                 or source["source_patcher_sha256"] != sha(root / "harness/confidence/patch_source.py")
                 or source["source_patch_receipt_sha256"] != sha(root / "source-patch.json")):
             raise ValueError("operator result is incomplete or source bindings changed")
+        if heldout_status["status"] not in ("no-positive-development-c", "completed"):
+            raise ValueError("held-out qualification or selected C study is incomplete")
         write_archive(out / "native-data.tar.gz", native)
         write_archive(
             out / "harness-source.tar.gz",
