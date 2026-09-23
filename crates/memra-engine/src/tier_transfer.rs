@@ -148,6 +148,12 @@ impl PinnedBacking {
         self.event.synchronize()?;
         Ok(self.ptr)
     }
+    /// WP-A day 34: the start and length WITHOUT the tracking event's host wait, for a read-only view
+    /// of an H2D source while its copy may still read it (two readers, no writer: the source's last
+    /// writer, the demote's D2H, was observed complete when its receipt was taken). Nothing is read here.
+    fn raw_view(&self) -> (*const u8, usize) {
+        (self.ptr.cast_const(), self.len)
+    }
     pub fn as_slice(&self) -> std::result::Result<&[u8], DriverError> {
         self.event.synchronize()?;
         // SAFETY: `ptr` is a live `malloc_host` allocation of `len` bytes owned by `self`, every
@@ -346,6 +352,54 @@ struct Entry {
     h2d_spans: Option<H2dSpanBatch>,
     /// The batch's H2D spans were taken back (a second take is `AlreadyReleased`).
     h2d_spans_taken: bool,
+    /// WP-A day 34 (`DAY34.md` design K): the H2D items' completion checksums, deferred to the
+    /// caller's hash helper (`defer_h2d_checksums`); `None` keeps them in `progress`.
+    deferred: Option<DeferredSums>,
+}
+/// WP-A day 34: the deferred checksums of one H2D batch: the views still out and each item's supplied
+/// digest (the item lands only with it, `memra_tier::conformance::h2d_deferred_checksum_lands_with_its_digests`).
+struct DeferredSums {
+    out: usize,
+    supplied: Vec<Option<Digest>>,
+}
+/// WP-A day 34 (`DAY34.md` design K): a read-only view of one accepted H2D item's host source, for a
+/// hashing thread off the owner thread. The engine keeps the source until the view comes back through
+/// `supply_h2d_checksums` (the ticket cannot land, retire its sources or retire until then), and nothing
+/// writes the source meanwhile (the entry's own handle cannot write while the ticket's twin lives).
+pub struct H2dSourceView {
+    item: u32,
+    ptr: *const u8,
+    len: usize,
+}
+// SAFETY: the view is read-only and the engine keeps its bytes alive and unwritten until it returns
+// (see the type's doc); moving it to another thread moves only that read access.
+unsafe impl Send for H2dSourceView {}
+impl H2dSourceView {
+    /// The item this view reads.
+    pub fn item(&self) -> u32 {
+        self.item
+    }
+    /// The bytes it covers (the item's whole host source, as `progress` hashes it).
+    pub fn len(&self) -> usize {
+        self.len
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    /// The same `checksum` program `progress` runs, over the same bytes.
+    pub fn digest(&self) -> Digest {
+        // SAFETY: `ptr` spans `len` initialized bytes of a pinned host allocation the engine keeps
+        // alive and unwritten while this view is out (the type's contract).
+        checksum(unsafe { std::slice::from_raw_parts(self.ptr, self.len) })
+    }
+}
+impl std::fmt::Debug for H2dSourceView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("H2dSourceView")
+            .field("item", &self.item)
+            .field("len", &self.len)
+            .finish()
+    }
 }
 impl Drop for Entry {
     fn drop(&mut self) {
@@ -1033,6 +1087,10 @@ impl CudaTransfers {
         if !e.cancelled {
             return Err(Error::NotReady);
         }
+        // WP-A day 34 (`h2d_deferred_checksum` rule 3): a source a view still reads stays here.
+        if e.deferred.as_ref().is_some_and(|d| d.out > 0) {
+            return Err(Error::Busy);
+        }
         let i = e
             .items
             .get(item as usize)
@@ -1341,6 +1399,7 @@ impl CudaTransfers {
             spans_taken: false,
             h2d_spans: None,
             h2d_spans_taken: false,
+            deferred: None,
         };
         for (i, op) in ops.into_iter().enumerate() {
             let mut s = SegmentCompletion {
@@ -1542,6 +1601,7 @@ impl CudaTransfers {
             spans_taken: false,
             h2d_spans: None,
             h2d_spans_taken: false,
+            deferred: None,
         };
         for (i, mut op) in ops.into_iter().enumerate() {
             let mut s = SegmentCompletion {
@@ -2030,6 +2090,106 @@ impl CudaTransfers {
         }
         Ok(())
     }
+    /// WP-A day 34 (`memra_tier::conformance::h2d_deferred_checksum_lands_with_its_digests`,
+    /// `DAY34.md` design K): defer this H2D batch's completion checksums to the caller, right after
+    /// the batch's submission. One read-only view per accepted item (its index and its whole host
+    /// source, the bytes `progress` would hash); from here an item lands only with the checksum
+    /// `supply_h2d_checksums` hands back, and the sources stay owned while a view is out.
+    /// Refused: an unknown, retired, cancelled or quarantined ticket, a ticket that is not an H2D
+    /// batch or carries a D2D receipt (`Unsupported`), one already deferred or already hashed by
+    /// `progress` (`Busy`).
+    pub fn defer_h2d_checksums(&mut self, ticket: &TransferTicket) -> Result<Vec<H2dSourceView>> {
+        self.check_thread()?;
+        let e = self.entries.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        if e.retired {
+            return Err(Error::AlreadyReleased);
+        }
+        if e.cancelled {
+            return Err(Error::Cancelled);
+        }
+        if e.unknown {
+            return Err(Error::Quarantined);
+        }
+        if e.receipt.is_some()
+            || e.items
+                .iter()
+                .flatten()
+                .any(|i| i.direction != CopyDirection::HostToDevice)
+        {
+            return Err(Error::Unsupported);
+        }
+        if e.deferred.is_some()
+            || e.completion
+                .items
+                .iter()
+                .any(|i| i.segments.iter().any(|s| s.checksum.is_some()))
+        {
+            return Err(Error::Busy);
+        }
+        let mut views = Vec::new();
+        for (i, item) in e.items.iter().enumerate() {
+            let Some(item) = item else {
+                continue;
+            };
+            // No host wait: `bytes()` would wait for this item's copy (its tracking event is recorded
+            // after the copy); the view only reads, as the copy does.
+            let (ptr, len) = item
+                .host
+                .as_ref()
+                .and_then(|h| h.allocation.backing.as_ref())
+                .ok_or(Error::AlreadyReleased)?
+                .raw_view();
+            views.push(H2dSourceView {
+                item: i as u32,
+                ptr,
+                len,
+            });
+        }
+        e.deferred = Some(DeferredSums {
+            out: views.len(),
+            supplied: vec![None; e.items.len()],
+        });
+        Ok(views)
+    }
+    /// WP-A day 34: the views back with their digests; each digest becomes its item's completion
+    /// checksum and expectation, the assignment `progress` makes for an undeferred item, so the
+    /// caller's `Completion::require` against the demote-time receipts is unchanged. A view of
+    /// another ticket or item (`WrongOwner`), a second return (`AlreadyReleased`) or a ticket with
+    /// nothing deferred (`Unsupported`) is refused before any digest is taken.
+    pub fn supply_h2d_checksums(
+        &mut self,
+        ticket: &TransferTicket,
+        digests: Vec<(H2dSourceView, Digest)>,
+    ) -> Result<()> {
+        self.check_thread()?;
+        let e = self.entries.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        let d = e.deferred.as_mut().ok_or(Error::Unsupported)?;
+        for (view, _) in &digests {
+            let i = view.item as usize;
+            let item = e
+                .items
+                .get(i)
+                .and_then(Option::as_ref)
+                .ok_or(Error::WrongOwner)?;
+            let (ptr, len) = item
+                .host
+                .as_ref()
+                .and_then(|h| h.allocation.backing.as_ref())
+                .ok_or(Error::AlreadyReleased)?
+                .raw_view();
+            if ptr != view.ptr || len != view.len {
+                return Err(Error::WrongOwner);
+            }
+            if d.supplied[i].is_some() {
+                return Err(Error::AlreadyReleased);
+            }
+        }
+        for (view, sum) in digests {
+            d.supplied[view.item as usize] = Some(sum);
+            d.out -= 1;
+        }
+        Ok(())
+    }
     /// WP-A day 32: the landed spans of an H2D batch, in attach order, each destination readable
     /// on the owner stream. `NotReady` until every item's AND every span's event is observed
     /// complete AND the owner stream's wait on every span event is installed
@@ -2185,6 +2345,21 @@ impl CudaTransfers {
                 s.producer_done = true;
                 s.status = ItemStatus::Complete;
                 s.valid_bytes = item.bytes;
+                continue;
+            }
+            // WP-A day 34 (`h2d_deferred_checksum` rule 1): a deferred H2D item's copy landed; the
+            // item lands with its supplied checksum (the caller's hash helper, same program, same
+            // bytes) or not yet. Nothing is hashed here.
+            if let Some(d) = &e.deferred
+                && item.direction == CopyDirection::HostToDevice
+            {
+                s.status = ItemStatus::Complete;
+                s.valid_bytes = item.bytes;
+                if let Some(sum) = d.supplied[i] {
+                    s.checksum = Some(sum);
+                    e.expected[i][0].checksum = sum;
+                    s.producer_done = true;
+                }
                 continue;
             }
             s.producer_done = true;
@@ -2390,6 +2565,7 @@ impl TransferEngine for CudaTransfers {
             spans_taken: false,
             h2d_spans: None,
             h2d_spans_taken: false,
+            deferred: None,
         };
         let mut acceptances = vec![];
         for (i, (op, error)) in ops.into_iter().zip(errors).enumerate() {
@@ -4369,6 +4545,162 @@ mod tests {
             started.elapsed() >= std::time::Duration::from_millis(200),
             "the copy landed only after the host function returned"
         );
+    }
+    /// WP-A day 34 (`DAY34.md` design K): the deferred H2D checksum's order, by source. `progress`
+    /// takes the deferred branch before its own checksum of a host source, and lands a deferred item
+    /// only with its supplied digest; `defer_h2d_checksums` takes its views without the tracking
+    /// event's host wait (no `bytes()`); `supply_h2d_checksums` checks every view before it takes
+    /// any digest; `recover_source` refuses while a view is out.
+    #[test]
+    fn h2d_deferred_checksum_rules_are_as_stated() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let fn_body = |name: &str| {
+            let at = body.find(name).unwrap_or_else(|| panic!("{name} missing"));
+            &body[at..at + body[at..].find("\n    }\n").unwrap()]
+        };
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let progress = fn_body("fn progress(");
+        assert!(
+            at(progress, "if let Some(d) = &e.deferred")
+                < at(
+                    progress,
+                    "item.host.as_ref().ok_or(Error::AlreadyReleased)?.bytes()?"
+                )
+        );
+        assert!(progress.contains("if let Some(sum) = d.supplied[i] {"));
+        let defer = fn_body("pub fn defer_h2d_checksums(");
+        assert!(defer.contains(".raw_view();"));
+        assert!(!defer.contains(".bytes()"), "no host wait at the defer");
+        let supply = fn_body("pub fn supply_h2d_checksums(");
+        assert!(
+            at(supply, "return Err(Error::AlreadyReleased);")
+                < at(supply, "d.supplied[view.item as usize] = Some(sum);")
+        );
+        let recover = fn_body("pub fn recover_source(");
+        assert!(recover.contains("if e.deferred.as_ref().is_some_and(|d| d.out > 0) {"));
+    }
+
+    /// WP-A day 34 (`memra_tier::conformance::h2d_deferred_checksum_lands_with_its_digests` and
+    /// `h2d_deferred_checksum_mismatch_is_corrupt`, on a card). One KV item H2D batch on the copy
+    /// stream, its checksum deferred: the copy lands and the item does not (no digest), the retire and
+    /// the source's retire are `Busy`; the view's digest is taken on ANOTHER thread and supplied; the
+    /// item lands, and the gate against the demote-time checksum (the pattern's `checksum`) opens; a
+    /// second supply is refused. A second batch supplied a wrong digest lands and the gate reads
+    /// `Corrupt`.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn h2d_deferred_checksum_lands_with_the_supplied_digests() {
+        use memra_tier::tier::governor::Governor;
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.new_stream().unwrap();
+        let cap = TierBudget {
+            version: 1,
+            device: vec![1 << 30],
+            peer: vec![0],
+            replicas: vec![0],
+            pinned: 1 << 30,
+            pageable: 1 << 30,
+            staging: 1 << 30,
+            loaders: 64,
+            inflight: 64,
+            nvme: 0,
+        };
+        let gov: SharedBudget = Rc::new(RefCell::new(
+            Governor::new(cap, TierBudget::zero(1), 64, 0, Arc::new(|| 0)).unwrap(),
+        ));
+        let mut t = CudaTransfers::new_with_copy_stream(stream.clone(), gov).unwrap();
+        let epochs = Epochs {
+            state: 0,
+            src_gen: 1,
+            dst_gen: 1,
+        };
+        let kv_bytes = 1usize << 20;
+        let pattern: Vec<u8> = (0..kv_bytes).map(|i| (i * 29 % 251) as u8).collect();
+        let submit = |t: &mut CudaTransfers| {
+            let plane = stream.alloc_zeros::<u8>(kv_bytes).unwrap();
+            let keep = t.register_device(plane, 1, request()).unwrap();
+            let device = t.retain_device(&keep).unwrap();
+            let mut host = t.alloc_host(kv_bytes, request()).unwrap();
+            host.write(&pattern).unwrap();
+            let producer = t.record_producer(1).unwrap();
+            let ticket = t
+                .h2d(CopyOp {
+                    host,
+                    device,
+                    bytes: kv_bytes as u64,
+                    epochs,
+                    producer_fence: Some(producer),
+                })
+                .unwrap();
+            (ticket, producer, keep)
+        };
+        let receipt = vec![vec![SegmentExpectation {
+            valid_bytes: kv_bytes as u64,
+            io_bytes: kv_bytes as u64,
+            checksum: checksum(&pattern),
+        }]];
+        let (ticket, producer, keep) = submit(&mut t);
+        let views = t.defer_h2d_checksums(&ticket).unwrap();
+        assert_eq!(views.len(), 1);
+        assert_eq!(t.defer_h2d_checksums(&ticket).err(), Some(Error::Busy));
+        t.synchronize(&ticket).unwrap();
+        let c = t.poll(&ticket).unwrap();
+        assert_eq!(
+            c.items[0].segments[0].status,
+            ItemStatus::Complete,
+            "the copy landed"
+        );
+        assert!(!c.producer_done, "the item lands only with its digest");
+        assert_eq!(t.retire_source(&ticket).err(), Some(Error::Busy));
+        assert_eq!(t.retire(&ticket, None).err(), Some(Error::Busy));
+        // The digest on another thread, as the hash helper takes it.
+        let hashed: Vec<(H2dSourceView, Digest)> = std::thread::spawn(move || {
+            views
+                .into_iter()
+                .map(|v| {
+                    let d = v.digest();
+                    (v, d)
+                })
+                .collect()
+        })
+        .join()
+        .unwrap();
+        t.supply_h2d_checksums(&ticket, hashed).unwrap();
+        let c = t.poll(&ticket).unwrap();
+        assert!(c.producer_done);
+        assert!(
+            c.require(&ticket, &receipt, false).is_ok(),
+            "the supplied digest is the demote-time checksum"
+        );
+        t.install_consumer_wait(&ticket).unwrap();
+        t.ready_view(&ticket, 0, epochs).unwrap();
+        let consumer = t.record_consumer(&ticket).unwrap();
+        stream.synchronize().unwrap();
+        t.retire_source(&ticket).unwrap();
+        t.release_producer(producer).unwrap();
+        t.retire(&ticket, Some(consumer)).unwrap();
+        t.acknowledge(&ticket).unwrap();
+        let plane = t.take_plane(&keep).unwrap().into_pooled().unwrap();
+        assert_eq!(stream.clone_dtoh(&plane).unwrap(), pattern);
+        // A wrong supplied digest: landed, and the gate refuses it.
+        let (ticket, _producer, _keep) = submit(&mut t);
+        let views = t.defer_h2d_checksums(&ticket).unwrap();
+        t.synchronize(&ticket).unwrap();
+        let wrong: Vec<(H2dSourceView, Digest)> = views
+            .into_iter()
+            .map(|v| {
+                let mut d = v.digest();
+                d[0] ^= 0xff;
+                (v, d)
+            })
+            .collect();
+        t.supply_h2d_checksums(&ticket, wrong).unwrap();
+        let c = t.poll(&ticket).unwrap();
+        assert!(c.producer_done);
+        assert_eq!(c.require(&ticket, &receipt, false), Err(Error::Corrupt));
+        stream.synchronize().unwrap();
     }
     fn f32_bytes(p: &[f32]) -> &[u8] {
         // SAFETY: an f32 slice is plain bytes of four times its length.
