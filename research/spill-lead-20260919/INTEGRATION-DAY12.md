@@ -2650,6 +2650,77 @@ per the owner's 2026-09-23 call to measure; decide-by moving to 2026-10-07).
 2026-10-04 (MoE slot cache, VMM), 2026-10-05 (the contracts door; C day 39's rows are new input), 2026-10-06 (the park
 door).
 
+## integ49 (`lane/spill-integ49-20260923`): A day 31 (DAY30's owed items 1a to 1d: the staging back on every post-take refusal, the staging charged to the governor, the span-refusal fault cell, the per-slot-class byte tally; the H2D half pre-registered)
+Lane tip merged: A `979881aa0` (day 31) on main `9c07b398b` (#658) as `40891cf2d`, clean (`worker.rs` auto-merged beside
+#655's 43 lines). Engine change: `crates/memra-server/src/worker.rs` only (the day-31 code commit `33b1285e0`), plus the
+`MEMRA_KV_HOST_FAULT` row in `docs/FLAGS.md` (a new value `contract-spans` on the existing door, no new `MEMRA_*` name)
+and the fault gate's `span-refusal` cell in `tools/kv-host-contract-fault-gate.sh`. No new `unsafe`. Between A's tip and
+the merged tree sit exactly #655's crate, tool and doc files, checked by file set.
+
+**A day 31.** 1a: a `StagedSpans` guard in `host_kv_planes_settle_contract` holds every landed staging buffer from the
+take on; its `Drop` puts each back into the context's set, and only `landed()` on the one success exit hands them out;
+the driver's two early exits of the `Done` arm put them back too (census: 11 `return Err(` after the take, all inside
+the guard's scope). On the served path the `postpublish` cell's next demote reads `pre-submit 0.93` (day 30: 28.71), so
+DAY30 finding 4 closes. 1b: a fresh staging buffer is charged to the tier governor's pinned ledger before it is
+allocated (`ResidentCharge::reserve`, `Priority::Backup`, the staging tenant `digest("host-tier-staging", ..)`), held
+while the set owns it and released at the latch's `clear()`, after which takes refuse and puts free; a refused charge
+refuses the attach through the typed `tier D2H spans refused` arm with the tier on. One fill line per boot that
+demoted: `tier span staging: 96 fresh pinned buffer(s), 156893184 bytes charged to the governor's pinned ledger; the set
+holds 156893184 bytes charged` (22 of 22 target-card logs), 48 buffers and 52690944 bytes on the 9B (19 of 19). 1c:
+`MEMRA_KV_HOST_FAULT=contract-spans` refuses the attach once after every span was built; the fault gate's
+`span-refusal` cell byte-compares r1 to r4 against a door-OFF boot. 1d: the copy-complete line ends `by slot class:
+conv C (B B), ssm S (B B), hidden H (B B), logits L (B B)`; SSM state is 95.6 % of the 27B image's heap bytes and 93.7 to
+93.8 % of the 9B's (C DAY38's separating line, now a log term). Target card (BOX3, one sitting on `6d940a97c`),
+verbatim: identity x4 `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok each); failure x2 `KV-HOST-SPILL FAILURE
+GATE: ALL GREEN` (15 ok each); `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (eleven cells, 142 ok, 0 FAIL) with `refusal
+handed back 96 span(s); the next copy-complete carries 96` and `byte-unequal request(s): none`; twin OFF and ON `->
+PASS`; hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` 61 / 68 ok with the day-24 census `-> PASS`; unit cells
+13 + 6 + 13 + 3 passed; double-park `DAY30 A2 pre-submit steady N=80 median=0.63 min=0.60 max=0.66 boots_on=10
+demotes_per_boot=[11] rule N>=80 median<=1.5 max<=3.0 -> PASS` and `DAY28 VERDICT clauses_failed=0 -> ALL PASS`. RTX 5090
+on the same tree: identity default ON, fault default and plain (142 ok each, `refusal handed back 48 span(s)`), hit OFF
+and ON, all ALL GREEN. Day 26's reader keeps its own clause 2 `|d-expected|=3.9 / 4.0 -> FAIL`, as on day 30; not an
+acceptance clause. **The H2D half is pre-registered, not landed** (DAY31 section 2: design H, the hash helper fills the
+staging from the resident planes while the request stays parked and the owner submits KV plus 96 typed `H2dSpan`s on
+one ticket; acceptance B1 to B5, B2 the promote's owner segment median <= 1.5 ms and max <= 3.0 ms over >= 20 steady
+promotes; no H2D code in the tree). Budget about 2.5 of 5 agent-hours, 54 minutes of it waiting out lane C's hold.
+
+**Lead review of A day 31.** Read every exit of the settle and the driver after the take: the guard returns the staging
+on each refusal; the helper's reply path returns it on the landed path; the reply-mismatch, helper-gone and
+latched-while-hashing exits latch the tier (or find it latched), so their buffers free with their holders and the
+charges release at `clear()`. `staging_take` refuses on a latched set before any charge, a refused charge allocates
+nothing, a failed allocation drops its charge, and a reused buffer is not charged again. The governor guard in the
+dimension read is a statement temporary; `ResidentCharge::drop` takes the governor lock, and no production site holds
+that lock across anything that reaches `disable`, so the latch's `clear()` cannot deadlock. The fault is one-shot on the demote side
+(`is_demote` covers `SpanAttach`). One numeric program per request holds: nothing here changes a byte that is hashed,
+published or promoted, and the span-refusal cell's r1 to r4 are byte-equal to a door-OFF boot on both cards. The one
+limit I would have raised, the charges releasing at the latch while a quarantined ticket or a detached helper still
+holds pinned buffers, is A's own stated limit in DAY31 section 1; it applies only to a latched tier. No finding.
+**Ruling 44:** 1a to 1d are the door's serving path and close DAY30's owed items 4 (the staging return), the governor
+charge and the span-refusal fault cell; the H2D half, the D2D half and the strong-form receipt of Move 2 owed item 1
+remain owed.
+
+**Checks.** CPU battery on `40891cf2d`, 15 of 15 rc=0: fmt; portable suites (357 passed, 0 skipped of budget
+0); server 873 + 7 passed; engine lib 539 passed; tier 4; clippy `-D warnings` on the six crates and on engine, server
+and tier all targets; check-flags; publish census; docs registry; pytest battery 87; conflict markers; workflow keys;
+perf board; `git diff --check`. RTX 5090 on the merged binary (`5aa040c9`, tree `aceef3589`, one collector hold
+03:44Z to 03:52Z), verbatim: serve-smoke `serve-smoke: 0 failed`; the engine `d2d_` and `d2h_span` cells `6 passed`;
+the worker `option_b_` and `option_c_` cells `13 passed`; identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN
+(teeth=0)` (12 ok); fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (142 ok each, `refusal handed back
+48 span(s); the next copy-complete carries 48`, `byte-unequal request(s): none`); hit OFF and ON `SPEC-ON-CACHE-HIT
+GATE: ALL GREEN (qwen)` (61 and 68 ok). Receipts `integration-day12/integ49-cpu-battery/` and `integ49-5090/`. The
+first hold and one relaunch were stopped by the lead inside their lock waits, before any cell ran, so lane B's
+two-order chain and then its D4 cell kept the card (`battery.log`). BOX3 is not rerun on the merged tree: A's
+receipts are on `6d940a97c`, and the merged tree differs by #655's files only (the integ47 precedent).
+
+**Running.** B day 31 (`MEMRA_ADMIT_BY_MEMORY`: the local two-order cell finished 03:08Z and its D4 cell 03:43Z; the
+target-card run continues; the survey). Lane E (memra#641, a pre-registered deterministic repro, then a bisect and a
+fix or a plain non-repro record). The lead's lane `lane/spec-ctx-edge-20260923` for memra#659, which B's cell found:
+an open request's last speculative round wrote past the session cache (worker panic, NaN verify, process exit);
+its red/green gate runs on the 5090 next.
+
+**Owner decisions flagged.** Unchanged from integ48: `MEMRA_ADMIT_BY_MEMORY` measuring (decide-by moving to
+2026-10-07); 2026-10-04 (MoE slot cache, VMM), 2026-10-05 (the contracts door), 2026-10-06 (the park door).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
