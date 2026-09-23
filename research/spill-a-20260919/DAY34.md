@@ -148,3 +148,15 @@ at most +20.0 per order, and its ON intruder e2e median at most the day-33 run's
 poll, `promote_in` about 16 to 18 ms, 1b about +6 to +12. The day-34 run: the helper's SHA-256 over cached leases about
 1 ms, the landing poll's hold about 0.5 ms, e2e within 1 ms of day 33's. If the day-33 run's copy misses the probe's tick,
 1b stays near the day-32 run's and that is the result.
+
+## 5. The BOX4 sitting, as it ran
+
+- 20:35:51Z: the lead's go (lane B's #680 part A done 20:21:58Z); the lock free, no compute app. `build.sh 5ae139734
+  d7d54c7a9 afd58bbde` in this lane's own clone `/root/wt-a`: three release servers, `rc=0` by 20:46Z.
+- **Attempt 1 refused at the port guard.** Every boot of all three double-park runs refused before any server
+  started: `cannot prove port 18132 is free. An unobservable port is not a free port: a foreign responder would be
+  measured as the model under test. Install iproute2 (ss) or lsof.` (neither was on BOX4); the gates and the hit gate
+  refused the same way. The unit-cell collector ran (its cells boot no server). The driver was stopped; iproute2 was
+  installed (`apt-iproute2.log`); attempt 1's boot-dependent receipts are kept under `attempt1-no-ss/`.
+- `driver-rerun.sh` (`fee93513d`): the same `doubleparks.sh`, `gates.sh` and `hitgate.sh` on the same three binaries under
+  the same collector. No script, clause, threshold or cell changed.
