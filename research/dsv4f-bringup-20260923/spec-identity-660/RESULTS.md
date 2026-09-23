@@ -49,6 +49,9 @@ Fixture: `dspark-fx-tape416.json` (416-token prompt from the gate source tape).
 
 ## Served cells on the fixed binary
 
+> **Rates invalid (2026-09-23):** measured on the power-braked pair (`../power-brake/POWER-BRAKE.md`).
+> The identity verdicts stand; the healthy-pair served cells are in `../REBASELINE.md`.
+
 memra-server from the fix tree (`spec-fix-r1/binary.sha256`), same bench, prompts and box as the
 pre-fix baseline (`research/dsv4f-bringup-20260923/BASELINE.md`). Single runs, 256 max tokens,
 c1, streaming, usage-authoritative counts, 250 ms telemetry.
@@ -117,6 +120,6 @@ are read from the captured DOTs (`hc-gate/*/qual-graphs.tar.xz`, full manifest i
 | `MEMRA_DSV4_HC_DOT_SPLIT=0` | `hc_dot_split=false slices=0` | PASS | 256 | 8 | 21.28 to 21.40 |
 
 This gate pins its own program (TP/EP, device sampler, small-kernel diet) and makes no
-performance claim; the rates are listed only as run records. It does not exercise the multi-row
+performance claim; the rates are listed only as run records, taken on the braked pair. It does not exercise the multi-row
 split that #660 adds. The multi-row path is covered by the DSpark gate verdicts above and the
 served cells.
