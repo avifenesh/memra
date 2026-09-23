@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from fixed_grid import fixed_arm
+from joint_selection import fixed_arm
 from run_native import (
     TOP_K, input_manifests, quality, run_one, save, sha,
 )
