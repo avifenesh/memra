@@ -1,5 +1,10 @@
 # DSv4-Flash served baseline, 2026-09-23
 
+> **SUPERSEDED, rates invalid (2026-09-23).** Every rate and timing on this page was measured
+> under a latched HW Power Brake Slowdown: effective SM clock 722 MHz behind a reported 2865 MHz.
+> The correctness findings stand. Finding and proof: `power-brake/POWER-BRAKE.md`; healthy-pair
+> numbers: `REBASELINE.md`.
+
 Scope: one model, one hardware shape. `tiyuvta/DeepSeek-V4-Flash-0731-NVFP4@bafd09f8cab4f4f4f25e1cdafbcdefc05b90ee38`
 on 2x RTX PRO 6000 Blackwell Workstation Edition (600 W limit, 3090 MHz max SM clock, driver
 595.71.05, GPUs on one NUMA node, `NODE` PCIe path). Rented box; memra-server built from main
