@@ -706,16 +706,19 @@ fn lru_victim<'a>(
 }
 
 /// The live readings behind the route's memory admission (memra#503).
-struct LiveProbe<'a> {
+struct LiveProbe<'a, 'b> {
     gpu: &'a Dsv4Gpu,
-    host_cache: &'a mut Dsv4HostCache,
+    /// The launch turn, which owns the parked-prefix cache. The door holds it for every reading
+    /// and gives it up only while it sleeps, so a session already in flight on another lane
+    /// can keep stepping (and finish, freeing the memory this request waits for).
+    turn: &'a mut Turn<'b>,
     /// The parked entry this request would restore from; never evicted for its admission.
     spare: Option<u64>,
     tx: &'a EventSender,
     t0: Instant,
 }
 
-impl MemoryProbe for LiveProbe<'_> {
+impl MemoryProbe for LiveProbe<'_, '_> {
     fn device_free(&mut self, devs: &[usize]) -> Result<Vec<u64>, String> {
         let stages = self.gpu.stage_memory()?;
         devs.iter()
@@ -734,12 +737,13 @@ impl MemoryProbe for LiveProbe<'_> {
         let available = crate::worker::meminfo_available_bytes(&meminfo)?;
         Some((
             available as u64,
-            self.host_cache.reclaimable(self.spare) as u64,
+            self.turn.cache().reclaimable(self.spare) as u64,
         ))
     }
 
     fn reclaim_host(&mut self, bytes: u64) -> u64 {
-        self.host_cache
+        self.turn
+            .cache()
             .reclaim(usize::try_from(bytes).unwrap_or(usize::MAX), self.spare) as u64
     }
 
@@ -752,7 +756,7 @@ impl MemoryProbe for LiveProbe<'_> {
     }
 
     fn wait(&mut self, ms: u64) {
-        std::thread::sleep(std::time::Duration::from_millis(ms));
+        sleep_without_turn(self.turn, std::time::Duration::from_millis(ms));
     }
 }
 
@@ -1091,9 +1095,7 @@ pub fn spawn(
     let (tx, rx) = std::sync::mpsc::channel::<Box<Request>>();
     let lanes = m.sessions.max(1);
     let rx = Arc::new(std::sync::Mutex::new(rx));
-    let turn = Arc::new(std::sync::Mutex::new(Dsv4HostCache::new(
-        m.host_cache_bytes,
-    )));
+    let turn = Arc::new(TurnLock::new(Dsv4HostCache::new(m.host_cache_bytes)));
     let m = Arc::new(m);
     for lane in 0..lanes {
         let (m, rx, turn, health, load) = (
@@ -1122,7 +1124,7 @@ pub fn spawn(
 fn serve_lane(
     m: &Dsv4Model,
     rx: &std::sync::Mutex<std::sync::mpsc::Receiver<Box<Request>>>,
-    turn_lock: &std::sync::Mutex<Dsv4HostCache>,
+    turn_lock: &TurnLock,
     health: &Arc<RouteHealth>,
     load: &Arc<RouteLoad>,
     lanes: usize,
@@ -1182,36 +1184,99 @@ fn serve_lane(
     }
 }
 
-/// The route's launch turn (memra #667). It owns the parked-prefix cache, and a session holds
-/// it for every engine call, so one session's work is queued whole on the stage streams
-/// before another's. Only a pipelined greedy step gives it up, while it waits for its own
-/// readbacks. With one serving lane nobody else ever asks for it.
+/// The route's launch turn (memra #667): a FIFO ticket lock beside the parked-prefix cache it
+/// guards. A session holds it for every engine call, so one session's work is queued whole on
+/// the stage streams before another's. A pipelined plain step gives it up while it waits for its
+/// own readbacks, a chunked plain prefill between chunks, and the memory door while it sleeps.
+/// Tickets are served in arrival order, so a session that gives the turn up and asks again at
+/// once queues behind every lane already waiting; a plain mutex would hand it straight back
+/// and starve the waiter for a whole prompt. With one serving lane nobody else ever asks for it.
+struct TurnLock {
+    /// (next ticket, ticket now served).
+    tickets: std::sync::Mutex<(u64, u64)>,
+    cv: std::sync::Condvar,
+    cache: std::sync::Mutex<Dsv4HostCache>,
+}
+
+impl TurnLock {
+    fn new(cache: Dsv4HostCache) -> Self {
+        TurnLock {
+            tickets: std::sync::Mutex::new((0, 0)),
+            cv: std::sync::Condvar::new(),
+            cache: std::sync::Mutex::new(cache),
+        }
+    }
+
+    fn lock(&self) {
+        let mut t = self.tickets.lock().unwrap_or_else(|p| p.into_inner());
+        let mine = t.0;
+        t.0 += 1;
+        while t.1 != mine {
+            t = self.cv.wait(t).unwrap_or_else(|p| p.into_inner());
+        }
+    }
+
+    fn unlock(&self) {
+        let mut t = self.tickets.lock().unwrap_or_else(|p| p.into_inner());
+        t.1 += 1;
+        drop(t);
+        self.cv.notify_all();
+    }
+}
+
+/// One session's hold on the [`TurnLock`]. Dropping it (including by unwinding) gives the turn
+/// up, so a panicking request cannot wedge the other lanes.
 struct Turn<'a> {
-    lock: &'a std::sync::Mutex<Dsv4HostCache>,
-    guard: Option<std::sync::MutexGuard<'a, Dsv4HostCache>>,
+    lock: &'a TurnLock,
+    held: bool,
+    cache: Option<std::sync::MutexGuard<'a, Dsv4HostCache>>,
 }
 
 impl<'a> Turn<'a> {
-    fn take(lock: &'a std::sync::Mutex<Dsv4HostCache>) -> Self {
-        let mut turn = Turn { lock, guard: None };
+    fn take(lock: &'a TurnLock) -> Self {
+        let mut turn = Turn {
+            lock,
+            held: false,
+            cache: None,
+        };
         turn.acquire();
         turn
     }
 
     fn acquire(&mut self) {
-        if self.guard.is_none() {
-            self.guard = Some(self.lock.lock().unwrap_or_else(|p| p.into_inner()));
+        if !self.held {
+            self.lock.lock();
+            self.held = true;
         }
     }
 
     fn release(&mut self) {
-        self.guard = None;
+        self.cache = None;
+        if self.held {
+            self.held = false;
+            self.lock.unlock();
+        }
     }
 
     fn cache(&mut self) -> &mut Dsv4HostCache {
         self.acquire();
-        self.guard.as_deref_mut().expect("turn held")
+        let lock = self.lock;
+        self.cache
+            .get_or_insert_with(|| lock.cache.lock().unwrap_or_else(|p| p.into_inner()))
     }
+}
+
+impl Drop for Turn<'_> {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+/// Sleep with the turn given up, then queue for it again (the memory door's defer wait).
+fn sleep_without_turn(turn: &mut Turn, d: std::time::Duration) {
+    turn.release();
+    std::thread::sleep(d);
+    turn.acquire();
 }
 
 /// One plain greedy step. Serial lanes take the one-call step. Pipelined lanes queue the step
@@ -1795,7 +1860,7 @@ pub(crate) fn settle(run: RouteRun, req: &mut Request, served: Result<Served, En
 /// can fit answers a context-length error naming the largest session that fits.
 fn admit_request(
     m: &Dsv4Model,
-    host_cache: &mut Dsv4HostCache,
+    turn: &mut Turn,
     req: &Request,
     prompt: &[u32],
     capacity: usize,
@@ -1805,10 +1870,12 @@ fn admit_request(
     let need = m
         .session_need(capacity, spec, host_c4)
         .map_err(EngineError::engine)?;
-    let spare = host_cache.restore_candidate(&req.cache_ns, req.affinity.as_deref(), prompt, spec);
+    let spare =
+        turn.cache()
+            .restore_candidate(&req.cache_ns, req.affinity.as_deref(), prompt, spec);
     let mut probe = LiveProbe {
         gpu: &m.gpu,
-        host_cache,
+        turn,
         spare,
         tx: &req.tx,
         t0: Instant::now(),
@@ -1897,7 +1964,7 @@ fn serve_one(
         .map_err(EngineError::context_length)?;
     if let Some(turned_away) = admit_request(
         m,
-        turn.cache(),
+        turn,
         req,
         &prompt,
         session_capacity,
@@ -2516,6 +2583,75 @@ mod c4_host_budget_tests {
                 assert!(resolve_sessions(Some(raw), default).is_err(), "{raw}");
             }
         }
+    }
+
+    #[test]
+    fn the_turn_is_served_in_arrival_order() {
+        use super::{Dsv4HostCache, Turn, TurnLock};
+        use std::sync::{Arc, Mutex};
+        let lock = Arc::new(TurnLock::new(Dsv4HostCache::new(0)));
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let mut a = Turn::take(&lock);
+        let b = {
+            let (lock, order) = (lock.clone(), order.clone());
+            std::thread::spawn(move || {
+                let _b = Turn::take(&lock);
+                order.lock().unwrap().push("b");
+            })
+        };
+        // B holds ticket 1 and waits.
+        while lock.tickets.lock().unwrap().0 < 2 {
+            std::thread::yield_now();
+        }
+        // A gives the turn up and asks at once, as the chunked prefill's yield does: it must
+        // queue behind B, not take the turn straight back.
+        a.release();
+        a.acquire();
+        order.lock().unwrap().push("a");
+        b.join().unwrap();
+        assert_eq!(*order.lock().unwrap(), ["b", "a"]);
+    }
+
+    #[test]
+    fn a_dropped_or_unwound_turn_is_given_up() {
+        use super::{Dsv4HostCache, Turn, TurnLock};
+        let lock = TurnLock::new(Dsv4HostCache::new(0));
+        {
+            let mut t = Turn::take(&lock);
+            let _ = t.cache();
+        }
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _t = Turn::take(&lock);
+            panic!("request fault");
+        }));
+        assert!(r.is_err());
+        // Both holds gave the turn up: a third take does not block.
+        let _t = Turn::take(&lock);
+        assert_eq!(*lock.tickets.lock().unwrap(), (3, 2));
+    }
+
+    #[test]
+    fn the_memory_door_sleeps_without_the_turn() {
+        use super::{Dsv4HostCache, Turn, TurnLock, sleep_without_turn};
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let lock = Arc::new(TurnLock::new(Dsv4HostCache::new(0)));
+        let stepped = Arc::new(AtomicBool::new(false));
+        let mut door = Turn::take(&lock);
+        let other = {
+            let (lock, stepped) = (lock.clone(), stepped.clone());
+            std::thread::spawn(move || {
+                let _t = Turn::take(&lock);
+                stepped.store(true, Ordering::SeqCst);
+            })
+        };
+        while lock.tickets.lock().unwrap().0 < 2 {
+            std::thread::yield_now();
+        }
+        // The in-flight lane gets its step in while the door waits for memory.
+        sleep_without_turn(&mut door, std::time::Duration::from_millis(50));
+        assert!(stepped.load(Ordering::SeqCst));
+        other.join().unwrap();
     }
 
     #[test]
