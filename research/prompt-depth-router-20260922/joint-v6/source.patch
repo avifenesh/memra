@@ -669,7 +669,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +            .ok_or("missing sampler K model header")?
 +            .split('\t')
 +            .collect();
-+        if header.len() != 5 || header[0] != "joint-v5-topk" || header[1] != "1" {
++        if header.len() != 5 || header[0] != "joint-v6-draft-topk" || header[1] != "1" {
 +            return Err("invalid sampler K model header");
 +        }
 +        let (features, window_size) = match header[2] {
@@ -1165,7 +1165,7 @@ diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engin
 +        k3[8] = 10.0; // token id 7 hashes to bucket 7
 +        let zero = [0.0_f64; 10];
 +        let text = format!(
-+            "joint-v5-topk\t1\tfirst16\t100\t20\nK\t3\t{}\nK\t20\t{}\n",
++            "joint-v6-draft-topk\t1\tfirst16\t100\t20\nK\t3\t{}\nK\t20\t{}\n",
 +            k3.iter().map(ToString::to_string).collect::<Vec<_>>().join(","),
 +            zero.iter().map(ToString::to_string).collect::<Vec<_>>().join(","),
 +        );

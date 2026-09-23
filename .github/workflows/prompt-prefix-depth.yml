@@ -416,6 +416,11 @@ jobs:
       - name: Compile pinned target-20 and draft-only K source
         run: |
           lane=research/prompt-depth-router-20260922
+          python3 -m py_compile \
+            "$lane/joint-v6/run_native.py" \
+            "$lane/joint-v6/schedules.py" \
+            "$lane/joint-v6/fit_models.py" \
+            "$lane/joint-v6/fit_topk.py"
           python3 "$lane/joint-v6/patch_source.py" \
             --base "$lane/confidence/adaptive-v3/receipts-v3/runtime-source-adaptive-v3.tar.gz" \
             --out "$RUNNER_TEMP/joint-v6-native"
