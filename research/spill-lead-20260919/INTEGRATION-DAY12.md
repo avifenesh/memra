@@ -2981,6 +2981,101 @@ is restored.
 - 2026-10-04: MoE slot cache, VMM.
 - 2026-10-06: the park door.
 
+## integ53 (`lane/spill-integ53-20260923`): B day 33 (memra#680 fixed under `MEMRA_ADMIT_BY_MEMORY`: pending prefill workspace booked, every admission logged, prefill OOM parked; green on the 5090, PRO 6000 part owed)
+Lane tip merged: B `9f335ac48`, which already carries main `0afd88e1d`, so the branch is a fast-forward. The engine
+change sits in `crates/memra-server/src/worker.rs` and `admit_memory.rs`, and every new behavior is gated on the
+door (`admit_memory_cfg.armed`). The new gate `tools/admit-mem-burst-gate.sh` is wired into `tools/local-ci.sh`
+behind `MEMRA_CI_ADMIT_MEM_BURST`, with FLAGS and TESTING rows.
+
+**B day 33.** Pre-registration `9491bc5d9` was committed at 14:08:50Z, and the first boot started at 14:09:07Z.
+
+The diagnosis, from code at `c3eb41d12`, quoted with file:line in DAY33 1.1:
+- The 58 in-flight requests were admitted by the generic VRAM gate, which compares each arrival's `required`
+  against one live `admission_headroom` reading. The door acted only in the defer branch and logged only defers
+  and refusals.
+- The resident prefix cache is not counted as free.
+- The missing term is the prefill workspace that sessions admitted earlier in the same burst still owe. It grows
+  at prime time, and the cost model's own comment says the live reading cannot see it.
+- A prefill OOM after admission is sent terminally and promoted to `Overloaded`, which is 503. The step-OOM park
+  covers decode steps only.
+- The 15.6 s refusal against an 8 s budget comes from one tick running for 15.6 s, with the budget checked once per
+  tick.
+
+The fix (`30a5ab697`), door-armed only:
+- Every headroom reading in the admission block is reduced by `pending_prime`, the workspace still-priming
+  sessions will allocate (`pending_prime_bytes`, `AdmissionHeadroom::less_pending`).
+- Every admission prints a `verdict=admit` line against that reduced reading, with a `pending_prime=` field.
+- A prefill CUDA OOM on a session that has emitted nothing is requeued like a step-OOM park (`prefill_oom_parkable`,
+  bounded by `step_oom_retries`).
+
+Local RTX 5090, verbatim:
+- `DAY33 VERDICT card=rtx5090 boots=8 v_boot_all=True green_noom_book_all=True v_id_fix_all=True v_id_all=True
+  v_off_all=True -> GREEN`.
+- `DAY33 V-OFF card=rtx5090 green=green-off red=red-off rows=16 equal=16 differ=0 admit_mem_lines=0 -> PASS`: the
+  default-OFF program is unchanged.
+- `DAY33 V-ID-FIX ... eligible=16 equal=16 differ=0 -> PASS` on each green run: the fix moves no token.
+
+The gate shape (open output 8192, a burst of 64):
+- On main: 19 x 200, 10 x 429 and 35 x 503 prefill OOM. The gate reads RED with 34 x 503.
+- On the fix, twice, `ADMIT-MEM BURST GATE: ALL GREEN`: 36 to 40 x 200 and 24 to 28 typed 429s, no OOM.
+- `pending_prime` peaked at 9.24 GB.
+
+The day-33 prefill-OOM park never fired on the card; only its CPU test exercises it. Server unit tests: 886 passed,
+including 8 new tests, one per decision arm. **The PRO 6000 half did not run.** B's box chain launched at 14:51:38Z
+and died with BOX3's instance before its first boot. The PRO boots remain owed: 32768 with a burst of 64, and OFF,
+on both binaries.
+
+**Lead review of B day 33.**
+- Door OFF is unchanged by construction: `pending_prime` is 0 unless the door is armed, `less_pending(0)` returns
+  the reading unchanged, and `prefill_oom_parkable` checks `armed` first. V-OFF's 16 of 16 equal rows, with no
+  `[admit-mem]` line, are the receipt.
+- The booked reduction applies only to the primary device's reading, the one the prefill workspace lands on.
+- The park requeues only a session that emitted nothing (`generated` empty, `tokens_emitted` 0), under the existing
+  retry bound, so a client never receives a duplicated or partial stream.
+- One numeric program per request holds: V-ID-FIX 16 of 16 on every green shape.
+- The root cause B names is an admission estimate that cannot see memory already promised to sessions admitted in
+  the same tick. That class is not specific to the door. The door-OFF path is outside this lane's scope, and no
+  door-OFF failure was observed (the OFF bursts return 200).
+- B noted two timing-sensitive server tests in untouched files (`health.rs`, `lib.rs`) failing once in a whole-suite
+  run and passing alone 3 of 3. That is recorded as flaky, not caused by this diff.
+
+**Ruling 48:**
+- B day 33 is read as registered: GREEN on the 5090.
+- The fix is the door's admission program and lands under the default-OFF door. #680 stays open until the PRO 6000
+  boots run on a restored BOX3.
+- The door decision (decide-by 2026-10-07) waits for B day 34, the clean rerun on this tree. B day 34 is
+  pre-registered with the corrected booking formula and a V-OOM term, and its 5090 half runs now.
+
+**Checks.**
+- CPU battery on `9f335ac48`, 15 of 15 rc=0: portable suites 363 passed and 0 skipped; server 886, engine lib 546,
+  tier 8 and pytest 87 passed; clippy `-D warnings` twice; fmt, check-flags, publish census, docs registry,
+  conflict markers, workflow keys, perf board and `git diff --check` (`integ53-cpu-battery/`).
+- RTX 5090 on the same tree: binary `5c557664`, hashed after serve-smoke's build; one collector hold from 18:27Z to
+  18:39Z (`integ53-5090/`). Verbatim:
+  - `serve-smoke: 0 failed`.
+  - The engine span cells `7 passed` and the worker cells `16 passed`, both serial.
+  - Identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`.
+  - Fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 160 ok each.
+  - Hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 and 68 ok.
+  - The #680 gate, `ADMIT-MEM BURST GATE: ALL GREEN`: `AMB no prefill OOM: oom_lines=0 status={200: 40, 429: 24} ->
+    PASS`, `AMB typed refusals: served=40 r429=24 refuse_lines=24 retry_after_in_1_60=True other_non200=0 -> PASS`,
+    `AMB booked admits: admit_lines=40 est_over_booked_free=0 served=40 -> PASS`.
+  - The #668 gate `SPEC-CTX-EDGE GATE: ALL GREEN`.
+- The collector's first launch was stopped inside its first lock wait, before any cell. The relaunch carried a
+  75 x 120 s bound and waited out lane B's O1 order and a 6-minute hold by lane A's nsys job (64 attempts,
+  `battery.log`).
+
+**Running.** B day 34: the clean door rerun, its 5090 half first. A day 33: the same-tick fill, 5090 first. BOX3
+restore: the identical spot type is polled read-only.
+
+**Owner decisions flagged.**
+- 2026-10-05, the contracts door: A day 32's TTFT trade. A day 33 aims to remove it.
+- `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-10-07): on B day 34.
+- 2026-10-04: MoE slot cache, VMM.
+- 2026-10-06: the park door.
+- BOX3's replacement: the identical spot type when it frees; the confidential-compute variant at about twice the
+  price is the owner's call.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
