@@ -1,0 +1,30 @@
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers)
+tickshape: T_a=2048 T_b=2048 T_c=4096 tick=1024 steps=32 join=4 ctx=4192 arms=["ref", "ref2", "tick", "bp", "bps", "wave"] canary=true
+[fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+ref: hidden rows=2048 first tok=82 text="s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div"
+arm ref prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+  per-step logits bitdiff: 1:0 2:0 3:0 4:0 5:0 6:0 7:0 8:0 9:0 10:0 11:0 12:0 13:0 14:0 15:0 16:0 17:0 18:0 19:0 20:0 21:0 22:0 23:0 24:0 25:0 26:0 27:0 28:0 29:0 30:0 31:0 32:0
+arm ref verdict: EXACT
+arm ref2 prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+  per-step logits bitdiff: 1:0 2:0 3:0 4:0 5:0 6:0 7:0 8:0 9:0 10:0 11:0 12:0 13:0 14:0 15:0 16:0 17:0 18:0 19:0 20:0 21:0 22:0 23:0 24:0 25:0 26:0 27:0 28:0 29:0 30:0 31:0 32:0
+arm ref2 verdict: EXACT
+arm tick prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+  per-step logits bitdiff: 1:0 2:0 3:0 4:0 5:0 6:0 7:0 8:0 9:0 10:0 11:0 12:0 13:0 14:0 15:0 16:0 17:0 18:0 19:0 20:0 21:0 22:0 23:0 24:0 25:0 26:0 27:0 28:0 29:0 30:0 31:0 32:0
+arm tick verdict: EXACT
+arm bp prime: logits bitdiff=248320 maxabs=4.302328e-1 argmax ref=82 arm=82 | h_seed bitdiff=4096 | hidden bitdiff=8388605 maxabs=9.140336e1 first_row=Some(0) | cache digests differ 63/66 first=["L3.k", "L3.v", "L7.k", "L7.v", "L11.k", "L11.v"]
+  first bit-different decode step 1: bitdiff=248320 maxabs=3.661897e-1
+  first argmax flip at decode step 2: ref tok=197 (2nd 248046, margin 0.465669) arm tok=248046 (2nd 197, margin 0.497613); ref text to here "s \t"
+  per-step logits bitdiff: 1:248320 2:248320 3:248320 4:248320 5:248320 6:248320 7:248320 8:248320 9:248320 10:248320 11:248320 12:248320 13:248320 14:248320 15:248320 16:248320 17:248320 18:248320 19:248320 20:248320 21:248320 22:248320 23:248320 24:248320 25:248320 26:248320 27:248320 28:248320 29:248320 30:248320 31:248320 32:248320
+arm bp verdict: DIFFERS (greedy text diverges at token 2)
+[fa-pool] grow #1 dev=0 o_len 135168 -> 532480 ml_len 528 -> 2080 (retired kept, zero=false)
+arm bps prime: logits bitdiff=248320 maxabs=4.302328e-1 argmax ref=82 arm=82 | h_seed bitdiff=4096 | hidden bitdiff=8388605 maxabs=9.140336e1 first_row=Some(0) | cache digests differ 63/66 first=["L3.k", "L3.v", "L7.k", "L7.v", "L11.k", "L11.v"]
+  first bit-different decode step 1: bitdiff=248320 maxabs=3.661897e-1
+  first argmax flip at decode step 2: ref tok=197 (2nd 248046, margin 0.465669) arm tok=248046 (2nd 197, margin 0.497613); ref text to here "s \t"
+  per-step logits bitdiff: 1:248320 2:248320 3:248320 4:248320 5:248320 6:248320 7:248320 8:248320 9:248320 10:248320 11:248320 12:248320 13:248320 14:248320 15:248320 16:248320 17:248320 18:248320 19:248320 20:248320 21:248320 22:248320 23:248320 24:248320 25:248320 26:248320 27:248320 28:248320 29:248320 30:248320 31:248320 32:248320
+arm bps verdict: DIFFERS (greedy text diverges at token 2)
+arm wave prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+  per-step logits bitdiff: 1:0 2:0 3:0 4:0 5:0 6:0 7:0 8:0 9:0 10:0 11:0 12:0 13:0 14:0 15:0 16:0 17:0 18:0 19:0 20:0 21:0 22:0 23:0 24:0 25:0 26:0 27:0 28:0 29:0 30:0 31:0 32:0
+arm wave verdict: EXACT
+tickshape verdict: AT LEAST ONE ARM DIFFERS

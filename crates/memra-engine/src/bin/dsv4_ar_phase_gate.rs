@@ -375,16 +375,11 @@ fn main() {
         args.len() >= 5,
         "usage: dsv4_ar_phase_gate <model-dir> <source-tape> <out-dir> <cell> [args]"
     );
-    for (name, value) in [
-        ("MEMRA_DSV4_SAMPLER", "device"),
-        ("MEMRA_DSV4_SMALL_KERNEL_DIET", "1"),
-    ] {
-        assert_eq!(
-            std::env::var(name).as_deref(),
-            Ok(value),
-            "requires {name}={value}"
-        );
-    }
+    assert_eq!(
+        std::env::var("MEMRA_DSV4_SAMPLER").as_deref(),
+        Ok("device"),
+        "requires MEMRA_DSV4_SAMPLER=device"
+    );
     // The instrument measures the DEFAULT program or it measures nothing anyone serves. Doors that
     // are ON by default must be unset or explicitly 1 here; nothing may be pinned OFF.
     for name in [

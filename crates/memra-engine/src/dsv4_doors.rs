@@ -972,10 +972,6 @@ mod tests {
         ("MEMRA_DSV4_SAMPLER", "program selector"),
         ("MEMRA_DSV4_SAMPLE_SORT", "program selector"),
         ("MEMRA_DSV4_SINK_SCORE", "program selector"),
-        (
-            "MEMRA_DSV4_SMALL_KERNEL_DIET",
-            "TP/EP-only program selector, refuses elsewhere",
-        ),
         ("MEMRA_DSV4_SPEC_DEPTH", "spec parameter"),
         ("MEMRA_DSV4_VERIFY_TOPK", "program selector"),
         ("MEMRA_DSV4_VT", "spec threshold parameter"),

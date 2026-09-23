@@ -3640,14 +3640,6 @@ impl Dsv4Gpu {
             on_device,
         )?;
 
-        let small_kernel_diet = match std::env::var("MEMRA_DSV4_SMALL_KERNEL_DIET").as_deref() {
-            Err(std::env::VarError::NotPresent) | Ok("0") => false,
-            Ok("1") => true,
-            _ => return Err("MEMRA_DSV4_SMALL_KERNEL_DIET requires 0 or 1".into()),
-        };
-        if small_kernel_diet && (!topology.is_tp_ep() || !chains_f32) {
-            return Err("small-kernel diet requires all-layer TP/EP and f32x".into());
-        }
         // Read once at load, like every other door. An unarmed process that exported the name
         // refuses here rather than loading with an instrument or a null collective in it.
         let ar_phase = ar_phase_environment_policy(
@@ -3690,7 +3682,7 @@ impl Dsv4Gpu {
             decode_path,
             dots_f32,
             chains_f32,
-            small_kernel_diet,
+            small_kernel_diet: false,
             ar_phase,
             small_kernel_launches: std::array::from_fn(|_| AtomicU64::new(0)),
             small_kernel_component_mask: AtomicU64::new(u64::MAX),
@@ -3718,6 +3710,12 @@ impl Dsv4Gpu {
             hc_head_base: Vec::new(),
             hc_head_scale: Vec::new(),
         };
+        // The fixed-order HC finish and Q norm/pack (#339) are the code on every f32x
+        // device program of this shape, PP-2 and TP/EP alike: each fused kernel keeps the
+        // unfused kernels' 128-thread tree and ascending sums, so the plain t=1 step and a
+        // multi-row verify row stay one numeric program. Other shapes keep the unfused
+        // kernels, which the fused launchers refuse.
+        me.small_kernel_diet = me.small_kernel_diet_shape();
         eprintln!(
             "[load] expert arm: {:?} | decode path: {:?} | dots arm: {}",
             me.expert_arm,
@@ -13256,6 +13254,12 @@ impl Dsv4Gpu {
 pub struct VerifyWs {
     ep: Option<EpScratch>,
     grouped_work: Option<crate::dsv4_grouped::GroupedWork>,
+    /// One MoE fault word per trunk layer for full-bank grouped work (memra #670): the route
+    /// and mirror checks of a transaction land here and are read once, see
+    /// [`Dsv4Gpu::take_moe_faults`]. Zero whenever `moe_fault_armed` is false.
+    moe_fault: Option<CudaSlice<i32>>,
+    moe_fault_host: Vec<i32>,
+    moe_fault_armed: bool,
     c4_gather: Option<C4Gather>,
     pub tmax: usize,
     /// Phase identity, not inferred from row count. Spec verification never sets it.
@@ -14307,6 +14311,13 @@ impl Dsv4Gpu {
                 } else {
                     None
                 },
+                moe_fault: if !self.ep_enabled && (self.prefill_grouped || self.matrix_moe) {
+                    Some(i(n_trunk)?)
+                } else {
+                    None
+                },
+                moe_fault_host: vec![0; n_trunk],
+                moe_fault_armed: false,
                 ep: if self.ep_enabled {
                     Some(EpScratch::new(
                         &st.gpu,
@@ -14795,10 +14806,17 @@ impl Dsv4Gpu {
         self.small_kernel_diet
     }
 
+    fn small_kernel_diet_shape(&self) -> bool {
+        matches!(self.decode_path, DecodePath::Device { .. })
+            && self.chains_f32
+            && self.model.cfg().hc_mult == 4
+            && self.model.mc.n_embd == 4096
+    }
+
     /// Same-loaded-model ABBA seam. Exclusive borrow prevents a concurrent walk.
     pub fn set_small_kernel_diet_for_gate(&mut self, enabled: bool) -> Res<()> {
-        if !self.topology.is_tp_ep() || !self.chains_f32 {
-            return Err("small-kernel gate requires TP/EP f32x".into());
+        if enabled && !self.small_kernel_diet_shape() {
+            return Err("small-kernel gate requires device f32x HC4 hidden 4096".into());
         }
         self.small_kernel_diet = enabled;
         Ok(())
@@ -16565,10 +16583,23 @@ impl Dsv4Gpu {
         } else {
             None
         };
+        let fault = match (&fresh, &vws.moe_fault) {
+            (None, Some(words)) if vws.moe_fault_armed => {
+                let il = layer.il as usize;
+                if il >= words.len() {
+                    return Err(format!("MoE fault word for layer {il} outside workspace"));
+                }
+                Some(crate::dsv4_grouped::MoeFault(
+                    words.device_ptr(&stream).0 + (il * std::mem::size_of::<i32>()) as u64,
+                ))
+            }
+            _ => None,
+        };
         let work = fresh
             .as_mut()
             .or(vws.grouped_work.as_mut())
             .ok_or("grouped workspace missing")?;
+        work.defer_faults(fault);
         let mut compute = EpCompute {
             xq: &vws.xq,
             xs: &vws.xs,
@@ -17486,6 +17517,15 @@ impl Dsv4Gpu {
                 vstate.bytes[si] +=
                     C4Gather::ensure(&mut vws.c4_gather, &stream, vstate.tmax, vws.idx_stride)?;
             }
+            if let Some(words) = vws.moe_fault.as_mut() {
+                // A round that ended in an error never read its words back; clear them.
+                if vws.moe_fault_armed {
+                    stream
+                        .memset_zeros(words)
+                        .map_err(e("clear stale MoE faults"))?;
+                }
+                vws.moe_fault_armed = true;
+            }
             write_pinned_i32(&mut vws.tok_host, &tok_i32)?;
             write_pinned_i32(&mut vws.pos_host, &pos_i32)?;
             let tok_host = pinned_i32(&vws.tok_host, t)?;
@@ -17914,6 +17954,7 @@ impl Dsv4Gpu {
                 self.head_logits_dev(step, host_math)?;
                 dtoh_f32(&stream, &step.logits)?
             };
+            self.take_moe_faults(&mut vstate.ws)?;
             self.prefill_head_counts
                 .last_rows
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -17994,8 +18035,48 @@ impl Dsv4Gpu {
                 .map_err(e("dtoh argmax batch"))?;
             stream_last.synchronize().map_err(e("sync argmax batch"))?;
         }
+        self.take_moe_faults(&mut vstate.ws)?;
         vstate.open = Some((pos0, t));
         Ok((logits, am.into_iter().map(|x| x as u32).collect()))
+    }
+
+    /// Read each armed stage's MoE fault words once and disarm them (memra #670). The
+    /// transaction's route and FP8-to-half mirror checks all landed there, so a nonzero word
+    /// fails it closed with the synchronous arm's reason: nothing has committed yet and no
+    /// token has left the engine. The synced output exits call this after their readback;
+    /// [`Self::commit_verify_dev`] calls it for the exits that return without one.
+    fn take_moe_faults(&self, ws: &mut [VerifyWs]) -> Res<()> {
+        let mut first = None;
+        for (si, vws) in ws.iter_mut().enumerate() {
+            if !vws.moe_fault_armed {
+                continue;
+            }
+            let Some(words) = vws.moe_fault.as_mut() else {
+                continue;
+            };
+            let st = &self.stages[si];
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind MoE fault read"))?;
+            let stream = st.gpu.stream();
+            stream
+                .memcpy_dtoh(words, &mut vws.moe_fault_host[..])
+                .map_err(e("MoE fault read"))?;
+            stream.synchronize().map_err(e("MoE fault sync"))?;
+            if let Some(il) = vws.moe_fault_host.iter().position(|&w| w != 0) {
+                first.get_or_insert((il, vws.moe_fault_host[il]));
+                stream.memset_zeros(words).map_err(e("clear MoE faults"))?;
+            }
+            vws.moe_fault_armed = false;
+        }
+        match first {
+            Some((il, word)) => Err(format!(
+                "DSV4 grouped MoE layer {il}: {}",
+                crate::dsv4_grouped::moe_fault_reason(word)
+            )),
+            None => Ok(()),
+        }
     }
 
     /// Commit the first `n_commit` positions of the open round and roll the rest back
@@ -18022,6 +18103,8 @@ impl Dsv4Gpu {
             n_commit >= 1 && n_commit <= t,
             "commit {n_commit} outside round width {t}"
         );
+        // Deferred MoE faults refuse the round before either plane commits.
+        self.take_moe_faults(&mut vstate.ws)?;
         if self.topology.is_tp_ep() {
             // Both planes commit, rank 0 first as the eager step does, before the shared
             // position moves.

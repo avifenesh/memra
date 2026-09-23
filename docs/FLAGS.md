@@ -65,12 +65,6 @@ measured on a GPU, because no speech operation has a CUDA kernel yet (§1).
 
 `MEMRA_PRIME_QW8`: removed before merge. Exact but flat at chunk 1024 (29.082/29.145 ms at 131070 depth); a 4096-only serving control subsequently OOMed after prefix publication. Superseded by the three-plane staging candidate at unchanged chunk 1024. Probability-fragment load reuse alone was also flat and removed. Receipts: `research/qwen-prefill-20260909/`.
 
-## DSV4 small-kernel diet
-
-| Flag | Default, arms, gate and rollback |
-| --- | --- |
-| `MEMRA_DSV4_SMALL_KERNEL_DIET` | **Default 0**, decide-by: **2026-09-21**. Parsed at model load; accepts only `0` or `1`. `0` retains the separate f32x HC finish (rowsq, Sinkhorn, collapse) and Q-LoRA norm/pack. `1` fuses each HC finish into one launch and Q norm/pack into one launch on all-layer TP/EP, t=1, HC4, hidden4096. Other topology or f64 chains refuse at load; unsupported HC shape refuses before its fused enqueue. Multirow work retains the old path. Both reductions retain the 128-thread tree; Sinkhorn gathers ascending row/column sums with the original iteration count. Expected bitwise classes: `dsv4_hc_f32_fixed_order`, `dsv4_norm_pack_f32_fixed_order`; no tolerance admission. Rollback: restart with `=0`. Gate: `dsv4_tp_ep_sampled_perf_gate --small-kernel-components` on live checkpoint tensors, then `--small-kernel-abba` (10 cycles, radix, sampled envelope, all state digests, actual HC/Q enqueue assertions). The gate's exclusive model setter changes arms between complete walks. Receipt pointer: private Darklanes `research/dsv4f-devpair-20260905/small-kernel-diet-20260907.md`, namespace `small-kernel-diet-29a73db-r1`: both components bit-equal on both ranks; ten sampled ABBA cycles give 35.404649 OFF to 36.850968 ON tok/s (+4.085112%), all 40 rows eligible and digest-identical. Targeted enqueues fall 344 to 129 per step per rank. Code source and binary hash are pinned in the tracked lane report. |
-
 > **A new `MEMRA_*` read needs a row here IN THE SAME COMMIT.** `tools/hooks/pre-push` runs
 > `tools/check-flags.sh` on every push (+0.55 s) and refuses one that adds an uncovered name. That
 > arm landed 2026-08-23 after main went red three times in one day on this exact rule — the census
@@ -344,6 +338,7 @@ Rules that follow, and are now enforced rather than remembered:
 | `MEMRA_CI_CONTGATE` | on | `0` skips the prime continuation gate in `tools/local-ci.sh` (`qwen-a4-continuation-gate` on the 9B NVFP4: one-call prime vs head + tail at grid-aligned tails 16/48/80 over a 9,296-token repo-text prompt; memra#427, the 16-row tail is the shape that used to ride the batched decode/verify mmvq tier). `MEMRA_CI_CONT_MODEL=<gguf>` points it at another GDN-hybrid artifact |
 | `MEMRA_CI_FAULTGATE` | on | `0` skips the request-fault boundary gate in `tools/local-ci.sh` (`tools/request-fault-gate.py`, memra#525: one of four concurrent streams carries the `MEMRA_FAULT_INJECT_CACHE_SALT` salt and panics inside its guarded step; it must fail with `code: worker_fault`, the three peers must finish byte-identical to the same three streamed without it, `request_faults_total` must read 1 and `worker_respawns_total` / `/health` `generation` 0). Skipped when the 9B NVFP4 model is absent |
 | `MEMRA_CI_SPEC_CTX_EDGE` | on | `0` skips the speculative context-edge gate in `tools/local-ci.sh` (`tools/spec-ctx-edge-gate.sh`, memra#659: open requests driven to their cap back to back under the default spec route, door ON at open output 64 and door OFF at `MEMRA_CTX=384`, plus spec vs plain message equality; every request 200 with `finish_reason: length`, no NaN trap, no panic, the boot alive). Wired 2026-09-23 after two consecutive green runs on the local RTX 5090 and a red run on the unfixed tree; receipts `research/spec-ctx-edge-20260923/` |
+| `MEMRA_CI_PRIME_EXACT` | on | `0` skips the 9B prime exactness stage in `tools/local-ci.sh` (memra#641): `tools/prime-batch-exact-gate.sh` (`prime-batch-gate --exact`, `prime_cache_batch` vs `prime_cache` bitwise per sequence at b3-p24, b4-p1100 and carried b3-p600) and `tools/prime-tick-exact-gate.sh` (the scheduler's #641 prime trace), each with its `--canary` teeth; both refuse a vacuous solo fallback. Wired 2026-09-23: red on `9c07b398b` while the fresh varlen FA arm lived, green on its deletion; fast-gate rows `pbg9`/`pbg9c` and `ptick`/`ptickc`. Skipped when the 9B NVFP4 model is absent; `MEMRA_CI_CONT_MODEL` overrides the model. Receipts `research/decode-exact-641-20260923/` |
 | `MEMRA_CI_FAIRGATE` | on | `0` skips the prime-fairness gate in `tools/local-ci.sh` (`tools/prime-fairness-gate.py`, memra#521: one 131,072-token cold prime beside three peers, both `MEMRA_PRIME_YIELD` arms on the 9B NVFP4, natural text calibrated per boot; bytes identical across arms, peers' first token within the bar and at most half the non-yielding arm's p95 on the yielding arm, `tick_max_ms` bounded, every request finished, the walker engaged). Skipped when the 9B NVFP4 model is absent |
 | `MEMRA_CI_GPUPROBEGATE` | on | `0` skips the GPU-probe recovery gate in `tools/local-ci.sh` (`tools/gpu-probe-recovery-gate.py`, memra#516: a fake `nvidia-smi` on `PATH` answers at startup, hangs for a scripted number of probes, then answers or reports ECC; `/health` must stay 200 and publish the degradation below the miss bound, return to clean after an answer, latch 503 at the bound, and never clear a fatal ECC latch on a later answer). Needs the 9B NVFP4 model to boot the real server |
 | `MEMRA_SPEC_BURST` | 32 | tokens per spec burst — round-robin/streaming latency vs per-burst fixed cost (pending-flush + init-feed amortization). The 2026-07-06 "throughput-neutral" null was pre-persistent-draft-graph; re-measured 2026-08-05 on BOTH tiers: `128` is the throughput optimum — 5090/82 SM +7% c=1 (512-tok), +6.9% c=8, +9.2% on the 9B, curve turns DOWN at 256; PRO 6000/188 SM +7.5% (B64 flat there, not here). Byte-identical greedy both rigs. The old flip-blocker — ONE SSE event per burst (at 128: 2 chunks/1.15s first text vs 8 chunks/0.41s at 32) — is FIXED (sse-cadence, 2026-08-05): the worker flushes text per spec-round commit, so first text is ~0.12s and cadence ~27ms at ANY burst size for a solo stream. The SECOND flip-blocker — burst size set round-robin admission latency (contended first-text 0.57s at B32 vs 1.67s at B128) — is also FIXED (admission yield, 2026-08-06): a pending admit ends the in-flight burst at the round boundary and cold sessions burst first, so contended first-text is 0.123s(B32)/0.152s(B128), the solo class at any burst. Kept at 32 by the strict flip criterion: B128 contended is one round-cadence quantum (29ms) behind B32 while buying +8.4%(c=1)/+8.5%(c=8) — a live owner call, no longer a cliff. Set `128` on throughput-tier serve configs (c≥2 batch, judge/harvest, non-streaming API); leave default for the daily pill. **Not** the lever for the mixed-tick penalty: bounding the burst to recover the batched rows' latency was measured and REFUTED (lane/spec-gate, 2026-08-07). In an un-demoted mixed tick at c=6, `MEMRA_SPEC_BURST=4` leaves stream p95 at 11.075 s against the default-32 arm's 11.243 s — inside per-rep spread — and costs 1.4% aggregate throughput. The tick shape says why: mixed ticks go 17 → 109, i.e. the same total serial work sliced thinner, because phase (a) still runs every spec session's rounds before phase (c) is reached. Demotion (`MEMRA_SPEC_GATE`) is the fix that works there (p95 → 7.249 s). Receipts: `research/spec-levers-5090-20260805/`, `research/sse-cadence-20260805/`, `research/admission-20260806/`, `research/spec-gate-20260806/` |
@@ -999,7 +994,6 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
 | `MEMRA_F16OUT=0` | separate epilogue launches instead of the fused fp16-operand `_f16out` twins (silu_mul / gated_rmsnorm / sig_mul) on the f16 prefill lane. Engages only at t>=16 with `MEMRA_PP_F16`-class mirrors live; auto-off under verify-exact. Bit-identical class (the twins emit the cvt kernel's exact halves) | task #17 (`hybrid_forward.rs f16out_on()`) |
 | `MEMRA_FA_EMIT=0` | f32 Q/K/V operands into prefill FA instead of the bf16 emit-straight-from-norm staging (t>=16; island/vision primes keep f32 regardless — the emit path has no island consumer) | `hybrid_forward.rs` emit gate |
 | `MEMRA_FA_BF16KV=0` | in-kernel scalar K/V staging in the hd128/hd256 prefill FA instead of pre-converted bf16 mirrors — BIT-IDENTICAL (same `__float2bfloat16` values into the same mma); the pre-convert turned the 67%-of-stalls scalar staging into int4 vector copies | default-on 2026-07-26 (`lib.rs fa_prefill`) |
-| `MEMRA_FA_VL=0` | per-seq prefill FA loop instead of the varlen batched arm on the batched-prefill path (engages at b=2..8, hd 128/256, FusedQ attention-gate class, fresh prompts) | `hybrid_forward.rs` (`use_favl`) |
 | `MEMRA_FAW_P1=0` | SWA windowed prefill FA back to the g4/o2 arms (P1 = per-head Br=64 stamp with the FA2 schedule + boundary/interior mask split; FP order preserved → bit-identical, gated) | P1 default-on 2026-07-22 engine study (`lib.rs fa_prefill_w`) |
 | `MEMRA_FAW_G4=0` | per-head SWA stamp instead of the MQA 4-heads/CTA staged-K/V-sharing twin (n_head_kv==1, n_head%4==0 class; per-(head,row) FP chain identical → bit-identical, gated) | `lib.rs` |
 | `MEMRA_FAW_O2=0` | single-CTA/SM smem layout instead of the occupancy-2 shared-K/V-buffer twin (~36.5 KB smem, 2 CTA/SM — the llama hd256 mechanism). Bit-identical | `lib.rs` |
@@ -1615,6 +1609,45 @@ boundary. A gate that arms the M1 tensor-core or half2 down tail keeps precedenc
 `set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail reference arm in one loaded model for
 the component test and the DSpark gate's historical arm.
 
+## Removed doors, 2026-09-23 (the DSV4 small-kernel diet is the code on every f32x device program)
+
+memra#339, lane `research/dsv4f-bringup-20260923/small-diet/RESULTS.md`. Owner ruling 2026-09-10:
+a door is either the default or it is deleted, and a same-class win with a clean receipt becomes
+the code. The diet was a TP/EP-only door (default 0, decide-by 2026-09-21, passed without a
+decision) with a +4.09% sampled ABBA receipt on that program. It is now the unconditional program
+on every device f32x HC4 / hidden 4096 load, PP-2 included:
+
+- Kernel boundary, local RTX 5090: `dsv4_small_diet_gpu` (96 HC cases over four residual and
+  three mix magnitude ranges, 128 norm/pack cases over eight row widths, red arms on each gate
+  scale and one weight) `DSV4_SMALL_HC_DIET EXACT cases=96 outputs=5 red_arms=3`,
+  `DSV4_SMALL_NORM_PACK_DIET EXACT cases=128 outputs=2 red_arms=1`. The same test on the target
+  pair, card 0: the same two lines, EXACT.
+- Served PP-2 plain greedy c1 on 2x RTX PRO 6000 Blackwell WS, one boot per row, order
+  `on off off on on off off on on off`, on the tree before the one-token MoE stream visitor:
+  **40.11 tok/s (N=5, 40.08..40.12) against 38.78 (N=5, 38.77..38.82), +3.4%**, TPOT p50
+  -0.85 ms, same text on all 8 prompts in every row. Re-measured on the lane merged with the
+  one-token stream visitor, order `on off off on on off`: **52.24 (N=3, 52.21..52.27) against
+  50.08 (N=3, 50.05..50.09), +4.3%**, TPOT p50 -0.83 ms, same hashes.
+- Served DSpark: flat (-0.1%, N=2 each; verify rows keep the unfused kernels).
+  `dsv4-gpu-dspark-gate --served`: PASS.
+
+`MEMRA_DSV4_SMALL_KERNEL_DIET`: **DELETED**, with its load-time parse, its TP/EP-only refusal and
+its exempt row in `src/dsv4_doors.rs`, and the `("MEMRA_DSV4_SMALL_KERNEL_DIET", "1")` entries in
+five gate env lists. `Dsv4Gpu::small_kernel_diet_shape` (device decode path, f32x chains,
+`hc_mult == 4`, `n_embd == 4096`) decides it at load. Multi-row verify and prefill rows keep the
+unfused chain, which the fused kernels match bit for bit, so a request never changes numeric
+program across plain and verify. The gate-bin setter `set_small_kernel_diet_for_gate` stays as the
+measurement seam of `dsv4_tp_ep_sampled_perf_gate --small-kernel-abba`; it can no longer arm the
+diet on a shape the fused launchers refuse.
+
+The row as it stood:
+
+> ## DSV4 small-kernel diet
+>
+> | Flag | Default, arms, gate and rollback |
+> | --- | --- |
+> | `MEMRA_DSV4_SMALL_KERNEL_DIET` | **Default 0**, decide-by: **2026-09-21**. Parsed at model load; accepts only `0` or `1`. `0` retains the separate f32x HC finish (rowsq, Sinkhorn, collapse) and Q-LoRA norm/pack. `1` fuses each HC finish into one launch and Q norm/pack into one launch on all-layer TP/EP, t=1, HC4, hidden4096. Other topology or f64 chains refuse at load; unsupported HC shape refuses before its fused enqueue. Multirow work retains the old path. Both reductions retain the 128-thread tree; Sinkhorn gathers ascending row/column sums with the original iteration count. Expected bitwise classes: `dsv4_hc_f32_fixed_order`, `dsv4_norm_pack_f32_fixed_order`; no tolerance admission. Rollback: restart with `=0`. Gate: `dsv4_tp_ep_sampled_perf_gate --small-kernel-components` on live checkpoint tensors, then `--small-kernel-abba` (10 cycles, radix, sampled envelope, all state digests, actual HC/Q enqueue assertions). The gate's exclusive model setter changes arms between complete walks. Receipt pointer: private Darklanes `research/dsv4f-devpair-20260905/small-kernel-diet-20260907.md`, namespace `small-kernel-diet-29a73db-r1`: both components bit-equal on both ranks; ten sampled ABBA cycles give 35.404649 OFF to 36.850968 ON tok/s (+4.085112%), all 40 rows eligible and digest-identical. Targeted enqueues fall 344 to 129 per step per rank. Code source and binary hash are pinned in the tracked lane report. |
+
 ## Decided before merge, 2026-09-23 (the DSV4 multi-row MoE stream visitor is the code)
 
 memra #669, receipt `research/dsv4f-bringup-20260923/mrow-stream/RESULTS.md`. The lane measured
@@ -1629,6 +1662,33 @@ identity at the kernel boundary. The lane also routed the one-token plain step t
 multi-row kernel: it lost 1.3% (49.42 against 50.07), so the one-token visitor keeps `rows == 1`.
 Rollback is `git revert`; the gate setter `set_dsv4_moe_m1_stream_for_gate(false)` runs the
 sktail reference arm for both visitors.
+
+## Removed doors, 2026-09-23 (the fresh varlen prefill FA: a second program for the batched prime, memra#641)
+
+memra#641, lane `research/decode-exact-641-20260923/RESULTS.md`. The engine replay of the
+issue's shape (`concat-prime-probe <9B NVFP4> tickshape`, the gate's A/B/C ids, tick 1024, one
+local RTX 5090 Laptop, N=1 per env as pre-registered) on `9c07b398b` plus the probe arm:
+
+```text
+arm bp prime: logits bitdiff=248319 maxabs=1.816733e-1 argmax ref=82 arm=82 | h_seed bitdiff=4096 | hidden bitdiff=8388594 maxabs=9.308960e0 first_row=Some(0) | cache digests differ 55/66 first=["L7.k", "L7.v", "L11.k", "L11.v", "L15.k", "L15.v"]
+tickshape verdict: AT LEAST ONE ARM DIFFERS
+```
+
+With `MEMRA_FA_VL=0` on the same binary every arm was EXACT. The fresh varlen arm attended bf16
+copies of the pre-quantization f32 K/V, while every solo chunk, chunk 0 included, has attended
+the quantized cache view since the 2026-08-05 chunk-invariance fix, so a request primed inside a
+fresh `[A, B, C]` batch took a different numerical program than the same request primed alone.
+The one-numeric-program law makes that a bug, not a speed trade.
+
+- `MEMRA_FA_VL` (default ON since task #18, 2026-07-26): **DELETED**, with the `use_favl`
+  branch of `prime_cache_batch_inner`, `Engine::fa_prefill_vl8` and `Engine::attn_pre_vl8`, the
+  `FaSeqVl`/`FaVl8`/`AttnPreVl`/`AttnPreVl8` argument structs, the VL kernels in
+  `cu/flash_attn.cu` (`fa_mirror_vl`, `q_gate_split_vl`, `attn_rms_vl`, `attn_rope_vl`,
+  `append_kv_vl`, `fa_prefill_bf16kv_vl` and its hd128 twin) and the sm_90a batched twin in
+  `cu/fa3_prefill.cu` (`memra_fa3_vl`, its kernel and stub). Every batch, fresh or carried, now
+  runs the per-sequence attention core, the solo prime's program. The occupancy win of one varlen
+  launch is given up; a varlen twin over the dequantized cache view may come back only with its
+  own bit-identity gate cell and receipt.
 
 ## Removed doors, 2026-09-21 (the prefix-cache policy door: decided on the incident's shape, the segmented arm deleted)
 

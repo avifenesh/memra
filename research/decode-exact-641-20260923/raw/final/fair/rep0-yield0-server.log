@@ -1,0 +1,282 @@
+[server] build: memra-0.138.0-18e7867af199 (id: source-tree, git: 53dac5a565f3)
+[server] starting; models config = [("gate", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=64 HIGH=65 source=env-resolved spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "gate": 33 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 7890MB (7890010112 B, derived: 2 x 3945005056 B max entry for model "gate" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), requested 7890010112 B; boot driver free 18244501504 B, post-reserve clamp 16633888768 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=mtp supported=true yield_door=false [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=870.554
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":8327347072,"pool_reserved_bytes":8455716864,"pool_cached_bytes":128369792,"driver_free_bytes":16365453312,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=mtp transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9440MB rest-mapped 8064MB charged 109MB -> 1266MB]; 1.2s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18521
+[meter] admit id=cmpl-b0847ebd627a8f95d211786135a186e3 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=1986 path=spec = 16704 B/token x ctx + 692MB prefill-workspace + 0MB fixed = 726MB
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=1921 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 107MB (observed 139MB at ctx 1930 path=spec)
+[prime-chunk] phase=mtp-trunk rows=1921 wall_ms=411.031
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=411.657 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=411.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=cmpl-6188e1647df88e5a59c4201eeb95e6ec tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=4200 path=spec = 16704 B/token x ctx + 1477MB prefill-workspace + 107MB fixed = 1654MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 1921; 1 parked, 4135 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=4135 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 111MB (observed 180MB at ctx 4144 path=spec)
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=819.403
+[prime-chunk] phase=mtp-trunk rows=39 wall_ms=54.821
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=25.689
+[prime-chunk] phase=mtp-draft-fill rows=39 wall_ms=0.535
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=901.126 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=901.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=cmpl-7982bf5d5605158401d707a2fae97140 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=135559 path=spec = 16704 B/token x ctx + 3629MB prefill-workspace + 111MB fixed = 6004MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 1921; 2 parked, 135494 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=135494 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 355MB (observed 2618MB at ctx 135503 path=spec)
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=778.733
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=871.566
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=907.670
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=939.514
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=975.678
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1012.849
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1056.204
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1095.109
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1132.999
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1174.878
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1217.242
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1256.704
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1292.654
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1335.299
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1371.619
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1410.551
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1461.614
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1514.488
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1565.836
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1618.850
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1684.341
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1712.792
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1768.988
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1787.401
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1859.998
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1943.052
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1980.695
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2038.423
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2068.836
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2080.661
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2126.613
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2198.200
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2344.990
+[prime-chunk] phase=mtp-trunk rows=288 wall_ms=224.567
+[fa-pool] grow #3 dev=0 o_len 1064960 -> 4337664 ml_len 4160 -> 16944 (retired kept, zero=false)
+[prime-chunk] phase=mtp-trunk rows=38 wall_ms=170.446
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.987
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.863
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.606
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.703
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.476
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.173
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.725
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.840
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.661
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.872
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.633
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.822
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.745
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=25.074
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.902
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.569
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.055
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.616
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.978
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.089
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.458
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.683
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.770
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.181
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.748
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.704
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=25.055
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=28.175
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.095
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.827
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.856
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.676
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.738
+[prime-chunk] phase=mtp-draft-fill rows=326 wall_ms=2.098
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.002 success=true
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=50785.656 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=50785.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=cmpl-0a06cc0a84a35e6d59c3699b5b58b2b1 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=2160 path=spec = 16704 B/token x ctx + 755MB prefill-workspace + 355MB fixed = 1146MB
+[worker] spec-affinity: declined (history diverged at 5 of checkpoint 4135; 2 parked, 2095 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=2095 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-chunk] phase=mtp-trunk rows=2095 wall_ms=469.621
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=470.278 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=470.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=cmpl-cf7932d0638b0308358bdc6590a8474e tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=2230 path=spec = 16704 B/token x ctx + 780MB prefill-workspace + 355MB fixed = 1172MB
+[worker] spec-affinity: declined (history diverged at 5 of checkpoint 135494; 2 parked, 2165 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=2165 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-chunk] phase=mtp-trunk rows=2165 wall_ms=503.474
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.002 success=true
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=504.171 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=504.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=cmpl-ededfa3ebb931a9b26a90a17cde59db8 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=4231 path=spec = 16704 B/token x ctx + 1477MB prefill-workspace + 355MB fixed = 1902MB
+[spec-k] model="gate" tenant="seed" K=3 source=cold-long prompt=4135 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=852.830
+[prime-chunk] phase=mtp-trunk rows=39 wall_ms=57.572
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=26.706
+[prime-chunk] phase=mtp-draft-fill rows=39 wall_ms=0.551
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-acc] ctx=4135 burst=16/45 cum=16/45=0.356
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=1187.472 generated=0->32 rounds=15 drafted=45 accepted=16 k=3
+[tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1187.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=cmpl-acf0006c3869f94c5b427f96431bd9f0 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=135590 path=spec = 16704 B/token x ctx + 3629MB prefill-workspace + 355MB fixed = 6249MB
+[spec-k] model="gate" tenant="long" K=3 source=cold-long prompt=135494 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 355MB (observed 2619MB at ctx 135534 path=spec)
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=816.442
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=918.079
+[meter] admit id=cmpl-1d310b08c41b10e9e81eef61e7f77e6e tenant=default lane=interactive model="gate"
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=982.919
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1011.517
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1066.667
+[meter] admit id=cmpl-ca602b1578c93fc8a0058d4241b3034e tenant=default lane=interactive model="gate"
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1110.546
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1127.998
+[meter] admit id=cmpl-c1a270624abd8518a722afc63d87bd2b tenant=default lane=interactive model="gate"
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1192.642
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1214.038
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1283.121
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1307.826
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1369.592
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1412.000
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1510.836
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1573.861
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1565.113
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1586.146
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1655.218
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1679.094
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1739.801
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1791.120
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1838.710
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1850.003
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1915.586
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=1940.686
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2013.968
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2067.685
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2097.950
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2129.162
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2175.379
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2234.323
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2202.153
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2349.717
+[prime-chunk] phase=mtp-trunk rows=288 wall_ms=241.694
+[prime-chunk] phase=mtp-trunk rows=38 wall_ms=186.885
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=25.521
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.736
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.188
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.054
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.089
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.951
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.990
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.013
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.938
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.941
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.976
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.726
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.042
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.235
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.666
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.927
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.539
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.038
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.866
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.067
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.066
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.103
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.339
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.078
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.155
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.097
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.312
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.330
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.191
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.100
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.002
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.203
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.981
+[prime-chunk] phase=mtp-draft-fill rows=326 wall_ms=2.134
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.002 success=true
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=53962.977 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=53963.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=2191 path=spec = 16704 B/token x ctx + 755MB prefill-workspace + 355MB fixed = 1146MB
+[spec-k] model="gate" tenant="peer-a" K=3 source=cold-long prompt=2095 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=2261 path=spec = 16704 B/token x ctx + 780MB prefill-workspace + 355MB fixed = 1173MB
+[spec-k] model="gate" tenant="peer-b" K=3 source=cold-long prompt=2165 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=4231 path=spec = 16704 B/token x ctx + 1477MB prefill-workspace + 355MB fixed = 1902MB
+[worker] spec-affinity: declined (empty suffix; 1 parked, 4135 prompt tokens; model gate)
+[spec-k] model="gate" tenant="seed" K=3 source=cold-long prompt=4135 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (spec-boundary): 135456 tokens, 2315.4MB (resident 2315.4MB / 7890MB, model gate, ns "long")
+[prime-chunk] phase=mtp-trunk rows=2095 wall_ms=476.126
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-acc] ctx=2095 burst=17/42 cum=17/42=0.405
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=686.680 generated=0->32 rounds=14 drafted=42 accepted=17 k=3
+[prime-chunk] phase=mtp-trunk rows=2165 wall_ms=520.702
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-acc] ctx=2165 burst=17/42 cum=17/42=0.405
+[tick-spec] seq=2 slot=2 trace=- start_ms=686.693 gap_ms=0.012 wall_ms=742.702 generated=0->32 rounds=14 drafted=42 accepted=17 k=3
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=897.802
+[prime-chunk] phase=mtp-trunk rows=39 wall_ms=61.593
+[prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=26.568
+[prime-chunk] phase=mtp-draft-fill rows=39 wall_ms=0.605
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-acc] ctx=4135 burst=16/45 cum=16/45=0.356
+[tick-spec] seq=3 slot=3 trace=- start_ms=1429.406 gap_ms=0.012 wall_ms=1230.113 generated=0->32 rounds=15 drafted=45 accepted=16 k=3
+[fa-pool] grow #4 dev=0 o_len 4337664 -> 13012992 ml_len 16944 -> 50832 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 13012992 -> 26025984 ml_len 50832 -> 101664 (retired kept, zero=false)
+[spec-acc] ctx=135495 burst=15/51 cum=15/51=0.294
+[tick-spec] seq=4 slot=0 trace=- start_ms=2659.531 gap_ms=0.012 wall_ms=873.427 generated=1->32 rounds=17 drafted=51 accepted=15 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=3533.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
