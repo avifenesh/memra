@@ -178,7 +178,19 @@ fn read(e: &Engine, b: &Bufs) -> Out {
 
 fn chain(e: &Engine, c: &Case) -> Out {
     let mut b = bufs(e, c);
-    let m = c.m as i32;
+    launch_chain(e, &mut b, c.m);
+    read(e, &b)
+}
+
+fn fused(e: &Engine, c: &Case, slices: i32, with_y: bool) -> Out {
+    let mut b = bufs(e, c);
+    launch_fused(e, &mut b, c.m, slices, with_y);
+    read(e, &b)
+}
+
+/// The unfused multi-row chain: split dots, rowsq, Sinkhorn, collapse, rmsnorm, pack.
+fn launch_chain(e: &Engine, b: &mut Bufs, rows: usize) {
+    let m = rows as i32;
     let stream = e.stream();
     unsafe {
         let plen = b.partial.len() as i32;
@@ -241,17 +253,70 @@ fn chain(e: &Engine, c: &Case) -> Out {
         let rc = k::memra_dsv4_cvt_bf16(
             dp(&b.out, e),
             b.packed.device_ptr_mut(&stream).0 as *mut c_void,
-            (c.m * D) as i64,
+            (rows * D) as i64,
             sv(e),
         );
         assert_eq!(rc, 0, "cvt_bf16");
     }
-    read(e, &b)
 }
 
-fn fused(e: &Engine, c: &Case, slices: i32, with_y: bool) -> Out {
-    let mut b = bufs(e, c);
-    let m = c.m as i32;
+/// The t=1 diet on main: split dots, the one-CTA small HC, rmsnorm, pack.
+fn launch_diet(e: &Engine, b: &mut Bufs) {
+    let stream = e.stream();
+    unsafe {
+        let plen = b.partial.len() as i32;
+        let rc = memra_dsv4_hc_dot_split(
+            dp(&b.x, e),
+            dp(&b.fn_w, e),
+            dpm(&mut b.partial, e),
+            plen,
+            dpm(&mut b.mixes, e),
+            1,
+            ROWS as i32,
+            W as i32,
+            sv(e),
+        );
+        assert_eq!(rc, 0, "hc_dot_split");
+        let rc = k::memra_dsv4_small_hc_f32_fixed_order(
+            dp(&b.x, e),
+            dpm(&mut b.mixes, e),
+            dp(&b.scale, e),
+            dp(&b.base, e),
+            dpm(&mut b.pre, e),
+            dpm(&mut b.post, e),
+            dpm(&mut b.comb, e),
+            dpm(&mut b.y, e),
+            1,
+            HC as i32,
+            D as i32,
+            ITERS,
+            HC_EPS,
+            sv(e),
+        );
+        assert_eq!(rc, 0, "small_hc_f32_fixed_order");
+        let rc = k::memra_dsv4_rmsnorm_f32acc(
+            dp(&b.y, e),
+            dp(&b.norm_w, e),
+            dpm(&mut b.out, e),
+            1,
+            D as i32,
+            RMS_EPS,
+            sv(e),
+        );
+        assert_eq!(rc, 0, "rmsnorm_f32acc");
+        let rc = k::memra_dsv4_cvt_bf16(
+            dp(&b.out, e),
+            b.packed.device_ptr_mut(&stream).0 as *mut c_void,
+            D as i64,
+            sv(e),
+        );
+        assert_eq!(rc, 0, "cvt_bf16");
+    }
+}
+
+/// The fused pair: split-dot partials, then one CTA per position.
+fn launch_fused(e: &Engine, b: &mut Bufs, rows: usize, slices: i32, with_y: bool) {
+    let m = rows as i32;
     let stream = e.stream();
     unsafe {
         let plen = b.partial.len() as i32;
@@ -295,7 +360,6 @@ fn fused(e: &Engine, c: &Case, slices: i32, with_y: bool) -> Out {
         );
         assert_eq!(rc, 0, "hc_finish_f32_fixed_order");
     }
-    read(e, &b)
 }
 
 const NAMES: [&str; 7] = ["mixes", "pre", "post", "comb", "y", "row", "pack"];
@@ -368,4 +432,47 @@ fn dsv4_hc_finish_is_bit_identical_to_the_unfused_chain() {
         "red arm: norm_w moved, row did not"
     );
     println!("DSV4_HC_FINISH EXACT cases={cases} outputs=7 slices=8,16,32 rows=1,2,5,6 red_arms=3");
+}
+
+fn chain_us(e: &Engine, launches: usize, mut f: impl FnMut()) -> f64 {
+    let flags = Some(cudarc::driver::sys::CUevent_flags::CU_EVENT_DEFAULT);
+    for _ in 0..64 {
+        f();
+    }
+    let start = e.stream().record_event(flags).unwrap();
+    for _ in 0..launches {
+        f();
+    }
+    let end = e.stream().record_event(flags).unwrap();
+    e.stream().synchronize().unwrap();
+    1000.0 * f64::from(start.elapsed_ms(&end).unwrap()) / launches as f64
+}
+
+/// Device time per HC entry site, as a CUDA event chain of back-to-back sites (kernels plus
+/// inter-kernel gaps): the unfused chain, main's t=1 diet, and the fused pair, at the served
+/// plain (1) and DSpark verify (6) row counts. Correctness is the test above.
+#[test]
+#[ignore = "needs a CUDA device; run under flock /tmp/memra-5090.lock"]
+fn dsv4_hc_finish_timing() {
+    let _gpu = gpu_guard();
+    force_true_f32();
+    let e = Engine::new(0).expect("CUDA engine on device 0");
+    assert_eq!(unsafe { memra_dsv4_hc_dot_split_set_for_gate(16) }, 0);
+    let (sites, reps) = (2000, 5);
+    for rows in [1usize, 6] {
+        let c = case(rows, 0x7117 ^ rows as u64, (-4, 2), (-9, -4));
+        let mut b = bufs(&e, &c);
+        for rep in 0..reps {
+            let chain = chain_us(&e, sites, || launch_chain(&e, &mut b, rows));
+            let diet = if rows == 1 {
+                chain_us(&e, sites, || launch_diet(&e, &mut b))
+            } else {
+                f64::NAN
+            };
+            let fused = chain_us(&e, sites, || launch_fused(&e, &mut b, rows, 16, false));
+            println!(
+                "TIMING hc_entry rows={rows} rep={rep} chain_us={chain:.3} diet_us={diet:.3} fused_us={fused:.3}"
+            );
+        }
+    }
 }
