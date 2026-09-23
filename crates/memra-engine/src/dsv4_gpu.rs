@@ -14191,7 +14191,7 @@ impl Dsv4Gpu {
                 },
                 moe_fault_host: vec![0; n_trunk],
                 moe_fault_armed: false,
-                moe_tile_cnt: if !self.ep_enabled && self.matrix_moe && hidden % 32 == 0 {
+                moe_tile_cnt: if !self.ep_enabled && self.matrix_moe && hidden.is_multiple_of(32) {
                     Some(i(hidden / 32)?)
                 } else {
                     None
