@@ -12662,7 +12662,7 @@ impl HybridModel {
                     // memra#659: M rounds of up to k+1 rows each, plus the tail's row, must
                     // land inside the cache; otherwise this round takes the eager arm, whose
                     // own guard above bounds one round.
-                    && cache.pos + m_rounds * t_v_s + 1 <= cache.max_ctx,
+                    && cache.pos + m_rounds * t_v_s < cache.max_ctx,
                 &stream_graph,
                 &stream_ptrs,
             ) {
@@ -15644,9 +15644,9 @@ mod ctx_edge_659_census {
         let guard = &tail[tail.find("if cache.pos + (if adapt").unwrap()..];
         assert_eq!(first_code_line(after(guard, "> cache.max_ctx {")), "break;");
         // The stream arm's choice carries its M-round bound.
-        assert!(tail.contains("&& cache.pos + m_rounds * t_v_s + 1 <= cache.max_ctx,"));
+        assert!(tail.contains("&& cache.pos + m_rounds * t_v_s < cache.max_ctx,"));
         let stream = tail
-            .find("&& cache.pos + m_rounds * t_v_s + 1 <= cache.max_ctx,")
+            .find("&& cache.pos + m_rounds * t_v_s < cache.max_ctx,")
             .unwrap();
         let engaged = tail.find("ROUND-STREAM burst engaged").unwrap();
         assert!(stream < engaged, "the bound is part of the arm's condition");
