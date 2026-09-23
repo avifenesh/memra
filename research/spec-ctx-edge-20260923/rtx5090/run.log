@@ -8,3 +8,12 @@
 2026-09-23T03:58:37Z idle wait 7: free=22572MiB apps=[1923091, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
 2026-09-23T03:59:37Z idle wait 8: free=22572MiB apps=[1923091, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
 2026-09-23T04:00:00Z runner stopped by the lead in idle wait 7: a non-memra co-tenant (colbert-2 python, 1390 MiB) held the card; the idle precondition becomes no memra-server compute app and >= 20000 MiB free, foreign apps recorded (this gate reads no timing); the red binary is a copy of the integ49 binary (5aa040c9) under target/red-integ49/
+2026-09-23T04:00:57Z hold taken tree=04d765ce11b8dd45cc1833f9e252869037c6ef6a
+2026-09-23T04:00:57Z foreign co-tenant recorded: [1923091, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-23T04:00:57Z start red bin=/home/avifenesh/projects/wt-spec-ctx-edge/target/red-integ49/memra-server
+2026-09-23T04:01:15Z done red rc=0 SPEC-CTX-EDGE GATE: RED
+2026-09-23T04:01:15Z start green1 bin=/home/avifenesh/projects/wt-spec-ctx-edge/target/release/memra-server
+2026-09-23T04:01:33Z done green1 rc=0 SPEC-CTX-EDGE GATE: ALL GREEN
+2026-09-23T04:01:33Z start green2 bin=/home/avifenesh/projects/wt-spec-ctx-edge/target/release/memra-server
+2026-09-23T04:01:50Z done green2 rc=0 SPEC-CTX-EDGE GATE: ALL GREEN
+2026-09-23T04:01:50Z hold released; SPEC-CTX-EDGE-5090-DONE
