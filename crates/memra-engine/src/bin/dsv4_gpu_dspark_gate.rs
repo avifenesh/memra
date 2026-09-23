@@ -48,7 +48,7 @@
 //!
 //! Usage: dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1]
 
-use memra_engine::dsv4_gpu::Dsv4Gpu;
+use memra_engine::dsv4_gpu::{DSV4_BATCH_WIDTH_MAX, DecodeState, DsparkState, Dsv4Gpu, resolve_vt};
 use memra_gguf::dsv4_dspark::DsparkFixtureSpec;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use std::io::Write;
@@ -97,13 +97,40 @@ fn vram_line(gpu: &Dsv4Gpu, tag: &str) {
     }
 }
 
+/// The serving prefill width (`MEMRA_DSV4_PREFILL_CHUNK` unset). The matrix expert
+/// program refuses the monolithic reference prefill, so every arm primes through the
+/// same chunked walk a served request takes: the first token as a decode step, the
+/// rest as committed batched transactions.
+const PREFILL_CHUNK: usize = DSV4_BATCH_WIDTH_MAX;
+
+fn fresh_state(gpu: &Dsv4Gpu) -> DecodeState {
+    gpu.alloc_decode_state_for_transient(gpu.max_seq, PREFILL_CHUNK)
+        .expect("alloc decode state")
+}
+
+/// Trunk-only chunked prefill; returns the next-token row after the prompt.
+fn prefill(gpu: &Dsv4Gpu, prompt: &[u32]) -> (DecodeState, Vec<f32>) {
+    let mut state = fresh_state(gpu);
+    let logits = gpu
+        .prefill_with_cache_chunked(prompt, &mut state, PREFILL_CHUNK)
+        .expect("chunked prefill");
+    (state, logits)
+}
+
+/// Trunk + DSpark chunked prefill and prime, the served spec route's cold prime.
+fn prime(gpu: &Dsv4Gpu, prompt: &[u32]) -> (DecodeState, DsparkState, Vec<f32>) {
+    let mut state = fresh_state(gpu);
+    let mut dstate = gpu.dspark_alloc_state().expect("alloc dspark state");
+    let logits = gpu
+        .dspark_prefill_prime_chunked(prompt, &mut state, &mut dstate, PREFILL_CHUNK)
+        .expect("chunked prefill + prime");
+    (state, dstate, logits)
+}
+
 /// Arm P: plain device greedy from `prompt`, `n_new` tokens.
 fn run_plain(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> Vec<u32> {
-    let mut state = gpu.alloc_decode_state().expect("alloc decode state");
-    let pre = gpu
-        .prefill_with_cache(prompt, &mut state)
-        .expect("plain prefill");
-    let mut t = argmax(&pre.logits);
+    let (mut state, logits) = prefill(gpu, prompt);
+    let mut t = argmax(&logits);
     let mut tokens = Vec::with_capacity(n_new);
     for step in 0..n_new {
         tokens.push(t);
@@ -119,12 +146,8 @@ fn run_plain(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> Vec<u32> {
 /// arm's accepted-position rule must reproduce bit for bit (verdict (d)).
 fn run_plain_with_rings(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> Vec<(String, Vec<f32>)> {
     let p0 = prompt.len();
-    let mut state = gpu.alloc_decode_state().expect("alloc decode state");
-    let mut dstate = gpu.dspark_alloc_state().expect("alloc dspark state");
-    let pre = gpu
-        .dspark_prefill_prime(prompt, &mut state, &mut dstate)
-        .expect("prefill + prime");
-    let mut t = argmax(&pre.logits);
+    let (mut state, mut dstate, logits) = prime(gpu, prompt);
+    let mut t = argmax(&logits);
     for step in 0..n_new {
         if step + 1 == n_new {
             break;
@@ -155,12 +178,8 @@ struct DraftedOut {
 /// Mirrors `spec_oracle::run_spec_greedy` step for step.
 fn run_drafted_seq(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOut {
     let p0 = prompt.len();
-    let mut state = gpu.alloc_decode_state().expect("alloc decode state");
-    let mut dstate = gpu.dspark_alloc_state().expect("alloc dspark state");
-    let pre = gpu
-        .dspark_prefill_prime(prompt, &mut state, &mut dstate)
-        .expect("drafted prefill + prime");
-    let mut t = argmax(&pre.logits);
+    let (mut state, mut dstate, logits) = prime(gpu, prompt);
+    let mut t = argmax(&logits);
     let mut tokens: Vec<u32> = Vec::with_capacity(n_new);
     let mut pending: std::collections::VecDeque<u32> = Default::default();
     let mut rounds = 0usize;
@@ -216,13 +235,38 @@ fn run_drafted_seq(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOut {
     }
 }
 
-/// Arm DB: the batched T=k+1 device verify loop (`spec_greedy_batched_with`).
+/// Arm DB: the batched T=k+1 device verify loop the served spec route runs
+/// (`spec_greedy_batched_stream_restored` after the chunked prime), with the same
+/// `MEMRA_DSV4_SPEC_DEPTH` / `MEMRA_DSV4_VT*` reads.
 fn run_drafted_batched(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOut {
-    let mut state = gpu.alloc_decode_state().expect("alloc decode state");
-    let mut dstate = gpu.dspark_alloc_state().expect("alloc dspark state");
-    let mut vstate = gpu.alloc_verify_state().expect("alloc verify state");
+    let (mut state, mut dstate, logits) = prime(gpu, prompt);
+    let mut vstate = gpu
+        .alloc_verify_state_for(state.capacity)
+        .expect("alloc verify state");
+    let depth_cap = std::env::var("MEMRA_DSV4_SPEC_DEPTH")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|t| *t > 0)
+        .unwrap_or(usize::MAX)
+        .max(1);
+    let vt = resolve_vt(
+        std::env::var("MEMRA_DSV4_VT").ok().as_deref(),
+        std::env::var("MEMRA_DSV4_VT_TAU").ok().as_deref(),
+        std::env::var("MEMRA_DSV4_VT_FLOOR").ok().as_deref(),
+    )
+    .expect("vt policy");
     let out = gpu
-        .spec_greedy_batched_with(prompt, n_new, &mut state, &mut dstate, &mut vstate)
+        .spec_greedy_batched_stream_restored(
+            prompt.len(),
+            &logits,
+            n_new,
+            &mut state,
+            &mut dstate,
+            &mut vstate,
+            depth_cap,
+            vt,
+            None,
+        )
         .expect("batched drafted run");
     let mut accept_bytes: Vec<u8> = Vec::new();
     let mut accepted = 0usize;
@@ -269,12 +313,9 @@ fn gate_bit_equal(
     let mut fails = Vec::new();
 
     // --- warm a cache state, deterministically, and learn the round's real head token
-    let warm_up = |gpu: &Dsv4Gpu| -> (memra_engine::dsv4_gpu::DecodeState, u32) {
-        let mut state = gpu.alloc_decode_state().expect("alloc decode state");
-        let pre = gpu
-            .prefill_with_cache(prompt, &mut state)
-            .expect("bitgate prefill");
-        let mut t = argmax(&pre.logits);
+    let warm_up = |gpu: &Dsv4Gpu| -> (DecodeState, u32) {
+        let (mut state, logits) = prefill(gpu, prompt);
+        let mut t = argmax(&logits);
         for _ in 0..warm {
             t = gpu
                 .decode_step_greedy(t, &mut state)
@@ -288,7 +329,9 @@ fn gate_bit_equal(
     let mut ids = vec![t0];
     ids.extend_from_slice(&drafts[..t_batch - 1]);
 
-    let mut vstate = gpu.alloc_verify_state().expect("alloc verify state");
+    let mut vstate = gpu
+        .alloc_verify_state_for(state_a.capacity)
+        .expect("alloc verify state");
     let (logits_b, _am) = gpu
         .verify_batch_dev(&ids, &mut state_a, &mut vstate, None, true)
         .expect("batched verify");
@@ -386,23 +429,36 @@ fn gate_bit_equal(
 }
 
 fn main() {
-    // Freeze this historical instrument independently of the newer defaults.
+    // `--served` runs the program a served request runs: the current default doors.
+    // Without it the historical instrument stays frozen on the pre-door numeric class.
+    let served = std::env::args().any(|a| a == "--served");
     // This is process startup, before any model or worker threads exist.
     unsafe {
-        std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
-        std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
+        if !served {
+            std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
+            std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
+        }
         // Gate-only AR phase instrument: pinned off here so no other bin can inherit
         // an exported instrument or null collective from the environment.
         std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
     }
 
-    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<String> = std::env::args().filter(|a| a != "--served").collect();
     if args.len() < 4 {
         eprintln!(
-            "usage: dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1]"
+            "usage: dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1] \
+             [--served]"
         );
         std::process::exit(2);
     }
+    eprintln!(
+        "program: {}",
+        if served {
+            "served defaults"
+        } else {
+            "historical pins"
+        }
+    );
     let t0 = std::time::Instant::now();
     let dir = Path::new(&args[1]);
     let spec = DsparkFixtureSpec::load(Path::new(&args[2]));

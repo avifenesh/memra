@@ -144,11 +144,14 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
             let forward = segment != 1;
             // Deleted entry families: a stale capture carrying one would be
             // dispatching a kernel this tree no longer builds (memra #461).
+            // The fused norm/RoPE kernel left with its door in memra #490; its norm and
+            // rotation are the separate rmsnorm and rope nodes counted below.
             for deleted in [
                 "moe_m1_graph_splitk_partial_kernel",
                 "moe_m1_graph_splitk_reduce_kernel",
                 "moe_m1_splitk_fast_partial_kernel",
                 "moe_m1_splitk_fast_reduce_kernel",
+                "dsv4_norm_rope_f32_fixed_order_kernel",
             ] {
                 assert_eq!(count_kernel(&dot, deleted), 0, "{deleted} is deleted");
             }
@@ -166,20 +169,16 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
                     0
                 }
             );
-            assert_eq!(
-                count_kernel(&dot, "dsv4_norm_rope_f32_fixed_order_kernel"),
-                if forward { 43 } else { 0 }
-            );
             let norms = match segment {
-                0 => 86,
-                2 => 128,
-                3 => 148,
+                0 => 129,
+                2 => 171,
+                3 => 191,
                 _ => usize::from(rank == 1),
             };
             assert_eq!(count_kernel(&dot, "dsv4_rmsnorm_f32acc_kernel"), norms);
             assert_eq!(
                 count_kernel(&dot, "dsv4_rope_kernel"),
-                if forward { 107 } else { 0 }
+                if forward { 150 } else { 0 }
             );
             assert_eq!(count_kernel(&dot, "dsv4_dense_exact_tail_fp8_kernel"), 0);
             assert_eq!(count_kernel(&dot, "dsv4_dense_exact_tail_dots_kernel"), 0);
