@@ -363,14 +363,33 @@ pub struct Stage {
     pub hc_head_scale_dev: Option<CudaSlice<f32>>,
 }
 
+/// A dots-kernel weight in its checkpoint storage: the BF16 bytes when the checkpoint stores
+/// BF16, else the f32 island. Every dots kernel widens BF16 exactly and runs the same product
+/// order on both, so the BF16 plane gives the f32 island's bits at half the bytes.
+pub struct IslandW {
+    raw: CudaSlice<u8>,
+    bf16: bool,
+}
+
+impl IslandW {
+    fn ptr(&self, stream: &std::sync::Arc<CudaStream>) -> *const c_void {
+        self.raw.device_ptr(stream).0 as *const c_void
+    }
+
+    /// The dots kernels' `w_is_bf16` argument.
+    fn flag(&self) -> i32 {
+        i32::from(self.bf16)
+    }
+}
+
 pub struct CmpDev {
     pub ratio: usize,
     pub d: usize,
     pub latent: usize,
     pub overlap: bool,
     pub rotate: bool,
-    pub wkv: CudaSlice<f32>,   // f32 island
-    pub wgate: CudaSlice<f32>, // f32 island
+    pub wkv: IslandW,
+    pub wgate: IslandW,
     pub norm: CudaSlice<f32>,
     pub ape: CudaSlice<f32>, // [ratio, latent]
 }
@@ -2941,6 +2960,32 @@ impl Dsv4Gpu {
         upload_f32(&stream, &v)
     }
 
+    /// A dots weight as the checkpoint stores it: BF16 bytes for a BF16 tensor, else the f32
+    /// island through the proven tensor_f32 decode.
+    fn island_w_dev(&mut self, stage: usize, name: &str) -> Res<IslandW> {
+        let stream = self.stages[stage].gpu.stream();
+        if let Some((info, raw)) = self.model.st.raw(name)
+            && info.dtype == "BF16"
+        {
+            let (shape, _) = self.model.tensor_f32(name);
+            if raw.len() != 2 * shape.iter().product::<usize>() {
+                return Err(format!("{name}: BF16 byte count vs shape {shape:?}"));
+            }
+            self.stages[stage].loaded_bytes += raw.len() as u64;
+            return Ok(IslandW {
+                raw: upload_u8(&stream, raw)?,
+                bf16: true,
+            });
+        }
+        let (_, v) = self.model.tensor_f32(name);
+        let bytes: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+        self.stages[stage].loaded_bytes += bytes.len() as u64;
+        Ok(IslandW {
+            raw: upload_u8(&stream, &bytes)?,
+            bf16: false,
+        })
+    }
+
     fn load_cmp(
         &mut self,
         stage: usize,
@@ -2959,8 +3004,8 @@ impl Dsv4Gpu {
             latent,
             overlap,
             rotate,
-            wkv: self.tensor_f32_dev(stage, &format!("{prefix}.wkv.weight"))?,
-            wgate: self.tensor_f32_dev(stage, &format!("{prefix}.wgate.weight"))?,
+            wkv: self.island_w_dev(stage, &format!("{prefix}.wkv.weight"))?,
+            wgate: self.island_w_dev(stage, &format!("{prefix}.wgate.weight"))?,
             norm: self.tensor_f32_dev(stage, &format!("{prefix}.norm.weight"))?,
             ape: self.tensor_f32_dev(stage, &format!("{prefix}.ape"))?,
         })
@@ -4617,6 +4662,69 @@ impl Dsv4Gpu {
         Ok(())
     }
 
+    /// `dots` over an [`IslandW`] in its checkpoint storage.
+    fn dots_w(
+        st: &Stage,
+        x: &CudaSlice<f32>,
+        w: &IslandW,
+        s: usize,
+        kdim: usize,
+        n: usize,
+        y: &mut CudaSlice<f32>,
+    ) -> Res<()> {
+        let stream = st.gpu.stream();
+        unsafe {
+            ck(
+                "dots_f32",
+                k::memra_dsv4_dots_f32(
+                    dpf!(x, &stream),
+                    w.ptr(&stream),
+                    w.flag(),
+                    dpm!(y, &stream),
+                    s as i32,
+                    kdim as i32,
+                    n as i32,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// `dots_dev` over an [`IslandW`] in its checkpoint storage.
+    #[allow(clippy::too_many_arguments)]
+    fn dots_dev_w(
+        &self,
+        st: &Stage,
+        x: &CudaSlice<f32>,
+        w: &IslandW,
+        s: usize,
+        kdim: usize,
+        n: usize,
+        y: &mut CudaSlice<f32>,
+    ) -> Res<()> {
+        if !self.dots_f32 {
+            return Self::dots_w(st, x, w, s, kdim, n, y);
+        }
+        let stream = st.gpu.stream();
+        unsafe {
+            ck(
+                "dots_f32acc",
+                k::memra_dsv4_dots_f32acc(
+                    dpf!(x, &stream),
+                    w.ptr(&stream),
+                    w.flag(),
+                    dpm!(y, &stream),
+                    s as i32,
+                    kdim as i32,
+                    n as i32,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        Ok(())
+    }
+
     /// Island dots on the DEVICE decode path (lane 9): routes to the f64 oracle-truth
     /// arm (default — byte-identical to `Self::dots`) or the owner-gated
     /// f32-accumulation serving arm (MEMRA_DSV4_DOTS_ARM=f32; fork gated by
@@ -4682,8 +4790,8 @@ impl Dsv4Gpu {
         let mut score = stream
             .alloc_zeros::<f32>(s * cmp.latent)
             .map_err(e("cmp score"))?;
-        Self::dots(st, x, &cmp.wkv, s, hidden, cmp.latent, &mut kv)?;
-        Self::dots(st, x, &cmp.wgate, s, hidden, cmp.latent, &mut score)?;
+        Self::dots_w(st, x, &cmp.wkv, s, hidden, cmp.latent, &mut kv)?;
+        Self::dots_w(st, x, &cmp.wgate, s, hidden, cmp.latent, &mut score)?;
         if s < cmp.ratio {
             return Ok((None, kv, score));
         }
@@ -7668,8 +7776,8 @@ impl Dsv4Gpu {
         let (ratio, d, latent) = (cmp.ratio, cmp.d, cmp.latent);
         let mut kv_row = stream.alloc_zeros::<f32>(latent).map_err(e("dkv"))?;
         let mut sc_row = stream.alloc_zeros::<f32>(latent).map_err(e("dsc"))?;
-        Self::dots(st, x, &cmp.wkv, 1, hidden, latent, &mut kv_row)?;
-        Self::dots(st, x, &cmp.wgate, 1, hidden, latent, &mut sc_row)?;
+        Self::dots_w(st, x, &cmp.wkv, 1, hidden, latent, &mut kv_row)?;
+        Self::dots_w(st, x, &cmp.wgate, 1, hidden, latent, &mut sc_row)?;
         let slot = if cmp.overlap {
             ratio + pos % ratio
         } else {
@@ -9272,8 +9380,8 @@ impl Dsv4Gpu {
     ) -> Res<()> {
         let stream = st.gpu.stream();
         let (ratio, d, latent) = (cmp.ratio, cmp.d, cmp.latent);
-        self.dots_dev(st, x, &cmp.wkv, 1, hidden, latent, kv_row)?;
-        self.dots_dev(st, x, &cmp.wgate, 1, hidden, latent, sc_row)?;
+        self.dots_dev_w(st, x, &cmp.wkv, 1, hidden, latent, kv_row)?;
+        self.dots_dev_w(st, x, &cmp.wgate, 1, hidden, latent, sc_row)?;
         let slot = if cmp.overlap {
             ratio + pos % ratio
         } else {
@@ -15077,8 +15185,8 @@ impl Dsv4Gpu {
         self.dots_m_dev(
             st,
             x_ptr,
-            cmp.wkv.device_ptr(&stream).0 as *const c_void,
-            0,
+            cmp.wkv.ptr(&stream),
+            cmp.wkv.flag(),
             t,
             hidden,
             latent,
@@ -15087,8 +15195,8 @@ impl Dsv4Gpu {
         self.dots_m_dev(
             st,
             x_ptr,
-            cmp.wgate.device_ptr(&stream).0 as *const c_void,
-            0,
+            cmp.wgate.ptr(&stream),
+            cmp.wgate.flag(),
             t,
             hidden,
             latent,
