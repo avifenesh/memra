@@ -1,0 +1,14 @@
+diff --git a/crates/memra-engine/src/dsv4_gpu.rs b/crates/memra-engine/src/dsv4_gpu.rs
+index 59226b743..9866624d6 100644
+--- a/crates/memra-engine/src/dsv4_gpu.rs
++++ b/crates/memra-engine/src/dsv4_gpu.rs
+@@ -3715,7 +3715,8 @@ impl Dsv4Gpu {
+         // unfused kernels' 128-thread tree and ascending sums, so the plain t=1 step and a
+         // multi-row verify row stay one numeric program. Other shapes keep the unfused
+         // kernels, which the fused launchers refuse.
+-        me.small_kernel_diet = me.small_kernel_diet_shape();
++        me.small_kernel_diet = me.small_kernel_diet_shape()
++            && std::env::var("MEMRA_DSV4_DIET_AB").as_deref() != Ok("0");
+         eprintln!(
+             "[load] expert arm: {:?} | decode path: {:?} | dots arm: {}",
+             me.expert_arm,

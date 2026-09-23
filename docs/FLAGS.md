@@ -65,12 +65,6 @@ measured on a GPU, because no speech operation has a CUDA kernel yet (§1).
 
 `MEMRA_PRIME_QW8`: removed before merge. Exact but flat at chunk 1024 (29.082/29.145 ms at 131070 depth); a 4096-only serving control subsequently OOMed after prefix publication. Superseded by the three-plane staging candidate at unchanged chunk 1024. Probability-fragment load reuse alone was also flat and removed. Receipts: `research/qwen-prefill-20260909/`.
 
-## DSV4 small-kernel diet
-
-| Flag | Default, arms, gate and rollback |
-| --- | --- |
-| `MEMRA_DSV4_SMALL_KERNEL_DIET` | **Default 0**, decide-by: **2026-09-21**. Parsed at model load; accepts only `0` or `1`. `0` retains the separate f32x HC finish (rowsq, Sinkhorn, collapse) and Q-LoRA norm/pack. `1` fuses each HC finish into one launch and Q norm/pack into one launch on all-layer TP/EP, t=1, HC4, hidden4096. Other topology or f64 chains refuse at load; unsupported HC shape refuses before its fused enqueue. Multirow work retains the old path. Both reductions retain the 128-thread tree; Sinkhorn gathers ascending row/column sums with the original iteration count. Expected bitwise classes: `dsv4_hc_f32_fixed_order`, `dsv4_norm_pack_f32_fixed_order`; no tolerance admission. Rollback: restart with `=0`. Gate: `dsv4_tp_ep_sampled_perf_gate --small-kernel-components` on live checkpoint tensors, then `--small-kernel-abba` (10 cycles, radix, sampled envelope, all state digests, actual HC/Q enqueue assertions). The gate's exclusive model setter changes arms between complete walks. Receipt pointer: private Darklanes `research/dsv4f-devpair-20260905/small-kernel-diet-20260907.md`, namespace `small-kernel-diet-29a73db-r1`: both components bit-equal on both ranks; ten sampled ABBA cycles give 35.404649 OFF to 36.850968 ON tok/s (+4.085112%), all 40 rows eligible and digest-identical. Targeted enqueues fall 344 to 129 per step per rank. Code source and binary hash are pinned in the tracked lane report. |
-
 > **A new `MEMRA_*` read needs a row here IN THE SAME COMMIT.** `tools/hooks/pre-push` runs
 > `tools/check-flags.sh` on every push (+0.55 s) and refuses one that adds an uncovered name. That
 > arm landed 2026-08-23 after main went red three times in one day on this exact rule — the census
@@ -1613,6 +1607,43 @@ boundary. A gate that arms the M1 tensor-core or half2 down tail keeps precedenc
 (the TP/EP bench pins that program). Rollback is `git revert`; the gate setter
 `set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail reference arm in one loaded model for
 the component test and the DSpark gate's historical arm.
+
+## Removed doors, 2026-09-23 (the DSV4 small-kernel diet is the code on every f32x device program)
+
+memra#339, lane `research/dsv4f-bringup-20260923/small-diet/RESULTS.md`. Owner ruling 2026-09-10:
+a door is either the default or it is deleted, and a same-class win with a clean receipt becomes
+the code. The diet was a TP/EP-only door (default 0, decide-by 2026-09-21, passed without a
+decision) with a +4.09% sampled ABBA receipt on that program. It is now the unconditional program
+on every device f32x HC4 / hidden 4096 load, PP-2 included:
+
+- Kernel boundary, local RTX 5090: `dsv4_small_diet_gpu` (96 HC cases over four residual and
+  three mix magnitude ranges, 128 norm/pack cases over eight row widths, red arms on each gate
+  scale and one weight) `DSV4_SMALL_HC_DIET EXACT cases=96 outputs=5 red_arms=3`,
+  `DSV4_SMALL_NORM_PACK_DIET EXACT cases=128 outputs=2 red_arms=1`. The same test on the target
+  pair, card 0: the same two lines, EXACT.
+- Served PP-2 plain greedy c1 on 2x RTX PRO 6000 Blackwell WS, one boot per row, order
+  `on off off on on off off on on off`, on the tree before the one-token MoE stream visitor:
+  **40.11 tok/s (N=5, 40.08..40.12) against 38.78 (N=5, 38.77..38.82), +3.4%**, TPOT p50
+  -0.85 ms, same text on all 8 prompts in every row.
+- Served DSpark: flat (-0.1%, N=2 each; verify rows keep the unfused kernels).
+  `dsv4-gpu-dspark-gate --served`: PASS.
+
+`MEMRA_DSV4_SMALL_KERNEL_DIET`: **DELETED**, with its load-time parse, its TP/EP-only refusal and
+its exempt row in `src/dsv4_doors.rs`, and the `("MEMRA_DSV4_SMALL_KERNEL_DIET", "1")` entries in
+five gate env lists. `Dsv4Gpu::small_kernel_diet_shape` (device decode path, f32x chains,
+`hc_mult == 4`, `n_embd == 4096`) decides it at load. Multi-row verify and prefill rows keep the
+unfused chain, which the fused kernels match bit for bit, so a request never changes numeric
+program across plain and verify. The gate-bin setter `set_small_kernel_diet_for_gate` stays as the
+measurement seam of `dsv4_tp_ep_sampled_perf_gate --small-kernel-abba`; it can no longer arm the
+diet on a shape the fused launchers refuse.
+
+The row as it stood:
+
+> ## DSV4 small-kernel diet
+>
+> | Flag | Default, arms, gate and rollback |
+> | --- | --- |
+> | `MEMRA_DSV4_SMALL_KERNEL_DIET` | **Default 0**, decide-by: **2026-09-21**. Parsed at model load; accepts only `0` or `1`. `0` retains the separate f32x HC finish (rowsq, Sinkhorn, collapse) and Q-LoRA norm/pack. `1` fuses each HC finish into one launch and Q norm/pack into one launch on all-layer TP/EP, t=1, HC4, hidden4096. Other topology or f64 chains refuse at load; unsupported HC shape refuses before its fused enqueue. Multirow work retains the old path. Both reductions retain the 128-thread tree; Sinkhorn gathers ascending row/column sums with the original iteration count. Expected bitwise classes: `dsv4_hc_f32_fixed_order`, `dsv4_norm_pack_f32_fixed_order`; no tolerance admission. Rollback: restart with `=0`. Gate: `dsv4_tp_ep_sampled_perf_gate --small-kernel-components` on live checkpoint tensors, then `--small-kernel-abba` (10 cycles, radix, sampled envelope, all state digests, actual HC/Q enqueue assertions). The gate's exclusive model setter changes arms between complete walks. Receipt pointer: private Darklanes `research/dsv4f-devpair-20260905/small-kernel-diet-20260907.md`, namespace `small-kernel-diet-29a73db-r1`: both components bit-equal on both ranks; ten sampled ABBA cycles give 35.404649 OFF to 36.850968 ON tok/s (+4.085112%), all 40 rows eligible and digest-identical. Targeted enqueues fall 344 to 129 per step per rank. Code source and binary hash are pinned in the tracked lane report. |
 
 ## Removed doors, 2026-09-21 (the prefix-cache policy door: decided on the incident's shape, the segmented arm deleted)
 
