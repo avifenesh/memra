@@ -160,3 +160,38 @@ poll, `promote_in` about 16 to 18 ms, 1b about +6 to +12. The day-34 run: the he
   installed (`apt-iproute2.log`); attempt 1's boot-dependent receipts are kept under `attempt1-no-ss/`.
 - `driver-rerun.sh` (`fee93513d`): the same `doubleparks.sh`, `gates.sh` and `hitgate.sh` on the same three binaries under
   the same collector. No script, clause, threshold or cell changed.
+
+## 6. The 5090 half (`rtx5090-day34/`)
+
+One bounded hold of `/tmp/memra-5090.lock`, 20:55:55Z to 21:12:08Z (`run.log`; it waited 47 bounded attempts behind lane
+B's O2 order, never inside it), no compute app at the start. Binaries: the day-33 binary with the timeline
+`a4f00c5656d35b4a1290565ad060af4b265ffc45614bb938827b18d29eebfee8` (`d7d54c7a9`), the day-34 binary
+`3d3b96bf4652e9a2a36a5b88084c35344e7debff2d929ac7b46697232c347cc0` (`100214477` code), the 9B NVFP4 MTP artifact.
+
+- Unit cells: the door's GPU cells `test result: ok. 17 passed` (with
+  `option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused`); the engine's `h2d_` and
+  `d2h_span` cells `ok. 5 passed` (with `h2d_deferred_checksum_lands_with_the_supplied_digests` and the day-33 owner-hold
+  cell).
+- The A/B, twenty boots, `STALL REPLAY: PASS` 20 of 20 (`reading-day34.log`), verbatim:
+  - `DAY34 READING arm=d33 boots=10 steady landing-poll-hold N=90 median=8.50 min=8.20 max=9.54 polls [1] (counts [90]) |
+    promote-in N=90 median=17.10 ...`
+  - `DAY34 C arm=d34 boots=10 steady landing-poll-hold N=90 median=0.12 min=0.10 max=0.40 polls [1, 2, 3] (counts [1,
+    88, 1]) | promote-in N=90 median=16.50 min=9.50 max=31.90 | receipts=100 on-helper=100 helper-ms N=100 median=8.80
+    min=8.70 max=18.50 rule N>=20 median<=1.5 max<=3.0 every-receipt-on-helper -> PASS`
+  - `DAY34 D order=o1 e2e d33 N=50 median=80.49 ... e2e d34 N=50 median=80.70 ... d34-minus-d33 +0.21 rule <=+1.0 ->
+    PASS`; `order=o2 ... median=81.19 ... median=81.70 ... +0.50 rule <=+1.0 -> PASS`
+- **(c) PASSES**: the landing poll's owner hold 8.50 ms to 0.12 ms (N=90 each, max 0.40). **(d) PASSES** in both orders.
+  The helper's hash over the write-combined leases takes 8.8 ms, just longer than the 8 ms to the next tick top, so 88
+  of 90 promotes land at the second poll: the owner thread is free, and the request waits one more tick than it would
+  if the digests had made the first (the predicted "miss" branch): `promote_in` 17.10 to 16.50.
+- Gates on the day-34 binary through `--external-lock 9`: identity x4 `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`
+  (12 ok each); failure ON `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (15 ok), with, in its `digest` cell, `contracts door H2D
+  receipt: Kv(3) K plane host bytes differ from the D2H receipt as injected (MEMRA_KV_HOST_FAULT=flip-demote); the
+  verify arm catches it at promote` and `VERIFY FAILED: promoted digest .. != demote digest ..`, the receipt naming `KV
+  checksums on the hash helper (1.1MB in 9.9ms)`: **(a)'s served-path cell holds** (the helper's digest saw the flipped
+  byte); fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (160 ok each).
+- The hit gates did not run in that hold: the gate's own `stop` addresses its server under an external lock only while
+  `/proc/<pid>/comm` reads `memra-server` (C day 28's rule), and the binary was named `memra-server-d34`; its spec-on
+  server outlived the stop and the spec-off twin refused the port (`hit-off/gate.log`). The orphan (this lane's own
+  binary on port 18099, its environment read from `/proc`) was stopped by pid. The rerun under that name, the same
+  bytes (`hit-rerun.sh`), waits for the lock behind another lane.
