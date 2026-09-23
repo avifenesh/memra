@@ -250,6 +250,8 @@ jobs:
             --archive "$lane/confidence/adaptive-v3/receipts-v3/native-data.tar.gz" \
             --workloads "$lane/confidence/adaptive-v3/workloads-v3/manifest.json" \
             --out "$RUNNER_TEMP/joint-v4-static-oracle.json"
+          cmp "$RUNNER_TEMP/joint-v4-static-oracle.json" \
+            "$lane/joint-v4/STATIC-ORACLE.json"
           python3 "$lane/joint-v4/workloads.py" \
             --out "$RUNNER_TEMP/joint-v4-workloads"
           diff -r "$RUNNER_TEMP/joint-v4-workloads" "$lane/joint-v4/workloads-v4"
@@ -279,6 +281,9 @@ jobs:
       - name: Rebuild randomized-depth source and compile native driver
         run: |
           lane=research/prompt-depth-router-20260922
+          python3 -m py_compile \
+            "$lane/joint-v4/run_native.py" \
+            "$lane/joint-v4/analyze_training.py"
           python3 "$lane/joint-v4/patch_source.py" \
             --base "$lane/confidence/adaptive-v3/receipts-v3/runtime-source-adaptive-v3.tar.gz" \
             --out "$RUNNER_TEMP/joint-v4-native"

@@ -52,19 +52,19 @@ controller experiment.
 
 At **request start**, a controller may use only a bounded first user
 token prefix, request length and prior turns' committed tokens. At a
-**round boundary**, it may additionally use the last committed token,
+**round boundary**, D may additionally use the last committed token,
 a bounded history of 4 and 16 committed tokens, previous *completed*
-round acceptance and elapsed time, current offered draft confidence,
-and current K/D. The current sampled draft token can be read only at
-the after-offer C decision. Never feed a future target logit, a
+round acceptance and elapsed time, and current K/D. The confidence
+and identity of a newly sampled draft token become available only
+at the after-offer C decision. Never feed a future target logit, a
 rejected suffix, a later output token, a later round's acceptance, or
 an unmeasured cache state into a decision.
 
 Train and ablate three nested feature sets:
 
-1. Current token and current draft confidence only.
-2. Those features plus 4/16 prior committed tokens.
-3. Those features plus previous-round accepted-prefix and cost
+1. Last committed token for D; newly offered draft confidence for C.
+2. Those causal features plus 4/16 prior committed tokens.
+3. Those causal features plus previous-round accepted-prefix and cost
    summaries.
 
 Check content transitions such as reasoning-to-code fence and
