@@ -704,6 +704,7 @@ fn compare_checkpoint_oracles(
     }
     let mut max_abs = 0.0f32;
     let mut max_rel = 0.0f32;
+    let mut max_ref_abs = 0.0f32;
     let mut worst = 0usize;
     let mut first_violation = None;
     for (index, (&reference, &native)) in expected.logits.iter().zip(&actual.logits).enumerate() {
@@ -717,6 +718,7 @@ fn compare_checkpoint_oracles(
             worst = index;
         }
         max_rel = max_rel.max(relative);
+        max_ref_abs = max_ref_abs.max(reference.abs());
         let allowed = gate.max_abs + gate.max_rel * reference.abs();
         if absolute > allowed && first_violation.is_none() {
             first_violation = Some((index, absolute, allowed));
@@ -737,7 +739,7 @@ fn compare_checkpoint_oracles(
         .into());
     }
     Ok(format!(
-        "status\tpassed\nreference_engine\t{}\nnative_engine\t{}\nnumeric_class\t{}\ntokens\t{}\nvocab\t{}\nmax_abs\t{max_abs}\nmax_rel\t{max_rel}\nreference_argmax\t{reference_argmax}\nnative_argmax\t{native_argmax}\n",
+        "status\tpassed\nreference_engine\t{}\nnative_engine\t{}\nnumeric_class\t{}\ntokens\t{}\nvocab\t{}\nmax_abs\t{max_abs}\nmax_rel\t{max_rel}\nmax_ref_abs\t{max_ref_abs}\nreference_argmax\t{reference_argmax}\nnative_argmax\t{native_argmax}\n",
         expected.engine,
         actual.engine,
         expected.numeric_class,
@@ -2525,7 +2527,8 @@ mod tests {
             max_rel: 2.0,
             require_argmax: true,
         };
-        assert!(compare_checkpoint_oracles(&reference, &native, gate).is_ok());
+        let receipt = compare_checkpoint_oracles(&reference, &native, gate).unwrap();
+        assert!(receipt.contains("\nmax_ref_abs\t1\n"));
         let failing = oracle("memra-native", &[2.0, 1.0, -1.0]);
         assert!(compare_checkpoint_oracles(&reference, &failing, gate).is_err());
         std::fs::remove_dir_all(root).unwrap();

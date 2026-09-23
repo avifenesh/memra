@@ -141,8 +141,8 @@ fn observe_comparison(
         candidate,
         policy(model)?,
     )?;
-    evidence.event(format!("FALLBACK_PARITY label={label} passed={} max_abs={} max_rel={} reference_argmax={} candidate_argmax={} first_violation={:?}",
-        result.passed, result.max_abs, result.max_rel, result.reference_argmax, result.candidate_argmax, result.first_violation))?;
+    evidence.event(format!("FALLBACK_PARITY label={label} passed={} max_abs={} max_rel={} max_ref_abs={} reference_argmax={} candidate_argmax={} first_violation={:?}",
+        result.passed, result.max_abs, result.max_rel, result.max_ref_abs, result.reference_argmax, result.candidate_argmax, result.first_violation))?;
     Ok(result.passed)
 }
 

@@ -101,6 +101,13 @@ controls), `CUDA_*`, `NVIDIA_*`, `CUBLAS_*`, `CUBLASLT_*`, `LD_PRELOAD` and
 `LD_LIBRARY_PATH`. cuBLASLt reads its own `CUBLASLT_` prefix, which `CUBLAS_` does
 not match.
 
+A receipt also records `max_ref_abs`, the largest compared `|reference|`. The parser
+refuses `max_abs > atol + rtol * max_ref_abs` when both tolerances are nonzero; before
+this, such a receipt could claim any `max_abs`. Each element passed that expression at
+its own reference value in f32, and f32 rounding is monotone, so the check is exact
+with no slack. The pure absolute and pure relative checks stay. A receipt without the
+field refuses, so earlier bundles need fresh receipts.
+
 The native runner includes a separate `library-drift` probe using a real read/execute
 mapping (never executed) and a populated eager cache. It must refuse retained re-entry
 before token work and preserve cache hashes. Qualified graph/prime/worker probes and real environment-drift control are now

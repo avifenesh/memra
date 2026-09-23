@@ -818,17 +818,18 @@ fn run() -> Result<()> {
             require(
                 parity.passed,
                 format!(
-                    "PROMPT_PARITY_FAILED prompt={i} max_abs={} max_rel={} reference_argmax={} candidate_argmax={} first={:?}",
+                    "PROMPT_PARITY_FAILED prompt={i} max_abs={} max_rel={} max_ref_abs={} reference_argmax={} candidate_argmax={} first={:?}",
                     parity.max_abs,
                     parity.max_rel,
+                    parity.max_ref_abs,
                     parity.reference_argmax,
                     parity.candidate_argmax,
                     parity.first_violation
                 ),
             )?;
             println!(
-                "PROMPT_PARITY_PASS prompt={i} max_abs={} max_rel={}",
-                parity.max_abs, parity.max_rel
+                "PROMPT_PARITY_PASS prompt={i} max_abs={} max_rel={} max_ref_abs={}",
+                parity.max_abs, parity.max_rel, parity.max_ref_abs
             );
             references.extend(reference);
             candidates.extend(candidate);

@@ -136,11 +136,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut max_abs = 0.0f32;
     let mut max_rel = 0.0f32;
+    let mut max_ref_abs = 0.0f32;
     for (&expected, &actual) in reference.iter().zip(&joined0) {
         let abs = (actual - expected).abs();
         let rel = abs / expected.abs().max(1.0e-6);
         max_abs = max_abs.max(abs);
         max_rel = max_rel.max(rel);
+        max_ref_abs = max_ref_abs.max(expected.abs());
         if abs > 1.0e-4 + 1.0e-4 * expected.abs() {
             return Err(format!(
                 "row-parallel BF16 tolerance exceeded: expected={expected} actual={actual} \
@@ -169,7 +171,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!(
         "TP2_BF16_ROW_PARALLEL PASS geometry={out_f}x{in_f} split={half}+{half} \
-         argmax={reference_argmax} max_abs={max_abs:.8} max_rel={max_rel:.8}"
+         argmax={reference_argmax} max_abs={max_abs:.8} max_rel={max_rel:.8} max_ref_abs={max_ref_abs:.8}"
     );
     Ok(())
 }

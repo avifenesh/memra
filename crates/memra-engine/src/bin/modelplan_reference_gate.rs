@@ -172,13 +172,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::write(
         &receipt_path,
         format!(
-            "format\tmemra-modelplan-fixture-parity-v1\nstatus\tpassed\nimplementation_sha256\t{executable_sha256}\nplan_sha256\t{}\nvalues\t{}\nmax_abs\t{}\nmax_rel\t{}\n",
-            rewrite.plan_sha256, receipt.values, receipt.max_abs, receipt.max_rel,
+            "format\tmemra-modelplan-fixture-parity-v1\nstatus\tpassed\nimplementation_sha256\t{executable_sha256}\nplan_sha256\t{}\nvalues\t{}\nmax_abs\t{}\nmax_rel\t{}\nmax_ref_abs\t{}\n",
+            rewrite.plan_sha256,
+            receipt.values,
+            receipt.max_abs,
+            receipt.max_rel,
+            receipt.max_ref_abs,
         ),
     )?;
     println!(
-        "ModelPlan reference parity passed: values={} max_abs={} max_rel={} receipt={receipt_path}",
-        receipt.values, receipt.max_abs, receipt.max_rel
+        "ModelPlan reference parity passed: values={} max_abs={} max_rel={} max_ref_abs={} receipt={receipt_path}",
+        receipt.values, receipt.max_abs, receipt.max_rel, receipt.max_ref_abs
     );
     Ok(())
 }

@@ -18,7 +18,7 @@ fn compare(
         candidate,
         policy(model)?,
     )?;
-    evidence.event(format!("PARITY label={label} surface={} passed={} max_abs={} max_rel={} reference_argmax={} candidate_argmax={} first_violation={:?}", surface.as_str(), receipt.passed, receipt.max_abs, receipt.max_rel, receipt.reference_argmax, receipt.candidate_argmax, receipt.first_violation))?;
+    evidence.event(format!("PARITY label={label} surface={} passed={} max_abs={} max_rel={} max_ref_abs={} reference_argmax={} candidate_argmax={} first_violation={:?}", surface.as_str(), receipt.passed, receipt.max_abs, receipt.max_rel, receipt.max_ref_abs, receipt.reference_argmax, receipt.candidate_argmax, receipt.first_violation))?;
     require(
         receipt.passed,
         format!("NATIVE_MATH_FAILED {label}; no tolerance relaxation or receipt substitution"),

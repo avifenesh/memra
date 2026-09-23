@@ -255,6 +255,7 @@ pub fn parse_qualified_rewrite_receipt(text: &str) -> Result<BTreeMap<&str, &str
         "values",
         "max_abs",
         "max_rel",
+        "max_ref_abs",
         "reference_argmax",
         "candidate_argmax",
         "atol",
@@ -325,12 +326,19 @@ pub fn parse_qualified_rewrite_receipt(text: &str) -> Result<BTreeMap<&str, &str
     let rtol = nonnegative("rtol")?;
     let max_abs = nonnegative("max_abs")?;
     let max_rel = nonnegative("max_rel")?;
+    let max_ref_abs = nonnegative("max_ref_abs")?;
     let reference_argmax = integer("reference_argmax")?;
     let candidate_argmax = integer("candidate_argmax")?;
-    // A receipt cannot declare passed while violating a pure absolute/relative bound.
-    // With both terms nonzero the two maxima may occur at different elements, so they
-    // cannot reconstruct the per-element combined tolerance on their own.
-    if (rtol == 0.0 && max_abs > atol) || (atol == 0.0 && max_rel > rtol) {
+    // A receipt cannot declare passed while violating its declared bound. Each compared
+    // element passed `|e - a| <= atol + rtol * |e|`, evaluated in f32. Rounding is
+    // monotone, so the same f32 expression at the largest compared reference magnitude
+    // bounds every element, including the one that set max_abs. The TSV values
+    // round-trip exactly, so this needs no slack. The pure bounds stay: max_rel is not
+    // implied by the combined check.
+    if (rtol == 0.0 && max_abs > atol)
+        || (atol == 0.0 && max_rel > rtol)
+        || max_abs > atol + rtol * max_ref_abs
+    {
         return Err("rewrite receipt errors exceed its declared tolerance".into());
     }
     match (fields["value_kind"], fields["require_argmax"]) {
@@ -513,6 +521,7 @@ impl ExecutionRewrite {
         }
         let mut max_abs = 0.0f32;
         let mut max_rel = 0.0f32;
+        let mut max_ref_abs = 0.0f32;
         let mut first_violation = None;
         for (index, (&expected, &actual)) in reference.iter().zip(candidate).enumerate() {
             if contract.is_some() && expected == f32::NEG_INFINITY {
@@ -526,6 +535,7 @@ impl ExecutionRewrite {
             let relative = absolute / expected.abs().max(1e-6);
             max_abs = max_abs.max(absolute);
             max_rel = max_rel.max(relative);
+            max_ref_abs = max_ref_abs.max(expected.abs());
             let allowed = policy.max_abs + policy.max_rel * expected.abs();
             if absolute > allowed && first_violation.is_none() {
                 first_violation = Some(index);
@@ -550,6 +560,7 @@ impl ExecutionRewrite {
             values: reference.len(),
             max_abs,
             max_rel,
+            max_ref_abs,
             reference_argmax,
             candidate_argmax,
             policy,
@@ -589,6 +600,10 @@ impl ExecutionRewrite {
             .zip(candidate)
             .map(|(&expected, &actual)| expected.abs_diff(actual) as f32)
             .fold(0.0f32, f32::max);
+        let max_ref_abs = reference
+            .iter()
+            .map(|&expected| expected as f32)
+            .fold(0.0f32, f32::max);
         Ok(RewriteParityReceipt {
             rewrite_id: self.id,
             surface: self.surface,
@@ -604,6 +619,7 @@ impl ExecutionRewrite {
             values: reference.len(),
             max_abs,
             max_rel: 0.0,
+            max_ref_abs,
             reference_argmax: 0,
             candidate_argmax: 0,
             policy: RewriteParityPolicy {
@@ -640,6 +656,9 @@ pub struct RewriteParityReceipt {
     pub values: usize,
     pub max_abs: f32,
     pub max_rel: f32,
+    /// Largest `|reference|` over the compared values. With `max_abs` it lets the parser
+    /// check a combined atol/rtol bound.
+    pub max_ref_abs: f32,
     pub reference_argmax: usize,
     pub candidate_argmax: usize,
     pub policy: RewriteParityPolicy,
@@ -732,6 +751,7 @@ impl RewriteParityReceipt {
         writeln!(output, "values\t{}", self.values).unwrap();
         writeln!(output, "max_abs\t{}", self.max_abs).unwrap();
         writeln!(output, "max_rel\t{}", self.max_rel).unwrap();
+        writeln!(output, "max_ref_abs\t{}", self.max_ref_abs).unwrap();
         writeln!(output, "reference_argmax\t{}", self.reference_argmax).unwrap();
         writeln!(output, "candidate_argmax\t{}", self.candidate_argmax).unwrap();
         writeln!(output, "atol\t{}", self.policy.max_abs).unwrap();
@@ -1809,6 +1829,14 @@ mod tests {
             fixture.receipt.replace("max_abs\t0", "max_abs\tNaN"),
             fixture.receipt.replace("rtol\t0", "rtol\tinf"),
             fixture.receipt.replace("max_rel\t0", "max_rel\t-1"),
+            fixture.receipt.replace("max_ref_abs\t3\n", ""),
+            fixture
+                .receipt
+                .replace("max_ref_abs\t3", "max_ref_abs\tNaN"),
+            fixture
+                .receipt
+                .replace("max_ref_abs\t3", "max_ref_abs\tinf"),
+            fixture.receipt.replace("max_ref_abs\t3", "max_ref_abs\t-1"),
             fixture
                 .receipt
                 .replace("require_argmax\tfalse", "require_argmax\ttrue"),
@@ -1881,6 +1909,75 @@ mod tests {
                     .contains("declared tolerance")
             );
         }
+    }
+
+    #[test]
+    fn qualification_rejects_a_combined_tolerance_violation() {
+        // With atol and rtol both nonzero, no compared element may exceed
+        // atol + rtol * max_ref_abs, whatever max_rel claims.
+        let fixture = QualificationFixture::new();
+        assert!(fixture.receipt.contains("max_ref_abs\t3\n"));
+        let (atol, rtol) = (0.1f32, 0.1f32);
+        let bound = atol + rtol * 3.0f32;
+        let claim = |max_abs: f32| {
+            fixture
+                .receipt
+                .replace("token-ids-u32", "logits-f32")
+                .replace("require_argmax\tfalse", "require_argmax\ttrue")
+                .replace("atol\t0", &format!("atol\t{atol}"))
+                .replace("rtol\t0", &format!("rtol\t{rtol}"))
+                .replace("max_abs\t0", &format!("max_abs\t{max_abs}"))
+        };
+        // The bound is the producer's own f32 expression, so it is exact: the largest
+        // passing value is accepted and the next f32 above it is refused.
+        parse_qualified_rewrite_receipt(&claim(bound)).unwrap();
+        let violating = claim(f32::from_bits(bound.to_bits() + 1));
+        assert!(
+            parse_qualified_rewrite_receipt(&violating)
+                .unwrap_err()
+                .contains("declared tolerance")
+        );
+        fixture.write_receipt(&violating);
+        assert!(
+            fixture
+                .load(&test_identity())
+                .unwrap_err()
+                .contains("declared tolerance")
+        );
+
+        // A producer receipt that spends the relative allowance at its largest
+        // reference value still parses.
+        let policy = RewriteParityPolicy {
+            max_abs: atol,
+            max_rel: rtol,
+            require_argmax: true,
+        };
+        let receipt = fixture
+            .rewrite
+            .verify_logits(
+                &test_identity().implementation_sha256,
+                &[3.0, -1.0, 0.5],
+                &[3.35, -1.0, 0.5],
+                policy,
+            )
+            .unwrap();
+        assert!(receipt.passed);
+        assert!(receipt.max_abs > atol);
+        assert_eq!(receipt.max_ref_abs, 3.0);
+        let text = receipt
+            .bind_artifact_lock(b"format_version=2\nfamily=qwen3\n")
+            .bind_runtime_identity(&test_identity())
+            .unwrap()
+            .to_tsv();
+        parse_qualified_rewrite_receipt(&text).unwrap();
+        // The same errors against a smaller claimed reference magnitude are refused.
+        let understated = text.replace("max_ref_abs\t3", "max_ref_abs\t1");
+        assert_ne!(understated, text);
+        assert!(
+            parse_qualified_rewrite_receipt(&understated)
+                .unwrap_err()
+                .contains("declared tolerance")
+        );
     }
 
     #[test]
