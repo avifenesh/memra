@@ -30,6 +30,11 @@ the deferred MoE checks (#670: one fault readback per transaction instead of 129
 reads per step, +6.8% plain greedy and +2.7% DSpark greedy). Every step kept the same text on
 every prompt.
 
+The small-kernel diet (#339: one fused HC finish and one fused Q norm/pack per plain step,
+bit-identical to the unfused chain) is the code on every device program. It measured +4.3% plain
+greedy (50.08 -> 52.24) on the tree before #670, so the table above predates it; DSpark is flat
+because verify rows keep the unfused chain.
+
 The TP/EP program on the same pair replays the 2026-09-08 anchor protocol at 50.04 tok/s eager
 and 50.68 graph with the anchor's exact bits (anchor: 42.80 / 44.01).
 
@@ -45,6 +50,6 @@ and 50.68 graph with the anchor's exact bits (anchor: 42.80 / 44.01).
   yet ([issue #454](https://github.com/avifenesh/memra/issues/454)).
 
 Receipts: `research/dsv4f-bringup-20260923/` (`REBASELINE.md`, `m1-stream-664/RESULTS.md`,
-`mrow-stream/RESULTS.md`, `moe-defer-670/RESULTS.md`, `PRIOR-ART.md`, `power-brake/POWER-BRAKE.md`, `spec-identity-660/RESULTS.md`; `BASELINE.md` is the withdrawn braked-pair run).
+`mrow-stream/RESULTS.md`, `moe-defer-670/RESULTS.md`, `small-diet/RESULTS.md`, `PRIOR-ART.md`, `power-brake/POWER-BRAKE.md`, `spec-identity-660/RESULTS.md`; `BASELINE.md` is the withdrawn braked-pair run).
 Deeper history: the [DeepSeek section](../MODELS.md#deepseek-v4-checkpoint-dirs-serve-through-their-own-door-lanedsv4-flash-revival-20260822).
 Do not infer production support from a successful load or prompt.
