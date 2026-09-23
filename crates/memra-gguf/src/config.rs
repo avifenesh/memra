@@ -163,6 +163,7 @@ impl Arch {
             | Arch::Qwen3
             | Arch::Qwen3Moe
             | Arch::Olmoe
+            | Arch::MiMoV2
             | Arch::Llama => Some(AttentionGateKind::None),
             // DeepSeek-V4-Flash rides its own dsv4 lane (loader/bring-up), never the hybrid
             // q_gate_split path; its attn_q out-features carry no fused gate — declared None
@@ -2901,7 +2902,6 @@ pub struct HfConfig {
     pub attention_value_scale: Option<f32>,
     pub add_swa_attention_sink_bias: Option<bool>,
     pub add_full_attention_sink_bias: Option<bool>,
-    pub moe_router_dtype: Option<String>,
     // ---- Hy3 (`hy_v3`) ----
     pub first_k_dense_replace: Option<u32>,
     pub moe_router_use_sigmoid: Option<bool>,
@@ -3067,7 +3067,6 @@ impl Default for HfConfig {
             attention_value_scale: None,
             add_swa_attention_sink_bias: None,
             add_full_attention_sink_bias: None,
-            moe_router_dtype: None,
             first_k_dense_replace: None,
             moe_router_use_sigmoid: None,
             moe_router_enable_expert_bias: None,
@@ -3706,9 +3705,6 @@ impl HfConfig {
         }
         if let Some(v) = o.boolean("add_full_attention_sink_bias")? {
             self.add_full_attention_sink_bias = Some(v);
-        }
-        if let Some(v) = o.string("moe_router_dtype")? {
-            self.moe_router_dtype = Some(v);
         }
         // ---- Hy3 keys ----
         if let Some(v) = o.u32("first_k_dense_replace")? {

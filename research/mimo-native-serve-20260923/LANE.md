@@ -101,6 +101,10 @@ Current fail-closed implementation slice in this worktree:
   (SHA-256 above). A unit test checks those values, 64 rotary dimensions,
   256 experts/top-8, and continued refusal by `compile_for_load` while
   no MiMo pack is registered.
-- Tests have **not run**. The owned research host has no Rust toolchain;
-  remote or hosted checks must run before any PR/review claim. The root
+- No local-rig tests ran; the owned research host has no Rust toolchain.
+  Hosted checks must pass before any review or merge claim. Draft Memra
+  PR #682 carries this fail-closed slice. Its first exact-head hosted CI
+  reported a duplicated existing `moe_router_dtype` field and a missing
+  `MiMoV2` arm in the attention-gate match; both were corrected in-lane
+  for a fresh exact-head run. The root
   Memra checkout remains on `main` with its unrelated edits untouched.
