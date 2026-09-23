@@ -358,7 +358,8 @@ fn main() {
     let prompt = tape.prompt(
         &tokenizer,
         "Review this inference engine source:\n\n",
-        CONTINUATION_TOKENS + 1,
+        // verify_refusal_boundary reads tokens[..128].
+        128,
     );
 
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
