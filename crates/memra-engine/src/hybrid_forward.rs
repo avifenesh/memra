@@ -8451,7 +8451,12 @@ impl HybridModel {
                             e, fa, g3s, &pos_ds[s], ts[s], caches[s], il,
                         )?;
                         let mut done = false;
-                        if let Some(xh) = &ag16 {
+                        // AWQ (memra#253), as the solo `full_attn_prime_core`: the f16 epilogue
+                        // never applied o_proj's input scale, so a scaled artifact takes the
+                        // general path here too (one program per request, memra#641).
+                        if let Some(xh) = &ag16
+                            && fa.wo_pqs.is_none()
+                        {
                             done = e.try_f16_gemm_pre_into_off_prefill(
                                 &fa.wo,
                                 xh,
