@@ -6220,15 +6220,6 @@ impl Dsv4Gpu {
         if ids.is_empty() {
             return Err("empty dsv4 chunked prefill".into());
         }
-        if self.topology.is_tp_ep() {
-            if ids.len() != 1 {
-                return Err(
-                    "DSV4 TP/EP vertical slice currently admits only a single-token prime; batched replicated cache hydration is not wired"
-                        .into(),
-                );
-            }
-            return self.decode_step(ids[0], state);
-        }
         if chunk == 0 || chunk > DSV4_BATCH_WIDTH_MAX || chunk > state.transient_rows {
             return Err(format!(
                 "dsv4 prefill chunk {chunk} outside 1..={} allocated transient rows",
@@ -10608,7 +10599,6 @@ impl Dsv4Gpu {
             let d = self.model.cfg();
             let hidden = self.model.mc.n_embd as usize;
             let hc = d.hc_mult as usize;
-            let topk = self.model.mc.moe.as_ref().expect("moe").expert_used_count as usize;
             let n_trunk = (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) as usize;
             if state.caches.len() != n_trunk || rank1_caches.len() != n_trunk {
                 return Err("TP/EP decode cache plane layer count mismatch".into());
@@ -10714,208 +10704,22 @@ impl Dsv4Gpu {
                             )?;
                         }
                     }
-                    for (il, rank1_cache) in rank1_caches.iter_mut().enumerate() {
-                        for rank in 0..2usize {
-                            let st = &self.stages[rank];
-                            if capture {
-                                st.gpu
-                                    .ctx
-                                    .bind_to_thread()
-                                    .map_err(e("replay capture rank bind"))?;
-                            }
-                            let layer = st
-                                .layers
-                                .iter()
-                                .find(|l| l.il == il as u32)
-                                .ok_or_else(|| format!("TP/EP rank {rank} missing layer {il}"))?;
-                            let vws = &mut work.verify.ws[rank];
-                            let lck = if rank == 0 {
-                                &mut work.verify.layers[il]
-                            } else {
-                                work.verify
-                                    .tp_ep_layers
-                                    .as_mut()
-                                    .ok_or("TP/EP rank-1 checkpoints missing")?
-                                    .get_mut(il)
-                                    .ok_or("TP/EP rank-1 checkpoint layer missing")?
-                            };
-                            let cache = if rank == 0 {
-                                &mut state.caches[il]
-                            } else {
-                                &mut *rank1_cache
-                            };
-                            if self.attention_tp.is_some() {
-                                self.attention_verify_dev(
-                                    st, layer, cache, lck, vws, false, state.pos, 1, false,
-                                )?;
-                                self.attention_tp_rank_calls[rank].fetch_add(1, Ordering::Relaxed);
-                            } else {
-                                self.block_verify_dev(
-                                    st,
-                                    layer,
-                                    cache,
-                                    lck,
-                                    vws,
-                                    false,
-                                    state.pos,
-                                    1,
-                                    &[tok],
-                                    false,
-                                    true,
-                                    None,
-                                    true,
-                                )?;
-                            }
-                            self.tp_ep_rank_layer_calls[rank]
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        }
-                        let (rank0_ws, rank1_ws) = work.verify.ws.split_at_mut(1);
-                        let owner_ws = &mut rank0_ws[0];
-                        let peer_ws = &mut rank1_ws[0];
-                        let ar_outputs = work
-                            .verify
-                            .tp_ep_ar_outputs
-                            .as_mut()
-                            .ok_or("TP/EP one-shot output buffers missing")?;
-                        let owner_gpu = &self.stages[0].gpu;
-                        let peer_gpu = &self.stages[1].gpu;
-                        if self.attention_tp.is_some() {
-                            // The partials are independent producers. Neither rank enters HC/FFN
-                            // until its stream has received the complete rank-ordered attention sum.
-                            // Dedicated attention outputs remain separate from the later expert join.
-                            let attention_outputs = work
-                                .verify
-                                .tp_ep_attention_outputs
-                                .as_mut()
-                                .ok_or("attention TP2 output buffers missing")?;
-                            {
-                                let (owner_output, peer_output) = attention_outputs.split_at_mut(1);
-                                let mut ar = self
-                                    .tp_ep_ar
-                                    .lock()
-                                    .map_err(|_| "attention TP2 AR mutex poisoned")?;
-                                ar.as_mut()
-                                    .ok_or("attention TP2 AR state missing")?
-                                    .all_reduce_into(
-                                        owner_gpu,
-                                        peer_gpu,
-                                        &owner_ws.attn_out,
-                                        &peer_ws.attn_out,
-                                        &mut owner_output[0],
-                                        &mut peer_output[0],
-                                        hidden,
-                                        capture,
-                                        work.replay.as_ref().map(|p| unsafe {
-                                            (
-                                                [p.input_ptr(0).add(2), p.input_ptr(1).add(2)],
-                                                il as i32,
-                                            )
-                                        }),
-                                        2 * il as u32,
-                                    )?;
-                                self.attention_tp_ar_calls.fetch_add(1, Ordering::Relaxed);
-                                let injection = if replaying {
-                                    None
-                                } else {
-                                    let mut armed =
-                                        self.attention_tp_refusal_injection.lock().map_err(
-                                            |_| "attention TP2 refusal injection mutex poisoned",
-                                        )?;
-                                    if armed
-                                        .as_ref()
-                                        .is_some_and(|injection| injection.layer == il)
-                                    {
-                                        armed.take()
-                                    } else {
-                                        None
-                                    }
-                                };
-                                if let Some(injection) = injection {
-                                    let mut words = [0, 0];
-                                    words[injection.rank] = injection.code;
-                                    ar.as_mut()
-                                        .ok_or("attention TP2 AR state missing during injection")?
-                                        .set_refusal_words_for_gate(owner_gpu, peer_gpu, words)?;
-                                }
-                            }
-                            for (rank, workspace) in
-                                [(0usize, &mut *owner_ws), (1usize, &mut *peer_ws)]
-                            {
-                                let st = &self.stages[rank];
-                                let layer = st
-                                    .layers
-                                    .iter()
-                                    .find(|layer| layer.il == il as u32)
-                                    .ok_or("attention TP2 post-join layer missing")?;
-                                self.post_attention_moe_verify_dev(
-                                    st,
-                                    layer,
-                                    workspace,
-                                    false,
-                                    1,
-                                    &[tok],
-                                    false,
-                                    true,
-                                    None,
-                                    true,
-                                    Some(&attention_outputs[rank]),
-                                )?;
-                            }
-                        }
-                        {
-                            let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
-                            let mut ar = self
-                                .tp_ep_ar
-                                .lock()
-                                .map_err(|_| "TP/EP one-shot reduction state mutex poisoned")?;
-                            ar.as_mut()
-                                .ok_or("TP/EP one-shot reduction state missing")?
-                                .all_reduce_into(
-                                    owner_gpu,
-                                    peer_gpu,
-                                    &owner_ws.contrib,
-                                    &peer_ws.contrib,
-                                    &mut owner_output[0],
-                                    &mut peer_output[0],
-                                    topk * hidden,
-                                    capture,
-                                    None,
-                                    2 * il as u32 + 1,
-                                )?;
-                        }
-                        let layer0 = self.stages[0]
-                            .layers
-                            .iter()
-                            .find(|l| l.il == il as u32)
-                            .ok_or("TP/EP rank-0 layer missing for tail")?;
-                        let layer1 = self.stages[1]
-                            .layers
-                            .iter()
-                            .find(|l| l.il == il as u32)
-                            .ok_or("TP/EP rank-1 layer missing for tail")?;
-                        self.moe_verify_common_tail(
-                            &self.stages[0],
-                            layer0,
-                            owner_ws,
-                            1,
-                            topk,
-                            hidden,
-                            d.swiglu_limit,
-                            true,
-                            Some(&ar_outputs[0]),
-                        )?;
-                        self.moe_verify_common_tail(
-                            &self.stages[1],
-                            layer1,
-                            peer_ws,
-                            1,
-                            topk,
-                            hidden,
-                            d.swiglu_limit,
-                            true,
-                            Some(&ar_outputs[1]),
-                        )?;
-                    }
+                    let fault_inputs = work
+                        .replay
+                        .as_ref()
+                        .map(|p| unsafe { [p.input_ptr(0).add(2), p.input_ptr(1).add(2)] });
+                    self.tp_ep_trunk_walk(
+                        &mut state.caches,
+                        &mut rank1_caches,
+                        &mut work.verify,
+                        state.pos,
+                        &[tok],
+                        true,
+                        capture,
+                        replaying,
+                        fault_inputs,
+                        None,
+                    )?;
                 }
                 if capture {
                     work.replay.as_mut().expect("replay").end(forward_slot)?;
@@ -11177,6 +10981,259 @@ impl Dsv4Gpu {
         state.tp_ep_caches = Some(rank1_caches);
         state.matrix_step = Some(work);
         result
+    }
+
+    /// Every trunk layer on both TP/EP ranks for the rows `toks` at `pos0 .. pos0 + t`:
+    /// attention on both ranks, the rank-ordered attention join, HC/FFN, the expert join,
+    /// then the common tail. The eager decode step and the multi-row verify both run this
+    /// walk, so a one-row verify is the decode step's program by construction. `taps` takes
+    /// the DSpark target rows from rank 1, the head rank.
+    #[allow(clippy::too_many_arguments)] // Both cache planes plus the transaction coordinates.
+    fn tp_ep_trunk_walk(
+        &self,
+        rank0_caches: &mut [LayerCache],
+        rank1_caches: &mut [LayerCache],
+        verify: &mut VerifyState,
+        pos0: usize,
+        toks: &[u32],
+        allow_gu_fuse: bool,
+        capture: bool,
+        replaying: bool,
+        fault_inputs: Option<[*const u64; 2]>,
+        mut taps: Option<&mut CudaSlice<f32>>,
+    ) -> Res<()> {
+        let d = self.model.cfg();
+        let t = toks.len();
+        let hidden = self.model.mc.n_embd as usize;
+        let hc = d.hc_mult as usize;
+        let topk = self.model.mc.moe.as_ref().expect("moe").expert_used_count as usize;
+        let targets = self.dspark.as_ref().map(|ds| ds.targets.clone());
+        let n_t = targets.as_ref().map_or(0, Vec::len);
+        for (il, rank1_cache) in rank1_caches.iter_mut().enumerate() {
+            for rank in 0..2usize {
+                let st = &self.stages[rank];
+                if capture {
+                    st.gpu
+                        .ctx
+                        .bind_to_thread()
+                        .map_err(e("replay capture rank bind"))?;
+                }
+                let layer = st
+                    .layers
+                    .iter()
+                    .find(|l| l.il == il as u32)
+                    .ok_or_else(|| format!("TP/EP rank {rank} missing layer {il}"))?;
+                let vws = &mut verify.ws[rank];
+                let lck = if rank == 0 {
+                    &mut verify.layers[il]
+                } else {
+                    verify
+                        .tp_ep_layers
+                        .as_mut()
+                        .ok_or("TP/EP rank-1 checkpoints missing")?
+                        .get_mut(il)
+                        .ok_or("TP/EP rank-1 checkpoint layer missing")?
+                };
+                let cache = if rank == 0 {
+                    &mut rank0_caches[il]
+                } else {
+                    &mut *rank1_cache
+                };
+                if self.attention_tp.is_some() {
+                    self.attention_verify_dev(st, layer, cache, lck, vws, false, pos0, t, false)?;
+                    self.attention_tp_rank_calls[rank].fetch_add(1, Ordering::Relaxed);
+                } else {
+                    self.block_verify_dev(
+                        st,
+                        layer,
+                        cache,
+                        lck,
+                        vws,
+                        false,
+                        pos0,
+                        t,
+                        toks,
+                        false,
+                        allow_gu_fuse,
+                        None,
+                        true,
+                    )?;
+                }
+                self.tp_ep_rank_layer_calls[rank]
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            let (rank0_ws, rank1_ws) = verify.ws.split_at_mut(1);
+            let owner_ws = &mut rank0_ws[0];
+            let peer_ws = &mut rank1_ws[0];
+            let ar_outputs = verify
+                .tp_ep_ar_outputs
+                .as_mut()
+                .ok_or("TP/EP one-shot output buffers missing")?;
+            let owner_gpu = &self.stages[0].gpu;
+            let peer_gpu = &self.stages[1].gpu;
+            if self.attention_tp.is_some() {
+                // The partials are independent producers. Neither rank enters HC/FFN
+                // until its stream has received the complete rank-ordered attention sum.
+                // Dedicated attention outputs remain separate from the later expert join.
+                let attention_outputs = verify
+                    .tp_ep_attention_outputs
+                    .as_mut()
+                    .ok_or("attention TP2 output buffers missing")?;
+                {
+                    let (owner_output, peer_output) = attention_outputs.split_at_mut(1);
+                    let mut ar = self
+                        .tp_ep_ar
+                        .lock()
+                        .map_err(|_| "attention TP2 AR mutex poisoned")?;
+                    ar.as_mut()
+                        .ok_or("attention TP2 AR state missing")?
+                        .all_reduce_into(
+                            owner_gpu,
+                            peer_gpu,
+                            &owner_ws.attn_out,
+                            &peer_ws.attn_out,
+                            &mut owner_output[0],
+                            &mut peer_output[0],
+                            t * hidden,
+                            capture,
+                            fault_inputs.map(|inputs| (inputs, il as i32)),
+                            2 * il as u32,
+                        )?;
+                    self.attention_tp_ar_calls.fetch_add(1, Ordering::Relaxed);
+                    let injection = if replaying {
+                        None
+                    } else {
+                        let mut armed = self
+                            .attention_tp_refusal_injection
+                            .lock()
+                            .map_err(|_| "attention TP2 refusal injection mutex poisoned")?;
+                        if armed
+                            .as_ref()
+                            .is_some_and(|injection| injection.layer == il)
+                        {
+                            armed.take()
+                        } else {
+                            None
+                        }
+                    };
+                    if let Some(injection) = injection {
+                        let mut words = [0, 0];
+                        words[injection.rank] = injection.code;
+                        ar.as_mut()
+                            .ok_or("attention TP2 AR state missing during injection")?
+                            .set_refusal_words_for_gate(owner_gpu, peer_gpu, words)?;
+                    }
+                }
+                for (rank, workspace) in [(0usize, &mut *owner_ws), (1usize, &mut *peer_ws)] {
+                    let st = &self.stages[rank];
+                    let layer = st
+                        .layers
+                        .iter()
+                        .find(|layer| layer.il == il as u32)
+                        .ok_or("attention TP2 post-join layer missing")?;
+                    self.post_attention_moe_verify_dev(
+                        st,
+                        layer,
+                        workspace,
+                        false,
+                        t,
+                        toks,
+                        false,
+                        allow_gu_fuse,
+                        None,
+                        true,
+                        Some(&attention_outputs[rank]),
+                    )?;
+                }
+            }
+            {
+                let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
+                let mut ar = self
+                    .tp_ep_ar
+                    .lock()
+                    .map_err(|_| "TP/EP one-shot reduction state mutex poisoned")?;
+                ar.as_mut()
+                    .ok_or("TP/EP one-shot reduction state missing")?
+                    .all_reduce_into(
+                        owner_gpu,
+                        peer_gpu,
+                        &owner_ws.contrib,
+                        &peer_ws.contrib,
+                        &mut owner_output[0],
+                        &mut peer_output[0],
+                        t * topk * hidden,
+                        capture,
+                        None,
+                        2 * il as u32 + 1,
+                    )?;
+            }
+            let layer0 = self.stages[0]
+                .layers
+                .iter()
+                .find(|l| l.il == il as u32)
+                .ok_or("TP/EP rank-0 layer missing for tail")?;
+            let layer1 = self.stages[1]
+                .layers
+                .iter()
+                .find(|l| l.il == il as u32)
+                .ok_or("TP/EP rank-1 layer missing for tail")?;
+            self.moe_verify_common_tail(
+                &self.stages[0],
+                layer0,
+                owner_ws,
+                t,
+                topk,
+                hidden,
+                d.swiglu_limit,
+                true,
+                Some(&ar_outputs[0]),
+            )?;
+            self.moe_verify_common_tail(
+                &self.stages[1],
+                layer1,
+                peer_ws,
+                t,
+                topk,
+                hidden,
+                d.swiglu_limit,
+                true,
+                Some(&ar_outputs[1]),
+            )?;
+            if let (Some(tp), Some(tg)) = (taps.as_mut(), targets.as_ref())
+                && let Some(kk) = tg.iter().position(|&tl| tl == il)
+            {
+                // Both ranks hold the joined residual; the drafter reads rank 1's, the
+                // head rank, with the tap kernels the PP verify walk runs.
+                let stream = self.stages[1].gpu.stream();
+                let vws = &mut verify.ws[1];
+                unsafe {
+                    ck(
+                        "TP/EP hc_mean tap",
+                        k::memra_dsv4_hc_mean(
+                            dpf!(vws.h_a, &stream),
+                            dpm!(vws.tap_tmp, &stream),
+                            t as i32,
+                            hc as i32,
+                            hidden as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                    ck(
+                        "TP/EP place_cols tap",
+                        k::memra_dsv4_place_cols(
+                            dpf!(vws.tap_tmp, &stream),
+                            dpm!(**tp, &stream),
+                            t as i32,
+                            hidden as i32,
+                            (n_t * hidden) as i64,
+                            (kk * hidden) as i64,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn decode_step_fast(
@@ -14048,6 +14105,21 @@ impl Dsv4Gpu {
         self.alloc_batched_state_for(capacity, tmax)
     }
 
+    /// Speculative-shape verify scratch of an explicit width without a resident drafter, for
+    /// the gates that compare verify rounds against sequential decode.
+    pub fn alloc_verify_state_width_for_gate(
+        &self,
+        capacity: usize,
+        tmax: usize,
+    ) -> Res<VerifyState> {
+        if tmax == 0 || tmax > DSV4_BATCH_WIDTH_MAX {
+            return Err(format!(
+                "dsv4 verify width {tmax} outside 1..={DSV4_BATCH_WIDTH_MAX}"
+            ));
+        }
+        self.alloc_batched_state_for(capacity, tmax)
+    }
+
     /// Allocate the same transaction machinery at a wider, explicit chunk width for
     /// bounded-memory prefill. Unlike speculative verification, this does not require a
     /// drafter; every row is teacher-forced and committed.
@@ -15221,8 +15293,8 @@ impl Dsv4Gpu {
         let hidden = mc.n_embd as usize;
         let shard = match self.attention_tp {
             Some(plan) => {
-                if t != 1 || host_math {
-                    return Err("attention TP2 currently admits only t=1 device math".into());
+                if host_math {
+                    return Err("attention TP2 admits device math only".into());
                 }
                 Some((
                     plan,
@@ -17271,12 +17343,34 @@ impl Dsv4Gpu {
         taps: Option<&mut CudaSlice<f32>>,
         output: VerifyOutput,
     ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
-        self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, vstate.matrix_moe)?;
         let DecodePath::Device { host_math } = self.decode_path else {
             return Err("verify_batch_dev requires MEMRA_DSV4_DECODE_PATH=device".into());
         };
+        let tp_ep = self.topology.is_tp_ep();
+        if tp_ep {
+            if host_math {
+                return Err("TP/EP verify requires device math".into());
+            }
+            if state
+                .caches
+                .iter()
+                .chain(state.tp_ep_caches.iter().flatten())
+                .any(|cache| cache.c4_host.is_some())
+            {
+                return Err("TP/EP verify requires device-resident C4 caches".into());
+            }
+            if vstate.capture_probe_next_round
+                || vstate.replay_layer_next_round
+                || vstate.capture_stage0_embed_probe_next_round
+                || vstate.replay_stage0_embed_next_round
+                || vstate.capture_head_probe_next_round
+                || vstate.replay_head_next_round
+            {
+                return Err("TP/EP verify has no per-layer graph probes".into());
+            }
+        }
         let mc = &self.model.mc;
         let d = self.model.cfg();
         let t = toks.len();
@@ -17342,6 +17436,10 @@ impl Dsv4Gpu {
             stream
                 .memcpy_htod(pos_host, &mut dst)
                 .map_err(e("htod pos round"))?;
+        }
+
+        if tp_ep {
+            return self.verify_batch_tp_ep(toks, state, vstate, taps, output);
         }
 
         // stage 0: tokens -> embed rows -> hc state. This is a stage-local
@@ -17549,12 +17647,169 @@ impl Dsv4Gpu {
 
         vstate.capture_probe_next_round = false;
         vstate.replay_layer_next_round = false;
+        assert_eq!(
+            cur_stage,
+            self.stages.len() - 1,
+            "device path expects the head stage last"
+        );
+        self.verify_head_output(state, vstate, pos0, t, host_math, output)
+    }
+
+    /// The TP/EP verify round: both ranks embed the round's rows, run
+    /// [`Self::tp_ep_trunk_walk`] (the eager decode step's walk, with `t` rows), and rank 1,
+    /// the last stage, takes the head. Nonzero refusal words roll both cache planes back and
+    /// fail the round; otherwise it stays open on both planes for [`Self::commit_verify_dev`].
+    fn verify_batch_tp_ep(
+        &self,
+        toks: &[u32],
+        state: &mut DecodeState,
+        vstate: &mut VerifyState,
+        taps: Option<&mut CudaSlice<f32>>,
+        output: VerifyOutput,
+    ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
+        let mc = &self.model.mc;
+        let hidden = mc.n_embd as usize;
+        let hc = self.model.cfg().hc_mult as usize;
+        let n_trunk = (mc.n_layer - mc.nextn_predict_layers) as usize;
+        let pos0 = state.pos;
+        let t = toks.len();
+        let walk_guard = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned".to_string())?;
+        let mut rank1_caches = state
+            .tp_ep_caches
+            .take()
+            .ok_or("TP/EP rank-1 cache plane missing")?;
+        let mut result = (|| -> Res<()> {
+            if state.caches.len() != n_trunk || rank1_caches.len() != n_trunk {
+                return Err("TP/EP verify cache plane layer count mismatch".into());
+            }
+            for rank in 0..2usize {
+                let st = &self.stages[rank];
+                st.gpu
+                    .ctx
+                    .bind_to_thread()
+                    .map_err(e("TP/EP verify bind"))?;
+                let stream = st.gpu.stream();
+                let vws = &mut vstate.ws[rank];
+                unsafe {
+                    ck(
+                        "TP/EP verify embed",
+                        k::memra_dsv4_embed_rows(
+                            st.embed
+                                .as_ref()
+                                .ok_or("TP/EP rank embed missing")?
+                                .device_ptr(&stream)
+                                .0 as *const c_void,
+                            vws.tok.device_ptr(&stream).0 as *const i32,
+                            dpm!(vws.emb, &stream),
+                            t as i32,
+                            hidden as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                    ck(
+                        "TP/EP verify repeat hc",
+                        k::memra_dsv4_repeat_hc(
+                            dpf!(vws.emb, &stream),
+                            dpm!(vws.h_a, &stream),
+                            t as i32,
+                            hc as i32,
+                            hidden as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+            }
+            // The PP walk's condition: GU fusion is the plain one-row program only.
+            let allow_gu_fuse =
+                t == 1 && vstate.tmax == 1 && !vstate.ws[1].is_prefill && taps.is_none();
+            self.tp_ep_trunk_walk(
+                &mut state.caches,
+                &mut rank1_caches,
+                vstate,
+                pos0,
+                toks,
+                allow_gu_fuse,
+                false,
+                false,
+                None,
+                taps,
+            )?;
+            let refusals = self.tp_ep_ar_refusal_words()?;
+            if refusals != [0, 0] {
+                let rollback0 = self.commit_verify_dev_plane(
+                    &mut state.caches,
+                    &mut vstate.layers,
+                    &mut vstate.ws,
+                    Some(0),
+                    pos0,
+                    t,
+                    0,
+                );
+                let rollback1 = match vstate.tp_ep_layers.as_mut() {
+                    Some(rank1_layers) => self.commit_verify_dev_plane(
+                        &mut rank1_caches,
+                        rank1_layers,
+                        &mut vstate.ws,
+                        Some(1),
+                        pos0,
+                        t,
+                        0,
+                    ),
+                    None => Err("TP/EP rank-1 checkpoints missing during refusal rollback".into()),
+                };
+                let mut error = format!("TP/EP verify reduction refused: {refusals:?}");
+                for (rank, rollback) in [rollback0, rollback1].into_iter().enumerate() {
+                    if let Err(rollback_error) = rollback {
+                        error.push_str(&format!("; rank {rank} rollback: {rollback_error}"));
+                    }
+                }
+                return Err(error);
+            }
+            Ok(())
+        })();
+        state.tp_ep_caches = Some(rank1_caches);
+        if let Err(error) = &mut result {
+            // A rank may still be waiting on its peer: drain both before any buffer is reused.
+            for (rank, stage) in self.stages.iter().enumerate() {
+                let drained = stage
+                    .gpu
+                    .ctx
+                    .bind_to_thread()
+                    .and_then(|()| stage.gpu.stream().synchronize());
+                if let Err(drain_error) = drained {
+                    error.push_str(&format!("; TP/EP rank {rank} drain: {drain_error}"));
+                }
+            }
+        }
+        drop(walk_guard);
+        result?;
+        self.verify_head_output(state, vstate, pos0, t, false, output)
+    }
+
+    /// The round's head on the last stage, per the output policy, leaving the round open for
+    /// [`Self::commit_verify_dev`]. The PP walk and the TP/EP walk share it: under TP/EP rank 1
+    /// is the last stage and holds the head.
+    fn verify_head_output(
+        &self,
+        state: &mut DecodeState,
+        vstate: &mut VerifyState,
+        pos0: usize,
+        t: usize,
+        host_math: bool,
+        output: VerifyOutput,
+    ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
+        let mc = &self.model.mc;
+        let hidden = mc.n_embd as usize;
+        let hc = self.model.cfg().hc_mult as usize;
+        let n_trunk = (mc.n_layer - mc.nextn_predict_layers) as usize;
         let capture_head = vstate.capture_head_probe_next_round;
         let replay_head = vstate.replay_head_next_round;
         vstate.capture_head_probe_next_round = false;
         vstate.replay_head_next_round = false;
         let last = self.stages.len() - 1;
-        assert_eq!(cur_stage, last, "device path expects the head stage last");
         if matches!(output, VerifyOutput::None | VerifyOutput::Last) {
             if capture_head || replay_head {
                 return Err(
@@ -17705,6 +17960,45 @@ impl Dsv4Gpu {
             n_commit >= 1 && n_commit <= t,
             "commit {n_commit} outside round width {t}"
         );
+        if self.topology.is_tp_ep() {
+            // Both planes commit, rank 0 first as the eager step does, before the shared
+            // position moves.
+            let _walk_guard = self
+                .tp_ep_walk_lock
+                .lock()
+                .map_err(|_| "TP/EP walk mutex poisoned".to_string())?;
+            let mut rank1_caches = state
+                .tp_ep_caches
+                .take()
+                .ok_or("TP/EP rank-1 cache plane missing")?;
+            let committed = (|| -> Res<()> {
+                self.commit_verify_dev_plane(
+                    &mut state.caches,
+                    &mut vstate.layers,
+                    &mut vstate.ws,
+                    Some(0),
+                    pos0,
+                    t,
+                    n_commit,
+                )?;
+                self.commit_verify_dev_plane(
+                    &mut rank1_caches,
+                    vstate
+                        .tp_ep_layers
+                        .as_mut()
+                        .ok_or("TP/EP rank-1 checkpoints missing")?,
+                    &mut vstate.ws,
+                    Some(1),
+                    pos0,
+                    t,
+                    n_commit,
+                )
+            })();
+            state.tp_ep_caches = Some(rank1_caches);
+            committed?;
+            state.pos = pos0 + n_commit;
+            return Ok(());
+        }
         self.commit_verify_dev_plane(
             &mut state.caches,
             &mut vstate.layers,
