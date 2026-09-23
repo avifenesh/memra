@@ -2652,10 +2652,10 @@ impl Dsv4Gpu {
             drafter_resident: self.dspark.is_some() || self.mtp.is_some(),
             gate_armed_gu_fuse: crate::moe_f16g_gu_fuse_on(),
             hc_geometry_24x16384: (2 + hc) * hc == 24 && hc * hidden == 16384,
-            // TP/EP cannot take a customer request: `prefill_with_cache_chunked`
-            // refuses a batched prime under this topology and the topology guard
-            // refuses MTP/DSpark state, independently (memra #457).
-            can_serve: !self.topology.is_tp_ep(),
+            // TP/EP takes a customer request since memra #454: chunked prefill and
+            // verify ride the TP/EP walk, DSpark sits on the head rank, and park/restore
+            // write both rank planes. The NextN MTP block loads on PP-2 only.
+            can_serve: true,
         }
     }
 
@@ -7158,7 +7158,12 @@ impl Dsv4Gpu {
     /// append-only compressed rows through each high-water mark, and the compressor/indexer
     /// pending state. Copy commands are queued per stage and synchronized once per stage.
     pub fn snapshot_decode_state(&self, state: &DecodeState) -> Res<Dsv4HostDecodeState> {
-        self.ensure_walk_topology_ready()?;
+        // Under TP/EP `layer_stage` is all 0, so the image is the rank-0 plane. Both ranks
+        // run the same replicated cache writes (the TP/EP gates hold the digests equal), so
+        // that plane is the whole request state and restore writes it to both.
+        if self.topology.is_tp_ep() && state.caches.iter().any(|c| c.c4_host.is_some()) {
+            return Err("TP/EP snapshot does not carry host-resident C4 history".into());
+        }
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         if crate::dsv4_c4::host_copy_elision_enabled() {
             return Err(
@@ -7367,7 +7372,9 @@ impl Dsv4Gpu {
         host_c4: bool,
         recent_rows: usize,
     ) -> Res<DecodeState> {
-        self.ensure_walk_topology_ready()?;
+        if self.topology.is_tp_ep() && host_c4 {
+            return Err("TP/EP restore does not carry host-resident C4 history".into());
+        }
         crate::dsv4_grouped::ensure_program(self.matrix_moe, host.matrix_moe)?;
         if host.pos == 0 || capacity < host.pos || capacity > self.max_seq {
             return Err(format!(
@@ -7438,6 +7445,38 @@ impl Dsv4Gpu {
             }
             cache.n_blocks = meta.n_blocks;
             cache.i_blocks = meta.i_blocks;
+            if let Some(rank1) = state.tp_ep_caches.as_mut() {
+                // The rank-1 plane takes the same image on its own stream.
+                let st = &self.stages[1];
+                st.gpu
+                    .ctx
+                    .bind_to_thread()
+                    .map_err(e("bind dsv4 TP/EP restore ctx"))?;
+                let stream = st.gpu.stream();
+                let cache = rank1
+                    .get_mut(il)
+                    .ok_or("TP/EP restore rank-1 layer missing")?;
+                dsv4_htod_span(&stream, slab, &meta.kvc, &mut cache.kvc)?;
+                for (dst, span) in [
+                    (cache.pend_kv.as_mut(), meta.pend_kv.as_ref()),
+                    (cache.pend_score.as_mut(), meta.pend_score.as_ref()),
+                    (cache.ikvc.as_mut(), meta.ikvc.as_ref()),
+                    (cache.ipend_kv.as_mut(), meta.ipend_kv.as_ref()),
+                    (cache.ipend_score.as_mut(), meta.ipend_score.as_ref()),
+                ] {
+                    match (dst, span) {
+                        (Some(dst), Some(span)) => dsv4_htod_span(&stream, slab, span, dst)?,
+                        (None, None) => {}
+                        _ => {
+                            return Err(format!(
+                                "layer {il} TP/EP restore optional-plane mismatch"
+                            ));
+                        }
+                    }
+                }
+                cache.n_blocks = meta.n_blocks;
+                cache.i_blocks = meta.i_blocks;
+            }
         }
         for st in &self.stages {
             st.gpu

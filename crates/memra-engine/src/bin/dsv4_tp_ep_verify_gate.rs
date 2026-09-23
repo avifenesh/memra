@@ -10,6 +10,8 @@
 //!   1..=6 at tmax 6, each committing a varied prefix, the shape a DSpark round takes. A
 //!   short commit rolls the rest of the round back, so the next round's rows also check the
 //!   rollback.
+//! - RESTORE: chunked prime, snapshot to pinned host, restore into a fresh state, then
+//!   verify rounds and plain steps, the served host-cache hit.
 //!
 //! `tpep` runs the arms on the TP/EP walk, `pp` on the PP-2 program as the control: an
 //! inequality both programs show is a property of the shared kernels, one only TP/EP shows
@@ -245,6 +247,61 @@ fn main() {
         }
     }
     println!("VERIFY rows={verify_rows}");
+
+    // RESTORE: chunked prime, park to pinned host, restore into a fresh state, then the first
+    // verify rounds and plain steps. The served host cache takes this path on a prefix hit.
+    let mut restore_rows = 0usize;
+    {
+        let mut state = fresh(&gpu, CHUNK);
+        gpu.prefill_with_cache_chunked(&tape[..PROMPT_TOKENS], &mut state, CHUNK)
+            .expect("RESTORE prime");
+        let host = gpu.snapshot_decode_state(&state).expect("RESTORE snapshot");
+        let capacity = state.capacity;
+        drop(state);
+        let mut state = gpu
+            .restore_decode_state_for_transient(&host, capacity, TMAX)
+            .expect("RESTORE restore");
+        assert_eq!(state.pos, PROMPT_TOKENS);
+        let mut vstate = gpu
+            .alloc_verify_state_width_for_gate(state.capacity, TMAX)
+            .expect("restore verify state");
+        for &(width, commit) in &ROUNDS[..4] {
+            let pos0 = state.pos;
+            let (logits, _) = gpu
+                .verify_batch_dev(
+                    &tape[pos0..pos0 + width],
+                    &mut state,
+                    &mut vstate,
+                    None,
+                    true,
+                )
+                .expect("RESTORE round");
+            let logits = logits.expect("full verify logits");
+            let vocab = logits.len() / width;
+            for i in 0..width {
+                let row = bits(&logits[i * vocab..(i + 1) * vocab]);
+                compare(
+                    &format!("RESTORE-w{width}c{commit}"),
+                    pos0 + i,
+                    &row,
+                    &seq[pos0 + i],
+                    &mut fails,
+                );
+                restore_rows += 1;
+            }
+            gpu.commit_verify_dev(&mut state, &mut vstate, commit)
+                .expect("RESTORE commit");
+        }
+        for pos in state.pos..state.pos + TMAX {
+            let row = bits(
+                &gpu.decode_step(tape[pos], &mut state)
+                    .expect("RESTORE tail"),
+            );
+            compare("RESTORE-tail", pos, &row, &seq[pos], &mut fails);
+            restore_rows += 1;
+        }
+    }
+    println!("RESTORE rows={restore_rows}");
     if tp_ep {
         let calls = gpu.tp_ep_rank_layer_calls();
         assert!(
@@ -260,7 +317,7 @@ fn main() {
     }
     if fails.is_empty() {
         println!(
-            "PASS topology={} rows chunk={chunk_rows} verify={verify_rows} bit-equal to sequential",
+            "PASS topology={} rows chunk={chunk_rows} verify={verify_rows} restore={restore_rows} bit-equal to sequential",
             args[3]
         );
     } else {
