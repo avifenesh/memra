@@ -39,17 +39,18 @@ def render(result):
         f"Code qualification: {result['qualification_code_covered']}/4 covered; "
         f"prose qualification diagnostic: {result['qualification_prose_covered']}/4 covered.",
         "",
-        "| Code prompt tokens | Pairs | K=3/C=0 tok/s | Selected tok/s | Change vs K=3/C=0 (95% interval) | K=2/C=0 tok/s | Change vs K=2/C=0 (95% interval) |",
-        "|---|---:|---:|---:|---:|---:|---:|",
+        "| Code prompt tokens | Pairs | All arms code-covered | K=3/C=0 tok/s | Selected tok/s | Change vs K=3/C=0 (95% interval) | K=2/C=0 tok/s | Change vs K=2/C=0 (95% interval) |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for length in (256, 1024, 4096, 16384):
         row = result["code_by_prompt_tokens"][str(length)]
         if not row["pairs"]:
-            lines.append(f"| {length:,} | 0 | — | — | — | — | — |")
+            lines.append(f"| {length:,} | 0 | 0 | — | — | — | — | — |")
             continue
         arms, comparisons = row["arms"], row["selected_vs"]
         lines.append(
             f"| {length:,} | {row['pairs']} | "
+            f"{result['all_arms_format_covered_code'][str(length)]['pairs']} | "
             f"{arms['k3off']['tokens_per_second']:.2f} | "
             f"{arms['selected']['tokens_per_second']:.2f} | "
             f"{change(comparisons['k3off'])} | "
