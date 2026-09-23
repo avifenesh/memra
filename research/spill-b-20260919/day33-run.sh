@@ -3,7 +3,8 @@
 # /tmp/memra-5090.lock hold (run-day26-cell.sh takes it). Before each boot: a bounded idle wait (at most 7200 s: lock
 # free, no compute app, at least 24 GB of host memory available). Never a signal to anything.
 # usage: day33-run.sh <receipt root> <boot spec> ...     boot spec = <name>:<red|green>:<shape>
-#        shape = G1 | G2 | R32 | off (DAY33.md 1.3); binaries target/day33/memra-server-<red|green>
+#        shape = G1 | G2 | R32 | off (DAY33.md 1.3); binaries target/day33/<red|green>/memra-server (the file must be
+#        named memra-server: run-day26-cell.sh stops its server with `pgrep -x memra-server`)
 set -uo pipefail
 R=${1:?receipt root}; shift
 WT=$HOME/projects/wt-spill-b
@@ -19,7 +20,7 @@ export CLIENT=day33-client.py PARSER=day31-parse.py N=5 RIGDIR="$R/boots" MEMRA_
   MEMRA_CTX=65536 LOCK=/tmp/memra-5090.lock
 for spec in "$@"; do
   IFS=: read -r name role shape <<< "$spec"
-  BIN=$WT/target/day33/memra-server-$role
+  BIN=$WT/target/day33/$role/memra-server
   [ -x "$BIN" ] || { log "boot $name: no binary $BIN; not run"; exit 1; }
   deadline=$((SECONDS + 7200)); waited=0
   until idle; do

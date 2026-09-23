@@ -6277,6 +6277,32 @@ fn pp_boundary_growth_projection(
     Some(growth)
 }
 
+/// Prompt rows a session still has to prime (memra#680): its queued rows while the prime runs,
+/// 0 once the prime is done or the queue is empty.
+fn session_pending_prime_rows(prefill_done: bool, queued_rows: usize) -> usize {
+    if prefill_done { 0 } else { queued_rows }
+}
+
+/// The prime-time workspace every admitted, still-priming session will still allocate, from
+/// each session's own cost model (`prefill_workspace_bytes` at its queued rows). Read by the
+/// armed gate only; see the PENDING-PRIME BOOKING note at the admission site.
+fn pending_prime_bytes(
+    active: &[Session],
+    admission_costs: &HashMap<String, AdmissionCostModel>,
+) -> usize {
+    active
+        .iter()
+        .map(
+            |s| match session_pending_prime_rows(s.prefill_done, s.prefill_queue.len()) {
+                0 => 0,
+                rows => admission_costs
+                    .get(&s.model)
+                    .map_or(0, |model| model.prefill_workspace_bytes(rows)),
+            },
+        )
+        .fold(0usize, usize::saturating_add)
+}
+
 fn admission_required(cost: usize, reserve: usize) -> usize {
     cost.saturating_add(reserve)
 }
@@ -23593,8 +23619,25 @@ pub fn run(
                         .join("; ");
                     eprintln!("[admission] parallel device plan: [{budgets}]");
                 }
+                // PENDING-PRIME BOOKING (memra#680, door MEMRA_ADMIT_BY_MEMORY). The live reading
+                // sees an admitted session's context KV and learned residual as soon as they are
+                // allocated, but not its prefill workspace: that grows at PRIME time
+                // (`AdmissionCostModel`'s own note), so a burst admitted in one tick saw every
+                // arrival fit while the workspaces of all the still-priming sessions were owed.
+                // Armed, every reading this gate takes is reduced by what those sessions will
+                // still allocate; a session mid-prime is counted twice for that chunk (live and
+                // booked), which only errs toward a defer. Unarmed the term is 0 and
+                // `less_pending(0, _)` is the identity, so the door-OFF gate is unchanged.
+                let pending_prime = if admit_memory_cfg.armed {
+                    pending_prime_bytes(&active, &admission_costs)
+                } else {
+                    0
+                };
+                let primary_device = engine.ctx().ordinal();
+                let book =
+                    move |h: AdmissionHeadroom| h.less_pending(pending_prime, primary_device);
                 let measured_headroom =
-                    admission_headroom(&engine, &loaded, device_requirements.as_deref());
+                    admission_headroom(&engine, &loaded, device_requirements.as_deref()).map(book);
                 if device_requirements.is_some() && measured_headroom.is_none() {
                     fail_request(
                         req,
@@ -23658,6 +23701,7 @@ pub fn run(
                         && kv_flex.shed(&mut px, false, "admission headroom") > 0
                         && let Some(next_headroom) =
                             admission_headroom(&engine, &loaded, device_requirements.as_deref())
+                                .map(book)
                     {
                         headroom = next_headroom;
                     }
@@ -23740,6 +23784,7 @@ pub fn run(
                             );
                             if let Some(next_headroom) =
                                 admission_headroom(&engine, &loaded, device_requirements.as_deref())
+                                    .map(book)
                             {
                                 headroom = next_headroom;
                             }
@@ -23768,7 +23813,8 @@ pub fn run(
                                 &engine,
                                 &loaded,
                                 device_requirements.as_deref(),
-                            ) else {
+                            )
+                            .map(book) else {
                                 break;
                             };
                             headroom = next_headroom;
@@ -23941,6 +23987,7 @@ pub fn run(
                                 None
                             };
                             admission_headroom(&engine, &loaded, requirements_eager.as_deref())
+                                .map(book)
                                 .is_some_and(|h| h.sufficient(required_eager))
                         };
                     if eager_arm {
@@ -24004,10 +24051,12 @@ pub fn run(
                         };
                         let captured_ok =
                             admission_headroom(&engine, &loaded, device_requirements.as_deref())
+                                .map(book)
                                 .is_some_and(|h| h.sufficient(required));
                         let eager_ok = draft_state_bytes > 0
                             && memra_engine::spec::spec_capture_gate_on()
                             && admission_headroom(&engine, &loaded, requirements_eager.as_deref())
+                                .map(book)
                                 .is_some_and(|h| h.sufficient(required_eager));
                         if captured_ok || eager_ok {
                             eprintln!(
@@ -24222,6 +24271,7 @@ pub fn run(
                                                 .then_some(req.params.max_new),
                                             estimate: est,
                                             tiers,
+                                            pending_prime_bytes: pending_prime as u64,
                                             inflight: admission_book.inflight(&req.model),
                                             cap: cap as u64,
                                             waited_ms,
@@ -24243,6 +24293,47 @@ pub fn run(
                         n_vram_defers += 1;
                         requeue.push_back(req); // waits (FIFO), never rejected
                         continue;
+                    }
+                    // ADMIT RECEIPT (memra#680): armed, every arrival this gate lets through is a
+                    // door decision with its own line, so a burst's admissions can be checked
+                    // against the booked reading instead of inferred from the absence of a
+                    // defer. `device_free` is the booked reading the gate just passed.
+                    if admit_memory_cfg.armed {
+                        let need = (if eager_arm { required_eager } else { required }) as u64;
+                        let mut est = crate::admit_memory::estimate(
+                            admission_cap,
+                            bytes_per_token as u64,
+                            ring_bytes_per_token as u64,
+                            ring_rows as u64,
+                            0,
+                        );
+                        est.fixed_bytes = need.saturating_sub(est.context_bytes);
+                        eprintln!(
+                            "{}",
+                            crate::admit_memory::memory_line(&crate::admit_memory::MemoryLine {
+                                request_id: &req.request_id,
+                                model: &req.model,
+                                verdict: crate::admit_memory::MemoryVerdict::Admit,
+                                prompt_tokens: prompt_len,
+                                output_bound: (req.params.max_new != MAX_NEW_CTX_BOUNDED)
+                                    .then_some(req.params.max_new),
+                                estimate: est,
+                                tiers: crate::admit_memory::Tiers {
+                                    device_free_bytes: headroom.limiting_free_bytes() as u64,
+                                    demotable_device_bytes: px.evictable_bytes(),
+                                    host_free_bytes: if hpx.armed() {
+                                        (hpx.budget.saturating_sub(hpx.total_bytes)) as u64
+                                    } else {
+                                        0
+                                    },
+                                },
+                                pending_prime_bytes: pending_prime as u64,
+                                inflight: admission_book.inflight(&req.model),
+                                cap: cap as u64,
+                                waited_ms: crate::admit_memory::waited_ms(req.memory_defer_since),
+                                retry_after_s: None,
+                            })
+                        );
                     }
                 }
             }
@@ -25751,6 +25842,25 @@ pub fn run(
                         }
                     }
                     Err(err) if prime_cancelled_abort(s, err.as_ref()) => finished.push(i),
+                    Err(err)
+                        if prefill_oom_parkable(
+                            admit_memory_cfg.armed,
+                            &err.to_string(),
+                            s.generated.len(),
+                            s.tokens_emitted,
+                            s.oom_retries,
+                            step_oom_retries(),
+                        ) =>
+                    {
+                        park_prefill_oom(
+                            &loaded,
+                            s,
+                            &err.to_string(),
+                            &mut requeue_oom,
+                            &mut n_step_oom_parks,
+                        );
+                        finished.push(i);
+                    }
                     Err(err) => {
                         quarantine_request_fault(s, err.as_ref());
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
@@ -26217,7 +26327,23 @@ pub fn run(
                         overlay_publish,
                     )
                 }) {
-                    if !prime_cancelled_abort(s, err.as_ref()) {
+                    if prime_cancelled_abort(s, err.as_ref()) {
+                    } else if prefill_oom_parkable(
+                        admit_memory_cfg.armed,
+                        &err.to_string(),
+                        s.generated.len(),
+                        s.tokens_emitted,
+                        s.oom_retries,
+                        step_oom_retries(),
+                    ) {
+                        park_prefill_oom(
+                            &loaded,
+                            s,
+                            &err.to_string(),
+                            &mut requeue_oom,
+                            &mut n_step_oom_parks,
+                        );
+                    } else {
                         quarantine_request_fault(s, err.as_ref());
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
@@ -27926,7 +28052,7 @@ struct AdmissionDeviceHeadroom {
     pool_used_bytes: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum AdmissionHeadroom {
     Primary {
         free_bytes: usize,
@@ -27936,6 +28062,40 @@ enum AdmissionHeadroom {
 }
 
 impl AdmissionHeadroom {
+    /// The booked reading (memra#680): this reading less the prime-time bytes admitted,
+    /// still-priming sessions owe. Those sessions prime on the primary device, so a
+    /// multi-device reading is reduced on that device only. `pending == 0` returns the
+    /// reading unchanged, which keeps the door-OFF gate byte-identical.
+    fn less_pending(self, pending: usize, primary_device: usize) -> Self {
+        if pending == 0 {
+            return self;
+        }
+        match self {
+            Self::Primary {
+                free_bytes,
+                pool_cached_bytes,
+            } => Self::Primary {
+                free_bytes: crate::admit_memory::booked_device_free(
+                    free_bytes as u64,
+                    pending as u64,
+                ) as usize,
+                pool_cached_bytes,
+            },
+            Self::Devices(mut devices) => {
+                for device in devices
+                    .iter_mut()
+                    .filter(|d| d.requirement.device == primary_device)
+                {
+                    device.free_bytes = crate::admit_memory::booked_device_free(
+                        device.free_bytes as u64,
+                        pending as u64,
+                    ) as usize;
+                }
+                Self::Devices(devices)
+            }
+        }
+    }
+
     fn sufficient(&self, primary_required: usize) -> bool {
         match self {
             Self::Primary { free_bytes, .. } => *free_bytes >= primary_required,
@@ -28117,6 +28277,55 @@ fn device_admission_headroom(
 /// route, the sse-cadence hook on the qwen route), where `generated` is still empty. A
 /// step-time CUDA OOM after any in-burst flush therefore takes the honest error (a
 /// terminal error event on the stream, no replay) instead of re-sending the prefix.
+/// PREFILL-OOM PARK (memra#680, door MEMRA_ADMIT_BY_MEMORY): armed, a prefill CUDA OOM on a
+/// session that has emitted nothing is capacity the admission gate should have deferred, so the
+/// session parks and requeues exactly like a step-OOM park and the door's bounded defer or
+/// typed refusal answers it. Unarmed, or on any other error, the prefill arm's honest error
+/// stands unchanged.
+fn prefill_oom_parkable(
+    armed: bool,
+    err: &str,
+    generated_len: usize,
+    tokens_emitted: usize,
+    oom_retries: u32,
+    max_retries: u32,
+) -> bool {
+    armed
+        && is_cuda_oom(err)
+        && step_oom_parkable(generated_len, tokens_emitted, oom_retries, max_retries)
+}
+
+/// The park itself, shared by both prefill arms: the step-OOM park's teardown and requeue,
+/// with its own receipt line. A request that cannot be rebuilt takes the prefill arm's error.
+fn park_prefill_oom(
+    loaded: &HashMap<String, LoadedModel>,
+    s: &mut Session,
+    err: &str,
+    requeue_oom: &mut std::collections::VecDeque<Box<Request>>,
+    parks: &mut u64,
+) {
+    s.oom_retries += 1;
+    s.oom_teardown = true;
+    eprintln!(
+        "[admit-mem] prefill OOM parked session back to queue (model {}, retry {}/{}): {err}",
+        s.model,
+        s.oom_retries,
+        step_oom_retries(),
+    );
+    match park_requeue(loaded, s) {
+        Some(req) => {
+            *parks += 1;
+            reserve_internal_admission(req.lane);
+            requeue_oom.push_back(req);
+        }
+        None => {
+            let _ = s.tx.send(Event::Error(EngineError::engine(format!(
+                "prefill error: {err}"
+            ))));
+        }
+    }
+}
+
 fn step_oom_parkable(
     generated_len: usize,
     tokens_emitted: usize,
@@ -49986,6 +50195,97 @@ mod tests {
         );
     }
 
+    /// memra#680: a session owes prime workspace only while it is still priming.
+    #[test]
+    fn pending_prime_rows_are_the_queue_while_priming_only() {
+        assert_eq!(super::session_pending_prime_rows(false, 1_344), 1_344);
+        assert_eq!(super::session_pending_prime_rows(false, 0), 0);
+        assert_eq!(super::session_pending_prime_rows(true, 0), 0);
+        // A done flag wins over a stale queue length.
+        assert_eq!(super::session_pending_prime_rows(true, 17), 0);
+    }
+
+    /// memra#680: the booked reading subtracts the owed prime workspace, saturates, touches
+    /// only the primary device of a multi-device reading, and is the identity at zero (the
+    /// door-OFF gate's path).
+    #[test]
+    fn booked_headroom_subtracts_the_owed_prime_on_the_primary_device() {
+        use super::{AdmissionDeviceHeadroom, AdmissionDeviceRequirement, AdmissionHeadroom};
+        let primary = || AdmissionHeadroom::Primary {
+            free_bytes: 16_949_000_000,
+            pool_cached_bytes: 693_000_000,
+        };
+        assert_eq!(primary().less_pending(0, 0), primary());
+        assert_eq!(
+            primary().less_pending(12 * 658_000_000, 0),
+            AdmissionHeadroom::Primary {
+                free_bytes: 16_949_000_000 - 12 * 658_000_000,
+                pool_cached_bytes: 693_000_000,
+            }
+        );
+        // The memra#680 shape: the live reading fits a 4.35 GB arrival, the booked one does not.
+        assert!(primary().sufficient(4_353_602_568));
+        assert!(
+            !primary()
+                .less_pending(58 * 658_000_000, 0)
+                .sufficient(4_353_602_568)
+        );
+        match primary().less_pending(usize::MAX, 0) {
+            AdmissionHeadroom::Primary { free_bytes, .. } => assert_eq!(free_bytes, 0),
+            other => panic!("{other:?}"),
+        }
+        let device = |ordinal, free| AdmissionDeviceHeadroom {
+            requirement: AdmissionDeviceRequirement {
+                device: ordinal,
+                session_bytes: 1_000,
+                state_bytes: 0,
+                pending_state_bytes: 0,
+                workspace_bytes: 0,
+                reserve_bytes: 0,
+                boundary_bytes: 0,
+            },
+            free_bytes: free,
+            pool_cached_bytes: 0,
+            pool_reserved_bytes: 0,
+            pool_used_bytes: 0,
+        };
+        let pair = || AdmissionHeadroom::Devices(vec![device(0, 5_000), device(1, 5_000)]);
+        assert_eq!(pair().less_pending(0, 0), pair());
+        assert_eq!(
+            pair().less_pending(4_500, 0),
+            AdmissionHeadroom::Devices(vec![device(0, 500), device(1, 5_000)])
+        );
+        assert!(!pair().less_pending(4_500, 0).sufficient(0));
+        assert_eq!(
+            pair().less_pending(4_500, 1),
+            AdmissionHeadroom::Devices(vec![device(0, 5_000), device(1, 500)])
+        );
+    }
+
+    /// memra#680: the prefill-OOM park is taken only with the door armed, only on the
+    /// driver's OOM text, and only under the step-OOM park's own pre-emission rule.
+    #[test]
+    fn prefill_oom_park_is_armed_oom_and_pre_emission_only() {
+        let oom = "DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")";
+        assert!(super::prefill_oom_parkable(true, oom, 0, 0, 0, 3));
+        // Unarmed: the prefill arm's honest error stands (door-OFF byte-identity).
+        assert!(!super::prefill_oom_parkable(false, oom, 0, 0, 0, 3));
+        // Not an OOM: a fault or an engine error is never parked.
+        assert!(!super::prefill_oom_parkable(
+            true,
+            "request fault: index out of bounds",
+            0,
+            0,
+            0,
+            3
+        ));
+        // Something already reached the client, or the retry budget is spent.
+        assert!(!super::prefill_oom_parkable(true, oom, 0, 1, 0, 3));
+        assert!(!super::prefill_oom_parkable(true, oom, 2, 0, 0, 3));
+        assert!(!super::prefill_oom_parkable(true, oom, 0, 0, 3, 3));
+        assert!(!super::prefill_oom_parkable(true, oom, 0, 0, 0, 0));
+    }
+
     /// The park guard's eligibility predicate (PR #93 review finding): parking replays
     /// the prompt on the SAME stream, so it is legal only while nothing reached the
     /// client — by EITHER marker. `tokens_emitted` is the one that moves mid-burst.
@@ -50022,11 +50322,27 @@ mod tests {
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         let live_sq = squash(live);
         let pred = format!("step_oom_parkable{}", "(");
-        // 1. Exactly one definition and one call site in live code.
+        // 1. Exactly one definition, the step guard's call, and the memra#680 prefill-OOM
+        //    predicate's call in live code.
         assert_eq!(
             live.matches(pred.as_str()).count(),
+            3,
+            "expected the predicate's definition, the step guard and the prefill-OOM predicate"
+        );
+        // 1b. The prefill-OOM predicate feeds BOTH markers too, and both prefill arms feed it
+        //     the session's own markers.
+        assert!(
+            live_sq.contains(
+                format!("{pred}generated_len, tokens_emitted, oom_retries, max_retries)").as_str()
+            ),
+            "the prefill-OOM park must gate on the predicate fed BOTH markers"
+        );
+        let prefill_guard = "prefill_oom_parkable( admit_memory_cfg.armed, &err.to_string(), \
+                             s.generated.len(), s.tokens_emitted, s.oom_retries, step_oom_retries(), )";
+        assert_eq!(
+            live_sq.matches(prefill_guard).count(),
             2,
-            "expected the predicate's definition plus exactly one guard call"
+            "both prefill arms must feed the prefill-OOM predicate the session's own markers"
         );
         let guard = format!(
             "if is_cuda_oom(&err.to_string()) && {pred} active[i].generated.len(), \
