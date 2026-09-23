@@ -31,7 +31,7 @@ CASES = {
     "overlap_range": ("((1, 4), (4, 7))", "True"),
     "contains_range": ("((1, 8), (3, 5))", "True"),
     "intersect_range": ("((1, 5), (3, 8))", "(3, 5)"),
-    "merge_touching": ("((1, 3), (4, 6))", "(1, 6)"),
+    "merge_touching": ("((1, 3), (3, 6))", "(1, 6)"),
     "take_prefix": ("([1, 2, 3, 4], 2)", "[1, 2]"),
     "take_suffix": ("([1, 2, 3, 4], 2)", "[3, 4]"),
     "drop_prefix": ("([1, 2, 3, 4], 2)", "[3, 4]"),
@@ -88,6 +88,7 @@ def worker():
             "tuple", "set", "dict", "len", "range", "enumerate", "zip",
             "sum", "min", "max", "abs", "sorted", "reversed", "all",
             "any", "isinstance", "round", "pow", "divmod", "filter", "map",
+            "bin",
         )
     }
     def restricted_import(name, *args, **kwargs):
@@ -158,7 +159,18 @@ def main():
             "text": "```python\ndef mask_below(bit: int) -> int:\n    return bit\n```",
             "function": "mask_below",
         }
-        for payload, expected in ((correct, True), (wrong, False)):
+        builtin = {
+            "text": "```python\ndef count_ones(value: int) -> int:\n    return bin(value).count('1')\n```",
+            "function": "count_ones",
+        }
+        touching = {
+            "text": "```python\ndef merge_touching(a: tuple[int, int], b: tuple[int, int]) -> tuple[int, int] | None:\n    return None\n```",
+            "function": "merge_touching",
+        }
+        for payload, expected in (
+            (correct, True), (wrong, False),
+            (builtin, True), (touching, False),
+        ):
             result = subprocess.run(
                 [sys.executable, "-I", str(Path(__file__).resolve()), "--worker"],
                 input=json.dumps(payload), text=True, capture_output=True,
