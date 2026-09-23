@@ -1,5 +1,11 @@
 # Qwen sampled C/K/D: corrected notation
 
+**Superseded scope, 2026-09-23:** The owner clarified that K changes
+only MTP draft sampling while the target stays at top-k=20. This v5
+source changes both target and draft top-k; its partial development
+cells are distribution-change controls, not the requested verdict.
+The corrected draft-only protocol is `joint-v6/PROTOCOL.md`.
+
 Owner correction, 2026-09-23: **K is sampler top-k**, shared by
 target and MTP proposal sampling. **D is the actual number of draft
 tokens selected before a round**. **C is the after-offer confidence
