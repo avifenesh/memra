@@ -211,6 +211,44 @@ The log-only timeline (`d7d54c7a9`, the lead's ask): the loop stamps its tick co
 submitted +S ms (tick K, its top +T ms); poll 1 at +P ms (tick K', its top +T' ms) pending|complete (path); ...;
 published +Q ms (..)`. No behavior change; it becomes part of the receipts on every card.
 
+## 5a. The cause, placed (the timeline fields and two Nsight Systems boots, `rtx5090-day33/nsys/`)
+
+After the lesson above: the nsys precheck (`/bin/true`, `TMPDIR` set) passed with no lock and no GPU; the two boots
+then ran under one hold, 18:39:37Z to 18:40:34Z (`nsys/run.log`), each server ready inside its 60 s bound: the day-33
+binary with the timeline fields (`a4f00c56..`, `d7d54c7a9`) and the day-32 H2D binary (`ffdd4208..`), each
+`stall_cell.py --mode promote --n 2`. Only summaries and exported windows are banked (`placement-summary.txt`,
+`analyze-*.txt`, `timeline-*.csv.gz`, ±30 ms around each promote; the 91 MB reports' sha256 in `artifacts.sha256`).
+
+The day-33 timeline, verbatim (`nsys/d33t-server.log`, the first of four, the other three the same within 0.2 ms):
+`promote published off the tick: ticket complete after 1 poll(s), 16.7ms from submission to completion (tick-top
+poll); timeline from t0: submitted +0.20ms (tick 9360, its top -0.25ms); poll 1 at +16.94ms (tick 9361, its top
++8.44ms) complete (the tick top); published +17.41ms (tick 9361, its top +8.44ms)`.
+
+So the next tick top came 8.7 ms after the previous one, as a tick does; the promote's first poll ran IN it and returned
+8.5 ms after the tick began. The trace says where those 8.5 ms went (`placement-summary.txt`, four of four promotes):
+`d33t promote 0: 16 owner cuEventSynchronize calls in the settle's poll before its reader-wait install, spaced median
+0.61 ms, span 8.38 ms, owner API time in it 0.02 ms; the last span-sized H2D ended -10.19 ms from the install`.
+
+- **The lever works on the 5090.** The copy stream's fill and all 48 span copies finished about 6.3 ms after the probe,
+  before the next tick top at +8.4 ms (`analyze-d33t.txt`: `gpu H2D stream 15 n= 48 52.69 MB first +4.229 ms last end
+  +6.269 ms`). The ticket was complete at the first poll.
+- **The 5090's second eight milliseconds are the settle's own owner time**: 16 steps of about 0.6 ms each, one per KV
+  item, 0.02 ms of it in CUDA calls. That is `progress` checksumming each H2D item's HOST source (the KV plane's pinned
+  lease) on the owner thread, and on this card the lease is write-combined memory: `PinnedKind::for_device` maps the
+  RTX 5090 to `WriteCombined` and the RTX PRO 6000 to `Cached` (`tier_transfer.rs:59`), and a write-combined read runs at
+  about 0.116 GB/s on this card (the measured figure DAY30 section 2 quotes), about 0.5 ms for each of these 56 KB items. Every door-ON
+  binary pays it at the landing poll on the 5090: on day 32 it made the same 8.8 ms (`d32 promote 0: .. span 8.88 ms`,
+  the spans ending 6.6 ms before the install, so they landed inside that one long poll: day 32's `1 poll(s), 8.8ms` on the
+  5090 against 2 on the target card). Hence `promote_in` 16.90 against 17.10 ms: one tick plus the checksum on day 33,
+  one tick plus a poll that outlasts the copy on day 32.
+- **The target card does not pay it** (cached leases: about 1.9 MB of SHA-256 over cacheable memory, about 1 ms). The
+  5090 reading therefore neither confirms nor refutes the pre-registered prediction for the target card; design F is
+  not refuted and stays, and the target-card sitting of section 2 is the test, unchanged.
+- **A finding owed separately (not a day-33 clause):** on the 5090 every contract promote holds the owner thread about
+  8 ms in its landing poll for write-combined checksums of the KV leases (and the demote's bind re-hash reads the same
+  class). Named levers, not built: cached leases for the contract route on the 5090, or the H2D completion checksum on
+  the hash helper as day 28 moved the bundle's.
+
 ## 6. The D2D half of Move 2 owed item 1, pre-registered (no code)
 
 **The read (file:line at `045ab57d4`).** The capture route copies each layer's recurrent state on the OWNER stream at

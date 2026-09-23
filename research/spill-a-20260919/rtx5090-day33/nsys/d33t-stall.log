@@ -1,0 +1,9 @@
+  run  1 order 1 idle     tokens=160 p50=7.5 max=8.1 stall=0.5 demote=[] promote=[] intruder=None
+  run  2 order 1 promote  tokens=160 p50=7.5 max=51.1 stall=43.6 demote=[93.4] promote=[17.4] intruder=78.18089699139819
+  run  3 order 1 idle     tokens=160 p50=7.5 max=8.2 stall=0.7 demote=[] promote=[] intruder=None
+  run  4 order 1 promote  tokens=160 p50=7.5 max=52.9 stall=45.4 demote=[93.7] promote=[18.9] intruder=79.43531399359927
+  run  5 order 2 promote  tokens=160 p50=7.5 max=54.7 stall=47.2 demote=[87.9] promote=[17.3] intruder=81.12380199600011
+  run  6 order 2 idle     tokens=160 p50=7.5 max=8.2 stall=0.7 demote=[] promote=[] intruder=None
+  run  7 order 2 promote  tokens=160 p50=7.5 max=51.5 stall=44.0 demote=[88.6] promote=[17.4] intruder=78.53033801075071
+  run  8 order 2 idle     tokens=160 p50=7.5 max=8.2 stall=0.7 demote=[] promote=[] intruder=None
+STALL rule cell=nsys-d33t arm=promote n_per_order=2 pooled=4 idle_runs=4 idle_p50=7.5 idle_p95=8.0 idle_p99=8.1 idle_max=8.2 arm_runs=4 arm_p50=7.5 arm_p95=8.1 arm_p99=18.2 arm_max=54.7 stall_median=44.7 stall_min=43.6 stall_max=47.2 server_demote_ms=[93.4, 93.7, 87.9, 88.6] server_promote_ms=[17.4, 18.9, 17.3, 17.4] intruder_prompt_tokens=[89, 86, 89, 86] tenant_text_identical=True errors=0
