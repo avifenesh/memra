@@ -64,7 +64,6 @@ def score(root):
         seconds = sum(row["seconds"] for row in records)
         return tokens, seconds, tokens / seconds
 
-    control = "k3-c0"
     rows = {}
     for arm in sorted(expected):
         tokens, seconds, rate = totals(arm, included)
@@ -104,11 +103,10 @@ def score(root):
             "accepted_over_offered": accepted / offered if offered else None,
             "policy_rounds": rounds,
         }
-    base_tokens, base_seconds, base_rate = totals(control, included)
-    rng = random.Random(20779001)
-    paired = {}
-    for arm in sorted(expected - {control}):
+    def comparison(arm, control):
+        base_tokens, base_seconds, base_rate = totals(control, included)
         tokens, seconds, rate = totals(arm, included)
+        rng = random.Random(20779001)
         bootstrap = []
         for _ in range(20000):
             sample = [rng.choice(included) for _ in included]
@@ -116,7 +114,7 @@ def score(root):
             _, _, b = totals(control, sample)
             bootstrap.append(100 * (a / b - 1))
         bootstrap.sort()
-        paired[arm] = {
+        return {
             "throughput_delta_percent": 100 * (rate / base_rate - 1),
             "bootstrap_95_percent": [
                 bootstrap[int(0.025 * len(bootstrap))],
@@ -136,6 +134,15 @@ def score(root):
                 for index in included
             ],
         }
+    paired_k3 = {
+        arm: comparison(arm, "k3-c0")
+        for arm in sorted(expected - {"k3-c0"})
+    }
+    best_fixed = selected["fixed_control"]
+    paired_fixed = {
+        arm: comparison(arm, best_fixed)
+        for arm in sorted(expected - {best_fixed})
+    }
     learned_d = f"{selected['variant']}-trained"
     learned = "cd-trained"
     return {
@@ -149,7 +156,8 @@ def score(root):
         "excluded_conversation_indices_due_to_any_loop": excluded,
         "included_conversation_indices": included,
         "arms": rows,
-        "paired_vs_k3_c0": paired,
+        "paired_vs_k3_c0": paired_k3,
+        "paired_vs_best_fixed": paired_fixed,
         "learned_quality_gate": (
             rows[learned]["all_48_format_pass"]
             and rows[learned]["functional_pass"] == 48
@@ -168,6 +176,9 @@ def score(root):
                 for arm in expected
                 if arm in ("k3-c0", selected["fixed_control"])
             )
+        ),
+        "joint_95_percent_lower_bound_beats_best_fixed": (
+            paired_fixed["cd-trained"]["bootstrap_95_percent"][0] > 0
         ),
     }
 

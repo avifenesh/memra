@@ -170,7 +170,7 @@ def run_one(args, item, workloads, label, variant, arm, cap, cutoffs=None,
         command.append(f"confidence-model={confidence_model}")
     environment = os.environ.copy()
     environment.update({
-        "MEMRA_SPEC_ADAPT": "1" if arm == "native" else "0",
+        "MEMRA_SPEC_ADAPT": "1" if arm in ("native", "measured") else "0",
         "MEMRA_SPEC_ADAPT_FLOOR": "1",
         "MEMRA_SPEC_CAPMAX": "7", "MEMRA_SPEC_PMIN": "0",
         "MEMRA_SPEC_PMIN0": "0", "MEMRA_SPEC_PMIN_INROUND": "0",
@@ -299,7 +299,7 @@ def scored_conversations(args, items, workloads, phase, variants):
     arms = [("k3-c0", "fixed:3", 3, None, None, None)]
     if fixed_name != "k3-c0":
         arms.append((fixed_name, fixed_arm, fixed_cap, fixed_cutoffs, None, None))
-    arms.append(("native-adapt", "native", 4, None, None, None))
+    arms.append(("native-adapt", "measured", 4, None, None, None))
     for name in evaluated:
         arms.append((f"{name}-trained", "trained-d", 4, None, models[name], None))
         arms.append((f"{name}-noop", "noop-d", 4, None, models[name], None))

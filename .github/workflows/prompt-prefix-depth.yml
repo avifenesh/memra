@@ -289,7 +289,9 @@ jobs:
             "$lane/joint-v4/quality.py" \
             "$lane/joint-v4/analyze_selection.py" \
             "$lane/joint-v4/analyze_final.py" \
-            "$lane/joint-v4/seal.py"
+            "$lane/joint-v4/diagnostics.py" \
+            "$lane/joint-v4/seal.py" \
+            "$lane/joint-v4/replay.py"
           python3 "$lane/joint-v4/patch_source.py" \
             --base "$lane/confidence/adaptive-v3/receipts-v3/runtime-source-adaptive-v3.tar.gz" \
             --out "$RUNNER_TEMP/joint-v4-native"
