@@ -121,6 +121,17 @@ Writing the client against the code found that P2 as registered cannot run on th
   expected reading there is one extra `park-compact:` line and a resumed next turn.
 - **Unchanged:** P1, P3, P4, the interaction pair and the decision rule.
 
+### 1.9 Addendum B (2026-09-24, before any day-38 boot)
+
+Addendum A's red arm named "the r3 binary of DAY37". That binary has no plain-path injection point (the fault door
+gained it in the fix commit), so the forged OOM would never fire there on the plain path. The red arm is instead the
+fix tree with only the flag's effect on parking removed: `day38-red.patch` makes `retire_may_park` ignore `errored`
+(the pre-fix predicate), and nothing else. It is checked to apply and to compile before the boot, and the build
+records both trees' hashes. The fault boots also run a fourth shape-X turn per conversation (turn 3 plus 64 ids,
+`max_tokens=32`, with its cold twin), so the conversation whose turn 3 takes the forged OOM has a next turn to read.
+With one request in flight, the forged OOM fires on the first decode step of the boot, which is conversation r0's
+turn 3 (turns 1 and 2 are `max_tokens=1` and never decode).
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
