@@ -137,3 +137,68 @@ arm checks that the fix holds on another host and driver; it cannot reproduce th
   timed window cannot survive), or in the engine (a synchronizing call the engine itself makes on the owner thread
   while copy-stream work is queued, which would hold the owner in production too). The fix's acceptance stays section
   1's.
+
+## 4. The probe, as it ran (`rtx5090-day37/finding5/probe/`), and its cross-context extension pre-registered
+
+- Binary `day37-hold-probe` (hash in `binary.sha256`), one hold 11:55:39Z to 11:57:46Z, no compute app. Verbatim
+  pattern over both tracking modes (`tracking-on.log`, `tracking-off.log`; N=3 each cell): the `free-host` row holds
+  the victim's `alloc-zeros` 260.46 to 260.99 ms, `event-query` 260.49 to 261.01, `htod-pageable` 260.82 to 261.07 and
+  `malloc-host` 262.03 to 262.28 in the two-thread form, 3 of 3 each, and holds nothing in the serial form (0.04 to
+  1.97 ms); `launch` is not held (0.02 to 0.36). Every other X (`none`, `malloc-host`, `free-async`, `stream-sync-own`,
+  `event-sync-own`, `ctx-sync`) holds no Y past 8.54 ms in any run. Event tracking on or off reads the same.
+- **The holding action is `cuMemFreeHost`.** While one thread's pinned free waits for the context's outstanding
+  device work (here the other thread's 300 ms spin, entered 20 ms in, so about 280 ms), every other thread's
+  allocation, event query, pageable copy and pinned allocation on that context waits with it. In the step-clock
+  receipts the H2D cell's thread sits 330 ms between its two refused-attach span builds (`pair-1`: the bad=1 set built
+  at -345 to -337 ms, the bad=2 set at -6.51 ms), which is the drop of the refused set's three `PinnedHostBuf`s, while
+  the D2H cell's `htod-pageable` is held for 294.53 ms.
+- **Where the engine frees pinned memory** (read, `pinned_host.rs`, `tier_transfer.rs`, `worker.rs`):
+  `PinnedHostBuf::drop` and the contract lease backing's drop (`event.synchronize()` then `free_host`) call
+  `cuMemFreeHost`. On the serving path the door keeps a promoted host entry and its leases (the H2D sources are
+  retained twins, `host_promote_finish`), so a lease backing is freed only when a host entry leaves the tier (host LRU
+  eviction at insert, a VERIFY FAILED drop, the tenant purge, the latch); the staging set frees only at the latch. In
+  the serving process the owner thread is the context's only CUDA caller, so the cross-thread hold does not arise on
+  one card; the free still waits for whatever the copy stream holds at that moment.
+- **The cross-context extension, pre-registered before it runs.** The question the fix's layer turns on: is the
+  held lock per context, or does a pinned free in one context hold a thread working in another context (the serving
+  shape of a multi-card process, one owner thread and one context per card)? On one card: the holder in a CREATED
+  context (`cuCtxCreate`) launches the 300 ms spin there and runs `free-host` (and `none` as the control); the victim
+  in the primary context times the same five calls; then the roles reversed. 3 runs each, one hold. Decision: if the
+  created-context free holds the primary-context victim for 200 ms or more in 3 of 3 runs, the lock is wider than a
+  context, and the engine's pinned frees are a cross-card hazard in a multi-card process; if not, the hold is a
+  same-context property only.
+
+## 5. The cross-context probe, as it ran, and the fix pre-registered (revised design)
+
+- Binary `binary-cross.sha256`, one hold 12:05:21Z to 12:05:43Z (`cross.log`, N=3 each). A `free-host` in the CREATED
+  context holds nothing in the primary context (`alloc-zeros` 0.05 to 0.20 ms, `event-query` 0.03, `htod-pageable`
+  0.33 to 0.34, `malloc-host` 1.66 to 1.70), nor the reverse (0.02 to 2.11 ms); the same-context control in the same
+  hold repeats the hold (`alloc-zeros` 260.69 to 260.95, `event-query` 260.48 to 260.93, `htod-pageable` 260.83 to
+  261.27, `malloc-host` 262.28 to 262.51). **By section 4's rule the hold is a same-context property only**: a pinned
+  free in one context does not hold a thread working in another. A multi-card process (one context and one owner
+  thread per card) is not exposed to it across cards.
+- **The defect, named.** The engine's contract is one CUDA owner thread per context (`CudaTransfers::check_thread`
+  refuses any other thread; the server runs one worker per device). The native cells break it when run in parallel:
+  each builds its own `CudaTransfers` on the device's PRIMARY context, so several owner threads share one context, and
+  in that shape a pinned free on any one of them (`cuMemFreeHost`, reached through `PinnedHostBuf::drop` or a lease
+  backing's drop) holds every other owner's driver calls until the context's device work drains, including another
+  cell's 300 ms hold. That is the whole of finding 5: the engine's code under test is not wrong, and the cells were
+  not testing the shape the engine runs in.
+- **Why section 1's H1 fix is not taken.** Section 1 named a gate the cell opens after it reads the intermediate state.
+  With several owners on one context a gate deadlocks instead of flaking: another owner's pinned free waits for the
+  gated work while it holds the gate-opener's event query. The rule-2 design is revised here, before any fix code; the
+  acceptance of section 1 is unchanged.
+- **The fix (engine test code only).** Each of the eleven native cells of `tier_transfer.rs` owns its context: the
+  cell builds it with `CudaContext::new_non_primary(0, 0)` (cudarc 0.19.8, `cuCtxCreate_v4`, destroyed on drop) instead
+  of retaining the primary, and drives it from its one thread, the shape the engine's contract states. Nothing else in
+  any cell changes: every assertion, hold, pattern and step stays; the step clock and the hold reading stay as the
+  cells' diagnostics. A CPU census pins it: every native cell in the module builds its context with
+  `new_non_primary`, and none calls `CudaContext::new(`.
+- **Acceptance (section 1's, restated, unchanged).** On the fixed test binary, one hold: the `all` arm 100 of 100 runs
+  green, then the `pair` arm 100 of 100 green; every cell's serial run green; the red arm: a scratch build of the fixed
+  cells with the hold removed from `h2d_span_batch` and `d2h_span_batch` (the `delay_on` line deleted), run once, must
+  fail both rule-2 assertions (banked, not committed as code); on the target card the `all` arm 20 of 20 in the next
+  sitting's unit cells.
+- **A reading beside it (not a clause).** The server's native door cells (`option_b_*`, `option_c_*`, built on
+  `Engine::new(0)`, the primary context) run in parallel once, 10 runs, to find whether the same class reaches them;
+  any failure there is recorded with its reading and gets its own pre-registered fix.
