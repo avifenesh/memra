@@ -251,7 +251,7 @@ chk "r3 served the COLD path with reference bytes (corruption never reached a cu
 # Verify digest v3 (lane/spill-c-20260919 day 53, DAY53.md): the verify digest covers every plane
 # a round trip carries, not only the trunk. One boot per plane, each flipping one byte of the host
 # copy after the demote digest was recorded. Spec-served entries (the default boot publishes
-# `insert (spec-snapshot)` entries carrying a draft plane and a hidden row) must fail the promote
+# `insert (spec-boundary)` entries carrying a draft plane and a hidden row) must fail the promote
 # like cell 2; plain-published entries (MEMRA_SERVE_SPEC=0) carry neither, so the draft and hidden
 # faults must flip nothing: no FAULT line, `verify ok`, a real promote.
 # Under MEMRA_KV_HOST_CONTRACTS=1 the door's receipts attest these planes and the three values
@@ -272,7 +272,7 @@ for plane in draft hidden logits; do
     chk "digest-$plane: the entry DEMOTED" grep -q "\[prefix-host\] demote:" "$log"
     if [ "$SPEC_MODE" = 1 ]; then
         chk "digest-$plane: the default boot published spec entries (the plane exists)" \
-            grep -q "\[prefix-cache\] insert (spec-snapshot)" "$log"
+            grep -q "\[prefix-cache\] insert (spec-boundary)" "$log"
     fi
     if [ "$DOOR_ON" = 0 ] && { [ "$SPEC_MODE" = 1 ] || [ "$plane" = logits ]; }; then
         chk "digest-$plane: the fault door announced the injected corruption" \

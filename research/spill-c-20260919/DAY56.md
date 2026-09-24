@@ -95,3 +95,39 @@ today's source and the cells, before any code. Tree at start: `ef7906504`. The r
 - **The reader** (`day56-reading.py`) compares the OFF arm's check lines with the ON arm's minus its door-only lines
   (the two `door ON` checks of the drafter arm), so "the same verdict lines" is read line for line.
 - Scripts: `day56-cell.sh` (cells `identity-dspark-off`, `identity-dspark-on`).
+
+## 2. First attempt on the target card (BOX8, DAY52 section 6; receipts `pro-single-day52/c5-attempt1/`)
+
+The two cells ran 23:36Z to 23:37Z on the box's `memra-server-c5` (`e801759f...`, tree `1b130f1ef`), the 27B with
+the DFlash2 drafter export (manifest checked). Verbatim (`c5-attempt1/reading.log`):
+
+`DAY56 ARM off rig=pro-single exit=1 verdict='KV-HOST-SPILL IDENTITY GATE: 1 FAILURE(S) (teeth=0)' checks=13 demotes=[('89', '164.2'), ('86', '164.0'), ('89', '164.2')] tails=[] restores=1 refusals=0`
+
+`DAY56 ARM on rig=pro-single exit=1 verdict='KV-HOST-SPILL IDENTITY GATE: 2 FAILURE(S) (teeth=0)' checks=15 demotes=[('89', '164.2'), ('86', '164.0'), ('89', '164.2')] tails=[(5, 10, 3645440), (5, 10, 3522560), (5, 10, 3645440)] restores=0 refusals=0`
+
+`DAY56 TERM all_green_both -> FAIL`, `DAY56 TERM same_verdict_lines -> FAIL`, `DAY56 TERM equal_demote_bytes -> PASS`,
+`DAY56 TERM tail_receipt_2L -> PASS`, `DAY56 TERM restore_both_same_text -> FAIL`, `DAY56 TERM no_refusal_on -> PASS`
+
+`DAY56 DFLASH TAIL rig=pro-single -> FAIL`
+
+**Why, from the logs.** The door side read as designed: the boot line `[prefix-host] contracts door: model gate DFlash
+tail program drafter_manifest=config.json=873e3556...;model.safetensors=67fc76d6... dflash_cfg_sha256=144f...`, one
+receipt per bound tail image (`contracts door tail bound: 5 draft layers, 10 Role::Tail segments (3645440 B, hashed
+in 0.8 ms on the owner thread), tail_checksums_sha256=3bc70fe5...`), equal demote bytes in both arms, no refusal, and
+`verify ok` on the promote. The failing check in both arms is the gate's `r3 served a strict-prefix hit through the
+promoted entry`: r3 (P_A + EXT, 102 tokens) is a strict-prefix hit on the promoted 89-token entry, and a DSPARK
+session restores a hit shorter than its prompt only under `MEMRA_DSPARK_PARTIAL_RESTORE=1`
+(`dspark_hit_is_restorable`), which this cell did not set, so r3 primed cold (`cached_tokens=0`) in both arms. In the
+OFF arm r4 then hit r3's own 102-token entry in full (`DSPARK restore: 102 of 102 prompt tokens`); in the ON arm r3's
+insert was refused beside the promoted entry's lease (`insert refused: entry 164100096 cannot fit beside 163181568
+leased bytes (budget 268435456, dspark-boundary ...)`), so ON had no DSPARK restore at all. That is a shape error in
+this cell's environment (section 1 named `MEMRA_DSPARK_PREFIX_RESTORE=1` and not the strict-prefix switch), not a slice
+verdict; the verdict stands as FAIL and the rule is not touched. The ON-arm insert refusal beside a lease is a
+difference between the arms that the corrected cell reads again.
+
+## 2a. The corrected cell, registered before it runs
+
+The same two cells with `MEMRA_DSPARK_PARTIAL_RESTORE=1` added to both arms (`day56-cell.sh`), everything else
+unchanged, the same rule and reader; on the target card (the attempt-1 receipts kept under `c5-attempt1/`) and in the
+RTX 5090 queue. Expected from source: r3 restores from the promoted entry in both arms (`DSPARK restore: 89 of 102
+prompt tokens + draft tail from cache (13 suffix tokens to prime)`).

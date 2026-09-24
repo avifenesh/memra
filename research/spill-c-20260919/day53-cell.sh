@@ -46,8 +46,11 @@ for attempt in $(seq 1 90); do
             ( cd "$HERE" || exit 3
               if ! flock -n 9; then echo "REFUSED: canonical GPU lock busy ($LOCK)"; exit 2; fi
               python3 tools/tier-lock-proof.py --fd 9 --lock "$LOCK" --owner day53-cell > "$OUT/LOCK.json" 2>&1
+              # The 1200% cap: a user scope where systemd runs, else 12 pinned cores (a box without systemd).
+              if systemd-run --user --scope -q true 2>/dev/null; then cap=(systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=28G --quiet); else cap=(taskset -c 0-11); fi
+              echo "cap=${cap[*]}"
               # shellcheck disable=SC2086
-              CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=28G --quiet $GATE
+              CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} "${cap[@]}" $GATE
             ) 9>>"$LOCK" > "$OUT/gate.log" 2>&1; rc=$? ;;
         *)
             env "${ENVS[@]}" bash "$HERE/$GATE" "$MODEL" "$BIN" "$OUT/ev" > "$OUT/gate.log" 2>&1; rc=$? ;;

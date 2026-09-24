@@ -95,3 +95,26 @@ Written before any code; tree at start: `094c46b24`. No sibling lane touches the
   GPU cell `verify_digest_v3_covers_every_round_tripped_plane_and_v2_stays_trunk_only`). The pool-full cell's line
   is the day-24 known `1 FAILURE(S)` shape only if it recurs; every new check must pass, and each cell's failing
   checks are quoted.
+
+## 2. First attempt on the target card (BOX8, DAY52 section 4; receipts `pro-single-day52/c6-attempt1/`)
+
+The six cells ran 23:32Z to 23:36Z on the box's `memra-server-v3` (`172123b7...`, tree `256c3c640`), the 27B, the
+256 MB device prefix budget. Verbatim verdicts (`c6-attempt1/<cell>/verdict.txt`):
+
+- `failure-default-off`: `KV-HOST-SPILL FAILURE GATE: 3 FAILURE(S)`
+- `failure-default-on`: `KV-HOST-SPILL FAILURE GATE: 3 FAILURE(S)`
+- `failure-plain-off`: `KV-HOST-SPILL FAILURE GATE: ALL GREEN`
+- `identity-default-off`: `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`
+- `identity-default-on`: `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`
+- `unit-server`: not run: the cell wraps the test in `systemd-run --user --scope`, and the box has no systemd
+  (`Failed to connect to bus: No medium found`).
+
+**Why the two failure runs fail.** In each, the three failing checks are the same one per new cell, `digest-<plane>:
+the default boot published spec entries (the plane exists)`, and every other check of the cell is `ok`: the FAULT
+line, the demote, `VERIFY FAILED: promoted digest split-state-v3:... != demote digest split-state-v3:...`, no promote,
+zero promotions, r3 byte-equal to the reference (door OFF), and the door-ON no-flip checks. The check grepped
+`[prefix-cache] insert (spec-snapshot)`, a string I took from a trace role; the spec publisher's insert line reads
+`[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB ...`. A wrong literal in the gate, not a verify defect; the
+verdicts stand as recorded. Fixed in the gate (`insert (spec-boundary)`) and in the unit cell (the 1200% cap as a user
+scope where systemd runs, else 12 pinned cores), both before any rerun; the three cells rerun on the target card
+(attempt-1 receipts kept) and run first time on the RTX 5090 with the fix.
