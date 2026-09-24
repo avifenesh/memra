@@ -716,10 +716,11 @@ mod profile_census_tests {
     /// 2741/3140/3240, graph split-K subtracted 86 until the matrix flip
     /// (2026-09-11), the KV norm/RoPE fusion subtracted 43 and the norm2
     /// activation pack a net 215 until the served ABBA deleted all three norm
-    /// doors the same day.
+    /// doors the same day. Exact attention TP (memra #679, 2026-09-23) adds 43: each
+    /// layer's one attention reduction became two row gathers.
     #[test]
     fn the_forward_census_is_the_unfused_base_with_no_door_terms_left() {
-        assert_eq!(forward_kernel_census(), [(0, 2741), (2, 3140), (3, 3240)]);
+        assert_eq!(forward_kernel_census(), [(0, 2784), (2, 3183), (3, 3283)]);
     }
 
     #[test]
