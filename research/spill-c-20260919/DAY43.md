@@ -74,3 +74,23 @@ minus OFF's, over 32), per-order medians, and day 40's R2 stage lines (host hits
 **What each card can decide.** The RTX 5090 decides I6's regression clause on this card and reads the budget's
 effect here. The target card reads both in the ladder sitting; its budget arm is registered there with that host's
 `MemAvailable`.
+
+## 1a. Addendum before the cell: two costs that grow with the tier, found by a dry check
+
+A dry check of the I6 binary at 8 GiB (`day43-cpu/dry-check-i6g.log`, one run under the lock outside the collector,
+not a receipt) printed the plan (`classes=[(450560, 11271), (557056, 5635), (860160, 433)] records_held=17339`), the
+tape unchanged and 40.5 host hits per window token (day 40's LRU profile predicted about 40), with `verify` 9.38 to
+5.29 and `pread` 3.46 to 1.92 ms per token, but the window slower (1.744 s against day 40's 0.915): `finish` 23.48 ms
+per token (`retire` 20.97 of it) and the read step 8.96 (173 us per read against day 40's 55).
+
+- (e) **The governor's release is O(outstanding charges).** `Governor::release` calls `prune_fairness`, which
+  rebuilds a set of every charged tenant from `charged_tenants`, one entry per outstanding charge: 17,339 cached
+  leases make each release O(17k), and a miss releases several charges. Part of I6 (the tier at scale): a per-tenant
+  charge count kept on reserve and release, so the active set is O(queued requests + distinct tenants); decisions
+  unchanged, checked by an in-module test that recomputes the old prune's active set from `charged_tenants` after
+  every operation of a randomized trace and asserts it equal to the new one, and that `last_served` and
+  `evicted_floor` evolve identically. Registered here before its code and before the cell.
+- **Not I6's: the read step's allocations.** Each host miss allocates and zero-fills two fresh `Vec`s; with 17k live
+  records in the heap the allocator hands out untouched pages, so every read pays first-touch faults. That is I2's
+  (a preallocated, pre-faulted slot pool, the read straight into the slot), registered already. The cell runs as
+  registered; this cost is expected in the I6G arm and is a reading, not a reason to move a clause.
