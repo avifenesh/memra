@@ -14,6 +14,8 @@ off-<lane|main> for A6.
 import glob, json, math, os, re, statistics, sys
 
 card, root = sys.argv[1], sys.argv[2]
+# The gate-set directory prefix: `gates-r2` (addendum C's rerun, the default) or `gates` (design v1's banked set).
+GATES = sys.argv[3] if len(sys.argv) > 3 else "gates-r2"
 GRAN = 2 * 1024 * 1024
 out = []
 
@@ -115,15 +117,16 @@ for g in sorted(glob.glob(os.path.join(root, "grow-*", "receipt", "GROW.txt"))):
 
 # ---- A1 gates --------------------------------------------------------------------------------------------------
 VERDICT = re.compile(r"(ALL GREEN[^\n]*|serve-smoke: \d+ failed|PREFIX-NEWEST-TURN-FITS:[^\n]*-> (?:PASS|FAIL)|FAIL[^\n]*GATE[^\n]*)")
-cells = sorted({os.path.basename(os.path.dirname(p)) for p in glob.glob(os.path.join(root, "gates-*", "*", "CELL.txt"))})
+cells = sorted({os.path.basename(os.path.dirname(p)) for p in glob.glob(os.path.join(root, f"{GATES}-pooled", "*", "CELL.txt"))}
+               | {os.path.basename(os.path.dirname(p)) for p in glob.glob(os.path.join(root, f"{GATES}-vmm", "*", "CELL.txt"))})
 gate_pass = True
 for c in cells:
     v = {}
     for arm in ("pooled", "vmm"):
-        d = os.path.join(root, f"gates-{arm}", c)
+        d = os.path.join(root, f"{GATES}-{arm}", c)
         gl = read(os.path.join(d, "gate.log"))
         m = VERDICT.findall(gl)
-        cell = dict(l.split("=", 1) for l in read(os.path.join(d, "CELL.txt")).splitlines() if "=" in l)
+        cell = dict(re.findall(r"(door_on_lines|door_off_lines)=(\d+)", read(os.path.join(d, "CELL.txt"))))
         rc = read(os.path.join(d, "gate.exit")).strip()
         oks = len(re.findall(r"^\s*ok\b|\bok\s*$|: ok\b", gl, re.M))
         v[arm] = dict(verdict=m[-1] if m else "no-verdict", rc=rc, door=cell.get("door_on_lines", "?") + "/" + cell.get("door_off_lines", "?"), oks=oks)
