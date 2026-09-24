@@ -46,7 +46,7 @@ example test and reserves at least two tests for grading. Tasks
 examined in the diagnostics are excluded from all v9 splits.
 
 The sanitized eight-turn qualifier on one nonproduction Nebius
-RTX PRO 6000 (FIN-02, on-demand) completed with 3,244 returned
+RTX PRO 6000 (uk-south2, on-demand) completed with 3,244 returned
 tokens in 27.384 complete-request seconds. All turns ended in EOS,
 8/8 answers were fenced and parseable, 8/8 passed every reserved
 test, zero exact loops occurred, and all seven later turns had
@@ -60,4 +60,7 @@ requires all 144 training arms, and advances through training-row
 extraction, new-only and augmented fits, sampled no-op/C qualification,
 validation selection and untouched final scoring. Every stage stops
 on an error; `pipeline-complete.json` is written only after final
-scoring. The supervisor does not use a periodic polling loop.
+scoring and archive sealing. The supervisor does not use a periodic
+polling loop. `replay.py` checks sealed member hashes, native turn
+receipts, no-op identity, C engagement, code tests and pooled request
+scores before the research VM is retired.
