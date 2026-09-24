@@ -11,8 +11,8 @@ pub mod plane;
 pub use plane::{
     GrowEvent, KvAllocator, KvPlane, KvWrite, VmmFaults, VmmGrowPlacement, note_on_demand_plane,
     on_demand_initial_rows, on_demand_pays, vmm_counters, vmm_granularity_for, vmm_graveyard_bytes,
-    vmm_grow_placement, vmm_reap_graveyard, vmm_reap_graveyard_blocking, vmm_set_faults,
-    vmm_set_grow_placement, with_on_demand_kv,
+    vmm_grow_placement, vmm_quarantined_bytes, vmm_reap_graveyard, vmm_reap_graveyard_blocking,
+    vmm_set_faults, vmm_set_grow_placement, with_on_demand_kv,
 };
 pub mod record;
 pub mod tiered;
@@ -556,9 +556,10 @@ impl KvLayer {
                 .release_beyond(kv_plane_allocation_bytes(rows, self.v_tok_bytes))
     }
 
-    /// Unmap the released tails whose events completed. Returns the bytes released.
-    pub fn reap(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
-        Ok(self.k.reap()? + self.v.reap()?)
+    /// Unmap the released tails whose events completed. Returns the bytes released; a failure is
+    /// quarantined inside the plane (DAY37 addendum E3).
+    pub fn reap(&mut self) -> usize {
+        self.k.reap() + self.v.reap()
     }
 
     /// Bytes of this layer's on-demand planes scheduled for release and not yet reaped.
@@ -2834,12 +2835,8 @@ impl Cache {
     }
 
     /// Unmap every released tail whose event completed. Returns the bytes released.
-    pub fn reap_kv(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
-        let mut released = 0;
-        for layer in self.kv.iter_mut().flatten() {
-            released += layer.reap()?;
-        }
-        Ok(released)
+    pub fn reap_kv(&mut self) -> usize {
+        self.kv.iter_mut().flatten().map(KvLayer::reap).sum()
     }
 
     /// Bytes of this cache's on-demand planes scheduled for release and not yet reaped.

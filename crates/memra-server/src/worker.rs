@@ -2179,6 +2179,8 @@ pub struct Metrics {
     pub kv_vmm_grow_waits_total: u64,
     pub kv_vmm_grow_failures_total: u64,
     pub kv_vmm_released_bytes_total: u64,
+    /// DAY37 addendum E3: bytes failed reaps took out of the release path.
+    pub kv_vmm_quarantined_bytes_total: u64,
     /// LCP length histogram (lane/cache-metering): one sample per prefix-cache PROBE —
     /// on a hit, the served entry's token length; on a miss, best_lcp against the pool
     /// (already computed there for the split-learning signal, so the histogram adds no
@@ -6665,48 +6667,84 @@ fn vmm_held_bytes(
     acc
 }
 
-/// The owner-tick reap (DAY37 addendum A): the graveyard and every parked session's released
-/// tails whose events completed. Returns (bytes released, bytes still pending): while anything is
-/// pending the run loop does not block indefinitely (addendum D), so releases land at idle.
+/// The owner-tick reap (DAY37 addendum A): the graveyard, every parked session's released tails,
+/// and the active sessions' (addendum E2: a resumed plane's tail past its `want` is released while
+/// it runs; no consumer touches bytes past the live prefix) whose events completed. Returns (bytes
+/// released, bytes still pending): while anything is pending the run loop does not block
+/// indefinitely (addendum D), so releases land at idle. A failed reap is quarantined inside the
+/// plane and leaves nothing pending (addendum E3).
 fn vmm_reap_tick(
+    active: &mut [Session],
     reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
     spec_reuse: &mut HashMap<PoolKey, Vec<SpecReuseEntry>>,
 ) -> (usize, usize) {
-    let mut released = 0;
-    let mut pending = 0;
-    match memra_engine::cache::vmm_reap_graveyard() {
-        Ok((n, _, pending_bytes)) => {
-            released += n;
-            pending += pending_bytes;
+    let (mut released, _, _) = memra_engine::cache::vmm_reap_graveyard();
+    for s in active.iter_mut() {
+        if let Some(sp) = s.spec.as_mut() {
+            released += sp.reap_kv();
         }
-        Err(err) => {
-            eprintln!("[kv-vmm] graveyard reap failed (left pending): {err}");
-            pending += memra_engine::cache::vmm_graveyard_bytes();
+        if let Some(c) = s.cache.as_mut() {
+            released += c.reap_kv();
         }
     }
     for e in reuse.values_mut().flatten() {
-        match e.cache.reap_kv() {
-            Ok(n) => released += n,
-            Err(err) => eprintln!("[kv-vmm] parked reap failed (left pending): {err}"),
-        }
+        released += e.cache.reap_kv();
     }
     for e in spec_reuse.values_mut().flatten() {
-        match e.sess.reap_kv() {
-            Ok(n) => released += n,
-            Err(err) => eprintln!("[kv-vmm] parked spec reap failed (left pending): {err}"),
-        }
+        released += e.sess.reap_kv();
     }
-    pending += reuse
-        .values()
-        .flatten()
-        .map(|e| e.cache.kv_pending_release_bytes())
-        .sum::<usize>();
-    pending += spec_reuse
-        .values()
-        .flatten()
-        .map(|e| e.sess.kv_pending_release_bytes())
-        .sum::<usize>();
-    (released, pending)
+    (released, vmm_pending_bytes(reuse, spec_reuse))
+}
+
+/// Bytes scheduled for release and not yet reaped with nothing active (DAY37 addendum E2): the
+/// graveyard and both parked pools. The idle decision reads it right before it chooses between the
+/// indefinite block and the 2 ms poll, so a trim or a drop made by this tick's retires is seen.
+fn vmm_pending_bytes(
+    reuse: &HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &HashMap<PoolKey, Vec<SpecReuseEntry>>,
+) -> usize {
+    memra_engine::cache::vmm_graveyard_bytes()
+        + reuse
+            .values()
+            .flatten()
+            .map(|e| e.cache.kv_pending_release_bytes())
+            .sum::<usize>()
+        + spec_reuse
+            .values()
+            .flatten()
+            .map(|e| e.sess.kv_pending_release_bytes())
+            .sum::<usize>()
+}
+
+/// The idle decision's read (DAY37 addendum E2 and E4): the tick-top reap ran before this tick's
+/// retires, so the releases their trims and drops scheduled are read here, right before the choice
+/// between the indefinite block and the 2 ms poll; the ensure-walls receipt prints its partial
+/// batch. Unarmed it does nothing.
+fn vmm_idle_refresh(
+    vmm_pending: &mut bool,
+    walls: &mut Vec<u64>,
+    reuse: &HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &HashMap<PoolKey, Vec<SpecReuseEntry>>,
+) {
+    if crate::kv_vmm::armed() {
+        *vmm_pending = vmm_pending_bytes(reuse, spec_reuse) > 0;
+        vmm_flush_ensure_walls(walls);
+    }
+}
+
+/// Print the ensure-walls receipt's batch (DAY37 A3 (i)); addendum E4 also prints the partial
+/// batch when the worker goes idle, so the reading is every wall of the boot.
+fn vmm_flush_ensure_walls(walls: &mut Vec<u64>) {
+    if walls.is_empty() {
+        return;
+    }
+    let joined: Vec<String> = walls.iter().map(u64::to_string).collect();
+    eprintln!(
+        "[kv-vmm] ensure-walls n={} us={}",
+        walls.len(),
+        joined.join(",")
+    );
+    walls.clear();
 }
 
 /// The reclaim paths' reap (DAY37 addendum D): the step-OOM teardown and the admin trim drop the
@@ -24062,6 +24100,7 @@ pub fn run(
         //    nearest deadline, so the sweep fires even on a box with zero active sessions:
         //    exactly the tool-round-trip pause shape at low concurrency.
         if active.is_empty() && queue.is_empty() {
+            vmm_idle_refresh(&mut vmm_pending, &mut vmm_ensure_walls, &reuse, &spec_reuse);
             if pending_constraints.is_empty()
                 && pause_pending.is_empty()
                 && handoff_import.is_none()
@@ -26198,7 +26237,7 @@ pub fn run(
         // session evicted, the device pools trimmed back to the driver), then the step-OOM
         // contract. Unarmed nothing here runs.
         if crate::kv_vmm::armed() {
-            let (reaped, pending) = vmm_reap_tick(&mut reuse, &mut spec_reuse);
+            let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse);
             vmm_pending = pending > 0;
             if reaped > 0 {
                 eprintln!(
@@ -26307,13 +26346,7 @@ pub fn run(
             if ensured_sessions > 0 {
                 vmm_ensure_walls.push(ensure_t0.elapsed().as_micros() as u64);
                 if vmm_ensure_walls.len() >= 256 {
-                    let walls: Vec<String> = vmm_ensure_walls.iter().map(u64::to_string).collect();
-                    eprintln!(
-                        "[kv-vmm] ensure-walls n={} us={}",
-                        vmm_ensure_walls.len(),
-                        walls.join(",")
-                    );
-                    vmm_ensure_walls.clear();
+                    vmm_flush_ensure_walls(&mut vmm_ensure_walls);
                 }
             }
         }
@@ -28788,6 +28821,7 @@ pub fn run(
                 m.kv_vmm_grow_waits_total = waits;
                 m.kv_vmm_grow_failures_total = failures;
                 m.kv_vmm_released_bytes_total = released;
+                m.kv_vmm_quarantined_bytes_total = memra_engine::cache::vmm_quarantined_bytes();
             }
             m.lcp_hist = px.lcp_hist;
             m.ns_tokens = ns_tokens.clone();
@@ -53069,13 +53103,13 @@ mod tests {
             .find("if s.tx.is_closed() { abort_log(s); finished.push(i); } }")
             .expect("the disconnect sweep");
         let ensure = live
-            .find("if crate::kv_vmm::armed() { let (reaped, pending) = vmm_reap_tick(&mut reuse, &mut spec_reuse);")
+            .find("if crate::kv_vmm::armed() { let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse);")
             .expect("the tick-top ensure");
         let first_phase = sweep + live[sweep..].find("if !batching {").expect("the phases");
         assert!(sweep < ensure && ensure < first_phase);
         assert_eq!(live.matches("vmm_ensure_session(s)").count(), 2);
         assert_eq!(
-            live.matches("vmm_reap_tick(&mut reuse, &mut spec_reuse)")
+            live.matches("vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse)")
                 .count(),
             1
         );
@@ -53140,7 +53174,28 @@ mod tests {
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         assert!(live.contains("&& hpx.restoring.is_none() && !vmm_pending {"));
         assert!(live.contains("if vmm_pending { wait = wait.min(Duration::from_millis(2)); }"));
-        assert!(live.contains("let (reaped, pending) = vmm_reap_tick(&mut reuse, &mut spec_reuse); vmm_pending = pending > 0;"));
+        assert!(live.contains("let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse); vmm_pending = pending > 0;"));
+        // Addendum E2 and E4: the idle decision re-reads the pending bytes (this tick's retires
+        // trimmed and dropped after the tick-top reap) before it chooses the block, and flushes
+        // the ensure-walls batch.
+        let refresh = "if active.is_empty() && queue.is_empty() { vmm_idle_refresh(&mut vmm_pending, &mut vmm_ensure_walls, &reuse, &spec_reuse); if pending_constraints.is_empty()";
+        let at = live
+            .find(refresh)
+            .expect("the idle decision refreshes the pending flag first");
+        assert!(
+            at < live
+                .find("&& hpx.restoring.is_none() && !vmm_pending {")
+                .unwrap()
+        );
+        assert_eq!(live.matches("vmm_idle_refresh(&mut").count(), 1);
+        assert!(live.contains("if crate::kv_vmm::armed() { *vmm_pending = vmm_pending_bytes(reuse, spec_reuse) > 0; vmm_flush_ensure_walls(walls); }"));
+        assert_eq!(
+            live.matches("vmm_pending = pending > 0;").count(),
+            1,
+            "the tick top's read"
+        );
+        // The tick-top reap covers the active sessions' planes too.
+        assert!(live.contains("for s in active.iter_mut() { if let Some(sp) = s.spec.as_mut() { released += sp.reap_kv(); } if let Some(c) = s.cache.as_mut() { released += c.reap_kv(); } }"));
         assert!(live.contains(
             "vmm_reap_for(\"oom-teardown\"); let reports = trim_model_device_pools(&engine, &loaded, \"oom-teardown\");"
         ));

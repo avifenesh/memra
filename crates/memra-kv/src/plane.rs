@@ -319,6 +319,24 @@ static MAPPER_GROWS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static GROW_WAITS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static GROW_FAILURES_TOTAL: AtomicU64 = AtomicU64::new(0);
 static RELEASED_BYTES_TOTAL: AtomicU64 = AtomicU64::new(0);
+static QUARANTINED_BYTES_TOTAL: AtomicU64 = AtomicU64::new(0);
+
+/// DAY37 addendum E3: bytes a failed unmap, release or grave reap took out of the release path
+/// (kept mapped by their plane, or leaked), one `[kv-vmm] quarantined` line each. A failure never
+/// leaves bytes counted as pending, so the idle wait of addendum D always ends.
+pub fn vmm_quarantined_bytes() -> u64 {
+    QUARANTINED_BYTES_TOTAL.load(Ordering::Relaxed)
+}
+
+fn quarantine(bytes: usize, what: &str) {
+    QUARANTINED_BYTES_TOTAL.fetch_add(bytes as u64, Ordering::Relaxed);
+    eprintln!("[kv-vmm] quarantined bytes={bytes}: {what}");
+}
+
+/// The helper placement's lookahead past the need (DAY37 addendum E5): one granule hides one
+/// mapper grow (stage 0's busy p95 is about 11 ms per granule, a plane consumes a granule over
+/// about a thousand rows); a second granule would only be retained memory.
+const LOOKAHEAD_GRANULES: usize = 1;
 
 /// The fault door of the gate (`MEMRA_KV_VMM_FAULT`, read by the server; addendum A 1.10).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -601,8 +619,11 @@ impl OdShared {
         Ok(())
     }
 
-    /// The tail extents whose release fence completed: unmap, release, pop.
-    fn reap(&self, st: &mut OdState) -> Result<usize> {
+    /// The tail extents whose release fence completed: unmap, release, pop. On a failure nothing
+    /// stays pending (DAY37 addendum E3): a failed unmap cancels every pending release of the plane
+    /// (the extents stay mapped and live, the plane keeps them until it drops); a failed release
+    /// after the unmap pops the extent and leaks its handle.
+    fn reap(&self, st: &mut OdState) -> usize {
         let mut released = 0;
         while let Some(last) = st.extents.last() {
             let Some(fence) = last.release_after.as_ref() else {
@@ -611,14 +632,32 @@ impl OdShared {
             if !fence.is_complete() {
                 break;
             }
-            let address = self.base + last.offset as u64;
-            self.driver.unmap(address, last.bytes)?;
-            self.driver.release(last.handle)?;
-            released += last.bytes;
+            let (address, bytes, handle) =
+                (self.base + last.offset as u64, last.bytes, last.handle);
+            if let Err(e) = self.driver.unmap(address, bytes) {
+                let kept = st.pending_release_bytes();
+                for x in st.extents.iter_mut() {
+                    x.release_after = None;
+                }
+                quarantine(
+                    kept,
+                    &format!(
+                        "unmap failed ({e}); the plane's pending releases are cancelled and stay mapped"
+                    ),
+                );
+                break;
+            }
             st.extents.pop();
+            match self.driver.release(handle) {
+                Ok(()) => released += bytes,
+                Err(e) => quarantine(
+                    bytes,
+                    &format!("release failed after unmap ({e}); the handle is leaked"),
+                ),
+            }
         }
         RELEASED_BYTES_TOTAL.fetch_add(released as u64, Ordering::Relaxed);
-        Ok(released)
+        released
     }
 }
 
@@ -637,6 +676,11 @@ fn mapper_grow(p: &OdShared) {
     }
     let end = st.end();
     if end >= st.want {
+        return;
+    }
+    // Never map behind a pending release (DAY37 addendum E1): pending extents are a tail at or
+    // past `want`, so this cannot hold while `end < want`; the guard keeps the reap's tail order.
+    if st.extents.iter().any(|e| e.release_after.is_some()) {
         return;
     }
     if fault_fires(GrowClass::Mapper) {
@@ -699,14 +743,21 @@ impl OnDemand {
         let t0 = Instant::now();
         let mut st = p.lock();
         let need = backed_need(bytes, p.granularity, p.reserved);
-        // A pending release inside the needed prefix is cancelled: the extent is still mapped.
-        for e in st.extents.iter_mut().filter(|e| e.offset < need) {
-            e.release_after = None;
-        }
         let helper = class == GrowClass::Ensure && vmm_grow_placement() == VmmGrowPlacement::Helper;
         if helper {
-            let ahead = backed_need(need + 2 * p.granularity, p.granularity, p.reserved);
+            let ahead = backed_need(
+                need + LOOKAHEAD_GRANULES * p.granularity,
+                p.granularity,
+                p.reserved,
+            );
             st.want = st.want.max(ahead);
+        }
+        // A pending release below the need or the `want` just set is cancelled: the extent is
+        // still mapped, and every pending extent must stay a tail at or past `want`, or the mapper
+        // would map behind it and the reap (tail first) could never release it (addendum E1).
+        let live_to = need.max(st.want);
+        for e in st.extents.iter_mut().filter(|e| e.offset < live_to) {
+            e.release_after = None;
         }
         let end = st.end();
         if end >= need {
@@ -771,7 +822,7 @@ impl OnDemand {
         }
         scheduled
     }
-    fn reap(&mut self) -> Result<usize> {
+    fn reap(&mut self) -> usize {
         let p = &self.shared;
         let mut st = p.lock();
         p.reap(&mut st)
@@ -816,44 +867,42 @@ impl OnDemand {
 static GRAVEYARD: Mutex<Vec<Arc<OdShared>>> = Mutex::new(Vec::new());
 
 /// Release every dropped on-demand plane whose release event completed: its extents, then its
-/// reserved range. Returns (bytes released, graves still pending, bytes still pending).
-pub fn vmm_reap_graveyard() -> Result<(usize, usize, usize)> {
+/// reserved range. Returns (bytes released, graves still pending, bytes still pending). A grave
+/// whose releases a failed unmap cancelled can never be reaped: it is quarantined out of the
+/// graveyard (leaked, never recycled; addendum E3), so it is never counted as pending.
+pub fn vmm_reap_graveyard() -> (usize, usize, usize) {
     let mut graves = GRAVEYARD.lock().unwrap_or_else(|p| p.into_inner());
     let mut released = 0;
     let mut kept = Vec::with_capacity(graves.len());
-    let mut failure = None;
     for g in graves.drain(..) {
-        if failure.is_some() {
-            kept.push(g);
-            continue;
-        }
         let mut st = g.lock();
-        match g.reap(&mut st) {
-            Ok(n) => released += n,
-            Err(e) => {
-                failure = Some(e);
-                drop(st);
-                kept.push(g);
-                continue;
-            }
-        }
-        let empty = st.extents.is_empty();
-        drop(st);
-        if empty {
+        released += g.reap(&mut st);
+        if st.extents.is_empty() {
+            drop(st);
             if let Err(e) = g.driver.address_free(g.base, g.reserved) {
                 eprintln!("[kv-vmm] graveyard VA free failed: {e}");
             }
-        } else {
-            kept.push(g);
+            continue;
         }
+        if st.pending_release_bytes() == 0 {
+            // Only a failed unmap cancels a grave's releases, and that reap already counted the
+            // bytes: the grave leaves with one line and no second count.
+            let bytes = st.physical_bytes();
+            st.extents.clear();
+            drop(st);
+            eprintln!(
+                "[kv-vmm] quarantined grave bytes={bytes}: its release failed; it leaves the \
+                 graveyard with its range (leaked, never recycled)"
+            );
+            continue;
+        }
+        drop(st);
+        kept.push(g);
     }
-    let pending_bytes = kept.iter().map(|g| g.lock().physical_bytes()).sum();
+    let pending_bytes = kept.iter().map(|g| g.lock().pending_release_bytes()).sum();
     let pending = kept.len();
     *graves = kept;
-    match failure {
-        Some(e) => Err(e),
-        None => Ok((released, pending, pending_bytes)),
-    }
+    (released, pending, pending_bytes)
 }
 
 /// The grow-failure path only (DAY37 1.4): wait on every grave's release event, then reap.
@@ -874,7 +923,7 @@ pub fn vmm_reap_graveyard_blocking() -> Result<(usize, usize, usize)> {
     for fence in fences {
         fence.wait()?;
     }
-    vmm_reap_graveyard()
+    Ok(vmm_reap_graveyard())
 }
 
 /// Bytes held by dropped on-demand planes whose release has not been reaped yet.
@@ -1041,9 +1090,10 @@ impl KvPlane {
             .as_ref()
             .map_or(0, |o| o.shared.lock().pending_release_bytes())
     }
-    /// On-demand planes: unmap and release the tail extents whose release event completed.
-    pub fn reap(&mut self) -> Result<usize> {
-        self.on_demand.as_mut().map_or(Ok(0), OnDemand::reap)
+    /// On-demand planes: unmap and release the tail extents whose release event completed. A
+    /// failure is quarantined inside (addendum E3) and leaves nothing pending.
+    pub fn reap(&mut self) -> usize {
+        self.on_demand.as_mut().map_or(0, OnDemand::reap)
     }
     /// Reserve `capacity` bytes of virtual range and back only `[0, initial)` (whole granules).
     /// The operand spans the whole capacity; nothing past `mapped_bytes()` may be touched.
@@ -1335,6 +1385,8 @@ mod tests {
         calls: Mutex<Vec<String>>,
         next_handle: AtomicU64,
         fail_map: AtomicBool,
+        fail_unmap: AtomicBool,
+        fail_release: AtomicBool,
         fences: Mutex<Vec<Arc<FakeFence>>>,
         key: usize,
     }
@@ -1366,10 +1418,18 @@ mod tests {
             Ok(())
         }
         fn unmap(&self, address: u64, size: usize) -> Result<()> {
+            if self.fail_unmap.load(Ordering::SeqCst) {
+                self.log(format!("unmap {address} {size} FAIL"));
+                return Err("fake unmap failure".into());
+            }
             self.log(format!("unmap {address} {size}"));
             Ok(())
         }
         fn release(&self, handle: u64) -> Result<()> {
+            if self.fail_release.load(Ordering::SeqCst) {
+                self.log(format!("release {handle} FAIL"));
+                return Err("fake release failure".into());
+            }
             self.log(format!("release {handle}"));
             Ok(())
         }
@@ -1495,10 +1555,10 @@ mod tests {
         assert_eq!(od.live_bytes(), 4 * G);
         assert_eq!(od.physical_bytes(), 6 * G);
         // Fence incomplete: the reap releases nothing, and the bytes read as pending.
-        assert_eq!(od.reap().unwrap(), 0);
+        assert_eq!(od.reap(), 0);
         assert_eq!(od.shared.lock().pending_release_bytes(), 2 * G);
         f.0.store(true, Ordering::SeqCst);
-        assert_eq!(od.reap().unwrap(), 2 * G);
+        assert_eq!(od.reap(), 2 * G);
         assert_eq!(od.physical_bytes(), 4 * G);
         assert!(
             drv.calls
@@ -1514,8 +1574,87 @@ mod tests {
         assert!(od.ensure(4 * G, GrowClass::Ensure).unwrap().is_none());
         assert_eq!(od.live_bytes(), 4 * G);
         f2.0.store(true, Ordering::SeqCst);
-        assert_eq!(od.reap().unwrap(), 0);
+        assert_eq!(od.reap(), 0);
         assert_eq!(od.physical_bytes(), 4 * G);
+    }
+
+    /// DAY37 addendum E3: a failed unmap cancels the plane's pending releases (they stay mapped
+    /// and live) and a failed release after the unmap pops the extent; neither leaves bytes
+    /// pending, and both count as quarantined.
+    #[test]
+    fn a_failed_reap_is_quarantined_and_leaves_nothing_pending() {
+        let _g = GLOBALS.lock().unwrap_or_else(|p| p.into_inner());
+        vmm_set_grow_placement(VmmGrowPlacement::Inline);
+        vmm_set_faults(None);
+        let (mut od, drv) = fake_plane(10 * G, 909);
+        od.ensure(2 * G, GrowClass::Build).unwrap();
+        od.ensure(4 * G, GrowClass::Ensure).unwrap();
+        od.ensure(6 * G, GrowClass::Ensure).unwrap();
+        assert_eq!(od.request_release_beyond(2 * G), 4 * G);
+        for f in drv.fences.lock().unwrap().iter() {
+            f.0.store(true, Ordering::SeqCst);
+        }
+        let q0 = vmm_quarantined_bytes();
+        drv.fail_unmap.store(true, Ordering::SeqCst);
+        assert_eq!(od.reap(), 0);
+        assert_eq!(od.shared.lock().pending_release_bytes(), 0);
+        assert_eq!(od.physical_bytes(), 6 * G);
+        assert_eq!(
+            od.live_bytes(),
+            6 * G,
+            "the cancelled extents stay mapped and live"
+        );
+        assert_eq!(vmm_quarantined_bytes() - q0, (4 * G) as u64);
+        drv.fail_unmap.store(false, Ordering::SeqCst);
+        // A release that fails after its unmap: the extent leaves the plane, its handle leaks.
+        assert_eq!(od.request_release_beyond(4 * G), 2 * G);
+        for f in drv.fences.lock().unwrap().iter() {
+            f.0.store(true, Ordering::SeqCst);
+        }
+        drv.fail_release.store(true, Ordering::SeqCst);
+        let q1 = vmm_quarantined_bytes();
+        assert_eq!(od.reap(), 0);
+        assert_eq!(od.shared.lock().pending_release_bytes(), 0);
+        assert_eq!(od.physical_bytes(), 4 * G);
+        assert_eq!(vmm_quarantined_bytes() - q1, (2 * G) as u64);
+        drv.fail_release.store(false, Ordering::SeqCst);
+        // The plane still grows at its end.
+        assert!(od.ensure(6 * G, GrowClass::Ensure).unwrap().is_some());
+        assert_eq!(od.live_bytes(), 6 * G);
+    }
+
+    /// DAY37 addendum E3: a grave whose reap fails leaves the graveyard (quarantined), so it is
+    /// never counted as pending.
+    #[test]
+    fn a_grave_whose_reap_fails_is_quarantined_out_of_the_graveyard() {
+        let _g = GLOBALS.lock().unwrap_or_else(|p| p.into_inner());
+        vmm_set_grow_placement(VmmGrowPlacement::Inline);
+        vmm_set_faults(None);
+        let _ = vmm_reap_graveyard_blocking();
+        let (mut od, drv) = fake_plane(8 * G, 910);
+        od.ensure(3 * G, GrowClass::Build).unwrap();
+        let shared = od.shared.clone();
+        od.bury();
+        for f in drv.fences.lock().unwrap().iter() {
+            f.0.store(true, Ordering::SeqCst);
+        }
+        drv.fail_unmap.store(true, Ordering::SeqCst);
+        let q0 = vmm_quarantined_bytes();
+        let (released, pending, pending_bytes) = vmm_reap_graveyard();
+        assert_eq!((released, pending, pending_bytes), (0, 0, 0));
+        assert_eq!(vmm_graveyard_bytes(), 0);
+        assert!(shared.lock().extents.is_empty());
+        // Counted once, by the reap whose unmap failed; the grave leaves without a second count.
+        assert_eq!(vmm_quarantined_bytes() - q0, (3 * G) as u64);
+        assert!(
+            !drv.calls
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|c| c.starts_with("free")),
+            "a quarantined range is never freed"
+        );
+        drv.fail_unmap.store(false, Ordering::SeqCst);
     }
 
     #[test]
@@ -1566,30 +1705,89 @@ mod tests {
     }
 
     #[test]
-    fn helper_placement_premaps_two_granules_past_the_need_and_the_owner_grows_when_behind() {
+    fn helper_placement_premaps_one_granule_past_the_need_and_the_owner_grows_when_behind() {
         let _g = GLOBALS.lock().unwrap_or_else(|p| p.into_inner());
         vmm_set_grow_placement(VmmGrowPlacement::Helper);
         vmm_set_faults(None);
         let (mut od, _drv) = fake_plane(20 * G, 905);
         // Nothing backed: the owner grows inline (waited) to the need, and the mapper is
-        // handed the rest up to need + 2 granules.
+        // handed the rest up to need + 1 granule (addendum E5).
         let ev = od.ensure(G, GrowClass::Ensure).unwrap().unwrap();
         assert!(ev.waited);
         assert_eq!(ev.mapped, G);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while od.physical_bytes() < 3 * G {
+        while od.physical_bytes() < 2 * G {
             assert!(
                 std::time::Instant::now() < deadline,
                 "the mapper never caught up"
             );
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
-        assert_eq!(od.physical_bytes(), 3 * G);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        assert_eq!(od.physical_bytes(), 2 * G, "one granule ahead, not two");
         // Within the pre-mapped headroom: no owner grow.
         assert!(od.ensure(2 * G, GrowClass::Ensure).unwrap().is_none());
         // A park trim pulls `want` back so the mapper cannot map past it after the fence.
         od.request_release_beyond(G);
         assert_eq!(od.shared.lock().want, G);
+        vmm_set_grow_placement(VmmGrowPlacement::Inline);
+    }
+
+    /// DAY37 addendum E1: a resume whose lookahead reaches past a pending tail must not map after
+    /// it. The mapper would append a live extent behind the pending one, the reap (tail first)
+    /// could never release it, and its bytes would read as pending for the plane's life. Red on
+    /// r3 (lookahead two granules, cancellation below the need only): extents `(5, 1, pending),
+    /// (6, 1, live)` in granules. The geometry reads `LOOKAHEAD_GRANULES`, so the invariant is
+    /// checked at the shipped lookahead.
+    #[test]
+    fn a_lookahead_past_a_pending_tail_cancels_it_and_never_maps_behind_it() {
+        let _g = GLOBALS.lock().unwrap_or_else(|p| p.into_inner());
+        vmm_set_faults(None);
+        vmm_set_grow_placement(VmmGrowPlacement::Inline);
+        let (mut od, drv) = fake_plane(20 * G, 908);
+        // One-granule extents [0, 6G), inline.
+        od.ensure(G, GrowClass::Build).unwrap();
+        for k in 2..=6 {
+            od.ensure(k * G, GrowClass::Ensure).unwrap();
+        }
+        // The park trim: keep 5 granules; the extent at [5G, 6G) pends.
+        assert_eq!(od.request_release_beyond(5 * G), G);
+        let f = drv.fences.lock().unwrap().last().unwrap().clone();
+        // The resume needs 5 granules; its lookahead reaches past the pending tail's start.
+        vmm_set_grow_placement(VmmGrowPlacement::Helper);
+        assert!(od.ensure(4 * G + 1, GrowClass::Ensure).unwrap().is_none());
+        let settle_to = (5 + LOOKAHEAD_GRANULES).max(6) * G;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while od.physical_bytes() < settle_to {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the mapper never caught up"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        f.0.store(true, Ordering::SeqCst);
+        let _ = od.reap();
+        {
+            let st = od.shared.lock();
+            if let Some(i) = st.extents.iter().position(|e| e.release_after.is_some()) {
+                assert!(
+                    st.extents[i..].iter().all(|e| e.release_after.is_some()),
+                    "a live extent sits behind a pending one: {:?}",
+                    st.extents
+                        .iter()
+                        .map(|e| (e.offset / G, e.bytes / G, e.release_after.is_some()))
+                        .collect::<Vec<_>>()
+                );
+            }
+            assert_eq!(
+                st.pending_release_bytes(),
+                0,
+                "a release stuck behind a live extent"
+            );
+            assert!(st.extents.iter().all(|e| e.offset < st.want.max(5 * G)));
+        }
+        assert_eq!(od.live_bytes(), od.physical_bytes());
         vmm_set_grow_placement(VmmGrowPlacement::Inline);
     }
 
@@ -1631,7 +1829,7 @@ mod tests {
         assert_eq!(shared.lock().want, 0);
         assert!(vmm_graveyard_bytes() >= 5 * G);
         // Fence incomplete: nothing released, the range is not freed.
-        let (released, pending, _) = vmm_reap_graveyard().unwrap();
+        let (released, pending, _) = vmm_reap_graveyard();
         assert_eq!(released, 0);
         assert!(pending >= 1);
         assert!(
@@ -1644,7 +1842,7 @@ mod tests {
         for f in drv.fences.lock().unwrap().iter() {
             f.0.store(true, Ordering::SeqCst);
         }
-        let (released, _, _) = vmm_reap_graveyard().unwrap();
+        let (released, _, _) = vmm_reap_graveyard();
         assert_eq!(released, 5 * G);
         let calls = drv.calls.lock().unwrap().clone();
         let n = calls.len();

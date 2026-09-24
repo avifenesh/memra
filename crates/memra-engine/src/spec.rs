@@ -1690,12 +1690,12 @@ impl SpecSession {
     }
 
     /// Unmap every released tail whose event completed. Returns the bytes released.
-    pub fn reap_kv(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
-        let mut released = self.cache.reap_kv()?;
+    pub fn reap_kv(&mut self) -> usize {
+        let mut released = self.cache.reap_kv();
         for layer in self.scratch_layers_mut() {
-            released += layer.reap()?;
+            released += layer.reap();
         }
-        Ok(released)
+        released
     }
 
     /// Bytes of the session's on-demand planes scheduled for release and not yet reaped.

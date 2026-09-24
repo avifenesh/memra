@@ -16,7 +16,6 @@ import glob, json, math, os, re, statistics, sys
 card, root = sys.argv[1], sys.argv[2]
 # The gate-set directory prefix: `gates-r3` (addenda C and D, the default) or `gates` (design v1's banked set).
 GATES = sys.argv[3] if len(sys.argv) > 3 else "gates-r3"
-GRAN = 2 * 1024 * 1024
 out = []
 
 
@@ -211,9 +210,16 @@ if stream:
 # ---- A4 ---------------------------------------------------------------------------------------------------------
 retire_ok = retire_n = 0
 worst = 0
+no_gran = []
 for n in B:
     if not n.endswith("-vmm"):
         continue
+    # Addendum E: the granule is the boot line's `granularity=`, never a literal.
+    g = re.search(r"\[kv-vmm\] door=ON routes=\S+ granularity=(\d+)", log(n))
+    if not g:
+        no_gran.append(n)
+        continue
+    GRAN = int(g.group(1))
     for m in re.finditer(r"\[kv-vmm\] retire id=\S+ planes=(\d+) mapped=(\d+) reserved=(\d+) used=(\d+) slack_bytes=(\d+) booked=(\d+)", log(n)):
         planes, mapped, reserved, used, slack, booked = map(int, m.groups())
         bound = planes * GRAN + slack
@@ -222,7 +228,8 @@ for n in B:
         retire_ok += mapped - used <= bound
         worst = max(worst, (mapped - used) - bound)
 say(f"DAY37 A4 card={card} retires={retire_n} within_bound={retire_ok} worst_over_bound_bytes={max(worst, 0)} "
-    f"rule mapped-used<=planes*granule+slack -> {'PASS' if retire_n and retire_ok == retire_n else 'FAIL'}")
+    f"boots_without_granularity={no_gran[:4]} rule mapped-used<=planes*granule+slack "
+    f"-> {'PASS' if retire_n and retire_ok == retire_n and not no_gran else 'FAIL'}")
 for n in sorted(B):
     if n.startswith("mix-"):
         me = {}

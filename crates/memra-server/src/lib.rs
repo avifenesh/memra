@@ -6879,6 +6879,7 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         body["kv_vmm_grow_waits_total"] = json!(m.kv_vmm_grow_waits_total);
         body["kv_vmm_grow_failures_total"] = json!(m.kv_vmm_grow_failures_total);
         body["kv_vmm_released_bytes_total"] = json!(m.kv_vmm_released_bytes_total);
+        body["kv_vmm_quarantined_bytes_total"] = json!(m.kv_vmm_quarantined_bytes_total);
         if !m.constraint_compiler_fail_closed.is_empty() {
             body["constraint_compiler_fail_closed"] = serde_json::Value::Object(
                 m.constraint_compiler_fail_closed
@@ -22090,6 +22091,7 @@ temperature = 0.6
             "kv_vmm_grow_waits_total",
             "kv_vmm_grow_failures_total",
             "kv_vmm_released_bytes_total",
+            "kv_vmm_quarantined_bytes_total",
             "constraint_compiler_fail_closed",
             "serve_idle_seconds",
             "spec",
