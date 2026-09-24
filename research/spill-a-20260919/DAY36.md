@@ -66,3 +66,55 @@ laptop card, about 0.12 ms. Host: 56 calls at a few microseconds each, about 0.2
 - As registered, this decides neither branch. The prediction held for the GPU time (0.12 predicted, 0.17 read: about
   0.62 TB/s effective over 2 x 52.7 MB) and came in under it for the host (0.2 to 0.4 predicted, 0.13 read: about 2.3
   us per call over 56 calls).
+
+## 3. The combined target-card sitting, pre-registered before it runs (the lead's ruling, option (1))
+
+One rented RTX PRO 6000 Blackwell Workstation Edition (600 W), passed through the lead's acceptance, the 27B NVFP4 MTP
+artifact staged by the lead (its sha256 banked), access only through the wrapper the lead sends, `/tmp/memra-gpu.lock`.
+Nothing on this card is compared with any other card. Scripts: `pro-single-day36/` (committed with this section).
+
+**Binaries, built on the box in this lane's own clone:** base `a0f915d8a` (F settled, the day-35 base; its code is
+the code M' was measured against on the 5090), M' `55ae87616`, the tip `d4f53945f` (M', the day-36 instrument, main at
+`fa73d0e6c`). The test binaries are built on the tip before any hold.
+
+**The cells, in one sitting, the A/B and the price cell in one collector hold:**
+
+1. **The price cell.** The day-26 restore arm (`pro-single-day26/restore-arm.sh`) byte for byte on the tip binary: one
+   door-ON boot, `stall_cell.py --mode restore --n 50`, the receipt replayed. Read by `day36-reading.py --target`.
+   **DAY33 section 6's rule, verbatim:** "if on the target card the owner-stream GPU median is under 0.5 ms and the host
+   median under 0.5 ms per restore, the D2D half closes as not worth a door (the verdict and the receipt in
+   `OWNER-THREAD-OFFLOAD.md` and the verdicts ledger; no code). Otherwise a restore-recurrent design is pre-registered
+   with its own acceptance." If the rule says a design is owed, this lane stops at that design's pre-registration.
+2. **M''s target-card A/B** (DAY35 section 7's cell with N as registered): `stall_cell.py --mode demote --n 5`, base
+   against M', o1 = `base m` five times, o2 = `m base` five times, door ON, 20 boots. The card's boot environment is the
+   PRO cells' (the day-17 and day-26 PRO demote environment): `MEMRA_PREFIX_CACHE_MB=256 MEMRA_KV_HOST_MB=8192
+   MEMRA_KV_HOST_CONTRACTS=1 MEMRA_SERVE_SPEC=0 MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4` (the 5090's 64 MB prefix budget
+   is the 9B's; a 27B entry is about 160 MB), each server's readiness bounded to 480 s (the PRO scripts' bound; the 27B
+   loads slower than the 60 s the 5090 script allows). Read by `day35m-reading.py --m2`, section 7's (c) and (d)
+   verbatim: (c) `take-back bind and publish` median at most 1.5 ms and max at most 3.0 ms over at least 20 steady
+   demotes on M''s boots; (d) per order, the wall median on M' at most the base's plus 17.0 ms and the demoting
+   intruder's e2e median at most the base's plus 1.0 ms.
+3. **The gates on the tip binary** (M''s (a) and (b) on this card): identity x4, failure OFF and ON (the `digest` cell
+   on the ON arm is (a)'s served-path cell), the fault gate default and plain (every cell), twin OFF and ON, hit OFF and
+   ON with the day-24 census; the unit cells on the tip (the door's GPU cells including
+   `option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused`, the engine's D2D, D2H and H2D cells,
+   the CPU censuses including `day35_` and `day36_`): ALL GREEN.
+
+A compute app that is not memra's at a hold's start is handled as on day 35 (a bounded wait; any amendment
+pre-registered before a boot). An incomplete cell is repeated whole once in a new hold; nothing is read from a partial
+one. Order: build (outside any hold), the price cell and the A/B in one hold, the gates, the hit gate, the unit cells.
+
+**Expected numbers, stated before the sitting.**
+
+- The price cell: owner-stream GPU median 0.2 to 0.3 ms (2 x 156.9 MB at 1.1 to 1.5 TB/s effective); host median 0.25
+  to 0.5 ms (112 calls: 96 recurrent `copy_into` and 16 `set_i32_one`, at this rig's 2.3 us per call and up to 1.8 times
+  slower on a server CPU, BOX4's single-thread ratio on day 34). Predicted verdict: CLOSES, the host the closer half.
+- M': (c) `take-back` about 0.5 ms (base about 1.6 ms, BOX4 day 34's `take-back` median 1.57 with hash 2 over about 2 MB
+  of cached leases inside it): PASS. (d) the wall within about -1 to +2 ms of the base and the e2e within about -1.5 to
+  +0.5 ms: PASS, the e2e the closer clause. On cached leases hash 2 is about 1 ms, so M''s card-level gain is small by
+  construction; the 5090's 8 ms was write-combined read time.
+- The gates green.
+
+**Timing, for the rental.** The builds about 25 minutes (three servers and the test binaries), the price cell about 8
+minutes, the A/B about 50 minutes (20 boots of the 27B), the gates about 20 minutes, the hit gate and the unit cells
+about 15 minutes: about 2 hours from access.
