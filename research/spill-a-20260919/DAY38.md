@@ -523,3 +523,16 @@ the absence of a call, host work between calls) that grows, and the fix is pre-r
   stream's previous activity) and TAIL (the next owner kernel's start minus its end), median, p90 and sums; every other
   stream's memcpys by the same key; how many owner memcpys overlap another stream's memcpy; and the owner thread's
   `cuMemcpyDtoHAsync_v2` durations. A reading, not a clause; the fix is pre-registered on it.
+
+## 13d. The copy reading, and a fourth reading pre-registered before it runs
+
+- **X1** (`nsys-x1/copy-reading.log`, verbatim): the owner stream's memcpys (2611 per full interval, device-to-device
+  and the per-step reads) keep their LEAD (median 7.1 to 8.1 us, sum 73.9 to 83.1 ms) and TAIL (median 4.2 to 4.9 us,
+  sum 45.5 to 55.1 ms) flat; the receipt stream's copies (`(15, DTOH, DEVICE, PINNED ..)`, 128 per interval, about 2.9
+  ms) are the same in every interval; the owner thread's `cuMemcpyDtoHAsync_v2` durations rise from `api_us
+  median=6486.9` to `7019.9` at interval 8 and fall back to `6563.4`. So the owner stream's added idle time lies
+  between two of its KERNELS, not around its copies, and the owner thread waits for it inside the step's read.
+- **Pre-registered before it runs** (`day38-nsys-gap-reading.py`, read-only over both traces): per interval, every
+  kernel-to-kernel gap of the owner stream (no owner copy between), bucketed by size, split by whether the owner thread
+  enqueued a `cuStreamWaitEvent` between the two kernels' launch calls, and summed by the name of the kernel after the
+  gap; the ten kernel names whose gaps grow most. A reading, not a clause; the fix is pre-registered on it.
