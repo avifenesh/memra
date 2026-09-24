@@ -1,16 +1,16 @@
-# WP-A resumable state (2026-09-25, during the BOX7 sittings)
+# WP-A resumable state (2026-09-25, during the BOX7 G4 and S sittings)
 
-- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`; tip `3c57fdfca` (G''' `9ab5c1265`, T `0153316d4`, day 41's
-  K arms `4ca4bb36e`, their records). BOX7 (one RTX PRO 6000 WS, EPYC 9B14 class, 92 CPUs) is the lead's box for this
-  lane: receipts under `/root/spill-receipts/a-day38` (the day-38 sitting and the diagnosis diag to diag8) and
-  `/root/spill-receipts/a-g3` (the G''' sitting); the box's clone `/root/wt-a`. Mirror file for file against a box
-  sha256 manifest, then remove both receipt roots and `/root/wt-a`, and report `BOX7 RELEASED`.
-- OWED (`OWED.md`): item 1 closed (BOX7 all arm 20 of 20). Item 2: G'' failed (d) on BOX7 (the tenant's per-demote
-  decode hump); the bisection (DAY38 13a to 13k) placed it on two non-owner streams running kernels; G''' (every engine
-  kernel on the receipt stream, the D2D classes with it; `d2h-delay` a host-side hold) pre-registered (section 14) and
-  built; its 5090 sitting (`rtx5090-day38/g3-card-run.sh`) then BOX7's (`pro-single-g3/`) owed. Item 3: design T built,
-  5090 PASS (DAY39 section 6), target cell rides the G''' sitting (`item3.sh`). Item 5: 5090 PASS (DAY41 section 2),
-  target rides the G''' sitting's fault gate. Item 4: device-side span receipt picked (DAY40), design waits for G'''.
-  Items 6 to 14 open.
-- Local scratch: `/tmp/wt-a-d38g3` (the G''' 5090 binaries), `/tmp/wt-a-d38g3-base-target` (the base build's target
-  dir), `/tmp/wt-a-d38x` (a scratch worktree at `b214bd2cf` for the diag patches). Remove when their cells are banked.
+- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. Code tips: G4 `26676c037` (item 2's delivered placement: one side
+  stream), S `a40e5b334` (item 4: device-side span receipts on the copy stream), T `0153316d4` (item 3), day 41's K arms
+  `4ca4bb36e` (item 5). Records: DAY38 sections 11 to 20a (the hump, its bisection, G''' and G4), DAY39 sections 4 to 6
+  (T), DAY40 sections 3 to 4 (S), DAY41 (item 5).
+- BOX7 (the lead's box for this lane): receipt roots `/root/spill-receipts/a-day38` (the day-38 sitting and diag to
+  diag8), `a-g3` (G''' sitting, done), `a-g4` (G4 sitting with item 3's cell, running), `a-s` (S sitting: its build queued
+  after the G4 driver; its driver to start after the 5090 S half reads). Clone `/root/wt-a`. Before release: mirror all
+  four roots file for file against a box sha256 manifest (binaries and nsys reports by hash only), remove them and the
+  clone, confirm no process of this lane remains, report `BOX7 RELEASED`.
+- 5090: the S card run (`rtx5090-day40/s/`) in its hold. Local scratch: `/tmp/wt-a-d38g4` (G4, gpp, base binaries),
+  `/tmp/wt-a-d38g4-base-target`, `/tmp/wt-a-d38g34` (the G''' rebuild), `/tmp/wt-a-d40s` (S binaries); remove when banked.
+- OWED: 1 closed; 2 G4 5090 (a)-(e) PASS, (f) PASS in the base-controlled hold, BOX7 (c), (d), (f) PASS so far; 3 T 5090
+  PASS, target cell in the G4 sitting; 4 S built, sittings running; 5 closed; 6 to 15 open (15 new: the receipt kernel's
+  price at long entries). Owner items: the 5090's (f) reading (base-controlled hold), G''' against G4 for long entries.
