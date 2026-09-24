@@ -1,0 +1,44 @@
+
+running 5 tests
+test sink_attn_st_matches_three_kernel_batched ... sink_attn_st batched: 208 cases bit-identical to the three-kernel program
+ok
+test sink_attn_st_matches_three_kernel_replay ... sink_attn_st replay: 86 cases bit-identical to the three-kernel program
+ok
+test sink_attn_st_matches_three_kernel_single_query ... sink_attn_st single query: 26 cases bit-identical to the three-kernel program
+ok
+test sink_attn_st_red_arm ... sink_attn_st red arm: a 2^-10 change to one live kv element is caught
+ok
+test sink_attn_st_timing ... TIMING tree=lane kernel=sink_attn shape=h64_r0_live128 rep=0 old_us=26.511 st_us=8.601
+TIMING tree=lane kernel=sink_attn shape=h64_r0_live128 rep=1 old_us=26.507 st_us=8.613
+TIMING tree=lane kernel=sink_attn shape=h64_r0_live128 rep=2 old_us=26.508 st_us=8.613
+TIMING tree=lane kernel=sink_attn shape=h64_r0_live128 rep=3 old_us=26.576 st_us=8.641
+TIMING tree=lane kernel=sink_attn shape=h64_r0_live128 rep=4 old_us=26.588 st_us=8.640
+TIMING tree=lane kernel=sink_attn shape=h64_r4_live187 rep=0 old_us=32.166 st_us=11.720
+TIMING tree=lane kernel=sink_attn shape=h64_r4_live187 rep=1 old_us=32.225 st_us=11.752
+TIMING tree=lane kernel=sink_attn shape=h64_r4_live187 rep=2 old_us=32.251 st_us=11.760
+TIMING tree=lane kernel=sink_attn shape=h64_r4_live187 rep=3 old_us=32.256 st_us=11.760
+TIMING tree=lane kernel=sink_attn shape=h64_r4_live187 rep=4 old_us=32.256 st_us=11.760
+TIMING tree=lane kernel=sink_attn shape=h64_r4_live640 rep=0 old_us=65.199 st_us=28.803
+TIMING tree=lane kernel=sink_attn shape=h64_r4_live640 rep=1 old_us=65.191 st_us=28.807
+TIMING tree=lane kernel=sink_attn shape=h64_r4_live640 rep=2 old_us=65.276 st_us=28.816
+TIMING tree=lane kernel=sink_attn shape=h64_r4_live640 rep=3 old_us=65.269 st_us=28.813
+TIMING tree=lane kernel=sink_attn shape=h64_r4_live640 rep=4 old_us=65.258 st_us=28.814
+TIMING tree=lane kernel=sink_attn shape=h32_r0_live128 rep=0 old_us=26.114 st_us=8.354
+TIMING tree=lane kernel=sink_attn shape=h32_r0_live128 rep=1 old_us=26.115 st_us=8.357
+TIMING tree=lane kernel=sink_attn shape=h32_r0_live128 rep=2 old_us=26.115 st_us=8.356
+TIMING tree=lane kernel=sink_attn shape=h32_r0_live128 rep=3 old_us=26.114 st_us=8.356
+TIMING tree=lane kernel=sink_attn shape=h32_r0_live128 rep=4 old_us=26.115 st_us=8.357
+TIMING tree=lane kernel=sink_attn shape=h32_r4_live187 rep=0 old_us=31.157 st_us=11.002
+TIMING tree=lane kernel=sink_attn shape=h32_r4_live187 rep=1 old_us=31.154 st_us=11.006
+TIMING tree=lane kernel=sink_attn shape=h32_r4_live187 rep=2 old_us=31.158 st_us=11.005
+TIMING tree=lane kernel=sink_attn shape=h32_r4_live187 rep=3 old_us=31.180 st_us=11.012
+TIMING tree=lane kernel=sink_attn shape=h32_r4_live187 rep=4 old_us=31.189 st_us=11.012
+TIMING tree=lane kernel=sink_attn shape=h32_r4_live640 rep=0 old_us=64.563 st_us=23.776
+TIMING tree=lane kernel=sink_attn shape=h32_r4_live640 rep=1 old_us=64.609 st_us=23.777
+TIMING tree=lane kernel=sink_attn shape=h32_r4_live640 rep=2 old_us=64.613 st_us=23.781
+TIMING tree=lane kernel=sink_attn shape=h32_r4_live640 rep=3 old_us=64.612 st_us=23.778
+TIMING tree=lane kernel=sink_attn shape=h32_r4_live640 rep=4 old_us=64.606 st_us=23.777
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.42s
+

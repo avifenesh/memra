@@ -1,0 +1,8 @@
+== admit-mem-burst-gate: open=8192 burst=64 ctx=65536 port=8194 out=/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day33/gate/green-2 ==
+  ready (pid 314714); releasing the burst
+AMB no prefill OOM: oom_lines=0 status={200: 36, 429: 28} -> PASS
+AMB typed refusals: served=36 r429=28 refuse_lines=28 retry_after_in_1_60=True other_non200=0 -> PASS
+AMB booked admits: admit_lines=36 est_over_booked_free=0 served=36 -> PASS
+AMB boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 [worker]_FATAL=0 [worker]_respawn=0 spec_verify_refused=0 -> PASS
+== admit-mem-burst-gate: 4 PASS, 0 FAIL ==
+ADMIT-MEM BURST GATE: ALL GREEN

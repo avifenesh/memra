@@ -600,3 +600,21 @@ extern "C" int memra_dsv4_hc_dot_split(const float* x, const float* w,
         default: return 40075;
     }
 }
+// The partial half alone, for memra_dsv4_hc_finish_f32_fixed_order, which owns the
+// slice sum. Same admission and slice count as the pair above.
+extern "C" int memra_dsv4_hc_dot_split_partial(const float* x, const float* w,
+    float* partial, int partial_len, int m, int n, int k, void* raw_stream) {
+    const int slices = dsv4_hc_dot_split_slices;
+    if (m < 1 || m > 65535 || n != 24 || k != 16384 || partial_len / 24 / m < slices ||
+        !dsv4_dense_exact_tail_dots_admits(x, w, 0, partial, 1, n, k) ||
+        !dsv4_dense_exact_tail_aligned(partial, 4)) return 40075;
+    const auto stream = (cudaStream_t)raw_stream;
+    const dim3 grid(24 * slices, m);
+    switch (slices) {
+        case 8: dsv4_hc_dot_split_partial_kernel<8><<<grid, 128, 0, stream>>>(x, w, partial); break;
+        case 16: dsv4_hc_dot_split_partial_kernel<16><<<grid, 128, 0, stream>>>(x, w, partial); break;
+        case 32: dsv4_hc_dot_split_partial_kernel<32><<<grid, 128, 0, stream>>>(x, w, partial); break;
+        default: return 40075;
+    }
+    return (int)cudaGetLastError();
+}
