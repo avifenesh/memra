@@ -338,3 +338,64 @@ fn prefill_dense_tile_timing() {
         }
     }
 }
+
+/// Device time of one 512-row compressor dots call, tile against the 32-row loop.
+#[test]
+#[ignore = "needs a CUDA device; run under the rig's GPU lock"]
+fn prefill_dots_tile_timing() {
+    let e = Engine::new(0).expect("CUDA engine on device 0");
+    let s = 512usize;
+    for &(n, kk) in &[(1024usize, 4096usize), (512, 4096), (256, 4096)] {
+        let wb = bf16_rows(n * kk, 5);
+        let wf: Vec<f32> = wb
+            .iter()
+            .map(|&b| f32::from_bits(u32::from(b) << 16))
+            .collect();
+        let wb_dev: CudaSlice<u16> = e.stream().clone_htod(&wb).unwrap();
+        let wf_dev: CudaSlice<f32> = e.htod(&wf).unwrap();
+        let x: CudaSlice<f32> = e.htod(&f32_rows(s * kk, 6)).unwrap();
+        let mut y: CudaSlice<f32> = e.htod(&vec![0f32; s * n]).unwrap();
+        let st = e.stream();
+        for (bf16, w) in [
+            (true, wb_dev.device_ptr(&st).0 as *const c_void),
+            (false, wf_dev.device_ptr(&st).0 as *const c_void),
+        ] {
+            let launch = |y: &mut CudaSlice<f32>| {
+                let rc = unsafe {
+                    k::memra_dsv4_dots_f32acc_mrow(
+                        x.device_ptr(&st).0 as *const f32,
+                        w,
+                        i32::from(bf16),
+                        y.device_ptr_mut(&st).0 as *mut f32,
+                        s as i32,
+                        kk as i32,
+                        n as i32,
+                        st.cu_stream() as *mut c_void,
+                    )
+                };
+                assert_eq!(rc, 0);
+            };
+            for rep in 0..2 {
+                let mut ms = [0f64; 2];
+                for (arm, on) in [(0usize, 1i32), (1, 0)] {
+                    let prev = unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(on) };
+                    launch(&mut y);
+                    st.synchronize().unwrap();
+                    let t0 = std::time::Instant::now();
+                    for _ in 0..20 {
+                        launch(&mut y);
+                    }
+                    st.synchronize().unwrap();
+                    ms[arm] = t0.elapsed().as_secs_f64() * 1e3 / 20.0;
+                    unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(prev) };
+                }
+                println!(
+                    "TIMING dots s={s} n={n} k={kk} bf16={bf16} rep={rep} tile_ms={:.3} loop_ms={:.3} speedup={:.2}",
+                    ms[0],
+                    ms[1],
+                    ms[1] / ms[0]
+                );
+            }
+        }
+    }
+}
