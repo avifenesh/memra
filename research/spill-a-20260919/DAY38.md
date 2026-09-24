@@ -788,3 +788,42 @@ The BOX7 G''' sitting of section 15 runs as registered (`pro-single-g3/driver-g3
 section 14); it decides nothing about the 5090's failure. Item 3's cell (`item3.sh`) moves to the sitting of the final
 tree (DAY39 section 5b): its arms must be built from the tree whose demote and capture placement they will ship with,
 because a promote's copies share the copy stream with whatever the final placement puts there.
+
+## 17. Design G4 pre-registered (G''' revised: one side stream), before any G4 code
+
+**What changes from G''', and only this.**
+
+1. **One side stream.** The receipt stream is removed: every piece of side work runs on the copy stream, the only
+   stream beside the owner's. The D2H device receipt goes back to G's placement (the copy stream waits on every
+   accepted item's producer event and on the lanes' zero-fill, the digest kernels, the flip under its fault, the lanes'
+   D2H and the receipt event, all before the batch's item copies and spans on the same stream; X2's order, flat on
+   BOX7 in every cell, and G's, flat on the 5090); the D2D classes go back to the copy stream (as before G'''). The
+   flip fault's cross-stream wait goes (the flip precedes the copies in stream order). The copy stream keeps the H2D
+   items, spans and the fill host function.
+2. **Kept from G'''**: the `d2h-delay` host-side hold (on one stream a spin would hold every later copy of every class,
+   G's plain-arm failure); the pooled twins, the `synchronize` receipt wait, the unretired entry's leak (G''); the drains,
+   now of the one side stream.
+3. **Censuses.** `one_kernel_stream_beside_the_owner` becomes `one_side_stream_beside_the_owner`: every direct launch is
+   a helper's or the copy stream's, every helper call passes `&copy` or `&self.stream` (the early readers), no
+   `receipt_stream` exists; the D2D and D2H censuses follow; the D2H census asserts the seal precedes the item loop on
+   the same stream. Docs and server wording follow (`on the contracts door's copy stream`; the receipt line `; receipts
+   on the copy stream (source digests, X.XXms)`, the words G's day-38 cell used).
+4. **What is not designed out, stated before any cell.** Every later consumer of the copy stream (a capture, a restore,
+   a promote's fill and copies) queues behind a demote's receipt kernel, as G's section 4 said: about 1.5 to 3.5 ms at
+   64 tokens, about 100 ms per 4096-token 27B entry on the 5090 (the survey's 32 x 4 MiB, 107.12 ms). No placement off
+   the copy stream stays flat on both cards (sections 13 to 16), so this cost is bounded by the kernel's own speed, a
+   new ledger item (`OWED.md` item 15, the receipt kernel's price at long entries, with its own survey and
+   pre-registration), not by G4.
+
+**Acceptance, stated before any code.** Section 3's (a) to (e), verbatim and whole, on each card (the A/B base
+`80039a8de` against G4, the gate set with every fault cell including day 41's three, the unit cells), and section 14's
+(f) on each card (G4's median HUMP at most 0.15 ms over two boots, the G'' control beside it; on the target card the
+control must hump or the cell repeats once). Nothing registered in sections 3 and 14 moves.
+
+**Predictions.** (c) about 0.15 ms on the 5090 and about 0.5 on BOX7. (d) on the 5090 as G's (wall about -7.5, e2e
+about -7.5 ms); on BOX7 the e2e about 1 ms under the base. (f) flat on both (the 5090's G, BOX7's X2).
+
+**What each card decides.** Each card its own (a) to (f).
+
+**Budget.** 0.5 agent-day: the code and CPU cells 0.15, the 5090 cells 0.15, the BOX7 sitting 0.2 (with item 3's cell,
+DAY39 section 5b, and item 5's target half).

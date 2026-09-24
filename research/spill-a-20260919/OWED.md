@@ -180,6 +180,16 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   governor still charges).
 - Status: open.
 
+### 15. The D2H receipt kernel's price at long entries (found by DAY38 section 17)
+
+- Source: `DAY38.md` sections 2 and 17 (the survey: one thread per item, about 40 MB/s per thread, `SURVEY G items=32
+  bytes_each=4194304 .. median=107.120` ms on the 5090); under G4 every later copy-stream consumer (a capture, a
+  restore, a promote's fill and copies) queues behind it, because no side placement off the copy stream stayed flat on
+  both cards (sections 13 to 16).
+- Acceptance: none registered. A kernel bitwise equal to the program (`memra_tier::contracts::checksum`) on every size
+  and offset, priced on both cards at 32 x 60 KiB and 32 x 4 MiB, pre-registered with a bound before its code.
+- Status: open.
+
 ## 2. Closed, delivered, or held by another owner
 
 - **Move 1 item 1, the settle-time owner wait for an H2D**: closed on day 19 by `c96d51862` (`DAY19.md`; the target
