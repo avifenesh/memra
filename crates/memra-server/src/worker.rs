@@ -21826,6 +21826,10 @@ struct Session {
     /// `AdmissionBook` at `active.push` and released at `active.remove`; a step-OOM
     /// park releases too (its KV drops) and the replay re-books at re-admission.
     booked_kv_bytes: u64,
+    /// WP-B day 38 addendum A: the session ended on a typed error. An errored session is never a
+    /// park point (a failed step may have advanced state that `fed` does not describe), and its
+    /// length stays out of the completion history, exactly as an abort's does.
+    errored: bool,
     /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): the rows this request's prompt occupies, the
     /// floor of the tick-top ensure bound for its on-demand K/V planes (`kv_vmm::bound_rows`).
     /// Set at admission, including a resume, to that request's prompt rows.
@@ -26153,6 +26157,7 @@ pub fn run(
                                     requeue_oom.push_back(req);
                                 }
                                 None => {
+                                    s.errored = true;
                                     let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                                         "step error: {err}"
                                     ))));
@@ -26172,6 +26177,7 @@ pub fn run(
                                 s.tokens_emitted
                             );
                             quarantine_request_fault(s, err.as_ref());
+                            s.errored = true;
                             let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                                 "step error: {err}"
                             ))));
@@ -26207,6 +26213,18 @@ pub fn run(
                     (active[i].request_id.clone(), fault_route(&active[i]));
                 let step_result =
                     guard_request(&engine, &fault_id, &fault_route, "decode step", || {
+                        // MEMRA_STEP_OOM_FAULT's non-batching injection point (WP-B day 38
+                        // addendum A): the forged quoted OOM stands in for this step, before any
+                        // device work; the error arm below is production logic.
+                        if step_oom_fault_fire() {
+                            eprintln!(
+                                "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this non-batching step \
+                                 reports a synthetic CUDA OOM (model {}, generated {})",
+                                active[i].model,
+                                active[i].generated.len(),
+                            );
+                            return Err(STEP_OOM_FAULT_MSG.into());
+                        }
                         match step_session_async_chain(&engine, &loaded, &mut active[i]) {
                             Ok(Some(keep)) => Ok(keep),
                             Ok(None) => {
@@ -26230,6 +26248,7 @@ pub fn run(
                     Ok(false) => finished.push(i),
                     Err(err) => {
                         quarantine_request_fault(&mut active[i], err.as_ref());
+                        active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -26552,6 +26571,7 @@ pub fn run(
                                         "[spec-gate] glm5 demote flush FAILED (model {}): {err}",
                                         s.model
                                     );
+                                    s.errored = true;
                                     let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                                         "glm5 demote flush failed: {err}"
                                     ))));
@@ -26609,6 +26629,7 @@ pub fn run(
                             // engine's primed-session assertion. Retire with the quoted cause
                             // rather than hand back a session that cannot burst.
                             eprintln!("[spec-gate] demote flush FAILED (model {}): {err}", s.model);
+                            s.errored = true;
                             let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                                 "spec demote flush failed: {err}"
                             ))));
@@ -26725,7 +26746,8 @@ pub fn run(
                 // named. The step itself is SKIPPED (no device work on a card the gate is
                 // pretending is full); the match below (park-vs-honest-error, the
                 // teardown fence, park_requeue, the retry budget) is production logic,
-                // un-doctored. This is the ONLY injection point of the door.
+                // un-doctored. One of the door's three injection points: this spec-phase step, the
+                // batched decode chunk and the non-batching step (WP-B day 38 addendum A).
                 let (fault_id, fault_route) =
                     (active[i].request_id.clone(), fault_route(&active[i]));
                 let step_result =
@@ -26873,6 +26895,7 @@ pub fn run(
                             None => {
                                 // cannot rebuild the request (no prompt to replay) — the
                                 // pre-fix honest error, quoted.
+                                s.errored = true;
                                 let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                                     "step error: {err}"
                                 ))));
@@ -26897,6 +26920,7 @@ pub fn run(
                             );
                         }
                         quarantine_request_fault(&mut active[i], err.as_ref());
+                        active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -27007,6 +27031,7 @@ pub fn run(
                         });
                     if let Err(err) = probe {
                         active[i].aborted = true;
+                        active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -27203,6 +27228,7 @@ pub fn run(
                                 );
                                 for &(i, _) in &cand {
                                     active[i].aborted = true;
+                                    active[i].errored = true;
                                     let _ = active[i].tx.send(Event::Error(EngineError::engine(
                                         format!("prime batch: {err}"),
                                     )));
@@ -27352,6 +27378,7 @@ pub fn run(
                     }
                     Err(err) => {
                         quarantine_request_fault(s, err.as_ref());
+                        s.errored = true;
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
                         ))));
@@ -27415,6 +27442,7 @@ pub fn run(
                     Ok(false) => finished.push(i),
                     Err(err) => {
                         quarantine_request_fault(&mut active[i], err.as_ref());
+                        active[i].errored = true;
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                             "step error: {err}"
                         ))));
@@ -27467,6 +27495,7 @@ pub fn run(
                         );
                         if let Err(err) = staged {
                             quarantine_request_fault(&mut active[i], err.as_ref());
+                            active[i].errored = true;
                             let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                                 "constraint mask: {err}"
                             ))));
@@ -27535,6 +27564,17 @@ pub fn run(
                     .collect::<Vec<_>>()
                     .join(",");
                 let logits = guard_request(&engine, &batch_ids, "batch", "batched decode", || {
+                    // MEMRA_STEP_OOM_FAULT's plain-dispatch injection point (WP-B day 38
+                    // addendum A): the forged quoted OOM stands in for this chunk's step, before
+                    // any device work; the chunk's error arm below is production logic.
+                    if step_oom_fault_fire() {
+                        eprintln!(
+                            "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this batched decode chunk \
+                             reports a synthetic CUDA OOM ({} session(s))",
+                            idxs.len()
+                        );
+                        return Err(STEP_OOM_FAULT_MSG.into());
+                    }
                     // split-borrow: pull the caches out via split_at_mut-style indexing
                     let mut caches: Vec<&mut Cache> = Vec::with_capacity(idxs.len());
                     // SAFETY: idxs are unique indices into `active`; we take disjoint &mut.
@@ -27584,6 +27624,7 @@ pub fn run(
                     Err(err) => {
                         for &i in &idxs {
                             active[i].aborted = true;
+                            active[i].errored = true;
                             let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                                 "batch step: {err}"
                             ))));
@@ -27762,6 +27803,7 @@ pub fn run(
                                 );
                                 for &i in &dcand {
                                     active[i].aborted = true;
+                                    active[i].errored = true;
                                     let _ = active[i].tx.send(Event::Error(EngineError::engine(
                                         format!("dark prime batch: {err}"),
                                     )));
@@ -27834,6 +27876,7 @@ pub fn run(
                         );
                     } else {
                         quarantine_request_fault(s, err.as_ref());
+                        s.errored = true;
                         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                             "prefill error: {err}"
                         ))));
@@ -27932,7 +27975,7 @@ pub fn run(
                     );
                 }
             }
-            if !s.oom_teardown && !s.aborted {
+            if !s.oom_teardown && !s.aborted && !s.errored {
                 completion_history.record(
                     crate::auth::meter_key(&s.cache_ns),
                     &s.model,
@@ -27994,7 +28037,7 @@ pub fn run(
                 oom_teardowns += 1;
                 continue;
             }
-            if s.prime_service.pending || !retire_may_park(s.aborted, s.oom_teardown) {
+            if s.prime_service.pending || !retire_may_park(s.aborted, s.oom_teardown, s.errored) {
                 continue;
             }
             // AGENT-PAUSE DEMOTE ARM (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831,
@@ -29873,6 +29916,7 @@ fn park_prefill_oom(
             requeue_oom.push_back(req);
         }
         None => {
+            s.errored = true;
             let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                 "prefill error: {err}"
             ))));
@@ -33217,6 +33261,7 @@ fn admit(
         // there); zero until then so a test-constructed Session books nothing.
         booked_kv_bytes: 0,
         vmm_floor_rows: n_prompt,
+        errored: false,
         shadow_kv_hat: 0,
         shadow_pred_total: 0,
         decoded_bytes: Vec::new(),
@@ -33704,6 +33749,7 @@ fn dedup_interactive_prefixes(
                 loaded.get(&key.0).map(|l| &l.model),
             );
             if let Err(err) = restored {
+                active[i].errored = true;
                 let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                     "prefix fanout restore failed: {err}"
                 ))));
@@ -34276,6 +34322,7 @@ fn advance_sample_emit(
         (None, Some(c)) => {
             let mut row = s.last_logits.clone();
             if let Err(err) = c.mask_logits(&mut row) {
+                s.errored = true;
                 let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                     "constraint mask: {err}"
                 ))));
@@ -34308,6 +34355,7 @@ fn advance_sample_emit(
     if let Some(c) = s.constraint.as_mut()
         && let Err(err) = c.consume(next)
     {
+        s.errored = true;
         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
             "constraint advance: {err}"
         ))));
@@ -34373,6 +34421,7 @@ fn advance_token_emit(
     if let Some(c) = s.constraint.as_mut()
         && let Err(err) = c.consume(tok)
     {
+        s.errored = true;
         let _ = s.tx.send(Event::Error(EngineError::engine(format!(
             "constraint advance: {err}"
         ))));
@@ -36599,8 +36648,8 @@ fn prime_cancelled_abort(s: &mut Session, err: &(dyn std::error::Error + 'static
     true
 }
 
-fn retire_may_park(aborted: bool, oom_teardown: bool) -> bool {
-    !aborted && !oom_teardown
+fn retire_may_park(aborted: bool, oom_teardown: bool, errored: bool) -> bool {
+    !aborted && !oom_teardown && !errored
 }
 
 /// Model-owned topology is shared by admission, recovery, calibration and admin trim.
@@ -37027,8 +37076,47 @@ fn run_boot_calibration(
 mod abort_park_tests {
     #[test]
     fn aborted_sessions_never_publish_reusable_kv() {
-        assert!(super::retire_may_park(false, false));
-        assert!(!super::retire_may_park(true, false));
+        assert!(super::retire_may_park(false, false, false));
+        assert!(!super::retire_may_park(true, false, false));
+    }
+
+    /// WP-B day 38 addendum A: a session that ended on a typed error is never a park point.
+    #[test]
+    fn errored_sessions_never_publish_reusable_kv() {
+        assert!(!super::retire_may_park(false, false, true));
+        assert!(!super::retire_may_park(true, true, true));
+    }
+
+    /// Every typed-error send that ends a session in the tick loop's session arms (and in the
+    /// session helpers it calls) marks the session errored first (comment-stripped census).
+    #[test]
+    fn every_session_ending_error_marks_the_session_errored() {
+        let worker = include_str!("worker.rs");
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let lines: Vec<&str> = live.lines().collect();
+        let mut unmarked = Vec::new();
+        for (i, l) in lines.iter().enumerate() {
+            let t = l.trim_start();
+            let session_send = t.starts_with("let _ = s.tx.send(Event::Error(")
+                || t.starts_with("let _ = active[i].tx.send(Event::Error(");
+            if !session_send {
+                continue;
+            }
+            let prev = lines[..i]
+                .iter()
+                .rev()
+                .map(|p| p.trim())
+                .find(|p| !p.is_empty() && !p.starts_with("//"))
+                .unwrap_or("");
+            let marked = prev.ends_with(".errored = true;") || prev.ends_with(".aborted = true;");
+            if !marked {
+                unmarked.push(i + 1);
+            }
+        }
+        assert!(
+            unmarked.is_empty(),
+            "unmarked session error sends at lines {unmarked:?}"
+        );
     }
 
     #[test]
@@ -37037,8 +37125,8 @@ mod abort_park_tests {
         // needs). A pool-park would keep the VRAM alive and starve the requeued retry —
         // and the pending-carry flush would run a GPU pass on a card that just proved
         // full (lane/step37-vram-admission-20260830).
-        assert!(!super::retire_may_park(false, true));
-        assert!(!super::retire_may_park(true, true));
+        assert!(!super::retire_may_park(false, true, false));
+        assert!(!super::retire_may_park(true, true, false));
     }
 }
 
@@ -44478,8 +44566,8 @@ mod tests {
         // terminal completions (parks re-admit; aborts are load, not completions).
         assert_eq!(prod.matches("completion_history.record(").count(), 1);
         assert!(
-            prod.contains("if !s.oom_teardown && !s.aborted {"),
-            "history excludes parks and aborts"
+            prod.contains("if !s.oom_teardown && !s.aborted && !s.errored {"),
+            "history excludes parks, aborts and errored sessions"
         );
 
         // G2 metrics: the /metrics gauges derive from the one book, never a twin counter.
@@ -53206,30 +53294,47 @@ mod tests {
             &s[at..end]
         }
         let worker = strip(include_str!("worker.rs"));
-        // One definition, one call site: the door cannot grow a second seam silently.
-        // Needles are assembled so this test's own literals never self-match.
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        // One definition and exactly three call sites (the spec phase's step dispatch, and since
+        // WP-B day 38 addendum A the batched decode chunk and the non-batching step): the door
+        // cannot grow a fourth seam silently. Needles are assembled so this test never self-matches.
         let call = format!("step_oom_fault_fire{}", "()");
         assert_eq!(
-            worker.matches(call.as_str()).count(),
-            2,
-            "expected exactly one fault-door call beside its definition"
+            live.matches(call.as_str()).count(),
+            4,
+            "expected the fault door's definition and its three registered call sites"
         );
-        let at = worker
-            .find(format!("if {call}").as_str())
-            .expect("the injection sits at the step dispatch");
-        let body = window(&worker, at, 4000);
-        assert!(
-            body.contains("Err(STEP_OOM_FAULT_MSG.into())"),
-            "the injection must forge the quoted CUDA OOM constant"
-        );
-        assert!(
-            body.contains("step_dspark_spec(") && body.contains("step_session("),
-            "the injection must gate the production step dispatch, not a copy of it"
-        );
-        assert!(
-            body.contains("match step_result"),
-            "the forged error must reach the same match the real step errors take"
-        );
+        let sites: Vec<usize> = live
+            .match_indices(format!("if {call}").as_str())
+            .map(|(at, _)| at)
+            .collect();
+        assert_eq!(sites.len(), 3);
+        for &at in &sites {
+            let body = window(live, at, 4000);
+            assert!(
+                body.contains("Err(STEP_OOM_FAULT_MSG.into())"),
+                "every injection must forge the quoted CUDA OOM constant"
+            );
+        }
+        // Each site gates a production dispatch whose result reaches the production match.
+        let spec = sites
+            .iter()
+            .map(|&at| window(live, at, 4000))
+            .find(|b| b.contains("step_dspark_spec("))
+            .expect("the spec-phase site gates the spec dispatch");
+        assert!(spec.contains("step_session(") && spec.contains("match step_result"));
+        let nonbatch = sites
+            .iter()
+            .map(|&at| window(live, at, 4000))
+            .find(|b| b.contains("step_session_async_chain("))
+            .expect("the non-batching site gates the non-batching step");
+        assert!(nonbatch.contains("match step_result"));
+        let batch = sites
+            .iter()
+            .map(|&at| window(live, at, 4000))
+            .find(|b| b.contains("decode_step_batch_sampled_lean_masked"))
+            .expect("the batched site gates the batched decode chunk");
+        assert!(batch.contains("\"batch step: {err}\""));
     }
 
     #[test]
