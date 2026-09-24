@@ -184,3 +184,11 @@ DAY35 did. Found by dry-running the reader (`day39-reading.py`) on DAY35's banke
 - **The 5090 half passes as registered**: T costs nothing on a host where the fill already fits, and every gate is green.
   The target cell (section 5, BOX7 class) is next; its arms are built from the tip that carries DAY38's hump fix, if that
   has landed, else from this tree.
+
+## 5b. Amendment to section 5, before the target cell runs: its tree
+
+Section 5 built the target cell's arms from "the lane tip carrying T and, if it has landed by then, the fix of DAY38's
+hump". The fix is not settled (DAY38 section 16: G''' fails its hump clause on the 5090, and its revision is
+pre-registered there), and where the D2D classes and the demote's receipt run decides what a promote's copies share
+the copy stream with. So the cell runs in the sitting of the final tree, its four arms built from that tree by the same
+patches (`f1.patch`, `hk-revert-tip.patch` re-checked on it). No clause, bound or arm changes.

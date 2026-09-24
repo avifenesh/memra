@@ -758,3 +758,33 @@ target cell and item 5's target half, DAY39 section 5 and DAY41 section 1).
   `hitgate.sh`, `unit-cells.sh`, and `item3.sh` (DAY39 section 5's cell: `hk ft f1 off`, 40 boots, `--n 5`, read by
   `day39-reading.py target`, ft being the G''' tip). Nothing in either sitting moves a clause or a bound registered in
   sections 3, 14, DAY39 section 5 or DAY41 section 1.
+
+## 16. G''' on the RTX 5090, as it ran so far (`rtx5090-day38/g3/`): (c) and (d) pass, (f) FAILS
+
+- The binaries (`g3-build.sh`, `BUILD.txt`): g3 `4d55968a8ca47604..` (tree `a108252dc`, crates equal to G'''s
+  `9ab5c1265`), gpp `bc18190323eef4c8..` (`358749c9f`, G''), base `453e2ea59b110dea..` (`80039a8de`); markers `g3
+  receipt-stream capture wording: 2`, `gpp .. 0`, `base .. 0`. One hold from 21:09Z (taken on its first attempt).
+- Unit cells: door GPU cells `ok. 18 passed`; the engine's native cells `ok. 13 passed` in parallel (the D2D cells on the
+  receipt stream, the D2H device-receipt cells with the host-side hold).
+- **(c) and (d), verbatim** (`g3/reading-day38.log`): `DAY38 G C copy-settle N=80 median=0.16 min=0.13 max=0.20 rule
+  N>=20 median<=1.5 max<=3.0 -> PASS`; `DAY38 G D order=o1 wall base=66.30 g=57.75 g-minus-base=-8.55 rule <=+5.0 | e2e
+  base=121.45 g=114.07 g-minus-base=-7.38 rule <=+1.0 -> PASS`; `order=o2 wall .. -8.00 .. e2e base=117.81 g=110.22
+  g-minus-base=-7.59 .. -> PASS`. 20 of 20 replays.
+- **(f), verbatim** (`g3/hump/reading-hump.log`): `HUMP boot=b01-xgpp base=7.344 hump=+0.555`, `b02-xg3 .. hump=+0.374
+  itl=[7.3, 7.37, 7.35, 7.36, 7.37, 7.72, 7.52, 7.5, 7.53, ..]`, `b03-xg3 .. hump=+0.470`, `b04-xgpp .. hump=+0.621`;
+  **`HUMP arm=xg3 boots=2 median-hump=+0.422 humps=True`** against `<=0.15`: **(f) FAILS on the 5090 as registered**
+  (the control `xgpp .. +0.588`).
+- **What it says.** On this card one kernel stream beside the owner's is not enough: G''' (kernels on the receipt stream,
+  the D2H copies on the copy stream) rises about as G'' does, where BOX7's x27 (the same structure) stayed flat. The one
+  placement flat on both cards is every piece of side work on ONE side stream: G's (the 5090's day-38 `g/` cell, the
+  tenant's ITL 7.34 to 7.36 ms over its runs, section 11) and BOX7's X2 (sections 12a to 13k, flat in every cell).
+- The gates (a), (b), (e) are still running; they are recorded when the hold ends. G''' is not integrable; the revision
+  is pre-registered in section 17 before its code.
+
+## 16a. The BOX7 G''' sitting, pre-registered before it runs, without item 3
+
+The BOX7 G''' sitting of section 15 runs as registered (`pro-single-g3/driver-g3only.sh`: `ab.sh`, `hump.sh`,
+`gates.sh`, `hitgate.sh`, `unit-cells.sh`), so the target card reads its own (a) to (f) for G''' (each card its own,
+section 14); it decides nothing about the 5090's failure. Item 3's cell (`item3.sh`) moves to the sitting of the final
+tree (DAY39 section 5b): its arms must be built from the tree whose demote and capture placement they will ship with,
+because a promote's copies share the copy stream with whatever the final placement puts there.
