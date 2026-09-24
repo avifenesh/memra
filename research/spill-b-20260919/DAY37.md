@@ -324,6 +324,55 @@ waited on the rig lock; `grow-32768-r2-lockwait/` holds its two refused lock att
 No clause or bound of 1.6 changes. The deciding cell runs on the binary with both fixes (r3): A2 as `grow-32768-r3`,
 the gate set as `gates-r3-pooled` and `gates-r3-vmm`, then addendum B's serving boots.
 
+### 1.14 Addendum E (2026-09-24, from the spill review patterns, before any serving boot on r3)
+
+Reading the r3 state machines against the review patterns again, before the target-card sitting as 1.6 asks, found
+three defects and one receipt gap. The r3 gate set had run (both arms); no serving boot had. `chain-r3` holds its boots
+through the lane's `STOP` file (never a signal), and the r3 receipts stay banked as they read.
+
+- **E1, a release behind a live extent.** The pending releases of a trimmed plane are meant to be a tail, reaped tail
+  first. A resume's ensure cancels the pending releases below its need, then raises `want` to the need plus the
+  lookahead; when that lookahead reaches past the pending tail, the mapper maps a live extent behind it. The reap then
+  stops at the live tail, so the pending extent is never released, its bytes read as pending for the plane's life,
+  and the idle wait of addendum D polls every 2 ms for as long as the plane is parked. Reproduced against the fake
+  driver before any fix (`a_lookahead_past_a_pending_tail_cancels_it_and_never_maps_behind_it`, red on r3: extents
+  `(5, 1, pending), (6, 1, live)` in granules). Fix: an ensure cancels every pending release below the `want` it sets,
+  not only below the need, and the mapper never maps behind a pending extent. The invariant (every pending extent
+  lies at or past `want`, so pending extents are always a tail) is asserted by the test.
+- **E2, the idle decision reads a stale flag.** Addendum D's `vmm_pending` is computed by the tick-top reap, before the
+  tick's retires. The last retire of a burst parks (a trim) or drops (a grave) after that point, so the next loop
+  iteration finds nothing active, reads the stale `false`, and blocks in `rx.recv()` with the release pending: the
+  defect addendum D meant to close, in its most common case. Fix: the idle decision recomputes the pending bytes
+  itself (the graveyard and both parked pools, no reap) right before it chooses between the indefinite block and the
+  2 ms poll. The tick-top reap also reaps the active sessions' planes (a resumed plane's tail past its `want` is
+  released while it runs; no consumer touches bytes past the live prefix).
+- **E3, a failed reap stays pending forever.** A failed unmap or release leaves the extent, or the grave, pending, so
+  the idle poll never ends. Fix: a failed unmap cancels every pending release of that plane (the extents stay mapped
+  and live, the plane keeps the bytes until it drops); a failed release after a successful unmap pops the extent and
+  leaks its handle; a grave whose reap fails is quarantined out of the graveyard (leaked, never recycled). Each prints
+  one `[kv-vmm] quarantined ...` line and adds to a `kv_vmm_quarantined_bytes` metric. No failure path leaves bytes
+  counted as pending.
+- **E4, the ensure-walls receipt drops its last batch.** `[kv-vmm] ensure-walls` prints every 256 walls, so up to
+  255 walls of a boot are never printed and A3 (i) reads a truncated population. Fix: the partial batch also prints
+  when the worker goes idle.
+- **E5, the lookahead is one granule, not two.** Addendum A set `want = need + 2 granules` without a derivation. The
+  lookahead only has to hide one mapper grow: stage 0's busy p95 for create, map and access is 11.3 ms per granule,
+  and 17 planes cross together (2.2), so about 0.2 s, while a plane consumes one granule over about 1,000 to 1,900
+  rows. One granule ahead hides the grow with that margin; the second granule is retained device memory on every
+  on-demand plane of every active session (on the 27B's 34 planes, 68 MiB per session). E5 makes it one granule. A3
+  (i) measures whether the owner ever waits because of it; the fault arm `mapper:all` still forces the owner-behind
+  path.
+- **The reader** reads A4's granule from the boot line's `granularity=` instead of a 2 MiB literal.
+- **A4's bound, stated.** A4's per-request bound (1.6, 1.11) was registered before addendum A's lookahead, so under the
+  helper placement the backed bytes at retire include the lookahead granule, which the bound counts as excess. A4 is
+  a benefit reading outside the decision rule (1.7); its bound does not change and is read as it reads.
+
+No clause, bound or rule of 1.6 and 1.7 changes. The deciding cell runs on the binary with E1 to E5 (r4), from a fresh
+receipt root `rtx5090-day37/r4/`: A2 as `grow-32768-r4`, the gate set as `gates-r4-pooled` and `gates-r4-vmm`, then
+addendum B's serving boots. The target-card sitting runs the same binary source. The r4 commit is also the lane tip at
+DAY38's and DAY39's first boots, so their green binaries are built from it (their red arms apply their own patches to
+it); both days' pre-registrations name the lane tip at the first boot, so neither changes.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
