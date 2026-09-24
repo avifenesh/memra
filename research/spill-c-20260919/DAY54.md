@@ -9,10 +9,15 @@ Written before any slice binary was built or booted; tree at start: `6f7496650`.
 
 ## 0. What the RTX 5090 already shows, and why the cell is on the target card
 
-The 5090's day-37 cell ran the promote class on a tree past the integ38 tip (`rtx5090-day37/stall/ev/p1-base/pass1/
-on/server.log`, the 9B): 10 `promote submitted off the tick` lines and 0 `restore submitted off the tick` lines, the
-inline demote publishing in 32.3 to 77.5 ms. The double park does not occur on this card's shape, so the 5090
-cannot place the slice; the cell runs where the finding was made, on the target card with day 29's shape.
+The 5090's day-37 cell ran the promote class on a tree past the integ38 tip (`091a931c0` contains `643ecbb28`;
+`rtx5090-day37/stall/ev/p1-base/pass1/on/server.log`, the 9B): 10 `promote submitted off the tick` lines, 0
+`restore submitted off the tick` lines, and `[prefix-cache] restore not routed (contracts door): the entry was
+promoted for this admission (insertion pin ...); the tick program copies it`, the promoted-pin refusal of A day 26
+(ruling 36's proposal 1, `e008bf502`), which removed the second park after integ38. So no 5090 receipt exists at
+the slice trees, and whether this card's shape would show the landing move is unknown. Corrected before any run
+(the first version of this section read the 5090's missing park as a property of the card; it is a property of the
+later tree). The cell runs on the target card, where the finding was made, with day 29's shape and the slice trees
+themselves (all before A day 26), not a 5090 reproduction first: the question is the target card's.
 
 ## 1. Pre-registration
 
