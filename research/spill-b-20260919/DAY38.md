@@ -132,6 +132,15 @@ records both trees' hashes. The fault boots also run a fourth shape-X turn per c
 With one request in flight, the forged OOM fires on the first decode step of the boot, which is conversation r0's
 turn 3 (turns 1 and 2 are `max_tokens=1` and never decode).
 
+### 1.10 Addendum C (2026-09-24, before any day-38 boot): the binaries
+
+DAY37 addendum E (1.14) changed the lane's on-demand release path before any day-38 boot, so the lane tip at the
+first boot is `c6f9282c2` (r4). Green is that commit's `memra-server` (the same file as DAY37's r4 lane binary,
+`580fe677...`); red is the same commit plus `day38-red.patch` (`f581e84d...`), built in a detached worktree
+(`rtx5090-day38/binaries.sha256`, `red.source`). The earlier builds from `99fef8898` never ran and are deleted. The
+target-card chain pins the same source and reuses the day-37 lane file as green when its source matches. Nothing
+else changes.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.

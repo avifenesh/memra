@@ -90,6 +90,15 @@ Unit tests: the slab owed growth (0 when the slab covers the need, the differenc
 over N sessions, a started walker's stack not booked, an unstarted one booked, the identity when unarmed, and the
 admit line rendering both fields. The existing day-33 and day-35 tests stay green.
 
+### 1.7 Addendum A (2026-09-24, before any day-39 boot): the binaries
+
+The lane tip at the first boot is `c6f9282c2` (DAY37 addendum E's r4, after this day's `6262506fc`). Green is its
+`memra-server`, the same file as DAY37's r4 lane binary (`580fe677...`); red is the same commit plus
+`day39-red.patch`, the reversed crates diff of `6262506fc` (`0cef991c...`; the red binary carries no
+`pending_prime_v1=` string, green does). This cell runs the pooled allocator, which addendum E does not touch. The
+first builds from `6262506fc` never ran and are deleted. The target-card chain builds with the same script, from the
+same source, reusing the day-37 lane file as green when its source matches.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
