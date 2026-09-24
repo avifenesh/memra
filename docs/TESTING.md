@@ -2029,6 +2029,18 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused` (through the production sink: the
   clean arm's receipts are the checksums of the lease bytes; a byte changed after hash 1 is refused at the bind,
   nothing published). The failure gate's `digest` cell's bind line is the helper's re-hash seeing the flipped byte.
+- The demote's D2H receipt on the copy stream and the copy-phase park (WP-A day 38, `research/spill-a-20260919/DAY38.md`
+  designs G and P, `memra_tier::conformance::d2h_device_receipt_lands_with_the_source_digest`): under the door the copy
+  stream digests every D2H item's DEVICE source with the receipt program (`d2h_receipt_sha256`) before its copy, the
+  item lands with that digest (hash 1 leaves the owner thread), and the bind's re-hash of the landed bytes witnesses
+  landed equal to source; a hit on a `Demoting` entry parks in either phase. CPU binding `d2h_device_receipt_bindings`
+  (with its red arm: an item that lands on its copy alone); engine census `d2h_device_receipt_rules_are_as_stated` and
+  native cells `d2h_device_receipt_lands_with_the_source_digest` (every receipt bitwise the CPU program over its source
+  and over its landed bytes) and `d2h_source_flip_is_witnessed_by_the_landed_bytes` (the flip's red arm); the fault
+  gate's `source-flip` cell (`MEMRA_KV_HOST_FAULT=d2h-source-flip`: one typed bind refusal, nothing published, r1 to
+  r4 byte-equal to door OFF) and `copy-phase-hit` cell (`MEMRA_KV_HOST_FAULT=d2h-delay`: one copy-phase park, the
+  publication, a promote instead of a cold prime, r1 to r4 byte-equal to door OFF); the day-29 park test extended to
+  the copy phase (`hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not`).
 - The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
   hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
   Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity
