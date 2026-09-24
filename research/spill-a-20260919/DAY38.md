@@ -451,3 +451,28 @@ probe about 10 minutes: about 2 hours 20 minutes from access.
   elsewhere verdict -> the next arm pre-registered (the twin pool removed, then the `synchronize` and drop changes);
   not reproduced -> the A/B is re-run once on the unchanged binaries in a new hold. G'' is not integrated with this
   defect; (d) is re-run on the fixed design, whole.
+
+## 12a. The diagnosis, as it ran (BOX7 `diag/`, one hold after the sitting's cells)
+
+- X2 built by `diag-build.sh` (`rc=0`, the tree returned to the tip); four boots 18:17Z to 18:28:04Z, each 30 demote
+  runs. Verbatim (`diag/reading-growth.log`): `GROWTH arm=x1 boots=2 median-growth=-0.113 grows=False`, `GROWTH arm=x2
+  boots=2 median-growth=+0.003 grows=False`, **`GROWTH VERDICT x1 flat -> not reproduced`**, as registered.
+- **What the registered windows could not see**: the per-run series of both X1 boots rise and fall back, `itl=[12.33,
+  12.36, 12.33, 12.44, 12.52, 12.61, 12.72, 12.77, 12.83, 12.9, 12.83, 12.76, 12.68, 12.62, 12.53, 12.41, 12.34, ..
+  12.33 ..]` (`b01-x1`; `b03-x1` the same shape, peak 12.92 at run 10); both X2 boots stay at 12.32 to 12.37 on every
+  run. The effect is a transient hump over the first 16 demote runs of a boot, peak about +0.6 ms per decode step, not an
+  unbounded growth; the section-3 A/B's 10-run boots sit on its rising side. The verdict stands as it reads; the hump is
+  recorded beside it, and it appears with the separate receipt stream only (X2 is G'' with the receipt on the copy
+  stream).
+
+## 13. Pre-registered before it runs: the registered follow-up, and a trace to place the hump
+
+1. **Section 12's registered consequence of `not reproduced`**: the section-3 A/B re-run once, unchanged binaries, in a new
+   hold (`diag2.sh` step 1: `ab.sh`'s cell verbatim, output redirected to `g-rerun/`), read by `day38-reading.py`; (c)
+   and (d) as registered.
+2. **The trace** (`diag2.sh` step 2, the same hold): one X1 and one X2 boot under Nsight Systems (`--trace=cuda,osrt`,
+   no sampling), `stall_cell.py --mode demote --n 8` each (16 demote runs), exported to sqlite and read by
+   `day38-nsys-reading.py` (written before the traces: the receipt kernel's launches as demote markers; per interval the
+   owner stream's kernel count, GPU-busy ms, launch gaps, the five most frequent kernels' mean durations, and every other
+   stream's busy ms). A reading that places the hump as GPU-side (owner kernels longer, or other streams busy) or
+   host-side (launch gaps longer); the fix is pre-registered on it.
