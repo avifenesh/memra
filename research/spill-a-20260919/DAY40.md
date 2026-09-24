@@ -163,3 +163,36 @@ No other clause, bound or check moves.
   xg4`), the gates on s.
 - **The BOX7 sitting** (`pro-single-s/`, after the 5090 half reads; receipts under `/root/spill-receipts/a-s`): the same
   cells in the PRO environment, g4 the G4 sitting's binary.
+
+## 5. S on the RTX 5090, as it ran so far (`rtx5090-day40/s/`): (c) and (d) FAIL
+
+- The binaries (`s-build.sh`): s `5ad8070a905a2356..` (crates equal to S `a40e5b334`), g4 the G4 5090 build; marker `s
+  span-flip-landed wording: 1`. One hold from 23:03Z. Unit cells: the door's GPU cells `ok. 18 passed`, the engine's
+  native cells `ok. 13 passed` in parallel (the D2H span cell's digests bitwise, its flip arm witnessed by span 0 alone,
+  the H2D span cells' destination digests bitwise).
+- **(c), verbatim** (`s/demote/reading-day40-demote.log`): `DAY40 S C order=o1 wall g4=51.70 s=91.95 s-minus-g4=+40.25 rule
+  <=+8.0 | e2e g4=103.27 s=104.75 s-minus-g4=+1.47 rule <=+1.0 -> FAIL`; `order=o2 wall g4=52.20 s=91.50 .. +39.30 .. e2e
+  g4=104.47 s=105.63 .. +1.16 .. -> FAIL`. **(c) FAILS.**
+- **(d), verbatim** (`s/promote/reading-day40-promote.log`): `DAY40 S D order=o1 pin g4=16.10 s=16.60 s-minus-g4=+0.50 rule
+  <=+1.0 | e2e g4=69.53 s=71.06 s-minus-g4=+1.53 rule <=+1.0 -> FAIL`; `order=o2 pin .. +0.30 .. e2e g4=70.30 s=70.90
+  .. +0.60 .. -> PASS`. **(d) FAILS** (o1's e2e).
+- **What the receipts place** (read after the fact, no clause): the tenant's stall is unchanged (median 37.76 against
+  38.10 ms), so the owner thread is not held; the demote's copy phase is: g4 `copy complete .. after 1 poll(s)` on 90 of
+  90 steady demotes at a median 8.4 ms from submission, S after 2 polls on 73 of 90 (median 52.2 ms) and after 1 poll on
+  17 (median 25.1 ms). The span receipt's copy-stream work lengthens the copy phase by about 17 ms on this card, far more
+  than the survey's kernel price for these bytes (about 2.5 ms for the 9B's 52.7 MB, DAY40 section 2), so the landing
+  misses the first poll and the next poll comes after the intruder's own work, about 40 ms later. The copy-stream kernels
+  also run beside the intruder's prefill (its e2e +0.6 to +1.5 ms).
+- S is not integrable as registered. The span receipt's price on the card is placed first (section 6), then S is revised
+  under a new pre-registration.
+
+## 6. Pre-registered before it runs: where the span receipt's copy-stream time goes
+
+- **The cell** (`rtx5090-day40/s-trace.sh`, one bounded hold after the S hold; the binaries of section 5): one g4 and one
+  s boot under Nsight Systems (`--trace=cuda,osrt`, no sampling), each `stall_cell.py --mode demote --n 4` (8 demote runs),
+  the day-35 5090 environment, exported to sqlite and read by `day40-trace-reading.py` (written before the traces): per
+  demote on the copy stream, the D2H item copies, the span copies, the `d2d_receipt_digest` launches split into the
+  source digests (before the span copies) and the landed digests (after them), each group's count, summed and wall ms,
+  and the copy stream's span from the first to the last of them; and the launch-to-start gaps of the digest kernels.
+- **What it decides**: which part of the span receipt costs the ~17 ms (the landed digests' host-memory reads, the
+  launches' serial latency, or the kernel's shape), and the revision is pre-registered on it.
