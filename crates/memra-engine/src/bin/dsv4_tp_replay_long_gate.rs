@@ -82,8 +82,18 @@ fn main() {
     let gpu =
         Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity + 64).expect("load");
     assert!(gpu.topology().is_tp_ep() && gpu.attention_tp_geometry().is_some());
-    gpu.set_grouped_route_validation_for_gate(false);
-    gpu.set_grouped_mirror_validation_for_gate(false);
+    // DSV4_REPLAY_GATE_VALIDATION: `on` (default, the served program: route and mirror checks
+    // deferred to device fault words) or `off` (the unchecked arm replay was first qualified on).
+    let validation = std::env::var("DSV4_REPLAY_GATE_VALIDATION").unwrap_or_else(|_| "on".into());
+    match validation.as_str() {
+        "on" => {}
+        "off" => {
+            gpu.set_grouped_route_validation_for_gate(false);
+            gpu.set_grouped_mirror_validation_for_gate(false);
+        }
+        other => panic!("DSV4_REPLAY_GATE_VALIDATION {other:?} must be on or off"),
+    }
+    println!("VALIDATION {validation}");
     // DSV4_REPLAY_GATE_MOE: `stream` (default) is the served one-token stream visitor;
     // `sktail` pins the gate-only graph split-K set the replay was first qualified on.
     let moe = std::env::var("DSV4_REPLAY_GATE_MOE").unwrap_or_else(|_| "stream".into());

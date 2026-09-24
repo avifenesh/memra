@@ -8675,8 +8675,6 @@ impl Dsv4Gpu {
             || self.verify_topk != Dsv4VerifyTopk::Device
             || (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) != 43
             || self.model.mc.n_embd != 4096
-            || crate::dsv4_grouped::route_validation_enabled()
-            || crate::dsv4_grouped::mirror_validation_enabled()
             || !full_token_moe_program_admitted()
             || self
                 .stages
@@ -10917,10 +10915,12 @@ impl Dsv4Gpu {
                 });
                 pair.upload(tok, state.pos, fault)?;
             }
-            if !replaying {
+            {
                 // Each rank's MoE route and mirror checks land in its fault words (memra
                 // #679); they are read with the one-shot refusal words, before either plane
-                // commits. The replay program admits only the unchecked arm.
+                // commits. Replay arms them the same way: the checked route kernels are
+                // captured in the forward graph, and the words are read between the forward
+                // and commit launches (#710).
                 for (rank, vws) in work.verify.ws.iter_mut().enumerate() {
                     let Some(words) = vws.moe_fault.as_mut() else {
                         continue;
