@@ -29,6 +29,10 @@ Author's review of the full diff `main..lane/spill-integ55-20260924`, posted as 
 - Checks on `38b35dc5e`: CPU battery 15 of 15 rc=0. RTX 5090 (binary `cd97b015` hashed after serve-smoke):
   serve-smoke, the serial span and worker cells, identity, fault default and plain (160 ok each), hit OFF/ON, the #680
   gate (37 x 200, 27 typed 429s, no OOM, every admit within its booked free) and spec-ctx-edge, all green.
+- The review fix `34a4b7f23` (revuto's finding): `prepare_snapshot` evicts inside the budget before a seed
+  allocates, so the booking is capped at `prefix_cache_budget_bytes() - px.total_bytes`. The cap can only lower
+  the term. A cold burst books as before: B's BOX4 addendum reads G-NOOM 0 twice with the identity terms 16/16, and
+  the r2 5090 battery on `34a4b7f23` is all green.
 - No provider name, host, id or price in tracked files. No em dash in authored lines.
 
 ## Push regime

@@ -3221,9 +3221,29 @@ publishes or is refused. The cache contents do not change. Verbatim:
 - One numeric program per request: V-ID-FIX 16 of 16. The booking moves no byte of any request; it only defers
   admissions.
 
+**The review fix, before merge.** Revuto on #705 found a real over-booking. `PrefixCache::prepare_snapshot`
+evicts or demotes older unleased entries to fit a seed inside the cache's byte budget before it allocates. A warm,
+full cache therefore replaces bytes rather than adding them, and booking every still-priming session's full seed
+would 429 requests that fit. The cold-burst evidence could not show it. The lead's fix `34a4b7f23` adds
+`seed_booking_cap(pending, prefix_cache_budget_bytes(), px.total_bytes)`: the term is capped at the budget the
+cache has left. It is armed only, with a unit test over the cold, part-full, full and over-budget cases, and the
+census updated.
+- Lane B re-ran day 35's green legs on BOX4 with it, under day 35's reader and verdicts, pre-registered at
+  `489b267cc` before its boots. Verbatim: `DAY33 G-NOOM card=pro6000 boot=green-R64-a1 ... oom_lines=0 burst_503=0
+  crash_lines=0 burst_200=44 ... r429=20 ... -> PASS`, and `green-R64-a2` identical. V-ID-FIX, V-ID and V-OFF are
+  16/16, and the card reads GREEN.
+- The 5090 r2 battery on `34a4b7f23` is all green (`integ55-5090-r2/`, binary `85708a67`), and the #680 gate is
+  unchanged at 37 x 200 and 27 typed 429s.
+- As expected, the cap never binds on a cold burst, so both cards read the same as before it. Its effect is in the
+  warm steady state, which no gate here measures.
+- B's day-36 receipts ride this merge (`0adb1e823`). They are read in integ56. Day 36 measured the uncapped
+  booking, and DAY36 2.2 says so.
+- BOX4 was destroyed at 04:53Z, after all 559 of B's box receipts were mirrored and sha256-checked file for file.
+
 **Ruling 50:**
-- Day 35 is read as registered: G-NOOM is green on the target card twice, with the red reproduced on main. With day
-  33's workspace term, #680's two terms are both booked. #680 closes with this merge.
+- Day 35 is read as registered: G-NOOM is green on the target card twice, with the red reproduced on main. The
+  review fix keeps it green (addendum, twice). With day 33's workspace term, #680's two terms are both booked, the
+  seed term capped at the cache's remaining budget. #680 closes with this merge.
 - The owner's `MEMRA_ADMIT_BY_MEMORY` decision cell is B day 36 on this tree, pre-registered at `88bb3b1e2` and
   running on both cards.
 
