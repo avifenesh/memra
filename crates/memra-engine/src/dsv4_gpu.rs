@@ -19616,7 +19616,8 @@ pub fn resolve_dspark_fused_moe(v: Option<&str>, on_device: bool) -> Result<bool
 }
 
 /// ds4f rung 1 — per-round verify-window policy from the drafter's OWN confidence head
-/// (`MEMRA_DSV4_VT={off|slot}`, unset = off = the byte-identical round driver).
+/// (`MEMRA_DSV4_VT={off|slot}`, unset = `slot` at tau 0.5 since the served A/B of 2026-09-24,
+/// `research/dsv4f-bringup-20260923/vt-window/RESULTS.md`; `off` is the full-depth ladder).
 ///
 /// `slot` is the owner-directive per-slot reading. The q38 H4 verdict transfers as a
 /// MECHANISM, never as receipts (no-generic-support): their head emits MARGINAL accept
@@ -19649,22 +19650,22 @@ pub fn resolve_vt(
     floor: Option<&str>,
 ) -> Result<Dsv4Vt, String> {
     match policy {
-        None | Some("") | Some("off") => {
+        Some("off") => {
             if let Some(t) = tau {
                 return Err(format!(
-                    "MEMRA_DSV4_VT_TAU='{t}' set without MEMRA_DSV4_VT=slot (orphan knob \
+                    "MEMRA_DSV4_VT_TAU='{t}' set with MEMRA_DSV4_VT=off (orphan knob \
                      would be silently inert — refuse instead)"
                 ));
             }
             if let Some(f) = floor {
                 return Err(format!(
-                    "MEMRA_DSV4_VT_FLOOR='{f}' set without MEMRA_DSV4_VT=slot (orphan \
+                    "MEMRA_DSV4_VT_FLOOR='{f}' set with MEMRA_DSV4_VT=off (orphan \
                      knob would be silently inert — refuse instead)"
                 ));
             }
             Ok(Dsv4Vt::Off)
         }
-        Some("slot") => {
+        None | Some("") | Some("slot") => {
             let tau_v: f32 = match tau {
                 None => 0.5,
                 Some(s) => s
@@ -20609,12 +20610,16 @@ mod dense_arm_default_tests {
 mod vt_policy_tests {
     use super::{Dsv4Vt, resolve_vt, vt_slot_drafts};
 
-    /// Unset env = Off = the byte-identical round driver. Mutating the default fails
-    /// this by name.
+    /// Unset env = the per-slot window at tau 0.5 (the served default since 2026-09-24);
+    /// `off` = the full-depth ladder. Mutating the default fails this by name.
     #[test]
-    fn default_vt_is_off_and_byte_inert() {
-        assert_eq!(resolve_vt(None, None, None), Ok(Dsv4Vt::Off));
-        assert_eq!(resolve_vt(Some(""), None, None), Ok(Dsv4Vt::Off));
+    fn default_vt_is_slot_at_half_and_off_is_the_ladder() {
+        let slot = Dsv4Vt::Slot {
+            tau_logit: 0.0,
+            floor: 0,
+        };
+        assert_eq!(resolve_vt(None, None, None), Ok(slot));
+        assert_eq!(resolve_vt(Some(""), None, None), Ok(slot));
         assert_eq!(resolve_vt(Some("off"), None, None), Ok(Dsv4Vt::Off));
     }
 
@@ -20649,8 +20654,8 @@ mod vt_policy_tests {
             (Some("slot"), Some("x"), None),
             (Some("slot"), None, Some("5")), // floor pins window open
             (Some("slot"), None, Some("-1")),
-            (None, Some("0.5"), None),      // orphan tau
-            (Some("off"), None, Some("2")), // orphan floor
+            (Some("off"), Some("0.5"), None), // orphan tau
+            (Some("off"), None, Some("2")),   // orphan floor
         ] {
             let r = resolve_vt(p, t, f);
             assert!(r.is_err(), "({p:?},{t:?},{f:?}) must refuse, got {r:?}");
