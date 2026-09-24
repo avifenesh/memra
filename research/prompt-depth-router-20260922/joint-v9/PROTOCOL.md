@@ -59,7 +59,7 @@ expected accepted prefix and marginal time, and select actions by
 predicted time-adjusted output, not acceptance alone. Compare against
 fixed K=3/10/20, D=3, C=0, a fixed C sweep chosen on training, learned
 K only, learned C/D at fixed K=20, joint C/K/D, and each learned arm's
-model-running no-op. At fixed K=20, compare C/D token-only,
+model-running no-op in the qualifier and final battery. At fixed K=20, compare C/D token-only,
 recent-token history, and history with previous-round features as a
 native throughput ablation. The validation split chooses the one frozen policy
 per family. No final-set feedback changes weights, features, cutoffs,

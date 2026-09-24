@@ -155,13 +155,16 @@ def score(root, quality_path, arms_path, phase):
         comparisons[arm] = {"vs_fixed_k20": paired(records, arm, REFERENCE, count)}
         if arm.startswith("k-") and not arm.startswith("k-noop-"):
             noop = "k-noop-" + arm.removeprefix("k-")
-            comparisons[arm]["vs_own_noop"] = paired(records, arm, noop, count)
+            if noop in records:
+                comparisons[arm]["vs_own_noop"] = paired(records, arm, noop, count)
         if arm.startswith("cd-") and not arm.startswith("cd-noop-"):
             noop = "cd-noop-" + arm.removeprefix("cd-")
-            comparisons[arm]["vs_own_noop"] = paired(records, arm, noop, count)
+            if noop in records:
+                comparisons[arm]["vs_own_noop"] = paired(records, arm, noop, count)
         if arm.startswith("joint-") and not arm.startswith("joint-noop-"):
             noop = "joint-noop-" + arm.removeprefix("joint-")
-            comparisons[arm]["vs_own_noop"] = paired(records, arm, noop, count)
+            if noop in records:
+                comparisons[arm]["vs_own_noop"] = paired(records, arm, noop, count)
     if phase == "heldout":
         selection_path = arms_path.with_name("selected.json")
         selection = json.loads(selection_path.read_text())
@@ -223,6 +226,17 @@ def select(report, arms_path, out):
         raise ValueError("policy selection must use validation only")
     candidates = json.loads(arms_path.read_text())["arms"]
     options = {item["label"]: item for item in candidates}
+    qualification = json.loads(
+        arms_path.with_name("qualification-arms.json").read_text()
+    )
+    if qualification["phase"] != "qualification":
+        raise ValueError("missing frozen no-op qualification arms")
+    all_options = {item["label"]: item for item in qualification["arms"]}
+    if any(
+        label not in all_options or all_options[label] != item
+        for label, item in options.items()
+    ):
+        raise ValueError("validation arm changed from qualification")
 
     def best(names):
         eligible = [
@@ -254,7 +268,7 @@ def select(report, arms_path, out):
         if key in ("k", "cd", "joint"):
             final_names.add(name.replace(f"{key}-", f"{key}-noop-", 1))
     final_arms = [
-        options[name] for name in sorted(final_names)
+        all_options[name] for name in sorted(final_names)
     ]
     selection = {
         "schema": 1,

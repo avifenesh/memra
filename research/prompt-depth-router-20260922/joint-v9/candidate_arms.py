@@ -85,10 +85,15 @@ def build(new, k_models, cd_models, out):
         ))
     if len(arms) != 22:
         raise ValueError("validation alternative count differs")
+    validation = [
+        item for item in arms if "-noop-" not in item["label"]
+    ]
+    if len(validation) != 14:
+        raise ValueError("validation policy count differs")
     out.mkdir(exist_ok=False)
     for phase, chosen in (
         ("qualification", arms),
-        ("validation", arms),
+        ("validation", validation),
     ):
         (out / f"{phase}-arms.json").write_text(
             json.dumps({
@@ -101,7 +106,12 @@ def build(new, k_models, cd_models, out):
                 "arms": chosen,
             }, indent=2, sort_keys=True) + "\n"
         )
-    return {"arms": len(arms), "low_second": c_low, "median_second": c_mid}
+    return {
+        "qualification_arms": len(arms),
+        "validation_arms": len(validation),
+        "low_second": c_low,
+        "median_second": c_mid,
+    }
 
 
 def main():
