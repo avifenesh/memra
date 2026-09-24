@@ -94,3 +94,59 @@ per token (`retire` 20.97 of it) and the read step 8.96 (173 us per read against
   records in the heap the allocator hands out untouched pages, so every read pays first-touch faults. That is I2's
   (a preallocated, pre-faulted slot pool, the read straight into the slot), registered already. The cell runs as
   registered; this cost is expected in the I6G arm and is a reading, not a reason to move a clause.
+
+## 3. Results, cell `resid` (RTX 5090 Laptop GPU, `rtx5090-day43/resid/`)
+
+One collector hold, 21:32:40Z to 22:11:10Z, 40 runs, tree `f9f5f3953`, binaries `run-gen` `b73bb4d3...` (BASE) and
+`run-gen-i6` `771ba66b...` (I6, with I6 (e)), the approved artifact. Three lock-busy attempts before it
+(`lock-retries.log`: another lane held the card); no holder touched. Regime over the hold (`regime.log`, the
+collector's 250 ms CSV, N=9179): SM 172 to 2790 MHz, power 9.2 to 154.8 W, 53 to 73 C. Collector `--validate` rc=0.
+
+Verbatim (`resid/reading.log`):
+
+`DAY43 RESID CHECKS rig=rtx5090 runs=40 integrity=ok`
+
+`DAY43 ARM base window_door_ms_per_token pooled=19.27 o1=19.03 o2=19.37 gen_door_ms_per_token=41.27 window_s median=0.948 iqr=0.013 | per token: demand=16.733 verify=9.369 step=5.470 pread=3.878 stage=1.294 alloc=0.768 drain=2.072 enqueue=1.024 validate=0.650 finish=0.261 collect=0.135 publish=0.233 miss_total=20.713 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3`
+
+`DAY43 ARM i6d window_door_ms_per_token pooled=21.59 o1=21.69 o2=21.28 gen_door_ms_per_token=46.33 window_s median=1.022 iqr=0.019 | per token: demand=18.951 verify=9.355 step=5.927 pread=3.893 stage=2.676 alloc=2.089 drain=2.069 enqueue=1.038 validate=0.685 finish=0.339 collect=0.220 publish=0.348 miss_total=22.936 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3`
+
+`DAY43 ARM i6g window_door_ms_per_token pooled=24.17 o1=24.62 o2=22.47 gen_door_ms_per_token=60.27 window_s median=1.105 iqr=0.154 | per token: demand=18.953 verify=5.289 step=10.985 pread=2.267 stage=2.072 alloc=1.418 drain=2.070 enqueue=2.504 validate=0.691 finish=0.132 collect=0.025 publish=0.223 miss_total=25.333 gpu_misses=92.3 host_hits=40.5 host_misses=51.8 reads=51.8`
+
+`DAY43 CLAUSE no_regression i6d_minus_base pooled=+0.075 o1=+0.085 o2=+0.061 noise=0.019 rule <=noise pooled and both orders -> FAIL`
+
+`DAY43 READING budget i6g_minus_base pooled=+0.157 o1=+0.179 o2=+0.099 noise=0.154 host_hits_per_token=40.5 -> resid_budget_flat`
+
+`DAY43 RESID rig=rtx5090 integrity=ok no_regression=FAIL budget=resid_budget_flat`
+
+**Read, not tuned.** I6's no-regression clause FAILS at the default budget: +2.3 ms per window token over BASE. The
+plan line says what changed (`host_bank_plan requested=268435456 planned=268271616 classes=[(450560, 353), (557056,
+176), (860160, 13)] records_held=542`, against BASE's 16 slots of the largest record): 542 records held, still zero
+host hits in the window, and the per-token lines put the difference in exactly two stages, `alloc` 0.768 to 2.089
+and `stage` 1.294 to 2.676 ms (per miss about 8 to 23 us and 14 to 29 us), while `verify`, `pread` and `drain` are
+unchanged. That is the mechanism section 1a registered for the budget arm before the cell ("each host miss allocates
+and zero-fills two fresh `Vec`s ... the allocator hands out untouched pages"; "That is I2's"), here at the default
+budget too: a tier that holds 34 times more records than BASE makes every read land in cold, freshly faulted memory.
+I6G at 8 GiB gets its 40.5 hits per token (the day-40 profile's prediction) and `verify` 9.37 to 5.29, but pays the
+same allocation cost and twice the `step`, so the window is flat. Section 1's rule: "If this fails, I6 is fixed or
+reverted before anything builds on it." The fix is I2 (day 47), already in the tree: one pre-faulted pinned pool, the
+read straight into its buffer, no per-read `Vec` and no assembly copy. Section 4 registers the check that the fixed
+tree passes I6's clause, before the deciding cell.
+
+## 4. The fix check, registered before it runs (cell `residfix`)
+
+**Question.** On the tree after every rung (I10's binary, which carries I2's pool), does I6's clause hold at the
+default budget?
+
+**Cell `residfix`** (`day43-fix-cell.sh`, reader `day43-fix.py`, RTX 5090 first; the target card reads it in the
+DAY52 sitting's DAY51 phase). Day 43's shape (`MEMRA_MOE_RESIDENT=0 MEMRA_NGEN=32 MEMRA_MOE_SLOTS=9986`, prompt
+`55 88 13`, the approved artifact); arms OFF (`run-gen-i10`, no door), BASE (`run-gen`, the day-40 binary, default
+budget), I10D (`run-gen-i10`, default budget); both door arms with `--expert-bank-stages`; order 1 (OFF, BASE, I10D) x
+5, order 2 reversed x 5, one collector hold.
+
+**Integrity** as day 43's (plan line on I10D, not on BASE), plus the I10 fill-complete line with `fill_refused=0` on
+every I10D run.
+
+**Clause** (I6's, unchanged): `median(I10D window) - median(BASE window) <= noise` pooled and in both orders, noise
+the larger IQR. PASS: I6's regression is fixed in the tree the deciding cell runs. FAIL: the default budget still
+regresses on the final tree; the cause is found from the per-token stage lines and fixed, with its own cell, before
+`DAY51.md` section 2 names the final tree. Readings beside it: the per-token stage lines of both arms.
