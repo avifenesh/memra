@@ -233,3 +233,132 @@ stages (`Dsv4Gpu::pipelined_steps_supported`, no drafter armed); every other loa
 DSpark holds the launch turn for a whole request in this slice, so a second lane there would
 wait, and it was not measured. `MEMRA_DSV4_SESSIONS=1` is the rollback seam (decide-by
 2026-10-08); `2..=4` stays settable.
+
+## Default-selection receipt
+
+Binary `beae5264a` (the default at two lanes, the FIFO turn, the door sleeping without it), one
+boot per row: unset twice, `MEMRA_DSV4_SESSIONS=1` twice, then unset with DSpark armed. Each
+boot's log names its lane count and source:
+
+- unset, plain: `2 serving lane(s) (default on the plain PP matrix program; MEMRA_DSV4_SESSIONS=1 is the serial route)`
+- `=1`: `1 serving lane(s) (MEMRA_DSV4_SESSIONS)`
+- unset, DSpark armed: `1 serving lane(s) (default)`
+
+`cells-pipe2.txt` adds c2 at about 2k-token prompts, so a prefill of four chunks yields the FIFO
+turn between chunks while the other lane decodes (`raw/server-pair/default/`):
+
+### greedy-c1
+
+| row | arm | agg tok/s | decode p50 tok/s | TPOT p50 / p95 / p99 ms | ITL p50 / p99 ms | TTFT p50 / p95 ms | E2E p50 / p95 ms | ok |
+|---|---|---|---|---|---|---|---|---|
+| r1 | unset | 44.53 | 46.26 | 21.62 / 21.67 / 21.68 | 21.40 / 22.64 | 236 / 253 | 5,749 / 5,773 | 8/8 |
+| r2 | one | 44.50 | 46.22 | 21.64 / 21.69 / 21.70 | 21.42 / 22.71 | 235 / 250 | 5,754 / 5,775 | 8/8 |
+| r3 | unset | 44.59 | 46.32 | 21.59 / 21.63 / 21.64 | 21.37 / 22.62 | 235 / 253 | 5,740 / 5,764 | 8/8 |
+| r4 | one | 44.49 | 46.20 | 21.64 / 21.68 / 21.70 | 21.42 / 22.66 | 235 / 250 | 5,754 / 5,776 | 8/8 |
+
+| arm | N | agg median | decode p50 median | TPOT p50 median ms | TTFT p50 median ms |
+|---|---|---|---|---|---|
+| one | 2 | 44.50 | 46.21 | 21.64 | 235 |
+| unset | 2 | 44.56 | 46.29 | 21.60 | 235 |
+
+Aggregate unset vs one: +0.1%; per-request decode +0.2%.
+
+Hashes: identical across every row of both arms; 8 requests, first aea6e69e 26ac8df7 850f75ed a7784b9a 7568f9b3 9dd1aedd 4fd72390 937f04d8.
+
+### greedy-c2
+
+| row | arm | agg tok/s | decode p50 tok/s | TPOT p50 / p95 / p99 ms | ITL p50 / p99 ms | TTFT p50 / p95 ms | E2E p50 / p95 ms | ok |
+|---|---|---|---|---|---|---|---|---|
+| r1 | unset | 65.82 | 34.52 | 28.97 / 29.51 / 29.53 | 27.95 / 31.19 | 379 / 506 | 7,786 / 7,806 | 8/8 |
+| r2 | one | 44.51 | 46.21 | 21.64 / 21.69 / 21.70 | 21.41 / 22.66 | 5,984 / 6,006 | 11,503 / 11,529 | 8/8 |
+| r3 | unset | 66.75 | 34.94 | 28.62 / 29.13 / 29.17 | 27.57 / 30.67 | 373 / 497 | 7,662 / 7,728 | 8/8 |
+| r4 | one | 44.50 | 46.20 | 21.65 / 21.69 / 21.70 | 21.42 / 22.65 | 5,988 / 6,006 | 11,508 / 11,530 | 8/8 |
+
+| arm | N | agg median | decode p50 median | TPOT p50 median ms | TTFT p50 median ms |
+|---|---|---|---|---|---|
+| one | 2 | 44.50 | 46.20 | 21.64 | 5,986 |
+| unset | 2 | 66.28 | 34.73 | 28.79 | 376 |
+
+Aggregate unset vs one: +48.9%; per-request decode -24.8%.
+
+Hashes: identical across every row of both arms; 8 requests, first aea6e69e 26ac8df7 850f75ed a7784b9a 7568f9b3 9dd1aedd 4fd72390 937f04d8.
+
+### greedy-c4
+
+| row | arm | agg tok/s | decode p50 tok/s | TPOT p50 / p95 / p99 ms | ITL p50 / p99 ms | TTFT p50 / p95 ms | E2E p50 / p95 ms | ok |
+|---|---|---|---|---|---|---|---|---|
+| r1 | unset | 66.35 | 34.75 | 28.78 / 29.33 / 29.38 | 27.78 / 30.94 | 8,017 / 8,242 | 15,416 / 15,506 | 8/8 |
+| r2 | one | 44.46 | 46.21 | 21.64 / 21.68 / 21.70 | 21.42 / 22.65 | 17,478 / 17,539 | 22,991 / 23,068 | 8/8 |
+| r3 | unset | 66.99 | 35.14 | 28.45 / 28.91 / 28.91 | 27.40 / 30.61 | 7,924 / 8,166 | 15,233 / 15,335 | 8/8 |
+| r4 | one | 44.46 | 46.20 | 21.65 / 21.68 / 21.70 | 21.42 / 22.67 | 17,483 / 17,536 | 22,997 / 23,066 | 8/8 |
+
+| arm | N | agg median | decode p50 median | TPOT p50 median ms | TTFT p50 median ms |
+|---|---|---|---|---|---|
+| one | 2 | 44.46 | 46.21 | 21.64 | 17,480 |
+| unset | 2 | 66.67 | 34.95 | 28.62 | 7,971 |
+
+Aggregate unset vs one: +50.0%; per-request decode -24.4%.
+
+Hashes: identical across every row of both arms; 8 requests, first aea6e69e 26ac8df7 850f75ed a7784b9a 7568f9b3 9dd1aedd 4fd72390 937f04d8.
+
+### sampled-c2
+
+| row | arm | agg tok/s | decode p50 tok/s | TPOT p50 / p95 / p99 ms | ITL p50 / p99 ms | TTFT p50 / p95 ms | E2E p50 / p95 ms | ok |
+|---|---|---|---|---|---|---|---|---|
+| r1 | unset | 60.51 | 31.55 | 31.69 / 32.18 / 32.19 | 30.68 / 33.89 | 374 / 497 | 8,459 / 8,474 | 8/8 |
+| r2 | one | 41.85 | 43.39 | 23.05 / 23.11 / 23.13 | 22.84 / 24.12 | 6,346 / 6,378 | 12,223 / 12,257 | 8/8 |
+| r3 | unset | 60.72 | 31.63 | 31.62 / 32.12 / 32.18 | 30.60 / 33.85 | 375 / 498 | 8,421 / 8,472 | 8/8 |
+| r4 | one | 41.89 | 43.41 | 23.04 / 23.10 / 23.11 | 22.83 / 24.11 | 6,343 / 6,369 | 12,216 / 12,249 | 8/8 |
+
+| arm | N | agg median | decode p50 median | TPOT p50 median ms | TTFT p50 median ms |
+|---|---|---|---|---|---|
+| one | 2 | 41.87 | 43.40 | 23.04 | 6,344 |
+| unset | 2 | 60.61 | 31.59 | 31.65 | 374 |
+
+Aggregate unset vs one: +44.8%; per-request decode -27.2%.
+
+Hashes: identical across every row of both arms; 8 requests, first 53944095 73fe7f91 6329ee94 827c0b56 437a4427 07de3a97 8a59518d b424bd80.
+
+### sampled-c4
+
+| row | arm | agg tok/s | decode p50 tok/s | TPOT p50 / p95 / p99 ms | ITL p50 / p99 ms | TTFT p50 / p95 ms | E2E p50 / p95 ms | ok |
+|---|---|---|---|---|---|---|---|---|
+| r1 | unset | 60.56 | 31.65 | 31.59 / 32.15 / 32.17 | 30.70 / 33.79 | 8,744 / 8,984 | 16,867 / 16,983 | 8/8 |
+| r2 | one | 41.84 | 43.39 | 23.05 / 23.11 / 23.13 | 22.84 / 24.10 | 18,541 / 18,625 | 24,417 / 24,497 | 8/8 |
+| r3 | unset | 61.05 | 31.82 | 31.42 / 31.98 / 32.03 | 30.70 / 33.44 | 8,690 / 8,938 | 16,683 / 16,876 | 8/8 |
+| r4 | one | 41.85 | 43.40 | 23.04 / 23.10 / 23.12 | 22.83 / 24.12 | 18,535 / 18,606 | 24,409 / 24,481 | 8/8 |
+
+| arm | N | agg median | decode p50 median | TPOT p50 median ms | TTFT p50 median ms |
+|---|---|---|---|---|---|
+| one | 2 | 41.85 | 43.40 | 23.04 | 18,538 |
+| unset | 2 | 60.81 | 31.74 | 31.51 | 8,717 |
+
+Aggregate unset vs one: +45.3%; per-request decode -26.9%.
+
+Hashes: identical across every row of both arms; 8 requests, first 53944095 73fe7f91 6329ee94 827c0b56 437a4427 07de3a97 8a59518d b424bd80.
+
+### greedy-c2-2k
+
+| row | arm | agg tok/s | decode p50 tok/s | TPOT p50 / p95 / p99 ms | ITL p50 / p99 ms | TTFT p50 / p95 ms | E2E p50 / p95 ms | ok |
+|---|---|---|---|---|---|---|---|---|
+| r1 | unset | 13.33 | 30.96 | 32.30 / 35.86 / 35.87 | 30.27 / 31.76 | 15,039 / 15,501 | 19,189 / 19,342 | 8/8 |
+| r2 | one | 12.07 | 43.85 | 22.81 / 22.87 / 22.88 | 22.59 / 23.80 | 18,301 / 18,465 | 21,194 / 21,364 | 8/8 |
+| r3 | unset | 13.35 | 30.98 | 32.28 / 35.79 / 35.99 | 29.22 / 32.14 | 15,015 / 15,491 | 19,162 / 19,316 | 8/8 |
+| r4 | one | 12.06 | 43.76 | 22.85 / 22.89 / 22.89 | 22.60 / 23.80 | 18,307 / 18,470 | 21,211 / 21,374 | 8/8 |
+
+| arm | N | agg median | decode p50 median | TPOT p50 median ms | TTFT p50 median ms |
+|---|---|---|---|---|---|
+| one | 2 | 12.07 | 43.80 | 22.83 | 18,304 |
+| unset | 2 | 13.34 | 30.97 | 32.29 | 15,027 |
+
+Aggregate unset vs one: +10.6%; per-request decode -29.3%.
+
+Hashes: identical across every row of both arms; 8 requests, first a031af1a 27abea10 5a190b71 386c38fe 0c449626 1494b4fc fb699e2c 78f53cd0.
+
+Thermal one: power median 178..179 W, peak 352 W, SM clock 2280..2422 MHz, max temp 52 C, 4707 samples.
+
+Thermal unset: power median 208..215 W, peak 354 W, SM clock 2265..2422 MHz, max temp 54 C, 3605 samples.
+
+Every cell's text is identical across both arms, the yielding prefill included. The unset arm
+repeats the A/B above: +48.9% greedy c2, +50.0% c4, +44.8% sampled c2. At 2k-token prompts the
+second request's first token comes 18% sooner (TTFT p50 18.3 -> 15.0 s).
