@@ -20,7 +20,6 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 
 const PREFIX: usize = 400;
-const CAPACITY: usize = 1024;
 
 /// The pinned plain TP2 / expert-id EP program the full-token replay admits.
 const PINS: [(&str, &str); 7] = [
@@ -55,8 +54,11 @@ fn main() {
         "usage: dsv4_tp_replay_long_gate <model-dir> <source-tape> [steps]"
     );
     let steps: usize = args.get(3).map_or(304, |v| v.parse().expect("steps"));
+    // DSV4_REPLAY_GATE_CAPACITY: the session capacity replay arms for (default 1024).
+    let capacity: usize = std::env::var("DSV4_REPLAY_GATE_CAPACITY")
+        .map_or(1024, |v| v.parse().expect("DSV4_REPLAY_GATE_CAPACITY"));
     assert!(
-        PREFIX + steps < CAPACITY,
+        PREFIX + steps < capacity,
         "steps must stay inside the session capacity"
     );
     // Process startup, before any model or worker thread exists: pin the admitted program.
@@ -78,10 +80,20 @@ fn main() {
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
     Dsv4Gpu::set_attention_tp_for_gate(true);
     let gpu =
-        Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, CAPACITY + 64).expect("load");
+        Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity + 64).expect("load");
     assert!(gpu.topology().is_tp_ep() && gpu.attention_tp_geometry().is_some());
-    gpu.set_grouped_route_validation_for_gate(false);
-    gpu.set_grouped_mirror_validation_for_gate(false);
+    // DSV4_REPLAY_GATE_VALIDATION: `on` (default, the served program: route and mirror checks
+    // deferred to device fault words) or `off` (the unchecked arm replay was first qualified on).
+    let validation = std::env::var("DSV4_REPLAY_GATE_VALIDATION").unwrap_or_else(|_| "on".into());
+    match validation.as_str() {
+        "on" => {}
+        "off" => {
+            gpu.set_grouped_route_validation_for_gate(false);
+            gpu.set_grouped_mirror_validation_for_gate(false);
+        }
+        other => panic!("DSV4_REPLAY_GATE_VALIDATION {other:?} must be on or off"),
+    }
+    println!("VALIDATION {validation}");
     // DSV4_REPLAY_GATE_MOE: `stream` (default) is the served one-token stream visitor;
     // `sktail` pins the gate-only graph split-K set the replay was first qualified on.
     let moe = std::env::var("DSV4_REPLAY_GATE_MOE").unwrap_or_else(|_| "stream".into());
@@ -97,20 +109,29 @@ fn main() {
         other => panic!("DSV4_REPLAY_GATE_MOE {other:?} must be stream or sktail"),
     }
     println!("MOE {moe}");
+    // DSV4_REPLAY_GATE_SAMPLING: `default` (temperature 1, the vendor default) or `greedy`
+    // (temperature 0: the eager arm runs the device argmax step, replay captures the argmax).
+    let sampling = std::env::var("DSV4_REPLAY_GATE_SAMPLING").unwrap_or_else(|_| "default".into());
+    let greedy = match sampling.as_str() {
+        "default" => false,
+        "greedy" => true,
+        other => panic!("DSV4_REPLAY_GATE_SAMPLING {other:?} must be default or greedy"),
+    };
+    println!("SAMPLING {sampling}");
     let cfg = Dsv4SampleCfg {
-        temperature: 1.,
+        temperature: if greedy { 0. } else { 1. },
         top_p: 1.,
         top_k: 0,
         seed: 20260924,
     };
     println!(
-        "PROTOCOL {{\"prefix\":{PREFIX},\"steps\":{steps},\"capacity\":{CAPACITY},\"compare\":\"token, logits bits, TP/EP cache and hidden digests per step\",\"seed\":{},\"source_sha256\":\"{}\"}}",
+        "PROTOCOL {{\"prefix\":{PREFIX},\"steps\":{steps},\"capacity\":{capacity},\"compare\":\"token, logits bits, TP/EP cache and hidden digests per step\",\"seed\":{},\"source_sha256\":\"{}\"}}",
         cfg.seed, tape.sha256
     );
 
     // Eager prefix: the prompt, then sampled tokens up to PREFIX.
     let mut prefix = gpu
-        .alloc_decode_state_for_transient(CAPACITY, 1)
+        .alloc_decode_state_for_transient(capacity, 1)
         .expect("prefix state");
     gpu.prefill_with_cache_chunked(&prompt[..1], &mut prefix, 1)
         .expect("prefill");
@@ -119,22 +140,30 @@ fn main() {
             .expect("prompt step");
     }
     let mut sampler = gpu.device_sampler().expect("sampler");
-    let mut first = gpu
-        .sample_device_logits(&prefix, &mut sampler, &cfg, &[], None)
-        .expect("sample");
+    let mut first = if greedy {
+        let logits = gpu.read_decode_logits_for_gate(&prefix).expect("logits");
+        (0..logits.len()).fold(0, |b, i| if logits[i] > logits[b] { i } else { b }) as u32
+    } else {
+        gpu.sample_device_logits(&prefix, &mut sampler, &cfg, &[], None)
+            .expect("sample")
+    };
     while prefix.pos < PREFIX {
-        gpu.decode_step_device_logits(first, &mut prefix)
-            .expect("prefix step");
-        first = gpu
-            .sample_device_logits(&prefix, &mut sampler, &cfg, &[], None)
-            .expect("sample");
+        first = if greedy {
+            gpu.decode_step_greedy(first, &mut prefix)
+                .expect("prefix step")
+        } else {
+            gpu.decode_step_device_logits(first, &mut prefix)
+                .expect("prefix step");
+            gpu.sample_device_logits(&prefix, &mut sampler, &cfg, &[], None)
+                .expect("sample")
+        };
     }
 
     let mut eager = gpu
-        .alloc_decode_state_for_transient(CAPACITY, 1)
+        .alloc_decode_state_for_transient(capacity, 1)
         .expect("eager state");
     let mut replay = gpu
-        .alloc_decode_state_for_transient(CAPACITY, 1)
+        .alloc_decode_state_for_transient(capacity, 1)
         .expect("replay state");
     gpu.restore_full_token_prefix_for_gate(&mut eager, &prefix)
         .expect("restore eager");
@@ -157,11 +186,14 @@ fn main() {
     for step in 0..steps {
         let pos = eager.pos;
         tokens.push(te);
-        gpu.decode_step_device_logits(te, &mut eager)
-            .expect("eager step");
-        te = gpu
-            .sample_device_logits(&eager, &mut eager_sampler, &cfg, &[], None)
-            .expect("eager sample");
+        te = if greedy {
+            gpu.decode_step_greedy(te, &mut eager).expect("eager step")
+        } else {
+            gpu.decode_step_device_logits(te, &mut eager)
+                .expect("eager step");
+            gpu.sample_device_logits(&eager, &mut eager_sampler, &cfg, &[], None)
+                .expect("eager sample")
+        };
         tr = gpu
             .decode_sample_full_token_for_gate(tr, &mut replay)
             .expect("replay step");
@@ -225,6 +257,8 @@ fn main() {
             tok = if armed {
                 gpu.decode_sample_full_token_for_gate(tok, state)
                     .expect("replay step")
+            } else if greedy {
+                gpu.decode_step_greedy(tok, state).expect("eager step")
             } else {
                 gpu.decode_step_device_logits(tok, state)
                     .expect("eager step");

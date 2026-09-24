@@ -8963,8 +8963,6 @@ impl Dsv4Gpu {
             || self.verify_topk != Dsv4VerifyTopk::Device
             || (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) != 43
             || self.model.mc.n_embd != 4096
-            || crate::dsv4_grouped::route_validation_enabled()
-            || crate::dsv4_grouped::mirror_validation_enabled()
             || !full_token_moe_program_admitted()
             || self
                 .stages
@@ -9025,19 +9023,20 @@ impl Dsv4Gpu {
         cadence: bool,
     ) -> Res<()> {
         self.validate_full_token_program()?;
+        // The replay indexer scores at most 4096 compressed blocks, 16384 positions at ratio 4;
+        // the 1024 cap was the first probe's admission scope, not a kernel bound (#710).
         if state.capacity < 512
-            || state.capacity > 1024
+            || state.capacity > 16384
             || state.pos >= state.capacity
-            || cfg.temperature != 1.0
-            || cfg.top_p != 1.0
-            || cfg.top_k != 0
+            || !(cfg.temperature == 0.0
+                || (cfg.temperature == 1.0 && cfg.top_p == 1.0 && cfg.top_k == 0))
             || state.caches.iter().any(|c| c.c4_host.is_some())
             || state
                 .tp_ep_caches
                 .as_ref()
                 .is_none_or(|cs| cs.iter().any(|c| c.c4_host.is_some()))
         {
-            return Err("full-token replay admits only device caches, a 512..=1024 capacity and vendor-default plain sampling".into());
+            return Err("full-token replay admits only device caches, a 512..=16384 capacity, and greedy or vendor-default plain sampling".into());
         }
         let _walk_guard = self
             .tp_ep_walk_lock
@@ -11204,10 +11203,12 @@ impl Dsv4Gpu {
                 });
                 pair.upload(tok, state.pos, fault)?;
             }
-            if !replaying {
+            {
                 // Each rank's MoE route and mirror checks land in its fault words (memra
                 // #679); they are read with the one-shot refusal words, before either plane
-                // commits. The replay program admits only the unchecked arm.
+                // commits. Replay arms them the same way: the checked route kernels are
+                // captured in the forward graph, and the words are read between the forward
+                // and commit launches (#710).
                 for (rank, vws) in work.verify.ws.iter_mut().enumerate() {
                     let Some(words) = vws.moe_fault.as_mut() else {
                         continue;
@@ -11466,13 +11467,29 @@ impl Dsv4Gpu {
                     self.head_logits_batch_dev(&mut work.verify.ws[1], 1, false)?;
                     let pair = work.replay.as_mut().expect("replay");
                     let stream = self.stages[1].gpu.stream();
-                    let uniform = unsafe { pair.input_ptr(1).add(1).cast::<f64>() };
-                    unsafe {
-                        pair.sampler.enqueue_replay(
-                            work.verify.ws[1].logits.device_ptr(&stream).0 as *const f32,
-                            uniform,
-                            &pair.cfg,
-                        )?;
+                    if pair.greedy {
+                        // The eager greedy step's own device argmax, captured (#710).
+                        let ws1 = &mut work.verify.ws[1];
+                        unsafe {
+                            ck(
+                                "replay argmax",
+                                k::memra_dsv4_argmax(
+                                    dpf!(ws1.logits, &stream),
+                                    ws1.logits.len() as i64,
+                                    ws1.argmax.device_ptr_mut(&stream).0 as *mut i32,
+                                    sp(&stream),
+                                ),
+                            )?;
+                        }
+                    } else {
+                        let uniform = unsafe { pair.input_ptr(1).add(1).cast::<f64>() };
+                        unsafe {
+                            pair.sampler.enqueue_replay(
+                                work.verify.ws[1].logits.device_ptr(&stream).0 as *const f32,
+                                uniform,
+                                &pair.cfg,
+                            )?;
+                        }
                     }
                     for rank in 0..2 {
                         let st = &self.stages[rank];
@@ -11503,7 +11520,17 @@ impl Dsv4Gpu {
                 drop(drain_phase);
                 let _readback = full_token_profile_phase("FULL_TOKEN_TOKEN_READBACK\0");
                 state.pos = pos0 + 1; // the forward is committed even if sampling refuses its logits
-                let token = pair.sampler.read_replay()?;
+                let token = if pair.greedy {
+                    let stream = self.stages[1].gpu.stream();
+                    let mut out = [0i32; 1];
+                    stream
+                        .memcpy_dtoh(&work.verify.ws[1].argmax, &mut out[..])
+                        .map_err(e("dtoh replay argmax"))?;
+                    stream.synchronize().map_err(e("sync replay argmax"))?;
+                    out[0] as u32
+                } else {
+                    pair.sampler.read_replay()?
+                };
                 return Ok((None, token));
             }
             let commit_phase = full_token_profile_phase("FULL_TOKEN_EAGER_COMMIT_DRAIN\0");

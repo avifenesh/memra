@@ -148,6 +148,9 @@ pub(crate) struct ReplayPair {
     counters: [CudaSlice<u64>; 2],
     streams: [Arc<CudaStream>; 2],
     pub cfg: crate::dsv4_gpu::Dsv4SampleCfg,
+    /// Temperature 0: the commit graph captures the device argmax the eager greedy step runs,
+    /// instead of the sampler (memra #710).
+    pub greedy: bool,
     pub ready: bool,
     pub owner: usize,
     pub captures: [u64; 2],
@@ -210,6 +213,7 @@ impl ReplayPair {
         Ok(Self {
             graphs: std::array::from_fn(|_| std::array::from_fn(|_| None)),
             sampler,
+            greedy: cfg.temperature == 0.0,
             input: inputs.try_into().map_err(|_| "replay input rank count")?,
             host: hosts.try_into().map_err(|_| "replay host rank count")?,
             counters: counts.try_into().map_err(|_| "replay counter rank count")?,
