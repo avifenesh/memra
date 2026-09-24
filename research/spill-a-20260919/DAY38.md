@@ -836,3 +836,18 @@ DAY39 section 5b, and item 5's target half).
   cells green); `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` OFF and ON. The hold released 21:32:35Z.
 - So on the 5090 G''' passes (a) to (e) and fails only (f). Its revision G4 (section 17) keeps the host-side hold; the
   receipt and the D2D classes go back to the copy stream.
+
+## 18. G4's two sittings, pre-registered before they run
+
+- **Built** (`26676c037`, section 17's items 1 to 3): the receipt stream is gone; `seal_d2h_device_receipt_into` takes
+  `let copy = self.copy.clone()` and issues the waits, the digest kernels, the flip under its fault, the lanes' D2H and the
+  receipt event ahead of the item loop; the flip's cross-stream wait is gone; the D2D classes are byte for byte their
+  pre-G''' code; `synchronize_copy_stream` is the one drain; census `one_side_stream_beside_the_owner` (no
+  `receipt_stream`, one `.new_stream()`, every direct launch a helper's or the copy stream's, the helpers' calls six on
+  `&copy` and two early readers on the owner's); the receipt line `; receipts on the copy stream (source digests, ..)`.
+  CPU: engine tier_transfer `ok. 15 passed`, server lib `911 passed`, the tier crate green, clippy clean.
+- **The 5090 sitting** (`rtx5090-day38/g4-card-run.sh`, the binaries by `g4-build.sh`): section 15's 5090 sitting with G4
+  for G''' (the unit cells, the A/B base against G4, the hump cell `xgpp xg4 xg4 xgpp`, the gates).
+- **The BOX7 sitting** (`pro-single-g4/`, after the 5090 half reads; receipts under `/root/spill-receipts/a-g4`):
+  section 15's BOX7 sitting with G4 for G''', item 3's cell included (`item3.sh` on the G4 tree, DAY39 section 5b), and
+  the fault gate with day 41's cells (item 5's target half).
