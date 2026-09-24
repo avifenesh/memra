@@ -54,3 +54,29 @@ window, recorded with `fill_admitted` at `phase=warm`.
 **What each card can decide.** The RTX 5090 decides (i) and (ii) here; the target card reads them in the ladder
 sitting (its host SHA runs at 2.15 GB/s, so the fill takes longer there; `fill_admitted` at `phase=gate` says how far
 it got by the first forward).
+
+## 2. Results, cell `fill` (RTX 5090 Laptop GPU, `rtx5090-day45/fill/`)
+
+One collector hold, 22:56:27Z to 23:03:38Z, 30 runs, tree `a25a78008`, binaries `run-gen-i9` `878aa1ff...` and
+`run-gen-fill` `19bcfd59...`, the approved artifact, the runner under the 1200% cap. Regime (`regime.log`, 250 ms,
+N=1718): SM 180 to 2790 MHz, power 21.8 to 168.1 W, 59 to 80 C. Collector `--validate` rc=0.
+
+Verbatim (`fill/reading.log`):
+
+`DAY45 FILL CHECKS rig=rtx5090 runs=30 integrity=ok`
+
+`DAY45 ARM i9g window_door_ms_per_token=22.50 gen_door_ms_per_token=57.25 window_s median=1.051 iqr=0.006 | per window token: gpu_misses=92.3 host_hits=40.5 host_misses=51.8 demand=19.161 verify=5.290 step=11.448 finish=0.104`
+
+`DAY45 ARM fill window_door_ms_per_token=5.17 gen_door_ms_per_token=13.66 window_s median=0.496 iqr=0.011 | per window token: gpu_misses=92.3 host_hits=92.3 host_misses=0.0 demand=0.867 verify=0.000 step=0.000 finish=0.084 fill_admitted gate=26254 warm=29556`
+
+`DAY45 CLAUSE (i) fill_minus_i9g window o1=-0.554 o2=-0.562 noise=0.011 rule < -noise both orders -> PASS`
+
+`DAY45 CLAUSE (ii) fill host_hits/gpu_misses per window token median=1.000 rule >=0.9 -> PASS`
+
+`DAY45 READING gen fill_minus_i9g=-1.395 s -> gen_lower`
+
+`DAY45 FILL rig=rtx5090 integrity=ok clause_i=PASS clause_ii=PASS`
+
+The fill stays. Every window miss is a host hit (92.3 of 92.3 per token), the demand falls 19.16 to 0.87 ms per token
+(no read, no verify on the owner thread), and the window door cost falls 22.50 to 5.17 ms per token; gen-only decode
+falls by 1.395 s over 32 tokens.
