@@ -1,0 +1,8 @@
+cell=serve-smoke arm=vmm cmd=bash tools/serve-smoke.sh /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+env=MEMRA_KV_ALLOCATOR=vmm 
+lock=/tmp/memra-5090.lock owner=collector-fd3
+tree=42b475d21dd524be978382fdcc78db16fa9126ee
+binary_sha256=2ec0b24e23b25365ba81668380bb78d1bae4994d4ebb58cd44c3a3440139b747
+model=Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+door_on_lines=1 door_off_lines=0
+status=executed-not-qualified
