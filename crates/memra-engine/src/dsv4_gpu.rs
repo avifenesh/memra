@@ -8727,7 +8727,7 @@ impl Dsv4Gpu {
         self.validate_full_token_program()?;
         if state.capacity < 512
             || state.capacity > 1024
-            || state.pos >= 512
+            || state.pos >= state.capacity
             || cfg.temperature != 1.0
             || cfg.top_p != 1.0
             || cfg.top_k != 0
@@ -8737,7 +8737,7 @@ impl Dsv4Gpu {
                 .as_ref()
                 .is_none_or(|cs| cs.iter().any(|c| c.c4_host.is_some()))
         {
-            return Err("full-token replay admits only device caches, positions below 512 and vendor-default plain sampling".into());
+            return Err("full-token replay admits only device caches, a 512..=1024 capacity and vendor-default plain sampling".into());
         }
         let _walk_guard = self
             .tp_ep_walk_lock
@@ -8767,9 +8767,21 @@ impl Dsv4Gpu {
             self as *const Self as usize,
             cadence,
         )?;
+        // The replay indexer scores up to 4096 compressed blocks (16384 positions at ratio 4)
+        // and reads the live count from the device position, so replay covers the session up
+        // to that bound. Every rank's score buffer must hold it; the attention kernels refuse
+        // an index stride shorter than the slots they read (#710). Checked on every rank before
+        // any is marked, so a refused arm leaves the state as it was.
+        let limit = state.capacity.min(16384);
+        if let Some(ws) = work.verify.ws.iter().find(|ws| ws.score.len() < limit / 4) {
+            return Err(format!(
+                "replay limit {limit} exceeds the workspace score buffer {}",
+                ws.score.len()
+            ));
+        }
         for ws in &mut work.verify.ws {
             ws.full_token_replay = true;
-            ws.replay_limit = 512;
+            ws.replay_limit = limit;
         }
         work.replay = Some(pair);
         Ok(())
@@ -10853,7 +10865,7 @@ impl Dsv4Gpu {
             }
             if let Some(pair) = &work.replay
                 && (pair.owner != self as *const Self as usize
-                    || state.pos >= 512
+                    || state.pos >= work.verify.ws[0].replay_limit
                     || tok as usize >= work.verify.ws[1].logits.len()
                     || pair.ar_blocks
                         != [
