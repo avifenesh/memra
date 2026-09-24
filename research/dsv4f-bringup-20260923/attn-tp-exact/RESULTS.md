@@ -32,7 +32,8 @@ Numeric class `dsv4_attention_head_split_row_gather_exact`.
 | `dsv4_tp_ep_gate`, attention TP off vs on | `DIGEST_EQUAL yes`: output and state sha256 identical (`c1e0448d...`, `c391bfaa...`) | `raw/tpep-gate-at0/`, `raw/tpep-gate-at1/` |
 | multi-row verify on the exact program | `PASS topology=tpep rows chunk=65 verify=70 restore=22 bit-equal to sequential` | `raw/verify-at1/` |
 | DSpark gate `--tpep` on the exact program | `GPU DSPARK GATE [PASS]` | `raw/dspark-tpa/` |
-| full-token replay, eager vs graph | first run: panicked on the AR epoch census (it still counted an attention all-reduce; block 0 ticked 258 for an expected 172, which is the two gathers). Census fixed in `f33ee547c`; rerun pending | `raw/replay-at1/` |
+| full-token replay, eager vs graph | first run: panicked on the AR epoch census (it still counted an attention all-reduce; block 0 ticked 258 for an expected 172, which is the two gathers). Census fixed in `f33ee547c` | `raw/replay-at1/` |
+| the same gates on the lane merged with main `a8455d29f` (two-launch sink attention and fused HC finish under attention TP), `d2a97c826` | TP/EP gate `DIGEST_EQUAL merged yes` (same sha256s as above); replay `PASS replay correctness and 6 live refusal cells`, 20 measures | `raw/merged/` |
 | served text | every request of every row hashed the same as PP-2 in all three cells | below |
 
 ## Served A/B (plain)
