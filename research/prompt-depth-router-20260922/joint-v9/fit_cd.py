@@ -128,11 +128,14 @@ def build(new_data, old_data, native, out):
     if not new_d or not new_c or not old_d or not old_c:
         raise ValueError("new or historical C/D observation set is empty")
     classes = token_classes(native, old_data)
+    new_manifest = json.loads((new_data / "manifest.json").read_text())
+    included = set(new_manifest["included_training_topics"])
     fixed = [
         json.loads(path.read_text())
         for path in native.glob("training-*-k20-fixed-d3.result.json")
+        if int(path.name.split("-")[1]) in included
     ]
-    if len(fixed) != 24 or any(row["loops"] for row in fixed):
+    if len(fixed) != len(included) or len(included) < 20 or any(row["loops"] for row in fixed):
         raise ValueError("new GPU K20 timing baseline incomplete")
     lam = sum(row["tokens"] for row in fixed) / sum(
         row["seconds"] for row in fixed

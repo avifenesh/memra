@@ -42,15 +42,18 @@ def fit(data, variant, alpha, reference):
 def train(new, old, out):
     current = rows(new / "k.jsonl.gz")
     historical = rows(old / "k.jsonl.gz")
+    new_manifest = json.loads((new / "manifest.json").read_text())
+    topics = new_manifest["conversation_count"]
     if (
-        len(current) != 24 * 8 * 3 or len(historical) != 192
+        not 20 <= topics <= 24
+        or len(current) != topics * 8 * 3 or len(historical) != 192
         or {row["source"] for row in current} != {"v9"}
     ):
         raise ValueError("new or historical measured K inventory differs")
     fixed20 = [
         row for row in current if row["draft_k"] == 20
     ]
-    if len(fixed20) != 192:
+    if len(fixed20) != topics * 8:
         raise ValueError("new K20 reference is incomplete")
     new_lam = sum(row["output_tokens"] for row in fixed20) / sum(
         row["complete_request_seconds"] for row in fixed20

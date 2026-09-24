@@ -51,6 +51,9 @@ actual action for each exposure. Retain the sampled chosen-token
 probability, proposal position, acceptance/rejection, committed-token
 history, round time, and full-turn outcome. C labels past
 the first rejection are censored, not zeroes.
+If any training arm on a task group exact-loops, exclude all six arms
+of that group from fitting and report it. Require at least 20 of the
+24 groups to remain. Keep the raw receipts for every arm.
 
 Fit a small K policy from bounded first-user-token prefix and previous
 turn acceptance, with K=10 included as an action. Fit D and C using

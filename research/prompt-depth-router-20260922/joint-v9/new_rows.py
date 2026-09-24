@@ -30,8 +30,6 @@ def build(root, out):
         raise ValueError("24 training conversations need six complete arms each")
     by_arm = {}
     for record in records:
-        if record["loops"]:
-            raise ValueError(f"looped training conversation: {record['name']}")
         index = int(record["name"].split("-")[1])
         key = index, record["k"], record["variant"].split("-", 1)[1]
         if key in by_arm:
@@ -43,16 +41,29 @@ def build(root, out):
         for label in ("fixed-d3", "explore-d")
     }:
         raise ValueError("native training arm inventory differs")
+    excluded = sorted({
+        int(record["name"].split("-")[1])
+        for record in records if record["loops"]
+    })
+    included = [
+        index for index in range(24) if index not in excluded
+    ]
+    if len(included) < 20:
+        raise ValueError("too few unlooped training task groups")
     wrapper = Directory(root)
     fixed = [
         {
             **row, "loops": 0,
-        } for row in records if row["variant"].endswith("fixed-d3")
+        } for row in records
+        if row["variant"].endswith("fixed-d3")
+        and int(row["name"].split("-")[1]) in included
     ]
     randomized = [
         {
             **row, "loops": 0,
-        } for row in records if row["variant"].endswith("explore-d")
+        } for row in records
+        if row["variant"].endswith("explore-d")
+        and int(row["name"].split("-")[1]) in included
     ]
     out.mkdir(parents=True, exist_ok=False)
     counts = {"k": {}, "d": {}, "c": {}}
@@ -78,7 +89,9 @@ def build(root, out):
     result = {
         "schema": 1,
         "phase": "training",
-        "conversation_count": 24,
+        "conversation_count": len(included),
+        "included_training_topics": included,
+        "excluded_looped_training_topics": excluded,
         "counts": counts,
     }
     (out / "manifest.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
