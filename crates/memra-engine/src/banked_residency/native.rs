@@ -803,21 +803,35 @@ impl Engine {
         let fill_counts = Arc::new(FillCounts::default());
         let (fill_workers, fill_intake) =
             start_fill(fill_file, fill_jobs, fill_counts.clone(), fill_buffers);
-        let owner = ExpertBankOwner::register(
-            Box::new(TracedDispatch {
-                inner: dispatch,
-                ids,
-                occupants: BTreeMap::new(),
-                clock: stage_clock.then(|| OwnerClock {
-                    pread_ns: pread_ns.clone().unwrap_or_default(),
-                    reads: reads.clone(),
-                    ..OwnerClock::default()
-                }),
-                fill: Some(fill_intake),
-                trace: String::with_capacity(TRACE_CHUNK + 256),
+        let mut traced = TracedDispatch {
+            inner: dispatch,
+            ids,
+            occupants: BTreeMap::new(),
+            clock: stage_clock.then(|| OwnerClock {
+                pread_ns: pread_ns.clone().unwrap_or_default(),
+                reads: reads.clone(),
+                ..OwnerClock::default()
             }),
-            open_leases,
-        );
+            fill: Some(fill_intake),
+            trace: String::with_capacity(TRACE_CHUNK + 256),
+        };
+        // DAY57 (I10): the fill completes inside the install, as the legacy's pinned host copy
+        // completes inside its load, so no decode demand races it.
+        let fill_started = Instant::now();
+        if traced.complete_fill(FILL_WAIT_STALL) {
+            eprintln!(
+                "[experts-via-tier] fill complete before decode in {:.1} ms: {}",
+                fill_started.elapsed().as_secs_f64() * 1e3,
+                fill_counts.line()
+            );
+        } else {
+            eprintln!(
+                "[experts-via-tier] fill wait stopped: no completion in {} s ({})",
+                FILL_WAIT_STALL.as_secs(),
+                fill_counts.line()
+            );
+        }
+        let owner = ExpertBankOwner::register(Box::new(traced), open_leases);
         let owner = owner?;
         if let Some(slots) = gpu_slots {
             self.build_moe_cache_exact(max_bytes as usize, slots)?;
@@ -1072,40 +1086,86 @@ impl TracedDispatch {
         let started = Instant::now();
         for _ in 0..limit {
             let Ok(done) = fill.rx.try_recv() else { break };
-            let local = done.local;
-            match self.inner.admit_filled(local, done.bytes, done.digest) {
-                Ok(FillOutcome::Admitted) => {
-                    fill.counts.admitted.fetch_add(1, Ordering::Relaxed);
-                }
-                Ok(FillOutcome::Dropped) => {
-                    fill.counts.dropped.fetch_add(1, Ordering::Relaxed);
-                }
-                Ok(FillOutcome::Full) => {
-                    fill.counts.dropped.fetch_add(1, Ordering::Relaxed);
-                    fill.stop.store(true, Ordering::Relaxed);
-                }
-                Ok(FillOutcome::Refused) => {
-                    fill.counts.refused.fetch_add(1, Ordering::Relaxed);
-                    eprintln!(
-                        "[experts-via-tier] fill refused {}:{}:{}: checksum mismatch",
-                        local.0, local.1, local.2
-                    );
-                }
-                Err(err) => {
-                    if fill.counts.errors.fetch_add(1, Ordering::Relaxed) == 0 {
-                        eprintln!(
-                            "[experts-via-tier] fill admission error {}:{}:{}: {err:?}",
-                            local.0, local.1, local.2
-                        );
-                    }
-                }
-            }
+            admit_one_fill(&mut self.inner, fill, done);
         }
         fill.counts
             .admit_ns
             .fetch_add(elapsed_ns(started), Ordering::Relaxed);
     }
+    /// DAY57 (I10): admit finished fills until every worker has exited (the channel
+    /// disconnects: jobs exhausted, the tier full, or a read error), so decode never races the
+    /// fill. Bounded: no completion for `stall` stops the wait and leaves the rest of the fill to
+    /// the demand path's `drain_fill`, as before. Returns whether the fill completed.
+    fn complete_fill(&mut self, stall: std::time::Duration) -> bool {
+        let Some(fill) = &self.fill else { return true };
+        let inner = &mut self.inner;
+        complete_fill_with(fill, stall, |done| admit_one_fill(inner, fill, done))
+    }
 }
+
+/// DAY57 (I10): the installer's wait, over any admission (the door's is `admit_one_fill`): every
+/// finished fill is admitted in arrival order until the channel disconnects (`true`), or no
+/// completion arrives for `stall` (`false`). Owner-side admission time lands in `admit_ns`.
+fn complete_fill_with(
+    fill: &FillIntake,
+    stall: std::time::Duration,
+    mut admit: impl FnMut(FillDone),
+) -> bool {
+    loop {
+        match fill.rx.recv_timeout(stall) {
+            Ok(done) => {
+                let started = Instant::now();
+                admit(done);
+                fill.counts
+                    .admit_ns
+                    .fetch_add(elapsed_ns(started), Ordering::Relaxed);
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return true,
+            Err(mpsc::RecvTimeoutError::Timeout) => return false,
+        }
+    }
+}
+
+/// One finished fill offered to the bank (DAY45 section 1 (b)): the admission both the demand
+/// path's `drain_fill` and the installer's `complete_fill` (DAY57) run. A full tier raises the
+/// fill's stop flag; a refused checksum and the first admission error print their line.
+fn admit_one_fill(
+    inner: &mut SlruExpertDispatch<Heat, FileReader>,
+    fill: &FillIntake,
+    done: FillDone,
+) {
+    let local = done.local;
+    match inner.admit_filled(local, done.bytes, done.digest) {
+        Ok(FillOutcome::Admitted) => {
+            fill.counts.admitted.fetch_add(1, Ordering::Relaxed);
+        }
+        Ok(FillOutcome::Dropped) => {
+            fill.counts.dropped.fetch_add(1, Ordering::Relaxed);
+        }
+        Ok(FillOutcome::Full) => {
+            fill.counts.dropped.fetch_add(1, Ordering::Relaxed);
+            fill.stop.store(true, Ordering::Relaxed);
+        }
+        Ok(FillOutcome::Refused) => {
+            fill.counts.refused.fetch_add(1, Ordering::Relaxed);
+            eprintln!(
+                "[experts-via-tier] fill refused {}:{}:{}: checksum mismatch",
+                local.0, local.1, local.2
+            );
+        }
+        Err(err) => {
+            if fill.counts.errors.fetch_add(1, Ordering::Relaxed) == 0 {
+                eprintln!(
+                    "[experts-via-tier] fill admission error {}:{}:{}: {err:?}",
+                    local.0, local.1, local.2
+                );
+            }
+        }
+    }
+}
+
+/// DAY57 (I10): how long the installer waits for the next finished fill before it stops waiting.
+const FILL_WAIT_STALL: std::time::Duration = std::time::Duration::from_secs(10);
 /// Owner-thread half of the stage clock: host-tier hits and misses, the inner demand, the
 /// trace print, and the reader's positioned reads (shared with `FileReader`).
 #[derive(Default)]
@@ -1301,6 +1361,77 @@ mod day45_fill {
         drop(workers);
         assert_eq!(counts.reads.load(Ordering::Relaxed), ranges.len() as u64);
         std::fs::remove_file(path).ok();
+    }
+
+    /// DAY57 (I10): the installer's wait admits every job once and returns when the workers
+    /// have exited; a fill that cannot progress (no buffer ever) stops the wait at the stall
+    /// bound, and the workers still stop and join.
+    #[test]
+    fn the_installer_wait_admits_every_fill_then_returns_and_a_stall_is_bounded() {
+        // Its own file (the path is keyed by length): the module's tests run in parallel.
+        let (path, _) = artifact((1 << 16) + 57);
+        let jobs = |n: u32| {
+            (0..n)
+                .map(|i| FillJob {
+                    local: (0, 1, i as u16),
+                    offset: u64::from(i % 60),
+                    len: 1024,
+                })
+                .collect::<Vec<_>>()
+        };
+        let counts = Arc::new(FillCounts::default());
+        let file = Arc::new(File::open(&path).unwrap());
+        let (workers, intake) = start_fill(file, jobs(500), counts.clone(), heap());
+        let mut seen = std::collections::BTreeSet::new();
+        let done = complete_fill_with(&intake, std::time::Duration::from_secs(10), |d| {
+            assert!(seen.insert(d.local.2), "a job admitted twice");
+        });
+        assert!(done, "the wait returns when every worker has exited");
+        assert_eq!(seen.len(), 500);
+        assert_eq!(counts.reads.load(Ordering::Relaxed), 500);
+        drop(workers);
+        // No buffer is ever available: the workers spin on the pool until stopped.
+        let counts = Arc::new(FillCounts::default());
+        let file = Arc::new(File::open(&path).unwrap());
+        let never: FillBuffers = Arc::new(|_| None);
+        let (workers, intake) = start_fill(file, jobs(10), counts.clone(), never);
+        let started = Instant::now();
+        let done = complete_fill_with(&intake, std::time::Duration::from_millis(200), |_| {
+            panic!("nothing can complete")
+        });
+        assert!(!done, "a stalled fill stops the wait");
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        let joined = Instant::now();
+        drop(workers);
+        assert!(
+            joined.elapsed() < std::time::Duration::from_secs(2),
+            "the join hung"
+        );
+        std::fs::remove_file(path).ok();
+    }
+
+    /// DAY57 census: the demand path and the installer admit through the one function, and no
+    /// other code calls the bank's `admit_filled`.
+    #[test]
+    fn both_fill_admissions_share_one_function() {
+        let src = include_str!("native.rs");
+        let code = &src[..src.find("#[cfg(test)]").expect("the tests")];
+        assert_eq!(
+            code.matches("admit_one_fill(").count(),
+            3,
+            "definition and two callers"
+        );
+        assert_eq!(
+            code.matches(".admit_filled(").count(),
+            1,
+            "only admit_one_fill admits"
+        );
+        let drain = &code[code.find("    fn drain_fill(").unwrap()..];
+        let drain = &drain[..drain.find("\n    }\n").unwrap()];
+        assert!(drain.contains("admit_one_fill(&mut self.inner, fill, done)"));
+        let complete = &code[code.find("    fn complete_fill(").unwrap()..];
+        let complete = &complete[..complete.find("\n    }\n").unwrap()];
+        assert!(complete.contains("admit_one_fill(inner, fill, done)"));
     }
 
     #[test]
