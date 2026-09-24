@@ -10990,7 +10990,7 @@ enum HostContractFault {
     /// complete with its spans.
     PromoteSpanAttach,
     /// WP-A day 38 (`DAY38.md` design G, the device receipt's red arm): the off-tick demote's first
-    /// KV item's DEVICE source has one byte flipped on the receipt stream after its receipt digest and
+    /// KV item's DEVICE source has one byte flipped on the copy stream after its receipt digest and
     /// before its copy (`CudaTransfers::inject_d2h_source_flip`); the landed bytes then differ from
     /// the receipt and the bind must refuse the image (nothing published, the tier on).
     D2hSourceFlip,
@@ -11597,11 +11597,11 @@ fn host_kv_planes_settle_contract(
         ));
     }
     // WP-A day 38 (`DAY38.md` design G): where hash 1 ran, for the receipt line (log only; the
-    // kernels' receipt-stream time is read without a wait, the batch has landed).
+    // kernels' copy-stream time is read without a wait, the batch has landed).
     let receipt_place = if t.d2h_receipts_on_device() {
         match t.d2h_receipt_gpu_ms(&ticket) {
-            Some(ms) => format!("; receipts on the receipt stream (source digests, {ms:.2}ms)"),
-            None => "; receipts on the receipt stream (source digests)".to_string(),
+            Some(ms) => format!("; receipts on the copy stream (source digests, {ms:.2}ms)"),
+            None => "; receipts on the copy stream (source digests)".to_string(),
         }
     } else {
         String::new()
@@ -16490,7 +16490,7 @@ fn host_capture_submit(
     };
     eprintln!(
         "[prefix-cache] capture submitted off the tick ({why}): {} tokens, {items} planes \
-         ({:.1}MB) on the contracts door's receipt stream; {recurrent_note}{draft_note}",
+         ({:.1}MB) on the contracts door's copy stream; {recurrent_note}{draft_note}",
         toks.len(),
         bytes as f64 / 1e6,
     );
@@ -17990,7 +17990,7 @@ fn host_restore_park_probe(
             // WP-A day 36 (log only): the recurrent copy's host time, at the line's end.
             eprintln!(
                 "[prefix-cache] restore submitted off the tick: {toks_len} tokens, {items} planes \
-                 ({:.1}MB), ticket seq={seq} on the contracts door's receipt stream; recurrent state \
+                 ({:.1}MB), ticket seq={seq} on the contracts door's copy stream; recurrent state \
                  copied on the owner stream; request parked{draft_note}; recurrent copy {:.2}ms host",
                 bytes as f64 / 1e6,
                 recur.host_ms,
@@ -48501,7 +48501,7 @@ mod tests {
         assert!(route.find("let fault = tier.take_fault(true);").unwrap() < armed);
         let at = body.find("fn host_kv_planes_settle_contract(").unwrap();
         let settle = &body[at..at + body[at..].find("\n}\n").unwrap()];
-        assert!(settle.contains("; receipts on the receipt stream (source digests"));
+        assert!(settle.contains("; receipts on the copy stream (source digests"));
         assert!(settle.contains("retired acknowledged{}{receipt_place}"));
     }
 

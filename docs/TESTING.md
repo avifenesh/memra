@@ -2056,8 +2056,8 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   clean arm's receipts are the checksums of the lease bytes; a byte changed after hash 1 is refused at the bind,
   nothing published). The failure gate's `digest` cell's bind line is the helper's re-hash seeing the flipped byte.
 - The demote's D2H receipt on the device and the copy-phase park (WP-A day 38, `research/spill-a-20260919/DAY38.md`
-  designs G' and P, `memra_tier::conformance::d2h_device_receipt_lands_with_the_source_digest`): under the door the
-  receipt stream digests every D2H item's DEVICE source with the receipt program (`d2h_receipt_sha256`) beside its copy, the
+  designs G4 and P, `memra_tier::conformance::d2h_device_receipt_lands_with_the_source_digest`): under the door the
+  copy stream digests every D2H item's DEVICE source with the receipt program (`d2h_receipt_sha256`) ahead of its copy, the
   item lands with that digest (hash 1 leaves the owner thread), and the bind's re-hash of the landed bytes witnesses
   landed equal to source; a hit on a `Demoting` entry parks in either phase. CPU binding `d2h_device_receipt_bindings`
   (with its red arm: an item that lands on its copy alone); engine census `d2h_device_receipt_rules_are_as_stated` and
@@ -2067,10 +2067,11 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   r4 byte-equal to door OFF) and `copy-phase-hit` cell (`MEMRA_KV_HOST_FAULT=d2h-delay`, a host-side 3 s hold of the
   demote's landing since design G''': one copy-phase park, the publication, a promote instead of a cold prime, r1 to r4
   byte-equal to door OFF); the day-29 park test extended to the copy phase
-  (`hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not`). Design G''' (DAY38 section 14): every engine kernel
-  on the receipt stream (the D2H receipt and the D2D classes whole), the copy stream DMA and host functions only; engine
-  census `one_kernel_stream_beside_the_owner`, the tenant's decode hump cell `day38-hump-reading.py` (sections 13e to
-  13k: two non-owner streams running kernels moved every later owner kernel boundary).
+  (`hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not`). Design G4 (DAY38 section 17): every piece of side
+  work on ONE stream beside the owner's, the copy stream (the D2H receipt ahead of the copies, the D2D classes, the H2D
+  items, spans and fills); engine census `one_side_stream_beside_the_owner`, the tenant's decode hump cell
+  `day38-hump-reading.py` (sections 13e to 16: a second side stream running kernels moved every later owner kernel
+  boundary, on BOX7 with kernels on both side streams and on the 5090 even with the copy stream kernel-free).
 - Design K's promote-side fail-closed arms (WP-A day 41, `research/spill-a-20260919/DAY41.md`): the fault gate's
   `sources-helper-gone`, `sources-never-land` and `sources-foreign-reply` cells (the hash helper's first `Sources` job
   takes the fault; one typed latch in the arm's own words, no promote publication, the helper joined, r1 to r4

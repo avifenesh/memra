@@ -27,7 +27,7 @@ LEDGER = re.compile(
 RECEIPTS = re.compile(r"demote receipts on the hash helper: ticket seq=\d+, (\d+) KV receipts \(([\d.]+)MB in ([\d.]+)ms\)")
 LEASES = re.compile(r"demote KV leases on the hash helper: ticket seq=\d+, (\d+) lease views \(([\d.]+)MB\)")
 ARMS = ("base", "g")
-KERNEL = re.compile(r"receipts on the receipt stream \(source digests(?:, ([\d.]+)ms)?\)")
+KERNEL = re.compile(r"receipts on the (?:receipt|copy) stream \(source digests(?:, ([\d.]+)ms)?\)")
 
 
 def med(xs):

@@ -8,7 +8,7 @@
 //! it `Corrupt` by construction and `capture_landed` / `restore_landed` proved only that the
 //! completion EVENT fired. The receipt witnesses the bytes: a digest of the SOURCE span taken behind
 //! the producer fence (it reads what the producer finished writing) and a digest of the
-//! DESTINATION taken on the copy's stream after the copy and before the completion event, both read
+//! DESTINATION taken on the copy stream after the copy and before the completion event, both read
 //! by the host only after that event is observed complete. The item's `checksum` is the destination
 //! digest and its expectation is the source digest, so the existing gate clause
 //! (`s.checksum != Some(e.checksum) => Corrupt`) is the comparison, unchanged.
