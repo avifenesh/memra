@@ -181,3 +181,35 @@ the probe's tick and the promote publishes at the second (about 16 ms). F is wor
 brings 1b under its bound there (HK reads +22.1 / +22.3, the day-32 form of BOX3's failure). BOX4 read F flat (DAY34
 section 7). **F is kept**: it wins on the 5090 and is not worse on the target card. The "owed: a decision A/B" mark on
 integ54 is closed by this cell.
+
+## 5. Design M as built (recorded before any M cell runs)
+
+In the pre-registered order: the tier rule (`ec40a3925`), the engine (`d0d2cdd0d`, plus `CudaPinnedLease::read_view`
+in the server commit), the server (this section's commit).
+
+- **M1 (hash 1), as registered.** The off-tick route's last submission step defers the ticket's D2H receipts
+  (`host_d2h_checksums_defer`). The settle's new step 6a hands the landed destinations' views to the helper as a
+  `Receipts` job once every KV copy landed (`d2h_landed_views`, `NotReady` before), takes the reply (`Poll`: hand the
+  ticket back while it is out; `Block`: a bounded wait in the helper's deadline), supplies it, and re-reads the
+  completion before the take-back and `require`. A helper gone, a reply that does not describe the ticket, or the
+  deadline quarantine the source: the engine keeps the destinations (a leak, never a free under a live read). One
+  line per landed demote: `demote receipts on the hash helper: ticket seq=S, N KV receipts (X MB in Y ms)`.
+- **M2 (hash 2), one named departure.** The pre-registration said the KV leases MOVE to the helper (owned, no raw
+  view). They cannot: `CudaPinnedLease` holds an `Rc` and a CUDA event and is not `Send`. As built, the day-34 pattern:
+  after the settle and the `flip-demote` point the KV planes leave the image into a guard (`HostLeasesOnHelper`) that
+  stays on the owner thread, and read views of their contract leases (`CudaPinnedLease::read_view`, an `unsafe fn`
+  whose contract is the guard's) ride the existing `Hashing` job. The guard lands (the planes go back to the image)
+  only when the helper's reply arrives; every other drop (a latch, the deadline, a helper gone, shutdown) leaks the
+  planes. The bind consumes the helper's digest per lease as a precomputed one, its byte count checked, and keeps its
+  own `checksum(bytes)` as the fallback; the receipt comparison and the `flip-demote` naming line are unchanged. One
+  line per hand-off: `demote KV leases on the hash helper: ticket seq=S, N lease views (X MB) for the bind's
+  re-hash`.
+- **The fault gate's `hash-helper-gone` arm keys on the first HASH job.** It exited the helper on its first job of
+  any kind; with M1 a demote's first job is its receipts job, which would move the arm from the `Hashing` phase (its
+  documented red arm, the gate's `hash-helper-gone` cell) to the receipt step. The exit now sits in the hash path, so
+  the cell reads what it read. The receipt step's own helper-gone and deadline arms have no fault-gate cell: named, owed.
+- No new `MEMRA_*` name, no new numeric program. Clauses (a) to (d), the A/B cell and the predictions stand as
+  section 2 wrote them.
+- Checks: tier contracts `102 passed`; engine lib `548 passed`; server lib `886 passed`; clippy `-D warnings` on tier,
+  engine and server, all targets, clean; the GPU-less `DOCS_RS=1 --target x86_64-unknown-linux-gnu` clippy pass
+  `docsrs_rc=0`; `check-flags` clean; `cargo fmt --all -- --check` and `git diff --check` clean.

@@ -53,7 +53,8 @@
 # of the image's heap payloads runs on one long-lived helper thread per tier context; the demote stays `Demoting`
 # (`Hashing`) until the digests land. Two red arms, one boot each, the demote cells' shape (r1 P_A seeds E_A; r2 P_B
 # evicts E_A, whose demote copies, completes, hands its heap payloads to the helper and takes the fault; r3 P_C evicts E_B):
-#   hash-helper-gone   MEMRA_KV_HOST_FAULT=hash-helper-gone: the helper exits on its first job; the next tick-top poll finds
+#   hash-helper-gone   MEMRA_KV_HOST_FAULT=hash-helper-gone: the helper exits on its first hash job (day 35: the demote's
+#                      receipts job before it runs, DAY35 design M); the next tick-top poll finds
 #                      the reply channel closed; typed refusal, nothing published, the tier latches and joins the helper;
 #                      r3's eviction finds the tier off and demotes nothing (no refusal line of its own).
 #   hash-never-lands   MEMRA_KV_HOST_FAULT=hash-never-lands: the helper hashes its first job and discards the reply; r3's

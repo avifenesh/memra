@@ -285,6 +285,51 @@ impl CudaPinnedLease {
         .copy_from_slice(bytes);
         Ok(())
     }
+    /// WP-A day 35 (`DAY35.md` design M2): a read-only view of this lease's bytes for a hashing
+    /// thread off the owner thread (the lease itself is not `Send`: an `Rc` and a CUDA event). The
+    /// pinned slice's tracking event is synchronized first, exactly as `bytes()` does, so the view
+    /// covers settled bytes.
+    ///
+    /// # Safety
+    ///
+    /// The caller keeps this lease (and every clone of it) alive and unwritten until the view is
+    /// dropped; a caller that cannot know the reader is done leaks the lease instead of freeing it.
+    pub unsafe fn read_view(&self) -> Result<PinnedLeaseView> {
+        let b = self.bytes()?;
+        Ok(PinnedLeaseView {
+            ptr: b.as_ptr(),
+            len: b.len(),
+        })
+    }
+}
+/// WP-A day 35 (`DAY35.md` design M2): a read-only view of a taken pinned lease's bytes
+/// (`CudaPinnedLease::read_view`), for the bind's re-hash on the caller's hash helper.
+pub struct PinnedLeaseView {
+    ptr: *const u8,
+    len: usize,
+}
+// SAFETY: read-only; the constructor's contract keeps the bytes alive and unwritten while the view
+// exists, so moving it to another thread moves only that read access.
+unsafe impl Send for PinnedLeaseView {}
+impl PinnedLeaseView {
+    pub fn len(&self) -> usize {
+        self.len
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    /// The same `checksum` program the bind runs, over the same bytes.
+    pub fn digest(&self) -> Digest {
+        // SAFETY: `ptr` spans `len` settled bytes the constructor's caller keeps alive and unwritten.
+        checksum(unsafe { std::slice::from_raw_parts(self.ptr, self.len) })
+    }
+}
+impl std::fmt::Debug for PinnedLeaseView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PinnedLeaseView")
+            .field("len", &self.len)
+            .finish()
+    }
 }
 impl Drop for PinnedAllocation {
     fn drop(&mut self) {
