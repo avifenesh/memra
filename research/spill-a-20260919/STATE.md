@@ -1,7 +1,6 @@
-# WP-A day 35 resumable state
+# WP-A day 36 resumable state
 
-- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. Merged `origin/main` `fa73d0e6c` (integ55, integ56, #706, #708) as `21e082cf3`, no conflict. DAY35 sections 1 and 2 pre-registered `a0f915d8a`; section 7 (M') `e748231e1`.
-- F settled on the 5090: `DAY35 F DECISION -> KEEP` (receipts `cbf52cc16`); integ54 records it.
-- Design M refuted (DAY35 section 6, red receipts `e727b0072`), reverted `6ce8b1aea`.
-- Design M' (hash 2 alone on the helper) `55ae87616`: every clause PASS on the 5090 (DAY35 section 8, receipts `9794558fc`): take-back 8.25 to 0.06 ms, wall -8.15 / -8.40 ms, e2e -7.68 / -8.04 ms, gates ALL GREEN. Integrable.
-- Owed: hash 1 on the owner (no off-thread form that keeps the copy phase at one poll); the fill's speed on slower CPUs; the D2D half; the strong-form receipt. No BOX4 sitting was pre-registered for M'.
+- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. Merged `origin/main` `1d0cf13bc` (#711, integ57, with the guard fix `43d16d73f`) as `e23383796`, no conflict. DAY36 sections 1 (`0c2c62f77`), 3 (`4c2a4b19d`) and 3a (`733075ed1`) pre-registered before their code and boots.
+- The instrument `d4f53945f` (a log-only recurrent copy field on the restore lines). 5090 reading `79f5f6ae0`: host 0.130, owner stream 0.170 ms.
+- BOX5 sitting (DAY36 section 4, receipts in `pro-single-day36/box/`): the price cell `-> CLOSES` (0.290 / 0.190 ms), the D2D half closed with no door; M' (c) and (d) PASS on the card, every gate green. BOX5 released.
+- Integrable: yes. Owed: hash 1 on the owner; the fill on slower CPUs; the strong-form receipt; the darklanes VERDICT line (drafted in DAY36 section 4, handed to the lead).
