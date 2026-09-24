@@ -110,3 +110,30 @@ arm checks that the fix holds on another host and driver; it cannot reproduce th
   is built before its submit, as the argument evaluation did).
 - The same stress protocol, one hold, runs with `--nocapture` so every reading and step line of a passing cell is kept.
   20 runs each arm. No decision in section 1 changes; the decision rule is applied to the step that holds the thread.
+
+## 3. The step-clock hold, as it ran, and the two-thread probe pre-registered (`rtx5090-day37/finding5/steps/`)
+
+- Test binary `4d03dc5ecbe7f3e9..` (`030f0f203`), one hold from 11:50:30Z, `--nocapture`: 40 of 40 runs FAILED (the
+  pair arm 20 of 20, the all arm 20 of 20). The step clock places every delay at ONE call per cell, and that call
+  returns when a 300 ms spin on the context ends. Verbatim examples (`raw/pair-1.log`, `raw/all-1.log`):
+  `HOLD STEPS cell=d2h_span_batch .. delay@0.00+0.03 .. htod-pageable@7.35+294.53 pinned-alloc@301.88+1.74
+  submit-busy@303.63+0.01`; `HOLD STEPS cell=h2d_span_batch .. delay@0.00+0.03 .. device-alloc@9.88+290.75
+  submit@300.64+2.64 ..`; `HOLD STEPS cell=h2d_span_filled_batch .. delay@0.00+135.44 pinned-alloc@135.45+306.03
+  device-alloc@441.48+3.63 ..`. So a pageable host-to-device copy, a stream-ordered device allocation, a pinned host
+  allocation and a kernel launch each held their thread for up to about 300 ms in the parallel runs, and none did in
+  the serial runs the batteries pass.
+- **The probe, pre-registered before it runs** (`day37-hold-probe/`, detached, cudarc 0.19.8 as the engine, nothing of
+  the engine). Holder thread H launches a 300 ms `%globaltimer` spin on its own stream and, 20 ms later, performs one
+  action X: `none`, `free-host` (cuMemFreeHost of a 4 MiB pinned buffer allocated before the spin), `malloc-host`
+  (cuMemHostAlloc 4 MiB), `free-async` (a stream-ordered alloc and free), `stream-sync-own`, `event-sync-own`,
+  `ctx-sync`. Victim thread V, 40 ms after the spin's launch, times one call Y on its own stream: `alloc-zeros`,
+  `malloc-host`, `htod-pageable` (4 MiB), `launch`, `event-query`. Each (X, Y) pair runs 3 times in a two-thread form
+  and a serial form (X then Y on one thread, the spin on a second stream), event tracking on (the cells' context), then
+  the whole matrix again with event tracking off (the engine's context). One bounded 5090 hold, raw output teed.
+- **What the probe decides, stated now.** An X whose two-thread column holds Y for 200 ms or more in all three runs,
+  where the `none` row does not, is a holding action; the serial column says whether the same X holds the calling
+  thread's own later calls. If `none` itself holds Y, the spin alone is the cause and no X is needed. The fix is then
+  chosen by where the holding action sits: in the cells' own fixtures (a synchronizing call that a concurrent cell's
+  timed window cannot survive), or in the engine (a synchronizing call the engine itself makes on the owner thread
+  while copy-stream work is queued, which would hold the owner in production too). The fix's acceptance stays section
+  1's.
