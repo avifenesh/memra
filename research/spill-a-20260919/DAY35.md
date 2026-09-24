@@ -301,3 +301,43 @@ out to `rtx5090-day35/m2/`; the reader `day35m-reading.py` gains an `--m2` mode 
 **Predictions.** `take-back` about 0.1 ms; `copy settle` about 8.4 ms (unchanged); the owner's hold per demote about
 10 ms (base 18.3); the wall 8 to 10 ms longer; the demoting intruder's e2e about 8 ms lower; the gates green, the copy
 phase being what it was.
+
+## 8. Design M' on the 5090, as it ran (`rtx5090-day35/m2/`): every clause passes
+
+- Attempt 1: `hold taken (fd 9)` 04:33:43Z, then `idle wait 1` to `15` with one compute app that is not memra's (pid
+  3337555, `/home/avifenesh/projects/colbert-2/.venv/bin/python`, 1390 MiB, 0 % utilization, another project's process,
+  never signalled), `NOT RUN: the card never went idle under the hold` 04:48:44Z. The lead's rule then: wait outside the
+  lock up to 60 minutes (to 05:49:16Z) and relaunch unchanged; past that, an amendment first. **Branch 1 ran**: `relaunch
+  wrapper: no compute app; relaunching` 05:36:56Z, `hold taken` 05:37:06Z, the idle check passed at once, released
+  05:53:09Z; no compute app at the end (`compute-apps.after.csv`). The branch-2 amendment was drafted and never
+  registered or used. Card telemetry (`card-250ms.csv`, local-time stamps): 3845 samples, 58 to 87 C, 10.0 to 189.7 W.
+- Binaries (`binaries.sha256`): base `07a0360ffbfaf240..`, M' `68c7dd8fa746fef0..` (`55ae87616`), test binaries
+  `fbb8ae36..` (server), `8d23648a..` (engine). 20 boots, all ready, `STALL REPLAY: PASS` 20 of 20.
+
+**The clauses, verbatim** (`reading-day35m2.log`, `run.log`, the gates' logs):
+
+- (c) `DAY35 M2 C take-back N=80 median=0.06 min=0.06 max=0.09 rule N>=20 median<=1.5 max<=3.0 (copy-settle reading:
+  copy-settle N=80 median=8.33 min=8.15 max=9.08) -> PASS` (base `take-back N=80 median=8.25`). **PASS.**
+- (d) `DAY35 M2 D order=o1 wall base=67.75 m=59.60 m-minus-base=-8.15 rule <=+17.0 | e2e base=119.20 m=111.52
+  m-minus-base=-7.68 rule <=+1.0 -> PASS`; `order=o2 wall base=67.95 m=59.55 m-minus-base=-8.40 .. e2e base=119.85
+  m=111.81 m-minus-base=-8.04 .. -> PASS`. **PASS.**
+- (b) identity x4 `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok each), failure ON `KV-HOST-SPILL FAILURE
+  GATE: ALL GREEN` (15 ok), fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (160 ok each), hit OFF and
+  ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 and 68 ok, the day-24 census `capture_submitted=12
+  capture_published=12 restore_submitted=13 restore_landed=13`); unit: door cells `ok. 18 passed`, engine `ok. 5
+  passed`. **PASS.**
+- (a) The failure gate's `digest` cell: `contracts door D2H receipt: Key plane image checksum differs from its D2H
+  receipt as injected (MEMRA_KV_HOST_FAULT=flip-demote)` (the helper's re-hash saw the flipped byte), then at the
+  promote `VERIFY FAILED: promoted digest .. != demote digest ..` and `ok: the promote caught it: VERIFY FAILED, loud
+  and named`; the GPU cell `option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused ... ok`; the
+  fault gate's demote cells in the 160. **PASS.**
+
+**Readings.** The owner's hold per steady demote `owner-held` median 17.98 to 9.55 ms (hash 1 stays: `copy settle`
+8.31 to 8.33); the helper's job 29.95 to 37.90 ms (the lease re-hash inside it, `lease-lines=90`); the wall shorter,
+not longer, because the owner's 8 ms bind hash no longer sits between the reply and the publication; the tenant's
+`tenant-stall` median 41.88 / 42.07 to 42.02 / 42.13 ms (flat: the one owner step it could see, the landing poll's hash
+1, is unchanged). Section 7's predictions held for `take-back`, `copy settle`, the owner's hold and the e2e; the wall
+moved the other way (-8 ms, predicted +8 to +10).
+
+**Integrable: yes.** F (kept, section 4) and M' (sections 7 and 8). Hash 1, the D2H receipt, stays on the owner
+thread: M1 is refuted (section 6) and no off-thread form of it that keeps the copy phase at one poll is known.
