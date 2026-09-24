@@ -8727,7 +8727,7 @@ impl Dsv4Gpu {
         self.validate_full_token_program()?;
         if state.capacity < 512
             || state.capacity > 1024
-            || state.pos >= 512
+            || state.pos >= state.capacity
             || cfg.temperature != 1.0
             || cfg.top_p != 1.0
             || cfg.top_k != 0
@@ -8737,7 +8737,7 @@ impl Dsv4Gpu {
                 .as_ref()
                 .is_none_or(|cs| cs.iter().any(|c| c.c4_host.is_some()))
         {
-            return Err("full-token replay admits only device caches, positions below 512 and vendor-default plain sampling".into());
+            return Err("full-token replay admits only device caches, a 512..=1024 capacity and vendor-default plain sampling".into());
         }
         let _walk_guard = self
             .tp_ep_walk_lock
@@ -10864,7 +10864,7 @@ impl Dsv4Gpu {
             }
             if let Some(pair) = &work.replay
                 && (pair.owner != self as *const Self as usize
-                    || state.pos >= 512
+                    || state.pos >= work.verify.ws[0].replay_limit
                     || tok as usize >= work.verify.ws[1].logits.len()
                     || pair.ar_blocks
                         != [
