@@ -2033,6 +2033,14 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   once with `a batch with a running span has not landed`; the two cells share the primary context and each
   holds its copy stream 300 ms; the serial run was green 3 of 3; the cause is not isolated). Evidence:
   `research/spill-a-20260919/DAY31.md`, `DAY32.md`, `DAY33.md`.
+- The DFlash tail class of the contracts door (lane/spill-c-20260919 day 56, `research/spill-c-20260919/DAY56.md`,
+  the rule of `DAY19.md` Task 3): `tools/kv-host-spill-identity-gate.sh`'s drafter arm (the caller sets
+  `MEMRA_DSPARK_SPEC=1 MEMRA_DSPARK_DRAFT=<export dir> MEMRA_DSPARK_PREFIX_RESTORE=1`) requires the ON boot's
+  `[prefix-cache] DSPARK restore:` line and, door ON, the `contracts door tail bound:` receipt and no `refused
+  (contracts door)` line; door OFF against door ON on the 27B with the DFlash2 drafter. CPU cells (`worker::tests`):
+  `host_tier_entry_class_admits_plain_mtp_draft_and_dflash_tail_and_refuses_glm_and_both_by_name`,
+  `host_tier_tail_program_is_a_pure_function_of_the_drafter_sources`,
+  `host_tier_tail_shape_frames_the_geometry_after_the_v2_blob`, `host_tier_dflash_tail_census`.
 - Verify digest v3 (lane/spill-c-20260919 day 53, `research/spill-c-20260919/DAY53.md`): `MEMRA_KV_HOST_VERIFY`'s
   round-trip digest covers the MTP draft plane, the boundary hidden row, the boundary logits and the DFlash tail
   beside the unchanged v2 trunk digest. `tools/kv-host-spill-failure-gate.sh` cells `digest-draft`,

@@ -695,8 +695,10 @@ attributed by any cell. Both are named as open for the review; nothing is inferr
    and is otherwise equal at steady state, which is what a pricing would weigh. Scoped by ruling 28 (lead,
    integ27): the handoff stays scoped until this review, where the budget question (one pinned budget or two)
    is decided with the door. Unchanged days 22 and 23.
-2. **The DFlash tail slice.** No drafter artifact identity is derivable from a GGUF digest and no gate boots a
-   DFlash drafter on the card; no cell exists. Day 20 (`DAY20.md`, memra#365) bounded the STANDALONE
+2. **The DFlash tail slice.** Code and gate arm landed C day 56 (`DAY56.md`, `OWED.md` C5): the tail class, the
+   tail program from the drafter's byte manifest, `Role::Tail` segments and the receipt line, the identity gate's
+   drafter arm; its RTX 5090 and target-card cells are recorded there when they run. Until day 56: no drafter
+   artifact identity is derivable from a GGUF digest and no gate boots a DFlash drafter on the card; no cell exists. Day 20 (`DAY20.md`, memra#365) bounded the STANDALONE
    whole-prompt tap sink (the prefill tap buffer in `generate_spec_dspark` and `generate_spec_dflash`), a
    prime-time allocation shape; the tail slice is the host tier's image of the draft KV TAIL (`dspark_draft`)
    under the door, whose two blockers day 20 did not touch. Day 20 did record the export directory's byte

@@ -28,7 +28,9 @@ When you add a tool, add its line.
 
 - `kv-host-spill-identity-gate.sh`: cached-vs-fresh byte-identity gate with a host-tier arm
   (demote -> promote -> restore must equal the tier-off cold bytes); `MEMRA_HOSTGATE_TEETH=1`
-  is the forced-tiny `MEMRA_KV_HOST_MB=1` red arm whose verdict must invert.
+  is the forced-tiny `MEMRA_KV_HOST_MB=1` red arm whose verdict must invert; with
+  `MEMRA_DSPARK_SPEC=1` (the drafter arm) it also requires the DFlash tail's restore and, door
+  ON, its `contracts door tail bound:` receipt.
 - `kv-host-spill-failure-gate.sh`: executes the host tier's failure paths loudly (pool-full
   refusal, `MEMRA_KV_HOST_VERIFY` digest mismatch via the `MEMRA_KV_HOST_FAULT=flip-demote`
   door and, since verify digest v3, `flip-demote-{draft,hidden,logits}` for the draft plane and

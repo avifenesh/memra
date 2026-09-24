@@ -14,6 +14,9 @@ use crate::model::GpuTensor;
 use cudarc::driver::CudaSlice;
 use sha2::{Digest, Sha256};
 
+/// `Debug` (lane/spill-c-20260919 day 56): the host tier's contracts door names a DFlash tail's
+/// program with this config's `Debug` form (`host_tier_tail_program` in memra-server).
+#[derive(Debug)]
 pub struct DflashCfg {
     pub hidden: usize,                // 5376
     pub n_head: usize,                // 64

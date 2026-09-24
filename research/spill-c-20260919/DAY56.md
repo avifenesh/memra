@@ -81,3 +81,16 @@ today's source and the cells, before any code. Tree at start: `ef7906504`. The r
   drafter export staged beside the artifacts, its manifest checked).
 
 **What each card decides.** Each card's cells pass or fail on that card.
+
+## 1a. Addendum, with the code and before any cell ran
+
+- **The device prefix budget** is 256 MB, the target card's day-23 identity-gate shape for this 27B
+  (`MEMRA_HOSTGATE_CACHE_MB=256`, a 64-token entry about 160 MB), with the tail's bytes computed rather than read
+  from a dry boot: a DFlash2 tail of about 70 rows of 4,096 B per layer (`n_kv 8 x head_dim 128 x 4`), K and V, five
+  layers, about 2.9 MB. One entry fits and two do not; the gate itself fails with its tuning line if no demote fires.
+- **The drafter** is the local export `config.json` `873e3556...e980` and `model.safetensors` `67fc76d6...b65c`
+  (`DAY20.md`'s manifest), q4 by default, no FR-Spec trim (the trim moves proposals and acceptance, never the draft
+  KV or the emitted tokens); the cell driver records both files' SHA-256.
+- **The reader** (`day56-reading.py`) compares the OFF arm's check lines with the ON arm's minus its door-only lines
+  (the two `door ON` checks of the drafter arm), so "the same verdict lines" is read line for line.
+- Scripts: `day56-cell.sh` (cells `identity-dspark-off`, `identity-dspark-on`).
