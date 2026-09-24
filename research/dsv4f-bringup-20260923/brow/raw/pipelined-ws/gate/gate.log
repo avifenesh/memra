@@ -1,0 +1,52 @@
+START utc=2026-09-24T02:16:06Z cmd=/root/lane/target-brow/release/dsv4_rows_gate /data/dsv4f/nvfp4 /root/box/tape-rebuild.txt 24 64
+[load] plain sampler: Host
+[load] sampled candidate order: Radix
+[load] placement: split_at=22 trunk_layers=43 dspark_tail_reserve=0.00 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: PpEp | layers=43 per-rank-resident=PP-owned
+[load] indexer score: Scalar
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 476.0ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 1 rank copies done t=11s
+[load] layer 7 -> 1 rank copies done t=23s
+[load] layer 11 -> 1 rank copies done t=34s
+[load] layer 15 -> 1 rank copies done t=46s
+[load] layer 19 -> 1 rank copies done t=57s
+[load] layer 23 -> 1 rank copies done t=68s
+[load] layer 27 -> 1 rank copies done t=80s
+[load] layer 31 -> 1 rank copies done t=91s
+[load] layer 35 -> 1 rank copies done t=103s
+[load] layer 39 -> 1 rank copies done t=114s
+[load] layer 42 -> 1 rank copies done t=123s
+[load] drafter: 3 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path off (set MEMRA_DSV4_DRAFTER=dspark); trunk-only
+[load] expert program: matrix (grouped ModelOpt split-plane executor via dsv4_grouped; tensor-core MMA class, the loaded default since 2026-09-11), EP off
+[dsv4-doors] program=loaded door="replay cadence" env=MEMRA_DSV4_REPLAY_CADENCE merged=#374 declared_default=On resolved=NoServingCaller("full-token replay is armed per request by a gate binary only; no serving or eager request arms it, so the cadence choice has no caller") disposition=ReclassifyAsGateInput
+[dsv4-doors] program=loaded door="dense exact-tail transport" env=MEMRA_DSV4_DENSE_EXACT_TAIL merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="dense-fast" env=MEMRA_DSV4_DENSE_FAST merged=#404 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="HC dot split S16" env=MEMRA_DSV4_HC_DOT_SPLIT merged=#418 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+PROTOCOL {"sessions":4,"prompt_tokens":[256, 197, 311, 150],"join_steps":[0, 3, 7, 12],"steps":24,"timing_steps":64,"greedy":true,"compare":"full logits bits per step","source_sha256":"11e4bd80352f4a24504ffdee519b33bbc527b3b9bcfeb531815e5731b190cb8c"}
+[dsv4-prefill-f16g] ENGAGED: t=1 pairs=6 expert_groups=256 max_rows_bound=6 device_routes=true FP8-QAT-mirrored half, split-plane ModelOpt NVFP4
+[moe-sk-form] dev=0 qt=108 sms=188 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=2048 n_active=256 max_m=1530
+WIDTHS [1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 1]
+SESSION 0 len=256 join=0 steps=24 IDENTICAL head=[337, 18598, 2838, 2366, 75374, 2366]
+SESSION 1 len=197 join=3 steps=24 IDENTICAL head=[1706, 337, 65, 2023, 2967, 2366]
+SESSION 2 len=311 join=7 steps=24 IDENTICAL head=[106657, 1200, 12774, 3103, 6849, 2366]
+SESSION 3 len=150 join=12 steps=24 IDENTICAL head=[595, 1387, 17555, 510, 3103, 1706]
+PASS: every row bit-identical to its solo step across join, leave and row moves
+PASS: pipelined groups bit-identical to solo steps
+TIME rep=0 B=1 one_row_ms_per_token=17.612 rows_ms_per_step=17.609 one_row_tok_s=56.78 rows_tok_s=56.79 speedup=1.000
+TIME rep=0 B=2 one_row_ms_per_token=17.599 rows_ms_per_step=25.628 one_row_tok_s=56.82 rows_tok_s=78.04 speedup=1.373
+TIME rep=0 PIPELINED 2x2 ms_per_group_step=18.592 tok_s=107.57 vs_rows4=1.037
+TIME rep=0 B=4 one_row_ms_per_token=17.599 rows_ms_per_step=38.553 one_row_tok_s=56.82 rows_tok_s=103.75 speedup=1.826
+TIME rep=1 B=1 one_row_ms_per_token=17.617 rows_ms_per_step=17.612 one_row_tok_s=56.76 rows_tok_s=56.78 speedup=1.000
+TIME rep=1 B=2 one_row_ms_per_token=17.611 rows_ms_per_step=25.659 one_row_tok_s=56.78 rows_tok_s=77.95 speedup=1.373
+TIME rep=1 PIPELINED 2x2 ms_per_group_step=18.596 tok_s=107.55 vs_rows4=1.038
+TIME rep=1 B=4 one_row_ms_per_token=17.609 rows_ms_per_step=38.597 one_row_tok_s=56.79 rows_tok_s=103.64 speedup=1.825
+GATE_DONE rc=0 utc=2026-09-24T02:19:37Z

@@ -32,6 +32,7 @@
 #include <cstring>
 #include <string>
 #include <utility>
+#include "moe_kq_prims.cuh"
 
 #define QT_IQ4_XS 5
 #define QT_IQ3_S  6
@@ -428,10 +429,6 @@ static __global__ void gather_act_f16_kernel(
 #define SK_BK 32
 #define SK_STRIDE (SK_BK + 8)   // +8 halves de-banks ldmatrix rows; keeps 16B alignment
 
-__device__ __forceinline__ void sk_cp16(void* smem, const void* g){
-    unsigned s = (unsigned)__cvta_generic_to_shared(smem);
-    asm volatile("cp.async.cg.shared.global [%0],[%1],16;" :: "r"(s), "l"(g));
-}
 // ldmatrix x4: a 16x16 half tile from k-contiguous smem rows. Register i = the 8x8 submatrix
 // (rows i&1 ? 8-15 : 0-7, k i&2 ? 8-15 : 0-7) — exactly the m16n8k16 A-operand register order;
 // the same load on the [n][k] W tile yields the B operand as n-blocks {r0,r2} (n 0-7) and
@@ -440,20 +437,6 @@ __device__ __forceinline__ void sk_ldm16x16(unsigned (&r)[4], const __half* base
     const __half* p = base + (threadIdx.x % 16) * stride + (threadIdx.x / 16) * 8;
     asm volatile("ldmatrix.sync.aligned.m8n8.x4.b16 {%0,%1,%2,%3}, [%4];"
         : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3]) : "l"(p));
-}
-// rate-audited 2026-08-06, see research/sm120-empirical-capabilities.md
-//   32.03 cyc/warp-MMA, 77.8 TFLOP/s -- the f32-accumulate throttle: half the 155.2 TFLOP/s the
-//   f16-accumulate form reaches (flash_attn.cu:974). NO equal-math swap: ptxas rejects f16
-//   m16n8k32 and bf16 .block_scale alike (isa_sibling_check.cu), so no deeper-K sibling exists.
-//   f16-accumulate would double the rate but is a NUMERIC change -- and unlike attention's P@V
-//   (bounded, post-softmax, 0<=p<=1), this is a full FFN GEMM whose f32 `c` accumulates over the
-//   whole in_f reduction, where f16 accumulate would overflow/lose mantissa. Verdict:
-//   NOT-APPLICABLE (no equal-math sibling; the accumulator is load-bearing here).
-__device__ __forceinline__ void sk_mma(float (&c)[4], const unsigned (&a)[4], unsigned b0, unsigned b1){
-    asm volatile("mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 "
-        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};"
-        : "+f"(c[0]), "+f"(c[1]), "+f"(c[2]), "+f"(c[3])
-        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
 }
 
 static __global__ void moe_f16g_sk_kernel(
@@ -2009,44 +1992,6 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int 
 
 static std::atomic<unsigned long long> g_moe_kq_m1_stream_dispatches{0};
 
-// Four ModelOpt E2M1 codes -> two f16x2 MMA B registers. x holds c0 (k 2t), c1 (k 2t+1),
-// c2 (k 2t+8), c3 (k 2t+9) in nibbles 0..3; b0 = {c0, c1}, b1 = {c2, c3}. The f16 magnitudes of
-// E2M1 {0, .5, 1, 1.5, 2, 3, 4, 6} all have a zero low byte, so a byte LUT gives the high byte and
-// the code's sign moves to bit 15. A negative-zero code decodes to +0, matching kv[8] = 0.
-__device__ __forceinline__ void kqs_e2m1_f16x4(uint32_t x, uint32_t& b0, uint32_t& b1){
-    const uint32_t mag = x & 0x7777u;
-    const uint32_t nz  = (mag + 0x7777u) & 0x8888u;   // nibble bit 3 set iff magnitude != 0
-    const uint32_t sg  = x & nz;
-    const uint32_t hb  = __byte_perm(0x3E3C3800u, 0x46444240u, mag);
-    b0 = __byte_perm(hb, 0u, 0x1404u) | ((sg << 12) & 0x8000u) | ((sg << 24) & 0x80000000u);
-    b1 = __byte_perm(hb, 0u, 0x3424u) | ((sg << 4) & 0x8000u) | ((sg << 16) & 0x80000000u);
-}
-
-// Clear E4M3FN NaN bytes (|b| == 0x7F) to +0, the value g_e4m3fn_to_float returns for them.
-__device__ __forceinline__ uint32_t kqs_e4m3fn_clear_nan(uint32_t w){
-    const uint32_t nan = ((w & 0x7F7F7F7Fu) + 0x01010101u) & 0x80808080u;
-    return w & ~((nan >> 7) * 0xFFu);
-}
-
-// Two NaN-cleared E4M3FN bytes -> f16x2 (byte 0 -> low half). Exact: every finite E4M3 value is
-// an f16 value.
-__device__ __forceinline__ uint32_t kqs_e4m3x2_f16x2(uint32_t w16){
-    uint32_t d;
-    const unsigned short v = (unsigned short)w16;
-    asm("cvt.rn.f16x2.e4m3x2 %0, %1;" : "=r"(d) : "h"(v));
-    return d;
-}
-
-__device__ __forceinline__ uint32_t kqs_hmul2(uint32_t a, uint32_t b){
-    uint32_t d;
-    asm("mul.rn.f16x2 %0, %1, %2;" : "=r"(d) : "r"(a), "r"(b));
-    return d;
-}
-
-__device__ __forceinline__ void kqs_cp8(void* smem, const void* g){
-    unsigned s = (unsigned)__cvta_generic_to_shared(smem);
-    asm volatile("cp.async.ca.shared.global [%0],[%1],8;" :: "r"(s), "l"(g));
-}
 
 // Exhaustive dequant probe for the component test: out[code * 256 + byte] = f16 bits of the
 // streaming visitor's B value for (scale byte, E2M1 code). The test compares it against
