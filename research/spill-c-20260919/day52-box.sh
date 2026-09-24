@@ -76,4 +76,12 @@ for cell in unit-server failure-default-off failure-plain-off failure-default-on
     echo "c6 $cell rc=$? $(date -u +%FT%TZ)" | tee -a "$R/box-driver.log"
     touch "$R/c6-$cell.done"
 done
+# DAY52 section 5 (OWED C4, DAY54.md): the double-park slice cell, one collector hold, the 27B.
+if [ ! -f "$R/slices.done" ]; then
+    "${cap[@]}" env D40_CELL_SCRIPT="$L/day54-box-cell.sh" D54_MODEL="$ART_OTHER" bash "$L/day40-run-cell.sh" slices 10800
+    echo "slices rc=$? $(date -u +%FT%TZ)" | tee -a "$R/box-driver.log"
+    python3 "$L/day54-slice-reading.py" "$R/slices" > "$R/slices/reading.log" 2>&1
+    echo "slices reader rc=$?" | tee -a "$R/box-driver.log"
+    touch "$R/slices.done"
+fi
 echo "box done $(date -u +%FT%TZ)" | tee -a "$R/box-driver.log"

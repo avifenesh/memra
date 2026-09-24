@@ -138,3 +138,11 @@ Acceptance is `DAY53.md` sections 1 and 1a on this card. The box builds one more
 `memra-server` of the verify digest v3 tree, `256c3c640` or the later commit named when the 5090 cells are read),
 and the sitting grows by about 30 minutes (six boots of the 27B per failure run, two per identity run, one test
 build), about 5 hours in all.
+
+## 5. Added before the sitting ran: the double-park slice cell (`OWED.md` C4, `DAY54.md`)
+
+After section 4, the driver runs `DAY54.md`'s cell `slices` in its own collector hold (timeout 3 h, about 85
+minutes expected, the 27B): eight `memra-server` binaries built as labels `srv-e0=0713c1a79 srv-s1=ff64e7f5d
+srv-s2=da1f59bf6 srv-s3=226abab0e srv-s4=5df11152f srv-s5=58b814abe srv-s6=f661406e4 srv-s7=269ef2cec` (named
+`memra-server-e0` to `-s7`; the build list grows by about 40 minutes, `e0` the farthest back). Reader
+`day54-slice-reading.py`. The sitting is then about 7 hours in all.
