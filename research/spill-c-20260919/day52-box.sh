@@ -64,6 +64,7 @@ moe_cell() { # $1 cell  $2 script  $3 timeout
     case $cell in
         attrib) python3 "$L/day40-attrib.py" "$R/$cell" --rig pro-single ;;
         ladder) python3 "$L/day52-views.py" "$R/$cell" --rig pro-single ;;
+        ladder-b) python3 "$L/day52-views.py" "$R/$cell" --rig pro-single --days 44,45 ;;
         residfix) python3 "$L/day43-fix.py" "$R/$cell" --rig pro-single ;;
         *) python3 "$L/day51-decide.py" "$cell" "$R/$cell" --rig pro-single ;;
     esac > "$R/$cell/reading.log" 2>&1
@@ -74,6 +75,7 @@ moe_cell() { # $1 cell  $2 script  $3 timeout
 # then DAY51's three cells, which need `final` built.
 moe_cell attrib day40-cell.sh 7200
 moe_cell ladder day52-cell.sh 14400
+moe_cell ladder-b day52-cell.sh 5400
 # DAY52 section 4 (OWED C6, DAY53.md): the host-tier failure and identity gates on the verify digest v3 server,
 # the 27B, device prefix budget 256 MB (day 23's target-card shape), each gate taking /tmp/memra-gpu.lock itself.
 for cell in unit-server failure-default-off failure-plain-off failure-default-on identity-default-off identity-default-on; do

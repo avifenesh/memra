@@ -4,7 +4,7 @@ on the target card's ladder cell. For every day 43 to 50 this builds a view dire
 (symlinks to the ladder's run logs and exit files under that day's arm names, and the ladder's marks for those runs
 renamed the same way), runs the day's reader on it with --rig, and writes its output beside the ladder.
 
-usage: day52-views.py <ladder-cell-dir> [--rig NAME]
+usage: day52-views.py <ladder-cell-dir> [--rig NAME] [--days 44,45]
 """
 import os
 import subprocess
@@ -53,7 +53,11 @@ def main():
     out = ladder / "views"
     out.mkdir(exist_ok=True)
     worst = 0
+    # DAY52 section 10: `--days 44,45` reads only those views (the ladder-b cell).
+    days = set(int(d) for d in sys.argv[sys.argv.index("--days") + 1].split(",")) if "--days" in sys.argv else None
     for day, (reader, arms) in VIEWS.items():
+        if days is not None and day not in days:
+            continue
         with tempfile.TemporaryDirectory(prefix=f"day52-view{day}-") as tmp:
             view_ev = Path(tmp) / "ev"
             view_ev.mkdir()

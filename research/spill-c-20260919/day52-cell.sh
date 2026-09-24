@@ -44,8 +44,10 @@ run_gen() { # $1 label  $2.. argv (env words first)
     return 0
 }
 case $cell in
-ladder)
+ladder|ladder-b)
     arms=(off base i6d i6g i9g fill i1 i2 i8 i5 i7 i4 i10)
+    # DAY52 section 10: `ladder-b` re-runs the arms days 44 and 45 read (the first ladder's i9g arm never ran).
+    [ "$cell" = ladder-b ] && arms=(off i6g i9g fill)
     bins=()
     for b in run-gen run-gen-i6 run-gen-i9 run-gen-fill run-gen-i1 run-gen-i2 run-gen-i8 run-gen-i5 run-gen-i7 run-gen-i4 run-gen-i10; do
         [ -x "$D40_BINS/$b" ] || { echo "missing binary $b"; exit 2; }
@@ -61,13 +63,14 @@ ladder)
             base) bin=$D40_BINS/run-gen; door=(--experts-via-tier --expert-bank-stages) ;;
             i6d) bin=$D40_BINS/run-gen-i6; door=(--experts-via-tier --expert-bank-stages) ;;
             i6g) bin=$D40_BINS/run-gen-i6 ;;
+            i9g) bin=$D40_BINS/run-gen-i9 ;;
             *) bin=$D40_BINS/run-gen-$1 ;;
         esac
         run_gen "$2" env MEMRA_MOE_RESIDENT=0 MEMRA_NGEN=32 MEMRA_MOE_SLOTS=9986 "$bin" "$D40_ART" 55 88 13 "${door[@]}"
     }
     for i in 1 2 3 4 5; do for a in "${arms[@]}"; do arm "$a" "o1-$a-r$i"; done; done
     for i in 1 2 3 4 5; do for ((k = ${#arms[@]} - 1; k >= 0; k--)); do a=${arms[$k]}; arm "$a" "o2-$a-r$i"; done; done
-    echo "ladder cell done: $(cat "$EV"/*.exit | sort | uniq -c | tr '\n' ' ')"
+    echo "$cell cell done: $(cat "$EV"/*.exit | sort | uniq -c | tr '\n' ' ')"
     ;;
 *) echo "unknown cell $cell"; exit 2;;
 esac

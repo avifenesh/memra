@@ -185,3 +185,12 @@ no_regression=FAIL budget=resid_budget_flat`), and `DAY43.md` section 4 register
 tree after every rung. The target card runs it in the final phase, first, with `day43-fix-cell.sh` and reader
 `day43-fix.py` (binaries `run-gen` and `run-gen-i10` from the build list; about 20 minutes). The box pulls the lane
 tip before the final phase so the driver carries this block (the first phase was already running on `f9f5f3953`).
+
+## 10. Added after the ladder ran, before any rerun: the `i9g` arm never ran; cell `ladder-b`
+
+The ladder's ten `i9g` runs exited 127 (`env: '/root/spill-receipts/c-day52/bins/run-gen-i9g': No such file or
+directory`): `day52-cell.sh` mapped `i6g` to `run-gen-i6` but let `i9g` fall to `run-gen-$1`. So the day-44 and
+day-45 views have no `i9g` runs and their readers stop (`KeyError: 'physical_reads'`); every other view reads the
+ladder as registered. Fixed (`i9g` maps to `run-gen-i9`), and a cell `ladder-b` runs the arms those two days read,
+`off i6g i9g fill`, in the ladder's pattern (order 1 top to bottom x 5, order 2 reversed x 5, 40 runs, one hold),
+read by `day52-views.py --days 44,45`. The first ladder's receipts stay as they are.
