@@ -232,3 +232,37 @@ sitting's shape goes to the lead when the ladder's 5090 rungs are in).
 
 `33d6f5cef` (`OWED.md`), `a47d950d4` (this file's sections 0 to 4, before any code), `08210a291` (the instrument, the
 cell, runner and reader), the runner's wait-bounds commit, and the receipts commit that carries this section.
+
+## 7. The target card (DAY52 sitting, rung 0; receipts `pro-single-day52/attrib/`)
+
+One RTX PRO 6000 Blackwell Workstation Edition (600 W), one collector hold 22:10:30Z to 22:35:55Z, 30 runs, the
+day-40 tree `08210a291` built on the box (`run-gen` `550baa4b...`; a box build of the commit gets its own SHA-256),
+the runner pinned to 12 cores by `taskset` (the box has no systemd scope). Regime over the hold (the collector's
+250 ms CSV, N=6057): SM 172 to 2872 MHz, power 15.8 to 202.3 W, 34 to 44 C. Collector `--validate` rc=0.
+
+Verbatim (`attrib/reading.log`):
+
+`DAY40 ATTRIB CHECKS rig=pro-single runs=30 integrity=ok`
+
+`DAY40 R1 door_ms_per_token gen: pooled=36.56 o1=36.59 o2=36.50 | window: pooled=17.09 o1=17.12 o2=17.06 | medians gen off=0.310 on=1.480 ons=1.500 window off=0.251 on=0.798 ons=0.807 (N=10 per arm)`
+
+`DAY40 R2 per_token_ms validate=0.452 demand=15.129 reserve=0.014 enqueue=0.951 copy_gpu=2.075 drain=1.344 sync2=0.018 finish=0.275 miss_total=18.178 inner_demand=14.630 trace=0.415 pread=2.551 stage=1.270 alloc=0.715 step=4.032 verify=9.030 publish=0.229 retire=0.103 collect=0.141 (N=10 ONS runs)`
+
+`DAY40 R2 per_token_counts admits=471.0 gpu_hits=378.7 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3 stages=92.3 steps=92.3 verified=92.3 copy_events=92.3 event_errors=0.0`
+
+`DAY40 R2 serial_rank demand=15.129 > drain=1.344 > enqueue=0.951 > validate=0.452 > finish=0.275 > sync2=0.018 > reserve=0.014`
+
+`DAY40 R3 serial_ms_per_token=18.183 window_door_ms_per_token=17.094 coverage=1.064 miss_total=18.178 miss_parts_excl_validate=17.731 residual=0.447`
+
+`DAY40 R4 demand=15.129 = inner_demand 14.630 + trace 0.415 + other 0.084; inner_demand: stage 1.270 (alloc 0.715) step 4.032 (pread 2.551) verify 9.030 publish 0.229; finish=0.275: retire 0.103 collect 0.141`
+
+`DAY40 R5 instrument_ms_per_token=0.281 bound=0.855 (min of 5% of 17.094 and 2.0) -> within_bound`
+
+`DAY40 R6 install_s ONS sha=4.63 catalog=0.00 records=56.63 setup=0.12 | ON install_s=61.37 (installed minus q8rp line, N=10)`
+
+`DAY40 ATTRIB rig=pro-single integrity=ok window_door_ms_per_token=17.09 serial_ms_per_token=18.18 instrument=within_bound top=demand`
+
+Read as registered: on this card too the door's window cost is the demand (15.1 of 17.1 ms per token), inside it the
+per-record SHA-256 verify (9.0), the read step (4.0) and the stage (1.3); the drain 1.3. The same rank as the RTX
+5090's (section 5). Day 18's 60.47 ms per decode token on this card class was a different reading (gen-only on the
+day-18 tree); the gen door cost today reads 36.6 ms per token.
