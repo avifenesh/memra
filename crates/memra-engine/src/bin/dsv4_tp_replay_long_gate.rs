@@ -1,8 +1,9 @@
 //! TP/EP full-token replay past the old 512-position arming cap (memra #710).
 //!
-//! One eager prefix to position 400 is restored into two states. State E decodes the sampled
-//! continuation through the eager full-token program; state R decodes the same tokens through
-//! the armed per-rank replay graphs. Every step must give the same sampled token, the same
+//! One eager prefix to position 400 is restored into two states. State E steps and samples the
+//! continuation through the unarmed TP/EP program (`decode_step_device_logits` and
+//! `sample_device_logits`); state R decodes through the armed per-rank replay graphs, which
+//! step and sample in one call. Every step must give the same sampled token, the same
 //! logits bits and the same TP/EP cache and hidden digests, and every R step must be a replay
 //! (the per-variant counters advance by the step count). The run covers positions 400 to
 //! 400 + steps, so it crosses 512 and the C4 and C128 emission cadences.
@@ -135,15 +136,20 @@ fn main() {
         .full_token_replay_variant_counts_for_gate(&replay)
         .expect("counts");
 
+    // The eager arm steps and samples through the unarmed TP/EP program; the draw is keyed on
+    // (seed, position), so equal logits bits give the replay's token.
+    let mut eager_sampler = gpu.device_sampler().expect("eager sampler");
     let (mut te, mut tr) = (first, first);
     let mut tokens = Vec::with_capacity(steps);
     let mut first_bad = None;
     for step in 0..steps {
         let pos = eager.pos;
         tokens.push(te);
-        te = gpu
-            .decode_sample_full_token_for_gate(te, &mut eager)
+        gpu.decode_step_device_logits(te, &mut eager)
             .expect("eager step");
+        te = gpu
+            .sample_device_logits(&eager, &mut eager_sampler, &cfg, &[], None)
+            .expect("eager sample");
         tr = gpu
             .decode_sample_full_token_for_gate(tr, &mut replay)
             .expect("replay step");
