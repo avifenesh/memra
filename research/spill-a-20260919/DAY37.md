@@ -271,3 +271,32 @@ arm checks that the fix holds on another host and driver; it cannot reproduce th
 - **Acceptance: section 1's, unchanged**, plus nothing: the `all` arm 100 of 100, the `pair` arm 100 of 100, serial
   green, the red arm (the hold removed from the two finding-5 cells in a scratch build fails both rule-2 assertions),
   the target card's `all` arm 20 of 20.
+
+## 9. The pool fix, as it ran: acceptance met on the 5090 (`rtx5090-day37/finding5/pool/`, `red/`, `server-reading/`)
+
+- The fix `ba5da705d` (test code only; `tier_transfer.rs`'s tests module: `NATIVE_CELLS`, the pool,
+  `cell_context()`, `native_fixture_on`, the census). Test binary hash in `pool/binary.sha256`; one hold 12:23Z to
+  12:33:07Z, no compute app at either end. Verbatim (`pool/run.log`): **pair 100 green of 100**, **all 100 green of
+  100** (`test result: ok. 11 passed` each), **serial 3 green of 3**.
+- **The red arm** (`red/`, the scratch patch `red-arm.patch`: the two `delay_on` lines deleted from the finding-5
+  cells, built, run once in parallel, the tree restored before anything else): `test result: FAILED. 0 passed; 2
+  failed`, both at rule 2: `a batch with a running span has not landed (HOLD READING cell=d2h_span_batch
+  first_item_seen_ms=14.89 polls=1 .. batch_landed_at_first_sight=true)` and the same for `h2d_span_batch` at 10.37 ms.
+  The checks keep their teeth.
+- **The server reading** (section 5's, not a clause; `server-reading/`): the 18 `option_b_` and `option_c_` door cells
+  in parallel at the default thread count, 10 runs, `test result: ok. 18 passed` 10 of 10. They build on
+  `Engine::new(0)` (the primary context) but hold no timed window, so the class does not reach them; no change there.
+- **Checks on the fix's tree**: engine lib `test result: ok. 547 passed; 0 failed; 40 ignored` (the census among
+  them); clippy `-D warnings` on memra-engine, all targets, clean; the GPU-less `DOCS_RS=1 --target
+  x86_64-unknown-linux-gnu` pass `docsrs_rc=0`; `cargo fmt --all -- --check` clean; `check-flags` clean; no new
+  `MEMRA_*` name. `docs/TESTING.md`'s span-cell row says the cause and the fix (it said "the cause is not isolated").
+- **Verdict line**: `DAY37 FINDING5 cause=cuMemFreeHost/cuMemFree/module-load hold every other owner thread of one
+  context (same context only; across contexts only context create/destroy) fix=one pool context per native cell,
+  created before any cell body, never destroyed in-process pair=100/100 all=100/100 serial=3/3 red-arm=FAIL as
+  required -> 5090 PASS; target card all-arm 20/20 owed`.
+- What the finding says about the serving engine: nothing wrong in the code under test. The serving process runs one
+  owner thread per context, so the cross-thread hold does not arise; a pinned free, a synchronous free or a module
+  load on the owner thread still waits for its context's queued work (the copy stream's included), which is the
+  single-owner form of the same fact.
+- **Owed**: the target card's `all` arm, 20 of 20, in the next sitting's unit cells (its script ships with that
+  sitting). `OWED.md` item 1 reads `5090 done, target owed`.

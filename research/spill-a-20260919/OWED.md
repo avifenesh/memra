@@ -20,9 +20,11 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 
 - Source: `DAY32.md` section 6 finding 5 (`rtx5090-day32/unit/engine-span-cells-parallel.log`); integ52 lead review
   ("A's finding 5 is owed, not waived"); ruling 47. Quoted failure: `a batch with a running span has not landed`.
-- Acceptance: none registered. To be pre-registered in its DAY file: the cause named in code, the defect fixed in the
-  engine or the cell's fixture state (not the harness's thread count), and the cells green in parallel.
-- Status: open.
+- Acceptance: DAY37 section 1 (the all and pair arms 100 of 100 in parallel, serial green, the red arm, the target
+  card's all arm 20 of 20).
+- Status: 5090 done, target owed (DAY37 sections 2 to 9: the cause placed at same-context `cuMemFreeHost`,
+  synchronous `cuMemFree` and module load by a two-thread probe; the fix `ba5da705d`, one pool context per native
+  cell; pair 100/100, all 100/100, serial 3/3, the red arm failing as required).
 
 ### 2. Hash 1 (the demote's D2H receipt digest) off the owner thread
 

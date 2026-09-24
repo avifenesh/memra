@@ -2002,10 +2002,14 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `option_c_spans_ride_the_promote_ticket_and_land_bitwise` (the promoted planes read bitwise equal to the
   resident bytes) and `option_c_span_postpublish_refusal_returns_the_staging_to_the_set`; engine cells
   `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream`, `h2d_span_batch_lands_with_its_ticket_on_the_copy_stream`
-  and (day 33) `h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies` (run with `--test-threads=1`: run in parallel in one process on the local RTX 5090 the H2D cell failed
-  once with `a batch with a running span has not landed`; the two cells share the primary context and each
-  holds its copy stream 300 ms; the serial run was green 3 of 3; the cause is not isolated). Evidence:
-  `research/spill-a-20260919/DAY31.md`, `DAY32.md`, `DAY33.md`.
+  and (day 33) `h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies`. Since WP-A day 37 every native
+  cell of `tier_transfer.rs` takes its own non-primary context from a process-lifetime pool (`cell_context()`,
+  census `native_cells_own_their_context`), so the cells run in parallel in one process: on the shared primary
+  context a pinned free, a synchronous device free or a module load on one cell's thread held every other cell's
+  driver calls until the context drained, and a cell whose first poll came after its own 300 ms hold failed
+  `a batch with a running span has not landed` (reproduced 17 of 20 and 20 of 20 runs; fixed 100 of 100 in
+  parallel, the red arm failing both rule-2 checks). Evidence: `research/spill-a-20260919/DAY31.md`, `DAY32.md`,
+  `DAY33.md`, `DAY37.md`.
 - The promote's KV completion checksums on the hash helper (WP-A day 34, `research/spill-a-20260919/DAY34.md`,
   `memra_tier::conformance::h2d_deferred_checksum_lands_with_its_digests`): under the door the off-tick promote
   defers its H2D items' checksums (`CudaTransfers::defer_h2d_checksums`), the helper digests each item's host
