@@ -115,7 +115,8 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   24 (2,359,296 B), ssm 24 (50,331,648 B), hidden 1 (0 B), logits 1 (993,280 B), the draft-bearing lines hidden
   16,384 B (`research/spill-a-20260919/DAY31.md` 1d table).
 - **Work.** The reconciliation against day 38's registered bounds, arithmetic on the banked lines; no new cell.
-- **Status.** Open until that reading is written (one section of a day file).
+- **Status.** CLOSED day 41 (`DAY41.md`): `DAY41 9B SPLIT plain_tuples=1 -> PASS` over 1,120 banked lines; conv
+  2,359,296 B, ssm 50,331,648 B, hidden 0 B (plain) or 16,384 B (draft-bearing), logits 993,280 B.
 
 ## Closed items this ledger records
 

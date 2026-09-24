@@ -32,3 +32,33 @@ arithmetic and no bound (day 38 registered bounds for the plain class only).
 
 **Decision.** PASS closes C9 in `OWED.md` with the split stated as bytes and shares. FAIL keeps C9 open with the
 failing clause quoted, and the reading goes to lane A (the line is A's).
+
+## 2. The reading
+
+Command: `python3 research/spill-c-20260919/day41-9b-split.py research/spill-a-20260919/rtx5090-day3{1..6}` into
+`day41-cpu/split.log` (`# exit=0`). Input: 1,120 copy-complete lines with 50 heap payloads in 216 of lane A's banked
+RTX 5090 logs (days 31 to 36), two distinct tuples. Verbatim:
+
+- `DAY41 9B TUPLE class=plain lines=983 conv=24x98304=2359296 ssm=24x2097152=50331648 hidden=0 logits=993280 (248320
+  f32) heap=53684224 (line 53.7MB) conv+ssm+hidden=52690944 entry=kv+tokens+heap=54634752 | shares of entry: kv 1.739%
+  conv 4.318% ssm 92.124% hidden 0.000% logits 1.818% | heap_rounds_to_line=ok slots=ok recurrent_hidden_bound=ok
+  logits_bound=ok heap_bound=ok entry_bound=ok`
+- `DAY41 9B TUPLE class=draft-bearing lines=137 conv=24x98304=2359296 ssm=24x2097152=50331648 hidden=16384
+  logits=993280 (248320 f32) heap=53700608 (line 53.7MB) conv+ssm+hidden=52707328 entry not computed (KV with the draft
+  plane is not on this line) | shares of heap: conv 4.393% ssm 93.726% hidden 0.031% logits 1.850% |
+  heap_rounds_to_line=ok slots=ok`
+- `DAY41 9B SPLIT plain_tuples=1 -> PASS`
+
+One reader fix, stated: the first run printed an `entry` and shares of entry for the draft-bearing tuple using the
+plain class's KV figure, which is wrong for that class (its KV carries the draft plane, day 38 section 3). The print was
+changed to shares of heap for that class; no clause and no bound involves it, and the plain tuple's line and the
+verdict were the same in both runs.
+
+**The split (the 9B plain 64-token entry, 54,634,752 B).** KV planes 950,272 B (1.739%), token ids 256 B, conv 24 slots
+of 98,304 B = 2,359,296 B (4.318%), ssm 24 slots of 2,097,152 B = 50,331,648 B (92.124%), the hidden row 0 B (a plain
+entry has no `last_h`), logits 993,280 B = 248,320 f32 (1.818%). Every figure is inside day 38's registered bounds.
+The draft-bearing class carries the same conv, ssm and logits and a 16,384 B hidden row (4,096 f32). Outside the rule,
+one observation: the logits row is 248,320 f32 while day 38's `loaded` lines print 248046; the difference (274) is not
+explained by any banked line and is recorded, not read into.
+
+**Decision, as registered.** PASS: C9 closes in `OWED.md`.
