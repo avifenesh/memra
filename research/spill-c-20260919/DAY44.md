@@ -66,3 +66,32 @@ three in the ladder sitting (its pinned copy is cached memory there, so (ii) is 
   prints `loaded ...` after the installer, so that line counts the install as load. The reader takes the load's end
   at the `[q8rp] split-plane decode mirrors built` line (the last line of the load, before the installer), stated
   here before any I9 cell ran.
+
+## 3. Results, cell `mapped` (RTX 5090 Laptop GPU, `rtx5090-day44/mapped/`)
+
+One collector hold, 22:33:31Z to 22:50:10Z, 30 runs, tree `23daf81ff` (scripts only past the I9 code), binaries
+`run-gen-i6` `771ba66b...` and `run-gen-i9` `878aa1ff...`, the approved artifact, the runner under the 1200% cap.
+Regime (`regime.log`, 250 ms, N=3970): SM 172 to 2782 MHz, power 9.3 to 145.7 W, 54 to 77 C. Collector `--validate`
+rc=0.
+
+Verbatim (`mapped/reading.log`):
+
+`DAY44 MAPPED CHECKS rig=rtx5090 runs=30 integrity=ok`
+
+`DAY44 CLAUSE census i9 mmap=120 (15219032064 bytes) pinned=0 (0) paged=0 (0) rule pinned=0 paged=0 mmap>0 on every i9 run -> PASS`
+
+`DAY44 ARM i6 window_door_ms_per_token pooled=21.97 o1=21.59 o2=21.97 window_s median=1.034 iqr=0.017 install_s median=60.74 iqr=1.45 loaded_s median=4.98 iqr=0.71`
+
+`DAY44 ARM i9 window_door_ms_per_token pooled=21.86 o1=21.53 o2=22.00 window_s median=1.030 iqr=0.018 install_s median=9.84 iqr=0.17 loaded_s median=0.73 iqr=0.04`
+
+`DAY44 CLAUSE (i) no_regression i9_minus_i6 window pooled=-0.004 o1=-0.002 o2=+0.001 noise=0.018 rule <=noise pooled and both orders -> PASS`
+
+`DAY44 READING (ii) install i9_minus_i6 o1=-51.71 o2=-50.47 noise=1.45 -> install_falls`
+
+`DAY44 READING (iii) load i9_minus_i6 o1=-4.53 o2=-3.84 noise=0.71 -> load_not_higher`
+
+`DAY44 MAPPED rig=rtx5090 integrity=ok census=PASS no_regression=PASS`
+
+I9 stays (clause (i) holds). The banks load as 120 views of the artifact's mapping (15,219,032,064 bytes, no pinned
+copy), the load falls 4.98 to 0.73 s and the install 60.74 to 9.84 s: the record pass now compares against
+page-cache bytes instead of write-combined pinned memory, as registered.
