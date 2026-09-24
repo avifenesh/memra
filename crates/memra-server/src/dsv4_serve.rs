@@ -1328,8 +1328,16 @@ struct CoalesceState<S> {
     /// Lanes inside a coalesced decode loop; a batch is full when every one has deposited.
     members: usize,
     next: u64,
-    waiting: Vec<(u64, u32, Lent<S>)>,
-    done: std::collections::HashMap<u64, Result<u32, String>>,
+    waiting: Vec<(u64, u32, bool, Lent<S>)>,
+    done: std::collections::HashMap<u64, Result<RowOut, String>>,
+}
+
+/// One row's result: its next token (the device argmax for a greedy row) and, when the row
+/// asked for it, its full logits row for the host sampler or a penalty.
+#[derive(Clone, Debug, PartialEq)]
+struct RowOut {
+    tok: u32,
+    logits: Option<Vec<f32>>,
 }
 
 /// A lane's `&mut S`, lent to the batch leader for one step.
@@ -1341,8 +1349,10 @@ struct Lent<S>(*mut S);
 // thread, and the launch turn serializes GPU work across lanes.
 unsafe impl<S> Send for Lent<S> {}
 
-/// Runs one batch: the rows' tokens and states in deposit order, returning their next tokens.
-type BatchRun<'r, S> = dyn FnMut(&[u32], &mut [&mut S]) -> Result<Vec<u32>, String> + 'r;
+/// Runs one batch: the rows' tokens, whether each wants its logits, and their states in
+/// deposit order; returns each row's result in the same order.
+type BatchRun<'r, S> =
+    dyn FnMut(&[u32], &[bool], &mut [&mut S]) -> Result<Vec<RowOut>, String> + 'r;
 
 /// How long a partial batch waits for the remaining lanes before it runs anyway.
 const ROW_BATCH_WAIT: std::time::Duration = std::time::Duration::from_micros(500);
@@ -1377,13 +1387,19 @@ impl<S> Coalescer<S> {
         self.cv.notify_all();
     }
 
-    /// Deposit `(tok, state)` and return this row's token. `run` executes one batch of
-    /// `(tok, &mut S)` rows and returns their tokens in order (or one error for all).
-    fn step(&self, tok: u32, state: &mut S, run: &mut BatchRun<'_, S>) -> Result<u32, String> {
+    /// Deposit `(tok, state)` and return this row's result; `logits` asks for the full row.
+    /// `run` executes one batch and returns its rows' results in order (or one error for all).
+    fn step(
+        &self,
+        tok: u32,
+        logits: bool,
+        state: &mut S,
+        run: &mut BatchRun<'_, S>,
+    ) -> Result<RowOut, String> {
         let mut g = self.lock();
         let ticket = g.next;
         g.next += 1;
-        g.waiting.push((ticket, tok, Lent(state as *mut S)));
+        g.waiting.push((ticket, tok, logits, Lent(state as *mut S)));
         let t0 = std::time::Instant::now();
         loop {
             if let Some(result) = g.done.remove(&ticket) {
@@ -1401,7 +1417,7 @@ impl<S> Coalescer<S> {
                     *take.last_mut().expect("bmax >= 1") = mine;
                 }
                 take.sort_unstable();
-                let batch: Vec<(u64, u32, Lent<S>)> = take
+                let batch: Vec<(u64, u32, bool, Lent<S>)> = take
                     .into_iter()
                     .rev()
                     .map(|i| g.waiting.remove(i))
@@ -1411,16 +1427,17 @@ impl<S> Coalescer<S> {
                     .collect();
                 drop(g);
                 let toks: Vec<u32> = batch.iter().map(|d| d.1).collect();
+                let wants: Vec<bool> = batch.iter().map(|d| d.2).collect();
                 // SAFETY: see `Lent`; every lender is blocked on its ticket.
                 let mut states: Vec<&mut S> =
-                    batch.iter().map(|d| unsafe { &mut *d.2.0 }).collect();
-                let out = run(&toks, &mut states);
+                    batch.iter().map(|d| unsafe { &mut *d.3.0 }).collect();
+                let out = run(&toks, &wants, &mut states);
                 drop(states);
                 g = self.lock();
                 match out {
                     Ok(next) if next.len() == batch.len() => {
-                        for (d, t) in batch.iter().zip(next) {
-                            g.done.insert(d.0, Ok(t));
+                        for (d, r) in batch.iter().zip(next) {
+                            g.done.insert(d.0, Ok(r));
                         }
                     }
                     Ok(next) => {
@@ -1493,31 +1510,59 @@ impl Drop for RowMember<'_> {
     }
 }
 
-/// One plain greedy step through the B-row batcher. The lane gives the turn up while its row
-/// waits; the leader takes it for the batch. One row runs the one-row program, which a
-/// one-row B-row step equals bit for bit (`dsv4_rows_gate`).
+/// One plain step through the B-row batcher: the next token, and the full logits row when
+/// `logits` (the host sampler, a penalty). The lane gives the turn up while its row waits; the
+/// leader takes it for the batch. One row runs the one-row program; several run one B-row
+/// step, full-logits only when some row asked for it. A greedy row's token is always the
+/// device argmax, the one-row greedy step's selection, and every row's bits equal its one-row
+/// step (`dsv4_rows_gate`).
 fn rows_step(
     m: &Dsv4Model,
     batcher: &RowBatcher,
     turn: &mut Turn,
     tok: u32,
+    logits: bool,
     state: &mut DecodeState,
-) -> Result<u32, String> {
+) -> Result<RowOut, String> {
     turn.release();
     let lock = turn.lock;
-    let result = batcher.core.step(tok, state, &mut |toks, states| {
-        let mut lead = Turn::take(lock);
-        if let [one] = states {
-            let t = m.gpu.decode_step_greedy(toks[0], one)?;
-            lead.release();
-            return Ok(vec![t]);
-        }
-        let mut ws = batcher.ws.lock().unwrap_or_else(|p| p.into_inner());
-        let out = m.gpu.decode_rows_greedy(toks, states, &mut ws.0);
-        drop(ws);
-        lead.release();
-        out
-    });
+    let result = batcher
+        .core
+        .step(tok, logits, state, &mut |toks, wants, states| {
+            // Dropped at the end of the closure, success or error: the turn goes back either way.
+            let _lead = Turn::take(lock);
+            if let [one] = states {
+                return if wants[0] {
+                    let row = m.gpu.decode_step(toks[0], one)?;
+                    Ok(vec![RowOut {
+                        tok: argmax(&row),
+                        logits: Some(row),
+                    }])
+                } else {
+                    let tok = m.gpu.decode_step_greedy(toks[0], one)?;
+                    Ok(vec![RowOut { tok, logits: None }])
+                };
+            }
+            let mut ws = batcher.ws.lock().unwrap_or_else(|p| p.into_inner());
+            if wants.iter().any(|&w| w) {
+                let (rows, am) = m.gpu.decode_rows_full(toks, states, &mut ws.0)?;
+                Ok(rows
+                    .into_iter()
+                    .zip(am)
+                    .zip(wants)
+                    .map(|((row, tok), &w)| RowOut {
+                        tok,
+                        logits: w.then_some(row),
+                    })
+                    .collect())
+            } else {
+                let am = m.gpu.decode_rows_greedy(toks, states, &mut ws.0)?;
+                Ok(am
+                    .into_iter()
+                    .map(|tok| RowOut { tok, logits: None })
+                    .collect())
+            }
+        });
     turn.acquire();
     result
 }
@@ -2430,8 +2475,9 @@ fn serve_one(
                 argmax(&pre_logits)
             };
             let mut step = 0usize;
-            // Plain greedy rows coalesce across the lanes when the route batches them.
-            let batcher = m.rows.as_deref().filter(|_| pen_cfg.is_none());
+            // Greedy rows coalesce across the lanes when the route batches them; a penalized
+            // row asks for its logits.
+            let batcher = m.rows.as_deref();
             let _member = batcher.map(RowMember::join);
             while emit.push(&[t]) {
                 if pen_cfg.is_some() {
@@ -2443,12 +2489,19 @@ fn serve_one(
                 }
                 t = if let Some(pc) = &pen_cfg {
                     // penalized greedy needs the full row (argmax AFTER penalties)
-                    let mut row =
-                        logits_step(m, turn, t, &mut state).map_err(EngineError::engine)?;
+                    let mut row = match batcher {
+                        Some(b) => rows_step(m, b, turn, t, true, &mut state)
+                            .map_err(EngineError::engine)?
+                            .logits
+                            .ok_or_else(|| EngineError::engine("B-row logits missing"))?,
+                        None => logits_step(m, turn, t, &mut state).map_err(EngineError::engine)?,
+                    };
                     dsv4_penalize_row(&mut row, &window, pc);
                     argmax(&row)
                 } else if let Some(b) = batcher {
-                    rows_step(m, b, turn, t, &mut state).map_err(EngineError::engine)?
+                    rows_step(m, b, turn, t, false, &mut state)
+                        .map_err(EngineError::engine)?
+                        .tok
                 } else {
                     greedy_step(m, turn, t, &mut state).map_err(EngineError::engine)?
                 };
@@ -2482,6 +2535,9 @@ fn serve_one(
             }
             .map_err(EngineError::engine)?;
             let mut step = 0usize;
+            // Host-sampled rows coalesce too; the device sampler keeps its own step.
+            let batcher = m.rows.as_deref().filter(|_| device_sampler.is_none());
+            let _member = batcher.map(RowMember::join);
             while emit.push(&[t]) {
                 if pen_cfg.is_some() {
                     window.push(t);
@@ -2497,8 +2553,13 @@ fn serve_one(
                     m.gpu
                         .sample_device_logits(&state, sampler, &cfg, &window, pen_cfg.as_ref())
                 } else {
-                    let mut row =
-                        logits_step(m, turn, t, &mut state).map_err(EngineError::engine)?;
+                    let mut row = match batcher {
+                        Some(b) => rows_step(m, b, turn, t, true, &mut state)
+                            .map_err(EngineError::engine)?
+                            .logits
+                            .ok_or_else(|| EngineError::engine("B-row logits missing"))?,
+                        None => logits_step(m, turn, t, &mut state).map_err(EngineError::engine)?,
+                    };
                     draw(&mut row, p0 + step, &window)
                 }
                 .map_err(EngineError::engine)?;
@@ -2927,7 +2988,7 @@ mod c4_host_budget_tests {
         steps: usize,
         fail_at: Option<usize>,
     ) -> CoalesceOutcome {
-        use super::Coalescer;
+        use super::{Coalescer, RowOut};
         use std::sync::{Arc, Mutex};
         let core = Arc::new(Coalescer::<u32>::new(bmax));
         let widths = Arc::new(Mutex::new(Vec::new()));
@@ -2942,7 +3003,9 @@ mod c4_host_budget_tests {
                     let mut out = Vec::new();
                     for step in 0..steps {
                         let tok = (lane * 1000 + step) as u32;
-                        out.push(core.step(tok, &mut counter, &mut |toks, states| {
+                        // Odd lanes ask for logits, so batches mix both kinds of row.
+                        let want = lane % 2 == 1;
+                        let r = core.step(tok, want, &mut counter, &mut |toks, wants, states| {
                             let mut w = widths.lock().unwrap();
                             w.push(toks.len());
                             if fail_at == Some(w.len() - 1) {
@@ -2951,8 +3014,20 @@ mod c4_host_budget_tests {
                             for s in states.iter_mut() {
                                 **s += 1;
                             }
-                            Ok(toks.iter().map(|t| t + 7).collect())
-                        }));
+                            Ok(toks
+                                .iter()
+                                .zip(wants)
+                                .map(|(t, &w)| RowOut {
+                                    tok: t + 7,
+                                    logits: w.then(|| vec![*t as f32]),
+                                })
+                                .collect())
+                        });
+                        // Each row gets its own token, and its own logits exactly when it asked.
+                        if let Ok(o) = &r {
+                            assert_eq!(o.logits, want.then(|| vec![tok as f32]));
+                        }
+                        out.push(r.map(|o| o.tok));
                     }
                     core.leave();
                     (out, counter)
@@ -3021,7 +3096,14 @@ mod c4_host_budget_tests {
             std::thread::spawn(move || {
                 let mut c = 0u32;
                 let t0 = std::time::Instant::now();
-                let r = core.step(5, &mut c, &mut |toks, _| Ok(toks.to_vec()));
+                let r = core
+                    .step(5, false, &mut c, &mut |toks, _, _| {
+                        Ok(toks
+                            .iter()
+                            .map(|&tok| super::RowOut { tok, logits: None })
+                            .collect())
+                    })
+                    .map(|o| o.tok);
                 (r, t0.elapsed())
             })
         };
