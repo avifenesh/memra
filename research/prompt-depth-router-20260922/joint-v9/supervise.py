@@ -100,9 +100,11 @@ def pipeline(log):
         "--root", str(RESULTS), "--quality", str(BASE / "heldout-quality.json"),
         "--arms", str(SELECTED / "heldout-arms.json"), "--phase", "heldout",
         "--out", str(BASE / "heldout-score.json"))
+    run(log, "seal", sys.executable, str(SCRIPTS / "seal.py"),
+        "--base", str(BASE), "--out", str(BASE / "sealed-v9"))
     (BASE / "pipeline-complete.json").write_text(json.dumps({
         "status": "complete",
-        "stages": ["training", "fit", "qualification", "validation", "heldout"],
+        "stages": ["training", "fit", "qualification", "validation", "heldout", "seal"],
     }, sort_keys=True) + "\n")
 
 
