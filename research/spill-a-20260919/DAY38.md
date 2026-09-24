@@ -655,3 +655,22 @@ the absence of a call, host work between calls) that grows, and the fix is pre-r
   the kernel's stream the copies it had under X2. Six boots `x1 x25 x2 x2 x25 x1` after diag6 ends, the same cell, reader
   and rule. `x25` flat: the demote stream is the fix candidate, pre-registered as a design with section 3's acceptance
   and a hump clause before its code; `x25` humps: section 13h's copy-stream branch is taken.
+
+## 13j. diag6 whole and x25 (first boot), and one more arm pre-registered before it runs
+
+- diag6 (`diag6-cell rc=0`, 20:20:30Z), verbatim: `HUMP arm=x1 boots=2 median-hump=+0.576 humps=True`, `HUMP arm=x1c
+  boots=2 median-hump=+0.553 humps=True`, `HUMP arm=x2 boots=2 median-hump=+0.028 humps=False`, `HUMP arm=x21 boots=2
+  median-hump=+0.565 humps=True`. Neither the driver's work-queue count nor the stream's priority is the trigger.
+- diag7's first boots: `HUMP boot=b02-x25 base=12.336 hump=+0.577` (the demote stream humps; its copies ran on it,
+  `demote copy complete .. 14.6ms from submission to completion`).
+- **What the arms say together.** A kernel humps on any stream that is not the copy stream, whatever that stream's
+  priority, the queue count, its DMA, its order against the copies, or its sharing of the demote's copies; on the copy
+  stream it does not. The copy stream is the one other stream that already runs kernels (the D2D classes' digest
+  kernels, 1024 in the X1 trace); so the one property left is how many streams besides the owner's run kernels: two
+  under X1, x25 and the rest, one under X2 and x8.
+- **The arm, pre-registered** (`diag8-build.sh`, `diag8.sh`, `diag8-x27.patch`): `x27` = the tip with the D2D classes
+  (capture and restore: their digest kernels and their copies) moved onto the receipt stream beside the D2H receipt, so
+  the receipt stream is the one non-owner stream with kernels and the copy stream runs DMA only. Six boots `x1 x27 x2 x2
+  x27 x1` after diag7 ends, the same cell, reader and rule. `x27` flat: the count of kernel-running streams besides the
+  owner's is the trigger, and the fix is pre-registered on it (one kernel stream beside the owner, the copy stream DMA
+  only); `x27` humps: section 13h's copy-stream branch is taken.
