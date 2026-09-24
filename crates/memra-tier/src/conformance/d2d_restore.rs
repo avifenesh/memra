@@ -8,7 +8,8 @@
 //! The restore class. A whole-entry prefix hit copies a PUBLISHED device entry's KV rows into the
 //! admitted request's FRESH session cache. Neither side is the engine's: the destination is the
 //! session's for its whole life and the source stays in the device LRU, servable to other hits
-//! while the copy reads it. The copies ride the copy stream behind a producer event recorded on
+//! while the copy reads it. The copies ride a side stream (the engine's receipt stream since WP-A
+//! day 38's design G''', its copy stream before) behind a producer event recorded on
 //! the owner stream; the source is held by the device LRU's PIN from submit through acknowledge
 //! (a pinned entry is out of the eviction index by construction), which is the contract's
 //! producer-side guarantee for a borrowed source; the destination's consumer is the owner stream

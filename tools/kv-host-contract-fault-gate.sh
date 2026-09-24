@@ -92,8 +92,8 @@
 #                   re-hash of the landed bytes differs from the receipt: one typed `plane checksum differs from its D2H
 #                   contract receipt` refusal, nothing published, the tier on; r3 P_A primes cold (no host entry) and its
 #                   insert evicts E_B into a clean demote; r4 P_B hits E_B on the host and promotes. r1..r4 byte-equal.
-#   copy-phase-hit  MEMRA_KV_HOST_FAULT=d2h-delay: r1 P_A seeds E_A; r2 P_B evicts E_A, whose demote's receipt waits 3 s
-#                   behind a receipt-stream spin (design G': the copy stream is not delayed); r3 P_A hits the Demoting
+#   copy-phase-hit  MEMRA_KV_HOST_FAULT=d2h-delay: r1 P_A seeds E_A; r2 P_B evicts E_A, whose demote is held unlanded
+#                   3 s on the host (design G''': no stream runs a spin, the D2D classes are not held); r3 P_A hits the Demoting
 #                   entry in its COPY phase and parks (one typed
 #                   line), the copy lands, the digests land, the entry publishes (its ledger names the parked hit), and
 #                   r3 promotes to a device hit instead of priming cold; r4 P_B promotes. r1..r4 byte-equal.

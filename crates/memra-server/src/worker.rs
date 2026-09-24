@@ -10994,10 +10994,10 @@ enum HostContractFault {
     /// before its copy (`CudaTransfers::inject_d2h_source_flip`); the landed bytes then differ from
     /// the receipt and the bind must refuse the image (nothing published, the tier on).
     D2hSourceFlip,
-    /// WP-A day 38 (P's red arm): the off-tick demote's copies wait `D2H_DELAY_FAULT_NS` behind a
-    /// receipt-stream spin ahead of its digest (`CudaTransfers::inject_d2h_delay`, design G'), so a
-    /// request hitting the entry arrives
-    /// in its copy phase and must park until the publication, then promote.
+    /// WP-A day 38 (P's red arm): the off-tick demote is held unlanded for `D2H_DELAY_FAULT_NS` on
+    /// the host (`CudaTransfers::inject_d2h_delay`, a host-side hold since design G''', DAY38
+    /// section 14; no stream runs a spin), so a request hitting the entry arrives in its copy phase
+    /// and must park until the publication, then promote.
     D2hDelay,
 }
 impl HostContractFault {
@@ -11353,10 +11353,9 @@ fn host_kv_planes_submit_contract(
             Some(HostContractFault::D2hDelay) => {
                 t.inject_d2h_delay(memra_engine::tier_transfer::D2H_DELAY_FAULT_NS);
                 eprintln!(
-                    "[prefix-host] demote fault armed (MEMRA_KV_HOST_FAULT=d2h-delay): the receipt \
-                     waits {} ms behind a receipt-stream spin (the copies do not); a hit arriving \
-                     in the copy phase must \
-                     park until the publication",
+                    "[prefix-host] demote fault armed (MEMRA_KV_HOST_FAULT=d2h-delay): the demote \
+                     is held unlanded for {} ms on the host (no stream is held); a hit arriving in \
+                     the copy phase must park until the publication",
                     memra_engine::tier_transfer::D2H_DELAY_FAULT_NS / 1_000_000
                 );
             }
@@ -16491,7 +16490,7 @@ fn host_capture_submit(
     };
     eprintln!(
         "[prefix-cache] capture submitted off the tick ({why}): {} tokens, {items} planes \
-         ({:.1}MB) on the contracts door's copy stream; {recurrent_note}{draft_note}",
+         ({:.1}MB) on the contracts door's receipt stream; {recurrent_note}{draft_note}",
         toks.len(),
         bytes as f64 / 1e6,
     );
@@ -17991,7 +17990,7 @@ fn host_restore_park_probe(
             // WP-A day 36 (log only): the recurrent copy's host time, at the line's end.
             eprintln!(
                 "[prefix-cache] restore submitted off the tick: {toks_len} tokens, {items} planes \
-                 ({:.1}MB), ticket seq={seq} on the contracts door's copy stream; recurrent state \
+                 ({:.1}MB), ticket seq={seq} on the contracts door's receipt stream; recurrent state \
                  copied on the owner stream; request parked{draft_note}; recurrent copy {:.2}ms host",
                 bytes as f64 / 1e6,
                 recur.host_ms,

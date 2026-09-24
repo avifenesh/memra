@@ -2064,9 +2064,13 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   native cells `d2h_device_receipt_lands_with_the_source_digest` (every receipt bitwise the CPU program over its source
   and over its landed bytes) and `d2h_source_flip_is_witnessed_by_the_landed_bytes` (the flip's red arm); the fault
   gate's `source-flip` cell (`MEMRA_KV_HOST_FAULT=d2h-source-flip`: one typed bind refusal, nothing published, r1 to
-  r4 byte-equal to door OFF) and `copy-phase-hit` cell (`MEMRA_KV_HOST_FAULT=d2h-delay`: one copy-phase park, the
-  publication, a promote instead of a cold prime, r1 to r4 byte-equal to door OFF); the day-29 park test extended to
-  the copy phase (`hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not`).
+  r4 byte-equal to door OFF) and `copy-phase-hit` cell (`MEMRA_KV_HOST_FAULT=d2h-delay`, a host-side 3 s hold of the
+  demote's landing since design G''': one copy-phase park, the publication, a promote instead of a cold prime, r1 to r4
+  byte-equal to door OFF); the day-29 park test extended to the copy phase
+  (`hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not`). Design G''' (DAY38 section 14): every engine kernel
+  on the receipt stream (the D2H receipt and the D2D classes whole), the copy stream DMA and host functions only; engine
+  census `one_kernel_stream_beside_the_owner`, the tenant's decode hump cell `day38-hump-reading.py` (sections 13e to
+  13k: two non-owner streams running kernels moved every later owner kernel boundary).
 - Design K's promote-side fail-closed arms (WP-A day 41, `research/spill-a-20260919/DAY41.md`): the fault gate's
   `sources-helper-gone`, `sources-never-land` and `sources-foreign-reply` cells (the hash helper's first `Sources` job
   takes the fault; one typed latch in the arm's own words, no promote publication, the helper joined, r1 to r4

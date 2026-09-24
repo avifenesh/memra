@@ -8,7 +8,8 @@
 //! into fresh device planes; the session keeps decoding and appends rows past the boundary, so the
 //! source rows are stable (append-only per position) and the recurrent state, which the next step
 //! overwrites, is NOT in this class: it stays on the owner stream at the boundary. The copies ride
-//! the copy stream behind a producer event recorded on the owner stream after the boundary chunk,
+//! a side stream (the engine's receipt stream since WP-A day 38's design G''', its copy stream
+//! before) behind a producer event recorded on the owner stream after the boundary chunk,
 //! and the entry enters the device prefix index only after every copy's completion event has been
 //! observed complete. Publication is the caller's (the LRU insert), not the engine's `ready_view`.
 //!
@@ -27,7 +28,7 @@
 //!    NO witnessed checksum, so `Completion::require` (the H2D and D2H publication gate) refuses
 //!    such an item `Corrupt`: no path can publish a capture through the host-contract gate ahead of
 //!    its receipt. Slice 3 (day 22, `d2d_receipt_witnessed`) added the witness: a destination
-//!    digest taken on the copy stream after the copy against a source digest taken behind the
+//!    digest taken on the copy's stream after the copy against a source digest taken behind the
 //!    producer fence. This schedule's fixture stays receipt-less, so the clause here remains the
 //!    receipt-less refusal by name; the witnessed arm is `d2d_receipt.rs`.
 //!
