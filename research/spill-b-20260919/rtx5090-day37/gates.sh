@@ -13,13 +13,14 @@ MODEL=${MODEL:-/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-G
 BIN=${BIN:-$WT/target/day37/lane/memra-server}
 cd "$WT" || exit 1
 mkdir -p "$ROOT"
-export MEMRA_GPU_LOCK=/tmp/memra-5090.lock
+RIG_LOCK=${RIG_LOCK:-/tmp/memra-5090.lock}
+export MEMRA_GPU_LOCK=$RIG_LOCK
 case $ARM in
   pooled) ALLOC="" ;;
   vmm) ALLOC="MEMRA_KV_ALLOCATOR=vmm" ;;
   *) echo "unknown arm $ARM"; exit 2 ;;
 esac
-python3 tools/tier-lock-proof.py --fd "$fd" --lock /tmp/memra-5090.lock --owner collector > "$ROOT/LOCK.json" 2>&1
+python3 tools/tier-lock-proof.py --fd "$fd" --lock "$RIG_LOCK" --owner collector > "$ROOT/LOCK.json" 2>&1
 TREE=$(git rev-parse HEAD)
 sha256sum "$BIN" > "$ROOT/binary.sha256"
 log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$ROOT/battery.log"; }
@@ -35,12 +36,12 @@ run() { # $1 name $2 env-string $3.. command
   nvidia-smi --query-gpu=temperature.gpu,power.draw,memory.used --format=csv > "$OUT/card.after.csv" 2>&1
   local on off
   on=$(grep -rh "\[kv-vmm\] door=ON" "$OUT" 2>/dev/null | wc -l); off=$(grep -rh "\[kv-vmm\] door=OFF" "$OUT" 2>/dev/null | wc -l)
-  { echo "cell=$name arm=$ARM cmd=$*"; echo "env=$envs"; echo "lock=/tmp/memra-5090.lock owner=collector-fd$fd"
+  { echo "cell=$name arm=$ARM cmd=$*"; echo "env=$envs"; echo "lock=$RIG_LOCK owner=collector-fd$fd"
     echo "tree=$TREE"; echo "binary_sha256=$(cut -d' ' -f1 "$ROOT/binary.sha256")"; echo "model=$(basename "$MODEL")"
     echo "door_on_lines=$on door_off_lines=$off"; echo "status=executed-not-qualified"; } > "$OUT/CELL.txt"
   log "done $name rc=$rc door_on=$on door_off=$off $(grep -hE 'GATE: |serve-smoke: |PREFIX-NEWEST-TURN-FITS' "$OUT/gate.log" | tail -1 | cut -c1-220)"
 }
-run serve-smoke "" bash tools/serve-smoke.sh
+run serve-smoke "" bash tools/serve-smoke.sh "$MODEL"
 sha256sum "$BIN" > "$ROOT/binary.sha256"
 sha256sum "$WT/target/release/memra-server" > "$ROOT/serve-smoke-binary.sha256"
 run identity-default-on "MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1" bash tools/kv-host-spill-identity-gate.sh --external-lock "$fd" "$MODEL" "$BIN" "$ROOT/identity-default-on/ev"
