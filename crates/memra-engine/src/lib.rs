@@ -1851,6 +1851,11 @@ pub struct Engine {
     /// MEMRA_MOE_CACHE. `Mutex` makes it multi-agent safe (§E.2); the lock covers only lookup/admit/
     /// memcpy-issue (µs), NOT the GEMM, so streams still overlap. `None` => cache disabled.
     moe_cache: Mutex<Option<crate::moe_cache::MoeSlotCache>>,
+    /// The MoE slot cache door's load option (`research/spill-c-20260919/DAY44.md`): when set
+    /// before a model loads, stacked expert banks load as views of the artifact's own mapping
+    /// (`HostBuf::Mmap`) instead of a pinned copy the door never reads. Only the gate binaries
+    /// set it, and only with `--experts-via-tier`; false is every loader path as before.
+    expert_host_mapped: std::sync::atomic::AtomicBool,
     /// CALIBRATED-A4 CLIPPING DIAGNOSTIC (research/qwen-fp4-activation-mint-20260909). `None`
     /// while serving, so the quantizer takes a null pointer and does no atomics. When a
     /// diagnostic run enables it, this is a device buffer of 4 u64 per program slot
@@ -3773,6 +3778,7 @@ impl Engine {
             router,
             sample,
             moe_cache: Mutex::new(None),
+            expert_host_mapped: std::sync::atomic::AtomicBool::new(false),
             a4_clip_stats: Mutex::new(None),
             w8_mirrors: Mutex::new(std::collections::HashMap::new()),
             w8_act: Mutex::new(std::collections::HashMap::new()),
@@ -6627,6 +6633,19 @@ impl Engine {
 
     /// Snapshot the MoE cache counters (hits, misses, staged_bytes, n_slots) for the §D.4 PCIe gate.
     /// Returns None if the cache was never built (disabled or no MoE forward ran).
+    /// Set the MoE slot cache door's load option before a model loads (DAY44): stacked expert
+    /// banks load as views of the artifact's mapping, never a pinned copy. Gate binaries only.
+    pub fn set_expert_host_mapped(&self, mapped: bool) {
+        self.expert_host_mapped
+            .store(mapped, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether the door's mapped-expert load option is set (DAY44).
+    pub(crate) fn expert_host_mapped(&self) -> bool {
+        self.expert_host_mapped
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// The MoE slot cache door's stage line (`--expert-bank-stages`,
     /// `research/spill-c-20260919/DAY40.md`): `Ok(None)` without the door or the flag. Never
     /// builds a cache; the bank half is read through the proxy on the owner thread.

@@ -287,7 +287,10 @@ impl TensorInfo {
 
 /// One physical GGUF file. A single-file model has exactly one; a split model has `split.count`.
 struct Shard {
-    mmap: Mmap,
+    /// Shared so a caller can hold a view of the artifact's own mapping past a borrow of this
+    /// file (the MoE slot cache door's mapped expert banks, `GgufFile::shard_mmap`); every
+    /// reader derefs the same map, so no read changes.
+    mmap: Arc<Mmap>,
     /// The same opened inode backing `mmap`, retained for disk-tier positioned reads.
     file: Arc<File>,
     /// On-disk path, retained for diagnostics and adjacent artifact lookup.
@@ -595,7 +598,7 @@ fn parse_one(
     path: PathBuf,
 ) -> std::io::Result<(Shard, u32, BTreeMap<String, MetaValue>, Vec<TensorInfo>)> {
     let file = Arc::new(File::open(&path)?);
-    let mmap = unsafe { Mmap::map(file.as_ref())? };
+    let mmap = Arc::new(unsafe { Mmap::map(file.as_ref())? });
     let mut c = Cursor::new(&mmap, &path);
 
     // The header checks RETURN, they do not panic (lane/step-draft 2026-08-07). `parse_one` is
@@ -1124,6 +1127,14 @@ impl GgufFile {
         &self.shards[i].file
     }
 
+    /// The shard's own parsed mapping, shared: the zero-copy byte source of a view that must
+    /// outlive a borrow of this file (the MoE slot cache door keeps its expert banks as such a
+    /// view instead of a pinned copy; `research/spill-c-20260919/DAY44.md`). Slice it with
+    /// `tensor_file_range` of a tensor of the SAME shard.
+    pub fn shard_mmap(&self, i: usize) -> &Arc<Mmap> {
+        &self.shards[i].mmap
+    }
+
     /// Absolute byte range `[start, end)` of a tensor's data within **its own shard's** file.
     /// `start = shards[t.shard].data_start + t.offset`; the disk-tier `HostBuf::Mmap` slices the
     /// mmap of that same shard (pair this with `shard_mmap_of`/`shard_file`, never with shard 0's).
@@ -1319,6 +1330,27 @@ mod split_tests {
         );
         // Metadata comes from shard 0 (shard 1 has no architecture KV at all).
         assert_eq!(g.arch(), Some("step35"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// DAY44 (`research/spill-c-20260919/DAY44.md`): the shared shard map sliced at a tensor's
+    /// absolute range is `tensor_data`, on either shard, and it is the file's own mapping (the
+    /// view a door's expert bank keeps is these bytes, not a copy).
+    #[test]
+    fn shard_mmap_at_the_tensor_range_is_tensor_data() {
+        let (dir, p0, _p1) = write_split_pair("shardmap");
+        let g = GgufFile::open(&p0).unwrap();
+        for name in ["blk.0.w", "blk.1.w", "blk.2.w"] {
+            let t = g.find(name).unwrap();
+            let (start, end) = g.tensor_file_range(t);
+            let map = g.shard_mmap(t.shard).clone();
+            assert_eq!(&map[start..end], g.tensor_data(t), "{name}");
+            assert_eq!(
+                map[start..end].as_ptr(),
+                g.tensor_data(t).as_ptr(),
+                "{name} is a copy"
+            );
+        }
         std::fs::remove_dir_all(dir).ok();
     }
 

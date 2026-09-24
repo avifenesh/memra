@@ -86,7 +86,10 @@ impl BankedExpertGate<'_> {
             return;
         }
         match self.engine.expert_bank_stage_line() {
-            Ok(Some(line)) => eprintln!("[experts-via-tier] stages phase={phase} {line}"),
+            Ok(Some(line)) => eprintln!(
+                "[experts-via-tier] stages phase={phase} {line} | proc {}",
+                proc_memory_fields()
+            ),
             Ok(None) => eprintln!("[experts-via-tier] stages phase={phase} absent"),
             Err(err) => eprintln!("[experts-via-tier] stages phase={phase} refused: {err}"),
         }
@@ -111,6 +114,21 @@ impl Drop for BankedExpertGate<'_> {
         // A still-pinned owner refuses release; never force-credit unknown DMA.
         let _ = self.budget.borrow_mut().release(&self.metadata);
     }
+}
+
+/// `/proc/self/status` memory fields as `key_kb=value` tokens (DAY44 section 1a: recorded
+/// context of the stage lines, no clause reads them). Missing fields print nothing.
+fn proc_memory_fields() -> String {
+    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+    ["VmRSS", "RssAnon", "RssFile", "RssShmem", "VmPin", "VmLck"]
+        .iter()
+        .filter_map(|key| {
+            let line = status.lines().find(|l| l.starts_with(&format!("{key}:")))?;
+            let kib = line.split_whitespace().nth(1)?;
+            Some(format!("{}_kb={kib}", key.to_ascii_lowercase()))
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn catalog_refusal(detail: impl std::fmt::Display) -> Box<dyn std::error::Error> {
@@ -223,6 +241,8 @@ impl Engine {
         let mut record_count = 0u64;
         let mut banked_blocks = 0usize;
         let mut mtp_banked = false;
+        // DAY44: the loaded banks' host storage, by class, over every retained projection.
+        let mut storage: BTreeMap<&'static str, (usize, usize)> = BTreeMap::new();
         for block in catalog.blocks() {
             let Some(first) = block.first() else {
                 return Err(Error::InvalidLayout.into());
@@ -275,6 +295,9 @@ impl Engine {
                     ExpertTensor::Up => (1, Projection::Up, &moe.up_exps),
                     ExpertTensor::Down => (2, Projection::Down, &moe.down_exps),
                 };
+                let entry = storage.entry(host.bytes.storage_kind()).or_insert((0, 0));
+                entry.0 += 1;
+                entry.1 += host.bytes.len();
                 bank_projection(
                     gguf,
                     artifact,
@@ -305,6 +328,11 @@ impl Engine {
             return Err("experts-via-tier empty or oversized bank".into());
         }
         let records_ns = clock(records_started);
+        let kind = |k: &str| storage.get(k).copied().unwrap_or((0, 0));
+        let ((mm, mb), (pn, pb), (pg, gb)) = (kind("mmap"), kind("pinned"), kind("paged"));
+        eprintln!(
+            "[experts-via-tier] host expert storage: mmap={mm} ({mb} bytes) pinned={pn} ({pb} bytes) paged={pg} ({gb} bytes)"
+        );
         let setup_started = Instant::now();
         eprintln!(
             "[experts-via-tier] catalog blocks={} banked={banked_blocks} projections={} catalog_sha256={} records={record_count} records_sha256={}",
@@ -663,5 +691,45 @@ impl ExpertDispatchBank for TracedDispatch {
                 .stage_report()
                 .unwrap_or_else(|| "absent".to_owned())
         ))
+    }
+}
+
+#[cfg(test)]
+mod day44_census {
+    //! DAY44 (`research/spill-c-20260919/DAY44.md`): the door's mapped-expert load option is a
+    //! gate-binary statement and the loader's mapped branch sits behind it, nowhere else.
+    const MODEL: &str = include_str!("../model.rs");
+    const RUN_GEN: &str = include_str!("../bin/run_gen.rs");
+    const RUN_SPEC: &str = include_str!("../bin/run_spec.rs");
+    const LIB: &str = include_str!("../lib.rs");
+
+    #[test]
+    fn the_mapped_branch_is_taken_only_under_the_door_option() {
+        let branch = "None if e.expert_host_mapped() => Some(door_mapped_extent(src, name)?),";
+        assert_eq!(
+            MODEL.matches(branch).count(),
+            1,
+            "one guarded mapped branch"
+        );
+        assert_eq!(
+            MODEL.matches("door_mapped_extent(").count(),
+            2,
+            "the helper's definition and its one guarded call"
+        );
+        // The split-tensor copy path refuses under the option instead of pinning.
+        assert!(
+            MODEL.contains("the door's mapped expert banks do not cover a split stacked tensor")
+        );
+        // Only the gate binaries set the option, from the parsed door, before the model loads.
+        let set = "e.set_expert_host_mapped(expert_bank.is_some());";
+        assert_eq!(RUN_GEN.matches(set).count(), 1);
+        assert_eq!(RUN_SPEC.matches(set).count(), 1);
+        for (name, src) in [("run_gen", RUN_GEN), ("run_spec", RUN_SPEC)] {
+            let at = src.find(set).unwrap();
+            let load = src.find("HybridModel::load").unwrap();
+            assert!(at < load, "{name} sets the option after a load");
+        }
+        assert_eq!(LIB.matches("fn set_expert_host_mapped").count(), 1);
+        assert!(LIB.contains("expert_host_mapped: std::sync::atomic::AtomicBool::new(false),"));
     }
 }

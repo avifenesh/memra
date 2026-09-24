@@ -129,6 +129,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // door and its typed budgets, parsed once here and handed to the installer (no env read).
     let expert_bank = memra_engine::banked_residency::expert_bank_cli(std::env::args())?;
     let e = Engine::new(0)?;
+    // DAY44: under the door the expert banks load as views of the artifact's mapping; the door
+    // never stages from them, so no pinned copy is made.
+    e.set_expert_host_mapped(expert_bank.is_some());
     // DIRECTORY path = safetensors HF checkpoint (MiniMax-M3 first-load path) OR a memra repack
     // dir (Hy3 Q4_K transcode: manifest.json + tensors/ + experts/). GGUF stays the dense norm.
     if std::path::Path::new(&path).is_dir() {
