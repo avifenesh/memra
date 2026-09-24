@@ -23716,6 +23716,9 @@ pub fn run(
     let mut n_session_defers = 0u64;
     let mut n_vram_defers = 0u64;
     let mut n_step_oom_parks = 0u64;
+    // WP-B day 37 (DAY37 A3 (i)): the owner's wall at the tick-top ensure point, per tick with
+    // at least one on-demand session, printed 256 at a time. Log-only; empty with the door off.
+    let mut vmm_ensure_walls: Vec<u64> = Vec::new();
     // Served-path receipts (lane/dspark-sampled-wave-20260825): admission-time route
     // classification, published to /metrics for the deploy gate's sampled probe.
     let mut n_served_dspark = 0u64;
@@ -26037,10 +26040,18 @@ pub fn run(
                     memra_engine::cache::vmm_graveyard_bytes()
                 );
             }
+            let ensure_t0 = Instant::now();
+            let mut ensured_sessions = 0usize;
             for (i, s) in active.iter_mut().enumerate() {
                 if finished.contains(&i) {
                     continue;
                 }
+                ensured_sessions += usize::from(
+                    s.spec
+                        .as_ref()
+                        .is_some_and(|sp| sp.kv_on_demand_planes() > 0)
+                        || s.cache.as_ref().is_some_and(|c| c.on_demand_planes() > 0),
+                );
                 let ensured = match vmm_ensure_session(s) {
                     Ok(evs) => Ok(evs),
                     Err(err) if is_cuda_oom(&err.to_string()) => {
@@ -26123,6 +26134,18 @@ pub fn run(
                         }
                         finished.push(i);
                     }
+                }
+            }
+            if ensured_sessions > 0 {
+                vmm_ensure_walls.push(ensure_t0.elapsed().as_micros() as u64);
+                if vmm_ensure_walls.len() >= 256 {
+                    let walls: Vec<String> = vmm_ensure_walls.iter().map(u64::to_string).collect();
+                    eprintln!(
+                        "[kv-vmm] ensure-walls n={} us={}",
+                        vmm_ensure_walls.len(),
+                        walls.join(",")
+                    );
+                    vmm_ensure_walls.clear();
                 }
             }
         }
