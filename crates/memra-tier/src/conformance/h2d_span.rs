@@ -41,6 +41,15 @@
 //! 5. Fail closed. An enqueue or event error on any span quarantines the whole ticket: `poll`, the
 //!    reader-wait install and `take_spans` answer `Quarantined`, nothing is taken back, the caller
 //!    latches and the engine keeps every span's source and destination.
+//!
+//! Day-33 rule 6 (the fill on the copy stream, `DAY33.md` design F), additive beside rules 1 to 5:
+//!
+//! 6. The fill is ordered before its copies. A FILLED span batch attaches spans whose staging sources
+//!    are not yet written; the copy stream runs one fill (a host function writing every source from
+//!    its resident plane) ahead of the span copies. No span copy runs before the fill: until the fill
+//!    has run the batch has not landed (`take_spans` `NotReady`) whatever else completed, and every
+//!    copy that runs reads a filled source. A copy issued before its fill reads unfilled bytes (this
+//!    rule's red arm); the contract orders the copy behind the fill by stream order, never by timing.
 use crate::contracts::*;
 
 /// The span fixture: `submit` issues the KV batch; `attach` attaches the fixture's spans to it
@@ -194,4 +203,48 @@ pub fn h2d_span_read_before_its_wait_is_unordered<F: H2dSpanFixture>(f: &mut F) 
     assert_eq!(f.take_spans(&ticket).unwrap(), f.span_bytes());
     f.reader_reads();
     assert!(f.readers_ordered());
+}
+
+/// Rule 6 fixture (day 33): one H2D batch with FILLED spans. `attach_filled` attaches spans whose
+/// sources the copy stream fills ahead of the copies; `fill_runs` runs the fill; `copies_run` runs
+/// every span copy the binding's stream order allows now; `copies_read_filled` is true only when every
+/// span copy that ran read a filled source.
+pub trait H2dFillFixture {
+    fn submit(&mut self) -> TransferTicket;
+    fn attach_filled(&mut self, ticket: &TransferTicket)
+    -> std::result::Result<(), (Error, usize)>;
+    fn poll(&mut self, ticket: &TransferTicket) -> Result<Completion>;
+    fn install_reader_wait(&mut self, ticket: &TransferTicket) -> Result<()>;
+    fn take_spans(&mut self, ticket: &TransferTicket) -> Result<Vec<u64>>;
+    fn items_complete(&mut self);
+    fn fill_runs(&mut self);
+    fn copies_run(&mut self);
+    fn copies_read_filled(&self) -> bool;
+    fn span_bytes(&self) -> Vec<u64>;
+}
+
+/// Rule 6, the schedule: the copies are offered a chance to run before the fill; none may. The batch
+/// lands only after the fill and the copies, and every copy read a filled source.
+pub fn h2d_span_fill_ordered_before_its_copy<F: H2dFillFixture>(f: &mut F) {
+    let ticket = f.submit();
+    f.attach_filled(&ticket).expect("the filled spans attach");
+    f.items_complete();
+    f.copies_run();
+    let c = f.poll(&ticket).unwrap();
+    assert!(
+        !c.producer_done,
+        "no span copy runs before its fill: the batch has not landed"
+    );
+    assert_eq!(f.take_spans(&ticket), Err(Error::NotReady));
+    assert!(
+        f.copies_read_filled(),
+        "a copy issued before its fill reads unfilled bytes"
+    );
+    f.fill_runs();
+    f.copies_run();
+    let c = f.poll(&ticket).unwrap();
+    assert!(c.producer_done, "the fill, then the copies: landed");
+    f.install_reader_wait(&ticket).unwrap();
+    assert_eq!(f.take_spans(&ticket).unwrap(), f.span_bytes());
+    assert!(f.copies_read_filled());
 }
