@@ -98,6 +98,15 @@
 #                   line), the copy lands, the digests land, the entry publishes (its ledger names the parked hit), and
 #                   r3 promotes to a device hit instead of priming cold; r4 P_B promotes. r1..r4 byte-equal.
 #
+# WP-A day 41 (OWED item 5, research/spill-a-20260919/DAY41.md): design K's three promote-side fail-closed arms, one
+# cell each, two boots each (door ON with the fault, then door OFF as the byte reference), the promote cells' shape: r1
+# P_A seeds E_A; r2 P_B evicts E_A (a clean demote, its Hash job lands); r3 P_A's promote hands its Sources job to the
+# helper, which takes the fault; r4 P_B. One helper-fault line, one TIER DISABLED line in the arm's own words, no promote
+# publication, the helper joined at the latch, r1..r4 byte-equal to door OFF:
+#   sources-helper-gone    the helper exits on its first Sources job (the sources reply channel closed)
+#   sources-never-land     the helper hashes it and discards the reply (the 10 s deadline)
+#   sources-foreign-reply  the helper replies with seq + 1 (a reply that does not describe the ticket)
+#
 # usage: kv-host-contract-fault-gate.sh [--external-lock FD] <model.gguf> <server_bin> <evidence_dir>
 # env:   MEMRA_HOSTGATE_CACHE_MB (default 256)  device prefix budget; must hold ONE seed entry but not two
 #        MEMRA_HOSTGATE_HOST_MB  (default 8192) host tier budget
@@ -821,6 +830,37 @@ ccell() { # WP-A day 38 (design P): MEMRA_KV_HOST_FAULT=d2h-delay (door ON), the
     chk "$name: r1..r4 byte-equal to the door-OFF boot" texts_equal_arms "$EV/$name" "$EV/$name-off" 4
 }
 
+kcell() { # WP-A day 41: $1 fault value $2 the TIER DISABLED line's own words (a literal)
+    local name=$1 fault=$1 words=$2 log="$EV/$1-server.log" offlog="$EV/$1-off-server.log"
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, design K's promote-side red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_B" "$EV/$name-r2.json"
+    req "$P_A" "$EV/$name-r3.json"
+    req "$P_B" "$EV/$name-r4.json"
+    stop
+    echo "== cell $name: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) =="
+    boot "MEMRA_KV_HOST_CONTRACTS=0" "$offlog"
+    req "$P_A" "$EV/$name-off-r1.json"
+    req "$P_B" "$EV/$name-off-r2.json"
+    req "$P_A" "$EV/$name-off-r3.json"
+    req "$P_B" "$EV/$name-off-r4.json"
+    stop
+    chk "$name: four completions served" four_served "$EV/$name"
+    chk "$name: door ON with the transfer engine on both sides" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine.*KV plane H2D through the same engine on promote" "$log"
+    chk "$name: r2's demote landed its digests and published (its Hash job ran clean)" grep -q "\\[prefix-host\\] demote: " "$log"
+    chk "$name: exactly one helper-fault line, on the Sources job" count_eq "hash helper fault (MEMRA_KV_HOST_FAULT=$fault): the Sources job of ticket seq=" "$log" 1
+    chk "$name: exactly one TIER DISABLED line in the arm's own words" count_eq "TIER DISABLED: $words" "$log" 1
+    chk "$name: the tier latched off exactly once" count_eq "TIER DISABLED" "$log" 1
+    chk "$name: the promote never published" absent "\\[prefix-host\\] promote: " "$log"
+    chk "$name: the hash helper joined at the latch" count_eq "hash helper joined (the tier latched off)" "$log" 1
+    chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
+    chk "$name: no Capacity refusal" absent "Capacity" "$log"
+    chk "$name: OFF boot: four completions served" four_served "$EV/$name-off"
+    chk "$name: OFF boot: the contracts door is off" absent "contracts door ON" "$offlog"
+    chk "$name: r1..r4 byte-equal to the door-OFF boot" texts_equal_arms "$EV/$name" "$EV/$name-off" 4
+}
+
 # WP-A day 22: the D2D receipt's red arm, one cell per class.
 dcell_capture
 dcell_restore
@@ -834,6 +874,10 @@ pscell
 # WP-A day 38: the device receipt's red arm and the copy-phase park's, byte-compared with the door-OFF boot.
 fcell
 ccell
+# WP-A day 41: design K's promote-side arms, byte-compared with the door-OFF boot.
+kcell sources-helper-gone "tier hash helper gone before the H2D checksums of ticket seq="
+kcell sources-never-land "tier H2D checksums never landed: ticket seq="
+kcell sources-foreign-reply "tier H2D checksum reply seq="
 
 if [ "$FAILS" -eq 0 ]; then
     echo "KV-HOST-CONTRACT-FAULT GATE: ALL GREEN"

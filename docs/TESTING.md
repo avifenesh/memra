@@ -2064,6 +2064,10 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   r4 byte-equal to door OFF) and `copy-phase-hit` cell (`MEMRA_KV_HOST_FAULT=d2h-delay`: one copy-phase park, the
   publication, a promote instead of a cold prime, r1 to r4 byte-equal to door OFF); the day-29 park test extended to
   the copy phase (`hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not`).
+- Design K's promote-side fail-closed arms (WP-A day 41, `research/spill-a-20260919/DAY41.md`): the fault gate's
+  `sources-helper-gone`, `sources-never-land` and `sources-foreign-reply` cells (the hash helper's first `Sources` job
+  takes the fault; one typed latch in the arm's own words, no promote publication, the helper joined, r1 to r4
+  byte-equal to door OFF) and the CPU cell `day41_the_sources_faults_key_on_the_first_sources_job`.
 - The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
   hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
   Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity

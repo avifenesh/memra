@@ -10358,12 +10358,21 @@ fn host_hash_restore_payload(e: &mut HostPrefixEntry, p: HostHashPayload) -> Res
 enum HostHashFault {
     HelperGone,
     NeverLands,
+    /// WP-A day 41 (`DAY41.md`, OWED item 5): design K's three promote-side arms, each keyed on
+    /// the helper's FIRST `Sources` job (a demote's `Hash` jobs before it run clean): the helper
+    /// exits on it, hashes it and discards the reply, or replies with the job's `seq + 1`.
+    SourcesGone,
+    SourcesNeverLand,
+    SourcesForeignReply,
 }
 impl HostHashFault {
     fn from_door(fault: &str) -> Option<Self> {
         match fault {
             "hash-helper-gone" => Some(Self::HelperGone),
             "hash-never-lands" => Some(Self::NeverLands),
+            "sources-helper-gone" => Some(Self::SourcesGone),
+            "sources-never-land" => Some(Self::SourcesNeverLand),
+            "sources-foreign-reply" => Some(Self::SourcesForeignReply),
             _ => None,
         }
     }
@@ -10410,6 +10419,41 @@ impl HostHashWorker {
                     let job = match job {
                         HostHelperJob::Hash(job) => job,
                         HostHelperJob::Sources(job) => {
+                            // WP-A day 41 (OWED item 5): the Sources-keyed red arms, one-shot.
+                            let sources_fault = match fault {
+                                Some(
+                                    f @ (HostHashFault::SourcesGone
+                                    | HostHashFault::SourcesNeverLand
+                                    | HostHashFault::SourcesForeignReply),
+                                ) => {
+                                    fault = None;
+                                    eprintln!(
+                                        "[prefix-host] hash helper fault (MEMRA_KV_HOST_FAULT={}): \
+                                         the Sources job of ticket seq={} ({} views) {}",
+                                        match f {
+                                            HostHashFault::SourcesGone => "sources-helper-gone",
+                                            HostHashFault::SourcesNeverLand => "sources-never-land",
+                                            _ => "sources-foreign-reply",
+                                        },
+                                        job.seq,
+                                        job.views.len(),
+                                        match f {
+                                            HostHashFault::SourcesGone => {
+                                                "is dropped and the helper exits"
+                                            }
+                                            HostHashFault::SourcesNeverLand => {
+                                                "is hashed and its reply discarded"
+                                            }
+                                            _ => "is answered as seq + 1",
+                                        }
+                                    );
+                                    Some(f)
+                                }
+                                _ => None,
+                            };
+                            if sources_fault == Some(HostHashFault::SourcesGone) {
+                                return;
+                            }
                             // WP-A day 34: the promote's H2D completion checksums, off the tick.
                             let t = Instant::now();
                             let bytes = job.views.iter().map(|v| v.len()).sum();
@@ -10422,11 +10466,21 @@ impl HostHashWorker {
                                 })
                                 .collect();
                             let reply = HostSourcesReply {
-                                seq: job.seq,
+                                seq: if sources_fault == Some(HostHashFault::SourcesForeignReply) {
+                                    job.seq.wrapping_add(1)
+                                } else {
+                                    job.seq
+                                },
                                 digests,
                                 bytes,
                                 helper_ms: t.elapsed().as_secs_f64() * 1e3,
                             };
+                            if sources_fault == Some(HostHashFault::SourcesNeverLand) {
+                                // The reply is discarded: its views drop here and never come back
+                                // to the engine, which keeps their sources (a leak, never a free).
+                                drop(reply);
+                                continue;
+                            }
                             if sources_tx.send(reply).is_err() {
                                 return;
                             }
@@ -48452,6 +48506,59 @@ mod tests {
         assert!(settle.contains("retired acknowledged{}{receipt_place}"));
     }
 
+    /// WP-A day 41 (`DAY41.md`, OWED item 5): the three Sources-keyed helper faults parse from the
+    /// existing door, are not contract faults, and each is keyed on the FIRST Sources job: a Hash job
+    /// before it runs clean (its reply lands), the Sources job takes the fault once, and a second
+    /// Sources job after a discarded or foreign reply runs clean.
+    #[test]
+    fn day41_the_sources_faults_key_on_the_first_sources_job() {
+        use super::HostHashFault as H;
+        for (door, want) in [
+            ("sources-helper-gone", H::SourcesGone),
+            ("sources-never-land", H::SourcesNeverLand),
+            ("sources-foreign-reply", H::SourcesForeignReply),
+        ] {
+            assert_eq!(H::from_door(door), Some(want));
+            assert_eq!(super::HostContractFault::from_door(door), None, "{door}");
+        }
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let at = production
+            .find("    fn spawn(fault: Option<HostHashFault>)")
+            .unwrap();
+        let spawn = &production[at..at + production[at..].find("\n    }\n").unwrap()];
+        let sources = spawn.find("HostHelperJob::Sources(job) => {").unwrap();
+        let gone = spawn
+            .find("if sources_fault == Some(HostHashFault::SourcesGone) {")
+            .unwrap();
+        let hashed = spawn[sources..].find("let d = v.digest();").unwrap() + sources;
+        let discard = spawn
+            .find("if sources_fault == Some(HostHashFault::SourcesNeverLand) {")
+            .unwrap();
+        let send = spawn.find("if sources_tx.send(reply).is_err() {").unwrap();
+        assert!(sources < gone && gone < hashed && hashed < discard && discard < send);
+        assert!(spawn.contains("job.seq.wrapping_add(1)"));
+        // One shot: the fault is cleared when a Sources job takes it.
+        let cleared = spawn[sources..].find("fault = None;").unwrap() + sources;
+        assert!(cleared < gone);
+        // Behaviour: under each Sources fault a Hash job runs clean (its reply lands).
+        for f in [H::SourcesGone, H::SourcesNeverLand, H::SourcesForeignReply] {
+            let helper = super::HostHashWorker::spawn(Some(f)).unwrap();
+            helper
+                .submit(super::HostHashJob {
+                    seq: 9,
+                    payloads: Vec::new(),
+                    leases: Vec::new(),
+                })
+                .unwrap();
+            let reply = helper
+                .reply_within(std::time::Duration::from_secs(5))
+                .unwrap()
+                .expect("a Hash job's reply lands under a Sources fault");
+            assert_eq!(reply.seq, 9, "{f:?}");
+            helper.close("test", std::time::Duration::from_secs(5));
+        }
+    }
     /// WP-A day 36 (`DAY36.md` section 1, log only): the restore's recurrent copy is timed around
     /// step 1 exactly (the two owner-stream events and the host timer bracket the copy loop, both
     /// before the producer fence), and the landing reads the owner-stream time only when the end
