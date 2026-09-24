@@ -476,3 +476,31 @@ probe about 10 minutes: about 2 hours 20 minutes from access.
    owner stream's kernel count, GPU-busy ms, launch gaps, the five most frequent kernels' mean durations, and every other
    stream's busy ms). A reading that places the hump as GPU-side (owner kernels longer, or other streams busy) or
    host-side (launch gaps longer); the fix is pre-registered on it.
+
+## 13a. The follow-up and the X1 trace, as they ran (BOX7 `g-rerun/`, `diag2/nsys-x1/`; X2 still exporting)
+
+- **The A/B re-run** (section 12's registered consequence, unchanged binaries, one new hold; `ab rerun rc=0`), verbatim
+  (`g-rerun/reading-day38-target.log`): `DAY38 G C copy-settle N=80 median=0.53 min=0.44 max=0.62 rule N>=20 median<=1.5
+  max<=3.0 -> PASS`; `DAY38 G D order=o1 wall base=182.70 g=185.25 g-minus-base=+2.55 rule <=+5.0 | e2e base=207.61
+  g=209.04 g-minus-base=+1.43 rule <=+1.0 -> FAIL`; `order=o2 .. wall .. +2.65 .. e2e base=207.59 g=209.07
+  g-minus-base=+1.48 .. -> FAIL`. Readings: `owner-held` 4.07 (base) to 3.07 ms (G''); the receipt kernel median 3.34
+  ms. **(d) fails again as registered; the first sitting's reading is reproduced within 0.12 ms.**
+- **The X1 trace** (`nsys-x1/reading.log`, 16 demote runs, 15 markers), verbatim per interval between two receipt
+  kernels: `owner_busy_ms` 4237.09, 4237.01, 4238.17, 4239.58, 4240.66, 4242.90, .., 4242.54, 4242.89, 4168.97, ..,
+  4237.98 (flat); `owner_gaps_ms` 165.82, 201.00, 231.05, 255.25, 279.68, 302.68, (interval 7 a short one), 347.08,
+  327.88, 302.33, 279.50, 258.62, 237.25, 209.59; `other_busy_ms` 3.7 to 5.6 (the receipt kernel and the copies);
+  `NSYS first3 owner_busy_per_kernel_us=11.34 gaps_per_kernel_us=0.44` against the peak's `gaps_per_kernel_us=0.89`.
+- **The placement, by section 13's rule: host-side.** The owner stream's GPU work per interval is flat (the five
+  commonest kernels' means 29.2 to 29.3, 1.5, 3.1, 1.5 to 1.6, 1.7 us), and its idle time between kernels, the GPU
+  waiting for the owner thread's launches, rises by about 25 ms per demote to twice its first value at the eighth
+  interval and falls back the same way: about +0.5 ms per decode step at the peak (about 360 steps per interval), the
+  hump the tenant's ITL showed. Nothing else on the card is busy then (under 6 ms per interval).
+
+## 13b. Pre-registered before it runs: what the owner thread does in the gaps
+
+A second reader over the same two traces (`day38-nsys-api-reading.py`, committed before it runs; the sqlite exports on
+the box, opened read-only): the owner thread (the thread that launched most of the owner stream's kernels), per
+interval, its CUDA API calls by name (count, ms), its OS runtime calls by name (count, ms), and its time between CUDA
+calls; the ten names of each whose time grows most from the first three intervals to the interval with the most launch
+gaps; the same for every other thread with CUDA calls. On X1 and on X2. A reading, not a clause: it names the call (or
+the absence of a call, host work between calls) that grows, and the fix is pre-registered on it before any code.
