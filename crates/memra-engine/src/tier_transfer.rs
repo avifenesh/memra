@@ -2007,6 +2007,19 @@ impl CudaTransfers {
         if let Some(r) = &e.receipt {
             cuda(r.event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;
         }
+        // WP-A day 38 (design G'): a device-receipt D2H batch lands only with its receipt, and the
+        // receipt runs on the receipt stream CONCURRENTLY with the item copies, so the items can
+        // complete first; the host wait covers the receipt event too, or a `Block` settle would read
+        // the batch unlanded after its wait (the integ38 shape, for this class).
+        if let Some(r) = &e.d2h_receipt {
+            cuda(
+                r.scratch
+                    .event
+                    .as_ref()
+                    .ok_or(Error::Quarantined)?
+                    .synchronize(),
+            )?;
+        }
         // WP-A day 30: a batch with spans lands with them (rule 2 of `d2h_span_batch`), so the
         // host wait covers every span's event; a span without an event is quarantined.
         if let Some(b) = &e.spans {
@@ -3691,6 +3704,12 @@ mod tests {
             .unwrap();
         assert!(seal < flip_wait && flip_wait < items);
         assert_eq!(submit.matches("copy.wait(").count(), 1);
+        // G': the host wait covers the receipt event (the receipt runs beside the copies).
+        let sync = fn_body("    pub fn synchronize(&mut self, ticket: &TransferTicket)");
+        let receipt_wait = sync.find("if let Some(r) = &e.d2h_receipt {").unwrap();
+        let block =
+            &sync[receipt_wait..receipt_wait + sync[receipt_wait..].find("\n        }").unwrap()];
+        assert!(block.contains("r.scratch") && block.contains(".synchronize()"));
         let progress = fn_body("    fn progress(");
         let branch = progress
             .find("if e.d2h_receipt.is_some() && item.direction == CopyDirection::DeviceToHost {")
@@ -3810,9 +3829,14 @@ mod tests {
             t.d2h_receipt_gpu_ms(&ticket).is_none(),
             "no reading before the kernels ran"
         );
+        // The `Block` settle's shape: ONE host wait on the ticket, then the completion. The receipt
+        // still waits behind its 300 ms hold here, so the wait must cover it (design G').
         t.synchronize(&ticket).unwrap();
         let c = t.poll(&ticket).unwrap();
-        assert!(c.producer_done, "copies and receipt observed: landed");
+        assert!(
+            c.producer_done,
+            "copies and receipt observed after one host wait on the ticket: landed"
+        );
         let gpu_ms = t
             .d2h_receipt_gpu_ms(&ticket)
             .expect("the kernels' time reads back once landed");
