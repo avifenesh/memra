@@ -14264,10 +14264,19 @@ fn host_demote_settle_hashing(
         }
         Ok(Some(reply)) => reply,
     };
-    // WP-A day 35 (`DAY35.md` design M'): the reply landed, so the helper reads nothing more; the KV
-    // planes leave the guard (free to use and to drop again) with what the reply's lease digests
-    // must match: the view count and each named lease's bytes.
-    let leases_back = hashing.leases.take().map(|g| {
+    // WP-A day 35 (`DAY35.md` design M'): a reply for THIS ticket means the helper reads nothing more of
+    // this job, so the KV planes leave the guard (free to use and to drop again) with what the reply's
+    // lease digests must match: the view count and each named lease's bytes. A reply for another ticket
+    // says nothing about this job's views, which may still be queued on the helper or being read
+    // (revuto on #711): the guard is NOT landed, stays in `hashing`, and its `Drop` leaks the leases on
+    // the latch path below, so no free happens under a live read.
+    let reply_is_ours = reply.seq == seq;
+    let leases_back = if !reply_is_ours {
+        None
+    } else {
+        hashing.leases.take()
+    }
+    .map(|g| {
         let views = g.views;
         let lens: Vec<Option<usize>> = reply
             .leases
@@ -48148,6 +48157,16 @@ mod tests {
         assert!(views.contains("unsafe { lease.read_view() }"));
         let hashing = body("fn host_demote_settle_hashing(");
         assert!(at(hashing, "Ok(Some(reply)) => reply,") < at(hashing, "hashing.leases.take()"));
+        // revuto on #711: the guard lands only on a reply for THIS ticket; a foreign reply leaves it in
+        // `hashing`, whose Drop leaks the leases on the latch path (never a free under a live read).
+        assert!(
+            at(hashing, "let reply_is_ours = reply.seq == seq;")
+                < at(hashing, "hashing.leases.take()")
+        );
+        assert!(
+            at(hashing, "let leases_back = if !reply_is_ours {")
+                < at(hashing, "hashing.leases.take()")
+        );
         assert!(at(hashing, "hashing.leases.take()") < at(hashing, "let mut e = pending.image;"));
         assert_eq!(
             production.matches("hashing.leases.take()").count(),
