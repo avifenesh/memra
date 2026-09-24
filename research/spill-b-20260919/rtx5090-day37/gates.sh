@@ -14,6 +14,9 @@ BIN=${BIN:-$WT/target/day37/lane/memra-server}
 cd "$WT" || exit 1
 mkdir -p "$ROOT"
 RIG_LOCK=${RIG_LOCK:-/tmp/memra-5090.lock}
+# The host-tier gates' prefix budget: 64 MB on the 5090 with the 9B (the lead's integ58 value), 256 MB on the target
+# card with the 27B (lane A's day-36 value).
+HOSTGATE_MB=${HOSTGATE_MB:-64}
 export MEMRA_GPU_LOCK=$RIG_LOCK
 case $ARM in
   pooled) ALLOC="" ;;
@@ -41,16 +44,34 @@ run() { # $1 name $2 env-string $3.. command
     echo "door_on_lines=$on door_off_lines=$off"; echo "status=executed-not-qualified"; } > "$OUT/CELL.txt"
   log "done $name rc=$rc door_on=$on door_off=$off $(grep -hE 'GATE: |serve-smoke: |PREFIX-NEWEST-TURN-FITS' "$OUT/gate.log" | tail -1 | cut -c1-220)"
 }
+if [ "${ONLY_TWIN27:-0}" = 1 ]; then
+  log "twin27-only mode (the pooled arm's 27B twin cells, run after its 9B twin cells refused)"
+else
 run serve-smoke "" bash tools/serve-smoke.sh "$MODEL"
+# serve-smoke writes its server log to /tmp/serve-smoke.log (its own rule): keep it with the cell and count its doors.
+cp /tmp/serve-smoke.log "$ROOT/serve-smoke/serve-smoke-server.log" 2>/dev/null
+sed -i "s/^door_on_lines=.*/door_on_lines=$(grep -c '\[kv-vmm\] door=ON' "$ROOT/serve-smoke/serve-smoke-server.log" 2>/dev/null) door_off_lines=$(grep -c '\[kv-vmm\] door=OFF' "$ROOT/serve-smoke/serve-smoke-server.log" 2>/dev/null)/" "$ROOT/serve-smoke/CELL.txt"
 sha256sum "$BIN" > "$ROOT/binary.sha256"
 sha256sum "$WT/target/release/memra-server" > "$ROOT/serve-smoke-binary.sha256"
-run identity-default-on "MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1" bash tools/kv-host-spill-identity-gate.sh --external-lock "$fd" "$MODEL" "$BIN" "$ROOT/identity-default-on/ev"
-run fault-default "MEMRA_HOSTGATE_CACHE_MB=64" bash tools/kv-host-contract-fault-gate.sh --external-lock "$fd" "$MODEL" "$BIN" "$ROOT/fault-default/ev"
-run fault-plain "MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_SERVE_SPEC=0" bash tools/kv-host-contract-fault-gate.sh --external-lock "$fd" "$MODEL" "$BIN" "$ROOT/fault-plain/ev"
+run identity-default-on "MEMRA_HOSTGATE_CACHE_MB=$HOSTGATE_MB MEMRA_KV_HOST_CONTRACTS=1" bash tools/kv-host-spill-identity-gate.sh --external-lock "$fd" "$MODEL" "$BIN" "$ROOT/identity-default-on/ev"
+run fault-default "MEMRA_HOSTGATE_CACHE_MB=$HOSTGATE_MB" bash tools/kv-host-contract-fault-gate.sh --external-lock "$fd" "$MODEL" "$BIN" "$ROOT/fault-default/ev"
+run fault-plain "MEMRA_HOSTGATE_CACHE_MB=$HOSTGATE_MB MEMRA_SERVE_SPEC=0" bash tools/kv-host-contract-fault-gate.sh --external-lock "$fd" "$MODEL" "$BIN" "$ROOT/fault-plain/ev"
 run hit-off "" bash tools/spec-on-cache-hit-gate.sh --external-lock "$fd" qwen "$MODEL" "$BIN" "$ROOT/hit-off/ev"
 run hit-on "MEMRA_KV_HOST_CONTRACTS=1" bash tools/spec-on-cache-hit-gate.sh --external-lock "$fd" qwen "$MODEL" "$BIN" "$ROOT/hit-on/ev"
-run twin-off "" python3 tools/prefix-newest-turn-fits-gate.py --external-lock "$fd" --model "$MODEL" --bin "$BIN" --out "$ROOT/twin-off/ev"
-run twin-on "MEMRA_KV_HOST_CONTRACTS=1" python3 tools/prefix-newest-turn-fits-gate.py --external-lock "$fd" --model "$MODEL" --bin "$BIN" --out "$ROOT/twin-on/ev"
 run admit-mem-burst "" bash tools/admit-mem-burst-gate.sh "$MODEL" "$BIN" "$ROOT/admit-mem-burst/ev"
 run spec-ctx-edge "" bash tools/spec-ctx-edge-gate.sh "$MODEL" "$BIN" "$ROOT/spec-ctx-edge/ev"
+fi
+# The twin gate's pressure preconditions are sized for the 27B (days 17 to 29 ran it as `twin27`); on the 9B its
+# cohort precondition refuses before any verdict (the day-37 pooled arm's first `twin-off`). It runs on the 27B
+# wherever that artifact is present, as `twin27-*`.
+MODEL_TWIN=${MODEL_TWIN:-}
+if [ -z "$MODEL_TWIN" ]; then
+  if [ -f /data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf ]; then
+    MODEL_TWIN=/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+  else
+    MODEL_TWIN=$MODEL
+  fi
+fi
+run twin27-off "" python3 tools/prefix-newest-turn-fits-gate.py --external-lock "$fd" --model "$MODEL_TWIN" --bin "$BIN" --out "$ROOT/twin27-off/ev"
+run twin27-on "MEMRA_KV_HOST_CONTRACTS=1" python3 tools/prefix-newest-turn-fits-gate.py --external-lock "$fd" --model "$MODEL_TWIN" --bin "$BIN" --out "$ROOT/twin27-on/ev"
 log "gates done arm=$ARM"

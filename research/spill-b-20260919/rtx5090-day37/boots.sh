@@ -15,6 +15,8 @@ STREAM_CONC=${STREAM_CONC:-8}
 cd "$WT" || exit 1
 mkdir -p "$R/boots"
 log() { echo "$(date -u +%FT%TZ) $*" >> "$R/run.log"; }
+# A STOP file in the receipt root holds every boot (the lane's own stop, never a signal).
+[ -e "$R/STOP" ] && { log "STOP present: no boot run ($*)"; exit 0; }
 idle() {
   flock -n "$RIG_LOCK" true || return 1
   [ -z "$(nvidia-smi --query-compute-apps=pid --format=csv,noheader)" ] || return 1

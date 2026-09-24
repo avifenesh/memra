@@ -282,6 +282,27 @@ Section 1.1 to 1.10 is unchanged. This fixes the instruments and parameters 1.6 
   `tools/tier-battery.py`.
 - **A6's baseline binary.** `memra-server` built from main `17dceb981` in a detached worktree.
 
+### 1.12 Addendum C (2026-09-24, before any serving boot, after the first gate set)
+
+Found by reading design v1's receipts, not by any clause: every on-demand plane backs at least one whole granule.
+On the vmm arm of the first 5090 gate set (`gates-vmm/hit-off/`), a bounded gate request retired with
+`planes=18 mapped=37748736 reserved=37748736 used=2301440`: 36 MiB backed for 2.3 MB of rows, where the pooled
+allocator holds the request's exact capacity. A short bounded request therefore costs more device memory on design v1
+than on the pooled allocator, and a burst of them costs it once per session. Measuring the allocator at its best
+needs the rule below; no clause and no bound of 1.6 changes.
+
+- **The rule.** Under the on-demand scope a K/V plane is an on-demand plane only when its pooled capacity leaves at
+  least one whole granule unbacked after the initial extent: `capacity >= whole_granules(initial) + granularity`.
+  Otherwise the plane is allocated pooled, exactly as today. Below that line the on-demand plane can never back fewer
+  bytes than the pooled one (it maps whole granules up to a reservation rounded above the capacity), so the pooled
+  plane is never worse there. A session may hold both kinds (for example a K plane on demand and its smaller V plane
+  pooled); the ensure visitor touches only on-demand planes, and the construction census counts only them.
+- **The granularity** the rule reads is the device's VMM granularity, queried once per device and cached.
+- **What reruns.** Design v1's receipts stay banked as they read: stage 0, the A2 series `grow-32768` and the first
+  gate set (`gates-pooled`, `gates-vmm`, including the 9B twin cells that refused before any verdict, 2.2). The
+  deciding cell runs on the revised binary: A2 again as `grow-32768-r2`, the gate set of both arms again as
+  `gates-r2-pooled` and `gates-r2-vmm` (with the twin gate on the 27B), then the serving boots of addendum B.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
