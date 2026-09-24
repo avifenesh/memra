@@ -524,6 +524,7 @@ fn main() {
             println!("cargo:rerun-if-changed=cu/dsv4_dense_tile.cuh");
             println!("cargo:rerun-if-changed=cu/mmq_mma_i8.cuh");
             println!("cargo:rerun-if-changed=cu/sm100_blockscale_layout.cuh");
+            println!("cargo:rerun-if-changed=cu/moe_kq_prims.cuh");
             // fa3_prefill.cu includes the shared wgmma header (dedup 2026-08-21).
             println!("cargo:rerun-if-changed=cu/wgmma_common.cuh");
             let compile_src =
