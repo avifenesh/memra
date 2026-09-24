@@ -674,3 +674,62 @@ the absence of a call, host work between calls) that grows, and the fix is pre-r
   x27 x1` after diag7 ends, the same cell, reader and rule. `x27` flat: the count of kernel-running streams besides the
   owner's is the trigger, and the fix is pre-registered on it (one kernel stream beside the owner, the copy stream DMA
   only); `x27` humps: section 13h's copy-stream branch is taken.
+
+## 13k. x27 as it ran: the trigger placed
+
+- diag7 whole (`diag7-cell rc=0`, 20:30:18Z): `HUMP arm=x1 .. +0.579 humps=True`, `HUMP arm=x2 .. +0.034 humps=False`,
+  `HUMP arm=x25 .. +0.573 humps=True`.
+- diag8 (`diag8-build rc=0`, six boots to 20:40:01Z, `diag8-cell rc=0`), verbatim (`diag8/reading-hump.log`): `HUMP
+  arm=x1 boots=2 median-hump=+0.573 humps=True`, `HUMP arm=x2 boots=2 median-hump=+0.035 humps=False`, **`HUMP arm=x27
+  boots=2 median-hump=+0.023 humps=False`** (`b02-x27 itl=[12.33, 12.34, 12.33, 12.34, 12.35, .., 12.33]`, `b05-x27 ..
+  hump=+0.030`).
+- **The trigger, by section 13j's rule: two streams besides the owner's running kernels.** With the D2D classes' digest
+  kernels on the copy stream and the D2H receipt kernel on the receipt stream (G'', X1 and every humping arm), each
+  receipt moves every later owner kernel boundary by about 0.07 us, up for eight receipts and back down for eight
+  (13e); with every non-owner kernel on one stream, whichever it is (X2: the copy stream; x27: the receipt stream),
+  nothing moves. The mechanism below the driver is not placed (no arm reaches it: queue count, priority, DMA overlap,
+  the D2H and the event kinds were each ruled out); the rule the evidence supports is placed, and the design follows
+  it.
+
+## 14. Design G''' pre-registered (G'' with one kernel stream), before any G''' code
+
+**What changes, and only this** (on top of G'', `2d1026b36`'s engine and server, plus T and day 41 as they are):
+
+1. **One kernel stream.** Every engine operation that launches a device kernel runs on the receipt stream: the D2H
+   device receipt (as G''), and the D2D classes whole, capture and restore (the waits on the producer events and the
+   lanes' zero-fill, the source digests, the D2D copies, the destination digests, the lanes' D2H and the receipt event,
+   in their existing stream order, so the day-22 receipt rule's order is unchanged; the `d2d-delay` early-reader arm's
+   spin rides with them). The copy stream carries DMA and host functions only: the D2H item copies and f32 spans
+   (beside the D2H receipt, as G''), the H2D items and spans, design F's (and T's) fill host function.
+2. **The `d2h-delay` red arm becomes a host-side hold.** No spin on any stream: the next device-receipt D2H batch's items
+   are not observed landed by `progress` before 3 s after its submission (the engine keeps the hold's deadline on the
+   entry), and `synchronize` on that ticket returns only after its event waits AND the deadline (a `Block` settle sees
+   it landed, as it would a copy that long). Its copy phase lasts at least 3 s for the owner while every stream runs
+   free, which is what the `copy-phase-hit` cell needs (G's plain arm failed because a GPU spin held a capture behind it;
+   under G' the spin on the receipt stream would hold the D2D classes that now run there). The cell's checks are
+   unchanged. The fault row's wording follows.
+3. **Drains.** `release_device` and `take_plane` drain every side stream, the receipt stream with the copy stream (the
+   D2D copies write registered planes there now).
+4. **Censuses.** A census that the engine launches kernels only on the receipt stream (and on the owner stream for the
+   `d2d-delay` early reader's destination digest, as today) and never on the copy stream outside test code; the D2D
+   class censuses name the receipt stream; the `d2h-delay` census names the hold. The tier crate's module docs that say
+   "the copy stream" for the D2D classes say "the receipt stream"; no rule, version or binding changes.
+
+**Acceptance, stated before any code.** Section 3's (a) to (e), verbatim and whole, re-run on G''' on each card (the
+A/B base `80039a8de` against G''', the gate set with every fault cell including day 41's three, the unit cells), and:
+
+- (f) **the hump clause** (new): the diag cell's shape (`stall_cell.py --mode demote --n 8`, 16 demote runs per boot, the
+  hump reader): two G''' boots and two G'' boots (the sitting's tip binary as the positive control), interleaved; G'''
+  passes if its median HUMP is at most 0.15 ms. On the target card the control must hump (above 0.15 ms) or the cell is
+  invalid and repeats once; on the 5090 the control is read, not required.
+
+**Predictions.** (c) as G'' (about 0.5 ms on BOX7, 0.15 on the 5090). (d) on BOX7: the e2e at or below the base (G''s
+owner saving, about 1 ms, without the hump's slower steps), so `<=+1.0` passes; the wall about G'''s. (f) about +0.03
+ms, as x27. The D2D classes' copy phase changes place (they no longer queue behind a demote's D2H copies on the copy
+stream; they may queue behind a demote's receipt kernel, 2.8 to 3.4 ms at 64 tokens on BOX7); the hit gate's census is
+the check that the capture and restore seams hold.
+
+**What each card decides.** Each card its own (a) to (f). No figure is compared across cards.
+
+**Budget.** 1 agent-day: the code and CPU cells 0.3, the 5090 cells 0.3, the BOX7 sitting 0.4 (it also carries item 3's
+target cell and item 5's target half, DAY39 section 5 and DAY41 section 1).
