@@ -257,3 +257,9 @@ SMs idle while a host sync spins, and would also fit.
 The same stress runs again on the WS pair, the pod where the stall happened, with a
 thread-state watchdog (`raw/q-pair7.sh`). The lane merges after that stress: a stall there under
 fused2 and not under main blocks it; none keeps the verdict.
+
+**WS-pair stress, 2026-09-24 (`raw/pair-stress/`):** 8 boots in the order F M M F F M M F
+(fused2 `899aac4d0`, main `6978f5fac`). Each boot served 64 greedy ignore-eos requests plus 8
+sampled ones. All 8 rows returned rc=0 with every request ok. No row stalled under either
+binary, and the watchdog never fired. The stall stays a one-off with its cause unknown. It did
+not reproduce under fused2 in 256 requests on the pod where it happened, so the verdict holds.
