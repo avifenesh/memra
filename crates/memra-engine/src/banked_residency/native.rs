@@ -317,7 +317,26 @@ impl Engine {
         // auto) is untouched; with one, the exact count is fixed here, before any allocation,
         // and a MEMRA_MOE_SLOTS request alongside it is a conflict, never a silent loser.
         let host_bytes = budget.host_bytes;
-        let slots = host_bank_budget(host_bytes, max_bytes)?;
+        // Day 43: the host tier is planned per record size under the budget, refused above
+        // three quarters of the host's MemAvailable read now (never an environment variable).
+        let record_sizes = entries
+            .iter()
+            .filter_map(|(_, record)| record.as_ref())
+            .map(|record| record.layout.storage_bytes())
+            .collect::<std::result::Result<Vec<u64>, _>>()?;
+        let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+        let ceiling = crate::banked_residency::host_bank_ceiling(&meminfo).ok_or_else(|| {
+            ExpertBankRefusal(
+                "experts-via-tier host memory unknown: /proc/meminfo carries no MemAvailable"
+                    .to_owned(),
+            )
+        })?;
+        let plan = host_bank_budget(host_bytes, &record_sizes, ceiling)?;
+        let slots = plan.records_held;
+        eprintln!(
+            "[experts-via-tier] host_bank_plan requested={host_bytes} planned={} classes={:?} records_held={slots} ceiling={ceiling}",
+            plan.planned_bytes, plan.classes
+        );
         let gpu_slots = match budget.gpu_bytes {
             Some(bytes) => {
                 if std::env::var_os("MEMRA_MOE_SLOTS").is_some() {
@@ -337,7 +356,13 @@ impl Engine {
             None => None,
         };
         let mut capacity = TierBudget::zero(1);
-        capacity.pageable = 512 * 1024 * 1024;
+        // The planned payload, a per-record metadata allowance and the previous fixed 512 MiB
+        // as headroom for staging and open tickets.
+        capacity.pageable = plan
+            .planned_bytes
+            .checked_add(slots as u64 * 4096)
+            .and_then(|n| n.checked_add(512 * 1024 * 1024))
+            .ok_or(Error::Overflow)?;
         capacity.staging = max_bytes;
         capacity.inflight = 1;
         let budget: SharedBudget = Rc::new(RefCell::new(Governor::new(
@@ -357,7 +382,7 @@ impl Engine {
                 slot_bytes: max_bytes,
             },
             BankLimits {
-                cache_bytes: host_bytes,
+                cache_bytes: plan.planned_bytes,
                 batch_bytes: max_bytes,
                 items: 1,
                 tickets: 1,
@@ -376,7 +401,7 @@ impl Engine {
         };
         request.bytes.pageable = bank.slru_metadata_bytes(slots)?;
         let metadata = budget.borrow_mut().reserve(&request)?;
-        let bank = bank.with_slru(SlruPolicy::new(&[(max_bytes, slots)])?, &metadata)?;
+        let bank = bank.with_slru(SlruPolicy::new(&plan.classes)?, &metadata)?;
         request.bytes = TierBudget::zero(1);
         let dispatch = SlruExpertDispatch::new(
             bank,

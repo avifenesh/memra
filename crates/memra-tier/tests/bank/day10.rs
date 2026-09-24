@@ -80,14 +80,28 @@ fn typed_refusals_name_requested_minimum_and_ceiling() {
             .0
             .contains("minimum overflow")
     );
-    assert_eq!(host_bank_budget(256 * 1024 * 1024, RECORD), Ok(16));
-    let host = host_bank_budget(1, RECORD).unwrap_err();
+    // Day 43: the host plan's typed refusals carry the same suffix, with the machine ceiling.
+    const CEILING: u64 = 1 << 34;
+    let sizes = [RECORD; 16];
+    assert_eq!(
+        host_bank_budget(16 * RECORD, &sizes, CEILING).map(|plan| plan.records_held),
+        Ok(16)
+    );
+    let host = host_bank_budget(1, &sizes, CEILING).unwrap_err();
     assert_eq!(
         host.0,
         format!(
             "experts-via-tier host bank budget cannot hold one expert record \
-             (requested 1, minimum {RECORD}, ceiling {})",
-            256 * 1024 * 1024
+             (requested 1, minimum {RECORD}, ceiling {CEILING})"
+        )
+    );
+    let over = host_bank_budget(CEILING + 1, &sizes, CEILING).unwrap_err();
+    assert_eq!(
+        over.0,
+        format!(
+            "experts-via-tier host bank budget exceeds the machine ceiling \
+             (requested {}, minimum {RECORD}, ceiling {CEILING})",
+            CEILING + 1
         )
     );
     // Only the typed refusal maps to the REFUSED contract; a plain error never does.

@@ -1804,9 +1804,13 @@ before any bank demand:
   names equal the former literal `blk.N.ffn_{gate,up,down}_exps.weight` spelling on a
   qwen3_5_moe plan with an MTP block, plus one test per refusal).
 - `--expert-bank-host-bytes=N` (default 256 MiB) sets the host bank budget. `host_bank_budget`
-  refuses `experts-via-tier host bank budget cannot hold one expert record` below one record
-  and `experts-via-tier host bank budget exceeds qualification ceiling` above 256 MiB, each
-  suffixed `(requested N, minimum M, ceiling C)`, and caps the bank at 16 records.
+  plans it into one SLRU class per exact record size of the catalog (slots proportional to each
+  size's record count, capped at it) and refuses `experts-via-tier host bank budget cannot hold
+  one expert record` below one record of the largest size and `experts-via-tier host bank
+  budget exceeds the machine ceiling` above three quarters of the host's `MemAvailable` read at
+  install, each suffixed `(requested N, minimum M, ceiling C)`; an unreadable `MemAvailable`
+  refuses too. The installer prints `[experts-via-tier] host_bank_plan requested= planned=
+  classes= records_held= ceiling=` (day 43, `research/spill-c-20260919/DAY43.md`).
 - `--expert-bank-gpu-bytes=N` fixes the GPU slot count before any allocation
   (`MoeSlotCache::with_exact_slots`, never clamps). `gpu_bank_budget` refuses
   `experts-via-tier GPU bank budget cannot hold the eight-slot minimum` below eight slots and

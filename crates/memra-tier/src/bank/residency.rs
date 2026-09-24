@@ -89,6 +89,70 @@ struct Pending {
     retired: bool,
 }
 
+/// The host cache's index (day 43, `research/spill-c-20260919/DAY43.md`): the resident leases by
+/// id, their storage bytes kept on every insert and removal, and the leases that left the index
+/// (evicted, trimmed, replaced, or published without a slot) while still owned: the only
+/// candidates `collect_evicted` can release. This replaces a scan of every owned lease against
+/// every cached one, which was quadratic in the tier's size.
+struct CacheIndex {
+    map: BTreeMap<BankId, BankLease>,
+    bytes: u64,
+    candidates: Vec<BankLease>,
+}
+impl CacheIndex {
+    fn new() -> Self {
+        Self {
+            map: BTreeMap::new(),
+            bytes: 0,
+            candidates: Vec::new(),
+        }
+    }
+    fn lease_bytes(lease: &BankLease) -> u64 {
+        lease.layout().storage_bytes().expect("validated layout")
+    }
+    fn get(&self, id: &BankId) -> Option<&BankLease> {
+        self.map.get(id)
+    }
+    fn contains_key(&self, id: &BankId) -> bool {
+        self.map.contains_key(id)
+    }
+    /// Insert, and hand a replaced lease of another charge to the release candidates.
+    fn insert(&mut self, id: BankId, lease: BankLease) {
+        let charge = lease.charge().id();
+        self.bytes += Self::lease_bytes(&lease);
+        if let Some(old) = self.map.insert(id, lease) {
+            self.bytes -= Self::lease_bytes(&old);
+            if old.charge().id() != charge {
+                self.candidates.push(old);
+            }
+        }
+    }
+    /// Remove an id that leaves the cache while its lease may still be owned.
+    fn remove_evicted(&mut self, id: &BankId) -> bool {
+        match self.map.remove(id) {
+            Some(old) => {
+                self.bytes -= Self::lease_bytes(&old);
+                self.candidates.push(old);
+                true
+            }
+            None => false,
+        }
+    }
+    /// Remove the entry of a lease that is being released now (not a candidate).
+    fn remove_released(&mut self, lease: &BankLease) -> bool {
+        if self
+            .map
+            .get(lease.id())
+            .is_some_and(|r| r.charge().id() == lease.charge().id())
+        {
+            let old = self.map.remove(lease.id()).expect("checked present");
+            self.bytes -= Self::lease_bytes(&old);
+            return true;
+        }
+        false
+    }
+}
+
 /// Portable HOST-only implementation of the frozen bank lifecycle. Reads currently
 /// run only in the explicit bounded `progress` pump; publication, cancellation and
 /// last-use retirement are separate. This is not A's asynchronous DMA engine and
@@ -102,7 +166,7 @@ pub struct BankService<D: BankDomain, H: Hotness<D>, R: ExactReader> {
     reader: R,
     policy: CoalescingPolicy,
     limits: BankLimits,
-    cache: BTreeMap<BankId, BankLease>,
+    cache: CacheIndex,
     owned: BTreeMap<(u64, u64), BankLease>,
     slru: Option<(SlruPolicy, LeasePin)>,
     pending: HashMap<TransferTicket, Pending>,
@@ -134,7 +198,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             reader,
             policy,
             limits,
-            cache: BTreeMap::new(),
+            cache: CacheIndex::new(),
             owned: BTreeMap::new(),
             slru: None,
             pending: HashMap::new(),
@@ -342,17 +406,22 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             .completion)
     }
     pub fn cache_bytes(&self) -> u64 {
-        self.cache
-            .values()
-            .map(|r| r.layout().storage_bytes().expect("validated layout"))
-            .sum()
+        self.cache.bytes
+    }
+    /// Records the host cache holds (day 43; read-only).
+    pub fn cached_records(&self) -> usize {
+        self.cache.map.len()
+    }
+    /// Leases the service owns, cached or held by an open ticket (day 43; read-only).
+    pub fn owned_leases(&self) -> usize {
+        self.owned.len()
     }
     pub fn evict_cached(&mut self, id: &BankId) -> Result<bool> {
         self.catalog.record(id)?;
         if let Some((policy, _)) = &mut self.slru {
             policy.remove(id);
         }
-        Ok(self.cache.remove(id).is_some())
+        Ok(self.cache.remove_evicted(id))
     }
     /// Host consumer adapter calls after its last use (including speculative
     /// rollback). No CUDA/graph use is accepted by this backend. Does not release
@@ -419,11 +488,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         while self.cache_bytes() > self.limits.cache_bytes {
             let id = self
                 .cache
+                .map
                 .keys()
                 .min_by_key(|id| self.heat.score(id))
                 .cloned()
                 .expect("nonempty cache");
-            self.cache.remove(&id);
+            self.cache.remove_evicted(&id);
             if let Some((policy, _)) = &mut self.slru {
                 policy.remove(&id);
             }
@@ -437,24 +507,39 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         result
     }
     fn collect_evicted_unclocked(&mut self) -> Result<()> {
-        let leases: Vec<_> = self
-            .owned
-            .values()
-            .filter(|l| {
-                !self
+        // Every owned lease outside the cache entered `candidates` when it left the index or
+        // was published without a slot, so these are exactly the leases the old scan found.
+        let candidates = std::mem::take(&mut self.cache.candidates);
+        let mut kept = Vec::new();
+        let mut failure = None;
+        for lease in candidates {
+            let charge = lease.charge().id();
+            if !self.owned.contains_key(&charge)
+                || self
                     .cache
-                    .values()
-                    .any(|c| c.charge().id() == l.charge().id())
-            })
-            .cloned()
-            .collect();
-        for lease in leases {
+                    .get(lease.id())
+                    .is_some_and(|c| c.charge().id() == charge)
+            {
+                continue;
+            }
+            if failure.is_some() {
+                kept.push(lease);
+                continue;
+            }
             match self.release(&lease) {
-                Ok(()) | Err(Error::Busy) => (),
-                Err(e) => return Err(e),
+                Ok(()) => {}
+                Err(Error::Busy) => kept.push(lease),
+                Err(e) => {
+                    kept.push(lease);
+                    failure = Some(e);
+                }
             }
         }
-        Ok(())
+        self.cache.candidates.extend(kept);
+        match failure {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 }
 impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankService<D, H, R> {
@@ -503,16 +588,11 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         self.can_release(lease)?;
         lease.retire_backing()?;
         self.budget.borrow_mut().release(lease.charge())?;
-        if self
-            .cache
-            .get(lease.id())
-            .is_some_and(|r| r.charge().id() == lease.charge().id())
+        if self.cache.remove_released(lease)
             && let Some((policy, _)) = &mut self.slru
         {
             policy.remove(lease.id());
         }
-        self.cache
-            .retain(|_, r| r.charge().id() != lease.charge().id());
         self.owned.remove(&lease.charge().id());
         Ok(())
     }
@@ -558,7 +638,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         let unique: BTreeSet<_> = batch.ids.iter().cloned().collect();
         let missing: Vec<_> = unique
             .iter()
-            .filter(|id| !self.cache.contains_key(*id))
+            .filter(|id| !self.cache.contains_key(id))
             .map(|id| Ok((id.clone(), self.catalog.record(id)?.clone())))
             .collect::<Result<_>>()?;
         let plan = plan_reads(&missing, logical, &self.reader, self.policy)?;
@@ -768,15 +848,19 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                 let lease = &p.records[id];
                 if let Some(decision) = policy.reserve(id, lease.layout().storage_bytes()?, &[])? {
                     if let Some(old) = decision.evicted {
-                        self.cache.remove(&old);
+                        self.cache.remove_evicted(&old);
                     }
                     policy.publish(id)?;
                     self.cache.insert(id.clone(), lease.clone());
+                } else {
+                    // Published to this ticket with no host slot: owned, never cached.
+                    self.cache.candidates.push(lease.clone());
                 }
             }
         } else {
-            self.cache
-                .extend(p.records.iter().map(|(id, l)| (id.clone(), l.clone())));
+            for (id, lease) in &p.records {
+                self.cache.insert(id.clone(), lease.clone());
+            }
             self.trim();
         }
         Ok(output)

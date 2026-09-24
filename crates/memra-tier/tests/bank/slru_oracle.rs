@@ -1,128 +1,35 @@
+//! Day 43 (`research/spill-c-20260919/DAY43.md`): the VecDeque host SLRU as it was before the O(1)
+//! rewrite, kept verbatim as the decision oracle the new `memra_tier::bank::SlruPolicy` must match.
 //! CPU decision model of moe_cache.rs default SLRU (not opt-in LFU/frozen mode).
 //! Fixed size classes, free-first admission, pending exclusion, full-class hits.
-//!
-//! Day 43 (`research/spill-c-20260919/DAY43.md`): every operation is O(1) apart from the
-//! `keep` skip of a prefetch eviction (O(skipped slots), the old scan's visit order). The
-//! segments are intrusive doubly-linked lists over slot indices (the `moe_cache.rs` `SlruList`
-//! shape) and the maps are `HashMap`s. Decisions and `orders()` equal the VecDeque version this
-//! replaced, which the tier's tests keep as the oracle (`tests/bank/slru_oracle.rs`) and drive
-//! against this one on the recorded synthetic trace and a randomized one.
-use crate::contracts::*;
-use std::collections::HashMap;
-
-const NIL: usize = usize::MAX;
-const SEG_NONE: u8 = 0;
-const SEG_PROBATION: u8 = 1;
-const SEG_PROTECTED: u8 = 2;
-
-#[derive(Clone, Copy, Debug)]
-struct Link {
-    prev: usize,
-    next: usize,
-    seg: u8,
-}
-impl Link {
-    const NONE: Self = Self {
-        prev: NIL,
-        next: NIL,
-        seg: SEG_NONE,
-    };
-}
-
-/// One segment, front = LRU, back = MRU.
-#[derive(Clone, Debug)]
-struct List {
-    head: usize,
-    tail: usize,
-    len: usize,
-}
-impl List {
-    const fn new() -> Self {
-        Self {
-            head: NIL,
-            tail: NIL,
-            len: 0,
-        }
-    }
-    fn push_back(&mut self, slot: usize, seg: u8, links: &mut [Link]) {
-        debug_assert_eq!(
-            links[slot].seg, SEG_NONE,
-            "slot {slot} already in a segment"
-        );
-        links[slot] = Link {
-            prev: self.tail,
-            next: NIL,
-            seg,
-        };
-        if self.tail == NIL {
-            self.head = slot;
-        } else {
-            links[self.tail].next = slot;
-        }
-        self.tail = slot;
-        self.len += 1;
-    }
-    fn unlink(&mut self, slot: usize, links: &mut [Link]) {
-        let l = links[slot];
-        if l.prev == NIL {
-            self.head = l.next;
-        } else {
-            links[l.prev].next = l.next;
-        }
-        if l.next == NIL {
-            self.tail = l.prev;
-        } else {
-            links[l.next].prev = l.prev;
-        }
-        links[slot] = Link::NONE;
-        self.len -= 1;
-    }
-    fn pop_front(&mut self, links: &mut [Link]) -> Option<usize> {
-        let slot = self.head;
-        if slot == NIL {
-            return None;
-        }
-        self.unlink(slot, links);
-        Some(slot)
-    }
-    fn iter<'a>(&self, links: &'a [Link]) -> impl Iterator<Item = usize> + 'a {
-        let mut cur = self.head;
-        std::iter::from_fn(move || {
-            if cur == NIL {
-                return None;
-            }
-            let slot = cur;
-            cur = links[slot].next;
-            Some(slot)
-        })
-    }
-}
+use memra_tier::contracts::*;
+use std::collections::{BTreeMap, VecDeque};
 
 #[derive(Clone, Debug)]
 struct Class {
     capacity: u64,
     free: Vec<usize>,
-    probation: List,
-    protected: List,
+    probation: VecDeque<usize>,
+    protected: VecDeque<usize>,
     protected_cap: usize,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SlruDecision {
+pub struct OracleDecision {
     pub slot: usize,
     pub evicted: Option<BankId>,
 }
 /// Metadata-only policy. Slots are NOT allocations or GPU permission. The caller
 /// retains and charges backing independently until last use, even after eviction.
+/// VecDeque is intentionally a readable CPU oracle, not a tuned O(1) replacement.
 #[derive(Clone, Debug)]
-pub struct SlruPolicy {
+pub struct SlruOracle {
     classes: Vec<Class>,
     slot_class: Vec<usize>,
-    links: Vec<Link>,
     occupants: Vec<Option<BankId>>,
-    reserved: HashMap<BankId, usize>,
-    table: HashMap<BankId, usize>,
+    reserved: BTreeMap<BankId, usize>,
+    table: BTreeMap<BankId, usize>,
 }
-impl SlruPolicy {
+impl SlruOracle {
     /// Ascending, unique (capacity, count) classes. Caller uses the native size
     /// class planner; this does not infer a hardware budget or change that plan.
     pub fn new(classes: &[(u64, usize)]) -> Result<Self> {
@@ -134,26 +41,23 @@ impl SlruPolicy {
         let mut out = Self {
             classes: Vec::new(),
             slot_class: Vec::new(),
-            links: Vec::new(),
             occupants: Vec::new(),
-            reserved: HashMap::new(),
-            table: HashMap::new(),
+            reserved: BTreeMap::new(),
+            table: BTreeMap::new(),
         };
         for &(capacity, count) in classes {
             let start = out.slot_class.len();
             let end = start.checked_add(count).ok_or(Error::Overflow)?;
             out.slot_class.resize(end, out.classes.len());
-            out.links.resize(end, Link::NONE);
             out.occupants.resize(end, None);
             out.classes.push(Class {
                 capacity,
                 free: (start..end).rev().collect(),
-                probation: List::new(),
-                protected: List::new(),
+                probation: VecDeque::new(),
+                protected: VecDeque::new(),
                 protected_cap: ((count as f64 * 0.8) as usize).max(1),
             });
         }
-        out.table.reserve(out.occupants.len());
         Ok(out)
     }
     pub fn capacity_bytes(&self) -> Result<u64> {
@@ -182,22 +86,16 @@ impl SlruPolicy {
         if !class.free.is_empty() {
             return true;
         }
-        match self.links[slot].seg {
-            SEG_PROBATION => class.probation.unlink(slot, &mut self.links),
-            SEG_PROTECTED => class.protected.unlink(slot, &mut self.links),
-            _ => {}
+        if let Some(pos) = class.probation.iter().position(|&s| s == slot) {
+            class.probation.remove(pos);
+        } else if let Some(pos) = class.protected.iter().position(|&s| s == slot) {
+            class.protected.remove(pos);
         }
-        class
-            .protected
-            .push_back(slot, SEG_PROTECTED, &mut self.links);
-        while class.protected.len > class.protected_cap {
-            let demoted = class
-                .protected
-                .pop_front(&mut self.links)
-                .expect("protected is longer than its cap");
+        class.protected.push_back(slot);
+        while class.protected.len() > class.protected_cap {
             class
                 .probation
-                .push_back(demoted, SEG_PROBATION, &mut self.links);
+                .push_back(class.protected.pop_front().unwrap());
         }
         true
     }
@@ -208,7 +106,7 @@ impl SlruPolicy {
         id: &BankId,
         required: u64,
         keep: &[BankId],
-    ) -> Result<Option<SlruDecision>> {
+    ) -> Result<Option<OracleDecision>> {
         id.validate()?;
         if required == 0 {
             return Err(Error::InvalidLayout);
@@ -226,23 +124,22 @@ impl SlruPolicy {
             }
         }
         if selected.is_none() {
-            let occupants = &self.occupants;
-            let links = &mut self.links;
-            'classes: for class in &mut self.classes {
+            for class in &mut self.classes {
                 if class.capacity < required {
                     continue;
                 }
-                for list in [&mut class.probation, &mut class.protected] {
-                    let victim = list.iter(links).find(|&s| {
-                        occupants[s]
+                for queue in [&mut class.probation, &mut class.protected] {
+                    if let Some(pos) = queue.iter().position(|&s| {
+                        self.occupants[s]
                             .as_ref()
-                            .is_some_and(|occupant| !keep.contains(occupant))
-                    });
-                    if let Some(slot) = victim {
-                        list.unlink(slot, links);
-                        selected = Some(slot);
-                        break 'classes;
+                            .is_some_and(|id| !keep.contains(id))
+                    }) {
+                        selected = queue.remove(pos);
+                        break;
                     }
+                }
+                if selected.is_some() {
+                    break;
                 }
             }
         }
@@ -254,7 +151,7 @@ impl SlruPolicy {
             self.table.remove(old);
         }
         self.reserved.insert(id.clone(), slot);
-        Ok(Some(SlruDecision { slot, evicted }))
+        Ok(Some(OracleDecision { slot, evicted }))
     }
     /// CPU producer completion only. Native caller must establish consumer wait
     /// before this metadata publication; calling this cannot create a ReadyView.
@@ -262,11 +159,9 @@ impl SlruPolicy {
         let slot = self.reserved.remove(id).ok_or(Error::NotFound)?;
         self.occupants[slot] = Some(id.clone());
         self.table.insert(id.clone(), slot);
-        self.classes[self.slot_class[slot]].probation.push_back(
-            slot,
-            SEG_PROBATION,
-            &mut self.links,
-        );
+        self.classes[self.slot_class[slot]]
+            .probation
+            .push_back(slot);
         Ok(slot)
     }
     /// Only a proven retired producer may return a reserved slot to free.
@@ -282,11 +177,8 @@ impl SlruPolicy {
         };
         self.occupants[slot] = None;
         let class = &mut self.classes[self.slot_class[slot]];
-        match self.links[slot].seg {
-            SEG_PROBATION => class.probation.unlink(slot, &mut self.links),
-            SEG_PROTECTED => class.protected.unlink(slot, &mut self.links),
-            _ => {}
-        }
+        class.probation.retain(|&s| s != slot);
+        class.protected.retain(|&s| s != slot);
         class.free.push(slot);
         true
     }
@@ -297,8 +189,8 @@ impl SlruPolicy {
             .map(|c| {
                 (
                     c.free.clone(),
-                    c.probation.iter(&self.links).collect(),
-                    c.protected.iter(&self.links).collect(),
+                    c.probation.iter().copied().collect(),
+                    c.protected.iter().copied().collect(),
                 )
             })
             .collect()
