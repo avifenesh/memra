@@ -36,9 +36,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   (a GPU digest behind Move 2 owed item 1, which is now closed).
 - Price today: `copy settle` 8.33 ms per demote on the 5090 (write-combined leases, `DAY35.md` section 8), 0.70 ms on
   BOX5 (`DAY36.md` section 4, cached leases).
-- Acceptance: none registered. DAY35 section 2's (a) to (d) are the template; the new design's own clauses are
-  pre-registered before its code.
-- Status: open (survey first, then pick on evidence).
+- Acceptance: DAY38 section 3, (a) to (e).
+- Status: pre-registered (DAY38: the survey picked G, the framed SHA-256 over the device source on the copy stream, with
+  P, the copy-phase park).
 
 ### 3. The same-tick fill (design F) on slower CPUs
 
@@ -126,6 +126,16 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Acceptance: day 16's clause, verbatim, unchanged.
 - Status: open (the NOT MET reading is on a tree before options (a) and 2a, the D2H and H2D spans, K, F and M'; the
   cell is owed on the current tree; the clause is read as written).
+
+### 12. Every CPU hash over the 5090's write-combined leases reads at the direct rate (found by DAY38's survey)
+
+- Source: `DAY38.md` section 2 (`SURVEY WC kind=write-combined bytes=1153434 N=5 direct_ms median=9.841 ..
+  streamed_ms median=0.341`); the reads it covers: K's promote-side checksums on the helper (8.8 ms per promote on the
+  5090, DAY34; 88 of 90 promotes land one tick later for it), M''s hash 2 on the helper (about 8 ms inside the
+  `Hashing` job, DAY35 section 8), the verify arm's host digest, and hash 1 until item 2 lands.
+- Acceptance: none registered (a streaming read for write-combined pinned sources in the hash path, the program
+  unchanged, bitwise, priced on the 5090 and a no-regression reading on the target card's cached leases).
+- Status: open.
 
 ## 2. Closed, delivered, or held by another owner
 
