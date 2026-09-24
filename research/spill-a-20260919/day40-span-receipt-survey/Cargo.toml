@@ -1,0 +1,16 @@
+# WP-A day 40 (DAY40.md section 1): the span-receipt survey. A research tool, not engine code: the engine's own
+# `cu/tier_receipt.cu` compiled by `build-fatbin.sh` with the engine's nvcc flags and loaded at run time, its
+# `d2d_receipt_digest` run over device memory and over pinned host memory through the host pointer, checked bitwise
+# against `memra_tier::conformance::receipt_digest` and priced. Detached from the workspace (the empty [workspace] table).
+# Build: bash build-fatbin.sh <arch> && cargo build --release --offline
+[package]
+name = "day40-span-receipt-survey"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+cudarc = { version = "=0.19.8", default-features = false, features = ["std", "cuda-13010", "dynamic-loading", "driver", "nvrtc"] }
+memra-tier = { path = "../../../crates/memra-tier" }

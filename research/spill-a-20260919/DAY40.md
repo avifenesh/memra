@@ -51,3 +51,21 @@ way the design is pre-registered with its acceptance before its code.
 card; the sitting re-reads (2) there.
 
 **Budget.** The survey 0.1 agent-day; the design, build and 5090 cells about 1 agent-day.
+
+## 2. The survey, as it ran (`rtx5090-day40/survey/`), and the pick
+
+- Probe `day40-span-receipt-survey/` with the engine's own `cu/tier_receipt.cu` compiled by `build-fatbin.sh 120a`
+  (source sha256 `6347cbe006ab5f3b..`, fatbin `3a7824de82e25c1c..`); one 5090 hold ending 17:50:55Z after bounded waits
+  behind lane B. Verbatim (`survey.log`):
+  - `SURVEY UVA checked=128 mismatches=0 -> BITWISE` (8 sizes, 8 offsets, cached and write-combined).
+  - 27B spans (96, 156,893,184 B): `arm=device .. median=0.588` ms (266.7 GB/s); `arm=staging .. median=6.725`
+    (23.3 GB/s, one launch per span, each observed); `arm=staging-queued .. median=6.290` (24.9 GB/s);
+    `CPU-ORACLE .. median=51.983` (3.02 GB/s on this host).
+  - 9B spans (48, 52,690,944 B): device 0.204, staging 2.462, queued 2.219, CPU oracle 17.153 ms.
+  - Every price run `bitwise=true`.
+- **The pick, by section 1's rule: the device-side form**, both directions: (1) bitwise on every size, offset and kind;
+  (2b) + (2a) for the 27B's shape 6.725 + 0.588 = 7.31 ms against the 15 ms bound; (2a) 0.588 ms against 1.0. The CPU
+  oracle the named D2H form would put on the helper is 52 ms here, about 70 ms on the day-27 target host.
+- **Held before the design**: DAY38's target-card sitting found that G' and G'' (a D2H receipt on its own receipt
+  stream) slow the tenant's decode a little more with each demote in a boot (DAY38 section 11). The device-side span
+  form would put more work on that stream, so its design waits for that cause to be placed and fixed.
