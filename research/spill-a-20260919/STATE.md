@@ -1,6 +1,5 @@
-# WP-A day 36 resumable state
+# WP-A day 38 resumable state
 
-- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. Merged `origin/main` `1d0cf13bc` (#711, integ57, with the guard fix `43d16d73f`) as `e23383796`, no conflict. DAY36 sections 1 (`0c2c62f77`), 3 (`4c2a4b19d`) and 3a (`733075ed1`) pre-registered before their code and boots.
-- The instrument `d4f53945f` (a log-only recurrent copy field on the restore lines). 5090 reading `79f5f6ae0`: host 0.130, owner stream 0.170 ms.
-- BOX5 sitting (DAY36 section 4, receipts in `pro-single-day36/box/`): the price cell `-> CLOSES` (0.290 / 0.190 ms), the D2D half closed with no door; M' (c) and (d) PASS on the card, every gate green. BOX5 released.
-- Integrable: yes. Owed: hash 1 on the owner; the fill on slower CPUs; the strong-form receipt; the darklanes VERDICT line (drafted in DAY36 section 4, handed to the lead).
+- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. `origin/main` `d61012658` merged as `71afb6e6f`; the tip `b214bd2cf` carries DAY38 section 10 (the target sitting's pre-registration) and DAY39 section 3.
+- Ledger `OWED.md` (`0e65c3d0d`, statuses current). Item 1 (finding 5, DAY37): fixed `ba5da705d` (one pool context per native cell), 5090 pair/all 100 of 100, target all arm owed. Item 2 (hash 1, DAY38): design G'' (the D2H receipt, the framed SHA-256 of each KV item's device source, on a receipt stream beside the copies; P, the copy-phase park; pooled receipt twins), 5090 (a) to (e) PASS, target owed. Item 3 (the fill, DAY39): survey pre-registered, 5090 reading banked, rented-host readings owed.
+- NEED TARGET CARD: DAY38 section 10 (scripts `pro-single-day38/`, `build.sh b214bd2cf`, then `driver.sh`), about 2 h 20 min from access. Found and owed: items 12 (streaming reads for write-combined hashes), 13 (the retire seam), 14 (host-tier lease frees on the owner thread).

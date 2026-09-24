@@ -24,7 +24,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   card's all arm 20 of 20).
 - Status: 5090 done, target owed (DAY37 sections 2 to 9: the cause placed at same-context `cuMemFreeHost`,
   synchronous `cuMemFree` and module load by a two-thread probe; the fix `ba5da705d`, one pool context per native
-  cell; pair 100/100, all 100/100, serial 3/3, the red arm failing as required).
+  cell; pair 100/100, all 100/100, serial 3/3, the red arm failing as required). The target card's all arm rides
+  DAY38 section 10's sitting.
 
 ### 2. Hash 1 (the demote's D2H receipt digest) off the owner thread
 
@@ -40,7 +41,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Status: pre-registered, revised twice (DAY38: the survey picked G with P; G's 5090 half passed (c) and (d) and failed
   (b) on the fault gate's plain arm, the red arm's delay sharing the copy stream; G' moved the receipt onto its own stream
   and passed (c), (d), (e) and failed (b) again, the cause a per-batch pinned receipt twin freed on the owner thread;
-  G'' pools the twins, section 8).
+  G'' pools the twins, section 8). **5090 done, target owed**: G'' passes (a) to (e) on the 5090 (DAY38 section 9:
+  `copy settle` 8.34 to 0.15 ms, wall -5.90 / -7.20 ms, e2e -5.48 / -7.47 ms, every gate ALL GREEN); the target half is
+  DAY38 section 10's sitting.
 
 ### 3. The same-tick fill (design F) on slower CPUs
 
@@ -48,9 +51,11 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   96 spans outlast the 13.1 ms to the next tick top, `polls [2] (counts [90])`), section 9 ("a multi-threaded or
   chunked fill on the copy stream, not pre-registered"); `DAY35.md` section 4 (F kept on the 5090, flat on BOX4);
   rulings 49, 52 and 53.
-- Acceptance: none registered. It must decide on a slower-CPU host as well as a 9950X-class host; the 5090 host decides
-  neither.
-- Status: open.
+- Acceptance: DAY39 section 1's rule picks the design per host class; the design's acceptance is pre-registered after
+  the host's reading.
+- Status: pre-registered (DAY39 sections 1 and 3); the survey read on the 5090 host (DAY39 section 2: the 27B fill
+  12.68 ms at 1 thread, 6.49 at 4, 5.93 at 8; spans 5.62 ms); the slower-CPU and 9950X-class readings owed on rented
+  hosts, the first in DAY38 section 10's sitting.
 
 ### 4. The strong-form receipt of the recurrent spans (both directions)
 
