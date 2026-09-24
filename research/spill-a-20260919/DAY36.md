@@ -118,3 +118,27 @@ one. Order: build (outside any hold), the price cell and the A/B in one hold, th
 **Timing, for the rental.** The builds about 25 minutes (three servers and the test binaries), the price cell about 8
 minutes, the A/B about 50 minutes (20 boots of the 27B), the gates about 20 minutes, the hit gate and the unit cells
 about 15 minutes: about 2 hours from access.
+
+## 3a. Amendment to section 3, before the sitting runs: M' carries the guard fix from review
+
+Review on #711 (integ57) found an ordering bug in M''s guard: `host_demote_settle_hashing` landed the guard before the
+reply's `seq` check, so a reply for another ticket could hand back, and the latch path then drop, leases whose views the
+helper might still hold. The lead fixed it on the integration branch (`43d16d73f`: the guard lands only when `reply.seq
+== seq`; otherwise it stays in `hashing` and its `Drop` leaks). The lead's ruling: M''s target-card cells run on a binary
+that carries it. So, before any boot:
+
+- **The M' arm, the price cell's binary and the gates' binary are one build: the lane tip after `origin/main` with #711
+  is merged** (M' with the fix, the day-36 instrument). Its commit is written into the build receipt (`tree-tip.sha`).
+- **The base arm is that same tip with M' removed**: `pro-single-day36/base-revert.patch`, the code of `55ae87616` and
+  `43d16d73f` reversed and nothing else, applied on the box for the base build and taken back out (`build.sh` checks the
+  tree returns to the tip). The two A/B arms then differ only in M'. Section 3's base `a0f915d8a` and M' `55ae87616`
+  are replaced; the 5090 A/B (DAY35 section 8) stays as it ran.
+- The cells, the rules (DAY33 section 6's verbatim; DAY35 section 7's (c) and (d) verbatim), N, the boot environment, the
+  gate set and the expected numbers are unchanged.
+- As prepared: `origin/main` `1d0cf13bc` (#711) merged as `e23383796`, no conflict (the fix `43d16d73f` in the lane;
+  server lib 894 passed, clippy clean on tier, engine and server, `check-flags` and `check-conflict-markers` OK). The
+  patch was cut there by reverting `43d16d73f` and `55ae87616` without a commit, crates only (2 files, 14 insertions, 486
+  deletions; the one conflict, in the tests, resolved by dropping day 35's census and keeping day 36's), checked to
+  compile (`cargo check -p memra-server`) with no M' symbol left and the day-36 instrument kept, and checked to apply to
+  the tip (`git apply --check`). The build's argument is the commit that carries this section (its code equals
+  `e23383796`'s).

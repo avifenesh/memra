@@ -2,7 +2,7 @@
 # Day-36 target-card cells 1 and 2 (DAY36.md section 3) in ONE collector hold:
 # `tier-battery.py --rig pro-single --external-lock --execute bash price-and-ab.sh @COLLECTOR_LOCK_FD@`.
 # 1. the price cell: pro-single-day26/restore-arm.sh byte for byte on the tip binary (one door-ON boot, --mode restore --n 50).
-# 2. M''s A/B: stall_cell.py --mode demote --n 5, base against M', o1 = base m x5, o2 = m base x5, door ON, the PRO demote
+# 2. M''s A/B: stall_cell.py --mode demote --n 5, base against M' (the tip, section 3a), o1 = base m x5, o2 = m base x5, door ON, the PRO demote
 #    environment, readiness bounded to 480 s; the day35m-reading.py layout (ab/o{1,2}/bNN-{base,m}). 250 ms telemetry.
 # A compute app at the hold's start: bounded 15 x 60 s, then NOT RUN (DAY36 section 3). Executed-not-qualified.
 set -uo pipefail
@@ -15,7 +15,7 @@ mkdir -p "$R/price" "$R/m2/ab"
 python3 tools/tier-lock-proof.py --fd "$fd" --lock /tmp/memra-gpu.lock --owner collector > "$R/m2/LOCK.json"
 log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$R/m2/run.log"; }
 log "model sha256: $(sha256sum "$MODEL" | cut -d' ' -f1) $(basename "$MODEL")"
-sha256sum "$R/bins/base/memra-server" "$R/bins/m2/memra-server" "$R/bins/tip/memra-server" > "$R/m2/binaries.sha256"
+sha256sum "$R/bins/base/memra-server" "$R/bins/tip/memra-server" > "$R/m2/binaries.sha256"
 idle=0
 for attempt in $(seq 1 15); do
   apps=$(nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader 2>&1)
@@ -61,7 +61,7 @@ for order in o1 o2; do
   arms="base m base m base m base m base m"; [ $order = o2 ] && arms="m base m base m base m base m base"
   for arm in $arms; do
     i=$((i+1)); D=$R/m2/ab/$order/$(printf 'b%02d-%s' "$i" "$arm"); mkdir -p "$D"
-    bin=$R/bins/base/memra-server; [ $arm = m ] && bin=$R/bins/m2/memra-server
+    bin=$R/bins/base/memra-server; [ $arm = m ] && bin=$R/bins/tip/memra-server
     echo "arm=$arm order=$order bin=$(sha256sum "$bin" | cut -c1-16)" > "$D/BOOT.txt"
     nvidia-smi --query-gpu=temperature.gpu,power.draw,clocks.sm,memory.used --format=csv > "$D/card.before.csv" 2>&1
     if ! boot "$bin" "$D/server.log"; then
