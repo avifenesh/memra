@@ -231,3 +231,28 @@ DAY33 VERDICT card=pro6000 boots=5 v_boot_all=True green_noom_book_all=True v_id
 The local detached worktrees `wt-b35-red` and `wt-b35-green` are removed with this commit. `target/day35/green` stays
 until day 36 has used its copy; `target/day35/red` is deleted. The BOX4 chain removed its worktrees. Its receipt
 root, and `bins/green` (the day-36 binary's source), stay.
+
+## 3. Addendum: the review fix, same acceptance
+
+Written before its boots. The review on #705 (revuto) found an over-booking in section 1.2's seed term.
+`PrefixCache::prepare_snapshot` evicts or demotes older unleased entries to fit a seed inside the cache's byte budget
+before it allocates. The cache's device bytes can therefore grow by at most `budget - total_bytes`, and booking every
+armed session's full seed over-books a warm cache (extra 429s). The cold-burst R64 above could not show it.
+
+The lead fixed it on the integration branch: `34a4b7f23` on `lane/spill-integ55-20260924`,
+`seed_booking_cap(pending, prefix_cache_budget_bytes(), px.total_bytes)`, armed only, with a unit test.
+
+The cell (`pro-single-day35/review-chain.sh`) runs on BOX4 after day 36's box half, with `34a4b7f23` built once on the
+box: `green-R64-a1`, `green-off-a`, `green-R64-a2`, with the shapes of 1.3. The reader and verdicts are 1.4's,
+unchanged:
+
+```
+python3 day33-compare.py --card pro6000 red:R64:pro-single-day35/box/boots/red-R64 red:off:pro-single-day35/box/boots/red-off \
+  green:R64:pro-single-day35/box-review/boots/green-R64-a1 green:R64:pro-single-day35/box-review/boots/green-R64-a2 \
+  green:off:pro-single-day35/box-review/boots/green-off-a
+```
+
+The red side is section 2's own BOX4 red boots (the same box and binary `3063862a...`). Acceptance is 1.4's: G-NOOM
+(0 OOM lines, parks included), G-BOOK, V-ID-FIX, V-ID and V-OFF PASS on both green runs, card verdict GREEN. The burst's
+200 and 429 counts are reported against section 2's; a cold burst's prefix cache starts empty, so the cap is expected
+to move little here.
