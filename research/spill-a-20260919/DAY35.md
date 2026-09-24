@@ -213,3 +213,54 @@ in the server commit), the server (this section's commit).
 - Checks: tier contracts `102 passed`; engine lib `548 passed`; server lib `886 passed`; clippy `-D warnings` on tier,
   engine and server, all targets, clean; the GPU-less `DOCS_RS=1 --target x86_64-unknown-linux-gnu` clippy pass
   `docsrs_rc=0`; `check-flags` clean; `cargo fmt --all -- --check` and `git diff --check` clean.
+
+## 6. Design M on the 5090, as it ran (`rtx5090-day35/m/`): refuted as registered
+
+- The hold: `hold taken (fd 9)` 03:47:19Z, released 04:03:25Z, after bounded waits behind lane B's day-36 O2 hold
+  (`run.log`); no compute app at the start or the end. Binaries (`binaries.sha256`): base `07a0360ffbfaf240..` (the FK
+  binary, the lane after F was settled), M `0ee7ba55af5ed567..` (`2562144dc`), the test binaries. 20 boots, every one
+  ready, `STALL REPLAY: PASS` 20 of 20. Card telemetry (`card-250ms.csv`, local-time stamps): 3859 samples, 61 to 89
+  C, 24.6 to 177.0 W.
+
+**The clauses, verbatim** (`reading-day35m.log`, `run.log`):
+
+- (c) `DAY35 M C copy-settle N=80 median=0.15 min=0.12 max=0.20 take-back N=80 median=0.07 min=0.06 max=0.08 rule
+  N>=20 median<=1.5 max<=3.0 each -> PASS` (base: `copy-settle N=80 median=8.41 .. take-back N=80 median=8.43`).
+- (d) `DAY35 M D order=o1 wall base=71.05 m=95.30 m-minus-base=+24.25 rule <=+25.0 | e2e base=124.29 m=107.93
+  m-minus-base=-16.36 rule <=+1.0 -> PASS`; `DAY35 M D order=o2 wall base=69.55 m=96.05 m-minus-base=+26.50 rule
+  <=+25.0 | e2e base=121.61 m=106.76 m-minus-base=-14.86 rule <=+1.0 -> FAIL`.
+- (b) `gate identity-default-on rc=1 KV-HOST-SPILL IDENTITY GATE: 4 FAILURE(S) (teeth=0)`, `gate failure-on rc=1
+  KV-HOST-SPILL FAILURE GATE: 1 FAILURE(S)`, `gate fault-default rc=1 KV-HOST-CONTRACT-FAULT GATE: 13 FAILURE(S)`
+  (three failures each in `promote-postpublish`, `promote-reject`, `promote-readyview` and `promote-span-refusal`, one
+  in `hash-helper-gone`); ALL GREEN: identity default OFF, plain OFF and ON, `fault-plain`, hit OFF and ON. Unit:
+  engine `ok. 6 passed` (with `d2h_deferred_checksum_lands_with_the_supplied_digests`); door cells `FAILED. 17 passed; 1
+  failed`, the new cell (below). **FAIL.**
+- (a) The failure gate's `digest` cell printed `contracts door D2H receipt: Key plane image checksum differs from its
+  D2H receipt as injected (MEMRA_KV_HOST_FAULT=flip-demote)`: the helper's re-hash saw the flipped byte, and r3 served
+  the cold path with reference bytes. `FAIL: the promote caught it: VERIFY FAILED, loud and named`: no promote ran, so
+  the verify arm had nothing to catch. The new GPU cell failed on its own fixture: `a Demoting entry has no source
+  shell for its submitted ticket` (it called `host_demote_prefix_ref`, which leaves the shell to the sink; the fix, the
+  sink `host_demote_prefix_entry` itself, is kept as a patch and was not run). **Not shown.**
+- **M as registered fails (b) and (d); it is refuted.** Nothing in section 2 is relaxed.
+
+**The cause, placed** (before any code change). M1 takes the receipts' reply at the NEXT tick-top poll after the
+views go out, so every off-tick demote's copy phase gains one poll. Behind a long tick, that poll is late. In the
+identity gate's default ON boot: `demote copy complete off the tick: ticket seq=3 complete after 2 poll(s), 300.8ms from
+submission to completion` (day 34's same boot: `complete after 1 poll(s), 36.6ms`), with r2's admission and prime
+(`[spec-k] .. prompt=102`, `[spec-acc] ctx=102`) logged between the submission and the D2H receipt. E_A reached its
+`Hashing` phase late; it published only when `demote hashing settled synchronously by a second demote`, and the boot
+has no promote line. A hit on a Demoting entry in its COPY phase does not park (day 29 parks the `Hashing` phase only),
+so a request arriving in that longer window serves cold. Every failing check needs a promote after a demote (identity
+r3, the digest cell's verify, the fault cells' "next promote"); the `hash-helper-gone` failure is r3's own demote
+meeting the late entry through the `Block` wait. The spec-off run of the same fault gate (`fault-plain`, shorter ticks)
+is ALL GREEN. The bytes held: `r3 ON == OFF byte identity (promoted restore == cold re-prime)` ok. Scope: the placement
+is the mechanism plus this boot's log; no per-cell timeline was taken.
+
+**What M bought** (readings): the owner's hold per steady demote `owner-held` median 18.28 to 1.34 ms; the demoting
+intruder's e2e 15 to 16 ms lower in both orders; the tenant's `tenant-stall` median 44.61 / 42.64 to 39.38 / 39.48 ms.
+The receipts took `receipts-ms N=90 median=8.10` on the helper.
+
+**Next.** M's code leaves the lane tip in one revert commit (tier rule, engine calls, server), so no half-working
+mechanism is integrated; git history and these receipts are the record. The half that adds no poll to the copy phase
+(M2 alone: hash 2 inside the `Hashing` job, whose hits already park) is a separate design, pre-registered before any
+code if it goes ahead.
