@@ -1492,10 +1492,25 @@ impl<S> Coalescer<S> {
                 // SAFETY: see `Lent`; every lender is blocked on its ticket.
                 let mut states: Vec<&mut S> =
                     batch.iter().map(|d| unsafe { &mut *d.3.0 }).collect();
-                let out = run(&toks, &wants, &mut states);
+                // A panicking step must not wedge the lanes that lent it their rows: every member
+                // gets an error, `in_flight` comes down, and the leader then unwinds as before.
+                let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    run(&toks, &wants, &mut states)
+                }));
                 drop(states);
                 g = self.lock();
                 g.in_flight -= batch.len();
+                let out = match out {
+                    Ok(out) => out,
+                    Err(panic) => {
+                        for d in &batch {
+                            g.done.insert(d.0, Err("B-row step panicked".to_string()));
+                        }
+                        drop(g);
+                        self.cv.notify_all();
+                        std::panic::resume_unwind(panic);
+                    }
+                };
                 match out {
                     Ok(next) if next.len() == batch.len() => {
                         for (d, r) in batch.iter().zip(next) {
@@ -1629,7 +1644,7 @@ fn rows_step(
             // Several rows: queue the group holding the turn, wait for its own readbacks without
             // it (so another group can queue behind it and the two cards overlap), then commit.
             let mut ws = batcher.take_ws();
-            let out = (|| {
+            let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let mut lead = Turn::take(lock);
                 m.gpu.decode_rows_enqueue(toks, states, &mut ws.0, full)?;
                 lead.release();
@@ -1652,9 +1667,13 @@ fn rows_step(
                         .map(|tok| RowOut { tok, logits: None })
                         .collect(),
                 })
-            })();
+            }));
+            // The workspace goes back to the pool on every exit, a panic included.
             batcher.put_ws(ws);
-            out
+            match out {
+                Ok(out) => out,
+                Err(panic) => std::panic::resume_unwind(panic),
+            }
         });
     turn.acquire();
     result
@@ -3244,6 +3263,50 @@ mod c4_host_budget_tests {
             .filter(|r| r.as_ref().err().map(String::as_str) == Some("injected"))
             .count();
         assert_eq!(failed, widths[2], "every row of batch 2 and no other");
+    }
+
+    /// A step that panics fails every row that lent it a state and lowers `in_flight`, so the
+    /// other lanes get an error instead of waiting forever, and the next batch still runs.
+    #[test]
+    fn a_panicking_batch_fails_its_rows_and_the_next_batch_runs() {
+        use super::Coalescer;
+        use std::sync::Arc;
+        let core = Arc::new(Coalescer::<u32>::new(2, 1));
+        core.join();
+        core.join();
+        let lanes: Vec<_> = (0..2u32)
+            .map(|lane| {
+                let core = core.clone();
+                std::thread::spawn(move || {
+                    let mut c = 0u32;
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        core.step(lane, false, &mut c, &mut |_, _, _| panic!("injected panic"))
+                            .map(|o| o.tok)
+                    }))
+                })
+            })
+            .collect();
+        let outcomes: Vec<_> = lanes.into_iter().map(|h| h.join().unwrap()).collect();
+        let panicked = outcomes.iter().filter(|o| o.is_err()).count();
+        let failed = outcomes
+            .iter()
+            .filter(|o| matches!(o, Ok(Err(e)) if e == "B-row step panicked"))
+            .count();
+        assert_eq!(
+            panicked + failed,
+            2,
+            "the leader unwinds, every other row gets the error"
+        );
+        assert!(panicked >= 1, "the leader's own panic is not swallowed");
+        let mut c = 0u32;
+        core.leave();
+        let next = core.step(7, false, &mut c, &mut |toks, _, _| {
+            Ok(toks
+                .iter()
+                .map(|&tok| super::RowOut { tok, logits: None })
+                .collect())
+        });
+        assert_eq!(next.map(|o| o.tok), Ok(7), "in_flight came back down");
     }
 
     #[test]
