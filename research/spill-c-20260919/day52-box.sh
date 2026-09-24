@@ -60,6 +60,7 @@ moe_cell() { # $1 cell  $2 script  $3 timeout
     for n in $(seq 30 -1 1); do [ -f "$R/$cell-retry$n/CELL.jsonl" ] && { out=$R/$cell-retry$n; break; }; done
     python3 "$WT/tools/tier-battery.py" --rig pro-single --validate "$out" > "$R/$cell-validate.log" 2>&1
     echo "$cell validate rc=$?" | tee -a "$R/box-driver.log"
+    mkdir -p "$R/$cell"
     case $cell in
         attrib) python3 "$L/day40-attrib.py" "$R/$cell" --rig pro-single ;;
         ladder) python3 "$L/day52-views.py" "$R/$cell" --rig pro-single ;;
@@ -89,6 +90,7 @@ if [ ! -f "$R/c5.done" ]; then
         MEMRA_GPU_LOCK=/tmp/memra-gpu.lock "${cap[@]}" bash "$L/day56-cell.sh" "$cell" "$ART_OTHER" "$DRAFT" "$R/bins/memra-server-c5" "$R/c5" 256
         echo "c5 $cell rc=$? $(date -u +%FT%TZ)" | tee -a "$R/box-driver.log"
     done
+    mkdir -p "$R/c5"
     python3 "$L/day56-reading.py" "$R/c5" --rig pro-single > "$R/c5/reading.log" 2>&1
     echo "c5 reader rc=$?" | tee -a "$R/box-driver.log"
     touch "$R/c5.done"
@@ -97,6 +99,7 @@ fi
 if [ ! -f "$R/slices.done" ]; then
     "${cap[@]}" env D40_CELL_SCRIPT="$L/day54-box-cell.sh" D54_MODEL="$ART_OTHER" bash "$L/day40-run-cell.sh" slices 10800
     echo "slices rc=$? $(date -u +%FT%TZ)" | tee -a "$R/box-driver.log"
+    mkdir -p "$R/slices"
     python3 "$L/day54-slice-reading.py" "$R/slices" > "$R/slices/reading.log" 2>&1
     echo "slices reader rc=$?" | tee -a "$R/box-driver.log"
     touch "$R/slices.done"
