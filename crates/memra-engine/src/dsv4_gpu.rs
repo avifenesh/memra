@@ -363,14 +363,33 @@ pub struct Stage {
     pub hc_head_scale_dev: Option<CudaSlice<f32>>,
 }
 
+/// A dots-kernel weight in its checkpoint storage: the BF16 bytes when the checkpoint stores
+/// BF16, else the f32 island. Every dots kernel widens BF16 exactly and runs the same product
+/// order on both, so the BF16 plane gives the f32 island's bits at half the bytes.
+pub struct IslandW {
+    raw: CudaSlice<u8>,
+    bf16: bool,
+}
+
+impl IslandW {
+    fn ptr(&self, stream: &std::sync::Arc<CudaStream>) -> *const c_void {
+        self.raw.device_ptr(stream).0 as *const c_void
+    }
+
+    /// The dots kernels' `w_is_bf16` argument.
+    fn flag(&self) -> i32 {
+        i32::from(self.bf16)
+    }
+}
+
 pub struct CmpDev {
     pub ratio: usize,
     pub d: usize,
     pub latent: usize,
     pub overlap: bool,
     pub rotate: bool,
-    pub wkv: CudaSlice<f32>,   // f32 island
-    pub wgate: CudaSlice<f32>, // f32 island
+    pub wkv: IslandW,
+    pub wgate: IslandW,
     pub norm: CudaSlice<f32>,
     pub ape: CudaSlice<f32>, // [ratio, latent]
 }
@@ -2456,8 +2475,8 @@ impl Dsv4Gpu {
         Ok(())
     }
 
-    /// Diagnostic readback of the actual final-layer partials and the preserved GPU sum.
-    /// The caller compares the sum with canonical CPU f32 addition, not full-width wo_b.
+    /// Diagnostic readback of the final layer's per-rank wo_b row halves and the joined
+    /// output. The caller checks the join is the two halves in rank order, bit for bit.
     pub fn attention_tp_last_join_for_gate(
         &self,
         state: &DecodeState,
@@ -2488,7 +2507,7 @@ impl Dsv4Gpu {
                 .map_err(e("attention TP2 snapshot context"))?;
             let stream = stage.gpu.stream();
             partials[rank] = stream
-                .clone_dtoh(&work.verify.ws[rank].attn_out.slice(..plan.hidden))
+                .clone_dtoh(&work.verify.ws[rank].attn_out.slice(..plan.local_hidden))
                 .map_err(e("attention TP2 partial snapshot"))?;
             joined[rank] = stream
                 .clone_dtoh(&outputs[rank].slice(..plan.hidden))
@@ -2516,6 +2535,15 @@ impl Dsv4Gpu {
             .lock()
             .ok()
             .and_then(|ar| ar.as_ref().map(TpEpArState::launches))
+            .unwrap_or(0)
+    }
+
+    /// Row gathers of the exact attention TP join, two per layer per step.
+    pub fn tp_ep_row_gathers(&self) -> u64 {
+        self.tp_ep_ar
+            .lock()
+            .ok()
+            .and_then(|ar| ar.as_ref().map(TpEpArState::gathers))
             .unwrap_or(0)
     }
 
@@ -2883,6 +2911,32 @@ impl Dsv4Gpu {
         upload_f32(&stream, &v)
     }
 
+    /// A dots weight as the checkpoint stores it: BF16 bytes for a BF16 tensor, else the f32
+    /// island through the proven tensor_f32 decode.
+    fn island_w_dev(&mut self, stage: usize, name: &str) -> Res<IslandW> {
+        let stream = self.stages[stage].gpu.stream();
+        if let Some((info, raw)) = self.model.st.raw(name)
+            && info.dtype == "BF16"
+        {
+            let (shape, _) = self.model.tensor_f32(name);
+            if raw.len() != 2 * shape.iter().product::<usize>() {
+                return Err(format!("{name}: BF16 byte count vs shape {shape:?}"));
+            }
+            self.stages[stage].loaded_bytes += raw.len() as u64;
+            return Ok(IslandW {
+                raw: upload_u8(&stream, raw)?,
+                bf16: true,
+            });
+        }
+        let (_, v) = self.model.tensor_f32(name);
+        let bytes: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+        self.stages[stage].loaded_bytes += bytes.len() as u64;
+        Ok(IslandW {
+            raw: upload_u8(&stream, &bytes)?,
+            bf16: false,
+        })
+    }
+
     fn load_cmp(
         &mut self,
         stage: usize,
@@ -2901,8 +2955,8 @@ impl Dsv4Gpu {
             latent,
             overlap,
             rotate,
-            wkv: self.tensor_f32_dev(stage, &format!("{prefix}.wkv.weight"))?,
-            wgate: self.tensor_f32_dev(stage, &format!("{prefix}.wgate.weight"))?,
+            wkv: self.island_w_dev(stage, &format!("{prefix}.wkv.weight"))?,
+            wgate: self.island_w_dev(stage, &format!("{prefix}.wgate.weight"))?,
             norm: self.tensor_f32_dev(stage, &format!("{prefix}.norm.weight"))?,
             ape: self.tensor_f32_dev(stage, &format!("{prefix}.ape"))?,
         })
@@ -4041,10 +4095,11 @@ impl Dsv4Gpu {
         Ok(me)
     }
 
-    /// Load-time only. Retain the full source planes for the explicit reference arm;
-    /// runtime attention reads only these packed rank-local planes when selected.
+    /// Load-time only. Packs each rank's Q_b rows, wo_a groups and wo_b rows, then frees the
+    /// full planes: the attention TP2 walk reads only the packed rank-local planes.
     fn pack_attention_tp_layers(&mut self) -> Res<()> {
         let plan = self.attention_tp.ok_or("attention TP2 geometry missing")?;
+        let mut freed = 0u64;
         if !self.topology.is_tp_ep() || !self.ep_enabled || !self.dense_fp8 || !self.matrix_moe {
             return Err(
                 "attention TP2 requires all-layer native matrix EP with FP8 dense planes".into(),
@@ -4109,9 +4164,9 @@ impl Dsv4Gpu {
                     layer.wo_b_fp8.as_ref(),
                     plan.hidden,
                     plan.full_output_width,
-                    Partition::Columns {
-                        start: rank * plan.local_output_width,
-                        len: plan.local_output_width,
+                    Partition::Rows {
+                        start: rank * plan.local_hidden,
+                        len: plan.local_hidden,
                     },
                 )?;
                 stage.loaded_bytes += [&wq_b, &wo_a, &wo_b]
@@ -4124,16 +4179,30 @@ impl Dsv4Gpu {
                     wo_a,
                     wo_b,
                 });
+                // Under attention TP2 the walk reads only the packed planes, so the full
+                // planes are freed here, layer by layer, before the next layer packs.
+                for full in [
+                    layer.wq_b_fp8.take(),
+                    layer.wo_a_fp8.take(),
+                    layer.wo_b_fp8.take(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    freed += (full.codes.len() + full.scales.len() * 4) as u64;
+                    stage.loaded_bytes -= (full.codes.len() + full.scales.len() * 4) as u64;
+                }
             }
             stream
                 .synchronize()
                 .map_err(e("attention TP2 pack finalize"))?;
         }
         eprintln!(
-            "[attention-TP2] packed rank-local Q_b/wo_a/wo_b: heads={} groups={} wo_b_k={} numeric_class={}",
+            "[attention-TP2] packed rank-local Q_b/wo_a/wo_b rows: heads={} groups={} wo_b_rows={} full_planes_freed={:.2} GiB numeric_class={}",
             plan.local_heads,
             plan.local_groups,
-            plan.local_output_width,
+            plan.local_hidden,
+            freed as f64 / (1u64 << 30) as f64,
             dsv4_attention_tp::ATTENTION_TP_NUMERIC_CLASS
         );
         Ok(())
@@ -4543,6 +4612,69 @@ impl Dsv4Gpu {
         Ok(())
     }
 
+    /// `dots` over an [`IslandW`] in its checkpoint storage.
+    fn dots_w(
+        st: &Stage,
+        x: &CudaSlice<f32>,
+        w: &IslandW,
+        s: usize,
+        kdim: usize,
+        n: usize,
+        y: &mut CudaSlice<f32>,
+    ) -> Res<()> {
+        let stream = st.gpu.stream();
+        unsafe {
+            ck(
+                "dots_f32",
+                k::memra_dsv4_dots_f32(
+                    dpf!(x, &stream),
+                    w.ptr(&stream),
+                    w.flag(),
+                    dpm!(y, &stream),
+                    s as i32,
+                    kdim as i32,
+                    n as i32,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// `dots_dev` over an [`IslandW`] in its checkpoint storage.
+    #[allow(clippy::too_many_arguments)]
+    fn dots_dev_w(
+        &self,
+        st: &Stage,
+        x: &CudaSlice<f32>,
+        w: &IslandW,
+        s: usize,
+        kdim: usize,
+        n: usize,
+        y: &mut CudaSlice<f32>,
+    ) -> Res<()> {
+        if !self.dots_f32 {
+            return Self::dots_w(st, x, w, s, kdim, n, y);
+        }
+        let stream = st.gpu.stream();
+        unsafe {
+            ck(
+                "dots_f32acc",
+                k::memra_dsv4_dots_f32acc(
+                    dpf!(x, &stream),
+                    w.ptr(&stream),
+                    w.flag(),
+                    dpm!(y, &stream),
+                    s as i32,
+                    kdim as i32,
+                    n as i32,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        Ok(())
+    }
+
     /// Island dots on the DEVICE decode path (lane 9): routes to the f64 oracle-truth
     /// arm (default — byte-identical to `Self::dots`) or the owner-gated
     /// f32-accumulation serving arm (MEMRA_DSV4_DOTS_ARM=f32; fork gated by
@@ -4608,8 +4740,8 @@ impl Dsv4Gpu {
         let mut score = stream
             .alloc_zeros::<f32>(s * cmp.latent)
             .map_err(e("cmp score"))?;
-        Self::dots(st, x, &cmp.wkv, s, hidden, cmp.latent, &mut kv)?;
-        Self::dots(st, x, &cmp.wgate, s, hidden, cmp.latent, &mut score)?;
+        Self::dots_w(st, x, &cmp.wkv, s, hidden, cmp.latent, &mut kv)?;
+        Self::dots_w(st, x, &cmp.wgate, s, hidden, cmp.latent, &mut score)?;
         if s < cmp.ratio {
             return Ok((None, kv, score));
         }
@@ -7594,8 +7726,8 @@ impl Dsv4Gpu {
         let (ratio, d, latent) = (cmp.ratio, cmp.d, cmp.latent);
         let mut kv_row = stream.alloc_zeros::<f32>(latent).map_err(e("dkv"))?;
         let mut sc_row = stream.alloc_zeros::<f32>(latent).map_err(e("dsc"))?;
-        Self::dots(st, x, &cmp.wkv, 1, hidden, latent, &mut kv_row)?;
-        Self::dots(st, x, &cmp.wgate, 1, hidden, latent, &mut sc_row)?;
+        Self::dots_w(st, x, &cmp.wkv, 1, hidden, latent, &mut kv_row)?;
+        Self::dots_w(st, x, &cmp.wgate, 1, hidden, latent, &mut sc_row)?;
         let slot = if cmp.overlap {
             ratio + pos % ratio
         } else {
@@ -9206,8 +9338,8 @@ impl Dsv4Gpu {
     ) -> Res<()> {
         let stream = st.gpu.stream();
         let (ratio, d, latent) = (cmp.ratio, cmp.d, cmp.latent);
-        self.dots_dev(st, x, &cmp.wkv, 1, hidden, latent, kv_row)?;
-        self.dots_dev(st, x, &cmp.wgate, 1, hidden, latent, sc_row)?;
+        self.dots_dev_w(st, x, &cmp.wkv, 1, hidden, latent, kv_row)?;
+        self.dots_dev_w(st, x, &cmp.wgate, 1, hidden, latent, sc_row)?;
         let slot = if cmp.overlap {
             ratio + pos % ratio
         } else {
@@ -11104,30 +11236,75 @@ impl Dsv4Gpu {
                 // The partials are independent producers. Neither rank enters HC/FFN
                 // until its stream has received the complete rank-ordered attention sum.
                 // Dedicated attention outputs remain separate from the later expert join.
+                let plan = self.attention_tp.ok_or("attention TP2 geometry missing")?;
                 let attention_outputs = verify
                     .tp_ep_attention_outputs
                     .as_mut()
                     .ok_or("attention TP2 output buffers missing")?;
+                let attention_og = verify
+                    .tp_ep_attention_og
+                    .as_mut()
+                    .ok_or("attention TP2 wo_a gather buffers missing")?;
                 {
-                    let (owner_output, peer_output) = attention_outputs.split_at_mut(1);
                     let mut ar = self
                         .tp_ep_ar
                         .lock()
                         .map_err(|_| "attention TP2 AR mutex poisoned")?;
-                    ar.as_mut()
-                        .ok_or("attention TP2 AR state missing")?
-                        .all_reduce_into(
+                    let ar = ar.as_mut().ok_or("attention TP2 AR state missing")?;
+                    // 1. Each rank's wo_a groups, gathered in group order on both ranks.
+                    {
+                        let (owner_og, peer_og) = attention_og.split_at_mut(1);
+                        ar.gather_rows_into(
+                            owner_gpu,
+                            peer_gpu,
+                            &owner_ws.og,
+                            &peer_ws.og,
+                            &mut owner_og[0],
+                            &mut peer_og[0],
+                            t,
+                            plan.local_output_width,
+                            capture,
+                            None,
+                        )?;
+                    }
+                    // 2. wo_b on this rank's output rows over the full wo_a rows.
+                    for (rank, workspace) in [(0usize, &mut *owner_ws), (1usize, &mut *peer_ws)] {
+                        let st = &self.stages[rank];
+                        if capture {
+                            st.gpu
+                                .ctx
+                                .bind_to_thread()
+                                .map_err(e("attention TP2 wo_b rank bind"))?;
+                        }
+                        let layer = st
+                            .layers
+                            .iter()
+                            .find(|layer| layer.il == il as u32)
+                            .ok_or("attention TP2 wo_b layer missing")?;
+                        self.attention_tp_wo_b_rows_dev(
+                            st,
+                            layer,
+                            workspace,
+                            &attention_og[rank],
+                            t,
+                        )?;
+                    }
+                    // 3. The two row halves, gathered: the joined attention output.
+                    {
+                        let (owner_output, peer_output) = attention_outputs.split_at_mut(1);
+                        ar.gather_rows_into(
                             owner_gpu,
                             peer_gpu,
                             &owner_ws.attn_out,
                             &peer_ws.attn_out,
                             &mut owner_output[0],
                             &mut peer_output[0],
-                            t * hidden,
+                            t,
+                            plan.local_hidden,
                             capture,
                             fault_inputs.map(|inputs| (inputs, il as i32)),
-                            2 * il as u32,
                         )?;
+                    }
                     self.attention_tp_ar_calls.fetch_add(1, Ordering::Relaxed);
                     let injection = if replaying {
                         None
@@ -11148,9 +11325,7 @@ impl Dsv4Gpu {
                     if let Some(injection) = injection {
                         let mut words = [0, 0];
                         words[injection.rank] = injection.code;
-                        ar.as_mut()
-                            .ok_or("attention TP2 AR state missing during injection")?
-                            .set_refusal_words_for_gate(owner_gpu, peer_gpu, words)?;
+                        ar.set_refusal_words_for_gate(owner_gpu, peer_gpu, words)?;
                     }
                 }
                 for (rank, workspace) in [(0usize, &mut *owner_ws), (1usize, &mut *peer_ws)] {
@@ -13356,6 +13531,34 @@ fn pinned_i32(buf: &crate::PinnedHostBuf, len: usize) -> Res<&[i32]> {
     Ok(unsafe { std::slice::from_raw_parts(buf.as_slice().as_ptr().cast::<i32>(), len) })
 }
 
+/// The overlap compressor's cur -> prev shift: copies `pend[half..2*half]` over
+/// `pend[0..half]`. The halves are disjoint, so one direct copy replaces the two copies
+/// through a scratch buffer that a borrow of both halves of one slice would otherwise need.
+fn cmp_shift_halves(
+    stream: &std::sync::Arc<CudaStream>,
+    pend: &mut CudaSlice<f32>,
+    half: usize,
+    label: &'static str,
+) -> Res<()> {
+    if pend.len() < 2 * half {
+        return Err(format!(
+            "{label}: pending buffer {} < 2 x {half}",
+            pend.len()
+        ));
+    }
+    let bytes = half * std::mem::size_of::<f32>();
+    let base = pend.device_ptr_mut(stream).0;
+    unsafe {
+        cudarc::driver::result::memcpy_dtod_async(
+            base,
+            base + bytes as u64,
+            bytes,
+            stream.cu_stream(),
+        )
+    }
+    .map_err(e(label))
+}
+
 /// One compressor's verify-round checkpoint on device — the CPU oracle's `CompCkpt`,
 /// device-realized: full pending snapshot + the per-position RAW (kv, score) rows that
 /// were written, plus the store high-water mark. `dst` and `emitted` are pure functions
@@ -13369,6 +13572,8 @@ struct CmpCkptDev {
     ratio: usize,
     overlap: bool,
     n_blocks0: usize,
+    /// `kv_snap`/`sc_snap` hold this round's pre-write state. A rollback without it refuses.
+    snap_live: bool,
 }
 
 /// One trunk layer's verify-round checkpoint: the two compressor payloads. The window
@@ -13412,6 +13617,8 @@ pub struct VerifyState {
     tp_ep_layers: Option<Vec<LayerCkptDev>>,
     tp_ep_ar_outputs: Option<[CudaSlice<f32>; 2]>,
     tp_ep_attention_outputs: Option<[CudaSlice<f32>; 2]>,
+    /// Attention TP2: both ranks' wo_a group outputs gathered, [tmax][groups * o_lora].
+    tp_ep_attention_og: Option<[CudaSlice<f32>; 2]>,
     pub tmax: usize,
     /// Decode-cache capacity this verify layout was planned against. The transient
     /// rows live immediately after each layer's capacity-sized compressed store, so
@@ -14447,6 +14654,7 @@ impl Dsv4Gpu {
                     ratio: cmp.ratio,
                     overlap: cmp.overlap,
                     n_blocks0: 0,
+                    snap_live: false,
                 })
             };
             let cmp = match &layer.cmp {
@@ -14503,6 +14711,7 @@ impl Dsv4Gpu {
                         ratio: cmp.ratio,
                         overlap: cmp.overlap,
                         n_blocks0: 0,
+                        snap_live: false,
                     })
                 };
                 let cmp = layer.cmp.as_ref().map(mk).transpose()?;
@@ -14544,7 +14753,10 @@ impl Dsv4Gpu {
         } else {
             None
         };
-        let tp_ep_attention_outputs = if self.attention_tp.is_some() {
+        let mut attention_planes = |width: usize| -> Res<Option<[CudaSlice<f32>; 2]>> {
+            if self.attention_tp.is_none() {
+                return Ok(None);
+            }
             let mut outputs = Vec::with_capacity(2);
             for (stage_i, stage) in self.stages.iter().enumerate() {
                 stage
@@ -14556,19 +14768,20 @@ impl Dsv4Gpu {
                     stage
                         .gpu
                         .stream()
-                        .alloc_zeros::<f32>(tmax * hidden)
+                        .alloc_zeros::<f32>(tmax * width)
                         .map_err(e("attention TP2 output allocation"))?,
                 );
-                bytes[stage_i] += (tmax * hidden * 4) as u64;
+                bytes[stage_i] += (tmax * width * 4) as u64;
             }
-            Some(
+            Ok(Some(
                 outputs
                     .try_into()
                     .map_err(|_| "attention TP2 output rank count")?,
-            )
-        } else {
-            None
+            ))
         };
+        let tp_ep_attention_outputs = attention_planes(hidden)?;
+        let tp_ep_attention_og =
+            attention_planes(self.attention_tp.map_or(0, |plan| plan.full_output_width))?;
         for st in &self.stages {
             st.gpu.stream().synchronize().map_err(e("vws sync"))?;
         }
@@ -14590,6 +14803,7 @@ impl Dsv4Gpu {
             tp_ep_layers,
             tp_ep_ar_outputs,
             tp_ep_attention_outputs,
+            tp_ep_attention_og,
             tmax,
             capacity,
             open: None,
@@ -15119,33 +15333,59 @@ impl Dsv4Gpu {
         }
         let stream = st.gpu.stream();
         let (ratio, d, latent) = (cmp.ratio, cmp.d, cmp.latent);
-        // snapshot + high-water mark BEFORE anything is written
-        stream
-            .memcpy_dtod(pend_kv, &mut ck_dev.kv_snap)
-            .map_err(e("ckpt snap kv"))?;
-        stream
-            .memcpy_dtod(pend_score, &mut ck_dev.sc_snap)
-            .map_err(e("ckpt snap sc"))?;
+        // Snapshot + high-water mark BEFORE anything is written. Only a rollback reads the
+        // snapshot, and a one-row round always commits its row (commit_verify_dev requires
+        // n_commit >= 1), so it is skipped there; the TP/EP refusal path rolls a round back
+        // to zero rows at any width and keeps it.
+        ck_dev.snap_live = t > 1 || self.topology.is_tp_ep();
+        if ck_dev.snap_live {
+            stream
+                .memcpy_dtod(pend_kv, &mut ck_dev.kv_snap)
+                .map_err(e("ckpt snap kv"))?;
+            stream
+                .memcpy_dtod(pend_score, &mut ck_dev.sc_snap)
+                .map_err(e("ckpt snap sc"))?;
+        }
         ck_dev.n_blocks0 = *blocks;
+        // A one-row round projects straight into its pending slot: rollback replay is the
+        // only other reader of the row record and a one-row round never replays a row.
+        // The full-token replay program appends from the record on the device.
+        let direct = t == 1 && replay_pos.is_none();
+        let (kv_rows, sc_rows) = if direct {
+            let slot = if cmp.overlap {
+                ratio + pos0 % ratio
+            } else {
+                pos0 % ratio
+            };
+            (
+                (pend_kv.device_ptr_mut(&stream).0 as *mut f32).wrapping_add(slot * latent),
+                (pend_score.device_ptr_mut(&stream).0 as *mut f32).wrapping_add(slot * latent),
+            )
+        } else {
+            (
+                ck_dev.rows_kv.device_ptr_mut(&stream).0 as *mut f32,
+                ck_dev.rows_sc.device_ptr_mut(&stream).0 as *mut f32,
+            )
+        };
         self.dots_m_dev(
             st,
             x_ptr,
-            cmp.wkv.device_ptr(&stream).0 as *const c_void,
-            0,
+            cmp.wkv.ptr(&stream),
+            cmp.wkv.flag(),
             t,
             hidden,
             latent,
-            ck_dev.rows_kv.device_ptr_mut(&stream).0 as *mut f32,
+            kv_rows,
         )?;
         self.dots_m_dev(
             st,
             x_ptr,
-            cmp.wgate.device_ptr(&stream).0 as *const c_void,
-            0,
+            cmp.wgate.ptr(&stream),
+            cmp.wgate.flag(),
             t,
             hidden,
             latent,
-            ck_dev.rows_sc.device_ptr_mut(&stream).0 as *mut f32,
+            sc_rows,
         )?;
         for i in 0..t {
             let pos = pos0 + i;
@@ -15205,12 +15445,14 @@ impl Dsv4Gpu {
                 *blocks = (pos + 1) / ratio;
                 continue;
             } else {
-                let src = ck_dev.rows_kv.slice(i * latent..(i + 1) * latent);
-                let mut dst = pend_kv.slice_mut(slot * latent..(slot + 1) * latent);
-                stream.memcpy_dtod(&src, &mut dst).map_err(e("pend kv b"))?;
-                let src = ck_dev.rows_sc.slice(i * latent..(i + 1) * latent);
-                let mut dst = pend_score.slice_mut(slot * latent..(slot + 1) * latent);
-                stream.memcpy_dtod(&src, &mut dst).map_err(e("pend sc b"))?;
+                if !direct {
+                    let src = ck_dev.rows_kv.slice(i * latent..(i + 1) * latent);
+                    let mut dst = pend_kv.slice_mut(slot * latent..(slot + 1) * latent);
+                    stream.memcpy_dtod(&src, &mut dst).map_err(e("pend kv b"))?;
+                    let src = ck_dev.rows_sc.slice(i * latent..(i + 1) * latent);
+                    let mut dst = pend_score.slice_mut(slot * latent..(slot + 1) * latent);
+                    stream.memcpy_dtod(&src, &mut dst).map_err(e("pend sc b"))?;
+                }
                 if (pos + 1) % ratio != 0 {
                     continue;
                 }
@@ -15298,26 +15540,8 @@ impl Dsv4Gpu {
                 }
             }
             if cmp.overlap {
-                {
-                    let src = pend_kv.slice(ratio * latent..2 * ratio * latent);
-                    let mut dst = shift.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("bshift1"))?;
-                }
-                {
-                    let src = shift.slice(0..ratio * latent);
-                    let mut dst = pend_kv.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("bshift2"))?;
-                }
-                {
-                    let src = pend_score.slice(ratio * latent..2 * ratio * latent);
-                    let mut dst = shift.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("bshift3"))?;
-                }
-                {
-                    let src = shift.slice(0..ratio * latent);
-                    let mut dst = pend_score.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("bshift4"))?;
-                }
+                cmp_shift_halves(&stream, pend_kv, ratio * latent, "bshift kv")?;
+                cmp_shift_halves(&stream, pend_score, ratio * latent, "bshift sc")?;
             }
             *blocks = j + 1;
         }
@@ -15338,13 +15562,17 @@ impl Dsv4Gpu {
         n_commit: usize,
         t: usize,
         pos0: usize,
-        shift: &mut CudaSlice<f32>,
         pend_kv: &mut CudaSlice<f32>,
         pend_score: &mut CudaSlice<f32>,
         blocks: &mut usize,
     ) -> Res<()> {
         if n_commit == t {
             return Ok(()); // fully committed: the in-place batch state is already exact
+        }
+        if !ck_dev.snap_live {
+            return Err(format!(
+                "compressor rollback of {n_commit}/{t} rows without a snapshot of this round"
+            ));
         }
         let stream = st.gpu.stream();
         let (ratio, latent, overlap) = (ck_dev.ratio, ck_dev.latent, ck_dev.overlap);
@@ -15374,26 +15602,8 @@ impl Dsv4Gpu {
                 continue;
             }
             if overlap {
-                {
-                    let src = pend_kv.slice(ratio * latent..2 * ratio * latent);
-                    let mut dst = shift.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("rbshift1"))?;
-                }
-                {
-                    let src = shift.slice(0..ratio * latent);
-                    let mut dst = pend_kv.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("rbshift2"))?;
-                }
-                {
-                    let src = pend_score.slice(ratio * latent..2 * ratio * latent);
-                    let mut dst = shift.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("rbshift3"))?;
-                }
-                {
-                    let src = shift.slice(0..ratio * latent);
-                    let mut dst = pend_score.slice_mut(0..ratio * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("rbshift4"))?;
-                }
+                cmp_shift_halves(&stream, pend_kv, ratio * latent, "rbshift kv")?;
+                cmp_shift_halves(&stream, pend_score, ratio * latent, "rbshift sc")?;
             }
             *blocks += 1;
         }
@@ -16413,10 +16623,9 @@ impl Dsv4Gpu {
             || dwsel(self.dense_fp8, &stream, &layer.wo_a, &layer.wo_a_fp8),
             |(_, bank)| packed_dense(&bank.wo_a, &stream),
         );
-        // The packed rank-half has only local groups. Its per-group GEMV is qualified
-        // by the component gate; the distinct grouped_m1 8-to-4 shape still needs a
-        // target receipt and must not inherit the full-attention accelerator flag.
-        let grouped_wo_a = if shard.is_none() && t == 1 && !vws.is_prefill {
+        // The packed rank-half has only local groups; the grouped launch takes them too
+        // (the 4x1024x4096 rank shape is in the grouped component test).
+        let grouped_wo_a = if t == 1 && !vws.is_prefill {
             Self::gemv_wo_a_grouped_fp8_m1_dev(
                 st,
                 wo_a_dw,
@@ -16446,14 +16655,16 @@ impl Dsv4Gpu {
                 )?;
             }
         }
+        if shard.is_some() {
+            // Attention TP2 ends at this rank's wo_a groups; the walk gathers them and
+            // runs wo_b on the full rows (attention_tp_wo_b_rows_dev).
+            return Ok(());
+        }
         Self::gemm_m_dev(
             st,
             vws.og.device_ptr(&stream).0 as *const f32,
             &mut vws.gemm_xb,
-            shard.map_or_else(
-                || dwsel(self.dense_fp8, &stream, &layer.wo_b, &layer.wo_b_fp8),
-                |(_, bank)| packed_dense(&bank.wo_b, &stream),
-            ),
+            dwsel(self.dense_fp8, &stream, &layer.wo_b, &layer.wo_b_fp8),
             t,
             hidden,
             o_groups * o_lora,
@@ -16461,6 +16672,35 @@ impl Dsv4Gpu {
         )?;
 
         Ok(())
+    }
+
+    /// Attention TP2 wo_b for this rank's output rows over the gathered full wo_a rows. Each
+    /// row is the one-card wo_b row: same packed input, same weight row, same kernel. The
+    /// rank's half lands at the head of `vws.attn_out` for the row gather.
+    fn attention_tp_wo_b_rows_dev(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        vws: &mut VerifyWs,
+        og_full: &CudaSlice<f32>,
+        t: usize,
+    ) -> Res<()> {
+        let plan = self.attention_tp.ok_or("attention TP2 geometry missing")?;
+        let bank = layer
+            .attention_tp
+            .as_ref()
+            .ok_or("attention TP2 layer pack missing")?;
+        let stream = st.gpu.stream();
+        Self::gemm_m_dev(
+            st,
+            og_full.device_ptr(&stream).0 as *const f32,
+            &mut vws.gemm_xb,
+            packed_dense(&bank.wo_b, &stream),
+            t,
+            plan.local_hidden,
+            plan.full_output_width,
+            vws.attn_out.device_ptr_mut(&stream).0 as *mut f32,
+        )
     }
 
     /// Consume a full attention result before replacing attention HC coefficients with
@@ -18470,7 +18710,6 @@ impl Dsv4Gpu {
                     n_commit,
                     t,
                     pos0,
-                    &mut vws.cmp_shift,
                     cache.pend_kv.as_mut().expect("pend kv"),
                     cache.pend_score.as_mut().expect("pend sc"),
                     &mut cache.n_blocks,
@@ -18483,7 +18722,6 @@ impl Dsv4Gpu {
                     n_commit,
                     t,
                     pos0,
-                    &mut vws.cmp_shift,
                     cache.ipend_kv.as_mut().expect("ipend kv"),
                     cache.ipend_score.as_mut().expect("ipend sc"),
                     &mut cache.i_blocks,
@@ -21073,6 +21311,12 @@ mod dense_wo_a_grouped_fp8_component_tests {
         unsafe { launch_old_grouped_slices(&stream, &mut small) };
         unsafe { launch_new_grouped(&stream, &mut small) };
         assert_fixture_bit_identity(&stream, &small);
+
+        // The attention TP2 rank shape: four local groups of 1024 rows over 4096.
+        let mut rank_half = make_fixture(&stream, 4, 1024, 4096);
+        unsafe { launch_old_grouped_slices(&stream, &mut rank_half) };
+        unsafe { launch_new_grouped(&stream, &mut rank_half) };
+        assert_fixture_bit_identity(&stream, &rank_half);
 
         let bad_stride_rc = unsafe {
             k::memra_dsv4_gemv_fp8_grouped_m1(

@@ -326,6 +326,9 @@ pub(crate) struct MemoryLine<'a> {
     /// memra#680: bytes the admitted, still-priming sessions will allocate at prime time;
     /// `tiers.device_free_bytes` is already reduced by it (the booked reading).
     pub pending_prime_bytes: u64,
+    /// memra#680 (lane B day 35): bytes of the prefix entries armed sessions will publish when
+    /// their primes complete; `tiers.device_free_bytes` is reduced by it too.
+    pub pending_seed_bytes: u64,
     pub inflight: u64,
     pub cap: u64,
     pub waited_ms: u64,
@@ -344,8 +347,8 @@ pub(crate) fn memory_line(line: &MemoryLine<'_>) -> String {
     };
     format!(
         "[admit-mem] id={} model={:?} verdict={} prompt={} output_bound={} charged_ctx={} \
-         est_bytes={} est_context={} est_fixed={} device_free={} pending_prime={} host_free={} \
-         demotable={} short_by={} inflight={} cap={} waited_ms={} retry_after_s={}",
+         est_bytes={} est_context={} est_fixed={} device_free={} pending_prime={} pending_seed={} \
+         host_free={} demotable={} short_by={} inflight={} cap={} waited_ms={} retry_after_s={}",
         line.request_id,
         line.model,
         line.verdict.as_str(),
@@ -357,6 +360,7 @@ pub(crate) fn memory_line(line: &MemoryLine<'_>) -> String {
         line.estimate.fixed_bytes,
         line.tiers.device_free_bytes,
         line.pending_prime_bytes,
+        line.pending_seed_bytes,
         line.tiers.host_free_bytes,
         line.tiers.demotable_device_bytes,
         short_by,
@@ -644,6 +648,7 @@ mod tests {
                 host_free_bytes: 200_000_000_000,
             },
             pending_prime_bytes: 658_000_000,
+            pending_seed_bytes: 197_800_000,
             inflight: 9,
             cap: 32,
             waited_ms: 0,
@@ -670,6 +675,7 @@ mod tests {
             "est_fixed=155000000",
             "device_free=10737418240",
             "pending_prime=658000000",
+            "pending_seed=197800000",
             "host_free=200000000000",
             "demotable=50000000000",
             "short_by=1834872320",
@@ -812,6 +818,45 @@ mod tests {
         );
         assert!(s.contains(&format!("pending_prime={OWED_680} ")), "{s}");
         assert!(s.contains(" short_by=0 "), "{s}");
+    }
+
+    /// memra#680's remaining term (lane B day 35), the day-34 BOX4 shape: the workspace booking
+    /// alone lets the arrival in, the seeds the still-priming sessions will publish do not.
+    #[test]
+    fn booked_seed_defers_what_the_workspace_booking_alone_admits() {
+        let need = 4_347_733_768u64;
+        let measured = 8_650_183_272u64;
+        let workspace = 838_656u64;
+        let seeds = 6 * 197_800_000u64;
+        // Workspace only (the day-33 reading): 8.65 GB booked, the arrival fits.
+        assert_eq!(
+            decide(need, &booked_tiers(measured, workspace), 0, 8_000),
+            MemoryVerdict::Admit
+        );
+        // Plus the owed seeds: still fits here ...
+        assert_eq!(
+            decide(need, &booked_tiers(measured, workspace + seeds), 0, 8_000),
+            MemoryVerdict::Admit
+        );
+        // ... but 25 still-seeding sessions (4.9 GB of entries) make it short, and it defers.
+        let owed = workspace + 25 * 197_800_000;
+        let tiers = booked_tiers(measured, owed);
+        assert_eq!(tiers.device_free_bytes, measured - owed);
+        assert_eq!(
+            decide(need, &tiers, 0, 8_000),
+            MemoryVerdict::Defer {
+                short_by: need - (measured - owed)
+            }
+        );
+    }
+
+    #[test]
+    fn admit_arm_renders_the_seed_term() {
+        let mut line = sample_line(MemoryVerdict::Admit);
+        line.pending_seed_bytes = 6 * 197_800_000;
+        let s = memory_line(&line);
+        assert!(s.contains(" pending_seed=1186800000 "), "{s}");
+        assert!(s.contains(" pending_prime=658000000 "), "{s}");
     }
 
     /// The demote budget is the shortfall and nothing more: an unbounded flush would stall

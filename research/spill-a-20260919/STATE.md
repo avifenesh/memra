@@ -1,8 +1,6 @@
-# WP-A day 34 resumable state
+# WP-A day 36 resumable state
 
-- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. Merged `origin/main` `25bbb91f5` (integ53, #692) as `37c08c06b`, no conflict. Pre-registration `a40ade417` (DAY34 section 2, design K, before any code); the BOX4 combination `afd58bbde` (DAY34 section 4, before the sitting). Code: tier `88b734bc9`, engine `e3424be24`, server `100214477`. Receipts `172beb696`, `22363f29d` (5090), `c37eecbeb` (BOX4). Every push in the announced `MEMRA_RELEASE_QUALIFICATION_MODE=development` mode. Write-up `DAY34.md`.
-- Design K: the off-tick promote's KV completion checksums leave the owner thread for the hash helper (`defer_h2d_checksums` hands out raw lease views, the helper digests them, `supply_h2d_checksums` returns them; an item lands only with its supplied digest; `recover_source` is Busy while views are out). Verification semantics unchanged (the failure gate's `digest` cell, the GPU refusal cell).
-- 5090 (9B): landing-poll hold 8.50 to 0.12 ms, e2e +0.21 / +0.50, gates ALL GREEN.
-- BOX4 (27B): day 33's (a) to (d) PASS and day 34's (a) to (d) PASS; the day-32 binary also meets DAY28 1b there (+12.8 / +12.7), design F's copy misses the probe's tick (the fill 11.4 ms on that CPU), and K's millisecond sits in the pending first poll (1.10 to 0.03 ms).
-- Resync after the server-side API stop at about 21:55Z: DAY33 and DAY34 re-read, `git fetch` and log, the running BOX4 driver left to finish, no second driver (DAY34 section 7).
-- Owed: the demote's two owner KV hashes; the fill's speed on slower CPUs if the one-tick landing is wanted; the D2D half (the restore's price cell); the strong-form receipt. Lever 1 (cached leases on the 5090) is not this lane's.
+- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. Merged `origin/main` `1d0cf13bc` (#711, integ57, with the guard fix `43d16d73f`) as `e23383796`, no conflict. DAY36 sections 1 (`0c2c62f77`), 3 (`4c2a4b19d`) and 3a (`733075ed1`) pre-registered before their code and boots.
+- The instrument `d4f53945f` (a log-only recurrent copy field on the restore lines). 5090 reading `79f5f6ae0`: host 0.130, owner stream 0.170 ms.
+- BOX5 sitting (DAY36 section 4, receipts in `pro-single-day36/box/`): the price cell `-> CLOSES` (0.290 / 0.190 ms), the D2D half closed with no door; M' (c) and (d) PASS on the card, every gate green. BOX5 released.
+- Integrable: yes. Owed: hash 1 on the owner; the fill on slower CPUs; the strong-form receipt; the darklanes VERDICT line (drafted in DAY36 section 4, handed to the lead).

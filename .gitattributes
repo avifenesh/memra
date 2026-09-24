@@ -5,3 +5,6 @@ research/gateway-20260812/raw/** -text
 # A unified diff encodes blank context lines as one literal space.
 # Preserve the hash-pinned research patch instead of rewriting those bytes.
 research/mtp-calibrated-depth-20260920/prototype.patch -text whitespace=-blank-at-eol
+
+# The lane-only server topology selector the #679 served rows were built with, kept byte-exact.
+research/dsv4f-bringup-20260923/attn-tp-exact/raw/topology-lane.patch -text whitespace=-blank-at-eol

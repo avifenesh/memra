@@ -1,0 +1,9 @@
+START utc=2026-09-24T02:57:03Z cmd=/root/lane/target-cmp/release/deps/dsv4_island_bf16_gpu-366e5da3cfbef83b --ignored --nocapture --test-threads=1
+
+running 1 test
+test bf16_island_storage_is_bit_identical_to_the_f32_widening ... DSV4_ISLAND_BF16 EXACT cases=60 entries=5 shapes=3 rows=1,2,6,33 red_arm=1
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s
+
+GATE_DONE rc=0 utc=2026-09-24T02:57:03Z

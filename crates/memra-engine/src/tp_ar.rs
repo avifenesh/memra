@@ -51,6 +51,25 @@ unsafe extern "C" {
         fault: *const c_void,
         site: i32,
     ) -> i32;
+    /// Row-strided f32 gather with the one-shot all-reduce's barrier and refusal words: rank r's
+    /// `rows x width` block lands at column `r * width` of each `2 * width` output row. `fault`
+    /// and `site` are the replay fault word, null and -1 outside replay.
+    pub fn memra_tp_ar_gather_rows_f32(
+        in_rank0: *const f32,
+        in_rank1: *const f32,
+        out: *mut f32,
+        self_sg: *mut c_void,
+        peer_sg: *mut c_void,
+        rank: i32,
+        rows: i64,
+        width: i64,
+        err: *mut i32,
+        spin_limit: i64,
+        blocks: i32,
+        stream: *mut c_void,
+        fault: *const c_void,
+        site: i32,
+    ) -> i32;
     /// Push `n` f32 from `src` into the PEER's `peer_stage`. Enqueued on the caller's stream.
     pub fn memra_tp_ar_push(
         src: *const f32,
