@@ -6303,6 +6303,95 @@ fn pending_prime_bytes(
         .fold(0usize, usize::saturating_add)
 }
 
+/// Prompt rows of the prefix entry a session will still publish at prime completion (memra#680,
+/// lane B day 35): its armed seed boundary while `seed_prefix` holds, with a live cache and no
+/// vision input, else 0. `maybe_prefix_seed` clears `seed_prefix` whether the insert lands, is
+/// refused or is skipped, which is exactly when the booking must end.
+fn session_pending_seed_rows(
+    seed_prefix: bool,
+    seed_at: Option<usize>,
+    has_vision: bool,
+    has_cache: bool,
+) -> usize {
+    match seed_at {
+        Some(rows) if seed_prefix && !has_vision && has_cache => rows,
+        _ => 0,
+    }
+}
+
+/// A prefix entry's bytes at `rows` rows from the cache's own layer descriptors:
+/// `prefix_snapshot_bytes`'s arithmetic with the row count set, KV rows times the per-token
+/// bytes of every counted layer, the recurrent state once, latent planes at `rows` (an upper
+/// bound for the indexed planes).
+fn seed_entry_bytes(
+    rows: usize,
+    kv_tok_bytes: usize,
+    recur_bytes: usize,
+    latent_row_floats: usize,
+) -> usize {
+    rows.saturating_mul(kv_tok_bytes)
+        .saturating_add(recur_bytes)
+        .saturating_add(rows.saturating_mul(latent_row_floats).saturating_mul(4))
+}
+
+/// The entry an armed session will publish, sized at its seed boundary (see
+/// `seed_entry_bytes`). Layers `prefix_snapshot_bytes` skips (no rows while the cache has moved
+/// on) are skipped here too; `prefix_snapshot_bytes` itself is unchanged.
+fn prefix_seed_bytes_at(cache: &Cache, rows: usize) -> usize {
+    let mut kv_tok_bytes = 0usize;
+    let mut recur_bytes = 0usize;
+    for il in 0..cache.kv.len() {
+        if let Some(kv) = &cache.kv[il]
+            && !(kv.len == 0 && cache.pos > 0)
+        {
+            kv_tok_bytes = kv_tok_bytes.saturating_add(kv.k_tok_bytes + kv.v_tok_bytes);
+        }
+        if let Some(recur) = &cache.recur[il] {
+            recur_bytes =
+                recur_bytes.saturating_add((recur.conv_state.len() + recur.ssm_state.len()) * 4);
+        }
+    }
+    for planes in cache.glm5_tp_recur.iter().flatten() {
+        for recur in planes {
+            recur_bytes =
+                recur_bytes.saturating_add((recur.conv_state.len() + recur.ssm_state.len()) * 4);
+        }
+    }
+    let latent_row_floats = cache
+        .latent
+        .iter()
+        .flatten()
+        .chain(cache.glm5_tp_latent_peer.iter().flatten().flatten())
+        .map(|latent| latent.width.saturating_add(latent.index_width))
+        .fold(0usize, usize::saturating_add);
+    seed_entry_bytes(rows, kv_tok_bytes, recur_bytes, latent_row_floats)
+}
+
+/// The prefix entries every armed, still-seeding session will publish (memra#680, lane B day
+/// 35). Read by the armed gate only; zero when the prefix cache has no budget.
+fn pending_seed_bytes(active: &[Session]) -> usize {
+    if prefix_cache_budget_bytes() == 0 {
+        return 0;
+    }
+    active
+        .iter()
+        .map(|s| {
+            match session_pending_seed_rows(
+                s.seed_prefix,
+                s.seed_at,
+                s.vision.is_some(),
+                s.cache.is_some(),
+            ) {
+                0 => 0,
+                rows => s
+                    .cache
+                    .as_ref()
+                    .map_or(0, |cache| prefix_seed_bytes_at(cache, rows)),
+            }
+        })
+        .fold(0usize, usize::saturating_add)
+}
+
 fn admission_required(cost: usize, reserve: usize) -> usize {
     cost.saturating_add(reserve)
 }
@@ -24302,9 +24391,20 @@ pub fn run(
                 } else {
                     0
                 };
+                // PENDING SEED (memra#680 remaining term, lane B day 35): a session armed to seed
+                // the prefix cache allocates that entry when its prime completes, after this gate
+                // admitted it; the day-34 BOX4 burst OOMed three prefills on exactly those inserts.
+                // Armed, the entry each armed session will publish is booked until the insert lands
+                // (or is refused); the cache's contents do not change. Unarmed it is 0.
+                let pending_seed = if admit_memory_cfg.armed {
+                    pending_seed_bytes(&active)
+                } else {
+                    0
+                };
                 let primary_device = engine.ctx().ordinal();
+                let pending_booked = pending_prime.saturating_add(pending_seed);
                 let book =
-                    move |h: AdmissionHeadroom| h.less_pending(pending_prime, primary_device);
+                    move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);
                 let measured_headroom =
                     admission_headroom(&engine, &loaded, device_requirements.as_deref()).map(book);
                 if device_requirements.is_some() && measured_headroom.is_none() {
@@ -24941,6 +25041,7 @@ pub fn run(
                                             estimate: est,
                                             tiers,
                                             pending_prime_bytes: pending_prime as u64,
+                                            pending_seed_bytes: pending_seed as u64,
                                             inflight: admission_book.inflight(&req.model),
                                             cap: cap as u64,
                                             waited_ms,
@@ -24997,6 +25098,7 @@ pub fn run(
                                     },
                                 },
                                 pending_prime_bytes: pending_prime as u64,
+                                pending_seed_bytes: pending_seed as u64,
                                 inflight: admission_book.inflight(&req.model),
                                 cap: cap as u64,
                                 waited_ms: crate::admit_memory::waited_ms(req.memory_defer_since),
@@ -51533,6 +51635,67 @@ mod tests {
             gate.contains("host_telem_published = host_telem;"),
             "the publish body must record the stamp it published"
         );
+    }
+
+    /// memra#680 remaining term (lane B day 35): a session owes its seed entry only while it is
+    /// armed to publish one, and only with a live cache and no vision input.
+    #[test]
+    fn pending_seed_rows_are_the_armed_boundary_only() {
+        assert_eq!(
+            super::session_pending_seed_rows(true, Some(1_344), false, true),
+            1_344
+        );
+        // Cleared by maybe_prefix_seed (landed, refused or skipped): nothing owed.
+        assert_eq!(
+            super::session_pending_seed_rows(false, Some(1_344), false, true),
+            0
+        );
+        assert_eq!(super::session_pending_seed_rows(true, None, false, true), 0);
+        // Vision sessions never seed; a session without a cache has nothing to publish.
+        assert_eq!(
+            super::session_pending_seed_rows(true, Some(1_344), true, true),
+            0
+        );
+        assert_eq!(
+            super::session_pending_seed_rows(true, Some(1_344), false, false),
+            0
+        );
+    }
+
+    /// The entry size at the boundary reproduces the day-34 receipts' shape: rows times the
+    /// per-token KV bytes plus the recurrent state once (1344 and 1376 rows differ by 32 rows'
+    /// worth of KV only), and latent planes scale with rows.
+    #[test]
+    fn seed_entry_bytes_is_rows_times_kv_plus_state_once() {
+        let kv = 31_000usize;
+        let state = 155_000_000usize;
+        let a = super::seed_entry_bytes(1_344, kv, state, 0);
+        let b = super::seed_entry_bytes(1_376, kv, state, 0);
+        assert_eq!(a, 1_344 * kv + state);
+        assert_eq!(b - a, 32 * kv);
+        assert_eq!(super::seed_entry_bytes(0, kv, state, 0), state);
+        assert_eq!(super::seed_entry_bytes(10, 0, 0, 3), 10 * 3 * 4);
+        assert_eq!(
+            super::seed_entry_bytes(usize::MAX, kv, state, 0),
+            usize::MAX
+        );
+    }
+
+    /// The seed term is computed only with the door armed, and it joins the workspace term in
+    /// the one booked reduction every headroom reading takes.
+    #[test]
+    fn pending_seed_is_armed_only_and_joins_the_booked_reduction() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert!(live.contains(
+            "let pending_seed = if admit_memory_cfg.armed { pending_seed_bytes(&active) } else { 0 };"
+        ));
+        assert!(live.contains("let pending_booked = pending_prime.saturating_add(pending_seed);"));
+        assert!(live.contains(
+            "move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);"
+        ));
+        assert_eq!(live.matches("pending_seed_bytes(&active)").count(), 1);
     }
 
     /// memra#680: a session owes prime workspace only while it is still priming.
