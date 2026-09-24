@@ -23,6 +23,7 @@ use std::{
     os::unix::fs::FileExt,
     rc::Rc,
     sync::Arc,
+    time::Instant,
 };
 
 const APPROVED_SHA: &str = "df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf";
@@ -30,6 +31,8 @@ struct FileReader {
     file: Arc<File>,
     ranges: BTreeMap<TensorId, (u64, u64)>,
     reads: Rc<Cell<u64>>,
+    /// `--expert-bank-stages` only: host wall of every `read_exact_at` (DAY40 `pread`).
+    pread_ns: Option<Rc<Cell<u64>>>,
 }
 impl ExactReader for FileReader {
     fn storage_bytes(&self, tensor: &TensorId) -> Result<u64> {
@@ -44,11 +47,18 @@ impl ExactReader for FileReader {
         {
             return Err(Error::InvalidLayout);
         }
+        let started = self.pread_ns.as_ref().map(|_| Instant::now());
         self.file
             .read_exact_at(dst, start.checked_add(offset).ok_or(Error::Overflow)?)?;
+        if let (Some(started), Some(total)) = (started, &self.pread_ns) {
+            total.set(total.get().saturating_add(elapsed_ns(started)));
+        }
         self.reads.set(self.reads.get() + 1);
         Ok(())
     }
+}
+fn elapsed_ns(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 struct Heat;
 impl Hotness<ExpertDomain> for Heat {
@@ -66,9 +76,25 @@ pub struct BankedExpertGate<'a> {
     reads: Rc<Cell<u64>>,
     budget: SharedBudget,
     metadata: ChargedLease,
+    stage_clock: bool,
+}
+impl BankedExpertGate<'_> {
+    /// `--expert-bank-stages`: print the door's cumulative stage line for `phase` (DAY40).
+    /// A no-op without the flag.
+    pub fn print_stage_line(&self, phase: &str) {
+        if !self.stage_clock {
+            return;
+        }
+        match self.engine.expert_bank_stage_line() {
+            Ok(Some(line)) => eprintln!("[experts-via-tier] stages phase={phase} {line}"),
+            Ok(None) => eprintln!("[experts-via-tier] stages phase={phase} absent"),
+            Err(err) => eprintln!("[experts-via-tier] stages phase={phase} refused: {err}"),
+        }
+    }
 }
 impl Drop for BankedExpertGate<'_> {
     fn drop(&mut self) {
+        self.print_stage_line("close");
         let report = self.engine.with_moe_cache(self.max_bytes, |cache, _| {
             let (slots, allocated_bytes, evictions) = cache.bank_pressure();
             eprintln!("[expert-gpu-slru] slots={slots} allocated_bytes={allocated_bytes} evictions={evictions}");
@@ -148,6 +174,9 @@ impl Engine {
                     .into(),
             );
         }
+        let stage_clock = budget.stage_clock;
+        let clock = |started: Instant| stage_clock.then(|| elapsed_ns(started));
+        let install_started = Instant::now();
         // Authenticate the already-open inode, not a pathname reopened after load.
         let file = gguf.opened_file().clone();
         let mut h = Sha256::new();
@@ -161,13 +190,16 @@ impl Engine {
             offset += n as u64;
         }
         let artifact: Digest = h.finalize().into();
+        let sha_ns = clock(install_started);
         let actual = hex(&artifact);
         if actual != APPROVED_SHA {
             return Err("experts-via-tier artifact SHA256 mismatch".into());
         }
         // The catalog comes from the compiled plan and the artifact's tensor contract; the
         // loaded HostExps only supply the bytes and the router mask for each named bank.
+        let catalog_started = Instant::now();
         let catalog = plan_catalog(model, gguf)?;
+        let catalog_ns = clock(catalog_started);
         if model.layers.len() != model.plan.layers.len() {
             return Err(catalog_refusal(format!(
                 "loaded model has {} layers, compiled plan has {}",
@@ -176,11 +208,14 @@ impl Engine {
             )));
         }
         let reads = Rc::new(Cell::new(0));
+        let pread_ns = stage_clock.then(|| Rc::new(Cell::new(0)));
         let mut reader = FileReader {
             file,
             ranges: BTreeMap::new(),
             reads: reads.clone(),
+            pread_ns: pread_ns.clone(),
         };
+        let records_started = Instant::now();
         let mut entries = vec![];
         let mut ids = BTreeMap::new();
         let mut max_bytes = 0;
@@ -269,6 +304,8 @@ impl Engine {
         if ids.is_empty() || max_bytes == 0 || max_bytes > 16 * 1024 * 1024 {
             return Err("experts-via-tier empty or oversized bank".into());
         }
+        let records_ns = clock(records_started);
+        let setup_started = Instant::now();
         eprintln!(
             "[experts-via-tier] catalog blocks={} banked={banked_blocks} projections={} catalog_sha256={} records={record_count} records_sha256={}",
             catalog.blocks().count(),
@@ -310,7 +347,7 @@ impl Engine {
             0,
             Arc::new(|| 0),
         )?));
-        let bank = BankService::new(
+        let bank: BankService<ExpertDomain, Heat, FileReader> = BankService::new(
             Catalog::new(LayoutClass::PerRecord, entries)?,
             budget.clone(),
             Heat,
@@ -326,6 +363,11 @@ impl Engine {
                 tickets: 1,
             },
         )?;
+        let bank = if stage_clock {
+            bank.with_stage_clock()
+        } else {
+            bank
+        };
         let mut request = BudgetRequest {
             bytes: TierBudget::zero(1),
             priority: Priority::Demand,
@@ -351,6 +393,11 @@ impl Engine {
                 inner: dispatch,
                 ids,
                 occupants: BTreeMap::new(),
+                clock: stage_clock.then(|| OwnerClock {
+                    pread_ns: pread_ns.clone().unwrap_or_default(),
+                    reads: reads.clone(),
+                    ..OwnerClock::default()
+                }),
             }),
             1,
         )?;
@@ -358,8 +405,15 @@ impl Engine {
             self.build_moe_cache_exact(max_bytes as usize, slots)?;
         }
         self.with_moe_cache(max_bytes as usize, |cache, _| {
-            cache.install_banked(owner.proxy())
+            cache.install_banked(owner.proxy(), stage_clock)
         })?;
+        if let (Some(sha), Some(catalog), Some(records), Some(setup)) =
+            (sha_ns, catalog_ns, records_ns, clock(setup_started))
+        {
+            eprintln!(
+                "[experts-via-tier] install sha_ns={sha} catalog_ns={catalog} records_ns={records} setup_ns={setup}"
+            );
+        }
         eprintln!(
             "[experts-via-tier] installed artifact_sha256={actual} host_slots={slots} max_expert_bytes={max_bytes}"
         );
@@ -370,6 +424,7 @@ impl Engine {
             reads,
             budget,
             metadata,
+            stage_clock,
         })
     }
 }
@@ -499,6 +554,19 @@ struct TracedDispatch {
     inner: SlruExpertDispatch<Heat, FileReader>,
     ids: BTreeMap<ExpertDispatchId, BankId>,
     occupants: BTreeMap<usize, ExpertDispatchId>,
+    /// `--expert-bank-stages` only (DAY40): the owner side of the door's stage clock.
+    clock: Option<OwnerClock>,
+}
+/// Owner-thread half of the stage clock: host-tier hits and misses, the inner demand, the
+/// trace print, and the reader's positioned reads (shared with `FileReader`).
+#[derive(Default)]
+struct OwnerClock {
+    host_hits: u64,
+    host_misses: u64,
+    inner_demand_ns: u64,
+    trace_ns: u64,
+    pread_ns: Rc<Cell<u64>>,
+    reads: Rc<Cell<u64>>,
 }
 impl ExpertDispatchBank for TracedDispatch {
     fn validate(&self, local: ExpertDispatchId, bytes: usize) -> Result<()> {
@@ -513,7 +581,17 @@ impl ExpertDispatchBank for TracedDispatch {
             .ok_or(Error::Incomplete)?
             .resident(id)
             .is_some();
-        let demand = self.inner.demand(local, bytes)?;
+        let demand_started = self.clock.as_ref().map(|_| Instant::now());
+        let demand = self.inner.demand(local, bytes);
+        if let (Some(started), Some(clock)) = (demand_started, self.clock.as_mut()) {
+            clock.inner_demand_ns = clock.inner_demand_ns.saturating_add(elapsed_ns(started));
+            if hit {
+                clock.host_hits += 1;
+            } else {
+                clock.host_misses += 1;
+            }
+        }
+        let demand = demand?;
         let slot = self
             .inner
             .bank()
@@ -525,6 +603,7 @@ impl ExpertDispatchBank for TracedDispatch {
             .occupants
             .insert(slot, local)
             .filter(|old| *old != local);
+        let trace_started = self.clock.as_ref().map(|_| Instant::now());
         eprintln!(
             "[expert-host-slru] key={}:{}:{} bytes={} slot={} hit={} victim={}",
             local.0,
@@ -537,9 +616,27 @@ impl ExpertDispatchBank for TracedDispatch {
                 .map(|v| format!("{}:{}:{}", v.0, v.1, v.2))
                 .unwrap_or_else(|| "-".into())
         );
+        if let (Some(started), Some(clock)) = (trace_started, self.clock.as_mut()) {
+            clock.trace_ns = clock.trace_ns.saturating_add(elapsed_ns(started));
+        }
         Ok(demand)
     }
     fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
         self.inner.finish(demand)
+    }
+    fn stage_report(&self) -> Option<String> {
+        let clock = self.clock.as_ref()?;
+        Some(format!(
+            "| owner host_hits={} host_misses={} inner_demand_ns={} trace_ns={} reads={} pread_ns={} | bank {}",
+            clock.host_hits,
+            clock.host_misses,
+            clock.inner_demand_ns,
+            clock.trace_ns,
+            clock.reads.get(),
+            clock.pread_ns.get(),
+            self.inner
+                .stage_report()
+                .unwrap_or_else(|| "absent".to_owned())
+        ))
     }
 }

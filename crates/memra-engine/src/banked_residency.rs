@@ -139,16 +139,23 @@ pub fn host_bank_slots(bytes: u64, max_record: u64) -> std::result::Result<usize
 /// binary's argv (`--expert-bank-host-bytes=N`, `--expert-bank-gpu-bytes=N`), never
 /// from an environment variable. `gpu_bytes == None` leaves native slot sizing
 /// (`MEMRA_MOE_SLOTS` / auto) exactly as it is.
+///
+/// `stage_clock` is not a budget: `--expert-bank-stages` installs the door's log-only stage
+/// clock (`research/spill-c-20260919/DAY40.md`), an explanatory diagnostic that reads
+/// `Instant` and two timing events per GPU miss and changes no decision. It shares the
+/// door's decide-by (`MOE-SLOT-CACHE-DOOR.md`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExpertBankBudget {
     pub host_bytes: u64,
     pub gpu_bytes: Option<u64>,
+    pub stage_clock: bool,
 }
 impl Default for ExpertBankBudget {
     fn default() -> Self {
         Self {
             host_bytes: 256 * 1024 * 1024,
             gpu_bytes: None,
+            stage_clock: false,
         }
     }
 }
@@ -182,8 +189,10 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
     const DOOR: &str = "--experts-via-tier";
     const HOST: &str = "--expert-bank-host-bytes";
     const GPU: &str = "--expert-bank-gpu-bytes";
+    const STAGES: &str = "--expert-bank-stages";
     const FAMILY: &str = "--expert-bank-";
     let mut door = false;
+    let mut stages = false;
     let mut host = None;
     let mut gpu = None;
     for arg in args {
@@ -199,11 +208,20 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
                 door = true;
                 continue;
             }
+            STAGES => {
+                if value.is_some() {
+                    return Err(format!("{STAGES} takes no value"));
+                }
+                if std::mem::replace(&mut stages, true) {
+                    return Err(format!("{STAGES} given more than once"));
+                }
+                continue;
+            }
             HOST => &mut host,
             GPU => &mut gpu,
             _ if key.starts_with(FAMILY) || key.starts_with(DOOR) => {
                 return Err(format!(
-                    "unknown expert bank flag {key:?}; expected {DOOR}, {HOST}=<bytes> or {GPU}=<bytes>"
+                    "unknown expert bank flag {key:?}; expected {DOOR}, {HOST}=<bytes>, {GPU}=<bytes> or {STAGES}"
                 ));
             }
             _ => continue,
@@ -220,6 +238,9 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
         if host.is_some() || gpu.is_some() {
             return Err(format!("expert bank budgets require {DOOR}"));
         }
+        if stages {
+            return Err(format!("{STAGES} requires {DOOR}"));
+        }
         return Ok(None);
     }
     let mut budget = ExpertBankBudget::default();
@@ -227,6 +248,7 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
         budget.host_bytes = bytes;
     }
     budget.gpu_bytes = gpu;
+    budget.stage_clock = stages;
     Ok(Some(budget))
 }
 

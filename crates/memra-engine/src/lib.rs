@@ -6627,6 +6627,18 @@ impl Engine {
 
     /// Snapshot the MoE cache counters (hits, misses, staged_bytes, n_slots) for the §D.4 PCIe gate.
     /// Returns None if the cache was never built (disabled or no MoE forward ran).
+    /// The MoE slot cache door's stage line (`--expert-bank-stages`,
+    /// `research/spill-c-20260919/DAY40.md`): `Ok(None)` without the door or the flag. Never
+    /// builds a cache; the bank half is read through the proxy on the owner thread.
+    pub(crate) fn expert_bank_stage_line(
+        &self,
+    ) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        match self.moe_cache.lock().unwrap().as_ref() {
+            Some(cache) => cache.bank_stage_line(),
+            None => Ok(None),
+        }
+    }
+
     pub fn moe_cache_stats(&self) -> Option<(u64, u64, u64, usize)> {
         let guard = self.moe_cache.lock().unwrap();
         guard

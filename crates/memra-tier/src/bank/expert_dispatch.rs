@@ -45,6 +45,11 @@ pub trait ExpertDispatchBank {
     fn validate(&self, local: ExpertDispatchId, bytes: usize) -> Result<()>;
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand>;
     fn finish(&mut self, demand: ExpertDemand) -> Result<()>;
+    /// The log-only stage clock's `key=value` line, `None` when no clock is installed
+    /// (the `--expert-bank-stages` diagnostic; `research/spill-c-20260919/DAY40.md`).
+    fn stage_report(&self) -> Option<String> {
+        None
+    }
 }
 
 pub struct SlruExpertDispatch<H: Hotness<ExpertDomain>, R: ExactReader> {
@@ -130,6 +135,9 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
             self.bank.collect_evicted()?;
         }
         result
+    }
+    fn stage_report(&self) -> Option<String> {
+        self.bank.stage_times().map(BankStageTimes::line)
     }
     fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
         self.bank.finish_host_use(&demand.ticket)?;

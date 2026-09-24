@@ -254,6 +254,9 @@ pub struct MoeSlotCache {
     // Typed qualification door, default OFF. Owner-only service is never stored here.
     banked: Option<memra_tier::bank::ExpertBankProxy>,
     banked_pending: Option<memra_tier::bank::ExpertLeaseToken>,
+    /// `--expert-bank-stages` only (DAY40): the CUDA-thread half of the door's log-only stage
+    /// clock. `None` without the door and without the flag, so no legacy statement reads it.
+    bank_clock: Option<BankAdmitClock>,
     slots: Vec<CudaSlice<u8>>, // fixed GPU buffers; capacities live in `classes`
     slot_class: Vec<usize>,    // slot index -> size-class index
     classes: Vec<SlotClass>,
@@ -334,6 +337,53 @@ pub struct MoeSlotCache {
     pub hits: u64,
     pub misses: u64,
     pub staged_bytes: u64, // total H2D bytes the cache caused (admit + first-miss transient)
+}
+
+/// CUDA-thread half of the door's stage clock (`research/spill-c-20260919/DAY40.md` section
+/// 2): host wall nanoseconds per bracket of `admit_banked` and the banked branch of
+/// `admit_native`, plus the GPU time of each H2D read from two timing events on the compute
+/// stream. Log-only: it reads `Instant` and events and changes no decision.
+#[derive(Clone, Copy, Debug, Default)]
+struct BankAdmitClock {
+    admits: u64,
+    gpu_hits: u64,
+    gpu_misses: u64,
+    validate_ns: u64,
+    demand_ns: u64,
+    reserve_ns: u64,
+    enqueue_ns: u64,
+    copy_gpu_ns: u64,
+    copy_events: u64,
+    event_errors: u64,
+    drain_ns: u64,
+    sync2_ns: u64,
+    finish_ns: u64,
+    miss_total_ns: u64,
+}
+impl BankAdmitClock {
+    fn line(&self) -> String {
+        format!(
+            "admits={} gpu_hits={} gpu_misses={} validate_ns={} demand_ns={} reserve_ns={} enqueue_ns={} copy_gpu_ns={} copy_events={} event_errors={} drain_ns={} sync2_ns={} finish_ns={} miss_total_ns={}",
+            self.admits,
+            self.gpu_hits,
+            self.gpu_misses,
+            self.validate_ns,
+            self.demand_ns,
+            self.reserve_ns,
+            self.enqueue_ns,
+            self.copy_gpu_ns,
+            self.copy_events,
+            self.event_errors,
+            self.drain_ns,
+            self.sync2_ns,
+            self.finish_ns,
+            self.miss_total_ns
+        )
+    }
+}
+
+fn clock_ns(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
 struct PendingBlock {
@@ -616,6 +666,7 @@ impl MoeSlotCache {
         Ok(MoeSlotCache {
             banked: None,
             banked_pending: None,
+            bank_clock: None,
             slots,
             slot_class,
             classes,
@@ -943,6 +994,7 @@ impl MoeSlotCache {
     pub(crate) fn install_banked(
         &mut self,
         bank: memra_tier::bank::ExpertBankProxy,
+        stage_clock: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.banked.is_some()
             || !self.table.is_empty()
@@ -956,7 +1008,21 @@ impl MoeSlotCache {
             return Err("banked experts require an untouched default-SLRU cache".into());
         }
         self.banked = Some(bank);
+        self.bank_clock = stage_clock.then(BankAdmitClock::default);
         Ok(())
+    }
+
+    /// The door's stage line (DAY40): this cache's clock, then the owner's report through
+    /// the proxy (owner thread only, like every bank call). `Ok(None)` without the door or
+    /// without `--expert-bank-stages`.
+    pub(crate) fn bank_stage_line(&self) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        let (Some(clock), Some(bank)) = (&self.bank_clock, &self.banked) else {
+            return Ok(None);
+        };
+        let owner = bank
+            .stage_report()?
+            .unwrap_or_else(|| "| owner absent".to_owned());
+        Ok(Some(format!("{} {owner}", clock.line())))
     }
 
     fn admit_banked(
@@ -970,14 +1036,28 @@ impl MoeSlotCache {
         }
         let bank = self.banked.as_ref().ok_or("bank proxy absent")?.clone();
         let local = (id.layer, id.proj, id.ex);
+        let clocked = self.bank_clock.is_some();
+        let entered = clocked.then(std::time::Instant::now);
         bank.validate(local, bytes)?;
+        if let (Some(started), Some(clock)) = (entered, self.bank_clock.as_mut()) {
+            clock.admits += 1;
+            clock.validate_ns += clock_ns(started);
+        }
         if let Some(slot) = self.table.get(&id).copied() {
             self.hits += 1;
+            if let Some(clock) = self.bank_clock.as_mut() {
+                clock.gpu_hits += 1;
+            }
             self.on_hit(slot);
             return Ok(slot);
         }
         self.misses += 1;
+        let demanded = clocked.then(std::time::Instant::now);
         let token = bank.demand(local, bytes)?;
+        if let (Some(started), Some(clock)) = (demanded, self.bank_clock.as_mut()) {
+            clock.gpu_misses += 1;
+            clock.demand_ns += clock_ns(started);
+        }
         if token.record() != local {
             // The proxy refuses a mismatched lease before minting a token; this is the
             // consumer's own assertion at the seam. Retire the lease if it ever fires so no
@@ -991,9 +1071,20 @@ impl MoeSlotCache {
         let token = self.banked_pending.take().unwrap();
         let result = bank.with_bytes(&token, |payload| self.admit_native(id, payload, e));
         self.banked_pending = Some(token);
+        let synced = clocked.then(std::time::Instant::now);
         e.stream().synchronize()?;
+        if let (Some(started), Some(clock)) = (synced, self.bank_clock.as_mut()) {
+            clock.sync2_ns += clock_ns(started);
+        }
+        let finishing = clocked.then(std::time::Instant::now);
         bank.finish(self.banked_pending.as_ref().unwrap())?;
         self.banked_pending = None;
+        if let (Some(started), Some(clock)) = (finishing, self.bank_clock.as_mut()) {
+            clock.finish_ns += clock_ns(started);
+            if let Some(entered) = entered {
+                clock.miss_total_ns += clock_ns(entered);
+            }
+        }
         result?
     }
 
@@ -1003,6 +1094,9 @@ impl MoeSlotCache {
         host_bytes: &[u8],
         e: &Engine,
     ) -> Result<usize, Box<dyn std::error::Error>> {
+        // Every clock statement below is behind `bank_clock`, which is `None` unless the
+        // door is installed with `--expert-bank-stages`; the legacy path reads nothing new.
+        let reserving = self.bank_clock.is_some().then(std::time::Instant::now);
         let slot = self.reserve_slot(host_bytes.len()).ok_or_else(|| {
             std::io::Error::other(format!(
                 "no MoE cache slot can hold {} bytes (max class {})",
@@ -1010,9 +1104,21 @@ impl MoeSlotCache {
                 self.classes.last().map(|class| class.capacity).unwrap_or(0)
             ))
         })?;
+        if let (Some(started), Some(clock)) = (reserving, self.bank_clock.as_mut()) {
+            clock.reserve_ns += clock_ns(started);
+        }
+        let timed = Some(cudarc::driver::sys::CUevent_flags::CU_EVENT_DEFAULT);
+        let copy_before = self
+            .bank_clock
+            .as_ref()
+            .map(|_| e.stream().record_event(timed));
+        let enqueuing = self.bank_clock.is_some().then(std::time::Instant::now);
         // Pending copy-stream admissions are not in either SLRU queue, so `evict_one` cannot return
         // an in-flight slot. This synchronous copy and its consumer remain ordered on gpu.stream.
-        if let Err(err) = e.stage_expert(host_bytes, &mut self.slots[slot], 0) {
+        let staged = e.stage_expert(host_bytes, &mut self.slots[slot], 0);
+        let enqueue_ns = enqueuing.map(clock_ns);
+        let copy_after = copy_before.as_ref().map(|_| e.stream().record_event(timed));
+        if let Err(err) = staged {
             return match e.stream().synchronize() {
                 Ok(()) => {
                     self.release_reserved_slot(slot);
@@ -1032,11 +1138,28 @@ impl MoeSlotCache {
         // copy completion is known. On an unknown result, leave it outside every
         // cache table/queue so a later resident fast path cannot bypass the token
         // refusal; Drop retries the drain and leaks slots if CUDA stays unknown.
+        let draining = self.bank_clock.is_some().then(std::time::Instant::now);
         if self.banked.is_some()
             && let Err(err) = e.stream().synchronize()
         {
             self.compute_stream_unknown = true;
             return Err(err.into());
+        }
+        if let (Some(started), Some(clock)) = (draining, self.bank_clock.as_mut()) {
+            clock.drain_ns += clock_ns(started);
+            clock.enqueue_ns += enqueue_ns.unwrap_or(0);
+            match (copy_before, copy_after) {
+                // Both events are complete after the drain; `elapsed_ms` waits on nothing.
+                (Some(Ok(before)), Some(Ok(after))) => match before.elapsed_ms(&after) {
+                    Ok(ms) => {
+                        clock.copy_gpu_ns += (f64::from(ms) * 1.0e6) as u64;
+                        clock.copy_events += 1;
+                    }
+                    Err(_) => clock.event_errors += 1,
+                },
+                (None, None) => {}
+                _ => clock.event_errors += 1,
+            }
         }
         self.staged_bytes += host_bytes.len() as u64;
         self.publish(id, slot);

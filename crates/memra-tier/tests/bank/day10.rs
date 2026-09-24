@@ -119,7 +119,8 @@ fn expert_bank_cli_parses_only_behind_the_door() {
         expert_bank_cli(argv(&["--experts-via-tier", "--expert-bank-host-bytes=1"])),
         Ok(Some(ExpertBankBudget {
             host_bytes: 1,
-            gpu_bytes: None
+            gpu_bytes: None,
+            stage_clock: false
         }))
     );
     assert_eq!(
@@ -130,7 +131,8 @@ fn expert_bank_cli_parses_only_behind_the_door() {
         ])),
         Ok(Some(ExpertBankBudget {
             host_bytes: 256 * 1024 * 1024,
-            gpu_bytes: Some(6_881_344)
+            gpu_bytes: Some(6_881_344),
+            stage_clock: false
         }))
     );
     assert_eq!(
@@ -141,7 +143,8 @@ fn expert_bank_cli_parses_only_behind_the_door() {
         ])),
         Ok(Some(ExpertBankBudget {
             host_bytes: 268_435_456,
-            gpu_bytes: Some(6_021_176)
+            gpu_bytes: Some(6_021_176),
+            stage_clock: false
         }))
     );
     // Usage errors, never silent: budget without the door, bare flag, junk, negative, repeat.
@@ -192,12 +195,69 @@ fn expert_bank_cli_parses_only_behind_the_door() {
         assert!(!err.contains("given more than once"), "{junk}: {err}");
     }
     assert_eq!(
-        expert_bank_cli(argv(&["--experts-via-tier", "--expert-bank-host-bytes-x=1"])),
-        Err("unknown expert bank flag \"--expert-bank-host-bytes-x\"; expected \
-             --experts-via-tier, --expert-bank-host-bytes=<bytes> or --expert-bank-gpu-bytes=<bytes>"
-            .to_owned())
+        expert_bank_cli(argv(&[
+            "--experts-via-tier",
+            "--expert-bank-host-bytes-x=1"
+        ])),
+        Err(
+            "unknown expert bank flag \"--expert-bank-host-bytes-x\"; expected \
+             --experts-via-tier, --expert-bank-host-bytes=<bytes>, --expert-bank-gpu-bytes=<bytes> \
+             or --expert-bank-stages"
+                .to_owned()
+        )
     );
     // The exact key still parses next to a look-alike-free argv, and the slot pad is shared.
     assert_eq!(SLOT_TAIL_PAD_BYTES, 8);
     assert_eq!(gpu_slot_bytes(RECORD), Some(RECORD + 8));
+}
+
+/// Day 40: `--expert-bank-stages` is the door's log-only stage clock. It parses only behind
+/// the door, takes no value, refuses a repeat and a look-alike key, and leaves the budgets
+/// exactly as they were.
+#[test]
+fn expert_bank_stage_clock_parses_only_behind_the_door() {
+    assert_eq!(
+        expert_bank_cli(argv(&["--experts-via-tier", "--expert-bank-stages"])),
+        Ok(Some(ExpertBankBudget {
+            stage_clock: true,
+            ..ExpertBankBudget::default()
+        }))
+    );
+    assert_eq!(
+        expert_bank_cli(argv(&[
+            "--expert-bank-stages",
+            "--experts-via-tier",
+            "--expert-bank-gpu-bytes=6881344"
+        ])),
+        Ok(Some(ExpertBankBudget {
+            host_bytes: 256 * 1024 * 1024,
+            gpu_bytes: Some(6_881_344),
+            stage_clock: true
+        }))
+    );
+    assert!(!ExpertBankBudget::default().stage_clock);
+    assert_eq!(
+        expert_bank_cli(argv(&["--expert-bank-stages"])),
+        Err("--expert-bank-stages requires --experts-via-tier".to_owned())
+    );
+    assert_eq!(
+        expert_bank_cli(argv(&["--experts-via-tier", "--expert-bank-stages=1"])),
+        Err("--expert-bank-stages takes no value".to_owned())
+    );
+    assert_eq!(
+        expert_bank_cli(argv(&[
+            "--experts-via-tier",
+            "--expert-bank-stages",
+            "--expert-bank-stages"
+        ])),
+        Err("--expert-bank-stages given more than once".to_owned())
+    );
+    for junk in [
+        "--expert-bank-stage",
+        "--expert-bank-stagesx",
+        "--expert-bank-stages-",
+    ] {
+        let err = expert_bank_cli(argv(&["--experts-via-tier", junk])).unwrap_err();
+        assert!(err.contains("unknown expert bank flag"), "{junk}: {err}");
+    }
 }

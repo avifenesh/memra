@@ -1022,7 +1022,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let g = GgufFile::open(&path)?;
     let model = HybridModel::load_without_mtp(&e, &g)?;
-    let _expert_bank_owner = match expert_bank {
+    let expert_bank_owner = match expert_bank {
         Some(budget) => Some(match e.install_expert_bank_gate(&model, &g, budget) {
             Ok(gate) => gate,
             Err(err) => {
@@ -1452,6 +1452,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cudaProfilerStart();
         }
     }
+    // --expert-bank-stages (DAY40): the door's cumulative stage line at each phase boundary.
+    let stage_line = |phase: &str| {
+        if let Some(gate) = &expert_bank_owner {
+            gate.print_stage_line(phase);
+        }
+    };
+    stage_line("gate");
     let t0 = std::time::Instant::now();
     let gen_out = model.generate_with(&e, &prompt, &params, &mut sampler, |id| {
         emitted_ids.push(id);
@@ -1492,6 +1499,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         gen_out.stop_reason
     );
     println!("tokens: {out:?}");
+    stage_line("generate");
 
     // --- EDGE-1 §D.4: MoE residency-cache PCIe report. The Stage-1 (no-cache) baseline re-stages
     //     every routed block every layer every token = `stage1_h2d_per_token()` (~907 MB/decode-token
@@ -1529,10 +1537,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ll = model.decode_step(&e, t, &mut warm_cache)?;
             }
             e.moe_cache_reset_counters(); // measure ONLY the steady-state window below
+            stage_line("warm");
+            // Host wall of the measured window (DAY40): every decode_step returns host logits, so
+            // the window is complete when the loop ends; no sync is added.
+            let window_started = std::time::Instant::now();
             for _ in 0..n_measure {
                 let next = argmax(&ll) as u32;
                 ll = model.decode_step(&e, next, &mut warm_cache)?;
             }
+            println!(
+                "MoE cache STEADY-STATE window: {n_measure} decode steps in {:.3}s",
+                window_started.elapsed().as_secs_f64()
+            );
+            stage_line("window");
             if let Some((h2, m2, s2, _)) = e.moe_cache_stats() {
                 let mb_tok = (s2 as f64 / (1024.0 * 1024.0)) / n_measure as f64;
                 let tot2 = h2 + m2;

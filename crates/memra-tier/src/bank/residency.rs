@@ -4,7 +4,69 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     marker::PhantomData,
     sync::atomic::{AtomicU64, Ordering},
+    time::Instant,
 };
+
+/// Log-only stage clock of the host bank lifecycle: the `--expert-bank-stages` diagnostic
+/// of the MoE slot cache door (`research/spill-c-20260919/DAY40.md`). Host wall nanoseconds
+/// summed per bracket and call counts; it reads `Instant` only, changes no decision, and is
+/// absent unless `with_stage_clock` installed it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BankStageTimes {
+    /// `stage()` calls and their whole wall.
+    pub stages: u64,
+    pub stage_ns: u64,
+    /// `ReadWork::new` inside `stage()`: the output allocations and their zero-fill.
+    pub alloc_ns: u64,
+    /// `ReadWork::step` calls from `progress()`: slot allocation and zero-fill, the reader
+    /// call, the assembly copy.
+    pub steps: u64,
+    pub step_ns: u64,
+    /// Records verified in `progress()` and the per-segment checksum and zero-tail wall.
+    pub verified: u64,
+    pub verify_ns: u64,
+    /// `publish()` whole.
+    pub publish_ns: u64,
+    /// `finish_host_use` + `retire` + `acknowledge`.
+    pub retire_ns: u64,
+    /// `collect_evicted`.
+    pub collect_ns: u64,
+}
+impl BankStageTimes {
+    /// `key=value` tokens in a fixed order, the form the day-40 reader parses.
+    pub fn line(&self) -> String {
+        format!(
+            "stages={} stage_ns={} alloc_ns={} steps={} step_ns={} verified={} verify_ns={} publish_ns={} retire_ns={} collect_ns={}",
+            self.stages,
+            self.stage_ns,
+            self.alloc_ns,
+            self.steps,
+            self.step_ns,
+            self.verified,
+            self.verify_ns,
+            self.publish_ns,
+            self.retire_ns,
+            self.collect_ns
+        )
+    }
+}
+
+fn clock_start(clock: &Option<BankStageTimes>) -> Option<Instant> {
+    clock.is_some().then(Instant::now)
+}
+
+fn clock_add(
+    clock: &mut Option<BankStageTimes>,
+    start: Option<Instant>,
+    field: impl FnOnce(&mut BankStageTimes, u64),
+) {
+    if let (Some(start), Some(clock)) = (start, clock.as_mut()) {
+        field(
+            clock,
+            u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX),
+        );
+    }
+}
 
 static NEXT_SERVICE: AtomicU64 = AtomicU64::new(1);
 struct Pending {
@@ -46,6 +108,7 @@ pub struct BankService<D: BankDomain, H: Hotness<D>, R: ExactReader> {
     pending: HashMap<TransferTicket, Pending>,
     issuer: u64,
     sequence: u64,
+    clock: Option<BankStageTimes>,
     _domain: PhantomData<D>,
 }
 impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
@@ -77,8 +140,19 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             pending: HashMap::new(),
             issuer,
             sequence: 0,
+            clock: None,
             _domain: PhantomData,
         })
+    }
+    /// Install the log-only stage clock (`BankStageTimes`). Diagnostic only: every bracket
+    /// reads `Instant` and nothing else, so the lifecycle's decisions are unchanged.
+    pub fn with_stage_clock(mut self) -> Self {
+        self.clock = Some(BankStageTimes::default());
+        self
+    }
+    /// The stage clock's totals, `None` unless `with_stage_clock` installed it.
+    pub fn stage_times(&self) -> Option<&BankStageTimes> {
+        self.clock.as_ref()
     }
     /// Install the CPU SLRU policy before any request. The charge is metadata
     /// only; exact output/backing remains separately charged by stage until final
@@ -130,7 +204,13 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         } else {
             self.reader.begin_request(&p.request, ticket.epochs);
             let work = p.work.as_mut().ok_or(Error::NotReady)?;
-            match work.step(&p.missing, &p.plan, &mut self.reader, self.policy) {
+            let started = clock_start(&self.clock);
+            let stepped = work.step(&p.missing, &p.plan, &mut self.reader, self.policy);
+            clock_add(&mut self.clock, started, |c, ns| {
+                c.steps += 1;
+                c.step_ns += ns;
+            });
+            match stepped {
                 Ok(false) => return Ok(false),
                 Ok(true) => Ok(std::mem::take(&mut work.outputs)),
                 Err(e) => Err(e),
@@ -149,6 +229,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             {
                 let mut base = 0usize;
                 let mut segments = Vec::new();
+                let started = clock_start(&self.clock);
                 for (j, s) in r.layout.segments.iter().enumerate() {
                     let valid_end = base + s.valid_bytes as usize;
                     let end = base + s.storage_bytes as usize;
@@ -179,6 +260,10 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                     });
                     base = end;
                 }
+                clock_add(&mut self.clock, started, |c, ns| {
+                    c.verified += 1;
+                    c.verify_ns += ns;
+                });
                 items.push(ItemOutcome {
                     item: index as u32,
                     accepted: true,
@@ -273,6 +358,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
     /// rollback). No CUDA/graph use is accepted by this backend. Does not release
     /// resources: retire/release still run, and borrowed views refuse Busy.
     pub fn finish_host_use(&mut self, ticket: &TransferTicket) -> Result<()> {
+        let started = clock_start(&self.clock);
+        let result = self.finish_host_use_unclocked(ticket);
+        clock_add(&mut self.clock, started, |c, ns| c.retire_ns += ns);
+        result
+    }
+    fn finish_host_use_unclocked(&mut self, ticket: &TransferTicket) -> Result<()> {
         let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
         if !p.published && !p.cancelled && p.error.is_none() {
             return Err(Error::Busy);
@@ -281,6 +372,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         Ok(())
     }
     pub fn acknowledge(&mut self, ticket: &TransferTicket) -> Result<()> {
+        let started = clock_start(&self.clock);
+        let result = self.acknowledge_unclocked(ticket);
+        clock_add(&mut self.clock, started, |c, ns| c.retire_ns += ns);
+        result
+    }
+    fn acknowledge_unclocked(&mut self, ticket: &TransferTicket) -> Result<()> {
         if !self
             .pending
             .get(ticket)
@@ -334,6 +431,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
     }
     /// Release inactive evicted allocations, never outstanding consumer tickets.
     pub fn collect_evicted(&mut self) -> Result<()> {
+        let started = clock_start(&self.clock);
+        let result = self.collect_evicted_unclocked();
+        clock_add(&mut self.clock, started, |c, ns| c.collect_ns += ns);
+        result
+    }
+    fn collect_evicted_unclocked(&mut self) -> Result<()> {
         let leases: Vec<_> = self
             .owned
             .values()
@@ -367,6 +470,55 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         Ok(self.cache.get(id).cloned())
     }
     fn stage(&mut self, batch: BankBatch) -> Result<TransferTicket> {
+        let started = clock_start(&self.clock);
+        let result = self.stage_unclocked(batch);
+        clock_add(&mut self.clock, started, |c, ns| {
+            c.stages += 1;
+            c.stage_ns += ns;
+        });
+        result
+    }
+    fn publish(&mut self, ticket: &TransferTicket, current: Epochs) -> Result<Vec<BankLease>> {
+        let started = clock_start(&self.clock);
+        let result = self.publish_unclocked(ticket, current);
+        clock_add(&mut self.clock, started, |c, ns| c.publish_ns += ns);
+        result
+    }
+    fn cancel(&mut self, ticket: &TransferTicket) -> Result<CancelState> {
+        let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        if p.published {
+            Ok(CancelState::AlreadyPublished)
+        } else {
+            p.cancelled = true;
+            Ok(CancelState::PublicationRevoked)
+        }
+    }
+    fn retire(&mut self, ticket: &TransferTicket) -> Result<bool> {
+        let started = clock_start(&self.clock);
+        let result = self.retire_unclocked(ticket);
+        clock_add(&mut self.clock, started, |c, ns| c.retire_ns += ns);
+        result
+    }
+    fn release(&mut self, lease: &BankLease) -> Result<()> {
+        self.can_release(lease)?;
+        lease.retire_backing()?;
+        self.budget.borrow_mut().release(lease.charge())?;
+        if self
+            .cache
+            .get(lease.id())
+            .is_some_and(|r| r.charge().id() == lease.charge().id())
+            && let Some((policy, _)) = &mut self.slru
+        {
+            policy.remove(lease.id());
+        }
+        self.cache
+            .retain(|_, r| r.charge().id() != lease.charge().id());
+        self.owned.remove(&lease.charge().id());
+        Ok(())
+    }
+}
+impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
+    fn stage_unclocked(&mut self, batch: BankBatch) -> Result<TransferTicket> {
         if batch.ids.is_empty() {
             return Err(Error::EmptyBatch);
         }
@@ -479,7 +631,10 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         let work = if missing.is_empty() {
             None
         } else {
-            match ReadWork::new(&missing) {
+            let started = clock_start(&self.clock);
+            let work = ReadWork::new(&missing);
+            clock_add(&mut self.clock, started, |c, ns| c.alloc_ns += ns);
+            match work {
                 Ok(work) => Some(work),
                 Err(error) => {
                     for charge in &charges {
@@ -551,7 +706,11 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         self.sequence = sequence;
         Ok(ticket)
     }
-    fn publish(&mut self, ticket: &TransferTicket, current: Epochs) -> Result<Vec<BankLease>> {
+    fn publish_unclocked(
+        &mut self,
+        ticket: &TransferTicket,
+        current: Epochs,
+    ) -> Result<Vec<BankLease>> {
         let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
         ticket.epochs.require(current)?;
         if p.cancelled {
@@ -622,16 +781,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         }
         Ok(output)
     }
-    fn cancel(&mut self, ticket: &TransferTicket) -> Result<CancelState> {
-        let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
-        if p.published {
-            Ok(CancelState::AlreadyPublished)
-        } else {
-            p.cancelled = true;
-            Ok(CancelState::PublicationRevoked)
-        }
-    }
-    fn retire(&mut self, ticket: &TransferTicket) -> Result<bool> {
+    fn retire_unclocked(&mut self, ticket: &TransferTicket) -> Result<bool> {
         let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
         if !p.host_use_done || !p.completion.producer_done {
             return Ok(false);
@@ -647,22 +797,5 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         p.unpublished.clear();
         p.retired = true;
         Ok(true)
-    }
-    fn release(&mut self, lease: &BankLease) -> Result<()> {
-        self.can_release(lease)?;
-        lease.retire_backing()?;
-        self.budget.borrow_mut().release(lease.charge())?;
-        if self
-            .cache
-            .get(lease.id())
-            .is_some_and(|r| r.charge().id() == lease.charge().id())
-            && let Some((policy, _)) = &mut self.slru
-        {
-            policy.remove(lease.id());
-        }
-        self.cache
-            .retain(|_, r| r.charge().id() != lease.charge().id());
-        self.owned.remove(&lease.charge().id());
-        Ok(())
     }
 }

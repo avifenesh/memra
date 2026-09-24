@@ -19,8 +19,18 @@ the model plan and tensor contract, typed catalog refusals), `76f78c569` (exact 
 shared slot tail pad, gate helpers off the crate root), `6defcd604` (day-eleven driver),
 `69905776f` (day twelve: lease token identity, `bank::dispatch_id`, `admit_banked` record assertion).
 
-decide-by: 2026-10-04 (covers the door and both budget flags; CLI doors carry
-their decide-by here, not in `docs/FLAGS.md`).
+decide-by: 2026-10-04 (covers the door, both budget flags and the stage clock; CLI doors
+carry their decide-by here, not in `docs/FLAGS.md`).
+
+Day 40 (`DAY40.md` section 2): `--expert-bank-stages` (no value, requires the door) installs
+the door's log-only stage clock, an explanatory diagnostic: `Instant` brackets around every
+step of `admit_banked`, the banked branch of `admit_native`, the owner's demand (`TracedDispatch`,
+`FileReader`) and the host bank lifecycle (`BankService::with_stage_clock`,
+`BankStageTimes`), plus two timing events per GPU miss around the H2D; `run-gen` prints
+`[experts-via-tier] stages phase=<gate|generate|warm|window>` lines and the gate prints
+`phase=close` and an `[experts-via-tier] install sha_ns= catalog_ns= records_ns= setup_ns=`
+line. No `MEMRA_*` read, no decision changes. It goes with the door. `run-gen` also prints,
+for every arm, `MoE cache STEADY-STATE window: <n> decode steps in <s>s`.
 
 | Surface | File | What it does |
 |---|---|---|
