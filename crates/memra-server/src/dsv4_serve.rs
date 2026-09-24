@@ -39,9 +39,10 @@ use crate::route_telemetry::{RouteLoad, RouteRun, ServeStats};
 use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request, SpecUsage};
 use memra_engine::dsv4_gpu::{
     DSV4_BATCH_WIDTH_MAX, DecodePath, DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState,
-    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, Dsv4Vt, RoundTake, StageMemory,
-    dsv4_penalize_row, dsv4_sample_row, resolve_vt,
+    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, Dsv4Vt, REPLAY_MIN_CAPACITY, RoundTake,
+    StageMemory, dsv4_penalize_row, dsv4_sample_row, resolve_vt,
 };
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::{Tokenizer, chat};
 use std::collections::HashMap;
@@ -237,6 +238,20 @@ pub fn sessions_from_env(default: usize) -> Result<usize, String> {
         configured_env_text("MEMRA_DSV4_SESSIONS")?.as_deref(),
         default,
     )
+}
+
+/// `MEMRA_DSV4_TOPOLOGY` (memra #710): where a two-card load places the model. Unset, empty or
+/// `tp_ep` is the default since 2026-09-25: every layer on both cards, experts split by id and
+/// attention split by head (exact attention TP2). `pp` is the PP-2 rollback. Anything else
+/// refuses the boot.
+fn resolve_topology(raw: Option<&str>) -> Result<Dsv4Placement, String> {
+    match raw.map(str::trim) {
+        None | Some("") | Some("tp_ep") => Ok(Dsv4Placement::TpEp { attention_tp: true }),
+        Some("pp") => Ok(Dsv4Placement::Pp),
+        Some(other) => Err(format!(
+            "MEMRA_DSV4_TOPOLOGY {other:?} unknown (tp_ep | pp)"
+        )),
+    }
 }
 
 fn configured_env_text(name: &str) -> Result<Option<String>, String> {
@@ -862,7 +877,29 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     if c4_host_bytes > 0 && prefill_chunk == 0 {
         return Err("MEMRA_DSV4_C4_HOST_MB requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
     }
-    let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq)?;
+    let topology_raw = configured_env_text("MEMRA_DSV4_TOPOLOGY")?;
+    let placement = resolve_topology(topology_raw.as_deref())?;
+    let gpu = Dsv4Gpu::load_placed(dir, &devices, variant, max_seq, placement).map_err(|e| {
+        if placement.is_tp_ep() {
+            format!("{e} (TP/EP is the default placement; MEMRA_DSV4_TOPOLOGY=pp loads PP-2)")
+        } else {
+            e
+        }
+    })?;
+    eprintln!(
+        "[dsv4-serve] {name}: placement {}{}, plain sampler {:?}",
+        if placement.is_tp_ep() {
+            "TP/EP (expert-ID EP pair, attention TP2)"
+        } else {
+            "PP-2"
+        },
+        if topology_raw.is_some() {
+            " (MEMRA_DSV4_TOPOLOGY)"
+        } else {
+            " (default)"
+        },
+        gpu.plain_sampler(),
+    );
     if gpu.matrix_moe_enabled() && prefill_chunk == 0 {
         return Err("experimental matrix program requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
     }
@@ -1679,6 +1716,40 @@ fn rows_step(
     result
 }
 
+/// The greedy program a TP/EP replay arms: the device argmax, no draw.
+const GREEDY_REPLAY: Dsv4SampleCfg = Dsv4SampleCfg {
+    temperature: 0.0,
+    top_p: 1.0,
+    top_k: 0,
+    seed: 0,
+};
+
+/// Arm a TP/EP plain request on the full-token replay graphs (memra #710). A refused arm
+/// leaves the request on the eager step, the same numeric program, and logs why.
+fn arm_replay(m: &Dsv4Model, state: &mut DecodeState, cfg: Dsv4SampleCfg) -> bool {
+    // SAFETY: the route holds the model behind an `Arc` for the whole request, so it outlives
+    // the state at a stable address, and nothing replaces its weights or reconfigures its
+    // kernels after load.
+    match unsafe { m.gpu.arm_full_token_replay(state, cfg) } {
+        Ok(()) => true,
+        Err(why) => {
+            eprintln!("[dsv4-serve] TP/EP replay not armed: {why}");
+            false
+        }
+    }
+}
+
+/// Whether an armed request's next step still replays. Past the replay limit the request
+/// drops its graphs and continues on the eager step, the same numeric program
+/// (`dsv4_tp_replay_long_gate` crosses that handoff).
+fn keep_replay(m: &Dsv4Model, state: &mut DecodeState) -> Result<bool, String> {
+    if m.gpu.full_token_replay_covers(state) {
+        return Ok(true);
+    }
+    m.gpu.disarm_full_token_replay(state)?;
+    Ok(false)
+}
+
 /// One plain greedy step. Serial lanes take the one-call step. Pipelined lanes queue the step
 /// holding the turn, wait for its readbacks without it, then take the turn back to commit.
 fn greedy_step(
@@ -2354,7 +2425,13 @@ fn serve_one(
         ));
     }
     let use_spec = m.spec && !(greedy && penalties_set);
-    let session_capacity = prompt.len() + budget;
+    // TP/EP plain requests serve on the full-token replay graphs, which need a capacity of at
+    // least REPLAY_MIN_CAPACITY; a shorter session is rounded up so it can arm.
+    let session_capacity = if m.gpu.topology().is_tp_ep() && !use_spec {
+        (prompt.len() + budget).max(REPLAY_MIN_CAPACITY)
+    } else {
+        prompt.len() + budget
+    };
     // Memory admission (memra#503), before consuming a parked prefix or starting any state
     // allocation: the active C4 history against its configured budget (a session past it can
     // never fit, so it is the client's error, not a retryable one), then the whole session
@@ -2580,6 +2657,11 @@ fn serve_one(
             // row asks for its logits.
             let batcher = m.rows.as_deref();
             let _member = batcher.map(RowMember::join);
+            // A TP/EP greedy row without penalties replays its steps (memra #710).
+            let mut replay = m.gpu.topology().is_tp_ep()
+                && pen_cfg.is_none()
+                && batcher.is_none()
+                && arm_replay(m, &mut state, GREEDY_REPLAY);
             while emit.push(&[t]) {
                 if pen_cfg.is_some() {
                     window.push(t);
@@ -2588,7 +2670,12 @@ fn serve_one(
                 if step >= budget {
                     break;
                 }
-                t = if let Some(pc) = &pen_cfg {
+                replay = replay && keep_replay(m, &mut state).map_err(EngineError::engine)?;
+                t = if replay {
+                    m.gpu
+                        .decode_sample_full_token(t, &mut state)
+                        .map_err(EngineError::engine)?
+                } else if let Some(pc) = &pen_cfg {
                     // penalized greedy needs the full row (argmax AFTER penalties)
                     let mut row = match batcher {
                         Some(b) => rows_step(m, b, turn, t, true, &mut state)
@@ -2620,14 +2707,12 @@ fn serve_one(
                 }
                 dsv4_sample_row(row, pos, &cfg)
             };
-            let mut device_sampler = if memra_engine::dsv4_sampler::dsv4_sampler()
-                .map_err(EngineError::engine)?
-                == memra_engine::dsv4_sampler::Dsv4Sampler::Device
-            {
-                Some(m.gpu.device_sampler().map_err(EngineError::engine)?)
-            } else {
-                None
-            };
+            let mut device_sampler =
+                if m.gpu.plain_sampler() == memra_engine::dsv4_sampler::Dsv4Sampler::Device {
+                    Some(m.gpu.device_sampler().map_err(EngineError::engine)?)
+                } else {
+                    None
+                };
             let mut row0 = pre_logits;
             let mut t = if let Some(sampler) = &mut device_sampler {
                 sampler.sample_host_row(&row0, p0, &cfg, &window, pen_cfg.as_ref())
@@ -2639,6 +2724,16 @@ fn serve_one(
             // Host-sampled rows coalesce too; the device sampler keeps its own step.
             let batcher = m.rows.as_deref().filter(|_| device_sampler.is_none());
             let _member = batcher.map(RowMember::join);
+            // A TP/EP device-sampled row at the vendor default (temperature 1, top-p 1, no
+            // top-k) without penalties replays its steps: the in-graph draw is the device
+            // sampler's position-keyed program (memra #710).
+            let mut replay = m.gpu.topology().is_tp_ep()
+                && device_sampler.is_some()
+                && pen_cfg.is_none()
+                && cfg.temperature == 1.0
+                && cfg.top_p == 1.0
+                && cfg.top_k == 0
+                && arm_replay(m, &mut state, cfg);
             while emit.push(&[t]) {
                 if pen_cfg.is_some() {
                     window.push(t);
@@ -2647,7 +2742,10 @@ fn serve_one(
                 if step >= budget {
                     break;
                 }
-                t = if let Some(sampler) = &mut device_sampler {
+                replay = replay && keep_replay(m, &mut state).map_err(EngineError::engine)?;
+                t = if replay {
+                    m.gpu.decode_sample_full_token(t, &mut state)
+                } else if let Some(sampler) = &mut device_sampler {
                     m.gpu
                         .decode_step_device_logits(t, &mut state)
                         .map_err(EngineError::engine)?;
@@ -3009,9 +3107,28 @@ mod declared_context_tests {
 mod c4_host_budget_tests {
     use super::{
         admit_c4_host_bytes, default_sessions, env_text, resolve_c4_host_bytes, resolve_env_mb,
-        resolve_sessions,
+        resolve_sessions, resolve_topology,
     };
+    use memra_engine::dsv4_topology::Dsv4Placement;
     use std::ffi::OsString;
+
+    /// TP/EP with attention TP2 is the default placement (memra #710); `pp` is the rollback,
+    /// and any other value, the retired `tp_ep_attn` measurement name included, refuses.
+    #[test]
+    fn the_topology_defaults_to_tp_ep_and_pp_is_the_rollback() {
+        for raw in [None, Some(""), Some("tp_ep"), Some(" tp_ep ")] {
+            assert_eq!(
+                resolve_topology(raw),
+                Ok(Dsv4Placement::TpEp { attention_tp: true }),
+                "{raw:?}"
+            );
+        }
+        assert_eq!(resolve_topology(Some("pp")), Ok(Dsv4Placement::Pp));
+        for raw in ["tp_ep_attn", "tp", "PP", "pp2"] {
+            let err = resolve_topology(Some(raw)).unwrap_err();
+            assert!(err.contains("MEMRA_DSV4_TOPOLOGY"), "{raw}: {err}");
+        }
+    }
 
     #[test]
     fn serving_lanes_resolve_literally() {

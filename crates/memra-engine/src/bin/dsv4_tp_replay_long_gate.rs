@@ -11,6 +11,11 @@
 //! Usage: `dsv4_tp_replay_long_gate <model-dir> <source-tape> [steps]` (default 304).
 //! `DSV4_REPLAY_GATE_MOE=stream|sktail` picks the expert program (default: the served stream
 //! visitor); the two must give the same tokens and digests.
+//!
+//! Past its replay limit (`min(capacity, 16384)`, or `DSV4_REPLAY_GATE_LIMIT`) state R drops
+//! its graphs and continues on the eager step, exactly as the served route does, and every
+//! later step must still match state E. With the limit inside the run the gate checks the
+//! replay-to-eager handoff; the timing arm then does not run.
 //! Rig law: under the box GPU lock, one pair, no other tenant.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg};
 use memra_engine::dsv4_source_tape::SourceTape;
@@ -61,6 +66,14 @@ fn main() {
         PREFIX + steps < capacity,
         "steps must stay inside the session capacity"
     );
+    // DSV4_REPLAY_GATE_LIMIT: a replay limit below the served one, so the run crosses the
+    // replay-to-eager handoff without a 16384-step walk.
+    let limit_override: Option<usize> = std::env::var("DSV4_REPLAY_GATE_LIMIT")
+        .ok()
+        .map(|v| v.parse().expect("DSV4_REPLAY_GATE_LIMIT"));
+    let limit = limit_override.unwrap_or(capacity.min(16384));
+    assert!(limit > PREFIX, "the replay limit must lie past the prefix");
+    let replay_steps = steps.min(limit - PREFIX);
     // Process startup, before any model or worker thread exists: pin the admitted program.
     for (key, value) in PINS {
         match std::env::var(key) {
@@ -125,7 +138,7 @@ fn main() {
         seed: 20260924,
     };
     println!(
-        "PROTOCOL {{\"prefix\":{PREFIX},\"steps\":{steps},\"capacity\":{capacity},\"compare\":\"token, logits bits, TP/EP cache and hidden digests per step\",\"seed\":{},\"source_sha256\":\"{}\"}}",
+        "PROTOCOL {{\"prefix\":{PREFIX},\"steps\":{steps},\"capacity\":{capacity},\"replay_limit\":{limit},\"compare\":\"token, logits bits, TP/EP cache and hidden digests per step\",\"seed\":{},\"source_sha256\":\"{}\"}}",
         cfg.seed, tape.sha256
     );
 
@@ -170,8 +183,11 @@ fn main() {
     gpu.restore_full_token_prefix_for_gate(&mut replay, &prefix)
         .expect("restore replay");
     unsafe {
-        gpu.arm_full_token_replay_for_gate(&mut replay, cfg)
-            .expect("arm replay");
+        match limit_override {
+            Some(limit) => gpu.arm_full_token_replay_limit_for_gate(&mut replay, cfg, limit),
+            None => gpu.arm_full_token_replay(&mut replay, cfg),
+        }
+        .expect("arm replay");
     }
     let before = gpu
         .full_token_replay_variant_counts_for_gate(&replay)
@@ -180,32 +196,56 @@ fn main() {
     // The eager arm steps and samples through the unarmed TP/EP program; the draw is keyed on
     // (seed, position), so equal logits bits give the replay's token.
     let mut eager_sampler = gpu.device_sampler().expect("eager sampler");
+    let mut handoff_sampler = gpu.device_sampler().expect("handoff sampler");
+    let eager_step = |tok: u32, state: &mut DecodeState, sampler: &mut _| -> u32 {
+        if greedy {
+            gpu.decode_step_greedy(tok, state).expect("eager step")
+        } else {
+            gpu.decode_step_device_logits(tok, state)
+                .expect("eager step");
+            gpu.sample_device_logits(state, sampler, &cfg, &[], None)
+                .expect("eager sample")
+        }
+    };
     let (mut te, mut tr) = (first, first);
     let mut tokens = Vec::with_capacity(steps);
     let mut first_bad = None;
+    let mut armed = true;
+    let mut after = before;
+    let mut handoff = None;
     for step in 0..steps {
         let pos = eager.pos;
         tokens.push(te);
-        te = if greedy {
-            gpu.decode_step_greedy(te, &mut eager).expect("eager step")
+        te = eager_step(te, &mut eager, &mut eager_sampler);
+        // The served route's handoff: once the replay no longer covers the position, read
+        // the counters, drop the graphs and step eager.
+        if armed && !gpu.full_token_replay_covers(&replay) {
+            after = gpu
+                .full_token_replay_variant_counts_for_gate(&replay)
+                .expect("counts");
+            gpu.disarm_full_token_replay(&mut replay)
+                .expect("disarm replay");
+            armed = false;
+            handoff = Some(replay.pos);
+        }
+        tr = if armed {
+            gpu.decode_sample_full_token(tr, &mut replay)
+                .expect("replay step")
         } else {
-            gpu.decode_step_device_logits(te, &mut eager)
-                .expect("eager step");
-            gpu.sample_device_logits(&eager, &mut eager_sampler, &cfg, &[], None)
-                .expect("eager sample")
+            eager_step(tr, &mut replay, &mut handoff_sampler)
         };
-        tr = gpu
-            .decode_sample_full_token_for_gate(tr, &mut replay)
-            .expect("replay step");
         let (ie, ir) = (identity(&gpu, &eager), identity(&gpu, &replay));
         if te != tr || ie != ir {
             first_bad = Some((step, pos, te, tr, ie, ir));
             break;
         }
     }
-    let after = gpu
-        .full_token_replay_variant_counts_for_gate(&replay)
-        .expect("counts");
+    if armed {
+        after = gpu
+            .full_token_replay_variant_counts_for_gate(&replay)
+            .expect("counts");
+    }
+    println!("HANDOFF {handoff:?} (the position replay handed the request to the eager step)");
     let delta: Vec<[u64; 4]> = (0..2)
         .map(|r| {
             let mut d = [0u64; 4];
@@ -235,14 +275,28 @@ fn main() {
         std::process::exit(1);
     }
     let replayed: Vec<u64> = delta.iter().map(|d| d[0] + d[2] + d[3]).collect();
-    if replayed.iter().any(|&n| n != steps as u64) {
-        println!("FAILED: {replayed:?} replayed steps per rank, expected {steps} each");
+    if replayed.iter().any(|&n| n != replay_steps as u64) {
+        println!("FAILED: {replayed:?} replayed steps per rank, expected {replay_steps} each");
+        std::process::exit(1);
+    }
+    if (replay_steps < steps) != handoff.is_some() || handoff.is_some_and(|p| p != limit) {
+        println!(
+            "FAILED: handoff at {handoff:?}, expected one at {limit} only when the run passes it"
+        );
         std::process::exit(1);
     }
     println!(
-        "PASS: {steps} replayed steps from position {PREFIX} to {} bit-identical to eager (token, logits, cache and hidden digests); tokens_sha256={tokens_sha}",
-        PREFIX + steps
+        "PASS: {steps} steps from position {PREFIX} to {} bit-identical to eager (token, logits, cache and hidden digests), {replay_steps} of them replayed{}; tokens_sha256={tokens_sha}",
+        PREFIX + steps,
+        if handoff.is_some() {
+            format!(", then eager from the handoff at {limit}")
+        } else {
+            String::new()
+        }
     );
+    if handoff.is_some() {
+        return;
+    }
 
     // Timing: the same continuation from the same restored prefix, eager and replay in
     // alternating order, wall time per token (each step returns its sampled token to the host).
@@ -255,7 +309,7 @@ fn main() {
         let t0 = std::time::Instant::now();
         for _ in 0..steps {
             tok = if armed {
-                gpu.decode_sample_full_token_for_gate(tok, state)
+                gpu.decode_sample_full_token(tok, state)
                     .expect("replay step")
             } else if greedy {
                 gpu.decode_step_greedy(tok, state).expect("eager step")

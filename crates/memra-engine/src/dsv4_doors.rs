@@ -20,6 +20,12 @@
 //! decode, but DSpark does not fit under TP/EP and PP-2 DSpark stays faster, so
 //! the server has no TP/EP selector and TP/EP still takes no customer request.
 //!
+//! **That changed on 2026-09-25** (memra #710, owner ruling "flip"): TP/EP with exact attention
+//! TP2 is the served two-card default. The expert-split drafter fits and serves (#720), plain
+//! requests ride the full-token replay graphs (#719, #721), and the served A/B beat PP-2 on
+//! plain and DSpark with the same text on every request. PP-2 stays as the
+//! `MEMRA_DSV4_TOPOLOGY=pp` rollback, so `SERVED_PROGRAM.tp_ep` is true and TP/EP can serve.
+//!
 //! A door admitted only under TP/EP is not "inert today", it is unreachable on
 //! the served path until a TP/EP program wins its served A/B and the server
 //! gains a selector; no door-level change rescues it. `AdmittingProgram` is
@@ -127,10 +133,9 @@ pub enum AdmittingProgram {
     /// sibling lane measured it on the served path at +42% to +140% prefill, so
     /// whether these doors ever engage is the memra #461 matrix verdict.
     MatrixExecutor,
-    /// Only the all-layer TP/EP topology admits it, and TP/EP serves no
-    /// customer request: the server has no TP/EP selector until a TP/EP
-    /// program beats PP-2 DSpark (memra #454, #679). Only that makes these
-    /// reachable.
+    /// Only the all-layer TP/EP topology admits it. TP/EP is the served two-card default since
+    /// 2026-09-25 (memra #710), so whether such a door engages is its own predicate's answer;
+    /// before the flip it was unreachable.
     TpEpOnly,
     /// Only a gate binary arming an instrument reaches it. No serving caller
     /// exists on any program.
@@ -172,9 +177,10 @@ pub struct ProgramFacts {
     pub matrix_can_serve: bool,
 }
 
-/// Today's facts: the server selects no TP/EP program, the matrix program serves.
+/// Today's facts: TP/EP is the served two-card default (memra #710), and the matrix program
+/// serves.
 pub const PROGRAM_FACTS: ProgramFacts = ProgramFacts {
-    tp_ep_can_serve: false,
+    tp_ep_can_serve: true,
     matrix_can_serve: true,
 };
 
@@ -205,16 +211,14 @@ pub struct Dsv4Program {
     pub gate_armed_gu_fuse: bool,
     /// This checkpoint's HC geometry is `rows == 24 && w == 16384`.
     pub hc_geometry_24x16384: bool,
-    /// Whether this program can serve a customer request AT ALL. TP/EP cannot:
-    /// memra #454 taught it to chunk and carry DSpark, but the server has no
-    /// TP/EP selector: DSpark does not fit under TP/EP, and PP-2 DSpark beats
-    /// every plain TP/EP arm.
+    /// Whether this program can serve a customer request AT ALL. TP/EP can since the
+    /// 2026-09-25 flip (memra #710); the tuned bench cannot, because it arms a gate-only seam.
     pub can_serve: bool,
 }
 
-/// What a customer request runs today: PP-2 (`Dsv4TopologyPlan::pp_ep`, so
-/// `is_tp_ep()` is false), the MATRIX expert program, DSpark resident, chunked
-/// prefill, and no gate-only arms.
+/// What a customer request runs today: TP/EP with exact attention TP2 (the two-card default
+/// since memra #710, 2026-09-25; PP-2 is the `MEMRA_DSV4_TOPOLOGY=pp` rollback), the MATRIX
+/// expert program, DSpark resident, chunked prefill, and no gate-only arms.
 ///
 /// `matrix_moe` was false until 2026-09-11. The owner flipped it on the memra
 /// #461 class verdict (NEW numeric class, 4.464% top-1 drift on the whole tape
@@ -228,7 +232,7 @@ pub struct Dsv4Program {
 /// calls and which exists so every CLASS row still has its reference arm.
 pub const SERVED_PROGRAM: Dsv4Program = Dsv4Program {
     name: "served",
-    tp_ep: false,
+    tp_ep: true,
     chains_f32: true,
     dots_f32: true,
     matrix_moe: true,
@@ -431,18 +435,19 @@ pub fn engaged_but_below_the_floor(rows: &[DoorRow], floor_pct: f64) -> Vec<&'st
         .collect()
 }
 
+/// The program on which a request reaches the cadence choice.
+const REPLAY_PLAIN_ROUTE: &str = "the drafter-less TP/EP plain route, which arms full-token \
+     replay on every greedy or vendor-default sampled request";
+
 fn resolve_replay_cadence(p: &Dsv4Program) -> DoorState {
-    // `arm_full_token_replay_for_gate` is the only caller, its admission needs
-    // the gate-only fused-GU arm and refuses host split-K/DSpark state, and its
-    // own FLAGS.md row says it: "No automatic arming of eager or serving
-    // requests". A served request never reaches the cadence choice.
-    if p.gate_armed_gu_fuse && p.tp_ep && !p.drafter_resident {
+    // Since the TP/EP flip (memra #710) the served TP/EP route arms `arm_full_token_replay`
+    // on its plain requests, and replay admits the served stream MoE (#721), so the fused-GU
+    // gate arm no longer matters. A drafter-resident route sends those requests to DSpark, so
+    // there only penalized greedy stays plain, and it never arms replay.
+    if p.tp_ep && !p.drafter_resident {
         DoorState::On(DoorShape::DecodeOnlyM1)
     } else {
-        DoorState::NoServingCaller(
-            "full-token replay is armed per request by a gate binary only; no serving or eager \
-             request arms it, so the cadence choice has no caller",
-        )
+        DoorState::OffProgram(REPLAY_PLAIN_ROUTE)
     }
 }
 
@@ -479,13 +484,10 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         env: "MEMRA_DSV4_REPLAY_CADENCE",
         merged: "#374",
         declared_default: DeclaredDefault::On,
-        declared_served: DoorState::NoServingCaller(
-            "full-token replay is armed per request by a gate binary only; no serving or eager \
-             request arms it, so the cadence choice has no caller",
-        ),
+        declared_served: DoorState::OffProgram(REPLAY_PLAIN_ROUTE),
         declared_bench: DoorState::On(DoorShape::DecodeOnlyM1),
         resolve: resolve_replay_cadence,
-        admitted_by: AdmittingProgram::GateInstrumentOnly,
+        admitted_by: AdmittingProgram::TpEpOnly,
         merged_gain_pct: (1.007107, 1.074545),
         measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
     },
@@ -717,18 +719,25 @@ mod tests {
     ///
     /// So the stand-in is defined here, depends on nothing else in this file,
     /// and stays correct whichever real doors exist: a door admitted only under
-    /// all-layer TP/EP, which the served program is not and cannot become
-    /// without a served TP/EP selector. Unlike a real door, nobody can fix it,
-    /// because there is nothing behind it to fix.
+    /// a drafter-less TP/EP program, which the served program (drafter resident) is not.
+    /// Unlike a real door, nobody can fix it, because there is nothing behind it to fix. It
+    /// was keyed to TP/EP alone until the 2026-09-25 flip made TP/EP the served topology.
     ///
     /// Taken verbatim from the norm-fuse PP-2 port lane's trial branch
     /// (`trial-normpp2-on-482`, `c3a4099b2`) rather than re-invented, so the two
     /// lanes cannot drift into two framings of the same subject.
     pub(super) const SYNTHETIC_TP_EP_ONLY: &str =
-        "synthetic red-arm door: admitted only under all-layer TP/EP, which cannot serve";
+        "synthetic red-arm door: admitted only on a drafter-less all-layer TP/EP program";
+
+    /// The facts before the 2026-09-25 flip, when TP/EP could not serve. The permanence rule
+    /// is keyed to this fact, so its arms run on it rather than on today's facts.
+    pub(super) const TP_EP_COULD_NOT_SERVE: ProgramFacts = ProgramFacts {
+        tp_ep_can_serve: false,
+        ..PROGRAM_FACTS
+    };
 
     pub(super) fn resolve_synthetic_tp_ep_only(p: &Dsv4Program) -> DoorState {
-        if p.tp_ep {
+        if p.tp_ep && !p.drafter_resident {
             DoorState::On(DoorShape::AllRoutedShapes)
         } else {
             DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY)
@@ -1074,8 +1083,12 @@ mod tests {
                 .map(|row| served_disposition(row, &PROGRAM_FACTS))
                 .expect(door)
         };
-        // Its own FLAGS row says no serving request arms full-token replay.
-        const RECLASSIFY: &[&str] = &["replay cadence"];
+        // Empty since the TP/EP flip: the served TP/EP route arms full-token replay, so the
+        // cadence is no longer a gate instrument's input.
+        const RECLASSIFY: &[&str] = &[];
+        // Admitted by a program that serves (the drafter-less TP/EP plain route), off on the
+        // drafter-resident served program by its own predicate.
+        const PORT_OR_REDECLARE: &[&str] = &["replay cadence"];
         // TP/EP cannot serve at all, so a door admitted only there waits on
         // nothing. EMPTY since the norm doors left the registry: the PP-2 port
         // took them out of this list and the served ABBA then deleted them. See
@@ -1100,6 +1113,7 @@ mod tests {
         // leaving fails HERE with its own name rather than shifting a number.
         let covered: std::collections::BTreeSet<&str> = RECLASSIFY
             .iter()
+            .chain(PORT_OR_REDECLARE)
             .chain(PERMANENTLY_UNREACHABLE)
             .chain(ENGAGED)
             .copied()
@@ -1115,7 +1129,10 @@ mod tests {
         // being asserted two incompatible ways.
         assert_eq!(
             covered.len(),
-            RECLASSIFY.len() + PERMANENTLY_UNREACHABLE.len() + ENGAGED.len(),
+            RECLASSIFY.len()
+                + PORT_OR_REDECLARE.len()
+                + PERMANENTLY_UNREACHABLE.len()
+                + ENGAGED.len(),
             "a door is asserted in more than one disposition set"
         );
 
@@ -1123,6 +1140,13 @@ mod tests {
             assert_eq!(
                 disposition(door),
                 DoorDisposition::ReclassifyAsGateInput,
+                "{door}"
+            );
+        }
+        for door in PORT_OR_REDECLARE {
+            assert_eq!(
+                disposition(door),
+                DoorDisposition::PortAdmissionOrRedeclare,
                 "{door}"
             );
         }
@@ -1138,7 +1162,7 @@ mod tests {
             );
         }
         assert_eq!(
-            served_disposition(&SYNTHETIC_TP_EP_ONLY_ROW, &PROGRAM_FACTS),
+            served_disposition(&SYNTHETIC_TP_EP_ONLY_ROW, &TP_EP_COULD_NOT_SERVE),
             DoorDisposition::PermanentlyUnreachable,
             "the permanence disposition must still be asserted with no real \
              TP/EP-only row left in the registry"
@@ -1156,10 +1180,10 @@ mod tests {
     /// admission question.
     #[test]
     fn permanence_is_keyed_to_the_program_fact_not_to_the_door() {
-        let if_tp_ep_could_serve = ProgramFacts {
-            tp_ep_can_serve: true,
-            ..PROGRAM_FACTS
-        };
+        // Today's facts are the "could serve" side since the 2026-09-25 flip; the pre-flip
+        // facts are the "cannot" side.
+        let if_tp_ep_could_serve = PROGRAM_FACTS;
+        assert!(if_tp_ep_could_serve.tp_ep_can_serve);
         // This arm ran over the three real TP/EP-only doors until 2026-09-11.
         // The rule is about ANY door admitted only by a program that cannot
         // serve, and it must keep its teeth when no such door happens to exist
@@ -1182,7 +1206,7 @@ mod tests {
             "the arm is vacuous unless the stand-in is inert on the served program"
         );
         assert_eq!(
-            served_disposition(&TP_EP_ONLY, &PROGRAM_FACTS),
+            served_disposition(&TP_EP_ONLY, &TP_EP_COULD_NOT_SERVE),
             DoorDisposition::PermanentlyUnreachable
         );
         assert_eq!(
