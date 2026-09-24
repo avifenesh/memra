@@ -871,3 +871,50 @@ DAY39 section 5b, and item 5's target half).
   Whether that advantage justifies a per-card placement (G''' on the RTX PRO 6000 class, G4 on the 5090) is an owner
   question, and its evidence is a long-entry cell (4096-token entries: a capture's and a promote's latency behind a
   demote's receipt kernel, G''' against G4), which rides `OWED.md` item 15. G4 is the single placement delivered.
+
+## 16d. G''' on BOX7, the rest of the sitting (`/root/spill-receipts/a-g3`)
+
+- The gates on G''' (`gates rc=0` 22:17:47Z, each `.exit` 0), verbatim: `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`
+  x4; `KV-HOST-SPILL FAILURE GATE: ALL GREEN` OFF and ON; `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` default and plain (229
+  ok each: day 41's `sources-helper-gone`, `sources-never-land` and `sources-foreign-reply` green on the target card, item
+  5's target half); twin OFF and ON `PREFIX-NEWEST-TURN-FITS: .. cached_ok=7/7 lines_ok=8/8 ..`; the hit gate OFF and ON
+  `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`. Unit cells: `unit-cells parallel=3/3 engine-serial-rc=0 door-rc=0 cpu-rc=0
+  engine-census-rc=0 tier-rc=0`.
+- **G''' passes (a) to (f) on the target card.** With section 16 it is a per-card result: flat and green here, (f) failing
+  on the 5090.
+
+## 19. G4 on the RTX 5090 (`rtx5090-day38/g4/`): (c) and (d) pass, (f) FAILS, and the card's thermal drift
+
+- The binaries (`g4-build.sh`): g4 (tree `29025da42`, crates equal to G4 `26676c037`), gpp (`358749c9f`), base
+  (`80039a8de`); markers `g4 copy-stream receipt lines: 1 receipt-stream wording: 0`, `gpp .. 0 .. 1`. The hold from
+  22:09Z after nine bounded busy attempts behind lane C.
+- **(c) and (d), verbatim** (`g4/reading-day38.log`): `DAY38 G C copy-settle N=80 median=0.15 min=0.12 max=0.24 rule
+  N>=20 median<=1.5 max<=3.0 -> PASS`; `DAY38 G D order=o1 wall base=60.05 g=51.95 g-minus-base=-8.10 .. e2e base=111.43
+  g=103.96 g-minus-base=-7.47 rule <=+1.0 -> PASS`; `order=o2 .. -7.10 .. e2e .. -7.12 .. -> PASS`. 20 of 20 replays.
+- **(f), verbatim** (`g4/hump/reading-hump.log`): `HUMP boot=b02-xg4 base=7.359 hump=+0.227`, `b03-xg4 .. hump=+0.372`,
+  **`HUMP arm=xg4 boots=2 median-hump=+0.299 humps=True`** against `<=0.15`: **(f) FAILS on the 5090 as registered**; the
+  control `HUMP arm=xgpp boots=2 median-hump=+0.601`.
+- **What the 5090's receipts add, read after the fact (no clause):**
+  - The BASE arm (`80039a8de`, no device receipt at all) rises too in two of the four 5090 A/Bs of these designs: the
+    per-run median of the tenant's pre-fire ITL over its ten boots, runs 1 to 10, `g3` cell base `7.312 .. 7.544`,
+    `gpp` cell base `7.311 .. 7.500`; flat in the `g` and `g4` cells (`7.276 .. 7.346`, `7.299 .. 7.344`).
+  - The G4 hold's card telemetry (`g4/card-250ms.csv`, local stamps): the A/B at 86 to 88 C with SM clocks 2096 to 2055
+    MHz; the hump cell at 87 to 88 C with SM clocks 1995 falling to 1830 to 1970 MHz at 150 to 164 W. The laptop card is
+    at its thermal limit and its clock falls during the hump cell, whose sixteen-run boots last about 45 s each.
+  - So on this card the registered (f) reads a rise that the base arm shows in some holds and the clock explains in
+    part: it does not isolate the design. On BOX7 (a desktop card at a steady 2317 MHz) the base-free controls (X2, x8,
+    x27, G''') sit at +0.02 to +0.04 ms, and the design-caused hump is +0.57.
+- G4 is not integrable as registered. The next step is a diagnosis, pre-registered in section 20, not a new clause.
+
+## 20. Pre-registered before it runs: the 5090's rise with a base arm in the same hold
+
+- **The cell** (`rtx5090-day38/g34-hump-run.sh`, one bounded hold; the binaries already built: base, G'' (gpp), G'''
+  (the `g3` build is gone; rebuilt by `g4-build.sh`'s pattern into `/tmp/wt-a-d38g34/g3` from `9ab5c1265`), G4): eight
+  door-ON boots `xbase xg4 xg3 xgpp xgpp xg3 xg4 xbase` (the base arm named `xbase` so the reader's `b*-x*` glob takes it), each `stall_cell.py --mode demote --n 8` (16 demote runs), the
+  day-35 5090 environment, 250 ms telemetry; read by `day38-hump-reading.py` (each arm's median HUMP) and by the
+  telemetry's SM clock per boot.
+- **What it decides** (a reading for the owner, no clause moves): `base` humps above 0.15 ms: the 5090's rise in this
+  shape is at least in part the card's (thermal), and (f) as registered cannot be met on this card by any design; the
+  owner decides whether the 5090 half of (f) is read against the base arm. `base` flat: the rise is the designs', and the
+  arms' order (G'' against G''' against G4 in one hold) says which placement the 5090 needs; G4 is then revised under a
+  new pre-registration.
