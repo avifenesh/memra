@@ -38,11 +38,11 @@ trap 'kill "$SAMPLER" 2>/dev/null || true' EXIT
 PAIR=(tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream
       tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream)
 for r in $(seq 1 "$N"); do
-    "$BIN" --ignored --exact --test-threads=2 "${PAIR[@]}" > "$OUT/raw/pair-$r.log" 2>&1
+    "$BIN" --ignored --exact --test-threads=2 --nocapture "${PAIR[@]}" > "$OUT/raw/pair-$r.log" 2>&1
     log "pair run $r rc=$? $(grep -h '^test result' "$OUT/raw/pair-$r.log" | head -1)"
 done
 for r in $(seq 1 "$N"); do
-    "$BIN" --ignored tier_transfer::tests:: > "$OUT/raw/all-$r.log" 2>&1
+    "$BIN" --ignored --nocapture tier_transfer::tests:: > "$OUT/raw/all-$r.log" 2>&1
     log "all run $r rc=$? $(grep -h '^test result' "$OUT/raw/all-$r.log" | head -1)"
 done
 nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$OUT/compute-apps.after.csv" 2>&1

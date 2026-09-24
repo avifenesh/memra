@@ -3349,6 +3349,53 @@ mod tests {
         eprintln!("{line}");
         (c, line)
     }
+    /// WP-A day 37 (`DAY37.md` section 2a): a step clock over a timed-hold cell's CUDA-touching
+    /// steps, each with its start offset from the hold's enqueue (negative before it) and its
+    /// duration; `line` prints them as one `HOLD STEPS` line. Interior mutability so the cells'
+    /// span-building closures can time their own calls; the calls and their order are unchanged.
+    struct StepClock {
+        hold_at: std::cell::Cell<Option<std::time::Instant>>,
+        steps: RefCell<Vec<(String, std::time::Instant, f64)>>,
+    }
+    impl StepClock {
+        fn new() -> Self {
+            Self {
+                hold_at: std::cell::Cell::new(None),
+                steps: RefCell::new(Vec::new()),
+            }
+        }
+        fn hold(&self) -> std::time::Instant {
+            let at = std::time::Instant::now();
+            self.hold_at.set(Some(at));
+            at
+        }
+        fn time<T>(&self, label: &str, f: impl FnOnce() -> T) -> T {
+            let start = std::time::Instant::now();
+            let out = f();
+            let ms = start.elapsed().as_secs_f64() * 1e3;
+            self.steps.borrow_mut().push((label.to_string(), start, ms));
+            out
+        }
+        fn line(&self, cell: &str) -> String {
+            let hold = self.hold_at.get().expect("the hold was enqueued");
+            let offset = |at: std::time::Instant| -> f64 {
+                if at >= hold {
+                    at.duration_since(hold).as_secs_f64() * 1e3
+                } else {
+                    -(hold.duration_since(at).as_secs_f64() * 1e3)
+                }
+            };
+            let steps: Vec<String> = self
+                .steps
+                .borrow()
+                .iter()
+                .map(|(label, at, ms)| format!("{label}@{:.2}+{ms:.2}", offset(*at)))
+                .collect();
+            let line = format!("HOLD STEPS cell={cell} {}", steps.join(" "));
+            eprintln!("{line}");
+            line
+        }
+    }
 
     /// WP-A day 20 (memra#536 Move 2 slice 1): the capture class on a card. Two owned planes are
     /// registered as destinations with retained twins; a borrowed source holds a pattern; one
@@ -4045,12 +4092,13 @@ mod tests {
             .enumerate()
             .map(|(k, &n)| (0..n).map(|i| (i as f32) * 0.5 + k as f32).collect())
             .collect();
+        let clock = StepClock::new();
         let spans = |bad: bool| -> Vec<D2hSpan> {
             patterns
                 .iter()
                 .enumerate()
                 .map(|(k, p)| {
-                    let source = stream.clone_htod(p).unwrap();
+                    let source = clock.time("htod-pageable", || stream.clone_htod(p).unwrap());
                     let len = if bad && k == 1 {
                         p.len() * 4 - 4
                     } else {
@@ -4058,7 +4106,9 @@ mod tests {
                     };
                     D2hSpan {
                         source,
-                        destination: PinnedHostBuf::new_unwritten(len).unwrap(),
+                        destination: clock.time("pinned-alloc", || {
+                            PinnedHostBuf::new_unwritten(len).unwrap()
+                        }),
                     }
                 })
                 .collect()
@@ -4070,10 +4120,14 @@ mod tests {
         assert_eq!(back.len(), 3);
         assert!(t.poll(&ticket).is_ok());
         // Hold the spans behind a 300 ms spin on the copy stream (after the KV item's copy).
-        let hold_at = std::time::Instant::now();
-        t.delay_on(&copy, 300_000_000).unwrap();
-        t.submit_d2h_spans(&ticket, spans(false)).unwrap();
-        let (error, back) = t.submit_d2h_spans(&ticket, spans(false)).unwrap_err();
+        let hold_at = clock.hold();
+        clock.time("delay", || t.delay_on(&copy, 300_000_000).unwrap());
+        let set = spans(false);
+        clock.time("submit", || t.submit_d2h_spans(&ticket, set).unwrap());
+        let set = spans(false);
+        let (error, back) = clock.time("submit-busy", || {
+            t.submit_d2h_spans(&ticket, set).unwrap_err()
+        });
         assert_eq!(
             (error, back.len()),
             (Error::Busy, 3),
@@ -4081,9 +4135,10 @@ mod tests {
         );
         // Rule 2: the KV item lands while the spans run; the batch has not landed.
         let (c, reading) = poll_until_first_item_landed(&mut t, &ticket, hold_at, "d2h_span_batch");
+        let steps = clock.line("d2h_span_batch");
         assert!(
             !c.producer_done,
-            "a batch with a running span has not landed ({reading})"
+            "a batch with a running span has not landed ({reading}) ({steps})"
         );
         assert_eq!(
             t.take_d2h_spans(&ticket).err(),
@@ -4295,14 +4350,19 @@ mod tests {
             .map(|(k, &n)| (0..n).map(|i| (i as f32) * 0.25 - k as f32).collect())
             .collect();
         // `bad`: 1 makes span 1's destination one f32 short; 2 leaves span 1's source unwritten.
+        let clock = StepClock::new();
         let spans = |bad: u8| -> Vec<H2dSpan> {
             patterns
                 .iter()
                 .enumerate()
                 .map(|(k, p)| {
-                    let mut source = PinnedHostBuf::new_unwritten(p.len() * 4).unwrap();
+                    let mut source = clock.time("pinned-alloc", || {
+                        PinnedHostBuf::new_unwritten(p.len() * 4).unwrap()
+                    });
                     if !(bad == 2 && k == 1) {
-                        source.copy_from_slice(f32_bytes(p)).unwrap();
+                        clock.time("pinned-write", || {
+                            source.copy_from_slice(f32_bytes(p)).unwrap()
+                        });
                     }
                     let n = if bad == 1 && k == 1 {
                         p.len() - 1
@@ -4311,7 +4371,8 @@ mod tests {
                     };
                     H2dSpan {
                         source,
-                        destination: stream.alloc_zeros::<f32>(n).unwrap(),
+                        destination: clock
+                            .time("device-alloc", || stream.alloc_zeros::<f32>(n).unwrap()),
                     }
                 })
                 .collect()
@@ -4324,10 +4385,14 @@ mod tests {
             assert!(t.poll(&ticket).is_ok());
         }
         // Hold the spans behind a 300 ms spin on the copy stream (after the KV item's copy).
-        let hold_at = std::time::Instant::now();
-        t.delay_on(&copy, 300_000_000).unwrap();
-        t.submit_h2d_spans(&ticket, spans(0)).unwrap();
-        let (error, back) = t.submit_h2d_spans(&ticket, spans(0)).unwrap_err();
+        let hold_at = clock.hold();
+        clock.time("delay", || t.delay_on(&copy, 300_000_000).unwrap());
+        let set = spans(0);
+        clock.time("submit", || t.submit_h2d_spans(&ticket, set).unwrap());
+        let set = spans(0);
+        let (error, back) = clock.time("submit-busy", || {
+            t.submit_h2d_spans(&ticket, set).unwrap_err()
+        });
         assert_eq!(
             (error, back.len()),
             (Error::Busy, 3),
@@ -4335,9 +4400,10 @@ mod tests {
         );
         // Rule 2: the KV item lands while the spans run; the batch has not landed.
         let (c, reading) = poll_until_first_item_landed(&mut t, &ticket, hold_at, "h2d_span_batch");
+        let steps = clock.line("h2d_span_batch");
         assert!(
             !c.producer_done,
-            "a batch with a running span has not landed ({reading})"
+            "a batch with a running span has not landed ({reading}) ({steps})"
         );
         assert_eq!(t.take_h2d_spans(&ticket).err(), Some(Error::NotReady));
         assert_eq!(t.retire(&ticket, None), Err(Error::Busy));
@@ -4463,12 +4529,17 @@ mod tests {
                 )
             })
             .collect();
+        let clock = StepClock::new();
         let spans = || -> Vec<H2dSpan> {
             planes
                 .iter()
                 .map(|p| H2dSpan {
-                    source: PinnedHostBuf::new_unwritten(p.len() * 4).unwrap(),
-                    destination: stream.alloc_zeros::<f32>(p.len()).unwrap(),
+                    source: clock.time("pinned-alloc", || {
+                        PinnedHostBuf::new_unwritten(p.len() * 4).unwrap()
+                    }),
+                    destination: clock.time("device-alloc", || {
+                        stream.alloc_zeros::<f32>(p.len()).unwrap()
+                    }),
                 })
                 .collect()
         };
@@ -4489,21 +4560,27 @@ mod tests {
         );
         // Hold the copy stream 300 ms (after the KV item's copy), then attach: the fill and every
         // span copy queue behind the hold.
-        let hold_at = std::time::Instant::now();
-        t.delay_on(&copy, 300_000_000).unwrap();
+        let hold_at = clock.hold();
+        clock.time("delay", || t.delay_on(&copy, 300_000_000).unwrap());
         let attached_at = std::time::Instant::now();
-        t.submit_h2d_spans_filled(&ticket, spans(), planes.clone())
-            .map_err(|(e, _, _)| e)
-            .unwrap();
+        let set = spans();
+        clock.time("submit", || {
+            t.submit_h2d_spans_filled(&ticket, set, planes.clone())
+                .map_err(|(e, _, _)| e)
+                .unwrap()
+        });
+        let attach_ms = attached_at.elapsed().as_secs_f64() * 1e3;
         assert!(
-            attached_at.elapsed() < std::time::Duration::from_millis(100),
-            "the owner thread does not wait for the fill at the attach"
+            attach_ms < 100.0,
+            "the owner thread does not wait for the fill at the attach ({attach_ms:.2} ms; {})",
+            clock.line("h2d_span_filled_batch")
         );
         let (c, reading) =
             poll_until_first_item_landed(&mut t, &ticket, hold_at, "h2d_span_filled_batch");
+        let steps = clock.line("h2d_span_filled_batch");
         assert!(
             !c.producer_done,
-            "the fill and the copies are still queued ({reading})"
+            "the fill and the copies are still queued ({reading}) ({steps})"
         );
         assert_eq!(t.take_h2d_spans(&ticket).err(), Some(Error::NotReady));
         t.synchronize(&ticket).unwrap();
