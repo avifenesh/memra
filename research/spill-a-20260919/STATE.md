@@ -1,8 +1,7 @@
-# WP-A day 34 resumable state
+# WP-A day 35 resumable state
 
-- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. Merged `origin/main` `25bbb91f5` (integ53, #692) as `37c08c06b`, no conflict. Pre-registration `a40ade417` (DAY34 section 2, design K, before any code); the BOX4 combination `afd58bbde` (DAY34 section 4, before the sitting). Code: tier `88b734bc9`, engine `e3424be24`, server `100214477`. Receipts `172beb696`, `22363f29d` (5090), `c37eecbeb` (BOX4). Every push in the announced `MEMRA_RELEASE_QUALIFICATION_MODE=development` mode. Write-up `DAY34.md`.
-- Design K: the off-tick promote's KV completion checksums leave the owner thread for the hash helper (`defer_h2d_checksums` hands out raw lease views, the helper digests them, `supply_h2d_checksums` returns them; an item lands only with its supplied digest; `recover_source` is Busy while views are out). Verification semantics unchanged (the failure gate's `digest` cell, the GPU refusal cell).
-- 5090 (9B): landing-poll hold 8.50 to 0.12 ms, e2e +0.21 / +0.50, gates ALL GREEN.
-- BOX4 (27B): day 33's (a) to (d) PASS and day 34's (a) to (d) PASS; the day-32 binary also meets DAY28 1b there (+12.8 / +12.7), design F's copy misses the probe's tick (the fill 11.4 ms on that CPU), and K's millisecond sits in the pending first poll (1.10 to 0.03 ms).
-- Resync after the server-side API stop at about 21:55Z: DAY33 and DAY34 re-read, `git fetch` and log, the running BOX4 driver left to finish, no second driver (DAY34 section 7).
-- Owed: the demote's two owner KV hashes; the fill's speed on slower CPUs if the one-tick landing is wanted; the D2D half (the restore's price cell); the strong-form receipt. Lever 1 (cached leases on the 5090) is not this lane's.
+- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. Merged `origin/main` `fa73d0e6c` (integ55, integ56, #706, #708) as `21e082cf3`, no conflict. DAY35 sections 1 and 2 pre-registered `a0f915d8a`; section 7 (M') `e748231e1`.
+- F settled on the 5090: `DAY35 F DECISION -> KEEP` (receipts `cbf52cc16`); integ54 records it.
+- Design M refuted (DAY35 section 6, red receipts `e727b0072`), reverted `6ce8b1aea`.
+- Design M' (hash 2 alone on the helper) `55ae87616`: every clause PASS on the 5090 (DAY35 section 8, receipts `9794558fc`): take-back 8.25 to 0.06 ms, wall -8.15 / -8.40 ms, e2e -7.68 / -8.04 ms, gates ALL GREEN. Integrable.
+- Owed: hash 1 on the owner (no off-thread form that keeps the copy phase at one poll); the fill's speed on slower CPUs; the D2D half; the strong-form receipt. No BOX4 sitting was pre-registered for M'.

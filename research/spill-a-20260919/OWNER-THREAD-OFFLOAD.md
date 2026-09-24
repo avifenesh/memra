@@ -1087,3 +1087,29 @@ CPU (the fill 11.4 ms), so BOX4 cannot credit F with 1b.
    (not pre-registered), **the D2D half** (the restore's price cell decides; the capture refuted by construction, DAY33
    section 6), and **the strong-form receipt**.
 2. to 4. Unchanged.
+
+## Move 2, day 35: design F settled; the demote's two KV hashes pre-registered (`DAY35.md`)
+
+**The decision.** On the 5090, with K on both arms, F against a revert of F (the day-32 helper fill, H): the promote
+publishes one tick earlier under F, `promote in` 16.2 / 16.5 ms against 23.8 / 24.1, and the promoting request's e2e is
+7.8 / 7.4 ms lower, each past the pre-registered pair noise in both orders (`DAY35 F DECISION -> KEEP`). BOX4 read F
+flat. F stays.
+
+**What Move 2 still owes, in order.**
+
+**Design M, refuted.** Both demote KV hashes on the helper (M1: the D2H receipts from a helper job before the
+completion check; M2: the bind's re-hash inside the `Hashing` job) cut the owner's two segments from 8.41 / 8.43 to
+0.15 / 0.07 ms on the 5090, but M1's reply adds a tick-top poll to the copy phase; behind a long prime tick the demote
+publishes late, a copy-phase hit does not park, and the gates' promote-after-demote never ran (identity default-on,
+failure-on, fault-default red), and the o2 wall read +26.50 ms against +25.0. M left the lane tip. M' (M2 alone) is
+pre-registered in DAY35 section 7.
+
+**Design M', landed** (DAY35 sections 7 and 8). The bind's re-hash (hash 2) runs on the helper inside the `Hashing`
+job over read views of the KV leases, which wait in a leak-on-drop guard on the owner thread; hash 1 stays in the
+engine's poll. On the 5090 the owner's `take-back` 8.25 to 0.06 ms, its hold per demote 17.98 to 9.55 ms, the demote's
+wall 8 ms shorter, the demoting request's e2e 8 ms lower; every gate green.
+
+1. The recurrent f32 state off the tick: **hash 1**, the D2H receipt, stays on the owner (the refuted M1: no off-thread form found that keeps the copy phase at one poll), **the
+   fill's speed** on CPUs where it outlasts the tick (not pre-registered), **the D2D half** (the restore's price cell
+   decides; the capture refuted by construction, DAY33 section 6), and **the strong-form receipt**.
+2. to 4. Unchanged.

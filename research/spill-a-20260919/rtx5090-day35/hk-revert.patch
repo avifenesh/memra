@@ -1,0 +1,1392 @@
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 283e4b5cb..00d2adf06 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -8534,6 +8534,8 @@ struct HostPrefixCache {
+     /// instant its current tick began, stamped at the loop top before the tick-top polls; the
+     /// promote's timeline (its submission, each settle step) reads it.
+     tick_top: Option<(u64, Instant)>,
++    /// WP-A day 32: staging fills handed to the hash helper this boot (the last one's `seq`).
++    fills_submitted: u64,
+     tier: Option<HostTierContext>,
+     arena: Option<memra_engine::PinnedHostArena>,
+     arena_reserve_ms: f64,
+@@ -10059,10 +10061,38 @@ struct HostSourcesReply {
+     helper_ms: f64,
+ }
+ 
+-/// What the owner thread hands the one helper: a demote's bundle hash (day 28) or, since day 34, a
+-/// promote's H2D source checksums. One job channel; one reply channel per kind.
++/// WP-A day 32 (memra#536 Move 2 owed item 1, the H2D half, DAY31 section 2 design H item 2): one
++/// recurrent plane of a promote's staging fill. The resident plane travels as an owned clone of
++/// its shared heap form (never a borrow across threads); the staging buffer comes from the
++/// context's set and is unwritten until the helper fills it.
++struct HostFillPlane {
++    slot: HostHashSlot,
++    plane: HostHeapF32,
++    staged: memra_engine::PinnedHostBuf,
++}
++
++/// WP-A day 32: one promote's staging fill; `seq` names it in the lines and in the reply.
++struct HostFillJob {
++    seq: u64,
++    planes: Vec<HostFillPlane>,
++}
++
++/// The helper's answer to a fill: every plane back, in the order handed over, each staging buffer
++/// written with its plane's bytes, or `failed` naming the first plane it could not fill (the
++/// staging then comes back unwritten); `helper_ms` is the helper's wall time over the job.
++struct HostFillReply {
++    seq: u64,
++    planes: Vec<HostFillPlane>,
++    failed: Option<String>,
++    helper_ms: f64,
++}
++
++/// What the owner thread hands the one helper: a demote's bundle hash (day 28), a promote's
++/// staging fill (day 32) or a promote's H2D source checksums (day 34). One job channel; one
++/// reply channel per kind.
+ enum HostHelperJob {
+     Hash(HostHashJob),
++    Fill(HostFillJob),
+     Sources(HostSourcesJob),
+ }
+ impl From<HostHashJob> for HostHelperJob {
+@@ -10076,6 +10106,7 @@ impl HostHelperJob {
+     fn hash(self) -> HostHashJob {
+         match self {
+             Self::Hash(job) => job,
++            Self::Fill(job) => panic!("expected a hash job, got fill seq={}", job.seq),
+             Self::Sources(job) => panic!("expected a hash job, got sources seq={}", job.seq),
+         }
+     }
+@@ -10200,6 +10231,8 @@ struct HostHashWorker {
+     replies: std::cell::RefCell<Option<std::sync::mpsc::Receiver<HostHashReply>>>,
+     /// WP-A day 34: the promote's source-checksum replies (the H2D settle reads this one).
+     sources: std::cell::RefCell<Option<std::sync::mpsc::Receiver<HostSourcesReply>>>,
++    /// WP-A day 32: the staging fills' replies (a promote's `Filling` phase polls this one).
++    fills: std::cell::RefCell<Option<std::sync::mpsc::Receiver<HostFillReply>>>,
+     handle: std::cell::RefCell<Option<std::thread::JoinHandle<()>>>,
+ }
+ 
+@@ -10212,6 +10245,7 @@ impl HostHashWorker {
+         let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<HostHelperJob>();
+         let (reply_tx, reply_rx) = std::sync::mpsc::channel::<HostHashReply>();
+         let (sources_tx, sources_rx) = std::sync::mpsc::channel::<HostSourcesReply>();
++        let (fill_tx, fill_rx) = std::sync::mpsc::channel::<HostFillReply>();
+         let handle = std::thread::Builder::new()
+             .name("memra-host-hash".into())
+             .spawn(move || {
+@@ -10247,6 +10281,31 @@ impl HostHashWorker {
+                             }
+                             continue;
+                         }
++                        HostHelperJob::Fill(job) => {
++                            // WP-A day 32: the promote's staging fill, a full write of each staging
++                            // buffer from its resident plane (the same bytes, a checked full write).
++                            let t = Instant::now();
++                            let mut failed = None;
++                            let mut planes = job.planes;
++                            for p in &mut planes {
++                                if failed.is_some() {
++                                    break;
++                                }
++                                if let Err(e) = p.staged.copy_from_slice(f32s_as_bytes(&p.plane)) {
++                                    failed = Some(format!("{:?}: {e}", p.slot));
++                                }
++                            }
++                            let reply = HostFillReply {
++                                seq: job.seq,
++                                planes,
++                                failed,
++                                helper_ms: t.elapsed().as_secs_f64() * 1e3,
++                            };
++                            if fill_tx.send(reply).is_err() {
++                                return;
++                            }
++                            continue;
++                        }
+                     };
+                     let t = Instant::now();
+                     let hashed = job
+@@ -10282,6 +10341,7 @@ impl HostHashWorker {
+             jobs: std::cell::RefCell::new(Some(jobs_tx)),
+             replies: std::cell::RefCell::new(Some(reply_rx)),
+             sources: std::cell::RefCell::new(Some(sources_rx)),
++            fills: std::cell::RefCell::new(Some(fill_rx)),
+             handle: std::cell::RefCell::new(Some(handle)),
+         })
+     }
+@@ -10295,9 +10355,16 @@ impl HostHashWorker {
+             jobs: std::cell::RefCell::new(Some(jobs)),
+             replies: std::cell::RefCell::new(Some(replies)),
+             sources: std::cell::RefCell::new(None),
++            fills: std::cell::RefCell::new(None),
+             handle: std::cell::RefCell::new(None),
+         }
+     }
++    /// WP-A day 32: the same with a caller-owned fill reply channel (the Filling-phase cells).
++    #[cfg(test)]
++    fn with_fills(self, fills: std::sync::mpsc::Receiver<HostFillReply>) -> Self {
++        *self.fills.borrow_mut() = Some(fills);
++        self
++    }
+     /// The same over a caller-owned thread (the wedged-helper cell: a job still in hand at the
+     /// latch).
+     #[cfg(test)]
+@@ -10357,6 +10424,48 @@ impl HostHashWorker {
+             }
+         }
+     }
++    /// WP-A day 32: a promote's staging fill; `Err` hands the job back with the reason (the
++    /// staging buffers inside it go back to the set), exactly when the helper is closed or gone.
++    #[allow(clippy::result_large_err)]
++    fn submit_fill(&self, job: HostFillJob) -> Result<(), (String, HostFillJob)> {
++        let jobs = self.jobs.borrow();
++        let Some(tx) = jobs.as_ref() else {
++            return Err(("the hash helper was closed".to_string(), job));
++        };
++        tx.send(HostHelperJob::Fill(job)).map_err(|e| match e.0 {
++            HostHelperJob::Fill(job) => ("the job channel closed".to_string(), job),
++            HostHelperJob::Hash(_) | HostHelperJob::Sources(_) => unreachable!("a fill was sent"),
++        })
++    }
++    /// WP-A day 32: `Poll` for a landed fill, `None` while the helper works, an error when the
++    /// fill channel closed (the helper exited or panicked) or the worker has none.
++    fn try_fill_reply(&self) -> Result<Option<HostFillReply>, String> {
++        let fills = self.fills.borrow();
++        let fills = fills
++            .as_ref()
++            .ok_or_else(|| "the hash helper was closed".to_string())?;
++        match fills.try_recv() {
++            Ok(r) => Ok(Some(r)),
++            Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
++            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
++                Err("the fill reply channel closed".to_string())
++            }
++        }
++    }
++    /// WP-A day 32: `Block`: the same with a bounded wait; `None` is the deadline.
++    fn fill_reply_within(&self, timeout: Duration) -> Result<Option<HostFillReply>, String> {
++        let fills = self.fills.borrow();
++        let fills = fills
++            .as_ref()
++            .ok_or_else(|| "the hash helper was closed".to_string())?;
++        match fills.recv_timeout(timeout) {
++            Ok(r) => Ok(Some(r)),
++            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Ok(None),
++            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
++                Err("the fill reply channel closed".to_string())
++            }
++        }
++    }
+     /// `Poll`: a landed reply, `None` while the helper still works, an error when the reply
+     /// channel closed (the helper exited or panicked).
+     fn try_reply(&self) -> Result<Option<HostHashReply>, String> {
+@@ -10399,6 +10508,7 @@ impl HostHashWorker {
+         drop(tx);
+         drop(self.replies.borrow_mut().take());
+         drop(self.sources.borrow_mut().take());
++        drop(self.fills.borrow_mut().take());
+         if let Some(handle) = self.handle.borrow_mut().take() {
+             let t = Instant::now();
+             while !handle.is_finished() && t.elapsed() < bound {
+@@ -10524,6 +10634,12 @@ struct PendingPromote {
+     /// (its tick) and every settle step of the contract (its tick, that tick's start, the step's
+     /// instant, the outcome, the path). Printed on the `promote published off the tick` line.
+     timeline: Vec<String>,
++    /// WP-A day 32 (DAY31 section 2, design H): `Some` while the hash helper fills the promote's
++    /// staging from the resident recurrent planes; `shell` and `contract` are `None` then. The
++    /// poll that lands the fill submits the KV batch and the spans on one ticket.
++    fill: Option<PendingFill>,
++    /// The candidate's entry class, for that submission.
++    class: Option<HostTierEntryClass>,
+ }
+ 
+ /// WP-A day 33 (log only): `at` and the current tick as the promote timeline writes them.
+@@ -10541,6 +10657,46 @@ fn host_promote_mark(host: &HostPrefixCache, t0: Instant, at: Instant) -> String
+     }
+ }
+ 
++/// WP-A day 32: the `Filling` phase of the one `Promoting` entry. The owner thread's held time is
++/// kept by segment for the `owner segment` field of the `promote submitted off the tick` line:
++/// the probe's (t0 to the hand-off) and every poll's until the submission starts.
++struct PendingFill {
++    seq: u64,
++    planes: usize,
++    bytes: usize,
++    handed: Instant,
++    probe_ms: f64,
++    polls_ms: f64,
++    polls: u32,
++}
++
++/// What the admission probe's staging-fill hand-off did (WP-A day 32).
++enum FillHandoff {
++    /// No contract route with spans for this entry: the day-18 program runs whole at the probe.
++    NotApplicable,
++    /// Refused with the host entry intact; every staging buffer is back in the set.
++    Refused(HostPromoteFailure),
++    /// The fill job is on the helper.
++    Handed {
++        seq: u64,
++        planes: usize,
++        bytes: usize,
++    },
++}
++
++/// What one step of the `Filling` phase did (WP-A day 32).
++#[derive(Debug, PartialEq, Eq)]
++enum FillStep {
++    /// The one `Promoting` entry is not filling (or there is none): the contract step runs.
++    NotFilling,
++    /// The fill has not landed: the state was kept.
++    Pending,
++    /// The fill landed and the KV batch and the spans were submitted on one ticket.
++    Submitted,
++    /// A typed failure or drop: nothing submitted, the staging back, the state consumed.
++    Failed,
++}
++
+ /// WP-A day 32: staging buffers on their way back to the context's set. Every exit of the promote
+ /// submission and of its settle that does not hand a buffer to the transfer engine puts it back
+ /// through this guard's `Drop` (the day-31 guard pattern); without a tier context they drop.
+@@ -11809,11 +11965,9 @@ fn host_h2d_sources_handoff(
+ }
+ 
+ /// WP-A day 32 (memra#536 Move 2 owed item 1, the H2D half; `memra_tier::conformance::
+-/// h2d_span_batch`): attach the promote's staging to its submitted KV ticket as typed f32 H2D
+-/// spans, one per recurrent plane, each into a fresh uninitialized owner-stream destination of the
+-/// plane's length. WP-A day 33 (`DAY33.md` design F, rule 6): the staging is filled from `fills`
+-/// (the resident planes, in the same order) by one host function on the copy stream ahead of the
+-/// copies (`submit_h2d_spans_filled`); the owner waits for nothing. A refusal before any enqueue (a destination alloc, the engine's own rule-1
++/// h2d_span_batch`): attach the promote's filled staging to its submitted KV ticket as typed f32
++/// H2D spans, one per recurrent plane, each into a fresh uninitialized owner-stream destination of
++/// the plane's length. A refusal before any enqueue (a destination alloc, the engine's own rule-1
+ /// refusal) hands every span back: each staging buffer to `staged` (so to the set), each
+ /// destination dropped (nothing was enqueued on it), and the KV ticket unwinds through
+ /// `host_promote_contract_abort` with the typed `tier H2D spans refused: .. (N f32 spans handed
+@@ -11824,7 +11978,6 @@ fn host_h2d_spans_submit(
+     tier: &HostTierContext,
+     mut pending: PendingContractPromote,
+     staged: &mut HostStagingBack<'_>,
+-    fills: Vec<HostHeapF32>,
+ ) -> Result<PendingContractPromote, HostPromoteFailure> {
+     use memra_engine::tier_transfer::H2dSpan;
+     let Some(transfers) = &tier.transfers else {
+@@ -11868,20 +12021,11 @@ fn host_h2d_spans_submit(
+     {
+         refused = Some("injected failure (MEMRA_KV_HOST_FAULT=contract-promote-spans)".into());
+     }
+-    // WP-A day 33 (design F): the fill rides the copy stream ahead of the copies (one host function).
+     let attached = match refused {
+         Some(why) => Err((why, spans)),
+-        None if fills.len() != spans.len() => Err((
+-            format!(
+-                "{} resident planes for {} staging buffers",
+-                fills.len(),
+-                spans.len()
+-            ),
+-            spans,
+-        )),
+         None => t
+-            .submit_h2d_spans_filled(&pending.ticket, spans, fills)
+-            .map_err(|(e, back, _)| (format!("{e:?}"), back)),
++            .submit_h2d_spans(&pending.ticket, spans)
++            .map_err(|(e, back)| (format!("{e:?}"), back)),
+     };
+     let (why, back) = match attached {
+         Ok(()) => {
+@@ -13320,7 +13464,9 @@ fn host_demote_prefix_ref(
+     // to a `Capacity` refusal.
+     host_demote_settle_pending(host, ContractWait::Block, "a second demote");
+     // WP-A day 18: the same for a `Promoting` entry, its contract half (this route has no device
+-    // cache in hand; the settled entry publishes at the next tick top).
++    // cache in hand; the settled entry publishes at the next tick top). WP-A day 32: a `Filling`
++    // entry's fill lands first and submits with this route's engine.
++    host_promote_fill_step(Some(engine), host, ContractWait::Block, "a second demote");
+     host_promote_settle_contract(host, ContractWait::Block, "a second demote");
+     if !host.armed() {
+         // Either settle can latch the tier off (`SourceQuarantined`, `TicketLeaked`); the gate
+@@ -14306,18 +14452,12 @@ fn device_entry_from_host_parts(
+     src: &HostPrefixEntry,
+     tier: Option<(&HostTierContext, HostTierEntryClass)>,
+     route: ContractH2d,
+-    staging: Option<Vec<(HostHashSlot, HostHeapF32, memra_engine::PinnedHostBuf)>>,
++    staged: Option<Vec<(HostHashSlot, memra_engine::PinnedHostBuf)>>,
+ ) -> Result<(PrefixEntry, Option<PendingContractPromote>), HostPromoteFailure> {
+-    // WP-A day 33: each staging buffer with the resident plane the copy stream fills it from.
+-    let mut fills: Vec<HostHeapF32> = Vec::new();
+     let mut staged = HostStagingBack {
+         tier: tier.map(|(t, _)| t),
+-        bufs: Vec::new(),
++        bufs: staged.unwrap_or_default(),
+     };
+-    for (slot, plane, buf) in staging.unwrap_or_default() {
+-        fills.push(plane);
+-        staged.bufs.push((slot, buf));
+-    }
+     if src.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
+         return Err(format!(
+             "host entry layout version {} != runtime {}: promote refused",
+@@ -14379,7 +14519,7 @@ fn device_entry_from_host_parts(
+                     let pending = if staged.bufs.is_empty() {
+                         pending
+                     } else {
+-                        host_h2d_spans_submit(engine, tier, pending, &mut staged, fills)?
++                        host_h2d_spans_submit(engine, tier, pending, &mut staged)?
+                     };
+                     // WP-A day 34 (design K): the last step of the submission, so no submit-side
+                     // unwind can meet a view that is out.
+@@ -15050,17 +15190,61 @@ fn host_promote_park_probe(
+         return false;
+     };
+     let t0 = Instant::now();
+-    // WP-A day 33 (`DAY33.md` design F): when the contract route runs and the entry's recurrent
+-    // planes are resident heap payloads, the staging is taken here and the whole submission (the
+-    // KV batch, then the spans with their fill as a host function on the copy stream) happens now,
+-    // in this tick; the owner waits for nothing and the next tick-top poll can find it landed.
+-    let staged = match host_promote_stage(host, &pool_key, hi, prepared.class) {
+-        Ok(staged) => staged,
+-        Err(failure) => {
++    // WP-A day 32 (DAY31 section 2, design H): when the contract route runs and the entry's
++    // recurrent planes are resident heap payloads, the hash helper fills the promote's staging from
++    // them first and the request parks; the poll that lands the fill submits the KV batch and the
++    // spans on one ticket (`host_promote_fill_step`). Nothing else changes at the probe.
++    match host_promote_fill_handoff(host, &pool_key, hi, prepared.class) {
++        FillHandoff::NotApplicable => {}
++        FillHandoff::Refused(failure) => {
+             host_promote_report_failure(host, &pool_key, prepared.host_id, failure, true);
+             return false;
+         }
+-    };
++        FillHandoff::Handed { seq, planes, bytes } => {
++            let host_len = prepared.host_len;
++            let probe_ms = t0.elapsed().as_secs_f64() * 1e3;
++            host.promoting = Some(PendingPromote {
++                pool_key: pool_key.clone(),
++                host_toks: prepared.host_toks,
++                host_id: prepared.host_id,
++                host_len,
++                shell: None,
++                contract: None,
++                ready: false,
++                tier_identity: prepared.identity,
++                tier_charge: prepared.charge,
++                expected_digest: prepared.expected_digest,
++                t0,
++                polls: 0,
++                copy_ms: 0.0,
++                settled_by: String::new(),
++                fill: Some(PendingFill {
++                    seq,
++                    planes,
++                    bytes,
++                    handed: Instant::now(),
++                    probe_ms,
++                    polls_ms: 0.0,
++                    polls: 0,
++                }),
++                class: prepared.class,
++                // WP-A day 33 (log only): the hand-off, the timeline's first term on this route.
++                timeline: vec![format!(
++                    "fill handed {}",
++                    host_promote_mark(host, t0, Instant::now())
++                )],
++            });
++            // No `request parked` in this line: that phrase is the submission line's, one per
++            // promote, and the readers count it.
++            eprintln!(
++                "[prefix-host] promote staging fill off the tick: {host_len} tokens, {planes} f32 \
++                 planes ({:.1}MB) handed to the hash helper (fill seq={seq}); the request waits \
++                 for the fill",
++                bytes as f64 / 1e6
++            );
++            return true;
++        }
++    }
+     let tier_route = match (&host.tier, prepared.class) {
+         (Some(tier), Some(class)) => Some((tier, class)),
+         _ => None,
+@@ -15070,7 +15254,7 @@ fn host_promote_park_probe(
+         &host.entries[&pool_key][hi],
+         tier_route,
+         ContractH2d::OffTick,
+-        staged,
++        None,
+     ) {
+         Err(failure) => {
+             host_promote_report_failure(host, &pool_key, prepared.host_id, failure, true);
+@@ -15094,16 +15278,6 @@ fn host_promote_park_probe(
+             let items = contract.sizes.len();
+             let bytes = shell.bytes;
+             let host_len = prepared.host_len;
+-            // WP-A day 33: the spans' term, before the owner segment (no term without spans).
+-            let span_term = if contract.spans.is_empty() {
+-                String::new()
+-            } else {
+-                format!(
+-                    ", {} f32 spans filled on the copy stream ({:.1}MB)",
+-                    contract.spans.len(),
+-                    contract.spans.iter().map(|(_, n)| n * 4).sum::<usize>() as f64 / 1e6
+-                )
+-            };
+             host.promoting = Some(PendingPromote {
+                 pool_key: pool_key.clone(),
+                 host_toks: prepared.host_toks,
+@@ -15123,6 +15297,8 @@ fn host_promote_park_probe(
+                     "submitted {}",
+                     host_promote_mark(host, t0, submitted_at)
+                 )],
++                fill: None,
++                class: prepared.class,
+             });
+             // WP-A day 32 (DAY31 section 2, B2's measure, log only): the promote's owner segment,
+             // the owner thread's held time from `t0` to this line. The field sits before `request
+@@ -15130,8 +15306,8 @@ fn host_promote_park_probe(
+             let owner_ms = t0.elapsed().as_secs_f64() * 1e3;
+             eprintln!(
+                 "[prefix-host] promote submitted off the tick: {host_len} tokens, {:.1}MB, ticket \
+-                 seq={seq}, {items} items on the contracts door's copy stream{span_term}; owner \
+-                 segment {owner_ms:.2}ms; request parked",
++                 seq={seq}, {items} items on the contracts door's copy stream; owner segment \
++                 {owner_ms:.2}ms; request parked",
+                 bytes as f64 / 1e6
+             );
+             true
+@@ -15139,34 +15315,32 @@ fn host_promote_park_probe(
+     }
+ }
+ 
+-/// WP-A day 33 (memra#536 Move 2 owed item 1, the H2D half, `DAY33.md` design F): the admission
+-/// probe's staging for the promote's recurrent spans. Applies only where the promote's KV planes
+-/// take the contract route on the copy stream and the entry holds resident heap recurrent planes;
+-/// there it takes one staging buffer per plane from the context's set (charged when fresh, the
+-/// day-31 rule and its line) and pairs it with the plane (an owned clone of its shared heap form),
+-/// which the copy stream's host function copies into it ahead of the span copies. `Ok(None)`: no
+-/// span route for this entry (the day-18 program runs whole). A staging refusal puts back every
+-/// buffer taken and refuses the promote typed, the tier on. Nothing here waits.
+-#[allow(clippy::type_complexity)]
+-fn host_promote_stage(
+-    host: &HostPrefixCache,
++/// WP-A day 32 (memra#536 Move 2 owed item 1, the H2D half, DAY31 section 2 design H item 2): the
++/// admission probe's staging-fill hand-off. Applies only where the promote's KV planes take the
++/// contract route on the copy stream and the entry holds resident heap recurrent planes; there it
++/// takes one staging buffer per plane from the context's set (charged when fresh, the day-31
++/// rule), hands the planes (owned clones of their shared heap form) and the buffers to the hash
++/// helper as ONE `Fill` job, and the caller parks the request. A staging refusal puts back every
++/// buffer taken and refuses the promote typed with the tier on; a helper that is gone hands the
++/// job back (the staging returns) and latches the tier (the day-28 rule).
++fn host_promote_fill_handoff(
++    host: &mut HostPrefixCache,
+     pool_key: &PoolKey,
+     hi: usize,
+     class: Option<HostTierEntryClass>,
+-) -> Result<Option<Vec<(HostHashSlot, HostHeapF32, memra_engine::PinnedHostBuf)>>, HostPromoteFailure>
+-{
++) -> FillHandoff {
+     let (Some(tier), Some(_)) = (&host.tier, class) else {
+-        return Ok(None);
++        return FillHandoff::NotApplicable;
+     };
+     let src = &host.entries[pool_key][hi];
+     if src.glm.is_some() || !host_entry_has_contract_plane(src) {
+-        return Ok(None);
++        return FillHandoff::NotApplicable;
+     }
+     let Some(transfers) = &tier.transfers else {
+-        return Ok(None);
++        return FillHandoff::NotApplicable;
+     };
+     if transfers.borrow().copy_stream().is_none() {
+-        return Ok(None);
++        return FillHandoff::NotApplicable;
+     }
+     let planes: Vec<(HostHashSlot, HostHeapF32)> = (src.conv.iter().enumerate())
+         .map(|(i, p)| (HostHashSlot::Conv(i), p))
+@@ -15177,25 +15351,30 @@ fn host_promote_stage(
+         })
+         .collect();
+     if planes.is_empty() {
+-        return Ok(None);
++        return FillHandoff::NotApplicable;
+     }
+     if let Err(e) = transfers.borrow().owner_stream().context().bind_to_thread() {
+-        return Err(HostPromoteFailure::Refused(format!(
++        return FillHandoff::Refused(HostPromoteFailure::Refused(format!(
+             "tier H2D spans refused: the owner context did not bind ({e})"
+         )));
+     }
+-    let mut staged = Vec::with_capacity(planes.len());
+-    let (mut fresh, mut fresh_bytes) = (0usize, 0u64);
++    let mut fill: Vec<HostFillPlane> = Vec::with_capacity(planes.len());
++    let (mut fresh, mut fresh_bytes, mut bytes) = (0usize, 0u64, 0usize);
+     let mut refused = None;
+     for (slot, plane) in planes {
+         let n = plane.len() * 4;
+         match tier.staging_take(n) {
+-            Ok((buf, allocated)) => {
++            Ok((staged, allocated)) => {
+                 if allocated {
+                     fresh += 1;
+                     fresh_bytes += n as u64;
+                 }
+-                staged.push((slot, plane, buf));
++                bytes += n;
++                fill.push(HostFillPlane {
++                    slot,
++                    plane,
++                    staged,
++                });
+             }
+             Err(e) => {
+                 refused = Some(format!("a {n}-byte staging buffer: {e}"));
+@@ -15212,15 +15391,244 @@ fn host_promote_stage(
+         );
+     }
+     if let Some(why) = refused {
+-        let n = staged.len();
+-        for (_, _, buf) in staged {
+-            tier.staging_put(buf);
++        let n = fill.len();
++        for p in fill {
++            tier.staging_put(p.staged);
+         }
+-        return Err(HostPromoteFailure::Refused(format!(
++        return FillHandoff::Refused(HostPromoteFailure::Refused(format!(
+             "tier H2D spans refused: {why} ({n} staging buffer(s) back)"
+         )));
+     }
+-    Ok(Some(staged))
++    let seq = host.fills_submitted + 1;
++    let planes = fill.len();
++    let Some(tier) = &host.tier else {
++        unreachable!("checked above")
++    };
++    match tier.hasher.submit_fill(HostFillJob { seq, planes: fill }) {
++        Ok(()) => {
++            host.fills_submitted = seq;
++            FillHandoff::Handed { seq, planes, bytes }
++        }
++        Err((why, job)) => {
++            for p in job.planes {
++                tier.staging_put(p.staged);
++            }
++            FillHandoff::Refused(HostPromoteFailure::Latched(format!(
++                "tier hash helper gone at the staging fill hand-off ({why}); fill seq={seq} not \
++                 handed, the staging back in the set"
++            )))
++        }
++    }
++}
++
++/// WP-A day 32 (DAY31 section 2 design H items 2 and 4): one step of the `Filling` phase of the one
++/// `Promoting` entry. `Poll` reads the helper's fill channel (the tick top); `Block` waits for it
++/// within the helper's deadline (a path that must settle the entry now). A landed fill with the
++/// engine in hand submits the KV batch and the spans on ONE ticket through the unchanged route
++/// (`device_entry_from_host_parts`, `OffTick`, the staging attached) and prints the `promote
++/// submitted off the tick` line with the owner segment; the entry is then a submitted `Promoting`
++/// entry and the contract step settles it as before. Without the engine (the tenant purge) a
++/// landed fill drops the promote typed. Fail closed: a fill the helper could not complete or an
++/// entry that left refuses typed with the tier on (the staging back, the request served cold); a
++/// helper that is gone or a fill past the deadline latches the tier (the day-28 rule; the staging
++/// drops with the helper).
++fn host_promote_fill_step(
++    engine: Option<&Engine>,
++    host: &mut HostPrefixCache,
++    wait: ContractWait,
++    why: &str,
++) -> FillStep {
++    if !host.promoting.as_ref().is_some_and(|p| p.fill.is_some()) {
++        return FillStep::NotFilling;
++    }
++    let held = Instant::now();
++    let mut pending = host.promoting.take().expect("checked");
++    let mut fill = pending.fill.take().expect("checked");
++    fill.polls += 1;
++    let cold = |host: &mut HostPrefixCache, pending: &PendingPromote| {
++        host.promote_cold = Some((pending.pool_key.clone(), pending.host_toks.clone()));
++    };
++    if !host.armed() {
++        eprintln!(
++            "[prefix-host] promote dropped: the tier latched off while fill seq={} was Filling; \
++             nothing submitted",
++            fill.seq
++        );
++        cold(host, &pending);
++        return FillStep::Failed;
++    }
++    let reply = {
++        let Some(tier) = host.tier.as_ref() else {
++            eprintln!("[prefix-host] promote failed (tier context gone under a Filling entry)");
++            cold(host, &pending);
++            return FillStep::Failed;
++        };
++        match wait {
++            ContractWait::Poll => tier.hasher.try_fill_reply(),
++            ContractWait::Block => tier
++                .hasher
++                .fill_reply_within(HOST_HASH_DEADLINE.saturating_sub(fill.handed.elapsed())),
++        }
++    };
++    let reply = match reply {
++        Ok(Some(reply)) => reply,
++        Ok(None) if fill.handed.elapsed() < HOST_HASH_DEADLINE => {
++            fill.polls_ms += held.elapsed().as_secs_f64() * 1e3;
++            pending.fill = Some(fill);
++            host.promoting = Some(pending);
++            return FillStep::Pending;
++        }
++        Ok(None) => {
++            let err = format!(
++                "tier staging fill never landed: fill seq={} handed {:.1}ms ago, past the {}s \
++                 deadline ({why})",
++                fill.seq,
++                fill.handed.elapsed().as_secs_f64() * 1e3,
++                HOST_HASH_DEADLINE.as_secs()
++            );
++            eprintln!("[prefix-host] promote failed ({err}); the tier latches off");
++            cold(host, &pending);
++            host.disable(&err);
++            return FillStep::Failed;
++        }
++        Err(e) => {
++            let err = format!(
++                "tier hash helper gone during the staging fill: fill seq={} ({e}; {why})",
++                fill.seq
++            );
++            eprintln!("[prefix-host] promote failed ({err}); the tier latches off");
++            cold(host, &pending);
++            host.disable(&err);
++            return FillStep::Failed;
++        }
++    };
++    let HostFillReply {
++        seq,
++        planes,
++        failed,
++        helper_ms,
++    } = reply;
++    let staged: Vec<(HostHashSlot, memra_engine::PinnedHostBuf)> =
++        planes.into_iter().map(|p| (p.slot, p.staged)).collect();
++    let back = |host: &HostPrefixCache,
++                staged: Vec<(HostHashSlot, memra_engine::PinnedHostBuf)>| {
++        if let Some(tier) = &host.tier {
++            for (_, buf) in staged {
++                tier.staging_put(buf);
++            }
++        }
++    };
++    if seq != fill.seq || staged.len() != fill.planes {
++        // FAIL CLOSED: a reply that does not describe this fill (one fill is on the helper at a
++        // time, so this is a protocol break): nothing is submitted and the tier latches.
++        let err = format!(
++            "tier staging fill reply seq={seq} with {} planes does not describe fill seq={} of {} \
++             planes",
++            staged.len(),
++            fill.seq,
++            fill.planes
++        );
++        back(host, staged);
++        eprintln!("[prefix-host] promote failed ({err}); the tier latches off");
++        cold(host, &pending);
++        host.disable(&err);
++        return FillStep::Failed;
++    }
++    if let Some(e) = failed {
++        back(host, staged);
++        host_promote_report_failure(
++            host,
++            &pending.pool_key,
++            pending.host_id,
++            HostPromoteFailure::Refused(format!(
++                "tier H2D spans refused: the staging fill failed ({e})"
++            )),
++            true,
++        );
++        return FillStep::Failed;
++    }
++    let Some(engine) = engine else {
++        back(host, staged);
++        eprintln!(
++            "[prefix-host] promote dropped: {why} met the Filling entry (fill seq={seq} landed, \
++             nothing submitted); serving without the host entry"
++        );
++        cold(host, &pending);
++        return FillStep::Failed;
++    };
++    let Some(hi) = host_entry_index_by_id(host, &pending.pool_key, pending.host_id) else {
++        back(host, staged);
++        eprintln!(
++            "[prefix-host] promote failed (the host entry left while its staging fill ran, fill \
++             seq={seq}); serving without the host entry"
++        );
++        cold(host, &pending);
++        return FillStep::Failed;
++    };
++    fill.polls_ms += held.elapsed().as_secs_f64() * 1e3;
++    let submit_t = Instant::now();
++    let result = {
++        let tier_route = match (&host.tier, pending.class) {
++            (Some(tier), Some(class)) => Some((tier, class)),
++            _ => None,
++        };
++        device_entry_from_host_parts(
++            engine,
++            &host.entries[&pending.pool_key][hi],
++            tier_route,
++            ContractH2d::OffTick,
++            Some(staged),
++        )
++    };
++    match result {
++        Err(failure) => {
++            host_promote_report_failure(host, &pending.pool_key, pending.host_id, failure, true);
++            FillStep::Failed
++        }
++        Ok((entry, None)) => {
++            // Unreachable by the hand-off's own checks (it ran only on the contract route): the
++            // pre-door program ran whole here, so the entry is complete and waits as `ready`.
++            pending.shell = Some(entry);
++            pending.ready = true;
++            host.promoting = Some(pending);
++            FillStep::Submitted
++        }
++        Ok((shell, Some(contract))) => {
++            let ticket_seq = contract.ticket.sequence;
++            let items = contract.sizes.len();
++            let spans = contract.spans.len();
++            let mb = shell.bytes as f64 / 1e6;
++            let host_len = pending.host_len;
++            let submitted_at = contract.submitted;
++            pending.shell = Some(shell);
++            pending.contract = Some(contract);
++            // WP-A day 33 (log only): the timeline's submission term, here at the fill's poll.
++            pending.timeline.push(format!(
++                "submitted {}",
++                host_promote_mark(host, pending.t0, submitted_at)
++            ));
++            let submit_ms = submit_t.elapsed().as_secs_f64() * 1e3;
++            // B2's measure on the H2D binary: the owner thread's held time for this promote up
++            // to this line, by segment (the request parked on the fill in between, the owner
++            // serving other ticks); `wall` is `t0` to the line.
++            let owner_ms = fill.probe_ms + fill.polls_ms + submit_ms;
++            eprintln!(
++                "[prefix-host] promote submitted off the tick: {host_len} tokens, {mb:.1}MB, \
++                 ticket seq={ticket_seq}, {items} items on the contracts door's copy stream, \
++                 {spans} f32 spans from the staging fill (fill seq={seq}, {:.1}MB filled by the \
++                 hash helper in {helper_ms:.1}ms, landed at poll {}); owner segment \
++                 {owner_ms:.2}ms (probe {:.2}, fill polls {:.2}, submit {submit_ms:.2}; wall \
++                 {:.1}ms from t0); request parked",
++                fill.bytes as f64 / 1e6,
++                fill.polls,
++                fill.probe_ms,
++                fill.polls_ms,
++                pending.t0.elapsed().as_secs_f64() * 1e3,
++            );
++            host.promoting = Some(pending);
++            FillStep::Submitted
++        }
++    }
+ }
+ 
+ /// WP-A day 18: one settle step of the `Promoting` entry, the contract half. `Poll` at the tick top;
+@@ -15239,6 +15647,12 @@ fn host_promote_settle_with(
+     ) -> Result<PromoteSettle, HostPromoteFailure>,
+ ) -> Option<PromoteSettled> {
+     let mut pending = host.promoting.take()?;
++    // WP-A day 32: a `Filling` entry has no shell and no ticket yet; its step is
++    // `host_promote_fill_step`, which every caller runs first. Here it is kept as it is.
++    if pending.fill.is_some() {
++        host.promoting = Some(pending);
++        return Some(PromoteSettled::Pending);
++    }
+     if pending.ready {
+         if pending.shell.is_some() {
+             return Some(PromoteSettled::Ready(Box::new(pending)));
+@@ -15389,6 +15803,13 @@ fn host_promote_settle_contract(
+     wait: ContractWait,
+     why: &str,
+ ) -> Option<HostPromoteOutcome> {
++    // WP-A day 32: without the engine a `Filling` entry cannot submit; its landed fill drops it
++    // typed (a caller with the engine in hand runs `host_promote_fill_step` with it first).
++    match host_promote_fill_step(None, host, wait, why) {
++        FillStep::Pending => return Some(HostPromoteOutcome::Promoting),
++        FillStep::Failed => return Some(HostPromoteOutcome::Failed),
++        FillStep::NotFilling | FillStep::Submitted => {}
++    }
+     Some(
+         match host_promote_settle_with(host, wait, why, host_kv_planes_settle_promote)? {
+             PromoteSettled::Pending => HostPromoteOutcome::Promoting,
+@@ -15409,6 +15830,12 @@ fn host_promote_settle_pending(
+     wait: ContractWait,
+     why: &str,
+ ) -> Option<HostPromoteOutcome> {
++    // WP-A day 32: the `Filling` phase first; a landed fill submits and the contract step follows.
++    match host_promote_fill_step(Some(engine), host, wait, why) {
++        FillStep::Pending => return Some(HostPromoteOutcome::Promoting),
++        FillStep::Failed => return Some(HostPromoteOutcome::Failed),
++        FillStep::NotFilling | FillStep::Submitted => {}
++    }
+     Some(
+         match host_promote_settle_with(host, wait, why, host_kv_planes_settle_promote)? {
+             PromoteSettled::Pending => HostPromoteOutcome::Promoting,
+@@ -46122,6 +46549,8 @@ mod tests {
+             copy_ms: 0.0,
+             settled_by: String::new(),
+             timeline: Vec::new(),
++            fill: None,
++            class: None,
+         });
+         id
+     }
+@@ -46524,14 +46953,15 @@ mod tests {
+             probe.find("let owner_ms = t0.elapsed()").unwrap()
+                 < probe.find("promote submitted off the tick:").unwrap()
+         );
+-        // OffTick: the probe and the route selector in device_entry_from_host_parts, nobody else
+-        // (WP-A day 33: the day-32 Filling step's submission is gone with the phase).
++        // OffTick: the probe, the route selector in device_entry_from_host_parts and (WP-A day 32)
++        // the Filling step's submission after a landed staging fill, nobody else.
+         let production = &worker[..worker.find("\nmod tests {").unwrap()];
+         let code: Vec<&str> = production
+             .lines()
+             .filter(|l| !l.trim_start().starts_with("//"))
+             .collect();
+-        assert_eq!(code.join("\n").matches("ContractH2d::OffTick").count(), 2);
++        assert_eq!(code.join("\n").matches("ContractH2d::OffTick").count(), 3);
++        assert!(body("fn host_promote_fill_step(").contains("ContractH2d::OffTick"));
+         // Publication: only `host_promote_publish` and the hook reach the shared tail, and the
+         // settle machine never inserts.
+         let machine = body("fn host_promote_settle_with(");
+@@ -47711,7 +48141,7 @@ mod tests {
+         assert!(
+             at(
+                 parts,
+-                "host_h2d_spans_submit(engine, tier, pending, &mut staged, fills)?"
++                "host_h2d_spans_submit(engine, tier, pending, &mut staged)?"
+             ) < at(parts, "host_h2d_sources_handoff(tier, pending)?")
+         );
+         let handoff = body("fn host_h2d_sources_handoff(");
+@@ -47759,87 +48189,221 @@ mod tests {
+         assert!(helper.contains("if sources_tx.send(reply).is_err() {"));
+     }
+ 
+-    // ---- WP-A day 33 (memra#536 Move 2 owed item 1, the H2D half, `DAY33.md` design F) ----
++    // ---- WP-A day 32 (memra#536 Move 2 owed item 1, the H2D half, DAY31 section 2 design H) ----
+ 
+-    /// WP-A day 33, the order by source: the probe takes the staging and submits in the same step
+-    /// (the KV batch, then the spans with their fill as a host function on the copy stream), with no
+-    /// helper, no Filling phase and no host wait between `t0` and the submitted line; the route
+-    /// submits the KV batch before the spans, the spans' destinations are allocated before the attach,
+-    /// the attach is the filled one, and a refusal unwinds the KV ticket; the settle takes the spans
+-    /// back after the reader wait and before the receipt check, publication and the retire, with the
+-    /// staging guard built before the take; the helper has one job kind again; every settle path is
+-    /// the contract step alone and the tick top polls.
++    /// A door host with a Filling promote on a caller-owned fill channel: the test plays the
++    /// helper's fill side. The fill names `planes` planes and no staging (a CPU host allocates no
++    /// pinned memory), so a reply with zero planes describes a zero-plane fill.
++    fn cpu_filling_promote(
++        planes: usize,
++    ) -> (
++        HostPrefixCache,
++        PoolKey,
++        std::sync::mpsc::Sender<super::HostFillReply>,
++    ) {
++        let (mut host, key) = cpu_door_host();
++        let (jobs_tx, _jobs_rx) = std::sync::mpsc::channel();
++        let (_reply_tx, reply_rx) = std::sync::mpsc::channel();
++        let (fill_tx, fill_rx) = std::sync::mpsc::channel();
++        host.tier.as_mut().unwrap().hasher =
++            super::HostHashWorker::from_channels(jobs_tx, reply_rx).with_fills(fill_rx);
++        std::mem::forget(_jobs_rx);
++        let id = cpu_pending_promote(&mut host, &key);
++        let p = host.promoting.as_mut().unwrap();
++        assert_eq!(p.host_id, id);
++        p.shell = None;
++        p.contract = None;
++        p.fill = Some(super::PendingFill {
++            seq: 1,
++            planes,
++            bytes: 0,
++            handed: std::time::Instant::now(),
++            probe_ms: 0.0,
++            polls_ms: 0.0,
++            polls: 0,
++        });
++        (host, key, fill_tx)
++    }
++
++    fn cpu_fill_reply(seq: u64, failed: Option<&str>) -> super::HostFillReply {
++        super::HostFillReply {
++            seq,
++            planes: Vec::new(),
++            failed: failed.map(str::to_string),
++            helper_ms: 0.1,
++        }
++    }
++
++    /// Poll keeps a Filling entry while its fill runs (the poll counted, nothing submitted); the
++    /// contract machine keeps it as it is; a landed fill without the engine in hand (the tenant
++    /// purge's path) drops the promote typed with the memo set and the tier on.
+     #[test]
+-    fn day33_the_promote_submits_its_filled_spans_in_the_probes_tick() {
++    fn day32_a_filling_promote_waits_and_drops_typed_without_the_engine() {
++        let (mut host, key, fill_tx) = cpu_filling_promote(0);
++        for polls in 1..=3u32 {
++            assert_eq!(
++                super::host_promote_fill_step(None, &mut host, super::ContractWait::Poll, "t"),
++                super::FillStep::Pending
++            );
++            let p = host.promoting.as_ref().unwrap();
++            assert_eq!(p.fill.as_ref().unwrap().polls, polls);
++            assert!(p.shell.is_none() && p.contract.is_none());
++        }
++        let machine = super::host_promote_settle_with(
++            &mut host,
++            super::ContractWait::Poll,
++            "t",
++            |_, _, _| panic!("a Filling entry has no ticket to settle"),
++        );
++        assert!(matches!(machine, Some(super::PromoteSettled::Pending)));
++        assert!(host.promoting.as_ref().unwrap().fill.is_some());
++        fill_tx.send(cpu_fill_reply(1, None)).unwrap();
++        assert_eq!(
++            super::host_promote_settle_contract(&mut host, super::ContractWait::Block, "a purge"),
++            Some(super::HostPromoteOutcome::Failed)
++        );
++        assert!(host.promoting.is_none());
++        assert!(host.armed(), "a drop is not a latch");
++        assert!(super::host_promote_memo_names(
++            &host,
++            &key,
++            &(100..164).collect::<Vec<u32>>()
++        ));
++    }
++
++    /// Fail closed: a fill the helper could not complete refuses typed with the tier on; a reply
++    /// that does not describe the fill, a helper that is gone and a fill past the deadline latch
++    /// the tier. Every arm consumes the state and sets the memo.
++    #[test]
++    fn day32_a_failed_or_lost_staging_fill_is_typed_and_the_lost_ones_latch() {
++        let (mut host, _key, fill_tx) = cpu_filling_promote(0);
++        fill_tx
++            .send(cpu_fill_reply(
++                1,
++                Some("Ssm(3): pinned host copy length mismatch"),
++            ))
++            .unwrap();
++        assert_eq!(
++            super::host_promote_fill_step(None, &mut host, super::ContractWait::Poll, "t"),
++            super::FillStep::Failed
++        );
++        assert!(host.promoting.is_none() && host.armed());
++        assert!(host.promote_cold.is_some());
++        // A reply naming another fill: latched.
++        let (mut host, _key, fill_tx) = cpu_filling_promote(0);
++        fill_tx.send(cpu_fill_reply(2, None)).unwrap();
++        assert_eq!(
++            super::host_promote_fill_step(None, &mut host, super::ContractWait::Poll, "t"),
++            super::FillStep::Failed
++        );
++        assert!(host.promoting.is_none() && !host.armed());
++        // A reply with the wrong plane count: latched.
++        let (mut host, _key, fill_tx) = cpu_filling_promote(3);
++        fill_tx.send(cpu_fill_reply(1, None)).unwrap();
++        assert_eq!(
++            super::host_promote_fill_step(None, &mut host, super::ContractWait::Block, "t"),
++            super::FillStep::Failed
++        );
++        assert!(!host.armed());
++        // The helper gone (its fill sender dropped), under Poll and under Block: latched.
++        for wait in [super::ContractWait::Poll, super::ContractWait::Block] {
++            let (mut host, _key, fill_tx) = cpu_filling_promote(0);
++            drop(fill_tx);
++            assert_eq!(
++                super::host_promote_fill_step(None, &mut host, wait, "t"),
++                super::FillStep::Failed
++            );
++            assert!(host.promoting.is_none() && !host.armed());
++            assert!(host.promote_cold.is_some());
++        }
++        // Past the deadline with nothing landed: latched.
++        let (mut host, _key, _fill_tx) = cpu_filling_promote(0);
++        host.promoting
++            .as_mut()
++            .unwrap()
++            .fill
++            .as_mut()
++            .unwrap()
++            .handed = std::time::Instant::now()
++            - super::HOST_HASH_DEADLINE
++            - std::time::Duration::from_millis(5);
++        assert_eq!(
++            super::host_promote_fill_step(None, &mut host, super::ContractWait::Poll, "t"),
++            super::FillStep::Failed
++        );
++        assert!(host.promoting.is_none() && !host.armed());
++        // A latched tier drops a Filling entry without reading the helper.
++        let (mut host, _key, _fill_tx) = cpu_filling_promote(0);
++        host.disable("elsewhere");
++        assert_eq!(
++            super::host_promote_fill_step(None, &mut host, super::ContractWait::Poll, "t"),
++            super::FillStep::Failed
++        );
++        assert!(host.promoting.is_none());
++    }
++
++    /// WP-A day 32, the order by source: the probe hands the fill off before any submission; the
++    /// Filling step reads the reply, finds the entry again by id and submits through the unchanged
++    /// route with the staging attached, then prints the submitted line with the owner segment;
++    /// the route submits the KV batch before the spans, the spans' destinations are allocated
++    /// before the attach and the refusal unwinds the KV ticket; the settle takes the spans back
++    /// after the reader wait and before the receipt check, publication and the retire, with the
++    /// staging guard built before the take; the helper's fill is a full write with no `unsafe`;
++    /// every path that settles a promote runs the Filling step first.
++    #[test]
++    fn day32_the_h2d_spans_ride_the_promote_ticket_in_the_stated_order() {
+         let worker = include_str!("worker.rs");
+-        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+         let body = |name: &str| {
+-            let at = production
++            let at = worker
+                 .find(name)
+                 .unwrap_or_else(|| panic!("{name} missing"));
+-            let end = production[at..].find("\n}\n").unwrap();
+-            &production[at..at + end]
++            let end = worker[at..].find("\n}\n").unwrap();
++            &worker[at..at + end]
+         };
+         let at = |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle}"));
+         let probe = body("fn host_promote_park_probe(");
++        assert!(
++            at(
++                probe,
++                "host_promote_fill_handoff(host, &pool_key, hi, prepared.class)"
++            ) < at(probe, "device_entry_from_host_parts(")
++        );
++        assert!(
++            !probe[at(probe, "promote staging fill off the tick")..][..at(
++                &probe[at(probe, "promote staging fill off the tick")..],
++                "return true;"
++            )]
++                .contains("request parked")
++        );
++        let step = body("fn host_promote_fill_step(");
+         for (a, b) in [
+             (
+-                "let t0 = Instant::now();",
+-                "host_promote_stage(host, &pool_key, hi, prepared.class)",
++                "ContractWait::Poll => tier.hasher.try_fill_reply(),",
++                "let HostFillReply {",
+             ),
+             (
+-                "host_promote_stage(host, &pool_key, hi, prepared.class)",
+-                "device_entry_from_host_parts(",
++                "if seq != fill.seq || staged.len() != fill.planes {",
++                "let Some(engine) = engine else {",
+             ),
+             (
+-                "device_entry_from_host_parts(",
+-                "let owner_ms = t0.elapsed()",
++                "let Some(engine) = engine else {",
++                "host_entry_index_by_id(host, &pending.pool_key",
+             ),
+             (
+-                "let owner_ms = t0.elapsed()",
++                "host_entry_index_by_id(host, &pending.pool_key",
++                "Some(staged),",
++            ),
++            ("Some(staged),", "promote submitted off the tick:"),
++            (
++                "let owner_ms = fill.probe_ms + fill.polls_ms + submit_ms;",
+                 "promote submitted off the tick:",
+             ),
+         ] {
+-            assert!(at(probe, a) < at(probe, b), "{a} before {b}");
++            assert!(at(step, a) < at(step, b), "{a} before {b}");
+         }
+-        assert!(probe.contains("f32 spans filled on the copy stream ({:.1}MB)"));
+-        assert!(probe.contains(
+-            "{span_term}; owner \\\n                 segment {owner_ms:.2}ms; request parked"
+-        ));
+-        // (d): nothing between t0 and the submitted line waits.
+-        let path = &probe
+-            [at(probe, "let t0 = Instant::now();")..at(probe, "promote submitted off the tick:")];
+-        let stage = body("fn host_promote_stage(");
++        assert!(step.contains("{owner_ms:.2}ms (probe"));
++        assert!(step.contains("request parked\","));
+         let parts = body("fn device_entry_from_host_parts(");
+-        let attach = body("fn host_h2d_spans_submit(");
+-        let submit = body("fn host_kv_planes_submit_promote(");
+-        for (name, b) in [
+-            ("probe", path),
+-            ("stage", stage),
+-            ("parts", parts),
+-            ("attach", attach),
+-            ("submit", submit),
+-        ] {
+-            for wait in [
+-                "synchronize(",
+-                "recv_timeout(",
+-                "reply_within(",
+-                "ContractWait::Block",
+-            ] {
+-                assert!(!b.contains(wait), "{name} waits: {wait}");
+-            }
+-        }
+-        // No Filling phase, no helper fill, one helper job kind.
+-        for gone in [
+-            "fn host_promote_fill_step(",
+-            "fn host_promote_fill_handoff(",
+-            "struct PendingFill",
+-            "HostHelperJob::Fill",
+-            "promote staging fill off the tick",
+-            "fn submit_fill(",
+-        ] {
+-            assert!(!production.contains(gone), "{gone} survives");
+-        }
+         assert!(
+             at(parts, "let mut staged = HostStagingBack {")
+                 < at(
+@@ -47853,25 +48417,17 @@ mod tests {
+                 "host_kv_planes_submit_promote(engine, tier, src, class)?"
+             ) < at(
+                 parts,
+-                "host_h2d_spans_submit(engine, tier, pending, &mut staged, fills)?"
++                "host_h2d_spans_submit(engine, tier, pending, &mut staged)?"
+             )
+         );
++        let attach = body("fn host_h2d_spans_submit(");
+         assert!(
+             at(attach, "engine.alloc_f32_uninit(len)")
+-                < at(
+-                    attach,
+-                    ".submit_h2d_spans_filled(&pending.ticket, spans, fills)"
+-                )
++                < at(attach, ".submit_h2d_spans(&pending.ticket, spans)")
+         );
+         assert!(
+-            !attach.contains(".submit_h2d_spans(&pending.ticket"),
+-            "the attach is the filled one"
+-        );
+-        assert!(
+-            at(
+-                attach,
+-                ".submit_h2d_spans_filled(&pending.ticket, spans, fills)"
+-            ) < at(attach, "Err(host_promote_contract_abort(")
++            at(attach, ".submit_h2d_spans(&pending.ticket, spans)")
++                < at(attach, "Err(host_promote_contract_abort(")
+         );
+         assert!(attach.contains("staged.bufs.push((slot, span.source));"));
+         let fault = at(
+@@ -47879,13 +48435,7 @@ mod tests {
+             "pending.fault == Some(HostContractFault::PromoteSpanAttach)",
+         );
+         assert!(at(attach, "engine.alloc_f32_uninit(len)") < fault);
+-        assert!(
+-            fault
+-                < at(
+-                    attach,
+-                    ".submit_h2d_spans_filled(&pending.ticket, spans, fills)"
+-                )
+-        );
++        assert!(fault < at(attach, ".submit_h2d_spans(&pending.ticket, spans)"));
+         assert!(
+             attach.contains(
+                 "\"injected failure (MEMRA_KV_HOST_FAULT=contract-promote-spans)\".into()"
+@@ -47921,13 +48471,38 @@ mod tests {
+         ] {
+             assert!(at(settle, a) < at(settle, b), "{a} before {b}");
+         }
++        let helper = body("impl HostHashWorker {");
++        let fill = &helper[at(helper, "HostHelperJob::Fill(job) => {")
++            ..at(
++                helper,
++                "let t = Instant::now();\n                    let hashed",
++            )];
++        assert!(fill.contains("p.staged.copy_from_slice(f32s_as_bytes(&p.plane))"));
++        assert!(!fill.contains("unsafe"), "no unsafe in the fill");
+         let pending = body("fn host_promote_settle_pending(");
+         assert!(
+-            pending.contains(
+-                "host_promote_settle_with(host, wait, why, host_kv_planes_settle_promote)"
++            at(
++                pending,
++                "host_promote_fill_step(Some(engine), host, wait, why)"
++            ) < at(pending, "host_promote_settle_with(")
++        );
++        let contract = body("fn host_promote_settle_contract(");
++        assert!(
++            at(contract, "host_promote_fill_step(None, host, wait, why)")
++                < at(contract, "host_promote_settle_with(")
++        );
++        let demote = body("fn host_demote_prefix_ref(");
++        assert!(
++            at(
++                demote,
++                "host_promote_fill_step(Some(engine), host, ContractWait::Block, \"a second demote\")"
++            ) < at(
++                demote,
++                "host_promote_settle_contract(host, ContractWait::Block, \"a second demote\")"
+             )
+         );
+-        assert!(!pending.contains("fill"));
++        let machine = body("fn host_promote_settle_with(");
++        assert!(at(machine, "if pending.fill.is_some() {") < at(machine, "if pending.ready {"));
+     }
+ 
+     /// GPU-only helper: a real `CudaTransfers` on the engine's owner stream over the server's
+@@ -49196,22 +49771,17 @@ mod tests {
+         }
+     }
+ 
+-    /// WP-A day 33: the staging the probe's `host_promote_stage` takes for the promote's spans: one
+-    /// buffer per resident heap recurrent plane from the context's set, paired with the plane the
+-    /// copy stream's host function fills it from (the image here is not in a host index).
++    /// WP-A day 32: the promote's staging fill through the context's real helper thread: one
++    /// staging buffer per resident heap recurrent plane from the set, one `Fill` job, the reply.
+     fn gpu_staging_fill(
+         host: &super::HostPrefixCache,
+         image: &super::HostPrefixEntry,
+-    ) -> Vec<(
+-        super::HostHashSlot,
+-        super::HostHeapF32,
+-        memra_engine::PinnedHostBuf,
+-    )> {
++    ) -> Vec<(super::HostHashSlot, memra_engine::PinnedHostBuf)> {
+         let tier = host.tier.as_ref().unwrap();
+         let slots = (0..image.conv.len())
+             .map(super::HostHashSlot::Conv)
+             .chain((0..image.ssm.len()).map(super::HostHashSlot::Ssm));
+-        let mut staged = Vec::new();
++        let mut planes = Vec::new();
+         for slot in slots {
+             let plane = match slot {
+                 super::HostHashSlot::Conv(i) => &image.conv[i],
+@@ -49221,11 +49791,31 @@ mod tests {
+             if let Some(super::HostF32::Heap(v)) = plane
+                 && !v.is_empty()
+             {
+-                let (buf, _) = tier.staging_take(v.len() * 4).unwrap();
+-                staged.push((slot, v.clone(), buf));
++                let (staged, _) = tier.staging_take(v.len() * 4).unwrap();
++                planes.push(super::HostFillPlane {
++                    slot,
++                    plane: v.clone(),
++                    staged,
++                });
+             }
+         }
+-        staged
++        let n = planes.len();
++        tier.hasher
++            .submit_fill(super::HostFillJob { seq: 1, planes })
++            .map_err(|(e, _)| e)
++            .unwrap();
++        let reply = tier
++            .hasher
++            .fill_reply_within(std::time::Duration::from_secs(10))
++            .unwrap()
++            .expect("the helper filled the staging");
++        assert!(reply.failed.is_none(), "{:?}", reply.failed);
++        assert_eq!((reply.seq, reply.planes.len()), (1, n));
++        reply
++            .planes
++            .into_iter()
++            .map(|p| (p.slot, p.staged))
++            .collect()
+     }
+ 
+     /// WP-A day 32 (memra#536 Move 2 owed item 1, the H2D half; `h2d_span_batch` through the
+diff --git a/docs/FLAGS.md b/docs/FLAGS.md
+index 70eb48283..38e2fa4fa 100644
+--- a/docs/FLAGS.md
++++ b/docs/FLAGS.md
+@@ -1266,7 +1266,7 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
+ |---|---|
+ | `MEMRA_KVPROBE_AT=<n[,n…]>` | digest the FIRST `n` rows of a LIVE cache, with `n <= cache.pos` allowed (`worker.rs kvprobe_ats()`). `prefix_cache_state_digest` refuses `n != pos`, which makes it unable to answer the question the arc turns on: are the KV bytes a COLD 1048-row prime writes for rows `[0..932)` the same bytes a 932-row prime wrote — and therefore published, and therefore restored? Unset = the probe costs nothing |
+ | `MEMRA_KVPROBE_LAYERS=1` | with `..._AT` set, also emit the per-layer digests instead of the whole-state digest alone (`worker.rs kvprobe_layers()`) — how the 59-of-60-layer divergence above was localized |
+-| `MEMRA_KV_HOST_FAULT=alloc-fail\|flip-demote\|contract-presubmit\|contract-postpublish\|contract-promote-presubmit\|contract-promote-postpublish\|contract-promote-reject\|contract-promote-readyview\|d2d-delay-capture\|d2d-delay-restore\|hash-helper-gone\|hash-never-lands\|contract-spans\|contract-promote-spans` | host-tier fault injection (lane/kv-host-spill-20260830), default unset = off, so the tier's FAILURE paths are executed by a gate instead of asserted in prose. `alloc-fail`: every pinned host alloc reports failure, exercising the loud latch-off (`[prefix-host] TIER DISABLED`, `prefix_host_rejected_allocs`, no pageable fallback). `flip-demote`: flips one K byte of the first demoted plane AFTER the demote digest is recorded, exercising the `MEMRA_KV_HOST_VERIFY` promote mismatch (`[prefix-host] VERIFY FAILED`, entry dropped, cold path serves). Consumed by `tools/kv-host-spill-failure-gate.sh`. `contract-presubmit` and `contract-postpublish` (lane/spill-c-20260919 day 15, Option B, review findings on PR #599) are ONE-SHOT faults of the contract-routed D2H under `MEMRA_KV_HOST_CONTRACTS=1`: the first demote that runs the route refuses the producer fence before any op is submitted (every registered plane must return to its slot, typed `demote failed (tier D2H producer fence refused: injected failure ...)`, tier on, ledger at zero), or refuses the receipt check after every destination was taken (the published ticket must retire against an observed consumer fence and be acknowledged, typed `demote failed (tier D2H receipt refused: injected failure ...)`, tier on, in-flight released); in both the NEXT demote must complete with a receipt (the ledger's in-flight dimension is exactly one batch, so a leaked ticket would refuse it with `Capacity`). Consumed by `tools/kv-host-contract-fault-gate.sh`; the same two paths are the GPU unit cells `option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on` and `option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on` (`worker::tests`, ignored without a device). `contract-promote-presubmit` and `contract-promote-postpublish` (lane/spill-c-20260919 day 16, Option C) are the ONE-SHOT faults of the contract-routed H2D promote under the same door: the first promote that runs the route refuses the producer fence before any op is submitted (every fresh destination plane released through its retained twin, every source twin dropped, the host entry intact and its leases sole-owned again, typed `promote refused (contracts door): tier H2D producer fence refused: injected failure ...; serving without the host entry`, tier on), or refuses after `ready_view` published every item (the published ticket retires against an observed consumer fence after its source twins retired and is acknowledged, typed `... tier H2D publication refused: injected failure ...`, tier on); in both the NEXT promote must complete with an H2D receipt. `contract-promote-reject` (PR #605 review finding 1: the last op of the batch asks for one byte more than its source holds, so the engine's own `CopyOp::validate` rejects exactly that item and the batch is accepted partially; the unwind recovers only the ACCEPTED sources, retires and acknowledges the ticket, releases every fresh destination, typed `promote refused (contracts door): tier H2D batch partially refused: 1 of N items (injected failure ...)`, tier on) and `contract-promote-readyview` (finding 2: the first `ready_view` succeeds in the engine, so the ticket IS published, and the route is handed an injected error for it; the unwind asks the engine through `cancel`, which answers `AlreadyPublished`, and takes the consumer-fence arm, typed `... tier H2D destination 0 not publishable: injected failure ...`, tier on). Each route takes only its own side of the cell (`HostTierContext::take_fault`), so one boot arms exactly one route. Consumed by `tools/kv-host-contract-fault-gate.sh` (cells `promote-presubmit`, `promote-postpublish`, `promote-reject`, `promote-readyview`); GPU unit cells `option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin`, `option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin`, `option_c_partial_acceptance_unwinds_refused_with_every_destination_released`, `option_c_first_ready_view_failure_unwinds_through_the_published_arm`. Under Option C `flip-demote` also names the injected difference at promote (`contracts door H2D receipt: ... plane host bytes differ from the D2H receipt as injected ...`) and requires against the completion's own checksums so the verify arm still catches it (`VERIFY FAILED`), the day-15 shape. NEVER set on a serving box: `flip-demote` intentionally corrupts host-tier bytes (harmless only because the gate pairs it with verify-on, which refuses the promote). `d2d-delay-capture` and `d2d-delay-restore` (WP-A day 22, memra#536 Move 2 slice 3, `research/spill-a-20260919/DAY22.md`, `memra_tier::conformance::d2d_receipt_witnessed`) are the ONE-SHOT red arms of the D2D receipt under `MEMRA_KV_HOST_CONTRACTS=1`: the first capture (or the first restore) of the boot that runs the copy-stream route has its copy delayed 200 ms on the copy stream (`tier_delay_spin`) and its DESTINATION digest taken by an unordered early reader (the owner stream at submit, after the producer fence, with no wait on the copy's event: the read a publication or a first prime chunk issued before the completion event would make), while the source digest stays on the copy stream behind the fence; the receipt line (`[prefix-cache] contracts door D2D capture receipt: .. source_digests_sha256=.. destination_digests_sha256=.. require=Corrupt`, or the `D2D restore receipt` twin) must name two different digests and the settle must refuse typed: nothing published (`CAPTURE OFF-TICK DISABLED: D2D capture receipt mismatch ..`) or nothing primed on (`RESTORE OFF-TICK DISABLED: D2D restore receipt mismatch ..`, the cache dropped and the pin released), the tier latches off (`TIER DISABLED`) and the request is served by the tick program with identical bytes. Consumed by `tools/kv-host-contract-fault-gate.sh` cells `d2d-capture` and `d2d-restore` (plain arm, `MEMRA_SERVE_SPEC=0`, so the seeds capture through the route); the engine GPU cell `d2d_early_reader_fault_is_refused_by_the_receipt` is the same arm on a card. A matching receipt under the fault FAILS the cell. `hash-helper-gone` and `hash-never-lands` (WP-A day 28, memra#536 Move 1 owed item 2, lead ruling 39, `research/spill-a-20260919/DAY28.md`) are the ONE-SHOT red arms of the demote's `Hashing` phase under `MEMRA_KV_HOST_CONTRACTS=1`: the bundle checksum of an image's heap payloads (the recurrent f32 planes, the logits, the hidden row; about 157 MB on the 27B, pageable `Vec<f32>` with no receipt partner) runs on ONE long-lived helper thread per tier context instead of the tick (the same `checksum` program over the same bytes; the KV planes' checksums stay on the owner thread), and the entry stays `Demoting` until the digests land. `hash-helper-gone`: the helper exits on its first job, so the next settle finds the reply channel closed; `hash-never-lands`: the helper hashes its first job and discards the reply, so the digests never land and the 10 s wall deadline after the hand-off (`HOST_HASH_DEADLINE`, checked at every tick-top poll and the `Block` wait's `recv_timeout`) fires. Each must end typed (`[prefix-host] demote failed (tier hash helper gone: ...)`, `demote failed (tier hash digests never landed: ...)`), nothing published (no `[prefix-host] demote:` line, no `demote digests landed` line), the shell dropped whole, no ticket to leak (retired before the hand-off), the tier latched (`TIER DISABLED`) and the helper joined (`hash helper joined (the tier latched off)`); the tick program serves every request. Consumed by `tools/kv-host-contract-fault-gate.sh` cells `hash-helper-gone` and `hash-never-lands`; the CPU cells `hash_helper_gone_is_a_typed_refusal_that_latches_under_poll_and_under_block` and `hash_digests_never_landing_latch_at_the_deadline_under_poll_and_under_block` are the same arms without a card, and `hash_helper_digests_equal_the_owner_thread_digests_bitwise` proves the helper's program is the bind's. `contract-spans` (WP-A day 31, memra#536 Move 2 owed item 1, the D2H half, `research/spill-a-20260919/DAY31.md`) is the ONE-SHOT red arm of the off-tick demote's f32 span attach under `MEMRA_KV_HOST_CONTRACTS=1`: after every recurrent plane of the evicted entry was built into a span (its source moved into the transfer engine, a charged pinned staging buffer from the context's set), the attach refuses before `submit_d2h_spans`; every span must come back (sources to their slots, staging to the set), the KV ticket unwind through the typed arm (`[prefix-host] demote failed (tier D2H spans refused: injected failure (MEMRA_KV_HOST_FAULT=contract-spans) (N f32 spans handed back)); nothing demoted`, N the entry's span count, read from the next demote's own copy-complete line), the tier stay on, the NEXT demote complete with spans and publish, a host hit on it promote, and every response be byte-equal to the door-OFF arm. Consumed by `tools/kv-host-contract-fault-gate.sh` cell `span-refusal`; the GPU cell `option_b_span_attach_fault_hands_every_span_back` (`worker::tests`) is the same arm on a card, and `option_b_span_staging_charge_refusal_refuses_the_attach_and_keeps_the_tier_on` is the ledger-refusal twin through the same typed arm. A model with no recurrent planes attaches no span and the one-shot fault is consumed without a line, which FAILS the cell. `contract-promote-spans` (WP-A day 32, memra#536 Move 2 owed item 1, the H2D half, `research/spill-a-20260919/DAY32.md`) is the ONE-SHOT red arm of the off-tick promote's f32 span attach under `MEMRA_KV_HOST_CONTRACTS=1`: the probe's submission built every recurrent plane into an H2D span (a charged staging buffer from the context's set as the source, filled from the resident plane by a host function on the copy stream since WP-A day 33, `DAY33.md`; a fresh owner-stream destination), then the attach refuses before `submit_h2d_spans_filled`; every span must come back (each destination released, each staging buffer to the set), the KV ticket unwind through `host_promote_contract_abort` typed (`[prefix-host] promote refused (contracts door): tier H2D spans refused: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-spans) (N f32 spans handed back); serving without the host entry`, N the entry's span count, read from the next H2D receipt's own `; N f32 spans landed under the ticket and taken back before the retire` term), the host entry stay, the tier stay on, the cold path serve the request, the NEXT promote land its spans and publish, and every response be byte-equal to the door-OFF arm. Consumed by `tools/kv-host-contract-fault-gate.sh` cell `promote-span-refusal`; the GPU cell `option_c_span_attach_fault_hands_every_span_back` (`worker::tests`) is the same arm on a card. Taken by the promote route only (`HostTierContext::take_fault`); a promote that takes the route with no recurrent plane attaches no span and consumes the fault without a line, which FAILS the cell. Fault values of a check: kept while the gate runs (door hygiene), reviewed with the door's decide-by 2026-10-05 |
++| `MEMRA_KV_HOST_FAULT=alloc-fail\|flip-demote\|contract-presubmit\|contract-postpublish\|contract-promote-presubmit\|contract-promote-postpublish\|contract-promote-reject\|contract-promote-readyview\|d2d-delay-capture\|d2d-delay-restore\|hash-helper-gone\|hash-never-lands\|contract-spans\|contract-promote-spans` | host-tier fault injection (lane/kv-host-spill-20260830), default unset = off, so the tier's FAILURE paths are executed by a gate instead of asserted in prose. `alloc-fail`: every pinned host alloc reports failure, exercising the loud latch-off (`[prefix-host] TIER DISABLED`, `prefix_host_rejected_allocs`, no pageable fallback). `flip-demote`: flips one K byte of the first demoted plane AFTER the demote digest is recorded, exercising the `MEMRA_KV_HOST_VERIFY` promote mismatch (`[prefix-host] VERIFY FAILED`, entry dropped, cold path serves). Consumed by `tools/kv-host-spill-failure-gate.sh`. `contract-presubmit` and `contract-postpublish` (lane/spill-c-20260919 day 15, Option B, review findings on PR #599) are ONE-SHOT faults of the contract-routed D2H under `MEMRA_KV_HOST_CONTRACTS=1`: the first demote that runs the route refuses the producer fence before any op is submitted (every registered plane must return to its slot, typed `demote failed (tier D2H producer fence refused: injected failure ...)`, tier on, ledger at zero), or refuses the receipt check after every destination was taken (the published ticket must retire against an observed consumer fence and be acknowledged, typed `demote failed (tier D2H receipt refused: injected failure ...)`, tier on, in-flight released); in both the NEXT demote must complete with a receipt (the ledger's in-flight dimension is exactly one batch, so a leaked ticket would refuse it with `Capacity`). Consumed by `tools/kv-host-contract-fault-gate.sh`; the same two paths are the GPU unit cells `option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on` and `option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on` (`worker::tests`, ignored without a device). `contract-promote-presubmit` and `contract-promote-postpublish` (lane/spill-c-20260919 day 16, Option C) are the ONE-SHOT faults of the contract-routed H2D promote under the same door: the first promote that runs the route refuses the producer fence before any op is submitted (every fresh destination plane released through its retained twin, every source twin dropped, the host entry intact and its leases sole-owned again, typed `promote refused (contracts door): tier H2D producer fence refused: injected failure ...; serving without the host entry`, tier on), or refuses after `ready_view` published every item (the published ticket retires against an observed consumer fence after its source twins retired and is acknowledged, typed `... tier H2D publication refused: injected failure ...`, tier on); in both the NEXT promote must complete with an H2D receipt. `contract-promote-reject` (PR #605 review finding 1: the last op of the batch asks for one byte more than its source holds, so the engine's own `CopyOp::validate` rejects exactly that item and the batch is accepted partially; the unwind recovers only the ACCEPTED sources, retires and acknowledges the ticket, releases every fresh destination, typed `promote refused (contracts door): tier H2D batch partially refused: 1 of N items (injected failure ...)`, tier on) and `contract-promote-readyview` (finding 2: the first `ready_view` succeeds in the engine, so the ticket IS published, and the route is handed an injected error for it; the unwind asks the engine through `cancel`, which answers `AlreadyPublished`, and takes the consumer-fence arm, typed `... tier H2D destination 0 not publishable: injected failure ...`, tier on). Each route takes only its own side of the cell (`HostTierContext::take_fault`), so one boot arms exactly one route. Consumed by `tools/kv-host-contract-fault-gate.sh` (cells `promote-presubmit`, `promote-postpublish`, `promote-reject`, `promote-readyview`); GPU unit cells `option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin`, `option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin`, `option_c_partial_acceptance_unwinds_refused_with_every_destination_released`, `option_c_first_ready_view_failure_unwinds_through_the_published_arm`. Under Option C `flip-demote` also names the injected difference at promote (`contracts door H2D receipt: ... plane host bytes differ from the D2H receipt as injected ...`) and requires against the completion's own checksums so the verify arm still catches it (`VERIFY FAILED`), the day-15 shape. NEVER set on a serving box: `flip-demote` intentionally corrupts host-tier bytes (harmless only because the gate pairs it with verify-on, which refuses the promote). `d2d-delay-capture` and `d2d-delay-restore` (WP-A day 22, memra#536 Move 2 slice 3, `research/spill-a-20260919/DAY22.md`, `memra_tier::conformance::d2d_receipt_witnessed`) are the ONE-SHOT red arms of the D2D receipt under `MEMRA_KV_HOST_CONTRACTS=1`: the first capture (or the first restore) of the boot that runs the copy-stream route has its copy delayed 200 ms on the copy stream (`tier_delay_spin`) and its DESTINATION digest taken by an unordered early reader (the owner stream at submit, after the producer fence, with no wait on the copy's event: the read a publication or a first prime chunk issued before the completion event would make), while the source digest stays on the copy stream behind the fence; the receipt line (`[prefix-cache] contracts door D2D capture receipt: .. source_digests_sha256=.. destination_digests_sha256=.. require=Corrupt`, or the `D2D restore receipt` twin) must name two different digests and the settle must refuse typed: nothing published (`CAPTURE OFF-TICK DISABLED: D2D capture receipt mismatch ..`) or nothing primed on (`RESTORE OFF-TICK DISABLED: D2D restore receipt mismatch ..`, the cache dropped and the pin released), the tier latches off (`TIER DISABLED`) and the request is served by the tick program with identical bytes. Consumed by `tools/kv-host-contract-fault-gate.sh` cells `d2d-capture` and `d2d-restore` (plain arm, `MEMRA_SERVE_SPEC=0`, so the seeds capture through the route); the engine GPU cell `d2d_early_reader_fault_is_refused_by_the_receipt` is the same arm on a card. A matching receipt under the fault FAILS the cell. `hash-helper-gone` and `hash-never-lands` (WP-A day 28, memra#536 Move 1 owed item 2, lead ruling 39, `research/spill-a-20260919/DAY28.md`) are the ONE-SHOT red arms of the demote's `Hashing` phase under `MEMRA_KV_HOST_CONTRACTS=1`: the bundle checksum of an image's heap payloads (the recurrent f32 planes, the logits, the hidden row; about 157 MB on the 27B, pageable `Vec<f32>` with no receipt partner) runs on ONE long-lived helper thread per tier context instead of the tick (the same `checksum` program over the same bytes; the KV planes' checksums stay on the owner thread), and the entry stays `Demoting` until the digests land. `hash-helper-gone`: the helper exits on its first job, so the next settle finds the reply channel closed; `hash-never-lands`: the helper hashes its first job and discards the reply, so the digests never land and the 10 s wall deadline after the hand-off (`HOST_HASH_DEADLINE`, checked at every tick-top poll and the `Block` wait's `recv_timeout`) fires. Each must end typed (`[prefix-host] demote failed (tier hash helper gone: ...)`, `demote failed (tier hash digests never landed: ...)`), nothing published (no `[prefix-host] demote:` line, no `demote digests landed` line), the shell dropped whole, no ticket to leak (retired before the hand-off), the tier latched (`TIER DISABLED`) and the helper joined (`hash helper joined (the tier latched off)`); the tick program serves every request. Consumed by `tools/kv-host-contract-fault-gate.sh` cells `hash-helper-gone` and `hash-never-lands`; the CPU cells `hash_helper_gone_is_a_typed_refusal_that_latches_under_poll_and_under_block` and `hash_digests_never_landing_latch_at_the_deadline_under_poll_and_under_block` are the same arms without a card, and `hash_helper_digests_equal_the_owner_thread_digests_bitwise` proves the helper's program is the bind's. `contract-spans` (WP-A day 31, memra#536 Move 2 owed item 1, the D2H half, `research/spill-a-20260919/DAY31.md`) is the ONE-SHOT red arm of the off-tick demote's f32 span attach under `MEMRA_KV_HOST_CONTRACTS=1`: after every recurrent plane of the evicted entry was built into a span (its source moved into the transfer engine, a charged pinned staging buffer from the context's set), the attach refuses before `submit_d2h_spans`; every span must come back (sources to their slots, staging to the set), the KV ticket unwind through the typed arm (`[prefix-host] demote failed (tier D2H spans refused: injected failure (MEMRA_KV_HOST_FAULT=contract-spans) (N f32 spans handed back)); nothing demoted`, N the entry's span count, read from the next demote's own copy-complete line), the tier stay on, the NEXT demote complete with spans and publish, a host hit on it promote, and every response be byte-equal to the door-OFF arm. Consumed by `tools/kv-host-contract-fault-gate.sh` cell `span-refusal`; the GPU cell `option_b_span_attach_fault_hands_every_span_back` (`worker::tests`) is the same arm on a card, and `option_b_span_staging_charge_refusal_refuses_the_attach_and_keeps_the_tier_on` is the ledger-refusal twin through the same typed arm. A model with no recurrent planes attaches no span and the one-shot fault is consumed without a line, which FAILS the cell. `contract-promote-spans` (WP-A day 32, memra#536 Move 2 owed item 1, the H2D half, `research/spill-a-20260919/DAY32.md`) is the ONE-SHOT red arm of the off-tick promote's f32 span attach under `MEMRA_KV_HOST_CONTRACTS=1`: the hash helper filled the promote's staging from the resident recurrent planes and the tick-top submission built every plane into an H2D span (a charged staging buffer from the context's set as the source, a fresh owner-stream destination), then the attach refuses before `submit_h2d_spans`; every span must come back (each destination released, each staging buffer to the set), the KV ticket unwind through `host_promote_contract_abort` typed (`[prefix-host] promote refused (contracts door): tier H2D spans refused: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-spans) (N f32 spans handed back); serving without the host entry`, N the entry's span count, read from the next H2D receipt's own `; N f32 spans landed under the ticket and taken back before the retire` term), the host entry stay, the tier stay on, the cold path serve the request, the NEXT promote land its spans and publish, and every response be byte-equal to the door-OFF arm. Consumed by `tools/kv-host-contract-fault-gate.sh` cell `promote-span-refusal`; the GPU cell `option_c_span_attach_fault_hands_every_span_back` (`worker::tests`) is the same arm on a card. Taken by the promote route only (`HostTierContext::take_fault`); a promote that takes the route with no recurrent plane attaches no span and consumes the fault without a line, which FAILS the cell. Fault values of a check: kept while the gate runs (door hygiene), reviewed with the door's decide-by 2026-10-05 |
+ | `MEMRA_STEP_OOM_FAULT=<n>` | **default absent/0 = OFF by design**: step-OOM fault injection (lane/kv-battery-fixups-20260831). Forges a QUOTED synthetic CUDA OOM (`CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_STEP_OOM_FAULT diagnostic door)`) on the next `n` phase-(a) session steps, at exactly ONE injection point (the step dispatch; the step itself is skipped, no device work runs on a card the gate is pretending is full). Everything downstream is UN-DOCTORED production logic: the park-vs-honest-error match, the `oom_teardown` fence, `park_requeue`, the `MEMRA_STEP_OOM_RETRIES` budget. WHY IT EXISTS: the 2026-08-31 pod battery proved the `[admit-oom] step OOM parked session back to queue` branch UNREACHABLE from outside the process: four refusal layers (KV-capacity 429, VRAM defer, TTFT deadline on queued requests, boot-time pool reservation) catch every external pressure shape first (darklanes `research/kv-fastband-20260830/battery-20260831/tenancy-gates/RESULTS.md`, T2), leaving the branch whose multi-active form was fleet-fatal before lane/step37-vram-admission with no executable gate (loud-failures / executed-failure-path laws). `1` proves the park branch (fresh session parks LOUDLY, the fire line names the door, requeues, re-primes, answers 200); `n > MEMRA_STEP_OOM_RETRIES` walks one session into the bounded-retry honest error. Both arms weighed: default OFF because an armed door fails real customer steps by design; unset/`0`/malformed (loud warning) are byte-identical to today. Receipts: the `[admit-oom] MEMRA_STEP_OOM_FAULT fired` line, the arming WARN at first use, the door name quoted inside every downstream error line, `step_oom_parks` in `/metrics`. NEVER set on a serving box |
+ 
+ ### Opt-in kernel & measurement doors backfill (2026-08-19 audit — internal; a naked run touches none of these)
+diff --git a/docs/TESTING.md b/docs/TESTING.md
+index bc6962d4b..05c1e95a8 100644
+--- a/docs/TESTING.md
++++ b/docs/TESTING.md
+@@ -1965,20 +1965,20 @@ never called). The door refuses the boot, typed and loud, for a junk value, the
+   all; the aborted ticket's sequence number is consumed, no `TIER DISABLED`, no drop, no `Capacity`, no
+   leaked wording). Evidence: `research/spill-c-20260919/DAY16.md` (review section), `pro-single-day16-review/`,
+   replay `verify-day16-review.py`.
+-- The recurrent f32 state's span cells of the same door (WP-A days 31 to 33, memra#536 Move 2 owed item 1):
++- The recurrent f32 state's span cells of the same door (WP-A days 31 and 32, memra#536 Move 2 owed item 1):
+   `tools/kv-host-contract-fault-gate.sh` cells `span-refusal` (`MEMRA_KV_HOST_FAULT=contract-spans`, the
+   demote's D2H span attach refused after every span was built) and `promote-span-refusal`
+-  (`MEMRA_KV_HOST_FAULT=contract-promote-spans`, the promote's H2D span attach refused after every span was
+-  built; since day 33 the staging is filled by a host function on the copy stream ahead of the copies).
+-  Each is two boots, door ON with the one-shot fault and door OFF as the byte reference, and asserts one typed refusal naming `N f32 spans handed back` with N the span
++  (`MEMRA_KV_HOST_FAULT=contract-promote-spans`, the promote's H2D span attach refused after the hash helper
++  filled the staging and every span was built). Each is two boots, door ON with the one-shot fault and door
++  OFF as the byte reference, and asserts one typed refusal naming `N f32 spans handed back` with N the span
+   count of the next receipt of the same direction, one `tier span staging:` fill in the boot, the next
+   demote or promote landing its spans and publishing, no latch, quarantine, leak or other refusal, and the
+   four responses byte-equal to the door-OFF boot. GPU cells (`worker::tests`, `#[ignore]` without a device):
+   `option_b_span_attach_fault_hands_every_span_back`, `option_c_span_attach_fault_hands_every_span_back`,
+   `option_c_spans_ride_the_promote_ticket_and_land_bitwise` (the promoted planes read bitwise equal to the
+   resident bytes) and `option_c_span_postpublish_refusal_returns_the_staging_to_the_set`; engine cells
+-  `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream`, `h2d_span_batch_lands_with_its_ticket_on_the_copy_stream`
+-  and (day 33) `h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies` (run with `--test-threads=1`: run in parallel in one process on the local RTX 5090 the H2D cell failed
++  `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream` and `h2d_span_batch_lands_with_its_ticket_on_the_copy_stream`
++  (run with `--test-threads=1`: run in parallel in one process on the local RTX 5090 the H2D cell failed
+   once with `a batch with a running span has not landed`; the two cells share the primary context and each
+   holds its copy stream 300 ms; the serial run was green 3 of 3; the cause is not isolated). Evidence:
+   `research/spill-a-20260919/DAY31.md`, `DAY32.md`, `DAY33.md`.
+diff --git a/tools/kv-host-contract-fault-gate.sh b/tools/kv-host-contract-fault-gate.sh
+index 79cf2dea1..403e89710 100755
+--- a/tools/kv-host-contract-fault-gate.sh
++++ b/tools/kv-host-contract-fault-gate.sh
+@@ -76,8 +76,8 @@
+ # the promote cells' shape:
+ #   promote-span-refusal  MEMRA_KV_HOST_FAULT=contract-promote-spans: r1 P_A seeds E_A; r2 P_B evicts E_A (a clean
+ #                  demote, whose spans fill the staging set: the boot's one `tier span staging:` line); r3 P_A hits E_A
+-#                  on the host, and the probe's submission builds every recurrent plane into an H2D span (its staging
+-#                  filled on the copy stream, WP-A day 33) and takes the injected attach refusal:
++#                  on the host, the hash helper fills the promote's staging from the resident planes, and the tick-top
++#                  submission builds every recurrent plane into an H2D span and takes the injected attach refusal:
+ #                  every span back, every staging buffer to the set, the KV ticket unwound typed, the host entry kept,
+ #                  the tier on, `N f32 spans handed back` with N the span count of the next H2D receipt; the cold path
+ #                  serves r3 and its insert evicts E_B into a clean demote; r4 P_B hits E_B on the host and its promote
+@@ -653,16 +653,16 @@ print(f"staging fill line(s) {fills}, promote refusal N {ref}")
+ sys.exit(0 if len(fills) == 1 and ref is not None and fills[0] == ref else 1)
+ PYEOF
+ }
+-filled_submission_after_refusal() { # $1 log: WP-A day 33 (DAY33 item 8): after the refusal, the next promote's submission
+-                                    # carries its spans filled on the copy stream (the day-32 helper fill phase is gone)
++fill_before_refusal() { # $1 log: the refused promote's staging fill line precedes the refusal, and a second fill line
++                        # precedes the next promote's submission (the fill runs on the helper for every contract promote)
+     python3 - "$1" <<'PYEOF'
+ import sys
+ lines = open(sys.argv[1], errors="replace").read().splitlines()
++fills = [i for i, l in enumerate(lines) if "promote staging fill off the tick:" in l]
+ ref = next((i for i, l in enumerate(lines) if "MEMRA_KV_HOST_FAULT=contract-promote-spans" in l and "promote refused" in l), None)
+-subs = [i for i, l in enumerate(lines) if "promote submitted off the tick:" in l and "f32 spans filled on the copy stream" in l]
+-after = [i for i in subs if ref is not None and i > ref]
+-print(f"refusal at {ref}, filled span submissions {len(subs)}, after the refusal {len(after)}")
+-sys.exit(0 if ref is not None and after else 1)
++subs = [i for i, l in enumerate(lines) if "promote submitted off the tick:" in l and "f32 spans from the staging fill" in l]
++print(f"fill lines {len(fills)}, refusal at {ref}, span submissions {len(subs)}")
++sys.exit(0 if ref is not None and len(fills) >= 2 and fills[0] < ref and subs and fills[1] < subs[0] and subs[0] > ref else 1)
+ PYEOF
+ }
+ pscell() { # WP-A day 32: MEMRA_KV_HOST_FAULT=contract-promote-spans (door ON), then the same four requests door OFF
+@@ -690,7 +690,7 @@ pscell() { # WP-A day 32: MEMRA_KV_HOST_FAULT=contract-promote-spans (door ON),
+     chk "$name: door ON with the transfer engine on both sides" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine.*KV plane H2D through the same engine on promote" "$log"
+     chk "$name: exactly one typed injected promote spans refusal" count_eq "$refusal" "$log" 1
+     chk "$name: the refusal's N spans handed back equals the next H2D receipt's span count (N >= 1)" promote_spans_refusal_matches_receipt "$log"
+-    chk "$name: the next promote's submission carries its spans filled on the copy stream" filled_submission_after_refusal "$log"
++    chk "$name: the staging fill ran on the helper before the refused submission and before the next one" fill_before_refusal "$log"
+     chk "$name: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)" after_any "$refusal" "contracts door D2H receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* require=ok" "$log"
+     chk "$name: the next promote publishes" after_any "$refusal" "\\[prefix-host\\] promote: " "$log"
+     chk "$name: the staging set filled once and every later demote and promote reused it" one_staging_fill_promote "$log"
