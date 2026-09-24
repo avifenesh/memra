@@ -950,3 +950,19 @@ DAY39 section 5b, and item 5's target half).
   measured alternative: equal on the hump on both cards, better by construction for a promote's copies (they never queue
   behind a demote's receipt kernel under G'''; captures queue behind it under both). Which placement serves long entries
   better is the owner's call, on the long-entry cell of `OWED.md` item 15.
+
+## 19b. G4 on BOX7, as it ran (`/root/spill-receipts/a-g4`, section 18's sitting; item 3's cell still running)
+
+- **(c) and (d), verbatim** (`g/reading-day38-target.log`, `ab rc=0` 22:56:35Z): `DAY38 G C copy-settle N=80 median=0.53
+  min=0.44 max=0.61 rule N>=20 median<=1.5 max<=3.0 -> PASS`; `DAY38 G D order=o1 wall base=182.65 g=181.40
+  g-minus-base=-1.25 rule <=+5.0 | e2e base=207.55 g=206.37 g-minus-base=-1.17 rule <=+1.0 -> PASS`; `order=o2 wall
+  base=182.70 g=181.50 .. -1.20 .. e2e base=207.52 g=206.42 .. -1.10 .. -> PASS`.
+- **(f), verbatim** (`hump/reading-hump.log`, `hump-cell rc=0` 23:02:30Z): `HUMP arm=xg4 boots=2 median-hump=+0.035
+  humps=False`, the control `HUMP arm=xgpp boots=2 median-hump=+0.576 humps=True`: **PASS**, the control valid.
+- **(a), (b), (e)** (`gates rc=0` 23:26:03Z, each `.exit` 0): identity x4 `ALL GREEN (teeth=0)`, failure OFF and ON `ALL
+  GREEN`, the fault gate default and plain `ALL GREEN` (229 ok each), twin OFF and ON green, the hit gate OFF and ON
+  `ALL GREEN (qwen)`; unit cells `unit-cells parallel=3/3 engine-serial-rc=0 door-rc=0 cpu-rc=0 engine-census-rc=0
+  tier-rc=0`.
+- **G4 passes (a) to (f) on the target card.** On the 5090: (a) to (e) pass (sections 19, 19a); (f) fails in the G4
+  hold and passes in the base-controlled hold (section 20a). Item 2 is integrable as G4 if the owner reads the 5090's (f)
+  from the base-controlled hold.
