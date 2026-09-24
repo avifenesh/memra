@@ -264,3 +264,40 @@ The receipts took `receipts-ms N=90 median=8.10` on the helper.
 mechanism is integrated; git history and these receipts are the record. The half that adds no poll to the copy phase
 (M2 alone: hash 2 inside the `Hashing` job, whose hits already park) is a separate design, pre-registered before any
 code if it goes ahead.
+
+## 7. Design M' pre-registered (before any M' code): hash 2 alone on the hash helper
+
+**Why this half.** Section 6 placed M's failure in M1: its reply adds a tick-top poll to the copy phase, and a
+copy-phase hit does not park. M2 adds nothing to the copy phase: hash 2 rides the `Hashing` job that already exists,
+whose hits already park one tick (day 29) and then promote.
+
+**Design M'.** M2 exactly as built in section 5 (the KV planes into the leak-on-drop guard after the settle and the
+`flip-demote` point; read views of their contract leases, `CudaPinnedLease::read_view`, in the `Hashing` job; the
+bind consumes the helper's digest per lease with its byte count checked and keeps `checksum(bytes)` as the fallback;
+the receipt comparison and the naming line unchanged), and nothing of M1: hash 1 stays in the engine's `progress` at
+the landing poll, no receipts job, no tier rule, no engine deferral, the `hash-helper-gone` fault unchanged (a demote's
+first helper job is its hash job again). The section-5 departure (views, not moves: a lease is not `Send`) is part of
+M'. The GPU cell `option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused` returns with its
+fixture through the production sink (`host_demote_prefix_entry`). No new `MEMRA_*` name, no new numeric program.
+
+**Acceptance, stated before any M' code.**
+
+- (a) Verification semantics unchanged: the failure gate's `digest` cell on the door ON arm with `plane image checksum
+  differs from its D2H receipt as injected` present, `VERIFY FAILED` caught and the cold path serving; the GPU cell
+  (the clean arm publishes with every receipt the checksum of its lease bytes; a byte changed after hash 1 is refused at
+  the bind, nothing published); the fault gate's demote cells.
+- (b) On the 5090: identity x4, failure ON, fault default and plain (every cell), hit OFF and ON with the day-24 census,
+  the unit cells (the door's GPU cells, the engine's H2D and D2H cells): ALL GREEN.
+- (c) The owner's `take-back bind and publish` segment on M''s boots: median at most 1.5 ms and max at most 3.0 ms over
+  at least 20 steady demotes (base 8.43). `copy settle` is a reading (hash 1 stays there by design).
+- (d) Per order: the steady demotes' `wall .. t0 to publication` median on M' at most the base's plus 17.0 ms (two of
+  the 5090's ticks: the lease re-hash, about 8 ms over write-combined leases, lengthens the helper's job), and the
+  demoting intruder's e2e median at most the base's plus 1.0 ms.
+
+**The cell.** `m-card-run.sh` byte for byte with the M' binary against the same base binary (`07a0360ffbfaf240..`),
+out to `rtx5090-day35/m2/`; the reader `day35m-reading.py` gains an `--m2` mode that applies this section's (c) and
+(d) (its default mode, section 2's clauses, is unchanged).
+
+**Predictions.** `take-back` about 0.1 ms; `copy settle` about 8.4 ms (unchanged); the owner's hold per demote about
+10 ms (base 18.3); the wall 8 to 10 ms longer; the demoting intruder's e2e about 8 ms lower; the gates green, the copy
+phase being what it was.
