@@ -80,3 +80,18 @@ Written before any code; tree at start: `094c46b24`. No sibling lane touches the
   before that sitting runs.
 
 **What each card decides.** Each card's gates pass or fail on that card; no number is compared.
+
+## 1a. Addendum, with the code and before any gate ran
+
+- **The failure gate's door-ON arm.** Section 1 (d) said a cell under the door fails because the values apply
+  nowhere there. Other lanes run this gate with `MEMRA_KV_HOST_CONTRACTS=1` (the door-ON arm, `docs/TESTING.md`),
+  so that would turn their door-ON runs red for a reason that is not a defect. Settled before any run: with the
+  door on, the three cells assert the no-flip outcome (no FAULT line, `verify ok`, a real promote, r3 byte-equal
+  to the reference), which is also the v3 digest's check across the door's round trip of the draft plane and the
+  boundary rows. No other term moves.
+- **The 5090 cells** (`day53-cell.sh`, the day-24 driver shape, the 9B
+  `Qwen3.5-9B-NVFP4-MTP-GGUF.gguf`, device prefix budget 64 MB as day 24): `failure-default-off`,
+  `failure-plain-off`, `failure-default-on`, `identity-default-off`, `identity-default-on`, and `unit-server` (the
+  GPU cell `verify_digest_v3_covers_every_round_tripped_plane_and_v2_stays_trunk_only`). The pool-full cell's line
+  is the day-24 known `1 FAILURE(S)` shape only if it recurs; every new check must pass, and each cell's failing
+  checks are quoted.

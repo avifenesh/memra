@@ -4995,9 +4995,11 @@ fn parse_kv_host_tenant_pct(raw: Option<&str>) -> usize {
     }
 }
 
-/// MEMRA_KV_HOST_VERIFY (default 0 = off): sha256 the demoted entry's logical trunk state
-/// (`prefix_entry_state_digest` over KV planes + conv/ssm) at demote and re-verify it on the
-/// re-materialized device entry at promote; a mismatch drops the host entry and serves cold.
+/// MEMRA_KV_HOST_VERIFY (default 0 = off): sha256 the demoted entry's logical state at demote
+/// (`host_roundtrip_digest`: since day 53 of lane/spill-c-20260919 the v3 digest, the trunk's
+/// KV planes, conv/ssm and latent plus the draft plane, boundary rows and DFlash tail) and
+/// re-verify it on the re-materialized device entry at promote; a mismatch drops the host
+/// entry and serves cold.
 /// Gate/diagnostic arm ONLY: the digest D2Hs every plane byte on both sides of the round
 /// trip, far too slow always-on for GB-class entries.
 fn kv_host_verify_on() -> bool {
@@ -5010,8 +5012,11 @@ fn kv_host_verify_on() -> bool {
 /// loud-failures-fail-quietly law). Values: `alloc-fail` = every pinned host alloc reports
 /// failure, exercising the loud latch-off with no pageable fallback; `flip-demote` = flip
 /// one K byte of the first demoted plane AFTER the demote digest is recorded, exercising the
-/// MEMRA_KV_HOST_VERIFY promote mismatch. Unset (the default) = off. NEVER set on a serving
-/// box: `flip-demote` intentionally corrupts host-tier bytes.
+/// MEMRA_KV_HOST_VERIFY promote mismatch; `flip-demote-draft`, `flip-demote-hidden`,
+/// `flip-demote-logits` (lane/spill-c-20260919 day 53, verify digest v3) = the same for the
+/// draft K plane, the boundary hidden row and the boundary logits, on the legacy copy path
+/// only. Unset (the default) = off. NEVER set on a serving box: the flips intentionally corrupt
+/// host-tier bytes.
 fn kv_host_fault() -> &'static str {
     static F: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     F.get_or_init(|| std::env::var("MEMRA_KV_HOST_FAULT").unwrap_or_default())
@@ -13281,6 +13286,9 @@ fn host_entry_from_device(
             _ => None,
         });
     }
+    // Day 53: the legacy copy path (no contract route took any plane), where the verify digest
+    // is the only byte attestation and the v3 red arms apply.
+    let legacy_copy = contract_draft.is_none() && pending.is_none();
     let draft = match contract_draft {
         Some(draft) => draft,
         None => match &dead.draft {
@@ -13310,7 +13318,7 @@ fn host_entry_from_device(
         }
         _ => None,
     };
-    let entry = HostPrefixEntry {
+    let mut entry = HostPrefixEntry {
         _tier_charge: None,
         _tier_metadata_charge: None,
         _tier_metadata: Vec::new(),
@@ -13358,10 +13366,60 @@ fn host_entry_from_device(
             .into());
         }
     }
+    if legacy_copy {
+        apply_flip_plane_faults(&mut entry)?;
+    }
     Ok(match pending {
         Some(pending) => HostImage::Demoting(entry, pending),
         None => HostImage::Whole(entry),
     })
+}
+
+/// The verify digest v3's red arms (lane/spill-c-20260919 day 53, see `kv_host_fault`): the first
+/// byte of the host copy's draft K plane, boundary hidden row or boundary logits row flipped AFTER
+/// the demote digest was recorded, so `MEMRA_KV_HOST_VERIFY` has a real mismatch to catch in each
+/// plane v2 was blind to. Called on the legacy copy path only; an image without the plane gets no
+/// flip and no line.
+fn apply_flip_plane_faults(entry: &mut HostPrefixEntry) -> Result<(), String> {
+    let which = match kv_host_fault() {
+        "flip-demote-draft" => {
+            let Some(plane) = entry.draft.as_mut().filter(|p| p.len * p.k_tok_bytes > 0) else {
+                return Ok(());
+            };
+            plane.k.flip_first_byte()?;
+            "draft K"
+        }
+        "flip-demote-hidden" if flip_first_f32_byte(&mut entry.last_h) => "hidden",
+        "flip-demote-logits" if flip_first_f32_byte(&mut entry.last_logits) => "logits",
+        _ => return Ok(()),
+    };
+    eprintln!(
+        "[prefix-host] FAULT: flipped one demoted {which} byte (MEMRA_KV_HOST_FAULT={})",
+        kv_host_fault()
+    );
+    Ok(())
+}
+
+/// Flips the first (little-endian low) byte of a host f32 row; `false` for an empty row. A heap
+/// row is shared and immutable, so the fault replaces it with a flipped copy.
+fn flip_first_f32_byte(row: &mut HostF32) -> bool {
+    match row {
+        HostF32::Heap(words) => {
+            let mut flipped = words.as_ref().clone();
+            let Some(first) = flipped.first_mut() else {
+                return false;
+            };
+            *first = f32::from_bits(first.to_bits() ^ 0xff);
+            *words = Arc::new(flipped);
+        }
+        HostF32::Pinned(buf) => {
+            let Some(first) = buf.as_mut_slice().first_mut() else {
+                return false;
+            };
+            *first ^= 0xff;
+        }
+    }
+    true
 }
 
 /// The `flip-demote` fault (see `kv_host_fault`): one K byte of the first demoted plane flipped
@@ -13485,9 +13543,10 @@ fn evict_all_demoting(
 /// what makes a demote racing the next request lose cleanly.
 fn host_roundtrip_digest(engine: &Engine, entry: &PrefixEntry) -> Result<String, String> {
     if entry.tp.is_some() || entry.latent.iter().any(Option::is_some) {
-        host_glm::digest(entry)
+        host_glm::digest(entry).map(|hex| format!("{VERIFY_PROGRAM_GLM_V1}:{hex}"))
     } else {
-        prefix_entry_state_digest(engine, entry, entry.pos).map_err(|e| e.to_string())
+        // Day 53: v3, the trunk digest plus the draft plane, the boundary rows and the tail.
+        prefix_entry_roundtrip_digest(engine, entry).map_err(|e| e.to_string())
     }
 }
 
@@ -15116,23 +15175,34 @@ fn host_promote_finish(
     };
     if let Some(expected) = expected_digest {
         match host_roundtrip_digest(engine, &e) {
-            Ok(actual) if actual == expected => {
+            Ok(actual) => {
+                let failed = match verify_digest_check(&expected, &actual) {
+                    VerifyDigestCheck::Match => None,
+                    VerifyDigestCheck::Mismatch => Some(format!(
+                        "promoted digest {actual} != demote digest {expected} ({host_len} tokens)"
+                    )),
+                    // Day 53: a digest carried from another binary's program (a handoff file)
+                    // cannot attest these bytes either way; typed, and dropped as a mismatch.
+                    VerifyDigestCheck::Program(carried, ours) => Some(format!(
+                        "carried digest program {carried} != this binary's {ours} (a handoff \
+                         written by another binary; {host_len} tokens)"
+                    )),
+                };
+                if let Some(why) = failed {
+                    host.digest_mismatches += 1;
+                    if let Some(hi) = host_entry_index_by_id(host, pool_key, host_id) {
+                        host.remove_at(pool_key, hi);
+                    }
+                    eprintln!(
+                        "[prefix-host] VERIFY FAILED: {why}; host entry dropped, cold path serves"
+                    );
+                    set_memo(host);
+                    return None;
+                }
                 eprintln!(
                     "[prefix-host] verify ok: promoted state digest matches demote digest \
                      ({host_len} tokens)"
                 );
-            }
-            Ok(actual) => {
-                host.digest_mismatches += 1;
-                if let Some(hi) = host_entry_index_by_id(host, pool_key, host_id) {
-                    host.remove_at(pool_key, hi);
-                }
-                eprintln!(
-                    "[prefix-host] VERIFY FAILED: promoted digest {actual} != demote digest \
-                     {expected} ({host_len} tokens); host entry dropped, cold path serves"
-                );
-                set_memo(host);
-                return None;
             }
             Err(err) => {
                 eprintln!("[prefix-host] verify digest failed ({err}); promote refused");
@@ -19879,6 +19949,108 @@ fn prefix_entry_state_digest(
         }
     }
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// Program tags of the `MEMRA_KV_HOST_VERIFY` round-trip digest (lane/spill-c-20260919 day 53,
+/// verify digest v3): the string a demote records and a promote compares is `<tag>:<hex>`, so a
+/// digest carried from another binary's program (a handoff file) is a typed refusal, not a
+/// false byte-corruption alarm. An untagged string is a pre-v3 binary's.
+const VERIFY_PROGRAM_SPLIT_V3: &str = "split-state-v3";
+const VERIFY_PROGRAM_GLM_V1: &str = "host-prefix-state-v1";
+
+/// The program tag of a verify digest string, `untagged` for a pre-v3 string.
+fn verify_digest_program(digest: &str) -> &str {
+    digest.split_once(':').map_or("untagged", |(tag, _)| tag)
+}
+
+/// How a promoted entry's verify digest compares with the one its demote recorded.
+#[derive(Debug, PartialEq, Eq)]
+enum VerifyDigestCheck<'a> {
+    Match,
+    /// Same program, different bytes: the loud `VERIFY FAILED` of a corrupted round trip.
+    Mismatch,
+    /// The carried digest was computed by another program (`carried`, `ours`).
+    Program(&'a str, &'a str),
+}
+
+fn verify_digest_check<'a>(expected: &'a str, actual: &'a str) -> VerifyDigestCheck<'a> {
+    let (carried, ours) = (
+        verify_digest_program(expected),
+        verify_digest_program(actual),
+    );
+    if carried != ours {
+        VerifyDigestCheck::Program(carried, ours)
+    } else if expected == actual {
+        VerifyDigestCheck::Match
+    } else {
+        VerifyDigestCheck::Mismatch
+    }
+}
+
+/// Verify digest v3 (lane/spill-c-20260919 day 53, `DAY53.md`): the `MEMRA_KV_HOST_VERIFY`
+/// round-trip digest of a non-GLM entry. v2 (`prefix_entry_state_digest`) covers the trunk only
+/// and cannot grow (the HIRADIX restore oracle compares it with a restored `Cache`, which holds
+/// none of the rest), so v3 is composed: the v2 string at the boundary, then every other plane a
+/// round trip carries and a restore consumes: the MTP draft plane's logical window, the boundary
+/// hidden row, the boundary logits, the DFlash tail (whole layer buffers, which the round trip
+/// copies whole).
+fn prefix_entry_roundtrip_digest(
+    engine: &Engine,
+    entry: &PrefixEntry,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let trunk = prefix_entry_state_digest(engine, entry, entry.pos)?;
+    let mut hasher = Sha256::new();
+    hasher.update(b"memra-prefix-split-state-v3");
+    hasher.update(trunk.as_bytes());
+    match &entry.draft {
+        Some(plane) => {
+            hasher.update([1]);
+            digest_usize(&mut hasher, plane.len);
+            digest_usize(&mut hasher, plane.k_tok_bytes);
+            digest_usize(&mut hasher, plane.v_tok_bytes);
+            let kb = plane
+                .len
+                .checked_mul(plane.k_tok_bytes)
+                .ok_or("entry digest draft K byte count overflow")?;
+            let vb = plane
+                .len
+                .checked_mul(plane.v_tok_bytes)
+                .ok_or("entry digest draft V byte count overflow")?;
+            if plane.k.len() < kb || plane.v.len() < vb {
+                return Err("entry digest draft plane is truncated".into());
+            }
+            let k = engine.dtoh_u8_view(&plane.k.slice(0..kb))?;
+            let v = engine.dtoh_u8_view(&plane.v.slice(0..vb))?;
+            digest_usize(&mut hasher, k.len());
+            hasher.update(&k);
+            digest_usize(&mut hasher, v.len());
+            hasher.update(&v);
+        }
+        None => hasher.update([0]),
+    }
+    digest_f32_plane(&mut hasher, &entry.last_h);
+    digest_f32_plane(&mut hasher, &entry.last_logits);
+    match &entry.dspark_draft {
+        Some(tail) => {
+            hasher.update([1]);
+            for x in [
+                tail.base,
+                tail.rows,
+                tail.len,
+                tail.row_bytes,
+                tail.floor,
+                tail.layers.len(),
+            ] {
+                digest_usize(&mut hasher, x);
+            }
+            for (k, v) in &tail.layers {
+                digest_f32_plane(&mut hasher, &engine.dtoh(k)?);
+                digest_f32_plane(&mut hasher, &engine.dtoh(v)?);
+            }
+        }
+        None => hasher.update([0]),
+    }
+    Ok(format!("{VERIFY_PROGRAM_SPLIT_V3}:{:x}", hasher.finalize()))
 }
 
 /// Same digest over the actual freshly-restored Cache. Device `len_d` mirrors are read and must
@@ -48590,6 +48762,165 @@ mod tests {
     fn gpu_used(host: &super::HostPrefixCache) -> (u64, u64, u64) {
         let used = host.tier.as_ref().unwrap().governor.lock().unwrap().used();
         (used.pinned, used.inflight, used.device.iter().sum())
+    }
+
+    /// Day 53 of lane/spill-c-20260919 (verify digest v3): the tag parse and the three-way
+    /// compare the promote runs.
+    #[test]
+    fn verify_digest_check_types_program_and_byte_mismatches() {
+        use super::{VerifyDigestCheck, verify_digest_check, verify_digest_program};
+        assert_eq!(verify_digest_program("split-state-v3:ab"), "split-state-v3");
+        assert_eq!(
+            verify_digest_program("host-prefix-state-v1:ab"),
+            "host-prefix-state-v1"
+        );
+        assert_eq!(verify_digest_program("0123abcd"), "untagged");
+        assert_eq!(
+            verify_digest_check("split-state-v3:ab", "split-state-v3:ab"),
+            VerifyDigestCheck::Match
+        );
+        assert_eq!(
+            verify_digest_check("split-state-v3:ab", "split-state-v3:cd"),
+            VerifyDigestCheck::Mismatch
+        );
+        assert_eq!(
+            verify_digest_check("0123abcd", "split-state-v3:0123abcd"),
+            VerifyDigestCheck::Program("untagged", "split-state-v3")
+        );
+        assert_eq!(
+            verify_digest_check("host-prefix-state-v1:ab", "split-state-v3:ab"),
+            VerifyDigestCheck::Program("host-prefix-state-v1", "split-state-v3")
+        );
+    }
+
+    /// Day 53: the fault's f32 flip changes exactly the first byte of a heap row and leaves an
+    /// empty row alone (the pinned arm is the same byte through `as_mut_slice`).
+    #[test]
+    fn verify_digest_v3_row_flip_touches_one_byte() {
+        let mut row = super::HostF32::Heap(Arc::new(vec![1.5f32, -2.0]));
+        assert!(super::flip_first_f32_byte(&mut row));
+        assert_eq!(row[0].to_bits(), 1.5f32.to_bits() ^ 0xff);
+        assert_eq!(row[1], -2.0);
+        let mut empty = super::HostF32::Heap(Arc::new(Vec::new()));
+        assert!(!super::flip_first_f32_byte(&mut empty));
+    }
+
+    /// Day 53 source census: the verify arm's non-GLM digest is v3; the v2 body is the base
+    /// tree's byte for byte (SHA-256 of its text pinned from `094c46b24`, so the split trace and
+    /// the HIRADIX restore oracle keep their program); the v3 red arms are called once, behind the
+    /// legacy-copy condition, in the whole-image build.
+    #[test]
+    fn verify_digest_v3_census() {
+        use sha2::Digest as _;
+        let src = include_str!("worker.rs");
+        let code = &src[..src
+            .find("#[cfg(test)]\nmod tests {")
+            .expect("the test module")];
+        let body = |start: &str| -> &str {
+            let a = code.find(start).unwrap_or_else(|| panic!("{start}"));
+            &code[a..a + code[a..].find("\n}\n").expect("the function ends") + 3]
+        };
+        let roundtrip = body("fn host_roundtrip_digest(");
+        assert!(roundtrip.contains("prefix_entry_roundtrip_digest(engine, entry)"));
+        assert!(!roundtrip.contains("prefix_entry_state_digest("));
+        let v2 = body("fn prefix_entry_state_digest(");
+        assert_eq!(
+            format!("{:x}", sha2::Sha256::digest(v2.as_bytes())),
+            "6cd83ed3d42eefc9ba30d2463f8044226ccd113bec94d93783200079cf5f036c",
+            "the v2 digest's text moved"
+        );
+        let v3 = body("fn prefix_entry_roundtrip_digest(");
+        assert!(v3.contains("prefix_entry_state_digest(engine, entry, entry.pos)?"));
+        assert_eq!(code.matches("apply_flip_plane_faults(").count(), 2);
+        let image = body("fn host_entry_from_device(");
+        let cond = image
+            .find("let legacy_copy = contract_draft.is_none() && pending.is_none();")
+            .expect("the legacy-copy condition");
+        let call = image
+            .find("    if legacy_copy {\n        apply_flip_plane_faults(&mut entry)?;\n    }")
+            .expect("the guarded call");
+        assert!(cond < call);
+    }
+
+    /// Day 53, GPU-only: a 4-token entry with a trunk plane, a draft plane, a hidden row, logits
+    /// and a one-layer DFlash tail; `flip` changes one byte of one of them.
+    fn v3_entry(engine: &Engine, flip: &str) -> super::PrefixEntry {
+        let (mut trunk, _) = gpu_plane(engine, 4, 34, 24, 3);
+        let (mut draft, _) = gpu_plane(engine, 4, 34, 24, 9);
+        let stream = engine.stream();
+        let bump = |p: &mut super::PrefixPlane| {
+            let mut k = stream.clone_dtoh(&p.k).unwrap();
+            k[0] ^= 0xff;
+            p.k = stream.clone_htod(&k).unwrap();
+        };
+        match flip {
+            "trunk" => bump(&mut trunk),
+            "draft" => bump(&mut draft),
+            _ => {}
+        }
+        let word = |base: f32, n: usize, hit: bool| -> Vec<f32> {
+            let mut v: Vec<f32> = (0..n).map(|i| base + i as f32).collect();
+            if hit {
+                v[0] = f32::from_bits(v[0].to_bits() ^ 0xff);
+            }
+            v
+        };
+        let tail_k = stream.clone_htod(&word(0.25, 16, flip == "tail")).unwrap();
+        let tail_v = stream.clone_htod(&word(0.75, 16, false)).unwrap();
+        super::PrefixEntry {
+            _tier_charge: None,
+            layout_version: super::PREFIX_ENTRY_LAYOUT_VERSION,
+            pool_key: ("m".into(), String::new()),
+            toks: (0..4).collect(),
+            kv: vec![Some(trunk)],
+            conv: vec![None],
+            ssm: vec![None],
+            latent: vec![None],
+            tp: None,
+            pos: 4,
+            last_logits: word(-1.0, 8, flip == "logits"),
+            draft: Some(draft),
+            dspark_draft: Some(memra_engine::dflash::DflashKvTail {
+                layers: vec![(tail_k, tail_v)],
+                base: 0,
+                rows: 4,
+                len: 4,
+                row_bytes: 16,
+                floor: 0,
+            }),
+            last_h: word(2.0, 8, flip == "hidden"),
+            bytes: 0,
+            last_use: std::time::Instant::now(),
+            id: 0,
+            pins: 0,
+        }
+    }
+
+    /// Day 53, GPU-only: v3 is equal on identical bytes and moves on one byte of each of the five
+    /// planes; v2 moves on the trunk byte only (the day-14 finding, now a test).
+    #[test]
+    #[ignore = "requires one CUDA device; run under the rig lock"]
+    fn verify_digest_v3_covers_every_round_tripped_plane_and_v2_stays_trunk_only() {
+        let engine = Engine::new(0).expect("device0");
+        let v3 = |e: &super::PrefixEntry| super::prefix_entry_roundtrip_digest(&engine, e).unwrap();
+        let v2 = |e: &super::PrefixEntry| super::prefix_entry_state_digest(&engine, e, 4).unwrap();
+        let base = v3_entry(&engine, "");
+        let (base3, base2) = (v3(&base), v2(&base));
+        assert!(base3.starts_with("split-state-v3:"), "{base3}");
+        assert_eq!(
+            v3(&v3_entry(&engine, "")),
+            base3,
+            "identical bytes, one digest"
+        );
+        for flip in ["trunk", "draft", "hidden", "logits", "tail"] {
+            let e = v3_entry(&engine, flip);
+            assert_ne!(v3(&e), base3, "v3 is blind to one {flip} byte");
+            assert_eq!(
+                v2(&e) == base2,
+                flip != "trunk",
+                "v2 must move on the trunk byte and only there ({flip})"
+            );
+        }
     }
 
     /// Review finding 1 on PR #599: a refusal BEFORE any op is submitted must return every

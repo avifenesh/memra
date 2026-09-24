@@ -31,5 +31,6 @@ When you add a tool, add its line.
   is the forced-tiny `MEMRA_KV_HOST_MB=1` red arm whose verdict must invert.
 - `kv-host-spill-failure-gate.sh`: executes the host tier's failure paths loudly (pool-full
   refusal, `MEMRA_KV_HOST_VERIFY` digest mismatch via the `MEMRA_KV_HOST_FAULT=flip-demote`
-  door, pinned-alloc latch-off via `alloc-fail`) and pins byte-identical cold serving under
-  each.
+  door and, since verify digest v3, `flip-demote-{draft,hidden,logits}` for the draft plane and
+  the boundary rows, pinned-alloc latch-off via `alloc-fail`) and pins byte-identical cold
+  serving under each.

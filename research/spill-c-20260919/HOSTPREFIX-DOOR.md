@@ -147,7 +147,9 @@ Findings that shape the slice:
    trunk planes only (`11178-11262`); under the door the contract checksums this slice adds are the
    only byte attestation of the draft plane. Extending the digest (`memra-prefix-split-state-v3`)
    would change the digest strings the OFF arm prints in `VERIFY FAILED` lines, so it is not part
-   of this slice; recorded here as the follow-up it is.
+   of this slice; recorded here as the follow-up it is. Landed as verify digest v3 on C day 53 (`DAY53.md`,
+   `OWED.md` C6): v3 composes the unchanged v2 trunk digest with the draft plane, the hidden row, the logits
+   and the DFlash tail, the strings are program-tagged, and the failure gate has a red arm per plane.
 3. **Chain width and trim do not enter the plane.** With `MEMRA_MTP_HEADS > 1` only head 0's
    scratch plane is published (`draft_plane_ref` returns `scratch.kv`; `mtp_extra`,
    `hybrid.rs:3884`, is not part of the entry). `MEMRA_FRSPEC_TRIM` changes the draft lm_head rows
@@ -701,7 +703,8 @@ attributed by any cell. Both are named as open for the review; nothing is inferr
    manifest (`config.json` and `model.safetensors` sha256, equal to #370's `qualification.json`), which is
    the identity input the slice would bind; nothing binds it. Pre-registered; the cell is not pre-registered
    in a runnable shape because its gate (a DFlash drafter booted on the card) does not exist.
-3. **Verify digest v3** (the draft plane inside `MEMRA_KV_HOST_VERIFY`): not landed; the day-14 finding 4 item.
+3. **Verify digest v3** (the draft plane inside `MEMRA_KV_HOST_VERIFY`): code and gate cells landed C day 53
+   (`DAY53.md`); its RTX 5090 and target-card gate receipts are recorded there when they run.
 4. RESOLVED day 21 (`7efab005d`): the pool-full failure-gate line was the gate's; day 22 added the whole-budget
    arm as a run receipt and the fault gate's floor receipt.
 5. **The RTX 5090 class pair.** RESOLVED day 31 (`DAY31.md`, `rtx5090-day31/pair/`): the day-16 `wc-cell` shape

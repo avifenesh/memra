@@ -2033,6 +2033,17 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   once with `a batch with a running span has not landed`; the two cells share the primary context and each
   holds its copy stream 300 ms; the serial run was green 3 of 3; the cause is not isolated). Evidence:
   `research/spill-a-20260919/DAY31.md`, `DAY32.md`, `DAY33.md`.
+- Verify digest v3 (lane/spill-c-20260919 day 53, `research/spill-c-20260919/DAY53.md`): `MEMRA_KV_HOST_VERIFY`'s
+  round-trip digest covers the MTP draft plane, the boundary hidden row, the boundary logits and the DFlash tail
+  beside the unchanged v2 trunk digest. `tools/kv-host-spill-failure-gate.sh` cells `digest-draft`,
+  `digest-hidden`, `digest-logits` (`MEMRA_KV_HOST_FAULT=flip-demote-{draft,hidden,logits}`, door OFF): spec
+  entries must refuse the promote `VERIFY FAILED: promoted digest`, zero promotions, r3 byte-equal to the pool-full
+  reference; under `MEMRA_SERVE_SPEC=0` the draft and hidden cells, and under `MEMRA_KV_HOST_CONTRACTS=1` all three,
+  must flip nothing and promote with `verify ok`.
+  CPU cells (`worker::tests`): `verify_digest_check_types_program_and_byte_mismatches`,
+  `verify_digest_v3_row_flip_touches_one_byte`, `verify_digest_v3_census` (v2's text pinned by SHA-256, the red
+  arms only behind the legacy copy path); GPU cell `verify_digest_v3_covers_every_round_tripped_plane_and_v2_stays_trunk_only`
+  (`#[ignore]` without a device: v3 moves on one byte of each of five planes, v2 on the trunk byte only).
 - The promote's KV completion checksums on the hash helper (WP-A day 34, `research/spill-a-20260919/DAY34.md`,
   `memra_tier::conformance::h2d_deferred_checksum_lands_with_its_digests`): under the door the off-tick promote
   defers its H2D items' checksums (`CudaTransfers::defer_h2d_checksums`), the helper digests each item's host
