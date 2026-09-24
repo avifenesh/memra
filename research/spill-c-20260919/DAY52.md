@@ -177,3 +177,11 @@ tree after I10's 5090 verdict.
   server-c5=1b130f1ef srv-e0=0713c1a79 srv-s1=ff64e7f5d srv-s2=da1f59bf6 srv-s3=226abab0e srv-s4=5df11152f
   srv-s5=58b814abe srv-s6=f661406e4 srv-s7=269ef2cec"`, plus `final=<DAY51 section 2 commit>` when named (21
   builds, about 90 minutes, the first cold). The sitting is then about 7.5 hours with everything.
+
+## 9. Added before the final phase ran: day 43's fix check (`DAY43.md` section 4)
+
+Day 43's `resid` cell failed I6's no-regression clause on the RTX 5090 (`DAY43 RESID rig=rtx5090 integrity=ok
+no_regression=FAIL budget=resid_budget_flat`), and `DAY43.md` section 4 registers the fix check `residfix` on the
+tree after every rung. The target card runs it in the final phase, first, with `day43-fix-cell.sh` and reader
+`day43-fix.py` (binaries `run-gen` and `run-gen-i10` from the build list; about 20 minutes). The box pulls the lane
+tip before the final phase so the driver carries this block (the first phase was already running on `f9f5f3953`).

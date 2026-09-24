@@ -64,6 +64,7 @@ moe_cell() { # $1 cell  $2 script  $3 timeout
     case $cell in
         attrib) python3 "$L/day40-attrib.py" "$R/$cell" --rig pro-single ;;
         ladder) python3 "$L/day52-views.py" "$R/$cell" --rig pro-single ;;
+        residfix) python3 "$L/day43-fix.py" "$R/$cell" --rig pro-single ;;
         *) python3 "$L/day51-decide.py" "$cell" "$R/$cell" --rig pro-single ;;
     esac > "$R/$cell/reading.log" 2>&1
     echo "$cell reader rc=$?" | tee -a "$R/box-driver.log"
@@ -106,6 +107,8 @@ if [ ! -f "$R/slices.done" ]; then
 fi
 # DAY51's cells on the final tree (DAY52 section 8): only when `final` was built from DAY51 section 2's commit.
 if [ -x "$R/bins/run-gen-final" ] && [ -x "$R/bins/run-spec-final" ]; then
+    # DAY52 section 9: day 43's fix check on this card (run-gen and run-gen-i10 from the build list).
+    moe_cell residfix day43-fix-cell.sh 3600
     moe_cell hashlock day51-cell.sh 1800
     moe_cell spec day51-cell.sh 3600
     moe_cell decide day51-cell.sh 3600
