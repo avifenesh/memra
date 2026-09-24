@@ -1,4 +1,4 @@
-"""Verify the sealed v6 archive and recompute fresh E2E metrics on hosted CPU."""
+"""Verify sealed v7 code probes, C engagement and fresh E2E on hosted CPU."""
 
 import argparse
 import hashlib
@@ -35,7 +35,7 @@ def extract(archive, manifest, target):
                 or str(logical) != name
                 or member.size != expected[name]["bytes"]
             ):
-                raise ValueError("unsafe or changed v6 archive member " + name)
+                raise ValueError("unsafe or changed v7 archive member " + name)
             seen.add(name)
             destination = (
                 target.joinpath(*logical.parts)
@@ -58,9 +58,9 @@ def extract(archive, manifest, target):
                     if sink is not None:
                         sink.close()
             if digest.hexdigest() != expected[name]["sha256"]:
-                raise ValueError("v6 evidence member hash differs " + name)
+                raise ValueError("v7 evidence member hash differs " + name)
     if seen != set(expected):
-        raise ValueError("v6 archive omits a sealed member")
+        raise ValueError("v7 archive omits a sealed member")
     return len(seen)
 
 
@@ -94,7 +94,7 @@ def check_models(root):
 def replay(archive, manifest_path):
     manifest = json.loads(manifest_path.read_text())
     if manifest["schema"] != 1 or sha(archive) != manifest["archive_sha256"]:
-        raise ValueError("v6 archive differs from sealed manifest")
+        raise ValueError("v7 archive differs from sealed manifest")
     with tempfile.TemporaryDirectory(prefix="joint-v6-replay-") as tmp:
         root = Path(tmp)
         members = extract(archive, manifest, root)
@@ -109,11 +109,22 @@ def replay(archive, manifest_path):
         archived_quality = json.loads((native / "quality.json").read_text())
         if quality_score(native, workload) != archived_quality:
             raise ValueError("independent fresh code probe differs")
+        engagement = json.loads((native / "engagement-result.json").read_text())
+        qualification = json.loads(
+            (native / "policy-qualification-result.json").read_text()
+        )
+        if (
+            engagement["confidence_decisions"] <= 0
+            or qualification["confidence_decisions"].get("joint-learned", 0) <= 0
+            or engagement["source_sha256"] != manifest["source_archive_sha256"]
+            or engagement["binary_sha256"] != manifest["binary_sha256"]
+        ):
+            raise ValueError("sealed single-head C engagement differs")
         frozen = json.loads((native / "final-analysis.json").read_text())
         if score(native) != frozen:
             raise ValueError("independent fresh E2E score differs")
     return {
-        "status": "all-v6-hashes-code-probes-and-E2E-score-match",
+        "status": "all-v7-hashes-C-engagement-code-probes-and-E2E-score-match",
         "members": members,
     }
 

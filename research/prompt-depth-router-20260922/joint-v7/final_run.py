@@ -74,6 +74,10 @@ def qualifier(args, fresh, topk, joint, router):
             "joint-noop", 20, "noop-ckd", 4,
             joint_args(args.models, router, joint["variant"]),
         ))
+        arms.append((
+            "joint-learned", 20, "joint-ckd", 4,
+            joint_args(args.models, router, joint["variant"]),
+        ))
     records = [
         run_one(args, entry, args.fresh, "policy-qualification-0",
                 label, k, arm, cap, extra=extra)
@@ -83,6 +87,8 @@ def qualifier(args, fresh, topk, joint, router):
     for turn in range(1, 9):
         reference = (baseline / f"turn-{turn}.output.ids").read_bytes()
         for record in records[1:]:
+            if record["variant"] == "joint-learned":
+                continue
             if (args.out / record["name"] / f"turn-{turn}.output.ids").read_bytes() != reference:
                 raise ValueError("sampled no-op K/C/D path changed target output bytes")
     functional = {
@@ -100,6 +106,19 @@ def qualifier(args, fresh, topk, joint, router):
         for row in records
     ):
         raise ValueError("policy qualifier failed code or loop gate")
+    confidence_decisions = {
+        row["variant"]: sum(
+            int(turn["confidence_decisions"])
+            for turn in v4.table(args.out / row["name"] / "turns.tsv")
+        )
+        for row in records
+        if row["variant"] in ("joint-noop", "joint-learned")
+    }
+    if joint["variant"] is not None and any(
+        confidence_decisions.get(arm, 0) == 0
+        for arm in ("joint-noop", "joint-learned")
+    ):
+        raise ValueError("v7 sampled qualifier did not engage the C model")
     save(args.out / "policy-qualification-result.json", {
         "schema": 1, "status": "sampled-eight-turn-byte-identical",
         "binary_sha256": args.binary_sha,
@@ -107,6 +126,7 @@ def qualifier(args, fresh, topk, joint, router):
         "router_sha256": sha(router),
         "joint_variant": joint["variant"],
         "functional_pass": functional,
+        "confidence_decisions": confidence_decisions,
     })
     save(args.out / "policy-qualification-summary.json", {
         "schema": 1, "phase": "policy-qualification", "records": records,
