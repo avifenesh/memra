@@ -77,3 +77,36 @@ Every run's output teed raw; the reader counts, per cell, passes and failures an
 arm checks that the fix holds on another host and driver; it cannot reproduce the original failure on demand.
 
 **Budget.** 0.25 agent-day.
+
+## 2. The reproduction, as it ran (`rtx5090-day37/finding5/repro/`)
+
+- Test binary `0849f96628e8d5ca..` (the instrument `cdfe75263`), one hold 11:45:09Z to 11:46:01Z, no compute app at
+  the start or the end, card telemetry `card-250ms.csv`. The pair arm 20 runs, the all arm 20 runs, each run's output
+  in `raw/`.
+- **The reproduction is valid**: pair 17 of 20 runs FAILED (21 cell failures: `d2h_span_batch` 8, `h2d_span_batch`
+  13); all 20 of 20 runs FAILED (61 failures over the 20 runs: `a batch with a running span has not landed` 40,
+  `the owner thread does not wait for the fill at the attach` 19, and once
+  `d2d_early_reader_fault_is_refused_by_the_receipt`'s `the early reader saw the fresh plane`).
+- **Every reading, verbatim form** (N=61, every one a failing cell: libtest captures a passing cell's stderr, so the
+  passing readings were not kept; the next hold runs with `--nocapture`): `batch_landed_at_first_sight=true`,
+  `first_item_seen_ms` 302.55 to 1011.23, `polls=1`, `longest_poll_ms` at most 0.02, `longest_gap_ms` 0.00. Example:
+  `HOLD READING cell=h2d_span_batch first_item_seen_ms=313.95 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00
+  batch_landed_at_first_sight=true`.
+- **Against the signs of section 1, as they read.** Not H2 (the first sight is never under 300 ms). Not H3 as worded
+  (the poll loop did not run with the item pending: its first poll saw everything landed). Not H1 as worded either:
+  H1's sign put the delay inside or between polls, and both read 0.01 ms or less. What the readings show is H1's
+  mechanism (the cell's thread did not observe the batch until its own hold had run out) with the delay located
+  BEFORE the first poll: between the hold's enqueue and the loop, where each cell builds its spans (pinned and
+  device allocations, and in the D2H cell a pageable host-to-device copy) and submits them. The filled cell's attach
+  assertion, which times exactly the span build and the submit, failed in 19 of 20 all runs. The cause is not yet
+  placed at a call.
+
+## 2a. Amendment, committed before the next hold: a step clock to place the delay
+
+- The three timed-hold cells time every CUDA-touching step between the hold's enqueue and the first poll (each span
+  build's pinned allocation, device allocation and host-to-device copy, each submit call), with the start offset from
+  the hold's enqueue and the duration, and print one `HOLD STEPS cell=<name> <label>@<start>+<dur> ...` line beside
+  the `HOLD READING`. Test code only; no assertion moves; the evaluation order of every call is unchanged (a span set
+  is built before its submit, as the argument evaluation did).
+- The same stress protocol, one hold, runs with `--nocapture` so every reading and step line of a passing cell is kept.
+  20 runs each arm. No decision in section 1 changes; the decision rule is applied to the step that holds the thread.
