@@ -511,3 +511,20 @@ jobs:
             ${{ runner.temp }}/joint-v8-native/mtp-depth-study
           if-no-files-found: ignore
           retention-days: 7
+
+  joint-v8-sealed-replay:
+    if: ${{ inputs.build_native }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Recompute parent lineage, code probes and complete-request ETE
+        run: |
+          lane=research/prompt-depth-router-20260922/joint-v8
+          python3 "$lane/replay.py" \
+            --archive "$lane/receipts-v8/native-data.tar.gz" \
+            --manifest "$lane/receipts-v8/manifest.json" \
+            --parent-archive "$lane/parent-v6/native-data.tar.gz" \
+            --parent-manifest "$lane/parent-v6/manifest.json"

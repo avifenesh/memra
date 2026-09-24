@@ -1,6 +1,7 @@
 """Verify sealed v8 code probes, C decisions and fresh E2E on hosted CPU."""
 
 import argparse
+import csv
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -91,15 +92,63 @@ def check_models(root):
                         raise ValueError("selected C/D model family hash differs")
 
 
-def replay(archive, manifest_path):
+def check_parent(archive, manifest_path, root, lineage):
+    manifest = json.loads(manifest_path.read_text())
+    if (
+        manifest["schema"] != 1
+        or sha(archive) != manifest["archive_sha256"]
+        or manifest["source_archive_sha256"] != lineage["parent_source_sha256"]
+        or manifest["binary_sha256"] != lineage["parent_binary_sha256"]
+        or manifest["lineage_sha256"] != sha(root / "native/training-parent.json")
+    ):
+        raise ValueError("v6 training parent seal differs from v8 lineage")
+    parent = root / "parent"
+    members = extract(archive, manifest, parent)
+    for name, digest in lineage["control_sha256"].items():
+        if sha(parent / "native" / name) != digest:
+            raise ValueError("v6 training control differs: " + name)
+    for name, digest in lineage["model_sha256"].items():
+        if sha(parent / "models" / name) != digest:
+            raise ValueError("v6 fitted model differs: " + name)
+    if (
+        (parent / "native/heldout-summary.json").exists()
+        or (parent / "native/continuation.exit").read_text().strip() != "1"
+    ):
+        raise ValueError("v6 parent was not stopped before fresh heldout")
+    selected = json.loads(
+        (parent / "native/joint-selection-summary.json").read_text()
+    )
+    decisions = 0
+    for record in selected["records"]:
+        if not record["variant"].startswith("joint-"):
+            continue
+        with (parent / "native" / record["name"] / "turns.tsv").open() as stream:
+            decisions += sum(
+                int(row["confidence_decisions"])
+                for row in csv.DictReader(stream, delimiter="\t")
+            )
+    if decisions:
+        raise ValueError("v6 parent unexpectedly engaged learned C")
+    return members
+
+
+def replay(archive, manifest_path, parent_archive=None, parent_manifest=None):
     manifest = json.loads(manifest_path.read_text())
     if manifest["schema"] != 1 or sha(archive) != manifest["archive_sha256"]:
         raise ValueError("v8 archive differs from sealed manifest")
-    with tempfile.TemporaryDirectory(prefix="joint-v6-replay-") as tmp:
+    if (parent_archive is None) != (parent_manifest is None):
+        raise ValueError("v6 parent archive and manifest must be paired")
+    with tempfile.TemporaryDirectory(prefix="joint-v8-replay-") as tmp:
         root = Path(tmp)
         members = extract(archive, manifest, root)
         check_models(root)
         native = root / "native"
+        parent_members = None
+        if parent_archive is not None:
+            lineage = json.loads((native / "training-parent.json").read_text())
+            parent_members = check_parent(
+                parent_archive, parent_manifest, root, lineage,
+            )
         with tarfile.open(root / "inputs.tar.gz", "r:gz") as inputs:
             frozen = inputs.getmember(FRESH_MANIFEST)
             if not frozen.isfile() or frozen.size > 1024 * 1024:
@@ -127,6 +176,7 @@ def replay(archive, manifest_path):
     return {
         "status": "all-v8-hashes-C-decisions-code-probes-and-E2E-score-match",
         "members": members,
+        "parent_members": parent_members,
     }
 
 
@@ -134,8 +184,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--parent-archive", type=Path)
+    parser.add_argument("--parent-manifest", type=Path)
     args = parser.parse_args()
-    print(json.dumps(replay(args.archive, args.manifest), sort_keys=True))
+    print(json.dumps(replay(
+        args.archive, args.manifest,
+        args.parent_archive, args.parent_manifest,
+    ), sort_keys=True))
 
 
 if __name__ == "__main__":

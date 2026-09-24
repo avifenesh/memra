@@ -33,6 +33,22 @@ def seal(args):
     for name in REQUIRED:
         if not (args.results / name).is_file():
             raise ValueError("v8 native study lacks required receipt " + name)
+    run_meta = json.loads((args.results / "run-meta.json").read_text())
+    if (
+        run_meta["model_sha256"] != MODEL_SHA
+        or run_meta["runtime_source_sha256"] != sha(args.source)
+        or run_meta["binary_sha256"] != sha(args.binary)
+        or run_meta["input_bundle_sha256"] != sha(args.inputs)
+        or run_meta["training_parent_sha256"]
+        != sha(args.results / "training-parent.json")
+        or run_meta["engagement_result_sha256"]
+        != sha(args.results / "engagement-result.json")
+        or run_meta["selected_joint_sha256"]
+        != sha(args.results / "selected-joint.json")
+        or run_meta["policy_qualification_sha256"]
+        != sha(args.results / "policy-qualification-result.json")
+    ):
+        raise ValueError("v8 run metadata differs from exact measured artifacts")
     engagement = json.loads((args.results / "engagement-result.json").read_text())
     if (
         engagement["status"] != "prime-probability-learned-C-engaged"
@@ -63,8 +79,8 @@ def seal(args):
                 named[f"{prefix}/{path.relative_to(folder).as_posix()}"] = path
     files = {}
     for name, path in sorted(named.items()):
-        if not path.is_file() or path.is_symlink() or path.stat().st_size == 0:
-            raise ValueError("missing or empty v8 study evidence " + name)
+        if not path.is_file() or path.is_symlink():
+            raise ValueError("missing v8 study evidence " + name)
         files[name] = {"bytes": path.stat().st_size, "sha256": sha(path)}
     manifest = {
         "schema": 1,

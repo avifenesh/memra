@@ -75,8 +75,12 @@ def score(root):
             "format_pass": sum(row["format"] for row in all_rows),
             "functional_pass": sum(probed[row["name"]] for row in all_rows),
             "looped_conversations": looped,
-            "draft_k_turns": dict(sorted(k_actions.items())),
-            "draft_d_eligible_rounds": dict(sorted(d_actions.items())),
+            "draft_k_turns": {
+                str(k): value for k, value in sorted(k_actions.items())
+            },
+            "draft_d_eligible_rounds": {
+                str(d): value for d, value in sorted(d_actions.items())
+            },
             "k_model_seconds": k_ns / 1e9,
             "cd_model_seconds": depth_ns / 1e9,
             "c_decisions": c_decisions,

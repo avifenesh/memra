@@ -1,6 +1,16 @@
 # Fast per-request depth routing
 
-On the tested Qwen code corpus, keep K=3/C=0 as the research control.
+The [draft-only C/K/D continuation](joint-v8/VERDICT.md)
+trained small controllers with the Qwen target and MTP head frozen.
+On six fresh eight-turn code conversations, joint learned K/C/D
+measured 140.75 tok/s versus 141.29 for fixed draft K=20/D=3/C=0
+and 142.29 for the fastest measured fixed draft K=10/D=3/C=0.
+It did not establish a throughput win. **In that continuation,
+K means MTP draft sampler top-k and D means draft length.**
+In the earlier studies below, K denoted draft depth.
+
+On the earlier tested Qwen code corpus, keep draft depth K=3/C=0
+as the research control.
 The earlier fixed-positive-C sampler censored sampled picks before
 target verification, so its measured rates are diagnostics. The
 [separate corrected-source live-C experiment](confidence/adaptive-v3/VERDICT.md)
@@ -17,7 +27,8 @@ with a 4K loss of 4.98%. Its offline replay did not beat calibrated
 fixed C. The [sampled exactness audit](confidence/EXACTNESS.md)
 explains why those earlier positive-C rates cannot support serving.
 
-For the tested Qwen3.8 code requests, keep K=3 as the research control.
+For the earlier Qwen3.8 prefix study, keep draft depth K=3
+as the research control.
 The K=4 code setting in `prefix/prefix_policy.rs` is the frozen experimental
 arm from the completed study: its pooled throughput changes versus K=3
 were negative at 256, 1K and 4K prompt tokens, with pointwise intervals that
