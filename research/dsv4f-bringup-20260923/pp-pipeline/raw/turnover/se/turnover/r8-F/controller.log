@@ -1,0 +1,9 @@
+START utc=2026-09-24T08:25:42Z bin=/root/lane/target-pfix/release/memra-server env=MEMRA_TIMEOUT_MS_MAX=900000
+READY after=111s port=37073
+CELL warmup c=1 ok=1/1 agg=37.08 tok/s decode_p50=52.05 tok/s ttft_p50=267 ms tpot_p50=19.21 ms errs=[]
+CELL ts1 c=4 ok=192/192 agg=50.04 tok/s decode_p50=34.09 tok/s ttft_p50=1605 ms tpot_p50=29.34 ms errs=[]
+CELL tg1 c=4 ok=192/192 agg=54.03 tok/s decode_p50=37.88 tok/s ttft_p50=1483 ms tpot_p50=26.40 ms errs=[]
+CELL ts2 c=4 ok=192/192 agg=50.67 tok/s decode_p50=34.54 tok/s ttft_p50=1560 ms tpot_p50=28.96 ms errs=[]
+CELL tg2 c=4 ok=192/192 agg=54.24 tok/s decode_p50=37.97 tok/s ttft_p50=1474 ms tpot_p50=26.34 ms errs=[]
+CELLS_DONE utc=2026-09-24T08:35:26Z
+TERMINAL rc=0 utc=2026-09-24T08:35:30Z

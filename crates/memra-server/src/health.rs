@@ -765,6 +765,12 @@ pub struct RouteHealth {
     rounds: AtomicU64,
     requests: AtomicU64,
     request_faults: AtomicU64,
+    /// Requests between `begin_request` and `end_request`. A route serving several sessions
+    /// (memra #667) is BUSY while any is in flight and IDLE only when the last one ends.
+    in_flight: std::sync::atomic::AtomicUsize,
+    /// Serializes each in-flight change with the phase it implies, so a request that begins
+    /// on one lane while the last one ends on another never reads IDLE (memra #667 review).
+    lanes: Mutex<()>,
     dead_reason: Mutex<String>,
     load: Arc<crate::route_telemetry::RouteLoad>,
 }
@@ -802,6 +808,8 @@ impl RouteHealth {
             rounds: AtomicU64::new(0),
             requests: AtomicU64::new(0),
             request_faults: AtomicU64::new(0),
+            in_flight: std::sync::atomic::AtomicUsize::new(0),
+            lanes: Mutex::new(()),
             dead_reason: Mutex::new(String::new()),
             load,
         }
@@ -828,7 +836,30 @@ impl RouteHealth {
     /// The thread dequeued a request and starts serving it.
     pub fn begin_request(&self) {
         self.requests.fetch_add(1, Ordering::Relaxed);
+        let _lanes = self.lanes.lock().unwrap_or_else(|p| p.into_inner());
+        self.in_flight.fetch_add(1, Ordering::AcqRel);
         self.set(PHASE_BUSY);
+    }
+
+    /// A request ended, served or failed. The route reads IDLE once no request is in flight.
+    pub fn end_request(&self) {
+        let _lanes = self.lanes.lock().unwrap_or_else(|p| p.into_inner());
+        let before = self
+            .in_flight
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| v.checked_sub(1))
+            .unwrap_or(0);
+        if before <= 1 {
+            self.set(PHASE_IDLE);
+        }
+    }
+
+    /// A serving lane is about to wait on its queue: publish IDLE only if no other lane of the
+    /// route holds a request, so a waiting lane never masks a busy one.
+    pub fn set_idle_if_free(&self) {
+        let _lanes = self.lanes.lock().unwrap_or_else(|p| p.into_inner());
+        if self.in_flight.load(Ordering::Acquire) == 0 {
+            self.set(PHASE_IDLE);
+        }
     }
 
     /// `rows` prime rows completed (the thread's odometer sink).
@@ -1421,6 +1452,33 @@ pub fn spawn_sd_watchdog(health: SharedHealth) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_route_never_reads_idle_with_a_request_in_flight() {
+        let h = std::sync::Arc::new(RouteHealth::new("ds-race", route_load("ds-race")));
+        let lanes: Vec<_> = (0..4)
+            .map(|_| {
+                let h = h.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..20_000 {
+                        h.begin_request();
+                        h.set_idle_if_free();
+                        h.end_request();
+                        h.set_idle_if_free();
+                        let _l = h.lanes.lock().unwrap();
+                        let busy = h.phase.load(Ordering::Acquire) == PHASE_BUSY;
+                        let n = h.in_flight.load(Ordering::Acquire);
+                        assert_eq!(busy, n > 0, "phase busy={busy} with {n} in flight");
+                    }
+                })
+            })
+            .collect();
+        for l in lanes {
+            l.join().unwrap();
+        }
+        assert_eq!(h.in_flight.load(Ordering::Acquire), 0);
+        assert_eq!(h.phase.load(Ordering::Acquire), PHASE_IDLE);
+    }
     use super::*;
 
     fn fresh() -> WorkerHealth {
@@ -1920,6 +1978,38 @@ mod tests {
 
     fn route_load(name: &str) -> Arc<crate::route_telemetry::RouteLoad> {
         crate::route_telemetry::RouteLoad::new(name, 1)
+    }
+
+    /// A multi-session route (memra #667) reads BUSY while any request is in flight: a lane that
+    /// finishes, or one that goes back to its queue, never masks a lane still serving.
+    #[test]
+    fn a_multi_session_route_stays_busy_until_its_last_request_ends() {
+        let h = WorkerHealth::with_stall_ms(60_000);
+        let r = h.register_route("ds-lanes", route_load("ds-lanes"));
+        r.set_idle();
+        r.begin_request();
+        r.begin_request();
+        r.end_request();
+        r.set_idle_if_free();
+        assert_eq!(
+            r.snapshot().phase,
+            PHASE_BUSY,
+            "one of two requests still runs"
+        );
+        r.end_request();
+        assert_eq!(r.snapshot().phase, PHASE_IDLE);
+        r.end_request();
+        assert_eq!(
+            r.snapshot().phase,
+            PHASE_IDLE,
+            "an extra end saturates at idle"
+        );
+        r.begin_request();
+        assert_eq!(
+            r.snapshot().phase,
+            PHASE_BUSY,
+            "the count did not go negative"
+        );
     }
 
     /// A registered route that never publishes is its own failure: not ready at once, not live
