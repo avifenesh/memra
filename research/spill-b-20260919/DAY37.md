@@ -301,7 +301,28 @@ needs the rule below; no clause and no bound of 1.6 changes.
 - **What reruns.** Design v1's receipts stay banked as they read: stage 0, the A2 series `grow-32768` and the first
   gate set (`gates-pooled`, `gates-vmm`, including the 9B twin cells that refused before any verdict, 2.2). The
   deciding cell runs on the revised binary: A2 again as `grow-32768-r2`, the gate set of both arms again as
-  `gates-r2-pooled` and `gates-r2-vmm` (with the twin gate on the 27B), then the serving boots of addendum B.
+  `gates-r2-pooled` and `gates-r2-vmm` (with the twin gate on the 27B), then the serving boots of addendum B
+  (superseded by addendum D's r3 before any r2 cell ran).
+
+### 1.13 Addendum D (2026-09-24, from the spill review patterns, before any cell on the revised binary)
+
+Reading the day-37 state machines against the review patterns (1.6's CPU paragraph) found two defects of the same
+shape, "parked work defeats the idle wait", before any addendum-C cell ran (`chain-r2` was stopped while A2 r2 still
+waited on the rig lock; `grow-32768-r2-lockwait/` holds its two refused lock attempts):
+
+- **The idle block.** With nothing active and nothing queued, the run loop blocks in `rx.recv()` with no timeout. The
+  reap runs at the tick top, so the releases scheduled by the last retires (their graves) and by the last parks (their
+  trims) stay backed until the next request arrives: device memory held at idle, which is what A4 reads. Fix: the
+  owner-tick reap reports what is still pending; while anything is, the loop never enters the indefinite block and
+  polls at most every 2 ms (the host tier's `Demoting`/`Promoting` precedent), so the pending releases land at idle.
+- **The two reclaim paths.** The step-OOM teardown (memra#145's reclaim before retry) and the admin trim drop the parked
+  pools, then trim the device pools back to the driver. Under the door the dropped on-demand planes sit in the
+  graveyard until a reap, so neither path hands their bytes back. Fix: both reap the graveyard (waiting on the
+  graves' own fences, the grow-failure path's form) right after the drops, before the pool trim, with a
+  `[kv-vmm] reap (<why>)` line.
+
+No clause or bound of 1.6 changes. The deciding cell runs on the binary with both fixes (r3): A2 as `grow-32768-r3`,
+the gate set as `gates-r3-pooled` and `gates-r3-vmm`, then addendum B's serving boots.
 
 ## 2. Results
 

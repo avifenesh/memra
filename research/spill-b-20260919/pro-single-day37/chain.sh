@@ -90,7 +90,7 @@ for arm in pooled vmm; do
   log "gates $arm rc=$?"
 done
 # 5. serving boots
-export LANE_BIN="$R/bins/lane/memra-server" MAIN_BIN="$R/bins/main/memra-server" MODEL_KEY=q38 BOOT_CTX= STREAM_CONC=16 NO_SCOPE=1
+export LANE_BIN="$R/bins/lane/memra-server" MAIN_BIN="$R/bins/main/memra-server" MODEL_KEY=q38 BOOT_CTX='' STREAM_CONC=16 NO_SCOPE=1
 B=research/spill-b-20260919/rtx5090-day37/boots.sh
 bash $B "$R" \
   mix-spec-O1-pooled:pooled:mixspec mix-spec-O1-vmm:vmm:mixspec mix-plain-O1-pooled:pooled:mixplain mix-plain-O1-vmm:vmm:mixplain \
