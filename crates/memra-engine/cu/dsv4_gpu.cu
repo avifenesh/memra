@@ -41,6 +41,7 @@
 #include <cuda_bf16.h>
 #include <cuda_fp8.h>
 #include <cuda_runtime.h>
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -4058,6 +4059,118 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
     }
 }
 
+// ---- prefill dense tile (memra #472, #700): the FP8 GEMV's arithmetic over a tile of token rows
+// and output rows. `dsv4_gemv_fp8_m_kernel` runs one block per output row, and every block reads all
+// of its token rows' activations, so at prefill widths the activation stream carries a factor of n.
+// Here a block of 128 threads covers TT token rows x TN output rows. Thread v owns exactly the
+// GEMV's k-slices, `v*8 + j*1024` for j ascending with the 8 elements ascending, decodes each
+// weight to the same `e4m3 * block scale` float and adds `w * x` into its own partial for every
+// (token, output) pair of the tile. Every output's 128 partials then take the GEMV's halving tree.
+// So each y[t][n] is the GEMV's bits, while an activation chunk is read once per TN outputs and a
+// weight chunk once per TT tokens. -fmad=false applies to this file as to the GEMV.
+template <int TT, int TN>
+__global__ void __launch_bounds__(128) dsv4_gemm_fp8_tile_kernel(
+        const uint8_t* __restrict__ w, const float* __restrict__ sc, int sc_cols,
+        const uint16_t* __restrict__ x, float* __restrict__ y, int m, int n, int k, int xstride,
+        int ystride) {
+    __shared__ float e4m3_tab[256];
+    extern __shared__ float tile_red[];  // [TT * TN][128]
+    const int v = threadIdx.x;
+    for (int i = v; i < 256; i += 128) e4m3_tab[i] = dsv4_e4m3((uint8_t)i);
+    __syncthreads();
+    const int n0 = blockIdx.x * TN, t0 = blockIdx.y * TT;
+    float part[TT][TN];
+#pragma unroll
+    for (int t = 0; t < TT; t++)
+#pragma unroll
+        for (int r = 0; r < TN; r++) part[t][r] = 0.0f;
+    for (int c = v * 8; c < k; c += 1024) {
+        float wv[TN][8];
+#pragma unroll
+        for (int r = 0; r < TN; r++) {
+            const int row = n0 + r;
+            if (row < n) {
+                const uint2 wr = *(const uint2*)(w + (long)row * k + c);
+                const float s = sc[(long)(row >> 7) * sc_cols + (c >> 7)];
+                const unsigned wb[2] = {wr.x, wr.y};
+#pragma unroll
+                for (int j = 0; j < 4; j++) {
+                    wv[r][2 * j] = e4m3_tab[(wb[j >> 1] >> (((j & 1) * 2) * 8)) & 0xFFu] * s;
+                    wv[r][2 * j + 1] = e4m3_tab[(wb[j >> 1] >> (((j & 1) * 2 + 1) * 8)) & 0xFFu] * s;
+                }
+            } else {
+#pragma unroll
+                for (int e = 0; e < 8; e++) wv[r][e] = 0.0f;
+            }
+        }
+#pragma unroll
+        for (int t = 0; t < TT; t++) {
+            if (t0 + t >= m) break;
+            const uint4 xv = *(const uint4*)(x + (long)(t0 + t) * xstride + c);
+            const unsigned xw[4] = {xv.x, xv.y, xv.z, xv.w};
+            float xf[8];
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                xf[2 * j] = __uint_as_float((xw[j] & 0xFFFFu) << 16);
+                xf[2 * j + 1] = __uint_as_float(xw[j] & 0xFFFF0000u);
+            }
+#pragma unroll
+            for (int r = 0; r < TN; r++) {
+                float acc = part[t][r];
+#pragma unroll
+                for (int e = 0; e < 8; e++) acc += wv[r][e] * xf[e];
+                part[t][r] = acc;
+            }
+        }
+    }
+#pragma unroll
+    for (int t = 0; t < TT; t++)
+#pragma unroll
+        for (int r = 0; r < TN; r++) tile_red[(t * TN + r) * 128 + v] = part[t][r];
+    __syncthreads();
+    for (int off = 64; off > 0; off >>= 1) {
+        if (v < off)
+            for (int i = 0; i < TT * TN; i++) tile_red[i * 128 + v] += tile_red[i * 128 + v + off];
+        __syncthreads();
+    }
+    for (int i = v; i < TT * TN; i += 128) {
+        const int t = t0 + i / TN, row = n0 + i % TN;
+        if (t < m && row < n) y[(long)t * ystride + row] = tile_red[i * 128];
+    }
+}
+
+// Gate seam: 0 forces the per-32-row GEMV loop for prefill widths, so a gate can compare the two in
+// one process. Not an environment door; serving always takes the tile.
+static std::atomic<int> g_dsv4_gemm_fp8_tile_on{1};
+static std::atomic<unsigned long long> g_dsv4_gemm_fp8_tile_launches{0};
+extern "C" int memra_dsv4_gemm_fp8_tile_set_for_gate(int on) {
+    return g_dsv4_gemm_fp8_tile_on.exchange(on ? 1 : 0);
+}
+extern "C" unsigned long long memra_dsv4_gemm_fp8_tile_launches(void) {
+    return g_dsv4_gemm_fp8_tile_launches.load(std::memory_order_relaxed);
+}
+
+static constexpr int DSV4_TILE_TT = 16, DSV4_TILE_TN = 8;
+
+static int dsv4_gemm_fp8_tile(const void* w_codes, const float* sc_f32, int sc_cols,
+                              const void* x_bf16, float* y, int m, int n, int k, int xstride,
+                              int ystride, cudaStream_t stream) {
+    const size_t smem = (size_t)DSV4_TILE_TT * DSV4_TILE_TN * 128 * sizeof(float);
+    static bool attr = false;
+    if (!attr) {
+        cudaFuncSetAttribute(dsv4_gemm_fp8_tile_kernel<DSV4_TILE_TT, DSV4_TILE_TN>,
+                             cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+        attr = true;
+    }
+    dim3 grid((unsigned)((n + DSV4_TILE_TN - 1) / DSV4_TILE_TN),
+              (unsigned)((m + DSV4_TILE_TT - 1) / DSV4_TILE_TT));
+    dsv4_gemm_fp8_tile_kernel<DSV4_TILE_TT, DSV4_TILE_TN><<<grid, 128, smem, stream>>>(
+        (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y, m, n, k, xstride,
+        ystride);
+    g_dsv4_gemm_fp8_tile_launches.fetch_add(1, std::memory_order_relaxed);
+    return 0;
+}
+
 #include "dsv4_dense_m1_exact_tail.cuh"
 
 // Defined in cu/dsv4_dense_cutlass.cu, compiled only under MEMRA_DSV4_CUTLASS.
@@ -4115,6 +4228,14 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
         dsv4_dense_exact_tail_fp8_admits(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k))
         return memra_dsv4_dense_exact_tail_fp8(w_codes, sc_f32, sc_cols, x_bf16,
             y, m, n, k, xstride, ystride, stream_v);
+    if (m > DSV4_TMAX && g_dsv4_gemm_fp8_tile_on.load(std::memory_order_relaxed)) {
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, n, k);
+        int rc = dsv4_gemm_fp8_tile(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride,
+                                    stream);
+        if (rc != 0) return rc;
+        DSV4_ERR();
+        return 0;
+    }
     if (m > DSV4_TMAX) {
         const uint16_t* x = (const uint16_t*)x_bf16;
         int launches = 0;
