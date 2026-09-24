@@ -16943,6 +16943,32 @@ struct PendingRestore {
     polls: u32,
     copy_ms: f64,
     settled_by: String,
+    /// WP-A day 36 (`DAY36.md`, DAY33 section 6's price cell, log only): the recurrent copy loop's
+    /// host time and its owner-stream timing events, read at the landing.
+    recur: RestoreRecurTiming,
+}
+
+/// WP-A day 36 (`DAY36.md` section 1, DAY33 section 6's price cell, log only): the restore's
+/// recurrent copy loop (step 1 of `host_restore_submit`) timed. `host_ms` is the host time around the
+/// loop; `events` are two timing events recorded on the owner stream around it, read at the landing
+/// only if the end event is already complete (never a host wait: a wait would change the thing
+/// priced). An event that could not be created leaves `None` and prints `n/a`.
+struct RestoreRecurTiming {
+    host_ms: f64,
+    events: Option<(cudarc::driver::CudaEvent, cudarc::driver::CudaEvent)>,
+}
+impl RestoreRecurTiming {
+    /// The landing line's term: the owner-stream GPU time, or why it is absent.
+    fn gpu_term(&self) -> String {
+        match &self.events {
+            Some((a, b)) if b.is_complete() => match a.elapsed_ms(b) {
+                Ok(ms) => format!("; recurrent copy {ms:.2}ms owner stream"),
+                Err(_) => "; recurrent copy n/a owner stream".to_string(),
+            },
+            Some(_) => "; recurrent copy owner stream pending".to_string(),
+            None => "; recurrent copy n/a owner stream".to_string(),
+        }
+    }
 }
 
 /// A ready restore whose request has not re-admitted within this many tick tops is an orphan.
@@ -17371,12 +17397,18 @@ fn host_restore_submit(
     cache: &mut Cache,
     draft: Option<&mut memra_engine::spec::RestoredDraftScratch>,
     hpx: &mut HostPrefixCache,
-) -> Result<(PendingContractRestore, usize), String> {
+) -> Result<(PendingContractRestore, usize, RestoreRecurTiming), String> {
     use memra_engine::tier_transfer::D2dRestore;
     let tier = hpx.tier.as_ref().ok_or("tier context missing")?;
     let transfers = tier.transfers.as_ref().ok_or("transfer engine missing")?;
     let restore_len = e.pos;
     let mut bytes = 0usize;
+    // WP-A day 36 (log only, DAY33 section 6's price cell): two timing events on the owner stream
+    // around step 1, and the host time around it.
+    let timing = Some(cudarc::driver::sys::CUevent_flags::CU_EVENT_DEFAULT);
+    let owner = engine.stream();
+    let recur_start = owner.record_event(timing).ok();
+    let recur_t = Instant::now();
     // 1. The recurrent state, `len` and `len_d` on the OWNER stream (the OFF statements).
     for il in 0..cache.kv.len() {
         if let (Some(dst), Some(c), Some(s)) = (cache.recur[il].as_mut(), &e.conv[il], &e.ssm[il]) {
@@ -17395,6 +17427,10 @@ fn host_restore_submit(
                 .map_err(|err| format!("len mirror of layer {il} failed: {err}"))?;
         }
     }
+    let recur = RestoreRecurTiming {
+        host_ms: recur_t.elapsed().as_secs_f64() * 1e3,
+        events: recur_start.zip(owner.record_event(timing).ok()),
+    };
     // 2. The producer fence, then the KV rows as one batch on the copy stream.
     let mut t = transfers.borrow_mut();
     let generation = HOST_TIER_TRANSFER_EPOCHS.dst_gen;
@@ -17480,6 +17516,7 @@ fn host_restore_submit(
                         submitted: Instant::now(),
                     },
                     bytes,
+                    recur,
                 ));
             }
             Err(err) => Some(format!("submission refused: {err:?}")),
@@ -17758,7 +17795,7 @@ fn host_restore_park_probe(
         }
     }
     match host_restore_submit(engine, e, &mut cache, draft.as_mut(), hpx) {
-        Ok((contract, bytes)) => {
+        Ok((contract, bytes, recur)) => {
             let seq = contract.ticket.sequence;
             let items = contract.sizes.len();
             let toks_len = e.toks.len();
@@ -17771,11 +17808,13 @@ fn host_restore_park_probe(
                 (None, Some(why)) => format!("; draft plane not submitted ({why})"),
                 (None, None) => String::new(),
             };
+            // WP-A day 36 (log only): the recurrent copy's host time, at the line's end.
             eprintln!(
                 "[prefix-cache] restore submitted off the tick: {toks_len} tokens, {items} planes \
                  ({:.1}MB), ticket seq={seq} on the contracts door's copy stream; recurrent state \
-                 copied on the owner stream; request parked{draft_note}",
+                 copied on the owner stream; request parked{draft_note}; recurrent copy {:.2}ms host",
                 bytes as f64 / 1e6,
+                recur.host_ms,
             );
             hpx.restoring = Some(PendingRestore {
                 request_id: req.request_id.clone(),
@@ -17793,6 +17832,7 @@ fn host_restore_park_probe(
                 polls: 0,
                 copy_ms: 0.0,
                 settled_by: String::new(),
+                recur,
             });
             true
         }
@@ -17883,7 +17923,7 @@ fn host_restore_take_ready(
     let draft = r.draft.take();
     eprintln!(
         "[prefix-cache] restore landed off the tick: {} tokens ({:.1}MB) complete after {} \
-         poll(s), {:.1}ms from submission to completion, {:.1}ms to re-admission ({}){}",
+         poll(s), {:.1}ms from submission to completion, {:.1}ms to re-admission ({}){}{}",
         r.toks_len,
         r.bytes as f64 / 1e6,
         r.polls,
@@ -17895,6 +17935,8 @@ fn host_restore_take_ready(
         } else {
             ""
         },
+        // WP-A day 36 (log only): the recurrent copy's owner-stream GPU time, no host wait.
+        r.recur.gpu_term(),
     );
     hpx.restores_landed += 1;
     Some((cache, pin, draft, r.draft_declined))
@@ -45988,6 +46030,10 @@ mod tests {
             polls: 0,
             copy_ms: 0.0,
             settled_by: String::new(),
+            recur: super::RestoreRecurTiming {
+                host_ms: 0.0,
+                events: None,
+            },
         });
     }
 
@@ -48174,6 +48220,55 @@ mod tests {
         ] {
             assert!(!production.contains(gone), "{gone} survives");
         }
+    }
+
+    /// WP-A day 36 (`DAY36.md` section 1, log only): the restore's recurrent copy is timed around
+    /// step 1 exactly (the two owner-stream events and the host timer bracket the copy loop, both
+    /// before the producer fence), and the landing reads the owner-stream time only when the end
+    /// event is already complete: no host wait anywhere in the instrument.
+    #[test]
+    fn day36_the_restore_recurrent_copy_is_timed_without_a_wait() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let body = |name: &str| {
+            let at = production
+                .find(name)
+                .unwrap_or_else(|| panic!("{name} missing"));
+            let end = production[at..].find("\n}\n").unwrap();
+            &production[at..at + end]
+        };
+        let at = |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle}"));
+        let submit = body("fn host_restore_submit(");
+        for (a, b) in [
+            (
+                "let recur_start = owner.record_event(timing).ok();",
+                "let recur_t = Instant::now();",
+            ),
+            (
+                "let recur_t = Instant::now();",
+                ".copy_into(&mut dst.conv_state, 0, c, c.len())",
+            ),
+            (
+                ".set_i32_one(&mut dst.len_d, restore_len as i32)",
+                "host_ms: recur_t.elapsed().as_secs_f64() * 1e3,",
+            ),
+            (
+                "events: recur_start.zip(owner.record_event(timing).ok()),",
+                ".record_producer(generation)",
+            ),
+        ] {
+            assert!(at(submit, a) < at(submit, b), "{a} before {b}");
+        }
+        let term = body("impl RestoreRecurTiming {");
+        assert!(term.contains("Some((a, b)) if b.is_complete() => match a.elapsed_ms(b) {"));
+        assert!(
+            !term.contains("synchronize"),
+            "no host wait in the instrument"
+        );
+        assert!(
+            !submit[at(submit, "let recur_start")..at(submit, ".record_producer(generation)")]
+                .contains("synchronize")
+        );
     }
 
     // ---- WP-A day 33 (memra#536 Move 2 owed item 1, the H2D half, `DAY33.md` design F) ----
