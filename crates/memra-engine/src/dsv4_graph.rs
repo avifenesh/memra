@@ -270,7 +270,9 @@ impl ReplayPair {
                 .end()?;
             let census = self.graphs[rank][segment].as_ref().expect("capture").census;
             if census[6] != 0
-                || (segment != 1 && (census[2] != 86 || census[3] != 1 || census[4] != 86))
+                // 129 joins: per layer the expert reduction and the exact attention join's two
+                // row gathers.
+                || (segment != 1 && (census[2] != 129 || census[3] != 1 || census[4] != 86))
             {
                 return Err(format!(
                     "incomplete full-token graph rank {rank} segment {segment}: {census:?}"

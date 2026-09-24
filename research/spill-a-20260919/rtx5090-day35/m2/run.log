@@ -1,0 +1,59 @@
+2026-09-24T04:26:01Z model sha256 (outside the hold): 52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+2026-09-24T04:28:01Z hold attempt 1: the lock stayed busy for 120 s
+2026-09-24T04:30:01Z hold attempt 2: the lock stayed busy for 120 s
+2026-09-24T04:32:01Z hold attempt 3: the lock stayed busy for 120 s
+2026-09-24T04:33:43Z hold taken (fd 9) tree=55ae87616cb2c3dd2f7a6bb0a7e21cf38619e348
+2026-09-24T04:33:43Z idle wait 1 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:34:43Z idle wait 2 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:35:43Z idle wait 3 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:36:43Z idle wait 4 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:37:43Z idle wait 5 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:38:43Z idle wait 6 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:39:43Z idle wait 7 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:40:43Z idle wait 8 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:41:43Z idle wait 9 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:42:43Z idle wait 10 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:43:43Z idle wait 11 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:44:43Z idle wait 12 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:45:43Z idle wait 13 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:46:44Z idle wait 14 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:47:44Z idle wait 15 under the hold: free=22572MiB apps=[3337555, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1390 MiB]
+2026-09-24T04:48:44Z NOT RUN: the card never went idle under the hold
+2026-09-24T04:49:16Z relaunch wrapper: waiting outside the lock for no compute app (bounded 120 x 60 s), then the same m-card-run.sh
+2026-09-24T04:50:37Z relaunch wrapper stopped (pid 3463897, its 120-min bound replaced by the lead's 60 min from 04:49:16Z)
+2026-09-24T04:50:49Z relaunch wrapper restarted: waiting outside the lock for no compute app until 05:49:16Z (the lead's 60 min from 04:49:16Z), then the same m-card-run.sh
+2026-09-24T05:36:56Z relaunch wrapper: no compute app; relaunching
+2026-09-24T05:37:06Z model sha256 (outside the hold): 52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+2026-09-24T05:37:06Z hold taken (fd 9) tree=6a8e9208815a180bddeef4f98fe19fb859d1096d
+2026-09-24T05:37:07Z unit server rc=0 test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 892 filtered out; finished in 0.43s
+2026-09-24T05:37:08Z unit engine rc=0 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 582 filtered out; finished in 1.63s
+2026-09-24T05:37:38Z ab o1 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.8 idle_p99=8.0
+2026-09-24T05:38:08Z ab o1 m rc=0 STALL rule cell=stall-demote-m arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.8 idle_p99=8.1 id
+2026-09-24T05:38:39Z ab o1 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.8 idle_p99=8.1
+2026-09-24T05:39:10Z ab o1 m rc=0 STALL rule cell=stall-demote-m arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.0 id
+2026-09-24T05:39:41Z ab o1 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.1
+2026-09-24T05:40:11Z ab o1 m rc=0 STALL rule cell=stall-demote-m arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.1 id
+2026-09-24T05:40:42Z ab o1 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p95=7.9 idle_p99=8.0
+2026-09-24T05:41:13Z ab o1 m rc=0 STALL rule cell=stall-demote-m arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.1 id
+2026-09-24T05:41:44Z ab o1 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.0
+2026-09-24T05:42:15Z ab o1 m rc=0 STALL rule cell=stall-demote-m arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.1 id
+2026-09-24T05:42:46Z ab o2 m rc=0 STALL rule cell=stall-demote-m arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.0 id
+2026-09-24T05:43:16Z ab o2 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.0
+2026-09-24T05:43:47Z ab o2 m rc=0 STALL rule cell=stall-demote-m arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.1 id
+2026-09-24T05:44:18Z ab o2 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.0
+2026-09-24T05:44:49Z ab o2 m rc=0 STALL rule cell=stall-demote-m arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.0 id
+2026-09-24T05:45:20Z ab o2 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.0
+2026-09-24T05:45:50Z ab o2 m rc=0 STALL rule cell=stall-demote-m arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.1 id
+2026-09-24T05:46:21Z ab o2 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.0
+2026-09-24T05:46:52Z ab o2 m rc=0 STALL rule cell=stall-demote-m arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.0 id
+2026-09-24T05:47:23Z ab o2 base rc=0 STALL rule cell=stall-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.1
+2026-09-24T05:47:37Z gate identity-default-off rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T05:47:52Z gate identity-default-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T05:48:02Z gate identity-plain-off rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T05:48:14Z gate identity-plain-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T05:48:39Z gate failure-on rc=0 KV-HOST-SPILL FAILURE GATE: ALL GREEN
+2026-09-24T05:50:39Z gate fault-default rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T05:52:20Z gate fault-plain rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T05:52:42Z gate hit-off rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T05:53:09Z gate hit-on rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T05:53:09Z hold released; DAY35-M-CARD-RUN-DONE

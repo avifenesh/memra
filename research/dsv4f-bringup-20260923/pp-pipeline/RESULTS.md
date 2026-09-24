@@ -362,3 +362,44 @@ Thermal unset: power median 208..215 W, peak 354 W, SM clock 2265..2422 MHz, max
 Every cell's text is identical across both arms, the yielding prefill included. The unset arm
 repeats the A/B above: +48.9% greedy c2, +50.0% c4, +44.8% sampled c2. At 2k-token prompts the
 second request's first token comes 18% sooner (TTFT p50 18.3 -> 15.0 s).
+
+## The one default-arm launch failure: mechanism, fix, stress
+
+One default-arm row faulted on the WS pod (`q-pairP` r5, B-row lane binary, sampled c4). Both
+lanes had just ended requests at the same moment. Their new requests got no first token for
+5.5 s, then `HC finish ... rc=10719`, a sticky `CUDA_ERROR_LAUNCH_FAILED`, surfaced at the next
+launch. The memory door did not wait: all 37 admits in that row show `waited_ms=0`.
+
+**Mechanism (code audit).**
+- A pipelined commit (`drain = false`) returns with its pinned slot-row upload still queued behind
+  the other lane's in-flight step.
+- On a request's last token, the request then returned and its state dropped.
+- `cuMemFreeHost` freed `slot_rows_host` under the queued copy. That copy feeds
+  `dsv4_scatter_rows` its ring slots, and the scatter has no bounds check.
+- A step that failed partway could also free stage 1's receive rows, which are stream-ordered
+  on stage 1, under stage 0's peer copy.
+- The serial route commits with `drain = true` from pageable memory, so it cannot hit either case.
+
+**Fix (`017f2bdae`).** `VerifyState` synchronizes each workspace's stream in `Drop`, so every
+stage's queued work lands before any transaction buffer is freed. The drained routes arrive
+there with nothing queued.
+
+**Stress.** Request-turnover cells: c4 x 48 short requests x 4 cells, 768 request endings per
+boot, one boot per row, order F C C F F C C F. F is the fix, C is `289ea34e2` before it.
+
+| pair | rows done | fix faults | control faults | endings per arm |
+|---|---|---|---|---|
+| Server Edition (`raw/turnover/se/`) | 8 of 8 | 0 | 0 | 3,072 |
+| Workstation (`raw/turnover/ws/`) | 6 of 8 complete, plus r7 hung | 0 | 0 errors, **1 hang** | 2,304 complete per arm |
+
+**The control hung; the fix did not.** WS row r7 (control, `289ea34e2`) stopped in its first
+turnover cell after 1 logged request and stayed there for 3 h 15 min. Both GPUs were at 0% and
+no engine error was logged. Two `dsv4-serve` lane threads were spinning in state R
+(`raw/turnover/ws/r7-C-hang/hang-capture.txt`): a host wait on work that never completed, the
+same shape as the earlier WS-pod stall. SIGTERM drained at its 30 s deadline with 2 requests in
+flight. No fix row hung or faulted: SE r1 to r8 and WS r1, r4 and r5, 5,376 request endings.
+One control hang in 8 control rows is not a rate. Freeing pinned memory under a queued copy is
+undefined, and the fix removes it by construction. The fix stands on its
+mechanism: freeing pinned memory under a queued copy is undefined, whatever the fault rate.
+Throughput is unchanged: F and C rows agree within row noise (for example ts1 52.19 against 52.13
+tok/s aggregate).

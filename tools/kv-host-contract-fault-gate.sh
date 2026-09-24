@@ -76,8 +76,8 @@
 # the promote cells' shape:
 #   promote-span-refusal  MEMRA_KV_HOST_FAULT=contract-promote-spans: r1 P_A seeds E_A; r2 P_B evicts E_A (a clean
 #                  demote, whose spans fill the staging set: the boot's one `tier span staging:` line); r3 P_A hits E_A
-#                  on the host, the hash helper fills the promote's staging from the resident planes, and the tick-top
-#                  submission builds every recurrent plane into an H2D span and takes the injected attach refusal:
+#                  on the host, and the probe's submission builds every recurrent plane into an H2D span (its staging
+#                  filled on the copy stream, WP-A day 33) and takes the injected attach refusal:
 #                  every span back, every staging buffer to the set, the KV ticket unwound typed, the host entry kept,
 #                  the tier on, `N f32 spans handed back` with N the span count of the next H2D receipt; the cold path
 #                  serves r3 and its insert evicts E_B into a clean demote; r4 P_B hits E_B on the host and its promote
@@ -653,16 +653,16 @@ print(f"staging fill line(s) {fills}, promote refusal N {ref}")
 sys.exit(0 if len(fills) == 1 and ref is not None and fills[0] == ref else 1)
 PYEOF
 }
-fill_before_refusal() { # $1 log: the refused promote's staging fill line precedes the refusal, and a second fill line
-                        # precedes the next promote's submission (the fill runs on the helper for every contract promote)
+filled_submission_after_refusal() { # $1 log: WP-A day 33 (DAY33 item 8): after the refusal, the next promote's submission
+                                    # carries its spans filled on the copy stream (the day-32 helper fill phase is gone)
     python3 - "$1" <<'PYEOF'
 import sys
 lines = open(sys.argv[1], errors="replace").read().splitlines()
-fills = [i for i, l in enumerate(lines) if "promote staging fill off the tick:" in l]
 ref = next((i for i, l in enumerate(lines) if "MEMRA_KV_HOST_FAULT=contract-promote-spans" in l and "promote refused" in l), None)
-subs = [i for i, l in enumerate(lines) if "promote submitted off the tick:" in l and "f32 spans from the staging fill" in l]
-print(f"fill lines {len(fills)}, refusal at {ref}, span submissions {len(subs)}")
-sys.exit(0 if ref is not None and len(fills) >= 2 and fills[0] < ref and subs and fills[1] < subs[0] and subs[0] > ref else 1)
+subs = [i for i, l in enumerate(lines) if "promote submitted off the tick:" in l and "f32 spans filled on the copy stream" in l]
+after = [i for i in subs if ref is not None and i > ref]
+print(f"refusal at {ref}, filled span submissions {len(subs)}, after the refusal {len(after)}")
+sys.exit(0 if ref is not None and after else 1)
 PYEOF
 }
 pscell() { # WP-A day 32: MEMRA_KV_HOST_FAULT=contract-promote-spans (door ON), then the same four requests door OFF
@@ -690,7 +690,7 @@ pscell() { # WP-A day 32: MEMRA_KV_HOST_FAULT=contract-promote-spans (door ON), 
     chk "$name: door ON with the transfer engine on both sides" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine.*KV plane H2D through the same engine on promote" "$log"
     chk "$name: exactly one typed injected promote spans refusal" count_eq "$refusal" "$log" 1
     chk "$name: the refusal's N spans handed back equals the next H2D receipt's span count (N >= 1)" promote_spans_refusal_matches_receipt "$log"
-    chk "$name: the staging fill ran on the helper before the refused submission and before the next one" fill_before_refusal "$log"
+    chk "$name: the next promote's submission carries its spans filled on the copy stream" filled_submission_after_refusal "$log"
     chk "$name: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)" after_any "$refusal" "contracts door D2H receipt: ticket issuer=[0-9]+ seq=[0-9]+ .* require=ok" "$log"
     chk "$name: the next promote publishes" after_any "$refusal" "\\[prefix-host\\] promote: " "$log"
     chk "$name: the staging set filled once and every later demote and promote reused it" one_staging_fill_promote "$log"

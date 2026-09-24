@@ -1,0 +1,7 @@
+START utc=2026-09-24T06:38:06Z bin=/root/lane/target-main9/release/memra-server env=MEMRA_TIMEOUT_MS_MAX=900000 MEMRA_DSV4_SESSIONS=1
+READY after=204s port=45925
+CELL warmup c=1 ok=1/1 agg=36.90 tok/s decode_p50=52.02 tok/s ttft_p50=271 ms tpot_p50=19.22 ms errs=[]
+CELL greedy-8k c=1 ok=2/2 agg=2.15 tok/s decode_p50=49.14 tok/s ttft_p50=28481 ms tpot_p50=20.35 ms errs=[]
+CELL greedy-32k c=1 ok=1/1 agg=0.54 tok/s decode_p50=46.85 tok/s ttft_p50=117410 ms tpot_p50=21.35 ms errs=[]
+CELLS_DONE utc=2026-09-24T06:44:29Z
+TERMINAL rc=0 utc=2026-09-24T06:44:33Z

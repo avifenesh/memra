@@ -1,0 +1,5 @@
+== cell 1: POOL-FULL (MEMRA_KV_HOST_MB=1, no real entry fits) ==
+kv-host-spill-failure-gate: FAIL — cannot observe listening sockets (no ss, no lsof), so this run
+  cannot prove port 18119 is free. An unobservable port is not a free port:
+  a foreign responder would be measured as the model under test.
+  Install iproute2 (ss) or lsof.
