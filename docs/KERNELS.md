@@ -37,6 +37,8 @@ there is no door.
 | `dsv4_gemv_bf16_m_kernel<M>` | Same shape for BF16 dense weights | BF16 weights and activations, f32 out | sm_120a | None | `memra_dsv4_gemv_bf16_m` |
 | `dsv4_dots_f32acc_mrow_kernel<M>` | f32-accumulated dense dots, `M` rows per launch | BF16 or f32 weights, f32 activations and out | sm_120a | None | `memra_dsv4_dots_f32acc_mrow` |
 | `dsv4_dots_f32_mrow_kernel<M>` | f64-accumulated dense dots, `M` rows per launch | BF16 or f32 weights, f32 activations and out | sm_120a | None | `memra_dsv4_dots_f32_mrow` |
+| `dsv4_gemm_fp8_tile_kernel<8, 8>` | Prefill dense tile (#472, #700): 8 token rows x 8 output rows per 128-thread CTA, each output reduced over the GEMV's 128 k-slices in the same halving tree (smem for 64/32, shuffles below), so every output keeps the GEMV's bits | FP8 e4m3 weights with f32 block scales, BF16 activations, f32 out | sm_120a | None; `m > DSV4_TMAX` in `memra_dsv4_gemv_fp8_m`; `memra_dsv4_gemm_fp8_tile_set_for_gate` is the gate-only comparison seam | `memra_dsv4_gemv_fp8_m` |
+| `dsv4_dots_f32acc_tile_kernel<8, 8>` | The same tile and tree for the compressor dots at prefill widths | BF16 or f32 weights, f32 activations and out | sm_120a | None; `s > DSV4_TMAX` in `memra_dsv4_dots_f32acc_mrow`; same gate seam | `memra_dsv4_dots_f32acc_mrow` |
 
 Numeric class SAME across every `M`: the per-row accumulation order and the
 128-leaf reduction tree are properties of the kernel body, not of `M`. Gated by
