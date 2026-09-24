@@ -64,3 +64,29 @@ The two TP/EP runs each reported one finding, a gate expectation rather than a p
 gate expected fused one-token MoE dispatches whenever the fused pair was on. TP/EP layers run the
 expert-id EP path, which never reaches it. The gate now expects zero fused dispatches on TP/EP
 (`09ca39c92`).
+
+## Served (WS pair, measurement branch)
+
+The served A/B needs a load-time TP/EP selector, which main does not carry (it was decided out
+before merge, `docs/FLAGS.md`). It ran on `lane/dsv4-tpep-serve-measure-20260924` `d1be33841`:
+this lane plus that selector, never merged. One boot per row, serial route, order
+Pp Tp Pd Td Td Pd Tp Pp Pp Tp Pd Td (N=3 each), cells `cells-spec.txt`
+(`raw/served-ws/`). The same binary first passed `dsv4-gpu-dspark-gate --tpep` with the fixed
+expectation: `GPU DSPARK GATE [PASS]`.
+
+| arm | greedy c1 | sampled c1 | TTFT p50 |
+|---|---|---|---|
+| PP-2 DSpark (`Pd`) | 70.60 | 56.85 | 235 ms |
+| **TP/EP DSpark, split drafter (`Td`)** | **82.73 (+17.2%)** | **65.42 (+15.1%)** | 189 ms (-19.7%) |
+| PP-2 plain (`Pp`) | 68.39 | 59.89 | 182 ms |
+| TP/EP plain, eager (`Tp`) | 62.73 (-8.3%) | 55.71 (-7.0%) | 141 ms (-22.4%) |
+
+- **Text:** every request's hash is identical across all twelve rows, TP/EP and PP-2 alike,
+  greedy and sampled. DSpark text equals plain text on both topologies.
+- **Fit:** the drafter fits at the served context. The TP/EP DSpark boot calibrates at
+  `max_seq` 1,048,576 with a ceiling of 10.03 and 9.70 GB and a fixed spec cost of 4.53 and
+  4.56 GB. That leaves rank 1 about 5.1 GB for one session's cache, about 370k tokens at
+  13,806 B/token. PP-2 DSpark on the same pair has 11.47 GB, 4.12 GB fixed, and 7,223 B/token,
+  about 1.0M tokens. The difference is TP/EP's replicated caches, not the drafter.
+- **Plain:** TP/EP plain is slower than PP-2 on the eager step. The full-token replay graphs close
+  that gap: 80.8 tok/s against 68.4 on this pair in the replay gate (`../tp-replay-stream/`).
