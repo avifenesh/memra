@@ -124,3 +124,17 @@ detached checkouts of `08210a291`, `51467de12`, `6745fd062`, the clean-tree chec
   /root/wt-c/research/spill-c-20260919/day52-box.sh` (restartable: a finished build list and each finished cell are
   skipped). Receipts land in `/root/spill-receipts/c-day52/` and come back to
   `research/spill-c-20260919/pro-single-day52/` with the driver, build, provenance, validate and reading logs.
+
+## 4. Added before the sitting ran: the verify digest v3 gates (`OWED.md` C6, `DAY53.md`)
+
+`DAY53.md` section 1 registers the target card's verify digest v3 cells as "the same failure and identity cells on
+the 27B, added to the DAY52 sitting as its own section before that sitting runs". After `decide`, the driver runs
+`day53-cell.sh` (the day-24 driver shape) with the non-approved 27B artifact (it is a serving model for these gates;
+the approved-artifact lock is the MoE door's alone), the device prefix budget 256 MB (the target card's day-23 gate
+shape: one 64-token entry of about 160 MB fits, two do not) and `MEMRA_GPU_LOCK=/tmp/memra-gpu.lock`, in order:
+`unit-server` (the GPU cell `verify_digest_v3_covers_every_round_tripped_plane_and_v2_stays_trunk_only`),
+`failure-default-off`, `failure-plain-off`, `failure-default-on`, `identity-default-off`, `identity-default-on`.
+Acceptance is `DAY53.md` sections 1 and 1a on this card. The box builds one more label, `server=<commit>` (the
+`memra-server` of the verify digest v3 tree, `256c3c640` or the later commit named when the 5090 cells are read),
+and the sitting grows by about 30 minutes (six boots of the 27B per failure run, two per identity run, one test
+build), about 5 hours in all.

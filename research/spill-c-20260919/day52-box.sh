@@ -68,4 +68,12 @@ for spec in attrib:day40-cell.sh:7200 ladder:day52-cell.sh:14400 hashlock:day51-
     echo "$cell reader rc=$?" | tee -a "$R/box-driver.log"
     touch "$R/$cell.done"
 done
+# DAY52 section 4 (OWED C6, DAY53.md): the host-tier failure and identity gates on the verify digest v3 server,
+# the 27B, device prefix budget 256 MB (day 23's target-card shape), each gate taking /tmp/memra-gpu.lock itself.
+for cell in unit-server failure-default-off failure-plain-off failure-default-on identity-default-off identity-default-on; do
+    [ -f "$R/c6-$cell.done" ] && { echo "c6 $cell already done"; continue; }
+    MEMRA_GPU_LOCK=/tmp/memra-gpu.lock "${cap[@]}" bash "$L/day53-cell.sh" "$cell" "$ART_OTHER" "$R/bins/memra-server-v3" "$R/c6" 256
+    echo "c6 $cell rc=$? $(date -u +%FT%TZ)" | tee -a "$R/box-driver.log"
+    touch "$R/c6-$cell.done"
+done
 echo "box done $(date -u +%FT%TZ)" | tee -a "$R/box-driver.log"
