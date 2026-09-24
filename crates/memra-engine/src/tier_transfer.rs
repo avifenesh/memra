@@ -489,6 +489,11 @@ impl Drop for Entry {
             // WP-A day 32: the same for an H2D span (its destination may be written, its staging
             // source read).
             std::mem::forget(self.h2d_spans.take());
+            // WP-A day 38 (design G'): the D2H device receipt's lanes may still be written by the
+            // receipt stream's kernel and its pinned twin by the lanes' D2H; a free here (the lanes
+            // on the owner stream, unordered with the receipt stream) could hand the memory out
+            // under that write. A leak, never a free.
+            std::mem::forget(self.d2h_receipt.take());
         }
     }
 }
@@ -3704,6 +3709,10 @@ mod tests {
             .unwrap();
         assert!(seal < flip_wait && flip_wait < items);
         assert_eq!(submit.matches("copy.wait(").count(), 1);
+        // G': an unretired entry's drop leaks the receipt scratch, as every other in-flight input.
+        let drop_at = body.find("impl Drop for Entry {").unwrap();
+        let drop_body = &body[drop_at..drop_at + body[drop_at..].find("\n}\n").unwrap()];
+        assert!(drop_body.contains("std::mem::forget(self.d2h_receipt.take());"));
         // G': the host wait covers the receipt event (the receipt runs beside the copies).
         let sync = fn_body("    pub fn synchronize(&mut self, ticket: &TransferTicket)");
         let receipt_wait = sync.find("if let Some(r) = &e.d2h_receipt {").unwrap();
