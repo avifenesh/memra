@@ -10,6 +10,9 @@ ROOT=$1; MODEL=$2; BG4=$3; BS=$4
 HERE=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$HERE" || exit 1
 mkdir -p "$ROOT"
+# nsys stages under $TMPDIR (/tmp/nvidia is another user's on this rig); a private one under the lane's scratch.
+export TMPDIR=/tmp/wt-a-d40trace/tmp
+mkdir -p "$TMPDIR"
 log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$ROOT/run.log"; }
 sha256sum "$BG4" "$BS" > "$ROOT/binaries.sha256"
 exec 9>/tmp/memra-5090.lock
