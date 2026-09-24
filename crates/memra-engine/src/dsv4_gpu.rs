@@ -18676,6 +18676,21 @@ impl Dsv4Gpu {
         Ok(logits.chunks(vocab).map(<[f32]>::to_vec).collect())
     }
 
+    /// [`Self::decode_rows_greedy`] returning each row's full logits and its device argmax, the
+    /// same selection a one-row greedy step makes. A step that mixes greedy and host-sampled
+    /// requests takes the greedy rows' tokens from the argmax and hands the others their rows.
+    pub fn decode_rows_full(
+        &self,
+        toks: &[u32],
+        states: &mut [&mut DecodeState],
+        rows: &mut VerifyState,
+    ) -> Res<(Vec<Vec<f32>>, Vec<u32>)> {
+        let (logits, am) = self.decode_rows(toks, states, rows, true)?;
+        let logits = logits.ok_or("B-row logits missing")?;
+        let vocab = logits.len() / toks.len();
+        Ok((logits.chunks(vocab).map(<[f32]>::to_vec).collect(), am))
+    }
+
     fn decode_rows(
         &self,
         toks: &[u32],
