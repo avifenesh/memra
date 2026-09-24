@@ -813,6 +813,7 @@ impl Engine {
                     ..OwnerClock::default()
                 }),
                 fill: Some(fill_intake),
+                trace: String::with_capacity(TRACE_CHUNK + 256),
             }),
             open_leases,
         );
@@ -976,8 +977,25 @@ struct TracedDispatch {
     clock: Option<OwnerClock>,
     /// DAY45: finished host fills, admitted at the start of each demand.
     fill: Option<FillIntake>,
+    /// DAY48 (I5): the host-demand trace, byte for byte as the unbuffered lines were, written to
+    /// stderr in one call whenever it passes `TRACE_CHUNK` (always at a line end) and at close.
+    trace: String,
+}
+/// DAY48: bytes of trace buffered before one stderr write.
+const TRACE_CHUNK: usize = 64 * 1024;
+impl Drop for TracedDispatch {
+    fn drop(&mut self) {
+        self.flush_trace();
+    }
 }
 impl TracedDispatch {
+    fn flush_trace(&mut self) {
+        if !self.trace.is_empty() {
+            use std::io::Write as _;
+            let _ = std::io::stderr().write_all(self.trace.as_bytes());
+            self.trace.clear();
+        }
+    }
     /// Offer up to `limit` finished fills to the bank (DAY45 section 1 (b)); a full tier raises
     /// the fill's stop flag.
     fn drain_fill(&mut self, limit: usize) {
@@ -1067,18 +1085,25 @@ impl ExpertDispatchBank for TracedDispatch {
             .insert(slot, local)
             .filter(|old| *old != local);
         let trace_started = self.clock.as_ref().map(|_| Instant::now());
-        eprintln!(
-            "[expert-host-slru] key={}:{}:{} bytes={} slot={} hit={} victim={}",
-            local.0,
-            local.1,
-            local.2,
-            bytes,
-            slot,
-            hit,
-            victim
-                .map(|v| format!("{}:{}:{}", v.0, v.1, v.2))
-                .unwrap_or_else(|| "-".into())
-        );
+        {
+            use std::fmt::Write as _;
+            let _ = writeln!(
+                self.trace,
+                "[expert-host-slru] key={}:{}:{} bytes={} slot={} hit={} victim={}",
+                local.0,
+                local.1,
+                local.2,
+                bytes,
+                slot,
+                hit,
+                victim
+                    .map(|v| format!("{}:{}:{}", v.0, v.1, v.2))
+                    .unwrap_or_else(|| "-".into())
+            );
+        }
+        if self.trace.len() >= TRACE_CHUNK {
+            self.flush_trace();
+        }
         if let (Some(started), Some(clock)) = (trace_started, self.clock.as_mut()) {
             clock.trace_ns = clock.trace_ns.saturating_add(elapsed_ns(started));
         }
@@ -1304,5 +1329,26 @@ mod day48_census {
             1,
             "one validate call site"
         );
+    }
+}
+
+#[cfg(test)]
+mod day48_trace_census {
+    //! DAY48 (I5): the host-demand trace keeps its line format and has no unbuffered print left;
+    //! the buffer is flushed at the chunk bound and when the dispatch closes.
+    const SRC: &str = include_str!("native.rs");
+
+    #[test]
+    fn the_trace_is_buffered_with_its_format_unchanged() {
+        let format = "\"[expert-host-slru] key={}:{}:{} bytes={} slot={} hit={} victim={}\"";
+        assert_eq!(SRC.matches(format).count(), 1);
+        let unbuffered = concat!("eprintln!(\n", "            \"[expert-host-slru]");
+        assert_eq!(
+            SRC.matches(unbuffered).count(),
+            0,
+            "an unbuffered trace print remains"
+        );
+        assert!(SRC.contains("if self.trace.len() >= TRACE_CHUNK {"));
+        assert!(SRC.contains("impl Drop for TracedDispatch {"));
     }
 }
