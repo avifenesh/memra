@@ -14,8 +14,8 @@ off-<lane|main> for A6.
 import glob, json, math, os, re, statistics, sys
 
 card, root = sys.argv[1], sys.argv[2]
-# The gate-set directory prefix: `gates-r2` (addendum C's rerun, the default) or `gates` (design v1's banked set).
-GATES = sys.argv[3] if len(sys.argv) > 3 else "gates-r2"
+# The gate-set directory prefix: `gates-r3` (addenda C and D, the default) or `gates` (design v1's banked set).
+GATES = sys.argv[3] if len(sys.argv) > 3 else "gates-r3"
 GRAN = 2 * 1024 * 1024
 out = []
 

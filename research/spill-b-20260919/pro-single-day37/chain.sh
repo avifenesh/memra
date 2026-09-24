@@ -73,16 +73,16 @@ export MEMRA_KV_VMM_GROW=$placement
 echo "$placement" > "$R/stage0/PLACEMENT"
 log "placement for this sitting: MEMRA_KV_VMM_GROW=$placement (stage 0's rule)"
 # 3. A2
-if [ ! -e "$R/grow-32768/collector.exit" ]; then
+if [ ! -e "$R/grow-32768-r3/collector.exit" ]; then
   wait_idle "A2"
   env -u MEMRA_KV_VMM_GROW WT="$WT" ROOT="$R" GATE_BIN="$R/bins/kv-tier-gate" ARTIFACT="$MODEL" \
-    bash research/spill-b-20260919/rtx5090-day37/run-grow.sh pro-single grow-32768 > "$R/grow.log" 2>&1
-  log "A2 rc=$? $(head -1 "$R/grow-32768/receipt/GROW.txt" 2>/dev/null)"
+    bash research/spill-b-20260919/rtx5090-day37/run-grow.sh pro-single grow-32768-r3 > "$R/grow.log" 2>&1
+  log "A2 rc=$? $(head -1 "$R/grow-32768-r3/receipt/GROW.txt" 2>/dev/null)"
 fi
 # 4. A1 gates
 export WT RIG_LOCK=/tmp/memra-gpu.lock MODEL MODEL_TWIN=$MODEL BIN="$R/bins/lane/memra-server" HOSTGATE_MB=256
 for arm in pooled vmm; do
-  out=$R/gates-$arm
+  out=$R/gates-r3-$arm
   if [ -e "$out/battery.log" ] && command grep -q "gates done arm=$arm" "$out/battery.log"; then continue; fi
   wait_idle "gates $arm"; mkdir -p "$out"
   python3 tools/tier-battery.py --rig pro-single --timeout 10800 --out "$out/collector" --external-lock --execute \
@@ -103,6 +103,6 @@ for k in 1 2 3 4 5; do args+=("stream-O1-$k-pooled:pooled:stream" "stream-O1-$k-
 for k in 1 2 3 4 5; do args+=("stream-O2-$k-vmm:vmm:stream" "stream-O2-$k-pooled:pooled:stream"); done
 bash $B "$R" "${args[@]}"
 # 6. reader
-python3 research/spill-b-20260919/day37-read.py pro6000 "$R" > "$R/read.log" 2>&1
+python3 research/spill-b-20260919/day37-read.py pro6000 "$R" gates-r3 > "$R/read.log" 2>&1
 ( cd "$R" && find . -type f ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY37-BOX-DONE"
