@@ -4344,7 +4344,11 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
         dsv4_dense_exact_tail_fp8_admits(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k))
         return memra_dsv4_dense_exact_tail_fp8(w_codes, sc_f32, sc_cols, x_bf16,
             y, m, n, k, xstride, ystride, stream_v);
-    if (m > DSV4_TMAX && g_dsv4_gemm_fp8_tile_on.load(std::memory_order_relaxed)) {
+    // The exact tile takes prefill widths unless the tensor-core path (#472) is linked: a
+    // MEMRA_DSV4_CUTLASS build keeps the per-32-row recursion below, whose chunks are the only
+    // shape that path admits, so its class choice stays exactly what it was.
+    if (m > DSV4_TMAX && !memra_dsv4_dense_cutlass_fp8 &&
+        g_dsv4_gemm_fp8_tile_on.load(std::memory_order_relaxed)) {
         dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, n, k);
         int rc = dsv4_gemm_fp8_tile(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride,
                                     stream);
