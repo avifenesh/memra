@@ -1,5 +1,16 @@
-# WP-A day 38 resumable state
+# WP-A resumable state (2026-09-25, during the BOX7 sittings)
 
-- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. `origin/main` `d61012658` merged as `71afb6e6f`; the tip `b214bd2cf` carries DAY38 section 10 (the target sitting's pre-registration) and DAY39 section 3.
-- Ledger `OWED.md` (`0e65c3d0d`, statuses current). Item 1 (finding 5, DAY37): fixed `ba5da705d` (one pool context per native cell), 5090 pair/all 100 of 100, target all arm owed. Item 2 (hash 1, DAY38): design G'' (the D2H receipt, the framed SHA-256 of each KV item's device source, on a receipt stream beside the copies; P, the copy-phase park; pooled receipt twins), 5090 (a) to (e) PASS, target owed. Item 3 (the fill, DAY39): survey pre-registered, 5090 reading banked, rented-host readings owed.
-- NEED TARGET CARD: DAY38 section 10 (scripts `pro-single-day38/`, `build.sh b214bd2cf`, then `driver.sh`), about 2 h 20 min from access. Found and owed: items 12 (streaming reads for write-combined hashes), 13 (the retire seam), 14 (host-tier lease frees on the owner thread).
+- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`; tip `3c57fdfca` (G''' `9ab5c1265`, T `0153316d4`, day 41's
+  K arms `4ca4bb36e`, their records). BOX7 (one RTX PRO 6000 WS, EPYC 9B14 class, 92 CPUs) is the lead's box for this
+  lane: receipts under `/root/spill-receipts/a-day38` (the day-38 sitting and the diagnosis diag to diag8) and
+  `/root/spill-receipts/a-g3` (the G''' sitting); the box's clone `/root/wt-a`. Mirror file for file against a box
+  sha256 manifest, then remove both receipt roots and `/root/wt-a`, and report `BOX7 RELEASED`.
+- OWED (`OWED.md`): item 1 closed (BOX7 all arm 20 of 20). Item 2: G'' failed (d) on BOX7 (the tenant's per-demote
+  decode hump); the bisection (DAY38 13a to 13k) placed it on two non-owner streams running kernels; G''' (every engine
+  kernel on the receipt stream, the D2D classes with it; `d2h-delay` a host-side hold) pre-registered (section 14) and
+  built; its 5090 sitting (`rtx5090-day38/g3-card-run.sh`) then BOX7's (`pro-single-g3/`) owed. Item 3: design T built,
+  5090 PASS (DAY39 section 6), target cell rides the G''' sitting (`item3.sh`). Item 5: 5090 PASS (DAY41 section 2),
+  target rides the G''' sitting's fault gate. Item 4: device-side span receipt picked (DAY40), design waits for G'''.
+  Items 6 to 14 open.
+- Local scratch: `/tmp/wt-a-d38g3` (the G''' 5090 binaries), `/tmp/wt-a-d38g3-base-target` (the base build's target
+  dir), `/tmp/wt-a-d38x` (a scratch worktree at `b214bd2cf` for the diag patches). Remove when their cells are banked.
