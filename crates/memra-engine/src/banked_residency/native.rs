@@ -404,6 +404,7 @@ impl Drop for BankedExpertGate<'_> {
         if let Some(fill) = &self.fill {
             fill.stop.store(true, Ordering::Relaxed);
         }
+        self.engine.set_expert_bank_prefetch(false);
         // DAY46: finish every in-flight lease (one stream drain) before the registry closes;
         // `close` refuses while any lease is open.
         let retired = self
@@ -824,6 +825,7 @@ impl Engine {
         self.with_moe_cache(max_bytes as usize, |cache, _| {
             cache.install_banked(owner.proxy(), stage_clock)
         })?;
+        self.set_expert_bank_prefetch(true);
         if let (Some(sha), Some(catalog), Some(records), Some(setup)) =
             (sha_ns, catalog_ns, records_ns, clock(setup_started))
         {
@@ -1179,6 +1181,9 @@ impl ExpertDispatchBank for TracedDispatch {
     fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
         self.inner.finish(demand)
     }
+    fn host_resident(&self, local: ExpertDispatchId) -> Result<bool> {
+        self.inner.host_resident(local)
+    }
     fn stage_report(&self) -> Option<String> {
         let clock = self.clock.as_ref()?;
         let fill = self
@@ -1350,7 +1355,8 @@ mod day46_census {
         let admit = body("admit_banked");
         assert!(!admit.contains("synchronize"), "admit_banked drains");
         assert!(admit.contains("self.retire_banked(&bank)?;"));
-        assert!(admit.contains("self.banked_inflight.push_back((token, done));"));
+        // DAY50 wrapped the event in an `Arc` (a prefetch's copy event is shared with `pending`).
+        assert!(admit.contains("self.banked_inflight.push_back((token, Arc::new(done)));"));
         let stage = body("stage_banked");
         assert_eq!(
             stage.matches("e.stream().synchronize()").count(),
@@ -1385,16 +1391,17 @@ mod day48_census {
     #[test]
     fn the_memo_holds_only_pairs_the_proxy_accepted() {
         let guarded = "        if self.banked_validated.get(&id) != Some(&bytes) {\n            bank.validate(local, bytes)?;\n            self.banked_validated.insert(id, bytes);\n        }";
+        // Two sites since DAY50 (the demand and the door's prefetch), each behind the guard.
         assert_eq!(
             CACHE.matches(guarded).count(),
-            1,
-            "the memo's one guarded insertion"
+            2,
+            "the memo's guarded insertions"
         );
-        assert_eq!(CACHE.matches("banked_validated.insert(").count(), 1);
+        assert_eq!(CACHE.matches("banked_validated.insert(").count(), 2);
         assert_eq!(
             CACHE.matches("bank.validate(").count(),
-            1,
-            "one validate call site"
+            2,
+            "validate call sites"
         );
     }
 }
@@ -1470,5 +1477,39 @@ mod day49_record_pass {
         for threads in [1, 2, 3, 8, 64] {
             assert_eq!(record_digests(&view, threads), Err(11), "threads={threads}");
         }
+    }
+}
+
+#[cfg(test)]
+mod day50_census {
+    //! DAY50: a pending prefetch is consumed only after the compute stream waits on its copy,
+    //! the door's prefetch takes its lease through the proxy, and only the door's installer
+    //! turns the forward's prefetch condition on.
+    const CACHE: &str = include_str!("../moe_cache.rs");
+    const FORWARD: &str = include_str!("../hybrid_forward.rs");
+    const SRC: &str = include_str!("native.rs");
+
+    #[test]
+    fn prefetch_goes_through_the_owner_and_consumption_waits() {
+        let consume = CACHE
+            .find("if let Some(pending) = self.pending.remove(&id) {\n            if let Err(err) = e.compute_wait(pending.ready.as_ref()) {")
+            .expect("consumption waits first");
+        let publish = CACHE[consume..]
+            .find("self.publish(id, pending.slot);")
+            .unwrap();
+        let wait = CACHE[consume..].find("e.compute_wait(").unwrap();
+        assert!(wait < publish, "published before the wait");
+        let prefetch = &CACHE[CACHE.find("fn prefetch_banked(").unwrap()..];
+        let prefetch = &prefetch[..prefetch.find("\n    fn ").unwrap_or(prefetch.len())];
+        assert!(prefetch.contains("bank.host_resident(local)?"));
+        assert!(prefetch.contains("bank.demand(local, bytes)"));
+        assert!(prefetch.contains("stage_on_copy_stream(e, payload, &mut self.slots[slot])"));
+        assert_eq!(FORWARD.matches("e.expert_bank_prefetch()").count(), 1);
+        // Count in this file's code, not in these tests' own literals.
+        let code = &SRC[..SRC.find("#[cfg(test)]").unwrap()];
+        assert_eq!(
+            code.matches("self.set_expert_bank_prefetch(true);").count(),
+            1
+        );
     }
 }

@@ -50,6 +50,11 @@ pub trait ExpertDispatchBank {
     fn stage_report(&self) -> Option<String> {
         None
     }
+    /// Day 50: whether the record behind `local` is resident in the host tier now (a prefetch
+    /// takes only host-resident records, so it never reads storage on the owner thread).
+    fn host_resident(&self, _local: ExpertDispatchId) -> Result<bool> {
+        Ok(false)
+    }
 }
 
 pub struct SlruExpertDispatch<H: Hotness<ExpertDomain>, R: ExactReader> {
@@ -149,6 +154,13 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
     }
     fn stage_report(&self) -> Option<String> {
         self.bank.stage_times().map(BankStageTimes::line)
+    }
+    fn host_resident(&self, local: ExpertDispatchId) -> Result<bool> {
+        let id = self.ids.get(&local).ok_or(Error::NotFound)?;
+        Ok(self
+            .bank
+            .slru_policy()
+            .is_some_and(|policy| policy.resident(id).is_some()))
     }
     fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
         self.bank.finish_host_use(&demand.ticket)?;

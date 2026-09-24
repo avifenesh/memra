@@ -257,7 +257,9 @@ pub struct MoeSlotCache {
     /// DAY46: leases whose H2D is enqueued on the compute stream, each with the event recorded
     /// after its copy, oldest first. A lease is finished only once its event has completed (or
     /// after a whole-stream drain at teardown); at most `BANKED_INFLIGHT` are open.
-    banked_inflight: VecDeque<(memra_tier::bank::ExpertLeaseToken, CudaEvent)>,
+    banked_inflight: VecDeque<(memra_tier::bank::ExpertLeaseToken, Arc<CudaEvent>)>,
+    /// DAY50: pending blocks a door prefetch leased (each holds its lease in `pending`).
+    banked_prefetched: usize,
     /// `--expert-bank-stages` only: timing events around each banked H2D, read once landed.
     bank_copy_timings: VecDeque<(CudaEvent, CudaEvent)>,
     /// DAY48: `(id, bytes)` pairs the bank's `validate` accepted. The catalog is immutable for
@@ -372,11 +374,14 @@ struct BankAdmitClock {
     /// DAY46: front-of-queue retirement (event checks and `finish`), and the full-queue wait.
     retire_ns: u64,
     wait_ns: u64,
+    /// DAY50: leases a prefetch took, and misses served from a pending prefetch.
+    prefetches: u64,
+    prefetch_hits: u64,
 }
 impl BankAdmitClock {
     fn line(&self) -> String {
         format!(
-            "admits={} gpu_hits={} gpu_misses={} validate_ns={} demand_ns={} reserve_ns={} enqueue_ns={} copy_gpu_ns={} copy_events={} event_errors={} drain_ns={} sync2_ns={} finish_ns={} miss_total_ns={} retire_ns={} wait_ns={}",
+            "admits={} gpu_hits={} gpu_misses={} validate_ns={} demand_ns={} reserve_ns={} enqueue_ns={} copy_gpu_ns={} copy_events={} event_errors={} drain_ns={} sync2_ns={} finish_ns={} miss_total_ns={} retire_ns={} wait_ns={} prefetches={} prefetch_hits={}",
             self.admits,
             self.gpu_hits,
             self.gpu_misses,
@@ -392,7 +397,9 @@ impl BankAdmitClock {
             self.finish_ns,
             self.miss_total_ns,
             self.retire_ns,
-            self.wait_ns
+            self.wait_ns,
+            self.prefetches,
+            self.prefetch_hits
         )
     }
 }
@@ -408,6 +415,8 @@ struct PendingBlock {
     slot: usize,
     ready: Arc<CudaEvent>,
     keepalive: Option<ExpertKeepalive>,
+    /// DAY50: a door prefetch's lease, finished only after `ready` completes.
+    lease: Option<memra_tier::bank::ExpertLeaseToken>,
 }
 
 #[derive(Clone, Copy)]
@@ -685,6 +694,7 @@ impl MoeSlotCache {
             banked: None,
             banked_pending: None,
             banked_inflight: VecDeque::new(),
+            banked_prefetched: 0,
             bank_copy_timings: VecDeque::new(),
             banked_validated: HashMap::new(),
             bank_clock: None,
@@ -1078,6 +1088,24 @@ impl MoeSlotCache {
             return Ok(slot);
         }
         self.misses += 1;
+        // DAY50: a block a door prefetch staged is consumed only after the compute stream waits
+        // on its copy event; its lease then retires on that event like any in-flight lease.
+        if let Some(pending) = self.pending.remove(&id) {
+            if let Err(err) = e.compute_wait(pending.ready.as_ref()) {
+                self.pending.insert(id, pending);
+                return Err(err);
+            }
+            if let Some(lease) = pending.lease {
+                self.banked_prefetched -= 1;
+                self.banked_inflight.push_back((lease, pending.ready));
+            }
+            if let Some(clock) = self.bank_clock.as_mut() {
+                clock.gpu_misses += 1;
+                clock.prefetch_hits += 1;
+            }
+            self.publish(id, pending.slot);
+            return Ok(pending.slot);
+        }
         let demanded = clocked.then(std::time::Instant::now);
         let token = bank.demand(local, bytes)?;
         if let (Some(started), Some(clock)) = (demanded, self.bank_clock.as_mut()) {
@@ -1097,7 +1125,7 @@ impl MoeSlotCache {
         let finishing = clocked.then(std::time::Instant::now);
         let outcome = match staged {
             Ok(Ok((slot, Some(done)))) => {
-                self.banked_inflight.push_back((token, done));
+                self.banked_inflight.push_back((token, Arc::new(done)));
                 Ok(slot)
             }
             // The copy's completion was proven by a stream drain (its event could not be
@@ -1147,7 +1175,7 @@ impl MoeSlotCache {
         let started = self.bank_clock.is_some().then(std::time::Instant::now);
         while let Some((_, done)) = self.banked_inflight.front() {
             if !done.is_complete() {
-                if self.banked_inflight.len() < BANKED_INFLIGHT {
+                if self.banked_inflight.len() + self.banked_prefetched < BANKED_INFLIGHT {
                     break;
                 }
                 let waiting = self.bank_clock.is_some().then(std::time::Instant::now);
@@ -1172,19 +1200,132 @@ impl MoeSlotCache {
     /// DAY46: every in-flight lease finished after one stream drain (teardown and the gate's
     /// close). A failed drain keeps every lease open.
     pub(crate) fn retire_all_banked(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        if self.banked_inflight.is_empty() {
+        if self.banked_inflight.is_empty() && self.banked_prefetched == 0 {
             return Ok(());
         }
         let bank = self.banked.as_ref().ok_or("bank proxy absent")?.clone();
         self.compute_stream.synchronize()?;
+        if self.banked_prefetched > 0 {
+            // DAY50: unconsumed prefetches' copies ran on the copy stream.
+            self.copy_stream.synchronize()?;
+        }
         while let Some((token, _done)) = self.banked_inflight.pop_front() {
             if let Err(err) = bank.finish(&token) {
                 self.banked_pending = Some(token);
                 return Err(err.into());
             }
         }
+        let prefetched: Vec<BlockId> = self
+            .pending
+            .iter()
+            .filter(|(_, p)| p.lease.is_some())
+            .map(|(id, _)| *id)
+            .collect();
+        for id in prefetched {
+            let mut pending = self.pending.remove(&id).expect("listed above");
+            let lease = pending.lease.take().expect("filtered on a lease");
+            self.banked_prefetched -= 1;
+            // The slot's copy landed (both streams drained) but it was never published: return
+            // it to its class's free list, then the lease.
+            self.occupant[pending.slot] = None;
+            self.release_reserved_slot(pending.slot);
+            if let Err(err) = bank.finish(&lease) {
+                self.banked_pending = Some(lease);
+                return Err(err.into());
+            }
+        }
         self.settle_copy_timings();
         Ok(())
+    }
+
+    /// DAY50: the door's prefetch of one block through the owner: a lease for a record that is
+    /// resident in the host tier, a GPU slot outside `keep`, the H2D on the copy stream after an
+    /// event that orders every earlier compute-stream reader of the slot. `false` (the demand
+    /// path serves the block) when the block is resident or pending, the record is not
+    /// host-resident, the in-flight bound is reached, or no slot outside `keep` can be taken.
+    fn prefetch_banked(
+        &mut self,
+        id: BlockId,
+        bytes: usize,
+        keep: &[BlockId],
+        e: &Engine,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if self.banked_pending.is_some()
+            || self.frozen
+            || self.table.contains_key(&id)
+            || self.pending.contains_key(&id)
+        {
+            return Ok(false);
+        }
+        let bank = self.banked.as_ref().ok_or("bank proxy absent")?.clone();
+        self.retire_banked(&bank)?;
+        if self.banked_inflight.len() + self.banked_prefetched >= BANKED_INFLIGHT {
+            return Ok(false);
+        }
+        let local = (id.layer, id.proj, id.ex);
+        if self.banked_validated.get(&id) != Some(&bytes) {
+            bank.validate(local, bytes)?;
+            self.banked_validated.insert(id, bytes);
+        }
+        if !bank.host_resident(local)? {
+            return Ok(false);
+        }
+        let Some(slot) = self.reserve_prefetch_slot(bytes, keep) else {
+            return Ok(false);
+        };
+        let token = match bank.demand(local, bytes) {
+            Ok(token) => token,
+            Err(err) => {
+                self.release_reserved_slot(slot);
+                return Err(err.into());
+            }
+        };
+        if token.record() != local {
+            self.release_reserved_slot(slot);
+            bank.finish(&token)?;
+            return Err("banked lease names another expert than the one demanded".into());
+        }
+        let staged = bank.with_bytes(&token, |payload| {
+            stage_on_copy_stream(e, payload, &mut self.slots[slot])
+        });
+        match staged {
+            Ok(Ok(ready)) => {
+                self.occupant[slot] = Some(id);
+                self.pending.insert(
+                    id,
+                    PendingBlock {
+                        slot,
+                        ready,
+                        keepalive: None,
+                        lease: Some(token),
+                    },
+                );
+                self.banked_prefetched += 1;
+                self.staged_bytes += bytes as u64;
+                if let Some(clock) = self.bank_clock.as_mut() {
+                    clock.prefetches += 1;
+                }
+                Ok(true)
+            }
+            Ok(Err((err, reusable))) => {
+                if reusable {
+                    // The copy stream drained: nothing reads the lease or the slot.
+                    self.release_reserved_slot(slot);
+                    bank.finish(&token)?;
+                } else {
+                    // Unknown copy completion: the slot stays outside every table and the
+                    // lease stays open; the copy stream is marked for Drop's drain.
+                    self.copy_stream_unknown = true;
+                    self.banked_pending = Some(token);
+                }
+                Err(err)
+            }
+            Err(err) => {
+                self.release_reserved_slot(slot);
+                self.banked_pending = Some(token);
+                Err(err.into())
+            }
+        }
     }
 
     /// The stage clock's copy timing events whose copy has landed (`--expert-bank-stages` only).
@@ -1639,6 +1780,7 @@ impl MoeSlotCache {
                 slot,
                 ready,
                 keepalive,
+                lease: None,
             },
         );
         self.staged_bytes += host_bytes.len() as u64;
@@ -1653,8 +1795,13 @@ impl MoeSlotCache {
         e: &Engine,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         if self.banked.is_some() {
-            // No detached legacy prefetch may bypass the owner service.
-            return Ok(false);
+            // No detached legacy prefetch may bypass the owner service: under the door a
+            // prefetch takes its lease through the owner (DAY50).
+            let bytes = match &source {
+                ExpertSource::Memory { bytes, .. } => bytes.len(),
+                ExpertSource::Disk { len, .. } => *len,
+            };
+            return self.prefetch_banked(id, bytes, keep, e);
         }
         self.reap_copy_sources();
         if self.table.contains_key(&id)
@@ -2328,15 +2475,23 @@ impl Drop for MoeSlotCache {
         // Event tracking is intentionally disabled in Engine. Drain explicit copy-stream handoffs
         // before either the destination slots or pinned read buffers begin field destruction.
         let mut safe_to_drop_slots = true;
-        if !self.banked_inflight.is_empty() {
-            // DAY46: one drain proves every in-flight copy; a failed drain keeps them all open.
-            if self.compute_stream.synchronize().is_err() {
+        if !self.banked_inflight.is_empty() || self.banked_prefetched > 0 {
+            // DAY46/DAY50: one drain of each stream proves every in-flight and prefetched copy; a
+            // failed drain keeps them all open.
+            if self.compute_stream.synchronize().is_err() || self.copy_stream.synchronize().is_err()
+            {
                 safe_to_drop_slots = false;
             } else if let Some(bank) = &self.banked {
                 while let Some((token, _done)) = self.banked_inflight.pop_front() {
                     // Wrong-thread teardown refuses; the owner registry retains backing.
                     let _ = bank.finish(&token);
                 }
+                for pending in self.pending.values_mut() {
+                    if let Some(lease) = pending.lease.take() {
+                        let _ = bank.finish(&lease);
+                    }
+                }
+                self.banked_prefetched = 0;
             }
         }
         if let Some(token) = &self.banked_pending {

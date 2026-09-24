@@ -154,6 +154,11 @@ impl ExpertBankProxy {
     pub fn validate(&self, id: ExpertDispatchId, bytes: usize) -> Result<()> {
         self.access(|e| e.bank.as_ref().ok_or(Error::NotFound)?.validate(id, bytes))
     }
+    /// Day 50: whether the record is resident in the host tier (`ExpertDispatchBank::host_resident`),
+    /// read on the owner thread.
+    pub fn host_resident(&self, id: ExpertDispatchId) -> Result<bool> {
+        self.access(|e| e.bank.as_ref().ok_or(Error::NotFound)?.host_resident(id))
+    }
     /// The registered bank's stage clock line (`ExpertDispatchBank::stage_report`), read on
     /// the owner thread like every other call; `Ok(None)` when no clock is installed.
     pub fn stage_report(&self) -> Result<Option<String>> {

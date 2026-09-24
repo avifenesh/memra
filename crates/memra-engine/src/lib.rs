@@ -1856,6 +1856,9 @@ pub struct Engine {
     /// (`HostBuf::Mmap`) instead of a pinned copy the door never reads. Only the gate binaries
     /// set it, and only with `--experts-via-tier`; false is every loader path as before.
     expert_host_mapped: std::sync::atomic::AtomicBool,
+    /// DAY50: the MoE slot cache door is installed and prefetches the next routed expert through
+    /// its owner. Set only by the door's installer; false keeps the legacy prefetch condition.
+    expert_bank_prefetch: std::sync::atomic::AtomicBool,
     /// CALIBRATED-A4 CLIPPING DIAGNOSTIC (research/qwen-fp4-activation-mint-20260909). `None`
     /// while serving, so the quantizer takes a null pointer and does no atomics. When a
     /// diagnostic run enables it, this is a device buffer of 4 u64 per program slot
@@ -3779,6 +3782,7 @@ impl Engine {
             sample,
             moe_cache: Mutex::new(None),
             expert_host_mapped: std::sync::atomic::AtomicBool::new(false),
+            expert_bank_prefetch: std::sync::atomic::AtomicBool::new(false),
             a4_clip_stats: Mutex::new(None),
             w8_mirrors: Mutex::new(std::collections::HashMap::new()),
             w8_act: Mutex::new(std::collections::HashMap::new()),
@@ -6638,6 +6642,18 @@ impl Engine {
     pub fn set_expert_host_mapped(&self, mapped: bool) {
         self.expert_host_mapped
             .store(mapped, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// DAY50: set by the door's installer once the bank is installed.
+    pub(crate) fn set_expert_bank_prefetch(&self, on: bool) {
+        self.expert_bank_prefetch
+            .store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// DAY50: whether the door prefetches through its owner (the forward's prefetch condition).
+    pub(crate) fn expert_bank_prefetch(&self) -> bool {
+        self.expert_bank_prefetch
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Whether the door's mapped-expert load option is set (DAY44).
