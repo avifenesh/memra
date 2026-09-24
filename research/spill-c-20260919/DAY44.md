@@ -62,3 +62,7 @@ three in the ladder sitting (its pinned copy is cached memory there, so (ii) is 
 - **The mapped view's plumbing.** `TensorSource` already exposes `gguf()`, so the view needs no new trait method:
   the loader asks the source's `GgufFile` for the tensor's range, the shard's shared map (`GgufFile::shard_mmap`,
   the shard's `Mmap` made an `Arc<Mmap>`) and its retained inode. Same effect as section 1 (b), less surface.
+- **The load reading's end point.** Section 1's (iii) names "the `loaded` line's time since process start"; run-gen
+  prints `loaded ...` after the installer, so that line counts the install as load. The reader takes the load's end
+  at the `[q8rp] split-plane decode mirrors built` line (the last line of the load, before the installer), stated
+  here before any I9 cell ran.
