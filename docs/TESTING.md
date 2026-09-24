@@ -1089,6 +1089,15 @@ shapes. The dense test's red arm moves one output row's weight codes and require
 move in every token row and its neighbour in none. Output buffers start as a NaN pattern, so an
 unwritten element fails, and the dense test also requires the stride gaps to stay unwritten. `_tile_timing` prints device time against the loop. Receipts:
 `research/dsv4f-bringup-20260923/prefill-tile/`.
+### DSv4 compressor BF16 island storage (#695)
+
+`cargo test -p memra-engine --release --test dsv4_island_bf16_gpu -- --ignored --test-threads=1`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) runs all five dots entries the
+compressor reaches from the BF16 checkpoint plane (`w_is_bf16 = 1`) and from its exact f32
+widening, and requires `to_bits`-equal outputs: 60 cases over the three compressor shapes
+(latent 1024, 512 and 256 over hidden 4096) and 1, 2, 6 and 33 rows. The red arm moves one
+row's BF16 weights by one ulp and requires that row to move and its neighbour not to. Receipts:
+`research/dsv4f-bringup-20260923/cmp-diet/`.
 
 ### DSv4 batch-1 latency kernels (latency lane)
 

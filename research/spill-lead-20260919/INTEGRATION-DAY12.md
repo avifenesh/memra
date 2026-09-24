@@ -3184,6 +3184,168 @@ demote's owner-thread KV hashes, pre-registered first).
 - 2026-10-06: the park door.
 - BOX3's detached OS volume: keep or delete.
 
+## integ55 (`lane/spill-integ55-20260924`): B day 35 (memra#680's remaining term: the prefix seed a still-priming session will publish is booked under the door; G-NOOM green on the target card)
+Lane commit merged: B `1e3e46629` (day 35) on main `55679db26` (#702) as `38b35dc5e`, clean. The engine change sits
+in `crates/memra-server/src/worker.rs` (`pending_seed_bytes`, `prefix_seed_bytes_at`, `seed_entry_bytes`,
+`session_pending_seed_rows`) and `admit_memory.rs` (the `pending_seed=` field). It is armed only. The FLAGS row gains
+the seed term. B's day-36 pre-registration (`88bb3b1e2`) rides the merge, but its partial receipts do not (they come
+after `1e3e46629`).
+
+**B day 35.** Pre-registration `164777767` was committed at 20:37:58Z, before any day-35 code or boot. It chose
+option (a), booking the seed rather than gating the insert. The diagnosis, from day 34's BOX4 receipts, is DAY33 1.1
+item 2 made concrete: every finished prime seeds a prefix-cache entry of about 197 MB during the burst, and the
+day-33 booking counted only the prefill workspace. The fix `809c16444` adds each armed session's future seed entry,
+sized by `prefix_snapshot_bytes`'s own arithmetic at its seed boundary, to the booked reduction until the seed
+publishes or is refused. The cache contents do not change. Verbatim:
+- BOX4, the red leg on main `25bbb91f5`: `DAY33 G-NOOM card=pro6000 boot=red-R64 ... oom_lines=3 burst_503=0 ...
+  -> FAIL`, with `first_oom=server.log:743 ... [admit-mem] prefill OOM parked`.
+- BOX4, the green legs on `809c16444`, twice: `DAY33 G-NOOM card=pro6000 boot=green-R64-r1 ... oom_lines=0
+  burst_503=0 crash_lines=0 burst_200=44 ... r429=20 refuse_lines=20 retry_after_in_1_60=True -> PASS` and
+  `green-R64-r2` identical, with G-BOOK PASS (`admit_lines=60 ... est_over_booked_free=0`).
+  The card reads `DAY33 VERDICT card=pro6000 boots=5 v_boot_all=True green_noom_book_all=True v_id_fix_all=True
+  v_id_all=True v_off_all=True -> GREEN`.
+- The 5090: `DAY33 VERDICT card=rtx5090 boots=6 ... -> GREEN`, with V-ID-FIX, V-ID and V-OFF 16 of 16. As
+  pre-registered, the 5090 has no red for this term: the day-33 tree read NOT-RED at G2 and at L64, so BOX4 carries
+  the red leg.
+- One post-block resync (a Bedrock 503 stop) and one BOX4 relaunch before any boot are recorded in
+  `rtx5090-day35/run.log`.
+
+**Lead review.**
+- Door OFF is unchanged: `pending_seed` is 0 unless the door is armed, and the census test
+  `pending_seed_is_armed_only_and_joins_the_booked_reduction` pins that it is computed once and joins the one
+  `less_pending` reduction.
+- No double count. The seed is booked only while `seed_prefix` and `seed_at` are set. The publish path clears both
+  (`s.seed_prefix = false; ... s.seed_at.take()`) whether it publishes or refuses, so a published entry's bytes are
+  counted once, as resident, never as pending too.
+- Vision sessions and sessions without a cache book nothing, matching the publish path's own refusals.
+- One numeric program per request: V-ID-FIX 16 of 16. The booking moves no byte of any request; it only defers
+  admissions.
+
+**The review fix, before merge.** Revuto on #705 found a real over-booking. `PrefixCache::prepare_snapshot`
+evicts or demotes older unleased entries to fit a seed inside the cache's byte budget before it allocates. A warm,
+full cache therefore replaces bytes rather than adding them, and booking every still-priming session's full seed
+would 429 requests that fit. The cold-burst evidence could not show it. The lead's fix `34a4b7f23` adds
+`seed_booking_cap(pending, prefix_cache_budget_bytes(), px.total_bytes)`: the term is capped at the budget the
+cache has left. It is armed only, with a unit test over the cold, part-full, full and over-budget cases, and the
+census updated.
+- Lane B re-ran day 35's green legs on BOX4 with it, under day 35's reader and verdicts, pre-registered at
+  `489b267cc` before its boots. Verbatim: `DAY33 G-NOOM card=pro6000 boot=green-R64-a1 ... oom_lines=0 burst_503=0
+  crash_lines=0 burst_200=44 ... r429=20 ... -> PASS`, and `green-R64-a2` identical. V-ID-FIX, V-ID and V-OFF are
+  16/16, and the card reads GREEN.
+- The 5090 r2 battery on `34a4b7f23` is all green (`integ55-5090-r2/`, binary `85708a67`), and the #680 gate is
+  unchanged at 37 x 200 and 27 typed 429s.
+- As expected, the cap never binds on a cold burst, so both cards read the same as before it. Its effect is in the
+  warm steady state, which no gate here measures.
+- B's day-36 receipts ride this merge (`0adb1e823`). They are read in integ56. Day 36 measured the uncapped
+  booking, and DAY36 2.2 says so.
+- BOX4 was destroyed at 04:53Z, after all 559 of B's box receipts were mirrored and sha256-checked file for file.
+
+**Ruling 50:**
+- Day 35 is read as registered: G-NOOM is green on the target card twice, with the red reproduced on main. The
+  review fix keeps it green (addendum, twice). With day 33's workspace term, #680's two terms are both booked, the
+  seed term capped at the cache's remaining budget. #680 closes with this merge.
+- The owner's `MEMRA_ADMIT_BY_MEMORY` decision cell is B day 36 on this tree, pre-registered at `88bb3b1e2` and
+  running on both cards.
+
+**Checks.**
+- CPU battery on `38b35dc5e`, 15 of 15 rc=0: portable suites 368 passed and 0 skipped; server 890, engine lib 546,
+  tier 8 and pytest 87 passed; clippy `-D warnings` twice; fmt, check-flags, publish census, docs registry,
+  conflict markers, workflow keys, perf board and `git diff --check` (`integ55-cpu-battery/`).
+- RTX 5090 on the same tree: binary `cd97b015`, hashed after serve-smoke's build; one collector hold from 03:35Z to
+  03:47Z, taken as lane B's day-36 O2-off released the card (`integ55-5090/`). Verbatim:
+  - `serve-smoke: 0 failed`.
+  - The engine span cells `10 passed` and the worker cells `17 passed`, both serial.
+  - Identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`.
+  - Fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 160 ok each.
+  - Hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 and 68 ok.
+  - The #680 gate, `ADMIT-MEM BURST GATE: ALL GREEN`: `AMB no prefill OOM: oom_lines=0 status={429: 27, 200: 37} ->
+    PASS`, `AMB booked admits: admit_lines=37 est_over_booked_free=0 served=37 -> PASS`. The seed booking refuses a
+    few more requests than integ54's run of the same gate (37 against 40 served); its own identity terms say the
+    served ones move no token.
+  - `SPEC-CTX-EDGE GATE: ALL GREEN`.
+
+**Running.** B day 36: the door decision cell, on BOX4 and the 5090. A day 35: design M, the demote's two KV hashes
+off the owner thread.
+
+**Owner decisions flagged.**
+- `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-10-07): on B day 36.
+- 2026-10-05, the contracts door: integ54's readings.
+- 2026-10-04: MoE slot cache, VMM.
+- 2026-10-06: the park door.
+- BOX3's detached OS volume: keep or delete.
+
+## integ56 (`lane/spill-integ56-20260924`): B day 36, the owner's `MEMRA_ADMIT_BY_MEMORY` decision cell (V-DOOR PASS on both cards; the decision packet)
+Lane tip merged: B `c4cbbe042` on main `54fe991e9` (#705) as `845b2a12a`. Research only: B's STATE.md, the day-36
+INDEX row and a one-word DAY35 fix. The day-36 receipts and DAY36.md came in with integ55.
+
+**B day 36.** Pre-registration `88bb3b1e2` was committed before any day-36 boot, and the cell started only once day
+35's BOX4 legs read GREEN. It is day 34's cell (OFF against ON at open output 2048, 8192 and 32768, both orders)
+with the V-ALLOC booking in the engine's form and a V-OOM term (zero prefill `CUDA_ERROR_OUT_OF_MEMORY` lines and
+zero 503s), on the day-35 tree `809c16444`, on the local 5090 (the 9B) and BOX4 (a single RTX PRO 6000 WS, the 27B).
+Verbatim, 63 PASS and 0 FAIL per card:
+- `DAY34 V-DOOR card=rtx5090 boots=8 excluded=0 v_crash_all=True v_id_all=True v_alloc_all=True v_trunc_band_all=True
+  v_trunc_conserved_all=True v_retry_all=True v_oom_all=True g_book_all=True park_all=True -> PASS`, and the same line
+  for `card=pro6000`.
+- No OOM line, no park and no crash in any of the 16 boots. Identity is 16/16 to 48/48 on every ON arm.
+- On the 5090, the 32768 burst is 19 x 200 and 13 typed 429s. On BOX4 it is 44 x 200 and 20 typed 429s. On day 32's
+  pre-fix tree the same bursts gave 2 x 503 per order locally and 46 to 47 x 503 per order on the target card.
+
+**The decision packet.** The owner's call, decide-by 2026-10-07.
+- **Selection rules as printed, none chosen:** `DAY34 SELECT card=rtx5090 R1_smallest_zero_truncation=8192 ...
+  R2_smallest_v_ge_max_natural_G=8192 (max_natural_G=6405) ... R3_registry=32768 R4_survey=context` and `DAY34 SELECT
+  card=pro6000 R1_smallest_zero_truncation=none ... R2_smallest_v_ge_max_natural_G=none of [2048, 8192, 32768]
+  (max_natural_G=193178) ... R3_registry=32768 R4_survey=context`.
+- **Truncation:**
+  - 2048 cuts 18 requests per order on the 5090 that OFF lets stop on their own. 8192 and 32768 cut none there.
+  - On the PRO 6000 every swept value cuts 4 to 5 requests per order, because the 27B's natural stops reach 193,178
+    tokens.
+- **Concurrency:**
+  - OFF peaks at 11 (5090) and 9 (PRO 6000) sessions in flight.
+  - At 2048 and 8192 every burst is served whole: 32 of 32 on the 5090, 64 of 64 on the PRO 6000.
+  - At 32768 the door serves 19 and 44 and refuses the rest with typed 429s.
+- **What R4 means:**
+  - Every surveyed engine (vLLM, SGLang, llama.cpp, TensorRT-LLM) bounds an omitted `max_tokens` by the remaining
+    context, and the OpenAI contract pins no bound. Following R4 makes the door's open-output charge the served
+    context. That is today's door-OFF charge, so the door's part (a) would not change the program.
+  - Parts (b) (demote-before-drop in the reclaim flush) and (c) (the bounded defer and typed 429) are the rest of the
+    door.
+- **One caveat:** day 36 ran the uncapped seed booking. On a warm prefix cache its ON admissions may be over-booked
+  (extra defers or 429s). The cap `34a4b7f23` is on main since #705. Truncation, identity and the no-OOM result are
+  unaffected.
+- **Options:**
+  - (1) Keep the door OFF.
+  - (2) Promote it with one open-output value. R1 and R2 give 8192 on the 5090 and nothing on the PRO 6000, where
+    every swept value truncates the 27B. R3 gives 32768, the registry value.
+  - (3) Promote parts (b) and (c) only, with the R4 charge.
+  - (4) Before deciding, rerun the ON concurrency rows on the capped tree: about 0.1 agent-day, 4.5 h on the 5090
+    and 6 h on a rented target card.
+
+**Lead review.**
+- The pre-registration precedes every boot. The arms, values, orders and reader match day 34's cell with its stated
+  changes.
+- The V-ALLOC booking now reads the engine's form, and the day-32 FAIL is not repeated.
+- The uncapped-booking caveat is recorded in DAY36 2.2 by B, not added after the fact here.
+- No finding.
+
+**Ruling 51:**
+- Day 36 is read as registered: V-DOOR PASS on both cards.
+- The door stays OFF until the owner decides. The lead selects no value.
+- The packet above is the owner's input. A capped-tree rerun (option 4) runs only if the owner asks for it.
+
+**Checks.**
+- Research only: check-flags, conflict markers, perf board and `git diff --check` are clean.
+- No provider name, host, id or price. No em dash in authored lines.
+
+**Running.** A day 35: design M' on the 5090, pre-registered after design M was refuted and reverted. Lane B holds.
+
+**Owner decisions flagged.**
+- `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-10-07): the packet above.
+- 2026-10-05, the contracts door: integ54's readings (DAY28 1b passes on the target card, and the owner thread's
+  promote cost is under 1 ms).
+- 2026-10-04: MoE slot cache, VMM.
+- 2026-10-06: the park door.
+- BOX3's detached OS volume: keep or delete.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
