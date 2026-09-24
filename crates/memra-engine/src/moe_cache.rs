@@ -260,6 +260,10 @@ pub struct MoeSlotCache {
     banked_inflight: VecDeque<(memra_tier::bank::ExpertLeaseToken, CudaEvent)>,
     /// `--expert-bank-stages` only: timing events around each banked H2D, read once landed.
     bank_copy_timings: VecDeque<(CudaEvent, CudaEvent)>,
+    /// DAY48: `(id, bytes)` pairs the bank's `validate` accepted. The catalog is immutable for
+    /// the door's life, so a pair that validated once always does; any other pair (a new id, or
+    /// a known id with another byte count) still goes to the proxy, and a refusal is never kept.
+    banked_validated: HashMap<BlockId, usize>,
     /// `--expert-bank-stages` only (DAY40): the CUDA-thread half of the door's log-only stage
     /// clock. `None` without the door and without the flag, so no legacy statement reads it.
     bank_clock: Option<BankAdmitClock>,
@@ -682,6 +686,7 @@ impl MoeSlotCache {
             banked_pending: None,
             banked_inflight: VecDeque::new(),
             bank_copy_timings: VecDeque::new(),
+            banked_validated: HashMap::new(),
             bank_clock: None,
             slots,
             slot_class,
@@ -1056,7 +1061,10 @@ impl MoeSlotCache {
         let local = (id.layer, id.proj, id.ex);
         let clocked = self.bank_clock.is_some();
         let entered = clocked.then(std::time::Instant::now);
-        bank.validate(local, bytes)?;
+        if self.banked_validated.get(&id) != Some(&bytes) {
+            bank.validate(local, bytes)?;
+            self.banked_validated.insert(id, bytes);
+        }
         if let (Some(started), Some(clock)) = (entered, self.bank_clock.as_mut()) {
             clock.admits += 1;
             clock.validate_ns += clock_ns(started);

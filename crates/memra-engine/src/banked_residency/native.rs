@@ -1283,3 +1283,26 @@ mod day46_census {
         assert!(CACHE.contains("pub(crate) const BANKED_INFLIGHT: usize = 32;"));
     }
 }
+
+#[cfg(test)]
+mod day48_census {
+    //! DAY48: the validate memo admits a pair only after the proxy accepted it, and a pair it
+    //! does not hold still reaches the proxy.
+    const CACHE: &str = include_str!("../moe_cache.rs");
+
+    #[test]
+    fn the_memo_holds_only_pairs_the_proxy_accepted() {
+        let guarded = "        if self.banked_validated.get(&id) != Some(&bytes) {\n            bank.validate(local, bytes)?;\n            self.banked_validated.insert(id, bytes);\n        }";
+        assert_eq!(
+            CACHE.matches(guarded).count(),
+            1,
+            "the memo's one guarded insertion"
+        );
+        assert_eq!(CACHE.matches("banked_validated.insert(").count(), 1);
+        assert_eq!(
+            CACHE.matches("bank.validate(").count(),
+            1,
+            "one validate call site"
+        );
+    }
+}
