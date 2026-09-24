@@ -47,7 +47,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   cold prime), digests equal on every request, `plain-affinity` hit lines present on the resumed arms; (ii) the
   step-OOM adjacency replay (`retire_may_park(_, true)` refuses the park, no `park-compact` line, no entry left);
   (iii) the park-time copy cost per park at the served context on both cards (the local 9B pair is owed).
-- Status: `open`. Day 27 has the target-card plain-path receipt for (iii) only (1.7 to 2.1 ms).
+- Status: `pre-registered` (DAY38.md, addenda A and B: the plain path's errored-session park fix and the fault
+  door's plain injection points landed first). Day 27 has the target-card plain-path receipt for (iii) only.
 - Price: 1 agent-day (design note), plus about 3 h on each card.
 
 ### O3. `MEMRA_ADMIT_BY_MEMORY` ON rows on the capped seed booking, decide-by 2026-10-07
@@ -59,8 +60,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - Acceptance: DAY34 1.6's terms unchanged (V-DOOR and its members) on the capped tree, both cards, both orders, plus
   a term that says whether the cap bound on each boot (from the `pending_seed=` field against the uncapped sum), so
   the rerun says what the cap moved rather than only repeating day 36.
-- Status: `open`. Should run after O4 and O5 land if they change the door's booking (they are the door's own
-  booking terms), so the owner reads the ON rows of the tree that would ship.
+- Status: `open`, DAY40. It follows O5 (DAY39): O5 corrects the door's own prime booking (a burst books the
+  shared slab once per session today), and the ON rows are only the owner's input on the booking that would ship.
+  Running them first would bank a second known over-booking beside day 36's.
 - Price: 0.1 agent-day plus about 4.5 h local and 6 h on a target card (STATE, day 36).
 
 ## Admission and memory improvements
@@ -82,7 +84,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   about 5.6 GB here ... named for the lead, not fixed by this lane").
 - Why here: day 33's `pending_prime` sums every still-priming session's full `W`, so the door's booked reading carries
   the same over-count on a burst. The fix is the door's booking measured at its best, and it feeds O3.
-- Status: `open`. Price: about 0.5 agent-day plus a cell on each card.
+- Status: `pre-registered` (DAY39.md), before O3.
+- Price: about 0.5 agent-day plus a cell on each card.
 
 ### O6. The enforcing predictive door on the fuller charge
 
