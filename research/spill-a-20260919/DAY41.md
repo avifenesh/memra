@@ -36,3 +36,22 @@ GREEN`), and on the target card in a later sitting; a CPU cell for the three val
 **What each card decides.** Each card its own gate. Nothing is timed.
 
 **Budget.** 0.25 agent-day.
+
+## 2. The 5090 half, as it ran (`rtx5090-day41/`)
+
+- The tip binary `a8e73bd2f377b66f..` (`7f3558229`, the day-41 code `4ca4bb36e` with later records only), one hold
+  18:15:42Z to 18:22:07Z after two bounded busy attempts; `run.sh` ran the fault gate's default and plain arms through
+  `--external-lock 9`.
+- Verbatim: `gate fault-default rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (229 ok, 0 FAIL) and `gate fault-plain
+  rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (229 ok, 0 FAIL); every check of the three new cells green in both arms.
+- The arms' own lines (default arm): `hash helper fault (MEMRA_KV_HOST_FAULT=sources-helper-gone): the Sources job of
+  ticket seq=4 (18 views) is dropped and the helper exits` then `TIER DISABLED: tier hash helper gone before the H2D
+  checksums of ticket seq=4 landed (the sources reply channel closed)`; `.. sources-never-land): .. is hashed and its
+  reply discarded` then `TIER DISABLED: tier H2D checksums never landed: ticket seq=4's 18 sources handed 10001.0ms ago,
+  past the 10s deadline`; `.. sources-foreign-reply): .. is answered as seq + 1` then `TIER DISABLED: tier H2D checksum
+  reply seq=5 with 18 digests does not describe ticket seq=4 of 18 sources`. No promote published in any of them, the
+  helper joined at each latch, r1 to r4 byte-equal to door OFF.
+- CPU: `day41_the_sources_faults_key_on_the_first_sources_job` (the census of the order and, behaviourally, a `Hash` job
+  answered cleanly under each `Sources` fault), server lib 911 passed, clippy clean.
+- **Verdict**: `DAY41 K-ARMS (5090) default ALL GREEN, plain ALL GREEN, the three arms each latch typed with no
+  publication -> 5090 PASS; target card owed` (the next sitting's fault gate carries the cells).
