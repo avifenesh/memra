@@ -1,0 +1,3 @@
+--label warmup --conc 1 --n 1 --max-tokens 32 --greedy
+--label greedy-32k --conc 1 --n 2 --greedy --keep-text --max-tokens 256 --context-words 22400
+--label greedy-64k --conc 1 --n 1 --greedy --keep-text --max-tokens 256 --context-words 44800

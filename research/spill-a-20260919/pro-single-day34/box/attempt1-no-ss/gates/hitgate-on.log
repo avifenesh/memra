@@ -1,0 +1,5 @@
+== qwen arm: spec-on boot (contracts door ON, MEMRA_KV_HOST_MB=8192) ==
+spec-on-cache-hit-gate: FAIL — cannot observe listening sockets (no ss, no lsof), so this run
+  cannot prove port 18099 is free. An unobservable port is not a free port:
+  a foreign responder would be measured as the model under test.
+  Install iproute2 (ss) or lsof.

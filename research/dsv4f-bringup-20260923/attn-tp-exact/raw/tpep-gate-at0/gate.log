@@ -1,0 +1,50 @@
+START utc=2026-09-23T22:50:58Z cmd=/root/lane/target-attn/release/dsv4_tp_ep_gate /data/dsv4f/nvfp4 /root/box/tape-rebuild.txt
+MOE_PROGRAM numeric_class=existing_m1_f16_mma
+PROTOCOL {"plain_only":true,"topology":"tp_ep_all_layers","numeric_class":"dsv4_expert_id_ep_slot_order_f32_rank_reduce","attention_tp":false,"prime_tokens":1,"continuation_tokens":3,"source_sha256":"11e4bd80352f4a24504ffdee519b33bbc527b3b9bcfeb531815e5731b190cb8c","dspark":false}
+[load] plain sampler: Host
+[load] sampled candidate order: Radix
+[load] placement: split_at=22 trunk_layers=43 dspark_tail_reserve=0.00 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: TpEpAllLayers | layers=43 per-rank-resident=all
+[load] indexer score: Scalar
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 349.0ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 2 rank copies done t=19s
+[load] layer 7 -> 2 rank copies done t=38s
+[load] layer 11 -> 2 rank copies done t=57s
+[load] layer 15 -> 2 rank copies done t=76s
+[load] layer 19 -> 2 rank copies done t=95s
+[load] layer 23 -> 2 rank copies done t=114s
+[load] layer 27 -> 2 rank copies done t=133s
+[load] layer 31 -> 2 rank copies done t=184s
+[load] layer 35 -> 2 rank copies done t=241s
+[load] layer 39 -> 2 rank copies done t=298s
+[load] layer 42 -> 2 rank copies done t=339s
+[load] drafter: 3 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path off (set MEMRA_DSV4_DRAFTER=dspark); trunk-only
+[load] sink score: Scalar
+[TP/EP load] local expert banks resident by ID: rank0=0..128, rank1=128..256; peer dispatch disabled
+[load] expert program: matrix (grouped ModelOpt split-plane executor via dsv4_grouped; tensor-core MMA class, the loaded default since 2026-09-11), EP pair (all-layer TP/EP local banks)
+[dsv4-doors] program=loaded door="replay cadence" env=MEMRA_DSV4_REPLAY_CADENCE merged=#374 declared_default=On resolved=NoServingCaller("full-token replay is armed per request by a gate binary only; no serving or eager request arms it, so the cadence choice has no caller") disposition=ReclassifyAsGateInput
+[dsv4-doors] program=loaded door="dense exact-tail transport" env=MEMRA_DSV4_DENSE_EXACT_TAIL merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="dense-fast" env=MEMRA_DSV4_DENSE_FAST merged=#404 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="HC dot split S16" env=MEMRA_DSV4_HC_DOT_SPLIT merged=#418 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+CORRECTNESS_ARM fresh_request_state=true
+MOE_NUMERIC_CLASS existing_m1_f16_mma
+[dsv4-prefill-f16g] GU_FUSE ENGAGED: rows=1 live_slots=6 hidden=4096 inter=2048 ModelOpt NVFP4 f16-MMA class
+RECEIPT Receipt { source_sha256: "11e4bd80352f4a24504ffdee519b33bbc527b3b9bcfeb531815e5731b190cb8c", output_sha256: "c1e0448db09d82969adff4b1b8863457961a07275ffeb7d3d584d31b205aa1c2", position: 4, positions: [1, 2, 3, 4], rank_layer_calls: [172, 172], cache_digests: [[5165682295342033977, 5165682295342033977], [4005118191933175359, 4005118191933175359], [3140616732917016357, 3140616732917016357], [17947439003610025137, 17947439003610025137]], hidden_digests: [[5757421387810370686, 5757421387810370686], [17371827106730674137, 17371827106730674137], [178994871880898510, 178994871880898510], [10642336272716670286, 10642336272716670286]], ep_calls: 344, ar_dispatches: 172, ar_refusals: [0, 0], attention_rank_calls: [0, 0], attention_ar_calls: 0 }
+DIGEST output_sha256=c1e0448db09d82969adff4b1b8863457961a07275ffeb7d3d584d31b205aa1c2 state_sha256=c391bfaa3f8503d1dc995eefe4d7ee9da8c672a9c15aa7fb8ebdcfefc1cc2483
+REFUSAL_GATE rank=0 code=40043 position=1 cache_unchanged=true retry_refused=true
+REFUSAL_GATE rank=0 code=40043 position=3 cache_unchanged=true retry_refused=true
+REFUSAL_GATE rank=0 code=40043 position=127 cache_unchanged=true retry_refused=true
+REFUSAL_GATE rank=1 code=40044 position=1 cache_unchanged=true retry_refused=true
+REFUSAL_GATE rank=1 code=40044 position=3 cache_unchanged=true retry_refused=true
+REFUSAL_GATE rank=1 code=40044 position=127 cache_unchanged=true retry_refused=true
+PASS plain-only all-layer TP/EP ranks=2 layers=43 numeric_class=dsv4_expert_id_ep_slot_order_f32_rank_reduce no_pp_fallback=true deterministic=true internal_consistency=true refusal_boundary=true oracle_equivalence=false
+GATE_DONE rc=0 utc=2026-09-23T22:56:50Z

@@ -1,0 +1,6 @@
+--label warmup --conc 1 --n 1 --max-tokens 32 --greedy
+--label ieos-a --conc 1 --n 16 --greedy --ignore-eos --max-tokens 256
+--label ieos-b --conc 1 --n 16 --greedy --ignore-eos --max-tokens 256
+--label ieos-c --conc 1 --n 16 --greedy --ignore-eos --max-tokens 256
+--label ieos-d --conc 1 --n 16 --greedy --ignore-eos --max-tokens 256
+--label sampled --conc 1 --n 8 --max-tokens 256

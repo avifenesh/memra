@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# q-v3.sh (2x RTX PRO 6000 Server Edition): exact attention TP2
+# (lane/dsv4-attn-tp-exact-20260923 75c55dfd4, on main 6978f5fac) plus the lane-only
+# topology selector (topology-lane.patch, never merged). Proof: the TP/EP gate DIGEST with
+# attention TP off and on must be equal; the multi-row verify gate and the DSpark TP/EP gate
+# on the exact program. Then the served questions: does DSpark boot on TP/EP at the served
+# context now that the full attention planes are freed, and what does it serve against PP-2.
+while ! grep -q SETUP_DONE /root/setup.log 2>/dev/null; do sleep 30; done
+set -u
+S=/root/rcpt/q-v3.summary; R=/root/rcpt/attn; mkdir -p $R/plain $R/spec $R/prof
+. /root/.cargo/env; export PATH=/usr/local/cuda/bin:$PATH MEMRA_CUDA_ARCH=120a MEMRA_NVCC=/usr/local/cuda/bin/nvcc
+wait_lock() { while ! flock -n /tmp/memra-gpu.lock true; do sleep 10; done; }
