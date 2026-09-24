@@ -2,7 +2,7 @@
 //! their Rc-backed leases never enter a cache/PP worker's Send/Sync object graph.
 //! This is deliberately NOT an RPC implementation: a migrated worker refuses
 //! WrongOwner instead of staging on an arbitrary thread or silently falling back.
-use super::{ExpertDemand, ExpertDispatchBank, ExpertDispatchId, dispatch_id};
+use super::{ExpertDemand, ExpertDispatchBank, ExpertDispatchId, HostBuffer, dispatch_id};
 use crate::contracts::{Digest, Epochs, Error, Result};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -200,8 +200,13 @@ impl ExpertBankProxy {
         self.access(|e| {
             let demand = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?;
             require(demand, token)?;
-            let bytes = demand.lease.resource::<Vec<u8>>()?;
-            Ok(f(&bytes))
+            // A heap `Vec` (no buffer source) or a pooled buffer (day 47): the same bytes lent
+            // the same way; the borrow ends before this returns.
+            if let Ok(bytes) = demand.lease.resource::<Vec<u8>>() {
+                return Ok(f(&bytes));
+            }
+            let buffer = demand.lease.resource::<Box<dyn HostBuffer>>()?;
+            Ok(f(buffer.as_slice()))
         })
     }
     /// Explicit completion observation by the CUDA owner, never Drop. On error

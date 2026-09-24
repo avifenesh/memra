@@ -75,7 +75,7 @@ fn a_filled_record_is_a_host_hit_without_a_read() {
     let local = dispatch_id(&ids[3].record).unwrap();
     let (bytes, digest) = filled(&recs[3]);
     assert_eq!(
-        d.admit_filled(local, bytes.clone(), digest),
+        d.admit_filled(local, HostBytes::Heap(bytes.clone()), digest),
         Ok(FillOutcome::Admitted)
     );
     assert!(d.bank().slru_policy().unwrap().resident(&ids[3]).is_some());
@@ -91,7 +91,7 @@ fn a_filled_record_is_a_host_hit_without_a_read() {
     // Offered again while resident: dropped, never replaced.
     let (bytes, digest) = filled(&recs[3]);
     assert_eq!(
-        d.admit_filled(local, bytes, digest),
+        d.admit_filled(local, HostBytes::Heap(bytes), digest),
         Ok(FillOutcome::Dropped)
     );
 }
@@ -105,13 +105,13 @@ fn a_wrong_digest_is_refused_and_nothing_is_published() {
     // Changed bytes carry their own digest, which is not the catalog's; a flipped digest never
     // is either.
     assert_eq!(
-        d.admit_filled(local, bytes.clone(), checksum(&bytes)),
+        d.admit_filled(local, HostBytes::Heap(bytes.clone()), checksum(&bytes)),
         Ok(FillOutcome::Refused)
     );
     let mut wrong = digest;
     wrong[0] ^= 1;
     assert_eq!(
-        d.admit_filled(local, bytes, wrong),
+        d.admit_filled(local, HostBytes::Heap(bytes), wrong),
         Ok(FillOutcome::Refused)
     );
     assert!(d.bank().slru_policy().unwrap().resident(&ids[2]).is_none());
@@ -119,7 +119,7 @@ fn a_wrong_digest_is_refused_and_nothing_is_published() {
     // Wrong length is refused too.
     let (bytes, digest) = filled(&recs[2]);
     assert_eq!(
-        d.admit_filled(local, bytes[..8].to_vec(), digest),
+        d.admit_filled(local, HostBytes::Heap(bytes[..8].to_vec()), digest),
         Ok(FillOutcome::Refused)
     );
 }
@@ -131,14 +131,17 @@ fn the_fill_never_evicts_and_reports_a_full_tier() {
         let (bytes, digest) = filled(&recs[n]);
         let local = dispatch_id(&ids[n].record).unwrap();
         assert_eq!(
-            d.admit_filled(local, bytes, digest),
+            d.admit_filled(local, HostBytes::Heap(bytes), digest),
             Ok(FillOutcome::Admitted)
         );
     }
     let before = d.bank().slru_policy().unwrap().orders();
     let (bytes, digest) = filled(&recs[5]);
     let local = dispatch_id(&ids[5].record).unwrap();
-    assert_eq!(d.admit_filled(local, bytes, digest), Ok(FillOutcome::Full));
+    assert_eq!(
+        d.admit_filled(local, HostBytes::Heap(bytes), digest),
+        Ok(FillOutcome::Full)
+    );
     assert_eq!(
         d.bank().slru_policy().unwrap().orders(),
         before,
@@ -177,7 +180,7 @@ fn only_the_doors_single_payload_segment_is_filled() {
         .with_slru(SlruPolicy::new(&[(32, 1)]).unwrap(), &metadata)
         .unwrap();
     assert_eq!(
-        bank.admit_filled(&id, vec![0; 20], [0; 32], &req),
+        bank.admit_filled(&id, HostBytes::Heap(vec![0; 20]), [0; 32], &req),
         Err(Error::Unsupported)
     );
 }

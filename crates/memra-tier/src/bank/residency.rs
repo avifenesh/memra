@@ -186,6 +186,8 @@ pub struct BankService<D: BankDomain, H: Hotness<D>, R: ExactReader> {
     issuer: u64,
     sequence: u64,
     clock: Option<BankStageTimes>,
+    /// Day 47: where record buffers come from; `None` is a heap `Vec` per record.
+    buffers: Option<Box<dyn HostBufferSource>>,
     _domain: PhantomData<D>,
 }
 impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
@@ -218,8 +220,18 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             issuer,
             sequence: 0,
             clock: None,
+            buffers: None,
             _domain: PhantomData,
         })
+    }
+    /// Install a source of record buffers (day 47): every read then lands in a buffer from it,
+    /// and the lease owns that buffer. Refused once any record is resident or pending.
+    pub fn with_host_buffers(mut self, source: Box<dyn HostBufferSource>) -> Result<Self> {
+        if !self.pending.is_empty() || !self.owned.is_empty() {
+            return Err(Error::Busy);
+        }
+        self.buffers = Some(source);
+        Ok(self)
     }
     /// Install the log-only stage clock (`BankStageTimes`). Diagnostic only: every bracket
     /// reads `Instant` and nothing else, so the lifecycle's decisions are unchanged.
@@ -310,9 +322,10 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                 for (j, s) in r.layout.segments.iter().enumerate() {
                     let valid_end = base + s.valid_bytes as usize;
                     let end = base + s.storage_bytes as usize;
-                    let hash = checksum(&bytes[base..valid_end]);
+                    let view = bytes.bytes();
+                    let hash = checksum(&view[base..valid_end]);
                     let valid =
-                        hash == r.checksums[j] && bytes[valid_end..end].iter().all(|&v| v == 0);
+                        hash == r.checksums[j] && view[valid_end..end].iter().all(|&v| v == 0);
                     if !valid {
                         error = Some(Error::Corrupt);
                     }
@@ -351,7 +364,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                     layout: r.layout,
                     class: self.catalog.class,
                     charge,
-                    backing: Box::new(bytes),
+                    backing: bytes.into_backing(),
                 });
             }
         } else {
@@ -430,7 +443,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
     pub fn admit_filled(
         &mut self,
         id: &BankId,
-        bytes: Vec<u8>,
+        bytes: HostBytes,
         digest: Digest,
         request: &BudgetRequest,
     ) -> Result<FillOutcome> {
@@ -479,7 +492,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             record.layout.clone(),
             self.catalog.class,
             charge,
-            Box::new(bytes),
+            bytes.into_backing(),
         ) {
             Ok(lease) => {
                 policy.publish(id)?;
@@ -798,7 +811,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             None
         } else {
             let started = clock_start(&self.clock);
-            let work = ReadWork::new(&missing);
+            let work = ReadWork::new(&missing, self.buffers.as_deref_mut());
             clock_add(&mut self.clock, started, |c, ns| c.alloc_ns += ns);
             match work {
                 Ok(work) => Some(work),

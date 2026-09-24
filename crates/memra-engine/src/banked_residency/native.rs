@@ -75,8 +75,164 @@ struct FillJob {
 /// A record a fill worker read and checksummed, handed to the owner by value.
 struct FillDone {
     local: ExpertDispatchId,
-    bytes: Vec<u8>,
+    bytes: HostBytes,
     digest: Digest,
+}
+
+/// Where a fill worker takes a record's buffer: `None` means none is free right now (the worker
+/// retries against the stop flag). The installer's factory takes from the pinned pool above its
+/// demand reserve (DAY47); the CUDA-free tests use heap buffers.
+type FillBuffers = Arc<dyn Fn(usize) -> Option<HostBytes> + Send + Sync>;
+
+/// Day 47 (`research/spill-c-20260919/DAY47.md`): the door's pinned host tier. One cached
+/// allocation (`CU_MEMHOSTALLOC_PORTABLE`, never write-combined: the fill and the verify read these
+/// bytes on the CPU) carved into fixed buffers per host-plan class, the class's planned slots
+/// plus `POOL_HEADROOM`. Each buffer is owned by at most one `PooledBuffer` at a time (the free
+/// lists sit under one mutex) and zeroed the first time it is handed out; dropping the
+/// `PooledBuffer` returns it. The allocation is freed when the pool and its last buffer are gone.
+struct PinnedPool {
+    base: *mut u8,
+    context: Arc<cudarc::driver::CudaContext>,
+    classes: Vec<PoolClass>,
+    state: std::sync::Mutex<PoolState>,
+    bytes: usize,
+}
+struct PoolClass {
+    capacity: usize,
+    start: usize,
+}
+struct PoolState {
+    free: Vec<Vec<usize>>,
+    touched: Vec<Vec<bool>>,
+}
+// SAFETY: `base` is one pinned host allocation that never moves and is freed only in `Drop`, after
+// every `PooledBuffer` (each holds an `Arc` of the pool) is gone. Each buffer range is taken and
+// returned under `state`'s mutex, so at most one `PooledBuffer` ever reaches a given range, and
+// the pool itself exposes no byte access.
+unsafe impl Send for PinnedPool {}
+unsafe impl Sync for PinnedPool {}
+/// Buffers per class beyond the planned slots: the leases I1 keeps open, the fill's queued and
+/// in-worker records, and one.
+const POOL_HEADROOM: usize = crate::moe_cache::BANKED_INFLIGHT + 1 + 64 + 8 + 1;
+/// Buffers per class the fill never takes, so a demand's read always finds one.
+const FILL_RESERVE: usize = crate::moe_cache::BANKED_INFLIGHT + 2;
+impl PinnedPool {
+    fn new(
+        context: Arc<cudarc::driver::CudaContext>,
+        classes: &[(u64, usize)],
+    ) -> std::result::Result<Arc<Self>, Box<dyn std::error::Error>> {
+        let mut layout = Vec::with_capacity(classes.len());
+        let mut counts = Vec::with_capacity(classes.len());
+        let mut total = 0usize;
+        for &(bytes, slots) in classes {
+            let capacity = usize::try_from(bytes)?;
+            let count = slots.checked_add(POOL_HEADROOM).ok_or(Error::Overflow)?;
+            layout.push(PoolClass {
+                capacity,
+                start: total,
+            });
+            counts.push(count);
+            total = capacity
+                .checked_mul(count)
+                .and_then(|n| total.checked_add(n))
+                .ok_or(Error::Overflow)?;
+        }
+        context.bind_to_thread()?;
+        // SAFETY: documented FFI (`cuMemHostAlloc`); the returned range is owned by this pool.
+        let base = unsafe {
+            cudarc::driver::result::malloc_host(
+                total.max(1),
+                cudarc::driver::sys::CU_MEMHOSTALLOC_PORTABLE,
+            )?
+        }
+        .cast::<u8>();
+        let state = PoolState {
+            free: counts.iter().map(|&n| (0..n).rev().collect()).collect(),
+            touched: counts.iter().map(|&n| vec![false; n]).collect(),
+        };
+        Ok(Arc::new(Self {
+            base,
+            context,
+            classes: layout,
+            state: std::sync::Mutex::new(state),
+            bytes: total,
+        }))
+    }
+    /// A buffer of exactly `len` bytes from the smallest class that holds it and has more than
+    /// `reserve` free, or `None`.
+    fn take(self: &Arc<Self>, len: usize, reserve: usize) -> Option<PooledBuffer> {
+        let (class, index, first) = {
+            let mut state = self.state.lock().ok()?;
+            let class = self.classes.iter().enumerate().position(|(class, spec)| {
+                spec.capacity >= len && state.free[class].len() > reserve
+            })?;
+            let index = state.free[class].pop()?;
+            let first = !std::mem::replace(&mut state.touched[class][index], true);
+            (class, index, first)
+        };
+        let spec = &self.classes[class];
+        // SAFETY: `index < count` of this class, so the range lies inside the allocation, and it
+        // was just popped from the free list, so no other `PooledBuffer` holds it.
+        let ptr = unsafe { self.base.add(spec.start + index * spec.capacity) };
+        if first {
+            // SAFETY: the exclusive range above; zeroed once so every later slice is initialized.
+            unsafe { ptr.write_bytes(0, spec.capacity) };
+        }
+        Some(PooledBuffer {
+            pool: self.clone(),
+            class,
+            index,
+            ptr,
+            len,
+        })
+    }
+    fn give_back(&self, class: usize, index: usize) {
+        if let Ok(mut state) = self.state.lock() {
+            state.free[class].push(index);
+        }
+    }
+}
+impl Drop for PinnedPool {
+    fn drop(&mut self) {
+        let _ = self.context.bind_to_thread();
+        // SAFETY: every `PooledBuffer` holds an `Arc` of this pool, so none is alive here.
+        let _ = unsafe { cudarc::driver::result::free_host(self.base.cast()) };
+    }
+}
+/// One pooled buffer: exclusive owner of `len` bytes at `ptr` inside the pool.
+struct PooledBuffer {
+    pool: Arc<PinnedPool>,
+    class: usize,
+    index: usize,
+    ptr: *mut u8,
+    len: usize,
+}
+// SAFETY: the buffer exclusively owns its range (see `PinnedPool::take`); moving it to another
+// thread moves that ownership, and the pool it returns to is `Sync`.
+unsafe impl Send for PooledBuffer {}
+impl HostBuffer for PooledBuffer {
+    fn as_slice(&self) -> &[u8] {
+        // SAFETY: an exclusive, initialized (zeroed at first take), pinned range of `len` bytes.
+        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+    }
+    fn as_mut_slice(&mut self) -> &mut [u8] {
+        // SAFETY: as above, and `&mut self` makes the access unique.
+        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
+}
+impl Drop for PooledBuffer {
+    fn drop(&mut self) {
+        self.pool.give_back(self.class, self.index);
+    }
+}
+/// The bank's buffer source: demand reads take from the pool with no reserve.
+struct PoolSource(Arc<PinnedPool>);
+impl HostBufferSource for PoolSource {
+    fn take(&mut self, len: usize) -> Option<Box<dyn HostBuffer>> {
+        self.0
+            .take(len, 0)
+            .map(|buffer| Box::new(buffer) as Box<dyn HostBuffer>)
+    }
 }
 /// The fill's counts, shared by the workers (reads, read errors), the owner's intake
 /// (admitted, dropped, refused, errors, the admission time) and the gate's close line.
@@ -136,6 +292,7 @@ fn start_fill(
     file: Arc<File>,
     jobs: Vec<FillJob>,
     counts: Arc<FillCounts>,
+    buffers: FillBuffers,
 ) -> (FillWorkers, FillIntake) {
     let (tx, rx) = mpsc::sync_channel::<FillDone>(64);
     let stop = Arc::new(AtomicBool::new(false));
@@ -147,25 +304,34 @@ fn start_fill(
         .clamp(1, 8);
     let handles = (0..threads)
         .map(|_| {
-            let (file, jobs, cursor, counts, stop, tx) = (
+            let (file, jobs, cursor, counts, stop, tx, buffers) = (
                 file.clone(),
                 jobs.clone(),
                 cursor.clone(),
                 counts.clone(),
                 stop.clone(),
                 tx.clone(),
+                buffers.clone(),
             );
             std::thread::spawn(move || {
                 while !stop.load(Ordering::Relaxed) {
                     let index = cursor.fetch_add(1, Ordering::Relaxed);
                     let Some(job) = jobs.get(index) else { break };
-                    let mut bytes = vec![0u8; job.len];
-                    if file.read_exact_at(&mut bytes, job.offset).is_err() {
+                    let mut bytes = loop {
+                        if let Some(bytes) = buffers(job.len) {
+                            break bytes;
+                        }
+                        if stop.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        std::thread::sleep(std::time::Duration::from_micros(200));
+                    };
+                    if file.read_exact_at(bytes.bytes_mut(), job.offset).is_err() {
                         counts.read_errors.fetch_add(1, Ordering::Relaxed);
                         break;
                     }
                     counts.reads.fetch_add(1, Ordering::Relaxed);
-                    let digest = checksum(&bytes);
+                    let digest = checksum(bytes.bytes());
                     let mut done = FillDone {
                         local: job.local,
                         bytes,
@@ -598,6 +764,21 @@ impl Engine {
         } else {
             bank
         };
+        // DAY47: the host tier lives in one cached pinned pool; every read lands in a buffer
+        // from it, and the fill takes from it above the demand reserve.
+        let pool = PinnedPool::new(self.ctx().clone(), &plan.classes)?;
+        eprintln!(
+            "[experts-via-tier] host pinned pool bytes={} classes={} headroom={POOL_HEADROOM} fill_reserve={FILL_RESERVE}",
+            pool.bytes,
+            pool.classes.len()
+        );
+        let bank = bank.with_host_buffers(Box::new(PoolSource(pool.clone())))?;
+        let fill_pool = pool.clone();
+        let fill_buffers: FillBuffers = Arc::new(move |len| {
+            fill_pool
+                .take(len, FILL_RESERVE)
+                .map(|buffer| HostBytes::Pooled(Box::new(buffer)))
+        });
         let mut request = BudgetRequest {
             bytes: TierBudget::zero(1),
             priority: Priority::Demand,
@@ -619,7 +800,8 @@ impl Engine {
             },
         )?;
         let fill_counts = Arc::new(FillCounts::default());
-        let (fill_workers, fill_intake) = start_fill(fill_file, fill_jobs, fill_counts.clone());
+        let (fill_workers, fill_intake) =
+            start_fill(fill_file, fill_jobs, fill_counts.clone(), fill_buffers);
         let owner = ExpertBankOwner::register(
             Box::new(TracedDispatch {
                 inner: dispatch,
@@ -975,6 +1157,10 @@ mod day45_fill {
     use super::*;
     use std::io::Write as _;
 
+    fn heap() -> FillBuffers {
+        Arc::new(|len| Some(HostBytes::Heap(vec![0u8; len])))
+    }
+
     fn artifact(len: usize) -> (std::path::PathBuf, Vec<u8>) {
         let bytes: Vec<u8> = (0..len).map(|i| (i * 31 % 251) as u8).collect();
         let path = std::env::temp_dir().join(format!("c45-fill-{}-{len}.bin", std::process::id()));
@@ -1000,7 +1186,7 @@ mod day45_fill {
             })
             .collect();
         let counts = Arc::new(FillCounts::default());
-        let (workers, intake) = start_fill(file, jobs, counts.clone());
+        let (workers, intake) = start_fill(file, jobs, counts.clone(), heap());
         let mut got = BTreeMap::new();
         for _ in 0..ranges.len() {
             let done = intake
@@ -1012,7 +1198,7 @@ mod day45_fill {
         for (i, &(offset, len)) in ranges.iter().enumerate() {
             let want = &bytes[offset as usize..offset as usize + len];
             let (b, d) = &got[&(i as u16)];
-            assert_eq!(b.as_slice(), want);
+            assert_eq!(b.bytes(), want);
             assert_eq!(*d, checksum(want));
         }
         drop(workers);
@@ -1032,7 +1218,7 @@ mod day45_fill {
             })
             .collect();
         let counts = Arc::new(FillCounts::default());
-        let (workers, _intake) = start_fill(file, jobs, counts.clone());
+        let (workers, _intake) = start_fill(file, jobs, counts.clone(), heap());
         std::thread::sleep(std::time::Duration::from_millis(50));
         let started = Instant::now();
         drop(workers);

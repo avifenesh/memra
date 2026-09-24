@@ -101,7 +101,7 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> SlruExpertDispatch<H, R> {
     pub fn admit_filled(
         &mut self,
         local: ExpertDispatchId,
-        bytes: Vec<u8>,
+        bytes: HostBytes,
         digest: Digest,
     ) -> Result<FillOutcome> {
         let id = self.ids.get(&local).ok_or(Error::NotFound)?.clone();
