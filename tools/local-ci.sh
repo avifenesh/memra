@@ -730,6 +730,27 @@ else
     echo "spec-ctx-edge gate: SKIP (no 9B NVFP4 model at $EDGE_MODEL or MEMRA_CI_SPEC_CTX_EDGE=0)"
 fi
 
+# MEMORY-ADMISSION BURST (memra#680): the door armed (MEMRA_ADMIT_BY_MEMORY=1, open output 8192), 64
+# open requests released on one barrier. Before the fix the VRAM gate compared each arrival with
+# one live reading, which cannot see the prefill workspace the sessions admitted earlier in the
+# burst still owe, and 34 of 64 died in prefill with CUDA OOM as 503s. Now every request is served
+# or refused with a typed 429, every admission fits the booked reading, and the boot survives.
+# Wired after a red run on the unfixed tree and two consecutive green runs on the local RTX 5090
+# (research/spill-b-20260919/DAY33.md). About 7 minutes on the 9B NVFP4.
+# MEMRA_CI_ADMIT_MEM_BURST=0 skips.
+AMB_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_ADMIT_MEM_BURST:-1}" = "1" ] && [ -f "$AMB_MODEL" ]; then
+    echo "== local-ci: memory-admission burst gate (memra#680) =="
+    AMB_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-admit-mem-burst.XXXXXX")
+    if tools/admit-mem-burst-gate.sh "$AMB_MODEL" target/release/memra-server "$AMB_OUT"; then
+        rm -rf "$AMB_OUT"
+    else
+        echo "admit-mem-burst gate FAIL (receipt kept at $AMB_OUT)"; exit 1
+    fi
+else
+    echo "admit-mem-burst gate: SKIP (no 9B NVFP4 model at $AMB_MODEL or MEMRA_CI_ADMIT_MEM_BURST=0)"
+fi
+
 # PRIME FAIRNESS (memra#521): one 131k cold prime beside three peers, both MEMRA_PRIME_YIELD
 # arms on the 9B's default spec route; bytes identical across arms, peers' first token bounded on
 # the yielding arm, tick_max_ms bounded, walker engaged. About 4 minutes. MEMRA_CI_FAIRGATE=0 skips.

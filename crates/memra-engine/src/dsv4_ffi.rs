@@ -149,15 +149,18 @@ unsafe extern "C" {
         present: f32,
         stream: *mut c_void,
     ) -> i32;
-    pub fn memra_dsv4_sink_scores_tiled_init() -> i32;
-    pub fn memra_dsv4_sink_attn_dec_mq_f32acc_tiled(
+    /// Nonzero when the two-launch sink attention program takes (heads, hd).
+    pub fn memra_dsv4_sink_attn_st_admits(heads: i32, hd: i32) -> i32;
+    /// Two-launch sink attention (memra #683), bit-identical to the three-kernel f32acc
+    /// program. `q` is [nq][heads][hd]. `replay_pos` null: `slots` live slots per query;
+    /// set: graph replay (nq 1), `slots` is slots_max and the live count comes from the
+    /// device position exactly as `memra_dsv4_replay_attention` derives it.
+    pub fn memra_dsv4_sink_attn_st_f32acc(
         q: *const f32,
         kv: *const f32,
         idxs: *const i32,
         sink: *const f32,
         scores: *mut f32,
-        evals: *mut f32,
-        den: *mut f32,
         o: *mut f32,
         nq: i32,
         heads: i32,
@@ -165,6 +168,10 @@ unsafe extern "C" {
         slots: i32,
         idx_stride: i32,
         scale: f32,
+        replay_pos: *const i32,
+        replay_win: i32,
+        replay_ratio: i32,
+        replay_topk: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_grouped_routes_partition(
@@ -939,6 +946,41 @@ unsafe extern "C" {
         hc: i32,
         d: i32,
         iters: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Partial half of the HC24 split dots: `m * 24 * slices` floats into `partial`.
+    pub fn memra_dsv4_hc_dot_split_partial(
+        x: *const f32,
+        w: *const f32,
+        partial: *mut f32,
+        partial_len: i32,
+        m: i32,
+        n: i32,
+        k: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Split-dot slice sum + small HC + entry rmsnorm (+ bf16 pack), one CTA per position.
+    /// `y` and `out_b` may be null.
+    pub fn memra_dsv4_hc_finish_f32_fixed_order(
+        partial: *const f32,
+        slices: i32,
+        x: *const f32,
+        mixes: *mut f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        y: *mut f32,
+        norm_w: *const f32,
+        out: *mut f32,
+        out_b: *mut c_void,
+        s: i32,
+        hc: i32,
+        d: i32,
+        iters: i32,
+        hc_eps: f32,
         eps: f32,
         stream: *mut c_void,
     ) -> i32;

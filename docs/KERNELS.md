@@ -129,6 +129,7 @@ the unfused kernels and the same row launched alone, bit for bit. Kernel-boundar
 | --- | --- | --- |
 | `dsv4_small_hc_f32_fixed_order_kernel` | rowsq f32x + Sinkhorn + collapse, 3 to 1. `dsv4_hc_f32_fixed_order`: same 128-thread rowsq tree, register Sinkhorn with ascending sums, same iteration count, ascending collapse. Bitwise gate required. | One block of 128 per row, HC4, hidden4096. |
 | `dsv4_small_norm_pack_f32_fixed_order_kernel` | Q-LoRA RMSNorm f32x + bf16 conversion, 2 to 1. `dsv4_norm_pack_f32_fixed_order`: same 128-thread reduction tree and f32 intermediate, bf16 RNE. Retains normalized f32 Q as well as packed Q. Bitwise gate required. | One block of 128 per row. |
+| `dsv4_hc_finish_f32_fixed_order_kernel<S>` | HC24 split-dot slice sum + rowsq f32x + Sinkhorn + collapse + entry RMSNorm f32x + bf16 pack, 4 to 1 behind `dsv4_hc_dot_split_partial_kernel<S>` (6 launches to 2 per HC entry site). Same sums and trees as `dsv4_hc_dot_split_reduce_kernel<S>`, the small HC kernel, `dsv4_rmsnorm_f32acc_regs<32>` and `dsv4_cvt_bf16_kernel`; x is read once and y stays in registers. Dispatch: `hc_pre_norm_batch_dev` on the diet shape with the split class on, every row count, attention entry (packs x for wq_a, wkv and the indexer weights) and FFN entry (no pack); FFI `memra_dsv4_hc_finish_f32_fixed_order`, `memra_dsv4_hc_dot_split_partial`. Bitwise gate required: `tests/dsv4_hc_finish_gpu.rs`, `research/dsv4f-bringup-20260923/hc-finish/`. | One block of 128 per row, HC4, hidden4096, S=8/16/32. |
 
 The gate counts successful enqueues in the replaced families and requires 8 to
 3 launches per layer per rank. This counter excludes all other kernels; total
@@ -472,7 +473,7 @@ DSV4 indexer candidate (same TU, separate multiply/add rounding):
 
 | symbol | purpose | dispatch flag | FFI binding |
 |---|---|---|---|
-| `dsv4_indexer_score_tiled_kernel` | 64-head, width-128 scorer; one thread owns a candidate and all heads, 128 candidates reuse 16-element query/key slabs. Ascending dimension and head sums use explicit separate round-to-nearest multiply/add, unlike the FMA-based MLA scorer. Absolute-position and fixed-limit masks share the same launch. | `MEMRA_DSV4_INDEXER_SCORE=scalar/tiled`, default scalar. Tiled is unqualified and opt-in; device f32x only. | `memra_dsv4_indexer_score_tiled`; `tools/dsv4-indexer-tiled-gate.cu` anchors to scalar CUDA and CPU witnesses, masks, write guards and a corruption control. Target-card component and one-load full-model parity pass; long-context serving remains unqualified. |
+| `dsv4_indexer_score_tiled_kernel` | 64-head, width-128 scorer; one thread owns a candidate and all heads, 128 candidates reuse 16-element query/key slabs. Ascending dimension and head sums use explicit separate round-to-nearest multiply/add, unlike the FMA-based MLA scorer. Absolute-position and fixed-limit masks share the same launch. | `MEMRA_DSV4_INDEXER_SCORE` unset = knee dispatch: tiled for one row at >= 1152 candidates or multi-row at >= 8192 row-candidates, scalar below; `scalar`/`tiled` force. Device f32x only. | `memra_dsv4_indexer_score_tiled`; `tools/dsv4-indexer-tiled-gate.cu` anchors to scalar CUDA and CPU witnesses, masks, write guards and a corruption control; `--knee` is the PRO 6000 timing sweep (`research/dsv4f-bringup-20260923/indexer-knee/`). Target-card component and one-load full-model parity pass. |
 
 Active-C4 residency experiment: `dsv4_c4_gather_kernel` /
 `memra_dsv4_c4_gather` copies selected logical rows from pinned host C4 or device
@@ -696,9 +697,9 @@ gate-reachable red arms (`dsv4_sink_scores_mq_f32acc_ref_kernel`,
 `dsv4_indexer_score_f32acc_pos_m_ref_kernel`, bound by
 `memra_dsv4_sink_scores_mq_f32acc_ref` and
 `memra_dsv4_indexer_score_f32acc_pos_m_ref`), which no serving launcher calls.
-The tiled arms of both scorers stage q themselves and keep reading the original
-layout; the q pointer travels with the launcher at the dispatch site so the two
-cannot be paired the wrong way round. Why: at fixed `x` the old layout put the 32
+The tiled indexer arm and the two-launch sink attention below stage q themselves
+and keep reading the original layout, so the transpose is skipped on those
+dispatches. Why: at fixed `x` the old layout put the 32
 lanes of a warp 2048 bytes apart (512 for the indexer), turning one warp load
 into 32 sector requests; the kernel was at 1.7% of its non-FMA arithmetic ceiling
 and 2.1% of measured HBM, held by L1TEX request throughput. Component gate:
@@ -708,17 +709,14 @@ fidelity). Receipt: `crates/memra-engine/src/bin/dsv4_q_layout_gate.rs`
 transpose fidelity); served interleaved A/B at the vendor-default sampled shape
 confirmed the win before this landed as the naked default.
 
-DSV4 prefill work-elision dispatch (no new CUDA arithmetic):
+DSV4 two-launch sink attention (memra #683, no dispatch flag):
 
-The experimental sink-score tile (`dsv4_sink_scores_tiled_f32acc_kernel`) is
-bound by `memra_dsv4_sink_scores_tiled_f32acc` and composed with the unchanged
-softmax/output kernels in `memra_dsv4_sink_attn_dec_mq_f32acc_tiled`.
-`memra_dsv4_sink_scores_tiled_init` checks/configures 84096 bytes of dynamic
-shared memory before capture. It tiles 8 heads x 32 selected keys, retains the
-ordered 512-dimensional FP32 dot and negative-index mask, and writes the same
-score layout. Rust FFI: `dsv4_ffi.rs`; dispatch: `MEMRA_DSV4_SINK_SCORE`, default
-scalar. Component gate: `tools/dsv4-sink-score-tiled-gate.cu`; full model:
-`dsv4_sink_score_gate`. Receipt: `research/dsv4f-2card-1m-20260904/sink-score-tiled.md`.
+| kernel | purpose | dispatch | binding and gate |
+|---|---|---|---|
+| `dsv4_sink_scores_st_f32acc_kernel` | f32x sink scores for one (8-slot tile, 8-head tile, query) block of 64 threads: q rows and the selected kv rows staged once per CTA by cp.async, each thread one f32 accumulator over `x` ascending, times `scale`, `-INF` for a `-1` slot. Score row stride is the live slot count; replay derives it on device (`win + min((pos+1)/ratio, topk)`), extra blocks exit. | Every admitted f32x shape (`memra_dsv4_sink_attn_st_admits`: heads and hd multiples of 16, hd <= 512, so 64x512 and 32x512 on DSV4F): eager single query, batched verify/prefill rows and graph replay. Other shapes keep `memra_dsv4_sink_attn_dec_f32acc` / `_mq_f32acc` / `memra_dsv4_replay_attention`. | `memra_dsv4_sink_attn_st_f32acc`, `dsv4_ffi.rs`; counter `sink_st_calls`. |
+| `dsv4_sink_softout_st_f32acc_kernel` | Max (fmaxf, floored at `-1e30`), den (ev in ascending slot order, then `expf(sink - m)`) and `o = (ascending sum of ev * kv over ev != 0) / den` for one (16-column tile, 16-head tile, query) block of 256 threads, 128-slot kv tiles, in shared memory instead of the evals/den workspace round trip. No split-K, no exp2 merge, so every sum keeps the three-kernel order. | Second launch of the same entry. | `tests/dsv4_sink_attn_st_gpu.rs`: 320 cases bit-identical to the three former entry points (batched, replay at ratio 0/4/128, single query) plus a red arm. Receipt: `research/dsv4f-bringup-20260923/sink-attn/RESULTS.md`. |
+
+DSV4 prefill work-elision dispatch (no new CUDA arithmetic):
 
 | dispatch | purpose | flag | gate |
 |---|---|---|---|
