@@ -214,6 +214,73 @@ The 5090 reading decides the 5090 class only; the target card's decides the targ
 Causes are quoted from captured stderr, never inferred. An OOM is a captured line plus `nvidia-smi` compute-apps at
 the time. A rerun happens only as a whole cell under a new name, with the reason in section 2.
 
+### 1.10 Addendum A (2026-09-24, after stage 0 on the 5090, before any mapper code)
+
+Stage 0 on the 5090 (2.1) read `GROW-PLACEMENT extent=1 busy_p95_sum_us=11330.8 blocks_behind_queue=no rule p95<=100
+-> helper` and `RELEASE-PLACEMENT unmap_or_release_blocks_behind_queue=no blocks_owner_from_helper=no -> owner-tick`.
+The rules of 1.5 therefore select, for the 5090 class, helper-thread grows and owner-tick reaps. Section 1.1 to 1.9 is
+unchanged; this addendum fixes the helper's design, which 1.5 named but did not specify:
+
+- **The mapper.** One mapper thread per CUDA context, owned by `memra-kv`, started at the first on-demand plane of that
+  context. Each on-demand plane's state (its extents and a `want` target) sits behind one lock shared by the plane and
+  the mapper.
+- **Ensure points under the helper placement.** At an ensure point the owner sets `want = need + 2 granules` (capped at
+  the reservation). If the backed prefix already covers `need`, the owner returns at once and hands the plane to the
+  mapper when the prefix is short of `want`. If it does not (the mapper is behind or failed), the owner maps the
+  missing extent itself, inline; that grow's `owner_us` is the ensure point's wait of A3 (i), and its receipt line
+  carries `waited=1`.
+- **Mapper grows.** The mapper takes the lock, maps one extent up to `want` (create, map, access), enqueues its zero
+  fill on the owner stream with the raw driver call, publishes the new backed prefix, and releases the lock. The owner
+  reads the backed prefix under the same lock before it launches work on those rows, so every later kernel is ordered
+  after the fill in stream order.
+- **Releases stay ordered after the mapper.** A park trim sets `want` to the kept bytes under the lock before it
+  records the release event; a drop marks the plane dead under the lock before it records the graveyard event; the
+  mapper skips dead planes and never maps past `want`. So every release event is recorded after the mapper's last
+  enqueue on that plane.
+- **Construction** maps its initial extent inline (it is the allocation; its cost is inside A3 (ii)'s TTFT).
+- **Per device class.** Stage 0 on the target card selects that class's placement by the same rule. If it reads
+  inline, the target class grows inline and the mapper does not start there. The boot line names the placement:
+  `[kv-vmm] door=ON routes=spec,plain granularity=<g> grow=helper|inline reap=owner-tick`.
+- **The fault door, refined before code.** `MEMRA_KV_VMM_FAULT` is a comma list of `build:<n>` (the n-th construction
+  grow fails once), `ensure:<n>` (the n-th owner grow at an ensure point fails once) and `mapper:all` (every mapper
+  grow fails, so the owner is always behind). A5 runs `mapper:all` alone (the owner-behind path must meet A1 on the
+  same mix) and `mapper:all,ensure:<n>` (an ensure-point failure: the registered outcome), and `build:<n>` (an
+  admission-time failure: the reclaim-retry line, then the admission refusal the pooled allocator gives). A5's
+  `grow:<n>` form in 1.6 reads as `ensure:<n>`.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
+
+### 2.1 Stage 0 on the local RTX 5090 Laptop GPU (`rtx5090-day37/stage0/`)
+
+Binary `3dc08994...8783100fb` (`vmm-call-cost`, built from `34e7f42f3` plus the uncommitted probe; committed with this
+section), one run under `/tmp/memra-5090.lock` (acquired 11:57:46Z after lane A's hold; `compute-apps` header-only
+before and after), 20 repetitions per cell, the busy queue 96 x 512 MiB memsets (one 0.626 ms, about 60 ms queued).
+Regime (250 ms samples, 308 rows): 58 to 82 C, 58.5 to 175.3 W, SM 2445 to 2745 MHz. Granularity 2,097,152 B.
+
+Readings (medians, microseconds; `probe.log` has every cell with p95 and max):
+
+| op | idle, 1 granule | busy, 1 granule | idle, 64 granules | busy p95, 1 granule |
+|---|---|---|---|---|
+| create | 6.2 | 31.0 | 6.6 | 4058.0 |
+| map | 0.3 | 2.3 | 0.3 | 4.0 |
+| access | 14.6 | 61.0 | 227.8 | 7268.8 |
+| zero enqueue | 1.7 | 1.7 | 1.7 | 2.3 |
+| unmap | 9.7 | 44.8 | 16.4 | 2977.7 |
+| release | 11.1 | 30.7 | 36.8 | 5321.6 |
+
+- No op waits for the queued work: every busy median is 5 orders below the 59.7 to 59.9 ms still queued at the call
+  (`behind_queue=no` on all 32 op and extent pairs).
+- No op blocks the owner from a helper thread: the owner's small launch plus event reads 9 to 11 us while a helper
+  call is in flight against 4.5 us with none (`owner_from_helper=no`, the rule's bound is 10 x).
+- The busy regime has a long tail: `create` + `map` + `access` at one granule sums to a 11,330.8 us p95.
+
+Branch lines, verbatim:
+
+```
+GROW-PLACEMENT extent=1 busy_p95_sum_us=11330.8 blocks_behind_queue=no rule p95<=100 -> helper
+RELEASE-PLACEMENT unmap_or_release_blocks_behind_queue=no blocks_owner_from_helper=no -> owner-tick
+```
+
+For the 5090 class the rules select helper grows and owner-tick reaps (addendum A, 1.10).
