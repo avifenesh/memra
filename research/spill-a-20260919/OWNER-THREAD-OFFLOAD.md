@@ -1104,8 +1104,12 @@ publishes late, a copy-phase hit does not park, and the gates' promote-after-dem
 failure-on, fault-default red), and the o2 wall read +26.50 ms against +25.0. M left the lane tip. M' (M2 alone) is
 pre-registered in DAY35 section 7.
 
-1. The recurrent f32 state off the tick: **the demote's re-hash** (design M', DAY35 section 7); **hash 1**, the D2H
-   receipt, stays on the owner (the refuted M1: no off-thread form found that keeps the copy phase at one poll), **the
+**Design M', landed** (DAY35 sections 7 and 8). The bind's re-hash (hash 2) runs on the helper inside the `Hashing`
+job over read views of the KV leases, which wait in a leak-on-drop guard on the owner thread; hash 1 stays in the
+engine's poll. On the 5090 the owner's `take-back` 8.25 to 0.06 ms, its hold per demote 17.98 to 9.55 ms, the demote's
+wall 8 ms shorter, the demoting request's e2e 8 ms lower; every gate green.
+
+1. The recurrent f32 state off the tick: **hash 1**, the D2H receipt, stays on the owner (the refuted M1: no off-thread form found that keeps the copy phase at one poll), **the
    fill's speed** on CPUs where it outlasts the tick (not pre-registered), **the D2D half** (the restore's price cell
    decides; the capture refuted by construction, DAY33 section 6), and **the strong-form receipt**.
 2. to 4. Unchanged.
