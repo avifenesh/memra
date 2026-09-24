@@ -38,16 +38,14 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Price today: `copy settle` 8.33 ms per demote on the 5090 (write-combined leases, `DAY35.md` section 8), 0.70 ms on
   BOX5 (`DAY36.md` section 4, cached leases).
 - Acceptance: DAY38 section 3, (a) to (e).
-- Status: pre-registered, revised twice (DAY38: the survey picked G with P; G's 5090 half passed (c) and (d) and failed
-  (b) on the fault gate's plain arm, the red arm's delay sharing the copy stream; G' moved the receipt onto its own stream
-  and passed (c), (d), (e) and failed (b) again, the cause a per-batch pinned receipt twin freed on the owner thread;
-  G'' pools the twins, section 8). G'' passes (a) to (e) on the 5090 (DAY38 section 9: `copy settle` 8.34 to 0.15 ms,
-  wall -5.90 / -7.20 ms, e2e -5.48 / -7.47 ms, every gate ALL GREEN). **On BOX7 (c) and (b) PASS and (d) FAILS**
-  (DAY38 sections 11, 11a, 13a: e2e +1.42 / +1.36 ms, re-run +1.43 / +1.48, against `<=+1.0`): each of the first eight
-  receipts on the separate receipt stream adds about 0.07 us to every later owner kernel boundary on the device, then
-  each later receipt takes it away (the tenant's ITL hump, peak about +0.6 ms per step; X2, the receipt on the copy
-  stream, flat). Diagnosis in progress (section 13e's bisection); G'' is not integrable until the fixed design passes
-  (d) whole.
+- Status: **5090 done, target in its sitting.** G'' failed (d) on BOX7 (the tenant's per-demote decode hump); the
+  bisection (DAY38 13a to 13k) placed the hump on two non-owner streams running kernels. G''' (every kernel on the receipt
+  stream) passes (a) to (f) on BOX7 (sections 16c, 16d) and (a) to (e) on the 5090; its 5090 (f) failed in a hot hold
+  (section 16). G4 (one side stream, section 17, `26676c037`) is the delivered placement: 5090 (a) to (e) PASS (sections
+  19, 19a), its (f) failed in a hot hold (section 19) and passes in the base-controlled hold (section 20a: base +0.072,
+  G''' +0.055, G4 +0.032, G'' +0.334); BOX7 (c) PASS 0.53 ms, (d) PASS (e2e -1.17 / -1.10 ms), the rest of its sitting
+  running. Owner items: whether the 5090's (f) is read from the base-controlled hold; G''' or G4 for long entries (item
+  15's cell).
 
 ### 3. The same-tick fill (design F) on slower CPUs
 
@@ -70,8 +68,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   the landed bytes; about +71 ms on the target card's helper"); `DAY31.md` section 2 and `DAY32.md` section 7 (H2D:
   "the helper's SHA-256 of the staged bytes required equal to the plane's share recorded at the demote, about +73 ms
   on the helper per promote on the target card"); rulings 42, 44, 47, 52, 53.
-- Acceptance: none registered.
-- Status: open.
+- Acceptance: DAY40 section 3 (amended 3a), (a) to (e).
+- Status: **built** (`a40e5b334`, design S: device-side four-lane span receipts on the copy stream, both directions;
+  CPU green); the 5090 sitting (`rtx5090-day40/s-card-run.sh`) queued, the BOX7 sitting (`pro-single-s/`) after it.
 
 ### 5. The helper's promote-side fail-closed arms have no serving-shape fault cell (found in this ledger's read)
 
@@ -85,11 +84,11 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Acceptance: none registered. A red arm per arm (helper gone, foreign reply, deadline) in the fault gate, each with
   its typed line, the tier latched, nothing published, the parked request served cold, byte-compared with a door-OFF
   boot as the other promote cells are.
-- Status: **5090 done, target owed.** Pre-registered (DAY41 section 1) and built (`4ca4bb36e`: `sources-helper-gone`,
+- Status: **closed.** Pre-registered (DAY41 section 1) and built (`4ca4bb36e`: `sources-helper-gone`,
   `sources-never-land`, `sources-foreign-reply` on the `MEMRA_KV_HOST_FAULT` row, keyed on the first `Sources` job; three
   fault gate cells). On the 5090 (DAY41 section 2) the fault gate default and plain `ALL GREEN` (229 ok each), each arm
-  latching the tier in its own words with no promote published. The target half is the next sitting's fault gate on the
-  tip.
+  latching the tier in its own words with no promote published. The target half: BOX7's fault gate on the G''' tree,
+  default and plain `ALL GREEN` (229 ok each, the three cells green; DAY38 section 16d).
 
 ### 6. Move 1 item 3: the by-reference demote routes keep the blocking program
 

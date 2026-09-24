@@ -934,7 +934,7 @@ DAY39 section 5b, and item 5's target half).
 
 ## 20a. The base-controlled 5090 cell, as it ran (`rtx5090-day38/g34/`)
 
-- One hold 22:48Z to 22:56:24Z (after bounded busy attempts behind lane C); eight boots, the card at 71 to 78 C and 1582 to
+- One hold 22:48Z to 22:56:24Z (after bounded busy attempts behind lane C); eight boots, the card at 60 to 78 C and 1582 to
   1590 MHz at each boot's start. Verbatim (`g34/hump/reading-hump.log`): `HUMP arm=xbase boots=2 median-hump=+0.072
   humps=False`, `HUMP arm=xg3 boots=2 median-hump=+0.055 humps=False`, `HUMP arm=xg4 boots=2 median-hump=+0.032
   humps=False`, `HUMP arm=xgpp boots=2 median-hump=+0.334 humps=True` (`b04-xgpp itl=[7.29, 7.36, 7.31, 7.42, .., 7.62,
