@@ -237,3 +237,11 @@ kernel and the copies, not their sum; about -8 ms against the base) and the e2e 
 cell: r2's capture no longer queues behind the delay, r3 arrives in the delayed copy phase and parks there.
 
 **What each card decides.** As section 3.
+
+## 5a. Amendment to section 5, before any G' cell runs: the receipt line names the stream it now runs on
+
+Under G' the receipt runs on the receipt stream, so the D2H receipt line's term `; receipts on the copy stream (source
+digests, X.XXms)` would misname it. It becomes `; receipts on the receipt stream (source digests, X.XXms)`; the fault
+gate's `source-flip` check that the receipts ran on the device and `day38-reading.py`'s kernel regex follow the new
+words, and so do the server census and the FLAGS, KERNELS and TESTING rows. No rule, bound, check, cell or order moves;
+section 4's receipts keep the words they were written with.
