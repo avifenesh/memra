@@ -1393,6 +1393,22 @@ impl DecodeState {
 /// spread, and a qualified win becomes the code rather than a door.
 pub const DSV4_BATCH_WIDTH_MAX: usize = 512;
 
+/// The expert programs full-token replay captures (memra #710): the served one-token stream
+/// visitor (`MEMRA_F16G_TAIL` on, the #664 stream on, every gate-only split-K arm off), or the
+/// pinned graph split-K set the replay was first qualified on (all five gate-only arms on).
+/// Anything in between mixes launch families inside one captured token and is refused.
+fn full_token_moe_program_admitted() -> bool {
+    let split_k = [
+        crate::moe_f16g_gu_fuse_on(),
+        crate::moe_f16g_m1_tc_on(),
+        crate::moe_f16g_gu_m1_tc_on(),
+        crate::moe_f16g_gu_half2_on(),
+        crate::moe_f16g_down_m1_half2_on(),
+    ];
+    let stream = crate::moe_f16g_tail_on() && crate::dsv4_moe_m1_stream_on();
+    split_k.iter().all(|&on| on) || (stream && split_k.iter().all(|&on| !on))
+}
+
 fn ring_commit_plan(pos0: usize, n_commit: usize, win: usize) -> (usize, Vec<i32>) {
     assert!(win > 0);
     let start = n_commit.saturating_sub(win);
@@ -8661,17 +8677,13 @@ impl Dsv4Gpu {
             || self.model.mc.n_embd != 4096
             || crate::dsv4_grouped::route_validation_enabled()
             || crate::dsv4_grouped::mirror_validation_enabled()
-            || !crate::moe_f16g_gu_fuse_on()
-            || !crate::moe_f16g_m1_tc_on()
-            || !crate::moe_f16g_gu_m1_tc_on()
-            || !crate::moe_f16g_gu_half2_on()
-            || !crate::moe_f16g_down_m1_half2_on()
+            || !full_token_moe_program_admitted()
             || self
                 .stages
                 .iter()
                 .any(|st| !std::sync::Arc::ptr_eq(&st.gpu.stream(), st.gpu.main_stream()))
         {
-            return Err("full-token replay requires the pinned plain TP2/expert-ID EP, device+diet, f32x/RefFp8Round program; only graph split-K admitted, host split-K/DSpark/host validation/other modes refused".into());
+            return Err("full-token replay requires the pinned plain TP2/expert-ID EP, device+diet, f32x/RefFp8Round program with either the served one-token stream MoE or the pinned graph split-K set; host split-K/DSpark/host validation/other modes refused".into());
         }
         Ok(())
     }

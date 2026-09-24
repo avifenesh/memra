@@ -9,6 +9,8 @@
 //! 400 + steps, so it crosses 512 and the C4 and C128 emission cadences.
 //!
 //! Usage: `dsv4_tp_replay_long_gate <model-dir> <source-tape> [steps]` (default 304).
+//! `DSV4_REPLAY_GATE_MOE=stream|sktail` picks the expert program (default: the served stream
+//! visitor); the two must give the same tokens and digests.
 //! Rig law: under the box GPU lock, one pair, no other tenant.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg};
 use memra_engine::dsv4_source_tape::SourceTape;
@@ -80,11 +82,21 @@ fn main() {
     assert!(gpu.topology().is_tp_ep() && gpu.attention_tp_geometry().is_some());
     gpu.set_grouped_route_validation_for_gate(false);
     gpu.set_grouped_mirror_validation_for_gate(false);
-    gpu.set_grouped_gu_fuse_for_gate(true);
-    gpu.set_grouped_m1_tc_for_gate(true);
-    memra_engine::set_moe_f16g_gu_m1_tc_for_gate(true);
-    memra_engine::set_moe_f16g_gu_half2_for_gate(true);
-    memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
+    // DSV4_REPLAY_GATE_MOE: `stream` (default) is the served one-token stream visitor;
+    // `sktail` pins the gate-only graph split-K set the replay was first qualified on.
+    let moe = std::env::var("DSV4_REPLAY_GATE_MOE").unwrap_or_else(|_| "stream".into());
+    match moe.as_str() {
+        "stream" => {}
+        "sktail" => {
+            gpu.set_grouped_gu_fuse_for_gate(true);
+            gpu.set_grouped_m1_tc_for_gate(true);
+            memra_engine::set_moe_f16g_gu_m1_tc_for_gate(true);
+            memra_engine::set_moe_f16g_gu_half2_for_gate(true);
+            memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
+        }
+        other => panic!("DSV4_REPLAY_GATE_MOE {other:?} must be stream or sktail"),
+    }
+    println!("MOE {moe}");
     let cfg = Dsv4SampleCfg {
         temperature: 1.,
         top_p: 1.,
