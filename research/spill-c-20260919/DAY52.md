@@ -172,3 +172,8 @@ tree after I10's 5090 verdict.
   `spec` and `decide`, which run only when `final` is in the build list (the driver says so otherwise and stops
   there; a rerun with `final` added resumes at those cells, every finished cell skipped). So the box can start before
   the RTX 5090's rung verdicts are in, and the final tree is named before its three cells run.
+- **The build list**, all sections: `D52_BUILDS="base=08210a291 i6=51467de12 i9=c2d78fb9c fill=ef7db702e i1=a6258a8f0
+  i2=10a1c30df i8=cd49c8bcb i5=ae5237e6c i7=14b2b9970 i4=6745fd062 i10=70d6633f5 server=256c3c640
+  server-c5=1b130f1ef srv-e0=0713c1a79 srv-s1=ff64e7f5d srv-s2=da1f59bf6 srv-s3=226abab0e srv-s4=5df11152f
+  srv-s5=58b814abe srv-s6=f661406e4 srv-s7=269ef2cec"`, plus `final=<DAY51 section 2 commit>` when named (21
+  builds, about 90 minutes, the first cold). The sitting is then about 7.5 hours with everything.
