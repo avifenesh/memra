@@ -13670,6 +13670,22 @@ pub struct VerifyState {
     pub bytes: Vec<u64>,
 }
 
+/// Every stage's queued work lands before a transaction state frees its buffers. A pipelined
+/// commit (`drain = false`) returns with its pinned slot-row upload still queued behind the
+/// other lane's step, and a step that failed partway can leave copies queued, including stage
+/// 0's peer copy into stage 1's receive rows. `cuMemFreeHost` does not order against a queued
+/// copy, and each device buffer's stream-ordered free waits only on its own stream, so without
+/// this a request that ends while another lane's step is in flight frees memory under a copy
+/// that later feeds `scatter_rows` its ring slots (memra #699, a sticky 719 on the two-lane
+/// route). The drained routes arrive here with nothing queued, so the sync returns at once.
+impl Drop for VerifyState {
+    fn drop(&mut self) {
+        for ws in &self.ws {
+            let _ = ws.slot_rows.stream().synchronize();
+        }
+    }
+}
+
 struct MatrixStep {
     // Pair-wide drain/drop must precede workspace and cache-plane destruction.
     replay: Option<crate::dsv4_graph::ReplayPair>,
