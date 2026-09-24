@@ -49,10 +49,10 @@ fi
 
 export D40_RIG=pro-single D40_R=$R D40_TREE=$WT D40_BINS=$R/bins D40_ART=$ART D40_ART_OTHER=$ART_OTHER
 export D40_LOCK=/tmp/memra-gpu.lock D40_MIN_AVAIL_GB=48 D51_MOE_ENV="MEMRA_MOE_RESIDENT=0"
-for spec in attrib:day40-cell.sh:7200 ladder:day52-cell.sh:14400 hashlock:day51-cell.sh:1800 \
-            spec:day51-cell.sh:3600 decide:day51-cell.sh:3600; do
-    IFS=: read -r cell script to <<< "$spec"
-    [ -f "$R/$cell.done" ] && { echo "$cell already done"; continue; }
+# One MoE door cell through the day-40 runner, its collector validate and its registered reader.
+moe_cell() { # $1 cell  $2 script  $3 timeout
+    local cell=$1 script=$2 to=$3 out n
+    [ -f "$R/$cell.done" ] && { echo "$cell already done"; return 0; }
     "${cap[@]}" env D40_CELL_SCRIPT="$L/$script" bash "$L/day40-run-cell.sh" "$cell" "$to"
     echo "$cell rc=$? $(date -u +%FT%TZ)" | tee -a "$R/box-driver.log"
     # The collector's out dir is $cell, or $cell-retryN after a busy-lock attempt; the cell's ev is always $cell/ev.
@@ -67,7 +67,11 @@ for spec in attrib:day40-cell.sh:7200 ladder:day52-cell.sh:14400 hashlock:day51-
     esac > "$R/$cell/reading.log" 2>&1
     echo "$cell reader rc=$?" | tee -a "$R/box-driver.log"
     touch "$R/$cell.done"
-done
+}
+# DAY52 section 8: the cells that do not need the final tree first (rung 0 and the ladder), then sections 4 to 6,
+# then DAY51's three cells, which need `final` built.
+moe_cell attrib day40-cell.sh 7200
+moe_cell ladder day52-cell.sh 14400
 # DAY52 section 4 (OWED C6, DAY53.md): the host-tier failure and identity gates on the verify digest v3 server,
 # the 27B, device prefix budget 256 MB (day 23's target-card shape), each gate taking /tmp/memra-gpu.lock itself.
 for cell in unit-server failure-default-off failure-plain-off failure-default-on identity-default-off identity-default-on; do
@@ -96,5 +100,14 @@ if [ ! -f "$R/slices.done" ]; then
     python3 "$L/day54-slice-reading.py" "$R/slices" > "$R/slices/reading.log" 2>&1
     echo "slices reader rc=$?" | tee -a "$R/box-driver.log"
     touch "$R/slices.done"
+fi
+# DAY51's cells on the final tree (DAY52 section 8): only when `final` was built from DAY51 section 2's commit.
+if [ -x "$R/bins/run-gen-final" ] && [ -x "$R/bins/run-spec-final" ]; then
+    moe_cell hashlock day51-cell.sh 1800
+    moe_cell spec day51-cell.sh 3600
+    moe_cell decide day51-cell.sh 3600
+else
+    echo "final not built: DAY51's hashlock, spec and decide not run (add final=<DAY51 section 2 commit> to D52_BUILDS and rerun)" \
+        | tee -a "$R/box-driver.log"
 fi
 echo "box done $(date -u +%FT%TZ)" | tee -a "$R/box-driver.log"

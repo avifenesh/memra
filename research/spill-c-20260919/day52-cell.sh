@@ -3,7 +3,7 @@
 # the target-card sitting): every improvement rung of the MoE slot cache door in one collector lock hold on the target
 # card, so each rung's registered clauses (days 43 to 50) are read on this card from the same window
 # (day52-views.py builds each day's arm set as a view and runs that day's reader unchanged).
-# Arms: off (run-gen-final, no door); base (run-gen, the day-40 binary, default host budget); i6d (run-gen-i6,
+# Arms: off (run-gen-i10, no door: the legacy program, DAY52 section 8); base (run-gen, the day-40 binary, default host budget); i6d (run-gen-i6,
 # default budget); i6g (run-gen-i6) and i9g, fill, i1, i2, i8, i5, i7, i4, i10 (run-gen-<rung>; i10 added by DAY52
 # section 7 before the sitting ran) at
 # --expert-bank-host-bytes=17179869184; every door arm with --expert-bank-stages. Order 1 old to new x 5, order 2
@@ -47,7 +47,7 @@ case $cell in
 ladder)
     arms=(off base i6d i6g i9g fill i1 i2 i8 i5 i7 i4 i10)
     bins=()
-    for b in run-gen-final run-gen run-gen-i6 run-gen-i9 run-gen-fill run-gen-i1 run-gen-i2 run-gen-i8 run-gen-i5 run-gen-i7 run-gen-i4 run-gen-i10; do
+    for b in run-gen run-gen-i6 run-gen-i9 run-gen-fill run-gen-i1 run-gen-i2 run-gen-i8 run-gen-i5 run-gen-i7 run-gen-i4 run-gen-i10; do
         [ -x "$D40_BINS/$b" ] || { echo "missing binary $b"; exit 2; }
         bins+=("$D40_BINS/$b")
     done
@@ -57,7 +57,7 @@ ladder)
     arm() { # $1 arm  $2 label
         local bin door=(--experts-via-tier --expert-bank-stages --expert-bank-host-bytes=17179869184)
         case $1 in
-            off) bin=$D40_BINS/run-gen-final; door=() ;;
+            off) bin=$D40_BINS/run-gen-i10; door=() ;;
             base) bin=$D40_BINS/run-gen; door=(--experts-via-tier --expert-bank-stages) ;;
             i6d) bin=$D40_BINS/run-gen-i6; door=(--experts-via-tier --expert-bank-stages) ;;
             i6g) bin=$D40_BINS/run-gen-i6 ;;

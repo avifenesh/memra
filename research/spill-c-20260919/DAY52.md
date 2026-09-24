@@ -163,3 +163,12 @@ The ladder grows a thirteenth arm, `i10` (`run-gen-i10`, the I10 tree `70d6633f5
 order 1 and first in order 2: 130 runs, about 12 minutes more. `day52-views.py` grows a day-57 view (`off, i4,
 i10`, reader `day57-fillwait.py`). The build list grows `i10=70d6633f5`, and `final` in `DAY51.md` section 2 is the
 tree after I10's 5090 verdict.
+
+## 8. Added before the sitting ran: the order of the cells, and the ladder's `off` arm
+
+- **The ladder's `off` arm** is `run-gen-i10` with no door (the newest rung binary; the legacy program, which no rung
+  changes, section 1), not `run-gen-final`, so the ladder does not wait on `DAY51.md` section 2.
+- **The order**: `attrib`, `ladder`, section 4 (C6), section 6 (C5), section 5 (C4), then `DAY51.md`'s `hashlock`,
+  `spec` and `decide`, which run only when `final` is in the build list (the driver says so otherwise and stops
+  there; a rerun with `final` added resumes at those cells, every finished cell skipped). So the box can start before
+  the RTX 5090's rung verdicts are in, and the final tree is named before its three cells run.
