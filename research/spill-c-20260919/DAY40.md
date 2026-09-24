@@ -163,7 +163,72 @@ other.
 - I7. **The installer.** The record compare reads the loaded `HostExps`, which live in write-combined pinned memory
   (`HostBuf::Pinned`, cudarc's `alloc_pinned`); the per-record verification is serial. Expected: `records` down.
 
-## 5. Commits, receipts
+## 5. The RTX 5090 cell, as it ran (`rtx5090-day40/attrib/`)
 
-Filled in as they land: the instrument commit, the local build, the CPU tests, the RTX 5090 cell under
-`rtx5090-day40/attrib/`, the reading, and the target-card sitting's shape for the lead.
+**The instrument landed first** (`08210a291`): the stage clock, the CPU tests (`day40-cpu/tier-bank-tests.log`: tier
+bank `64 passed` after the fixture re-pin below; `day40-cpu/engine-lib-tests.log`: engine lib `546 passed`), clippy
+`-D warnings` clean over both crates and all targets (`day40-cpu/clippy.log`). The day-4 SLRU fixture pins the SHA-256
+of `moe_cache.rs`; the first tier run failed on that pin alone (`left: "072cad5d..."`, the old digest), the file's
+diff adds clock statements only and binds `stage_expert`'s result to a name before the same `if let Err`, so the
+recorded SLRU trace stands and the digest was re-pinned (`d0acf6f03`'s precedent). A dry check (`day40-cpu/dry-check*`,
+one ONS run under the lock outside the collector, not a receipt) confirmed every stage line prints.
+
+**The hold.** Lane B's queue held the card first (`waits.log`: 8 bounded waits at 120 s; my first runner was stopped
+inside its wait and restarted with longer bounds, `chore` commit, before any cell ran). Then one collector hold,
+16:46:38Z to 17:12:10Z, 30 runs, `attrib.exit` 0, collector `--validate` rc=0 (`attrib-validate.log`). Binary
+`run-gen` `b73bb4d3...` built from `08210a291` (`ev/binary.sha256`); the cell's tree is the next commit (the runner's
+wait bounds only; `git diff 08210a291 <tree> -- crates` empty). The artifact `df27a780...7adf`, fetched today from its
+pinned revision and checked (`ARTIFACT_SHA256_MATCH`). Regime over the hold (`regime.log`, 6,087 samples at 250 ms):
+53 to 70 C (median 56), at most 147 W, SM clock up to 2775 MHz (the median 180 MHz is the CPU-bound install and SHA
+phases). No compute app of another process at any run boundary (`ev/*.snap`).
+
+**The reading, verbatim** (`reading.log`, `day40-attrib.py`):
+
+```
+DAY40 ATTRIB CHECKS rig=rtx5090 runs=30 integrity=ok
+DAY40 R1 door_ms_per_token gen: pooled=39.25 o1=40.31 o2=38.75 | window: pooled=18.25 o1=18.47 o2=18.16 | medians gen off=0.401 on=1.657 ons=1.692 window off=0.331 on=0.915 ons=0.936 (N=10 per arm)
+DAY40 R2 per_token_ms validate=0.649 demand=16.364 reserve=0.022 enqueue=1.075 copy_gpu=2.834 drain=2.071 sync2=0.019 finish=0.264 miss_total=20.300 inner_demand=15.993 trace=0.265 pread=3.457 stage=1.286 alloc=0.754 step=5.036 verify=9.382 publish=0.231 retire=0.094 collect=0.135 (N=10 ONS runs)
+DAY40 R2 per_token_counts admits=471.0 gpu_hits=378.7 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3 stages=92.3 steps=92.3 verified=92.3 copy_events=92.3 event_errors=0.0
+DAY40 R2 serial_rank demand=16.364 > drain=2.071 > enqueue=1.075 > validate=0.649 > finish=0.264 > reserve=0.022 > sync2=0.019
+DAY40 R3 serial_ms_per_token=20.465 window_door_ms_per_token=18.250 coverage=1.121 miss_total=20.300 miss_parts_excl_validate=19.816 residual=0.484
+DAY40 R4 demand=16.364 = inner_demand 15.993 + trace 0.265 + other 0.106; inner_demand: stage 1.286 (alloc 0.754) step 5.036 (pread 3.457) verify 9.382 publish 0.231; finish=0.264: retire 0.094 collect 0.135
+DAY40 R5 instrument_ms_per_token=0.656 bound=0.913 (min of 5% of 18.250 and 2.0) -> within_bound
+DAY40 R6 install_s ONS sha=5.08 catalog=0.00 records=55.77 setup=0.11 | ON install_s=60.66 (installed minus q8rp line, N=10)
+DAY40 ATTRIB rig=rtx5090 integrity=ok window_door_ms_per_token=18.25 serial_ms_per_token=20.47 instrument=within_bound top=demand
+```
+
+**What it says on this card (the RTX 5090; nothing here attributes the target card's 60.47 ms).**
+
+1. The door costs 39.25 ms per decode token on the gen-only span and 18.25 on the steady window; both orders agree
+   within 1.6 ms. The window's miss traffic is 92.3 GPU misses per token, every one a host-tier miss and a physical
+   read (host hits 0.0 per token at the 16-record tier).
+2. The owner thread's serialized door work in the window is 20.47 ms per token, of which the host demand is 16.36:
+   the per-record SHA-256 verify 9.38, the read step 5.04 (the `pread` itself 3.46; the slot allocation, zero-fill and
+   assembly copy the other 1.58), `stage` 1.29 (the output allocation and zero-fill 0.75), the trace print 0.27, the
+   publish 0.23. The compute-stream drain is 2.07, the pageable enqueue 1.08, `validate` 0.65 (471 admissions per
+   token, hits included), `finish` 0.26. The H2D itself takes 2.83 ms of GPU time per token (92.3 copies of the
+   pageable lease, about 30 us each).
+3. Coverage 1.12: the serialized work exceeds the door's window cost because the drain includes GPU compute the
+   legacy program also runs (it overlaps it instead of waiting for it). The instrument costs 0.66 ms per token,
+   within its bound, so the stage lines are usable as registered.
+4. The install is 60.7 s per process on this host, 55.8 s of it the record pass (the byte compare against the loaded
+   `HostExps`, which live in write-combined pinned memory, and the per-record SHA-256), 5.1 s the artifact SHA pass.
+
+**The order this sets for the improvement list (the decision rule).** `demand` first: I6 (host residency sized for
+the bank), then the host fill that serves first touches before they are demanded, then I2 (pinned slots, the read
+straight into the slot), then I1 (the drain), then I8 (a `validate` memo; a new item: 0.65 ms per token spent
+validating hits, the ids and lengths never change), I5 (the trace), I7 (the install), I4 (prefetch). One reading
+outside the rule shapes I6, recorded here: a stack-distance profile of one ONS run's host-demand trace
+(`o1-ons-r1.log`, 22,077 demands, 17,688 distinct records) gives an LRU host tier a window hit fraction of 0.000 at
+every budget up to 2 GiB, 0.039 at 4 GiB and 0.439 at 8 and 16 GiB, and 1,659 of the window's 2,955 demands are the
+first demand of their record in the process: a GPU miss is for a record evicted long ago or never loaded, so a host
+tier helps only past the GPU cache's reach, and first touches need the fill.
+
+**The target card.** The same cell (`day40-cell.sh attrib`, `--rig pro-single`, `/tmp/memra-gpu.lock`) is owed there
+to attribute the 60.47 ms; it runs as rung 0 of the target-card sitting that measures the improvement ladder (the
+sitting's shape goes to the lead when the ladder's 5090 rungs are in).
+
+## 6. Commits
+
+`33d6f5cef` (`OWED.md`), `a47d950d4` (this file's sections 0 to 4, before any code), `08210a291` (the instrument, the
+cell, runner and reader), the runner's wait-bounds commit, and the receipts commit that carries this section.

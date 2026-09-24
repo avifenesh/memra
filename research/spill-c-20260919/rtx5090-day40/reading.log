@@ -1,0 +1,11 @@
+DAY40 ATTRIB CHECKS rig=rtx5090 runs=30 integrity=ok
+DAY40 R1 door_ms_per_token gen: pooled=39.25 o1=40.31 o2=38.75 | window: pooled=18.25 o1=18.47 o2=18.16 | medians gen off=0.401 on=1.657 ons=1.692 window off=0.331 on=0.915 ons=0.936 (N=10 per arm)
+DAY40 R2 per_token_ms validate=0.649 demand=16.364 reserve=0.022 enqueue=1.075 copy_gpu=2.834 drain=2.071 sync2=0.019 finish=0.264 miss_total=20.300 inner_demand=15.993 trace=0.265 pread=3.457 stage=1.286 alloc=0.754 step=5.036 verify=9.382 publish=0.231 retire=0.094 collect=0.135 (N=10 ONS runs)
+DAY40 R2 per_token_counts admits=471.0 gpu_hits=378.7 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3 stages=92.3 steps=92.3 verified=92.3 copy_events=92.3 event_errors=0.0
+DAY40 R2 serial_rank demand=16.364 > drain=2.071 > enqueue=1.075 > validate=0.649 > finish=0.264 > reserve=0.022 > sync2=0.019
+DAY40 R3 serial_ms_per_token=20.465 window_door_ms_per_token=18.250 coverage=1.121 miss_total=20.300 miss_parts_excl_validate=19.816 residual=0.484
+DAY40 R4 demand=16.364 = inner_demand 15.993 + trace 0.265 + other 0.106; inner_demand: stage 1.286 (alloc 0.754) step 5.036 (pread 3.457) verify 9.382 publish 0.231; finish=0.264: retire 0.094 collect 0.135
+DAY40 R5 instrument_ms_per_token=0.656 bound=0.913 (min of 5% of 18.250 and 2.0) -> within_bound
+DAY40 R6 install_s ONS sha=5.08 catalog=0.00 records=55.77 setup=0.11 | ON install_s=60.66 (installed minus q8rp line, N=10)
+DAY40 ATTRIB rig=rtx5090 integrity=ok window_door_ms_per_token=18.25 serial_ms_per_token=20.47 instrument=within_bound top=demand
+# exit=
