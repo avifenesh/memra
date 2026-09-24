@@ -1,0 +1,47 @@
+START utc=2026-09-23T23:12:13Z cmd=/root/lane/target-attn/release/dsv4_tp_ep_sampled_perf_gate /data/dsv4f/nvfp4 /root/box/tape-rebuild.txt --full-token-replay
+NUMERIC_CLASS dsv4_attention_head_split_row_gather_exact
+PROTOCOL {"plain_only":true,"sampled":true,"topology":"tp_ep_all_layers","attention_tp":true,"prompt_tokens":256,"output_tokens":256,"repeats":20,"temperature":1.0,"top_p":1.0,"top_k":0,"seed":20260907,"sampler_order":"device","timing_scope":"sample_plus_forward_envelope","sampling_in_timing":true,"source_sha256":"11e4bd80352f4a24504ffdee519b33bbc527b3b9bcfeb531815e5731b190cb8c","speculative":false,"pp_timing":false,"cache_hash_in_timing":false}
+[load] plain sampler: Device
+[load] sampled candidate order: Radix
+[load] placement: split_at=22 trunk_layers=43 dspark_tail_reserve=0.00 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: TpEpAllLayers | layers=43 per-rank-resident=all
+[load] indexer score: Scalar
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 347.7ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 2 rank copies done t=25s
+[load] layer 7 -> 2 rank copies done t=52s
+[load] layer 11 -> 2 rank copies done t=83s
+[load] layer 15 -> 2 rank copies done t=107s
+[load] layer 19 -> 2 rank copies done t=127s
+[load] layer 23 -> 2 rank copies done t=180s
+[load] layer 27 -> 2 rank copies done t=224s
+[load] layer 31 -> 2 rank copies done t=285s
+[load] layer 35 -> 2 rank copies done t=330s
+[load] layer 39 -> 2 rank copies done t=376s
+[load] layer 42 -> 2 rank copies done t=412s
+[load] drafter: 3 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path off (set MEMRA_DSV4_DRAFTER=dspark); trunk-only
+[load] sink score: Scalar
+[TP/EP load] local expert banks resident by ID: rank0=0..128, rank1=128..256; peer dispatch disabled
+[load] expert program: matrix (grouped ModelOpt split-plane executor via dsv4_grouped; tensor-core MMA class, the loaded default since 2026-09-11), EP pair (all-layer TP/EP local banks)
+[attention-TP2] packed rank-local Q_b/wo_a/wo_b rows: heads=32 groups=4 wo_b_rows=2048 full_planes_freed=8.06 GiB numeric_class=dsv4_attention_head_split_row_gather_exact
+[dsv4-doors] program=loaded door="replay cadence" env=MEMRA_DSV4_REPLAY_CADENCE merged=#374 declared_default=On resolved=NoServingCaller("full-token replay is armed per request by a gate binary only; no serving or eager request arms it, so the cadence choice has no caller") disposition=ReclassifyAsGateInput
+[dsv4-doors] program=loaded door="dense exact-tail transport" env=MEMRA_DSV4_DENSE_EXACT_TAIL merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="dense-fast" env=MEMRA_DSV4_DENSE_FAST merged=#404 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="HC dot split S16" env=MEMRA_DSV4_HC_DOT_SPLIT merged=#418 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+[dsv4-prefill-f16g] GU_FUSE ENGAGED: rows=1 live_slots=6 hidden=4096 inter=2048 ModelOpt NVFP4 f16-MMA class
+REPLAY_PROTOCOL {"prime_tokens":256,"sampled_output_tokens":256,"prime_wall_ns":6489668708,"rows":20,"blocks":"AAAAA BBBBB BBBBB AAAAA","timing_scope":"sample_plus_forward_envelope","step_order":"forward_refusal_commit_head_sample_readback","initial_carry_draw_outside_timing":true,"final_next_draw_inside_timing":true,"both_arms_same_draw_positions":true,"first_scored_graph_capture_inside_timing":true,"control_hash_provenance":"host_reconstructed_intended_sequence","split_k":false,"device_sampler":true,"diet":true,"host_c4":false,"speculative":false}
+
+thread 'main' (49518) panicked at crates/memra-engine/src/bin/../dsv4_full_token_replay_gate.rs:47:13:
+assertion `left == right` failed: AR epoch rank 0 block 0
+  left: 258
+ right: 172
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+GATE_DONE rc=101 utc=2026-09-23T23:19:18Z
