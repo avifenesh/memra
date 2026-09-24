@@ -207,12 +207,41 @@ fn vmm_granularity(device: i32) -> Result<usize> {
     Ok(granularity)
 }
 
+static GRANULARITIES: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
+
 /// The VMM allocation granularity of the stream's device (the boot line's `granularity=`), or
-/// the named refusal when the device has no VMM support.
+/// the named refusal when the device has no VMM support. Queried once per device ordinal.
 pub fn vmm_granularity_for(stream: &CudaStream) -> Result<usize> {
+    let ordinal = stream.context().ordinal();
+    if let Some(&(_, g)) = GRANULARITIES
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .iter()
+        .find(|(o, _)| *o == ordinal)
+    {
+        return Ok(g);
+    }
     stream.context().bind_to_thread()?;
-    let device = cudarc::driver::result::device::get(stream.context().ordinal() as i32)?;
-    vmm_granularity(device)
+    let device = cudarc::driver::result::device::get(ordinal as i32)?;
+    let g = vmm_granularity(device)?;
+    GRANULARITIES
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .push((ordinal, g));
+    Ok(g)
+}
+
+/// DAY37 addendum C: a plane is worth backing on demand only when its pooled capacity leaves at
+/// least one whole granule unbacked after the initial extent. Below that line an on-demand plane
+/// can never back fewer bytes than the pooled one (it maps whole granules up to a reservation
+/// rounded above the capacity), so the pooled plane is never worse there.
+pub fn on_demand_pays(capacity: usize, initial: usize, granularity: usize) -> bool {
+    granularity > 0
+        && capacity
+            >= initial
+                .div_ceil(granularity)
+                .saturating_mul(granularity)
+                .saturating_add(granularity)
 }
 
 // ---------------- on-demand planes (WP-B day 37, `MEMRA_KV_ALLOCATOR=vmm`) ----------------
@@ -1371,6 +1400,22 @@ mod tests {
             }),
         };
         (od, drv)
+    }
+
+    #[test]
+    fn on_demand_pays_only_with_a_whole_granule_left_unbacked() {
+        // A bounded request whose capacity is within a granule of its initial rows: pooled.
+        assert!(!on_demand_pays(3 * G - 1, G + 1, G));
+        assert!(!on_demand_pays(2 * G - 1, G, G));
+        // Exactly one whole granule past the initial extent: on demand.
+        assert!(on_demand_pays(2 * G, G, G));
+        assert!(on_demand_pays(3 * G, G + 1, G));
+        // An open request at the served context: on demand.
+        assert!(on_demand_pays(262_144 * 1088 + 8, 1_500 * 1088 + 8, G));
+        // No granularity (no VMM): never.
+        assert!(!on_demand_pays(1 << 40, 0, 0));
+        // The day-37 gate request: 18 planes of a few hundred KB each stay pooled.
+        assert!(!on_demand_pays(2_301_440 / 9 + 64 * 1088, 2_301_440 / 9, G));
     }
 
     #[test]

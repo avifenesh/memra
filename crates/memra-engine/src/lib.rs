@@ -35592,6 +35592,9 @@ impl memra_kv::KvDev for Engine {
     ) -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
         memra_kv::KvPlane::vmm_on_demand(self.stream(), capacity, initial)
     }
+    fn kv_vmm_granularity(&self) -> Option<usize> {
+        memra_kv::vmm_granularity_for(&self.stream()).ok()
+    }
     fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         Engine::zeros(self, n)
     }

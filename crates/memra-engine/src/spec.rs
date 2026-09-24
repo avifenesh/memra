@@ -2495,13 +2495,14 @@ impl MtpScratch {
             .flatten();
         let alloc = |tok_bytes: usize| -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
             let capacity = alloc_rows * tok_bytes;
-            match on_demand {
-                Some(rows) => {
-                    let plane = memra_kv::KvDev::alloc_vmm_on_demand_u8(
-                        e,
-                        capacity,
-                        (rows.min(alloc_rows) * tok_bytes).min(capacity),
-                    )?;
+            let initial = on_demand.map(|rows| (rows.min(alloc_rows) * tok_bytes).min(capacity));
+            // Addendum C: on demand only where a whole granule stays unbacked.
+            match initial.filter(|&initial| {
+                memra_kv::KvDev::kv_vmm_granularity(e)
+                    .is_some_and(|g| memra_kv::on_demand_pays(capacity, initial, g))
+            }) {
+                Some(initial) => {
+                    let plane = memra_kv::KvDev::alloc_vmm_on_demand_u8(e, capacity, initial)?;
                     memra_kv::note_on_demand_plane();
                     Ok(plane)
                 }

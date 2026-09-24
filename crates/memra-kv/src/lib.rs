@@ -10,7 +10,7 @@
 pub mod plane;
 pub use plane::{
     GrowEvent, KvAllocator, KvPlane, KvWrite, VmmFaults, VmmGrowPlacement, note_on_demand_plane,
-    on_demand_initial_rows, vmm_counters, vmm_granularity_for, vmm_graveyard_bytes,
+    on_demand_initial_rows, on_demand_pays, vmm_counters, vmm_granularity_for, vmm_graveyard_bytes,
     vmm_grow_placement, vmm_reap_graveyard, vmm_reap_graveyard_blocking, vmm_set_faults,
     vmm_set_grow_placement, with_on_demand_kv,
 };
@@ -436,6 +436,10 @@ pub trait KvDev {
         allocator: KvAllocator,
     ) -> Result<KvPlane, Box<dyn std::error::Error>> {
         allocator.allocate(|| self.alloc_u8(n).map(Into::into), || self.alloc_vmm_u8(n))
+    }
+    /// The backend's VMM allocation granularity (WP-B day 37 addendum C), `None` without VMM.
+    fn kv_vmm_granularity(&self) -> Option<usize> {
+        None
     }
     /// On-demand VMM plane (WP-B day 37): `capacity` bytes of reserved range, `[0, initial)`
     /// backed. Explicit backend capability; never a pooled substitute.
@@ -3080,11 +3084,15 @@ impl Cache {
                         .flatten();
                     let alloc = |tok_bytes: usize| -> Result<KvPlane, Box<dyn std::error::Error>> {
                         let capacity = kv_plane_allocation_bytes(alloc_rows, tok_bytes);
-                        match on_demand {
-                            Some(rows) => {
-                                let initial =
-                                    kv_plane_allocation_bytes(rows.min(alloc_rows), tok_bytes)
-                                        .min(capacity);
+                        let initial = on_demand.map(|rows| {
+                            kv_plane_allocation_bytes(rows.min(alloc_rows), tok_bytes).min(capacity)
+                        });
+                        // Addendum C: on demand only where a whole granule stays unbacked.
+                        match initial.filter(|&initial| {
+                            e.kv_vmm_granularity()
+                                .is_some_and(|g| on_demand_pays(capacity, initial, g))
+                        }) {
+                            Some(initial) => {
                                 let plane = e.alloc_vmm_on_demand_u8(capacity, initial)?;
                                 note_on_demand_plane();
                                 Ok(plane)
