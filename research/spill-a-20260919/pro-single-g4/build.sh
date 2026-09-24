@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The G4 target-card build (DAY38 section 17, DAY39 section 5, DAY41 section 1), outside any hold, on the box's clone of
 # this lane (/root/wt-a, never another lane's tree). From ONE tree, the tip: g4 (the tip as built), f1 (the tip plus
-# rtx5090-day39/f1.patch, design F at one fill thread), hk (the tip plus rtx5090-day39/hk-revert-tip.patch, the day-32
+# rtx5090-day39/f1-g4.patch, design F at one fill thread; f1.patch's context names the removed receipt stream), hk (the tip plus rtx5090-day39/hk-revert-tip.patch, the day-32
 # helper fill with design K), then the tip's test binaries; the tree checked back at the tip after each patched build.
 # base (80039a8de) and gpp (G'', the day-38 sitting's tip b214bd2cf, the hump's control) are the day-38 sitting's binaries,
 # copied with their hashes. usage: build.sh <tip_sha>
@@ -23,7 +23,7 @@ echo "== g4" >> "$L"
 nice -n 5 cargo build --release -p memra-server >> "$L" 2>&1 || { echo "rc=1 (g4)" >> "$R/build.log"; exit 1; }
 cp target/release/memra-server "$R/bins/g4/memra-server"
 echo "== f1" >> "$L"
-git apply research/spill-a-20260919/rtx5090-day39/f1.patch >> "$L" 2>&1 || { echo "rc=2 (f1 patch)" >> "$R/build.log"; exit 2; }
+git apply research/spill-a-20260919/rtx5090-day39/f1-g4.patch >> "$L" 2>&1 || { echo "rc=2 (f1 patch)" >> "$R/build.log"; exit 2; }
 nice -n 5 cargo build --release -p memra-server >> "$L" 2>&1; brc=$?
 cp target/release/memra-server "$R/bins/f1/memra-server"
 git checkout -q -- crates docs tools; clean || { echo "rc=2 (tree after f1)" >> "$R/build.log"; exit 2; }
