@@ -6652,7 +6652,7 @@ impl Engine {
     pub(crate) fn expert_bank_stage_line(
         &self,
     ) -> Result<Option<String>, Box<dyn std::error::Error>> {
-        match self.moe_cache.lock().unwrap().as_ref() {
+        match self.moe_cache.lock().unwrap().as_mut() {
             Some(cache) => cache.bank_stage_line(),
             None => Ok(None),
         }

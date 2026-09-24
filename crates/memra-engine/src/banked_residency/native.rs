@@ -238,6 +238,14 @@ impl Drop for BankedExpertGate<'_> {
         if let Some(fill) = &self.fill {
             fill.stop.store(true, Ordering::Relaxed);
         }
+        // DAY46: finish every in-flight lease (one stream drain) before the registry closes;
+        // `close` refuses while any lease is open.
+        let retired = self
+            .engine
+            .with_moe_cache(self.max_bytes, |cache, _| cache.retire_all_banked());
+        if let Err(err) = retired {
+            eprintln!("[experts-via-tier] in-flight retire refused: {err}");
+        }
         self.print_stage_line("close");
         let report = self.engine.with_moe_cache(self.max_bytes, |cache, _| {
             let (slots, allocated_bytes, evictions) = cache.bank_pressure();
@@ -528,6 +536,10 @@ impl Engine {
             }
             None => None,
         };
+        // DAY46: leases stay open until their copy event completes, so the registry, the bank's
+        // tickets and the governor's in-flight and staging dimensions hold the in-flight queue
+        // plus the demand being admitted.
+        let open_leases = crate::moe_cache::BANKED_INFLIGHT + 1;
         let mut capacity = TierBudget::zero(1);
         // The planned payload, a per-record metadata allowance and the previous fixed 512 MiB
         // as headroom for staging and open tickets.
@@ -536,8 +548,10 @@ impl Engine {
             .checked_add(slots as u64 * 4096)
             .and_then(|n| n.checked_add(512 * 1024 * 1024))
             .ok_or(Error::Overflow)?;
-        capacity.staging = max_bytes;
-        capacity.inflight = 1;
+        capacity.staging = max_bytes
+            .checked_mul(open_leases as u64)
+            .ok_or(Error::Overflow)?;
+        capacity.inflight = open_leases as u64;
         let budget: SharedBudget = Rc::new(RefCell::new(Governor::new(
             capacity,
             TierBudget::zero(1),
@@ -576,7 +590,7 @@ impl Engine {
                 cache_bytes: plan.planned_bytes,
                 batch_bytes: max_bytes,
                 items: 1,
-                tickets: 1,
+                tickets: open_leases,
             },
         )?;
         let bank = if stage_clock {
@@ -618,7 +632,7 @@ impl Engine {
                 }),
                 fill: Some(fill_intake),
             }),
-            1,
+            open_leases,
         );
         let owner = owner?;
         if let Some(slots) = gpu_slots {
@@ -1029,5 +1043,57 @@ mod day45_fill {
         // The channel holds at most 64, so the workers stopped long before the 10,000 jobs.
         assert!(counts.reads.load(Ordering::Relaxed) < 10_000);
         std::fs::remove_file(path).ok();
+    }
+}
+
+#[cfg(test)]
+mod day46_census {
+    //! DAY46 (`research/spill-c-20260919/DAY46.md`): the door's miss path drains nothing on
+    //! success. Its only stream drains are the two error branches of `stage_banked` and the
+    //! teardown's `retire_all_banked`; retirement waits on the oldest copy's event, never the
+    //! stream; every `finish` of a copied lease sits behind an event check or the teardown drain.
+    const CACHE: &str = include_str!("../moe_cache.rs");
+
+    fn body(name: &str) -> &'static str {
+        let start = CACHE
+            .find(&format!("fn {name}("))
+            .unwrap_or_else(|| panic!("{name} missing"));
+        let rest = &CACHE[start..];
+        let end = rest[1..]
+            .find("\n    fn ")
+            .or_else(|| rest[1..].find("\n    pub(crate) fn "))
+            .map(|i| i + 1)
+            .unwrap_or(rest.len());
+        &rest[..end]
+    }
+
+    #[test]
+    fn the_miss_path_drains_nothing_on_success() {
+        let admit = body("admit_banked");
+        assert!(!admit.contains("synchronize"), "admit_banked drains");
+        assert!(admit.contains("self.retire_banked(&bank)?;"));
+        assert!(admit.contains("self.banked_inflight.push_back((token, done));"));
+        let stage = body("stage_banked");
+        assert_eq!(
+            stage.matches("e.stream().synchronize()").count(),
+            2,
+            "stage_banked drains beyond its two error branches"
+        );
+        assert!(stage.contains("e.stream().record_event(None)"));
+        let retire = body("retire_banked");
+        assert!(
+            !retire.contains("stream().synchronize()"),
+            "retire waits on the stream"
+        );
+        assert!(retire.contains("done.synchronize()?;"));
+        assert!(retire.contains("if !done.is_complete()"));
+        let teardown = body("retire_all_banked");
+        assert_eq!(
+            teardown
+                .matches("self.compute_stream.synchronize()?;")
+                .count(),
+            1
+        );
+        assert!(CACHE.contains("pub(crate) const BANKED_INFLIGHT: usize = 32;"));
     }
 }

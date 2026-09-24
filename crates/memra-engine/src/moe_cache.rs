@@ -38,7 +38,7 @@ use crate::banked_residency::SLOT_TAIL_PAD_BYTES;
 use crate::model::{ExpertKeepalive, ExpertSource};
 use crate::spill_pread::{PreadPool, PreadStats, ReadTicket, SpillIoMode};
 use cudarc::driver::{CudaEvent, CudaSlice, CudaStream, HostSlice, SyncOnDrop};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 /// Which projection of an expert (gate/up/down are three distinct GGUF blocks per expert).
@@ -254,6 +254,12 @@ pub struct MoeSlotCache {
     // Typed qualification door, default OFF. Owner-only service is never stored here.
     banked: Option<memra_tier::bank::ExpertBankProxy>,
     banked_pending: Option<memra_tier::bank::ExpertLeaseToken>,
+    /// DAY46: leases whose H2D is enqueued on the compute stream, each with the event recorded
+    /// after its copy, oldest first. A lease is finished only once its event has completed (or
+    /// after a whole-stream drain at teardown); at most `BANKED_INFLIGHT` are open.
+    banked_inflight: VecDeque<(memra_tier::bank::ExpertLeaseToken, CudaEvent)>,
+    /// `--expert-bank-stages` only: timing events around each banked H2D, read once landed.
+    bank_copy_timings: VecDeque<(CudaEvent, CudaEvent)>,
     /// `--expert-bank-stages` only (DAY40): the CUDA-thread half of the door's log-only stage
     /// clock. `None` without the door and without the flag, so no legacy statement reads it.
     bank_clock: Option<BankAdmitClock>,
@@ -359,11 +365,14 @@ struct BankAdmitClock {
     sync2_ns: u64,
     finish_ns: u64,
     miss_total_ns: u64,
+    /// DAY46: front-of-queue retirement (event checks and `finish`), and the full-queue wait.
+    retire_ns: u64,
+    wait_ns: u64,
 }
 impl BankAdmitClock {
     fn line(&self) -> String {
         format!(
-            "admits={} gpu_hits={} gpu_misses={} validate_ns={} demand_ns={} reserve_ns={} enqueue_ns={} copy_gpu_ns={} copy_events={} event_errors={} drain_ns={} sync2_ns={} finish_ns={} miss_total_ns={}",
+            "admits={} gpu_hits={} gpu_misses={} validate_ns={} demand_ns={} reserve_ns={} enqueue_ns={} copy_gpu_ns={} copy_events={} event_errors={} drain_ns={} sync2_ns={} finish_ns={} miss_total_ns={} retire_ns={} wait_ns={}",
             self.admits,
             self.gpu_hits,
             self.gpu_misses,
@@ -377,10 +386,15 @@ impl BankAdmitClock {
             self.drain_ns,
             self.sync2_ns,
             self.finish_ns,
-            self.miss_total_ns
+            self.miss_total_ns,
+            self.retire_ns,
+            self.wait_ns
         )
     }
 }
+
+/// DAY46: leases the door keeps in flight on the compute stream before it waits on the oldest.
+pub(crate) const BANKED_INFLIGHT: usize = 32;
 
 fn clock_ns(started: std::time::Instant) -> u64 {
     u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
@@ -666,6 +680,8 @@ impl MoeSlotCache {
         Ok(MoeSlotCache {
             banked: None,
             banked_pending: None,
+            banked_inflight: VecDeque::new(),
+            bank_copy_timings: VecDeque::new(),
             bank_clock: None,
             slots,
             slot_class,
@@ -1015,7 +1031,8 @@ impl MoeSlotCache {
     /// The door's stage line (DAY40): this cache's clock, then the owner's report through
     /// the proxy (owner thread only, like every bank call). `Ok(None)` without the door or
     /// without `--expert-bank-stages`.
-    pub(crate) fn bank_stage_line(&self) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    pub(crate) fn bank_stage_line(&mut self) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        self.settle_copy_timings();
         let (Some(clock), Some(bank)) = (&self.bank_clock, &self.banked) else {
             return Ok(None);
         };
@@ -1035,6 +1052,7 @@ impl MoeSlotCache {
             return Err("banked expert has unretired H2D or unsupported frozen dispatch".into());
         }
         let bank = self.banked.as_ref().ok_or("bank proxy absent")?.clone();
+        self.retire_banked(&bank)?;
         let local = (id.layer, id.proj, id.ex);
         let clocked = self.bank_clock.is_some();
         let entered = clocked.then(std::time::Instant::now);
@@ -1065,37 +1083,133 @@ impl MoeSlotCache {
             bank.finish(&token)?;
             return Err("banked lease names another expert than the one demanded".into());
         }
-        self.banked_pending = Some(token);
-        // Move only the identity out while borrowing payload on the owner. Put it
-        // back before observing completion, including any failed enqueue.
-        let token = self.banked_pending.take().unwrap();
-        let result = bank.with_bytes(&token, |payload| self.admit_native(id, payload, e));
-        self.banked_pending = Some(token);
-        let synced = clocked.then(std::time::Instant::now);
-        e.stream().synchronize()?;
-        if let (Some(started), Some(clock)) = (synced, self.bank_clock.as_mut()) {
-            clock.sync2_ns += clock_ns(started);
-        }
+        // DAY46: borrow the payload on the owner and enqueue its H2D with a completion event;
+        // no stream drain. The lease is finished only once that event completes.
+        let staged = bank.with_bytes(&token, |payload| self.stage_banked(id, payload, e));
         let finishing = clocked.then(std::time::Instant::now);
-        bank.finish(self.banked_pending.as_ref().unwrap())?;
-        self.banked_pending = None;
+        let outcome = match staged {
+            Ok(Ok((slot, Some(done)))) => {
+                self.banked_inflight.push_back((token, done));
+                Ok(slot)
+            }
+            // The copy's completion was proven by a stream drain (its event could not be
+            // recorded): finish now.
+            Ok(Ok((slot, None))) => match bank.finish(&token) {
+                Ok(()) => Ok(slot),
+                Err(err) => {
+                    self.banked_pending = Some(token);
+                    Err(err.into())
+                }
+            },
+            // The enqueue failed. A proven drain released the slot and nothing reads the
+            // lease; an unknown stream keeps the lease open (never finished) with the slot
+            // outside every table.
+            Ok(Err(err)) => {
+                if self.compute_stream_unknown {
+                    self.banked_pending = Some(token);
+                } else if let Err(finish_err) = bank.finish(&token) {
+                    self.banked_pending = Some(token);
+                    return Err(finish_err.into());
+                }
+                Err(err)
+            }
+            // The registry refused the borrow: the lease stays open and further admissions
+            // refuse (fail closed).
+            Err(err) => {
+                self.banked_pending = Some(token);
+                Err(err.into())
+            }
+        };
         if let (Some(started), Some(clock)) = (finishing, self.bank_clock.as_mut()) {
             clock.finish_ns += clock_ns(started);
             if let Some(entered) = entered {
                 clock.miss_total_ns += clock_ns(entered);
             }
         }
-        result?
+        outcome
     }
 
-    fn admit_native(
+    /// DAY46: retire, oldest first, every in-flight lease whose copy event has completed; when
+    /// `BANKED_INFLIGHT` are open, wait on the oldest event (never the stream) first. A `finish`
+    /// the registry refuses keeps its lease open and fails closed.
+    fn retire_banked(
+        &mut self,
+        bank: &memra_tier::bank::ExpertBankProxy,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let started = self.bank_clock.is_some().then(std::time::Instant::now);
+        while let Some((_, done)) = self.banked_inflight.front() {
+            if !done.is_complete() {
+                if self.banked_inflight.len() < BANKED_INFLIGHT {
+                    break;
+                }
+                let waiting = self.bank_clock.is_some().then(std::time::Instant::now);
+                done.synchronize()?;
+                if let (Some(waited), Some(clock)) = (waiting, self.bank_clock.as_mut()) {
+                    clock.wait_ns += clock_ns(waited);
+                }
+            }
+            let (token, _done) = self.banked_inflight.pop_front().expect("front checked");
+            if let Err(err) = bank.finish(&token) {
+                self.banked_pending = Some(token);
+                return Err(err.into());
+            }
+        }
+        self.settle_copy_timings();
+        if let (Some(started), Some(clock)) = (started, self.bank_clock.as_mut()) {
+            clock.retire_ns += clock_ns(started);
+        }
+        Ok(())
+    }
+
+    /// DAY46: every in-flight lease finished after one stream drain (teardown and the gate's
+    /// close). A failed drain keeps every lease open.
+    pub(crate) fn retire_all_banked(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.banked_inflight.is_empty() {
+            return Ok(());
+        }
+        let bank = self.banked.as_ref().ok_or("bank proxy absent")?.clone();
+        self.compute_stream.synchronize()?;
+        while let Some((token, _done)) = self.banked_inflight.pop_front() {
+            if let Err(err) = bank.finish(&token) {
+                self.banked_pending = Some(token);
+                return Err(err.into());
+            }
+        }
+        self.settle_copy_timings();
+        Ok(())
+    }
+
+    /// The stage clock's copy timing events whose copy has landed (`--expert-bank-stages` only).
+    fn settle_copy_timings(&mut self) {
+        let Some(clock) = self.bank_clock.as_mut() else {
+            return;
+        };
+        while let Some((_, after)) = self.bank_copy_timings.front() {
+            if !after.is_complete() {
+                break;
+            }
+            let (before, after) = self.bank_copy_timings.pop_front().expect("front checked");
+            match before.elapsed_ms(&after) {
+                Ok(ms) => {
+                    clock.copy_gpu_ns += (f64::from(ms) * 1.0e6) as u64;
+                    clock.copy_events += 1;
+                }
+                Err(_) => clock.event_errors += 1,
+            }
+        }
+    }
+
+    /// DAY46: the door's copy of one lease into a GPU slot. Reserve the slot, enqueue the H2D on
+    /// the compute stream, record the completion event after it, publish. No drain: every
+    /// consumer is on the same stream. A failed enqueue drains to decide the slot (released on a
+    /// proven drain, left outside every table on an unknown one); a failed event record drains
+    /// and, proven, publishes with `None` (the copy is complete).
+    fn stage_banked(
         &mut self,
         id: BlockId,
         host_bytes: &[u8],
         e: &Engine,
-    ) -> Result<usize, Box<dyn std::error::Error>> {
-        // Every clock statement below is behind `bank_clock`, which is `None` unless the
-        // door is installed with `--expert-bank-stages`; the legacy path reads nothing new.
+    ) -> Result<(usize, Option<CudaEvent>), Box<dyn std::error::Error>> {
         let reserving = self.bank_clock.is_some().then(std::time::Instant::now);
         let slot = self.reserve_slot(host_bytes.len()).ok_or_else(|| {
             std::io::Error::other(format!(
@@ -1113,8 +1227,6 @@ impl MoeSlotCache {
             .as_ref()
             .map(|_| e.stream().record_event(timed));
         let enqueuing = self.bank_clock.is_some().then(std::time::Instant::now);
-        // Pending copy-stream admissions are not in either SLRU queue, so `evict_one` cannot return
-        // an in-flight slot. This synchronous copy and its consumer remain ordered on gpu.stream.
         let staged = e.stage_expert(host_bytes, &mut self.slots[slot], 0);
         let enqueue_ns = enqueuing.map(clock_ns);
         let copy_after = copy_before.as_ref().map(|_| e.stream().record_event(timed));
@@ -1134,32 +1246,62 @@ impl MoeSlotCache {
                 }
             };
         }
-        // The bank door must not publish a native-cache slot before its explicit
-        // copy completion is known. On an unknown result, leave it outside every
-        // cache table/queue so a later resident fast path cannot bypass the token
-        // refusal; Drop retries the drain and leaks slots if CUDA stays unknown.
-        let draining = self.bank_clock.is_some().then(std::time::Instant::now);
-        if self.banked.is_some()
-            && let Err(err) = e.stream().synchronize()
-        {
-            self.compute_stream_unknown = true;
-            return Err(err.into());
-        }
-        if let (Some(started), Some(clock)) = (draining, self.bank_clock.as_mut()) {
-            clock.drain_ns += clock_ns(started);
+        if let Some(clock) = self.bank_clock.as_mut() {
             clock.enqueue_ns += enqueue_ns.unwrap_or(0);
             match (copy_before, copy_after) {
-                // Both events are complete after the drain; `elapsed_ms` waits on nothing.
-                (Some(Ok(before)), Some(Ok(after))) => match before.elapsed_ms(&after) {
-                    Ok(ms) => {
-                        clock.copy_gpu_ns += (f64::from(ms) * 1.0e6) as u64;
-                        clock.copy_events += 1;
-                    }
-                    Err(_) => clock.event_errors += 1,
-                },
+                (Some(Ok(before)), Some(Ok(after))) => {
+                    self.bank_copy_timings.push_back((before, after));
+                }
                 (None, None) => {}
                 _ => clock.event_errors += 1,
             }
+        }
+        let done = match e.stream().record_event(None) {
+            Ok(done) => Some(done),
+            Err(_) => {
+                // No completion event: prove the copy with a drain before publishing.
+                if let Err(err) = e.stream().synchronize() {
+                    self.compute_stream_unknown = true;
+                    return Err(err.into());
+                }
+                None
+            }
+        };
+        self.staged_bytes += host_bytes.len() as u64;
+        self.publish(id, slot);
+        Ok((slot, done))
+    }
+
+    fn admit_native(
+        &mut self,
+        id: BlockId,
+        host_bytes: &[u8],
+        e: &Engine,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let slot = self.reserve_slot(host_bytes.len()).ok_or_else(|| {
+            std::io::Error::other(format!(
+                "no MoE cache slot can hold {} bytes (max class {})",
+                host_bytes.len(),
+                self.classes.last().map(|class| class.capacity).unwrap_or(0)
+            ))
+        })?;
+        // Pending copy-stream admissions are not in either SLRU queue, so `evict_one` cannot return
+        // an in-flight slot. This synchronous copy and its consumer remain ordered on gpu.stream.
+        if let Err(err) = e.stage_expert(host_bytes, &mut self.slots[slot], 0) {
+            return match e.stream().synchronize() {
+                Ok(()) => {
+                    self.release_reserved_slot(slot);
+                    Err(err)
+                }
+                Err(sync_err) => {
+                    // Keep the slot outside free/table/SLRU. Drop retries the stream drain and
+                    // leaks every slot if CUDA never provides a completion proof.
+                    self.compute_stream_unknown = true;
+                    Err(std::io::Error::other(format!(
+                        "compute-stream H2D setup failed ({err}); stream drain also failed ({sync_err})"
+                    )).into())
+                }
+            };
         }
         self.staged_bytes += host_bytes.len() as u64;
         self.publish(id, slot);
@@ -2178,6 +2320,17 @@ impl Drop for MoeSlotCache {
         // Event tracking is intentionally disabled in Engine. Drain explicit copy-stream handoffs
         // before either the destination slots or pinned read buffers begin field destruction.
         let mut safe_to_drop_slots = true;
+        if !self.banked_inflight.is_empty() {
+            // DAY46: one drain proves every in-flight copy; a failed drain keeps them all open.
+            if self.compute_stream.synchronize().is_err() {
+                safe_to_drop_slots = false;
+            } else if let Some(bank) = &self.banked {
+                while let Some((token, _done)) = self.banked_inflight.pop_front() {
+                    // Wrong-thread teardown refuses; the owner registry retains backing.
+                    let _ = bank.finish(&token);
+                }
+            }
+        }
         if let Some(token) = &self.banked_pending {
             if self.compute_stream.synchronize().is_err() {
                 safe_to_drop_slots = false;
