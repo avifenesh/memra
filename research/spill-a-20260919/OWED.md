@@ -22,10 +22,10 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   ("A's finding 5 is owed, not waived"); ruling 47. Quoted failure: `a batch with a running span has not landed`.
 - Acceptance: DAY37 section 1 (the all and pair arms 100 of 100 in parallel, serial green, the red arm, the target
   card's all arm 20 of 20).
-- Status: 5090 done, target owed (DAY37 sections 2 to 9: the cause placed at same-context `cuMemFreeHost`,
-  synchronous `cuMemFree` and module load by a two-thread probe; the fix `ba5da705d`, one pool context per native
-  cell; pair 100/100, all 100/100, serial 3/3, the red arm failing as required). The target card's all arm rides
-  DAY38 section 10's sitting.
+- Status: **closed** (DAY37 sections 2 to 9: the cause placed at same-context `cuMemFreeHost`, synchronous `cuMemFree`
+  and module load by a two-thread probe; the fix `ba5da705d`, one pool context per native cell; pair 100/100, all
+  100/100, serial 3/3, the red arm failing as required; the target card's all arm on BOX7 `DAY37 FINDING5 TARGET
+  all-arm green=20 of 20 rule 20 of 20 -> PASS`, DAY38 section 11a).
 
 ### 2. Hash 1 (the demote's D2H receipt digest) off the owner thread
 
@@ -41,9 +41,13 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Status: pre-registered, revised twice (DAY38: the survey picked G with P; G's 5090 half passed (c) and (d) and failed
   (b) on the fault gate's plain arm, the red arm's delay sharing the copy stream; G' moved the receipt onto its own stream
   and passed (c), (d), (e) and failed (b) again, the cause a per-batch pinned receipt twin freed on the owner thread;
-  G'' pools the twins, section 8). **5090 done, target owed**: G'' passes (a) to (e) on the 5090 (DAY38 section 9:
-  `copy settle` 8.34 to 0.15 ms, wall -5.90 / -7.20 ms, e2e -5.48 / -7.47 ms, every gate ALL GREEN); the target half is
-  DAY38 section 10's sitting.
+  G'' pools the twins, section 8). G'' passes (a) to (e) on the 5090 (DAY38 section 9: `copy settle` 8.34 to 0.15 ms,
+  wall -5.90 / -7.20 ms, e2e -5.48 / -7.47 ms, every gate ALL GREEN). **On BOX7 (c) and (b) PASS and (d) FAILS**
+  (DAY38 sections 11, 11a, 13a: e2e +1.42 / +1.36 ms, re-run +1.43 / +1.48, against `<=+1.0`): each of the first eight
+  receipts on the separate receipt stream adds about 0.07 us to every later owner kernel boundary on the device, then
+  each later receipt takes it away (the tenant's ITL hump, peak about +0.6 ms per step; X2, the receipt on the copy
+  stream, flat). Diagnosis in progress (section 13e's bisection); G'' is not integrable until the fixed design passes
+  (d) whole.
 
 ### 3. The same-tick fill (design F) on slower CPUs
 
@@ -53,9 +57,12 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   rulings 49, 52 and 53.
 - Acceptance: DAY39 section 1's rule picks the design per host class; the design's acceptance is pre-registered after
   the host's reading.
-- Status: pre-registered (DAY39 sections 1 and 3); the survey read on the 5090 host (DAY39 section 2: the 27B fill
-  12.68 ms at 1 thread, 6.49 at 4, 5.93 at 8; spans 5.62 ms); the slower-CPU and 9950X-class readings owed on rented
-  hosts, the first in DAY38 section 10's sitting.
+- Status: **5090 done, target owed.** The survey on the 5090 host (DAY39 section 2) and on BOX7, a slower-CPU host of
+  the BOX4 class (section 4: T=1 10.985 ms against a 9.22 ms budget, T=12 3.889 ms; the rule picks T alone); design T
+  pre-registered (section 5, amended 5a) and built (`0153316d4`: the fill split across `min(12, cpus/2)` scoped threads);
+  on the 5090 (section 6) (e) PASS in both orders and every gate ALL GREEN. The target cell (HK FT F1 OFF, `polls [1]` on
+  80 of 90 and the day-35 margin) rides the next BOX7-class sitting; the HK arm is ported (`rtx5090-day39/HK.txt`). The
+  9950X-class reading stays owed.
 
 ### 4. The strong-form receipt of the recurrent spans (both directions)
 
@@ -78,7 +85,11 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Acceptance: none registered. A red arm per arm (helper gone, foreign reply, deadline) in the fault gate, each with
   its typed line, the tier latched, nothing published, the parked request served cold, byte-compared with a door-OFF
   boot as the other promote cells are.
-- Status: open.
+- Status: **5090 done, target owed.** Pre-registered (DAY41 section 1) and built (`4ca4bb36e`: `sources-helper-gone`,
+  `sources-never-land`, `sources-foreign-reply` on the `MEMRA_KV_HOST_FAULT` row, keyed on the first `Sources` job; three
+  fault gate cells). On the 5090 (DAY41 section 2) the fault gate default and plain `ALL GREEN` (229 ok each), each arm
+  latching the tier in its own words with no promote published. The target half is the next sitting's fault gate on the
+  tip.
 
 ### 6. Move 1 item 3: the by-reference demote routes keep the blocking program
 
