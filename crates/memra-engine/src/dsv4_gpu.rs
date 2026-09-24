@@ -8769,16 +8769,17 @@ impl Dsv4Gpu {
         )?;
         // The replay indexer scores up to 4096 compressed blocks (16384 positions at ratio 4)
         // and reads the live count from the device position, so replay covers the session up
-        // to that bound; the workspace must hold the scores and indices it implies (#710).
+        // to that bound. Every rank's score buffer must hold it; the attention kernels refuse
+        // an index stride shorter than the slots they read (#710). Checked on every rank before
+        // any is marked, so a refused arm leaves the state as it was.
         let limit = state.capacity.min(16384);
+        if let Some(ws) = work.verify.ws.iter().find(|ws| ws.score.len() < limit / 4) {
+            return Err(format!(
+                "replay limit {limit} exceeds the workspace score buffer {}",
+                ws.score.len()
+            ));
+        }
         for ws in &mut work.verify.ws {
-            // The attention kernels refuse an index stride shorter than the slots they read.
-            if ws.score.len() < limit / 4 {
-                return Err(format!(
-                    "replay limit {limit} exceeds the workspace score buffer {}",
-                    ws.score.len()
-                ));
-            }
             ws.full_token_replay = true;
             ws.replay_limit = limit;
         }
