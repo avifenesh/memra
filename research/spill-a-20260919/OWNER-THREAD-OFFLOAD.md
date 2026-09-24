@@ -1097,7 +1097,15 @@ flat. F stays.
 
 **What Move 2 still owes, in order.**
 
-1. The recurrent f32 state off the tick: **the demote's two owner KV hashes** (design M, pre-registered in DAY35
-   section 2), **the fill's speed** on CPUs where it outlasts the tick (not pre-registered), **the D2D half** (the
-   restore's price cell decides; the capture refuted by construction, DAY33 section 6), and **the strong-form receipt**.
+**Design M, refuted.** Both demote KV hashes on the helper (M1: the D2H receipts from a helper job before the
+completion check; M2: the bind's re-hash inside the `Hashing` job) cut the owner's two segments from 8.41 / 8.43 to
+0.15 / 0.07 ms on the 5090, but M1's reply adds a tick-top poll to the copy phase; behind a long prime tick the demote
+publishes late, a copy-phase hit does not park, and the gates' promote-after-demote never ran (identity default-on,
+failure-on, fault-default red), and the o2 wall read +26.50 ms against +25.0. M left the lane tip. M' (M2 alone) is
+pre-registered in DAY35 section 7.
+
+1. The recurrent f32 state off the tick: **the demote's re-hash** (design M', DAY35 section 7); **hash 1**, the D2H
+   receipt, stays on the owner (the refuted M1: no off-thread form found that keeps the copy phase at one poll), **the
+   fill's speed** on CPUs where it outlasts the tick (not pre-registered), **the D2D half** (the restore's price cell
+   decides; the capture refuted by construction, DAY33 section 6), and **the strong-form receipt**.
 2. to 4. Unchanged.
