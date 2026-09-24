@@ -2016,7 +2016,10 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `tools/kv-host-contract-fault-gate.sh` cells `span-refusal` (`MEMRA_KV_HOST_FAULT=contract-spans`, the
   demote's D2H span attach refused after every span was built) and `promote-span-refusal`
   (`MEMRA_KV_HOST_FAULT=contract-promote-spans`, the promote's H2D span attach refused after every span was
-  built; since day 33 the staging is filled by a host function on the copy stream ahead of the copies).
+  built; since day 33 the staging is filled by a host function on the copy stream ahead of the copies, and since
+  day 39 that fill is split across `min(12, cpus / 2)` scoped threads inside it, one thread under 8 MiB; CPU
+  cells `day39_fill_shares_cover_every_byte_once` and `day39_threaded_fill_is_bitwise_the_planes`, and the
+  native filled-batch cell runs its fill on three threads with a cut inside a plane).
   Each is two boots, door ON with the one-shot fault and door OFF as the byte reference, and asserts one typed refusal naming `N f32 spans handed back` with N the span
   count of the next receipt of the same direction, one `tier span staging:` fill in the boot, the next
   demote or promote landing its spans and publishing, no latch, quarantine, leak or other refusal, and the

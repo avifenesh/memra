@@ -549,24 +549,125 @@ struct H2dSpanBatch {
 }
 /// WP-A day 33 (design F): the fill of one filled H2D span batch, run by the copy stream's host
 /// function: each resident plane (an owned `Arc`) and its span's staging target (a raw pointer
-/// and a byte length, checked equal at the attach).
+/// and a byte length, checked equal at the attach). WP-A day 39 (`DAY39.md` design T): the fill
+/// runs on `threads` host threads at most (the engine's `fill_threads`).
 struct SpanFillTask {
     items: Vec<(Arc<Vec<f32>>, FillTarget)>,
+    threads: usize,
 }
 /// A staging buffer's start and byte length (`PinnedHostBuf::fill_target`).
 type FillTarget = (*mut u8, usize);
 // SAFETY: the task moves once to the driver's callback thread; each target is written by that
-// thread only, while the engine owns the buffer and nobody else touches it (`attach_h2d_spans`).
+// thread and the fill threads it spawns and joins (`SpanFillTask::run`, disjoint byte ranges),
+// while the engine owns the buffer and nobody else touches it (`attach_h2d_spans`).
 unsafe impl Send for SpanFillTask {}
+/// WP-A day 39 (design T): the most threads a promote's staging fill runs on, on any host.
+pub(crate) const FILL_THREADS_MAX: usize = 12;
+/// WP-A day 39 (design T): the least bytes a fill thread is given; a fill under twice this runs
+/// on one thread.
+pub(crate) const FILL_SHARE_FLOOR: usize = 4 << 20;
+/// WP-A day 39 (design T): the fill threads of this host, `min(12, max(1, cpus / 2))`, fixed when
+/// the engine is built (`DAY39.md` section 5: at or below the physical cores of an SMT host).
+pub(crate) fn fill_threads_for_host(cpus: usize) -> usize {
+    (cpus / 2).clamp(1, FILL_THREADS_MAX)
+}
+/// WP-A day 39 (design T): the threads one fill of `bytes` runs on, `min(host, max(1, bytes / 4
+/// MiB))`.
+pub(crate) fn fill_threads_for_bytes(host: usize, bytes: usize) -> usize {
+    host.min((bytes / FILL_SHARE_FLOOR).max(1)).max(1)
+}
+/// WP-A day 39 (design T): a fill's byte list (`lens`, in attach order) cut into `t` contiguous
+/// shares of `ceil(total / t)` bytes (the last one shorter), each `(item, byte offset, bytes)`; a
+/// cut that falls inside an item splits it across two shares. Every byte is in exactly one share,
+/// in order. The day-39 survey probe's `shares`, verbatim in its arithmetic.
+pub(crate) fn fill_shares(lens: &[usize], t: usize) -> Vec<Vec<(usize, usize, usize)>> {
+    let t = t.max(1);
+    let total: usize = lens.iter().sum();
+    let per = total.div_ceil(t).max(1);
+    let mut out = vec![Vec::new(); t];
+    let (mut k, mut used) = (0usize, 0usize);
+    for (i, &n) in lens.iter().enumerate() {
+        let mut off = 0;
+        while off < n {
+            let take = (n - off).min(per - used);
+            out[k].push((i, off, take));
+            off += take;
+            used += take;
+            if used == per && k + 1 < t {
+                k += 1;
+                used = 0;
+            }
+        }
+    }
+    out
+}
+/// One fill copy of a share: `n` bytes from `src` to `dst`.
+struct FillCopy {
+    src: *const u8,
+    dst: *mut u8,
+    n: usize,
+}
+// SAFETY: a share's copies are run by exactly one thread (a fill thread, or the callback thread
+// when the host gives no thread); every source is a plane the task's `Arc` keeps alive and nobody
+// writes, every destination range is written by that thread only (the shares are disjoint), and
+// every fill thread is joined before the host function returns.
+unsafe impl Send for FillCopy {}
+unsafe impl Sync for FillCopy {}
+fn run_fill_copies(copies: &[FillCopy]) {
+    for c in copies {
+        // SAFETY: see `FillCopy`; `src` holds `n` initialized bytes, `dst` has room for `n`, and a
+        // heap `Vec` never overlaps a pinned host allocation.
+        unsafe { std::ptr::copy_nonoverlapping(c.src, c.dst, c.n) };
+    }
+}
 impl SpanFillTask {
     fn run(&self) {
-        for (plane, (dst, len)) in &self.items {
-            let n = (*len).min(plane.len() * 4);
-            // SAFETY: `dst` is the start of an exclusive, live staging buffer of `len` bytes
-            // (see `attach_h2d_spans`); `plane` holds `plane.len() * 4 >= n` initialized bytes;
-            // the two do not overlap (a heap `Vec` and a pinned host allocation).
-            unsafe { std::ptr::copy_nonoverlapping(plane.as_ptr().cast::<u8>(), *dst, n) };
+        let lens: Vec<usize> = self
+            .items
+            .iter()
+            .map(|(plane, (_, len))| (*len).min(plane.len() * 4))
+            .collect();
+        let t = fill_threads_for_bytes(self.threads, lens.iter().sum());
+        let shares: Vec<Vec<FillCopy>> = fill_shares(&lens, t)
+            .into_iter()
+            .map(|share| {
+                share
+                    .into_iter()
+                    .map(|(i, off, n)| {
+                        let (plane, (dst, _)) = &self.items[i];
+                        // SAFETY: `off + n <= lens[i]`, within both the plane's initialized bytes
+                        // and the staging buffer (`attach_h2d_spans`).
+                        unsafe {
+                            FillCopy {
+                                src: plane.as_ptr().cast::<u8>().add(off),
+                                dst: dst.add(off),
+                                n,
+                            }
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+        if shares.len() == 1 {
+            run_fill_copies(&shares[0]);
+            return;
         }
+        std::thread::scope(|s| {
+            let mut here = vec![0usize];
+            for (k, share) in shares.iter().enumerate().skip(1) {
+                // A thread the host will not give leaves its share to this thread: every byte is
+                // written either way, before the host function returns.
+                let spawned = std::thread::Builder::new()
+                    .name("memra-fill".into())
+                    .spawn_scoped(s, move || run_fill_copies(share));
+                if spawned.is_err() {
+                    here.push(k);
+                }
+            }
+            for k in here {
+                run_fill_copies(&shares[k]);
+            }
+        });
     }
 }
 /// The host function (`cuLaunchHostFunc`) of a filled span batch: takes its task back, runs the
@@ -662,6 +763,10 @@ pub struct CudaTransfers {
     /// thread would hold it behind any long copy-stream or receipt-stream work. Freed only when the
     /// engine drops (the latch or shutdown).
     twin_pool: RefCell<Vec<PinnedBacking>>,
+    /// WP-A day 39 (`DAY39.md` design T): the host threads a filled promote's staging fill runs
+    /// on at most (`fill_threads_for_host` of the host's available parallelism, read once here);
+    /// each fill takes `fill_threads_for_bytes` of it.
+    fill_threads: usize,
     governor: SharedBudget,
     /// The pinned destination arm `alloc_host` takes on this device (`PinnedKind::for_device` of
     /// the owner context's device name, resolved once at construction).
@@ -707,6 +812,9 @@ impl CudaTransfers {
             copy: None,
             receipt_stream: None,
             twin_pool: RefCell::new(Vec::new()),
+            fill_threads: fill_threads_for_host(
+                std::thread::available_parallelism().map_or(1, |n| n.get()),
+            ),
             governor,
             pinned_default,
             owner: DeviceOwner::new(device),
@@ -2311,7 +2419,8 @@ impl CudaTransfers {
             Ok(copy) => copy,
             Err(error) => return Err((error, spans, fills)),
         };
-        // Day 33 (design F): the fill, ONE host function on the copy stream ahead of every copy.
+        // Day 33 (design F): the fill, ONE host function on the copy stream ahead of every copy;
+        // day 39 (design T): split inside it across the engine's fill threads.
         if let Some(fills) = fills {
             let task = Box::new(SpanFillTask {
                 items: fills
@@ -2322,6 +2431,7 @@ impl CudaTransfers {
                         (plane, dst)
                     })
                     .collect(),
+                threads: self.fill_threads,
             });
             let raw = Box::into_raw(task);
             // SAFETY: `span_fill_on_copy_stream` takes the box back exactly once, when the copy
@@ -4031,6 +4141,110 @@ mod tests {
             "the twin came back once more; the pool did not grow"
         );
     }
+    /// WP-A day 39 (`DAY39.md` design T): the fill's thread counts and shares. `fill_threads_for_host`
+    /// is `min(12, max(1, cpus / 2))`; `fill_threads_for_bytes` keeps a fill under 8 MiB on one
+    /// thread; `fill_shares` covers every byte of the list exactly once, each share contiguous and
+    /// in order, every share `ceil(total / t)` bytes but the last.
+    #[test]
+    fn day39_fill_shares_cover_every_byte_once() {
+        use super::{FILL_SHARE_FLOOR, fill_shares, fill_threads_for_bytes, fill_threads_for_host};
+        for (cpus, t) in [
+            (0, 1),
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (4, 2),
+            (8, 4),
+            (24, 12),
+            (92, 12),
+            (192, 12),
+        ] {
+            assert_eq!(fill_threads_for_host(cpus), t, "cpus={cpus}");
+        }
+        for host in [1usize, 2, 12] {
+            for (bytes, t) in [
+                (0usize, 1usize),
+                (1, 1),
+                (FILL_SHARE_FLOOR - 1, 1),
+                (2 * FILL_SHARE_FLOOR - 1, 1),
+                (2 * FILL_SHARE_FLOOR, 2),
+                (52_690_944, 12),
+                (156_893_184, 12),
+            ] {
+                assert_eq!(
+                    fill_threads_for_bytes(host, bytes),
+                    host.min(t),
+                    "host={host} bytes={bytes}"
+                );
+            }
+        }
+        let b27 = [vec![3usize << 20; 48], vec![120 << 10; 48]].concat();
+        let b9 = [vec![2usize << 20; 24], vec![96 << 10; 24]].concat();
+        let odd = vec![1usize, 7, 0, 4 << 20, 3, (5 << 20) + 1, 13];
+        for lens in [&b27, &b9, &odd, &vec![1usize], &vec![0usize]] {
+            let total: usize = lens.iter().sum();
+            for t in [1usize, 2, 3, 5, 12] {
+                let shares = fill_shares(lens, t);
+                assert_eq!(shares.len(), t);
+                let per = total.div_ceil(t).max(1);
+                // Concatenated in order, the shares walk the list byte for byte.
+                let (mut item, mut off) = (0usize, 0usize);
+                for (k, share) in shares.iter().enumerate() {
+                    let bytes: usize = share.iter().map(|&(_, _, n)| n).sum();
+                    if k + 1 < t && total >= per * (k + 1) {
+                        assert_eq!(bytes, per, "share {k} of {t} over {total} B");
+                    }
+                    for &(i, o, n) in share {
+                        while item < lens.len() && off == lens[item] {
+                            item += 1;
+                            off = 0;
+                        }
+                        assert_eq!((i, o), (item, off), "contiguous and in order");
+                        assert!(n > 0 && o + n <= lens[i]);
+                        off += n;
+                    }
+                }
+                let covered: usize = shares.iter().flatten().map(|&(_, _, n)| n).sum();
+                assert_eq!(covered, total, "every byte exactly once");
+            }
+        }
+        // The 27B's list at 12 threads cuts inside a 3 MiB plane: a share starts mid-plane.
+        assert!(fill_shares(&b27, 12).iter().any(|s| s[0].1 != 0));
+    }
+    /// WP-A day 39 (`DAY39.md` design T): the fill through `SpanFillTask::run` writes every
+    /// destination bitwise equal to its plane at 1, 2, 5 and 12 threads, over a list whose cuts
+    /// fall inside planes (heap destinations; CPU only).
+    #[test]
+    fn day39_threaded_fill_is_bitwise_the_planes() {
+        let lens = [(3usize << 20) + 12, 7 << 20, 20, (5 << 20) + 4, 1 << 20];
+        let planes: Vec<Arc<Vec<f32>>> = lens
+            .iter()
+            .enumerate()
+            .map(|(k, &n)| {
+                Arc::new(
+                    (0..n / 4)
+                        .map(|i| (i as f32) * 0.375 - 3.0 * k as f32)
+                        .collect(),
+                )
+            })
+            .collect();
+        for threads in [1usize, 2, 5, 12] {
+            let mut dsts: Vec<Vec<u8>> = lens.iter().map(|&n| vec![0xa5u8; n]).collect();
+            let task = super::SpanFillTask {
+                items: planes
+                    .iter()
+                    .zip(dsts.iter_mut())
+                    .map(|(p, d)| (p.clone(), (d.as_mut_ptr(), d.len())))
+                    .collect(),
+                threads,
+            };
+            task.run();
+            drop(task);
+            for (p, d) in planes.iter().zip(&dsts) {
+                assert_eq!(d.as_slice(), f32_bytes(p), "threads={threads}");
+            }
+        }
+    }
     /// WP-A day 37 (`DAY37.md` section 8): every native cell of this module owns a context of the
     /// pool (`cell_context()`), the pool is the module's only context constructor, and its size is
     /// the native cell count.
@@ -5288,6 +5502,16 @@ mod tests {
             (ticket, producer, keep)
         };
         let lens = [3usize << 18, 5 << 18, 1 << 20];
+        // Day 39 (design T): the fill of these 12 MiB runs on three threads, and its second share
+        // starts inside the second plane.
+        t.fill_threads = 3;
+        let fill_bytes: Vec<usize> = lens.iter().map(|n| n * 4).collect();
+        let cut = super::fill_shares(
+            &fill_bytes,
+            super::fill_threads_for_bytes(t.fill_threads, fill_bytes.iter().sum()),
+        );
+        assert_eq!(cut.len(), 3);
+        assert_eq!(cut[1][0], (1, 1 << 20, 4 << 20));
         let planes: Vec<Arc<Vec<f32>>> = lens
             .iter()
             .enumerate()
