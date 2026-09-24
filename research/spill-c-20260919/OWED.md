@@ -34,7 +34,12 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   wins: the owner's promotion call, and C2 becomes the promotion work.
 - **Acceptance.** Registered per step in its `DAYnn.md` before code or boots; the deciding cell's rule is
   registered before either card runs it.
-- **Status.** Open. Day 40 is step (a).
+- **Status.** Open. Step (a) done day 40 (`DAY40 ATTRIB rig=rtx5090 ... top=demand`). Step (b): ten rungs landed
+  and pre-registered days 43 to 50 (I6, I9, the fill, I1, I2, I8, I5, I7, I4) and day 57 (I10), their 5090 cells
+  queued (`rtx5090-day43` to `-day50`, `-day57`); the target card reads them in the DAY52 ladder. Step (c): the
+  deciding cell pre-registered (`DAY51.md`, scripts `day51-cell.sh`, `day51-decide.py`), the target-card sitting
+  pre-registered and scripted (`DAY52.md`, `day52-box.sh`); `DAY51.md` section 2 names the final tree once the rung
+  verdicts are in.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 
@@ -69,8 +74,11 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   a median 22.4 ms on the integ38 tree against 97.0 on the day-23 tree); `DAY29.md`.
 - **Work.** A pre-registered bisect over the slices between `0713c1a79` and the integ38 tip (`643ecbb28`), the
   day-29 cell shape on each slice's binary, the reading the demote's landing time.
-- **Acceptance.** Not registered yet; written in its `DAYnn.md` before any boot.
-- **Status.** Open.
+- **Acceptance.** Registered in `DAY54.md` (the eight slice binaries, day 29's promote boot, ten boots per binary
+  interleaved both orders, the landing and park readings and the rule).
+- **Status.** Open: pre-registered and scripted day 54 (`day54-slice-cell.sh`, `day54-slice-reading.py`), a
+  target-card cell (the 5090's day-37 tree has no second park, `DAY54.md` section 0), in the DAY52 sitting
+  (section 5).
 
 ## C5. The DFlash tail slice of the contracts door (`HOSTPREFIX-DOOR.md` section D item 2)
 
@@ -80,16 +88,22 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   bytes, one receipt per tail plane per draft layer, a promote that re-arms the drafter).
 - **Work.** Engine code first (the manifest digest, the class, the tail through the route), then the identity gate
   grows a drafter arm, then the cells on the 5090 (drafter export present locally) and the target card.
-- **Acceptance.** `DAY19.md` Task 3 "Rule", as registered.
-- **Status.** Open. Before 2026-10-05.
+- **Acceptance.** `DAY19.md` Task 3 "Rule", as registered; the design and cells in `DAY56.md`.
+- **Status.** Open: code landed day 56 (`dec0ba368`: the `DflashTail` class, the tail program, `Role::Tail`
+  segments, the receipt line, the identity gate's drafter arm; CPU cells green); the RTX 5090 cells queued
+  (`rtx5090-day56`), the target-card cells in the DAY52 sitting (section 6). Follow-ups this slice leaves on the
+  owner thread by design, measured by its own receipt line (`hashed in <t> ms`): the tail's bind hash on the hash
+  helper, and the tail's copies off the tick (both in lane A's helper and span code).
 
 ## C6. Verify digest v3 (the draft plane inside `MEMRA_KV_HOST_VERIFY`)
 
 - **Source.** `HOSTPREFIX-DOOR.md` section D item 3; the day-14 finding "The verify arm is blind to the draft
   plane" (a `memra-prefix-split-state-v3` digest covering the draft plane changes the digest strings the OFF arm
   prints in `VERIFY FAILED` lines, so it is its own slice and gate line).
-- **Acceptance.** Not registered yet.
-- **Status.** Open. Before 2026-10-05.
+- **Acceptance.** Registered in `DAY53.md` (sections 1 and 1a).
+- **Status.** Open: code landed day 53 (`256c3c640`: v3 composed over the unchanged v2, tagged strings, three
+  door-OFF red arms, the failure gate's three cells; CPU cells green); the RTX 5090 gates queued (`rtx5090-day53`),
+  the target-card gates in the DAY52 sitting (section 4).
 
 ## C7. The arena lease handoff under the contracts door (`HOSTPREFIX-DOOR.md` section D item 1)
 
@@ -105,7 +119,9 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   control's low first pass, cause not separated), `DOOR-DECISION-PACKET.md` item 7.
 - **Work.** A new pre-registration (a prime the memory admission admits in every run: a shorter prime or another
   `MEMRA_CTX`), then the 5090 cell.
-- **Status.** Open.
+- **Status.** Open: pre-registered day 55 (`DAY55.md`: the arithmetic shows a shorter prime is not admitted beside
+  day 35's co-tenant either, so the arm is the day-35 cell with a per-boot card guard and a warm-up prime boot); the
+  cell queued (`rtx5090-day55`).
 
 ## C9. The 9B entry's conv, ssm and hidden split (closes on a reading)
 
