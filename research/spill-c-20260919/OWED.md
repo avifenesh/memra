@@ -65,7 +65,8 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   only, no recommendation; `HOSTPREFIX-DOOR.md` section E the same.
 - **Status.** Current through lane A day 36 and ruling 53 (day 42, `DAY42.md`: `DAY42 PACKET LINES checked=68
   missing=0 -> PASS`). Stays open until the review: every later receipt bearing on the door is read in before
-  2026-10-05.
+  2026-10-05. At 2026-09-24 21:10Z lane A's days 37 to 41 are in flight on its branch (DAY38's G'' and G''' sittings,
+  DAY39's design T, DAY40's span-receipt survey, DAY41's design K red arms); they are read in when they land.
 
 ## C4. The double-park slice (the contracts door, 2026-10-05)
 
@@ -92,8 +93,11 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
 - **Status.** Open: code landed day 56 (`dec0ba368`: the `DflashTail` class, the tail program, `Role::Tail`
   segments, the receipt line, the identity gate's drafter arm; CPU cells green); the RTX 5090 cells queued
   (`rtx5090-day56`), the target-card cells in the DAY52 sitting (section 6). Follow-ups this slice leaves on the
-  owner thread by design, measured by its own receipt line (`hashed in <t> ms`): the tail's bind hash on the hash
-  helper, and the tail's copies off the tick (both in lane A's helper and span code).
+  owner thread by design, measured by its own receipt line (`hashed in <t> ms`): C5b, the tail's bind hash on the
+  hash helper (new `HostHashSlot` tail slots); C5c, the tail's D2H and H2D through the contract route as f32 spans
+  (`DAY19.md` Task 3's shape item). Both edit lane A's helper and span code, which lane A is changing now (A's DAY38
+  design G''' and its receipt streams, 65 commits past integ58); sequenced after that lands, through the lead, so
+  the two lanes do not write the same functions at once. Open, not waived.
 
 ## C6. Verify digest v3 (the draft plane inside `MEMRA_KV_HOST_VERIFY`)
 
