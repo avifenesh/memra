@@ -20,6 +20,11 @@
 //! of 1, 2 and 4 rows, and two pipelined groups of 2, reported as ms per step and aggregate
 //! tokens per second.
 //!
+//! Profile mode (`DSV4_ROWS_GATE_PROFILE=B`): prime B sessions, warm up, then run `timing-steps`
+//! B-row steps between `cuProfilerStart` and `cuProfilerStop` and exit, for
+//! `nsys profile --capture-range=cudaProfilerApi`. Comparing B=1 with B=2 attributes the cost an
+//! added row brings, kernel by kernel.
+//!
 //! Usage: `dsv4_rows_gate <model-dir> <source.txt> [steps] [timing-steps]`.
 //! Rig law: under the box GPU lock, served defaults (no MEMRA_DSV4_* overrides).
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu};
@@ -213,6 +218,42 @@ fn main() {
         tape.sha256
     );
 
+    if let Ok(b) = std::env::var("DSV4_ROWS_GATE_PROFILE") {
+        let b: usize = b.parse().expect("DSV4_ROWS_GATE_PROFILE rows");
+        assert!((1..=prompts.len()).contains(&b));
+        let mut sessions: Vec<Session> = prompts[..b]
+            .iter()
+            .map(|p| prime(&gpu, p, capacity))
+            .collect();
+        let mut rows = gpu.alloc_rows_state(b).expect("B-row workspace");
+        let mut run = |n: usize, sessions: &mut Vec<Session>| {
+            for _ in 0..n {
+                let toks: Vec<u32> = sessions.iter().map(|s| s.next).collect();
+                let mut states: Vec<&mut DecodeState> =
+                    sessions.iter_mut().map(|s| &mut s.state).collect();
+                let next = gpu
+                    .decode_rows_greedy(&toks, &mut states, &mut rows)
+                    .expect("B-row");
+                drop(states);
+                for (s, t) in sessions.iter_mut().zip(next) {
+                    s.next = t;
+                }
+            }
+        };
+        run(4, &mut sessions);
+        drain(&gpu);
+        cudarc::driver::profiler_start().expect("cuProfilerStart");
+        let t0 = Instant::now();
+        run(timing_steps, &mut sessions);
+        drain(&gpu);
+        let secs = t0.elapsed().as_secs_f64();
+        cudarc::driver::profiler_stop().expect("cuProfilerStop");
+        println!(
+            "PROFILE B={b} steps={timing_steps} ms_per_step={:.3}",
+            1e3 * secs / timing_steps as f64
+        );
+        return;
+    }
     let reference = solo(&gpu, &prompts, capacity, steps);
     let (rows, widths) = batched(&gpu, &prompts, capacity, steps);
     println!("WIDTHS {widths:?}");
