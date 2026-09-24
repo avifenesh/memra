@@ -76,6 +76,19 @@ for cell in unit-server failure-default-off failure-plain-off failure-default-on
     echo "c6 $cell rc=$? $(date -u +%FT%TZ)" | tee -a "$R/box-driver.log"
     touch "$R/c6-$cell.done"
 done
+# DAY52 section 6 (OWED C5, DAY56.md): the identity gate's drafter arm on the verify digest v3 + tail class server
+# (label server-c5), the 27B with the DFlash2 drafter export, door OFF then door ON, then the reader.
+DRAFT=/root/artifacts/q38-dflash2
+if [ ! -f "$R/c5.done" ]; then
+    { sha256sum "$DRAFT/config.json" "$DRAFT/model.safetensors"; } 2>&1 | tee "$R/c5-drafter.sha256"
+    for cell in identity-dspark-off identity-dspark-on; do
+        MEMRA_GPU_LOCK=/tmp/memra-gpu.lock "${cap[@]}" bash "$L/day56-cell.sh" "$cell" "$ART_OTHER" "$DRAFT" "$R/bins/memra-server-c5" "$R/c5" 256
+        echo "c5 $cell rc=$? $(date -u +%FT%TZ)" | tee -a "$R/box-driver.log"
+    done
+    python3 "$L/day56-reading.py" "$R/c5" --rig pro-single > "$R/c5/reading.log" 2>&1
+    echo "c5 reader rc=$?" | tee -a "$R/box-driver.log"
+    touch "$R/c5.done"
+fi
 # DAY52 section 5 (OWED C4, DAY54.md): the double-park slice cell, one collector hold, the 27B.
 if [ ! -f "$R/slices.done" ]; then
     "${cap[@]}" env D40_CELL_SCRIPT="$L/day54-box-cell.sh" D54_MODEL="$ART_OTHER" bash "$L/day40-run-cell.sh" slices 10800

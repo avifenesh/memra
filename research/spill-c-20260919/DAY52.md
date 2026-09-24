@@ -146,3 +146,13 @@ minutes expected, the 27B): eight `memra-server` binaries built as labels `srv-e
 srv-s2=da1f59bf6 srv-s3=226abab0e srv-s4=5df11152f srv-s5=58b814abe srv-s6=f661406e4 srv-s7=269ef2cec` (named
 `memra-server-e0` to `-s7`; the build list grows by about 40 minutes, `e0` the farthest back). Reader
 `day54-slice-reading.py`. The sitting is then about 7 hours in all.
+
+## 6. Added before the sitting ran: the DFlash tail class cells (`OWED.md` C5, `DAY56.md`)
+
+After section 4, the driver runs `DAY56.md`'s two cells (`day56-cell.sh identity-dspark-off` and `-on`, the 27B,
+256 MB device prefix budget, `MEMRA_GPU_LOCK=/tmp/memra-gpu.lock`) on the server built as label `server-c5=<commit>`
+(the tail class tree, `1b130f1ef` or the later commit named when the 5090 cells are read), then `day56-reading.py`.
+The box stages the DFlash2 drafter export at `/root/artifacts/q38-dflash2/` (`config.json` SHA-256
+`873e3556509b0da06e29654ba00d4944888d4b5e8a33afde25f7eb27d321e980`, `model.safetensors`
+`67fc76d68dc5a9415511a4f394ef744d67510cd20e93b37cc2cc7d28e4bab65c`, 3.8 GB, `DAY20.md`'s manifest; the driver
+records both before the cells). About 10 more minutes (four boots of the 27B with the drafter), one more build.
