@@ -1,0 +1,15 @@
+build dctl d7e79f5a3 SERVER_EXIT=0 ENGINE_EXIT=0  gate c6e03f18bd83dd27
+build dlane acd3986b6 SERVER_EXIT=0 ENGINE_EXIT=0  gate dbf64fe36e8301c8
+pp dctl 62b368f10f1becea d404da5fe101077f d404da5fe101077f  | GPU DSPARK GATE [PASS] GATE_DONE rc=0 utc=2026-09-24T18:29:27Z 
+pp dctl [vram post-bitgate] dev0 used 84.42/94.97 GiB (resident 82.97) | dev1 used 84.51/94.97 GiB (resident 82.85)
+pp dctl [vram post-drafted] dev0 used 84.42/94.97 GiB (resident 82.97) | dev1 used 84.51/94.97 GiB (resident 82.85)
+pp dlane 62b368f10f1becea d404da5fe101077f d404da5fe101077f  | GPU DSPARK GATE [PASS] GATE_DONE rc=0 utc=2026-09-24T18:36:08Z 
+pp dlane [vram post-bitgate] dev0 used 84.42/94.97 GiB (resident 82.97) | dev1 used 84.51/94.97 GiB (resident 82.85)
+pp dlane [vram post-drafted] dev0 used 84.42/94.97 GiB (resident 82.97) | dev1 used 84.51/94.97 GiB (resident 82.85)
+tpep dctl 62b368f10f1becea d404da5fe101077f d404da5fe101077f  | GPU DSPARK GATE: [FAIL] 1 finding(s) GATE_DONE rc=1 utc=2026-09-24T18:42:51Z 
+tpep dctl [vram post-bitgate] dev0 used 81.73/94.97 GiB (resident 78.85) | dev1 used 92.39/94.97 GiB (resident 89.27)
+tpep dctl [vram post-drafted] dev0 used 81.73/94.97 GiB (resident 78.85) | dev1 used 92.39/94.97 GiB (resident 89.27)
+tpep dlane 62b368f10f1becea d404da5fe101077f d404da5fe101077f  | GPU DSPARK GATE: [FAIL] 1 finding(s) GATE_DONE rc=1 utc=2026-09-24T18:50:09Z 
+tpep dlane [vram post-bitgate] dev0 used 87.26/94.97 GiB (resident 84.39) | dev1 used 87.61/94.97 GiB (resident 84.49)
+tpep dlane [vram post-drafted] dev0 used 87.26/94.97 GiB (resident 84.39) | dev1 used 87.61/94.97 GiB (resident 84.49)
+V3R_DONE
