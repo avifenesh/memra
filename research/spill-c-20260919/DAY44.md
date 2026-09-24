@@ -55,8 +55,9 @@ three in the ladder sitting (its pinned copy is cached memory there, so (ii) is 
   showing in `/proc/self/status` `VmPin`, which I have not confirmed; if they do not, the clause passes on both arms
   and proves nothing. It is replaced before any build: the installer prints a census of the loaded banks' host
   storage, `[experts-via-tier] host expert storage: mmap=N (B bytes) pinned=P (B bytes) paged=Q (B bytes)`, read off
-  each retained projection's `HostBuf` variant, and the clause is **I9 prints `pinned=0` with every projection
-  `mmap`, and I6 prints every projection `pinned`**. The stage lines additionally carry `VmRSS`, `RssAnon`, `RssFile`,
+  each retained projection's `HostBuf` variant, and the clause is **I9 prints `pinned=0` and `paged=0` with every
+  projection `mmap`** (the I6 arm runs the day-43 binary, which has no census; its banks are pinned by the loader's
+  default, `model.rs` `load_stacked_from_source`, read from source). The stage lines additionally carry `VmRSS`, `RssAnon`, `RssFile`,
   `RssShmem`, `VmPin` and `VmLck` from `/proc/self/status` as recorded context, no clause on them.
 - **The mapped view's plumbing.** `TensorSource` already exposes `gguf()`, so the view needs no new trait method:
   the loader asks the source's `GgufFile` for the tensor's range, the shard's shared map (`GgufFile::shard_mmap`,
