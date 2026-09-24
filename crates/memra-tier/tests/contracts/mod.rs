@@ -32,3 +32,6 @@ mod h2d_span_bindings;
 
 // Day 34 (WP-A, `DAY34.md` design K): the deferred H2D checksum.
 mod h2d_deferred_checksum_bindings;
+
+// Day 35 (WP-A, `DAY35.md` design M1): the deferred D2H checksum.
+mod d2h_deferred_checksum_bindings;
