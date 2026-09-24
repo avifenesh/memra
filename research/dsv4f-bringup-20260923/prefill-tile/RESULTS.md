@@ -29,10 +29,10 @@ Served text is identical on every request of all six rows (below).
 
 | projection (n x k) | loop ms | tile ms | speedup |
 |---|---|---|---|
-| wq_a-like 1024 x 4096 | 0.590 | 0.336 | 1.76x |
+| wq_a 1024 x 4096 | 0.590 | 0.336 | 1.76x |
 | wq_b 32768 x 1024 | 8.890 | 3.785 | 2.35x |
-| wo 4096 x 8192 | 2.73 | 2.34 | 1.17-1.23x |
-| 512 x 4096 | 0.45 | 0.17 | 2.56-2.69x |
+| wo_b 4096 x 8192 | 2.73 | 2.34 | 1.17-1.23x |
+| wkv 512 x 4096 | 0.45 | 0.17 | 2.56-2.69x |
 | shared expert 2048 x 4096 | 1.050 | 0.655 | 1.60x |
 | compressor dots, bf16, 1024 / 512 / 256 x 4096 | 0.755 / 0.591 / 0.600 | 0.338 / 0.178 / 0.100 | 2.2x / 3.3x / 6.0x |
 
