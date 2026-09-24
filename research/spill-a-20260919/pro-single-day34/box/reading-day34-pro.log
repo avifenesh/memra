@@ -1,0 +1,4 @@
+DAY34 PRO READING run=d33 steady landing-poll-hold N=90 median=0.35 min=0.32 max=0.36 | promote-in N=90 median=28.40 min=28.30 max=30.00 | receipts=100 on-helper=0 helper-ms N=0
+DAY34 PRO C run=d34 steady landing-poll-hold N=90 median=0.35 min=0.33 max=0.37 | promote-in N=90 median=27.40 min=27.30 max=28.90 | receipts=100 on-helper=100 helper-ms N=100 median=1.40 min=1.10 max=1.70 rule N>=20 median<=1.5 max<=3.0 every-receipt-on-helper -> PASS
+DAY34 PRO D order=o1 ON e2e d33 N=50 median=133.42 min=132.76 max=135.81 ON e2e d34 N=50 median=132.36 min=131.79 max=134.66 d34-minus-d33 -1.07 rule <=+1.0 -> PASS
+DAY34 PRO D order=o2 ON e2e d33 N=50 median=133.37 min=132.65 max=135.67 ON e2e d34 N=50 median=132.31 min=131.71 max=134.75 d34-minus-d33 -1.05 rule <=+1.0 -> PASS

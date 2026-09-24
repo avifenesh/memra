@@ -1043,3 +1043,47 @@ fill landing is the named lever, not built.
    copies; the capture races the next decode, so its ordering needs its own rule), and **the strong-form receipt**.
    Closed on day 32: the H2D half.
 2. to 4. Unchanged.
+
+## Move 2, day 33: the day-32 lever, the fill on the copy stream (`DAY33.md`)
+
+**What landed (`f814af107`, `82472ff12`, `045ab57d4`, `d7d54c7a9`).** Design F, pre-registered before code: the
+promote's staging fill is ONE host function on the copy stream ahead of the span copies
+(`CudaTransfers::submit_h2d_spans_filled`, tier rule 6: the fill is ordered before its copies, red arm a copy before its
+fill), so the probe submits the KV batch and the spans in its own tick and the owner waits for nothing. The day-32
+Filling phase, the helper's Fill job and `HostHelperJob` are removed. A log-only timeline on the `promote published off
+the tick` line (tick, tick start and instant of the submission and of every settle step).
+
+**What the 5090 says.** The gate set holds (B1, B4, B5). The pre-registered stall reading showed no gain, and the cause
+was placed rather than guessed: the copy lands 6.3 ms after the probe, inside its tick; the landing poll then holds the
+owner about 8.4 ms, 16 steps of about 0.6 ms with 0.02 ms of CUDA calls: the H2D completion checksum of each KV item's
+host lease, write-combined on the 5090 (`PinnedKind::for_device`), cached on the PRO 6000. A host function does not
+hold the owner thread (its own cell). The target-card sitting is the test of the lever, pending the box.
+
+**What Move 2 still owes, in order.**
+
+1. The recurrent f32 state off the tick: the H2D lever's target-card sitting (DAY33 section 2), **the H2D completion
+   checksum on the hash helper** (the lead's day 34; the 5090's 8 ms), **the D2D half** (the restore's price cell
+   decides; the capture refuted by construction, DAY33 section 6), and **the strong-form receipt**.
+2. to 4. Unchanged.
+
+## Move 2, day 34: the promote's H2D completion checksums on the hash helper (`DAY34.md`)
+
+**What landed (`88b734bc9`, `e3424be24`, `100214477`).** Design K, pre-registered before code: the off-tick promote's
+KV completion checksums leave the owner thread. `CudaTransfers::defer_h2d_checksums` hands out raw views of the
+landed leases (no event wait), the hash helper digests them as a `Sources` job, `supply_h2d_checksums` returns the
+digests, and `progress` lands an item only with its supplied digest (tier rule `conformance/h2d_deferred_checksum.rs`,
+red arm a landing without its digest). The receipt names `N KV checksums on the hash helper (X MB in Y ms)`.
+
+**What the cards say.** RTX 5090 (write-combined leases): the landing poll's owner hold 8.50 to 0.12 ms, e2e within
+0.5 ms. BOX4 (cached leases): the helper takes 1.4 ms, the first (pending) poll's end moves 1.10 to 0.03 ms after its
+tick top, `promote_in` 28.40 to 27.40 ms, e2e -1.07 / -1.05. The same hold read the day-33 lever: every day-33 clause
+passes there, but the day-32 binary also meets DAY28 1b on BOX4 and design F's copy misses the probe's tick on that
+CPU (the fill 11.4 ms), so BOX4 cannot credit F with 1b.
+
+**What Move 2 still owes, in order.**
+
+1. The recurrent f32 state off the tick: **the demote's two owner KV hashes** (DAY34 section 1: the one in `progress`
+   and the bind's, about 10 to 13 ms per demote on the 5090), **the fill's speed** on CPUs where it outlasts the tick
+   (not pre-registered), **the D2D half** (the restore's price cell decides; the capture refuted by construction, DAY33
+   section 6), and **the strong-form receipt**.
+2. to 4. Unchanged.

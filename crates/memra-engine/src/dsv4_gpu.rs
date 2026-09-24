@@ -783,9 +783,13 @@ pub struct DsparkCaptureOut {
     pub markov_embed: Vec<f32>,
 }
 
+/// The indexer scorer arm. Scalar and tiled are bit-identical
+/// (`tools/dsv4-indexer-tiled-gate.cu`), so the arm is a speed choice only.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Dsv4IndexerScore {
+    /// Default: per launch, tiled at or past the measured knee, scalar below it.
     #[default]
+    Knee,
     Scalar,
     Tiled,
 }
@@ -793,11 +797,25 @@ pub enum Dsv4IndexerScore {
 impl Dsv4IndexerScore {
     pub fn resolve(value: Option<&str>) -> Res<Self> {
         match value {
-            None | Some("") | Some("scalar") => Ok(Self::Scalar),
+            None | Some("") => Ok(Self::Knee),
+            Some("scalar") => Ok(Self::Scalar),
             Some("tiled") => Ok(Self::Tiled),
             Some(other) => Err(format!(
-                "MEMRA_DSV4_INDEXER_SCORE '{other}' unknown (scalar | tiled)"
+                "MEMRA_DSV4_INDEXER_SCORE '{other}' unknown (unset | scalar | tiled)"
             )),
+        }
+    }
+
+    /// Whether a launch of `rows` query rows over `nb` candidates takes the tiled scorer.
+    /// Knee from the PRO 6000 sweep (research/dsv4f-bringup-20260923/indexer-knee): one row
+    /// (the fixed-limit f32acc scorer) crosses between 1024 and 1536 candidates; more rows
+    /// (the absolute-position scorer) cross near 8192 row-candidates at 6, 16, 32 and 64 rows.
+    pub fn tiled_for(self, rows: usize, nb: usize) -> bool {
+        match self {
+            Self::Scalar => false,
+            Self::Tiled => true,
+            Self::Knee if rows == 1 => nb >= 1152,
+            Self::Knee => rows * nb >= 8192,
         }
     }
 }
@@ -3492,16 +3510,21 @@ impl Dsv4Gpu {
             }
         };
 
-        if indexer_score == Dsv4IndexerScore::Tiled
-            && (!matches!(decode_path, DecodePath::Device { host_math: false })
-                || !chains_f32
-                || d.index_n_heads != 64
-                || d.index_head_dim != 128)
-        {
+        let tiled_indexer_fits = matches!(decode_path, DecodePath::Device { host_math: false })
+            && chains_f32
+            && d.index_n_heads == 64
+            && d.index_head_dim == 128;
+        if indexer_score == Dsv4IndexerScore::Tiled && !tiled_indexer_fits {
             return Err(
                 "MEMRA_DSV4_INDEXER_SCORE=tiled requires device f32x and indexer 64x128".into(),
             );
         }
+        // The knee needs the tiled kernel; a program it cannot serve stays scalar.
+        let indexer_score = if tiled_indexer_fits {
+            indexer_score
+        } else {
+            Dsv4IndexerScore::Scalar
+        };
         if prefill_grouped
             && (!matches!(decode_path, DecodePath::Device { host_math: false })
                 || crate::moe_f16g_mode() < 2
@@ -8373,7 +8396,7 @@ impl Dsv4Gpu {
             || !self.dense_fp8
             || !self.small_kernel_diet
             || self.variant != ActQuantVariant::RefFp8Round
-            || self.indexer_score != Dsv4IndexerScore::Scalar
+            || self.indexer_score == Dsv4IndexerScore::Tiled
             || self.verify_topk != Dsv4VerifyTopk::Device
             || (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) != 43
             || self.model.mc.n_embd != 4096
@@ -8976,10 +8999,11 @@ impl Dsv4Gpu {
         nb: i32,
         ratio: i32,
         lim0: i32,
+        scalar_only: bool,
         sv: *mut c_void,
     ) -> i32 {
         unsafe {
-            if self.indexer_score == Dsv4IndexerScore::Tiled {
+            if !scalar_only && self.indexer_score.tiled_for(s as usize, nb as usize) {
                 k::memra_dsv4_indexer_score_tiled(
                     q, ckv, w, wscale, score, s, heads, hd, nb, ratio, lim0, -1, sv,
                 )
@@ -9691,6 +9715,7 @@ impl Dsv4Gpu {
                                 nb as i32,
                                 layer.ratio as i32,
                                 nb as i32,
+                                false,
                                 sp(&stream),
                             ),
                         )?;
@@ -15550,7 +15575,7 @@ impl Dsv4Gpu {
                 || host_math
                 || cache.c4_host.is_some()
                 || !self.chains_f32
-                || self.indexer_score != Dsv4IndexerScore::Scalar)
+                || self.indexer_score == Dsv4IndexerScore::Tiled)
         {
             return Err("full-token attention requires t=1 scalar f32 device-cache program".into());
         }
@@ -15980,6 +16005,8 @@ impl Dsv4Gpu {
                                     nb as i32,
                                     ratio as i32,
                                     nb as i32,
+                                    // Full-token replay is pinned to the scalar program.
+                                    replay_pos.is_some(),
                                     sp(&stream),
                                 ),
                             )?;
@@ -16107,7 +16134,7 @@ impl Dsv4Gpu {
                         let wscale =
                             ((ix.hd as f64).powf(-0.5) * (ix.heads as f64).powf(-0.5)) as f32;
                         unsafe {
-                            let score_rc = if self.indexer_score == Dsv4IndexerScore::Tiled {
+                            let score_rc = if self.indexer_score.tiled_for(t, nb) {
                                 k::memra_dsv4_indexer_score_tiled(
                                     dpf!(vws.qi, &stream),
                                     dpf!(ikvc.as_ref().expect("ikvc"), &stream),
@@ -20380,16 +20407,29 @@ mod dense_arm_default_tests {
     }
 
     #[test]
-    fn tiled_indexer_is_literal_and_default_off() {
-        for raw in [None, Some(""), Some("scalar")] {
-            assert_eq!(Dsv4IndexerScore::resolve(raw), Ok(Dsv4IndexerScore::Scalar));
+    fn indexer_score_defaults_to_the_knee_and_forces_literally() {
+        for raw in [None, Some("")] {
+            assert_eq!(Dsv4IndexerScore::resolve(raw), Ok(Dsv4IndexerScore::Knee));
         }
+        assert_eq!(
+            Dsv4IndexerScore::resolve(Some("scalar")),
+            Ok(Dsv4IndexerScore::Scalar)
+        );
         assert_eq!(
             Dsv4IndexerScore::resolve(Some("tiled")),
             Ok(Dsv4IndexerScore::Tiled)
         );
-        for raw in ["1", "TILED", " tiled", "fused"] {
+        for raw in ["1", "TILED", " tiled", "fused", "knee"] {
             assert!(Dsv4IndexerScore::resolve(Some(raw)).is_err());
+        }
+        let knee = Dsv4IndexerScore::Knee;
+        assert!(!knee.tiled_for(1, 1151) && knee.tiled_for(1, 1152));
+        assert!(!knee.tiled_for(6, 1365) && knee.tiled_for(6, 1366));
+        assert!(!knee.tiled_for(32, 255) && knee.tiled_for(32, 256));
+        assert!(knee.tiled_for(64, 129) && knee.tiled_for(512, 129));
+        for (rows, nb) in [(1, 1), (1, 1 << 20), (6, 129), (512, 1 << 16)] {
+            assert!(!Dsv4IndexerScore::Scalar.tiled_for(rows, nb));
+            assert!(Dsv4IndexerScore::Tiled.tiled_for(rows, nb));
         }
     }
 

@@ -1979,23 +1979,34 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   all; the aborted ticket's sequence number is consumed, no `TIER DISABLED`, no drop, no `Capacity`, no
   leaked wording). Evidence: `research/spill-c-20260919/DAY16.md` (review section), `pro-single-day16-review/`,
   replay `verify-day16-review.py`.
-- The recurrent f32 state's span cells of the same door (WP-A days 31 and 32, memra#536 Move 2 owed item 1):
+- The recurrent f32 state's span cells of the same door (WP-A days 31 to 33, memra#536 Move 2 owed item 1):
   `tools/kv-host-contract-fault-gate.sh` cells `span-refusal` (`MEMRA_KV_HOST_FAULT=contract-spans`, the
   demote's D2H span attach refused after every span was built) and `promote-span-refusal`
-  (`MEMRA_KV_HOST_FAULT=contract-promote-spans`, the promote's H2D span attach refused after the hash helper
-  filled the staging and every span was built). Each is two boots, door ON with the one-shot fault and door
-  OFF as the byte reference, and asserts one typed refusal naming `N f32 spans handed back` with N the span
+  (`MEMRA_KV_HOST_FAULT=contract-promote-spans`, the promote's H2D span attach refused after every span was
+  built; since day 33 the staging is filled by a host function on the copy stream ahead of the copies).
+  Each is two boots, door ON with the one-shot fault and door OFF as the byte reference, and asserts one typed refusal naming `N f32 spans handed back` with N the span
   count of the next receipt of the same direction, one `tier span staging:` fill in the boot, the next
   demote or promote landing its spans and publishing, no latch, quarantine, leak or other refusal, and the
   four responses byte-equal to the door-OFF boot. GPU cells (`worker::tests`, `#[ignore]` without a device):
   `option_b_span_attach_fault_hands_every_span_back`, `option_c_span_attach_fault_hands_every_span_back`,
   `option_c_spans_ride_the_promote_ticket_and_land_bitwise` (the promoted planes read bitwise equal to the
   resident bytes) and `option_c_span_postpublish_refusal_returns_the_staging_to_the_set`; engine cells
-  `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream` and `h2d_span_batch_lands_with_its_ticket_on_the_copy_stream`
-  (run with `--test-threads=1`: run in parallel in one process on the local RTX 5090 the H2D cell failed
+  `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream`, `h2d_span_batch_lands_with_its_ticket_on_the_copy_stream`
+  and (day 33) `h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies` (run with `--test-threads=1`: run in parallel in one process on the local RTX 5090 the H2D cell failed
   once with `a batch with a running span has not landed`; the two cells share the primary context and each
   holds its copy stream 300 ms; the serial run was green 3 of 3; the cause is not isolated). Evidence:
-  `research/spill-a-20260919/DAY31.md`, `DAY32.md`.
+  `research/spill-a-20260919/DAY31.md`, `DAY32.md`, `DAY33.md`.
+- The promote's KV completion checksums on the hash helper (WP-A day 34, `research/spill-a-20260919/DAY34.md`,
+  `memra_tier::conformance::h2d_deferred_checksum_lands_with_its_digests`): under the door the off-tick promote
+  defers its H2D items' checksums (`CudaTransfers::defer_h2d_checksums`), the helper digests each item's host
+  source with the engine's own program, and the settle supplies them (`supply_h2d_checksums`) before the receipt
+  `require` against the demote-time checksums. CPU binding `h2d_deferred_checksum_bindings` (with its red arm: an
+  item that lands on its copy alone); engine cells `h2d_deferred_checksum_rules_are_as_stated` (CPU) and
+  `h2d_deferred_checksum_lands_with_the_supplied_digests` (a card: the digest on another thread, a wrong digest
+  `Corrupt` at the gate); GPU cell `option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused`
+  (a flipped lease byte refused `ReceiptMismatch`, nothing published). The failure gate's `digest` cell on the door ON
+  arm is the served-path check: the settle's `plane host bytes differ from the D2H receipt as injected` line is the
+  helper's digest seeing the flipped byte, and `VERIFY FAILED` refuses the entry.
 - The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
   hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
   Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity
