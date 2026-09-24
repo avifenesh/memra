@@ -463,3 +463,33 @@ DAY37 A4 card=rtx5090 retires=0 within_bound=0 worst_over_bound_bytes=0 rule map
 
 The A4 line reads FAIL because no serving boot ran (`retires=0`); it is no reading. The reader also listed design v1's
 `grow-32768` line, omitted above (2.2 quotes it). The deciding cell is r4 (1.14).
+
+### 2.4 The review reading (1.6's CPU paragraph), on the r4 tree, before the target-card sitting
+
+The seven spill review patterns, read against every state machine this lane added for O1 (the on-demand plane, the
+mapper, the graveyard, the worker's ensure, trim, reap and idle paths) and against the O2 and O5 changes:
+
+- **Move-then-match.** No let-else moves a field on these paths: `KvPlane::drop` takes `on_demand` and buries it;
+  the park trims and the ensure visitor borrow. None found.
+- **Parked work defeats the idle wait.** Two found, both fixed in addendum E: the idle decision read a pending flag
+  computed before the tick's retires (E2), and a release stuck behind a live extent kept the 2 ms poll alive for a
+  parked plane's life (E1). The step-OOM park back to the queue after a failed ensure is bounded by the step-OOM retry
+  budget, as the spec phase's is.
+- **Gate literals that rot.** The reader's 2 MiB granule literal now reads the boot line (addendum E). The census
+  tests match code text, not counts of a run, except the two that pin the number of ensure and refresh sites, which
+  are the point of those tests.
+- **Release only on the happy path.** Found and fixed in E3: a failed unmap, release or grave reap left bytes pending
+  forever. `map_extent` undoes each driver step on failure; a construction census refusal drops the cache, whose
+  planes go to the graveyard; `bury` quarantines when no fence can be recorded.
+- **Borrowed sources settled at the seam that moves them.** A trim records its fence under the plane lock after
+  `want` is pulled back (the `7e4ac87e4` fix, 2.2); `bury` marks the plane dead under the lock before the grave's
+  fence; the mapper upgrades a weak reference and re-checks `dead` under the same lock.
+- **A booking of a future insert into a budgeted cache.** Owed growth is `reserved - backed` per active session: the
+  footprint the pooled gate already charges at admission, with no eviction inside a plane to cap it. O5's term books
+  the prime slab's growth, and the slab is grow-only with no eviction, so there is no budget left to cap at; the
+  seed term keeps its day-35 cap.
+- **A guard that hands memory back checks the reply is its own.** No reply-carrying guard on these paths: the mapper
+  is fire-and-forget on a weak reference, and every state change it makes is under the plane's lock.
+
+O2's errored flag (DAY38 addendum A) is set before every session-error send the census test pairs, and O5's term is
+computed only with the door armed (its census test pins both).
