@@ -738,6 +738,9 @@ pub struct MtpDev {
 pub struct DsparkDev {
     /// mtp.0..2 — layer ids n_trunk+k, ratio 0 (window-only), score-routed MXFP4.
     pub blocks: Vec<LayerDev>,
+    /// Under TP/EP, rank 0's copy of each block holding the first expert-id half of its routed
+    /// bank (`blocks` then holds rank 1's, the second half); empty on PP (memra #718).
+    pub rank0_blocks: Vec<LayerDev>,
     pub main_proj: CudaSlice<u8>, // bf16 [hidden, n_targets*hidden]
     pub main_norm: CudaSlice<f32>,
     pub norm: CudaSlice<f32>, // mtp.2.norm (exit head)
@@ -1392,6 +1395,37 @@ impl DecodeState {
 /// real at the canonical served arm, +31.1% at 3,686 tokens with a 0.0% repeat
 /// spread, and a qualified win becomes the code rather than a door.
 pub const DSV4_BATCH_WIDTH_MAX: usize = 512;
+
+/// A local-only expert-id half for one DSpark block under TP/EP (memra #718): rank `owner`
+/// holds ids `owner * count .. (owner + 1) * count`, and `LayerDev::expert_ptrs` refuses any
+/// other id. The drafter's per-expert path needs no peer planes or pointer table.
+fn dspark_local_bank(
+    gpu: &memra_runtime::Gpu,
+    owner: usize,
+    count: usize,
+) -> Res<crate::dsv4_ep::EpLayer> {
+    gpu.ctx
+        .bind_to_thread()
+        .map_err(e("bind DSpark local bank"))?;
+    let stream = gpu.stream();
+    Ok(crate::dsv4_ep::EpLayer {
+        peer_stage: 1 - owner,
+        local_first: owner * count,
+        count,
+        peer_first: (1 - owner) * count,
+        peer_w: stream
+            .alloc_zeros::<u8>(0)
+            .map_err(e("DSpark empty peer weights"))?,
+        peer_sc: stream
+            .alloc_zeros::<u8>(0)
+            .map_err(e("DSpark empty peer scales"))?,
+        peer_s2: stream
+            .alloc_zeros::<f32>(0)
+            .map_err(e("DSpark empty peer scales2"))?,
+        peer_table: None,
+        local_only: true,
+    })
+}
 
 /// The expert programs full-token replay captures (memra #710): the served one-token stream
 /// visitor (`MEMRA_F16G_TAIL` on, the #664 stream on, every gate-only split-K arm off), or the
@@ -4108,13 +4142,37 @@ impl Dsv4Gpu {
                 // (tap layers 40/41/42 + shared head locality — VRAM plan in the
                 // iteration-3 receipts). Census pins + NextN refusal ride the CPU
                 // oracle's own config loader (one refusal program, two realizations).
-                // Under TP/EP the last stage is rank 1, the head rank: the blocks keep
-                // their full expert slab and run the PP drafter program unchanged.
+                // Under TP/EP the last stage is rank 1, the head rank. The routed experts are
+                // 10.27 GB of the drafter's 10.86 (memra #718), so each rank holds the
+                // expert-id half the trunk's EP pair gives it and rank 1 keeps everything else;
+                // `dspark_moe_tp_ep` joins the halves through the trunk's slot all-reduce.
                 let cfg = memra_gguf::dsv4_dspark::DsparkConfig::load(dir, &me.model);
                 let hidden = me.model.mc.n_embd as usize;
+                let tp_ep = me.topology.is_tp_ep();
+                if tp_ep && me.dspark_fused_moe {
+                    return Err(
+                        "MEMRA_DSV4_DSPARK_FUSED_MOE indexes the drafter's expert bank by global id and cannot run on TP/EP's per-rank halves".into(),
+                    );
+                }
+                let ne = me.model.mc.moe.as_ref().expect("moe").expert_count as usize;
+                let half = ne / 2;
                 let mut blocks = Vec::with_capacity(cfg.n_blocks);
+                let mut rank0_blocks = Vec::new();
                 for k in 0..cfg.n_blocks {
-                    let layer = me.load_layer(last, n_trunk + k as u32, &format!("mtp.{k}"))?;
+                    let il = n_trunk + k as u32;
+                    let prefix = format!("mtp.{k}");
+                    let layer = if tp_ep {
+                        let mut rank1 =
+                            me.load_layer_partitioned(last, il, &prefix, Some((half, half)))?;
+                        let mut rank0 =
+                            me.load_layer_partitioned(0, il, &prefix, Some((0, half)))?;
+                        rank1.ep = Some(dspark_local_bank(&me.stages[last].gpu, 1, half)?);
+                        rank0.ep = Some(dspark_local_bank(&me.stages[0].gpu, 0, half)?);
+                        rank0_blocks.push(rank0);
+                        rank1
+                    } else {
+                        me.load_layer(last, il, &prefix)?
+                    };
                     assert_eq!(layer.ratio, 0, "dspark block mtp.{k} must be ratio 0");
                     assert_eq!(
                         layer.expert_kind,
@@ -4152,6 +4210,7 @@ impl Dsv4Gpu {
                 let markov_w2 = upload_f32(&st_stream, &w2)?;
                 let dspark = DsparkDev {
                     blocks,
+                    rank0_blocks,
                     main_proj: me.tensor_bf16(last, "mtp.0.main_proj")?,
                     main_norm: me.tensor_f32_dev(last, "mtp.0.main_norm.weight")?,
                     norm: me.tensor_f32_dev(last, &format!("{last_p}.norm.weight"))?,
@@ -5981,12 +6040,7 @@ impl Dsv4Gpu {
             // x quantized ONCE per-row-per-128 (model.py:113-115); code/scale rows
             // gathered per expert (row-local quant commutes with gathering exactly);
             // h re-quantized AFTER the routing-weight multiply (M:604-606) before w2.
-            let kind = match layer.expert_kind {
-                ExpertKind::Nvfp4 => 0i32,
-                ExpertKind::Mxfp4 => 1i32,
-            };
             let kq_x = hidden / 128;
-            let kq_h = inter / 128;
             let mut xq = stream.alloc_zeros::<u8>(s * hidden).map_err(e("xq"))?;
             let mut xs = stream.alloc_zeros::<f32>(s * kq_x).map_err(e("xs"))?;
             unsafe {
@@ -6002,123 +6056,9 @@ impl Dsv4Gpu {
                     ),
                 )?;
             }
-            let mut xgq = stream.alloc_zeros::<u8>(s * hidden).map_err(e("xgq"))?;
-            let mut xgs = stream.alloc_zeros::<f32>(s * kq_x).map_err(e("xgs"))?;
-            let mut g1 = stream.alloc_zeros::<f32>(s * inter).map_err(e("g1"))?;
-            let mut g3 = stream.alloc_zeros::<f32>(s * inter).map_err(e("g3"))?;
-            let mut hbuf = stream.alloc_zeros::<f32>(s * inter).map_err(e("hbuf"))?;
-            let mut hq = stream.alloc_zeros::<u8>(s * inter).map_err(e("hq"))?;
-            let mut hs = stream.alloc_zeros::<f32>(s * kq_h).map_err(e("hs"))?;
-            let mut contrib = stream
-                .alloc_zeros::<f32>(s * hidden)
-                .map_err(e("contrib"))?;
-            for &ex in &uniq {
-                let toks: Vec<(usize, usize)> = (0..s * topk)
-                    .filter(|i| indices[*i] == ex)
-                    .map(|i| (i / topk, i % topk))
-                    .collect();
-                let g = toks.len();
-                let tok_rows: Vec<i32> = toks.iter().map(|&(t, _)| t as i32).collect();
-                let wrow: Vec<f32> = toks.iter().map(|&(t, kk)| weights[t * topk + kk]).collect();
-                let rows_dev = upload_i32(&stream, &tok_rows)?;
-                let wrow_dev = upload_f32(&stream, &wrow)?;
-                unsafe {
-                    ck(
-                        "gather xq",
-                        k::memra_dsv4_gather_rows_u8(
-                            dp!(xq, &stream),
-                            rows_dev.device_ptr(&stream).0 as *const i32,
-                            xgq.device_ptr_mut(&stream).0 as *mut c_void,
-                            g as i32,
-                            hidden as i64,
-                            sp(&stream),
-                        ),
-                    )?;
-                    ck(
-                        "gather xs",
-                        k::memra_dsv4_gather_rows_u8(
-                            xs.device_ptr(&stream).0 as *const c_void,
-                            rows_dev.device_ptr(&stream).0 as *const i32,
-                            xgs.device_ptr_mut(&stream).0 as *mut c_void,
-                            g as i32,
-                            (kq_x * 4) as i64,
-                            sp(&stream),
-                        ),
-                    )?;
-                    // w1 (out inter), w3 (out inter) from x codes; w2 (out hidden) from h codes
-                    for (pi, dst) in [(0usize, &mut g1), (2usize, &mut g3)] {
-                        let (wp, scp) = layer.expert_ptrs(ex, pi, wbytes, sbytes, &stream)?;
-                        ck(
-                            "fp4_gemm w1/w3",
-                            k::memra_dsv4_fp4_gemm(
-                                dp!(xgq, &stream),
-                                dpf!(xgs, &stream),
-                                wp,
-                                scp,
-                                layer.experts_s2[ex * 3 + pi],
-                                kind,
-                                dpm!(*dst, &stream),
-                                g as i32,
-                                inter as i32,
-                                hidden as i32,
-                                sp(&stream),
-                            ),
-                        )?;
-                    }
-                    ck(
-                        "swiglu",
-                        k::memra_dsv4_swiglu(
-                            dpf!(g1, &stream),
-                            dpf!(g3, &stream),
-                            dpm!(hbuf, &stream),
-                            g as i32,
-                            inter as i32,
-                            limit,
-                            wrow_dev.device_ptr(&stream).0 as *const f32,
-                            sp(&stream),
-                        ),
-                    )?;
-                    ck(
-                        "act_quant_fp8 h",
-                        k::memra_dsv4_act_quant_fp8(
-                            dpf!(hbuf, &stream),
-                            hq.device_ptr_mut(&stream).0 as *mut c_void,
-                            dpm!(hs, &stream),
-                            g as i32,
-                            inter as i32,
-                            sp(&stream),
-                        ),
-                    )?;
-                    let (wp2, scp2) = layer.expert_ptrs(ex, 1, wbytes, sbytes, &stream)?;
-                    ck(
-                        "fp4_gemm w2",
-                        k::memra_dsv4_fp4_gemm(
-                            dp!(hq, &stream),
-                            dpf!(hs, &stream),
-                            wp2,
-                            scp2,
-                            layer.experts_s2[ex * 3 + 1],
-                            kind,
-                            dpm!(contrib, &stream),
-                            g as i32,
-                            hidden as i32,
-                            inter as i32,
-                            sp(&stream),
-                        ),
-                    )?;
-                    ck(
-                        "scatter",
-                        k::memra_dsv4_scatter_add(
-                            dpm!(y, &stream),
-                            dpf!(contrib, &stream),
-                            rows_dev.device_ptr(&stream).0 as *const i32,
-                            g as i32,
-                            hidden as i32,
-                            sp(&stream),
-                        ),
-                    )?;
-                }
-            }
+            self.moe_native_expert_loop(
+                st, layer, &xq, &xs, &uniq, &indices, &weights, s, &mut y, false,
+            )?;
             return self.moe_shared_and_finish(st, layer, &xb, s, y);
         }
         // reusable per-expert buffers sized for the worst case (all tokens on one expert)
@@ -6266,6 +6206,354 @@ impl Dsv4Gpu {
             }
         }
         self.moe_shared_and_finish(st, layer, &xb, s, y)
+    }
+
+    /// The native per-expert program of [`Self::moe_forward`]: for each expert in `experts`
+    /// (ascending), gather its token rows of the FP8 activation, w1/w3, SwiGLU with the routing
+    /// weights, re-quantize, w2, then scatter-add into `out`. `slots = false` scatters into row
+    /// `t` of `out [s, hidden]` (the single-card sum, ascending expert id per row); `slots = true`
+    /// writes slot `t * topk + k` of `out [s * topk, hidden]`, one owner per slot, for a join
+    /// that sums rows later in the same order (memra #718).
+    #[allow(clippy::too_many_arguments)]
+    fn moe_native_expert_loop(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        xq: &CudaSlice<u8>,
+        xs: &CudaSlice<f32>,
+        experts: &[usize],
+        indices: &[usize],
+        weights: &[f32],
+        s: usize,
+        out: &mut CudaSlice<f32>,
+        slots: bool,
+    ) -> Res<()> {
+        let mc = &self.model.mc;
+        let d = self.model.cfg();
+        let moe = mc.moe.as_ref().expect("moe");
+        let hidden = mc.n_embd as usize;
+        let topk = moe.expert_used_count as usize;
+        let inter = moe.expert_ff_length as usize;
+        let limit = d.swiglu_limit;
+        let stream = st.gpu.stream();
+        let wbytes = inter * hidden / 2;
+        let sbytes = match layer.expert_kind {
+            ExpertKind::Nvfp4 => inter * hidden / 16,
+            ExpertKind::Mxfp4 => inter * hidden / 32,
+        };
+        let kind = match layer.expert_kind {
+            ExpertKind::Nvfp4 => 0i32,
+            ExpertKind::Mxfp4 => 1i32,
+        };
+        let kq_x = hidden / 128;
+        let kq_h = inter / 128;
+        let mut xgq = stream.alloc_zeros::<u8>(s * hidden).map_err(e("xgq"))?;
+        let mut xgs = stream.alloc_zeros::<f32>(s * kq_x).map_err(e("xgs"))?;
+        let mut g1 = stream.alloc_zeros::<f32>(s * inter).map_err(e("g1"))?;
+        let mut g3 = stream.alloc_zeros::<f32>(s * inter).map_err(e("g3"))?;
+        let mut hbuf = stream.alloc_zeros::<f32>(s * inter).map_err(e("hbuf"))?;
+        let mut hq = stream.alloc_zeros::<u8>(s * inter).map_err(e("hq"))?;
+        let mut hs = stream.alloc_zeros::<f32>(s * kq_h).map_err(e("hs"))?;
+        let mut contrib = stream
+            .alloc_zeros::<f32>(s * hidden)
+            .map_err(e("contrib"))?;
+        for &ex in experts {
+            let toks: Vec<(usize, usize)> = (0..s * topk)
+                .filter(|i| indices[*i] == ex)
+                .map(|i| (i / topk, i % topk))
+                .collect();
+            let g = toks.len();
+            let tok_rows: Vec<i32> = toks.iter().map(|&(t, _)| t as i32).collect();
+            let wrow: Vec<f32> = toks.iter().map(|&(t, kk)| weights[t * topk + kk]).collect();
+            let rows_dev = upload_i32(&stream, &tok_rows)?;
+            let wrow_dev = upload_f32(&stream, &wrow)?;
+            let dest_dev = if slots {
+                let dest: Vec<i32> = toks.iter().map(|&(t, kk)| (t * topk + kk) as i32).collect();
+                Some(upload_i32(&stream, &dest)?)
+            } else {
+                None
+            };
+            let dest = dest_dev.as_ref().unwrap_or(&rows_dev);
+            unsafe {
+                ck(
+                    "gather xq",
+                    k::memra_dsv4_gather_rows_u8(
+                        dp!(xq, &stream),
+                        rows_dev.device_ptr(&stream).0 as *const i32,
+                        xgq.device_ptr_mut(&stream).0 as *mut c_void,
+                        g as i32,
+                        hidden as i64,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "gather xs",
+                    k::memra_dsv4_gather_rows_u8(
+                        xs.device_ptr(&stream).0 as *const c_void,
+                        rows_dev.device_ptr(&stream).0 as *const i32,
+                        xgs.device_ptr_mut(&stream).0 as *mut c_void,
+                        g as i32,
+                        (kq_x * 4) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+                // w1 (out inter), w3 (out inter) from x codes; w2 (out hidden) from h codes
+                for (pi, dst) in [(0usize, &mut g1), (2usize, &mut g3)] {
+                    let (wp, scp) = layer.expert_ptrs(ex, pi, wbytes, sbytes, &stream)?;
+                    ck(
+                        "fp4_gemm w1/w3",
+                        k::memra_dsv4_fp4_gemm(
+                            dp!(xgq, &stream),
+                            dpf!(xgs, &stream),
+                            wp,
+                            scp,
+                            layer.experts_s2[ex * 3 + pi],
+                            kind,
+                            dpm!(*dst, &stream),
+                            g as i32,
+                            inter as i32,
+                            hidden as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+                ck(
+                    "swiglu",
+                    k::memra_dsv4_swiglu(
+                        dpf!(g1, &stream),
+                        dpf!(g3, &stream),
+                        dpm!(hbuf, &stream),
+                        g as i32,
+                        inter as i32,
+                        limit,
+                        wrow_dev.device_ptr(&stream).0 as *const f32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "act_quant_fp8 h",
+                    k::memra_dsv4_act_quant_fp8(
+                        dpf!(hbuf, &stream),
+                        hq.device_ptr_mut(&stream).0 as *mut c_void,
+                        dpm!(hs, &stream),
+                        g as i32,
+                        inter as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                let (wp2, scp2) = layer.expert_ptrs(ex, 1, wbytes, sbytes, &stream)?;
+                ck(
+                    "fp4_gemm w2",
+                    k::memra_dsv4_fp4_gemm(
+                        dp!(hq, &stream),
+                        dpf!(hs, &stream),
+                        wp2,
+                        scp2,
+                        layer.experts_s2[ex * 3 + 1],
+                        kind,
+                        dpm!(contrib, &stream),
+                        g as i32,
+                        hidden as i32,
+                        inter as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "scatter",
+                    k::memra_dsv4_scatter_add(
+                        dpm!(*out, &stream),
+                        dpf!(contrib, &stream),
+                        dest.device_ptr(&stream).0 as *const i32,
+                        g as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// DSpark's MoE under TP/EP (memra #718). Rank 1 routes on the host exactly as
+    /// [`Self::moe_forward`] and quantizes x once; rank 0 receives the same FP8 codes and scales
+    /// by peer copy. Each rank runs the native per-expert program for the experts it owns into a
+    /// zeroed slot plane `[s * topk, hidden]`, the trunk's one-shot all-reduce joins the planes
+    /// (every slot has one owner, so each joined slot is `c + 0`), and rank 1 sums every row in
+    /// ascending expert id: `moe_forward`'s scatter order, so the drafter keeps the one-card bits.
+    /// `site` labels the join for the gate-only AR instrument (the trunk uses 0..86).
+    fn dspark_moe_tp_ep(
+        &self,
+        layer1: &LayerDev,
+        x: &CudaSlice<f32>,
+        s: usize,
+        ids: &[u32],
+        site: u32,
+    ) -> Res<CudaSlice<f32>> {
+        let mc = &self.model.mc;
+        let d = self.model.cfg();
+        let moe = mc.moe.as_ref().expect("moe");
+        let hidden = mc.n_embd as usize;
+        let ne = moe.expert_count as usize;
+        let topk = moe.expert_used_count as usize;
+        let kq_x = hidden / 128;
+        let layer0 = self
+            .dspark()
+            .rank0_blocks
+            .iter()
+            .find(|l| l.il == layer1.il)
+            .ok_or("TP/EP DSpark rank-0 block missing")?;
+        let owns = |layer: &LayerDev, ex: usize| {
+            layer
+                .ep
+                .as_ref()
+                .is_some_and(|ep| (ep.local_first..ep.local_first + ep.count).contains(&ex))
+        };
+        let (st0, st1) = (&self.stages[0], &self.stages[1]);
+
+        st1.gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind DSpark EP rank 1"))?;
+        let s1 = st1.gpu.stream();
+        let mut raw = s1.alloc_zeros::<f32>(s * ne).map_err(e("gate raw"))?;
+        Self::dots(st1, x, &layer1.gate_w, s, hidden, ne, &mut raw)?;
+        let raw_h = dtoh_f32(&s1, &raw)?;
+        let (indices, weights) =
+            Self::route_host(layer1, &raw_h, ids, s, ne, topk, d.routed_scaling_factor);
+        let mut xb = s1.alloc_zeros::<u8>(s * hidden * 2).map_err(e("xb moe"))?;
+        let mut xq = s1.alloc_zeros::<u8>(s * hidden).map_err(e("xq"))?;
+        let mut xs = s1.alloc_zeros::<f32>(s * kq_x).map_err(e("xs"))?;
+        unsafe {
+            ck(
+                "cvt moe x",
+                k::memra_dsv4_cvt_bf16(
+                    dpf!(x, &s1),
+                    xb.device_ptr_mut(&s1).0 as *mut c_void,
+                    (s * hidden) as i64,
+                    sp(&s1),
+                ),
+            )?;
+            ck(
+                "act_quant_fp8 x",
+                k::memra_dsv4_act_quant_fp8(
+                    dpf!(x, &s1),
+                    xq.device_ptr_mut(&s1).0 as *mut c_void,
+                    dpm!(xs, &s1),
+                    s as i32,
+                    hidden as i32,
+                    sp(&s1),
+                ),
+            )?;
+        }
+        let mut uniq: Vec<usize> = indices.clone();
+        uniq.sort_unstable();
+        uniq.dedup();
+        let (mine1, mine0): (Vec<usize>, Vec<usize>) =
+            uniq.iter().partition(|&&ex| owns(layer1, ex));
+        if let Some(&ex) = mine0.iter().find(|&&ex| !owns(layer0, ex)) {
+            return Err(format!("TP/EP DSpark expert {ex} has no owning rank"));
+        }
+        let plane = s * topk * hidden;
+        let mut plane1 = s1
+            .alloc_zeros::<f32>(plane)
+            .map_err(e("DSpark EP plane 1"))?;
+        let mut out1 = s1
+            .alloc_zeros::<f32>(plane)
+            .map_err(e("DSpark EP join 1"))?;
+
+        st0.gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind DSpark EP rank 0"))?;
+        let s0 = st0.gpu.stream();
+        let mut xq0 = s0.alloc_zeros::<u8>(s * hidden).map_err(e("xq rank 0"))?;
+        let mut xs0 = s0.alloc_zeros::<f32>(s * kq_x).map_err(e("xs rank 0"))?;
+        let mut plane0 = s0
+            .alloc_zeros::<f32>(plane)
+            .map_err(e("DSpark EP plane 0"))?;
+        let mut out0 = s0
+            .alloc_zeros::<f32>(plane)
+            .map_err(e("DSpark EP join 0"))?;
+        // Rank 0's zeroed destinations exist before rank 1's copies land in them.
+        s0.synchronize().map_err(e("DSpark EP rank-0 alloc"))?;
+        crate::dsv4_ep::peer_copy(&s1, &s0, &xq, &mut xq0, s * hidden)?;
+        crate::dsv4_ep::peer_copy(&s1, &s0, &xs, &mut xs0, s * kq_x)?;
+        let copied = s1.record_event(None).map_err(e("DSpark EP copy event"))?;
+        st1.gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind DSpark EP rank 1"))?;
+        self.moe_native_expert_loop(
+            st1,
+            layer1,
+            &xq,
+            &xs,
+            &mine1,
+            &indices,
+            &weights,
+            s,
+            &mut plane1,
+            true,
+        )?;
+        st0.gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind DSpark EP rank 0"))?;
+        s0.wait(&copied).map_err(e("DSpark EP copy wait"))?;
+        self.moe_native_expert_loop(
+            st0,
+            layer0,
+            &xq0,
+            &xs0,
+            &mine0,
+            &indices,
+            &weights,
+            s,
+            &mut plane0,
+            true,
+        )?;
+        {
+            let mut ar = self
+                .tp_ep_ar
+                .lock()
+                .map_err(|_| "TP/EP one-shot reduction state mutex poisoned")?;
+            ar.as_mut()
+                .ok_or("TP/EP one-shot reduction state missing")?
+                .all_reduce_into(
+                    &st0.gpu, &st1.gpu, &plane0, &plane1, &mut out0, &mut out1, plane, false, None,
+                    site,
+                )?;
+        }
+        // Each row's slots in ascending expert id: the order `moe_forward` scatters them in.
+        let mut order = vec![0i32; s * topk];
+        for t in 0..s {
+            let mut ks: Vec<usize> = (0..topk).collect();
+            ks.sort_by_key(|&k| indices[t * topk + k]);
+            for (j, k) in ks.into_iter().enumerate() {
+                order[t * topk + j] = k as i32;
+            }
+        }
+        st1.gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind DSpark EP rank 1"))?;
+        let order_dev = upload_i32(&s1, &order)?;
+        let mut y = s1.alloc_zeros::<f32>(s * hidden).map_err(e("moe y"))?;
+        unsafe {
+            ck(
+                "DSpark EP combine",
+                k::memra_dsv4_combine_rows_m(
+                    dpf!(out1, &s1),
+                    order_dev.device_ptr(&s1).0 as *const i32,
+                    topk as i32,
+                    dpm!(y, &s1),
+                    hidden as i64,
+                    s as i32,
+                    sp(&s1),
+                ),
+            )?;
+        }
+        self.moe_shared_and_finish(st1, layer1, &xb, s, y)
     }
 
     /// Shared expert (unweighted, added last — oracle order) + return. Stays on the
@@ -13171,7 +13459,12 @@ impl Dsv4Gpu {
             )?;
         }
         let ids = vec![0u32; block];
-        let moe_out = self.moe_forward(st, blk, &xf, block, &ids)?;
+        let moe_out = if self.topology.is_tp_ep() {
+            let n_trunk = mc.n_layer - mc.nextn_predict_layers;
+            self.dspark_moe_tp_ep(blk, &xf, block, &ids, 86 + blk.il - n_trunk)?
+        } else {
+            self.moe_forward(st, blk, &xf, block, &ids)?
+        };
         let mut h3 = stream
             .alloc_zeros::<f32>(block * hc * hidden)
             .map_err(e("h3"))?;
@@ -13219,6 +13512,39 @@ impl Dsv4Gpu {
         capture: bool,
         sample: Option<&Dsv4SampleCfg>,
     ) -> Res<DsparkProposal> {
+        if !self.topology.is_tp_ep() {
+            return self.dspark_forward_spec_run(state, input_token, tap_row, pos, capture, sample);
+        }
+        // TP/EP (memra #718): the drafter's three MoE joins use the trunk's one-shot reduction,
+        // so the forward holds the walk lock (taken before the reduction mutex, the trunk's
+        // order) and reads both refusal words before a proposal leaves.
+        let _walk_guard = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned")?;
+        let proposal =
+            self.dspark_forward_spec_run(state, input_token, tap_row, pos, capture, sample);
+        let words = self.tp_ep_ar_refusal_words()?;
+        if words != [0, 0] {
+            for st in &self.stages {
+                let _ = st.gpu.stream().synchronize();
+            }
+            return Err(format!(
+                "TP/EP DSpark forward refused by the one-shot reduction: words {words:?}"
+            ));
+        }
+        proposal
+    }
+
+    fn dspark_forward_spec_run(
+        &self,
+        state: &mut DsparkState,
+        input_token: u32,
+        tap_row: usize,
+        pos: usize,
+        capture: bool,
+        sample: Option<&Dsv4SampleCfg>,
+    ) -> Res<DsparkProposal> {
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         let ds = self.dspark();
         let mc = &self.model.mc;
@@ -13240,21 +13566,23 @@ impl Dsv4Gpu {
         } else {
             None
         };
-        // main_x from the tap row (computed once per call, M:930-932)
-        let tap = {
-            let _p = phase!("1a.tap_copy", prof.as_ref());
-            let mut row = stream.alloc_zeros::<f32>(n_t * hidden).map_err(e("tapr"))?;
-            let src = state
-                .taps
-                .slice(tap_row * n_t * hidden..(tap_row + 1) * n_t * hidden);
-            stream.memcpy_dtod(&src, &mut row).map_err(e("tap cp"))?;
-            row
-        };
-        let mx = {
-            let _p = phase!("1b.main_x", prof.as_ref());
-            self.dspark_main_x(&tap, 1)?
-        };
+        // main_x from the tap row (M:930-932) is a capture observable only: the rings already
+        // hold it through `dspark_write_rings`, so the forward never reads it and a plain
+        // round skips the tap copy and the [hidden x n_targets*hidden] GEMV.
         let (cap_main_hidden, cap_main_x) = if capture {
+            let tap = {
+                let _p = phase!("1a.tap_copy", prof.as_ref());
+                let mut row = stream.alloc_zeros::<f32>(n_t * hidden).map_err(e("tapr"))?;
+                let src = state
+                    .taps
+                    .slice(tap_row * n_t * hidden..(tap_row + 1) * n_t * hidden);
+                stream.memcpy_dtod(&src, &mut row).map_err(e("tap cp"))?;
+                row
+            };
+            let mx = {
+                let _p = phase!("1b.main_x", prof.as_ref());
+                self.dspark_main_x(&tap, 1)?
+            };
             (
                 Some(dtoh_f32(&stream, &tap)?),
                 Some(dtoh_f32(&stream, &mx)?),
