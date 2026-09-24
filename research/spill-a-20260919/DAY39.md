@@ -158,3 +158,29 @@ pooled=10`), so `--n 5` gives ten promote runs per boot, nine steady (DAY35's ce
 boots; DAY34's BOX4 sitting: `promote in-ms steady N=90`), and `--n 10` would give nineteen. The count the clause is
 written on (90 steady promotes per arm, `polls [1]` on at least 80) is kept, so both cells run `--n 5`, as DAY34 and
 DAY35 did. Found by dry-running the reader (`day39-reading.py`) on DAY35's banked cell; no T cell has run.
+
+## 6. Design T on the RTX 5090, as it ran (`rtx5090-day39/t/`)
+
+- The arms (`build.sh`, one tree `7514bdf3b`): FT `db13c8ae27473..`, F1 `f3650153c8a92..` (FT plus `f1.patch`); the test
+  binaries of the FT tree. The build's own last check printed `tree did not return to the tip` only because a
+  research-only commit (`6b93ba805`: DAY39.md, the reader, the card script) landed while it ran; the tree was clean and
+  HEAD~1 was the build tree (`t/BUILD.txt`). One hold of `/tmp/memra-5090.lock` 18:56:19Z to 19:20:17Z, taken on the
+  first attempt; the 9B NVFP4 MTP artifact `52c9cceb190055e0..`; card telemetry 5743 samples, 61 to 87 C, up to 178.6 W.
+- Unit cells: the door's GPU cells `ok. 18 passed`; the engine's native cells `ok. 13 passed` in parallel, among them
+  `h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies ... ok` with its fill on three threads (the cut
+  inside the second plane asserted, the planes bitwise on the device). CPU: `day39_fill_shares_cover_every_byte_once`,
+  `day39_threaded_fill_is_bitwise_the_planes`, the engine's tier_transfer CPU cells `ok. 14 passed`, clippy clean.
+- The gates on FT (each `rc=0`): `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` x4 (default OFF and ON, plain OFF and
+  ON), `KV-HOST-SPILL FAILURE GATE: ALL GREEN` OFF and ON, `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` default and plain,
+  `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` OFF and ON.
+- The cell: 30 boots, every one ready, `STALL REPLAY: PASS` 30 of 30. Verbatim (`t/reading-day39-5090.log`):
+  - `DAY39 T CLAUSE (e) order=o1 metric=e2e ft=70.47 f1=70.47 ft-minus-f1=+0.00 pair-noise=2.27 .. -> PASS`;
+    `order=o1 metric=pin ft=16.60 f1=16.50 ft-minus-f1=+0.10 pair-noise=0.30 .. -> PASS`; `order=o2 metric=e2e
+    ft=70.39 f1=70.49 ft-minus-f1=-0.10 pair-noise=0.90 .. -> PASS`; `order=o2 metric=pin ft=16.50 f1=16.60
+    ft-minus-f1=-0.10 pair-noise=0.30 .. -> PASS`; `DAY39 T 5090 (e) -> PASS`.
+  - Readings: steady polls `[2] (counts [45])` for FT and F1 in both orders (the copy lands in the probe's tick on this
+    host at T=1 already, and K's checksums over the write-combined leases land at the second tick top, 8.8 to 9.3 ms on
+    the helper, as DAY35 read); DAY28 1b `+8.3` / `+7.3` (FT) and `+8.3` / `+7.4` (F1) against `<=+20.0`.
+- **The 5090 half passes as registered**: T costs nothing on a host where the fill already fits, and every gate is green.
+  The target cell (section 5, BOX7 class) is next; its arms are built from the tip that carries DAY38's hump fix, if that
+  has landed, else from this tree.
