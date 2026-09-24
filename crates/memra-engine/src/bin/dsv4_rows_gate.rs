@@ -176,7 +176,7 @@ fn main() {
                 "SESSION {s} len={} join={} steps={steps} IDENTICAL head={:?}",
                 LENS[s],
                 JOIN[s],
-                &reference[s].iter().take(6).map(|x| x.0).collect::<Vec<_>>()
+                reference[s].iter().take(6).map(|x| x.0).collect::<Vec<_>>()
             ),
             Some(i) => {
                 bad += 1;
