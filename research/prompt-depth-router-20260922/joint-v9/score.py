@@ -221,7 +221,7 @@ def select(report, arms_path, out):
             name for name in options if name.startswith("fixed-")
         ]),
         "k": best(("k-new-only", "k-augmented")),
-        "cd": best(("cd-new-only", "cd-augmented")),
+        "cd": best(("cd-new-only", "cd-augmented", "cd-token", "cd-prior")),
         "joint": best(("joint-new-only", "joint-augmented")),
     }
     if chosen["fixed"] is None:

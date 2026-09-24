@@ -70,7 +70,20 @@ def build(new, k_models, cd_models, out):
                 f"topk-model={router}", f"joint-model-dir={cd}",
                 "depth-variant=history", "confidence-variant=history"),
         ))
-    if len(arms) != 18:
+    for variant in ("token", "prior"):
+        depth = (cd_models / "new-only" / f"topk20/depth-{variant}.tsv").resolve()
+        confidence = (
+            cd_models / "new-only" / f"topk20/confidence-{variant}.tsv"
+        ).resolve()
+        if not depth.is_file() or not confidence.is_file():
+            raise ValueError(f"missing new-only C/D {variant} model")
+        arms.extend((
+            arm(f"cd-{variant}", 20, "joint-cd", 4,
+                f"depth-model={depth}", f"confidence-model={confidence}"),
+            arm(f"cd-noop-{variant}", 20, "noop-cd", 4,
+                f"depth-model={depth}", f"confidence-model={confidence}"),
+        ))
+    if len(arms) != 22:
         raise ValueError("validation alternative count differs")
     out.mkdir(exist_ok=False)
     for phase, chosen in (
