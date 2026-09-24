@@ -827,3 +827,12 @@ about -7.5 ms); on BOX7 the e2e about 1 ms under the base. (f) flat on both (the
 
 **Budget.** 0.5 agent-day: the code and CPU cells 0.15, the 5090 cells 0.15, the BOX7 sitting 0.2 (with item 3's cell,
 DAY39 section 5b, and item 5's target half).
+
+## 16b. G''' on the RTX 5090, the rest of the hold (`rtx5090-day38/g3/`)
+
+- The gates on G''' (each `rc=0`), verbatim: `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` x4; `KV-HOST-SPILL FAILURE
+  GATE: ALL GREEN` OFF and ON; `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` default and plain (229 ok each, 0 FAIL: the
+  `copy-phase-hit` cell green in the PLAIN arm under the host-side hold, where G's spin failed it, and day 41's three
+  cells green); `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` OFF and ON. The hold released 21:32:35Z.
+- So on the 5090 G''' passes (a) to (e) and fails only (f). Its revision G4 (section 17) keeps the host-side hold; the
+  receipt and the D2D classes go back to the copy stream.
