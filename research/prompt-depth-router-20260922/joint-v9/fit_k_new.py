@@ -11,7 +11,7 @@ from pathlib import Path
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 import numpy as np
 
-from fit_k import ACTIONS, FEATURE_COUNT, vector
+from fit_k import ACTIONS, FEATURE_COUNT, predict, vector
 
 
 def rows(path):
@@ -80,7 +80,7 @@ def train(new, old, out):
             directory.mkdir(parents=True, exist_ok=True)
             for variant in FEATURE_COUNT:
                 weights = fit(data, variant, alpha, references)
-                lines = [f"joint-v6-draft-topk\t1\t{variant}\t{new_lam:.12g}\t20"]
+                lines = [f"joint-v6-draft-topk\t1\t{variant}\t{new_lam:.12g}\t{alpha}"]
                 for k in ACTIONS:
                     lines.append(
                         f"K\t{k}\t" +
@@ -89,13 +89,7 @@ def train(new, old, out):
                 payload = ("\n".join(lines) + "\n").encode()
                 path = directory / f"topk-{variant}.tsv"
                 path.write_bytes(payload)
-                chosen = Counter(
-                    max(
-                        ACTIONS,
-                        key=lambda k: (float(vector(row, variant) @ weights[k]), k)
-                    )
-                    for row in current
-                )
+                chosen = Counter(predict(row, variant, weights) for row in current)
                 models.append({
                     "source": source,
                     "alpha": alpha,

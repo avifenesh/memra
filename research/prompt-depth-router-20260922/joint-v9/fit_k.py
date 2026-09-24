@@ -49,7 +49,14 @@ def fit(rows, variant, lam, alpha):
 
 def predict(row, variant, weights):
     x = vector(row, variant)
-    return max(ACTIONS, key=lambda k: (float(x @ weights[k]), k))
+    best = 20
+    best_score = float(x @ weights[20])
+    for k in ACTIONS:
+        value = float(x @ weights[k])
+        if value > best_score + 1e-9:
+            best = k
+            best_score = value
+    return best
 
 
 def train(data, out):
@@ -77,7 +84,7 @@ def train(data, out):
         directory.mkdir()
         for variant in FEATURE_COUNT:
             weights = fit(rows, variant, lam, alpha)
-            lines = [f"joint-v6-draft-topk\t1\t{variant}\t{lam:.12g}\t20"]
+            lines = [f"joint-v6-draft-topk\t1\t{variant}\t{lam:.12g}\t{alpha}"]
             for k in ACTIONS:
                 lines.append(
                     f"K\t{k}\t" +
