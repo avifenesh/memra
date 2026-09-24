@@ -3445,6 +3445,92 @@ all behind the default-OFF door `MEMRA_KV_HOST_CONTRACTS`:
 - 2026-10-06: the park door.
 - BOX3's detached OS volume: keep or delete.
 
+## integ58 (`lane/spill-integ58-20260924`): A day 36 (the D2D half's restore price cell CLOSES on the target card; M' PASS on the target card; the restore's recurrent copy timed, log only)
+Lane tip merged: A `6d9e0b06e`, which already carries main `1d0cf13bc` (#711), so the branch is a fast-forward. The only
+code is `worker.rs` (+99/-4), a log-only instrument on the door's restore path:
+- `RestoreRecurTiming` holds the host time of the recurrent copy (an `Instant` around the submit) and two owner-stream
+  timing events recorded before and after it.
+- The GPU term is read at the restore's landing line only if the end event is already complete (`is_complete()`), so
+  the instrument never waits on the host. Otherwise the line says `pending`.
+- Census `day36_the_restore_recurrent_copy_is_timed_without_a_wait` pins the order and the absence of a
+  `synchronize`. No new `unsafe`, no new `MEMRA_*` name, no FLAGS row owed.
+
+**A day 36.**
+1. **Pre-registered before any day-36 code** (`0c2c62f77`): DAY33 section 6's price cell unchanged, the day-26
+   restore arm byte for byte, DAY33's rule verbatim, and the statement that a 5090 reading decides neither branch.
+2. **The 5090 reading** (one hold, 100 restores, `STALL REPLAY: PASS`), verbatim:
+   `DAY36 PRICE READING (5090, not the rule's card) host median=0.130 owner-stream median=0.170 (the rule's bound 0.5
+   each, read on the target card only)`.
+3. **The target-card sitting** (BOX5, one RTX PRO 6000 Blackwell Workstation Edition at 600 W, the 27B), pre-registered
+   in DAY36 section 3 (`4c2a4b19d`) and amended before it ran in section 3a (`733075ed1`: M' carries #711's guard fix).
+   - The price cell, verbatim: `DAY36 PRICE VERDICT (target card) owner-stream median=0.290 host median=0.190 rule
+     each < 0.5 ms per restore -> CLOSES`.
+   - **The D2D half of Move 2 owed item 1 closes with no door and no code.** The capture half was refuted by
+     construction on day 33.
+   - M' on the target card, DAY35 section 7's clauses verbatim: (c) take-back `median=0.11` against base `0.54`
+     `-> PASS`; (d) o1 wall `-0.40` (bound `+17.0`), e2e `+0.09` (bound `+1.0`) `-> PASS`, o2 wall `-0.50`, e2e
+     `+0.01` `-> PASS`. 20 boots, 20 of 20 replays PASS. The owner's hold per demote goes 2.67 to 2.27 ms; the gain is
+     small on cached leases, as predicted.
+   - The gates on the tip, all `ALL GREEN`: identity x4 (12 ok each), failure OFF/ON (15 each, the ON arm's helper
+     re-hash names the flipped byte at the bind and `VERIFY FAILED` catches it at the promote), fault default and
+     plain (160 ok each), twin OFF/ON `PASS`, hit OFF/ON (61 and 68 ok, the day-24 census). Unit cells 18, 10, 18, 6
+     and 13 passed.
+   - Receipts mirrored and checked 506 of 506 against the box manifest; binaries excluded, their hashes kept.
+4. **The box.** BOX5 passed the lead's acceptance gate before any weights were staged, served the sitting, and was
+   destroyed after the checked mirror. An earlier candidate box was rejected at the same gate: 139 W at idle and a 535 MHz
+   effective clock on the FMA spin, with HW slowdown, power brake and the braking counter all clear. Only the spin
+   and the idle power caught it.
+
+**Lead review.**
+- The instrument reads two events and a host clock. It changes no control flow: the submit path returns the timing
+  alongside its existing tuple, and the landing line formats it. A pending end event prints `pending` rather than
+  waiting, so the owner thread never blocks on it (the census pins it).
+- The events are recorded on the owner stream, the stream the copy already runs on. Recording an event adds no
+  dependency the copy did not have.
+- One numeric program per request holds: nothing the restore computes or copies changes, only a log line.
+- The seven spill review patterns (move-then-match, parked idle wait, gate literals, happy-path release, borrowed
+  sources, budgeted booking, guard identity) were read against the diff. None applies: there is no new state, no new
+  resource and no new release.
+- The verdict lines above are copied from DAY36 sections 2 and 4.
+
+**Ruling 53:**
+- Day 36 is read as registered.
+- The D2D half closes as not worth a door (0.29 ms owner-stream GPU and 0.19 ms host per restore on the target card,
+  each under the 0.5 ms bound). No code follows from it.
+- M' passes (a) to (d) on the 5090 (day 35) and on the target card (day 36). It stays the door's serving path for the
+  bind re-hash.
+- The instrument stays: it is the log line the price cell reads, it costs no wait, and it sits on the door's restore
+  path only.
+- The VERDICT line A drafted in DAY36 section 4 lands in the darklanes verdicts ledger through its own PR.
+- Owed: hash 1 on the owner thread (no off-thread form known), the fill on slower CPUs, the strong-form receipt.
+
+**Checks.**
+- CPU battery on `6d9e0b06e`, 15 of 15 rc=0:
+  - portable suites: 368 passed, 0 skipped;
+  - tests: server 894, engine lib 546, tier 281 across 8 binaries, pytest 87 passed;
+  - clippy `-D warnings` twice;
+  - fmt, check-flags, publish census, docs registry, conflict markers, workflow keys, perf board and
+    `git diff --check` (`integ58-cpu-battery/`).
+- RTX 5090 on the same tree: binary `1532f987`, hashed after serve-smoke's build; one collector hold, 08:38Z to 08:50Z
+  (`integ58-5090/`). Verbatim:
+  - serve-smoke `serve-smoke: 0 failed`;
+  - the engine span cells `10 passed` and the worker cells `18 passed`, both serial;
+  - identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok);
+  - fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 160 ok each;
+  - hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 and 68 ok;
+  - `ADMIT-MEM BURST GATE: ALL GREEN` (36 x 200, 28 typed 429s, no OOM);
+  - `SPEC-CTX-EDGE GATE: ALL GREEN`.
+
+**Running.** None. Lane A is finished; its next items need a new pre-registration. Lane B holds for the owner's
+`MEMRA_ADMIT_BY_MEMORY` decision.
+
+**Owner decisions flagged.**
+- `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-10-07): integ56's packet.
+- 2026-10-05, the contracts door: integ54's readings, with M' now passed on both cards and the D2D half closed.
+- 2026-10-04: MoE slot cache, VMM.
+- 2026-10-06: the park door.
+- BOX3's detached OS volume: keep or delete.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
