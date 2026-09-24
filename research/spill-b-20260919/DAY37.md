@@ -439,3 +439,27 @@ For the 5090 class the rules select helper grows and owner-tick reaps (addendum 
   is also the census test `vmm_owed_growth_joins_the_booked_reduction_and_both_parks_trim`).
 - **The reader** first read the door counts per line and so read every A1-GATE line FAIL; the fixed reader reads
   CELL.txt's one-line form (`e76c9bdbd`). No verdict of the fixed reader has been seen before the r3 cells.
+
+### 2.3 The r3 receipts, banked (addenda C and D binary; superseded by r4 before any serving boot)
+
+Binaries: server `c4f3f928...` and gate `380052d0...` (`r3-binaries.sha256`, source `d5923ccae`). `chain-r3` ran
+14:04:09 to 15:14:34Z under `/tmp/memra-5090.lock`: A2, then the gate set of both arms; its boots found the lane's
+`STOP` file (addendum E, 1.14) and ran nothing (`run.log`). The reader's lines (`read-r3.log`), verbatim:
+
+```
+DAY37 A2 card=rtx5090 receipt=grow-32768-r3/receipt/GROW.txt GROW-G1 PASS (grows=28 unequal=0 planes=34 planes_crossed=34 min_crossings_per_plane=12 rule>=5 drift=0 tokens_equal=true logits_equal=true prefix_state_equal=true final_state_equal=true) committed=32768 generated=128
+DAY37 A1-GATE card=rtx5090 cell=admit-mem-burst pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=0/0 door_on/off pooled=0/1 vmm=1/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=fault-default pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=160/160 door_on/off pooled=0/14 vmm=14/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=fault-plain pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=160/160 door_on/off pooled=0/14 vmm=14/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=hit-off pooled=[rc=0 ALL GREEN (qwen)] vmm=[rc=0 ALL GREEN (qwen)] ok_lines=61/61 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=hit-on pooled=[rc=0 ALL GREEN (qwen)] vmm=[rc=0 ALL GREEN (qwen)] ok_lines=68/68 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=identity-default-on pooled=[rc=0 ALL GREEN (teeth=0)] vmm=[rc=0 ALL GREEN (teeth=0)] ok_lines=12/12 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=serve-smoke pooled=[rc=0 serve-smoke: 0 failed] vmm=[rc=0 serve-smoke: 0 failed] ok_lines=31/31 door_on/off pooled=0/1 vmm=1/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=spec-ctx-edge pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=0/0 door_on/off pooled=0/3 vmm=3/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=twin27-off pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=twin27-on pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A4 card=rtx5090 retires=0 within_bound=0 worst_over_bound_bytes=0 rule mapped-used<=planes*granule+slack -> FAIL
+```
+
+The A4 line reads FAIL because no serving boot ran (`retires=0`); it is no reading. The reader also listed design v1's
+`grow-32768` line, omitted above (2.2 quotes it). The deciding cell is r4 (1.14).

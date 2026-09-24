@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # WP-B day 38 target-card half (DAY38.md 1.3, addenda A and B): one RTX PRO 6000 Blackwell WS, the 27B at the
-# checkpoint's context, after the day-37 sitting on the same box. Builds green and red from the 5090's day-38 source,
-# pinned (GREEN_SHA, the tree target/day38 was built from; red = green plus day38-red.patch), each in a detached
+# checkpoint's context, after the day-37 sitting on the same box. Green and red come from the 5090's day-38 source,
+# pinned (GREEN_SHA, the r4 tree target/day38 was built from; green reuses the day-37 lane file when its source matches;
+# red = green plus day38-red.patch), each built in a detached
 # worktree, then the same boots as the local chain with the target card's lengths, the reader, and a receipts
 # manifest. Never a signal to anything this lane did not start.
 set -uo pipefail
@@ -14,11 +15,17 @@ log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$R/chain.log"; }
 cd "$WT" || { log "no $WT"; exit 1; }
 git fetch -q origin lane/spill-b-20260919 && git merge --ff-only -q FETCH_HEAD >> "$R/fetch.log" 2>&1 || { log "fetch/ff failed"; exit 1; }
 git rev-parse HEAD > "$R/source.txt"
-GREEN_SHA=${GREEN_SHA:-99fef8898}
+GREEN_SHA=${GREEN_SHA:-c6f9282c26e71349c0263b88dc7beb59c4a57797}
 [ "$(sha256sum "$MODEL" | cut -d' ' -f1)" = "$WANT_MODEL" ] || { log "model sha256 mismatch; not run"; exit 1; }
 nvidia-smi --query-gpu=name,power.limit,memory.total --format=csv > "$R/card.csv"
 command grep -q "RTX PRO 6000 Blackwell" "$R/card.csv" || { log "not an RTX PRO 6000 Blackwell: $(tail -1 "$R/card.csv")"; exit 1; }
 [ "${DRY_RUN:-0}" = 1 ] && { log "dry run done"; exit 0; }
+# The day-37 sitting's lane binary is the same source (r4): reuse the file when its source matches.
+L37=/root/spill-receipts/b-day37/bins/lane
+if [ ! -x "$R/bins/green/memra-server" ] && [ "$(cat "$L37/source.commit" 2>/dev/null)" = "$(git rev-parse "$GREEN_SHA")" ]; then
+  cp "$L37/memra-server" "$R/bins/green/memra-server"; cp "$L37/source.commit" "$R/bins/green/source.commit"
+  echo "copied from $L37 (the day-37 lane build, same source)" > "$R/bins/green/source.note"
+fi
 if [ ! -x "$R/bins/green/memra-server" ]; then
   W=/root/wt-b38-green
   git worktree add --detach "$W" "$GREEN_SHA" >> "$R/fetch.log" 2>&1 || { log "green worktree failed"; exit 1; }

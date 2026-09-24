@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# WP-B day 39 builds (DAY39.md 1.3): green = GREEN_SHA (the O5 commit's tree), red = the same tree with
+# WP-B day 39 builds (DAY39.md 1.3): green = GREEN_SHA (the r4 tree, the lane tip at the first boot), red = the same tree with
 # day39-red.patch applied (the reverse of that commit's crates diff: the day-33/35 booking), each in its own detached
 # worktree, one after the other into one CARGO_TARGET_DIR. Records source.commit (and the patch sha256 for red) and
 # SHA256SUMS. usage: day39-build.sh <bins dir>
@@ -7,7 +7,7 @@
 set -uo pipefail
 OUT=${1:?bins dir}
 WT=${WT:-$HOME/projects/wt-spill-b}
-GREEN_SHA=${GREEN_SHA:-6262506fc564df66ff11998ad7cdb7cb24353d61}
+GREEN_SHA=${GREEN_SHA:-c6f9282c26e71349c0263b88dc7beb59c4a57797}
 TARGET=${TARGET:-$WT/target/day39-build}
 PATCH=$WT/research/spill-b-20260919/day39-red.patch
 read -r -a WRAP <<< "${WRAP:-nice -n 10}"

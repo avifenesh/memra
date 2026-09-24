@@ -15,3 +15,11 @@ HEAD is now at d5923ccae feat(kv): DAY37 addendum D, the idle block polls while 
 2026-09-24T14:44:39Z start hit-on env=[ MEMRA_KV_HOST_CONTRACTS=1]
 2026-09-24T14:45:05Z done hit-on rc=0 door_on=0 door_off=2 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
 2026-09-24T14:45:05Z start admit-mem-burst env=[ ]
+2026-09-24T14:50:59Z done admit-mem-burst rc=0 door_on=0 door_off=1 ADMIT-MEM BURST GATE: ALL GREEN
+2026-09-24T14:50:59Z start spec-ctx-edge env=[ ]
+2026-09-24T14:51:16Z done spec-ctx-edge rc=0 door_on=0 door_off=3 SPEC-CTX-EDGE GATE: ALL GREEN
+2026-09-24T14:51:16Z start twin27-off env=[ ]
+2026-09-24T14:53:29Z done twin27-off rc=0 door_on=0 door_off=2 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 i
+2026-09-24T14:53:29Z start twin27-on env=[ MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T14:55:41Z done twin27-on rc=0 door_on=0 door_off=2 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 i
+2026-09-24T14:55:41Z gates done arm=pooled

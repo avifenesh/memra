@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # WP-B day 39 target-card half (DAY39.md 1.3, 1.4): one RTX PRO 6000 Blackwell Workstation Edition, the 27B at the
-# checkpoint's context. Builds red and green with day39-build.sh (green = the O5 commit, red = green plus
+# checkpoint's context. Builds red and green with day39-build.sh (green = the r4 tree, reused from the day-37 lane build
+# when its source matches; red = green plus
 # day39-red.patch), then red-R64, red-off, green-R64-r1, green-off, green-R64-r2, each under /tmp/memra-gpu.lock after
 # a bounded idle wait, then day33-compare.py (unchanged), day39-read.py and a receipts manifest. Never a signal to
 # anything this lane did not start. Receipts under /root/spill-receipts/b-day39, mirrored to pro-single-day39/box/.
@@ -19,6 +20,12 @@ git rev-parse HEAD > "$R/source.txt"
 nvidia-smi --query-gpu=name,power.limit,memory.total --format=csv > "$R/card.csv"
 command grep -q "RTX PRO 6000 Blackwell" "$R/card.csv" || { log "not an RTX PRO 6000 Blackwell: $(tail -1 "$R/card.csv")"; exit 1; }
 [ "${DRY_RUN:-0}" = 1 ] && { log "dry run done"; exit 0; }
+# The day-37 sitting's lane binary is the same source (r4): reuse it as green when its source matches.
+L37=/root/spill-receipts/b-day37/bins/lane
+if [ ! -x "$R/bins/green/memra-server" ] && [ "$(cat "$L37/source.commit" 2>/dev/null)" = "$(git rev-parse "${GREEN_SHA:-c6f9282c26e71349c0263b88dc7beb59c4a57797}")" ]; then
+  mkdir -p "$R/bins/green"; cp "$L37/memra-server" "$R/bins/green/memra-server"; cp "$L37/source.commit" "$R/bins/green/source.commit"
+  echo "copied from $L37 (the day-37 lane build, same source)" > "$R/bins/green/source.note"
+fi
 export WT; TARGET=$WT/target WRAP="nice -n 10" bash research/spill-b-20260919/day39-build.sh "$R/bins" > "$R/bins/build.out" 2>&1 \
   || { log "builds failed: $(tail -1 "$R/bins/build.out")"; exit 1; }
 log "chain start HEAD=$(cat "$R/source.txt") $(tr '\n' ' ' < "$R/bins/SHA256SUMS")"

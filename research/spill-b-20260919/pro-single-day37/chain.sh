@@ -18,7 +18,7 @@ WT=/root/wt-b
 MODEL=${MODEL:-/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf}
 WANT_MODEL=1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a
 MAIN_SHA=17dceb981
-LANE_SHA=${LANE_SHA:-d5923ccae634c064a0efab107b991c37355bbdf6}
+LANE_SHA=${LANE_SHA:-c6f9282c26e71349c0263b88dc7beb59c4a57797}
 export PATH=/root/.cargo/bin:/usr/local/cuda/bin:$PATH
 log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$R/chain.log"; }
 cd "$WT" || { log "no $WT"; exit 1; }
@@ -41,7 +41,7 @@ wait_idle() {
   until idle; do [ $SECONDS -ge $deadline ] && { log "$1: card not idle after 7200 s; not run"; exit 3; }; sleep 30; done
 }
 # 1. builds
-# The deciding cell's binaries are the 5090's r3 source (addenda C and D), pinned: the scripts run from the tip.
+# The deciding cell's binaries are the 5090's r4 source (addenda C to E), pinned: the scripts run from the tip.
 if [ ! -x "$R/bins/lane/memra-server" ]; then
   W=/root/wt-b37-lane; mkdir -p "$R/bins/lane"
   git worktree add --detach "$W" "$LANE_SHA" >> "$R/fetch.log" 2>&1 || { log "lane worktree failed"; exit 1; }
@@ -78,16 +78,16 @@ export MEMRA_KV_VMM_GROW=$placement
 echo "$placement" > "$R/stage0/PLACEMENT"
 log "placement for this sitting: MEMRA_KV_VMM_GROW=$placement (stage 0's rule)"
 # 3. A2
-if [ ! -e "$R/grow-32768-r3/collector.exit" ]; then
+if [ ! -e "$R/grow-32768-r4/collector.exit" ]; then
   wait_idle "A2"
   env -u MEMRA_KV_VMM_GROW WT="$WT" ROOT="$R" GATE_BIN="$R/bins/kv-tier-gate" ARTIFACT="$MODEL" \
-    bash research/spill-b-20260919/rtx5090-day37/run-grow.sh pro-single grow-32768-r3 > "$R/grow.log" 2>&1
-  log "A2 rc=$? $(head -1 "$R/grow-32768-r3/receipt/GROW.txt" 2>/dev/null)"
+    bash research/spill-b-20260919/rtx5090-day37/run-grow.sh pro-single grow-32768-r4 > "$R/grow.log" 2>&1
+  log "A2 rc=$? $(head -1 "$R/grow-32768-r4/receipt/GROW.txt" 2>/dev/null)"
 fi
 # 4. A1 gates
 export WT RIG_LOCK=/tmp/memra-gpu.lock MODEL MODEL_TWIN=$MODEL BIN="$R/bins/lane/memra-server" HOSTGATE_MB=256
 for arm in pooled vmm; do
-  out=$R/gates-r3-$arm
+  out=$R/gates-r4-$arm
   if [ -e "$out/battery.log" ] && command grep -q "gates done arm=$arm" "$out/battery.log"; then continue; fi
   wait_idle "gates $arm"; mkdir -p "$out"
   python3 tools/tier-battery.py --rig pro-single --timeout 10800 --out "$out/collector" --external-lock --execute \
@@ -108,6 +108,6 @@ for k in 1 2 3 4 5; do args+=("stream-O1-$k-pooled:pooled:stream" "stream-O1-$k-
 for k in 1 2 3 4 5; do args+=("stream-O2-$k-vmm:vmm:stream" "stream-O2-$k-pooled:pooled:stream"); done
 bash $B "$R" "${args[@]}"
 # 6. reader
-python3 research/spill-b-20260919/day37-read.py pro6000 "$R" gates-r3 > "$R/read.log" 2>&1
+python3 research/spill-b-20260919/day37-read.py pro6000 "$R" gates-r4 > "$R/read.log" 2>&1
 ( cd "$R" && find . -type f ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY37-BOX-DONE"
