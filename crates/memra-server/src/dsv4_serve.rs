@@ -39,8 +39,8 @@ use crate::route_telemetry::{RouteLoad, RouteRun, ServeStats};
 use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request, SpecUsage};
 use memra_engine::dsv4_gpu::{
     DSV4_BATCH_WIDTH_MAX, DecodePath, DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState,
-    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, RoundTake, StageMemory, dsv4_penalize_row,
-    dsv4_sample_row, resolve_vt,
+    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, Dsv4Vt, RoundTake, StageMemory,
+    dsv4_penalize_row, dsv4_sample_row, resolve_vt,
 };
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::{Tokenizer, chat};
@@ -125,6 +125,42 @@ pub struct Dsv4Model {
     pub prefill_chunk: usize,
     /// The route's memory book, calibrated at load (memra#503).
     pub memory: Dsv4Memory,
+    /// The spec route's verify policy, resolved once at load.
+    pub spec_policy: Dsv4SpecPolicy,
+}
+
+/// The spec route's verify policy: the per-round depth ceiling (`MEMRA_DSV4_SPEC_DEPTH`,
+/// unset = the drafter's own `block_size + 1`) and the confidence window (`MEMRA_DSV4_VT`,
+/// `MEMRA_DSV4_VT_TAU`, `MEMRA_DSV4_VT_FLOOR`). Resolved at load, so a bad value refuses the
+/// boot instead of failing every spec request with an engine error.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Dsv4SpecPolicy {
+    pub depth_cap: usize,
+    pub vt: Dsv4Vt,
+}
+
+fn resolve_spec_policy(
+    depth: Option<&str>,
+    vt: Option<&str>,
+    tau: Option<&str>,
+    floor: Option<&str>,
+) -> Result<Dsv4SpecPolicy, String> {
+    let depth_cap = match depth {
+        None => usize::MAX,
+        Some(raw) => match raw.trim().parse::<usize>() {
+            Ok(d) if d > 0 => d,
+            _ => {
+                return Err(format!(
+                    "MEMRA_DSV4_SPEC_DEPTH {raw:?} is not a positive integer (unset = the \
+                     drafter's own depth)"
+                ));
+            }
+        },
+    };
+    Ok(Dsv4SpecPolicy {
+        depth_cap,
+        vt: resolve_vt(vt, tau, floor)?,
+    })
 }
 
 /// What a session costs on each stage beyond its capacity-planned layer caches, and the most
@@ -760,6 +796,13 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         std::env::var_os("MEMRA_DSV4_KV_HOST_MB"),
     )?;
     let host_cache_mb = host_cache_bytes / (1024 * 1024);
+    let spec_policy = resolve_spec_policy(
+        configured_env_text("MEMRA_DSV4_SPEC_DEPTH")?.as_deref(),
+        configured_env_text("MEMRA_DSV4_VT")?.as_deref(),
+        configured_env_text("MEMRA_DSV4_VT_TAU")?.as_deref(),
+        configured_env_text("MEMRA_DSV4_VT_FLOOR")?.as_deref(),
+    )
+    .map_err(|e| format!("dsv4 model {name:?}: {e}"))?;
     let prefill_chunk_raw = configured_env_text("MEMRA_DSV4_PREFILL_CHUNK")?;
     let prefill_chunk = resolve_prefill_chunk(prefill_chunk_raw.as_deref(), max_seq)?;
     let c4_host_raw = configured_env_text("MEMRA_DSV4_C4_HOST_MB")?;
@@ -813,6 +856,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         c4_host_bytes,
         prefill_chunk,
         memory: Dsv4Memory::default(),
+        spec_policy,
     };
     m.memory = calibrate_memory(&m).map_err(|e| format!("dsv4 memory calibration: {e}"))?;
     let per_stage = |v: &[u64]| {
@@ -1774,19 +1818,8 @@ fn serve_one(
     let mut dstate_to_park: Option<DsparkState> = None;
 
     if use_spec {
-        // the env-seam depth/window policy — exactly the bench drivers' law
-        let depth_cap = std::env::var("MEMRA_DSV4_SPEC_DEPTH")
-            .ok()
-            .and_then(|v| v.trim().parse::<usize>().ok())
-            .filter(|t| *t > 0)
-            .unwrap_or(usize::MAX)
-            .max(1);
-        let vt = resolve_vt(
-            std::env::var("MEMRA_DSV4_VT").ok().as_deref(),
-            std::env::var("MEMRA_DSV4_VT_TAU").ok().as_deref(),
-            std::env::var("MEMRA_DSV4_VT_FLOOR").ok().as_deref(),
-        )
-        .map_err(EngineError::engine)?;
+        // the depth/window policy resolved at load — exactly the bench drivers' law
+        let Dsv4SpecPolicy { depth_cap, vt } = m.spec_policy;
         let (mut state, mut dstate, initial_logits) = if let Some(hit) = restored.take() {
             (
                 hit.state,
@@ -2069,6 +2102,42 @@ fn argmax(v: &[f32]) -> u32 {
         }
     }
     best as u32
+}
+
+#[cfg(test)]
+mod spec_policy_tests {
+    use super::{Dsv4SpecPolicy, resolve_spec_policy};
+    use memra_engine::dsv4_gpu::Dsv4Vt;
+
+    /// Unset knobs are the drafter's own depth and no window; a valid depth and `slot` pass
+    /// through. Anything else refuses at load and names its value, so a typo cannot boot a
+    /// server that fails every spec request (`slot@0.5` did exactly that on 2026-09-24).
+    #[test]
+    fn a_bad_spec_knob_refuses_by_name() {
+        assert_eq!(
+            resolve_spec_policy(None, None, None, None),
+            Ok(Dsv4SpecPolicy {
+                depth_cap: usize::MAX,
+                vt: Dsv4Vt::Off
+            })
+        );
+        assert_eq!(
+            resolve_spec_policy(Some("4"), Some("off"), None, None).map(|p| p.depth_cap),
+            Ok(4)
+        );
+        assert!(matches!(
+            resolve_spec_policy(None, Some("slot"), None, None).map(|p| p.vt),
+            Ok(Dsv4Vt::Slot { floor: 0, .. })
+        ));
+        for depth in ["0", "", "four", "-1"] {
+            let err = resolve_spec_policy(Some(depth), None, None, None).unwrap_err();
+            assert!(err.contains("MEMRA_DSV4_SPEC_DEPTH"), "{depth:?}: {err}");
+        }
+        let err = resolve_spec_policy(None, Some("slot@0.5"), None, None).unwrap_err();
+        assert!(err.contains("slot@0.5"), "{err}");
+        let err = resolve_spec_policy(None, None, Some("0.5"), None).unwrap_err();
+        assert!(err.contains("MEMRA_DSV4_VT_TAU"), "{err}");
+    }
 }
 
 #[cfg(test)]

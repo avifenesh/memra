@@ -516,12 +516,25 @@ fn main() {
         other => panic!("the spec==plain identity gate runs the REF contract, got {other:?}"),
     };
     let max_seq = (p0 + n_new + 32).max(256);
+    // `--tpep` also takes the exact attention TP2 program when the gate selector asks for it.
+    let attention_tp = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("0") => false,
+        Ok("1") if tp_ep => true,
+        _ => panic!("MEMRA_DSV4_ATTENTION_TP_GATE requires 0, or 1 with --tpep"),
+    };
     Dsv4Gpu::set_tp_ep_topology_for_gate(tp_ep);
+    Dsv4Gpu::set_attention_tp_for_gate(attention_tp);
     let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq).expect("load");
+    Dsv4Gpu::set_attention_tp_for_gate(false);
     assert_eq!(
         gpu.topology().is_tp_ep(),
         tp_ep,
         "no silent topology fallback"
+    );
+    assert_eq!(
+        gpu.attention_tp_geometry().is_some(),
+        attention_tp,
+        "no silent attention program fallback"
     );
     println!(
         "loaded: topology {}, split at layer {}, verify tmax {}, t={:.0}s",

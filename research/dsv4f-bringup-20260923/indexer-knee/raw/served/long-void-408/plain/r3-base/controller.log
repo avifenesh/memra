@@ -1,0 +1,6 @@
+START utc=2026-09-23T22:22:23Z bin=/root/lane/target-main/release/memra-server env=
+READY after=128s port=59665
+CELL warmup c=1 ok=1/1 agg=36.85 tok/s decode_p50=51.42 tok/s ttft_p50=265 ms tpot_p50=19.45 ms errs=[]
+CELL greedy-32k c=1 ok=0/2 agg=0.00 tok/s decode_p50=None tok/s ttft_p50=None ms tpot_p50=None ms errs=['HTTP Error 408: Request Timeout', 'HTTP Error 408: Request Timeout']
+CELL greedy-64k c=1 ok=0/1 agg=0.00 tok/s decode_p50=None tok/s ttft_p50=None ms tpot_p50=None ms errs=['HTTP Error 408: Request Timeout']
+CELLS_DONE utc=2026-09-23T22:29:02Z

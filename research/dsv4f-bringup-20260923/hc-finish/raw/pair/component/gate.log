@@ -1,0 +1,9 @@
+START utc=2026-09-23T19:11:08Z cmd=/root/lane/target-hc2/release/deps/dsv4_hc_finish_gpu-577f3bf906f6ac27 --ignored --nocapture --test-threads=1 dsv4_hc_finish_is_bit_identical
+
+running 1 test
+test dsv4_hc_finish_is_bit_identical_to_the_unfused_chain ... DSV4_HC_FINISH EXACT cases=144 outputs=7 slices=8,16,32 rows=1,2,5,6 red_arms=3
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.38s
+
+GATE_DONE rc=0 utc=2026-09-23T19:11:10Z

@@ -1063,6 +1063,30 @@ HC red arm moves one mix of row 5 and requires rows 0..5 to stay bit-equal. The 
 on every row count, so this is the proof that plain and verify rows stay one numeric program. Receipts:
 `research/dsv4f-bringup-20260923/small-diet/`.
 
+### DSv4 HC finish at the kernel boundary (HC2 lane)
+
+`cargo test -p memra-engine --release --test dsv4_hc_finish_gpu -- --ignored --test-threads=1 dsv4_hc_finish_is_bit_identical`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) runs the split-dot partials plus
+the fused HC finish against the unfused chain they replace (split dots, rowsq, Sinkhorn,
+collapse, entry RMSNorm, bf16 pack) and requires all seven outputs to compare `to_bits`-equal:
+144 cases over slice counts 8, 16 and 32, four residual and three weight magnitude ranges, and
+1, 2, 5 and 6 rows. The served launch passes no y; the other six outputs must not move. Red arms
+bump one HC weight row, one gate scale and one norm weight by 2^-10 relative and require the fed
+output to move (one weight element alone sits below the dot's ulp and proved nothing on the
+first target-card run). `dsv4_hc_finish_timing` prints the device time per HC entry site for the
+unfused chain, main's diet and the fused pair at 1 and 6 rows. Receipts:
+`research/dsv4f-bringup-20260923/hc-finish/`.
+
+### DSv4 compressor BF16 island storage (#695)
+
+`cargo test -p memra-engine --release --test dsv4_island_bf16_gpu -- --ignored --test-threads=1`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) runs all five dots entries the
+compressor reaches from the BF16 checkpoint plane (`w_is_bf16 = 1`) and from its exact f32
+widening, and requires `to_bits`-equal outputs: 60 cases over the three compressor shapes
+(latent 1024, 512 and 256 over hidden 4096) and 1, 2, 6 and 33 rows. The red arm moves one
+row's BF16 weights by one ulp and requires that row to move and its neighbour not to. Receipts:
+`research/dsv4f-bringup-20260923/cmp-diet/`.
+
 ### DSv4 batch-1 latency kernels (latency lane)
 
 `cargo test -p memra-engine --release --test dsv4_latency_kernels_gpu -- --ignored --test-threads=1 --skip latency_kernel_timing`

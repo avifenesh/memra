@@ -1,0 +1,4 @@
+READY after=125s
+CELL warmup c=1 ok=1/1 agg=37.02 tok/s decode_p50=51.33 tok/s ttft_p50=260 ms tpot_p50=19.48 ms errs=[]
+CELL prof-greedy c=1 ok=2/2 agg=47.73 tok/s decode_p50=49.66 tok/s ttft_p50=228 ms tpot_p50=20.14 ms errs=[]
+PROF_DONE capture span 10702.6 ms over 510 steps = 20.99 ms/step dev0: kernels 737116 (1445/step) kernel-sum 7.56 ms/step busy-union 7.75 ms/step memcpys 229/step dev1: kernels 718346 (1409/step) kernel-sum 7.99 ms/step busy-union 8.20 ms/step memcpys 237/step 

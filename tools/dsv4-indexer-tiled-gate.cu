@@ -124,7 +124,21 @@ int main(int argc, char** argv) {
     try {
         const bool teeth = argc > 1 && std::string(argv[1]) == "--teeth";
         const bool perf = argc > 1 && std::string(argv[1]) == "--perf";
+        const bool knee = argc > 1 && std::string(argv[1]) == "--knee";
         size_t compared = 0;
+        if (knee) {
+            // Dispatch-knee sweep at the served shapes: s=1 plain decode (fixed limit, the
+            // f32acc scorer), then s=6 DSpark verify, s=16/32 between, and s=64/256/512 chunked prefill
+            // (absolute positions, the pos_m scorer). Every cell is also a bit gate.
+            for (int nb : {129, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 8192,
+                           16384, 32768, 65536})
+                compared += cell(1, nb, -1, nb, false, false, true);
+            for (int s : {6, 16, 32, 64, 256, 512})
+                for (int nb : {129, 192, 256, 384, 512, 768, 1024, 1536, 2048, 4096, 8192, 16384})
+                    compared += cell(s, nb, std::max(0, nb * 4 - s), -1, false, false, true);
+            printf("KNEE PASS comparisons=%zu\n", compared);
+            return 0;
+        }
         for (int nb : {1, 127, 128, 129, 4096, 4103, 65536, 262147}) {
             compared += cell(1, nb, -1, nb, false, teeth, perf);
             compared += cell(5, nb, std::min(1048576, std::max(0, nb * 4 - 7)), -1, false, false, false);
