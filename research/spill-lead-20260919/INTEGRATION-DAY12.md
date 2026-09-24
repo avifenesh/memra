@@ -3396,6 +3396,17 @@ all behind the default-OFF door `MEMRA_KV_HOST_CONTRACTS`:
 - One numeric program per request holds: the digest is the same `checksum` over the same bytes, only on the helper,
   and the corrupted-byte cell is refused at both the bind and the promote.
 
+**The review fix, before merge.**
+- Revuto on #711 found an ordering bug in M''s guard. `host_demote_settle_hashing` called `land()`, handing the
+  KV planes back, before checking `reply.seq == seq`.
+- A reply for another ticket says nothing about this job's views, which the helper may still hold or be reading.
+  The latch path then dropped real leases under that read, breaking the guard's own rule.
+- The lead's fix `43d16d73f`: the guard lands only on a reply for this ticket (`reply_is_ours`). On a foreign reply
+  it stays in `hashing`, and its `Drop` leaks the leases on the latch path. The census pins the order.
+- Only the mismatch branch changes: for any reply that matches `seq` (every gate's path), the take and land are
+  the same as before. Server lib 893 passed and clippy is clean. The 5090 battery on the fixed head (`integ57-5090-r2/`, binary
+  `bec0b102`) is all green: the same cells and counts as the first run, fault default and plain 160 ok each.
+
 **Ruling 52:**
 - Day 35 is read as registered.
 - F stays (a per-card win on the 5090, flat on the target card).

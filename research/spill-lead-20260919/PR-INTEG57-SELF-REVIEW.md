@@ -46,6 +46,12 @@ Author's review of the full diff `main..lane/spill-integ57-20260924`, posted as 
   cells, identity, fault default and plain (160 ok each), hit OFF/ON, admit-mem-burst and spec-ctx-edge, all green.
 - No target-card sitting was pre-registered for M'. It joins the next rented card's sitting.
 
+**The review fix `43d16d73f` (revuto's finding)**
+- The guard landed before the reply's `seq` check, so a foreign reply could free leases the helper might still read.
+- It now lands only when `reply.seq == seq`, and otherwise leaks on the latch path. The census pins the order.
+- Every matching reply takes the same path as before. The 5090 battery on the fixed head (binary `bec0b102`) is
+  all green.
+
 **Hygiene:** no provider name, host, id or price in tracked files. No em dash in authored lines.
 
 ## Push regime
