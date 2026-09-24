@@ -3276,9 +3276,23 @@ mod tests {
         assert!(take_body.contains("if i.direction == CopyDirection::DeviceToDevice {"));
     }
 
+    /// WP-A day 37 (`DAY37.md` section 5, finding 5): a native cell OWNS its context, a
+    /// non-primary one it creates and drives from its one thread, the shape the engine's contract
+    /// states (one CUDA owner thread per context; `check_thread`). Cells that retained the shared
+    /// primary context ran several owner threads on one context when run in parallel, and there a
+    /// pinned free on any one of them (`cuMemFreeHost`) held every other owner's driver calls
+    /// until the context's device work drained, another cell's 300 ms hold included
+    /// (`day37-hold-probe`: about 260 ms per held call in the same context, none across contexts).
+    fn cell_context() -> Arc<CudaContext> {
+        CudaContext::new_non_primary(0, 0).unwrap()
+    }
     fn native_fixture() -> (CudaTransfers, Arc<CudaStream>, SharedBudget) {
+        native_fixture_on(&cell_context())
+    }
+    /// The day-20 fixture on a context the cell already owns (a second `CudaTransfers` on the
+    /// cell's own thread and context, as before when every cell shared the primary one).
+    fn native_fixture_on(ctx: &Arc<CudaContext>) -> (CudaTransfers, Arc<CudaStream>, SharedBudget) {
         use memra_tier::tier::governor::Governor;
-        let ctx = CudaContext::new(0).unwrap();
         let stream = ctx.new_stream().unwrap();
         let cap = TierBudget {
             version: 1,
@@ -3308,6 +3322,41 @@ mod tests {
             deadline: Deadline(u64::MAX),
             tenant: [0; 32],
         }
+    }
+    /// WP-A day 37 (`DAY37.md` section 5): every native cell of this module owns its context
+    /// (`cell_context()`, non-primary, created and driven by the cell's one thread), so cells
+    /// run in parallel are one owner thread per context each, as the engine's contract states;
+    /// none retains the shared primary context.
+    #[test]
+    fn native_cells_own_their_context() {
+        let src = include_str!("tier_transfer.rs");
+        let tests = &src[src.find("#[cfg(test)]\nmod tests").unwrap()..];
+        assert_eq!(tests.matches(concat!("CudaContext::", "new(")).count(), 0);
+        assert_eq!(
+            tests
+                .matches(concat!("CudaContext::", "new_non_primary("))
+                .count(),
+            1
+        );
+        let marker = "#[ignore = \"native CUDA required";
+        let mut cells = 0;
+        for (at, _) in tests.match_indices(marker) {
+            let rest = &tests[at..];
+            let end = rest[1..]
+                .find("\n    #[test]")
+                .map(|e| e + 1)
+                .unwrap_or(rest.len());
+            let body = &rest[..end];
+            let name = body.lines().nth(1).unwrap_or_default().trim();
+            assert!(
+                body.contains("cell_context()")
+                    || body.contains("native_fixture()")
+                    || body.contains("receipt_fixture()"),
+                "{name} does not own its context"
+            );
+            cells += 1;
+        }
+        assert_eq!(cells, 11, "the module's native cells");
     }
     /// WP-A day 37 (`DAY37.md` section 1, finding 5's instrument): poll a timed-hold cell's
     /// ticket until its first KV item is observed landed, the same loop the cells ran inline
@@ -3406,7 +3455,7 @@ mod tests {
     #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
     fn d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event() {
         use memra_tier::tier::governor::Governor;
-        let ctx = CudaContext::new(0).unwrap();
+        let ctx = cell_context();
         let stream = ctx.new_stream().unwrap();
         let cap = TierBudget {
             version: 1,
@@ -3443,7 +3492,7 @@ mod tests {
             destinations.push(lease);
         }
         // The class does not exist without the copy stream.
-        let (mut on_owner, _s, _g) = native_fixture();
+        let (mut on_owner, _s, _g) = native_fixture_on(&ctx);
         assert!(matches!(
             on_owner.submit_d2d_capture(Vec::new(), epochs),
             Err(Error::Unsupported)
@@ -3530,7 +3579,7 @@ mod tests {
     #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
     fn d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait() {
         use memra_tier::tier::governor::Governor;
-        let ctx = CudaContext::new(0).unwrap();
+        let ctx = cell_context();
         let stream = ctx.new_stream().unwrap();
         let cap = TierBudget {
             version: 1,
@@ -3562,7 +3611,7 @@ mod tests {
             .map(|_| stream.alloc_zeros::<u8>(bytes).unwrap())
             .collect();
         // The class does not exist without the copy stream.
-        let (mut on_owner, _s, _g) = native_fixture();
+        let (mut on_owner, _s, _g) = native_fixture_on(&ctx);
         assert!(matches!(
             on_owner.submit_d2d_restore(Vec::new(), epochs),
             Err(Error::Unsupported)
@@ -3658,7 +3707,7 @@ mod tests {
     /// copy and the cell could not show the fault the server shows).
     fn receipt_fixture() -> (CudaTransfers, Arc<CudaStream>) {
         use memra_tier::tier::governor::Governor;
-        let ctx = CudaContext::new(0).unwrap();
+        let ctx = cell_context();
         // SAFETY: no slice of this context exists yet; every slice below is created untracked,
         // exactly as the engine's are.
         unsafe { ctx.disable_event_tracking() };
@@ -4042,7 +4091,7 @@ mod tests {
     #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
     fn d2h_span_batch_lands_with_its_ticket_on_the_copy_stream() {
         use memra_tier::tier::governor::Governor;
-        let ctx = CudaContext::new(0).unwrap();
+        let ctx = cell_context();
         let stream = ctx.new_stream().unwrap();
         let cap = TierBudget {
             version: 1,
@@ -4299,7 +4348,7 @@ mod tests {
     #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
     fn h2d_span_batch_lands_with_its_ticket_on_the_copy_stream() {
         use memra_tier::tier::governor::Governor;
-        let ctx = CudaContext::new(0).unwrap();
+        let ctx = cell_context();
         let stream = ctx.new_stream().unwrap();
         let cap = TierBudget {
             version: 1,
@@ -4473,7 +4522,7 @@ mod tests {
     #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
     fn h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies() {
         use memra_tier::tier::governor::Governor;
-        let ctx = CudaContext::new(0).unwrap();
+        let ctx = cell_context();
         let stream = ctx.new_stream().unwrap();
         let cap = TierBudget {
             version: 1,
@@ -4644,7 +4693,7 @@ mod tests {
         unsafe extern "C" fn sleep_200ms(_: *mut std::ffi::c_void) {
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
-        let ctx = CudaContext::new(0).unwrap();
+        let ctx = cell_context();
         let owner = ctx.new_stream().unwrap();
         let copy = ctx.new_stream().unwrap();
         let host_bytes: Vec<u8> = (0..(4usize << 20)).map(|i| (i % 253) as u8).collect();
@@ -4741,7 +4790,7 @@ mod tests {
     #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
     fn h2d_deferred_checksum_lands_with_the_supplied_digests() {
         use memra_tier::tier::governor::Governor;
-        let ctx = CudaContext::new(0).unwrap();
+        let ctx = cell_context();
         let stream = ctx.new_stream().unwrap();
         let cap = TierBudget {
             version: 1,
