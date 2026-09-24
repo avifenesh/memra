@@ -398,7 +398,7 @@ no engine error was logged. Two `dsv4-serve` lane threads were spinning in state
 (`raw/turnover/ws/r7-C-hang/hang-capture.txt`): a host wait on work that never completed, the
 same shape as the earlier WS-pod stall. SIGTERM drained at its 30 s deadline with 2 requests in
 flight. No fix row hung or faulted: SE r1 to r8 and WS r1, r4 and r5, 5,376 request endings.
-One control hang in 12 control rows is not a rate. Freeing pinned memory under a queued copy is
+One control hang in 8 control rows is not a rate. Freeing pinned memory under a queued copy is
 undefined, and the fix removes it by construction. The fix stands on its
 mechanism: freeing pinned memory under a queued copy is undefined, whatever the fault rate.
 Throughput is unchanged: F and C rows agree within row noise (for example ts1 52.19 against 52.13
