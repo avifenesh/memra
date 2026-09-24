@@ -245,3 +245,20 @@ digests, X.XXms)` would misname it. It becomes `; receipts on the receipt stream
 gate's `source-flip` check that the receipts ran on the device and `day38-reading.py`'s kernel regex follow the new
 words, and so do the server census and the FLAGS, KERNELS and TESTING rows. No rule, bound, check, cell or order moves;
 section 4's receipts keep the words they were written with.
+
+## 6. G' before its cell: a defect found by reading, fixed, and the queued cell restarted
+
+- G' built at `80349d455` (binary `befc684a9f97d604..`), its cell queued at 14:32:18Z behind lane B's hold. Before the
+  hold was taken, a read of the landing paths found that `CudaTransfers::synchronize` waited on every item's event, the
+  D2D receipt and the spans, but not on the NEW D2H receipt's event. Under G the receipt preceded the copies on one
+  stream, so the items' events implied it; under G' the receipt runs beside the copies and the items can complete first,
+  so a `Block` settle (a second demote, a promote or a purge meeting the Demoting entry), the abort's
+  synchronize-then-retire and every by-reference route (`ContractD2h::OnTick`) would read the batch unlanded after its
+  one host wait and latch the tier: integ38's D2D-receipt shape, for this class.
+- The queued cell was stopped by this lane while still in its lock wait (its script and its own `flock -w 120 9` child,
+  both this lane's processes; the hold was never taken, no boot ran; the stopped cell's log is kept as
+  `rtx5090-day38/gp-stopped-prehold/`).
+- The fix `c12e80e19`: `synchronize` also waits on the D2H receipt's event; the census pins it; the native cell's
+  landing is now one host wait on the ticket while the receipt still sits behind its 300 ms hold (the `Block` settle's
+  shape), so the cell fails on the unfixed code. Engine lib 548 passed, clippy clean. The G' binary rebuilt
+  (`ded2dd0903719..`), the cell relaunched unchanged in its script, its acceptance section 3's.
