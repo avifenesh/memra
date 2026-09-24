@@ -1087,3 +1087,17 @@ CPU (the fill 11.4 ms), so BOX4 cannot credit F with 1b.
    (not pre-registered), **the D2D half** (the restore's price cell decides; the capture refuted by construction, DAY33
    section 6), and **the strong-form receipt**.
 2. to 4. Unchanged.
+
+## Move 2, day 35: design F settled; the demote's two KV hashes pre-registered (`DAY35.md`)
+
+**The decision.** On the 5090, with K on both arms, F against a revert of F (the day-32 helper fill, H): the promote
+publishes one tick earlier under F, `promote in` 16.2 / 16.5 ms against 23.8 / 24.1, and the promoting request's e2e is
+7.8 / 7.4 ms lower, each past the pre-registered pair noise in both orders (`DAY35 F DECISION -> KEEP`). BOX4 read F
+flat. F stays.
+
+**What Move 2 still owes, in order.**
+
+1. The recurrent f32 state off the tick: **the demote's two owner KV hashes** (design M, pre-registered in DAY35
+   section 2), **the fill's speed** on CPUs where it outlasts the tick (not pre-registered), **the D2D half** (the
+   restore's price cell decides; the capture refuted by construction, DAY33 section 6), and **the strong-form receipt**.
+2. to 4. Unchanged.

@@ -143,3 +143,41 @@ grows by about 10 to 20 ms: hash 1's helper pass (about 8.3 ms on write-combined
 0.5 agent-day. The 5090 is taken first by the lead's integ54 battery (about 30 minutes), then possibly by lane B; the
 cell's hold waits behind both with bounded attempts. The arms are built under `systemd-run --user --scope -q -p
 CPUQuota=1200% -p MemoryMax=20G`, niced, while another lane holds the card.
+
+## 4. The F decision cell, as it ran (`rtx5090-day35/`)
+
+- The arms as built: `HK` = `scratch/spill-a-d35-hk` `44abb96e0` (`a0f915d8a` plus `hk-revert.patch`: the fifteen
+  conflict hunks resolved by section 1's rule; the Filling construction and the fill's submission gained the log-only
+  timeline terms `fill handed` and `submitted`), binary `4465a68212350c3c..`; clippy `-D warnings` clean, server lib
+  `887 passed`. `FK` = `a0f915d8a`, binary `07a0360ffbfaf240..`. Both `cargo build --release -p memra-server`, niced
+  under the CPU quota while lane B held the card. The HK scratch commit's first try went in with hooks off; it was
+  undone and recommitted with the pre-commit hook running before anything was built from it. The branch was local and
+  is deleted after this record; the patch is the arm's source.
+- The hold: taken on the 58th bounded attempt, after 57 busy ones behind lane B's day-36 O1 hold (`run.log`), taken 00:53:08Z, released 01:08:23Z; no
+  compute app at the start or the end (`compute-apps.after.csv` empty). 30 boots, every one ready (`rc=0` 30 of 30),
+  `STALL REPLAY: PASS` 30 of 30. The 9B artifact `52c9cceb190055e0..` (`run.log`). Card telemetry (`card-250ms.csv`,
+  local-time stamps): 3659 samples, 71 to 88 C, 16.3 to 176.2 W.
+
+**The decision, verbatim** (`reading-day35.log`):
+
+- `DAY35 F CLAUSE order=o1 metric=e2e hk=86.75 fk=78.95 hk-minus-fk=+7.81 pair-noise=5.57 (hk range 5.57, fk range
+  3.32) rule hk-minus-fk>pair-noise -> CLEARS`
+- `DAY35 F CLAUSE order=o1 metric=pin hk=23.80 fk=16.20 hk-minus-fk=+7.60 pair-noise=0.90 (hk range 0.90, fk range
+  0.50) rule hk-minus-fk>pair-noise -> CLEARS`
+- `DAY35 F CLAUSE order=o2 metric=e2e hk=88.26 fk=80.82 hk-minus-fk=+7.44 pair-noise=5.03 (hk range 5.03, fk range
+  3.84) rule hk-minus-fk>pair-noise -> CLEARS`
+- `DAY35 F CLAUSE order=o2 metric=pin hk=24.10 fk=16.50 hk-minus-fk=+7.60 pair-noise=0.90 (hk range 0.80, fk range
+  0.90) rule hk-minus-fk>pair-noise -> CLEARS`
+- `DAY35 F DECISION -> KEEP`
+
+**Readings** (not clauses): DAY28 1b against the same OFF boots, `order=o1 arm=hk on=86.8 off=64.7 on_minus_off=+22.1
+rule <=+20.0 -> FAIL`, `order=o1 arm=fk on=78.9 off=64.7 on_minus_off=+14.3 .. -> PASS`, `order=o2 arm=hk .. +22.3 ..
+FAIL`, `order=o2 arm=fk .. +14.9 .. PASS`. Polls: HK `polls [2, 3] (counts [1, 49])` and `[7, 43]`, FK `polls [2]
+(counts [50])` in both orders. The helper's checksum time: HK 8.20 / 8.00 ms, FK 8.80 / 8.80 ms.
+
+**What it says.** Section 1's prediction held: HK's fill lands at the first tick top, K's hash over the write-combined
+leases then ends past the second, and the promote publishes at the third (`promote in` about 24 ms); FK's copy lands in
+the probe's tick and the promote publishes at the second (about 16 ms). F is worth one tick per promote on the 5090 and
+brings 1b under its bound there (HK reads +22.1 / +22.3, the day-32 form of BOX3's failure). BOX4 read F flat (DAY34
+section 7). **F is kept**: it wins on the 5090 and is not worse on the target card. The "owed: a decision A/B" mark on
+integ54 is closed by this cell.

@@ -1,8 +1,6 @@
-# WP-A day 34 resumable state
+# WP-A day 35 resumable state
 
-- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. Merged `origin/main` `25bbb91f5` (integ53, #692) as `37c08c06b`, no conflict. Pre-registration `a40ade417` (DAY34 section 2, design K, before any code); the BOX4 combination `afd58bbde` (DAY34 section 4, before the sitting). Code: tier `88b734bc9`, engine `e3424be24`, server `100214477`. Receipts `172beb696`, `22363f29d` (5090), `c37eecbeb` (BOX4). Every push in the announced `MEMRA_RELEASE_QUALIFICATION_MODE=development` mode. Write-up `DAY34.md`.
-- Design K: the off-tick promote's KV completion checksums leave the owner thread for the hash helper (`defer_h2d_checksums` hands out raw lease views, the helper digests them, `supply_h2d_checksums` returns them; an item lands only with its supplied digest; `recover_source` is Busy while views are out). Verification semantics unchanged (the failure gate's `digest` cell, the GPU refusal cell).
-- 5090 (9B): landing-poll hold 8.50 to 0.12 ms, e2e +0.21 / +0.50, gates ALL GREEN.
-- BOX4 (27B): day 33's (a) to (d) PASS and day 34's (a) to (d) PASS; the day-32 binary also meets DAY28 1b there (+12.8 / +12.7), design F's copy misses the probe's tick (the fill 11.4 ms on that CPU), and K's millisecond sits in the pending first poll (1.10 to 0.03 ms).
-- Resync after the server-side API stop at about 21:55Z: DAY33 and DAY34 re-read, `git fetch` and log, the running BOX4 driver left to finish, no second driver (DAY34 section 7).
-- Owed: the demote's two owner KV hashes; the fill's speed on slower CPUs if the one-tick landing is wanted; the D2D half (the restore's price cell); the strong-form receipt. Lever 1 (cached leases on the 5090) is not this lane's.
+- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`; base `05fbec3b2` (integ54). Pre-registration `a0f915d8a` (DAY35 sections 1 and 2, before any arm or code). The cell's script and reader `bc97178b4`; receipts `cbf52cc16`. Write-up `DAY35.md`.
+- F settled on the 5090: `DAY35 F DECISION -> KEEP` (HK minus FK e2e +7.81 / +7.44 over pair noise 5.57 / 5.03; promote in-ms +7.60 / +7.60 over 0.90 / 0.90). The HK arm's source is `rtx5090-day35/hk-revert.patch`; its scratch branch is deleted.
+- Next: design M (DAY35 section 2), the demote's two owner-thread KV hashes: M1 hash 1 deferred to the helper (tier rule `d2h_deferred_checksum` first), M2 hash 2 in the Hashing job, the ordering rule; acceptance (a) to (d) and the 5090 A/B as written there.
+- Owed after M: the fill's speed on slower CPUs (not pre-registered), the D2D half, the strong-form receipt. Lever 1 is not this lane's.
