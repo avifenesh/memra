@@ -18740,6 +18740,11 @@ impl Dsv4Gpu {
             ring_commit_plan(pos0, n_commit, win)
         };
         let ring_keep = slot_rows.len();
+        // Every layer of a stage scatters into its own cache through the stage's one
+        // `slot_rows` buffer, and the ring plan is the same for every layer (one global
+        // window), so each stage uploads it once per commit; later layers' scatters read it
+        // in stream order (memra #710 stage 0: 43 uploads per step became 2).
+        let mut slot_rows_live = vec![false; self.stages.len()];
         for il in 0..n_trunk {
             let stage = stage_override.unwrap_or(self.layer_stage[il]);
             if stage >= self.stages.len() {
@@ -18759,7 +18764,11 @@ impl Dsv4Gpu {
             // Only the newest window survives. Scattering every committed row
             // when n_commit>win races multiple writers to the same ring slot.
             if ring_keep != 0 {
-                {
+                // The transaction rows sit at `trans_base >= win`, past every ring slot, so the
+                // scatter reads them in place; the bounce copy only served the borrow checker
+                // (memra #710 stage 0). A layout without that gap keeps the bounce.
+                let direct = trans_base >= win;
+                if !direct {
                     let src = cache
                         .kvc
                         .slice((trans_base + ring_start) * hd..(trans_base + n_commit) * hd);
@@ -18768,7 +18777,8 @@ impl Dsv4Gpu {
                         .memcpy_dtod(&src, &mut dst)
                         .map_err(e("commit bounce"))?;
                 }
-                if !graph_commit {
+                if !graph_commit && !slot_rows_live[stage] {
+                    slot_rows_live[stage] = true;
                     if drain {
                         let mut dst = vws.slot_rows.slice_mut(0..ring_keep);
                         stream
@@ -18783,12 +18793,18 @@ impl Dsv4Gpu {
                             .map_err(e("htod slot rows pinned"))?;
                     }
                 }
+                let kvc = cache.kvc.device_ptr_mut(&stream).0;
+                let src = if direct {
+                    (kvc as *const f32).wrapping_add((trans_base + ring_start) * hd)
+                } else {
+                    vws.bounce.device_ptr(&stream).0 as *const f32
+                };
                 unsafe {
                     ck(
                         "scatter_rows commit",
                         k::memra_dsv4_scatter_rows(
-                            dpf!(vws.bounce, &stream),
-                            dpm!(cache.kvc, &stream),
+                            src,
+                            kvc as *mut f32,
                             vws.slot_rows.device_ptr(&stream).0 as *const i32,
                             ring_keep as i32,
                             hd as i32,
