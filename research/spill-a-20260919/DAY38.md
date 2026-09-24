@@ -623,3 +623,21 @@ the absence of a call, host work between calls) that grows, and the fix is pre-r
   with the copy stream's DMA is the trigger, and the fix is pre-registered as a design that keeps the two apart;
   `x17` humps: the kernel's stream is the trigger (the kernel on a stream other than the copy stream), and the next arm
   is pre-registered on that.
+
+## 13h. x17 as it ran, and two more arms pre-registered before they run
+
+- diag5 (BOX7, `diag5-build rc=0`, six boots to 20:06:16Z, `diag5-cell rc=0`), verbatim (`diag5/reading-hump.log`):
+  `HUMP arm=x1 boots=2 median-hump=+0.569 humps=True`, `HUMP arm=x17 boots=2 median-hump=+0.568 humps=True`, `HUMP
+  arm=x2 boots=2 median-hump=+0.024 humps=False`. **By section 13g's rule, the overlap with the copy stream's DMA is
+  not the trigger: the kernel's stream is.** A kernel on the receipt stream humps however it is ordered against the
+  copies (x1 beside them, x17 ahead of them with the copies waiting, x11 with no D2H of its own); the same kernel on
+  the copy stream (x2, and x8 with an idle third stream beside it) does not.
+- **Two arms, pre-registered** (`diag6-build.sh`, `diag6.sh`, `diag6-x21.patch`): `x1c` = the tip binary booted with the
+  CUDA driver's `CUDA_DEVICE_MAX_CONNECTIONS=32` (the driver's compute work queues per context, default 8; a stream the
+  driver multiplexes onto a queue it shares with the owner stream's is the one mechanism named by stream identity that a
+  boot variable can move; a driver variable in a diagnostic boot, not a memra read); `x21` = the tip with the receipt
+  stream created at the context's highest stream priority (`new_stream_with_priority(greatest)`). Eight boots `x1 x1c x21
+  x2 x2 x21 x1c x1`, the same cell, reader and rule. Outcomes: `x1c` flat: the hardware queue the receipt stream shares
+  is the trigger, and the fix is pre-registered on the queue assignment; `x21` flat: the stream's priority; both hump:
+  the receipt work goes back on the copy stream, and G's two defects on that stream (section 4: the red arm's spin and
+  the kernel ahead of later copy-stream consumers) are designed out under a new pre-registration.
