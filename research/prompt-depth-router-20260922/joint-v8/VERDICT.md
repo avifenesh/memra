@@ -128,7 +128,9 @@ The [v8 receipt](receipts-v8/manifest.json) seals
 6,666 native/source/model members, archive SHA-256
 `a54b6e48e1e1067cc27e5716563be446cfda30a5c859e285af0554f321b2e55c`.
 The v6 training parent seals 13,613 members, and the
-v7 diagnostic seals 164. Independent pod replay
+v7 diagnostic seals 164. Their
+[exact publication boundary](ARCHIVE-BOUNDARY.md)
+is reviewed separately. Independent pod replay
 verified the v8 score and code probes, parent model
 and control hashes, and each archived member.
 The first derived analysis JSON used integer action-map
