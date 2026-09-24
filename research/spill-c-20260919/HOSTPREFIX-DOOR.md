@@ -998,3 +998,10 @@ promote-on arm (`-5.0/0.8`, `-5.1/0.8`). On b2 every copy-complete line carries 
 ledger's pre-submit reads `1.15` to `1.17` ms against b1's `42.44` to `43.71`, and its helper `hashed_in` `104.8` to
 `107.3` against `73.2` to `73.3` (described, not attributed). Promote tick 2 is `not_defined` on b1 and b2. Every cell
 `executed-not-qualified`. The question of this section is unchanged and still not answered here.
+
+DAY 42: no card ran. Lane A days 31 to 36 and rulings 44, 47, 49 and 53 are read into the decision packet
+(`DOOR-DECISION-PACKET.md`, the day-42 update; `DAY42.md`), every quoted line checked present in its receipt file
+(`day42-cpu/packet-lines.log`, `DAY42 PACKET LINES checked=68 missing=0 -> PASS`). Move 2 owed item 1's H2D half
+(ruling 47) and D2D half (ruling 53) are closed; its strong-form receipt, hash 1 on the owner thread and the fill on
+slower CPUs stay owed. The 9B entry's split by class is read (`DAY41.md`, `DAY41 9B SPLIT plain_tuples=1 -> PASS`).
+The question itself is unchanged and still not answered here.

@@ -58,7 +58,9 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   A day 36 the D2D half closes, M' PASS on the target card, ruling 53).
 - **Work.** Read A days 31 to 36 into the packet's sections 2, 4, 5 item 7 and 6 and the appendix, verbatim lines
   only, no recommendation; `HOSTPREFIX-DOOR.md` section E the same.
-- **Status.** Open (records only). Before 2026-10-05.
+- **Status.** Current through lane A day 36 and ruling 53 (day 42, `DAY42.md`: `DAY42 PACKET LINES checked=68
+  missing=0 -> PASS`). Stays open until the review: every later receipt bearing on the door is read in before
+  2026-10-05.
 
 ## C4. The double-park slice (the contracts door, 2026-10-05)
 

@@ -38,3 +38,23 @@ appendix A. A number that cannot be matched to a receipt line is not added.
 
 **Cross-box rule, restated.** BOX3, BOX4 and BOX5 are different machines of the target card class; their rows are
 never subtracted from one another (BOX4's OFF stall reads 93.1 where BOX3's read 85.4, the same cell).
+
+## 2. What was done
+
+- **The check first.** `python3 research/spill-c-20260919/day42-packet-lines.py research` into
+  `day42-cpu/packet-lines.log`: `DAY42 PACKET LINES checked=68 missing=0 -> PASS` (52 lines or line fragments present
+  verbatim in their named receipt files, and 16 gate-count checks: per target-card sitting of A days 31, 32, 34 and 36,
+  4 identity, 2 failure and 2 hit `ALL GREEN` lines, and 1 contract-fault line, 2 on day 36).
+- **The packet** (`DOOR-DECISION-PACKET.md`): the status paragraph gains the day-42 update line; section 2 gains the
+  bullet "Since A days 31 to 36" after the "What still runs on the tick under ON" bullet; section 4's target-card table
+  gains four rows (A day 31 on BOX3, A day 32's same-hold pair on BOX3, A day 34 on BOX4, A day 36 on BOX5) and the RTX
+  5090 table six (the day-41 split, A days 33, 34, 35 twice, 36); item 7 gains its day-42 paragraph (what closed, what
+  stays); section 6's naked-default and longer-door bullets gain a day-42 line each; appendix A names the check.
+- **One addition beyond the registered list, stated.** Section 3 (correctness evidence) was not in section 1's list of
+  changes; the owner needs the gate set's verdicts on the trees the new cost rows come from, so one row was added there
+  (the gate set on A days 31, 32, 34 and 36), its counts checked by the same script before the commit.
+- **`HOSTPREFIX-DOOR.md`** section E gains a DAY 42 paragraph pointing here; the question is unchanged.
+- No recommendation, before or after. No number is compared across BOX3, BOX4 and BOX5.
+
+**Status.** C3 is current through lane A day 36 and ruling 53. It stays open in `OWED.md` until the review: any later
+lane A or lane C receipt that bears on the contracts door is read in the same way before 2026-10-05.
