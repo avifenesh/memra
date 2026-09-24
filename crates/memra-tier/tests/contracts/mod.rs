@@ -29,3 +29,6 @@ mod d2h_span_bindings;
 
 // Day 32 (WP-A, memra#536 Move 2 owed item 1, the H2D half): the typed f32 spans of a promote batch.
 mod h2d_span_bindings;
+
+// Day 34 (WP-A, `DAY34.md` design K): the deferred H2D checksum.
+mod h2d_deferred_checksum_bindings;

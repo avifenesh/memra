@@ -516,12 +516,25 @@ fn main() {
         other => panic!("the spec==plain identity gate runs the REF contract, got {other:?}"),
     };
     let max_seq = (p0 + n_new + 32).max(256);
+    // `--tpep` also takes the exact attention TP2 program when the gate selector asks for it.
+    let attention_tp = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("0") => false,
+        Ok("1") if tp_ep => true,
+        _ => panic!("MEMRA_DSV4_ATTENTION_TP_GATE requires 0, or 1 with --tpep"),
+    };
     Dsv4Gpu::set_tp_ep_topology_for_gate(tp_ep);
+    Dsv4Gpu::set_attention_tp_for_gate(attention_tp);
     let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq).expect("load");
+    Dsv4Gpu::set_attention_tp_for_gate(false);
     assert_eq!(
         gpu.topology().is_tp_ep(),
         tp_ep,
         "no silent topology fallback"
+    );
+    assert_eq!(
+        gpu.attention_tp_geometry().is_some(),
+        attention_tp,
+        "no silent attention program fallback"
     );
     println!(
         "loaded: topology {}, split at layer {}, verify tmax {}, t={:.0}s",
@@ -599,18 +612,36 @@ fn main() {
     // The one-token streaming visitor (memra #664) is an engagement claim as much as an
     // identity one: a forced-ON run whose plain arm never took it proves nothing, and an OFF
     // run that took it is not the OFF program.
+    // The fused one-token pair takes that step ahead of the visitor when its checks are
+    // deferred, so a fused-ON plain arm claims fused dispatches instead of stream ones.
     let stream_before = memra_engine::dsv4_moe_m1_stream_dispatches();
+    let fused_before = memra_engine::dsv4_moe_fused_dispatches();
     let plain = run_plain(&gpu, &prompt, n_new);
     let stream_taken = memra_engine::dsv4_moe_m1_stream_dispatches() - stream_before;
+    let fused_taken = memra_engine::dsv4_moe_fused_dispatches() - fused_before;
     let stream_on = memra_engine::dsv4_moe_m1_stream_on();
+    let fused_on = memra_engine::dsv4_moe_fused_on();
     println!(
-        "arm P (plain device greedy): {} tokens t={:.0}s | m1 stream {} dispatches {}",
+        "arm P (plain device greedy): {} tokens t={:.0}s | m1 stream {} dispatches {} | \
+         fused MoE {} dispatches {}",
         plain.len(),
         t0.elapsed().as_secs_f64(),
         if stream_on { "ON" } else { "OFF" },
-        stream_taken
+        stream_taken,
+        if fused_on { "ON" } else { "OFF" },
+        fused_taken
     );
-    if stream_on == (stream_taken == 0) {
+    // The pair only replaces the visitor, so a stream-OFF (reference) arm takes neither.
+    let fused_expected = fused_on && stream_on;
+    if fused_expected == (fused_taken == 0) {
+        fails.push(format!(
+            "FUSED MOE ENGAGEMENT: fused {} stream {} but the plain arm took {fused_taken} \
+             fused dispatches",
+            if fused_on { "ON" } else { "OFF" },
+            if stream_on { "ON" } else { "OFF" }
+        ));
+    }
+    if !fused_expected && stream_on == (stream_taken == 0) {
         fails.push(format!(
             "M1 STREAM ENGAGEMENT: stream {} but the plain arm took {stream_taken} dispatches",
             if stream_on { "ON" } else { "OFF" }

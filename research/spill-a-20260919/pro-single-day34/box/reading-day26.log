@@ -1,0 +1,32 @@
+DAY26 DOUBLE-PARK ADMISSIBLE all_receipts=True
+DAY26 CLAUSE 1 arm=on N_runs=100 parked_per_run=[1] restore_submitted_per_run=[0] not_routed_per_run=[1] runs_with_parked_1_submitted_0_not_routed_1=100 -> PASS
+DAY26 CLAUSE 1 context arm=off N_runs=100 parked_per_run=[0] not_routed_per_run=[0]
+DAY26 TYPED LINE (one ON run, verbatim): [prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=2, 64 tokens, model gate); the tick program copies it
+DAY26 CLAUSE 2 e2e order=o1 on_median=132.4 off_median=120.3 on_minus_off=+12.0 unc=1.9 expected=+15.8 (day 25: +105.85 minus 90.1) |d-expected|=3.7 -> FAIL
+DAY26 CLAUSE 3 stall order=o1 on_stall_medians=[76.8, 76.8, 76.8, 76.8, 76.8] on_cell_median=76.8 IQR=0.1 off_cell_median=93.1 on_minus_off=-16.3 unc=0.1 -> isolated | against day 25's 149.4 (IQR 0.1): -72.6 -> FINDING (moved, reported with the decomposition, not tuned)
+DAY26 CLAUSE 2 e2e order=o2 on_median=132.3 off_median=120.3 on_minus_off=+12.0 unc=1.9 expected=+15.8 (day 25: +105.85 minus 90.1) |d-expected|=3.7 -> FAIL
+DAY26 CLAUSE 3 stall order=o2 on_stall_medians=[76.7, 76.8, 76.8, 76.9, 76.8] on_cell_median=76.8 IQR=0.1 off_cell_median=93.0 on_minus_off=-16.2 unc=0.1 -> isolated | against day 25's 149.4 (IQR 0.1): -72.6 -> FINDING (moved, reported with the decomposition, not tuned)
+DAY26 DECOMPOSITION arm=on N_runs=100 parked_per_run=[1] restore_readmission=[] promote_completion median=26.3 promote_in median=27.4 demote_completion median=nan demote_in median=208.6 demote_in-completion median=nan idle_p50(tick)=12.08 | tenant top gaps: largest median=88.9 second median=16.6 sum median=105.4
+DAY26 DECOMPOSITION arm=off N_runs=100 parked_per_run=[0] promote_in median=17.0 demote_in median=9.6 | tenant top gaps: largest median=105.1 second median=15.0
+DAY26 CLAUSE 4 restore-arm: NO RECEIPT -> FAIL
+DAY26 CLAUSE 5 hitgate-off: SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen) (ok=61 FAIL=0)
+DAY26 CLAUSE 5 hitgate-on: SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen) (ok=68 FAIL=0)
+DAY26 CLAUSE 5 hitgate-on census: door lines: armed=1 door_on=1 capture_submitted=12 capture_published=12 restore_submitted=13 restore_landed=13 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+DAY26 CLAUSE 5 hitgate-on census: door lines: armed=1 door_on=1 capture_submitted=2 capture_published=2 restore_submitted=3 restore_landed=3 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+DAY26 CLAUSE 5 hitgate-on counts against day 24: spec_on_census_equal=True spec_off_census_equal=True route_submissions=30 (day 24: 30) spec_boundary_captures_with_draft_plane=11 (day 24: 11) not_routed_lines=0 (must be 0: the gate has no promote-then-hit shape) -> PASS
+DAY26 READING identity-default-on route lines: promote_published=1 restore_submitted=1 restore_landed=1 parked=2 not_routed=1 hits=2 (day 24's tree: 1, 2, 2, 3, 0, 2)
+DAY26 READING identity-plain-on route lines: promote_published=1 restore_submitted=1 restore_landed=1 parked=2 not_routed=1 hits=2 (day 24's tree: 1, 2, 2, 3, 0, 2)
+DAY26 READING fault promote-presubmit: promote_published=1 restore_submitted=0 parked=1 not_routed=1
+DAY26 READING fault promote-postpublish: promote_published=1 restore_submitted=0 parked=2 not_routed=1
+DAY26 READING fault promote-readyview: promote_published=1 restore_submitted=0 parked=2 not_routed=1
+DAY26 READING fault promote-reject: promote_published=1 restore_submitted=0 parked=1 not_routed=1
+DAY26 GATE identity-default-off: KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0) (ok=12)
+DAY26 GATE identity-default-on: KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0) (ok=12)
+DAY26 GATE identity-plain-off: KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0) (ok=12)
+DAY26 GATE identity-plain-on: KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0) (ok=12)
+DAY26 GATE failure-off: KV-HOST-SPILL FAILURE GATE: ALL GREEN (ok=15)
+DAY26 GATE failure-on: KV-HOST-SPILL FAILURE GATE: ALL GREEN (ok=15)
+DAY26 GATE contract-fault: KV-HOST-CONTRACT-FAULT GATE: ALL GREEN (ok=160)
+DAY26 GATE twin-off: PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS (ok=0)
+DAY26 GATE twin-on: PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS (ok=0)
+DAY26 ACCEPTANCE clauses (1) (2) (4) (5) = ['PASS', 'FAIL', 'FAIL', 'PASS']; clause (3) is a finding either way (see CLAUSE 3 lines)

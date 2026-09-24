@@ -1,0 +1,22 @@
+   Compiling serde_json v1.0.150
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.98s
+     Running tests/contracts/mod.rs (target/debug/deps/contracts-7e738aecefe88b56)
+
+running 13 tests
+test d2h_span_bindings::d2h_span_enqueue_failure_quarantines_the_ticket ... ok
+test h2d_deferred_checksum_bindings::h2d_deferred_checksum_lands_with_its_digests_and_passes_the_gate ... ok
+test d2h_span_bindings::d2h_span_batch_lands_with_its_ticket_and_comes_back_once ... ok
+test d2h_span_bindings::d2h_span_red_arm_a_take_on_the_items_landing_fails ... ok
+test h2d_deferred_checksum_bindings::h2d_deferred_checksum_mismatch_is_refused_corrupt ... ok
+test h2d_span_bindings::h2d_span_enqueue_failure_quarantines_the_ticket ... ok
+test h2d_span_bindings::h2d_span_batch_lands_with_its_ticket_and_is_read_behind_the_wait ... ok
+test h2d_deferred_checksum_bindings::h2d_deferred_checksum_red_arm_a_copy_alone_fails ... ok
+test h2d_span_bindings::h2d_span_fill_runs_ahead_of_every_copy ... ok
+test h2d_span_bindings::h2d_span_red_arm_a_copy_before_its_fill_fails ... ok
+test h2d_span_bindings::h2d_span_red_arm_an_owner_read_before_the_wait_fails ... ok
+test reader_fence_bindings::day19_h2d_reader_fence_at_settle_with_a_wait_on_the_reader_stream ... ok
+test reader_fence_bindings::day19_h2d_reader_fence_at_submit_is_the_engines_day18_program ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 85 filtered out; finished in 0.00s
+
