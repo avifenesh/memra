@@ -18,6 +18,7 @@ WT=/root/wt-b
 MODEL=${MODEL:-/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf}
 WANT_MODEL=1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a
 MAIN_SHA=17dceb981
+LANE_SHA=${LANE_SHA:-d5923ccae634c064a0efab107b991c37355bbdf6}
 export PATH=/root/.cargo/bin:/usr/local/cuda/bin:$PATH
 log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$R/chain.log"; }
 cd "$WT" || { log "no $WT"; exit 1; }
@@ -40,13 +41,16 @@ wait_idle() {
   until idle; do [ $SECONDS -ge $deadline ] && { log "$1: card not idle after 7200 s; not run"; exit 3; }; sleep 30; done
 }
 # 1. builds
+# The deciding cell's binaries are the 5090's r3 source (addenda C and D), pinned: the scripts run from the tip.
 if [ ! -x "$R/bins/lane/memra-server" ]; then
-  mkdir -p "$R/bins/lane"
-  ( nice -n 10 cargo build --release -p memra-server --bin memra-server -p memra-engine --bin kv-tier-gate --bin vmm-call-cost ) \
-    > "$R/bins/lane/build.log" 2>&1 || { log "lane build failed"; exit 1; }
-  cp target/release/memra-server "$R/bins/lane/memra-server"
-  cp target/release/kv-tier-gate target/release/vmm-call-cost "$R/bins/"
-  git rev-parse HEAD > "$R/bins/lane/build-source.txt"
+  W=/root/wt-b37-lane; mkdir -p "$R/bins/lane"
+  git worktree add --detach "$W" "$LANE_SHA" >> "$R/fetch.log" 2>&1 || { log "lane worktree failed"; exit 1; }
+  ( cd "$W" && CARGO_TARGET_DIR=/root/wt-b/target nice -n 10 cargo build --release -p memra-server --bin memra-server \
+      -p memra-engine --bin kv-tier-gate --bin vmm-call-cost ) > "$R/bins/lane/build.log" 2>&1 || { log "lane build failed"; exit 1; }
+  cp /root/wt-b/target/release/memra-server "$R/bins/lane/memra-server"
+  cp /root/wt-b/target/release/kv-tier-gate /root/wt-b/target/release/vmm-call-cost "$R/bins/"
+  git -C "$W" rev-parse HEAD > "$R/bins/lane/build-source.txt"
+  git worktree remove --force "$W" >> "$R/fetch.log" 2>&1
   log "built lane from $(cat "$R/bins/lane/build-source.txt")"
 fi
 if [ ! -x "$R/bins/main/memra-server" ]; then

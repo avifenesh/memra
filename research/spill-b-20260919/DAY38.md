@@ -93,6 +93,34 @@ Neither card's reading is compared with the other's, and no timing crosses cards
 The client and its reader (`day38-client.py`, `day38-read.py`) with a dry run against a stub; `bash -n` and
 shellcheck on the runners. No engine or server change is planned; if the cell needs one, it is an addendum first.
 
+### 1.8 Addendum A (2026-09-24, from reading the code, before any day-38 code or boot)
+
+Writing the client against the code found that P2 as registered cannot run on the plain path, and a defect beside it:
+
+- **P2's instrument does not reach the plain path.** `MEMRA_STEP_OOM_FAULT` forges its OOM at one point, the spec
+  phase's step dispatch (`"spec step"`), which a plain session never enters. The plain path also has no step-OOM
+  retry: the step-OOM park back to the queue exists in the spec phase only (and the admission door's prefill park).
+  So on the plain path P2's first clause ("parks the first stepping session back to the queue") has no branch to hit.
+- **The defect beside it (door OFF and ON alike).** The session-ending error arms that the plain path can reach send
+  a typed error but leave the session parkable: the non-batching step arm (`MEMRA_SERVE_BATCH=0`), the prefill tick's
+  arm, and the eager-only decode arm set neither `aborted` nor `oom_teardown`, so `retire_may_park` passes and the
+  errored session's cache parks. A later exact-extension or affinity resume could then adopt state that a failed
+  step left behind (a recurrent layer advanced by a token that is not in `fed`). The batched decode arm already sets
+  `aborted` and does not park. The spec phase's honest-error arm has the same shape for a non-OOM error.
+- **The fix, before its code.** Every arm that ends a session on an error marks it unparkable through one new flag
+  (`errored`), which `retire_may_park` reads and which keeps the session out of the completion history exactly as an
+  abort does; a census test pairs every typed-error send of the tick loop's session arms with that flag or with
+  `aborted`. No successful request's program changes.
+- **P2, re-specified for the plain path.** The fault door gains the plain decode dispatch as a second injection point
+  (the batched chunk and the non-batching step; the same quoted synthetic OOM, before any device work; its FLAGS row
+  updated). The fault boots run `on`, shape X at 6,144 with `MEMRA_STEP_OOM_FAULT=1`, in two modes: batched (the
+  default) and `MEMRA_SERVE_BATCH=0`. Clauses: the forged OOM ends the first plain session it reaches with the typed
+  step error; that session writes no `park-compact` line and parks nothing (the boot's `park-compact:` count equals
+  its number of HTTP 200 rows, and that conversation's next turn runs cold with a digest equal to its cold twin's).
+  The non-batching mode also runs once on the unfixed binary (the r3 binary of DAY37) as the red arm; the defect's
+  expected reading there is one extra `park-compact:` line and a resumed next turn.
+- **Unchanged:** P1, P3, P4, the interaction pair and the decision rule.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
