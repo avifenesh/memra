@@ -244,3 +244,30 @@ arm checks that the fix holds on another host and driver; it cannot reproduce th
   stream), `free-sync` (a synchronous `cuMemFree` of a device allocation made before), in another context, victim
   primary, 3 runs each; and the same four X in the SAME context as the victim (the holder thread on the victim's
   context), 3 runs each. Decision as section 6's. The fix is pre-registered on the complete table.
+
+## 8. The completion, as it ran (`probe/teardown2.log`), and the fix pre-registered on the complete table
+
+- One hold 12:21:42Z to 12:22:27Z, N=3. **Same context** (the holder thread on the victim's context): `free-sync`
+  (a synchronous `cuMemFree`) and `module-load` each wait about 280 ms (279.75 to 280.12) and hold the victim's
+  `alloc-zeros`, `event-query`, `htod-pageable` and `malloc-host` 259.97 to 263.34 ms, 12 of 12 each;
+  `module-unload` waits 279.44 to 279.98 ms on its own thread and holds nothing (0.01 to 1.52); `stream-destroy`
+  neither waits nor holds. **Other context**: none of the four holds anything (every Y 0.01 to 1.62 ms, every X
+  0.01 to 0.16 ms).
+- **The complete table** (sections 4, 5, 7, 8): in ONE context, `cuMemFreeHost`, synchronous `cuMemFree` and module
+  load each hold every other thread's driver calls until the context's device work drains; ACROSS contexts only
+  context destruction holds (pinned allocations, about 260 ms), and context creation holds pinned allocations about
+  30 ms. The cells' own setup and teardown reach every same-context holder (the transfers engine's module load in
+  `new_with_copy_stream`, pinned frees on drop), which is why several owners on the primary context cannot run
+  parallel windows; and each per-cell context was destroyed at its cell's end, which is why section 6's fix failed.
+- **The fix, pre-registered before its code (engine test code only).** A pool of contexts for the module's native
+  cells, created in one step before any cell's body runs and alive for the whole test process: the first
+  `cell_context()` call creates `NATIVE_CELLS` non-primary contexts (`CudaContext::new_non_primary(0, 0)`) into a
+  process-lifetime static; every call hands out the next one, one per cell, so each cell is the only owner thread of
+  its context; no context is destroyed while the process runs (the static holds every one), and none is created after
+  the first cell's call. A cell asking past the pool's size panics with a message naming the rule. The d2d cells'
+  second `CudaTransfers` shares its cell's context (`native_fixture_on`). The census pins: no `CudaContext::new(` in the
+  module's tests, `new_non_primary(` exactly once (the pool), `NATIVE_CELLS` equal to the number of native cells, and
+  every native cell reaching its context through the pool. Nothing else in any cell changes.
+- **Acceptance: section 1's, unchanged**, plus nothing: the `all` arm 100 of 100, the `pair` arm 100 of 100, serial
+  green, the red arm (the hold removed from the two finding-5 cells in a scratch build fails both rule-2 assertions),
+  the target card's `all` arm 20 of 20.
