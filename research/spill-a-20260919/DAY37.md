@@ -205,7 +205,7 @@ arm checks that the fix holds on another host and driver; it cannot reproduce th
 
 ## 6. The per-cell-context fix, as it ran (`rtx5090-day37/finding5/fix/`): acceptance FAILED, the fix reverted
 
-- Test binary on `8c8f1fa1f`-era tree (the fix commit, binary hash in `fix/binary.sha256`), one hold 12:08Z to
+- Test binary built at the fix commit `2f5cf17c2` (hash in `fix/binary.sha256`), one hold 12:08Z to
   12:16:44Z, no compute app at either end. Verbatim (`fix/run.log`): the pair arm `100 green of 100`; the serial arm
   3 of 3 (`test result: ok. 11 passed`); the all arm **75 of 100** runs green. The 25 failing all runs carry 35 cell
   failures: `h2d_span_batch` 24, `d2h_span_batch` 8, `h2d_span_filled_batch` 3 (`a batch with a running span has not
