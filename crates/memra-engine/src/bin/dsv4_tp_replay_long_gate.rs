@@ -199,4 +199,46 @@ fn main() {
         "PASS: {steps} replayed steps from position {PREFIX} to {} bit-identical to eager (token, logits, cache and hidden digests); tokens_sha256={tokens_sha}",
         PREFIX + steps
     );
+
+    // Timing: the same continuation from the same restored prefix, eager and replay in
+    // alternating order, wall time per token (each step returns its sampled token to the host).
+    let run = |armed: bool, eager: &mut DecodeState, replay: &mut DecodeState| -> f64 {
+        let state = if armed { replay } else { eager };
+        gpu.restore_full_token_prefix_for_gate(state, &prefix)
+            .expect("restore");
+        let mut sampler = gpu.device_sampler().expect("sampler");
+        let mut tok = first;
+        let t0 = std::time::Instant::now();
+        for _ in 0..steps {
+            tok = if armed {
+                gpu.decode_sample_full_token_for_gate(tok, state)
+                    .expect("replay step")
+            } else {
+                gpu.decode_step_device_logits(tok, state)
+                    .expect("eager step");
+                gpu.sample_device_logits(state, &mut sampler, &cfg, &[], None)
+                    .expect("eager sample")
+            };
+        }
+        1e3 * t0.elapsed().as_secs_f64() / steps as f64
+    };
+    for rep in 0..3 {
+        let order = if rep % 2 == 0 {
+            [false, true]
+        } else {
+            [true, false]
+        };
+        let mut ms = [0f64; 2];
+        for armed in order {
+            ms[usize::from(armed)] = run(armed, &mut eager, &mut replay);
+        }
+        println!(
+            "TIME rep={rep} eager_ms_per_token={:.3} replay_ms_per_token={:.3} eager_tok_s={:.2} replay_tok_s={:.2} speedup={:.3}",
+            ms[0],
+            ms[1],
+            1e3 / ms[0],
+            1e3 / ms[1],
+            ms[0] / ms[1]
+        );
+    }
 }
