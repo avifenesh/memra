@@ -142,3 +142,24 @@ cold path serves (`promote refused (contracts door): ..; host entry dropped, col
 whose bytes no longer match what the demote wrote would fail every later promote the same way. A span is the same class,
 so it takes the same path. The fault gate's `span-flip-resident` cell checks one such line and exactly one dropped entry.
 No other clause, bound or check moves.
+
+## 4. S as built, and its two sittings pre-registered before they run
+
+- **Built** (`a40e5b334`, sections 3 and 3a): `PinnedHostBuf::device_address` (`cuMemHostGetDevicePointer`);
+  `CudaTransfers::digest_ptr_on`; `submit_d2h_spans` allocates the span receipt's scratch in its admission, digests every
+  span's source after the zero-fill and before the copies, then the flip (under `span-flip-landed`) and every span's
+  landed digest over the staging's device address, the lanes' D2H and the receipt event; `attach_h2d_spans` digests every
+  destination after its copies; both span folds land a batch only with its receipt event; `take_d2h_spans` returns
+  `LandedD2hSpan { span, source_digest, landed_digest }`, `take_h2d_spans` `LandedH2dSpan { span, destination_digest }`,
+  each putting the twin back in the pool; `synchronize` covers both receipts. The server refuses a demote whose pair
+  differs (`demote failed (tier image <slot> span landed bytes differ from their device source); nothing published`),
+  carries each source digest through the hash payload into `HostPrefixEntry::span_digests`, and refuses a promote whose
+  destination digest differs (the receipt-mismatch path). Tier rule `span_receipt` (three schedules) with its binding and
+  two red arms; engine census `span_receipt_rules_are_as_stated`; the D2H span native cell carries the flip arm; fault
+  gate cells `span-flip-landed` and `span-flip-resident`; FLAGS, KERNELS, TESTING rows. CPU: engine `ok. 16 passed`, server
+  lib `911 passed`, the tier crate green (105 contracts), clippy clean.
+- **The 5090 sitting** (`rtx5090-day40/s-card-run.sh`, queued behind DAY38 section 20's cell): the unit cells, (c) the
+  demote A/B and (d) the promote A/B (g4 against s, 20 boots each, `day40-reading.py`), (e) the hump cell (`xg4 xs xs
+  xg4`), the gates on s.
+- **The BOX7 sitting** (`pro-single-s/`, after the 5090 half reads; receipts under `/root/spill-receipts/a-s`): the same
+  cells in the PRO environment, g4 the G4 sitting's binary.
