@@ -3309,6 +3309,46 @@ mod tests {
             tenant: [0; 32],
         }
     }
+    /// WP-A day 37 (`DAY37.md` section 1, finding 5's instrument): poll a timed-hold cell's
+    /// ticket until its first KV item is observed landed, the same loop the cells ran inline
+    /// (its 5 s bound from the loop's start), and time it from the hold's enqueue: the instant
+    /// of the observing poll, the poll count, the longest single `poll` call and the longest gap
+    /// between two polls. Prints one `HOLD READING` line and returns it with the completion, so
+    /// the rule-2 assertion's message carries the same fields. Reads only.
+    fn poll_until_first_item_landed(
+        t: &mut CudaTransfers,
+        ticket: &TransferTicket,
+        hold_at: std::time::Instant,
+        cell: &str,
+    ) -> (Completion, String) {
+        let t0 = std::time::Instant::now();
+        let (mut polls, mut longest_poll, mut longest_gap) = (0u32, 0f64, 0f64);
+        let mut last_end: Option<std::time::Instant> = None;
+        let (c, seen) = loop {
+            let start = std::time::Instant::now();
+            if let Some(end) = last_end {
+                longest_gap = longest_gap.max(start.duration_since(end).as_secs_f64() * 1e3);
+            }
+            let c = t.poll(ticket).unwrap();
+            let end = std::time::Instant::now();
+            polls += 1;
+            longest_poll = longest_poll.max(end.duration_since(start).as_secs_f64() * 1e3);
+            last_end = Some(end);
+            if c.items[0].segments[0].producer_done {
+                break (c, end);
+            }
+            assert!(t0.elapsed().as_secs() < 5, "the KV item never landed");
+        };
+        let line = format!(
+            "HOLD READING cell={cell} first_item_seen_ms={:.2} polls={polls} \
+             longest_poll_ms={longest_poll:.2} longest_gap_ms={longest_gap:.2} \
+             batch_landed_at_first_sight={}",
+            seen.duration_since(hold_at).as_secs_f64() * 1e3,
+            c.producer_done
+        );
+        eprintln!("{line}");
+        (c, line)
+    }
 
     /// WP-A day 20 (memra#536 Move 2 slice 1): the capture class on a card. Two owned planes are
     /// registered as destinations with retained twins; a borrowed source holds a pattern; one
@@ -4030,6 +4070,7 @@ mod tests {
         assert_eq!(back.len(), 3);
         assert!(t.poll(&ticket).is_ok());
         // Hold the spans behind a 300 ms spin on the copy stream (after the KV item's copy).
+        let hold_at = std::time::Instant::now();
         t.delay_on(&copy, 300_000_000).unwrap();
         t.submit_d2h_spans(&ticket, spans(false)).unwrap();
         let (error, back) = t.submit_d2h_spans(&ticket, spans(false)).unwrap_err();
@@ -4039,17 +4080,10 @@ mod tests {
             "one span batch per ticket"
         );
         // Rule 2: the KV item lands while the spans run; the batch has not landed.
-        let t0 = std::time::Instant::now();
-        let c = loop {
-            let c = t.poll(&ticket).unwrap();
-            if c.items[0].segments[0].producer_done {
-                break c;
-            }
-            assert!(t0.elapsed().as_secs() < 5, "the KV item never landed");
-        };
+        let (c, reading) = poll_until_first_item_landed(&mut t, &ticket, hold_at, "d2h_span_batch");
         assert!(
             !c.producer_done,
-            "a batch with a running span has not landed"
+            "a batch with a running span has not landed ({reading})"
         );
         assert_eq!(
             t.take_d2h_spans(&ticket).err(),
@@ -4290,6 +4324,7 @@ mod tests {
             assert!(t.poll(&ticket).is_ok());
         }
         // Hold the spans behind a 300 ms spin on the copy stream (after the KV item's copy).
+        let hold_at = std::time::Instant::now();
         t.delay_on(&copy, 300_000_000).unwrap();
         t.submit_h2d_spans(&ticket, spans(0)).unwrap();
         let (error, back) = t.submit_h2d_spans(&ticket, spans(0)).unwrap_err();
@@ -4299,17 +4334,10 @@ mod tests {
             "one span batch per ticket"
         );
         // Rule 2: the KV item lands while the spans run; the batch has not landed.
-        let t0 = std::time::Instant::now();
-        let c = loop {
-            let c = t.poll(&ticket).unwrap();
-            if c.items[0].segments[0].producer_done {
-                break c;
-            }
-            assert!(t0.elapsed().as_secs() < 5, "the KV item never landed");
-        };
+        let (c, reading) = poll_until_first_item_landed(&mut t, &ticket, hold_at, "h2d_span_batch");
         assert!(
             !c.producer_done,
-            "a batch with a running span has not landed"
+            "a batch with a running span has not landed ({reading})"
         );
         assert_eq!(t.take_h2d_spans(&ticket).err(), Some(Error::NotReady));
         assert_eq!(t.retire(&ticket, None), Err(Error::Busy));
@@ -4461,6 +4489,7 @@ mod tests {
         );
         // Hold the copy stream 300 ms (after the KV item's copy), then attach: the fill and every
         // span copy queue behind the hold.
+        let hold_at = std::time::Instant::now();
         t.delay_on(&copy, 300_000_000).unwrap();
         let attached_at = std::time::Instant::now();
         t.submit_h2d_spans_filled(&ticket, spans(), planes.clone())
@@ -4470,15 +4499,12 @@ mod tests {
             attached_at.elapsed() < std::time::Duration::from_millis(100),
             "the owner thread does not wait for the fill at the attach"
         );
-        let t0 = std::time::Instant::now();
-        let c = loop {
-            let c = t.poll(&ticket).unwrap();
-            if c.items[0].segments[0].producer_done {
-                break c;
-            }
-            assert!(t0.elapsed().as_secs() < 5, "the KV item never landed");
-        };
-        assert!(!c.producer_done, "the fill and the copies are still queued");
+        let (c, reading) =
+            poll_until_first_item_landed(&mut t, &ticket, hold_at, "h2d_span_filled_batch");
+        assert!(
+            !c.producer_done,
+            "the fill and the copies are still queued ({reading})"
+        );
         assert_eq!(t.take_h2d_spans(&ticket).err(), Some(Error::NotReady));
         t.synchronize(&ticket).unwrap();
         assert!(t.poll(&ticket).unwrap().producer_done);
