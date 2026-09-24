@@ -196,3 +196,21 @@ No other clause, bound or check moves.
   and the copy stream's span from the first to the last of them; and the launch-to-start gaps of the digest kernels.
 - **What it decides**: which part of the span receipt costs the ~17 ms (the landed digests' host-memory reads, the
   launches' serial latency, or the kernel's shape), and the revision is pre-registered on it.
+
+## 5a. S on the RTX 5090, the rest of the hold
+
+- (e), verbatim (`s/hump/reading-hump.log`): `HUMP arm=xs boots=2 median-hump=+0.210 humps=True` against `<=0.15`, **(e)
+  FAILS as registered**, with the G4 arm in the same hold at `+0.157` (it read `+0.032` in the base-controlled hold, DAY38
+  section 20a): the hold ran after forty A/B boots, and both arms rise monotonically (no triangle), the card's drift
+  that DAY38 section 19 placed.
+- The gates on S (each through the hold): identity x4 `ALL GREEN (teeth=0)`, failure OFF and ON `ALL GREEN`, the hit gate
+  OFF and ON `ALL GREEN (qwen)`; the fault gate default and plain `1 FAILURE(S)` each, the same check in both:
+  `FAIL: span-flip-landed: every submitted demote published or refused before stop (bounded 15 s wait)`. Every other check
+  of both new cells is green (`exactly one typed refusal of the flipped span`, `r3 primed cold and only r4 promoted`,
+  `r1..r4 byte-equal to the door-OFF boot`; `span-flip-resident: .. exactly one host entry dropped, the refused one`,
+  byte-equal). **The failing check is the cell's own defect**: its settle helper, `await_settled_or_refused`, counted
+  refusals by the source-flip cell's words only, so the span refusal never balanced the count. Fixed before any rerun
+  (the helper takes the cell's refusal words; the source-flip wording stays its default); the cell reruns with S's
+  revision.
+- A reading from the same boot: one steady demote's copy phase was `216.9ms from submission to completion` (seq=7), the
+  span receipt's cost again; the trace (section 6) places it.

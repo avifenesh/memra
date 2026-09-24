@@ -1,0 +1,7 @@
+DAY40 READING mode=promote order=o1 arm=g4 e2e N=50 median=69.53 min=68.00 max=76.52 | wall N=50 median=78.45 min=75.30 max=92.60 | copy-settle N=50 median=0.14 min=0.12 max=0.18 | owner-held N=50 median=1.92 min=0.60 max=8.62 | pin N=45 median=16.10 min=15.90 max=24.00 | steady polls [2] (counts [45])
+DAY40 READING mode=promote order=o1 arm=s e2e N=50 median=71.06 min=69.02 max=83.61 | wall N=50 median=80.25 min=71.90 max=93.90 | copy-settle N=50 median=0.15 min=0.11 max=0.19 | owner-held N=50 median=2.20 min=0.72 max=11.62 | pin N=45 median=16.60 min=16.20 max=27.10 | steady polls [2] (counts [45])
+DAY40 READING mode=promote order=o2 arm=g4 e2e N=50 median=70.30 min=67.87 max=79.17 | wall N=50 median=79.35 min=75.30 max=92.40 | copy-settle N=50 median=0.15 min=0.12 max=0.21 | owner-held N=50 median=2.06 min=0.60 max=5.75 | pin N=45 median=16.10 min=15.80 max=18.70 | steady polls [2] (counts [45])
+DAY40 READING mode=promote order=o2 arm=s e2e N=50 median=70.90 min=68.95 max=74.93 | wall N=50 median=80.00 min=76.20 max=93.60 | copy-settle N=50 median=0.15 min=0.13 max=0.21 | owner-held N=50 median=2.40 min=0.76 max=5.12 | pin N=45 median=16.40 min=16.20 max=20.80 | steady polls [2] (counts [45])
+DAY40 S D order=o1 pin g4=16.10 s=16.60 s-minus-g4=+0.50 rule <=+1.0 | e2e g4=69.53 s=71.06 s-minus-g4=+1.53 rule <=+1.0 -> FAIL
+DAY40 S D order=o2 pin g4=16.10 s=16.40 s-minus-g4=+0.30 rule <=+1.0 | e2e g4=70.30 s=70.90 s-minus-g4=+0.60 rule <=+1.0 -> PASS
+DAY40 S PROMOTE -> FAIL

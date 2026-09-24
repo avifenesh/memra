@@ -755,13 +755,16 @@ print(f"the first copy phase lasted {ms} ms (bound {sys.argv[2]})")
 sys.exit(0 if ms is not None and ms >= float(sys.argv[2]) else 1)
 PYEOF
 }
-await_settled_or_refused() { # $1 log: every `demote submitted off the tick` has ended in a publication or a bind refusal
-                             # (bounded 15 s); the source-flip cell's first demote ends in the refusal by design
+await_settled_or_refused() { # $1 log [$2 the refusal's words]: every `demote submitted off the tick` has ended in a
+                             # publication or a typed refusal (bounded 15 s); the source-flip cell's first demote ends in
+                             # its bind refusal by design, the span-flip-landed cell's in its span refusal (day 40: the
+                             # refusal's words are the cell's own, the source-flip wording by default)
+    local refusal=${2:-'plane checksum differs from its D2H contract receipt); nothing published'}
     for _ in $(seq 1 150); do
         local sub pub ref
         sub=$(grep -c 'demote submitted off the tick' "$1")
         pub=$(grep -c '\[prefix-host\] demote: ' "$1")
-        ref=$(grep -c 'plane checksum differs from its D2H contract receipt); nothing published' "$1")
+        ref=$(grep -c "$refusal" "$1")
         if [ "$sub" -eq $((pub + ref)) ]; then return 0; fi
         sleep 0.1
     done
@@ -881,7 +884,7 @@ lcell() { # WP-A day 40 (design S): MEMRA_KV_HOST_FAULT=span-flip-landed (door O
     await_line "$refusal" "$log" || awaited=$?
     req "$P_A" "$EV/$name-r3.json"
     req "$P_B" "$EV/$name-r4.json"
-    await_settled_or_refused "$log" || settled=$?
+    await_settled_or_refused "$log" "$refusal" || settled=$?
     stop
     echo "== cell $name: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) =="
     boot "MEMRA_KV_HOST_CONTRACTS=0" "$offlog"
