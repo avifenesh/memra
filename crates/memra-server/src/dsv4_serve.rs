@@ -2109,7 +2109,7 @@ mod spec_policy_tests {
     use super::{Dsv4SpecPolicy, resolve_spec_policy};
     use memra_engine::dsv4_gpu::Dsv4Vt;
 
-    /// Unset knobs are the drafter's own depth and no window; a valid depth and `slot` pass
+    /// Unset knobs are the drafter's own depth and the tau-0.5 window; a valid depth and `slot` pass
     /// through. Anything else refuses at load and names its value, so a typo cannot boot a
     /// server that fails every spec request (`slot@0.5` did exactly that on 2026-09-24).
     #[test]
@@ -2118,7 +2118,10 @@ mod spec_policy_tests {
             resolve_spec_policy(None, None, None, None),
             Ok(Dsv4SpecPolicy {
                 depth_cap: usize::MAX,
-                vt: Dsv4Vt::Off
+                vt: Dsv4Vt::Slot {
+                    tau_logit: 0.0,
+                    floor: 0
+                }
             })
         );
         assert_eq!(
@@ -2135,7 +2138,7 @@ mod spec_policy_tests {
         }
         let err = resolve_spec_policy(None, Some("slot@0.5"), None, None).unwrap_err();
         assert!(err.contains("slot@0.5"), "{err}");
-        let err = resolve_spec_policy(None, None, Some("0.5"), None).unwrap_err();
+        let err = resolve_spec_policy(None, Some("off"), Some("0.5"), None).unwrap_err();
         assert!(err.contains("MEMRA_DSV4_VT_TAU"), "{err}");
     }
 }
