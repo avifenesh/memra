@@ -5,9 +5,11 @@ import csv
 import gzip
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 import numpy as np
 
 

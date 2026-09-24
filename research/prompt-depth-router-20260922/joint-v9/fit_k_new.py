@@ -5,8 +5,10 @@ from collections import Counter
 import gzip
 import hashlib
 import json
+import os
 from pathlib import Path
 
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 import numpy as np
 
 from fit_k import ACTIONS, FEATURE_COUNT, vector
