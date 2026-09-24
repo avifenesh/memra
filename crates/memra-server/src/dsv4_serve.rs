@@ -127,6 +127,8 @@ pub struct Dsv4Model {
     pub memory: Dsv4Memory,
     /// Serving lanes (`MEMRA_DSV4_SESSIONS`, memra #667).
     pub sessions: usize,
+    /// B-row step coalescing across the lanes (`MEMRA_DSV4_ROWS`, memra #667 lever 2).
+    pub rows: Option<Arc<RowBatcher>>,
     /// The spec route's verify policy, resolved once at load.
     pub spec_policy: Dsv4SpecPolicy,
 }
@@ -214,6 +216,19 @@ fn resolve_sessions(raw: Option<&str>, default: usize) -> Result<usize, String> 
 /// not measured: it keeps one.
 fn default_sessions(pipelined_steps: bool, drafter: bool) -> usize {
     if pipelined_steps && !drafter { 2 } else { 1 }
+}
+
+/// `MEMRA_DSV4_ROWS` (memra #667 lever 2): the most plain greedy rows one step runs across the
+/// lanes. Unset, empty, `0` or `1` keeps each lane's own step; `2..=8` coalesces them.
+fn resolve_rows(raw: Option<&str>) -> Result<usize, String> {
+    match raw.map(str::trim) {
+        None | Some("") => Ok(1),
+        Some(text) => match text.parse::<usize>() {
+            Ok(0) => Ok(1),
+            Ok(n @ 1..=8) => Ok(n),
+            _ => Err(format!("MEMRA_DSV4_ROWS {text:?} must be 0..=8")),
+        },
+    }
 }
 
 /// The serving lanes for a load: `MEMRA_DSV4_SESSIONS` when set, else [`default_sessions`].
@@ -890,6 +905,28 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
             "MEMRA_DSV4_SESSIONS={sessions} pipelines the PP matrix device program only; this load runs another"
         ));
     }
+    let rows = resolve_rows(configured_env_text("MEMRA_DSV4_ROWS")?.as_deref())?;
+    if rows > 1 && (!pipelined || rows > sessions) {
+        return Err(format!(
+            "MEMRA_DSV4_ROWS={rows} coalesces the lanes' plain PP matrix steps: it needs that \
+             program and at least {rows} serving lanes (MEMRA_DSV4_SESSIONS={sessions})"
+        ));
+    }
+    // The B-row workspace is the route's, allocated before calibration so the memory book's
+    // idle readings already exclude it.
+    let row_batcher = if rows > 1 {
+        let groups = if 2 * rows <= sessions { 2 } else { 1 };
+        let ws = (0..groups)
+            .map(|_| gpu.alloc_rows_state(rows))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("MEMRA_DSV4_ROWS={rows} workspace: {e}"))?;
+        eprintln!(
+            "[dsv4-serve] {name}: B-row steps up to {rows} rows, {groups} group(s) in flight (MEMRA_DSV4_ROWS)"
+        );
+        Some(Arc::new(RowBatcher::new(rows, ws)))
+    } else {
+        None
+    };
     eprintln!(
         "[dsv4-serve] {name}: {sessions} serving lane(s){}",
         if std::env::var_os("MEMRA_DSV4_SESSIONS").is_some() {
@@ -911,6 +948,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         prefill_chunk,
         memory: Dsv4Memory::default(),
         sessions,
+        rows: row_batcher,
         spec_policy,
     };
     m.memory = calibrate_memory(&m).map_err(|e| format!("dsv4 memory calibration: {e}"))?;
@@ -1321,6 +1359,324 @@ fn sleep_without_turn(turn: &mut Turn, d: std::time::Duration) {
     turn.release();
     std::thread::sleep(d);
     turn.acquire();
+}
+
+/// Step coalescing core (memra #667 lever 2): lanes deposit one row each; a lane whose deposit
+/// completes the batch, or that has waited out [`ROW_BATCH_WAIT`], leads. The leader takes up
+/// to `bmax` deposits including its own, runs them, and publishes every ticket's result. A
+/// waiting lane holds no launch turn, so the leader can always take it. Generic over the row
+/// payload so the coordination is testable without a GPU.
+struct Coalescer<S> {
+    bmax: usize,
+    /// Batches that can be in flight at once (the B-row workspaces). A batch targets
+    /// `ceil(members / groups)` rows, so the lanes split into that many groups: with two
+    /// groups, two concurrent requests run as two pipelined one-row steps (the two cards
+    /// overlap) and four run as two pipelined groups of two.
+    groups: usize,
+    inner: std::sync::Mutex<CoalesceState<S>>,
+    cv: std::sync::Condvar,
+}
+
+struct CoalesceState<S> {
+    /// Lanes inside a coalesced decode loop; a batch is full when every one of them that is not
+    /// already riding a batch in flight has deposited.
+    members: usize,
+    /// Rows taken by batches that have not published yet.
+    in_flight: usize,
+    next: u64,
+    waiting: Vec<(u64, u32, bool, Lent<S>)>,
+    done: std::collections::HashMap<u64, Result<RowOut, String>>,
+}
+
+/// One row's result: its next token (the device argmax for a greedy row) and, when the row
+/// asked for it, its full logits row for the host sampler or a penalty.
+#[derive(Clone, Debug, PartialEq)]
+struct RowOut {
+    tok: u32,
+    logits: Option<Vec<f32>>,
+}
+
+/// A lane's `&mut S`, lent to the batch leader for one step.
+struct Lent<S>(*mut S);
+
+// SAFETY: the lending lane blocks in `Coalescer::step` until the leader publishes its ticket,
+// and the leader dereferences the pointer only between taking the deposit and publishing, so
+// the two never touch the state at once. Engine calls bind their stage contexts on the calling
+// thread, and the launch turn serializes GPU work across lanes.
+unsafe impl<S> Send for Lent<S> {}
+
+/// Runs one batch: the rows' tokens, whether each wants its logits, and their states in
+/// deposit order; returns each row's result in the same order.
+type BatchRun<'r, S> =
+    dyn FnMut(&[u32], &[bool], &mut [&mut S]) -> Result<Vec<RowOut>, String> + 'r;
+
+/// How long a partial batch waits for the remaining lanes before it runs anyway.
+const ROW_BATCH_WAIT: std::time::Duration = std::time::Duration::from_micros(500);
+
+impl<S> Coalescer<S> {
+    fn new(bmax: usize, groups: usize) -> Self {
+        Coalescer {
+            bmax,
+            groups: groups.max(1),
+            inner: std::sync::Mutex::new(CoalesceState {
+                members: 0,
+                in_flight: 0,
+                next: 0,
+                waiting: Vec::new(),
+                done: std::collections::HashMap::new(),
+            }),
+            cv: std::sync::Condvar::new(),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, CoalesceState<S>> {
+        self.inner.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    fn join(&self) {
+        self.lock().members += 1;
+    }
+
+    fn leave(&self) {
+        let mut g = self.lock();
+        g.members = g.members.saturating_sub(1);
+        drop(g);
+        // A smaller membership may complete a batch that is already waiting.
+        self.cv.notify_all();
+    }
+
+    /// Deposit `(tok, state)` and return this row's result; `logits` asks for the full row.
+    /// `run` executes one batch and returns its rows' results in order (or one error for all).
+    fn step(
+        &self,
+        tok: u32,
+        logits: bool,
+        state: &mut S,
+        run: &mut BatchRun<'_, S>,
+    ) -> Result<RowOut, String> {
+        let mut g = self.lock();
+        let ticket = g.next;
+        g.next += 1;
+        g.waiting.push((ticket, tok, logits, Lent(state as *mut S)));
+        let t0 = std::time::Instant::now();
+        loop {
+            if let Some(result) = g.done.remove(&ticket) {
+                return result;
+            }
+            let pos = g.waiting.iter().position(|d| d.0 == ticket);
+            let free = g.members.saturating_sub(g.in_flight);
+            let target = g.members.div_ceil(self.groups).clamp(1, self.bmax);
+            let full = g.waiting.len() >= target.min(free).max(1);
+            if let Some(mine) = pos
+                && (full || t0.elapsed() >= ROW_BATCH_WAIT)
+            {
+                // Lead: the oldest deposits, with ours among them.
+                let mut take: Vec<usize> = (0..g.waiting.len()).collect();
+                take.truncate(target);
+                if !take.contains(&mine) {
+                    *take.last_mut().expect("bmax >= 1") = mine;
+                }
+                take.sort_unstable();
+                let batch: Vec<(u64, u32, bool, Lent<S>)> = take
+                    .into_iter()
+                    .rev()
+                    .map(|i| g.waiting.remove(i))
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                g.in_flight += batch.len();
+                drop(g);
+                let toks: Vec<u32> = batch.iter().map(|d| d.1).collect();
+                let wants: Vec<bool> = batch.iter().map(|d| d.2).collect();
+                // SAFETY: see `Lent`; every lender is blocked on its ticket.
+                let mut states: Vec<&mut S> =
+                    batch.iter().map(|d| unsafe { &mut *d.3.0 }).collect();
+                // A panicking step must not wedge the lanes that lent it their rows: every member
+                // gets an error, `in_flight` comes down, and the leader then unwinds as before.
+                let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    run(&toks, &wants, &mut states)
+                }));
+                drop(states);
+                g = self.lock();
+                g.in_flight -= batch.len();
+                let out = match out {
+                    Ok(out) => out,
+                    Err(panic) => {
+                        for d in &batch {
+                            g.done.insert(d.0, Err("B-row step panicked".to_string()));
+                        }
+                        drop(g);
+                        self.cv.notify_all();
+                        std::panic::resume_unwind(panic);
+                    }
+                };
+                match out {
+                    Ok(next) if next.len() == batch.len() => {
+                        for (d, r) in batch.iter().zip(next) {
+                            g.done.insert(d.0, Ok(r));
+                        }
+                    }
+                    Ok(next) => {
+                        let why = format!(
+                            "B-row step returned {} rows for {}",
+                            next.len(),
+                            batch.len()
+                        );
+                        for d in &batch {
+                            g.done.insert(d.0, Err(why.clone()));
+                        }
+                    }
+                    Err(why) => {
+                        for d in &batch {
+                            g.done.insert(d.0, Err(why.clone()));
+                        }
+                    }
+                }
+                self.cv.notify_all();
+                continue;
+            }
+            g = if pos.is_some() {
+                let left = ROW_BATCH_WAIT.saturating_sub(t0.elapsed());
+                self.cv
+                    .wait_timeout(g, left.max(std::time::Duration::from_micros(20)))
+                    .unwrap_or_else(|p| p.into_inner())
+                    .0
+            } else {
+                self.cv.wait(g).unwrap_or_else(|p| p.into_inner())
+            };
+        }
+    }
+}
+
+/// The route's B-row batcher (`MEMRA_DSV4_ROWS`): the coalescer plus the B-row workspace the
+/// leader uses under the launch turn.
+pub struct RowBatcher {
+    core: Coalescer<DecodeState>,
+    /// One B-row workspace per batch that can be in flight: two when the lanes can fill two
+    /// groups (`2 * B <= lanes`), so one group's stage 0 runs while the other's stage 1 does.
+    pool: std::sync::Mutex<Vec<RowsWorkspace>>,
+    freed: std::sync::Condvar,
+}
+
+struct RowsWorkspace(memra_engine::dsv4_gpu::VerifyState);
+
+// SAFETY: only a batch leader touches it, holding both this mutex and the launch turn.
+unsafe impl Send for RowsWorkspace {}
+
+impl RowBatcher {
+    fn new(bmax: usize, ws: Vec<memra_engine::dsv4_gpu::VerifyState>) -> Self {
+        RowBatcher {
+            core: Coalescer::new(bmax, ws.len()),
+            pool: std::sync::Mutex::new(ws.into_iter().map(RowsWorkspace).collect()),
+            freed: std::sync::Condvar::new(),
+        }
+    }
+
+    fn take_ws(&self) -> RowsWorkspace {
+        let mut pool = self.pool.lock().unwrap_or_else(|p| p.into_inner());
+        loop {
+            if let Some(ws) = pool.pop() {
+                return ws;
+            }
+            pool = self.freed.wait(pool).unwrap_or_else(|p| p.into_inner());
+        }
+    }
+
+    fn put_ws(&self, ws: RowsWorkspace) {
+        self.pool.lock().unwrap_or_else(|p| p.into_inner()).push(ws);
+        self.freed.notify_one();
+    }
+}
+
+/// A lane's membership in the coalesced decode loop; leaving on drop keeps the batch count
+/// right on every exit, including an unwind.
+struct RowMember<'a>(&'a RowBatcher);
+
+impl<'a> RowMember<'a> {
+    fn join(b: &'a RowBatcher) -> Self {
+        b.core.join();
+        RowMember(b)
+    }
+}
+
+impl Drop for RowMember<'_> {
+    fn drop(&mut self) {
+        self.0.core.leave();
+    }
+}
+
+/// One plain step through the B-row batcher: the next token, and the full logits row when
+/// `logits` (the host sampler, a penalty). The lane gives the turn up while its row waits; the
+/// leader takes it for the batch. One row runs the one-row program; several run one B-row
+/// step, full-logits only when some row asked for it. A greedy row's token is always the
+/// device argmax, the one-row greedy step's selection, and every row's bits equal its one-row
+/// step (`dsv4_rows_gate`).
+fn rows_step(
+    m: &Dsv4Model,
+    batcher: &RowBatcher,
+    turn: &mut Turn,
+    tok: u32,
+    logits: bool,
+    state: &mut DecodeState,
+) -> Result<RowOut, String> {
+    turn.release();
+    let lock = turn.lock;
+    let result = batcher
+        .core
+        .step(tok, logits, state, &mut |toks, wants, states| {
+            let full = wants.iter().any(|&w| w);
+            // One row runs the pipelined one-row step, the program a one-row B-row step equals.
+            if let [one] = states {
+                let mut lead = Turn::take(lock);
+                return if full {
+                    logits_step(m, &mut lead, toks[0], one).map(|row| {
+                        vec![RowOut {
+                            tok: argmax(&row),
+                            logits: Some(row),
+                        }]
+                    })
+                } else {
+                    greedy_step(m, &mut lead, toks[0], one)
+                        .map(|tok| vec![RowOut { tok, logits: None }])
+                };
+            }
+            // Several rows: queue the group holding the turn, wait for its own readbacks without
+            // it (so another group can queue behind it and the two cards overlap), then commit.
+            let mut ws = batcher.take_ws();
+            let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut lead = Turn::take(lock);
+                m.gpu.decode_rows_enqueue(toks, states, &mut ws.0, full)?;
+                lead.release();
+                let waited = m.gpu.decode_rows_wait(&mut ws.0);
+                lead.acquire();
+                waited?;
+                let (rows, am) = m.gpu.decode_rows_complete(states, &mut ws.0)?;
+                Ok(match rows {
+                    Some(rows) => rows
+                        .into_iter()
+                        .zip(am)
+                        .zip(wants)
+                        .map(|((row, tok), &w)| RowOut {
+                            tok,
+                            logits: w.then_some(row),
+                        })
+                        .collect(),
+                    None => am
+                        .into_iter()
+                        .map(|tok| RowOut { tok, logits: None })
+                        .collect(),
+                })
+            }));
+            // The workspace goes back to the pool on every exit, a panic included.
+            batcher.put_ws(ws);
+            match out {
+                Ok(out) => out,
+                Err(panic) => std::panic::resume_unwind(panic),
+            }
+        });
+    turn.acquire();
+    result
 }
 
 /// One plain greedy step. Serial lanes take the one-call step. Pipelined lanes queue the step
@@ -2220,6 +2576,10 @@ fn serve_one(
                 argmax(&pre_logits)
             };
             let mut step = 0usize;
+            // Greedy rows coalesce across the lanes when the route batches them; a penalized
+            // row asks for its logits.
+            let batcher = m.rows.as_deref();
+            let _member = batcher.map(RowMember::join);
             while emit.push(&[t]) {
                 if pen_cfg.is_some() {
                     window.push(t);
@@ -2230,10 +2590,19 @@ fn serve_one(
                 }
                 t = if let Some(pc) = &pen_cfg {
                     // penalized greedy needs the full row (argmax AFTER penalties)
-                    let mut row =
-                        logits_step(m, turn, t, &mut state).map_err(EngineError::engine)?;
+                    let mut row = match batcher {
+                        Some(b) => rows_step(m, b, turn, t, true, &mut state)
+                            .map_err(EngineError::engine)?
+                            .logits
+                            .ok_or_else(|| EngineError::engine("B-row logits missing"))?,
+                        None => logits_step(m, turn, t, &mut state).map_err(EngineError::engine)?,
+                    };
                     dsv4_penalize_row(&mut row, &window, pc);
                     argmax(&row)
+                } else if let Some(b) = batcher {
+                    rows_step(m, b, turn, t, false, &mut state)
+                        .map_err(EngineError::engine)?
+                        .tok
                 } else {
                     greedy_step(m, turn, t, &mut state).map_err(EngineError::engine)?
                 };
@@ -2267,6 +2636,9 @@ fn serve_one(
             }
             .map_err(EngineError::engine)?;
             let mut step = 0usize;
+            // Host-sampled rows coalesce too; the device sampler keeps its own step.
+            let batcher = m.rows.as_deref().filter(|_| device_sampler.is_none());
+            let _member = batcher.map(RowMember::join);
             while emit.push(&[t]) {
                 if pen_cfg.is_some() {
                     window.push(t);
@@ -2282,8 +2654,13 @@ fn serve_one(
                     m.gpu
                         .sample_device_logits(&state, sampler, &cfg, &window, pen_cfg.as_ref())
                 } else {
-                    let mut row =
-                        logits_step(m, turn, t, &mut state).map_err(EngineError::engine)?;
+                    let mut row = match batcher {
+                        Some(b) => rows_step(m, b, turn, t, true, &mut state)
+                            .map_err(EngineError::engine)?
+                            .logits
+                            .ok_or_else(|| EngineError::engine("B-row logits missing"))?,
+                        None => logits_step(m, turn, t, &mut state).map_err(EngineError::engine)?,
+                    };
                     draw(&mut row, p0 + step, &window)
                 }
                 .map_err(EngineError::engine)?;
@@ -2721,6 +3098,244 @@ mod c4_host_budget_tests {
         sleep_without_turn(&mut door, std::time::Duration::from_millis(50));
         assert!(stepped.load(Ordering::SeqCst));
         other.join().unwrap();
+    }
+
+    #[test]
+    fn b_row_width_resolves_literally() {
+        use super::resolve_rows;
+        for raw in [None, Some(""), Some("0"), Some("1")] {
+            assert_eq!(resolve_rows(raw), Ok(1));
+        }
+        for n in 2..=8 {
+            assert_eq!(resolve_rows(Some(&n.to_string())), Ok(n));
+        }
+        for raw in ["9", "two", "-1", "2.5"] {
+            assert!(resolve_rows(Some(raw)).is_err(), "{raw}");
+        }
+    }
+
+    /// (batch widths in run order, each lane's per-step results, each lane's final counter)
+    type CoalesceOutcome = (Vec<usize>, Vec<Vec<Result<u32, String>>>, Vec<u32>);
+
+    /// Runs `lanes` threads that each take `steps` coalesced steps on their own counter.
+    /// The batch runner records each batch's width and bumps every row's counter once.
+    fn coalesce_run(
+        bmax: usize,
+        lanes: usize,
+        steps: usize,
+        fail_at: Option<usize>,
+    ) -> CoalesceOutcome {
+        use super::{Coalescer, RowOut};
+        use std::sync::{Arc, Mutex};
+        let core = Arc::new(Coalescer::<u32>::new(bmax, 1));
+        let widths = Arc::new(Mutex::new(Vec::new()));
+        let barrier = Arc::new(std::sync::Barrier::new(lanes));
+        let handles: Vec<_> = (0..lanes)
+            .map(|lane| {
+                let (core, widths, barrier) = (core.clone(), widths.clone(), barrier.clone());
+                std::thread::spawn(move || {
+                    core.join();
+                    barrier.wait();
+                    let mut counter = 0u32;
+                    let mut out = Vec::new();
+                    for step in 0..steps {
+                        let tok = (lane * 1000 + step) as u32;
+                        // Odd lanes ask for logits, so batches mix both kinds of row.
+                        let want = lane % 2 == 1;
+                        let r = core.step(tok, want, &mut counter, &mut |toks, wants, states| {
+                            let mut w = widths.lock().unwrap();
+                            w.push(toks.len());
+                            if fail_at == Some(w.len() - 1) {
+                                return Err("injected".into());
+                            }
+                            for s in states.iter_mut() {
+                                **s += 1;
+                            }
+                            Ok(toks
+                                .iter()
+                                .zip(wants)
+                                .map(|(t, &w)| RowOut {
+                                    tok: t + 7,
+                                    logits: w.then(|| vec![*t as f32]),
+                                })
+                                .collect())
+                        });
+                        // Each row gets its own token, and its own logits exactly when it asked.
+                        if let Ok(o) = &r {
+                            assert_eq!(o.logits, want.then(|| vec![tok as f32]));
+                        }
+                        out.push(r.map(|o| o.tok));
+                    }
+                    core.leave();
+                    (out, counter)
+                })
+            })
+            .collect();
+        let mut results = Vec::new();
+        let mut counters = Vec::new();
+        for h in handles {
+            let (out, counter) = h.join().unwrap();
+            results.push(out);
+            counters.push(counter);
+        }
+        let w = widths.lock().unwrap().clone();
+        (w, results, counters)
+    }
+
+    #[test]
+    fn coalesced_rows_each_get_their_own_token_once_per_step() {
+        let (widths, results, counters) = coalesce_run(4, 3, 20, None);
+        for (lane, out) in results.iter().enumerate() {
+            for (step, r) in out.iter().enumerate() {
+                assert_eq!(*r, Ok((lane * 1000 + step) as u32 + 7));
+            }
+        }
+        // Every row of every step ran exactly once.
+        assert_eq!(counters, vec![20, 20, 20]);
+        assert_eq!(widths.iter().sum::<usize>(), 60);
+        assert!(widths.iter().all(|&w| (1..=3).contains(&w)));
+        // Three members keep batches full most of the time; a partial batch only waits out
+        // the window.
+        assert!(
+            widths.iter().filter(|&&w| w == 3).count() >= 10,
+            "{widths:?}"
+        );
+    }
+
+    #[test]
+    fn two_groups_split_the_lanes_in_half() {
+        use super::{Coalescer, RowOut};
+        use std::sync::{Arc, Mutex};
+        let core = Arc::new(Coalescer::<u32>::new(4, 2));
+        let widths = Arc::new(Mutex::new(Vec::new()));
+        for lanes in [2usize, 4] {
+            let barrier = Arc::new(std::sync::Barrier::new(lanes));
+            let handles: Vec<_> = (0..lanes)
+                .map(|lane| {
+                    let (core, widths, barrier) = (core.clone(), widths.clone(), barrier.clone());
+                    std::thread::spawn(move || {
+                        core.join();
+                        barrier.wait();
+                        let mut c = 0u32;
+                        for step in 0..8u32 {
+                            core.step(step, false, &mut c, &mut |toks, _, _| {
+                                widths.lock().unwrap().push((lanes, toks.len()));
+                                std::thread::sleep(std::time::Duration::from_millis(1));
+                                Ok(toks
+                                    .iter()
+                                    .map(|&tok| RowOut { tok, logits: None })
+                                    .collect())
+                            })
+                            .unwrap();
+                        }
+                        barrier.wait();
+                        core.leave();
+                        let _ = lane;
+                    })
+                })
+                .collect();
+            for h in handles {
+                h.join().unwrap();
+            }
+        }
+        let w = widths.lock().unwrap();
+        // Two lanes never batch together (two pipelined one-row steps); four lanes batch in
+        // pairs, never four at once.
+        assert!(w.iter().filter(|x| x.0 == 2).all(|x| x.1 == 1), "{w:?}");
+        assert!(w.iter().filter(|x| x.0 == 4).all(|x| x.1 <= 2), "{w:?}");
+        assert!(w.iter().filter(|x| x.0 == 4).any(|x| x.1 == 2), "{w:?}");
+    }
+
+    #[test]
+    fn a_batch_never_exceeds_its_width() {
+        let (widths, results, counters) = coalesce_run(2, 5, 12, None);
+        assert!(widths.iter().all(|&w| w <= 2), "{widths:?}");
+        assert_eq!(counters, vec![12; 5]);
+        assert!(results.iter().flatten().all(|r| r.is_ok()));
+    }
+
+    #[test]
+    fn a_failed_batch_fails_every_row_in_it_and_only_them() {
+        let (widths, results, _) = coalesce_run(4, 3, 6, Some(2));
+        let failed: usize = results
+            .iter()
+            .flatten()
+            .filter(|r| r.as_ref().err().map(String::as_str) == Some("injected"))
+            .count();
+        assert_eq!(failed, widths[2], "every row of batch 2 and no other");
+    }
+
+    /// A step that panics fails every row that lent it a state and lowers `in_flight`, so the
+    /// other lanes get an error instead of waiting forever, and the next batch still runs.
+    #[test]
+    fn a_panicking_batch_fails_its_rows_and_the_next_batch_runs() {
+        use super::Coalescer;
+        use std::sync::Arc;
+        let core = Arc::new(Coalescer::<u32>::new(2, 1));
+        core.join();
+        core.join();
+        let lanes: Vec<_> = (0..2u32)
+            .map(|lane| {
+                let core = core.clone();
+                std::thread::spawn(move || {
+                    let mut c = 0u32;
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        core.step(lane, false, &mut c, &mut |_, _, _| panic!("injected panic"))
+                            .map(|o| o.tok)
+                    }))
+                })
+            })
+            .collect();
+        let outcomes: Vec<_> = lanes.into_iter().map(|h| h.join().unwrap()).collect();
+        let panicked = outcomes.iter().filter(|o| o.is_err()).count();
+        let failed = outcomes
+            .iter()
+            .filter(|o| matches!(o, Ok(Err(e)) if e == "B-row step panicked"))
+            .count();
+        assert_eq!(
+            panicked + failed,
+            2,
+            "the leader unwinds, every other row gets the error"
+        );
+        assert!(panicked >= 1, "the leader's own panic is not swallowed");
+        let mut c = 0u32;
+        core.leave();
+        let next = core.step(7, false, &mut c, &mut |toks, _, _| {
+            Ok(toks
+                .iter()
+                .map(|&tok| super::RowOut { tok, logits: None })
+                .collect())
+        });
+        assert_eq!(next.map(|o| o.tok), Ok(7), "in_flight came back down");
+    }
+
+    #[test]
+    fn a_leaving_lane_completes_the_waiting_batch() {
+        use super::Coalescer;
+        use std::sync::Arc;
+        let core = Arc::new(Coalescer::<u32>::new(4, 1));
+        core.join();
+        core.join();
+        let waiter = {
+            let core = core.clone();
+            std::thread::spawn(move || {
+                let mut c = 0u32;
+                let t0 = std::time::Instant::now();
+                let r = core
+                    .step(5, false, &mut c, &mut |toks, _, _| {
+                        Ok(toks
+                            .iter()
+                            .map(|&tok| super::RowOut { tok, logits: None })
+                            .collect())
+                    })
+                    .map(|o| o.tok);
+                (r, t0.elapsed())
+            })
+        };
+        std::thread::sleep(std::time::Duration::from_micros(50));
+        core.leave();
+        let (r, _) = waiter.join().unwrap();
+        assert_eq!(r, Ok(5));
     }
 
     #[test]
