@@ -1,0 +1,15 @@
+DAY35 READING order=o1 arm=hk boots=5 e2e N=50 median=86.75 min=78.40 max=96.61 boot-medians [84.64, 87.02, 86.19, 87.73, 90.21] | pin-steady N=45 median=23.80 min=17.50 max=30.40 boot-medians [23.5, 23.7, 23.6, 23.8, 24.4] | polls [2, 3] (counts [1, 49]) | helper-ms N=50 median=8.20 min=8.00 max=8.40
+DAY35 READING order=o1 arm=fk boots=5 e2e N=50 median=78.95 min=76.47 max=83.94 boot-medians [77.47, 78.43, 79.1, 78.82, 80.79] | pin-steady N=45 median=16.20 min=15.80 max=22.20 boot-medians [16.0, 16.1, 16.1, 16.0, 16.5] | polls [2] (counts [50]) | helper-ms N=50 median=8.80 min=8.60 max=9.80
+DAY35 READING order=o1 arm=off boots=5 e2e N=50 median=64.69 min=60.70 max=80.34 boot-medians [61.89, 64.35, 63.96, 66.09, 65.15] | pin-steady N=45 median=10.10 min=8.30 max=29.50 boot-medians [9.3, 10.2, 9.4, 10.2, 10.3] | polls [] (counts []) | helper-ms N=0
+DAY35 READING order=o2 arm=hk boots=5 e2e N=50 median=88.26 min=78.89 max=98.45 boot-medians [87.23, 88.84, 87.88, 91.25, 86.22] | pin-steady N=45 median=24.10 min=16.60 max=29.70 boot-medians [23.7, 24.1, 24.1, 24.5, 23.8] | polls [2, 3] (counts [7, 43]) | helper-ms N=50 median=8.00 min=8.00 max=9.80
+DAY35 READING order=o2 arm=fk boots=5 e2e N=50 median=80.82 min=76.28 max=86.89 boot-medians [82.69, 80.26, 82.05, 80.99, 78.85] | pin-steady N=45 median=16.50 min=15.90 max=21.10 boot-medians [17.1, 16.3, 16.5, 16.6, 16.2] | polls [2] (counts [50]) | helper-ms N=50 median=8.80 min=8.70 max=9.60
+DAY35 READING order=o2 arm=off boots=5 e2e N=50 median=65.92 min=60.93 max=87.03 boot-medians [66.85, 64.61, 66.38, 67.33, 65.42] | pin-steady N=45 median=10.30 min=8.00 max=29.40 boot-medians [10.5, 9.1, 10.3, 10.7, 9.8] | polls [] (counts []) | helper-ms N=0
+DAY35 1b READING order=o1 arm=hk on=86.8 off=64.7 on_minus_off=+22.1 rule <=+20.0 -> FAIL
+DAY35 1b READING order=o1 arm=fk on=78.9 off=64.7 on_minus_off=+14.3 rule <=+20.0 -> PASS
+DAY35 F CLAUSE order=o1 metric=e2e hk=86.75 fk=78.95 hk-minus-fk=+7.81 pair-noise=5.57 (hk range 5.57, fk range 3.32) rule hk-minus-fk>pair-noise -> CLEARS
+DAY35 F CLAUSE order=o1 metric=pin hk=23.80 fk=16.20 hk-minus-fk=+7.60 pair-noise=0.90 (hk range 0.90, fk range 0.50) rule hk-minus-fk>pair-noise -> CLEARS
+DAY35 1b READING order=o2 arm=hk on=88.3 off=65.9 on_minus_off=+22.3 rule <=+20.0 -> FAIL
+DAY35 1b READING order=o2 arm=fk on=80.8 off=65.9 on_minus_off=+14.9 rule <=+20.0 -> PASS
+DAY35 F CLAUSE order=o2 metric=e2e hk=88.26 fk=80.82 hk-minus-fk=+7.44 pair-noise=5.03 (hk range 5.03, fk range 3.84) rule hk-minus-fk>pair-noise -> CLEARS
+DAY35 F CLAUSE order=o2 metric=pin hk=24.10 fk=16.50 hk-minus-fk=+7.60 pair-noise=0.90 (hk range 0.80, fk range 0.90) rule hk-minus-fk>pair-noise -> CLEARS
+DAY35 F DECISION -> KEEP
