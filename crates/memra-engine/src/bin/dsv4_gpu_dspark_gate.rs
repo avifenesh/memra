@@ -174,6 +174,9 @@ struct DraftedOut {
     verified: usize,
     /// per-round accepted counts, digested for cross-run determinism
     accept_sha: String,
+    /// per-round drafter proposals (draft ids and fp32 confidence bits), digested so two
+    /// binaries or topologies can be compared on the drafter itself (memra #718)
+    proposal_sha: String,
     /// batched arm only: mean forwarded depth per round (the perf-model observable)
     mean_t_batch: f64,
     rings: Option<Vec<(String, Vec<f32>)>>,
@@ -193,6 +196,7 @@ fn run_drafted_seq(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOut {
     let mut accept_bytes: Vec<u8> = Vec::new();
     let mut cur_accepts = 0u32;
     let mut open_round = false;
+    let mut proposal_bytes: Vec<u8> = Vec::new();
     for step in 0..n_new {
         let m = p0 + step; // t sits at index m
         if pending.is_empty() {
@@ -202,6 +206,12 @@ fn run_drafted_seq(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOut {
             let prop = gpu
                 .dspark_forward_spec(&mut dstate, t, 0, m - 1, false)
                 .expect("dspark propose");
+            for id in &prop.out_ids[1..] {
+                proposal_bytes.extend_from_slice(&id.to_le_bytes());
+            }
+            for c in &prop.confidence {
+                proposal_bytes.extend_from_slice(&c.to_bits().to_le_bytes());
+            }
             pending = prop.out_ids[1..].iter().cloned().collect();
             rounds += 1;
             cur_accepts = 0;
@@ -235,6 +245,7 @@ fn run_drafted_seq(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOut {
         accepted,
         verified,
         accept_sha: sha256_hex(&accept_bytes),
+        proposal_sha: sha256_hex(&proposal_bytes),
         mean_t_batch: 1.0,
         rings: None,
     }
@@ -274,12 +285,19 @@ fn run_drafted_batched(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOu
         )
         .expect("batched drafted run");
     let mut accept_bytes: Vec<u8> = Vec::new();
+    let mut proposal_bytes: Vec<u8> = Vec::new();
     let mut accepted = 0usize;
     let mut verified = 0usize;
     let mut t_sum = 0usize;
     let mut t_n = 0usize;
     for r in &out.rounds {
         accept_bytes.extend_from_slice(&(r.accepts as u32).to_le_bytes());
+        for id in &r.drafts {
+            proposal_bytes.extend_from_slice(&id.to_le_bytes());
+        }
+        for c in &r.confidence {
+            proposal_bytes.extend_from_slice(&c.to_bits().to_le_bytes());
+        }
         accepted += r.accepts;
         verified += r.verified;
         if r.t_batch > 0 {
@@ -294,6 +312,7 @@ fn run_drafted_batched(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOu
         accepted,
         verified,
         accept_sha: sha256_hex(&accept_bytes),
+        proposal_sha: sha256_hex(&proposal_bytes),
         mean_t_batch: if t_n > 0 {
             t_sum as f64 / t_n as f64
         } else {
@@ -660,13 +679,14 @@ fn main() {
     let ds = run_drafted_seq(&gpu, &prompt, n_new);
     println!(
         "arm DS (drafted, sequential verify): {} tokens | rounds {} | accepted {} (mean \
-         {:.4}/round) | verified {} | accept sha {} | t={:.0}s",
+         {:.4}/round) | verified {} | accept sha {} | proposal sha {} | t={:.0}s",
         ds.tokens.len(),
         ds.rounds,
         ds.accepted,
         ds.accepted as f64 / ds.rounds as f64,
         ds.verified,
         ds.accept_sha,
+        ds.proposal_sha,
         t0.elapsed().as_secs_f64()
     );
 
@@ -680,7 +700,7 @@ fn main() {
         println!(
             "arm DB run{r} (drafted, BATCHED T=k+1 verify): {} tokens | rounds {} | accepted \
              {} (mean {:.4}/round) | verified {} | mean T forwarded {:.4} | accept sha {} | \
-             t={:.0}s",
+             proposal sha {} | t={:.0}s",
             d.tokens.len(),
             d.rounds,
             d.accepted,
@@ -688,6 +708,7 @@ fn main() {
             d.verified,
             d.mean_t_batch,
             d.accept_sha,
+            d.proposal_sha,
             t0.elapsed().as_secs_f64()
         );
         db_runs.push(d);
