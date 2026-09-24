@@ -74,7 +74,8 @@ never the evaluation score.
 For validation selection, an arm is quality-eligible when it has no
 more exact-loop turns than fixed K=20/D=3/C=0 and its fenced syntax and
 all-tests-pass rates are each no more than five percentage points below
-that control. This is a frozen noninferiority guard, not a claim that
+that control. Its output-cap rate may be at most five percentage points
+higher than that control. This is a frozen noninferiority guard, not a claim that
 the benchmark tasks measure broad code correctness. Choose one fixed,
 one K-only, one C/D, and one joint arm from quality-eligible validation
 points. The final split reports every fixed K=3/10/20 control, each

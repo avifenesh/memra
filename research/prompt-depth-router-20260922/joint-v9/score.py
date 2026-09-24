@@ -1,7 +1,7 @@
 """Score paired complete native requests and freeze validation choices."""
 
 import argparse
-from collections import defaultdict
+from collections import Counter, defaultdict
 import hashlib
 import json
 from pathlib import Path
@@ -106,6 +106,11 @@ def score(root, quality_path, arms_path, phase):
             "looped_conversations": [
                 index for index in range(count) if group[index]["loops"]
             ],
+            "finish_reasons": dict(sorted(Counter(
+                reason
+                for conversation in group.values()
+                for reason in conversation["finished"]
+            ).items())),
             "syntax_pass": sum(
                 quality_rows[row["name"]]["syntax_pass"]
                 for row in group.values()
@@ -120,10 +125,12 @@ def score(root, quality_path, arms_path, phase):
     baseline = result[REFERENCE]
     margin = 0.05 * count * 8
     for arm, row in result.items():
+        row["capped_turns"] = row["finish_reasons"].get("length", 0)
         row["quality_eligible"] = (
             row["looped_turns"] <= baseline["looped_turns"]
             and row["syntax_pass"] + margin >= baseline["syntax_pass"]
             and row["all_tests_pass"] + margin >= baseline["all_tests_pass"]
+            and row["capped_turns"] <= baseline["finish_reasons"].get("length", 0) + margin
         )
     comparisons = {}
     for arm in records:
