@@ -69,6 +69,26 @@ Evidence: `DAY18.md` (day-18 inputs for items 1, 3, 4 and 6, verbatim lines unde
 `DAY9.md` (target card: default and 8 GiB, gen `MATCH`, spec K1..8
 `SELF-CONSISTENCY PASS`, ON/OFF tapes identical, 12,091 / 63,996 GPU evictions).
 
+## Days 40 to 50: the tuned program (each with its own pre-registration, commit and cell)
+
+The door's program after the tuning of `OWED.md` C1 (days 40 to 50). Every row is `executed-not-qualified` until its
+cell reads; the cells are listed in each day file and the deciding cell in `DAY51.md`.
+
+| Day | Change | Where | Commit |
+|---|---|---|---|
+| 40 | Stage clock `--expert-bank-stages` (log only) and the attribution cell | `moe_cache.rs`, `native.rs`, `residency.rs` | `08210a291` |
+| 43 | I6: the host tier planned per record size (no 16-record clamp, no 256 MiB ceiling; refused above 3/4 of `MemAvailable`), an O(1) host SLRU decision-identical to the VecDeque oracle, `collect_evicted` over a candidate list, the governor's release no longer O(outstanding charges) | `banked_residency.rs`, `slru.rs`, `residency.rs`, `governor.rs` | `ed3c8c5b4`, `51467de12` |
+| 44 | I9: under the door the loader keeps expert banks as views of the artifact's mapping (no pinned write-combined duplicate); `Engine::set_expert_host_mapped`, `GgufFile::shard_mmap` | `model.rs`, `lib.rs`, `memra-gguf` | `c2d78fb9c` |
+| 45 | I3, the host fill: `min(8, cores/2)` threads read and checksum every record off the owner thread; the owner admits each against the catalog digest into a free slot (`BankService::admit_filled`, `SlruPolicy::reserve_free`) | `native.rs`, `residency.rs`, `slru.rs` | `ef7db702e` |
+| 46 | I1: no compute-stream drain on the miss path; leases retired in order on their copy events, at most 32 open | `moe_cache.rs`, `native.rs` | `a6258a8f0` |
+| 47 | I2: one cached pinned pool per install, the tier's `HostBuffer` hook, reads straight into pooled buffers, the H2D a DMA from cached pinned memory | `host_buffer.rs`, `rows.rs`, `residency.rs`, `native.rs` | `10a1c30df` |
+| 48 | I8: a memo of `(id, bytes)` pairs `validate` accepted; I5: the host-demand trace written in 64 KiB line-aligned chunks | `moe_cache.rs`, `native.rs` | `cd49c8bcb`, `ae5237e6c` |
+| 49 | I7: the installer's per-expert compare and checksum on scoped threads after the serial SHA lock | `native.rs` | `14b2b9970` |
+| 50 | I4: prefetch of the next routed expert through the owner (host-resident records only, copy stream, consumption after a compute-stream wait) | `moe_cache.rs`, `hybrid_forward.rs`, `lib.rs`, `native.rs` | `6745fd062` |
+
+The door's decide-by is unchanged (2026-10-04). What the pending items below say about the synchronous miss path
+(item 4) describes the program before day 46.
+
 ## What is pending before the door can sit behind the tiered materializer
 
 Listed, not implemented. None is a "small default-OFF step with no new numeric
