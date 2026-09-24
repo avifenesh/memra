@@ -918,3 +918,16 @@ DAY39 section 5b, and item 5's target half).
   owner decides whether the 5090 half of (f) is read against the base arm. `base` flat: the rise is the designs', and the
   arms' order (G'' against G''' against G4 in one hold) says which placement the 5090 needs; G4 is then revised under a
   new pre-registration.
+
+## 19a. G4 on the RTX 5090, the rest of the hold, and the BOX7 G4 sitting started
+
+- The gates on G4 (each `rc=0`), verbatim: `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` x4; `KV-HOST-SPILL FAILURE
+  GATE: ALL GREEN` OFF and ON; `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` default and plain (229 ok each, 0 FAIL; the
+  source-flip cell with the flip ahead of the copies on one stream, copy-phase-hit under the host-side hold, day 41's three);
+  `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` OFF and ON; unit cells `ok. 18 passed` and `ok. 13 passed`. Hold released
+  22:33:27Z. So on the 5090 G4 passes (a) to (e) and fails (f) as registered (section 19).
+- The BOX7 G4 sitting (`pro-single-g4/`, `build.sh 020745ef4` `rc=0` after one refused attempt: `f1.patch`'s context named
+  the removed receipt stream, replaced by `f1-g4.patch`, `build-attempt1.log` kept; g4 `e764db2195703cf7..`, f1
+  `7f466826f289a4ce..`, hk `b448c36c214f5d04..`, base and gpp the day-38 sitting's; markers `g4 copy-stream-receipt-line:
+  1`, `base .. 0`, `gpp .. 0`) launched `driver.sh` at 22:36Z: the A/B, the hump cell, the gates with day 41's cells,
+  the hit gate, the unit cells and item 3's cell.
