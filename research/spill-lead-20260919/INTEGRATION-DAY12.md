@@ -3274,6 +3274,78 @@ off the owner thread.
 - 2026-10-06: the park door.
 - BOX3's detached OS volume: keep or delete.
 
+## integ56 (`lane/spill-integ56-20260924`): B day 36, the owner's `MEMRA_ADMIT_BY_MEMORY` decision cell (V-DOOR PASS on both cards; the decision packet)
+Lane tip merged: B `c4cbbe042` on main `54fe991e9` (#705) as `845b2a12a`. Research only: B's STATE.md, the day-36
+INDEX row and a one-word DAY35 fix. The day-36 receipts and DAY36.md came in with integ55.
+
+**B day 36.** Pre-registration `88bb3b1e2` was committed before any day-36 boot, and the cell started only once day
+35's BOX4 legs read GREEN. It is day 34's cell (OFF against ON at open output 2048, 8192 and 32768, both orders)
+with the V-ALLOC booking in the engine's form and a V-OOM term (zero prefill `CUDA_ERROR_OUT_OF_MEMORY` lines and
+zero 503s), on the day-35 tree `809c16444`, on the local 5090 (the 9B) and BOX4 (a single RTX PRO 6000 WS, the 27B).
+Verbatim, 63 PASS and 0 FAIL per card:
+- `DAY34 V-DOOR card=rtx5090 boots=8 excluded=0 v_crash_all=True v_id_all=True v_alloc_all=True v_trunc_band_all=True
+  v_trunc_conserved_all=True v_retry_all=True v_oom_all=True g_book_all=True park_all=True -> PASS`, and the same line
+  for `card=pro6000`.
+- No OOM line, no park and no crash in any of the 16 boots. Identity is 16/16 to 48/48 on every ON arm.
+- On the 5090, the 32768 burst is 19 x 200 and 13 typed 429s. On BOX4 it is 44 x 200 and 20 typed 429s. On day 32's
+  pre-fix tree the same bursts gave 2 x 503 per order locally and 46 to 47 x 503 per order on the target card.
+
+**The decision packet.** The owner's call, decide-by 2026-10-07.
+- **Selection rules as printed, none chosen:** `DAY34 SELECT card=rtx5090 R1_smallest_zero_truncation=8192 ...
+  R2_smallest_v_ge_max_natural_G=8192 (max_natural_G=6405) ... R3_registry=32768 R4_survey=context` and `DAY34 SELECT
+  card=pro6000 R1_smallest_zero_truncation=none ... R2_smallest_v_ge_max_natural_G=none of [2048, 8192, 32768]
+  (max_natural_G=193178) ... R3_registry=32768 R4_survey=context`.
+- **Truncation:**
+  - 2048 cuts 18 requests per order on the 5090 that OFF lets stop on their own. 8192 and 32768 cut none there.
+  - On the PRO 6000 every swept value cuts 4 to 5 requests per order, because the 27B's natural stops reach 193,178
+    tokens.
+- **Concurrency:**
+  - OFF peaks at 11 (5090) and 9 (PRO 6000) sessions in flight.
+  - At 2048 and 8192 every burst is served whole: 32 of 32 on the 5090, 64 of 64 on the PRO 6000.
+  - At 32768 the door serves 19 and 44 and refuses the rest with typed 429s.
+- **What R4 means:**
+  - Every surveyed engine (vLLM, SGLang, llama.cpp, TensorRT-LLM) bounds an omitted `max_tokens` by the remaining
+    context, and the OpenAI contract pins no bound. Following R4 makes the door's open-output charge the served
+    context. That is today's door-OFF charge, so the door's part (a) would not change the program.
+  - Parts (b) (demote-before-drop in the reclaim flush) and (c) (the bounded defer and typed 429) are the rest of the
+    door.
+- **One caveat:** day 36 ran the uncapped seed booking. On a warm prefix cache its ON admissions may be over-booked
+  (extra defers or 429s). The cap `34a4b7f23` is on main since #705. Truncation, identity and the no-OOM result are
+  unaffected.
+- **Options:**
+  - (1) Keep the door OFF.
+  - (2) Promote it with one open-output value. R1 and R2 give 8192 on the 5090 and nothing on the PRO 6000, where
+    every swept value truncates the 27B. R3 gives 32768, the registry value.
+  - (3) Promote parts (b) and (c) only, with the R4 charge.
+  - (4) Before deciding, rerun the ON concurrency rows on the capped tree: about 0.1 agent-day, 4.5 h on the 5090
+    and 6 h on a rented target card.
+
+**Lead review.**
+- The pre-registration precedes every boot. The arms, values, orders and reader match day 34's cell with its stated
+  changes.
+- The V-ALLOC booking now reads the engine's form, and the day-32 FAIL is not repeated.
+- The uncapped-booking caveat is recorded in DAY36 2.2 by B, not added after the fact here.
+- No finding.
+
+**Ruling 51:**
+- Day 36 is read as registered: V-DOOR PASS on both cards.
+- The door stays OFF until the owner decides. The lead selects no value.
+- The packet above is the owner's input. A capped-tree rerun (option 4) runs only if the owner asks for it.
+
+**Checks.**
+- Research only: check-flags, conflict markers, perf board and `git diff --check` are clean.
+- No provider name, host, id or price. No em dash in authored lines.
+
+**Running.** A day 35: design M' on the 5090, pre-registered after design M was refuted and reverted. Lane B holds.
+
+**Owner decisions flagged.**
+- `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-10-07): the packet above.
+- 2026-10-05, the contracts door: integ54's readings (DAY28 1b passes on the target card, and the owner thread's
+  promote cost is under 1 ms).
+- 2026-10-04: MoE slot cache, VMM.
+- 2026-10-06: the park door.
+- BOX3's detached OS volume: keep or delete.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
