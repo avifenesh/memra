@@ -872,10 +872,14 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     // The B-row workspace is the route's, allocated before calibration so the memory book's
     // idle readings already exclude it.
     let row_batcher = if rows > 1 {
-        let ws = gpu
-            .alloc_rows_state(rows)
+        let groups = if 2 * rows <= sessions { 2 } else { 1 };
+        let ws = (0..groups)
+            .map(|_| gpu.alloc_rows_state(rows))
+            .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("MEMRA_DSV4_ROWS={rows} workspace: {e}"))?;
-        eprintln!("[dsv4-serve] {name}: B-row steps up to {rows} rows (MEMRA_DSV4_ROWS)");
+        eprintln!(
+            "[dsv4-serve] {name}: B-row steps up to {rows} rows, {groups} group(s) in flight (MEMRA_DSV4_ROWS)"
+        );
         Some(Arc::new(RowBatcher::new(rows, ws)))
     } else {
         None
@@ -1325,8 +1329,11 @@ struct Coalescer<S> {
 }
 
 struct CoalesceState<S> {
-    /// Lanes inside a coalesced decode loop; a batch is full when every one has deposited.
+    /// Lanes inside a coalesced decode loop; a batch is full when every one of them that is not
+    /// already riding a batch in flight has deposited.
     members: usize,
+    /// Rows taken by batches that have not published yet.
+    in_flight: usize,
     next: u64,
     waiting: Vec<(u64, u32, bool, Lent<S>)>,
     done: std::collections::HashMap<u64, Result<RowOut, String>>,
@@ -1363,6 +1370,7 @@ impl<S> Coalescer<S> {
             bmax,
             inner: std::sync::Mutex::new(CoalesceState {
                 members: 0,
+                in_flight: 0,
                 next: 0,
                 waiting: Vec::new(),
                 done: std::collections::HashMap::new(),
@@ -1406,7 +1414,8 @@ impl<S> Coalescer<S> {
                 return result;
             }
             let pos = g.waiting.iter().position(|d| d.0 == ticket);
-            let full = g.waiting.len() >= g.members.clamp(1, self.bmax);
+            let free = g.members.saturating_sub(g.in_flight);
+            let full = g.waiting.len() >= free.clamp(1, self.bmax);
             if let Some(mine) = pos
                 && (full || t0.elapsed() >= ROW_BATCH_WAIT)
             {
@@ -1425,6 +1434,7 @@ impl<S> Coalescer<S> {
                     .into_iter()
                     .rev()
                     .collect();
+                g.in_flight += batch.len();
                 drop(g);
                 let toks: Vec<u32> = batch.iter().map(|d| d.1).collect();
                 let wants: Vec<bool> = batch.iter().map(|d| d.2).collect();
@@ -1434,6 +1444,7 @@ impl<S> Coalescer<S> {
                 let out = run(&toks, &wants, &mut states);
                 drop(states);
                 g = self.lock();
+                g.in_flight -= batch.len();
                 match out {
                     Ok(next) if next.len() == batch.len() => {
                         for (d, r) in batch.iter().zip(next) {
@@ -1476,7 +1487,10 @@ impl<S> Coalescer<S> {
 /// leader uses under the launch turn.
 pub struct RowBatcher {
     core: Coalescer<DecodeState>,
-    ws: std::sync::Mutex<RowsWorkspace>,
+    /// One B-row workspace per batch that can be in flight: two when the lanes can fill two
+    /// groups (`2 * B <= lanes`), so one group's stage 0 runs while the other's stage 1 does.
+    pool: std::sync::Mutex<Vec<RowsWorkspace>>,
+    freed: std::sync::Condvar,
 }
 
 struct RowsWorkspace(memra_engine::dsv4_gpu::VerifyState);
@@ -1485,11 +1499,27 @@ struct RowsWorkspace(memra_engine::dsv4_gpu::VerifyState);
 unsafe impl Send for RowsWorkspace {}
 
 impl RowBatcher {
-    fn new(bmax: usize, ws: memra_engine::dsv4_gpu::VerifyState) -> Self {
+    fn new(bmax: usize, ws: Vec<memra_engine::dsv4_gpu::VerifyState>) -> Self {
         RowBatcher {
             core: Coalescer::new(bmax),
-            ws: std::sync::Mutex::new(RowsWorkspace(ws)),
+            pool: std::sync::Mutex::new(ws.into_iter().map(RowsWorkspace).collect()),
+            freed: std::sync::Condvar::new(),
         }
+    }
+
+    fn take_ws(&self) -> RowsWorkspace {
+        let mut pool = self.pool.lock().unwrap_or_else(|p| p.into_inner());
+        loop {
+            if let Some(ws) = pool.pop() {
+                return ws;
+            }
+            pool = self.freed.wait(pool).unwrap_or_else(|p| p.into_inner());
+        }
+    }
+
+    fn put_ws(&self, ws: RowsWorkspace) {
+        self.pool.lock().unwrap_or_else(|p| p.into_inner()).push(ws);
+        self.freed.notify_one();
     }
 }
 
@@ -1529,39 +1559,51 @@ fn rows_step(
     let result = batcher
         .core
         .step(tok, logits, state, &mut |toks, wants, states| {
-            // Dropped at the end of the closure, success or error: the turn goes back either way.
-            let _lead = Turn::take(lock);
+            let full = wants.iter().any(|&w| w);
+            // One row runs the pipelined one-row step, the program a one-row B-row step equals.
             if let [one] = states {
-                return if wants[0] {
-                    let row = m.gpu.decode_step(toks[0], one)?;
-                    Ok(vec![RowOut {
-                        tok: argmax(&row),
-                        logits: Some(row),
-                    }])
+                let mut lead = Turn::take(lock);
+                return if full {
+                    logits_step(m, &mut lead, toks[0], one).map(|row| {
+                        vec![RowOut {
+                            tok: argmax(&row),
+                            logits: Some(row),
+                        }]
+                    })
                 } else {
-                    let tok = m.gpu.decode_step_greedy(toks[0], one)?;
-                    Ok(vec![RowOut { tok, logits: None }])
+                    greedy_step(m, &mut lead, toks[0], one)
+                        .map(|tok| vec![RowOut { tok, logits: None }])
                 };
             }
-            let mut ws = batcher.ws.lock().unwrap_or_else(|p| p.into_inner());
-            if wants.iter().any(|&w| w) {
-                let (rows, am) = m.gpu.decode_rows_full(toks, states, &mut ws.0)?;
-                Ok(rows
-                    .into_iter()
-                    .zip(am)
-                    .zip(wants)
-                    .map(|((row, tok), &w)| RowOut {
-                        tok,
-                        logits: w.then_some(row),
-                    })
-                    .collect())
-            } else {
-                let am = m.gpu.decode_rows_greedy(toks, states, &mut ws.0)?;
-                Ok(am
-                    .into_iter()
-                    .map(|tok| RowOut { tok, logits: None })
-                    .collect())
-            }
+            // Several rows: queue the group holding the turn, wait for its own readbacks without
+            // it (so another group can queue behind it and the two cards overlap), then commit.
+            let mut ws = batcher.take_ws();
+            let out = (|| {
+                let mut lead = Turn::take(lock);
+                m.gpu.decode_rows_enqueue(toks, states, &mut ws.0, full)?;
+                lead.release();
+                let waited = m.gpu.decode_rows_wait(&mut ws.0);
+                lead.acquire();
+                waited?;
+                let (rows, am) = m.gpu.decode_rows_complete(states, &mut ws.0)?;
+                Ok(match rows {
+                    Some(rows) => rows
+                        .into_iter()
+                        .zip(am)
+                        .zip(wants)
+                        .map(|((row, tok), &w)| RowOut {
+                            tok,
+                            logits: w.then_some(row),
+                        })
+                        .collect(),
+                    None => am
+                        .into_iter()
+                        .map(|tok| RowOut { tok, logits: None })
+                        .collect(),
+                })
+            })();
+            batcher.put_ws(ws);
+            out
         });
     turn.acquire();
     result

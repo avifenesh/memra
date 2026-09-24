@@ -11,8 +11,14 @@
 //! A request must not change numeric program when a peer joins or leaves, or when its row
 //! moves.
 //!
+//! A second identity arm pipelines two groups of two sessions (`decode_rows_enqueue`, `_wait`,
+//! `_complete`): group 0's step is queued, then group 1's behind it, and each is completed and
+//! queued again in turn, so the two cards run different groups' stages. Every row's logits bits
+//! must again equal its solo step.
+//!
 //! Timing (after the identity arms, decode wall only): the one-row step against B-row steps
-//! of 1, 2 and 4 rows, interleaved, reported as ms per step and aggregate tokens per second.
+//! of 1, 2 and 4 rows, and two pipelined groups of 2, reported as ms per step and aggregate
+//! tokens per second.
 //!
 //! Usage: `dsv4_rows_gate <model-dir> <source.txt> [steps] [timing-steps]`.
 //! Rig law: under the box GPU lock, served defaults (no MEMRA_DSV4_* overrides).
@@ -140,6 +146,48 @@ fn batched(
     (trace, widths)
 }
 
+/// Two groups of two sessions, pipelined: every step of every session through
+/// `decode_rows_enqueue` / `_wait` / `_complete`, full logits kept for the bit comparison.
+fn pipelined_groups(gpu: &Dsv4Gpu, prompts: &[Vec<u32>], capacity: usize, steps: usize) -> Trace {
+    let mut sessions: Vec<Session> = prompts.iter().map(|p| prime(gpu, p, capacity)).collect();
+    let mut rows = [
+        gpu.alloc_rows_state(2).expect("group 0 workspace"),
+        gpu.alloc_rows_state(2).expect("group 1 workspace"),
+    ];
+    let mut trace: Trace = vec![Vec::new(); sessions.len()];
+    let (a, b) = sessions.split_at_mut(2);
+    let mut groups = [a, b];
+    for (g, group) in groups.iter_mut().enumerate() {
+        let toks: Vec<u32> = group.iter().map(|s| s.next).collect();
+        let mut states: Vec<&mut DecodeState> = group.iter_mut().map(|s| &mut s.state).collect();
+        gpu.decode_rows_enqueue(&toks, &mut states, &mut rows[g], true)
+            .expect("first enqueue");
+    }
+    for step in 0..steps {
+        for (g, group) in groups.iter_mut().enumerate() {
+            gpu.decode_rows_wait(&mut rows[g]).expect("group wait");
+            let mut states: Vec<&mut DecodeState> =
+                group.iter_mut().map(|s| &mut s.state).collect();
+            let (logits, _) = gpu
+                .decode_rows_complete(&mut states, &mut rows[g])
+                .expect("group complete");
+            drop(states);
+            for (i, (s, row)) in group.iter_mut().zip(logits.expect("full rows")).enumerate() {
+                s.next = argmax(&row);
+                trace[2 * g + i].push((s.next, bits_hash(&row)));
+            }
+            if step + 1 < steps {
+                let toks: Vec<u32> = group.iter().map(|s| s.next).collect();
+                let mut states: Vec<&mut DecodeState> =
+                    group.iter_mut().map(|s| &mut s.state).collect();
+                gpu.decode_rows_enqueue(&toks, &mut states, &mut rows[g], true)
+                    .expect("group enqueue");
+            }
+        }
+    }
+    trace
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     assert!(
@@ -197,6 +245,18 @@ fn main() {
         std::process::exit(1);
     }
     println!("PASS: every row bit-identical to its solo step across join, leave and row moves");
+    let piped = pipelined_groups(&gpu, &prompts, capacity, steps);
+    for s in 0..prompts.len() {
+        if let Some(i) = (0..steps).find(|&i| reference[s][i] != piped[s][i]) {
+            println!(
+                "PIPELINED SESSION {s} FIRST DIVERGENCE step={i} solo=(tok {}, bits {:016x}) rows=(tok {}, bits {:016x})",
+                reference[s][i].0, reference[s][i].1, piped[s][i].0, piped[s][i].1
+            );
+            println!("FAILED: pipelined groups diverged");
+            std::process::exit(1);
+        }
+    }
+    println!("PASS: pipelined groups bit-identical to solo steps");
 
     // Timing: one-row steps vs B-row steps, fresh sessions each arm, decode wall only.
     for rep in 0..2 {
@@ -235,6 +295,54 @@ fn main() {
                 }
             }
             let rows_s = t0.elapsed().as_secs_f64();
+            if b == 4 {
+                let mut sessions: Vec<Session> =
+                    prompts.iter().map(|p| prime(&gpu, p, capacity)).collect();
+                let mut ws = [
+                    gpu.alloc_rows_state(2).expect("group 0 workspace"),
+                    gpu.alloc_rows_state(2).expect("group 1 workspace"),
+                ];
+                let (a, c) = sessions.split_at_mut(2);
+                let mut groups = [a, c];
+                drain(&gpu);
+                let t0 = Instant::now();
+                for (g, group) in groups.iter_mut().enumerate() {
+                    let toks: Vec<u32> = group.iter().map(|s| s.next).collect();
+                    let mut states: Vec<&mut DecodeState> =
+                        group.iter_mut().map(|s| &mut s.state).collect();
+                    gpu.decode_rows_enqueue(&toks, &mut states, &mut ws[g], false)
+                        .expect("enqueue");
+                }
+                for step in 0..timing_steps {
+                    for (g, group) in groups.iter_mut().enumerate() {
+                        gpu.decode_rows_wait(&mut ws[g]).expect("wait");
+                        let mut states: Vec<&mut DecodeState> =
+                            group.iter_mut().map(|s| &mut s.state).collect();
+                        let (_, next) = gpu
+                            .decode_rows_complete(&mut states, &mut ws[g])
+                            .expect("complete");
+                        drop(states);
+                        for (s, t) in group.iter_mut().zip(next) {
+                            s.next = t;
+                        }
+                        if step + 1 < timing_steps {
+                            let toks: Vec<u32> = group.iter().map(|s| s.next).collect();
+                            let mut states: Vec<&mut DecodeState> =
+                                group.iter_mut().map(|s| &mut s.state).collect();
+                            gpu.decode_rows_enqueue(&toks, &mut states, &mut ws[g], false)
+                                .expect("enqueue");
+                        }
+                    }
+                }
+                let piped_s = t0.elapsed().as_secs_f64();
+                let tokens = (4 * timing_steps) as f64;
+                println!(
+                    "TIME rep={rep} PIPELINED 2x2 ms_per_group_step={:.3} tok_s={:.2} vs_rows4={:.3}",
+                    1e3 * piped_s / (2 * timing_steps) as f64,
+                    tokens / piped_s,
+                    rows_s / piped_s
+                );
+            }
             let tokens = (b * timing_steps) as f64;
             println!(
                 "TIME rep={rep} B={b} one_row_ms_per_token={:.3} rows_ms_per_step={:.3} one_row_tok_s={:.2} rows_tok_s={:.2} speedup={:.3}",

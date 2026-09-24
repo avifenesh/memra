@@ -13628,6 +13628,10 @@ struct CmpCkptDev {
 
 /// One request's rows of a multi-row attention transaction (memra #667 lever 2): its layer
 /// cache and checkpoint, the position of its first row and its rows `row0..row0 + t` of the
+/// What a completed B-row step returns: each row's logits when the step kept them, and each
+/// row's device argmax.
+pub type RowsOutput = (Option<Vec<Vec<f32>>>, Vec<u32>);
+
 /// workspace.
 struct AttnRows<'a> {
     cache: &'a mut LayerCache,
@@ -18691,12 +18695,117 @@ impl Dsv4Gpu {
         Ok((logits.chunks(vocab).map(<[f32]>::to_vec).collect(), am))
     }
 
+    /// Pipelined B-row step, first half (memra #667 levers 1 and 2): queue the whole step for
+    /// every row with no host wait. Each row's device argmax (and, when `full`, its logits row)
+    /// lands in pinned memory behind one event per stage, and each request's round stays open.
+    /// Another group's step can then be queued on the same stage streams before this one
+    /// finishes, so the two cards run different groups' stages. `rows` must be this group's
+    /// own workspace. [`Self::decode_rows_complete`] finishes it.
+    pub fn decode_rows_enqueue(
+        &self,
+        toks: &[u32],
+        states: &mut [&mut DecodeState],
+        rows: &mut VerifyState,
+        full: bool,
+    ) -> Res<()> {
+        self.decode_rows_run(toks, states, rows, full, true)
+            .map(|_| ())
+    }
+
+    /// Pipelined B-row step, the wait: block until this group's own readbacks landed, not
+    /// whatever else the stage streams hold. Queues no work.
+    pub fn decode_rows_wait(&self, rows: &mut VerifyState) -> Res<()> {
+        match rows.landing.as_mut() {
+            Some(landing) if landing.rows != 0 => landing.wait(&self.stages),
+            _ => Err("B-row wait without a queued step".into()),
+        }
+    }
+
+    /// Pipelined B-row step, second half: refuse on a MoE fault before anything commits, then
+    /// commit each request's row through its own one-row workspace (as its pipelined one-row
+    /// step commits) and return each row's device argmax, and its logits row when the step
+    /// was queued with `full`. `states` are the enqueued states in the same order.
+    pub fn decode_rows_complete(
+        &self,
+        states: &mut [&mut DecodeState],
+        rows: &mut VerifyState,
+    ) -> Res<RowsOutput> {
+        let b = states.len();
+        if rows.open != Some((0, b)) {
+            return Err(format!(
+                "B-row completion of {b} rows without a matching queued step ({:?})",
+                rows.open
+            ));
+        }
+        rows.open = None;
+        let full = rows.landing.as_ref().is_some_and(|l| l.full);
+        let landed = self.complete_step_landing(rows, full);
+        let result = (|| -> Res<RowsOutput> {
+            if landed? != b {
+                return Err(format!("B-row step landed a different row count than {b}"));
+            }
+            let landing = rows.landing.as_ref().expect("landing completed above");
+            let am: Vec<u32> = landing.argmax.words(b).iter().map(|&x| x as u32).collect();
+            let logits = if full {
+                let head = rows.ws.last().ok_or("head workspace missing")?;
+                let vocab = head.logits.len() / head.tmax;
+                let flat = landing
+                    .logits
+                    .as_ref()
+                    .ok_or("B-row logits landing missing")?
+                    .words(b * vocab);
+                Some(flat.chunks(vocab).map(<[f32]>::to_vec).collect())
+            } else {
+                None
+            };
+            Ok((logits, am))
+        })();
+        let mut committed = result.as_ref().map(|_| ()).map_err(Clone::clone);
+        for state in states.iter_mut() {
+            let Some(mut step) = state.matrix_step.take() else {
+                committed = Err("matrix one-row workspace missing".into());
+                continue;
+            };
+            let open = step.verify.open;
+            let c = if committed.is_err() {
+                Err("B-row step failed".to_string())
+            } else if open != Some((state.pos, 1)) {
+                Err(format!(
+                    "B-row request round {open:?} at position {}",
+                    state.pos
+                ))
+            } else {
+                self.commit_verify_dev_opts(state, &mut step.verify, 1, false)
+            };
+            if let Err(why) = c {
+                // A request whose row did not commit may not continue from a half-written round.
+                step.failed = true;
+                step.verify.open = None;
+                committed = committed.and(Err(why));
+            }
+            state.matrix_step = Some(step);
+        }
+        committed?;
+        result
+    }
+
     fn decode_rows(
         &self,
         toks: &[u32],
         states: &mut [&mut DecodeState],
         rows: &mut VerifyState,
         full: bool,
+    ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
+        self.decode_rows_run(toks, states, rows, full, false)
+    }
+
+    fn decode_rows_run(
+        &self,
+        toks: &[u32],
+        states: &mut [&mut DecodeState],
+        rows: &mut VerifyState,
+        full: bool,
+        deferred: bool,
     ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
         let b = toks.len();
         if b == 0 || b != states.len() || b > rows.tmax {
@@ -18752,7 +18861,7 @@ impl Dsv4Gpu {
             .iter_mut()
             .map(|s| s.matrix_step.take().expect("checked above"))
             .collect();
-        let result = self.decode_rows_walk(toks, states, &mut steps, rows, full);
+        let result = self.decode_rows_walk(toks, states, &mut steps, rows, full, deferred);
         let failed = result.is_err();
         for (state, mut step) in states.iter_mut().zip(steps) {
             // A failed step poisons every request in it: none of them may continue from a
@@ -18770,6 +18879,7 @@ impl Dsv4Gpu {
         steps: &mut [Box<MatrixStep>],
         rows: &mut VerifyState,
         full: bool,
+        deferred: bool,
     ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
         let mc = &self.model.mc;
         let d = self.model.cfg();
@@ -18920,7 +19030,7 @@ impl Dsv4Gpu {
         self.head_logits_batch_dev(&mut rows.ws[last], b, false)?;
         let vws = &mut rows.ws[last];
         let vocab = vws.logits.len() / vws.tmax;
-        let logits = if full {
+        let logits = if full && !deferred {
             let mut v = vec![0f32; b * vocab];
             let view = vws.logits.slice(0..b * vocab);
             stream_last
@@ -18944,6 +19054,17 @@ impl Dsv4Gpu {
                     ),
                 )?;
             }
+        }
+        if deferred {
+            // Readbacks land in pinned memory behind one event per stage; each request's round
+            // stays open until `decode_rows_complete` commits it through its own workspace.
+            drop(logits);
+            self.enqueue_step_landing(rows, b, full)?;
+            for (step, &p0) in steps.iter_mut().zip(&pos0) {
+                step.verify.open = Some((p0, 1));
+            }
+            rows.open = Some((0, b));
+            return Ok((None, Vec::new()));
         }
         let view = vws.argmax.slice(0..b);
         stream_last
