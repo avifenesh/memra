@@ -6369,6 +6369,13 @@ fn prefix_seed_bytes_at(cache: &Cache, rows: usize) -> usize {
 
 /// The prefix entries every armed, still-seeding session will publish (memra#680, lane B day
 /// 35). Read by the armed gate only; zero when the prefix cache has no budget.
+/// The pending-seed booking the prefix cache can actually add to device memory: at most what its byte
+/// budget has left above what it holds (`PrefixCache::prepare_snapshot` evicts or demotes older
+/// unleased entries to fit a seed inside the budget before allocating it).
+fn seed_booking_cap(pending: usize, budget: usize, resident: usize) -> usize {
+    pending.min(budget.saturating_sub(resident))
+}
+
 fn pending_seed_bytes(active: &[Session]) -> usize {
     if prefix_cache_budget_bytes() == 0 {
         return 0;
@@ -24396,8 +24403,16 @@ pub fn run(
                 // admitted it; the day-34 BOX4 burst OOMed three prefills on exactly those inserts.
                 // Armed, the entry each armed session will publish is booked until the insert lands
                 // (or is refused); the cache's contents do not change. Unarmed it is 0.
+                // Capped at the budget the prefix cache has left (revuto on #705): `prepare_snapshot`
+                // evicts or demotes older unleased entries to fit a seed inside the cache's byte
+                // budget before it allocates, so the cache's device bytes can grow by at most
+                // `budget - total_bytes`. A warm, full cache replaces bytes; it does not add them.
                 let pending_seed = if admit_memory_cfg.armed {
-                    pending_seed_bytes(&active)
+                    seed_booking_cap(
+                        pending_seed_bytes(&active),
+                        prefix_cache_budget_bytes(),
+                        px.total_bytes,
+                    )
                 } else {
                     0
                 };
@@ -51637,6 +51652,34 @@ mod tests {
         );
     }
 
+    /// memra#680 remaining term, the review fix on #705: the pending-seed booking is capped at the budget
+    /// the prefix cache has left, because a seed evicts inside the budget before it allocates.
+    #[test]
+    fn seed_booking_is_capped_at_the_budget_the_cache_has_left() {
+        let seed = 197_800_000usize;
+        // Cold cache: the whole pending total fits the remaining budget and is booked.
+        assert_eq!(
+            super::seed_booking_cap(25 * seed, 13_000_000_000, 0),
+            25 * seed
+        );
+        // Warm, part-full cache: only the headroom above what it holds can grow.
+        assert_eq!(
+            super::seed_booking_cap(25 * seed, 13_000_000_000, 12_000_000_000),
+            1_000_000_000
+        );
+        // Full (or over) budget: a seed replaces bytes, it adds none.
+        assert_eq!(
+            super::seed_booking_cap(25 * seed, 13_000_000_000, 13_000_000_000),
+            0
+        );
+        assert_eq!(
+            super::seed_booking_cap(25 * seed, 13_000_000_000, 14_000_000_000),
+            0
+        );
+        // No pending seed books nothing.
+        assert_eq!(super::seed_booking_cap(0, 13_000_000_000, 0), 0);
+    }
+
     /// memra#680 remaining term (lane B day 35): a session owes its seed entry only while it is
     /// armed to publish one, and only with a live cache and no vision input.
     #[test]
@@ -51689,7 +51732,7 @@ mod tests {
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         assert!(live.contains(
-            "let pending_seed = if admit_memory_cfg.armed { pending_seed_bytes(&active) } else { 0 };"
+            "let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_bytes(&active), prefix_cache_budget_bytes(), px.total_bytes, ) } else { 0 };"
         ));
         assert!(live.contains("let pending_booked = pending_prime.saturating_add(pending_seed);"));
         assert!(live.contains(
