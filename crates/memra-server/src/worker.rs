@@ -9606,15 +9606,22 @@ impl HostPrefixCache {
                 .collect::<Vec<_>>(),
             entry.draft.as_ref().map(plane_geometry),
         );
-        // The KV planes' checksums stay on this thread (the leases hold an `Rc` and a CUDA event).
-        for p in entry.kv.iter().flatten() {
+        // WP-A day 35 (`DAY35.md` design M'): a KV plane's re-hash (hash 2) is the helper's digest
+        // over a view of the lease when one came back (the same `checksum` program over the same
+        // bytes, taken after the `flip-demote` point); without one it runs here, as before. Either
+        // way the receipt comparison below is unchanged.
+        let lease_pre = |slot: HostLeaseSlot| hashed.and_then(|h| h.lease(slot));
+        for (i, p) in entry.kv.iter().enumerate() {
+            let Some(p) = p else {
+                continue;
+            };
             add(
                 Role::Key,
                 p.k_tok_bytes as u64,
                 b"q8_0",
                 p.k.bytes()?,
                 p.k.receipt(),
-                None,
+                lease_pre(HostLeaseSlot::TrunkK(i)),
             )?;
             add(
                 Role::Value,
@@ -9622,7 +9629,7 @@ impl HostPrefixCache {
                 b"q5_1",
                 p.v.bytes()?,
                 p.v.receipt(),
-                None,
+                lease_pre(HostLeaseSlot::TrunkV(i)),
             )?;
         }
         let pre = |slot: HostHashSlot| hashed.and_then(|h| h.get(slot));
@@ -9675,7 +9682,7 @@ impl HostPrefixCache {
                 b"mtp-draft-q8_0",
                 p.k.bytes()?,
                 p.k.receipt(),
-                None,
+                lease_pre(HostLeaseSlot::DraftK),
             )?;
             add(
                 Role::Draft,
@@ -9683,7 +9690,7 @@ impl HostPrefixCache {
                 b"mtp-draft-q5_1",
                 p.v.bytes()?,
                 p.v.receipt(),
-                None,
+                lease_pre(HostLeaseSlot::DraftV),
             )?;
         }
         add(
@@ -9970,6 +9977,9 @@ struct PendingHashing {
     /// silent re-parks of an already-recorded id (the `ParkAgain` shape).
     parked: Vec<String>,
     reparks: u32,
+    /// WP-A day 35 (`DAY35.md` design M'): the image's KV planes while the helper reads views of
+    /// their leases (the bind's re-hash); `land`ed when the reply arrives, leaked on any other drop.
+    leases: Option<HostLeasesOnHelper>,
 }
 
 /// The owner thread's held time for one off-tick demote, by segment, in ms: before the submission
@@ -10030,7 +10040,15 @@ fn host_hash_class_tally(payloads: &[HostHashPayload]) -> String {
 struct HostHashJob {
     seq: u64,
     payloads: Vec<HostHashPayload>,
+    /// WP-A day 35 (`DAY35.md` design M'): read views of the image's contract KV leases, taken
+    /// after the settle and the `flip-demote` point; the bind consumes their digests (hash 2).
+    /// The leases themselves stay on the owner thread in `HostLeasesOnHelper` (a lease is not
+    /// `Send`).
+    leases: HostLeaseViews,
 }
+
+/// WP-A day 35: the lease views of one hash job, by slot.
+type HostLeaseViews = Vec<(HostLeaseSlot, memra_engine::tier_transfer::PinnedLeaseView)>;
 
 /// The helper's answer: every payload back with the byte count it hashed and its digest, in the
 /// order handed over; `helper_ms` is the helper's own wall time over the job.
@@ -10038,6 +10056,62 @@ struct HostHashReply {
     seq: u64,
     hashed: Vec<(HostHashPayload, usize, memra_engine::cache::tiered::Digest)>,
     helper_ms: f64,
+    /// WP-A day 35: each lease view's byte count and digest, in the order handed over (the views
+    /// end with the job: the helper reads nothing after this reply is sent).
+    leases: Vec<(HostLeaseSlot, usize, memra_engine::cache::tiered::Digest)>,
+}
+
+/// WP-A day 35 (`DAY35.md` design M'): which KV lease of the image a view reads and a digest names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostLeaseSlot {
+    TrunkK(usize),
+    TrunkV(usize),
+    DraftK,
+    DraftV,
+}
+
+/// WP-A day 35 (`DAY35.md` design M', the ordering rule on the server side):
+/// the image's KV planes while the hash helper reads views of their leases. Moved out of the image at
+/// the hand-off, they stay on the owner thread; nothing writes them here. Until the helper's reply
+/// lands (`land`) the helper may still read them, so a drop on any other path (a latch, the deadline,
+/// a helper that is gone, shutdown) LEAKS them: never a free under a live read.
+struct HostLeasesOnHelper {
+    kv: Vec<Option<HostPlane>>,
+    draft: Option<HostPlane>,
+    views: usize,
+    bytes: usize,
+    read_done: bool,
+}
+impl HostLeasesOnHelper {
+    /// The helper's reply landed (or the job never reached it): the planes are free to use again.
+    fn land(mut self) -> (Vec<Option<HostPlane>>, Option<HostPlane>) {
+        self.read_done = true;
+        (std::mem::take(&mut self.kv), self.draft.take())
+    }
+    /// The planes' lease bytes a slot names, for the reply's byte-count check.
+    fn lease_len(&self, slot: HostLeaseSlot) -> Option<usize> {
+        let plane_bytes = |b: &HostPlaneBytes| match b {
+            HostPlaneBytes::Contract { lease, .. } => {
+                use memra_engine::cache::tiered::PinnedLease;
+                Some(lease.storage_bytes() as usize)
+            }
+            HostPlaneBytes::Pinned(_) => None,
+        };
+        match slot {
+            HostLeaseSlot::TrunkK(i) => self.kv.get(i)?.as_ref().and_then(|p| plane_bytes(&p.k)),
+            HostLeaseSlot::TrunkV(i) => self.kv.get(i)?.as_ref().and_then(|p| plane_bytes(&p.v)),
+            HostLeaseSlot::DraftK => self.draft.as_ref().and_then(|p| plane_bytes(&p.k)),
+            HostLeaseSlot::DraftV => self.draft.as_ref().and_then(|p| plane_bytes(&p.v)),
+        }
+    }
+}
+impl Drop for HostLeasesOnHelper {
+    fn drop(&mut self) {
+        if !self.read_done {
+            std::mem::forget(std::mem::take(&mut self.kv));
+            std::mem::forget(self.draft.take());
+        }
+    }
 }
 
 /// WP-A day 34 (`DAY34.md` design K): one promote's H2D completion checksums, the views of its KV
@@ -10086,8 +10160,16 @@ impl HostHelperJob {
 #[derive(Default)]
 struct HostHashDigests {
     by_slot: Vec<(HostHashSlot, usize, memra_engine::cache::tiered::Digest)>,
+    /// WP-A day 35 (`DAY35.md` design M'): the KV leases' digests (hash 2) from the helper.
+    by_lease: Vec<(HostLeaseSlot, usize, memra_engine::cache::tiered::Digest)>,
 }
 impl HostHashDigests {
+    fn lease(&self, slot: HostLeaseSlot) -> Option<(usize, memra_engine::cache::tiered::Digest)> {
+        self.by_lease
+            .iter()
+            .find(|(s, _, _)| *s == slot)
+            .map(|(_, n, d)| (*n, *d))
+    }
     fn get(&self, slot: HostHashSlot) -> Option<(usize, memra_engine::cache::tiered::Digest)> {
         self.by_slot
             .iter()
@@ -10261,10 +10343,18 @@ impl HostHashWorker {
                             (p, n, d)
                         })
                         .collect();
+                    // WP-A day 35 (design M'): the bind's KV re-hash, the same program over the
+                    // same lease bytes; the views end here, before the reply is sent.
+                    let leases = job
+                        .leases
+                        .into_iter()
+                        .map(|(slot, v)| (slot, v.len(), v.digest()))
+                        .collect();
                     let reply = HostHashReply {
                         seq: job.seq,
                         hashed,
                         helper_ms: t.elapsed().as_secs_f64() * 1e3,
+                        leases,
                     };
                     if fault == Some(HostHashFault::NeverLands) {
                         // The red arm, one-shot: the digests never land; the helper stays alive.
@@ -13802,11 +13892,47 @@ fn host_demote_settle_with_deadline(
                 .map(|p| p.staged.as_ref().map_or(p.data.len() * 4, |s| s.len()))
                 .sum();
             let tally = host_hash_class_tally(&payloads);
+            // WP-A day 35 (`DAY35.md` design M'): the KV planes leave the image into the guard, and
+            // read views of their contract leases ride the hash job: the bind's re-hash (hash 2)
+            // runs on the helper AFTER the `flip-demote` point above and before the bind, and
+            // nothing writes a lease meanwhile (the guard owns the planes on this thread).
+            let leases = HostLeasesOnHelper {
+                kv: std::mem::take(&mut pending.image.kv),
+                draft: pending.image.draft.take(),
+                views: 0,
+                bytes: 0,
+                read_done: false,
+            };
+            let (leases, lease_views) = match host_lease_views(leases) {
+                Ok(both) => both,
+                Err((leases, err)) => {
+                    // No view was handed out: the planes are free and go back with the image.
+                    let (kv, draft) = leases.land();
+                    pending.image.kv = kv;
+                    pending.image.draft = draft;
+                    eprintln!(
+                        "[prefix-host] demote failed ({err}); nothing published; the tier latches \
+                         off"
+                    );
+                    host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "lease view");
+                    host.disable(&err);
+                    return Some(HostDemoteOutcome::Failed);
+                }
+            };
+            let (lease_n, lease_bytes) = (leases.views, leases.bytes);
             let submitted = match host.tier.as_ref() {
-                Some(tier) => tier.hasher.submit(HostHashJob { seq, payloads }),
+                Some(tier) => tier.hasher.submit(HostHashJob {
+                    seq,
+                    payloads,
+                    leases: lease_views,
+                }),
                 None => Err("tier context gone under a Demoting entry".to_string()),
             };
             if let Err(err) = submitted {
+                // The job never reached the helper (it dropped with the refused send): no reader.
+                let (kv, draft) = leases.land();
+                pending.image.kv = kv;
+                pending.image.draft = draft;
                 let err = format!(
                     "tier hash helper gone: {err} before the heap payloads of ticket seq={seq} \
                      were handed over ({n} payloads, {:.1}MB, {mode})",
@@ -13828,6 +13954,11 @@ fn host_demote_settle_with_deadline(
                 kv_items + span_items,
                 bytes as f64 / 1e6
             );
+            eprintln!(
+                "[prefix-host] demote KV leases on the hash helper: ticket seq={seq}, {lease_n} lease \
+                 views ({:.1}MB) for the bind's re-hash",
+                lease_bytes as f64 / 1e6
+            );
             pending.dead = Some(dead);
             pending.owner.copy_settle_ms += held.elapsed().as_secs_f64() * 1e3;
             let hashing = PendingHashing {
@@ -13837,6 +13968,7 @@ fn host_demote_settle_with_deadline(
                 handed: Instant::now(),
                 parked: Vec::new(),
                 reparks: 0,
+                leases: Some(leases),
             };
             match wait {
                 ContractWait::Poll => {
@@ -13885,6 +14017,52 @@ fn host_demote_settle_with_deadline(
     }
 }
 
+/// WP-A day 35 (`DAY35.md` design M'): one read view per contract KV lease the guard holds (trunk K
+/// and V in plane order, then the draft's), for the hash helper. A lease whose bytes cannot be read
+/// refuses before any view is handed out (the guard comes back with the reason).
+#[allow(clippy::result_large_err)]
+fn host_lease_views(
+    mut leases: HostLeasesOnHelper,
+) -> Result<(HostLeasesOnHelper, HostLeaseViews), (HostLeasesOnHelper, String)> {
+    let mut views = Vec::new();
+    let mut take = |slot: HostLeaseSlot, b: &HostPlaneBytes| -> Result<(), String> {
+        if let HostPlaneBytes::Contract { lease, .. } = b {
+            // SAFETY: the guard keeps this lease on the owner thread, alive and unwritten, until
+            // the helper's reply lands (`HostLeasesOnHelper::land`); every other drop of the guard
+            // leaks the lease (its `Drop`), so no free happens under the helper's read.
+            let view = unsafe { lease.read_view() }
+                .map_err(|e| format!("tier KV lease {slot:?} unreadable for its view ({e:?})"))?;
+            views.push((slot, view));
+        }
+        Ok(())
+    };
+    let mut refused = None;
+    for (i, p) in leases.kv.iter().enumerate() {
+        if let Some(p) = p
+            && let Err(e) = take(HostLeaseSlot::TrunkK(i), &p.k)
+                .and_then(|_| take(HostLeaseSlot::TrunkV(i), &p.v))
+        {
+            refused = Some(e);
+            break;
+        }
+    }
+    if refused.is_none()
+        && let Some(p) = &leases.draft
+        && let Err(e) =
+            take(HostLeaseSlot::DraftK, &p.k).and_then(|_| take(HostLeaseSlot::DraftV, &p.v))
+    {
+        refused = Some(e);
+    }
+    if let Some(e) = refused {
+        // Views taken before the refusal drop here, unread.
+        drop(views);
+        return Err((leases, e));
+    }
+    leases.views = views.len();
+    leases.bytes = views.iter().map(|(_, v)| v.len()).sum();
+    Ok((leases, views))
+}
+
 /// WP-A day 28: one settle step of a `Hashing` demote (ruling 39). `Poll` reads the reply channel
 /// and hands the state back while the helper works; `Block` waits on the reply for the remainder
 /// of the deadline, naming what it waits on (no CUDA event, no join: the KV planes settled and the
@@ -13898,7 +14076,7 @@ fn host_demote_settle_with_deadline(
 fn host_demote_settle_hashing(
     host: &mut HostPrefixCache,
     mut pending: PendingDemote,
-    hashing: PendingHashing,
+    mut hashing: PendingHashing,
     wait: ContractWait,
     why: &str,
     deadline: Duration,
@@ -13990,6 +14168,19 @@ fn host_demote_settle_hashing(
         }
         Ok(Some(reply)) => reply,
     };
+    // WP-A day 35 (`DAY35.md` design M'): the reply landed, so the helper reads nothing more; the KV
+    // planes leave the guard (free to use and to drop again) with what the reply's lease digests
+    // must match: the view count and each named lease's bytes.
+    let leases_back = hashing.leases.take().map(|g| {
+        let views = g.views;
+        let lens: Vec<Option<usize>> = reply
+            .leases
+            .iter()
+            .map(|(s, _, _)| g.lease_len(*s))
+            .collect();
+        let (kv, draft) = g.land();
+        (views, lens, kv, draft)
+    });
     // The reply must describe THIS image: its ticket, its payload count, every byte count.
     let mismatch = if reply.seq != seq {
         Some(format!(
@@ -14014,6 +14205,25 @@ fn host_demote_settle_hashing(
                 )
             })
     };
+    let mismatch = mismatch.or_else(|| {
+        let (views, lens) = leases_back
+            .as_ref()
+            .map_or((0, Vec::new()), |(v, l, _, _)| (*v, l.clone()));
+        if reply.leases.len() != views {
+            return Some(format!(
+                "the reply carries {} lease digests, {views} lease views were handed over",
+                reply.leases.len()
+            ));
+        }
+        reply
+            .leases
+            .iter()
+            .zip(lens)
+            .find(|((_, n, _), len)| *len != Some(*n))
+            .map(|((slot, n, _), len)| {
+                format!("the reply's {slot:?} lease digest covers {n} bytes, the lease has {len:?}")
+            })
+    });
     if let Some(what) = mismatch {
         return latch(
             host,
@@ -14030,7 +14240,14 @@ fn host_demote_settle_hashing(
         return HostDemoteOutcome::Failed;
     }
     let mut e = pending.image;
-    let mut digests = HostHashDigests::default();
+    if let Some((_, _, kv, draft)) = leases_back {
+        e.kv = kv;
+        e.draft = draft;
+    }
+    let mut digests = HostHashDigests {
+        by_lease: reply.leases,
+        ..HostHashDigests::default()
+    };
     for (mut payload, hashed_bytes, digest) in reply.hashed {
         digests.by_slot.push((payload.slot, hashed_bytes, digest));
         // WP-A day 30: a span's staging goes back to the context's set; the heap copy stays.
@@ -46666,7 +46883,11 @@ mod tests {
         // The helper: the same digests, bitwise, over the same bytes, every payload back.
         let worker = &host.tier.as_ref().unwrap().hasher;
         worker
-            .submit(super::HostHashJob { seq: 9, payloads })
+            .submit(super::HostHashJob {
+                seq: 9,
+                payloads,
+                leases: Vec::new(),
+            })
             .unwrap();
         let reply = worker
             .reply_within(std::time::Duration::from_secs(60))
@@ -46721,7 +46942,8 @@ mod tests {
             worker
                 .submit(super::HostHashJob {
                     seq: 10,
-                    payloads: vec![]
+                    payloads: vec![],
+                    leases: Vec::new(),
                 })
                 .is_err()
         );
@@ -46741,7 +46963,11 @@ mod tests {
             .as_ref()
             .unwrap()
             .hasher
-            .submit(super::HostHashJob { seq, payloads })
+            .submit(super::HostHashJob {
+                seq,
+                payloads,
+                leases: Vec::new(),
+            })
             .unwrap();
         host.demoting = Some(super::PendingDemote {
             dead: Some(dead),
@@ -46757,6 +46983,7 @@ mod tests {
                 handed: std::time::Instant::now(),
                 parked: Vec::new(),
                 reparks: 0,
+                leases: None,
             }),
             owner: super::DemoteOwnerLedger::default(),
         });
@@ -46869,6 +47096,7 @@ mod tests {
                 seq: 5,
                 hashed,
                 helper_ms: 1.0,
+                leases: Vec::new(),
             })
             .unwrap();
         let outcome = super::host_demote_settle_with(
@@ -46955,6 +47183,7 @@ mod tests {
                 seq: 3,
                 hashed,
                 helper_ms: 1.0,
+                leases: Vec::new(),
             })
             .unwrap();
         // The next poll reaches publication: on the CPU the bind refuses by name (no KV plane
@@ -46991,6 +47220,7 @@ mod tests {
                 seq: 4,
                 hashed,
                 helper_ms: 1.0,
+                leases: Vec::new(),
             })
             .unwrap();
         let outcome = super::host_demote_settle_with(
@@ -47113,6 +47343,7 @@ mod tests {
                 seq: 1,
                 hashed: Vec::new(),
                 helper_ms: 0.0,
+                leases: Vec::new(),
             };
             let _ = sent_tx.send(reply_tx.send(reply).is_ok());
         });
@@ -47166,6 +47397,7 @@ mod tests {
                 seq: 8,
                 hashed,
                 helper_ms: 1.0,
+                leases: Vec::new(),
             };
             mutate(&mut reply);
             replies.send(reply).unwrap();
@@ -47516,7 +47748,7 @@ mod tests {
         let driver = body("fn host_demote_settle_with_deadline(");
         assert!(
             at(driver, "p.staged = Some(buf);")
-                < at(driver, "tier.hasher.submit(HostHashJob { seq, payloads })")
+                < at(driver, "Some(tier) => tier.hasher.submit(HostHashJob {")
         );
         assert!(
             driver
@@ -47757,6 +47989,74 @@ mod tests {
         assert!(helper.contains("HostHelperJob::Sources(job) => {"));
         assert!(helper.contains("let d = v.digest();"));
         assert!(helper.contains("if sources_tx.send(reply).is_err() {"));
+    }
+
+    // ---- WP-A day 35 (`DAY35.md` design M': the demote's re-hash, hash 2, on the hash helper) ----
+
+    /// WP-A day 35, M''s order by source: hash 1 stays in the engine's poll (no receipt step in the
+    /// copy phase); the driver applies the `flip-demote` point BEFORE the KV planes leave the image
+    /// into the guard and their lease views ride the hash job; the Hashing step lands the guard only
+    /// once the reply arrived; the guard leaks on every other drop; the bind consumes the helper's
+    /// re-hash and keeps its own as the fallback, the receipt comparison unchanged.
+    #[test]
+    fn day35_the_demote_rehash_rides_the_hash_helper_in_the_stated_order() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let body = |name: &str| {
+            let at = production
+                .find(name)
+                .unwrap_or_else(|| panic!("{name} missing"));
+            let end = production[at..].find("\n}\n").unwrap();
+            &production[at..at + end]
+        };
+        let at = |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle}"));
+        let driver = body("fn host_demote_settle_with_deadline(");
+        for (a, b) in [
+            (
+                "if let Err(err) = apply_flip_demote_fault(&mut kv) {",
+                "kv: std::mem::take(&mut pending.image.kv),",
+            ),
+            (
+                "kv: std::mem::take(&mut pending.image.kv),",
+                "host_lease_views(leases)",
+            ),
+            (
+                "host_lease_views(leases)",
+                "Some(tier) => tier.hasher.submit(HostHashJob {",
+            ),
+        ] {
+            assert!(at(driver, a) < at(driver, b), "{a} before {b}");
+        }
+        let views = body("fn host_lease_views(");
+        assert!(views.contains("unsafe { lease.read_view() }"));
+        let hashing = body("fn host_demote_settle_hashing(");
+        assert!(at(hashing, "Ok(Some(reply)) => reply,") < at(hashing, "hashing.leases.take()"));
+        assert!(at(hashing, "hashing.leases.take()") < at(hashing, "let mut e = pending.image;"));
+        assert_eq!(
+            production.matches("hashing.leases.take()").count(),
+            1,
+            "one landing site"
+        );
+        let guard = body("impl Drop for HostLeasesOnHelper {");
+        assert!(guard.contains("if !self.read_done {"));
+        assert!(guard.contains("std::mem::forget(std::mem::take(&mut self.kv));"));
+        let bind = body("    fn bind_tier_image(");
+        assert!(bind.contains("lease_pre(HostLeaseSlot::TrunkK(i)),"));
+        assert!(
+            bind.contains("None => checksum(bytes),"),
+            "the owner-thread fallback stays"
+        );
+        let helper = body("impl HostHashWorker {");
+        assert!(helper.contains(".map(|(slot, v)| (slot, v.len(), v.digest()))"));
+        // Nothing of M1: the copy phase keeps its one landing poll.
+        for gone in [
+            "d2h_landed_views",
+            "supply_d2h_checksums",
+            "defer_d2h_checksums",
+            "HostReceiptsJob",
+        ] {
+            assert!(!production.contains(gone), "{gone} survives");
+        }
     }
 
     // ---- WP-A day 33 (memra#536 Move 2 owed item 1, the H2D half, `DAY33.md` design F) ----
@@ -48278,7 +48578,11 @@ mod tests {
             })
             .collect();
         tier.hasher
-            .submit(super::HostHashJob { seq: 1, payloads })
+            .submit(super::HostHashJob {
+                seq: 1,
+                payloads,
+                leases: Vec::new(),
+            })
             .unwrap();
         let reply = tier
             .hasher
@@ -49398,6 +49702,110 @@ mod tests {
         drop(shell);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// WP-A day 35 (`DAY35.md` design M, acceptance (a) on a card): an off-tick demote through the
+    /// production driver under `Poll`. The clean arm publishes, and every published KV plane's
+    /// receipt (hash 1, the helper's digest of the landed destination) is the checksum of its lease
+    /// bytes. The changed-lease arm: a test-only writer changes one K byte AFTER hash 1 was supplied
+    /// and before the hand-off (the settle step returns, then the byte changes); the helper's re-hash
+    /// (hash 2) differs from the receipt, the bind refuses it, and nothing is published.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused() {
+        use memra_engine::cache::tiered::PinnedLease;
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let drive = |host: &mut super::HostPrefixCache, change: bool| {
+            let t0 = std::time::Instant::now();
+            loop {
+                let outcome = super::host_demote_settle_with(
+                    host,
+                    super::ContractWait::Poll,
+                    "the day-35 cell",
+                    |tier, dead, pending, wait| {
+                        match super::host_kv_planes_settle_contract(tier, dead, pending, wait) {
+                            Ok(super::ContractSettle::Done(mut kv, draft, staged)) if change => {
+                                // The test-only writer, after hash 1 and before the hand-off.
+                                kv.iter_mut()
+                                    .flatten()
+                                    .next()
+                                    .expect("a trunk plane")
+                                    .k
+                                    .flip_first_byte()
+                                    .unwrap();
+                                Ok(super::ContractSettle::Done(kv, draft, staged))
+                            }
+                            other => other,
+                        }
+                    },
+                );
+                match outcome {
+                    Some(super::HostDemoteOutcome::Demoting) => {
+                        assert!(t0.elapsed().as_secs() < 20, "the demote never settled");
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                    other => return other,
+                }
+            }
+        };
+        // The production sink (it attaches the evicted shell to the pending demote).
+        let (mut entry, _want) = gpu_entry(&engine);
+        let _recur = gpu_recurrent(&engine, &mut entry, None);
+        super::host_demote_prefix_entry(&engine, &mut host, entry);
+        assert!(
+            host.demoting.as_ref().is_some_and(|d| d.dead.is_some()),
+            "the sink left a Demoting entry with its shell"
+        );
+        assert_eq!(
+            drive(&mut host, false),
+            Some(super::HostDemoteOutcome::Demoted),
+            "the clean arm publishes"
+        );
+        let published: Vec<&super::HostPrefixEntry> = host.entries.values().flatten().collect();
+        assert_eq!(published.len(), 1);
+        let planes: Vec<&super::HostPlane> = published[0]
+            .kv
+            .iter()
+            .flatten()
+            .chain(published[0].draft.iter())
+            .collect();
+        assert!(!planes.is_empty());
+        for p in planes {
+            for b in [&p.k, &p.v] {
+                let super::HostPlaneBytes::Contract { lease, receipt } = b else {
+                    panic!("a contract-routed plane")
+                };
+                assert_eq!(
+                    memra_engine::cache::tiered::checksum(lease.bytes().unwrap()),
+                    *receipt,
+                    "the helper's receipt is the checksum of the landed bytes"
+                );
+            }
+        }
+        // The changed-lease arm on a second entry (other tokens, the same pool).
+        let (mut entry2, _want2) = gpu_entry(&engine);
+        entry2.toks = (100..108).collect();
+        let _recur2 = gpu_recurrent(&engine, &mut entry2, None);
+        super::host_demote_prefix_entry(&engine, &mut host, entry2);
+        assert!(
+            host.demoting.as_ref().is_some_and(|d| d.dead.is_some()),
+            "the sink left a Demoting entry with its shell"
+        );
+        assert_eq!(
+            drive(&mut host, true),
+            Some(super::HostDemoteOutcome::Failed),
+            "the bind refuses the changed lease"
+        );
+        assert_eq!(
+            host.entries.values().flatten().count(),
+            1,
+            "nothing more published"
+        );
     }
 
     /// WP-A day 32 (design H item 4, the red arm on a card; `MEMRA_KV_HOST_FAULT=contract-promote-spans`):

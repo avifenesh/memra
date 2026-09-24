@@ -11,6 +11,9 @@ Steady demotes: the second and later `demote digests landed off the tick` ledger
     intruder's e2e (`wall_ms` of every demote-arm run) median on m <= base + 1.0 ms.
 Readings: the same segments on base, by settle mode; the receipts and lease lines per landed demote; the helper's
 times; the tenant's `stall_ms` over the demote-arm runs.
+--m2 (DAY35 section 7, design M', added before M' ran): (c) the `take-back bind and publish` segment alone, median <= 1.5
+    ms and max <= 3.0 ms over N >= 20 steady demotes on the m boots (`copy settle` a reading); (d) per order, wall
+    median on m <= base + 17.0 ms and e2e median on m <= base + 1.0 ms. Usage: day35m-reading.py [--m2] ROOT
 """
 import glob
 import json
@@ -86,7 +89,8 @@ def boot(d):
 
 
 def main():
-    root = sys.argv[1]
+    m2 = sys.argv[1] == "--m2"
+    root = sys.argv[2] if m2 else sys.argv[1]
     cells = {}
     complete = True
     notes = []
@@ -128,18 +132,24 @@ def main():
         sys.exit(2)
     rc = 0
     copy, take = pooled("m", "copy"), pooled("m", "take")
-    ok = (len(copy) >= 20 and med(copy) <= 1.5 and max(copy) <= 3.0 and len(take) >= 20 and med(take) <= 1.5
-          and max(take) <= 3.0)
-    print(f"DAY35 M C {stat('copy-settle', copy)} {stat('take-back', take)} rule N>=20 median<=1.5 max<=3.0 each -> "
-          f"{'PASS' if ok else 'FAIL'}")
+    tag, wall_bound = ("DAY35 M2", 17.0) if m2 else ("DAY35 M", 25.0)
+    if m2:
+        ok = len(take) >= 20 and med(take) <= 1.5 and max(take) <= 3.0
+        print(f"{tag} C {stat('take-back', take)} rule N>=20 median<=1.5 max<=3.0 (copy-settle reading: "
+              f"{stat('copy-settle', copy)}) -> {'PASS' if ok else 'FAIL'}")
+    else:
+        ok = (len(copy) >= 20 and med(copy) <= 1.5 and max(copy) <= 3.0 and len(take) >= 20 and med(take) <= 1.5
+              and max(take) <= 3.0)
+        print(f"{tag} C {stat('copy-settle', copy)} {stat('take-back', take)} rule N>=20 median<=1.5 max<=3.0 each -> "
+              f"{'PASS' if ok else 'FAIL'}")
     rc |= 0 if ok else 1
     for order in ("o1", "o2"):
         wb, wm = pooled("base", "wall", order), pooled("m", "wall", order)
         eb, em = pooled("base", "e2e", order), pooled("m", "e2e", order)
-        ok = bool(wb and wm and eb and em) and med(wm) <= med(wb) + 25.0 and med(em) <= med(eb) + 1.0
-        print(f"DAY35 M D order={order} wall base={med(wb):.2f} m={med(wm):.2f} m-minus-base={med(wm) - med(wb):+.2f} "
-              f"rule <=+25.0 | e2e base={med(eb):.2f} m={med(em):.2f} m-minus-base={med(em) - med(eb):+.2f} rule <=+1.0 "
-              f"-> {'PASS' if ok else 'FAIL'}")
+        ok = bool(wb and wm and eb and em) and med(wm) <= med(wb) + wall_bound and med(em) <= med(eb) + 1.0
+        print(f"{tag} D order={order} wall base={med(wb):.2f} m={med(wm):.2f} m-minus-base={med(wm) - med(wb):+.2f} "
+              f"rule <=+{wall_bound:.1f} | e2e base={med(eb):.2f} m={med(em):.2f} m-minus-base={med(em) - med(eb):+.2f} "
+              f"rule <=+1.0 -> {'PASS' if ok else 'FAIL'}")
         rc |= 0 if ok else 1
     sys.exit(rc)
 
