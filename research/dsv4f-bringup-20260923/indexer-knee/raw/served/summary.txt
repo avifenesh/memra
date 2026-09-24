@@ -1,0 +1,26 @@
+tree main 6978f5fac9df278074f0cbd0211c45ba89d7c9b9
+tree idx 798e1267476870386e0aea0315aba82306e6ca0d
+build main SERVER_EXIT=0 ENGINE_EXIT=0  server aa634173e6d69230
+build idx SERVER_EXIT=0 ENGINE_EXIT=0  server 4096430cb994bf60
+hashchk HASHCHK files=77 lfs=48 bad=0
+idx dspark-served 32206c1eb08ae844 GPU DSPARK GATE [PASS] GATE_DONE rc=0 utc=2026-09-23T19:14:48Z
+long/plain/r1-idx rc=0 fused=0 CELL greedy-32k c=1 ok=0/2 agg=0.00 tok/s decode_p50=None tok/s ttft_p50=None ms tpot_p50=None ms errs=['HTTP Error 408: Request Timeout', 'HTTP Error 408: Request Timeout'] CELL greedy-64k c=1 ok=0/1 agg=0.00 tok/s decode_p50=None tok/s ttft_p50=None ms tpot_p50=None ms errs=['HTTP Error 408: Request Timeout']
+long/plain/r2-base rc=0 fused=0 CELL greedy-32k c=1 ok=0/2 agg=0.00 tok/s decode_p50=None tok/s ttft_p50=None ms tpot_p50=None ms errs=['HTTP Error 408: Request Timeout', 'HTTP Error 408: Request Timeout'] CELL greedy-64k c=1 ok=0/1 agg=0.00 tok/s decode_p50=None tok/s ttft_p50=None ms tpot_p50=None ms errs=['HTTP Error 408: Request Timeout']
+long VOID: every 32k/64k request hit the server default 90 s timeout_ms ceiling (HTTP 408); rows moved to long-void-408, rerun by q-pairL.sh with MEMRA_TIMEOUT_MS_MAX=900000
+long/plain/r1-idx rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.21 tok/s decode_p50=44.90 tok/s ttft_p50=110278 ms tpot_p50=22.27 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=1.08 tok/s decode_p50=43.56 tok/s ttft_p50=230334 ms tpot_p50=22.96 ms errs=[]
+long/plain/r2-base rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.10 tok/s decode_p50=40.81 tok/s ttft_p50=115550 ms tpot_p50=24.50 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=1.00 tok/s decode_p50=35.93 tok/s ttft_p50=249586 ms tpot_p50=27.83 ms errs=[]
+long/plain/r3-base rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.10 tok/s decode_p50=40.80 tok/s ttft_p50=115713 ms tpot_p50=24.51 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=1.00 tok/s decode_p50=35.93 tok/s ttft_p50=249268 ms tpot_p50=27.83 ms errs=[]
+long/plain/r4-idx rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.20 tok/s decode_p50=44.89 tok/s ttft_p50=110774 ms tpot_p50=22.28 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=1.08 tok/s decode_p50=43.55 tok/s ttft_p50=230644 ms tpot_p50=22.96 ms errs=[]
+long/plain/r5-idx rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.20 tok/s decode_p50=44.85 tok/s ttft_p50=110833 ms tpot_p50=22.30 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=1.08 tok/s decode_p50=43.56 tok/s ttft_p50=230615 ms tpot_p50=22.96 ms errs=[]
+long/plain/r6-base rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.10 tok/s decode_p50=40.80 tok/s ttft_p50=115799 ms tpot_p50=24.51 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=1.00 tok/s decode_p50=35.93 tok/s ttft_p50=249699 ms tpot_p50=27.83 ms errs=[]
+long/plain/r7-base rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.10 tok/s decode_p50=40.81 tok/s ttft_p50=115697 ms tpot_p50=24.51 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=1.00 tok/s decode_p50=35.92 tok/s ttft_p50=250021 ms tpot_p50=27.84 ms errs=[]
+long/plain/r8-idx rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.20 tok/s decode_p50=44.89 tok/s ttft_p50=110825 ms tpot_p50=22.28 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=1.08 tok/s decode_p50=43.56 tok/s ttft_p50=230622 ms tpot_p50=22.96 ms errs=[]
+long/spec/r1-idx rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.15 tok/s decode_p50=53.00 tok/s ttft_p50=114258 ms tpot_p50=18.87 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=1.05 tok/s decode_p50=47.36 tok/s ttft_p50=237538 ms tpot_p50=21.12 ms errs=[]
+long/spec/r2-base rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.05 tok/s decode_p50=43.23 tok/s ttft_p50=119221 ms tpot_p50=23.13 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=0.97 tok/s decode_p50=32.39 tok/s ttft_p50=256947 ms tpot_p50=30.87 ms errs=[]
+long/spec/r3-base rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.04 tok/s decode_p50=43.23 tok/s ttft_p50=119345 ms tpot_p50=23.13 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=0.96 tok/s decode_p50=32.38 tok/s ttft_p50=258058 ms tpot_p50=30.88 ms errs=[]
+long/spec/r4-idx rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.15 tok/s decode_p50=52.99 tok/s ttft_p50=114232 ms tpot_p50=18.87 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=1.05 tok/s decode_p50=47.37 tok/s ttft_p50=237892 ms tpot_p50=21.11 ms errs=[]
+long/spec/r5-idx rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.15 tok/s decode_p50=52.99 tok/s ttft_p50=114272 ms tpot_p50=18.87 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=1.06 tok/s decode_p50=47.37 tok/s ttft_p50=236801 ms tpot_p50=21.11 ms errs=[]
+long/spec/r6-base rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.08 tok/s decode_p50=43.22 tok/s ttft_p50=117464 ms tpot_p50=23.14 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=0.96 tok/s decode_p50=32.37 tok/s ttft_p50=258011 ms tpot_p50=30.89 ms errs=[]
+long/spec/r7-base rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.07 tok/s decode_p50=43.22 tok/s ttft_p50=117714 ms tpot_p50=23.14 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=0.97 tok/s decode_p50=32.38 tok/s ttft_p50=255463 ms tpot_p50=30.88 ms errs=[]
+long/spec/r8-idx rc=0 CELL greedy-32k c=1 ok=2/2 agg=2.16 tok/s decode_p50=52.99 tok/s ttft_p50=113957 ms tpot_p50=18.87 ms errs=[] CELL greedy-64k c=1 ok=1/1 agg=1.08 tok/s decode_p50=47.35 tok/s ttft_p50=231518 ms tpot_p50=21.12 ms errs=[]
+PAIR_DONE
