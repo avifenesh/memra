@@ -408,3 +408,46 @@ green, the copy-phase park line in both fault arms. The all arm 20 of 20.
 **Timing, for the rental.** The builds about 30 minutes, the A/B about 50 minutes (20 boots of the 27B), the gates about
 40 minutes (the fault gate's two new cells add four boots), the hit gate about 10 minutes, the unit cells and the fill
 probe about 10 minutes: about 2 hours 20 minutes from access.
+
+## 11. BOX7, the A/B as it read (the rest of the sitting still running): (c) PASS, (d) FAILS on the e2e clause
+
+- BOX7: one RTX PRO 6000 Blackwell Workstation Edition (600 W), the lead's acceptance (idle 14.7 W, the FMA spin a steady
+  2317 MHz effective, a host clock policy of the BOX4 machine class); host an EPYC 9B14 class part, 92 CPUs of quota,
+  440 GB RAM. The sitting launched 17:13:34Z (`build.sh b214bd2cf`, `rc=0`; `driver.sh`), the A/B in one collector hold
+  17:27:57Z to 17:48:54Z, 20 boots, `STALL REPLAY: PASS` 20 of 20; the artifact `1facf36c2db359dc..`.
+- Verbatim (`reading-day38-target.log`, mirrored with the sitting):
+  - `DAY38 G C copy-settle N=80 median=0.52 min=0.45 max=0.73 rule N>=20 median<=1.5 max<=3.0 -> PASS` (base
+    `copy-settle N=80 median=1.57`).
+  - `DAY38 G D order=o1 wall base=182.80 g=185.40 g-minus-base=+2.60 rule <=+5.0 | e2e base=207.66 g=209.08
+    g-minus-base=+1.42 rule <=+1.0 -> FAIL`; `order=o2 wall base=182.70 g=185.30 g-minus-base=+2.60 .. e2e base=207.64
+    g=209.01 g-minus-base=+1.36 .. -> FAIL`.
+  - Readings: `owner-held` 4.06 to 3.06 ms per steady demote; the helper 162.25 / 161.85 ms per 157.9 MB on this host;
+    the receipt kernel median 3.33 ms.
+- **(d) FAILS as registered on the target card.** The per-run receipts place why (`stall_cell` receipts, both
+  orders, every boot): in every G'' boot the TENANT's time to its 24th token (`fired_at_ms`) grows run over run (363.7,
+  362.9, 363.0, 365.5, 367.8, 369.7, 371.7, 373.4, 375.5, 376.9 ms in `o1/b02-g`) and the intruder's wall with it (205.4
+  to 210.4 ms), while every base boot stays flat (362.8 to 364.1 ms). Something G'' does per demote accumulates within a
+  process and slows the next decode steps.
+- **The 5090 receipts say which change**, read back from the three banked 5090 cells (tenant pre-fire ITL median,
+  run 2 to run 10, medians over the arm's boots): G (`rtx5090-day38/g/`, the receipt on the copy stream) 7.34 to 7.36 ms,
+  flat; G' (`gp/`, the receipt on its own stream) 7.37 to 7.66; G'' (`gpp/`, plus pooled twins) 7.37 to 7.77; every
+  base arm flat. The growth arrived with G', the separate receipt stream, and the 5090's (d) passed because G''s gains
+  there (about 8 ms per demote) outweighed it within ten runs. Section 9's 5090 PASS stands as it read; the defect it
+  did not see is real.
+
+## 12. The diagnosis, pre-registered before it runs (BOX7, after the sitting's cells)
+
+- **Arms.** X1: the sitting's tip binary (G''). X2: the same tip with `pro-single-day38/diag-one-stream.patch` (one
+  line: the receipt stream IS the copy stream, so the receipt's kernels queue ahead of the copies as under G; everything
+  else G''), built by `diag-build.sh` from the box's clone, the tree returned to the tip.
+- **The cell** (`diag.sh`, one collector hold): four long door-ON boots X1 X2 X1 X2, each `stall_cell.py --mode demote
+  --n 15` (30 demote runs), the PRO demote environment; 250 ms telemetry.
+- **The reader** (`day38-growth-reading.py`, dry-checked on the 5090 receipts): per boot, EARLY = the median over demote
+  runs 2 to 6 of the tenant's pre-fire ITL median, LATE = over the last five, GROWTH = LATE minus EARLY; an arm GROWS if
+  the median of its boots' GROWTH exceeds 0.10 ms. `x1 grows, x2 flat -> the separate receipt stream`; `both grow ->
+  elsewhere in G''`; `x1 flat -> not reproduced`.
+- **What follows from each verdict** (before any fix code): the stream verdict -> one X1 boot under Nsight Systems on this
+  box to place the mechanism (the decode step's wait early against late), and a fix pre-registered on that trace; the
+  elsewhere verdict -> the next arm pre-registered (the twin pool removed, then the `synchronize` and drop changes);
+  not reproduced -> the A/B is re-run once on the unchanged binaries in a new hold. G'' is not integrated with this
+  defect; (d) is re-run on the fixed design, whole.
