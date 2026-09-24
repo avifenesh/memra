@@ -504,3 +504,22 @@ interval, its CUDA API calls by name (count, ms), its OS runtime calls by name (
 calls; the ten names of each whose time grows most from the first three intervals to the interval with the most launch
 gaps; the same for every other thread with CUDA calls. On X1 and on X2. A reading, not a clause: it names the call (or
 the absence of a call, host work between calls) that grows, and the fix is pre-registered on it before any code.
+
+## 13c. The API reading of X1, and a third reading pre-registered before it runs
+
+- **X1** (`nsys-x1/api-reading.log`, verbatim): the owner thread is `memra-gpu-worke..` (5004 of 5004 sampled owner
+  kernels launched from it); per interval about 1.6 M CUDA calls, their time 4004.13, 3948.80, .., 4092.09 ms at the
+  peak (interval 8), its time between CUDA calls 493.22 (first three, median) to 502.66 ms. The growth table: `name=
+  cuMemcpyDtoHAsync_v2 base(first3 median) calls=457 ms=2368.19 -> peak(interval 8) calls=457 ms=2511.16
+  delta_ms=+142.97`; next `cuLaunchKernel .. delta_ms=+2.00`, `cuLaunchKernelEx .. +1.95`, `cuMemFreeAsync .. +1.16`; no
+  OS runtime call grows by more than 0.1 ms. **X2** (`nsys-x2/reading.log`): `owner_gaps_ms` 168.15, 168.60, 170.67, ..,
+  178.33, flat within 10 ms, as its ITL was.
+- **What it says.** The owner thread launches no more slowly and does no more host work; it waits longer in its 457
+  per-interval `cuMemcpyDtoHAsync_v2` calls (the decode step's token read, one per step, about +0.31 ms each at the
+  peak), and the owner stream idles in the same place. The read's copy starts later after the step's last kernel, or
+  runs longer, only when the receipt runs on its own stream.
+- **Pre-registered before it runs** (`day38-nsys-copy-reading.py`, read-only over both traces): per interval, the owner
+  stream's memcpys by kind, source, destination and size, each one's LEAD (its start minus the end of the owner
+  stream's previous activity) and TAIL (the next owner kernel's start minus its end), median, p90 and sums; every other
+  stream's memcpys by the same key; how many owner memcpys overlap another stream's memcpy; and the owner thread's
+  `cuMemcpyDtoHAsync_v2` durations. A reading, not a clause; the fix is pre-registered on it.
