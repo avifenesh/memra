@@ -22,7 +22,7 @@ sampled token: the full logits readback plus the CPU softmax, filter and draw.
 The device sampler wins at c1 and matches the host text here. It does not become the default
 yet. Under the two-lane pipelined route of #699, the device sampler holds the launch turn for a
 whole request, while a host-sampled plain step gives the turn up during its readbacks. Sampled
-c2 there serves 72.6 tok/s aggregate on host sampling (arm A of `../brow/raw/pipelined-ws/`, on the #699 lane binary), and a turn-holding
+c2 there serves 72.48..72.75 tok/s aggregate on host sampling (arm A, three rows, of the B-row lane's WS campaign on the #699 lane binary, banked here as `raw/pipelined-host/`), and a turn-holding
 route would fall back to serial speed. The flip waits for the device sampler to join the split
 step: enqueue the sampling kernel with the step and land one u32 per stage event. That work is
 tracked with #699. The door's decide-by moves to 2026-10-08, with this receipt.
