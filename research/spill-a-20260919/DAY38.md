@@ -329,3 +329,37 @@ section 4's receipts keep the words they were written with.
 
 **Predictions.** The plain arm's capture settles at its poll in about 0.4 ms; r3 arrives in the delayed copy phase and
 parks there; (c) and (d) as G'.
+
+## 9. G'' on the RTX 5090, as it ran (`rtx5090-day38/gpp/`, `gpp/unit-r2/`): every clause of section 3 passes
+
+- G'' at `a266da656` (binary `c8133ce1a5d50f1a..`), base `80039a8de` (`995682a695faba3d..`). The hold taken 16:04:30Z
+  after bounded waits behind lane B, released 16:21:47Z; no compute app at either end; card telemetry 4141 samples, 63
+  to 89 C, 23.8 to 183.7 W. 20 boots, `STALL REPLAY: PASS` 20 of 20.
+- **(c)**: `DAY38 G C copy-settle N=80 median=0.15 min=0.12 max=0.19 rule N>=20 median<=1.5 max<=3.0 -> PASS` (base
+  8.34). **PASS.**
+- **(d)**: `DAY38 G D order=o1 wall base=60.60 g=54.70 g-minus-base=-5.90 rule <=+5.0 | e2e base=113.00 g=107.52
+  g-minus-base=-5.48 rule <=+1.0 -> PASS`; `order=o2 wall base=64.30 g=57.10 g-minus-base=-7.20 .. e2e base=119.61
+  g=112.14 g-minus-base=-7.47 .. -> PASS`. **PASS.** Readings: `owner-held` 9.59 to 1.33 ms per steady demote; the
+  receipt kernel median 3.59 ms on the receipt stream, 90 of 90 receipt lines naming it; the tenant's demote-mode stall
+  42.44 / 45.86 to 38.92 / 41.06 ms.
+- **(a), (b), (e)**: identity x4 `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok each); failure ON `ALL GREEN`
+  (15 ok, the `digest` cell's bind line and `VERIFY FAILED` as before); hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL
+  GREEN (qwen)` (61, 68 ok); the fault gate default `ALL GREEN` (190 ok) and **plain `ALL GREEN` (190 ok)**: the
+  `source-flip` cell's `demote failed (tier image Key plane checksum differs from its D2H contract receipt); nothing
+  published`, and the `copy-phase-hit` cell in both arms with its park line (plain: `hit parked on a Demoting entry in
+  its copy phase: request .. (89 tokens) hits the Demoting entry's 64 tokens (ticket seq=2, submitted 434.8ms ago)`),
+  r2's capture now settling at its poll in 0.06 and 0.09 ms (`the settle held the owner thread 0.06ms`; G' read
+  2944.94 ms), r1 to r4 byte-equal to door OFF.
+- **The unit cells, as they ran, then as rerun.** In the hold the engine's native cells read `rc=101 .. 11 passed; 2
+  failed`: my own G'' addition to `d2h_device_receipt_cell` submitted its second batch with no producer fence, which the
+  contract's validation refuses (`called Result::unwrap() on an Err value: NotReady`, `producer_fence.ok_or(
+  Error::NotReady)`), a fixture error in the new test lines, not the mechanism. Fixed in `e5e8ba81e` (the fence recorded
+  after the uploads; test code only), and the unit cells rerun alone in one hold (16:45:01Z, no compute app) with the
+  same production binary under test: `engine parallel 1..3 rc=0 test result: ok. 13 passed`, `engine serial rc=0 ..
+  13 passed` (the second batch reuses the pooled twin, `D2H DEVICE RECEIPT cell flip=false items=3 gpu_ms=22.896`),
+  `server door rc=0 .. 18 passed`.
+- **Verdict line**: `DAY38 HASH1 G'' (5090) (a) PASS (b) PASS (c) copy-settle 8.34 -> 0.15 ms PASS (d) wall -5.90 / -7.20
+  e2e -5.48 / -7.47 ms PASS (e) PASS; hash 1 leaves the owner thread, the bind witnesses landed equal to source; target
+  card owed`.
+- What G'' carries beyond hash 1, stated: the receipt twins of every D2D capture and restore batch (since day 22) are no
+  longer freed per batch on the owner thread; that free was a context-wide wait behind any stream's queued work.

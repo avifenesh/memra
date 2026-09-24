@@ -41,3 +41,16 @@ copy landing in the probe's tick on the slower host, `polls [1]` on at least 80 
 e2e margin against the day-32 helper fill there) before its code.
 
 **Budget.** The survey 0.05 agent-day here.
+
+## 2. The survey on this host, as it ran (`rtx5090-day39/survey/`): a reading, deciding nothing for slower hosts
+
+- Probe `day39-fill-survey/` (hash in `survey/binary.sha256`), in the same 5090 hold as DAY38's unit rerun (16:45:19Z),
+  `--gpu`. `available_parallelism=24`. Verbatim (`survey.log`), every run `bitwise=true`:
+  - 27B (156,893,184 B): `threads=1 .. median=12.677` ms (12.38 GB/s), `threads=2 .. 8.979`, `threads=4 .. 6.494`,
+    `threads=8 .. 5.929` (26.46 GB/s), `threads=12 .. 5.895`; `SPANS shape=27B .. median=5.621` ms (27.91 GB/s).
+  - 9B (52,690,944 B): `threads=1 .. 3.738`, `threads=4 .. 1.871`, `threads=8 .. 1.619`, `threads=12 .. 1.666`;
+    `SPANS shape=9B .. median=1.913`.
+- Read against section 1's rule as if this host carried the 27B: T=1 needs 12.68 ms against a budget of 13.1 - 5.62 -
+  1.0 = 6.48 ms, so the single-thread fill of design F would miss the probe's tick here too; T=4 (6.49 ms) sits at the
+  bound and T=8 (5.93 ms) inside it. On the 9B this host needs no thread (3.74 ms against 13.1 - 1.91 - 1.0). Neither is
+  the rented hosts' reading; the probe is their first cell.
