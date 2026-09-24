@@ -16,7 +16,6 @@ spec = importlib.util.spec_from_file_location("day40_attrib", HERE / "day40-attr
 d40 = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(d40)
 
-N_TOKENS = 32
 DOOR_TAGS = ("[experts-via-tier]", "[expert-host-slru]", "[expert-gpu-slru]")
 IDENT = re.compile(r"catalog_sha256=([0-9a-f]+) records=(\d+) records_sha256=([0-9a-f]+)")
 DAY40_IDENT = ("2204b15974f6c5e7794d6f4912af1ec6961f52bf53f6f82325f94c123bdefde8", "30720",
@@ -55,7 +54,7 @@ def hashlock(ev, rig):
 
 def spec_cell(ev, rig):
     ok = True
-    for label in ("spec-pressure", "spec-exact8"):
+    for label in ("spec", "spec-pressure", "spec-exact8"):
         text = lines(ev / f"{label}.log")
         rc = int((ev / f"{label}.exit").read_text())
         verdict = any("=== SELF-CONSISTENCY PASS ===" in l for l in text)
@@ -105,6 +104,7 @@ def decide(ev, rig):
         check(r["ident"] == DAY40_IDENT, f"{label} installer identity {r['ident']}")
         check(r["fill"] is not None and r["fill"].get("fill_refused") == 0, f"{label} fill_refused")
         check(r.get("physical_reads") == r["trace_misses"], f"{label} physical_reads != hit=false lines")
+        check(r["trace_lines"] >= r["trace_misses"] > 0, f"{label} trace lines {r['trace_lines']} misses {r['trace_misses']}")
         check(not r["stages"], f"{label} stage lines without the flag")
     check(len({r.get("tokens") for r in runs.values()}) == 1, "tapes differ")
     check(len({r.get("steady") for r in runs.values()}) == 1, "steady lines differ")

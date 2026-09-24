@@ -56,6 +56,25 @@ reported with it and is a per-card input (the per-hardware rule); it does not ve
 
 **What each card can decide.** Each card decides its own verdict; nothing is compared across cards.
 
+## 1a. Addendum, written with the scripts and before any rung cell or deciding cell ran
+
+Scripts: `day51-cell.sh` (cells `hashlock`, `spec`, `decide`), reader `day51-decide.py`. Three points where section 1
+did not say enough to be executed, settled here before any result exists. None relaxes a term; two add terms.
+
+- **G1's environment.** Day 18's `hashlock` cell ran with an empty MoE env on the RTX 5090 and
+  `MEMRA_MOE_RESIDENT=0` on the target card (`day18-local/run-local.sh`, `pro-single-day18/day18-box.sh`); the
+  script takes the same through `D51_MOE_ENV`, so the cell is day 18's unchanged.
+- **G2 adds two shapes.** Section 1's G2 is the `spec` run (day 11's `run-spec` shape, default GPU budget, the host
+  budget). The cell also runs `spec-pressure` (the same plus `MEMRA_MOE_SLOTS=9986`, the pressure the timing cell
+  decides at) and `spec-exact8` (the same plus `--expert-bank-gpu-bytes=6881344`, day 11's eight-slot extreme,
+  where every expert is a miss and the prefetch, the in-flight queue and the fill are all under the most pressure).
+  G2 passes only if all three pass; each has the section-1 terms plus `[experts-via-tier] installed` present and no
+  `fill refused` line.
+- **G3's trace term without the stage clock.** `decide`'s ON arm runs without `--expert-bank-stages`, so it prints
+  no host demand count; "trace lines equal host demands" is read on every rung cell's door arms (days 43 to 50, all
+  with the stage clock), and on `decide` the trace term is `physical_reads` equal to the `hit=false` lines plus at
+  least one miss, with no stage line on any ON run (the flag really off).
+
 ## 2. The binary (filled in before the cell runs)
 
 Named here once every improvement's 5090 verdict is in: the final tree's commit, the list of rungs kept or reverted,
