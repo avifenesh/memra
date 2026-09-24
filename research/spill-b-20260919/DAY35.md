@@ -284,7 +284,7 @@ DAY33 VERDICT card=pro6000 boots=5 v_boot_all=True green_noom_book_all=True v_id
 
 - G-NOOM reads 0 OOM lines on both runs, parks included, and the card verdict is GREEN: the review fix meets the same
   acceptance.
-- The burst is unchanged from section 2's green runs (44 x 200, 20 typed 429s), as 3 expected: a cold burst's
+- The burst is unchanged from section 2's green runs (44 x 200, 20 typed 429s), as section 3 expected: a cold burst's
   prefix cache starts empty, so the cap does not bind here. What the cap changes, the warm-cache over-booking, is not
   shown by this cell.
 - The fix moved no token: V-ID-FIX 16/16 against section 2's red, V-ID 16/16, and V-OFF 16/16 with no `[admit-mem]
