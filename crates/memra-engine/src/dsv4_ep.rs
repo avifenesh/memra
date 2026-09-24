@@ -180,6 +180,7 @@ pub(crate) struct TpEpArState {
     signal: [CudaSlice<u8>; 2],
     error: [CudaSlice<i32>; 2],
     launches: u64,
+    gathers: u64,
     instrument: Option<ArInstrument>,
 }
 
@@ -240,6 +241,7 @@ impl TpEpArState {
             signal: [signal0, signal1],
             error: [error0, error1],
             launches: 0,
+            gathers: 0,
             instrument: None,
         })
     }
@@ -571,8 +573,101 @@ impl TpEpArState {
         Ok(())
     }
 
+    /// Exact attention TP join: rank r's `rows x width` block lands at column `r * width` of
+    /// each `2 * width` output row on BOTH ranks. Pure bit movement on the one-shot barrier and
+    /// refusal words; `fault` is the replay fault word for `site` (the layer). Counted apart
+    /// from the reductions so reduction-count receipts keep their meaning.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn gather_rows_into(
+        &mut self,
+        owner: &Gpu,
+        peer: &Gpu,
+        owner_input: &CudaSlice<f32>,
+        peer_input: &CudaSlice<f32>,
+        owner_output: &mut CudaSlice<f32>,
+        peer_output: &mut CudaSlice<f32>,
+        rows: usize,
+        width: usize,
+        capture: bool,
+        fault: Option<([*const u64; 2], i32)>,
+    ) -> Res<()> {
+        let n = rows * width;
+        if n == 0
+            || owner_input.len() < n
+            || peer_input.len() < n
+            || owner_output.len() < 2 * n
+            || peer_output.len() < 2 * n
+        {
+            return Err("TP/EP row gather buffer shape mismatch".into());
+        }
+        let mut ptrs = [(
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        ); 2];
+        for (rank, (gpu, input, output)) in [
+            (owner, owner_input, &mut *owner_output),
+            (peer, peer_input, &mut *peer_output),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            let stream = gpu.stream();
+            ptrs[rank] = (
+                input.device_ptr(&stream).0 as *const f32,
+                output.device_ptr_mut(&stream).0 as *mut f32,
+                self.signal[rank].device_ptr_mut(&stream).0 as *mut c_void,
+                self.error[rank].device_ptr_mut(&stream).0 as *mut i32,
+            );
+        }
+        if ptrs
+            .iter()
+            .any(|&(input, output, _, _)| std::ptr::eq(input, output))
+        {
+            return Err("TP/EP row gather output aliases an input".into());
+        }
+        let blocks = crate::tp_ar::ar_blocks_for(n);
+        for (rank, gpu) in [owner, peer].into_iter().enumerate() {
+            if capture {
+                gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            }
+            let stream = gpu.stream();
+            let (_, out, self_signal, error) = ptrs[rank];
+            let peer_signal = ptrs[1 - rank].2;
+            let rc = unsafe {
+                crate::tp_ar::memra_tp_ar_gather_rows_f32(
+                    ptrs[0].0,
+                    ptrs[1].0,
+                    out,
+                    self_signal,
+                    peer_signal,
+                    rank as i32,
+                    rows as i64,
+                    width as i64,
+                    error,
+                    crate::tp_ar::AR_SPIN_LIMIT,
+                    blocks,
+                    stream.cu_stream().cast(),
+                    fault.map_or(std::ptr::null(), |(inputs, _)| inputs[rank].cast()),
+                    fault.map_or(-1, |(_, site)| site),
+                )
+            };
+            if rc != 0 {
+                return Err(format!("TP/EP row gather launch rc {rc} rank {rank}"));
+            }
+        }
+        self.gathers += 1;
+        Ok(())
+    }
+
     pub(crate) fn launches(&self) -> u64 {
         self.launches
+    }
+
+    pub(crate) fn gathers(&self) -> u64 {
+        self.gathers
     }
     pub(crate) fn epochs_for_gate(&self, owner: &Gpu, peer: &Gpu) -> Res<[Vec<u32>; 2]> {
         let offset = unsafe { crate::tp_ar::memra_tp_ar_seq_offset_bytes() } as usize;

@@ -1,0 +1,12 @@
+NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 610.57.04, 600.00 W, 3090 MHz
+idx-tree 6ecb3ffdc43e387686ad102f7d1f8b30d3de4003 mhc-tree 2508bcca5e52b85f33ba9558bcecee71b3536bf5
+hc2 build rc=0
+hc2 test-bin 0a5af523f12ee2bb
+hc2 gate r1 rc=101 thread 'dsv4_hc_finish_is_bit_identical_to_the_unfused_chain' (13035) panicked at crates/memra-engine/tests/dsv4_hc_finish_gpu.rs:415:5: test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.18s 
+hc2 gate r2 rc=101 thread 'dsv4_hc_finish_is_bit_identical_to_the_unfused_chain' (13046) panicked at crates/memra-engine/tests/dsv4_hc_finish_gpu.rs:415:5: test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.03s 
+hc2 timing rc=0
+idx-tree 73b23547963fa6c4f2407e220aead9cace5fd2a9 mhc-tree 9d07e83aea5602920c0d767221cd1c5795e458f0
+hc2 build rc=0
+hc2 test-bin 217ba0c0b59e8ef4
+hc2 gate r3 rc=0 test dsv4_hc_finish_is_bit_identical_to_the_unfused_chain ... DSV4_HC_FINISH EXACT cases=144 outputs=7 slices=8,16,32 rows=1,2,5,6 red_arms=3 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.06s 
+hc2 gate r4 rc=0 test dsv4_hc_finish_is_bit_identical_to_the_unfused_chain ... DSV4_HC_FINISH EXACT cases=144 outputs=7 slices=8,16,32 rows=1,2,5,6 red_arms=3 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.02s 

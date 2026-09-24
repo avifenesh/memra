@@ -290,6 +290,44 @@ impl PinnedHostBuf {
     pub(crate) fn is_written(&self) -> bool {
         self.written
     }
+    /// WP-A day 33 (the copy stream's fill of a filled H2D span, `tier_transfer::SpanFillTask`):
+    /// the buffer's start and byte length for a writer outside this type. The buffer becomes
+    /// unreadable here (`written` false) until `mark_landed`, which the engine calls only after the
+    /// span's event, which stream order puts after the fill.
+    pub(crate) fn fill_target(&mut self) -> (*mut u8, usize) {
+        self.written = false;
+        (self.ptr, self.len)
+    }
+    /// WP-A day 33: `enqueue_to_device_f32` for a source a host function on `stream` fills ahead
+    /// of this copy (the buffer is not written on the host's side yet).
+    ///
+    /// # Safety
+    ///
+    /// As `enqueue_to_device_f32`, and: a host function that writes all `len` bytes of this buffer
+    /// was launched on `stream` before this call, so stream order puts the write before the copy.
+    pub(crate) unsafe fn enqueue_to_device_f32_after_fill(
+        &self,
+        dst: &mut CudaSlice<f32>,
+        stream: &Arc<CudaStream>,
+    ) -> Result<(), Error> {
+        let n = dst.len().checked_mul(4).ok_or("pinned f32 size overflow")?;
+        if n != self.len || n == 0 {
+            return Err("pinned f32 span length mismatch".into());
+        }
+        let (device, _record_dst) = dst.device_ptr_mut(stream);
+        // SAFETY: documented FFI; the caller's contract orders the fill before this copy and keeps
+        // both buffers alive and unaliased until the copy's event.
+        unsafe {
+            cudarc::driver::sys::cuMemcpyHtoDAsync_v2(
+                device,
+                self.ptr.cast_const().cast(),
+                self.len,
+                stream.cu_stream(),
+            )
+            .result()?;
+        }
+        Ok(())
+    }
     /// WP-A day 30: the span's copy landed; its bytes become readable.
     ///
     /// # Safety
