@@ -435,6 +435,23 @@ probe about 10 minutes: about 2 hours 20 minutes from access.
   there (about 8 ms per demote) outweighed it within ten runs. Section 9's 5090 PASS stands as it read; the defect it
   did not see is real.
 
+## 11a. BOX7, the rest of the sitting as it ran (b) and item 1's target arm
+
+- The gates on the tip binary (`gates/`, one collector hold 17:48:55Z to 18:08:26Z; each `.exit` 0), verbatim:
+  `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` default OFF and ON, plain OFF and ON (12 ok each ON);
+  `KV-HOST-SPILL FAILURE GATE: ALL GREEN` OFF and ON (15 ok); `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` default and plain
+  (190 ok each; the sitting's tip carries the source-flip and copy-phase-hit cells, not day 41's three); twin OFF and ON
+  `PREFIX-NEWEST-TURN-FITS: .. cached_ok=7/7 lines_ok=8/8 .. self_evictions=0 refused_or_skipped=0`. The hit gate (its
+  own flock) OFF `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok) and ON (68 ok) with the day-24 census `capture_submitted=12
+  capture_published=12 restore_submitted=13 restore_landed=13 .. latched=0` and `30 route submission(s)`.
+- The unit cells (`unit/`, 18:11:48Z): the door's GPU cells `ok. 18 passed`, the engine's native cells serial `ok. 13
+  passed`, the engine censuses `ok. 8 passed`, the hash cells `ok. 19 passed`, the tier bindings `ok. 16 passed`.
+- **Item 1's target arm** (`unit/all-arm/run.log`): `DAY37 FINDING5 TARGET all-arm green=20 of 20 rule 20 of 20 ->
+  PASS` (every run `ok. 13 passed`, the native cells in parallel on their pool contexts). Finding 5 closes on both
+  cards (DAY37 section 1's acceptance).
+- (b) on the target card: **PASS**. With (c) PASS and (d) FAIL (section 11), G'' is not integrable until the fixed
+  design passes (d) whole.
+
 ## 12. The diagnosis, pre-registered before it runs (BOX7, after the sitting's cells)
 
 - **Arms.** X1: the sitting's tip binary (G''). X2: the same tip with `pro-single-day38/diag-one-stream.patch` (one
