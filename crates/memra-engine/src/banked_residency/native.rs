@@ -848,6 +848,56 @@ impl Engine {
     }
 }
 
+/// DAY49: threads for the installer's record pass, the fill's bound (`min(8, cores / 2)`).
+fn record_threads() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get() / 2)
+        .unwrap_or(1)
+        .clamp(1, 8)
+}
+
+/// DAY49: the order-independent per-expert work of the record pass (the byte compare of the
+/// artifact's bytes with the loaded bank's, and the contract `checksum`) on `threads` scoped
+/// threads over contiguous expert ranges. `Ok` holds each expert's digest in expert order
+/// (`None` for a masked expert); `Err` names the first expert, in expert order, whose bytes
+/// differ, whichever thread saw it.
+fn record_digests(
+    pairs: &[Option<(&[u8], &[u8])>],
+    threads: usize,
+) -> std::result::Result<Vec<Option<Digest>>, usize> {
+    let chunk = pairs.len().div_ceil(threads.max(1)).max(1);
+    let parts: Vec<Vec<std::result::Result<Option<Digest>, ()>>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = pairs
+            .chunks(chunk)
+            .map(|part| {
+                scope.spawn(move || {
+                    part.iter()
+                        .map(|pair| match pair {
+                            None => Ok(None),
+                            Some((artifact, loaded)) if artifact == loaded => {
+                                Ok(Some(checksum(artifact)))
+                            }
+                            Some(_) => Err(()),
+                        })
+                        .collect()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("record pass thread panicked"))
+            .collect()
+    });
+    let mut out = Vec::with_capacity(pairs.len());
+    for (expert, result) in parts.into_iter().flatten().enumerate() {
+        match result {
+            Ok(digest) => out.push(digest),
+            Err(()) => return Err(expert),
+        }
+    }
+    Ok(out)
+}
+
 /// Catalog one projection bank: every retained expert record of the tensor the catalog
 /// named, checked byte-for-byte against the loaded HostExps, with its checksum folded into
 /// the running records digest. Scale planes on the loaded bank are a typed refusal: the
@@ -899,24 +949,41 @@ fn bank_projection(
     let active: Vec<bool> = active_experts
         .map(<[bool]>::to_vec)
         .unwrap_or_else(|| vec![true; host.n_expert]);
+    // DAY49: the per-expert compare and checksum are independent; they run on scoped threads,
+    // and everything order-dependent below stays serial in expert order.
+    let mut pairs: Vec<Option<(&[u8], &[u8])>> = Vec::with_capacity(active.len());
+    let mut slicing_error = None;
+    for (expert, &retained) in active.iter().enumerate() {
+        if !retained {
+            pairs.push(None);
+            continue;
+        }
+        let layout = host.expert_layout(expert);
+        let bytes = layout
+            .offset
+            .checked_add(layout.len)
+            .ok_or(Error::Overflow)
+            .and_then(|end| raw.get(layout.offset..end).ok_or(Error::InvalidLayout));
+        match bytes {
+            Ok(bytes) => pairs.push(Some((bytes, host.expert_bytes(expert)))),
+            Err(err) => {
+                slicing_error = Some(err);
+                break;
+            }
+        }
+    }
+    // A mismatch before a slicing error refuses first, as the serial pass would.
+    let digests = record_digests(&pairs, record_threads())
+        .map_err(|_| "native expert bytes differ from pinned GGUF")?;
+    if let Some(err) = slicing_error {
+        return Err(err.into());
+    }
     let mut sources = BTreeMap::new();
     for (expert, &retained) in active.iter().enumerate() {
         if !retained {
             continue;
         }
         let layout = host.expert_layout(expert);
-        let bytes = raw
-            .get(
-                layout.offset
-                    ..layout
-                        .offset
-                        .checked_add(layout.len)
-                        .ok_or(Error::Overflow)?,
-            )
-            .ok_or(Error::InvalidLayout)?;
-        if bytes != host.expert_bytes(expert) {
-            return Err("native expert bytes differ from pinned GGUF".into());
-        }
         let mut source = tensor.clone();
         if host.tiers.is_some() {
             source.name = format!("{}.expert.{expert}", tensor.name);
@@ -929,7 +996,7 @@ fn bank_projection(
                 .ranges
                 .insert(source.clone(), (start as u64, raw.len() as u64));
         }
-        let digest = checksum(bytes);
+        let digest = digests[expert].ok_or(Error::InvalidLayout)?;
         records.update(digest);
         *record_count += 1;
         sources.insert(
@@ -1350,5 +1417,58 @@ mod day48_trace_census {
         );
         assert!(SRC.contains("if self.trace.len() >= TRACE_CHUNK {"));
         assert!(SRC.contains("impl Drop for TracedDispatch {"));
+    }
+}
+
+#[cfg(test)]
+mod day49_record_pass {
+    //! DAY49: the parallel record pass gives the serial pass's digests in expert order and names
+    //! the same first mismatch, for any thread count.
+    use super::*;
+
+    #[test]
+    fn parallel_digests_equal_the_serial_pass() {
+        let slabs: Vec<Vec<u8>> = (0..37u32)
+            .map(|e| {
+                (0..(1000 + e as usize * 13))
+                    .map(|i| (i as u32 * 7 + e) as u8)
+                    .collect()
+            })
+            .collect();
+        let mut copies = slabs.clone();
+        let mask: Vec<bool> = (0..37).map(|e| e % 5 != 3).collect();
+        let pairs = |copies: &Vec<Vec<u8>>| -> Vec<Option<(Vec<u8>, Vec<u8>)>> {
+            slabs
+                .iter()
+                .zip(copies)
+                .zip(&mask)
+                .map(|((a, b), &keep)| keep.then(|| (a.clone(), b.clone())))
+                .collect()
+        };
+        let owned = pairs(&copies);
+        let view: Vec<Option<(&[u8], &[u8])>> = owned
+            .iter()
+            .map(|p| p.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())))
+            .collect();
+        let serial: Vec<Option<Digest>> =
+            view.iter().map(|p| p.map(|(a, _)| checksum(a))).collect();
+        for threads in [1, 2, 3, 8, 64] {
+            assert_eq!(
+                record_digests(&view, threads),
+                Ok(serial.clone()),
+                "threads={threads}"
+            );
+        }
+        // Two planted mismatches: the earlier expert is named, whatever thread sees which.
+        copies[29][5] ^= 1;
+        copies[11][0] ^= 1;
+        let owned = pairs(&copies);
+        let view: Vec<Option<(&[u8], &[u8])>> = owned
+            .iter()
+            .map(|p| p.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())))
+            .collect();
+        for threads in [1, 2, 3, 8, 64] {
+            assert_eq!(record_digests(&view, threads), Err(11), "threads={threads}");
+        }
     }
 }
