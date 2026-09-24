@@ -37,9 +37,10 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Price today: `copy settle` 8.33 ms per demote on the 5090 (write-combined leases, `DAY35.md` section 8), 0.70 ms on
   BOX5 (`DAY36.md` section 4, cached leases).
 - Acceptance: DAY38 section 3, (a) to (e).
-- Status: pre-registered, revised (DAY38: the survey picked G with P; G's 5090 half passed (c) and (d) and failed (b) on
-  the fault gate's plain arm, the red arm's delay sharing the copy stream; G' moves the receipt onto its own stream,
-  section 5).
+- Status: pre-registered, revised twice (DAY38: the survey picked G with P; G's 5090 half passed (c) and (d) and failed
+  (b) on the fault gate's plain arm, the red arm's delay sharing the copy stream; G' moved the receipt onto its own stream
+  and passed (c), (d), (e) and failed (b) again, the cause a per-batch pinned receipt twin freed on the owner thread;
+  G'' pools the twins, section 8).
 
 ### 3. The same-tick fill (design F) on slower CPUs
 
@@ -138,7 +139,7 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   unchanged, bitwise, priced on the 5090 and a no-regression reading on the target card's cached leases).
 - Status: open.
 
-### 13. The capture retire seam's `Block` settle holds the owner thread when the capture's copy is queued behind other copy-stream work (found by DAY38)
+### 13. The capture retire seam's `Block` settle holds the owner thread when the capture's copy is queued behind other copy-stream work (found by DAY38; see DAY38 section 7: part of the observed hold is the receipt twin's free, item 2's G'')
 
 - Source: `DAY38.md` section 4 (`capture published off the tick (seed): .. settled synchronously by a session retire; the
   settle held the owner thread 2607.12ms`, under the `d2h-delay` red arm); day 25 priced the seam at 0.4 ms on a copy
@@ -148,6 +149,19 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Acceptance: none registered (the seam's owner hold priced with a capture queued behind a known amount of copy-stream
   work, then a design that does not block the owner there, for example the retiring session's source planes held by
   the pending capture until it lands).
+- Status: open.
+
+### 14. The host tier's pinned lease frees run `cuMemFreeHost` on the owner thread (found by DAY37 and DAY38)
+
+- Source: `DAY37.md` sections 4 and 8 (`cuMemFreeHost` waits for every stream's queued work in the context and holds every
+  other thread's calls meanwhile); `DAY38.md` section 7 (a per-batch pinned twin's free held the owner thread 2944.94
+  ms behind a 3 s receipt-stream spin). The contract lease backings (`PinnedBacking::drop`: `event.synchronize()` then
+  `free_host`) are freed when a host entry leaves the tier (host LRU eviction at insert, a VERIFY FAILED drop, a tenant
+  purge, the latch): 32 leases per 27B entry, each a context-wide wait on the owner thread for whatever the copy and
+  receipt streams hold at that moment.
+- Acceptance: none registered (the owner's hold priced at a host eviction with known copy-stream and receipt-stream work
+  queued, then a design that frees no pinned memory on the serving path, for example the leases returned to a pool the
+  governor still charges).
 - Status: open.
 
 ## 2. Closed, delivered, or held by another owner

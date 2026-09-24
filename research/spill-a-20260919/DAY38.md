@@ -269,3 +269,63 @@ section 4's receipts keep the words they were written with.
   scratch by value, so an error after its first enqueue dropped it under a pending write (move-then-match; fixed in
   `12c3f69d7`: the scratch rides `ManuallyDrop` through the enqueues and is handed out on success only, census). Engine
   lib 548 and server lib 895 passed, clippy clean. The cell relaunched on `12c3f69d7` (G' binary `5a88e47f4a7ade0b..`).
+
+## 7. G' on the RTX 5090, as it ran (`rtx5090-day38/gp/`): (c), (d) and (e) pass; (b) fails again, a real defect placed
+
+- G' at `12c3f69d7` (binary `5a88e47f4a7ade0b..`), base `80039a8de` (`995682a695faba3d..`). The hold taken 15:14:34Z
+  after bounded waits behind lane B, released 15:31:46Z; no compute app at either end; card telemetry 4121 samples, 63
+  to 88 C, 24.4 to 197.2 W. 20 boots, `STALL REPLAY: PASS` 20 of 20.
+- Unit cells (from the absolute output root this time): `unit server rc=0 test result: ok. 18 passed` (the door's GPU
+  cells, serial); `unit engine rc=0 test result: ok. 13 passed` (the thirteen native cells in parallel).
+- **(c)**: `DAY38 G C copy-settle N=80 median=0.14 min=0.12 max=0.18 rule N>=20 median<=1.5 max<=3.0 -> PASS` (base
+  8.41). **(d)**: `DAY38 G D order=o1 wall base=60.25 g=52.80 g-minus-base=-7.45 rule <=+5.0 | e2e base=111.74 g=105.18
+  g-minus-base=-6.56 rule <=+1.0 -> PASS`; `order=o2 wall base=59.80 g=52.80 g-minus-base=-7.00 .. e2e base=111.76
+  g=105.39 g-minus-base=-6.37 .. -> PASS`. Readings: `owner-held` 9.56 to 1.21 ms; the receipt kernel `N=90
+  median=3.44 min=1.92 max=3.64` ms on the receipt stream, 90 of 90 receipt lines naming it; the tenant's demote-mode
+  stall 42.25 / 42.32 to 38.19 / 38.22 ms.
+- **(b)**: identity x4 ALL GREEN (12 ok each), failure ON ALL GREEN (15 ok), hit OFF and ON ALL GREEN (61, 68 ok), the
+  fault gate default ALL GREEN (190 ok, the copy-phase park line `hit parked on a Demoting entry in its copy phase:
+  request .. (89 tokens) hits the Demoting entry's 64 tokens (ticket seq=3, submitted 36.9ms ago)`); **the fault gate
+  plain `KV-HOST-CONTRACT-FAULT GATE: 4 FAILURE(S)`** (186 ok), all four in `copy-phase-hit` (`exactly one copy-phase
+  park line (r3)`, `the entry published after the park`, `the published entry's ledger names the parked hit`, `r3
+  promoted after its park (not a cold prime)`); r1 to r4 still byte-equal to door OFF. **(b) FAILS as registered.**
+- **The cause, placed from the log** (`gp/fault-plain/ev/copy-phase-hit-server.log`). Under G' the demote's copies are
+  not behind the spin, and r2's seed capture landed promptly, yet its settle at a TICK-TOP POLL held the owner thread for
+  the rest of the spin: `capture published off the tick (seed): 64 tokens complete after 2 poll(s), 2984.2ms ..
+  (tick-top poll; the settle held the owner thread 2944.94ms, entered 39.2ms after submission)`. A `Poll` settle does not
+  wait on the copy. What it does at the acknowledge is drop the capture batch's receipt scratch, whose pinned twin
+  (`PinnedBacking`, allocated per batch by `receipt_scratch_bytes`) is freed with `cuMemFreeHost`, and DAY37's probe
+  measured that call waiting for EVERY stream's queued work in the context (`free-host`, same thread: about 280 ms behind
+  a 300 ms spin): here the 3 s receipt-stream spin. The owner thread was held there, r3 was admitted after the delayed
+  copy had landed and its entry published, and it took a plain host hit (no park, a promote).
+- **The defect, named**: the door allocates a pinned receipt twin per batch (every D2D capture and restore since day 22,
+  every D2H demote under G) and frees it with `cuMemFreeHost` on the owner thread at the batch's acknowledge; that free
+  waits for all queued device work in the context, so any long work on another stream (a large entry's receipt kernel,
+  about 100 ms at 4096 tokens; F's fill host function, 11.4 ms on BOX4; a delayed copy) holds the owner thread at the
+  next batch's end. Section 4's 2607.12 ms retire-seam hold under G likely paid the same free after its copy wait; the
+  two are not separated there.
+- **OWED**: item 13 is restated around the free (the seam's `Block` and the twin's free), and the host tier's lease
+  frees (32 per host entry leaving the tier) are the same call on the same thread: a new item 14.
+
+## 8. Design G'' pre-registered (G' plus pooled receipt twins), before any G'' code
+
+1. **Receipt twins are pooled per `CudaTransfers`.** `receipt_scratch_bytes` takes a pinned twin of exactly the
+   batch's lane bytes from the engine's twin pool when one is free, else allocates one; the twin is zero-filled as today.
+   When a batch's entry is ACKNOWLEDGED (retired, every write to the twin observed), its twin goes back to the pool
+   instead of being freed; the device lanes still drop (a stream-ordered free, which DAY37's probe measured holding
+   nothing). An unretired entry's drop still leaks its scratch whole. The pool frees its twins only when the
+   `CudaTransfers` drops (the latch or shutdown). Distinct sizes stay few (items x 32 or 64 bytes); the pool is bounded
+   by distinct sizes times the batches in flight (at most one per class). Both receipt classes use it (D2D captures and
+   restores, D2H demotes).
+2. The d2h-delay arming line's words are corrected (`the receipt waits .. behind a receipt-stream spin (the copies do
+   not)`). No check reads that phrase.
+3. Censuses: `acknowledge` returns the twins to the pool before the entry drops; `receipt_scratch_bytes` takes from it;
+   the unretired drop still forgets; no `PinnedBacking` of a receipt scratch is dropped on the retired path. A native
+   cell: two consecutive device-receipt batches of the same shape reuse one twin (the same host pointer), and the second
+   receipt is still the program over its own sources.
+4. Everything else is G' as built.
+
+**Acceptance: section 3's (a) to (e), verbatim and whole, re-run on G''.** No clause, bound or check moves.
+
+**Predictions.** The plain arm's capture settles at its poll in about 0.4 ms; r3 arrives in the delayed copy phase and
+parks there; (c) and (d) as G'.
