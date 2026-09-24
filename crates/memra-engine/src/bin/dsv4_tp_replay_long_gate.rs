@@ -20,7 +20,6 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 
 const PREFIX: usize = 400;
-const CAPACITY: usize = 1024;
 
 /// The pinned plain TP2 / expert-id EP program the full-token replay admits.
 const PINS: [(&str, &str); 7] = [
@@ -55,8 +54,11 @@ fn main() {
         "usage: dsv4_tp_replay_long_gate <model-dir> <source-tape> [steps]"
     );
     let steps: usize = args.get(3).map_or(304, |v| v.parse().expect("steps"));
+    // DSV4_REPLAY_GATE_CAPACITY: the session capacity replay arms for (default 1024).
+    let capacity: usize = std::env::var("DSV4_REPLAY_GATE_CAPACITY")
+        .map_or(1024, |v| v.parse().expect("DSV4_REPLAY_GATE_CAPACITY"));
     assert!(
-        PREFIX + steps < CAPACITY,
+        PREFIX + steps < capacity,
         "steps must stay inside the session capacity"
     );
     // Process startup, before any model or worker thread exists: pin the admitted program.
@@ -78,7 +80,7 @@ fn main() {
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
     Dsv4Gpu::set_attention_tp_for_gate(true);
     let gpu =
-        Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, CAPACITY + 64).expect("load");
+        Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity + 64).expect("load");
     assert!(gpu.topology().is_tp_ep() && gpu.attention_tp_geometry().is_some());
     gpu.set_grouped_route_validation_for_gate(false);
     gpu.set_grouped_mirror_validation_for_gate(false);
@@ -104,13 +106,13 @@ fn main() {
         seed: 20260924,
     };
     println!(
-        "PROTOCOL {{\"prefix\":{PREFIX},\"steps\":{steps},\"capacity\":{CAPACITY},\"compare\":\"token, logits bits, TP/EP cache and hidden digests per step\",\"seed\":{},\"source_sha256\":\"{}\"}}",
+        "PROTOCOL {{\"prefix\":{PREFIX},\"steps\":{steps},\"capacity\":{capacity},\"compare\":\"token, logits bits, TP/EP cache and hidden digests per step\",\"seed\":{},\"source_sha256\":\"{}\"}}",
         cfg.seed, tape.sha256
     );
 
     // Eager prefix: the prompt, then sampled tokens up to PREFIX.
     let mut prefix = gpu
-        .alloc_decode_state_for_transient(CAPACITY, 1)
+        .alloc_decode_state_for_transient(capacity, 1)
         .expect("prefix state");
     gpu.prefill_with_cache_chunked(&prompt[..1], &mut prefix, 1)
         .expect("prefill");
@@ -131,10 +133,10 @@ fn main() {
     }
 
     let mut eager = gpu
-        .alloc_decode_state_for_transient(CAPACITY, 1)
+        .alloc_decode_state_for_transient(capacity, 1)
         .expect("eager state");
     let mut replay = gpu
-        .alloc_decode_state_for_transient(CAPACITY, 1)
+        .alloc_decode_state_for_transient(capacity, 1)
         .expect("replay state");
     gpu.restore_full_token_prefix_for_gate(&mut eager, &prefix)
         .expect("restore eager");

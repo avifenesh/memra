@@ -8737,8 +8737,10 @@ impl Dsv4Gpu {
         cadence: bool,
     ) -> Res<()> {
         self.validate_full_token_program()?;
+        // The replay indexer scores at most 4096 compressed blocks, 16384 positions at ratio 4;
+        // the 1024 cap was the first probe's admission scope, not a kernel bound (#710).
         if state.capacity < 512
-            || state.capacity > 1024
+            || state.capacity > 16384
             || state.pos >= state.capacity
             || cfg.temperature != 1.0
             || cfg.top_p != 1.0
@@ -8749,7 +8751,7 @@ impl Dsv4Gpu {
                 .as_ref()
                 .is_none_or(|cs| cs.iter().any(|c| c.c4_host.is_some()))
         {
-            return Err("full-token replay admits only device caches, a 512..=1024 capacity and vendor-default plain sampling".into());
+            return Err("full-token replay admits only device caches, a 512..=16384 capacity and vendor-default plain sampling".into());
         }
         let _walk_guard = self
             .tp_ep_walk_lock
