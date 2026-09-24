@@ -4,7 +4,7 @@
 # compute app and >= 20000 MiB free, bounded 15 x 60 s). Arms, in the hold: `pair` (the two finding-5 cells alone,
 # --test-threads=2) N runs, then `all` (the eleven native cells of tier_transfer.rs in one process at the default
 # thread count) N runs. Every run's output teed raw. 250 ms card telemetry. Executed-not-qualified.
-# usage: stress.sh <out_dir> <engine test binary> <runs per arm> [<label>]   (SERIAL_RUNS=k adds k --test-threads=1 runs)
+# usage: stress.sh <out_dir> <engine test binary> <runs per arm> [<label>]
 set -uo pipefail
 OUT=$1; BIN=$2; N=$3; LABEL=${4:-repro}
 HERE=$(cd "$(dirname "$0")/../../../.." && pwd)
@@ -44,10 +44,6 @@ done
 for r in $(seq 1 "$N"); do
     "$BIN" --ignored --nocapture tier_transfer::tests:: > "$OUT/raw/all-$r.log" 2>&1
     log "all run $r rc=$? $(grep -h '^test result' "$OUT/raw/all-$r.log" | head -1)"
-done
-for r in $(seq 1 "${SERIAL_RUNS:-0}"); do
-    "$BIN" --ignored --test-threads=1 --nocapture tier_transfer::tests:: > "$OUT/raw/serial-$r.log" 2>&1
-    log "serial run $r rc=$? $(grep -h '^test result' "$OUT/raw/serial-$r.log" | head -1)"
 done
 nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$OUT/compute-apps.after.csv" 2>&1
 log "hold released"
