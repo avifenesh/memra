@@ -256,3 +256,37 @@ The red side is section 2's own BOX4 red boots (the same box and binary `3063862
 (0 OOM lines, parks included), G-BOOK, V-ID-FIX, V-ID and V-OFF PASS on both green runs, card verdict GREEN. The burst's
 200 and 429 counts are reported against section 2's; a cold burst's prefix cache starts empty, so the cap is expected
 to move little here.
+
+### 3.1 Result (written after the boots)
+
+`pro-single-day35/review-chain.sh` ran on BOX4 from 04:37:30 to 04:49:16 UTC on 2026-09-24, after day 36's box half,
+with the review binary `6759ccfcd55fd544ce049ee9cb562339b600062254a022d0f0b24a263f057715` built from `34a4b7f23`.
+Verdict lines verbatim (`pro-single-day35/box-review/SUMMARY.txt`; V-BOOT PASS on all 5; the red lines are section
+2's):
+
+```
+DAY33 V-BOOT boot=green-R64-a1 arm=on32768 door_line=present -> PASS role=green shape=R64
+DAY33 V-BOOT boot=green-R64-a2 arm=on32768 door_line=present -> PASS role=green shape=R64
+DAY33 R-OOM card=pro6000 boot=green-R64-a1 role=green shape=R64 v=32768 oom_lines=0 burst={429: 20, 200: 44} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=pro6000 boot=green-R64-a1 role=green shape=R64 oom_lines=0 burst_503=0 crash_lines=0 burst_200=44 other_non200=0 r429=20 refuse_lines=20 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=pro6000 boot=green-R64-a1 role=green shape=R64 admit_lines=60 admit_lines_in_burst=44 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=pro6000 boot=green-R64-a2 role=green shape=R64 v=32768 oom_lines=0 burst={429: 20, 200: 44} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=pro6000 boot=green-R64-a2 role=green shape=R64 oom_lines=0 burst_503=0 crash_lines=0 burst_200=44 other_non200=0 r429=20 refuse_lines=20 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=pro6000 boot=green-R64-a2 role=green shape=R64 admit_lines=60 admit_lines_in_burst=44 est_over_booked_free=0 -> PASS
+DAY33 V-ID-FIX card=pro6000 shape=R64 green=green-R64-a1 red=red-R64 eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID-FIX card=pro6000 shape=R64 green=green-R64-a2 red=red-R64 eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID card=pro6000 shape=R64 on=green-R64-a1 off=green-off-a eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID card=pro6000 shape=R64 on=green-R64-a2 off=green-off-a eligible=16 equal=16 differ=0 -> PASS
+== V-OFF (green OFF against red OFF: the default-OFF program unchanged)
+DAY33 V-OFF card=pro6000 green=green-off-a red=red-off rows=16 equal=16 differ=0 admit_mem_lines=0 -> PASS
+DAY33 VERDICT card=pro6000 boots=5 v_boot_all=True green_noom_book_all=True v_id_fix_all=True v_id_all=True v_off_all=True -> GREEN
+```
+
+- G-NOOM reads 0 OOM lines on both runs, parks included, and the card verdict is GREEN: the review fix meets the same
+  acceptance.
+- The burst is unchanged from section 2's green runs (44 x 200, 20 typed 429s), as 3 expected: a cold burst's
+  prefix cache starts empty, so the cap does not bind here. What the cap changes, the warm-cache over-booking, is not
+  shown by this cell.
+- The fix moved no token: V-ID-FIX 16/16 against section 2's red, V-ID 16/16, and V-OFF 16/16 with no `[admit-mem]
+  id=` line.
+- Receipts: `pro-single-day35/box-review/`, `FAULTS.txt` (no panic, respawn, FATAL or engine error).
