@@ -186,6 +186,95 @@ fn prefill_dense_tile_is_the_gemv_loop_bit_for_bit() {
     );
 }
 
+fn f32_rows(n: usize, seed: u64) -> Vec<f32> {
+    let mut r = lcg(seed);
+    (0..n)
+        .map(|_| ((r() & 0xffff) as f32 / 65535.0 - 0.5) * 2f32.powi((r() % 9) as i32 - 4))
+        .collect()
+}
+
+fn run_dots(
+    e: &Engine,
+    x: &CudaSlice<f32>,
+    w: *const c_void,
+    bf16: bool,
+    s: usize,
+    kk: usize,
+    n: usize,
+) -> Vec<u32> {
+    let mut y: CudaSlice<f32> = e.htod(&vec![f32::from_bits(0x7fc0_4321); s * n]).unwrap();
+    let st = e.stream();
+    let rc = unsafe {
+        k::memra_dsv4_dots_f32acc_mrow(
+            x.device_ptr(&st).0 as *const f32,
+            w,
+            i32::from(bf16),
+            y.device_ptr_mut(&st).0 as *mut f32,
+            s as i32,
+            kk as i32,
+            n as i32,
+            st.cu_stream() as *mut c_void,
+        )
+    };
+    assert_eq!(rc, 0, "dots launch s={s} n={n} k={kk}");
+    e.dtoh(&y).unwrap().iter().map(|v| v.to_bits()).collect()
+}
+
+/// The compressor projections' f32-island dots at prefill widths: the tile against the 32-row
+/// loop, BF16 and f32 weight storage.
+#[test]
+#[ignore = "needs a CUDA device; run under the rig's GPU lock"]
+fn prefill_dots_tile_is_the_mrow_loop_bit_for_bit() {
+    let e = Engine::new(0).expect("CUDA engine on device 0");
+    let mut cases = 0;
+    for (si, &(n, kk)) in [
+        (1024usize, 4096usize),
+        (512, 4096),
+        (256, 4096),
+        (2048, 4096),
+        (37, 1024),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let wb = bf16_rows(n * kk, 0xB1 ^ si as u64);
+        let wf: Vec<f32> = wb
+            .iter()
+            .map(|&b| f32::from_bits(u32::from(b) << 16))
+            .collect();
+        let wb_dev: CudaSlice<u16> = e.stream().clone_htod(&wb).unwrap();
+        let wf_dev: CudaSlice<f32> = e.htod(&wf).unwrap();
+        let st = e.stream();
+        for &s in &[33usize, 64, 100, 512] {
+            let x: CudaSlice<f32> = e
+                .htod(&f32_rows(s * kk, 0xD0 ^ ((s as u64) << 4) ^ si as u64))
+                .unwrap();
+            for (bf16, w) in [
+                (true, wb_dev.device_ptr(&st).0 as *const c_void),
+                (false, wf_dev.device_ptr(&st).0 as *const c_void),
+            ] {
+                let prev = unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(1) };
+                let tile = run_dots(&e, &x, w, bf16, s, kk, n);
+                unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(0) };
+                let loopd = run_dots(&e, &x, w, bf16, s, kk, n);
+                unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(prev) };
+                if let Some(i) = (0..tile.len()).find(|&i| tile[i] != loopd[i]) {
+                    panic!(
+                        "dots s={s} n={n} k={kk} bf16={bf16}: y[{}][{}] tile {:#010x} loop {:#010x}",
+                        i / n,
+                        i % n,
+                        tile[i],
+                        loopd[i]
+                    );
+                }
+                assert!(tile.iter().all(|&b| b != 0x7fc0_4321), "unwritten output");
+                cases += 1;
+            }
+        }
+    }
+    println!("DSV4_DOTS_TILE EXACT cases={cases}");
+}
+
 /// Device time of one 512-row prefill projection, tile against the GEMV loop, per shape. The output
 /// is allocated once and read back never; only back-to-back launches are timed.
 #[test]
