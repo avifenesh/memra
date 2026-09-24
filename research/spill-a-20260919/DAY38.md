@@ -851,3 +851,23 @@ DAY39 section 5b, and item 5's target half).
 - **The BOX7 sitting** (`pro-single-g4/`, after the 5090 half reads; receipts under `/root/spill-receipts/a-g4`):
   section 15's BOX7 sitting with G4 for G''', item 3's cell included (`item3.sh` on the G4 tree, DAY39 section 5b), and
   the fault gate with day 41's cells (item 5's target half).
+
+## 16c. G''' on BOX7, as it ran so far (`/root/spill-receipts/a-g3`, section 16a's sitting)
+
+- Build (`pro-single-g3/build.sh 3c57fdfca`, `rc=0`): g3 `43e832c8ac23e3c1..`, f1 `868ffcb8f6f7709e..`, hk
+  `a8b0137497d04034..`, base `84fdc5121e67ea1f..` and gpp `49110c9c1f02764b..` (the day-38 sitting's); markers `g3
+  door's-receipt-stream: 2`, `base .. 0`, `gpp .. 0`.
+- **(c) and (d), verbatim** (`g/reading-day38-target.log`, `ab rc=0` 21:48:17Z): `DAY38 G C copy-settle N=80
+  median=0.53 min=0.45 max=0.62 rule N>=20 median<=1.5 max<=3.0 -> PASS`; `DAY38 G D order=o1 wall base=182.75 g=181.70
+  g-minus-base=-1.05 rule <=+5.0 | e2e base=207.61 g=206.56 g-minus-base=-1.05 rule <=+1.0 -> PASS`; `order=o2 wall
+  base=182.70 g=181.70 g-minus-base=-1.00 .. e2e base=207.61 g=206.59 g-minus-base=-1.02 .. -> PASS`. The owner's hold
+  4.06 to 3.07 ms per steady demote, now whole in the e2e (G'''s +1.42 was the hump).
+- **(f), verbatim** (`hump/reading-hump.log`, `hump-cell rc=0` 21:54:11Z): `HUMP arm=xg3 boots=2 median-hump=+0.031
+  humps=False` (`b02-xg3 itl=[12.32, 12.33, 12.32, 12.33, ..]`), the control `HUMP arm=xgpp boots=2 median-hump=+0.568
+  humps=True`: **PASS**, the control valid.
+- **What it says.** G''' is flat on the target card and humps on the 5090 (section 16): the placement that satisfies
+  both cards is G4's, and G''''s advantage on this card (later copy-stream consumers never queue behind a demote's
+  receipt kernel) is real by construction but unmeasured at this shape (64-token entries; the kernel is about 3 ms here).
+  Whether that advantage justifies a per-card placement (G''' on the RTX PRO 6000 class, G4 on the 5090) is an owner
+  question, and its evidence is a long-entry cell (4096-token entries: a capture's and a promote's latency behind a
+  demote's receipt kernel, G''' against G4), which rides `OWED.md` item 15. G4 is the single placement delivered.
