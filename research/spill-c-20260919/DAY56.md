@@ -40,8 +40,9 @@ today's source and the cells, before any code. Tree at start: `ef7906504`. The r
   numeric knobs (every `MEMRA_DFLASH_*` and `MEMRA_DSPARK_*` variable set at boot except `MEMRA_DSPARK_DRAFT`, whose
   bytes the manifest names, sorted as `NAME=value`; over-inclusive on purpose, fail closed), `numeric` = the plain
   class plus `+dflash-tail-f32`. Every other field is the plain field. A boot line names it: `[prefix-host]
-  contracts door: model <m> DFlash tail program drafter_manifest_sha256=... dflash_cfg_sha256=... knobs=...
-  numeric=...`. A tail-bearing entry on a model without a drafter is refused by `program()` with a typed line.
+  contracts door: model <m> DFlash tail program drafter_manifest=config.json=<sha256>;model.safetensors=<sha256>
+  dflash_cfg_sha256=... knobs=[...] numeric=...` (the line's field name corrected here to the code's before any
+  cell ran: the manifest is printed whole, not hashed again). A tail-bearing entry on a model without a drafter is refused by `program()` with a typed line.
 - (c) **The tail in the bound image**: per draft layer a K and a V segment under `Role::Tail` (encodings
   `dflash-tail-k-f32` and `dflash-tail-v-f32`, `row_bytes` as the row), each checksummed by the bind like the
   recurrent planes (hashed on the owner thread: the tail is not handed to the hash helper in this slice; its bind
