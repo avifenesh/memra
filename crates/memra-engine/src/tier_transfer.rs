@@ -361,6 +361,9 @@ struct Entry {
 struct DeferredSums {
     out: usize,
     supplied: Vec<Option<Digest>>,
+    /// WP-A day 35 (`DAY35.md` design M1): the views were handed out. An H2D batch hands them at the
+    /// defer; a D2H batch only once every copy landed (`d2h_landed_views`).
+    handed: bool,
 }
 /// WP-A day 34 (`DAY34.md` design K): a read-only view of one accepted H2D item's host source, for a
 /// hashing thread off the owner thread. The engine keeps the source until the view comes back through
@@ -396,6 +399,47 @@ impl H2dSourceView {
 impl std::fmt::Debug for H2dSourceView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("H2dSourceView")
+            .field("item", &self.item)
+            .field("len", &self.len)
+            .finish()
+    }
+}
+/// WP-A day 35 (`DAY35.md` design M1): a read-only view of one landed D2H item's host destination, for
+/// a hashing thread off the owner thread. Handed out only after every deferred item's copy was observed
+/// complete (`d2h_landed_views`), so it reads settled bytes; the engine keeps the destination until the
+/// view comes back through `supply_d2h_checksums` (the ticket cannot land, give the destination back or
+/// retire until then), and nothing writes the destination meanwhile (its copy landed and the caller has
+/// not taken it).
+pub struct D2hDestinationView {
+    item: u32,
+    ptr: *const u8,
+    len: usize,
+}
+// SAFETY: the view is read-only and the engine keeps its bytes alive and unwritten until it returns
+// (see the type's doc); moving it to another thread moves only that read access.
+unsafe impl Send for D2hDestinationView {}
+impl D2hDestinationView {
+    /// The item this view reads.
+    pub fn item(&self) -> u32 {
+        self.item
+    }
+    /// The bytes it covers (the item's whole host destination, as `progress` hashes it).
+    pub fn len(&self) -> usize {
+        self.len
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    /// The same `checksum` program `progress` runs, over the same bytes.
+    pub fn digest(&self) -> Digest {
+        // SAFETY: `ptr` spans `len` bytes of a pinned host allocation whose copy landed; the engine
+        // keeps it alive and unwritten while this view is out (the type's contract).
+        checksum(unsafe { std::slice::from_raw_parts(self.ptr, self.len) })
+    }
+}
+impl std::fmt::Debug for D2hDestinationView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("D2hDestinationView")
             .field("item", &self.item)
             .field("len", &self.len)
             .finish()
@@ -2148,6 +2192,7 @@ impl CudaTransfers {
         e.deferred = Some(DeferredSums {
             out: views.len(),
             supplied: vec![None; e.items.len()],
+            handed: true,
         });
         Ok(views)
     }
@@ -2171,6 +2216,138 @@ impl CudaTransfers {
                 .get(i)
                 .and_then(Option::as_ref)
                 .ok_or(Error::WrongOwner)?;
+            let (ptr, len) = item
+                .host
+                .as_ref()
+                .and_then(|h| h.allocation.backing.as_ref())
+                .ok_or(Error::AlreadyReleased)?
+                .raw_view();
+            if ptr != view.ptr || len != view.len {
+                return Err(Error::WrongOwner);
+            }
+            if d.supplied[i].is_some() {
+                return Err(Error::AlreadyReleased);
+            }
+        }
+        for (view, sum) in digests {
+            d.supplied[view.item as usize] = Some(sum);
+            d.out -= 1;
+        }
+        Ok(())
+    }
+    /// WP-A day 35 (`memra_tier::conformance::d2h_deferred_checksum_lands_with_its_digests`,
+    /// `DAY35.md` design M1): defer this D2H batch's completion checksums to the caller, right after
+    /// the batch's submission and before any poll. From here `progress` observes each item's copy and
+    /// lands the item only with the checksum `supply_d2h_checksums` hands back; the views come from
+    /// `d2h_landed_views` once every copy landed. Refused: an unknown, retired, cancelled or
+    /// quarantined ticket, a ticket that is not a D2H batch or carries a D2D receipt (`Unsupported`),
+    /// one already deferred or already hashed by `progress` (`Busy`).
+    pub fn defer_d2h_checksums(&mut self, ticket: &TransferTicket) -> Result<()> {
+        self.check_thread()?;
+        let e = self.entries.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        if e.retired {
+            return Err(Error::AlreadyReleased);
+        }
+        if e.cancelled {
+            return Err(Error::Cancelled);
+        }
+        if e.unknown {
+            return Err(Error::Quarantined);
+        }
+        if e.receipt.is_some()
+            || e.items
+                .iter()
+                .flatten()
+                .any(|i| i.direction != CopyDirection::DeviceToHost)
+        {
+            return Err(Error::Unsupported);
+        }
+        if e.deferred.is_some()
+            || e.completion
+                .items
+                .iter()
+                .any(|i| i.segments.iter().any(|s| s.checksum.is_some()))
+        {
+            return Err(Error::Busy);
+        }
+        e.deferred = Some(DeferredSums {
+            out: 0,
+            supplied: vec![None; e.items.len()],
+            handed: false,
+        });
+        Ok(())
+    }
+    /// WP-A day 35 (`d2h_deferred_checksum` rule 2): one read-only view per accepted item of a deferred
+    /// D2H batch, its whole host destination, once EVERY item's copy was observed complete (`NotReady`
+    /// before: nothing hashes bytes still in flight). No host wait: the copies' events are already
+    /// observed complete here. A second call is `AlreadyReleased`; a batch with nothing deferred, or
+    /// an H2D one, is `Unsupported`.
+    pub fn d2h_landed_views(&mut self, ticket: &TransferTicket) -> Result<Vec<D2hDestinationView>> {
+        self.check_thread()?;
+        self.progress(ticket)?;
+        let e = self.entries.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        let d = e.deferred.as_ref().ok_or(Error::Unsupported)?;
+        if e.items
+            .iter()
+            .flatten()
+            .any(|i| i.direction != CopyDirection::DeviceToHost)
+        {
+            return Err(Error::Unsupported);
+        }
+        if d.handed {
+            return Err(Error::AlreadyReleased);
+        }
+        let mut views = Vec::new();
+        for (i, item) in e.items.iter().enumerate() {
+            let Some(item) = item else {
+                continue;
+            };
+            if e.completion.items[i].segments[0].status != ItemStatus::Complete {
+                return Err(Error::NotReady);
+            }
+            let (ptr, len) = item
+                .host
+                .as_ref()
+                .and_then(|h| h.allocation.backing.as_ref())
+                .ok_or(Error::AlreadyReleased)?
+                .raw_view();
+            views.push(D2hDestinationView {
+                item: i as u32,
+                ptr,
+                len,
+            });
+        }
+        let d = e.deferred.as_mut().unwrap();
+        d.handed = true;
+        d.out = views.len();
+        Ok(views)
+    }
+    /// WP-A day 35 (`d2h_deferred_checksum` rules 3 and 4): the views back with their digests; each
+    /// digest becomes its item's completion checksum and expectation, the assignment `progress` makes
+    /// for an undeferred D2H item, so it IS the receipt the caller's bind compares against. A view of
+    /// another ticket or item (`WrongOwner`), a second return (`AlreadyReleased`) or a ticket with no
+    /// views handed (`Unsupported`) is refused before any digest is taken.
+    pub fn supply_d2h_checksums(
+        &mut self,
+        ticket: &TransferTicket,
+        digests: Vec<(D2hDestinationView, Digest)>,
+    ) -> Result<()> {
+        self.check_thread()?;
+        let e = self.entries.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        let d = e.deferred.as_mut().ok_or(Error::Unsupported)?;
+        if !d.handed {
+            return Err(Error::Unsupported);
+        }
+        for (view, _) in &digests {
+            let i = view.item as usize;
+            let item = e
+                .items
+                .get(i)
+                .and_then(Option::as_ref)
+                .ok_or(Error::WrongOwner)?;
+            if item.direction != CopyDirection::DeviceToHost {
+                return Err(Error::WrongOwner);
+            }
             let (ptr, len) = item
                 .host
                 .as_ref()
@@ -2350,8 +2527,13 @@ impl CudaTransfers {
             // WP-A day 34 (`h2d_deferred_checksum` rule 1): a deferred H2D item's copy landed; the
             // item lands with its supplied checksum (the caller's hash helper, same program, same
             // bytes) or not yet. Nothing is hashed here.
+            // WP-A day 35 (`d2h_deferred_checksum` rule 1): the same for a deferred D2H item, whose
+            // destination the helper reads only after `d2h_landed_views`.
             if let Some(d) = &e.deferred
-                && item.direction == CopyDirection::HostToDevice
+                && matches!(
+                    item.direction,
+                    CopyDirection::HostToDevice | CopyDirection::DeviceToHost
+                )
             {
                 s.status = ItemStatus::Complete;
                 s.valid_bytes = item.bytes;
@@ -2762,6 +2944,15 @@ impl TransferEngine for CudaTransfers {
         item: u32,
         current: Epochs,
     ) -> Result<Destination<Self::Host>> {
+        // WP-A day 35 (`d2h_deferred_checksum` rule 3): a destination a view still reads stays here.
+        if self
+            .entries
+            .get(ticket)
+            .and_then(|e| e.deferred.as_ref())
+            .is_some_and(|d| d.out > 0)
+        {
+            return Err(Error::Busy);
+        }
         self.publishable(ticket, current)?;
         let e = self.entries.get_mut(ticket).unwrap();
         let i = e
@@ -4701,6 +4892,200 @@ mod tests {
         assert!(c.producer_done);
         assert_eq!(c.require(&ticket, &receipt, false), Err(Error::Corrupt));
         stream.synchronize().unwrap();
+    }
+
+    /// WP-A day 35 (`DAY35.md` design M1): the deferred D2H checksum's order, by source. `progress`
+    /// takes the deferred branch (now for a D2H item too) before its own checksum of a host lease;
+    /// `d2h_landed_views` refuses `NotReady` while any item's copy is incomplete, before it builds a
+    /// view, and takes its views without the tracking event's host wait; `supply_d2h_checksums` checks
+    /// every view before it takes any digest; `take_destination` refuses `Busy` while a view is out,
+    /// before its publication check; `defer_d2h_checksums` hands nothing out.
+    #[test]
+    fn d2h_deferred_checksum_rules_are_as_stated() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let fn_body = |name: &str| {
+            let at = body.find(name).unwrap_or_else(|| panic!("{name} missing"));
+            &body[at..at + body[at..].find("\n    }\n").unwrap()]
+        };
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let progress = fn_body("fn progress(");
+        assert!(
+            at(
+                progress,
+                "CopyDirection::HostToDevice | CopyDirection::DeviceToHost"
+            ) < at(
+                progress,
+                "item.host.as_ref().ok_or(Error::AlreadyReleased)?.bytes()?"
+            )
+        );
+        let views = fn_body("pub fn d2h_landed_views(");
+        assert!(
+            at(
+                views,
+                "!= ItemStatus::Complete {\n                return Err(Error::NotReady);"
+            ) < at(views, "views.push(D2hDestinationView {")
+        );
+        assert!(views.contains(".raw_view();"));
+        assert!(!views.contains(".bytes()"), "no host wait at the views");
+        let supply = fn_body("pub fn supply_d2h_checksums(");
+        assert!(
+            at(supply, "return Err(Error::AlreadyReleased);")
+                < at(supply, "d.supplied[view.item as usize] = Some(sum);")
+        );
+        let take = fn_body("fn take_destination(");
+        assert!(
+            at(take, ".is_some_and(|d| d.out > 0)")
+                < at(take, "self.publishable(ticket, current)?;")
+        );
+        let defer = fn_body("pub fn defer_d2h_checksums(");
+        assert!(defer.contains("handed: false,"));
+        assert!(
+            !defer.contains("raw_view"),
+            "nothing is handed out at the defer"
+        );
+    }
+
+    /// WP-A day 35 (`memra_tier::conformance::d2h_deferred_checksum_lands_with_its_digests` and
+    /// `d2h_deferred_checksum_wrong_digest_is_the_receipt`, on a card). One KV item D2H batch on the copy
+    /// stream behind a 300 ms spin, its checksum deferred at submission: no view while the copy is held
+    /// (`NotReady`); the copy lands and the item does not; one view, a second call `AlreadyReleased`; the
+    /// destination's take-back and the retire are `Busy` while the view is out; the digest is taken on
+    /// ANOTHER thread and supplied; the item lands with the digest of the device bytes as its receipt and
+    /// the settle runs as today. A second batch supplied a wrong digest lands with that digest as its
+    /// receipt.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn d2h_deferred_checksum_lands_with_the_supplied_digests() {
+        use memra_tier::tier::governor::Governor;
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.new_stream().unwrap();
+        let cap = TierBudget {
+            version: 1,
+            device: vec![1 << 30],
+            peer: vec![0],
+            replicas: vec![0],
+            pinned: 1 << 30,
+            pageable: 1 << 30,
+            staging: 1 << 30,
+            loaders: 64,
+            inflight: 64,
+            nvme: 0,
+        };
+        let gov: SharedBudget = Rc::new(RefCell::new(
+            Governor::new(cap, TierBudget::zero(1), 64, 0, Arc::new(|| 0)).unwrap(),
+        ));
+        let mut t = CudaTransfers::new_with_copy_stream(stream.clone(), gov).unwrap();
+        let copy = t.copy_stream().unwrap().clone();
+        let epochs = Epochs {
+            state: 0,
+            src_gen: 1,
+            dst_gen: 1,
+        };
+        let kv_bytes = 1usize << 20;
+        let pattern: Vec<u8> = (0..kv_bytes).map(|i| (i * 31 % 251) as u8).collect();
+        let submit = |t: &mut CudaTransfers| {
+            let mut plane = stream.alloc_zeros::<u8>(kv_bytes).unwrap();
+            stream.memcpy_htod(&pattern, &mut plane).unwrap();
+            let keep = t.register_device(plane, 1, request()).unwrap();
+            let device = t.retain_device(&keep).unwrap();
+            let host = t.alloc_host(kv_bytes, request()).unwrap();
+            let producer = t.record_producer(1).unwrap();
+            let ticket = t
+                .d2h(CopyOp {
+                    host,
+                    device,
+                    bytes: kv_bytes as u64,
+                    epochs,
+                    producer_fence: Some(producer),
+                })
+                .unwrap();
+            (ticket, producer, keep)
+        };
+        // Hold the copy stream behind a 300 ms spin, then the D2H behind it.
+        t.delay_on(&copy, 300_000_000).unwrap();
+        let (ticket, producer, keep) = submit(&mut t);
+        t.defer_d2h_checksums(&ticket).unwrap();
+        assert_eq!(t.defer_d2h_checksums(&ticket).err(), Some(Error::Busy));
+        assert_eq!(
+            t.d2h_landed_views(&ticket).err(),
+            Some(Error::NotReady),
+            "no view while the copy is held"
+        );
+        t.synchronize(&ticket).unwrap();
+        let c = t.poll(&ticket).unwrap();
+        assert_eq!(
+            c.items[0].segments[0].status,
+            ItemStatus::Complete,
+            "the copy landed"
+        );
+        assert!(!c.producer_done, "the item lands only with its digest");
+        let views = t.d2h_landed_views(&ticket).unwrap();
+        assert_eq!(views.len(), 1);
+        assert_eq!(
+            t.d2h_landed_views(&ticket).err(),
+            Some(Error::AlreadyReleased)
+        );
+        assert_eq!(
+            t.take_destination(&ticket, 0, epochs).err(),
+            Some(Error::Busy),
+            "a view is out"
+        );
+        assert_eq!(t.retire(&ticket, None).err(), Some(Error::Busy));
+        // The digest on another thread, as the hash helper takes it.
+        let hashed: Vec<(D2hDestinationView, Digest)> = std::thread::spawn(move || {
+            views
+                .into_iter()
+                .map(|v| {
+                    let d = v.digest();
+                    (v, d)
+                })
+                .collect()
+        })
+        .join()
+        .unwrap();
+        t.supply_d2h_checksums(&ticket, hashed).unwrap();
+        let c = t.poll(&ticket).unwrap();
+        assert!(c.producer_done);
+        assert_eq!(
+            c.items[0].segments[0].checksum,
+            Some(checksum(&pattern)),
+            "the receipt is the digest of the landed device bytes"
+        );
+        t.retire_source(&ticket).unwrap();
+        t.release_device(&keep).unwrap();
+        let Destination::Host(host) = t.take_destination(&ticket, 0, epochs).unwrap() else {
+            panic!("D2H destination is not host")
+        };
+        assert_eq!(host.bytes().unwrap(), pattern.as_slice());
+        let consumer = t.record_consumer(&ticket).unwrap();
+        stream.synchronize().unwrap();
+        t.retire(&ticket, Some(consumer)).unwrap();
+        t.acknowledge(&ticket).unwrap();
+        t.release_producer(producer).unwrap();
+        // A wrong supplied digest: landed, and it is the receipt as supplied.
+        let (ticket, _producer, _keep) = submit(&mut t);
+        t.defer_d2h_checksums(&ticket).unwrap();
+        t.synchronize(&ticket).unwrap();
+        let wrong: Vec<(D2hDestinationView, Digest)> = t
+            .d2h_landed_views(&ticket)
+            .unwrap()
+            .into_iter()
+            .map(|v| {
+                let mut d = v.digest();
+                d[0] ^= 0xff;
+                (v, d)
+            })
+            .collect();
+        t.supply_d2h_checksums(&ticket, wrong).unwrap();
+        let c = t.poll(&ticket).unwrap();
+        assert!(c.producer_done);
+        assert_ne!(
+            c.items[0].segments[0].checksum,
+            Some(checksum(&pattern)),
+            "the wrong digest is the receipt, as supplied"
+        );
     }
     fn f32_bytes(p: &[f32]) -> &[u8] {
         // SAFETY: an f32 slice is plain bytes of four times its length.
