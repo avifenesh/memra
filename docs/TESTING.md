@@ -2029,6 +2029,14 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   (a flipped lease byte refused `ReceiptMismatch`, nothing published). The failure gate's `digest` cell on the door ON
   arm is the served-path check: the settle's `plane host bytes differ from the D2H receipt as injected` line is the
   helper's digest seeing the flipped byte, and `VERIFY FAILED` refuses the entry.
+- The demote's re-hash on the hash helper (WP-A day 35, `research/spill-a-20260919/DAY35.md` design M'): under the
+  door, after the off-tick demote's settle and the `flip-demote` point, the KV planes wait in a guard that leaks on any
+  drop before the helper's reply, and the helper re-hashes read views of their leases (`CudaPinnedLease::read_view`)
+  for the bind (hash 2); hash 1, the D2H receipt, stays in the engine's poll. Server census
+  `day35_the_demote_rehash_rides_the_hash_helper_in_the_stated_order`; GPU cell
+  `option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused` (through the production sink: the
+  clean arm's receipts are the checksums of the lease bytes; a byte changed after hash 1 is refused at the bind,
+  nothing published). The failure gate's `digest` cell's bind line is the helper's re-hash seeing the flipped byte.
 - The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
   hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
   Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity

@@ -1,0 +1,4 @@
+HK arm: scratch/spill-a-d35-hk 44abb96e0f91c59b632ea1fdb2fccc784c263dd9 = a0f915d8a + this patch (a revert of 045ab57d4 resolved by DAY35 section 1's rule), local branch, not pushed
+HK binary 4465a68212350c3c28b41bb9b40fc48fc8569aac1958d30141676413de38ac63 (cargo build --release -p memra-server, built at 44abb96e0)
+FK binary 07a0360ffbfaf240c541397d694277aa7a8b4e5cf5ee8d8091dce59147fb730c (the same build at a0f915d8a)
+HK bar: clippy -D warnings clean (memra-server all targets), server lib 887 passed

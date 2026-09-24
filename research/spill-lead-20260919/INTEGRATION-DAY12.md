@@ -3346,6 +3346,191 @@ Verbatim, 63 PASS and 0 FAIL per card:
 - 2026-10-06: the park door.
 - BOX3's detached OS volume: keep or delete.
 
+## integ57 (`lane/spill-integ57-20260924`): A day 35 (F settled KEEP; design M refuted and reverted; design M', the bind re-hash on the hash helper, PASS on the 5090)
+Lane tip merged: A `50644beeb`, which already carries main `e20a4c5bb` (#707), so the branch is a fast-forward. The engine change is
+all behind the default-OFF door `MEMRA_KV_HOST_CONTRACTS`:
+- `tier_transfer.rs`: `read_view`, an `unsafe fn` with a stated ownership contract, and `PinnedLeaseView`, a read-only
+  `Send` view whose `digest` runs the bind's `checksum`.
+- `worker.rs`: `host_lease_views`, the `HostLeasesOnHelper` leak-on-drop guard, and the bind re-hash moved into the
+  existing `Hashing` job.
+- `docs/FLAGS.md` and `docs/TESTING.md` rows. No new `MEMRA_*` name.
+
+**A day 35.**
+1. **F is settled** by its pre-registered 5090 A/B, with K on both arms: `DAY35 F DECISION -> KEEP`.
+   - 30 boots in one hold, 30 of 30 replays PASS.
+   - e2e without F minus with F: +7.81 and +7.44 ms, against pair noise of 5.57 and 5.03.
+   - Promote in-ms: +7.60 against 0.90.
+   - DAY28 1b reads +22.1 without F and +14.3 with F.
+   - F is flat on BOX4, so this is a per-card win.
+2. **Design M, both demote KV hashes on the helper, failed as pre-registered.**
+   - (c) passed: the owner's hash segments fell to 0.15 and 0.07 ms.
+   - (d) failed in o2: the demote's wall grew +26.50 ms against the +25.0 bound.
+   - (b) failed: identity default-ON 4 failures, failure-ON 1, and fault-default 13 failures across five cells.
+   - The cause is placed: moving hash 1 adds a poll to the copy phase (300.8 against 36.6 ms), and a hit that
+     arrives in the copy phase does not park, so the gates' promote-after-demote never ran. The bytes held.
+   - The red receipts are committed as-is (`e727b0072`), and M came out of the tip in one revert (`6ce8b1aea`).
+3. **Design M' (only hash 2, the bind re-hash) passed every clause.** It was pre-registered in DAY35 section 7
+   (`e748231e1`) before its code, and ran 20 boots with 20 of 20 replays:
+   - (c) take-back 8.25 → 0.06 ms, max 0.09;
+   - (d) wall -8.15 and -8.40 ms (bound +17.0), e2e -7.68 and -8.04 ms;
+   - (b) identity x4 (12 ok each), failure ON (15), fault default and plain (160 each), hit OFF/ON (61 and 68, with
+     the day-24 census), unit cells 18 + 5, all ALL GREEN;
+   - (a) the helper's re-hash names the flipped byte at the bind, and `VERIFY FAILED` catches it again at the promote.
+   - The owner's hold per demote falls from 17.98 to 9.55 ms. Hash 1 stays on the owner (copy settle 8.33 ms).
+   - The helper's job grows from 29.95 to 37.90 ms, and the tenant stall is flat, at about 42 ms.
+4. **Process notes, recorded as they happened:**
+   - M''s first hold read NOT RUN because another project's idle process sat on the card. It left within the
+     60-minute wait, so the unchanged script ran and the drafted amendment was never registered or used.
+   - A's first local scratch commit for the F A/B went in with hooks off. A undid it and recommitted with the
+     pre-commit hook before building anything from it, and nothing was pushed from it. Hooks are never skipped;
+     the correction is recorded here.
+
+**Lead review.**
+- `PinnedLeaseView` repeats K's reviewed pattern (integ54): a raw read-only view that is `Send`, whose owner keeps
+  the lease alive and unwritten until the view returns.
+- `HostLeasesOnHelper` holds each lease on the owner thread until `land` takes the helper's reply. Every other drop of
+  the guard leaks the lease rather than freeing it, so no free happens under the helper's read. A census test pins
+  the single `hashing.leases.take()` after the reply and before the image is published.
+- M' moves only work that already sits inside a `Hashing` job whose hits park, so the copy phase keeps its one poll.
+  That is the property whose loss refuted M.
+- One numeric program per request holds: the digest is the same `checksum` over the same bytes, only on the helper,
+  and the corrupted-byte cell is refused at both the bind and the promote.
+
+**The review fix, before merge.**
+- Revuto on #711 found an ordering bug in M''s guard. `host_demote_settle_hashing` called `land()`, handing the
+  KV planes back, before checking `reply.seq == seq`.
+- A reply for another ticket says nothing about this job's views, which the helper may still hold or be reading.
+  The latch path then dropped real leases under that read, breaking the guard's own rule.
+- The lead's fix `43d16d73f`: the guard lands only on a reply for this ticket (`reply_is_ours`). On a foreign reply
+  it stays in `hashing`, and its `Drop` leaks the leases on the latch path. The census pins the order.
+- Only the mismatch branch changes: for any reply that matches `seq` (every gate's path), the take and land are
+  the same as before. Server lib 893 passed and clippy is clean. The 5090 battery on the fixed head (`integ57-5090-r2/`, binary
+  `bec0b102`) is all green: the same cells and counts as the first run, fault default and plain 160 ok each.
+
+**Ruling 52:**
+- Day 35 is read as registered.
+- F stays (a per-card win on the 5090, flat on the target card).
+- M is refuted, and its red receipts are banked.
+- M' is the door's serving path for the bind re-hash. The demote's owner hold halves on the 5090, and nothing moves on
+  the promote path.
+- Hash 1 stays on the owner: no off-thread form is known that keeps the copy phase at one poll.
+- Owed: the fill's speed on slower CPUs, the D2D half, and the strong-form receipt.
+- No target-card sitting was pre-registered for M'. When the next card is rented, M' joins the sitting.
+
+**Checks.**
+- CPU battery on `50644beeb`, 15 of 15 rc=0:
+  - portable suites: 368 passed, 0 skipped;
+  - tests: server 893, engine lib 546, tier 8 and pytest 87 passed;
+  - clippy `-D warnings` twice;
+  - fmt, check-flags, publish census, docs registry, conflict markers, workflow keys, perf board and
+    `git diff --check` (`integ57-cpu-battery/`).
+- RTX 5090 on the same tree: binary `33d63f70`, hashed after serve-smoke's build; one collector hold, 06:13Z to 06:25Z
+  (`integ57-5090/`). Verbatim:
+  - serve-smoke `serve-smoke: 0 failed`;
+  - the engine span cells `10 passed` and the worker cells `18 passed`, both serial;
+  - identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)`;
+  - fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 160 ok each;
+  - hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 and 68 ok;
+  - `ADMIT-MEM BURST GATE: ALL GREEN` (36 x 200, 28 typed 429s, no OOM);
+  - `SPEC-CTX-EDGE GATE: ALL GREEN`.
+- The collector's header comment was copied from integ55's and named the wrong gate. It is corrected in the
+  committed script, and the cells are unchanged.
+
+**Running.** None. Lane A is finished, and lane B holds for the owner's `MEMRA_ADMIT_BY_MEMORY` decision.
+
+**Owner decisions flagged.**
+- `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-10-07): integ56's packet.
+- 2026-10-05, the contracts door: integ54's readings, now with M' halving the demote's owner hold on the 5090.
+- 2026-10-04: MoE slot cache, VMM.
+- 2026-10-06: the park door.
+- BOX3's detached OS volume: keep or delete.
+
+## integ58 (`lane/spill-integ58-20260924`): A day 36 (the D2D half's restore price cell CLOSES on the target card; M' PASS on the target card; the restore's recurrent copy timed, log only)
+Lane tip merged: A `6d9e0b06e`, which already carries main `1d0cf13bc` (#711), so the branch is a fast-forward. The only
+code is `worker.rs` (+99/-4), a log-only instrument on the door's restore path:
+- `RestoreRecurTiming` holds the host time of the recurrent copy (an `Instant` around the submit) and two owner-stream
+  timing events recorded before and after it.
+- The GPU term is read at the restore's landing line only if the end event is already complete (`is_complete()`), so
+  the instrument never waits on the host. Otherwise the line says `pending`.
+- Census `day36_the_restore_recurrent_copy_is_timed_without_a_wait` pins the order and the absence of a
+  `synchronize`. No new `unsafe`, no new `MEMRA_*` name, no FLAGS row owed.
+
+**A day 36.**
+1. **Pre-registered before any day-36 code** (`0c2c62f77`): DAY33 section 6's price cell unchanged, the day-26
+   restore arm byte for byte, DAY33's rule verbatim, and the statement that a 5090 reading decides neither branch.
+2. **The 5090 reading** (one hold, 100 restores, `STALL REPLAY: PASS`), verbatim:
+   `DAY36 PRICE READING (5090, not the rule's card) host median=0.130 owner-stream median=0.170 (the rule's bound 0.5
+   each, read on the target card only)`.
+3. **The target-card sitting** (BOX5, one RTX PRO 6000 Blackwell Workstation Edition at 600 W, the 27B), pre-registered
+   in DAY36 section 3 (`4c2a4b19d`) and amended before it ran in section 3a (`733075ed1`: M' carries #711's guard fix).
+   - The price cell, verbatim: `DAY36 PRICE VERDICT (target card) owner-stream median=0.290 host median=0.190 rule
+     each < 0.5 ms per restore -> CLOSES`.
+   - **The D2D half of Move 2 owed item 1 closes with no door and no code.** The capture half was refuted by
+     construction on day 33.
+   - M' on the target card, DAY35 section 7's clauses verbatim: (c) take-back `median=0.11` against base `0.54`
+     `-> PASS`; (d) o1 wall `-0.40` (bound `+17.0`), e2e `+0.09` (bound `+1.0`) `-> PASS`, o2 wall `-0.50`, e2e
+     `+0.01` `-> PASS`. 20 boots, 20 of 20 replays PASS. The owner's hold per demote goes 2.67 to 2.27 ms; the gain is
+     small on cached leases, as predicted.
+   - The gates on the tip, all `ALL GREEN`: identity x4 (12 ok each), failure OFF/ON (15 each, the ON arm's helper
+     re-hash names the flipped byte at the bind and `VERIFY FAILED` catches it at the promote), fault default and
+     plain (160 ok each), twin OFF/ON `PASS`, hit OFF/ON (61 and 68 ok, the day-24 census). Unit cells 18, 10, 18, 6
+     and 13 passed.
+   - Receipts mirrored and checked 506 of 506 against the box manifest; binaries excluded, their hashes kept.
+4. **The box.** BOX5 passed the lead's acceptance gate before any weights were staged, served the sitting, and was
+   destroyed after the checked mirror. An earlier candidate box was rejected at the same gate: 139 W at idle and a 535 MHz
+   effective clock on the FMA spin, with HW slowdown, power brake and the braking counter all clear. Only the spin
+   and the idle power caught it.
+
+**Lead review.**
+- The instrument reads two events and a host clock. It changes no control flow: the submit path returns the timing
+  alongside its existing tuple, and the landing line formats it. A pending end event prints `pending` rather than
+  waiting, so the owner thread never blocks on it (the census pins it).
+- The events are recorded on the owner stream, the stream the copy already runs on. Recording an event adds no
+  dependency the copy did not have.
+- One numeric program per request holds: nothing the restore computes or copies changes, only a log line.
+- The seven spill review patterns (move-then-match, parked idle wait, gate literals, happy-path release, borrowed
+  sources, budgeted booking, guard identity) were read against the diff. None applies: there is no new state, no new
+  resource and no new release.
+- The verdict lines above are copied from DAY36 sections 2 and 4.
+
+**Ruling 53:**
+- Day 36 is read as registered.
+- The D2D half closes as not worth a door (0.29 ms owner-stream GPU and 0.19 ms host per restore on the target card,
+  each under the 0.5 ms bound). No code follows from it.
+- M' passes (a) to (d) on the 5090 (day 35) and on the target card (day 36). It stays the door's serving path for the
+  bind re-hash.
+- The instrument stays: it is the log line the price cell reads, it costs no wait, and it sits on the door's restore
+  path only.
+- The VERDICT line A drafted in DAY36 section 4 lands in the darklanes verdicts ledger through its own PR.
+- Owed: hash 1 on the owner thread (no off-thread form known), the fill on slower CPUs, the strong-form receipt.
+
+**Checks.**
+- CPU battery on `6d9e0b06e`, 15 of 15 rc=0:
+  - portable suites: 368 passed, 0 skipped;
+  - tests: server 894, engine lib 546, tier 281 across 8 binaries, pytest 87 passed;
+  - clippy `-D warnings` twice;
+  - fmt, check-flags, publish census, docs registry, conflict markers, workflow keys, perf board and
+    `git diff --check` (`integ58-cpu-battery/`).
+- RTX 5090 on the same tree: binary `1532f987`, hashed after serve-smoke's build; one collector hold, 08:38Z to 08:50Z
+  (`integ58-5090/`). Verbatim:
+  - serve-smoke `serve-smoke: 0 failed`;
+  - the engine span cells `10 passed` and the worker cells `18 passed`, both serial;
+  - identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok);
+  - fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 160 ok each;
+  - hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 and 68 ok;
+  - `ADMIT-MEM BURST GATE: ALL GREEN` (36 x 200, 28 typed 429s, no OOM);
+  - `SPEC-CTX-EDGE GATE: ALL GREEN`.
+
+**Running.** None. Lane A is finished; its next items need a new pre-registration. Lane B holds for the owner's
+`MEMRA_ADMIT_BY_MEMORY` decision.
+
+**Owner decisions flagged.**
+- `MEMRA_ADMIT_BY_MEMORY` (decide-by 2026-10-07): integ56's packet.
+- 2026-10-05, the contracts door: integ54's readings, with M' now passed on both cards and the D2D half closed.
+- 2026-10-04: MoE slot cache, VMM.
+- 2026-10-06: the park door.
+- BOX3's detached OS volume: keep or delete.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
