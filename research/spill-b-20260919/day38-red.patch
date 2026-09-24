@@ -1,0 +1,14 @@
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 923092f7d..f17528911 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -36649,7 +36649,8 @@ fn prime_cancelled_abort(s: &mut Session, err: &(dyn std::error::Error + 'static
+ }
+ 
+ fn retire_may_park(aborted: bool, oom_teardown: bool, errored: bool) -> bool {
+-    !aborted && !oom_teardown && !errored
++    let _ = errored;
++    !aborted && !oom_teardown
+ }
+ 
+ /// Model-owned topology is shared by admission, recovery, calibration and admin trim.

@@ -47,12 +47,27 @@ run() { # $1 name $2 env-string $3.. command
 if [ "${ONLY_TWIN27:-0}" = 1 ]; then
   log "twin27-only mode (the pooled arm's 27B twin cells, run after its 9B twin cells refused)"
 else
-run serve-smoke "" bash tools/serve-smoke.sh "$MODEL"
+# serve-smoke builds memra-server from the tree it runs in (its own rule). When the arm's binary names its source
+# (`source.commit` beside it), serve-smoke runs in a detached worktree at that commit with its own target dir, so the
+# cell tests the arm's source and not whatever the lane tip is by then.
+SMOKE_DIR=$WT
+if [ -f "$(dirname "$BIN")/source.commit" ]; then
+  SMOKE_SHA=$(cat "$(dirname "$BIN")/source.commit")
+  # On disk under the lane's own (ignored) target dir, never /tmp: the worktree builds its own target/.
+  SMOKE_DIR=$WT/target/smoke-wt-${SMOKE_SHA:0:12}
+  [ -d "$SMOKE_DIR" ] || git worktree add --detach "$SMOKE_DIR" "$SMOKE_SHA" >> "$ROOT/battery.log" 2>&1
+  log "serve-smoke runs at $SMOKE_SHA in $SMOKE_DIR"
+fi
+( cd "$SMOKE_DIR" && run serve-smoke "" bash tools/serve-smoke.sh "$MODEL" )
+if [ "$SMOKE_DIR" != "$WT" ]; then
+  sha256sum "$SMOKE_DIR/target/release/memra-server" > "$ROOT/serve-smoke-binary.sha256" 2>/dev/null
+  git worktree remove --force "$SMOKE_DIR" >> "$ROOT/battery.log" 2>&1
+fi
 # serve-smoke writes its server log to /tmp/serve-smoke.log (its own rule): keep it with the cell and count its doors.
 cp /tmp/serve-smoke.log "$ROOT/serve-smoke/serve-smoke-server.log" 2>/dev/null
 sed -i "s/^door_on_lines=.*/door_on_lines=$(grep -c '\[kv-vmm\] door=ON' "$ROOT/serve-smoke/serve-smoke-server.log" 2>/dev/null) door_off_lines=$(grep -c '\[kv-vmm\] door=OFF' "$ROOT/serve-smoke/serve-smoke-server.log" 2>/dev/null)/" "$ROOT/serve-smoke/CELL.txt"
 sha256sum "$BIN" > "$ROOT/binary.sha256"
-sha256sum "$WT/target/release/memra-server" > "$ROOT/serve-smoke-binary.sha256"
+[ "$SMOKE_DIR" = "$WT" ] && sha256sum "$WT/target/release/memra-server" > "$ROOT/serve-smoke-binary.sha256"
 run identity-default-on "MEMRA_HOSTGATE_CACHE_MB=$HOSTGATE_MB MEMRA_KV_HOST_CONTRACTS=1" bash tools/kv-host-spill-identity-gate.sh --external-lock "$fd" "$MODEL" "$BIN" "$ROOT/identity-default-on/ev"
 run fault-default "MEMRA_HOSTGATE_CACHE_MB=$HOSTGATE_MB" bash tools/kv-host-contract-fault-gate.sh --external-lock "$fd" "$MODEL" "$BIN" "$ROOT/fault-default/ev"
 run fault-plain "MEMRA_HOSTGATE_CACHE_MB=$HOSTGATE_MB MEMRA_SERVE_SPEC=0" bash tools/kv-host-contract-fault-gate.sh --external-lock "$fd" "$MODEL" "$BIN" "$ROOT/fault-plain/ev"

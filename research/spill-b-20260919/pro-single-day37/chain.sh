@@ -50,6 +50,7 @@ if [ ! -x "$R/bins/lane/memra-server" ]; then
   cp /root/wt-b/target/release/memra-server "$R/bins/lane/memra-server"
   cp /root/wt-b/target/release/kv-tier-gate /root/wt-b/target/release/vmm-call-cost "$R/bins/"
   git -C "$W" rev-parse HEAD > "$R/bins/lane/build-source.txt"
+  cp "$R/bins/lane/build-source.txt" "$R/bins/lane/source.commit"   # gates.sh runs serve-smoke at this source
   git worktree remove --force "$W" >> "$R/fetch.log" 2>&1
   log "built lane from $(cat "$R/bins/lane/build-source.txt")"
 fi
