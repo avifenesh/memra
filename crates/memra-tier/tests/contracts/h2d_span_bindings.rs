@@ -220,3 +220,114 @@ fn h2d_span_red_arm_an_owner_read_before_the_wait_fails() {
     h2d_span_read_before_its_wait_is_unordered(&mut f);
     assert_eq!(f.reads, vec![true]);
 }
+
+/// Day 33, rule 6: the filled batch. `copy_before_fill` is the red arm: a binding whose copies run
+/// when offered, before the fill.
+struct FilledBatch {
+    copy_before_fill: bool,
+    items_done: bool,
+    filled: bool,
+    copied: bool,
+    read_unfilled: bool,
+    waited: bool,
+    taken: bool,
+    completion: Completion,
+    lens: Vec<u64>,
+}
+impl FilledBatch {
+    fn new(items: usize, spans: usize) -> Self {
+        Self {
+            copy_before_fill: false,
+            items_done: false,
+            filled: false,
+            copied: false,
+            read_unfilled: false,
+            waited: false,
+            taken: false,
+            completion: completion(
+                TransferTicket {
+                    issuer: 96,
+                    sequence: 1,
+                    epochs: epochs(),
+                },
+                items,
+            ),
+            lens: (0..spans).map(|i| 8192 + 32 * i as u64).collect(),
+        }
+    }
+    fn landed(&self) -> bool {
+        self.items_done && self.copied
+    }
+}
+impl H2dFillFixture for FilledBatch {
+    fn submit(&mut self) -> TransferTicket {
+        self.completion.producer_done = false;
+        self.completion.ticket
+    }
+    fn attach_filled(
+        &mut self,
+        ticket: &TransferTicket,
+    ) -> std::result::Result<(), (Error, usize)> {
+        if ticket != &self.completion.ticket {
+            return Err((Error::UnknownTicket, self.lens.len()));
+        }
+        Ok(())
+    }
+    fn poll(&mut self, _ticket: &TransferTicket) -> Result<Completion> {
+        self.completion.producer_done = self.landed();
+        Ok(self.completion.clone())
+    }
+    fn install_reader_wait(&mut self, _ticket: &TransferTicket) -> Result<()> {
+        self.waited = true;
+        Ok(())
+    }
+    fn take_spans(&mut self, _ticket: &TransferTicket) -> Result<Vec<u64>> {
+        if self.taken {
+            return Err(Error::AlreadyReleased);
+        }
+        if !self.landed() || !self.waited {
+            return Err(Error::NotReady);
+        }
+        self.taken = true;
+        Ok(self.lens.clone())
+    }
+    fn items_complete(&mut self) {
+        self.items_done = true;
+    }
+    fn fill_runs(&mut self) {
+        self.filled = true;
+    }
+    fn copies_run(&mut self) {
+        // Stream order: the copies wait for the fill; the red arm runs them anyway.
+        if self.filled || self.copy_before_fill {
+            if !self.filled {
+                self.read_unfilled = true;
+            }
+            self.copied = true;
+        }
+    }
+    fn copies_read_filled(&self) -> bool {
+        !self.read_unfilled
+    }
+    fn span_bytes(&self) -> Vec<u64> {
+        self.lens.clone()
+    }
+}
+
+#[test]
+fn h2d_span_fill_runs_ahead_of_every_copy() {
+    let mut f = FilledBatch::new(4, 12);
+    h2d_span_fill_ordered_before_its_copy(&mut f);
+    assert!(f.taken && !f.read_unfilled);
+}
+
+#[test]
+fn h2d_span_red_arm_a_copy_before_its_fill_fails() {
+    let mut f = FilledBatch::new(4, 12);
+    f.copy_before_fill = true;
+    let r = catch_unwind(AssertUnwindSafe(|| {
+        h2d_span_fill_ordered_before_its_copy(&mut f)
+    }));
+    assert!(r.is_err(), "the red arm must fail the rule");
+    assert!(f.read_unfilled, "the red arm's copy read unfilled bytes");
+}

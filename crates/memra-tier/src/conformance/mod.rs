@@ -155,3 +155,10 @@ pub use d2h_span::*;
 // destination is handed out only behind the reader wait; a span error quarantines the ticket.
 mod h2d_span;
 pub use h2d_span::*;
+
+// Day-34 rule (WP-A, memra#536 Move 2 owed item 1, `DAY34.md` design K): an H2D batch whose completion
+// checksums are supplied by the caller's hash helper, beside the frozen schedules, unversioned: one
+// landing with the supplied checksums; the demote-time receipts gate it as before; sources stay owned
+// while a view is out.
+mod h2d_deferred_checksum;
+pub use h2d_deferred_checksum::*;
