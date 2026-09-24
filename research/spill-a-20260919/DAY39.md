@@ -149,3 +149,12 @@ owner item. (e) fails: the per-fill `T_eff` floor is revised under a new pre-reg
 
 **Budget.** 0.5 agent-day: code and CPU cells 0.1, the HK port 0.1, the 5090 cells 0.2, the target cell's share of a
 sitting 0.1.
+
+## 5a. Amendment to section 5, before any T cell runs: the stall cell's `--n`
+
+Section 5 wrote `stall_cell.py --mode promote --n 10` for the target cell and, in the same paragraph, "9 per boot, 90 per
+arm pooled over both orders". Those disagree: the harness's `--n` is its n per order (`STALL rule .. n_per_order=5
+pooled=10`), so `--n 5` gives ten promote runs per boot, nine steady (DAY35's cell: `e2e N=50` per arm per order from five
+boots; DAY34's BOX4 sitting: `promote in-ms steady N=90`), and `--n 10` would give nineteen. The count the clause is
+written on (90 steady promotes per arm, `polls [1]` on at least 80) is kept, so both cells run `--n 5`, as DAY34 and
+DAY35 did. Found by dry-running the reader (`day39-reading.py`) on DAY35's banked cell; no T cell has run.
