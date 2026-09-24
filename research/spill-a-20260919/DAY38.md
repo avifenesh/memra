@@ -931,3 +931,22 @@ DAY39 section 5b, and item 5's target half).
   `7f466826f289a4ce..`, hk `b448c36c214f5d04..`, base and gpp the day-38 sitting's; markers `g4 copy-stream-receipt-line:
   1`, `base .. 0`, `gpp .. 0`) launched `driver.sh` at 22:36Z: the A/B, the hump cell, the gates with day 41's cells,
   the hit gate, the unit cells and item 3's cell.
+
+## 20a. The base-controlled 5090 cell, as it ran (`rtx5090-day38/g34/`)
+
+- One hold 22:48Z to 22:56:24Z (after bounded busy attempts behind lane C); eight boots, the card at 71 to 78 C and 1582 to
+  1590 MHz at each boot's start. Verbatim (`g34/hump/reading-hump.log`): `HUMP arm=xbase boots=2 median-hump=+0.072
+  humps=False`, `HUMP arm=xg3 boots=2 median-hump=+0.055 humps=False`, `HUMP arm=xg4 boots=2 median-hump=+0.032
+  humps=False`, `HUMP arm=xgpp boots=2 median-hump=+0.334 humps=True` (`b04-xgpp itl=[7.29, 7.36, 7.31, 7.42, .., 7.62,
+  .., 7.36]`, the triangle of BOX7's G'').
+- **What it says, by section 20's rule.** The base arm is flat in this hold, and so are G''' and G4; only G'' humps, as on
+  BOX7. The (f) failures of G''' and G4 in their own holds (sections 16 and 19) came in holds where the card ran hotter
+  and its clock fell (the G4 hold's hump cell at 87 to 88 C, 1830 to 1995 MHz) and where the base arm itself rose in two of
+  the A/Bs; this cell, (f)'s registered shape (two design boots, the G'' control beside them) plus the base arm, reads
+  G''' at +0.055 and G4 at +0.032 against the 0.15 bound. Both readings stay in the record; the owner decides whether the
+  5090's (f) is read from this base-controlled hold. Section 17's premise (that G''' humps on the 5090) is not
+  reproduced under a base control: on both cards the hump is G'''s second kernel stream, and G''' and G4 are both flat.
+- **The placement delivered stays G4** (design S is built on it and its cells are queued), with G''' recorded as the
+  measured alternative: equal on the hump on both cards, better by construction for a promote's copies (they never queue
+  behind a demote's receipt kernel under G'''; captures queue behind it under both). Which placement serves long entries
+  better is the owner's call, on the long-entry cell of `OWED.md` item 15.
