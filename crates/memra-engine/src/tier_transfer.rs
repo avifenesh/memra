@@ -3,7 +3,8 @@
 use crate::PinnedHostBuf;
 use cudarc::driver::{
     CudaContext, CudaEvent, CudaFunction, CudaModule, CudaSlice, CudaStream, CudaView, CudaViewMut,
-    DriverError, HostSlice, LaunchConfig, PushKernelArg, SyncOnDrop, result, sys,
+    DevicePtr, DeviceRepr, DriverError, HostSlice, LaunchConfig, PushKernelArg, SyncOnDrop, result,
+    sys,
 };
 use cudarc::nvrtc::Ptx;
 use memra_kv::KvPlane;
@@ -19,6 +20,9 @@ use memra_tier::{bank::SharedBudget, contracts::*};
 const TIER_RECEIPT_FATBIN: &[u8] = include_bytes!(env!("MEMRA_TIER_RECEIPT_FATBIN"));
 /// The `d2d-delay` fault's early-reader delay ahead of the copy (`inject_d2d_early_reader`).
 pub const D2D_DELAY_FAULT_NS: u64 = 200_000_000;
+/// WP-A day 38: the `d2h-delay` fault's copy-stream spin ahead of a demote's copies
+/// (`inject_d2h_delay`), long enough for the next request to arrive in the copy phase.
+pub const D2H_DELAY_FAULT_NS: u64 = 3_000_000_000;
 use std::{
     cell::{Ref, RefCell},
     collections::HashMap,
@@ -400,7 +404,32 @@ struct Entry {
     /// WP-A day 34 (`DAY34.md` design K): the H2D items' completion checksums, deferred to the
     /// caller's hash helper (`defer_h2d_checksums`); `None` keeps them in `progress`.
     deferred: Option<DeferredSums>,
+    /// WP-A day 38 (`DAY38.md` design G, `memra_tier::conformance::d2h_device_receipt`): a D2H
+    /// batch's receipt taken on the copy stream over each item's DEVICE source (the program
+    /// `checksum`, byte for byte), sealed by one receipt event; `None` keeps the owner-thread
+    /// checksum of the landed bytes in `progress` (a batch on the owner stream).
+    d2h_receipt: Option<D2hDeviceReceipt>,
 }
+/// WP-A day 38: one D2H batch's device receipt: the digests (32 bytes per item, the batch's item
+/// order) on the device and their pinned twin, sealed by `scratch.event`; `timing` brackets the
+/// digest kernels on the copy stream (a log-only reading, never waited on).
+struct D2hDeviceReceipt {
+    scratch: ReceiptScratch,
+    timing: Option<(CudaEvent, CudaEvent)>,
+}
+/// The by-value argument of `d2h_receipt_sha256` (`cu/tier_receipt.cu` `ReceiptItems`): up to
+/// `RECEIPT_ITEMS` items per launch, their device pointers and byte lengths.
+const RECEIPT_ITEMS: usize = 64;
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ReceiptItems {
+    n: u64,
+    ptr: [u64; RECEIPT_ITEMS],
+    len: [u64; RECEIPT_ITEMS],
+}
+// SAFETY: plain `#[repr(C)]` integers, laid out exactly as the kernel's `struct ReceiptItems`
+// (`u64 n; u64 ptr[64]; u64 len[64]`), passed by value.
+unsafe impl DeviceRepr for ReceiptItems {}
 /// WP-A day 34: the deferred checksums of one H2D batch: the views still out and each item's supplied
 /// digest (the item lands only with it, `memra_tier::conformance::h2d_deferred_checksum_lands_with_its_digests`).
 struct DeferredSums {
@@ -547,6 +576,10 @@ struct ReceiptKernels {
     _module: Arc<CudaModule>,
     digest: CudaFunction,
     delay: CudaFunction,
+    /// WP-A day 38 (design G): the framed SHA-256 of a D2H batch's device sources, and the
+    /// `d2h-source-flip` fault's one-byte flip.
+    sha256: CudaFunction,
+    flip: CudaFunction,
 }
 /// One D2D batch's receipt lanes (WP-A day 22, `memra_tier::conformance::d2d_receipt_witnessed`):
 /// per item, 64 bytes on the device (four u64 lanes of the SOURCE digest, taken on the copy stream
@@ -629,6 +662,14 @@ pub struct CudaTransfers {
     /// class delays its copy by this many nanoseconds and takes its destination digest from an
     /// unordered early reader on the owner stream. `None` in production.
     early_reader: Option<u64>,
+    /// WP-A day 38: the one-shot `d2h-source-flip` fault (`inject_d2h_source_flip`): the next
+    /// device-receipt D2H batch flips one byte of its first item's source after the digest and
+    /// before the copy. `false` in production.
+    source_flip: bool,
+    /// WP-A day 38: the one-shot `d2h-delay` fault (`inject_d2h_delay`): the next device-receipt
+    /// D2H batch's copies wait this many nanoseconds behind a copy-stream spin. `None` in
+    /// production.
+    d2h_delay: Option<u64>,
     /// Test only (the native `d2h_span` and day-32 `h2d_span` cells): the next span batch's second
     /// enqueue fails, whichever direction it is.
     #[cfg(test)]
@@ -658,6 +699,8 @@ impl CudaTransfers {
             entries: HashMap::new(),
             receipt: None,
             early_reader: None,
+            source_flip: false,
+            d2h_delay: None,
             #[cfg(test)]
             span_enqueue_fault: false,
         })
@@ -677,12 +720,51 @@ impl CudaTransfers {
         )?;
         let digest = cuda(module.load_function("d2d_receipt_digest"))?;
         let delay = cuda(module.load_function("tier_delay_spin"))?;
+        let sha256 = cuda(module.load_function("d2h_receipt_sha256"))?;
+        let flip = cuda(module.load_function("tier_flip_byte"))?;
         t.receipt = Some(ReceiptKernels {
             _module: module,
             digest,
             delay,
+            sha256,
+            flip,
         });
         Ok(t)
+    }
+    /// WP-A day 38 (`DAY38.md` design G): whether this engine takes a D2H batch's receipt on the
+    /// copy stream over the device sources (a copy stream with its receipt kernels), rather than
+    /// on the owner thread over the landed bytes.
+    pub fn d2h_receipts_on_device(&self) -> bool {
+        self.copy.is_some() && self.receipt.is_some()
+    }
+    /// The `MEMRA_KV_HOST_FAULT=d2h-source-flip` fault (WP-A day 38, the device receipt's red arm):
+    /// the NEXT device-receipt D2H batch flips one byte of its first accepted item's source on the
+    /// copy stream after the digest and before the copy, so the landed bytes differ from the
+    /// receipt and the caller's witness must refuse the image. One-shot; diagnostics only.
+    pub fn inject_d2h_source_flip(&mut self) {
+        self.source_flip = true;
+    }
+    /// The `MEMRA_KV_HOST_FAULT=d2h-delay` fault (WP-A day 38, the copy-phase park's red arm): the
+    /// NEXT device-receipt D2H batch's copies wait `delay_ns` behind a copy-stream spin queued
+    /// after its receipt, so the batch's copy phase lasts at least that long. One-shot.
+    pub fn inject_d2h_delay(&mut self, delay_ns: u64) {
+        self.d2h_delay = Some(delay_ns);
+    }
+    /// WP-A day 38 (log only): the device receipt's digest kernels' copy-stream time for `ticket`,
+    /// read only if the end event already completed (never a host wait); `None` for a batch
+    /// without a device receipt or while the kernels have not finished.
+    pub fn d2h_receipt_gpu_ms(&self, ticket: &TransferTicket) -> Option<f32> {
+        let (start, end) = self
+            .entries
+            .get(ticket)?
+            .d2h_receipt
+            .as_ref()?
+            .timing
+            .as_ref()?;
+        if !event_done(end).ok()? {
+            return None;
+        }
+        start.elapsed_ms(end).ok()
     }
     /// The `MEMRA_KV_HOST_FAULT=d2d-delay-*` fault (WP-A day 22, the red arm of the receipt): the
     /// NEXT D2D submit of either class runs `tier_delay_spin(delay_ns)` ONCE on the copy stream,
@@ -699,7 +781,10 @@ impl CudaTransfers {
     /// twin of the same size. Allocated before the batch is charged, so a refusal here submits
     /// nothing.
     fn receipt_scratch(&self, items: usize) -> Result<ReceiptScratch> {
-        let bytes = items.checked_mul(64).ok_or(Error::Overflow)?;
+        self.receipt_scratch_bytes(items.checked_mul(64).ok_or(Error::Overflow)?)
+    }
+    /// `receipt_scratch` for `bytes` of lanes (a D2H device receipt takes 32 bytes per item).
+    fn receipt_scratch_bytes(&self, bytes: usize) -> Result<ReceiptScratch> {
         // Zeroed on the OWNER stream and fenced by `zeroed`: the copy stream waits on it before
         // its first digest, and the fault's early reader (owner stream) follows it in order.
         let lanes = cuda(self.stream.alloc_zeros::<u8>(bytes))?;
@@ -751,6 +836,99 @@ impl CudaTransfers {
         // SAFETY: documented FFI of `cu/tier_receipt.cu`: `tier_delay_spin(u64 ns)` takes one
         // scalar and touches no memory.
         cuda(unsafe { b.launch(cfg) }).map(|_| ())
+    }
+    /// WP-A day 38 (`DAY38.md` design G, `memra_tier::conformance::d2h_device_receipt`): take a
+    /// D2H batch's receipt on the copy stream. The copy stream waits on every accepted D2H item's
+    /// producer event and on the lanes' zero-fill, `d2h_receipt_sha256` digests each accepted D2H
+    /// item's device source (the program `checksum`, byte for byte; any other item hashes nothing
+    /// and its lanes are never read), one D2H of the digests goes into the pinned twin, and the
+    /// receipt event seals it; the caller issues the copies after this returns, so each digest
+    /// reads its source before its copy does. The two faults ride here: the one-byte flip after
+    /// the digest and the delay spin after the seal, both one-shot. The sources are the ticket's
+    /// registered device leases, untouched by any writer until the ticket retires its sources.
+    fn seal_d2h_device_receipt(
+        &mut self,
+        ops: &[TransferOp<CudaPinnedLease>],
+        errors: &[Option<Error>],
+        mut scratch: ReceiptScratch,
+    ) -> Result<D2hDeviceReceipt> {
+        let copy = self.copy.clone().ok_or(Error::Unsupported)?;
+        let mut sources: Vec<(u64, u64)> = Vec::with_capacity(ops.len());
+        let mut waited: Vec<u64> = Vec::new();
+        for (op, error) in ops.iter().zip(errors) {
+            match (op, error) {
+                (TransferOp::D2h(o), None) => {
+                    if let Some(f) = o.producer_fence
+                        && !waited.contains(&f.sequence)
+                    {
+                        cuda(copy.wait(&self.producers[&f.sequence].1))?;
+                        waited.push(f.sequence);
+                    }
+                    let backing = self.owner.resolve::<Rc<RefCell<KvPlane>>>(&o.device)?;
+                    let plane = backing.borrow();
+                    let view = plane.slice(..o.bytes as usize);
+                    let (ptr, _record) = view.device_ptr(&copy);
+                    sources.push((ptr, o.bytes));
+                }
+                _ => sources.push((0, 0)),
+            }
+        }
+        cuda(copy.wait(&scratch.zeroed))?;
+        let k = self.receipt.as_ref().ok_or(Error::Unsupported)?;
+        // The two bracket events carry timing (the log-only kernel reading); every other event of
+        // the engine keeps cudarc's timing-disabled default.
+        let timed = Some(sys::CUevent_flags::CU_EVENT_DEFAULT);
+        let start = cuda(copy.record_event(timed))?;
+        for (chunk, part) in sources.chunks(RECEIPT_ITEMS).enumerate() {
+            let mut items = ReceiptItems {
+                n: part.len() as u64,
+                ptr: [0; RECEIPT_ITEMS],
+                len: [0; RECEIPT_ITEMS],
+            };
+            for (j, &(ptr, len)) in part.iter().enumerate() {
+                items.ptr[j] = ptr;
+                items.len[j] = len;
+            }
+            let at = chunk * RECEIPT_ITEMS * 32;
+            let mut out = scratch.lanes.slice_mut(at..at + part.len() * 32);
+            let cfg = LaunchConfig {
+                grid_dim: (part.len().div_ceil(32) as u32, 1, 1),
+                block_dim: (32, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let mut b = copy.launch_builder(&k.sha256);
+            b.arg(&items).arg(&mut out);
+            // SAFETY: documented FFI of `cu/tier_receipt.cu`: `d2h_receipt_sha256(ReceiptItems items,
+            // u8* out)` reads `items.len[j]` bytes at each non-zero `items.ptr[j]` (live device
+            // sources of this batch, ordered behind their producer fences above) and writes exactly
+            // `32 * items.n` bytes of `out` (this chunk's slice of the lanes).
+            cuda(unsafe { b.launch(cfg) })?;
+        }
+        let end = cuda(copy.record_event(timed))?;
+        if std::mem::take(&mut self.source_flip)
+            && let Some(&(ptr, len)) = sources.iter().find(|(p, n)| *p != 0 && *n > 0)
+        {
+            let at = ptr + (len - 1).min(5);
+            let cfg = LaunchConfig {
+                grid_dim: (1, 1, 1),
+                block_dim: (1, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let mut b = copy.launch_builder(&k.flip);
+            b.arg(&at);
+            // SAFETY: documented FFI of `cu/tier_receipt.cu`: `tier_flip_byte(u8* p)` XORs the one
+            // byte at `p`, inside the first accepted item's live source (offset below its length).
+            cuda(unsafe { b.launch(cfg) })?;
+        }
+        cuda(copy.memcpy_dtoh(&scratch.lanes, &mut scratch.pinned))?;
+        scratch.event = Some(cuda(copy.record_event(None))?);
+        if let Some(ns) = self.d2h_delay.take() {
+            self.delay_on(&copy, ns)?;
+        }
+        Ok(D2hDeviceReceipt {
+            scratch,
+            timing: Some((start, end)),
+        })
     }
     /// Seal a batch's receipt: one D2H of the lanes into the pinned twin on the copy stream, then
     /// the receipt event; `progress` reads the lanes only after that event. A failure quarantines
@@ -1445,6 +1623,7 @@ impl CudaTransfers {
             h2d_spans: None,
             h2d_spans_taken: false,
             deferred: None,
+            d2h_receipt: None,
         };
         for (i, op) in ops.into_iter().enumerate() {
             let mut s = SegmentCompletion {
@@ -1647,6 +1826,7 @@ impl CudaTransfers {
             h2d_spans: None,
             h2d_spans_taken: false,
             deferred: None,
+            d2h_receipt: None,
         };
         for (i, mut op) in ops.into_iter().enumerate() {
             let mut s = SegmentCompletion {
@@ -2337,6 +2517,33 @@ impl CudaTransfers {
                 }
             }
         };
+        // WP-A day 38 (design G): a D2H batch's device receipt, readable once its receipt event
+        // (recorded after the digests' D2H, before any copy) is observed complete.
+        let d2h_lanes: Option<Vec<u8>> = match &e.d2h_receipt {
+            None => None,
+            Some(r) => {
+                let sealed = r
+                    .scratch
+                    .event
+                    .as_ref()
+                    .ok_or(Error::Quarantined)
+                    .and_then(event_done);
+                match sealed {
+                    Ok(true) => match r.scratch.pinned.as_slice() {
+                        Ok(lanes) => Some(lanes.to_vec()),
+                        Err(_) => {
+                            e.unknown = true;
+                            return Err(Error::Quarantined);
+                        }
+                    },
+                    Ok(false) => None,
+                    Err(err) => {
+                        e.unknown = true;
+                        return Err(err);
+                    }
+                }
+            }
+        };
         for (i, item) in e.items.iter_mut().enumerate() {
             let Some(item) = item else {
                 continue;
@@ -2390,6 +2597,29 @@ impl CudaTransfers {
                 s.producer_done = true;
                 s.status = ItemStatus::Complete;
                 s.valid_bytes = item.bytes;
+                continue;
+            }
+            // WP-A day 38 (`d2h_device_receipt` rules 1 and 2): a device-receipt D2H item's copy
+            // landed; it lands with its receipt observed or not yet, and its checksum and
+            // expectation are its SOURCE's digest (the program `checksum` on the copy stream). The
+            // owner thread hashes nothing; the caller's re-hash of the landed bytes before any
+            // publication is the witness (rule 3, the bind).
+            if e.d2h_receipt.is_some() && item.direction == CopyDirection::DeviceToHost {
+                let Some(lanes) = &d2h_lanes else {
+                    continue;
+                };
+                let off = 32 * i;
+                let Some(sum) = lanes.get(off..off + 32) else {
+                    e.unknown = true;
+                    return Err(Error::Quarantined);
+                };
+                let mut digest: Digest = [0; 32];
+                digest.copy_from_slice(sum);
+                s.producer_done = true;
+                s.status = ItemStatus::Complete;
+                s.valid_bytes = item.bytes;
+                s.checksum = Some(digest);
+                e.expected[i][0].checksum = digest;
                 continue;
             }
             // WP-A day 34 (`h2d_deferred_checksum` rule 1): a deferred H2D item's copy landed; the
@@ -2574,12 +2804,25 @@ impl TransferEngine for CudaTransfers {
             if errors.iter().all(Option::is_some) {
                 return Err(errors[0].clone().unwrap());
             }
+            // WP-A day 38 (`DAY38.md` design G): a D2H batch on the copy stream takes its receipt
+            // on the device. Its scratch is allocated here, before the batch is charged, so a
+            // refusal submits nothing and hands every op back.
+            let device_receipt = self.d2h_receipts_on_device()
+                && ops
+                    .iter()
+                    .zip(&errors)
+                    .any(|(op, e)| e.is_none() && matches!(op, TransferOp::D2h(_)));
+            let scratch = if device_receipt {
+                Some(self.receipt_scratch_bytes(ops.len().checked_mul(32).ok_or(Error::Overflow)?)?)
+            } else {
+                None
+            };
             let mut request = self.request();
             request.bytes.inflight = ops.len() as u64;
             let charge = self.governor.borrow_mut().reserve(&request)?;
-            Ok((first, errors, charge))
+            Ok((first, errors, charge, scratch))
         })();
-        let (epochs, errors, charge) = match admission {
+        let (epochs, errors, charge, scratch) = match admission {
             Ok(v) => v,
             Err(error) => return Err(Rejected { op: ops, error }),
         };
@@ -2611,7 +2854,18 @@ impl TransferEngine for CudaTransfers {
             h2d_spans: None,
             h2d_spans_taken: false,
             deferred: None,
+            d2h_receipt: None,
         };
+        // WP-A day 38 (design G): the receipt digests every accepted D2H item's DEVICE source on
+        // the copy stream behind the producer fences, BEFORE any copy is issued; the copies below
+        // are unchanged. Any error from the first enqueue on may leave work in flight: the batch is
+        // accepted and quarantined, never handed back.
+        if let Some(scratch) = scratch {
+            match self.seal_d2h_device_receipt(&ops, &errors, scratch) {
+                Ok(receipt) => entry.d2h_receipt = Some(receipt),
+                Err(_) => entry.unknown = true,
+            }
+        }
         let mut acceptances = vec![];
         for (i, (op, error)) in ops.into_iter().zip(errors).enumerate() {
             let mut s = SegmentCompletion {
@@ -3278,7 +3532,7 @@ mod tests {
 
     /// WP-A day 37 (`DAY37.md` section 8, finding 5): the number of native cells in this module,
     /// one context each in the pool below (the census pins the count).
-    const NATIVE_CELLS: usize = 11;
+    const NATIVE_CELLS: usize = 13;
     /// The module's native cells' contexts: `NATIVE_CELLS` non-primary contexts created in ONE step,
     /// at the first `cell_context()` call (before that cell's body runs; every other cell waits
     /// here), and held for the whole test process by this static, so no context is created or
@@ -3347,6 +3601,214 @@ mod tests {
             tenant: [0; 32],
         }
     }
+    /// WP-A day 38 (`DAY38.md` design G): the device receipt's order, by text. The scratch is
+    /// allocated in the admission, before the batch is charged; the receipt is sealed before the
+    /// item loop issues any copy; the digest precedes the flip, the flip precedes the lanes' D2H,
+    /// the seal precedes the delay; `progress`'s device-receipt branch comes before the
+    /// owner-thread checksum and hashes nothing.
+    #[test]
+    fn d2h_device_receipt_rules_are_as_stated() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let fn_body = |name: &str| -> &str {
+            let at = body.find(name).unwrap();
+            &body[at..at + body[at..].find("\n    }\n").unwrap()]
+        };
+        let submit = fn_body("    fn submit_batch(");
+        let scratch = submit.find("self.receipt_scratch_bytes(").unwrap();
+        let reserve = submit
+            .find("self.governor.borrow_mut().reserve(&request)?")
+            .unwrap();
+        assert!(
+            scratch < reserve,
+            "the scratch is allocated before the charge"
+        );
+        let seal = submit
+            .find("self.seal_d2h_device_receipt(&ops, &errors, scratch)")
+            .unwrap();
+        let items = submit
+            .find("for (i, (op, error)) in ops.into_iter().zip(errors).enumerate()")
+            .unwrap();
+        assert!(
+            seal < items,
+            "the receipt is sealed before any copy is issued"
+        );
+        let sealer = fn_body("    fn seal_d2h_device_receipt(");
+        let digest = sealer.find("copy.launch_builder(&k.sha256)").unwrap();
+        let flip = sealer.find("copy.launch_builder(&k.flip)").unwrap();
+        let lanes = sealer
+            .find("copy.memcpy_dtoh(&scratch.lanes, &mut scratch.pinned)")
+            .unwrap();
+        let event = sealer.find("scratch.event = Some(").unwrap();
+        let delay = sealer.find("self.delay_on(&copy, ns)").unwrap();
+        assert!(digest < flip && flip < lanes && lanes < event && event < delay);
+        assert!(sealer.find("copy.wait(&self.producers").unwrap() < digest);
+        assert!(sealer.find("copy.wait(&scratch.zeroed)").unwrap() < digest);
+        let progress = fn_body("    fn progress(");
+        let branch = progress
+            .find("if e.d2h_receipt.is_some() && item.direction == CopyDirection::DeviceToHost {")
+            .unwrap();
+        let host_sum = progress.rfind("s.checksum = Some(checksum(").unwrap();
+        assert!(branch < host_sum);
+        let arm = &progress
+            [branch..branch + progress[branch..].find("continue;\n            }").unwrap()];
+        assert!(
+            !arm.contains("checksum("),
+            "the device-receipt branch hashes nothing"
+        );
+    }
+    /// WP-A day 38 (`DAY38.md` design G, `memra_tier::conformance::d2h_device_receipt`, on a card).
+    /// A three-item D2H batch (lengths 1 MiB, 1 MiB + 3 and 61,445 bytes) behind a 300 ms copy-stream
+    /// hold: not landed while the digest waits; landed after the host wait with every item's
+    /// checksum the receipt program over its SOURCE bytes, bitwise, and equal to the program over
+    /// the landed host bytes (the witness); the kernel's copy-stream time reads back once landed.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn d2h_device_receipt_lands_with_the_source_digest() {
+        d2h_device_receipt_cell(false);
+    }
+    /// WP-A day 38: the `d2h-source-flip` red arm on a card. The same batch with the one-shot flip:
+    /// item 0's receipt is still the program over its ORIGINAL source bytes, and the program over
+    /// its landed bytes differs from it (the witness refuses); the other items agree.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn d2h_source_flip_is_witnessed_by_the_landed_bytes() {
+        d2h_device_receipt_cell(true);
+    }
+    fn d2h_device_receipt_cell(flip: bool) {
+        use memra_tier::tier::governor::Governor;
+        let ctx = cell_context();
+        let stream = ctx.new_stream().unwrap();
+        let cap = TierBudget {
+            version: 1,
+            device: vec![1 << 30],
+            peer: vec![0],
+            replicas: vec![0],
+            pinned: 1 << 30,
+            pageable: 1 << 30,
+            staging: 1 << 30,
+            loaders: 64,
+            inflight: 64,
+            nvme: 0,
+        };
+        let gov: SharedBudget = Rc::new(RefCell::new(
+            Governor::new(cap, TierBudget::zero(1), 64, 0, Arc::new(|| 0)).unwrap(),
+        ));
+        let mut t = CudaTransfers::new_with_copy_stream(stream.clone(), gov).unwrap();
+        assert!(t.d2h_receipts_on_device());
+        let copy = t.copy_stream().unwrap().clone();
+        let epochs = Epochs {
+            state: 0,
+            src_gen: 1,
+            dst_gen: 1,
+        };
+        let lens = [1usize << 20, (1 << 20) + 3, 61_445];
+        let patterns: Vec<Vec<u8>> = lens
+            .iter()
+            .enumerate()
+            .map(|(k, &n)| {
+                (0..n)
+                    .map(|i| ((i * 29 + k * 11 + (i >> 7)) % 251) as u8)
+                    .collect()
+            })
+            .collect();
+        let producer = t.record_producer(1).unwrap();
+        let mut keeps = Vec::new();
+        let mut ops = Vec::new();
+        for p in &patterns {
+            let mut plane = stream.alloc_zeros::<u8>(p.len()).unwrap();
+            stream.memcpy_htod(p, &mut plane).unwrap();
+            let keep = t.register_device(plane, 1, request()).unwrap();
+            let device = t.retain_device(&keep).unwrap();
+            let host = t.alloc_host(p.len(), request()).unwrap();
+            keeps.push(keep);
+            ops.push(TransferOp::D2h(CopyOp {
+                host,
+                device,
+                bytes: p.len() as u64,
+                epochs,
+                producer_fence: Some(producer),
+            }));
+        }
+        // The producer fence covers the planes' uploads (recorded before them above, so record a
+        // fresh one after them and use it).
+        let producer = {
+            t.release_producer(producer).unwrap();
+            let fresh = t.record_producer(1).unwrap();
+            for op in &mut ops {
+                if let TransferOp::D2h(o) = op {
+                    o.producer_fence = Some(fresh);
+                }
+            }
+            fresh
+        };
+        t.delay_on(&copy, 300_000_000).unwrap();
+        if flip {
+            t.inject_d2h_source_flip();
+        }
+        let ticket = t.submit_batch(ops).map_err(|r| r.error).unwrap().ticket;
+        let c = t.poll(&ticket).unwrap();
+        assert!(
+            !c.producer_done,
+            "not landed while the digest waits behind the hold"
+        );
+        assert!(
+            t.d2h_receipt_gpu_ms(&ticket).is_none(),
+            "no reading before the kernels ran"
+        );
+        t.synchronize(&ticket).unwrap();
+        let c = t.poll(&ticket).unwrap();
+        assert!(c.producer_done, "copies and receipt observed: landed");
+        let gpu_ms = t
+            .d2h_receipt_gpu_ms(&ticket)
+            .expect("the kernels' time reads back once landed");
+        eprintln!(
+            "D2H DEVICE RECEIPT cell flip={flip} items={} gpu_ms={gpu_ms:.3}",
+            lens.len()
+        );
+        t.retire_source(&ticket).unwrap();
+        for keep in &keeps {
+            t.release_device(keep).unwrap();
+        }
+        for (i, p) in patterns.iter().enumerate() {
+            let receipt = c.items[i].segments[0]
+                .checksum
+                .expect("a landed item has its receipt");
+            assert_eq!(
+                receipt,
+                checksum(p),
+                "item {i}: the receipt is the program over its source"
+            );
+            let Destination::Host(host) = t.take_destination(&ticket, i as u32, epochs).unwrap()
+            else {
+                panic!("D2H destination is not host")
+            };
+            let landed = checksum(host.bytes().unwrap());
+            if flip && i == 0 {
+                assert_ne!(
+                    landed, receipt,
+                    "the witness over the landed bytes sees the flip"
+                );
+                let mut want = p.clone();
+                want[(p.len() - 1).min(5)] ^= 0x40;
+                assert_eq!(
+                    host.bytes().unwrap(),
+                    want.as_slice(),
+                    "exactly the one byte flipped"
+                );
+            } else {
+                assert_eq!(
+                    landed, receipt,
+                    "item {i}: the witness agrees with the receipt"
+                );
+            }
+        }
+        let consumer = t.record_consumer(&ticket).unwrap();
+        stream.synchronize().unwrap();
+        t.retire(&ticket, Some(consumer)).unwrap();
+        t.acknowledge(&ticket).unwrap();
+        t.release_producer(producer).unwrap();
+    }
     /// WP-A day 37 (`DAY37.md` section 8): every native cell of this module owns a context of the
     /// pool (`cell_context()`), the pool is the module's only context constructor, and its size is
     /// the native cell count.
@@ -3362,6 +3824,11 @@ mod tests {
             1
         );
         let marker = "#[ignore = \"native CUDA required";
+        let helpers = [
+            "native_fixture",
+            "receipt_fixture",
+            "d2h_device_receipt_cell",
+        ];
         let mut cells = 0;
         for (at, _) in tests.match_indices(marker) {
             let rest = &tests[at..];
@@ -3373,13 +3840,22 @@ mod tests {
             let name = body.lines().nth(1).unwrap_or_default().trim();
             assert!(
                 body.contains("cell_context()")
-                    || body.contains("native_fixture()")
-                    || body.contains("receipt_fixture()"),
+                    || helpers.iter().any(|h| body.contains(&format!("{h}("))),
                 "{name} does not own its context"
             );
             cells += 1;
         }
         assert_eq!(cells, NATIVE_CELLS, "one pool context per native cell");
+        // Every fixture a native cell may take its context through builds it with the pool.
+        for h in helpers {
+            let at = tests.find(&format!("fn {h}(")).unwrap();
+            let body = &tests[at..at + tests[at..].find("\n    }\n").unwrap()];
+            assert!(
+                body.contains("cell_context()")
+                    || body.contains("native_fixture_on(&cell_context())"),
+                "{h} does not take its context from the pool"
+            );
+        }
     }
     /// WP-A day 37 (`DAY37.md` section 1, finding 5's instrument): poll a timed-hold cell's
     /// ticket until its first KV item is observed landed, the same loop the cells ran inline
