@@ -160,3 +160,80 @@ holding.
 
 **What each card decides.** The 5090: (a) to (e) on this card. The target card: its own (b) to (d) and the kernel's
 price there. No figure is compared across cards.
+
+## 4. The 5090 half of G with P, as it ran (`rtx5090-day38/g/`, `engine-cells/`)
+
+- Build: G = the lane tip `0f5c2d2f0` (binary `24588464c4ad4abc..`, `strings` count of `receipts on the copy stream`: 1),
+  base = `80039a8de` in a scratch worktree (binary `995682a695faba3d..`, count 0); the tip's test binaries. The engine's
+  native cells ran first in their own hold (`engine-cells/`, 13:22:23Z): `test result: ok. 13 passed` in three parallel
+  runs and one serial run, the two new cells included (`D2H DEVICE RECEIPT cell flip=false items=3 gpu_ms=22.906`
+  serially, the 1 MiB items as the survey priced them).
+- The cell (`g-card-run.sh`): the hold taken 13:53:37Z after two bounded busy attempts behind lane B, released 14:10:41Z;
+  no compute app at the start or the end; card telemetry 4091 samples, 58 to 88 C, 25.7 to 188.5 W. 20 boots, `STALL
+  REPLAY: PASS` 20 of 20.
+- **(c), verbatim** (`g/reading-day38.log`): `DAY38 G C copy-settle N=80 median=0.15 min=0.12 max=0.31 rule N>=20
+  median<=1.5 max<=3.0 -> PASS` (base `copy-settle N=80 median=8.40 min=8.16 max=9.11`). **PASS.**
+- **(d), verbatim**: `DAY38 G D order=o1 wall base=59.60 g=52.00 g-minus-base=-7.60 rule <=+5.0 | e2e base=111.06
+  g=103.52 g-minus-base=-7.54 rule <=+1.0 -> PASS`; `order=o2 wall base=60.30 g=52.95 g-minus-base=-7.35 .. e2e
+  base=111.63 g=104.99 g-minus-base=-6.64 .. -> PASS`. **PASS.**
+- Readings: the owner's hold per steady demote `owner-held` 9.50 to 1.32 ms; `take-back` 0.06 on both (M'); the helper
+  37.90 / 37.80 ms; 90 of 90 G receipt lines name the copy stream, the kernel `receipt-kernel-ms N=90 median=3.51
+  min=2.15 max=4.03`; the tenant's demote-mode stall 42.05 / 42.08 to 37.74 / 38.48 ms.
+- **(a) and (b), verbatim**: identity x4 `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok each); failure ON
+  `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (15 ok; the `digest` cell's bind line `contracts door D2H receipt: Key plane
+  image checksum differs from its D2H receipt as injected (MEMRA_KV_HOST_FAULT=flip-demote)` and `VERIFY FAILED:
+  promoted digest .. != demote digest ..`); hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 and 68 ok);
+  the fault gate default `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (190 ok, both new cells in, the copy-phase park line
+  `hit parked on a Demoting entry in its copy phase: request .. (89 tokens) hits the Demoting entry's 64 tokens (ticket
+  seq=3, submitted 37.2ms ago)`); **the fault gate plain `KV-HOST-CONTRACT-FAULT GATE: 3 FAILURE(S)`** (187 ok): the
+  `copy-phase-hit` cell's `FAIL: copy-phase-hit: exactly one copy-phase park line (r3)`, `FAIL: .. the entry published
+  after the park` and `FAIL: .. r3 promoted after its park (not a cold prime)`; its other checks, the `source-flip`
+  cell in both arms (15 ok each), and r1 to r4 byte-equal to the door-OFF boot all green. The unit cells did not run:
+  the script's unit steps `cd` into the crate before redirecting to an output root I passed relative, so their logs had
+  no directory (`unit server rc=1`, no result line); the A/B and the gates run from the repository root and are
+  unaffected. **(b) FAILS as registered.**
+- **The cause of the plain arm's failure, placed from the log** (`g/fault-plain/ev/copy-phase-hit-server.log`): the
+  `d2h-delay` spin sits on the SHARED copy stream, so r2's own seed capture, submitted after the delayed demote, queued
+  behind it; at r2's session retire the capture seam settled it `Block`: `capture published off the tick (seed): 64
+  tokens complete after 50 poll(s), 2984.6ms .. (settled synchronously by a session retire; the settle held the owner
+  thread 2607.12ms ..)`. The owner thread was held until the spin ended, so r3 was admitted only after the delayed copy
+  landed (`complete after 50 poll(s), 3005.5ms`) and parked on the `Hashing` phase (`hit parked on a Hashing entry:
+  request .. hits the Demoting entry's 64 tokens (ticket seq=2 ..)`), then promoted (the ledger's `1 hit(s) parked`
+  and two promotes read green). The default arm's shape publishes its capture through the spec-boundary route, not the
+  retire seam, and met the copy-phase park. So P held where the shape reached it; the red arm's delay, being a spin on
+  the shared stream, also delayed every later copy-stream consumer and let a `Block` settle hold the owner thread.
+- **What this also says about G as built**: G's kernel runs on the copy stream AHEAD of the demote's copies, so every
+  later copy-stream consumer (a seed capture, a promote's fill and spans, a restore) queues behind it; at 64 tokens it is
+  about 1.5 to 3.5 ms, at 4096 tokens about 100 ms (DAY38 section 2), and a retire seam's `Block` settle of a capture
+  queued behind it would hold the owner thread for the remainder. Day 25 priced the retire seam at 0.4 ms on a landed
+  copy; a copy queued behind other copy-stream work is not one (a separate ledger item, `OWED.md` item 13).
+
+## 5. Design G' pre-registered (G revised; the red arm revised), before any G' code
+
+**What changes, and only this.**
+
+1. **The receipt stream.** `CudaTransfers::new_with_copy_stream` creates a third stream of the same context, the
+   receipt stream, beside the copy stream. `seal_d2h_device_receipt` issues on it: the waits on every accepted item's
+   producer event and on the lanes' zero-fill, the digest kernels, the lanes' D2H and the receipt event. The item copies
+   stay on the copy stream exactly as before G, NOT behind the kernel: each waits on its producer fence only. The kernel
+   and the copies read the same sources concurrently (reads only). An item lands when its copy event AND the receipt
+   event are observed complete (G's `progress` rule, unchanged; the tier rule unchanged). The copy stream's other
+   consumers no longer queue behind the kernel.
+2. **The red arms on the receipt stream.** `d2h-delay`: the spin is queued on the RECEIPT stream ahead of the digest,
+   so the demote's receipt (and so its landing) comes at least 3 s after the submission while the copy stream's other
+   work is not delayed. `d2h-source-flip`: the flip is queued on the receipt stream after the digest, one event is
+   recorded after it, and for that batch only the copy stream waits on that event before the first copy (the fault's
+   definition: the copy after the flip). Without a fault the copy stream waits on nothing of the receipt stream.
+3. The census follows: the receipt stream's order (waits, the delay, the digest, the flip and its event, the lanes, the
+   receipt event) and the copy stream's items waiting on their producer fences and, under the flip only, on the flip's
+   event. Everything else of section 3 (the kernel, `progress`, the hooks' names, P, the server lines, the fault values,
+   the gate cells and their checks) stays as built.
+
+**Acceptance: section 3's (a) to (e), verbatim and whole, re-run on G'** (the A/B base `80039a8de` against G', the gate
+set, and the unit cells from an absolute output root). No clause, bound or check moves.
+
+**Predictions.** (c) about 0.15 ms as G. (d) the wall at or below G's (the demote's copy phase becomes the longer of the
+kernel and the copies, not their sum; about -8 ms against the base) and the e2e as G's. The plain arm's `copy-phase-hit`
+cell: r2's capture no longer queues behind the delay, r3 arrives in the delayed copy phase and parks there.
+
+**What each card decides.** As section 3.
