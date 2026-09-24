@@ -2456,8 +2456,8 @@ impl Dsv4Gpu {
         Ok(())
     }
 
-    /// Diagnostic readback of the actual final-layer partials and the preserved GPU sum.
-    /// The caller compares the sum with canonical CPU f32 addition, not full-width wo_b.
+    /// Diagnostic readback of the final layer's per-rank wo_b row halves and the joined
+    /// output. The caller checks the join is the two halves in rank order, bit for bit.
     pub fn attention_tp_last_join_for_gate(
         &self,
         state: &DecodeState,
@@ -2488,7 +2488,7 @@ impl Dsv4Gpu {
                 .map_err(e("attention TP2 snapshot context"))?;
             let stream = stage.gpu.stream();
             partials[rank] = stream
-                .clone_dtoh(&work.verify.ws[rank].attn_out.slice(..plan.hidden))
+                .clone_dtoh(&work.verify.ws[rank].attn_out.slice(..plan.local_hidden))
                 .map_err(e("attention TP2 partial snapshot"))?;
             joined[rank] = stream
                 .clone_dtoh(&outputs[rank].slice(..plan.hidden))
@@ -2516,6 +2516,15 @@ impl Dsv4Gpu {
             .lock()
             .ok()
             .and_then(|ar| ar.as_ref().map(TpEpArState::launches))
+            .unwrap_or(0)
+    }
+
+    /// Row gathers of the exact attention TP join, two per layer per step.
+    pub fn tp_ep_row_gathers(&self) -> u64 {
+        self.tp_ep_ar
+            .lock()
+            .ok()
+            .and_then(|ar| ar.as_ref().map(TpEpArState::gathers))
             .unwrap_or(0)
     }
 
@@ -4041,10 +4050,11 @@ impl Dsv4Gpu {
         Ok(me)
     }
 
-    /// Load-time only. Retain the full source planes for the explicit reference arm;
-    /// runtime attention reads only these packed rank-local planes when selected.
+    /// Load-time only. Packs each rank's Q_b rows, wo_a groups and wo_b rows, then frees the
+    /// full planes: the attention TP2 walk reads only the packed rank-local planes.
     fn pack_attention_tp_layers(&mut self) -> Res<()> {
         let plan = self.attention_tp.ok_or("attention TP2 geometry missing")?;
+        let mut freed = 0u64;
         if !self.topology.is_tp_ep() || !self.ep_enabled || !self.dense_fp8 || !self.matrix_moe {
             return Err(
                 "attention TP2 requires all-layer native matrix EP with FP8 dense planes".into(),
@@ -4109,9 +4119,9 @@ impl Dsv4Gpu {
                     layer.wo_b_fp8.as_ref(),
                     plan.hidden,
                     plan.full_output_width,
-                    Partition::Columns {
-                        start: rank * plan.local_output_width,
-                        len: plan.local_output_width,
+                    Partition::Rows {
+                        start: rank * plan.local_hidden,
+                        len: plan.local_hidden,
                     },
                 )?;
                 stage.loaded_bytes += [&wq_b, &wo_a, &wo_b]
@@ -4124,16 +4134,30 @@ impl Dsv4Gpu {
                     wo_a,
                     wo_b,
                 });
+                // Under attention TP2 the walk reads only the packed planes, so the full
+                // planes are freed here, layer by layer, before the next layer packs.
+                for full in [
+                    layer.wq_b_fp8.take(),
+                    layer.wo_a_fp8.take(),
+                    layer.wo_b_fp8.take(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    freed += (full.codes.len() + full.scales.len() * 4) as u64;
+                    stage.loaded_bytes -= (full.codes.len() + full.scales.len() * 4) as u64;
+                }
             }
             stream
                 .synchronize()
                 .map_err(e("attention TP2 pack finalize"))?;
         }
         eprintln!(
-            "[attention-TP2] packed rank-local Q_b/wo_a/wo_b: heads={} groups={} wo_b_k={} numeric_class={}",
+            "[attention-TP2] packed rank-local Q_b/wo_a/wo_b rows: heads={} groups={} wo_b_rows={} full_planes_freed={:.2} GiB numeric_class={}",
             plan.local_heads,
             plan.local_groups,
-            plan.local_output_width,
+            plan.local_hidden,
+            freed as f64 / (1u64 << 30) as f64,
             dsv4_attention_tp::ATTENTION_TP_NUMERIC_CLASS
         );
         Ok(())
@@ -11104,30 +11128,75 @@ impl Dsv4Gpu {
                 // The partials are independent producers. Neither rank enters HC/FFN
                 // until its stream has received the complete rank-ordered attention sum.
                 // Dedicated attention outputs remain separate from the later expert join.
+                let plan = self.attention_tp.ok_or("attention TP2 geometry missing")?;
                 let attention_outputs = verify
                     .tp_ep_attention_outputs
                     .as_mut()
                     .ok_or("attention TP2 output buffers missing")?;
+                let attention_og = verify
+                    .tp_ep_attention_og
+                    .as_mut()
+                    .ok_or("attention TP2 wo_a gather buffers missing")?;
                 {
-                    let (owner_output, peer_output) = attention_outputs.split_at_mut(1);
                     let mut ar = self
                         .tp_ep_ar
                         .lock()
                         .map_err(|_| "attention TP2 AR mutex poisoned")?;
-                    ar.as_mut()
-                        .ok_or("attention TP2 AR state missing")?
-                        .all_reduce_into(
+                    let ar = ar.as_mut().ok_or("attention TP2 AR state missing")?;
+                    // 1. Each rank's wo_a groups, gathered in group order on both ranks.
+                    {
+                        let (owner_og, peer_og) = attention_og.split_at_mut(1);
+                        ar.gather_rows_into(
+                            owner_gpu,
+                            peer_gpu,
+                            &owner_ws.og,
+                            &peer_ws.og,
+                            &mut owner_og[0],
+                            &mut peer_og[0],
+                            t,
+                            plan.local_output_width,
+                            capture,
+                            None,
+                        )?;
+                    }
+                    // 2. wo_b on this rank's output rows over the full wo_a rows.
+                    for (rank, workspace) in [(0usize, &mut *owner_ws), (1usize, &mut *peer_ws)] {
+                        let st = &self.stages[rank];
+                        if capture {
+                            st.gpu
+                                .ctx
+                                .bind_to_thread()
+                                .map_err(e("attention TP2 wo_b rank bind"))?;
+                        }
+                        let layer = st
+                            .layers
+                            .iter()
+                            .find(|layer| layer.il == il as u32)
+                            .ok_or("attention TP2 wo_b layer missing")?;
+                        self.attention_tp_wo_b_rows_dev(
+                            st,
+                            layer,
+                            workspace,
+                            &attention_og[rank],
+                            t,
+                        )?;
+                    }
+                    // 3. The two row halves, gathered: the joined attention output.
+                    {
+                        let (owner_output, peer_output) = attention_outputs.split_at_mut(1);
+                        ar.gather_rows_into(
                             owner_gpu,
                             peer_gpu,
                             &owner_ws.attn_out,
                             &peer_ws.attn_out,
                             &mut owner_output[0],
                             &mut peer_output[0],
-                            t * hidden,
+                            t,
+                            plan.local_hidden,
                             capture,
                             fault_inputs.map(|inputs| (inputs, il as i32)),
-                            2 * il as u32,
                         )?;
+                    }
                     self.attention_tp_ar_calls.fetch_add(1, Ordering::Relaxed);
                     let injection = if replaying {
                         None
@@ -11148,9 +11217,7 @@ impl Dsv4Gpu {
                     if let Some(injection) = injection {
                         let mut words = [0, 0];
                         words[injection.rank] = injection.code;
-                        ar.as_mut()
-                            .ok_or("attention TP2 AR state missing during injection")?
-                            .set_refusal_words_for_gate(owner_gpu, peer_gpu, words)?;
+                        ar.set_refusal_words_for_gate(owner_gpu, peer_gpu, words)?;
                     }
                 }
                 for (rank, workspace) in [(0usize, &mut *owner_ws), (1usize, &mut *peer_ws)] {
@@ -13407,6 +13474,8 @@ pub struct VerifyState {
     tp_ep_layers: Option<Vec<LayerCkptDev>>,
     tp_ep_ar_outputs: Option<[CudaSlice<f32>; 2]>,
     tp_ep_attention_outputs: Option<[CudaSlice<f32>; 2]>,
+    /// Attention TP2: both ranks' wo_a group outputs gathered, [tmax][groups * o_lora].
+    tp_ep_attention_og: Option<[CudaSlice<f32>; 2]>,
     pub tmax: usize,
     /// Decode-cache capacity this verify layout was planned against. The transient
     /// rows live immediately after each layer's capacity-sized compressed store, so
@@ -14534,7 +14603,10 @@ impl Dsv4Gpu {
         } else {
             None
         };
-        let tp_ep_attention_outputs = if self.attention_tp.is_some() {
+        let mut attention_planes = |width: usize| -> Res<Option<[CudaSlice<f32>; 2]>> {
+            if self.attention_tp.is_none() {
+                return Ok(None);
+            }
             let mut outputs = Vec::with_capacity(2);
             for (stage_i, stage) in self.stages.iter().enumerate() {
                 stage
@@ -14546,19 +14618,20 @@ impl Dsv4Gpu {
                     stage
                         .gpu
                         .stream()
-                        .alloc_zeros::<f32>(tmax * hidden)
+                        .alloc_zeros::<f32>(tmax * width)
                         .map_err(e("attention TP2 output allocation"))?,
                 );
-                bytes[stage_i] += (tmax * hidden * 4) as u64;
+                bytes[stage_i] += (tmax * width * 4) as u64;
             }
-            Some(
+            Ok(Some(
                 outputs
                     .try_into()
                     .map_err(|_| "attention TP2 output rank count")?,
-            )
-        } else {
-            None
+            ))
         };
+        let tp_ep_attention_outputs = attention_planes(hidden)?;
+        let tp_ep_attention_og =
+            attention_planes(self.attention_tp.map_or(0, |plan| plan.full_output_width))?;
         for st in &self.stages {
             st.gpu.stream().synchronize().map_err(e("vws sync"))?;
         }
@@ -14580,6 +14653,7 @@ impl Dsv4Gpu {
             tp_ep_layers,
             tp_ep_ar_outputs,
             tp_ep_attention_outputs,
+            tp_ep_attention_og,
             tmax,
             capacity,
             open: None,
@@ -16403,10 +16477,9 @@ impl Dsv4Gpu {
             || dwsel(self.dense_fp8, &stream, &layer.wo_a, &layer.wo_a_fp8),
             |(_, bank)| packed_dense(&bank.wo_a, &stream),
         );
-        // The packed rank-half has only local groups. Its per-group GEMV is qualified
-        // by the component gate; the distinct grouped_m1 8-to-4 shape still needs a
-        // target receipt and must not inherit the full-attention accelerator flag.
-        let grouped_wo_a = if shard.is_none() && t == 1 && !vws.is_prefill {
+        // The packed rank-half has only local groups; the grouped launch takes them too
+        // (the 4x1024x4096 rank shape is in the grouped component test).
+        let grouped_wo_a = if t == 1 && !vws.is_prefill {
             Self::gemv_wo_a_grouped_fp8_m1_dev(
                 st,
                 wo_a_dw,
@@ -16436,14 +16509,16 @@ impl Dsv4Gpu {
                 )?;
             }
         }
+        if shard.is_some() {
+            // Attention TP2 ends at this rank's wo_a groups; the walk gathers them and
+            // runs wo_b on the full rows (attention_tp_wo_b_rows_dev).
+            return Ok(());
+        }
         Self::gemm_m_dev(
             st,
             vws.og.device_ptr(&stream).0 as *const f32,
             &mut vws.gemm_xb,
-            shard.map_or_else(
-                || dwsel(self.dense_fp8, &stream, &layer.wo_b, &layer.wo_b_fp8),
-                |(_, bank)| packed_dense(&bank.wo_b, &stream),
-            ),
+            dwsel(self.dense_fp8, &stream, &layer.wo_b, &layer.wo_b_fp8),
             t,
             hidden,
             o_groups * o_lora,
@@ -16451,6 +16526,35 @@ impl Dsv4Gpu {
         )?;
 
         Ok(())
+    }
+
+    /// Attention TP2 wo_b for this rank's output rows over the gathered full wo_a rows. Each
+    /// row is the one-card wo_b row: same packed input, same weight row, same kernel. The
+    /// rank's half lands at the head of `vws.attn_out` for the row gather.
+    fn attention_tp_wo_b_rows_dev(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        vws: &mut VerifyWs,
+        og_full: &CudaSlice<f32>,
+        t: usize,
+    ) -> Res<()> {
+        let plan = self.attention_tp.ok_or("attention TP2 geometry missing")?;
+        let bank = layer
+            .attention_tp
+            .as_ref()
+            .ok_or("attention TP2 layer pack missing")?;
+        let stream = st.gpu.stream();
+        Self::gemm_m_dev(
+            st,
+            og_full.device_ptr(&stream).0 as *const f32,
+            &mut vws.gemm_xb,
+            packed_dense(&bank.wo_b, &stream),
+            t,
+            plan.local_hidden,
+            plan.full_output_width,
+            vws.attn_out.device_ptr_mut(&stream).0 as *mut f32,
+        )
     }
 
     /// Consume a full attention result before replacing attention HC coefficients with
@@ -20956,6 +21060,12 @@ mod dense_wo_a_grouped_fp8_component_tests {
         unsafe { launch_old_grouped_slices(&stream, &mut small) };
         unsafe { launch_new_grouped(&stream, &mut small) };
         assert_fixture_bit_identity(&stream, &small);
+
+        // The attention TP2 rank shape: four local groups of 1024 rows over 4096.
+        let mut rank_half = make_fixture(&stream, 4, 1024, 4096);
+        unsafe { launch_old_grouped_slices(&stream, &mut rank_half) };
+        unsafe { launch_new_grouped(&stream, &mut rank_half) };
+        assert_fixture_bit_identity(&stream, &rank_half);
 
         let bad_stride_rc = unsafe {
             k::memra_dsv4_gemv_fp8_grouped_m1(
