@@ -46,3 +46,26 @@ I1 (the I1 binary). Order 1 (OFF, FILL, I1) x 5, order 2 reversed x 5, one colle
 I1 stays if (i) and (ii) hold; if (ii) holds and (i) fails, the drain was not what the window paid, recorded.
 
 **What each card can decide.** The RTX 5090 decides (i) and (ii) here; the target card reads them in the ladder.
+
+## 2. Results, cell `nodrain` (RTX 5090 Laptop GPU, `rtx5090-day46/nodrain/`)
+
+One collector hold, 23:37:31Z to 23:43:40Z, 30 runs, tree `1a8c7ff15`, binaries `run-gen-fill` `19bcfd59...` and
+`run-gen-i1` `0d90e124...`, the approved artifact, the runner under the 1200% cap. Regime (`regime.log`, 250 ms,
+N=1469): SM 180 to 2790 MHz, power 18.1 to 158.9 W, 60 to 73 C. Collector `--validate` rc=0.
+
+Verbatim (`nodrain/reading.log`):
+
+`DAY46 NODRAIN CHECKS rig=rtx5090 runs=30 integrity=ok`
+
+`DAY46 ARM fill window_door_ms_per_token=5.03 gen_door_ms_per_token=13.16 window_s median=0.492 iqr=0.008 | per window token: gpu_misses=92.3 host_hits=92.3 demand=0.863 drain=2.067 sync2=0.018 wait=0.000 retire=0.055 finish=0.085 enqueue=3.175 miss_total=6.669`
+
+`DAY46 ARM i1 window_door_ms_per_token=3.31 gen_door_ms_per_token=12.34 window_s median=0.437 iqr=0.009 | per window token: gpu_misses=92.3 host_hits=92.3 demand=0.892 drain=0.000 sync2=0.000 wait=0.000 retire=0.062 finish=0.002 enqueue=3.273 miss_total=4.579`
+
+`DAY46 CLAUSE (i) i1_minus_fill window o1=-0.048 o2=-0.058 noise=0.009 rule < -noise both orders -> PASS`
+
+`DAY46 CLAUSE (ii) i1 drain+sync2=0.000 wait=0.000 ms per window token rule <0.05 and <1.0 -> PASS`
+
+`DAY46 NODRAIN rig=rtx5090 integrity=ok clause_i=PASS clause_ii=PASS`
+
+I1 stays: no drain on the miss path, the window door cost 5.03 to 3.31 ms per token; the remaining miss cost is the
+enqueue (3.27 ms per token, the pageable H2D, I2's).

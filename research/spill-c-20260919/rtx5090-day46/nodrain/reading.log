@@ -1,0 +1,6 @@
+DAY46 NODRAIN CHECKS rig=rtx5090 runs=30 integrity=ok
+DAY46 ARM fill window_door_ms_per_token=5.03 gen_door_ms_per_token=13.16 window_s median=0.492 iqr=0.008 | per window token: gpu_misses=92.3 host_hits=92.3 demand=0.863 drain=2.067 sync2=0.018 wait=0.000 retire=0.055 finish=0.085 enqueue=3.175 miss_total=6.669
+DAY46 ARM i1 window_door_ms_per_token=3.31 gen_door_ms_per_token=12.34 window_s median=0.437 iqr=0.009 | per window token: gpu_misses=92.3 host_hits=92.3 demand=0.892 drain=0.000 sync2=0.000 wait=0.000 retire=0.062 finish=0.002 enqueue=3.273 miss_total=4.579
+DAY46 CLAUSE (i) i1_minus_fill window o1=-0.048 o2=-0.058 noise=0.009 rule < -noise both orders -> PASS
+DAY46 CLAUSE (ii) i1 drain+sync2=0.000 wait=0.000 ms per window token rule <0.05 and <1.0 -> PASS
+DAY46 NODRAIN rig=rtx5090 integrity=ok clause_i=PASS clause_ii=PASS
