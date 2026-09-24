@@ -8742,16 +8742,15 @@ impl Dsv4Gpu {
         if state.capacity < 512
             || state.capacity > 16384
             || state.pos >= state.capacity
-            || cfg.temperature != 1.0
-            || cfg.top_p != 1.0
-            || cfg.top_k != 0
+            || !(cfg.temperature == 0.0
+                || (cfg.temperature == 1.0 && cfg.top_p == 1.0 && cfg.top_k == 0))
             || state.caches.iter().any(|c| c.c4_host.is_some())
             || state
                 .tp_ep_caches
                 .as_ref()
                 .is_none_or(|cs| cs.iter().any(|c| c.c4_host.is_some()))
         {
-            return Err("full-token replay admits only device caches, a 512..=16384 capacity and vendor-default plain sampling".into());
+            return Err("full-token replay admits only device caches, a 512..=16384 capacity, and greedy or vendor-default plain sampling".into());
         }
         let _walk_guard = self
             .tp_ep_walk_lock
@@ -11180,13 +11179,29 @@ impl Dsv4Gpu {
                     self.head_logits_batch_dev(&mut work.verify.ws[1], 1, false)?;
                     let pair = work.replay.as_mut().expect("replay");
                     let stream = self.stages[1].gpu.stream();
-                    let uniform = unsafe { pair.input_ptr(1).add(1).cast::<f64>() };
-                    unsafe {
-                        pair.sampler.enqueue_replay(
-                            work.verify.ws[1].logits.device_ptr(&stream).0 as *const f32,
-                            uniform,
-                            &pair.cfg,
-                        )?;
+                    if pair.greedy {
+                        // The eager greedy step's own device argmax, captured (#710).
+                        let ws1 = &mut work.verify.ws[1];
+                        unsafe {
+                            ck(
+                                "replay argmax",
+                                k::memra_dsv4_argmax(
+                                    dpf!(ws1.logits, &stream),
+                                    ws1.logits.len() as i64,
+                                    ws1.argmax.device_ptr_mut(&stream).0 as *mut i32,
+                                    sp(&stream),
+                                ),
+                            )?;
+                        }
+                    } else {
+                        let uniform = unsafe { pair.input_ptr(1).add(1).cast::<f64>() };
+                        unsafe {
+                            pair.sampler.enqueue_replay(
+                                work.verify.ws[1].logits.device_ptr(&stream).0 as *const f32,
+                                uniform,
+                                &pair.cfg,
+                            )?;
+                        }
                     }
                     for rank in 0..2 {
                         let st = &self.stages[rank];
@@ -11217,7 +11232,17 @@ impl Dsv4Gpu {
                 drop(drain_phase);
                 let _readback = full_token_profile_phase("FULL_TOKEN_TOKEN_READBACK\0");
                 state.pos = pos0 + 1; // the forward is committed even if sampling refuses its logits
-                let token = pair.sampler.read_replay()?;
+                let token = if pair.greedy {
+                    let stream = self.stages[1].gpu.stream();
+                    let mut out = [0i32; 1];
+                    stream
+                        .memcpy_dtoh(&work.verify.ws[1].argmax, &mut out[..])
+                        .map_err(e("dtoh replay argmax"))?;
+                    stream.synchronize().map_err(e("sync replay argmax"))?;
+                    out[0] as u32
+                } else {
+                    pair.sampler.read_replay()?
+                };
                 return Ok((None, token));
             }
             let commit_phase = full_token_profile_phase("FULL_TOKEN_EAGER_COMMIT_DRAIN\0");

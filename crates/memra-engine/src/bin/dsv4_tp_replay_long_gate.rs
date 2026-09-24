@@ -99,8 +99,17 @@ fn main() {
         other => panic!("DSV4_REPLAY_GATE_MOE {other:?} must be stream or sktail"),
     }
     println!("MOE {moe}");
+    // DSV4_REPLAY_GATE_SAMPLING: `default` (temperature 1, the vendor default) or `greedy`
+    // (temperature 0: the eager arm runs the device argmax step, replay captures the argmax).
+    let sampling = std::env::var("DSV4_REPLAY_GATE_SAMPLING").unwrap_or_else(|_| "default".into());
+    let greedy = match sampling.as_str() {
+        "default" => false,
+        "greedy" => true,
+        other => panic!("DSV4_REPLAY_GATE_SAMPLING {other:?} must be default or greedy"),
+    };
+    println!("SAMPLING {sampling}");
     let cfg = Dsv4SampleCfg {
-        temperature: 1.,
+        temperature: if greedy { 0. } else { 1. },
         top_p: 1.,
         top_k: 0,
         seed: 20260924,
@@ -121,15 +130,23 @@ fn main() {
             .expect("prompt step");
     }
     let mut sampler = gpu.device_sampler().expect("sampler");
-    let mut first = gpu
-        .sample_device_logits(&prefix, &mut sampler, &cfg, &[], None)
-        .expect("sample");
+    let mut first = if greedy {
+        let logits = gpu.read_decode_logits_for_gate(&prefix).expect("logits");
+        (0..logits.len()).fold(0, |b, i| if logits[i] > logits[b] { i } else { b }) as u32
+    } else {
+        gpu.sample_device_logits(&prefix, &mut sampler, &cfg, &[], None)
+            .expect("sample")
+    };
     while prefix.pos < PREFIX {
-        gpu.decode_step_device_logits(first, &mut prefix)
-            .expect("prefix step");
-        first = gpu
-            .sample_device_logits(&prefix, &mut sampler, &cfg, &[], None)
-            .expect("sample");
+        first = if greedy {
+            gpu.decode_step_greedy(first, &mut prefix)
+                .expect("prefix step")
+        } else {
+            gpu.decode_step_device_logits(first, &mut prefix)
+                .expect("prefix step");
+            gpu.sample_device_logits(&prefix, &mut sampler, &cfg, &[], None)
+                .expect("sample")
+        };
     }
 
     let mut eager = gpu
@@ -159,11 +176,14 @@ fn main() {
     for step in 0..steps {
         let pos = eager.pos;
         tokens.push(te);
-        gpu.decode_step_device_logits(te, &mut eager)
-            .expect("eager step");
-        te = gpu
-            .sample_device_logits(&eager, &mut eager_sampler, &cfg, &[], None)
-            .expect("eager sample");
+        te = if greedy {
+            gpu.decode_step_greedy(te, &mut eager).expect("eager step")
+        } else {
+            gpu.decode_step_device_logits(te, &mut eager)
+                .expect("eager step");
+            gpu.sample_device_logits(&eager, &mut eager_sampler, &cfg, &[], None)
+                .expect("eager sample")
+        };
         tr = gpu
             .decode_sample_full_token_for_gate(tr, &mut replay)
             .expect("replay step");
@@ -227,6 +247,8 @@ fn main() {
             tok = if armed {
                 gpu.decode_sample_full_token_for_gate(tok, state)
                     .expect("replay step")
+            } else if greedy {
+                gpu.decode_step_greedy(tok, state).expect("eager step")
             } else {
                 gpu.decode_step_device_logits(tok, state)
                     .expect("eager step");
