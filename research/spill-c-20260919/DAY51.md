@@ -75,6 +75,12 @@ did not say enough to be executed, settled here before any result exists. None r
   with the stage clock), and on `decide` the trace term is `physical_reads` equal to the `hit=false` lines plus at
   least one miss, with no stage line on any ON run (the flag really off).
 
+## 1b. Addendum before any rung or deciding cell ran: I10 joins the ladder
+
+`DAY57.md` (I10, the fill completes inside the install) was found from the day-50 dry check and pre-registered as
+its own rung with its own cell (`fillwait`) after day 50's. The tree the deciding cell runs on is the tree after
+every rung's verdict, I10's included; nothing else in section 1 moves.
+
 ## 2. The binary (filled in before the cell runs)
 
 Named here once every improvement's 5090 verdict is in: the final tree's commit, the list of rungs kept or reverted,

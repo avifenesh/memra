@@ -24,6 +24,7 @@ VIEWS = {
     48: ("day48-small.py", {"off": "off", "i2": "i2", "i8": "i8", "i5": "i5"}),
     49: ("day49-install.py", {"off": "off", "i5": "i5", "i7": "i7"}),
     50: ("day50-prefetch.py", {"off": "off", "i7": "i7", "i4": "i4"}),
+    57: ("day57-fillwait.py", {"off": "off", "i4": "i4", "i10": "i10"}),
 }
 
 

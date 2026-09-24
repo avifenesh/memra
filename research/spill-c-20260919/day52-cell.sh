@@ -4,7 +4,8 @@
 # card, so each rung's registered clauses (days 43 to 50) are read on this card from the same window
 # (day52-views.py builds each day's arm set as a view and runs that day's reader unchanged).
 # Arms: off (run-gen-final, no door); base (run-gen, the day-40 binary, default host budget); i6d (run-gen-i6,
-# default budget); i6g (run-gen-i6) and i9g, fill, i1, i2, i8, i5, i7, i4 (run-gen-<rung>) at
+# default budget); i6g (run-gen-i6) and i9g, fill, i1, i2, i8, i5, i7, i4, i10 (run-gen-<rung>; i10 added by DAY52
+# section 7 before the sitting ran) at
 # --expert-bank-host-bytes=17179869184; every door arm with --expert-bank-stages. Order 1 old to new x 5, order 2
 # new to old x 5; the day-18 overlap environment.
 # Environment (set by the driver): D40_R receipts root, D40_BINS binary dir, D40_TREE worktree, D40_ART the approved
@@ -44,9 +45,9 @@ run_gen() { # $1 label  $2.. argv (env words first)
 }
 case $cell in
 ladder)
-    arms=(off base i6d i6g i9g fill i1 i2 i8 i5 i7 i4)
+    arms=(off base i6d i6g i9g fill i1 i2 i8 i5 i7 i4 i10)
     bins=()
-    for b in run-gen-final run-gen run-gen-i6 run-gen-i9 run-gen-fill run-gen-i1 run-gen-i2 run-gen-i8 run-gen-i5 run-gen-i7 run-gen-i4; do
+    for b in run-gen-final run-gen run-gen-i6 run-gen-i9 run-gen-fill run-gen-i1 run-gen-i2 run-gen-i8 run-gen-i5 run-gen-i7 run-gen-i4 run-gen-i10; do
         [ -x "$D40_BINS/$b" ] || { echo "missing binary $b"; exit 2; }
         bins+=("$D40_BINS/$b")
     done

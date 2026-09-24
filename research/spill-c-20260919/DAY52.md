@@ -156,3 +156,10 @@ The box stages the DFlash2 drafter export at `/root/artifacts/q38-dflash2/` (`co
 `873e3556509b0da06e29654ba00d4944888d4b5e8a33afde25f7eb27d321e980`, `model.safetensors`
 `67fc76d68dc5a9415511a4f394ef744d67510cd20e93b37cc2cc7d28e4bab65c`, 3.8 GB, `DAY20.md`'s manifest; the driver
 records both before the cells). About 10 more minutes (four boots of the 27B with the drafter), one more build.
+
+## 7. Added before the sitting ran: improvement I10 in the ladder (`DAY57.md`)
+
+The ladder grows a thirteenth arm, `i10` (`run-gen-i10`, the I10 tree `70d6633f5`, 16 GiB, the stage clock), last in
+order 1 and first in order 2: 130 runs, about 12 minutes more. `day52-views.py` grows a day-57 view (`off, i4,
+i10`, reader `day57-fillwait.py`). The build list grows `i10=70d6633f5`, and `final` in `DAY51.md` section 2 is the
+tree after I10's 5090 verdict.
