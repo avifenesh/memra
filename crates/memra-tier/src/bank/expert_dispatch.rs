@@ -96,6 +96,17 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> SlruExpertDispatch<H, R> {
     pub fn into_bank(self) -> BankService<ExpertDomain, H, R> {
         self.bank
     }
+    /// Offer one record the host fill read and checksummed off the owner thread (day 45):
+    /// `BankService::admit_filled` under this dispatch's request.
+    pub fn admit_filled(
+        &mut self,
+        local: ExpertDispatchId,
+        bytes: Vec<u8>,
+        digest: Digest,
+    ) -> Result<FillOutcome> {
+        let id = self.ids.get(&local).ok_or(Error::NotFound)?.clone();
+        self.bank.admit_filled(&id, bytes, digest, &self.request)
+    }
 }
 impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpertDispatch<H, R> {
     fn validate(&self, local: ExpertDispatchId, bytes: usize) -> Result<()> {

@@ -89,6 +89,19 @@ struct Pending {
     retired: bool,
 }
 
+/// What the host fill's offer of one record came to (day 45).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FillOutcome {
+    /// Published into a free slot of the host tier.
+    Admitted,
+    /// Already resident or pending, no free slot of a fitting class, or no charge left.
+    Dropped,
+    /// No free slot in any class: the tier is full and the fill has nothing left to do.
+    Full,
+    /// The bytes did not verify against the catalog's checksum (or a non-zero storage tail).
+    Refused,
+}
+
 /// The host cache's index (day 43, `research/spill-c-20260919/DAY43.md`): the resident leases by
 /// id, their storage bytes kept on every insert and removal, and the leases that left the index
 /// (evicted, trimmed, replaced, or published without a slot) while still owned: the only
@@ -407,6 +420,79 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
     }
     pub fn cache_bytes(&self) -> u64 {
         self.cache.bytes
+    }
+    /// Admit a record the host fill read off the owner thread (day 45,
+    /// `research/spill-c-20260919/DAY45.md`): the digest the fill computed over the bytes must
+    /// equal the catalog's checksum (the check `progress` applies to a read), then a charge, a
+    /// lease and publication into a FREE slot of the SLRU. Never evicts, never replaces: a
+    /// resident or pending record, a full tier or a refused charge drops the bytes. Only
+    /// single-segment payload records with no storage tail (the door's) are accepted.
+    pub fn admit_filled(
+        &mut self,
+        id: &BankId,
+        bytes: Vec<u8>,
+        digest: Digest,
+        request: &BudgetRequest,
+    ) -> Result<FillOutcome> {
+        let record = self.catalog.record(id)?.clone();
+        let layout = &record.layout;
+        if layout.segments.len() != 1 || layout.segments[0].role != Role::Payload {
+            return Err(Error::Unsupported);
+        }
+        let segment = &layout.segments[0];
+        if segment.valid_bytes != segment.storage_bytes {
+            return Err(Error::Unsupported);
+        }
+        // The fill computed `digest` with the contract `checksum` over exactly these bytes (moved
+        // here, not copied): the same function over the same bytes `progress` would verify.
+        if bytes.len() as u64 != segment.storage_bytes || digest != record.checksums[0] {
+            return Ok(FillOutcome::Refused);
+        }
+        if self.cache.contains_key(id) {
+            return Ok(FillOutcome::Dropped);
+        }
+        let Some((policy, _)) = &mut self.slru else {
+            return Err(Error::Unsupported);
+        };
+        if policy.resident(id).is_some() || policy.pending(id) {
+            return Ok(FillOutcome::Dropped);
+        }
+        let Some(_slot) = policy.reserve_free(id, layout.storage_bytes()?)? else {
+            return Ok(if policy.free_slots() == 0 {
+                FillOutcome::Full
+            } else {
+                FillOutcome::Dropped
+            });
+        };
+        let mut charge_request = request.clone();
+        charge_request.bytes = TierBudget::zero(charge_request.bytes.device.len());
+        charge_request.bytes.pageable = record.resident_charge_bytes(id)?;
+        let charge = match self.budget.borrow_mut().reserve(&charge_request) {
+            Ok(charge) => charge,
+            Err(_) => {
+                policy.abort_retired(id)?;
+                return Ok(FillOutcome::Dropped);
+            }
+        };
+        match BankLease::from_backend(
+            id.clone(),
+            record.layout.clone(),
+            self.catalog.class,
+            charge,
+            Box::new(bytes),
+        ) {
+            Ok(lease) => {
+                policy.publish(id)?;
+                self.owned.insert(lease.charge().id(), lease.clone());
+                self.cache.insert(id.clone(), lease);
+                Ok(FillOutcome::Admitted)
+            }
+            Err(rejected) => {
+                policy.abort_retired(id)?;
+                self.budget.borrow_mut().release(&rejected.op.charge)?;
+                Err(rejected.error)
+            }
+        }
     }
     /// Records the host cache holds (day 43; read-only).
     pub fn cached_records(&self) -> usize {

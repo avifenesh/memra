@@ -22,7 +22,11 @@ use std::{
     fs::File,
     os::unix::fs::FileExt,
     rc::Rc,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        mpsc,
+    },
     time::Instant,
 };
 
@@ -60,6 +64,138 @@ impl ExactReader for FileReader {
 fn elapsed_ns(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
+
+/// Day 45 (`research/spill-c-20260919/DAY45.md`): one record the host fill reads, its exact range
+/// in the authenticated artifact.
+struct FillJob {
+    local: ExpertDispatchId,
+    offset: u64,
+    len: usize,
+}
+/// A record a fill worker read and checksummed, handed to the owner by value.
+struct FillDone {
+    local: ExpertDispatchId,
+    bytes: Vec<u8>,
+    digest: Digest,
+}
+/// The fill's counts, shared by the workers (reads, read errors), the owner's intake
+/// (admitted, dropped, refused, errors, the admission time) and the gate's close line.
+#[derive(Default)]
+struct FillCounts {
+    reads: AtomicU64,
+    read_errors: AtomicU64,
+    admitted: AtomicU64,
+    dropped: AtomicU64,
+    refused: AtomicU64,
+    errors: AtomicU64,
+    admit_ns: AtomicU64,
+}
+impl FillCounts {
+    fn line(&self) -> String {
+        let get = |a: &AtomicU64| a.load(Ordering::Relaxed);
+        format!(
+            "fill_reads={} fill_read_errors={} fill_admitted={} fill_dropped={} fill_refused={} fill_errors={} fill_ns={}",
+            get(&self.reads),
+            get(&self.read_errors),
+            get(&self.admitted),
+            get(&self.dropped),
+            get(&self.refused),
+            get(&self.errors),
+            get(&self.admit_ns)
+        )
+    }
+}
+/// The fill threads, held by the gate: a stop flag the owner raises when the tier is full and
+/// the gate raises at close, and the handles the gate joins.
+struct FillWorkers {
+    stop: Arc<AtomicBool>,
+    handles: Vec<std::thread::JoinHandle<()>>,
+}
+impl Drop for FillWorkers {
+    /// Every exit path stops and joins the workers, the installer's error returns included:
+    /// each worker retries a full channel against the stop flag, so a join returns after at
+    /// most one read and one checksum.
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        for handle in self.handles.drain(..) {
+            let _ = handle.join();
+        }
+    }
+}
+/// Owner-side intake of finished fills (lives in `TracedDispatch`, on the owner thread).
+struct FillIntake {
+    rx: mpsc::Receiver<FillDone>,
+    counts: Arc<FillCounts>,
+    stop: Arc<AtomicBool>,
+}
+/// Start the fill over `jobs`: each worker takes the next job from a shared cursor, `pread`s
+/// its range from the authenticated inode, checksums it with the contract `checksum`, and
+/// offers it to the owner over a channel of 64. A full channel is retried until the owner
+/// drains it or the stop flag is raised, so no worker blocks past a stop.
+fn start_fill(
+    file: Arc<File>,
+    jobs: Vec<FillJob>,
+    counts: Arc<FillCounts>,
+) -> (FillWorkers, FillIntake) {
+    let (tx, rx) = mpsc::sync_channel::<FillDone>(64);
+    let stop = Arc::new(AtomicBool::new(false));
+    let jobs = Arc::new(jobs);
+    let cursor = Arc::new(AtomicUsize::new(0));
+    let threads = std::thread::available_parallelism()
+        .map(|n| n.get() / 2)
+        .unwrap_or(1)
+        .clamp(1, 8);
+    let handles = (0..threads)
+        .map(|_| {
+            let (file, jobs, cursor, counts, stop, tx) = (
+                file.clone(),
+                jobs.clone(),
+                cursor.clone(),
+                counts.clone(),
+                stop.clone(),
+                tx.clone(),
+            );
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    let index = cursor.fetch_add(1, Ordering::Relaxed);
+                    let Some(job) = jobs.get(index) else { break };
+                    let mut bytes = vec![0u8; job.len];
+                    if file.read_exact_at(&mut bytes, job.offset).is_err() {
+                        counts.read_errors.fetch_add(1, Ordering::Relaxed);
+                        break;
+                    }
+                    counts.reads.fetch_add(1, Ordering::Relaxed);
+                    let digest = checksum(&bytes);
+                    let mut done = FillDone {
+                        local: job.local,
+                        bytes,
+                        digest,
+                    };
+                    loop {
+                        match tx.try_send(done) {
+                            Ok(()) => break,
+                            Err(mpsc::TrySendError::Full(back)) => {
+                                if stop.load(Ordering::Relaxed) {
+                                    return;
+                                }
+                                done = back;
+                                std::thread::sleep(std::time::Duration::from_micros(200));
+                            }
+                            Err(mpsc::TrySendError::Disconnected(_)) => return,
+                        }
+                    }
+                }
+            })
+        })
+        .collect();
+    (
+        FillWorkers {
+            stop: stop.clone(),
+            handles,
+        },
+        FillIntake { rx, counts, stop },
+    )
+}
 struct Heat;
 impl Hotness<ExpertDomain> for Heat {
     fn demand(&mut self, _: &BankId) {}
@@ -77,6 +213,8 @@ pub struct BankedExpertGate<'a> {
     budget: SharedBudget,
     metadata: ChargedLease,
     stage_clock: bool,
+    fill: Option<FillWorkers>,
+    fill_counts: Arc<FillCounts>,
 }
 impl BankedExpertGate<'_> {
     /// `--expert-bank-stages`: print the door's cumulative stage line for `phase` (DAY40).
@@ -97,6 +235,9 @@ impl BankedExpertGate<'_> {
 }
 impl Drop for BankedExpertGate<'_> {
     fn drop(&mut self) {
+        if let Some(fill) = &self.fill {
+            fill.stop.store(true, Ordering::Relaxed);
+        }
         self.print_stage_line("close");
         let report = self.engine.with_moe_cache(self.max_bytes, |cache, _| {
             let (slots, allocated_bytes, evictions) = cache.bank_pressure();
@@ -111,6 +252,10 @@ impl Drop for BankedExpertGate<'_> {
             self.reads.get(),
             self.owner.close()
         );
+        if let Some(fill) = self.fill.take() {
+            drop(fill); // stop and join (FillWorkers::drop)
+            eprintln!("[experts-via-tier] fill {}", self.fill_counts.line());
+        }
         // A still-pinned owner refuses release; never force-credit unknown DMA.
         let _ = self.budget.borrow_mut().release(&self.metadata);
     }
@@ -400,6 +545,24 @@ impl Engine {
             0,
             Arc::new(|| 0),
         )?));
+        // DAY45: the host fill's jobs, one per retained record in catalog order, each the record's
+        // exact range in the authenticated inode (the reader's tensor start plus the segment's
+        // offset, the position `ReadWork` would read). Door records are single-segment payload.
+        let fill_file = reader.file.clone();
+        let mut fill_jobs = Vec::with_capacity(entries.len());
+        for (id, record) in &entries {
+            let Some(record) = record else { continue };
+            let [segment] = record.layout.segments.as_slice() else {
+                return Err(Error::InvalidLayout.into());
+            };
+            let tensor = segment.tensor.as_ref().ok_or(Error::InvalidLayout)?;
+            let &(start, _) = reader.ranges.get(tensor).ok_or(Error::NotFound)?;
+            fill_jobs.push(FillJob {
+                local: dispatch_id(&id.record)?,
+                offset: start.checked_add(segment.offset).ok_or(Error::Overflow)?,
+                len: usize::try_from(segment.storage_bytes)?,
+            });
+        }
         let bank: BankService<ExpertDomain, Heat, FileReader> = BankService::new(
             Catalog::new(LayoutClass::PerRecord, entries)?,
             budget.clone(),
@@ -441,6 +604,8 @@ impl Engine {
                 dst_gen: 0,
             },
         )?;
+        let fill_counts = Arc::new(FillCounts::default());
+        let (fill_workers, fill_intake) = start_fill(fill_file, fill_jobs, fill_counts.clone());
         let owner = ExpertBankOwner::register(
             Box::new(TracedDispatch {
                 inner: dispatch,
@@ -451,9 +616,11 @@ impl Engine {
                     reads: reads.clone(),
                     ..OwnerClock::default()
                 }),
+                fill: Some(fill_intake),
             }),
             1,
-        )?;
+        );
+        let owner = owner?;
         if let Some(slots) = gpu_slots {
             self.build_moe_cache_exact(max_bytes as usize, slots)?;
         }
@@ -478,6 +645,8 @@ impl Engine {
             budget,
             metadata,
             stage_clock,
+            fill: Some(fill_workers),
+            fill_counts,
         })
     }
 }
@@ -609,6 +778,50 @@ struct TracedDispatch {
     occupants: BTreeMap<usize, ExpertDispatchId>,
     /// `--expert-bank-stages` only (DAY40): the owner side of the door's stage clock.
     clock: Option<OwnerClock>,
+    /// DAY45: finished host fills, admitted at the start of each demand.
+    fill: Option<FillIntake>,
+}
+impl TracedDispatch {
+    /// Offer up to `limit` finished fills to the bank (DAY45 section 1 (b)); a full tier raises
+    /// the fill's stop flag.
+    fn drain_fill(&mut self, limit: usize) {
+        let Some(fill) = &self.fill else { return };
+        let started = Instant::now();
+        for _ in 0..limit {
+            let Ok(done) = fill.rx.try_recv() else { break };
+            let local = done.local;
+            match self.inner.admit_filled(local, done.bytes, done.digest) {
+                Ok(FillOutcome::Admitted) => {
+                    fill.counts.admitted.fetch_add(1, Ordering::Relaxed);
+                }
+                Ok(FillOutcome::Dropped) => {
+                    fill.counts.dropped.fetch_add(1, Ordering::Relaxed);
+                }
+                Ok(FillOutcome::Full) => {
+                    fill.counts.dropped.fetch_add(1, Ordering::Relaxed);
+                    fill.stop.store(true, Ordering::Relaxed);
+                }
+                Ok(FillOutcome::Refused) => {
+                    fill.counts.refused.fetch_add(1, Ordering::Relaxed);
+                    eprintln!(
+                        "[experts-via-tier] fill refused {}:{}:{}: checksum mismatch",
+                        local.0, local.1, local.2
+                    );
+                }
+                Err(err) => {
+                    if fill.counts.errors.fetch_add(1, Ordering::Relaxed) == 0 {
+                        eprintln!(
+                            "[experts-via-tier] fill admission error {}:{}:{}: {err:?}",
+                            local.0, local.1, local.2
+                        );
+                    }
+                }
+            }
+        }
+        fill.counts
+            .admit_ns
+            .fetch_add(elapsed_ns(started), Ordering::Relaxed);
+    }
 }
 /// Owner-thread half of the stage clock: host-tier hits and misses, the inner demand, the
 /// trace print, and the reader's positioned reads (shared with `FileReader`).
@@ -626,6 +839,7 @@ impl ExpertDispatchBank for TracedDispatch {
         self.inner.validate(local, bytes)
     }
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
+        self.drain_fill(32);
         let id = self.ids.get(&local).ok_or(Error::NotFound)?;
         let hit = self
             .inner
@@ -679,8 +893,13 @@ impl ExpertDispatchBank for TracedDispatch {
     }
     fn stage_report(&self) -> Option<String> {
         let clock = self.clock.as_ref()?;
+        let fill = self
+            .fill
+            .as_ref()
+            .map(|f| f.counts.line())
+            .unwrap_or_else(|| "fill absent".to_owned());
         Some(format!(
-            "| owner host_hits={} host_misses={} inner_demand_ns={} trace_ns={} reads={} pread_ns={} | bank {}",
+            "| owner host_hits={} host_misses={} inner_demand_ns={} trace_ns={} reads={} pread_ns={} | {fill} | bank {}",
             clock.host_hits,
             clock.host_misses,
             clock.inner_demand_ns,
@@ -731,5 +950,84 @@ mod day44_census {
         }
         assert_eq!(LIB.matches("fn set_expert_host_mapped").count(), 1);
         assert!(LIB.contains("expert_host_mapped: std::sync::atomic::AtomicBool::new(false),"));
+    }
+}
+
+#[cfg(test)]
+mod day45_fill {
+    //! DAY45: the fill workers read each job's exact range, digest it with the contract
+    //! `checksum`, hand the bytes over by value, and stop and join promptly even when the owner
+    //! never drains the channel.
+    use super::*;
+    use std::io::Write as _;
+
+    fn artifact(len: usize) -> (std::path::PathBuf, Vec<u8>) {
+        let bytes: Vec<u8> = (0..len).map(|i| (i * 31 % 251) as u8).collect();
+        let path = std::env::temp_dir().join(format!("c45-fill-{}-{len}.bin", std::process::id()));
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(&bytes)
+            .unwrap();
+        (path, bytes)
+    }
+
+    #[test]
+    fn the_fill_reads_each_range_and_digests_it() {
+        let (path, bytes) = artifact(1 << 16);
+        let file = Arc::new(File::open(&path).unwrap());
+        let ranges = [(3u64, 4096usize), (10_000, 777), (40_000, 12_345)];
+        let jobs = ranges
+            .iter()
+            .enumerate()
+            .map(|(i, &(offset, len))| FillJob {
+                local: (0, 0, i as u16),
+                offset,
+                len,
+            })
+            .collect();
+        let counts = Arc::new(FillCounts::default());
+        let (workers, intake) = start_fill(file, jobs, counts.clone());
+        let mut got = BTreeMap::new();
+        for _ in 0..ranges.len() {
+            let done = intake
+                .rx
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .unwrap();
+            got.insert(done.local.2, (done.bytes, done.digest));
+        }
+        for (i, &(offset, len)) in ranges.iter().enumerate() {
+            let want = &bytes[offset as usize..offset as usize + len];
+            let (b, d) = &got[&(i as u16)];
+            assert_eq!(b.as_slice(), want);
+            assert_eq!(*d, checksum(want));
+        }
+        drop(workers);
+        assert_eq!(counts.reads.load(Ordering::Relaxed), ranges.len() as u64);
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn workers_stop_and_join_with_an_undrained_channel() {
+        let (path, _) = artifact(1 << 16);
+        let file = Arc::new(File::open(&path).unwrap());
+        let jobs = (0..10_000u32)
+            .map(|i| FillJob {
+                local: (1, 2, (i % 60_000) as u16),
+                offset: u64::from(i % 60),
+                len: 1024,
+            })
+            .collect();
+        let counts = Arc::new(FillCounts::default());
+        let (workers, _intake) = start_fill(file, jobs, counts.clone());
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let started = Instant::now();
+        drop(workers);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "the join hung"
+        );
+        // The channel holds at most 64, so the workers stopped long before the 10,000 jobs.
+        assert!(counts.reads.load(Ordering::Relaxed) < 10_000);
+        std::fs::remove_file(path).ok();
     }
 }

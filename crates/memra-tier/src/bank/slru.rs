@@ -168,6 +168,10 @@ impl SlruPolicy {
     pub fn slots(&self) -> usize {
         self.occupants.len()
     }
+    /// Free slots over every class (day 45: the host fill stops when this reaches zero).
+    pub fn free_slots(&self) -> usize {
+        self.classes.iter().map(|c| c.free.len()).sum()
+    }
     pub fn resident(&self, id: &BankId) -> Option<usize> {
         self.table.get(id).copied()
     }
@@ -255,6 +259,27 @@ impl SlruPolicy {
         }
         self.reserved.insert(id.clone(), slot);
         Ok(Some(SlruDecision { slot, evicted }))
+    }
+    /// Reserve a FREE slot only (day 45, the host fill): the first class, in order, that holds
+    /// `required` and has a free slot, exactly `reserve`'s free-first choice; `None` instead of
+    /// an eviction when every fitting class is full. The fill never displaces a resident record.
+    pub fn reserve_free(&mut self, id: &BankId, required: u64) -> Result<Option<usize>> {
+        id.validate()?;
+        if required == 0 {
+            return Err(Error::InvalidLayout);
+        }
+        if self.table.contains_key(id) || self.reserved.contains_key(id) {
+            return Err(Error::Conflict);
+        }
+        for class in &mut self.classes {
+            if class.capacity >= required
+                && let Some(slot) = class.free.pop()
+            {
+                self.reserved.insert(id.clone(), slot);
+                return Ok(Some(slot));
+            }
+        }
+        Ok(None)
     }
     /// CPU producer completion only. Native caller must establish consumer wait
     /// before this metadata publication; calling this cannot create a ReadyView.
