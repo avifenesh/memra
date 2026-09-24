@@ -48,3 +48,16 @@ reads it (the installer's compare, any refused path's error text) at no memory c
 
 **What each card can decide.** The RTX 5090 decides (i) here and reads (ii) and (iii); the target card reads all
 three in the ladder sitting (its pinned copy is cached memory there, so (ii) is expected smaller on that host).
+
+## 1a. Amendment, before any I9 build or cell
+
+- **The memory clause.** Section 1's clause "`VmPin` below 2 GiB" rests on the driver's pinned host allocations
+  showing in `/proc/self/status` `VmPin`, which I have not confirmed; if they do not, the clause passes on both arms
+  and proves nothing. It is replaced before any build: the installer prints a census of the loaded banks' host
+  storage, `[experts-via-tier] host expert storage: mmap=N (B bytes) pinned=P (B bytes) paged=Q (B bytes)`, read off
+  each retained projection's `HostBuf` variant, and the clause is **I9 prints `pinned=0` with every projection
+  `mmap`, and I6 prints every projection `pinned`**. The stage lines additionally carry `VmRSS`, `RssAnon`, `RssFile`,
+  `RssShmem`, `VmPin` and `VmLck` from `/proc/self/status` as recorded context, no clause on them.
+- **The mapped view's plumbing.** `TensorSource` already exposes `gguf()`, so the view needs no new trait method:
+  the loader asks the source's `GgufFile` for the tensor's range, the shard's shared map (`GgufFile::shard_mmap`,
+  the shard's `Mmap` made an `Arc<Mmap>`) and its retained inode. Same effect as section 1 (b), less surface.
