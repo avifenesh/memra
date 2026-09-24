@@ -326,6 +326,9 @@ pub(crate) struct MemoryLine<'a> {
     /// memra#680: bytes the admitted, still-priming sessions will allocate at prime time;
     /// `tiers.device_free_bytes` is already reduced by it (the booked reading).
     pub pending_prime_bytes: u64,
+    /// WP-B day 39: day 33's per-session sum of the same term, printed beside the corrected one
+    /// (`pending_prime_v1=`) so every line shows both; it reduces nothing.
+    pub pending_prime_v1_bytes: u64,
     /// memra#680 (lane B day 35): bytes of the prefix entries armed sessions will publish when
     /// their primes complete; `tiers.device_free_bytes` is reduced by it too.
     pub pending_seed_bytes: u64,
@@ -347,7 +350,8 @@ pub(crate) fn memory_line(line: &MemoryLine<'_>) -> String {
     };
     format!(
         "[admit-mem] id={} model={:?} verdict={} prompt={} output_bound={} charged_ctx={} \
-         est_bytes={} est_context={} est_fixed={} device_free={} pending_prime={} pending_seed={} \
+         est_bytes={} est_context={} est_fixed={} device_free={} pending_prime={} pending_prime_v1={} \
+         pending_seed={} \
          host_free={} demotable={} short_by={} inflight={} cap={} waited_ms={} retry_after_s={}",
         line.request_id,
         line.model,
@@ -360,6 +364,7 @@ pub(crate) fn memory_line(line: &MemoryLine<'_>) -> String {
         line.estimate.fixed_bytes,
         line.tiers.device_free_bytes,
         line.pending_prime_bytes,
+        line.pending_prime_v1_bytes,
         line.pending_seed_bytes,
         line.tiers.host_free_bytes,
         line.tiers.demotable_device_bytes,
@@ -648,6 +653,7 @@ mod tests {
                 host_free_bytes: 200_000_000_000,
             },
             pending_prime_bytes: 658_000_000,
+            pending_prime_v1_bytes: 1_316_000_000,
             pending_seed_bytes: 197_800_000,
             inflight: 9,
             cap: 32,
@@ -675,6 +681,7 @@ mod tests {
             "est_fixed=155000000",
             "device_free=10737418240",
             "pending_prime=658000000",
+            "pending_prime_v1=1316000000",
             "pending_seed=197800000",
             "host_free=200000000000",
             "demotable=50000000000",

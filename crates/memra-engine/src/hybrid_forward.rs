@@ -1623,6 +1623,12 @@ pub struct PrimeWorkspaceShape {
 }
 
 impl PrimeWorkspaceShape {
+    /// The rows one prime call carries for a `prompt_rows` prime under the deployment's chunking
+    /// (WP-B day 39: the admission door books one call's workspace once, not once per session).
+    pub fn call_rows(&self, prompt_rows: usize) -> usize {
+        prompt_rows.min(prime_chunk_tokens(prompt_rows, self.n_layers).max(1))
+    }
+
     /// The charge for `prompt_rows` with an explicit per-call row count (pure arithmetic,
     /// what the tests pin).
     pub fn admission_bytes_with_call_rows(&self, prompt_rows: usize, call_rows: usize) -> usize {
@@ -6549,6 +6555,28 @@ impl HybridModel {
     /// its OWN slabs on its own device (a dev0 slab dereferenced by a dev1 kernel would be
     /// a peer read per GEMM operand, the exact class Lever B removes). Single-device rigs
     /// see one entry, byte-identical behavior.
+    /// WP-B day 39 (`research/spill-b-20260919/DAY39.md` 1.2): the prime slab set's allocated bytes
+    /// on `e`'s device, 0 before the first prime. The slab is retained and grow-only, and every prime
+    /// call on the device uses it in turn, so the admission door books only its owed growth.
+    pub fn prime_slab_bytes(&self, e: &Engine) -> usize {
+        let dev = e.ctx().ordinal();
+        let slabs = self.prime_slabs.lock().unwrap_or_else(|p| p.into_inner());
+        slabs.get(&dev).map_or(0, |sl| {
+            let s = sl.lock().unwrap_or_else(|p| p.into_inner());
+            let f32s = s.h.len()
+                + s.x1.len()
+                + s.z.len()
+                + s.act.len()
+                + s.xa.len()
+                + s.xb.len()
+                + s.gate.len()
+                + s.up.len()
+                + s.ffn_out.len()
+                + s.mixed.len();
+            f32s * 4 + s.h16.len() + s.z16.len()
+        })
+    }
+
     pub fn prime_slabs_get(
         &self,
         e: &Engine,

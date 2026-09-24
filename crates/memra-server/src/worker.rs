@@ -6315,6 +6315,100 @@ fn pending_prime_bytes(
         .fold(0usize, usize::saturating_add)
 }
 
+/// One still-priming session as the corrected pending-prime term reads it (WP-B day 39).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PrimeOwed {
+    rows: usize,
+    /// On the MTP spec route with its walker not yet started (its whole-prompt stack is owed).
+    unstarted_walker: bool,
+    /// The walker persists across ticks (`MEMRA_PRIME_YIELD` and the model supports the walk).
+    cooperative: bool,
+}
+
+/// The corrected pending-prime term for one model (pure; DAY39 1.2): the largest call, with its
+/// returned rows, once less the resident slab; the cooperative unstarted walkers' stacks summed; the
+/// largest non-cooperative walker stack once; the hyper shape per session as day 33 booked it.
+fn pending_prime_for_model(
+    owed: &[PrimeOwed],
+    shape: Option<&memra_engine::hybrid_forward::PrimeWorkspaceShape>,
+    hyper: Option<&memra_engine::hybrid_forward::HyperPrimeWorkspaceShape>,
+    slab_bytes: usize,
+) -> usize {
+    let hyper_bytes = hyper.map_or(0, |h| {
+        owed.iter()
+            .map(|o| h.admission_bytes(o.rows))
+            .fold(0usize, usize::saturating_add)
+    });
+    let Some(shape) = shape else {
+        return hyper_bytes;
+    };
+    let call_rows = owed
+        .iter()
+        .map(|o| shape.call_rows(o.rows))
+        .max()
+        .unwrap_or(0);
+    let once = shape
+        .call_row_bytes
+        .saturating_add(shape.prompt_row_bytes)
+        .saturating_mul(call_rows)
+        .saturating_sub(slab_bytes);
+    let stack = |o: &PrimeOwed| shape.prompt_row_bytes.saturating_mul(o.rows);
+    let stacks = owed
+        .iter()
+        .filter(|o| o.unstarted_walker && o.cooperative)
+        .map(stack)
+        .fold(0usize, usize::saturating_add);
+    let noncoop = owed
+        .iter()
+        .filter(|o| o.unstarted_walker && !o.cooperative)
+        .map(stack)
+        .max()
+        .unwrap_or(0);
+    once.saturating_add(stacks)
+        .saturating_add(noncoop)
+        .saturating_add(hyper_bytes)
+}
+
+/// The corrected pending-prime term (WP-B day 39, `research/spill-b-20260919/DAY39.md` 1.2), per
+/// model through `pending_prime_for_model`: the prime slab is retained, grow-only and shared by every
+/// prime call on the device, and the batched worker runs those calls one after another, so a burst
+/// owes one call's workspace (less the slab already resident) and each cooperative walker's stack
+/// until that walker starts, not one whole workspace per session.
+fn pending_prime_bytes_v2(
+    active: &[Session],
+    admission_costs: &HashMap<String, AdmissionCostModel>,
+    slab_bytes: &dyn Fn(&str) -> usize,
+    cooperative: &dyn Fn(&str) -> bool,
+) -> usize {
+    let mut by_model: HashMap<&str, Vec<PrimeOwed>> = HashMap::new();
+    for s in active {
+        let rows = session_pending_prime_rows(s.prefill_done, s.prefill_queue.len());
+        if rows == 0 || !admission_costs.contains_key(&s.model) {
+            continue;
+        }
+        by_model
+            .entry(s.model.as_str())
+            .or_default()
+            .push(PrimeOwed {
+                rows,
+                unstarted_walker: s.spec.is_some() && s.mtp_prime.is_none(),
+                cooperative: cooperative(&s.model),
+            });
+    }
+    by_model
+        .into_iter()
+        .map(|(name, owed)| {
+            let model = &admission_costs[name];
+            pending_prime_for_model(
+                &owed,
+                model.prime.as_ref(),
+                model.prefill.as_ref(),
+                slab_bytes(name),
+            )
+        })
+        .fold(0usize, usize::saturating_add)
+}
+
 /// Prompt rows of the prefix entry a session will still publish at prime completion (memra#680,
 /// lane B day 35): its armed seed boundary while `seed_prefix` holds, with a live cache and no
 /// vision input, else 0. `maybe_prefix_seed` clears `seed_prefix` whether the insert lands, is
@@ -24952,8 +25046,30 @@ pub fn run(
                 // still allocate; a session mid-prime is counted twice for that chunk (live and
                 // booked), which only errs toward a defer. Unarmed the term is 0 and
                 // `less_pending(0, _)` is the identity, so the door-OFF gate is unchanged.
-                let pending_prime = if admit_memory_cfg.armed {
+                // WP-B day 39 (DAY39 1.2): the slab and one call once, the walker stacks per
+                // unstarted cooperative session. Day 33's per-session sum is kept beside it, printed
+                // on every admit/defer/refuse line as `pending_prime_v1=`.
+                let pending_prime_v1 = if admit_memory_cfg.armed {
                     pending_prime_bytes(&active, &admission_costs)
+                } else {
+                    0
+                };
+                let pending_prime = if admit_memory_cfg.armed {
+                    pending_prime_bytes_v2(
+                        &active,
+                        &admission_costs,
+                        &|name| {
+                            loaded
+                                .get(name)
+                                .map_or(0, |lm| lm.model.prime_slab_bytes(&engine))
+                        },
+                        &|name| {
+                            memra_engine::prime_walker::prime_yield_enabled()
+                                && loaded
+                                    .get(name)
+                                    .is_some_and(|lm| lm.model.mtp_prime_walk_supported())
+                        },
+                    )
                 } else {
                     0
                 };
@@ -25625,6 +25741,7 @@ pub fn run(
                                             estimate: est,
                                             tiers,
                                             pending_prime_bytes: pending_prime as u64,
+                                            pending_prime_v1_bytes: pending_prime_v1 as u64,
                                             pending_seed_bytes: pending_seed as u64,
                                             inflight: admission_book.inflight(&req.model),
                                             cap: cap as u64,
@@ -25682,6 +25799,7 @@ pub fn run(
                                     },
                                 },
                                 pending_prime_bytes: pending_prime as u64,
+                                pending_prime_v1_bytes: pending_prime_v1 as u64,
                                 pending_seed_bytes: pending_seed as u64,
                                 inflight: admission_book.inflight(&req.model),
                                 cap: cap as u64,
@@ -53029,6 +53147,83 @@ mod tests {
         assert!(live.contains(
             "vmm_reap_for(\"admin-trim\"); report.devices = trim_model_device_pools(&engine, &loaded, \"admin-trim\");"
         ));
+    }
+
+    /// WP-B day 39 (DAY39 1.6): the corrected pending-prime term, one model.
+    #[test]
+    fn corrected_pending_prime_books_one_call_once_and_unstarted_walker_stacks() {
+        let shape = memra_engine::hybrid_forward::PrimeWorkspaceShape {
+            call_row_bytes: 400_000,
+            prompt_row_bytes: 20_480,
+            n_layers: 64,
+        };
+        let o = |rows, unstarted_walker, cooperative| super::PrimeOwed {
+            rows,
+            unstarted_walker,
+            cooperative,
+        };
+        let call = |rows: usize| (400_000 + 20_480) * shape.call_rows(rows);
+        // Nothing owed: 0.
+        assert_eq!(
+            super::pending_prime_for_model(&[], Some(&shape), None, 0),
+            0
+        );
+        // N plain sessions: one call, once, not N.
+        let plain = vec![o(1_300, false, false); 64];
+        assert_eq!(
+            super::pending_prime_for_model(&plain, Some(&shape), None, 0),
+            call(1_300)
+        );
+        // The resident slab covers the call: only what exceeds it is owed.
+        assert_eq!(
+            super::pending_prime_for_model(&plain, Some(&shape), None, call(1_300)),
+            0
+        );
+        assert_eq!(
+            super::pending_prime_for_model(&plain, Some(&shape), None, call(1_300) - 7),
+            7
+        );
+        // Cooperative unstarted walkers: each whole-prompt stack; a started walker books none.
+        let coop = vec![
+            o(1_300, true, true),
+            o(1_300, true, true),
+            o(1_300, false, true),
+        ];
+        assert_eq!(
+            super::pending_prime_for_model(&coop, Some(&shape), None, 0),
+            call(1_300) + 2 * 20_480 * 1_300
+        );
+        // Non-cooperative walkers: only the largest stack (it lives for one call).
+        let noncoop = vec![o(1_000, true, false), o(2_000, true, false)];
+        assert_eq!(
+            super::pending_prime_for_model(&noncoop, Some(&shape), None, 0),
+            call(2_000) + 20_480 * 2_000
+        );
+        // Never above day 33's per-session sum for the same sessions.
+        let v1: usize = coop.iter().map(|x| shape.admission_bytes(x.rows)).sum();
+        assert!(super::pending_prime_for_model(&coop, Some(&shape), None, 0) <= v1);
+    }
+
+    /// The corrected term is computed only with the door armed and replaces day 33's in the one
+    /// booked reduction; day 33's value rides the lines as `pending_prime_v1`.
+    #[test]
+    fn corrected_pending_prime_is_armed_only_and_prints_v1_beside_it() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert!(live.contains(
+            "let pending_prime_v1 = if admit_memory_cfg.armed { pending_prime_bytes(&active, &admission_costs) } else { 0 };"
+        ));
+        assert!(
+            live.contains(
+                "let pending_prime = if admit_memory_cfg.armed { pending_prime_bytes_v2("
+            )
+        );
+        assert_eq!(
+            live.matches("pending_prime_v1_bytes: pending_prime_v1 as u64,")
+                .count(),
+            2
+        );
     }
 
     /// memra#680: a session owes prime workspace only while it is still priming.
