@@ -262,3 +262,10 @@ section 4's receipts keep the words they were written with.
   landing is now one host wait on the ticket while the receipt still sits behind its 300 ms hold (the `Block` settle's
   shape), so the cell fails on the unfixed code. Engine lib 548 passed, clippy clean. The G' binary rebuilt
   (`ded2dd0903719..`), the cell relaunched unchanged in its script, its acceptance section 3's.
+- A second read against the spill review patterns, while the relaunched cell was still in its lock wait, found two more
+  G' lifetimes, and the queued cell was stopped again pre-hold (`rtx5090-day38/gp-stopped-prehold-2/`): an unretired
+  entry's drop leaked its items, D2D receipt and spans but FREED the D2H receipt scratch, whose lanes the receipt stream
+  may still write (fixed in `e2ce1911b`: leaked like every other in-flight input, census); and the sealer took the
+  scratch by value, so an error after its first enqueue dropped it under a pending write (move-then-match; fixed in
+  `12c3f69d7`: the scratch rides `ManuallyDrop` through the enqueues and is handed out on success only, census). Engine
+  lib 548 and server lib 895 passed, clippy clean. The cell relaunched on `12c3f69d7` (G' binary `5a88e47f4a7ade0b..`).
