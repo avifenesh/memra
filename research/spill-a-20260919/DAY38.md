@@ -733,3 +733,28 @@ the check that the capture and restore seams hold.
 
 **Budget.** 1 agent-day: the code and CPU cells 0.3, the 5090 cells 0.3, the BOX7 sitting 0.4 (it also carries item 3's
 target cell and item 5's target half, DAY39 section 5 and DAY41 section 1).
+
+## 15. G''' as built, and its two sittings pre-registered before they run
+
+- **Built** (`9ab5c1265`, section 14's items 1 to 4, nothing else): the D2D capture and restore take `let Some(rs) =
+  self.receipt_stream.clone()` and issue their waits, digests, copies, lanes' D2H and events on it in the day-22 order; the
+  `d2h-delay` fault is spent by the D2H receipt's wrapper into `hold_until`, `progress` reads no lanes of a held batch
+  (`Ok(true) if held => None`), `synchronize` sleeps out the hold after the receipt event, `d2h_receipt_gpu_ms` reads
+  nothing while it is on, and no stream runs a spin for it; `release_device` and `take_plane` drain both side streams
+  (`synchronize_side_streams`). New census `one_kernel_stream_beside_the_owner` (every direct launch is a helper's or the
+  receipt stream's; the helpers' calls pass `&rs` six times and `&self.stream` twice, the early readers; no copy-stream
+  launch; both D2D classes on the receipt stream; both drains); the D2D and D2H censuses follow. The server's capture and
+  restore lines say `on the contracts door's receipt stream`; the fault's armed line says `the demote is held unlanded for
+  3000 ms on the host (no stream is held)`. CPU: engine tier_transfer `ok. 15 passed`, server lib `911 passed`, tier
+  crate green, clippy `-D warnings` clean, `check-flags` clean.
+- **The 5090 sitting** (`rtx5090-day38/g3-card-run.sh`, one bounded hold): the unit cells from the tip's test binaries;
+  section 3's A/B (base `80039a8de` against G''', 20 boots, read by `day38-reading.py` for (c) and (d)); the hump cell (f)
+  (`xgpp xg3 xg3 xgpp`, the pre-G''' tip `358749c9f` as G'', 16 demote runs per boot, `day38-hump-reading.py`); the gates on
+  G''' (identity x4, failure OFF and ON, fault default and plain with every cell, hit OFF and ON) for (a), (b) and (e).
+  The binaries by `rtx5090-day38/g3-build.sh` (g3, gpp, base from one lane tree; base in a scratch worktree).
+- **The BOX7 sitting** (`pro-single-g3/`, after the 5090 half reads): `build.sh` (g3, f1 and hk from the tip in one tree;
+  base and gpp copied from the day-38 sitting's `bins/base` and `bins/tip` with their hashes), then `driver.sh`: `ab.sh`
+  ((c), (d)), `hump.sh` ((f), the control must hump), `gates.sh` ((b), with DAY41's three cells: item 5's target half),
+  `hitgate.sh`, `unit-cells.sh`, and `item3.sh` (DAY39 section 5's cell: `hk ft f1 off`, 40 boots, `--n 5`, read by
+  `day39-reading.py target`, ft being the G''' tip). Nothing in either sitting moves a clause or a bound registered in
+  sections 3, 14, DAY39 section 5 or DAY41 section 1.
