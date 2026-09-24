@@ -103,6 +103,9 @@ mod build_id;
 mod dsv4_admit;
 mod dsv4_serve;
 mod embed_api;
+/// `MEMRA_KV_ALLOCATOR=vmm` (WP-B day 37, decide-by 2026-10-04): the serving arm of the
+/// `--kv-allocator vmm` door, on-demand fixed-address K/V planes for covered sessions.
+mod kv_vmm;
 /// The admission/accounting seam: the server admits, denies, and reports counts;
 /// what admission MEANS — budgets, prices, tenancy policy — is a deployment concern,
 /// supplied behind `metering::Metering` through `ServerWiring`. The stock binary
@@ -6867,6 +6870,15 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         body["cuda_pool_reserved_bytes"] = json!(m.cuda_pool_reserved_bytes);
         body["cuda_pool_used_bytes"] = json!(m.cuda_pool_used_bytes);
         body["cuda_pool_cached_bytes"] = json!(m.cuda_pool_cached_bytes);
+        body["kv_vmm_mapped_bytes"] = json!(m.kv_vmm_mapped_bytes);
+        body["kv_vmm_reserved_bytes"] = json!(m.kv_vmm_reserved_bytes);
+        body["kv_vmm_owed_bytes"] = json!(m.kv_vmm_owed_bytes);
+        body["kv_vmm_graveyard_bytes"] = json!(m.kv_vmm_graveyard_bytes);
+        body["kv_vmm_grows_total"] = json!(m.kv_vmm_grows_total);
+        body["kv_vmm_mapper_grows_total"] = json!(m.kv_vmm_mapper_grows_total);
+        body["kv_vmm_grow_waits_total"] = json!(m.kv_vmm_grow_waits_total);
+        body["kv_vmm_grow_failures_total"] = json!(m.kv_vmm_grow_failures_total);
+        body["kv_vmm_released_bytes_total"] = json!(m.kv_vmm_released_bytes_total);
         if !m.constraint_compiler_fail_closed.is_empty() {
             body["constraint_compiler_fail_closed"] = serde_json::Value::Object(
                 m.constraint_compiler_fail_closed
@@ -22069,6 +22081,15 @@ temperature = 0.6
             "cuda_pool_reserved_bytes",
             "cuda_pool_used_bytes",
             "cuda_pool_cached_bytes",
+            "kv_vmm_mapped_bytes",
+            "kv_vmm_reserved_bytes",
+            "kv_vmm_owed_bytes",
+            "kv_vmm_graveyard_bytes",
+            "kv_vmm_grows_total",
+            "kv_vmm_mapper_grows_total",
+            "kv_vmm_grow_waits_total",
+            "kv_vmm_grow_failures_total",
+            "kv_vmm_released_bytes_total",
             "constraint_compiler_fail_closed",
             "serve_idle_seconds",
             "spec",

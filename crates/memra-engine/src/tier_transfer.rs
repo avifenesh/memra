@@ -85,6 +85,22 @@ impl PinnedKind {
     }
 }
 
+/// Where on-demand KV grows run on a device (WP-B day 37, `MEMRA_KV_ALLOCATOR=vmm`), by card
+/// class, keyed exactly as [`PinnedKind::for_device`]: the stage-0 rule of
+/// `research/spill-b-20260919/DAY37.md` 1.5 per class that has its receipt. The RTX 5090 class
+/// reads `helper` (DAY37 2.1: `GROW-PLACEMENT extent=1 busy_p95_sum_us=11330.8 ... -> helper`).
+/// A class with no stage-0 receipt takes the helper arm, which never holds the owner thread
+/// across a driver call's tail. Returns the placement and the name of its source.
+pub fn kv_vmm_placement_for_device(name: &str) -> (memra_kv::VmmGrowPlacement, &'static str) {
+    use crate::parallel::HardwareTarget;
+    match HardwareTarget::from_device_name(name) {
+        Ok(HardwareTarget::Rtx5090) => (memra_kv::VmmGrowPlacement::Helper, "rtx5090-receipt"),
+        Ok(HardwareTarget::RtxPro6000Blackwell) | Err(_) => {
+            (memra_kv::VmmGrowPlacement::Helper, "no-receipt-default")
+        }
+    }
+}
+
 /// The engine-owned page-locked backing of a `CudaPinnedLease`: one `cuMemHostAlloc` with the
 /// arm's flag bits through the existing `result::malloc_host` FFI, freed with `result::free_host`
 /// after its tracking event is synchronized. It presents exactly the `HostSlice` contract cudarc's

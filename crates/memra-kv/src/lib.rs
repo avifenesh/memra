@@ -8,7 +8,12 @@
 //! call sites are unchanged.
 
 pub mod plane;
-pub use plane::{KvAllocator, KvPlane, KvWrite};
+pub use plane::{
+    GrowEvent, KvAllocator, KvPlane, KvWrite, VmmFaults, VmmGrowPlacement, note_on_demand_plane,
+    on_demand_initial_rows, vmm_counters, vmm_granularity_for, vmm_graveyard_bytes,
+    vmm_grow_placement, vmm_reap_graveyard, vmm_reap_graveyard_blocking, vmm_set_faults,
+    vmm_set_grow_placement, with_on_demand_kv,
+};
 pub mod record;
 pub mod tiered;
 
@@ -432,6 +437,15 @@ pub trait KvDev {
     ) -> Result<KvPlane, Box<dyn std::error::Error>> {
         allocator.allocate(|| self.alloc_u8(n).map(Into::into), || self.alloc_vmm_u8(n))
     }
+    /// On-demand VMM plane (WP-B day 37): `capacity` bytes of reserved range, `[0, initial)`
+    /// backed. Explicit backend capability; never a pooled substitute.
+    fn alloc_vmm_on_demand_u8(
+        &self,
+        _capacity: usize,
+        _initial: usize,
+    ) -> Result<KvPlane, Box<dyn std::error::Error>> {
+        Err("REFUSED: backend does not implement on-demand VMM allocation".into())
+    }
     fn htod_i32(&self, v: &[i32]) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>>;
     fn clone_dtod(
         &self,
@@ -503,6 +517,80 @@ impl KvLayer {
             Some(ring) => ring.physical_range(start, end),
             None => Ok(start..end),
         }
+    }
+
+    /// WP-B day 37: how many of this layer's two planes are on-demand VMM planes.
+    pub fn on_demand_planes(&self) -> usize {
+        usize::from(self.k.is_on_demand()) + usize::from(self.v.is_on_demand())
+    }
+
+    /// Back rows `[0, rows)` of both planes (the tail pad included, whole granules). Returns
+    /// one `(plane, event)` per grow, `'k'` or `'v'`. A no-op on pooled planes.
+    pub fn ensure_rows(
+        &mut self,
+        rows: usize,
+    ) -> Result<Vec<(char, GrowEvent)>, Box<dyn std::error::Error>> {
+        let mut out = Vec::new();
+        for (tag, plane, tok) in [
+            ('k', &mut self.k, self.k_tok_bytes),
+            ('v', &mut self.v, self.v_tok_bytes),
+        ] {
+            if let Some(ev) = plane.ensure_mapped(kv_plane_allocation_bytes(rows, tok))? {
+                out.push((tag, ev));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Schedule the release of every extent wholly past row `rows` (tail pad included) behind a
+    /// fence each plane records under its own lock. Returns the bytes scheduled.
+    pub fn release_beyond_rows(&mut self, rows: usize) -> usize {
+        self.k
+            .release_beyond(kv_plane_allocation_bytes(rows, self.k_tok_bytes))
+            + self
+                .v
+                .release_beyond(kv_plane_allocation_bytes(rows, self.v_tok_bytes))
+    }
+
+    /// Unmap the released tails whose events completed. Returns the bytes released.
+    pub fn reap(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
+        Ok(self.k.reap()? + self.v.reap()?)
+    }
+
+    /// Backed bytes of this layer's on-demand planes (0 for pooled planes).
+    pub fn on_demand_physical_bytes(&self) -> usize {
+        [&self.k, &self.v]
+            .iter()
+            .filter(|p| p.is_on_demand())
+            .map(|p| p.physical_bytes())
+            .sum()
+    }
+
+    /// Reserved bytes of this layer's on-demand planes (0 for pooled planes).
+    pub fn on_demand_reserved_bytes(&self) -> usize {
+        [&self.k, &self.v]
+            .iter()
+            .filter(|p| p.is_on_demand())
+            .map(|p| p.reserved_bytes())
+            .sum()
+    }
+
+    /// On-demand planes only: (bytes the `len` rows occupy, bytes `rows` rows of slack occupy),
+    /// summed over the layer's on-demand planes (0 for pooled planes). The retire receipt's
+    /// `used` and `slack` terms (DAY37 A4).
+    pub fn on_demand_used_and_slack(&self, rows: usize) -> (usize, usize) {
+        [(&self.k, self.k_tok_bytes), (&self.v, self.v_tok_bytes)]
+            .iter()
+            .filter(|(p, _)| p.is_on_demand())
+            .fold((0, 0), |(u, s), (_, tok)| {
+                (u + self.len * tok, s + rows * tok)
+            })
+    }
+
+    /// The rows consumers may touch on both planes (capacity rows for pooled planes).
+    pub fn mapped_rows(&self) -> usize {
+        let rows = |p: &KvPlane, tok: usize| p.mapped_bytes().saturating_sub(8) / tok.max(1);
+        rows(&self.k, self.k_tok_bytes).min(rows(&self.v, self.v_tok_bytes))
     }
 }
 
@@ -2288,6 +2376,10 @@ fn full_attention_kv_layout(
     (kv_dim_k, kv_dim_v, kbb_l, vbb_l)
 }
 
+/// WP-B day 37: the rows an on-demand cache must have backed past its position before any
+/// decode or prime entry (`Cache::ensure_usable`); the serving engine's speculative slack.
+pub const ON_DEMAND_MIN_AHEAD_ROWS: usize = 64;
+
 fn kv_plane_allocation_bytes(rows: usize, token_bytes: usize) -> usize {
     rows * token_bytes + 8
 }
@@ -2667,7 +2759,96 @@ impl Cache {
                 layers: self.suspended.layers(),
             }));
         }
+        // WP-B day 37 backstop: an on-demand cache must be backed past its position by the
+        // speculative slack before any entry runs. The serving tick maps the whole call's
+        // bound first (`ensure_kv_rows`); a missed ensure point refuses here as a request
+        // error instead of a kernel touching an unmapped address.
+        let need = (self.pos + ON_DEMAND_MIN_AHEAD_ROWS).min(self.max_ctx);
+        if let Some(mapped) = self.kv_mapped_rows().filter(|&mapped| mapped < need) {
+            return Err(format!(
+                "{path}: vmm: on-demand KV rows not backed (mapped {mapped} rows, position {}, \
+                 need {need})",
+                self.pos
+            )
+            .into());
+        }
         Ok(())
+    }
+
+    /// WP-B day 37: on-demand VMM planes in this cache (0 for a pooled cache).
+    pub fn on_demand_planes(&self) -> usize {
+        self.kv
+            .iter()
+            .flatten()
+            .map(KvLayer::on_demand_planes)
+            .sum()
+    }
+
+    /// The fewest rows any on-demand layer has backed, or `None` for a pooled cache.
+    pub fn kv_mapped_rows(&self) -> Option<usize> {
+        self.kv
+            .iter()
+            .flatten()
+            .filter(|l| l.on_demand_planes() > 0)
+            .map(KvLayer::mapped_rows)
+            .min()
+    }
+
+    /// Back rows `[0, rows)` of every on-demand K/V plane (capped at `max_ctx`). Returns one
+    /// `(label, event)` per grow, label `k<layer>` or `v<layer>`.
+    pub fn ensure_kv_rows(
+        &mut self,
+        rows: usize,
+    ) -> Result<Vec<(String, GrowEvent)>, Box<dyn std::error::Error>> {
+        let rows = rows.min(self.max_ctx);
+        let mut out = Vec::new();
+        for (il, layer) in self.kv.iter_mut().enumerate() {
+            let Some(layer) = layer.as_mut().filter(|l| l.on_demand_planes() > 0) else {
+                continue;
+            };
+            for (tag, ev) in layer.ensure_rows(rows)? {
+                out.push((format!("{tag}{il}"), ev));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Schedule the release of every on-demand extent wholly past row `rows` (each plane records
+    /// its own fence under its lock).
+    /// Returns the bytes scheduled.
+    pub fn release_kv_beyond_rows(&mut self, rows: usize) -> usize {
+        self.kv
+            .iter_mut()
+            .flatten()
+            .map(|l| l.release_beyond_rows(rows))
+            .sum()
+    }
+
+    /// Unmap every released tail whose event completed. Returns the bytes released.
+    pub fn reap_kv(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
+        let mut released = 0;
+        for layer in self.kv.iter_mut().flatten() {
+            released += layer.reap()?;
+        }
+        Ok(released)
+    }
+
+    /// Used and slack bytes of this cache's on-demand planes (`KvLayer::on_demand_used_and_slack`).
+    pub fn kv_on_demand_used_and_slack(&self, rows: usize) -> (usize, usize) {
+        self.kv.iter().flatten().fold((0, 0), |(u, s), l| {
+            let (lu, ls) = l.on_demand_used_and_slack(rows);
+            (u + lu, s + ls)
+        })
+    }
+
+    /// Backed and reserved bytes of this cache's on-demand planes.
+    pub fn kv_on_demand_bytes(&self) -> (usize, usize) {
+        self.kv.iter().flatten().fold((0, 0), |(m, r), l| {
+            (
+                m + l.on_demand_physical_bytes(),
+                r + l.on_demand_reserved_bytes(),
+            )
+        })
     }
 
     /// Day-11 rule 2: take layer `il`'s K/V out for demotion and register the suspension, so
@@ -2890,18 +3071,33 @@ impl Cache {
                         None
                     };
                     let alloc_rows = ring.as_ref().map(KvRing::rows).unwrap_or(max_ctx);
+                    // WP-B day 37: inside `with_on_demand_kv` a flat plane requested with the
+                    // default allocator is an on-demand VMM plane backing the scope's initial
+                    // rows. Ring planes (bounded by their window) and explicit allocators keep
+                    // their program.
+                    let on_demand = (allocator == KvAllocator::Pooled && ring.is_none())
+                        .then(on_demand_initial_rows)
+                        .flatten();
+                    let alloc = |tok_bytes: usize| -> Result<KvPlane, Box<dyn std::error::Error>> {
+                        let capacity = kv_plane_allocation_bytes(alloc_rows, tok_bytes);
+                        match on_demand {
+                            Some(rows) => {
+                                let initial =
+                                    kv_plane_allocation_bytes(rows.min(alloc_rows), tok_bytes)
+                                        .min(capacity);
+                                let plane = e.alloc_vmm_on_demand_u8(capacity, initial)?;
+                                note_on_demand_plane();
+                                Ok(plane)
+                            }
+                            None => e.alloc_kv_plane(capacity, allocator),
+                        }
+                    };
                     kv.push(Some(KvLayer {
                         // +8B tail pad: the v4 stage's aligned funnelshift window reads up to
                         // 4B past the final block (PR #3's finding, adopted pad-style — the
                         // expert-dot precedent; zero hot-loop branches, values discarded).
-                        k: e.alloc_kv_plane(
-                            kv_plane_allocation_bytes(alloc_rows, k_tok_bytes),
-                            allocator,
-                        )?,
-                        v: e.alloc_kv_plane(
-                            kv_plane_allocation_bytes(alloc_rows, v_tok_bytes),
-                            allocator,
-                        )?,
+                        k: alloc(k_tok_bytes)?,
+                        v: alloc(v_tok_bytes)?,
                         kv_dim_k,
                         kv_dim_v,
                         k_tok_bytes,

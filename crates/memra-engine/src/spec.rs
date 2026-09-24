@@ -1638,6 +1638,90 @@ impl SpecSession {
     pub fn cache_max_ctx(&self) -> usize {
         self.cache.max_ctx
     }
+
+    fn scratch_layers_mut(&mut self) -> impl Iterator<Item = &mut KvLayer> {
+        std::iter::once(&mut self.scratch.kv)
+            .chain(self.scratch.extra.iter_mut().map(|p| &mut p.kv))
+    }
+
+    fn scratch_layers(&self) -> impl Iterator<Item = &KvLayer> {
+        std::iter::once(&self.scratch.kv).chain(self.scratch.extra.iter().map(|p| &p.kv))
+    }
+
+    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): the on-demand VMM planes this session holds,
+    /// trunk cache and draft scratch together. The server compares it with the count its
+    /// construction scope allocated, so a plane this visitor cannot reach refuses the session.
+    pub fn kv_on_demand_planes(&self) -> usize {
+        self.cache.on_demand_planes()
+            + self
+                .scratch_layers()
+                .map(KvLayer::on_demand_planes)
+                .sum::<usize>()
+    }
+
+    /// Back rows `[0, rows)` of every on-demand plane of the session (trunk and scratch,
+    /// capped at their capacities). One `(label, event)` per grow; scratch labels are `d<i>`.
+    pub fn ensure_kv_rows(
+        &mut self,
+        rows: usize,
+    ) -> Result<Vec<(String, memra_kv::GrowEvent)>, Box<dyn std::error::Error>> {
+        let mut out = self.cache.ensure_kv_rows(rows)?;
+        let cap = self.scratch.cap;
+        for (i, layer) in self.scratch_layers_mut().enumerate() {
+            if layer.on_demand_planes() == 0 {
+                continue;
+            }
+            for (tag, ev) in layer.ensure_rows(rows.min(cap))? {
+                out.push((format!("d{tag}{i}"), ev));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Schedule the release of every on-demand extent wholly past row `rows` (each plane records
+    /// its own fence under its lock).
+    pub fn release_kv_beyond_rows(&mut self, rows: usize) -> usize {
+        let trunk = self.cache.release_kv_beyond_rows(rows);
+        trunk
+            + self
+                .scratch_layers_mut()
+                .map(|l| l.release_beyond_rows(rows))
+                .sum::<usize>()
+    }
+
+    /// Unmap every released tail whose event completed. Returns the bytes released.
+    pub fn reap_kv(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
+        let mut released = self.cache.reap_kv()?;
+        for layer in self.scratch_layers_mut() {
+            released += layer.reap()?;
+        }
+        Ok(released)
+    }
+
+    /// Backed and reserved bytes of the session's on-demand planes.
+    pub fn kv_on_demand_bytes(&self) -> (usize, usize) {
+        let (m, r) = self.cache.kv_on_demand_bytes();
+        self.scratch_layers().fold((m, r), |(m, r), l| {
+            (
+                m + l.on_demand_physical_bytes(),
+                r + l.on_demand_reserved_bytes(),
+            )
+        })
+    }
+
+    /// Used and slack bytes of the session's on-demand planes, trunk and scratch.
+    pub fn kv_on_demand_used_and_slack(&self, rows: usize) -> (usize, usize) {
+        let (u, s) = self.cache.kv_on_demand_used_and_slack(rows);
+        self.scratch_layers().fold((u, s), |(u, s), l| {
+            let (lu, ls) = l.on_demand_used_and_slack(rows);
+            (u + lu, s + ls)
+        })
+    }
+
+    /// The trunk cache's position (rows committed).
+    pub fn kv_position(&self) -> usize {
+        self.cache.pos
+    }
     /// Read access to the live trunk cache (lane/spec-prefix-cache): the worker slices
     /// full-attn KV rows `[0..capture.pos)` out of it when publishing a boundary capture —
     /// those rows are append-only for the session's lifetime (rollbacks never truncate below
@@ -2402,10 +2486,32 @@ impl MtpScratch {
             Some(_) => Some(e.htod_i32(&[0])?),
             None => None,
         };
+        // WP-B day 37: inside the server's on-demand scope (`memra_kv::with_on_demand_kv`) a
+        // flat scratch plane is an on-demand VMM plane backing the scope's initial rows, the
+        // trunk cache's rule; ring planes keep their bounded pooled program.
+        let on_demand = ring
+            .is_none()
+            .then(memra_kv::on_demand_initial_rows)
+            .flatten();
+        let alloc = |tok_bytes: usize| -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
+            let capacity = alloc_rows * tok_bytes;
+            match on_demand {
+                Some(rows) => {
+                    let plane = memra_kv::KvDev::alloc_vmm_on_demand_u8(
+                        e,
+                        capacity,
+                        (rows.min(alloc_rows) * tok_bytes).min(capacity),
+                    )?;
+                    memra_kv::note_on_demand_plane();
+                    Ok(plane)
+                }
+                None => Ok(e.alloc_u8(capacity)?.into()),
+            }
+        };
         Ok(MtpScratchPlane {
             kv: KvLayer {
-                k: e.alloc_u8(alloc_rows * k_tok_bytes)?.into(),
-                v: e.alloc_u8(alloc_rows * v_tok_bytes)?.into(),
+                k: alloc(k_tok_bytes)?,
+                v: alloc(v_tok_bytes)?,
                 kv_dim_k,
                 kv_dim_v,
                 k_tok_bytes,

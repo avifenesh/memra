@@ -1,8 +1,13 @@
 //! Owning KV operands. VMM storage never escapes as an owned CudaSlice.
-use cudarc::driver::{CudaSlice, CudaStream, CudaViewMut, sys};
+use cudarc::driver::{CudaEvent, CudaSlice, CudaStream, CudaViewMut, sys};
 use std::{
+    cell::Cell,
     ops::{Deref, Range},
-    sync::Arc,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Instant,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -174,9 +179,718 @@ impl Drop for Mapping {
     }
 }
 
+fn vmm_granularity(device: i32) -> Result<usize> {
+    let mut supported = 0;
+    // SAFETY: valid device and output pointer; unsupported/query failure refuses explicitly.
+    unsafe {
+        sys::cuDeviceGetAttribute(
+            &mut supported,
+            sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_VIRTUAL_MEMORY_MANAGEMENT_SUPPORTED,
+            device,
+        )
+        .result()
+    }
+    .map_err(|e| format!("REFUSED: VMM support query failed: {e}"))?;
+    let prop = properties(device);
+    let mut granularity = 0;
+    // SAFETY: complete allocation properties and valid size output pointer.
+    unsafe {
+        sys::cuMemGetAllocationGranularity(
+            &mut granularity,
+            &prop,
+            sys::CUmemAllocationGranularity_flags::CU_MEM_ALLOC_GRANULARITY_MINIMUM,
+        )
+        .result()
+    }
+    .map_err(|e| format!("REFUSED: VMM granularity query failed: {e}"))?;
+    validate_capabilities(supported, granularity)?;
+    Ok(granularity)
+}
+
+/// The VMM allocation granularity of the stream's device (the boot line's `granularity=`), or
+/// the named refusal when the device has no VMM support.
+pub fn vmm_granularity_for(stream: &CudaStream) -> Result<usize> {
+    stream.context().bind_to_thread()?;
+    let device = cudarc::driver::result::device::get(stream.context().ordinal() as i32)?;
+    vmm_granularity(device)
+}
+
+// ---------------- on-demand planes (WP-B day 37, `MEMRA_KV_ALLOCATOR=vmm`) ----------------
+//
+// A plane reserves its whole capacity as virtual range once and backs it in extents: one
+// `cuMemCreate` handle per grow, mapped at the end of the backed prefix. The address never
+// changes, so graphs and kernels that bake it stay valid. A release never runs while work
+// that may touch the range is in flight: it records an event and the extent is unmapped
+// only after the event completes (`reap`); a dropped plane goes to the graveyard, reaped the
+// same way. Nothing on these paths synchronizes the owner stream.
+//
+// Grow placement (DAY37 1.5, addendum A 1.10): `Inline` maps at the ensure point on the owner
+// thread; `Helper` keeps a mapper thread one lookahead ahead (`want = need + 2 granules`) and
+// the owner maps inline only when the mapper is behind (`waited`). Every state change of a
+// plane (its extents, `want`, `dead`) happens under the plane's one lock, which the mapper
+// holds across its driver calls and its zero-fill enqueue, so the owner never launches work on
+// rows before their fill, and every release event is recorded after the mapper's last enqueue.
+
+/// Where on-demand grows run (DAY37 1.5's rule, per card class).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum VmmGrowPlacement {
+    /// A mapper thread pre-maps; the owner maps only when the mapper is behind.
+    #[default]
+    Helper,
+    /// The owner maps at the ensure point.
+    Inline,
+}
+impl VmmGrowPlacement {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Helper => "helper",
+            Self::Inline => "inline",
+        }
+    }
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "helper" => Some(Self::Helper),
+            "inline" => Some(Self::Inline),
+            _ => None,
+        }
+    }
+}
+
+static PLACEMENT_INLINE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Set the process's grow placement (the server, once at worker start).
+pub fn vmm_set_grow_placement(p: VmmGrowPlacement) {
+    PLACEMENT_INLINE.store(p == VmmGrowPlacement::Inline, Ordering::Relaxed);
+}
+
+/// The process's grow placement.
+pub fn vmm_grow_placement() -> VmmGrowPlacement {
+    if PLACEMENT_INLINE.load(Ordering::Relaxed) {
+        VmmGrowPlacement::Inline
+    } else {
+        VmmGrowPlacement::Helper
+    }
+}
+
+/// One owner-side grow: the extent mapped at `offset..offset + bytes`, the backed prefix after
+/// it, the reserved range, the host wall of the driver calls plus the zero-fill enqueue (and any
+/// wait for the plane's lock), and whether it ran because the mapper was behind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GrowEvent {
+    pub offset: usize,
+    pub bytes: usize,
+    pub mapped: usize,
+    pub reserved: usize,
+    pub owner_us: u64,
+    pub waited: bool,
+}
+
+static GROWS_TOTAL: AtomicU64 = AtomicU64::new(0);
+static MAPPER_GROWS_TOTAL: AtomicU64 = AtomicU64::new(0);
+static GROW_WAITS_TOTAL: AtomicU64 = AtomicU64::new(0);
+static GROW_FAILURES_TOTAL: AtomicU64 = AtomicU64::new(0);
+static RELEASED_BYTES_TOTAL: AtomicU64 = AtomicU64::new(0);
+
+/// The fault door of the gate (`MEMRA_KV_VMM_FAULT`, read by the server; addendum A 1.10).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct VmmFaults {
+    /// 1-based construction grow numbers that fail once.
+    pub build: Vec<u64>,
+    /// 1-based owner ensure-point grow numbers that fail once.
+    pub ensure: Vec<u64>,
+    /// Every mapper grow fails.
+    pub mapper_all: bool,
+}
+impl VmmFaults {
+    /// `build:<n>`, `ensure:<n>`, `mapper:all`, comma separated. `None` on any other token.
+    pub fn parse(spec: &str) -> Option<Self> {
+        let mut f = Self::default();
+        for tok in spec.split(',').map(str::trim).filter(|t| !t.is_empty()) {
+            match tok.split_once(':')? {
+                ("build", n) => f.build.push(n.parse().ok().filter(|&n| n > 0)?),
+                ("ensure", n) => f.ensure.push(n.parse().ok().filter(|&n| n > 0)?),
+                ("mapper", "all") => f.mapper_all = true,
+                _ => return None,
+            }
+        }
+        Some(f)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GrowClass {
+    Build,
+    Ensure,
+    Mapper,
+}
+
+static BUILD_SEQ: AtomicU64 = AtomicU64::new(0);
+static ENSURE_SEQ: AtomicU64 = AtomicU64::new(0);
+static FAULTS: Mutex<Option<VmmFaults>> = Mutex::new(None);
+
+/// Arm (or, with `None`, disarm) the fault door.
+pub fn vmm_set_faults(faults: Option<VmmFaults>) {
+    *FAULTS.lock().unwrap_or_else(|p| p.into_inner()) = faults;
+}
+
+fn fault_fires(class: GrowClass) -> bool {
+    let mut guard = FAULTS.lock().unwrap_or_else(|p| p.into_inner());
+    let Some(f) = guard.as_mut() else {
+        return false;
+    };
+    let (list, seq) = match class {
+        GrowClass::Mapper => return f.mapper_all,
+        GrowClass::Build => (&mut f.build, &BUILD_SEQ),
+        GrowClass::Ensure => (&mut f.ensure, &ENSURE_SEQ),
+    };
+    let n = seq.fetch_add(1, Ordering::Relaxed) + 1;
+    match list.iter().position(|&x| x == n) {
+        Some(i) => {
+            list.remove(i);
+            true
+        }
+        None => false,
+    }
+}
+
+/// Process counters for `/metrics`: owner grows, mapper grows, owner grows that waited on a
+/// behind mapper, grow failures, bytes released by reaps.
+pub fn vmm_counters() -> (u64, u64, u64, u64, u64) {
+    (
+        GROWS_TOTAL.load(Ordering::Relaxed),
+        MAPPER_GROWS_TOTAL.load(Ordering::Relaxed),
+        GROW_WAITS_TOTAL.load(Ordering::Relaxed),
+        GROW_FAILURES_TOTAL.load(Ordering::Relaxed),
+        RELEASED_BYTES_TOTAL.load(Ordering::Relaxed),
+    )
+}
+
+/// Whole granules covering `[0, bytes)`, capped at the reserved range.
+fn backed_need(bytes: usize, granularity: usize, reserved: usize) -> usize {
+    bytes
+        .div_ceil(granularity)
+        .saturating_mul(granularity)
+        .min(reserved)
+}
+
+/// A release fence: an event recorded on the owner stream after every use of a range.
+pub trait ReleaseFence: Send + Sync {
+    fn is_complete(&self) -> bool;
+    /// Block until complete (the grow-failure path only).
+    fn wait(&self) -> Result<()>;
+}
+impl ReleaseFence for CudaEvent {
+    fn is_complete(&self) -> bool {
+        CudaEvent::is_complete(self)
+    }
+    fn wait(&self) -> Result<()> {
+        Ok(self.synchronize()?)
+    }
+}
+
+/// The driver calls an on-demand plane makes, behind one seam so the extent state machine runs
+/// against a fake in CPU tests. The CUDA implementation is `CudaVmmDriver`.
+trait VmmDriver: Send + Sync {
+    /// `cuMemCreate` of `size` bytes; returns the handle.
+    fn create(&self, size: usize) -> Result<u64>;
+    /// `cuMemMap` of the handle at `address`.
+    fn map(&self, address: u64, size: usize, handle: u64) -> Result<()>;
+    /// `cuMemSetAccess` read-write for the owning device.
+    fn set_access(&self, address: u64, size: usize) -> Result<()>;
+    /// The stream-ordered zero fill on the owner stream.
+    fn zero(&self, address: u64, bytes: usize) -> Result<()>;
+    /// `cuMemUnmap`.
+    fn unmap(&self, address: u64, size: usize) -> Result<()>;
+    /// `cuMemRelease`.
+    fn release(&self, handle: u64) -> Result<()>;
+    /// `cuMemAddressFree` of the whole reservation.
+    fn address_free(&self, base: u64, size: usize) -> Result<()>;
+    /// A fence recorded on the owner stream now (`None` when it cannot be recorded).
+    fn fence(&self) -> Option<Arc<dyn ReleaseFence>>;
+    /// Synchronize the owner stream (only when no fence could be recorded).
+    fn synchronize(&self) -> Result<()>;
+    /// The mapper this plane belongs to (the context ordinal).
+    fn mapper_key(&self) -> usize;
+}
+
+struct CudaVmmDriver {
+    device: i32,
+    stream: Arc<CudaStream>,
+}
+impl VmmDriver for CudaVmmDriver {
+    fn create(&self, size: usize) -> Result<u64> {
+        self.stream.context().bind_to_thread()?;
+        let prop = properties(self.device);
+        let mut handle = 0;
+        // SAFETY: initialized properties, a valid handle output; size is whole granules.
+        unsafe { sys::cuMemCreate(&mut handle, size, &prop, 0).result()? };
+        Ok(handle)
+    }
+    fn map(&self, address: u64, size: usize, handle: u64) -> Result<()> {
+        // SAFETY: [address, address + size) is an unmapped whole-granule span of the caller's
+        // reservation and the handle owns `size` bytes.
+        unsafe { sys::cuMemMap(address, size, 0, handle, 0).result()? };
+        Ok(())
+    }
+    fn set_access(&self, address: u64, size: usize) -> Result<()> {
+        let access = sys::CUmemAccessDesc {
+            location: properties(self.device).location,
+            flags: sys::CUmemAccess_flags::CU_MEM_ACCESS_FLAGS_PROT_READWRITE,
+        };
+        // SAFETY: the span is mapped to the owning device.
+        unsafe { sys::cuMemSetAccess(address, size, &access, 1).result()? };
+        Ok(())
+    }
+    fn zero(&self, address: u64, bytes: usize) -> Result<()> {
+        // SAFETY: the span is mapped and accessible; the fill is ordered on the owner stream.
+        unsafe { sys::cuMemsetD8Async(address, 0, bytes, self.stream.cu_stream()).result()? };
+        Ok(())
+    }
+    fn unmap(&self, address: u64, size: usize) -> Result<()> {
+        self.stream.context().bind_to_thread()?;
+        // SAFETY: the caller's release fence completed: no recorded work touches the span.
+        unsafe { sys::cuMemUnmap(address, size).result()? };
+        Ok(())
+    }
+    fn release(&self, handle: u64) -> Result<()> {
+        // SAFETY: the handle is the caller's and has no mapping.
+        unsafe { sys::cuMemRelease(handle).result()? };
+        Ok(())
+    }
+    fn address_free(&self, base: u64, size: usize) -> Result<()> {
+        self.stream.context().bind_to_thread()?;
+        // SAFETY: every extent of the reservation is unmapped and released.
+        unsafe { sys::cuMemAddressFree(base, size).result()? };
+        Ok(())
+    }
+    fn fence(&self) -> Option<Arc<dyn ReleaseFence>> {
+        self.stream.context().bind_to_thread().ok()?;
+        let ev = self.stream.record_event(None).ok()?;
+        Some(Arc::new(ev))
+    }
+    fn synchronize(&self) -> Result<()> {
+        self.stream.context().bind_to_thread()?;
+        Ok(self.stream.synchronize()?)
+    }
+    fn mapper_key(&self) -> usize {
+        self.stream.context().ordinal()
+    }
+}
+
+struct Extent {
+    handle: sys::CUmemGenericAllocationHandle,
+    offset: usize,
+    bytes: usize,
+    /// A requested release: the extent stays mapped and its bytes intact until this fence
+    /// completes and a reap unmaps it. An ensure cancels it when the rows are needed again.
+    release_after: Option<Arc<dyn ReleaseFence>>,
+}
+
+/// A plane's mutable state, under the lock the mapper shares.
+struct OdState {
+    /// Contiguous from offset 0, in offset order; releases only ever pend on a tail.
+    extents: Vec<Extent>,
+    /// The mapper maps up to here and never past it.
+    want: usize,
+    /// The plane dropped: the mapper skips it.
+    dead: bool,
+    /// The mapper's last failure, cleared by the next successful grow.
+    mapper_error: Option<String>,
+    /// A mapper request is queued for this plane.
+    queued: bool,
+}
+impl OdState {
+    fn end(&self) -> usize {
+        self.extents.last().map_or(0, |e| e.offset + e.bytes)
+    }
+    fn physical_bytes(&self) -> usize {
+        self.extents.iter().map(|e| e.bytes).sum()
+    }
+    fn live_bytes(&self) -> usize {
+        self.extents
+            .iter()
+            .take_while(|e| e.release_after.is_none())
+            .last()
+            .map_or(0, |e| e.offset + e.bytes)
+    }
+}
+
+/// What the mapper needs of a plane, and the plane's state.
+struct OdShared {
+    base: u64,
+    reserved: usize,
+    /// The operand's length: the bytes the pooled plane would allocate.
+    capacity: usize,
+    granularity: usize,
+    driver: Box<dyn VmmDriver>,
+    state: Mutex<OdState>,
+}
+
+impl OdShared {
+    fn lock(&self) -> std::sync::MutexGuard<'_, OdState> {
+        self.state.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// create, map, set access, then the zero fill of the rows the operand spans, enqueued on
+    /// the owner stream (the caller holds the plane's lock, so no owner launch on these rows can
+    /// precede it). Every failure undoes what it did.
+    fn map_extent(&self, st: &mut OdState, size: usize) -> Result<()> {
+        let offset = st.end();
+        let d = &self.driver;
+        let handle = d.create(size)?;
+        let address = self.base + offset as u64;
+        if let Err(e) = d.map(address, size, handle) {
+            let _ = d.release(handle);
+            return Err(e);
+        }
+        if let Err(e) = d.set_access(address, size) {
+            let _ = d.unmap(address, size);
+            let _ = d.release(handle);
+            return Err(e);
+        }
+        let zero_end = (offset + size).min(self.capacity);
+        if zero_end > offset {
+            if let Err(e) = d.zero(address, zero_end - offset) {
+                let _ = d.unmap(address, size);
+                let _ = d.release(handle);
+                return Err(e);
+            }
+        }
+        st.extents.push(Extent {
+            handle,
+            offset,
+            bytes: size,
+            release_after: None,
+        });
+        Ok(())
+    }
+
+    /// The tail extents whose release fence completed: unmap, release, pop.
+    fn reap(&self, st: &mut OdState) -> Result<usize> {
+        let mut released = 0;
+        while let Some(last) = st.extents.last() {
+            let Some(fence) = last.release_after.as_ref() else {
+                break;
+            };
+            if !fence.is_complete() {
+                break;
+            }
+            let address = self.base + last.offset as u64;
+            self.driver.unmap(address, last.bytes)?;
+            self.driver.release(last.handle)?;
+            released += last.bytes;
+            st.extents.pop();
+        }
+        RELEASED_BYTES_TOTAL.fetch_add(released as u64, Ordering::Relaxed);
+        Ok(released)
+    }
+}
+
+/// The mapper of one context: a thread that maps each handed plane up to its `want`.
+struct Mapper {
+    tx: std::sync::mpsc::Sender<std::sync::Weak<OdShared>>,
+}
+
+static MAPPERS: Mutex<Vec<(usize, Mapper)>> = Mutex::new(Vec::new());
+
+fn mapper_grow(p: &OdShared) {
+    let mut st = p.lock();
+    st.queued = false;
+    if st.dead {
+        return;
+    }
+    let end = st.end();
+    if end >= st.want {
+        return;
+    }
+    if fault_fires(GrowClass::Mapper) {
+        GROW_FAILURES_TOTAL.fetch_add(1, Ordering::Relaxed);
+        st.mapper_error = Some("injected mapper grow failure (MEMRA_KV_VMM_FAULT)".into());
+        return;
+    }
+    let size = st.want - end;
+    match p.map_extent(&mut st, size) {
+        Ok(()) => {
+            st.mapper_error = None;
+            MAPPER_GROWS_TOTAL.fetch_add(1, Ordering::Relaxed);
+        }
+        Err(e) => {
+            GROW_FAILURES_TOTAL.fetch_add(1, Ordering::Relaxed);
+            st.mapper_error = Some(e.to_string());
+        }
+    }
+}
+
+/// Hand a plane to its context's mapper (started on first use).
+fn post_to_mapper(p: &Arc<OdShared>) {
+    let ordinal = p.driver.mapper_key();
+    let mut mappers = MAPPERS.lock().unwrap_or_else(|e| e.into_inner());
+    if !mappers.iter().any(|(o, _)| *o == ordinal) {
+        let (tx, rx) = std::sync::mpsc::channel::<std::sync::Weak<OdShared>>();
+        let spawned = std::thread::Builder::new()
+            .name(format!("memra-kv-vmm-mapper-{ordinal}"))
+            .spawn(move || {
+                while let Ok(weak) = rx.recv() {
+                    if let Some(plane) = weak.upgrade() {
+                        mapper_grow(&plane);
+                    }
+                }
+            });
+        if spawned.is_err() {
+            eprintln!("[kv-vmm] mapper thread did not start; grows stay on the owner");
+            return;
+        }
+        mappers.push((ordinal, Mapper { tx }));
+    }
+    if let Some((_, m)) = mappers.iter().find(|(o, _)| *o == ordinal) {
+        let _ = m.tx.send(Arc::downgrade(p));
+    }
+}
+
+struct OnDemand {
+    shared: Arc<OdShared>,
+}
+
+impl OnDemand {
+    fn physical_bytes(&self) -> usize {
+        self.shared.lock().physical_bytes()
+    }
+    fn live_bytes(&self) -> usize {
+        self.shared.lock().live_bytes()
+    }
+    fn ensure(&mut self, bytes: usize, class: GrowClass) -> Result<Option<GrowEvent>> {
+        let p = &self.shared;
+        let t0 = Instant::now();
+        let mut st = p.lock();
+        let need = backed_need(bytes, p.granularity, p.reserved);
+        // A pending release inside the needed prefix is cancelled: the extent is still mapped.
+        for e in st.extents.iter_mut().filter(|e| e.offset < need) {
+            e.release_after = None;
+        }
+        let helper = class == GrowClass::Ensure && vmm_grow_placement() == VmmGrowPlacement::Helper;
+        if helper {
+            let ahead = backed_need(need + 2 * p.granularity, p.granularity, p.reserved);
+            st.want = st.want.max(ahead);
+        }
+        let end = st.end();
+        if end >= need {
+            if helper && end < st.want && !st.queued {
+                st.queued = true;
+                drop(st);
+                post_to_mapper(p);
+            }
+            return Ok(None);
+        }
+        if fault_fires(class) {
+            GROW_FAILURES_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return Err(Box::new(cudarc::driver::DriverError(
+                sys::cudaError_enum::CUDA_ERROR_OUT_OF_MEMORY,
+            )));
+        }
+        if let Err(e) = p.map_extent(&mut st, need - end) {
+            GROW_FAILURES_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return Err(e);
+        }
+        st.want = st.want.max(need);
+        GROWS_TOTAL.fetch_add(1, Ordering::Relaxed);
+        if helper {
+            GROW_WAITS_TOTAL.fetch_add(1, Ordering::Relaxed);
+            if st.end() < st.want && !st.queued {
+                st.queued = true;
+                drop(st);
+                post_to_mapper(p);
+            }
+        }
+        Ok(Some(GrowEvent {
+            offset: end,
+            bytes: need - end,
+            mapped: need,
+            reserved: p.reserved,
+            owner_us: t0.elapsed().as_micros() as u64,
+            waited: helper,
+        }))
+    }
+    /// Schedule the release of every extent wholly past `keep_bytes`. The fence is recorded
+    /// HERE, under the plane's lock and after `want` is pulled back: a mapper fill enqueued before
+    /// the lock was taken is then ordered before the fence, and no mapper enqueue can follow it
+    /// (the mapper never maps past `want`). A caller-recorded event would miss a fill enqueued
+    /// between its record and this lock. No fence, no schedule: the extents stay mapped.
+    fn request_release_beyond(&mut self, keep_bytes: usize) -> usize {
+        let p = &self.shared;
+        let mut st = p.lock();
+        let keep = backed_need(keep_bytes, p.granularity, p.reserved);
+        st.want = st.want.min(keep);
+        if !st.extents.iter().any(|e| e.offset >= keep) {
+            return 0;
+        }
+        let Some(fence) = p.driver.fence() else {
+            eprintln!("[kv-vmm] trim skipped: no release fence could be recorded");
+            return 0;
+        };
+        let mut scheduled = 0;
+        for e in st.extents.iter_mut().filter(|e| e.offset >= keep) {
+            // A later fence completes after the earlier one: replacing it is never earlier.
+            e.release_after = Some(fence.clone());
+            scheduled += e.bytes;
+        }
+        scheduled
+    }
+    fn reap(&mut self) -> Result<usize> {
+        let p = &self.shared;
+        let mut st = p.lock();
+        p.reap(&mut st)
+    }
+    /// The plane dropped: marked dead under the lock (the mapper skips it from here), then every
+    /// extent and the range go to the graveyard behind a fence on the owner stream. If no fence
+    /// can be recorded, the stream is synchronized first; if that fails too the range is
+    /// quarantined (leaked), never recycled while possibly live.
+    fn bury(self) {
+        let p = self.shared;
+        let mut st = p.lock();
+        st.dead = true;
+        st.want = 0;
+        let fence = match p.driver.fence() {
+            Some(f) => f,
+            None => {
+                // Dropping the handles' bookkeeping without a release leaks the physical
+                // memory and the range: quarantine, never a recycle of possibly live storage.
+                if p.driver.synchronize().is_err() {
+                    eprintln!("[kv-vmm] graveyard quarantined: owner synchronization failed");
+                    st.extents.clear();
+                    return;
+                }
+                match p.driver.fence() {
+                    Some(f) => f,
+                    None => {
+                        eprintln!("[kv-vmm] graveyard quarantined: no release fence");
+                        st.extents.clear();
+                        return;
+                    }
+                }
+            }
+        };
+        for e in st.extents.iter_mut() {
+            e.release_after = Some(fence.clone());
+        }
+        drop(st);
+        GRAVEYARD.lock().unwrap_or_else(|e| e.into_inner()).push(p);
+    }
+}
+
+static GRAVEYARD: Mutex<Vec<Arc<OdShared>>> = Mutex::new(Vec::new());
+
+/// Release every dropped on-demand plane whose release event completed: its extents, then its
+/// reserved range. Returns (bytes released, graves still pending, bytes still pending).
+pub fn vmm_reap_graveyard() -> Result<(usize, usize, usize)> {
+    let mut graves = GRAVEYARD.lock().unwrap_or_else(|p| p.into_inner());
+    let mut released = 0;
+    let mut kept = Vec::with_capacity(graves.len());
+    let mut failure = None;
+    for g in graves.drain(..) {
+        if failure.is_some() {
+            kept.push(g);
+            continue;
+        }
+        let mut st = g.lock();
+        match g.reap(&mut st) {
+            Ok(n) => released += n,
+            Err(e) => {
+                failure = Some(e);
+                drop(st);
+                kept.push(g);
+                continue;
+            }
+        }
+        let empty = st.extents.is_empty();
+        drop(st);
+        if empty {
+            if let Err(e) = g.driver.address_free(g.base, g.reserved) {
+                eprintln!("[kv-vmm] graveyard VA free failed: {e}");
+            }
+        } else {
+            kept.push(g);
+        }
+    }
+    let pending_bytes = kept.iter().map(|g| g.lock().physical_bytes()).sum();
+    let pending = kept.len();
+    *graves = kept;
+    match failure {
+        Some(e) => Err(e),
+        None => Ok((released, pending, pending_bytes)),
+    }
+}
+
+/// The grow-failure path only (DAY37 1.4): wait on every grave's release event, then reap.
+/// This waits on events recorded at each drop, never on the owner stream as a whole.
+pub fn vmm_reap_graveyard_blocking() -> Result<(usize, usize, usize)> {
+    let fences: Vec<Arc<dyn ReleaseFence>> = GRAVEYARD
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .iter()
+        .flat_map(|g| {
+            g.lock()
+                .extents
+                .iter()
+                .filter_map(|e| e.release_after.clone())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    for fence in fences {
+        fence.wait()?;
+    }
+    vmm_reap_graveyard()
+}
+
+/// Bytes held by dropped on-demand planes whose release has not been reaped yet.
+pub fn vmm_graveyard_bytes() -> usize {
+    GRAVEYARD
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .iter()
+        .map(|g| g.lock().physical_bytes())
+        .sum()
+}
+
+thread_local! {
+    /// The scoped ambient allocator for cache construction (`with_on_demand_kv`): the initial
+    /// rows on-demand planes back, and how many on-demand planes the scope allocated.
+    static ON_DEMAND_SCOPE: Cell<Option<(usize, usize)>> = const { Cell::new(None) };
+}
+
+/// Construct under the on-demand allocator: every flat full-attention K/V plane a default
+/// cache constructor (and the MTP draft scratch) allocates inside `f` is an on-demand plane
+/// backing `initial_rows` rows. Returns `f`'s result and the number of on-demand planes.
+/// Scopes do not nest: an inner scope replaces the outer for its duration and restores it.
+pub fn with_on_demand_kv<R>(initial_rows: usize, f: impl FnOnce() -> R) -> (R, usize) {
+    let prev = ON_DEMAND_SCOPE.with(|s| s.replace(Some((initial_rows, 0))));
+    let out = f();
+    let count = ON_DEMAND_SCOPE
+        .with(|s| s.replace(prev))
+        .map_or(0, |(_, n)| n);
+    (out, count)
+}
+
+/// The ambient scope's initial rows, when construction is inside `with_on_demand_kv`.
+pub fn on_demand_initial_rows() -> Option<usize> {
+    ON_DEMAND_SCOPE.with(|s| s.get().map(|(rows, _)| rows))
+}
+
+/// Count one on-demand plane against the ambient scope (allocation sites call it).
+pub fn note_on_demand_plane() {
+    ON_DEMAND_SCOPE.with(|s| {
+        if let Some((rows, n)) = s.get() {
+            s.set(Some((rows, n + 1)));
+        }
+    });
+}
+
 pub struct KvPlane {
     operand: Option<CudaSlice<u8>>,
     mapping: Option<Mapping>,
+    /// On-demand VMM storage (WP-B day 37, `MEMRA_KV_ALLOCATOR=vmm`): the full capacity is a
+    /// reserved virtual range and only `ensure_mapped` extents are backed. Exclusive with
+    /// `mapping`; the gate-only demote/restore arms refuse it.
+    on_demand: Option<OnDemand>,
     suspended: Option<Range<usize>>,
 }
 impl From<CudaSlice<u8>> for KvPlane {
@@ -184,6 +898,7 @@ impl From<CudaSlice<u8>> for KvPlane {
         Self {
             operand: Some(operand),
             mapping: None,
+            on_demand: None,
             suspended: None,
         }
     }
@@ -222,21 +937,117 @@ impl KvPlane {
             .slice_mut(bounds)
     }
     pub fn is_vmm(&self) -> bool {
-        self.mapping.is_some()
+        self.mapping.is_some() || self.on_demand.is_some()
+    }
+    /// On-demand VMM storage: the operand's upper rows are backed only once `ensure_mapped`
+    /// has covered them. No consumer may touch bytes past `mapped_bytes()`.
+    pub fn is_on_demand(&self) -> bool {
+        self.on_demand.is_some()
     }
     pub fn capacity_bytes(&self) -> usize {
         self.operand.as_ref().expect("owned operand").len()
     }
     pub fn granularity(&self) -> Option<usize> {
-        self.mapping.as_ref().map(|m| m.granularity)
+        self.mapping
+            .as_ref()
+            .map(|m| m.granularity)
+            .or(self.on_demand.as_ref().map(|o| o.shared.granularity))
     }
     pub fn virtual_address(&self) -> Option<u64> {
-        self.mapping.as_ref().map(|m| m.base)
+        self.mapping
+            .as_ref()
+            .map(|m| m.base)
+            .or(self.on_demand.as_ref().map(|o| o.shared.base))
     }
     pub fn physical_bytes(&self) -> usize {
+        if let Some(o) = self.on_demand.as_ref() {
+            return o.physical_bytes();
+        }
         self.mapping.as_ref().map_or(self.capacity_bytes(), |m| {
             m.chunks.iter().filter(|c| c.handle.is_some()).count() * m.granularity
         })
+    }
+    /// Bytes from offset 0 that are mapped and not pending release: what consumers may touch.
+    /// A pooled or fully mapped plane reports its whole capacity.
+    pub fn mapped_bytes(&self) -> usize {
+        self.on_demand.as_ref().map_or(self.capacity_bytes(), |o| {
+            o.live_bytes().min(o.shared.capacity)
+        })
+    }
+    /// The on-demand plane's reserved range; a pooled or fully mapped plane reports its
+    /// physical bytes.
+    pub fn reserved_bytes(&self) -> usize {
+        self.on_demand
+            .as_ref()
+            .map_or(self.physical_bytes(), |o| o.shared.reserved)
+    }
+    /// On-demand planes: back `[0, bytes)` (whole granules, capped at the reserved range),
+    /// cancelling any pending release of an extent inside it first. Returns the grow event,
+    /// or `None` when the range was already mapped. Pooled and fully mapped planes: `None`.
+    pub fn ensure_mapped(&mut self, bytes: usize) -> Result<Option<GrowEvent>> {
+        match self.on_demand.as_mut() {
+            Some(o) => o.ensure(bytes, GrowClass::Ensure),
+            None => Ok(None),
+        }
+    }
+    /// On-demand planes: every extent wholly past `keep_bytes` (rounded up to a granule) is
+    /// released at a later `reap`, once a fence the plane records now, under its lock, completes.
+    /// Returns the bytes scheduled.
+    pub fn release_beyond(&mut self, keep_bytes: usize) -> usize {
+        self.on_demand
+            .as_mut()
+            .map_or(0, |o| o.request_release_beyond(keep_bytes))
+    }
+    /// On-demand planes: unmap and release the tail extents whose release event completed.
+    pub fn reap(&mut self) -> Result<usize> {
+        self.on_demand.as_mut().map_or(Ok(0), OnDemand::reap)
+    }
+    /// Reserve `capacity` bytes of virtual range and back only `[0, initial)` (whole granules).
+    /// The operand spans the whole capacity; nothing past `mapped_bytes()` may be touched.
+    pub fn vmm_on_demand(stream: Arc<CudaStream>, capacity: usize, initial: usize) -> Result<Self> {
+        stream.context().bind_to_thread()?;
+        let device = cudarc::driver::result::device::get(stream.context().ordinal() as i32)?;
+        let granularity = vmm_granularity(device)?;
+        let reserved = rounded(capacity, granularity)?;
+        let mut base = 0;
+        // SAFETY: valid output pointer, aligned nonzero size; no requested fixed address.
+        unsafe { sys::cuMemAddressReserve(&mut base, reserved, granularity, 0, 0).result()? };
+        let od = OnDemand {
+            shared: Arc::new(OdShared {
+                base,
+                reserved,
+                capacity,
+                granularity,
+                driver: Box::new(CudaVmmDriver {
+                    device,
+                    stream: stream.clone(),
+                }),
+                state: Mutex::new(OdState {
+                    extents: Vec::new(),
+                    want: 0,
+                    dead: false,
+                    mapper_error: None,
+                    queued: false,
+                }),
+            }),
+        };
+        // SAFETY (the lead-approved constructor exception of `vmm`): base is our reserved range
+        // of at least `capacity` bytes. KvPlane never exports ownership, never lets a consumer
+        // past `mapped_bytes()` through `ensure_mapped`'s contract, and Drop leaks the operand
+        // BEFORE the range is released (never cudaFreeAsync).
+        let operand = unsafe { stream.upgrade_device_ptr::<u8>(base, capacity) };
+        let mut plane = Self {
+            operand: Some(operand),
+            mapping: None,
+            on_demand: Some(od),
+            suspended: None,
+        };
+        if initial > 0 {
+            if let Some(o) = plane.on_demand.as_mut() {
+                o.ensure(initial, GrowClass::Build)?;
+            }
+        }
+        Ok(plane)
     }
     /// Only pooled storage may transfer its operand out of this owner.
     pub fn into_pooled(mut self) -> Result<CudaSlice<u8>> {
@@ -303,6 +1114,7 @@ impl KvPlane {
         let mut plane = Self {
             operand: Some(operand),
             mapping: Some(mapping),
+            on_demand: None,
             suspended: None,
         };
         stream.memset_zeros(&mut plane.kv_view_mut())?;
@@ -401,10 +1213,13 @@ impl KvPlane {
 }
 impl Drop for KvPlane {
     fn drop(&mut self) {
-        if self.mapping.is_some() {
+        if self.mapping.is_some() || self.on_demand.is_some() {
             if let Some(operand) = self.operand.take() {
                 operand.leak();
             }
+        }
+        if let Some(od) = self.on_demand.take() {
+            od.bury();
         }
         // Pooled operand drops normally; VMM Mapping drops only after operand is disarmed.
     }
@@ -453,6 +1268,356 @@ mod tests {
         }
         assert!(validate_capabilities(1, 2 << 20).is_ok());
     }
+    // ---- on-demand planes against a fake driver (WP-B day 37, DAY37 1.6 CPU clauses) ----
+
+    use std::sync::atomic::AtomicBool;
+
+    /// Globals (placement, faults, the graveyard) are process-wide: tests that touch them take
+    /// this lock so they do not interleave.
+    static GLOBALS: Mutex<()> = Mutex::new(());
+
+    struct FakeFence(AtomicBool);
+    impl ReleaseFence for FakeFence {
+        fn is_complete(&self) -> bool {
+            self.0.load(Ordering::SeqCst)
+        }
+        fn wait(&self) -> Result<()> {
+            self.0.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct FakeDriver {
+        calls: Mutex<Vec<String>>,
+        next_handle: AtomicU64,
+        fail_map: AtomicBool,
+        fences: Mutex<Vec<Arc<FakeFence>>>,
+        key: usize,
+    }
+    impl FakeDriver {
+        fn log(&self, c: String) {
+            self.calls.lock().unwrap().push(c);
+        }
+    }
+    impl VmmDriver for Arc<FakeDriver> {
+        fn create(&self, size: usize) -> Result<u64> {
+            let h = self.next_handle.fetch_add(1, Ordering::SeqCst) + 1;
+            self.log(format!("create {size} -> {h}"));
+            Ok(h)
+        }
+        fn map(&self, address: u64, size: usize, handle: u64) -> Result<()> {
+            if self.fail_map.load(Ordering::SeqCst) {
+                self.log(format!("map {address} {size} {handle} FAIL"));
+                return Err("fake map failure".into());
+            }
+            self.log(format!("map {address} {size} {handle}"));
+            Ok(())
+        }
+        fn set_access(&self, address: u64, size: usize) -> Result<()> {
+            self.log(format!("access {address} {size}"));
+            Ok(())
+        }
+        fn zero(&self, address: u64, bytes: usize) -> Result<()> {
+            self.log(format!("zero {address} {bytes}"));
+            Ok(())
+        }
+        fn unmap(&self, address: u64, size: usize) -> Result<()> {
+            self.log(format!("unmap {address} {size}"));
+            Ok(())
+        }
+        fn release(&self, handle: u64) -> Result<()> {
+            self.log(format!("release {handle}"));
+            Ok(())
+        }
+        fn address_free(&self, base: u64, size: usize) -> Result<()> {
+            self.log(format!("free {base} {size}"));
+            Ok(())
+        }
+        fn fence(&self) -> Option<Arc<dyn ReleaseFence>> {
+            let f = Arc::new(FakeFence(AtomicBool::new(false)));
+            self.fences.lock().unwrap().push(f.clone());
+            Some(f)
+        }
+        fn synchronize(&self) -> Result<()> {
+            Ok(())
+        }
+        fn mapper_key(&self) -> usize {
+            self.key
+        }
+    }
+
+    const G: usize = 2 << 20;
+
+    fn fake_plane(capacity: usize, key: usize) -> (OnDemand, Arc<FakeDriver>) {
+        let drv = Arc::new(FakeDriver {
+            key,
+            ..FakeDriver::default()
+        });
+        let od = OnDemand {
+            shared: Arc::new(OdShared {
+                base: 1 << 40,
+                reserved: rounded(capacity, G).unwrap(),
+                capacity,
+                granularity: G,
+                driver: Box::new(drv.clone()),
+                state: Mutex::new(OdState {
+                    extents: Vec::new(),
+                    want: 0,
+                    dead: false,
+                    mapper_error: None,
+                    queued: false,
+                }),
+            }),
+        };
+        (od, drv)
+    }
+
+    #[test]
+    fn backed_need_is_whole_granules_capped_at_the_reservation() {
+        assert_eq!(backed_need(0, G, 10 * G), 0);
+        assert_eq!(backed_need(1, G, 10 * G), G);
+        assert_eq!(backed_need(G, G, 10 * G), G);
+        assert_eq!(backed_need(G + 1, G, 10 * G), 2 * G);
+        assert_eq!(backed_need(100 * G, G, 10 * G), 10 * G);
+    }
+
+    #[test]
+    fn inline_grows_map_one_extent_per_call_at_the_end_and_zero_the_operand_rows() {
+        let _g = GLOBALS.lock().unwrap_or_else(|p| p.into_inner());
+        vmm_set_grow_placement(VmmGrowPlacement::Inline);
+        vmm_set_faults(None);
+        // Capacity is not a whole number of granules: the last extent's fill stops at it.
+        let cap = 5 * G - 100;
+        let (mut od, drv) = fake_plane(cap, 901);
+        let first = od.ensure(G + 7, GrowClass::Build).unwrap().unwrap();
+        assert_eq!((first.offset, first.bytes, first.mapped), (0, 2 * G, 2 * G));
+        assert!(!first.waited);
+        // Inside the backed prefix: nothing.
+        assert!(od.ensure(2 * G, GrowClass::Ensure).unwrap().is_none());
+        // Past it: one new extent at the end, to the cap.
+        let second = od.ensure(100 * G, GrowClass::Ensure).unwrap().unwrap();
+        assert_eq!(
+            (second.offset, second.bytes, second.mapped),
+            (2 * G, 3 * G, 5 * G)
+        );
+        assert_eq!(od.physical_bytes(), 5 * G);
+        assert_eq!(od.live_bytes(), 5 * G);
+        let calls = drv.calls.lock().unwrap().clone();
+        let base = 1u64 << 40;
+        assert_eq!(
+            calls,
+            vec![
+                format!("create {} -> 1", 2 * G),
+                format!("map {base} {} 1", 2 * G),
+                format!("access {base} {}", 2 * G),
+                format!("zero {base} {}", 2 * G),
+                format!("create {} -> 2", 3 * G),
+                format!("map {} {} 2", base + 2 * G as u64, 3 * G),
+                format!("access {} {}", base + 2 * G as u64, 3 * G),
+                format!("zero {} {}", base + 2 * G as u64, 3 * G - 100),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_release_waits_for_its_fence_and_a_resume_cancels_it() {
+        let _g = GLOBALS.lock().unwrap_or_else(|p| p.into_inner());
+        vmm_set_grow_placement(VmmGrowPlacement::Inline);
+        vmm_set_faults(None);
+        let (mut od, drv) = fake_plane(10 * G, 902);
+        od.ensure(2 * G, GrowClass::Build).unwrap();
+        od.ensure(4 * G, GrowClass::Ensure).unwrap();
+        od.ensure(6 * G, GrowClass::Ensure).unwrap();
+        // Keep 2 granules plus a byte: the extent at [2G, 4G) is partly needed and stays; the
+        // one at [4G, 6G) is wholly past and is scheduled.
+        assert_eq!(od.request_release_beyond(3 * G + 1), 2 * G);
+        let f = drv.fences.lock().unwrap().last().unwrap().clone();
+        assert_eq!(od.live_bytes(), 4 * G);
+        assert_eq!(od.physical_bytes(), 6 * G);
+        // Fence incomplete: the reap releases nothing.
+        assert_eq!(od.reap().unwrap(), 0);
+        f.0.store(true, Ordering::SeqCst);
+        assert_eq!(od.reap().unwrap(), 2 * G);
+        assert_eq!(od.physical_bytes(), 4 * G);
+        assert!(
+            drv.calls
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|c| c.starts_with("unmap"))
+        );
+        // Schedule again, then a resume needs the rows before the fence completes: cancelled,
+        // and the completed fence then releases nothing.
+        assert_eq!(od.request_release_beyond(G), 2 * G);
+        let f2 = drv.fences.lock().unwrap().last().unwrap().clone();
+        assert!(od.ensure(4 * G, GrowClass::Ensure).unwrap().is_none());
+        assert_eq!(od.live_bytes(), 4 * G);
+        f2.0.store(true, Ordering::SeqCst);
+        assert_eq!(od.reap().unwrap(), 0);
+        assert_eq!(od.physical_bytes(), 4 * G);
+    }
+
+    #[test]
+    fn a_failed_map_undoes_its_create_and_leaves_no_extent() {
+        let _g = GLOBALS.lock().unwrap_or_else(|p| p.into_inner());
+        vmm_set_grow_placement(VmmGrowPlacement::Inline);
+        vmm_set_faults(None);
+        let (mut od, drv) = fake_plane(4 * G, 903);
+        drv.fail_map.store(true, Ordering::SeqCst);
+        assert!(od.ensure(G, GrowClass::Ensure).is_err());
+        assert_eq!(od.physical_bytes(), 0);
+        let calls = drv.calls.lock().unwrap().clone();
+        assert_eq!(calls.last().unwrap(), "release 1");
+        drv.fail_map.store(false, Ordering::SeqCst);
+        assert!(od.ensure(G, GrowClass::Ensure).unwrap().is_some());
+        assert_eq!(od.physical_bytes(), G);
+    }
+
+    #[test]
+    fn the_fault_door_fails_the_named_grow_once_before_any_driver_call() {
+        let _g = GLOBALS.lock().unwrap_or_else(|p| p.into_inner());
+        vmm_set_grow_placement(VmmGrowPlacement::Inline);
+        assert_eq!(
+            VmmFaults::parse("build:2, ensure:1,mapper:all"),
+            Some(VmmFaults {
+                build: vec![2],
+                ensure: vec![1],
+                mapper_all: true
+            })
+        );
+        assert_eq!(VmmFaults::parse("grow:1"), None);
+        assert_eq!(VmmFaults::parse("ensure:0"), None);
+        assert_eq!(VmmFaults::parse("ensure:x"), None);
+        BUILD_SEQ.store(0, Ordering::SeqCst);
+        ENSURE_SEQ.store(0, Ordering::SeqCst);
+        vmm_set_faults(Some(VmmFaults {
+            build: vec![],
+            ensure: vec![1],
+            mapper_all: false,
+        }));
+        let (mut od, drv) = fake_plane(4 * G, 904);
+        let err = od.ensure(G, GrowClass::Ensure).unwrap_err().to_string();
+        assert!(err.contains("OUT_OF_MEMORY"), "{err}");
+        assert!(drv.calls.lock().unwrap().is_empty());
+        // Once only: the next ensure grows.
+        assert!(od.ensure(G, GrowClass::Ensure).unwrap().is_some());
+        vmm_set_faults(None);
+    }
+
+    #[test]
+    fn helper_placement_premaps_two_granules_past_the_need_and_the_owner_grows_when_behind() {
+        let _g = GLOBALS.lock().unwrap_or_else(|p| p.into_inner());
+        vmm_set_grow_placement(VmmGrowPlacement::Helper);
+        vmm_set_faults(None);
+        let (mut od, _drv) = fake_plane(20 * G, 905);
+        // Nothing backed: the owner grows inline (waited) to the need, and the mapper is
+        // handed the rest up to need + 2 granules.
+        let ev = od.ensure(G, GrowClass::Ensure).unwrap().unwrap();
+        assert!(ev.waited);
+        assert_eq!(ev.mapped, G);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while od.physical_bytes() < 3 * G {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the mapper never caught up"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(od.physical_bytes(), 3 * G);
+        // Within the pre-mapped headroom: no owner grow.
+        assert!(od.ensure(2 * G, GrowClass::Ensure).unwrap().is_none());
+        // A park trim pulls `want` back so the mapper cannot map past it after the fence.
+        od.request_release_beyond(G);
+        assert_eq!(od.shared.lock().want, G);
+        vmm_set_grow_placement(VmmGrowPlacement::Inline);
+    }
+
+    #[test]
+    fn a_mapper_fault_leaves_the_owner_behind_and_growing_inline() {
+        let _g = GLOBALS.lock().unwrap_or_else(|p| p.into_inner());
+        vmm_set_grow_placement(VmmGrowPlacement::Helper);
+        vmm_set_faults(Some(VmmFaults {
+            build: vec![],
+            ensure: vec![],
+            mapper_all: true,
+        }));
+        let (mut od, _drv) = fake_plane(20 * G, 906);
+        let ev = od.ensure(G, GrowClass::Ensure).unwrap().unwrap();
+        assert!(ev.waited);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert_eq!(od.physical_bytes(), G, "the faulted mapper mapped nothing");
+        assert!(od.shared.lock().mapper_error.is_some());
+        let ev = od.ensure(2 * G, GrowClass::Ensure).unwrap().unwrap();
+        assert!(ev.waited);
+        assert_eq!(ev.mapped, 2 * G);
+        vmm_set_faults(None);
+        vmm_set_grow_placement(VmmGrowPlacement::Inline);
+    }
+
+    #[test]
+    fn a_dropped_plane_goes_to_the_graveyard_and_frees_its_range_after_its_fence() {
+        let _g = GLOBALS.lock().unwrap_or_else(|p| p.into_inner());
+        vmm_set_grow_placement(VmmGrowPlacement::Inline);
+        vmm_set_faults(None);
+        // Drain anything an earlier test left.
+        let _ = vmm_reap_graveyard_blocking();
+        let (mut od, drv) = fake_plane(8 * G, 907);
+        od.ensure(3 * G, GrowClass::Build).unwrap();
+        od.ensure(5 * G, GrowClass::Ensure).unwrap();
+        let shared = od.shared.clone();
+        od.bury();
+        assert!(shared.lock().dead);
+        assert_eq!(shared.lock().want, 0);
+        assert!(vmm_graveyard_bytes() >= 5 * G);
+        // Fence incomplete: nothing released, the range is not freed.
+        let (released, pending, _) = vmm_reap_graveyard().unwrap();
+        assert_eq!(released, 0);
+        assert!(pending >= 1);
+        assert!(
+            !drv.calls
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|c| c.starts_with("free"))
+        );
+        for f in drv.fences.lock().unwrap().iter() {
+            f.0.store(true, Ordering::SeqCst);
+        }
+        let (released, _, _) = vmm_reap_graveyard().unwrap();
+        assert_eq!(released, 5 * G);
+        let calls = drv.calls.lock().unwrap().clone();
+        let n = calls.len();
+        // The tail extent first, then the first, then the range.
+        assert_eq!(
+            calls[n - 5],
+            format!("unmap {} {}", (1u64 << 40) + 3 * G as u64, 2 * G)
+        );
+        assert_eq!(calls[n - 1], format!("free {} {}", 1u64 << 40, 8 * G));
+    }
+
+    #[test]
+    fn the_ambient_scope_counts_its_planes_and_restores_the_outer_scope() {
+        assert_eq!(on_demand_initial_rows(), None);
+        let ((), n) = with_on_demand_kv(100, || {
+            assert_eq!(on_demand_initial_rows(), Some(100));
+            note_on_demand_plane();
+            let ((), inner) = with_on_demand_kv(7, || {
+                assert_eq!(on_demand_initial_rows(), Some(7));
+                note_on_demand_plane();
+                note_on_demand_plane();
+            });
+            assert_eq!(inner, 2);
+            assert_eq!(on_demand_initial_rows(), Some(100));
+            note_on_demand_plane();
+        });
+        assert_eq!(n, 2);
+        assert_eq!(on_demand_initial_rows(), None);
+        // Outside a scope a note counts nothing.
+        note_on_demand_plane();
+        assert_eq!(on_demand_initial_rows(), None);
+    }
+
     #[test]
     fn edges_empty_and_refusals() {
         assert_eq!(whole_chunks(1..7, 4).unwrap(), 1..1);

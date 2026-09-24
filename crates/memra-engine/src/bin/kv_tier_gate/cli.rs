@@ -5,6 +5,8 @@ use std::path::PathBuf;
 pub enum KvAllocator {
     Pooled,
     Vmm,
+    /// WP-B day 37: on-demand VMM planes (`memra_kv::with_on_demand_kv`), `--case grow` only.
+    VmmOnDemand,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -23,7 +25,7 @@ pub struct Args {
     pub out: PathBuf,
 }
 
-pub const USAGE: &str = "kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|32768 --tiers host|host,nvme --same-program [--kv-allocator pooled|vmm] [--reclaim-diagnostic [--reclaim-cycles N]] [--fault cancel-demote|cancel-restore|corrupt-host|missing-host|host-budget-short|device-short|require-resident] --out <new-directory>";
+pub const USAGE: &str = "kv-tier-gate --artifact <gguf> --case baseline|active|prefix|grow --context 8192|32768 --tiers host|host,nvme --same-program [--kv-allocator pooled|vmm|vmm-ondemand] [--reclaim-diagnostic [--reclaim-cycles N]] [--fault cancel-demote|cancel-restore|corrupt-host|missing-host|host-budget-short|device-short|require-resident] --out <new-directory>";
 const CYCLES_REFUSAL: &str = "REFUSED: --reclaim-cycles requires an integer count >= 2";
 
 pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
@@ -109,7 +111,12 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     {
         "pooled" => KvAllocator::Pooled,
         "vmm" => KvAllocator::Vmm,
-        _ => return Err("REFUSED: unknown KV allocator (expected pooled or vmm)".into()),
+        "vmm-ondemand" => KvAllocator::VmmOnDemand,
+        _ => {
+            return Err(
+                "REFUSED: unknown KV allocator (expected pooled, vmm or vmm-ondemand)".into(),
+            );
+        }
     };
     if reclaim_cycles.is_some() && kv_allocator != KvAllocator::Vmm {
         return Err(
@@ -120,8 +127,16 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut get = |key: &str| fields.remove(key).ok_or_else(|| format!("missing {key}"));
     let artifact = get("--artifact")?.into();
     let case = get("--case")?;
-    if !["baseline", "active", "prefix"].contains(&case.as_str()) {
-        return Err("case must be baseline, active or prefix".into());
+    if !["baseline", "active", "prefix", "grow"].contains(&case.as_str()) {
+        return Err("case must be baseline, active, prefix or grow".into());
+    }
+    // WP-B day 37: the grow series and the on-demand allocator come together, and only
+    // together; the case runs its own pooled arm in the same process for the identity term.
+    if (case == "grow") != (kv_allocator == KvAllocator::VmmOnDemand) {
+        return Err(
+            "REFUSED: --case grow requires --kv-allocator vmm-ondemand, and that allocator is bound to --case grow"
+                .into(),
+        );
     }
     let context = match get("--context")?.as_str() {
         "8192" => 8192,
@@ -138,6 +153,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         && (kv_allocator != KvAllocator::Vmm || case != "active" || tiers != "host")
     {
         return Err("REFUSED: reclaim diagnostic requires active VMM host mode".into());
+    }
+    if case == "grow" && (reclaim_diagnostic || fault.is_some() || tiers != "host") {
+        return Err("REFUSED: the grow series takes no diagnostic, fault or tier route".into());
     }
     if fault.is_some() {
         // A fault arm is a door on the active roundtrip: anywhere else it is a usage error.
@@ -187,6 +205,43 @@ pub fn diagnostic(error: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    fn argv(extra: &[&str]) -> Vec<String> {
+        let mut v: Vec<String> = [
+            "--artifact",
+            "m.gguf",
+            "--context",
+            "32768",
+            "--tiers",
+            "host",
+            "--same-program",
+            "--out",
+            "o",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        v.extend(extra.iter().map(|s| s.to_string()));
+        v
+    }
+
+    #[test]
+    fn the_grow_case_and_the_on_demand_allocator_come_together() {
+        let ok = super::parse(argv(&["--case", "grow", "--kv-allocator", "vmm-ondemand"])).unwrap();
+        assert_eq!(ok.case, "grow");
+        assert_eq!(ok.kv_allocator, super::KvAllocator::VmmOnDemand);
+        for bad in [
+            &["--case", "grow"][..],
+            &["--case", "grow", "--kv-allocator", "vmm"][..],
+            &["--case", "baseline", "--kv-allocator", "vmm-ondemand"][..],
+            &["--case", "active", "--kv-allocator", "vmm-ondemand"][..],
+        ] {
+            assert!(
+                super::parse(argv(bad)).unwrap_err().starts_with("REFUSED:"),
+                "{bad:?}"
+            );
+        }
+    }
+
     #[test]
     fn collector_refusal_is_unwrapped_but_failures_are_not_refusals() {
         assert_eq!(

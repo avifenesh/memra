@@ -2167,6 +2167,18 @@ pub struct Metrics {
     pub cuda_pool_reserved_bytes: u64,
     pub cuda_pool_used_bytes: u64,
     pub cuda_pool_cached_bytes: u64,
+    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): on-demand K/V planes held by active and parked
+    /// sessions, backed and reserved; their owed growth (active only); the graveyard's pending
+    /// bytes; process counters. All 0 with the door off.
+    pub kv_vmm_mapped_bytes: u64,
+    pub kv_vmm_reserved_bytes: u64,
+    pub kv_vmm_owed_bytes: u64,
+    pub kv_vmm_graveyard_bytes: u64,
+    pub kv_vmm_grows_total: u64,
+    pub kv_vmm_mapper_grows_total: u64,
+    pub kv_vmm_grow_waits_total: u64,
+    pub kv_vmm_grow_failures_total: u64,
+    pub kv_vmm_released_bytes_total: u64,
     /// LCP length histogram (lane/cache-metering): one sample per prefix-cache PROBE —
     /// on a hit, the served entry's token length; on a miss, best_lcp against the pool
     /// (already computed there for the split-learning signal, so the histogram adds no
@@ -6397,6 +6409,192 @@ fn pending_seed_bytes(active: &[Session]) -> usize {
             }
         })
         .fold(0usize, usize::saturating_add)
+}
+
+/// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`, DAY37 1.3): the routes whose engine calls the tick-top
+/// ensure bounds. A model is covered when it runs on one device (no ppN stage ownership, no
+/// model-owned peer engines) and its plan has no SWA ring and no latent planes; every other
+/// model keeps pooled planes under the door.
+fn vmm_route_covered(engine: &Engine, lm: &LoadedModel) -> bool {
+    let n_trunk = (lm.model.cfg.n_layer - lm.model.cfg.nextn_predict_layers) as usize;
+    memra_engine::pp::pp_cuts(n_trunk).is_none()
+        && lm.model.owned_engines(engine).len() <= 1
+        && !lm.model.plan.layers.iter().any(|layer| {
+            matches!(
+                layer.state,
+                memra_gguf::model_plan::StatePlan::SlidingKvCache { .. }
+                    | memra_gguf::model_plan::StatePlan::LatentKvCache { .. }
+            )
+        })
+}
+
+/// The spec burst cadence (`MEMRA_SPEC_BURST`, default 32), the rows one spec burst targets.
+fn vmm_spec_burst_t() -> usize {
+    std::env::var("MEMRA_SPEC_BURST")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(32)
+}
+
+/// The construction scope's initial rows for a covered cache of `cap` rows, or `None` when the
+/// door is off or the model is not covered (DAY37 1.2 ensure point 1).
+fn vmm_scope(
+    engine: &Engine,
+    lm: &LoadedModel,
+    cap: usize,
+    prompt_rows: usize,
+    spec_k: usize,
+) -> Option<usize> {
+    if !crate::kv_vmm::armed() || !vmm_route_covered(engine, lm) {
+        return None;
+    }
+    // One tick of either route: the larger of a spec burst and a plain step.
+    let tick = crate::kv_vmm::tick_rows(true, vmm_spec_burst_t(), spec_k, serve_async_chain_k())
+        .max(crate::kv_vmm::tick_rows(false, 0, 0, serve_async_chain_k()));
+    Some(crate::kv_vmm::initial_rows(cap, prompt_rows, tick))
+}
+
+/// Build a cache under the on-demand scope (DAY37 1.2's runtime census): the on-demand planes
+/// the scope allocated must all be reachable by the cache's own ensure visitor, or the cache is
+/// refused before any engine call. `scope == None` is the pooled program, byte for byte.
+fn vmm_build_cache(
+    scope: Option<usize>,
+    build: impl FnOnce() -> Result<Cache, Box<dyn std::error::Error>>,
+) -> Result<Cache, Box<dyn std::error::Error>> {
+    let Some(initial) = scope else {
+        return build();
+    };
+    let (built, count) = memra_engine::cache::with_on_demand_kv(initial, build);
+    let cache = built?;
+    if cache.on_demand_planes() != count {
+        return Err(format!(
+            "vmm: on-demand plane not reachable by ensure (scope allocated {count}, cache reaches {})",
+            cache.on_demand_planes()
+        )
+        .into());
+    }
+    Ok(cache)
+}
+
+/// The spec-session twin of [`vmm_build_cache`]: trunk cache and draft scratch together.
+fn vmm_build_spec<T>(
+    scope: Option<usize>,
+    build: impl FnOnce() -> Result<T, Box<dyn std::error::Error>>,
+    planes: impl Fn(&T) -> usize,
+) -> Result<T, Box<dyn std::error::Error>> {
+    let Some(initial) = scope else {
+        return build();
+    };
+    let (built, count) = memra_engine::cache::with_on_demand_kv(initial, build);
+    let value = built?;
+    if planes(&value) != count {
+        return Err(format!(
+            "vmm: on-demand plane not reachable by ensure (scope allocated {count}, session reaches {})",
+            planes(&value)
+        )
+        .into());
+    }
+    Ok(value)
+}
+
+/// Back one session's on-demand planes through its bound (DAY37 1.2 ensure points 2 and 3):
+/// the spec session's trunk and scratch, and `s.cache`, each against its own position. Returns
+/// every grow as `(label, rows, event)`; a pooled session returns nothing.
+/// Every grow of one ensure: `(plane label, bound rows, event)`.
+type VmmGrows = Vec<(String, usize, memra_engine::cache::GrowEvent)>;
+
+fn vmm_ensure_session(s: &mut Session) -> Result<VmmGrows, Box<dyn std::error::Error>> {
+    let mut out = Vec::new();
+    let floor = s.vmm_floor_rows;
+    if let Some(sp) = s.spec.as_mut()
+        && sp.kv_on_demand_planes() > 0
+    {
+        let tick =
+            crate::kv_vmm::tick_rows(true, vmm_spec_burst_t(), s.spec_k, serve_async_chain_k());
+        let rows = crate::kv_vmm::bound_rows(sp.cache_max_ctx(), sp.kv_position(), floor, tick);
+        for (label, ev) in sp.ensure_kv_rows(rows)? {
+            out.push((label, rows, ev));
+        }
+    }
+    if let Some(c) = s.cache.as_mut()
+        && c.on_demand_planes() > 0
+    {
+        let tick = crate::kv_vmm::tick_rows(false, 0, 0, serve_async_chain_k());
+        let rows = crate::kv_vmm::bound_rows(c.max_ctx, c.pos, floor, tick);
+        for (label, ev) in c.ensure_kv_rows(rows)? {
+            out.push((label, rows, ev));
+        }
+    }
+    Ok(out)
+}
+
+/// Owed growth (DAY37 1.4): the reserved-but-unbacked bytes of every active session's on-demand
+/// planes. Pooled planes are allocated whole at admission, so the pooled gate already sees them;
+/// the armed gate reduces its readings by this so it sees the same future footprint.
+fn vmm_owed_bytes(active: &[Session]) -> usize {
+    active
+        .iter()
+        .map(|s| {
+            let (m1, r1) = s.spec.as_ref().map_or((0, 0), |sp| sp.kv_on_demand_bytes());
+            let (m2, r2) = s.cache.as_ref().map_or((0, 0), |c| c.kv_on_demand_bytes());
+            r1.saturating_sub(m1).saturating_add(r2.saturating_sub(m2))
+        })
+        .sum()
+}
+
+/// Backed and reserved bytes of every on-demand plane the worker holds: active sessions and the
+/// two parked pools (for `/metrics`).
+fn vmm_held_bytes(
+    active: &[Session],
+    reuse: &HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &HashMap<PoolKey, Vec<SpecReuseEntry>>,
+) -> (usize, usize) {
+    let mut acc = (0usize, 0usize);
+    let mut add = |(m, r): (usize, usize)| {
+        acc.0 += m;
+        acc.1 += r;
+    };
+    for s in active {
+        if let Some(sp) = s.spec.as_ref() {
+            add(sp.kv_on_demand_bytes());
+        }
+        if let Some(c) = s.cache.as_ref() {
+            add(c.kv_on_demand_bytes());
+        }
+    }
+    for e in reuse.values().flatten() {
+        add(e.cache.kv_on_demand_bytes());
+    }
+    for e in spec_reuse.values().flatten() {
+        add(e.sess.kv_on_demand_bytes());
+    }
+    acc
+}
+
+/// The owner-tick reap (DAY37 addendum A): the graveyard and every parked session's released
+/// tails whose events completed. Returns the bytes released.
+fn vmm_reap_tick(
+    reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &mut HashMap<PoolKey, Vec<SpecReuseEntry>>,
+) -> usize {
+    let mut released = 0;
+    match memra_engine::cache::vmm_reap_graveyard() {
+        Ok((n, _, _)) => released += n,
+        Err(err) => eprintln!("[kv-vmm] graveyard reap failed (left pending): {err}"),
+    }
+    for e in reuse.values_mut().flatten() {
+        match e.cache.reap_kv() {
+            Ok(n) => released += n,
+            Err(err) => eprintln!("[kv-vmm] parked reap failed (left pending): {err}"),
+        }
+    }
+    for e in spec_reuse.values_mut().flatten() {
+        match e.sess.reap_kv() {
+            Ok(n) => released += n,
+            Err(err) => eprintln!("[kv-vmm] parked spec reap failed (left pending): {err}"),
+        }
+    }
+    released
 }
 
 fn admission_required(cost: usize, reserve: usize) -> usize {
@@ -17715,11 +17913,19 @@ fn host_restore_park_probe(
         );
         false
     };
-    let mut cache =
-        match memra_engine::pp::new_cache_planned(engine, &lm.model.cfg, &lm.model.plan, ctx_cap) {
-            Ok(c) => c,
-            Err(err) => return refuse(format!("session cache alloc failed: {err}")),
-        };
+    let mut cache = match vmm_build_cache(
+        vmm_scope(
+            engine,
+            lm,
+            ctx_cap,
+            req.prepared_prompt.as_ref().map_or(0, Vec::len),
+            0,
+        ),
+        || memra_engine::pp::new_cache_planned(engine, &lm.model.cfg, &lm.model.plan, ctx_cap),
+    ) {
+        Ok(c) => c,
+        Err(err) => return refuse(format!("session cache alloc failed: {err}")),
+    };
     {
         let e = &px.entries[&pool_key][i];
         if let Err(err) = prefix_restore_validate(&cache, e, &pool_key, e.pos, Some(&lm.model)) {
@@ -21587,6 +21793,10 @@ struct Session {
     /// `AdmissionBook` at `active.push` and released at `active.remove`; a step-OOM
     /// park releases too (its KV drops) and the replay re-books at re-admission.
     booked_kv_bytes: u64,
+    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): the rows this request's prompt occupies, the
+    /// floor of the tick-top ensure bound for its on-demand K/V planes (`kv_vmm::bound_rows`).
+    /// Set at admission, including a resume, to that request's prompt rows.
+    vmm_floor_rows: usize,
     /// D2 gap G5: this session's SHADOW kv_hat (P-tenant-p95 book). 0 whenever
     /// `MEMRA_ADMIT_PREDICT_SHADOW` is off.
     shadow_kv_hat: u64,
@@ -23584,6 +23794,37 @@ pub fn run(
     // same receipt the qualification env is derived from.
     let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::from_env();
     eprintln!("{}", admit_memory_cfg.boot_line());
+    // ON-DEMAND KV PLANES (WP-B day 37, door MEMRA_KV_ALLOCATOR=vmm, decide-by 2026-10-04,
+    // research/spill-b-20260919/DAY37.md). Read once here; an unknown value, or the door armed on
+    // a device without VMM support, refuses the boot instead of serving pooled under an ON line.
+    let kv_vmm_cfg =
+        match crate::kv_vmm::KvVmmConfig::from_env(&engine.ctx().name().unwrap_or_default()) {
+            Ok(cfg) => cfg,
+            Err(why) => {
+                let _ = ready_tx.send(Err(why));
+                return;
+            }
+        };
+    let kv_vmm_granularity = if kv_vmm_cfg.armed {
+        match memra_engine::cache::vmm_granularity_for(&engine.stream()) {
+            Ok(g) => Some(g),
+            Err(err) => {
+                let _ = ready_tx.send(Err(format!("MEMRA_KV_ALLOCATOR=vmm: {err}")));
+                return;
+            }
+        }
+    } else {
+        None
+    };
+    if kv_vmm_cfg.armed {
+        memra_engine::cache::vmm_set_grow_placement(kv_vmm_cfg.placement);
+        memra_engine::cache::vmm_set_faults(kv_vmm_cfg.faults.clone());
+    }
+    eprintln!("{}", kv_vmm_cfg.boot_line(kv_vmm_granularity));
+    if let Err(why) = crate::kv_vmm::install(kv_vmm_cfg) {
+        let _ = ready_tx.send(Err(why));
+        return;
+    }
     let mut admission_book = crate::admit_predict::AdmissionBook::default();
     let mut completion_history = crate::admit_predict::CompletionHistory::default();
     // AGENT-PAUSE DEMOTION (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, Arc E):
@@ -24686,6 +24927,16 @@ pub fn run(
                 };
                 let primary_device = engine.ctx().ordinal();
                 let pending_booked = pending_prime.saturating_add(pending_seed);
+                // OWED GROWTH (WP-B day 37, MEMRA_KV_ALLOCATOR=vmm, DAY37 1.4): an admitted
+                // on-demand session backs only the rows it has reached, so the live reading does
+                // not see the rest of the context the pooled allocator would already hold. Armed,
+                // every reading is reduced by that owed growth too. Unarmed it is 0.
+                let vmm_owed = if crate::kv_vmm::armed() {
+                    vmm_owed_bytes(&active)
+                } else {
+                    0
+                };
+                let pending_booked = pending_booked.saturating_add(vmm_owed);
                 let book =
                     move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);
                 let measured_headroom =
@@ -25692,6 +25943,20 @@ pub fn run(
                         )
                         .total();
                     }
+                    // WP-B day 37: the owed growth the gate reduced this admission's reading by.
+                    if crate::kv_vmm::armed() {
+                        let (m1, r1) = s.spec.as_ref().map_or((0, 0), |sp| sp.kv_on_demand_bytes());
+                        let (m2, r2) = s.cache.as_ref().map_or((0, 0), |c| c.kv_on_demand_bytes());
+                        eprintln!(
+                            "[kv-vmm] admit id={} owed_before={} session_mapped={} \
+                             session_reserved={} active={}",
+                            s.request_id,
+                            vmm_owed_bytes(&active),
+                            m1 + m2,
+                            r1 + r2,
+                            active.len()
+                        );
+                    }
                     admission_book.admit(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
                     active.push(s);
                 }
@@ -25756,6 +26021,109 @@ pub fn run(
             if s.tx.is_closed() {
                 abort_log(s);
                 finished.push(i);
+            }
+        }
+        // ON-DEMAND KV (WP-B day 37, MEMRA_KV_ALLOCATOR=vmm, DAY37 1.2 ensure point 2 and
+        // addendum A): the owner-tick reap, then every active on-demand session backed through
+        // its bound before the first engine call of this tick. A grow failure takes the reclaim
+        // retry (the graveyard's release events waited once, the prefix cache and one parked
+        // session evicted, the device pools trimmed back to the driver), then the step-OOM
+        // contract. Unarmed nothing here runs.
+        if crate::kv_vmm::armed() {
+            let reaped = vmm_reap_tick(&mut reuse, &mut spec_reuse);
+            if reaped > 0 {
+                eprintln!(
+                    "[kv-vmm] reap released={reaped} pending={}",
+                    memra_engine::cache::vmm_graveyard_bytes()
+                );
+            }
+            for (i, s) in active.iter_mut().enumerate() {
+                if finished.contains(&i) {
+                    continue;
+                }
+                let ensured = match vmm_ensure_session(s) {
+                    Ok(evs) => Ok(evs),
+                    Err(err) if is_cuda_oom(&err.to_string()) => {
+                        let _ = memra_engine::cache::vmm_reap_graveyard_blocking();
+                        let evicted_prefix = px.evict_all();
+                        let evicted_parked = evict_oldest_parked(
+                            &mut reuse,
+                            &mut spec_reuse,
+                            &mut dspark_reuse,
+                            &mut reuse_metrics,
+                        );
+                        let _ = memra_engine::cache::vmm_reap_graveyard_blocking();
+                        let _ = trim_model_device_pools(&engine, &loaded, "kv-vmm grow reclaim");
+                        eprintln!(
+                            "[kv-vmm] grow failed ({err}); reclaim-retry: evicted {evicted_prefix} \
+                             prefix entries and {} parked session(s); retrying once",
+                            usize::from(evicted_parked.is_some())
+                        );
+                        vmm_ensure_session(s)
+                    }
+                    Err(err) => Err(err),
+                };
+                match ensured {
+                    Ok(evs) => {
+                        for (label, rows, ev) in evs {
+                            eprintln!(
+                                "{}",
+                                crate::kv_vmm::grow_line(&s.request_id, &label, rows, &ev)
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        let oom = is_cuda_oom(&err.to_string());
+                        if oom
+                            && step_oom_parkable(
+                                s.generated.len(),
+                                s.tokens_emitted,
+                                s.oom_retries,
+                                step_oom_retries(),
+                            )
+                        {
+                            s.oom_retries += 1;
+                            s.oom_teardown = true;
+                            eprintln!(
+                                "[kv-vmm] ensure failed: parked session back to queue (model {}, \
+                                 retry {}/{}): {err}",
+                                s.model,
+                                s.oom_retries,
+                                step_oom_retries()
+                            );
+                            match park_requeue(&loaded, s) {
+                                Some(req) => {
+                                    n_step_oom_parks += 1;
+                                    reserve_internal_admission(req.lane);
+                                    requeue_oom.push_back(req);
+                                }
+                                None => {
+                                    let _ = s.tx.send(Event::Error(EngineError::engine(format!(
+                                        "step error: {err}"
+                                    ))));
+                                }
+                            }
+                        } else {
+                            if oom {
+                                s.oom_teardown = true;
+                            }
+                            eprintln!(
+                                "[kv-vmm] ensure failed: not parked (model {}, retries {}/{}, \
+                                 generated {}, streamed {}): reporting honestly: {err}",
+                                s.model,
+                                s.oom_retries,
+                                step_oom_retries(),
+                                s.generated.len(),
+                                s.tokens_emitted
+                            );
+                            quarantine_request_fault(s, err.as_ref());
+                            let _ = s.tx.send(Event::Error(EngineError::engine(format!(
+                                "step error: {err}"
+                            ))));
+                        }
+                        finished.push(i);
+                    }
+                }
             }
         }
         if !batching {
@@ -27472,6 +27840,31 @@ pub fn run(
             // length is a disconnect point, not a completion length (the D2 offline
             // history was built from completed rows only; aborts stay load-only).
             admission_book.retire(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
+            // WP-B day 37 (DAY37 A4): what an on-demand session backed against what it used.
+            if crate::kv_vmm::armed() {
+                let (sm, sr) = s.spec.as_ref().map_or((0, 0), |sp| sp.kv_on_demand_bytes());
+                let (cm, cr) = s.cache.as_ref().map_or((0, 0), |c| c.kv_on_demand_bytes());
+                let (su, ss) = s.spec.as_ref().map_or((0, 0), |sp| {
+                    sp.kv_on_demand_used_and_slack(crate::kv_vmm::SLACK)
+                });
+                let (cu, cs) = s.cache.as_ref().map_or((0, 0), |c| {
+                    c.kv_on_demand_used_and_slack(crate::kv_vmm::SLACK)
+                });
+                let planes = s.spec.as_ref().map_or(0, |sp| sp.kv_on_demand_planes())
+                    + s.cache.as_ref().map_or(0, |c| c.on_demand_planes());
+                if planes > 0 {
+                    eprintln!(
+                        "[kv-vmm] retire id={} planes={planes} mapped={} reserved={} used={} \
+                         slack_bytes={} booked={}",
+                        s.request_id,
+                        sm + cm,
+                        sr + cr,
+                        su + cu,
+                        ss + cs,
+                        s.booked_kv_bytes
+                    );
+                }
+            }
             if !s.oom_teardown && !s.aborted {
                 completion_history.record(
                     crate::auth::meter_key(&s.cache_ns),
@@ -27647,6 +28040,19 @@ pub fn run(
                         reuse_pool_per_namespace(),
                         reuse_pool_global_cap(),
                     ) {
+                        // ON-DEMAND KV (WP-B day 37, DAY37 1.1 park trim): the parked session
+                        // keeps its virtual range and captured graphs; extents wholly past its
+                        // position plus the slack go back behind a fence each plane records.
+                        if crate::kv_vmm::armed() && sess.kv_on_demand_planes() > 0 {
+                            let keep = sess.kv_position() + crate::kv_vmm::SLACK;
+                            let n = sess.release_kv_beyond_rows(keep);
+                            if n > 0 {
+                                eprintln!(
+                                    "[kv-vmm] trim id={} pool=spec keep_rows={keep} released={n}",
+                                    s.request_id
+                                );
+                            }
+                        }
                         spec_reuse
                             .entry(pool_key)
                             .or_default()
@@ -27775,7 +28181,7 @@ pub fn run(
                             // here and grows back to the resuming request's own cap at
                             // the admit probe. Flag off: the ladder-cap cache parks
                             // whole, byte-identical to today.
-                            let (cache, cap) = if kv_park_compact_on() {
+                            let (mut cache, cap) = if kv_park_compact_on() {
                                 compact_parked_plain_cache(
                                     &engine,
                                     &loaded[&s.model],
@@ -27786,6 +28192,18 @@ pub fn run(
                             } else {
                                 (cache, cap)
                             };
+                            // ON-DEMAND KV (WP-B day 37, DAY37 1.1 park trim): the plain twin of
+                            // the spec park's trim above.
+                            if crate::kv_vmm::armed() && cache.on_demand_planes() > 0 {
+                                let keep = cache.pos + crate::kv_vmm::SLACK;
+                                let n = cache.release_kv_beyond_rows(keep);
+                                if n > 0 {
+                                    eprintln!(
+                                        "[kv-vmm] trim id={} pool=plain keep_rows={keep} released={n}",
+                                        s.request_id
+                                    );
+                                }
+                            }
                             reuse.entry(pool_key).or_default().push(ReuseEntry {
                                 fed: s.fed,
                                 cache,
@@ -28128,6 +28546,20 @@ pub fn run(
             m.cuda_pool_reserved_bytes = pool_reserved as u64;
             m.cuda_pool_used_bytes = pool_used as u64;
             m.cuda_pool_cached_bytes = engine.pool_cached_bytes() as u64;
+            if crate::kv_vmm::armed() {
+                let (mapped, reserved) = vmm_held_bytes(&active, &reuse, &spec_reuse);
+                m.kv_vmm_mapped_bytes = mapped as u64;
+                m.kv_vmm_reserved_bytes = reserved as u64;
+                m.kv_vmm_owed_bytes = vmm_owed_bytes(&active) as u64;
+                m.kv_vmm_graveyard_bytes = memra_engine::cache::vmm_graveyard_bytes() as u64;
+                let (grows, mapper, waits, failures, released) =
+                    memra_engine::cache::vmm_counters();
+                m.kv_vmm_grows_total = grows;
+                m.kv_vmm_mapper_grows_total = mapper;
+                m.kv_vmm_grow_waits_total = waits;
+                m.kv_vmm_grow_failures_total = failures;
+                m.kv_vmm_released_bytes_total = released;
+            }
             m.lcp_hist = px.lcp_hist;
             m.ns_tokens = ns_tokens.clone();
             m.lane_admitted = lane_admitted;
@@ -29777,12 +30209,14 @@ fn admit(
             let snap = e.cache.snapshot(engine)?;
             let mut grown_cache = alloc_with_single_reclaim_retry(
                 || {
-                    memra_engine::pp::new_cache_planned(
-                        engine,
-                        &lm.model.cfg,
-                        &lm.model.plan,
-                        ctx_cap,
-                    )
+                    vmm_build_cache(vmm_scope(engine, lm, ctx_cap, prompt.len(), 0), || {
+                        memra_engine::pp::new_cache_planned(
+                            engine,
+                            &lm.model.cfg,
+                            &lm.model.plan,
+                            ctx_cap,
+                        )
+                    })
                 },
                 |err| {
                     let evicted_prefix = px.evict_all();
@@ -29918,12 +30352,14 @@ fn admit(
             let restored: Result<(), Box<dyn std::error::Error>> = if target_cap > old_cap {
                 match alloc_with_single_reclaim_retry(
                     || {
-                        memra_engine::pp::new_cache_planned(
-                            engine,
-                            &lm.model.cfg,
-                            &lm.model.plan,
-                            target_cap,
-                        )
+                        vmm_build_cache(vmm_scope(engine, lm, target_cap, prompt.len(), 0), || {
+                            memra_engine::pp::new_cache_planned(
+                                engine,
+                                &lm.model.cfg,
+                                &lm.model.plan,
+                                target_cap,
+                            )
+                        })
                     },
                     |err| {
                         let evicted_prefix = px.evict_all();
@@ -30353,12 +30789,14 @@ fn admit(
                 // `pp::new_cache`, not `Cache::new` — stage-owned KV under an open ppN door
                 // (see the session-cache site below for the full reason). `prefix_restore`
                 // then copies plane-by-plane into whatever device each layer landed on.
-                match memra_engine::pp::new_cache_planned(
-                    engine,
-                    &lm.model.cfg,
-                    &lm.model.plan,
-                    ctx_cap,
-                ) {
+                match vmm_build_cache(vmm_scope(engine, lm, ctx_cap, prompt.len(), 0), || {
+                    memra_engine::pp::new_cache_planned(
+                        engine,
+                        &lm.model.cfg,
+                        &lm.model.plan,
+                        ctx_cap,
+                    )
+                }) {
                     Ok(mut c) => {
                         match prefix_restore(engine, &mut c, e, &pool_key, Some(&lm.model)) {
                             // A prefix-cache restore is a transient carrier consumed straight into a
@@ -30509,11 +30947,16 @@ fn admit(
                     let restored = {
                         let e = &px.entries[&pool_key][i];
                         trace_prefix_entry_state(engine, e, lcp, "source", "immediate-partial");
-                        match memra_engine::pp::new_cache_planned(
-                            engine,
-                            &lm.model.cfg,
-                            &lm.model.plan,
-                            ctx_cap,
+                        match vmm_build_cache(
+                            vmm_scope(engine, lm, ctx_cap, prompt.len(), 0),
+                            || {
+                                memra_engine::pp::new_cache_planned(
+                                    engine,
+                                    &lm.model.cfg,
+                                    &lm.model.plan,
+                                    ctx_cap,
+                                )
+                            },
                         ) {
                             Ok(mut c) => match prefix_restore_at(
                                 engine,
@@ -31520,11 +31963,41 @@ fn admit(
                     let rewound = if target_cap > old_cap {
                         alloc_with_single_reclaim_retry(
                             || {
-                                lm.model.spec_grow_and_rewind_to_checkpoint(
+                                // WP-B day 37: a covered grow rebuilds the trunk cache and the
+                                // draft scratch under the on-demand scope; every on-demand plane
+                                // the scope allocated must be reachable by the session's ensure.
+                                let scope = vmm_scope(
                                     engine,
-                                    &mut entry.sess,
+                                    lm,
                                     target_cap,
-                                )
+                                    prompt.len(),
+                                    spec_k_decision.k,
+                                );
+                                let Some(initial) = scope else {
+                                    return lm.model.spec_grow_and_rewind_to_checkpoint(
+                                        engine,
+                                        &mut entry.sess,
+                                        target_cap,
+                                    );
+                                };
+                                let (grown, count) =
+                                    memra_engine::cache::with_on_demand_kv(initial, || {
+                                        lm.model.spec_grow_and_rewind_to_checkpoint(
+                                            engine,
+                                            &mut entry.sess,
+                                            target_cap,
+                                        )
+                                    });
+                                let grown = grown?;
+                                if count > 0 && entry.sess.kv_on_demand_planes() != count {
+                                    return Err(format!(
+                                        "vmm: on-demand plane not reachable by ensure (scope \
+                                         allocated {count}, session reaches {})",
+                                        entry.sess.kv_on_demand_planes()
+                                    )
+                                    .into());
+                                }
+                                Ok(grown)
                             },
                             |err| {
                                 if !is_cuda_oom(&err.to_string()) {
@@ -31708,7 +32181,16 @@ fn admit(
                         req.model
                     );
                 }
-                match lm.model.new_session(engine, ctx_cap) {
+                // WP-B day 37: under `MEMRA_KV_ALLOCATOR=vmm` a covered model's session is built
+                // with on-demand planes (`vmm_build_spec`); unarmed it is this call unchanged.
+                let vmm_new_session = |cap: usize| {
+                    vmm_build_spec(
+                        vmm_scope(engine, lm, cap, prompt.len(), spec_k_decision.k),
+                        || lm.model.new_session(engine, cap),
+                        |sess: &memra_engine::spec::SpecSession| sess.kv_on_demand_planes(),
+                    )
+                };
+                match vmm_new_session(ctx_cap) {
                     Ok(sess) => Some(sess),
                     Err(first_err) => {
                         let evicted = spec_reuse
@@ -31728,7 +32210,7 @@ fn admit(
                             );
                         }
                         let retried = if evicted > 0 {
-                            lm.model.new_session(engine, ctx_cap).ok()
+                            vmm_new_session(ctx_cap).ok()
                         } else {
                             None
                         };
@@ -31746,7 +32228,7 @@ fn admit(
                                         .unwrap_or(ctx_cap / 2)
                                         .clamp(need, ctx_cap);
                                     loop {
-                                        let landed = match lm.model.new_session(engine, ask) {
+                                        let landed = match vmm_new_session(ask) {
                                             Ok(s) => {
                                                 // transient reserve (see SPEC_SHRINK_RESERVE):
                                                 // a fit that leaves no headroom panics later on
@@ -32326,12 +32808,14 @@ fn admit(
             (None, Some(c)) => Some(c),
             (None, None) => match alloc_with_single_reclaim_retry(
                 || {
-                    memra_engine::pp::new_cache_planned(
-                        engine,
-                        &lm.model.cfg,
-                        &lm.model.plan,
-                        ctx_cap,
-                    )
+                    vmm_build_cache(vmm_scope(engine, lm, ctx_cap, prompt.len(), 0), || {
+                        memra_engine::pp::new_cache_planned(
+                            engine,
+                            &lm.model.cfg,
+                            &lm.model.plan,
+                            ctx_cap,
+                        )
+                    })
                 },
                 |err| {
                     // Headroom discipline: prefix entries always yield before a session errors.
@@ -32664,6 +33148,7 @@ fn admit(
         // Booked by the worker loop at active.push (the admission charge is computed
         // there); zero until then so a test-constructed Session books nothing.
         booked_kv_bytes: 0,
+        vmm_floor_rows: n_prompt,
         shadow_kv_hat: 0,
         shadow_pred_total: 0,
         decoded_bytes: Vec::new(),
@@ -32750,6 +33235,41 @@ fn admit(
                 eprintln!(
                     "[prefix-cache] restore fence failed ({err}); source stays leased, publication skipped"
                 );
+            }
+        }
+    }
+    // ON-DEMAND KV (WP-B day 37, DAY37 1.2 ensure point 3): the admitted session, fresh or
+    // adopted from a pool, is backed through this request's bound before it leaves admission. A
+    // failure waits on the graveyard's release events once and retries; a second failure refuses
+    // the request as the pooled allocator's `cache alloc failed` does.
+    if crate::kv_vmm::armed() {
+        let ensured = match vmm_ensure_session(&mut s) {
+            Ok(evs) => Ok(evs),
+            Err(err) if is_cuda_oom(&err.to_string()) => {
+                let _ = memra_engine::cache::vmm_reap_graveyard_blocking();
+                eprintln!(
+                    "[kv-vmm] admission ensure failed ({err}); graveyard reaped, retrying once"
+                );
+                vmm_ensure_session(&mut s)
+            }
+            Err(err) => Err(err),
+        };
+        match ensured {
+            Ok(evs) => {
+                for (label, rows, ev) in evs {
+                    eprintln!(
+                        "{}",
+                        crate::kv_vmm::grow_line(&s.request_id, &label, rows, &ev)
+                    );
+                }
+            }
+            Err(err) => {
+                return Err((
+                    s.tx,
+                    EngineError::engine(format!(
+                        "cache alloc failed: vmm ensure at admission: {err}"
+                    )),
+                ));
             }
         }
     }
@@ -52263,6 +52783,80 @@ mod tests {
         assert_eq!(live.matches("pending_seed_bytes(&active)").count(), 1);
     }
 
+    /// WP-B day 37 (DAY37 1.2 ensure point 2): the tick-top ensure runs after the disconnect
+    /// sweep and before the first engine call of the tick, only with the door armed, and its
+    /// retry is the one reclaim retry.
+    #[test]
+    fn vmm_tick_top_ensure_precedes_every_phase_and_is_armed_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let sweep = live
+            .find("if s.tx.is_closed() { abort_log(s); finished.push(i); } }")
+            .expect("the disconnect sweep");
+        let ensure = live
+            .find("if crate::kv_vmm::armed() { let reaped = vmm_reap_tick(&mut reuse, &mut spec_reuse);")
+            .expect("the tick-top ensure");
+        let first_phase = sweep + live[sweep..].find("if !batching {").expect("the phases");
+        assert!(sweep < ensure && ensure < first_phase);
+        assert_eq!(live.matches("vmm_ensure_session(s)").count(), 2);
+        assert_eq!(
+            live.matches("vmm_reap_tick(&mut reuse, &mut spec_reuse)")
+                .count(),
+            1
+        );
+    }
+
+    /// WP-B day 37 (DAY37 1.2 ensure points 1 and 3, 1.3): every session-cache construction in
+    /// the admission paths goes through the on-demand scope, the spec sessions through one
+    /// closure; the only direct constructions left are the park compaction's fed-length cache
+    /// and the boot calibration probe, both pooled by design. The admitted session is ensured
+    /// before it leaves admission. A new construction site fails this census until classified.
+    #[test]
+    fn vmm_every_admission_cache_is_built_under_the_scope() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert_eq!(
+            live.matches("memra_engine::pp::new_cache_planned(").count(),
+            7
+        );
+        // Six wrapped sites plus the helper's own definition.
+        assert_eq!(live.matches("vmm_build_cache(").count(), 7);
+        // Eight sites (six caches, the spec closure, the spec grow) plus the definition.
+        assert_eq!(live.matches("vmm_scope(").count(), 9);
+        let compact = live
+            .find("fn compact_parked_plain_cache(")
+            .expect("the park compaction");
+        let compact_end = compact + live[compact..].find("\n}").unwrap_or(live.len() - compact);
+        assert!(live[compact..compact_end].contains(
+            "memra_engine::pp::new_cache_planned(engine, &lm.model.cfg, &lm.model.plan, target)?"
+        ));
+        assert_eq!(live.matches("lm.model.new_session(engine, ").count(), 2);
+        assert!(live.contains("|| lm.model.new_session(engine, cap),"));
+        assert!(live.contains("let mut sess = lm.model.new_session(engine, probe_ctx)?;"));
+        assert_eq!(live.matches("vmm ensure at admission").count(), 1);
+    }
+
+    /// WP-B day 37 (DAY37 1.4): the owed growth joins the one booked reduction, computed only with
+    /// the door armed, and both park sites trim through a recorded event.
+    #[test]
+    fn vmm_owed_growth_joins_the_booked_reduction_and_both_parks_trim() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert!(live.contains(
+            "let vmm_owed = if crate::kv_vmm::armed() { vmm_owed_bytes(&active) } else { 0 }; let pending_booked = pending_booked.saturating_add(vmm_owed);"
+        ));
+        assert!(live.contains("let pending_booked = pending_prime.saturating_add(pending_seed);"));
+        assert_eq!(live.matches("pool=spec keep_rows={keep}").count(), 1);
+        assert_eq!(live.matches("pool=plain keep_rows={keep}").count(), 1);
+        // Each plane records its own fence under its lock (DAY37 section 2's review): the worker
+        // records no event for a trim.
+        assert!(!live.contains("release_kv_beyond_rows(keep, &"));
+        assert_eq!(super::vmm_owed_bytes(&[]), 0);
+    }
+
     /// memra#680: a session owes prime workspace only while it is still priming.
     #[test]
     fn pending_prime_rows_are_the_queue_while_priming_only() {
@@ -52390,12 +52984,25 @@ mod tests {
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         let live_sq = squash(live);
         let pred = format!("step_oom_parkable{}", "(");
-        // 1. Exactly one definition, the step guard's call, and the memra#680 prefill-OOM
-        //    predicate's call in live code.
+        // 1. Exactly one definition, the step guard's call, the memra#680 prefill-OOM
+        //    predicate's call, and the WP-B day 37 on-demand ensure guard (MEMRA_KV_ALLOCATOR=vmm)
+        //    in live code.
         assert_eq!(
             live.matches(pred.as_str()).count(),
-            3,
-            "expected the predicate's definition, the step guard and the prefill-OOM predicate"
+            4,
+            "expected the predicate's definition, the step guard, the prefill-OOM predicate and \
+             the on-demand ensure guard"
+        );
+        // 1a. The on-demand ensure guard feeds BOTH markers too.
+        assert!(
+            live_sq.contains(
+                format!(
+                    "if oom && {pred} s.generated.len(), s.tokens_emitted, s.oom_retries, \
+                     step_oom_retries(), )"
+                )
+                .as_str()
+            ),
+            "the on-demand ensure park must gate on the predicate fed BOTH markers"
         );
         // 1b. The prefill-OOM predicate feeds BOTH markers too, and both prefill arms feed it
         //     the session's own markers.

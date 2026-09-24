@@ -1563,7 +1563,7 @@ read on the path.
 (pure, testable without CUDA):
 
 ```text
-kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|32768 --tiers host|host,nvme --same-program [--kv-allocator pooled|vmm] [--reclaim-diagnostic [--reclaim-cycles N]] --out <new-directory>
+kv-tier-gate --artifact <gguf> --case baseline|active|prefix|grow --context 8192|32768 --tiers host|host,nvme --same-program [--kv-allocator pooled|vmm|vmm-ondemand] [--reclaim-diagnostic [--reclaim-cycles N]] --out <new-directory>
 ```
 
 - `--same-program` is mandatory. Without it the parser rejects the invocation
@@ -1588,8 +1588,19 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|3276
   `impl KvDev for Engine` implements `alloc_vmm_u8`, so any caller *could* construct VMM planes;
   today only this gate does, and the decide-by decides whether that surface is promoted or
   deleted. Any other value refuses:
-  `REFUSED: unknown KV allocator (expected pooled or vmm)`. It is a CLI door, so it has no
-  `docs/FLAGS.md` row; the decide-by lives in the decision record.
+  `REFUSED: unknown KV allocator (expected pooled, vmm or vmm-ondemand)`. It is a CLI door; its
+  serving arm is `MEMRA_KV_ALLOCATOR` (the `docs/FLAGS.md` row, same decide-by).
+- `--case grow --kv-allocator vmm-ondemand` (WP-B day 37, clause A2 of
+  `research/spill-b-20260919/DAY37.md`; the two come together or refuse) is the G1 grow series of
+  the serving arm's on-demand planes: in one process the tokenwise program runs first on pooled
+  planes, then on on-demand planes (`memra_kv::with_on_demand_kv`) that back rows only as the
+  position grows, every grow read on the driver around a stream sync (grows run inline; no
+  mapper thread). It prints `GROW-G1 PASS|FAIL (grows=.. unequal=.. planes=.. planes_crossed=..
+  min_crossings_per_plane=.. rule>=5 drift=.. tokens_equal=.. logits_equal=..
+  prefix_state_equal=.. final_state_equal=..)` and writes `GROW.txt` and `grow-series.tsv`. PASS
+  needs every grow to move driver free by exactly its extents' bytes, every plane to cross at
+  least 5 granule boundaries, driver free back at the pre-cache baseline after the drop and the
+  graveyard reap, and tokens, per-step logits and state manifests equal to the pooled arm's.
 - `--reclaim-diagnostic` requires `--case active --tiers host --kv-allocator vmm`
   (`REFUSED: reclaim diagnostic requires active VMM host mode`). After demote it frees a
   never-mapped spare VA reservation, re-reads free VRAM, calls `cuCtxSynchronize` and

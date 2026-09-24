@@ -35585,6 +35585,13 @@ impl memra_kv::KvDev for Engine {
     fn alloc_vmm_u8(&self, n: usize) -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
         memra_kv::KvPlane::vmm(self.stream(), n)
     }
+    fn alloc_vmm_on_demand_u8(
+        &self,
+        capacity: usize,
+        initial: usize,
+    ) -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
+        memra_kv::KvPlane::vmm_on_demand(self.stream(), capacity, initial)
+    }
     fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         Engine::zeros(self, n)
     }

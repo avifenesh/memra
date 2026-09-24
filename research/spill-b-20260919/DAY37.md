@@ -248,6 +248,40 @@ unchanged; this addendum fixes the helper's design, which 1.5 named but did not 
   admission-time failure: the reclaim-retry line, then the admission refusal the pooled allocator gives). A5's
   `grow:<n>` form in 1.6 reads as `ensure:<n>`.
 
+### 1.11 Addendum B (2026-09-24, before any A1 to A7 run, with the code at its first commit)
+
+Section 1.1 to 1.10 is unchanged. This fixes the instruments and parameters 1.6 left open, and a file name:
+
+- **A3 (ii)'s instrument.** The day-26 mix client and the day-31/33 clients are non-streaming, so they cannot read
+  TTFT, ITL or TPOT. A3 (ii) is read from `day37-stream-client.py` (streaming, `stream_options.include_usage`): per
+  boot 32 greedy requests over 5000-char slices of `docs/SERVING.md`, 8 in flight on the 5090 and 16 on the target
+  card, `max_tokens` alternating 256 and 2600 (a 2600-token request crosses at least one granule boundary of every
+  plane on both models), 250 ms telemetry. Same-window interleaved: per order 5 boot pairs (O1 pooled first, O2 vmm
+  first), one binary; each boot prints `DAY37 STREAM ...`. The A3 (ii) ratios use the per-arm medians of the per-boot
+  readings over the 10 boots of each arm (N = 10 per arm, 5 per order), and are also stated per order. The mix and
+  burst boots contribute E2E and throughput as readings, outside the bound. The stream rows' text digests join A1:
+  equal across arms, row for row.
+- **The file name.** 1.6's `day34-client.py` is a slip: the day-34 cell's client is `day31-client.py` through
+  `day31-order.sh` (DAY34.md 1.3). The A7 burst boots use `day33-client.py --chars 5000 --skip-long --burst 64` at
+  open output 8192 (the day-35 `G2`) and 32768 (`L64`) with `MEMRA_ADMIT_BY_MEMORY=1`, and the same client with the
+  admission door off (`--burst 64`), one boot per arm and shape; `day33-compare.py`'s G-NOOM and G-BOOK terms read
+  them unchanged.
+- **A5's fault lists.** `mapper:all` alone on the spec mix (the owner-behind path must meet A1 on the mix);
+  `mapper:all,ensure:1,ensure:2` on `G2` (the first owner ensure grow and its retry both fail); `build:1` on `G2` (one
+  construction grow fails: the retry line, then the request succeeds); `build:1` to `build:64` on `G2` (every early
+  construction fails: the admission refusal). Reachability, stated before the run: the tick-top bound covers the
+  prompt from construction, so an ensure grow first happens at a granule crossing during decode, after the session has
+  emitted; the ensure-point outcome is therefore the typed error, and the park branch is reachable only through
+  admission, where a failure takes the `cache alloc failed` refusal. A5 reads what each arm reaches.
+- **A4's receipt.** Every retire of a session with on-demand planes prints `[kv-vmm] retire id=... planes=..
+  mapped=.. reserved=.. used=.. slack_bytes=.. booked=..`, where `used` is the rows committed times each plane's row
+  bytes and `slack_bytes` is 64 rows of each plane. A4's bound per request is `mapped - used <= planes x granularity +
+  slack_bytes`, rounded up to whole granules.
+- **A2's command.** `kv-tier-gate --case grow --kv-allocator vmm-ondemand --context 32768 --tiers host
+  --same-program` with the 27B artifact on both cards (the 5090 ran it at 32k on days 11 and 12), through
+  `tools/tier-battery.py`.
+- **A6's baseline binary.** `memra-server` built from main `17dceb981` in a detached worktree.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
