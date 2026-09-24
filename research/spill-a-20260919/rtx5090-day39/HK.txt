@@ -2,3 +2,4 @@ HK arm (DAY39 section 5): rtx5090-day35/hk-revert.patch ported onto the lane tip
 patch sha256 3c789ad8b09ff381491c56e8e1e5ff89da58d0a5763f8d03c1e840db34a6f988 (hk-revert-tip.patch, base 0153316d4858adebe4f0ae6c6b94af4bf980cf80)
 HK bar at 0153316d4 + patch: cargo clippy -p memra-server --all-targets -- -D warnings clean; cargo test -p memra-server --lib: 913 passed, 0 failed, 24 ignored
 the sitting's HK binary is the final tip plus this patch (re-ported and re-checked if the tip moves); built by the sitting's build script from one tree
+re-checked on the G''' tip a92353928 (the BOX7 G''' sitting's HK arm is 3c57fdfca plus this patch; the two trees differ only in research files): git apply -3 applied cleanly to all three files; cargo clippy -p memra-server --all-targets -- -D warnings clean (rc=0); cargo test -p memra-server --lib 913 passed, 0 failed, 24 ignored (a scratch worktree with its own target dir, removed)
