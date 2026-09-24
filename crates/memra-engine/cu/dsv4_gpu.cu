@@ -4192,12 +4192,6 @@ extern "C" unsigned long long memra_dsv4_gemm_fp8_tile_launches(void) {
     return g_dsv4_gemm_fp8_tile_launches.load(std::memory_order_relaxed);
 }
 
-// Gate-only tile-shape selector for the timing sweep: 0 = 8x8, 1 = 16x4, 2 = 16x8, 3 = 32x4
-// (token rows x output rows). Every shape is the same arithmetic.
-static std::atomic<int> g_dsv4_gemm_fp8_tile_shape{0};
-extern "C" int memra_dsv4_gemm_fp8_tile_shape_set_for_gate(int shape) {
-    return g_dsv4_gemm_fp8_tile_shape.exchange(shape);
-}
 
 template <int TT, int TN>
 static void dsv4_gemm_fp8_tile_launch(const void* w_codes, const float* sc_f32, int sc_cols,
@@ -4286,12 +4280,9 @@ static int dsv4_dots_f32acc_tile(const float* x, const void* w, int w_is_bf16, f
 static int dsv4_gemm_fp8_tile(const void* w_codes, const float* sc_f32, int sc_cols,
                               const void* x_bf16, float* y, int m, int n, int k, int xstride,
                               int ystride, cudaStream_t stream) {
-    switch (g_dsv4_gemm_fp8_tile_shape.load(std::memory_order_relaxed)) {
-        case 1: dsv4_gemm_fp8_tile_launch<16, 4>(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride, stream); break;
-        case 2: dsv4_gemm_fp8_tile_launch<16, 8>(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride, stream); break;
-        case 3: dsv4_gemm_fp8_tile_launch<32, 4>(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride, stream); break;
-        default: dsv4_gemm_fp8_tile_launch<8, 8>(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride, stream); break;
-    }
+    // 8 token rows x 8 output rows: the sweep's winner on 4 of 5 DSv4 shapes (16x4, 16x8 and 32x4
+    // were measured and deleted; research/dsv4f-bringup-20260923/prefill-tile/RESULTS.md).
+    dsv4_gemm_fp8_tile_launch<8, 8>(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride, stream);
     g_dsv4_gemm_fp8_tile_launches.fetch_add(1, std::memory_order_relaxed);
     return 0;
 }

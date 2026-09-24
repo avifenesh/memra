@@ -109,8 +109,7 @@ fn prefill_dense_tile_is_the_gemv_loop_bit_for_bit() {
     ];
     let widths = [33usize, 48, 64, 100, 256, 512];
     let mut cases = 0;
-    for tile_shape in 0..4 {
-        unsafe { k::memra_dsv4_gemm_fp8_tile_shape_set_for_gate(tile_shape) };
+    {
         for (si, &(n, kk)) in shapes.iter().enumerate() {
             let w = codes(n * kk, 0xF8 ^ si as u64);
             let sc_cols = kk.div_ceil(128);
@@ -154,7 +153,6 @@ fn prefill_dense_tile_is_the_gemv_loop_bit_for_bit() {
             }
         }
     }
-    unsafe { k::memra_dsv4_gemm_fp8_tile_shape_set_for_gate(0) };
     // Red arm: move output row 5's codes by one step; row 5 moves in every token row, row 4 in none.
     let (n, kk, m) = (1024usize, 4096usize, 64usize);
     let mut w = codes(n * kk, 0xF8);
@@ -181,7 +179,7 @@ fn prefill_dense_tile_is_the_gemv_loop_bit_for_bit() {
         );
     }
     println!(
-        "DSV4_DENSE_TILE EXACT cases={cases} tile_shapes=4 shapes={} widths={widths:?} red_arm=1",
+        "DSV4_DENSE_TILE EXACT cases={cases} shapes={} widths={widths:?} red_arm=1",
         shapes.len()
     );
 }
@@ -313,8 +311,7 @@ fn prefill_dense_tile_timing() {
             };
             assert_eq!(rc, 0);
         };
-        for (rep, tile_shape) in [(0, 0), (1, 1), (2, 2), (3, 3), (4, 0)] {
-            unsafe { k::memra_dsv4_gemm_fp8_tile_shape_set_for_gate(tile_shape) };
+        for rep in 0..2 {
             let mut ms = [0f64; 2];
             for (arm, on) in [(0usize, 1i32), (1, 0)] {
                 let prev = unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(on) };
@@ -330,7 +327,7 @@ fn prefill_dense_tile_timing() {
             }
             let tflops = 2.0 * (m * n * kk) as f64 / (ms[0] * 1e-3) / 1e12;
             println!(
-                "TIMING dense m={m} n={n} k={kk} rep={rep} tile_shape={tile_shape} tile_ms={:.3} gemv_ms={:.3} speedup={:.2} tile_tflops={tflops:.1}",
+                "TIMING dense m={m} n={n} k={kk} rep={rep} tile_ms={:.3} gemv_ms={:.3} speedup={:.2} tile_tflops={tflops:.1}",
                 ms[0],
                 ms[1],
                 ms[1] / ms[0]
