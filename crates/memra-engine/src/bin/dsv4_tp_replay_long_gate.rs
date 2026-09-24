@@ -16,6 +16,9 @@
 //! its graphs and continues on the eager step, exactly as the served route does, and every
 //! later step must still match state E. With the limit inside the run the gate checks the
 //! replay-to-eager handoff; the timing arm then does not run.
+//!
+//! Profile mode (`DSV4_REPLAY_GATE_PROFILE=replay|eager`): after the identity arm, one warm run
+//! of that arm, then one bracketed by cuProfilerStart/Stop, in place of the timing arm.
 //! Rig law: under the box GPU lock, one pair, no other tenant.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg};
 use memra_engine::dsv4_source_tape::SourceTape;
@@ -329,6 +332,21 @@ fn main() {
         }
         1e3 * t0.elapsed().as_secs_f64() / steps as f64
     };
+    // Profile mode (`DSV4_REPLAY_GATE_PROFILE=replay|eager`): one run of that arm bracketed
+    // by cuProfilerStart/Stop for `nsys --capture-range=cudaProfilerApi`, after the identity arm.
+    if let Ok(arm) = std::env::var("DSV4_REPLAY_GATE_PROFILE") {
+        let armed = match arm.as_str() {
+            "replay" => true,
+            "eager" => false,
+            other => panic!("DSV4_REPLAY_GATE_PROFILE {other:?} must be replay or eager"),
+        };
+        run(armed, &mut eager, &mut replay);
+        cudarc::driver::profiler_start().expect("cuProfilerStart");
+        let ms = run(armed, &mut eager, &mut replay);
+        cudarc::driver::profiler_stop().expect("cuProfilerStop");
+        println!("PROFILE arm={arm} steps={steps} ms_per_token={ms:.3}");
+        return;
+    }
     for rep in 0..3 {
         let order = if rep % 2 == 0 {
             [false, true]
