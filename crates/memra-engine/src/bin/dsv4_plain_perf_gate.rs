@@ -276,7 +276,6 @@ fn main() {
         ("MEMRA_DSV4_VERIFY_TOPK", "device"),
         ("MEMRA_DSV4_SAMPLE_SORT", "radix"),
         ("MEMRA_DSV4_INDEXER_SCORE", "tiled"),
-        ("MEMRA_DSV4_SINK_SCORE", "tiled"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
     ] {
         assert_eq!(

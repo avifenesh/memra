@@ -299,6 +299,15 @@ pub(crate) fn waited_ms(since: Option<Instant>) -> u64 {
     since.map_or(0, |t| t.elapsed().as_millis() as u64)
 }
 
+/// The device reading the armed gate may spend (memra#680): measured effective free minus
+/// what admitted, still-priming sessions will allocate at prime time. The worker applies the
+/// same subtraction to every headroom reading of the admission block, so this is the value
+/// `Tiers::device_free_bytes` carries and the receipt prints. A zero pending term is the
+/// identity, which is why the door-OFF gate (pending always 0) is unchanged.
+pub(crate) fn booked_device_free(measured_free_bytes: u64, pending_prime_bytes: u64) -> u64 {
+    measured_free_bytes.saturating_sub(pending_prime_bytes)
+}
+
 /// The client sentence for a bounded memory refusal. Stable text, no numbers: the numbers are
 /// on the `[admit-mem]` line, keyed by request id.
 pub(crate) const MEMORY_REFUSE_MESSAGE: &str = "the box has no free KV for this request's context on either the device or the host tier; \
@@ -314,6 +323,9 @@ pub(crate) struct MemoryLine<'a> {
     pub output_bound: Option<usize>,
     pub estimate: KvEstimate,
     pub tiers: Tiers,
+    /// memra#680: bytes the admitted, still-priming sessions will allocate at prime time;
+    /// `tiers.device_free_bytes` is already reduced by it (the booked reading).
+    pub pending_prime_bytes: u64,
     pub inflight: u64,
     pub cap: u64,
     pub waited_ms: u64,
@@ -332,8 +344,8 @@ pub(crate) fn memory_line(line: &MemoryLine<'_>) -> String {
     };
     format!(
         "[admit-mem] id={} model={:?} verdict={} prompt={} output_bound={} charged_ctx={} \
-         est_bytes={} est_context={} est_fixed={} device_free={} host_free={} demotable={} \
-         short_by={} inflight={} cap={} waited_ms={} retry_after_s={}",
+         est_bytes={} est_context={} est_fixed={} device_free={} pending_prime={} host_free={} \
+         demotable={} short_by={} inflight={} cap={} waited_ms={} retry_after_s={}",
         line.request_id,
         line.model,
         line.verdict.as_str(),
@@ -344,6 +356,7 @@ pub(crate) fn memory_line(line: &MemoryLine<'_>) -> String {
         line.estimate.context_bytes,
         line.estimate.fixed_bytes,
         line.tiers.device_free_bytes,
+        line.pending_prime_bytes,
         line.tiers.host_free_bytes,
         line.tiers.demotable_device_bytes,
         short_by,
@@ -630,6 +643,7 @@ mod tests {
                 demotable_device_bytes: 50_000_000_000,
                 host_free_bytes: 200_000_000_000,
             },
+            pending_prime_bytes: 658_000_000,
             inflight: 9,
             cap: 32,
             waited_ms: 0,
@@ -655,6 +669,7 @@ mod tests {
             "est_context=12417105920",
             "est_fixed=155000000",
             "device_free=10737418240",
+            "pending_prime=658000000",
             "host_free=200000000000",
             "demotable=50000000000",
             "short_by=1834872320",
@@ -715,6 +730,88 @@ mod tests {
         assert!(off.boot_line().contains("door=OFF"));
         // OFF hands the caller nothing, so request_ctx_cap keeps today's MEMRA_CTX arm.
         assert_eq!(off.open_output_charge(), None);
+    }
+
+    /// memra#680, one test per decision arm of the booked reading. The shape is the day-32
+    /// target-card burst: 4.35 GB needed, 16.9 GB measured free after the prefix flush, and
+    /// 12 still-priming sessions owing 658 MB of prime workspace each (7.9 GB).
+    const NEED_680: u64 = 4_353_602_568;
+    const MEASURED_680: u64 = 16_949_000_000;
+    const OWED_680: u64 = 12 * 658_000_000;
+
+    fn booked_tiers(measured: u64, pending: u64) -> Tiers {
+        Tiers {
+            device_free_bytes: booked_device_free(measured, pending),
+            demotable_device_bytes: 0,
+            host_free_bytes: 0,
+        }
+    }
+
+    #[test]
+    fn booked_reading_admits_when_the_need_fits_after_the_owed_prime() {
+        // 16.9 GB measured, 2 sessions owing 1.3 GB: 15.6 GB booked, the arrival fits.
+        let tiers = booked_tiers(MEASURED_680, 2 * 658_000_000);
+        assert_eq!(decide(NEED_680, &tiers, 0, 8_000), MemoryVerdict::Admit);
+    }
+
+    #[test]
+    fn booked_reading_defers_what_the_live_reading_would_admit() {
+        // The memra#680 arm: the live reading admits (measured >= need) ...
+        assert_eq!(
+            decide(
+                NEED_680,
+                &booked_tiers(3_458_769_208 + NEED_680, 0),
+                0,
+                8_000
+            ),
+            MemoryVerdict::Admit
+        );
+        // ... but with 58 x 658 MB still owed the booked reading is 0 and the arrival defers.
+        let measured = 3_458_769_208 + NEED_680;
+        let tiers = booked_tiers(measured, 58 * 658_000_000);
+        assert_eq!(tiers.device_free_bytes, 0);
+        assert_eq!(
+            decide(NEED_680, &tiers, 0, 8_000),
+            MemoryVerdict::Defer { short_by: NEED_680 }
+        );
+    }
+
+    #[test]
+    fn booked_reading_refuses_once_the_budget_is_spent() {
+        let tiers = booked_tiers(MEASURED_680, OWED_680 + MEASURED_680);
+        assert_eq!(
+            decide(NEED_680, &tiers, 8_000, 8_000),
+            MemoryVerdict::Refuse { short_by: NEED_680 }
+        );
+        // A budget of 0 keeps the unbounded defer, booked or not.
+        assert_eq!(
+            decide(NEED_680, &tiers, 60_000, 0),
+            MemoryVerdict::Defer { short_by: NEED_680 }
+        );
+    }
+
+    #[test]
+    fn zero_pending_is_the_identity() {
+        for measured in [0, 1, NEED_680, MEASURED_680, u64::MAX] {
+            assert_eq!(booked_device_free(measured, 0), measured);
+        }
+        // Saturates instead of wrapping when more is owed than measured.
+        assert_eq!(booked_device_free(OWED_680 - 1, OWED_680), 0);
+    }
+
+    #[test]
+    fn admit_arm_renders_the_booked_reading() {
+        let mut line = sample_line(MemoryVerdict::Admit);
+        line.tiers.device_free_bytes = booked_device_free(MEASURED_680, OWED_680);
+        line.pending_prime_bytes = OWED_680;
+        let s = memory_line(&line);
+        assert!(s.contains("verdict=admit "), "{s}");
+        assert!(
+            s.contains(&format!("device_free={} ", MEASURED_680 - OWED_680)),
+            "{s}"
+        );
+        assert!(s.contains(&format!("pending_prime={OWED_680} ")), "{s}");
+        assert!(s.contains(" short_by=0 "), "{s}");
     }
 
     /// The demote budget is the shortfall and nothing more: an unbounded flush would stall
