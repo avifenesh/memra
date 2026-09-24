@@ -542,6 +542,13 @@ impl OdState {
             .last()
             .map_or(0, |e| e.offset + e.bytes)
     }
+    fn pending_release_bytes(&self) -> usize {
+        self.extents
+            .iter()
+            .filter(|e| e.release_after.is_some())
+            .map(|e| e.bytes)
+            .sum()
+    }
 }
 
 /// What the mapper needs of a plane, and the plane's state.
@@ -1027,6 +1034,13 @@ impl KvPlane {
             .as_mut()
             .map_or(0, |o| o.request_release_beyond(keep_bytes))
     }
+    /// On-demand planes: backed bytes scheduled for release and not yet reaped (DAY37 addendum
+    /// D: the run loop keeps polling while any are, so they land at idle).
+    pub fn pending_release_bytes(&self) -> usize {
+        self.on_demand
+            .as_ref()
+            .map_or(0, |o| o.shared.lock().pending_release_bytes())
+    }
     /// On-demand planes: unmap and release the tail extents whose release event completed.
     pub fn reap(&mut self) -> Result<usize> {
         self.on_demand.as_mut().map_or(Ok(0), OnDemand::reap)
@@ -1480,8 +1494,9 @@ mod tests {
         let f = drv.fences.lock().unwrap().last().unwrap().clone();
         assert_eq!(od.live_bytes(), 4 * G);
         assert_eq!(od.physical_bytes(), 6 * G);
-        // Fence incomplete: the reap releases nothing.
+        // Fence incomplete: the reap releases nothing, and the bytes read as pending.
         assert_eq!(od.reap().unwrap(), 0);
+        assert_eq!(od.shared.lock().pending_release_bytes(), 2 * G);
         f.0.store(true, Ordering::SeqCst);
         assert_eq!(od.reap().unwrap(), 2 * G);
         assert_eq!(od.physical_bytes(), 4 * G);

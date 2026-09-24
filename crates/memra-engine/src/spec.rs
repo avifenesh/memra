@@ -1698,6 +1698,15 @@ impl SpecSession {
         Ok(released)
     }
 
+    /// Bytes of the session's on-demand planes scheduled for release and not yet reaped.
+    pub fn kv_pending_release_bytes(&self) -> usize {
+        self.cache.kv_pending_release_bytes()
+            + self
+                .scratch_layers()
+                .map(KvLayer::pending_release_bytes)
+                .sum::<usize>()
+    }
+
     /// Backed and reserved bytes of the session's on-demand planes.
     pub fn kv_on_demand_bytes(&self) -> (usize, usize) {
         let (m, r) = self.cache.kv_on_demand_bytes();

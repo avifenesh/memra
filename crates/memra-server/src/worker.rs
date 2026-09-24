@@ -6572,15 +6572,23 @@ fn vmm_held_bytes(
 }
 
 /// The owner-tick reap (DAY37 addendum A): the graveyard and every parked session's released
-/// tails whose events completed. Returns the bytes released.
+/// tails whose events completed. Returns (bytes released, bytes still pending): while anything is
+/// pending the run loop does not block indefinitely (addendum D), so releases land at idle.
 fn vmm_reap_tick(
     reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
     spec_reuse: &mut HashMap<PoolKey, Vec<SpecReuseEntry>>,
-) -> usize {
+) -> (usize, usize) {
     let mut released = 0;
+    let mut pending = 0;
     match memra_engine::cache::vmm_reap_graveyard() {
-        Ok((n, _, _)) => released += n,
-        Err(err) => eprintln!("[kv-vmm] graveyard reap failed (left pending): {err}"),
+        Ok((n, _, pending_bytes)) => {
+            released += n;
+            pending += pending_bytes;
+        }
+        Err(err) => {
+            eprintln!("[kv-vmm] graveyard reap failed (left pending): {err}");
+            pending += memra_engine::cache::vmm_graveyard_bytes();
+        }
     }
     for e in reuse.values_mut().flatten() {
         match e.cache.reap_kv() {
@@ -6594,7 +6602,32 @@ fn vmm_reap_tick(
             Err(err) => eprintln!("[kv-vmm] parked spec reap failed (left pending): {err}"),
         }
     }
-    released
+    pending += reuse
+        .values()
+        .flatten()
+        .map(|e| e.cache.kv_pending_release_bytes())
+        .sum::<usize>();
+    pending += spec_reuse
+        .values()
+        .flatten()
+        .map(|e| e.sess.kv_pending_release_bytes())
+        .sum::<usize>();
+    (released, pending)
+}
+
+/// The reclaim paths' reap (DAY37 addendum D): the step-OOM teardown and the admin trim drop the
+/// parked pools; under the door their on-demand planes sit in the graveyard, so the path waits on
+/// the graves' own fences and reaps before it trims the device pools back to the driver.
+fn vmm_reap_for(why: &str) {
+    if !crate::kv_vmm::armed() {
+        return;
+    }
+    match memra_engine::cache::vmm_reap_graveyard_blocking() {
+        Ok((released, pending, _)) => {
+            eprintln!("[kv-vmm] reap ({why}) released={released} pending_graves={pending}")
+        }
+        Err(err) => eprintln!("[kv-vmm] reap ({why}) failed (left pending): {err}"),
+    }
 }
 
 fn admission_required(cost: usize, reserve: usize) -> usize {
@@ -23719,6 +23752,9 @@ pub fn run(
     // WP-B day 37 (DAY37 A3 (i)): the owner's wall at the tick-top ensure point, per tick with
     // at least one on-demand session, printed 256 at a time. Log-only; empty with the door off.
     let mut vmm_ensure_walls: Vec<u64> = Vec::new();
+    // WP-B day 37 addendum D: releases scheduled by retires and parks and not yet reaped. While
+    // any are, the idle block polls instead of waiting indefinitely, so they land at idle.
+    let mut vmm_pending = false;
     // Served-path receipts (lane/dspark-sampled-wave-20260825): admission-time route
     // classification, published to /metrics for the deploy gate's sampled probe.
     let mut n_served_dspark = 0u64;
@@ -23935,6 +23971,7 @@ pub fn run(
                 && hpx.promoting.is_none()
                 && hpx.capturing.is_none()
                 && hpx.restoring.is_none()
+                && !vmm_pending
             {
                 // Do not let an already-arrived request sit behind an idle-only probe. Once the
                 // channel is observed empty, one pending expensive rung may run before the worker
@@ -24007,6 +24044,11 @@ pub fn run(
                 {
                     wait = wait.min(Duration::from_millis(2));
                 }
+                // WP-B day 37 addendum D: a pending on-demand KV release is tick work on an idle box
+                // too: keep the poll running so the tick-top reap lands it without a request.
+                if vmm_pending {
+                    wait = wait.min(Duration::from_millis(2));
+                }
                 match rx.recv_timeout(wait) {
                     Ok(cmd) => handle_cmd(
                         cmd,
@@ -24076,6 +24118,7 @@ pub fn run(
             // until it settles (publish or drop) first.
             host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, "a trim");
             host_restore_settle_pending(&mut px, &mut hpx, ContractWait::Block, "a trim");
+            vmm_reap_for("admin-trim");
             report.devices = trim_model_device_pools(&engine, &loaded, "admin-trim");
             eprintln!(
                 "[trim] pools dropped: reuse={} spec={} dspark={} prefix={}",
@@ -26033,7 +26076,8 @@ pub fn run(
         // session evicted, the device pools trimmed back to the driver), then the step-OOM
         // contract. Unarmed nothing here runs.
         if crate::kv_vmm::armed() {
-            let reaped = vmm_reap_tick(&mut reuse, &mut spec_reuse);
+            let (reaped, pending) = vmm_reap_tick(&mut reuse, &mut spec_reuse);
+            vmm_pending = pending > 0;
             if reaped > 0 {
                 eprintln!(
                     "[kv-vmm] reap released={reaped} pending={}",
@@ -28290,6 +28334,7 @@ pub fn run(
             oom_teardown_fence(&engine, &loaded);
             host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, "a trim");
             host_restore_settle_pending(&mut px, &mut hpx, ContractWait::Block, "a trim");
+            vmm_reap_for("oom-teardown");
             let reports = trim_model_device_pools(&engine, &loaded, "oom-teardown");
             let trimmed_total = reports.iter().fold(0usize, |total, report| {
                 total.saturating_add(report.reclaimed_bytes)
@@ -52818,7 +52863,7 @@ mod tests {
             .find("if s.tx.is_closed() { abort_log(s); finished.push(i); } }")
             .expect("the disconnect sweep");
         let ensure = live
-            .find("if crate::kv_vmm::armed() { let reaped = vmm_reap_tick(&mut reuse, &mut spec_reuse);")
+            .find("if crate::kv_vmm::armed() { let (reaped, pending) = vmm_reap_tick(&mut reuse, &mut spec_reuse);")
             .expect("the tick-top ensure");
         let first_phase = sweep + live[sweep..].find("if !batching {").expect("the phases");
         assert!(sweep < ensure && ensure < first_phase);
@@ -52878,6 +52923,24 @@ mod tests {
         // records no event for a trim.
         assert!(!live.contains("release_kv_beyond_rows(keep, &"));
         assert_eq!(super::vmm_owed_bytes(&[]), 0);
+    }
+
+    /// WP-B day 37 addendum D: pending releases keep the idle block polling, and both reclaim
+    /// paths reap the graveyard before their pool trim.
+    #[test]
+    fn vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert!(live.contains("&& hpx.restoring.is_none() && !vmm_pending {"));
+        assert!(live.contains("if vmm_pending { wait = wait.min(Duration::from_millis(2)); }"));
+        assert!(live.contains("let (reaped, pending) = vmm_reap_tick(&mut reuse, &mut spec_reuse); vmm_pending = pending > 0;"));
+        assert!(live.contains(
+            "vmm_reap_for(\"oom-teardown\"); let reports = trim_model_device_pools(&engine, &loaded, \"oom-teardown\");"
+        ));
+        assert!(live.contains(
+            "vmm_reap_for(\"admin-trim\"); report.devices = trim_model_device_pools(&engine, &loaded, \"admin-trim\");"
+        ));
     }
 
     /// memra#680: a session owes prime workspace only while it is still priming.

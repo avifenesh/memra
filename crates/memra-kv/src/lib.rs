@@ -561,6 +561,11 @@ impl KvLayer {
         Ok(self.k.reap()? + self.v.reap()?)
     }
 
+    /// Bytes of this layer's on-demand planes scheduled for release and not yet reaped.
+    pub fn pending_release_bytes(&self) -> usize {
+        self.k.pending_release_bytes() + self.v.pending_release_bytes()
+    }
+
     /// Backed bytes of this layer's on-demand planes (0 for pooled planes).
     pub fn on_demand_physical_bytes(&self) -> usize {
         [&self.k, &self.v]
@@ -2835,6 +2840,15 @@ impl Cache {
             released += layer.reap()?;
         }
         Ok(released)
+    }
+
+    /// Bytes of this cache's on-demand planes scheduled for release and not yet reaped.
+    pub fn kv_pending_release_bytes(&self) -> usize {
+        self.kv
+            .iter()
+            .flatten()
+            .map(KvLayer::pending_release_bytes)
+            .sum()
     }
 
     /// Used and slack bytes of this cache's on-demand planes (`KvLayer::on_demand_used_and_slack`).
