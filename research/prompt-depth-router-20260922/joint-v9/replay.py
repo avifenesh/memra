@@ -17,6 +17,10 @@ def sha(path):
     return value.hexdigest()
 
 
+def canonical_json(value):
+    return json.loads(json.dumps(value, sort_keys=True))
+
+
 def extract(archive, manifest, target):
     expected = manifest["members"]
     seen = set()
@@ -79,7 +83,7 @@ def replay(archive, manifest_path):
             observed = collect.verify_session(
                 native / row["name"], entry, label, row["k"], "training",
             )
-            if observed != row:
+            if canonical_json(observed) != row:
                 raise ValueError(f"native training result differs: {row['name']}")
         for phase, arms_path in (
             ("qualification", root / "selection/arms/qualification-arms.json"),
@@ -97,12 +101,12 @@ def replay(archive, manifest_path):
                 observed = native_eval.verify(
                     native / row["name"], entry, specs[row["variant"]],
                 )
-                if observed != row:
+                if canonical_json(observed) != row:
                     raise ValueError(f"native {phase} result differs: {row['name']}")
         qualification = qualify.qualify(
             native, root / "selection/arms/qualification-arms.json",
         )
-        if qualification != json.loads(
+        if canonical_json(qualification) != json.loads(
             (root / "native/qualification-result.json").read_text()
         ):
             raise ValueError("no-op or C engagement replay differs")
@@ -113,11 +117,11 @@ def replay(archive, manifest_path):
         ):
             scored_quality = quality.score(native, inputs, [phase])
             quality_path = root / f"native/{phase}-quality.json"
-            if scored_quality != json.loads(quality_path.read_text()):
+            if canonical_json(scored_quality) != json.loads(quality_path.read_text()):
                 raise ValueError(f"{phase} code-quality replay differs")
             if arms_path is not None:
                 scored = score.score(native, quality_path, arms_path, phase)
-                if scored != json.loads(
+                if canonical_json(scored) != json.loads(
                     (root / f"native/{phase}-score.json").read_text()
                 ):
                     raise ValueError(f"{phase} pooled request score differs")
