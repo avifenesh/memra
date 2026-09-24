@@ -162,3 +162,10 @@ pub use h2d_span::*;
 // while a view is out.
 mod h2d_deferred_checksum;
 pub use h2d_deferred_checksum::*;
+
+// Day-38 rule (WP-A, memra#536 Move 1 owed item 2's hash 1, `DAY38.md` design G): a D2H batch whose
+// receipt is the framed SHA-256 of each item's DEVICE source, taken on the copy stream, beside the frozen
+// schedules, unversioned: one landing with the receipt observed; the checksum names the source; the
+// caller's re-hash of the landed bytes is the witness before publication.
+mod d2h_device_receipt;
+pub use d2h_device_receipt::*;
