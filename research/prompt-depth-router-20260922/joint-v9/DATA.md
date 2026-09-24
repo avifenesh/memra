@@ -32,7 +32,8 @@ Google Research `google-research` commit
 `ca95deaa9a01ef0a6f439f88bcf0dd3db3563d22f22aad6cae04ebb9a8d8c8e9`.
 This is a custom continuing-conversation workload, not an official
 MBPP benchmark score. The partition is locked by `workloads.py` before
-opening validation or final output.
+opening validation or final output. Its generated manifest SHA-256 is
+`3067e98e6c1b2af0e7de1010e62239182b3264c5a1902e01712c50727bc83079`.
 
 The first native qualifier used an earlier wording with no worked
 example. Its first turn reached 8,192 tokens of thinking and produced
@@ -52,3 +53,11 @@ test, zero exact loops occurred, and all seven later turns had
 positive native cached and new input tokens. The binary logged
 the full 248,320-row embedded MTP and fixed target top-k=20.
 This is an engagement and workload check, not an evaluation score.
+
+The GPU collector writes one result per fixed or randomized training
+arm. `supervise.py` waits for its process exit using a Linux pidfd,
+requires all 144 training arms, and advances through training-row
+extraction, new-only and augmented fits, sampled no-op/C qualification,
+validation selection and untouched final scoring. Every stage stops
+on an error; `pipeline-complete.json` is written only after final
+scoring. The supervisor does not use a periodic polling loop.
