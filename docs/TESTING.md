@@ -1100,6 +1100,17 @@ shapes. The dense test's red arm moves one output row's weight codes and require
 move in every token row and its neighbour in none. Output buffers start as a NaN pattern, so an
 unwritten element fails, and the dense test also requires the stride gaps to stay unwritten. `_tile_timing` prints device time against the loop. Receipts:
 `research/dsv4f-bringup-20260923/prefill-tile/`.
+### DSv4 TP/EP full-token replay past position 512 (#710)
+
+`dsv4_tp_replay_long_gate <model-dir> <source-tape> [steps]` (a 2x RTX PRO 6000 pair, under
+`/tmp/memra-gpu.lock`) pins the full-token TP2/EP program and restores one eager prefix to
+position 400 into two states. It steps one through the unarmed program and one through the armed
+replay graphs, then requires every step to match: sampled token, logits bits, and the TP/EP cache
+and hidden digests. It also requires the replay variant counters to advance by the step count on
+both ranks. The default 304 steps cross position 512 and the C4 and C128 emission cadences. A
+timing arm then runs the same continuation eager and replayed in alternating order. Receipts:
+`research/dsv4f-bringup-20260923/tp-replay-long/`.
+
 ### DSv4 compressor BF16 island storage (#695)
 
 `cargo test -p memra-engine --release --test dsv4_island_bf16_gpu -- --ignored --test-threads=1`
