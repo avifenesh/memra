@@ -363,3 +363,48 @@ parks there; (c) and (d) as G'.
   card owed`.
 - What G'' carries beyond hash 1, stated: the receipt twins of every D2D capture and restore batch (since day 22) are no
   longer freed per batch on the owner thread; that free was a context-wide wait behind any stream's queued work.
+
+## 10. The target-card sitting for items 1 and 2 (and item 3's first reading), pre-registered before it runs
+
+`origin/main` `d61012658` (#699, #715, #716: dsv4 only; the `worker.rs` hunks are the dsv4 route contract's lanes,
+disjoint from the door) merged as `71afb6e6f`, no conflict; on the merged tree `cargo fmt --all -- --check` clean, server
+lib 910, engine lib 548 and tier contracts 101 passed, clippy `-D warnings` on tier, engine and server clean,
+`check-flags` and `git diff --check` clean (`rtx5090-day38/merge-cpu/`). The 5090 receipts of section 9 are on
+`a266da656` and `e5e8ba81e`; between them and the merged tree sit only main's dsv4 files (checked by file set).
+
+**The box, as needed.** One RTX PRO 6000 Blackwell Workstation Edition (600 W) through the lead's acceptance (the clock
+spin and the idle power), the 27B NVFP4 MTP artifact staged by the lead at `/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`
+(its sha256 banked; day 36's was `1facf36c2db359dc..`), access only through the wrapper the lead sends,
+`/tmp/memra-gpu.lock`. RAM at least 96 GB, free disk at least 150 GB (the clone, two release servers, the test binaries
+and the artifact), the CUDA 13.1 and Rust toolchains as on BOX5, network for the clone and the crate fetch. Any CPU class
+serves items 1 and 2; the host's CPU model and core counts are banked (`host-shape.txt`) because item 3 decides per host
+class, and a slower-CPU host (BOX4 class) makes this sitting item 3's first slow-host reading as well.
+
+**Build** (`pro-single-day38/build.sh <tip>`, outside any hold): the base `80039a8de` and the tip (the merged tree
+carrying this section), release servers each, the tip's test binaries, the DAY39 fill probe; the binaries' hashes and
+the G' marker count (`receipts on the receipt stream`: 1 in the tip, 0 in the base) banked.
+
+**The cells, one sitting** (`driver.sh`): `ab.sh` under ONE collector hold (G'''s A/B: `stall_cell.py --mode demote --n
+5`, o1 = `base g` five times, o2 = `g base` five times, door ON, the PRO demote environment of DAY36 section 3, readiness
+bounded to 480 s; read by `day38-reading.py`); `gates.sh` under the collector (identity x4, failure OFF and ON, the fault
+gate default and plain with all fourteen cells including `source-flip` and `copy-phase-hit`, twin OFF and ON);
+`hitgate.sh` (OFF, then ON with the day-24 census); `unit-cells.sh` under the collector (DAY37's all arm: the thirteen
+native cells in one process at the default thread count, 20 runs; then once serially; the door's GPU cells; the CPU
+censuses `day31_` to `day38_` with the hash, Hashing and Demoting censuses; the engine censuses with
+`native_cells_own_their_context`; the tier's span, H2D and device-receipt rules); `fill-survey.sh` under the collector
+(DAY39 section 3).
+
+**The rules, verbatim.** DAY38 section 3's (b), (c) and (d) on this card: (b) the gate set and the unit cells ALL GREEN;
+(c) the owner's `copy settle` median at most 1.5 ms and max at most 3.0 ms over at least 20 steady demotes on G'''s boots;
+(d) per order, the steady demotes' `wall .. t0 to publication` median on G'' at most the base's plus 5.0 ms and the
+demoting intruder's e2e median at most the base's plus 1.0 ms. DAY37 section 1's target-card clause: the all arm 20 of
+20 (`DAY37 FINDING5 TARGET all-arm green=N of 20 rule 20 of 20`). Nothing on this card is compared with the 5090.
+
+**Expected, stated before the sitting.** (c) `copy settle` from about 0.70 ms (BOX5's base) to about 0.15 ms. (d) the
+wall within about -1 to +1 ms of the base (the owner's 0.7 ms hash leaves; the receipt kernel, about 1.5 ms for the 27B's
+32 items, runs beside the copies) and the e2e about 0.5 ms lower. The receipt kernel's time about 1 to 2 ms. The gates
+green, the copy-phase park line in both fault arms. The all arm 20 of 20.
+
+**Timing, for the rental.** The builds about 30 minutes, the A/B about 50 minutes (20 boots of the 27B), the gates about
+40 minutes (the fault gate's two new cells add four boots), the hit gate about 10 minutes, the unit cells and the fill
+probe about 10 minutes: about 2 hours 20 minutes from access.

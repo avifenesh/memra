@@ -54,3 +54,13 @@ e2e margin against the day-32 helper fill there) before its code.
   1.0 = 6.48 ms, so the single-thread fill of design F would miss the probe's tick here too; T=4 (6.49 ms) sits at the
   bound and T=8 (5.93 ms) inside it. On the 9B this host needs no thread (3.74 ms against 13.1 - 1.91 - 1.0). Neither is
   the rented hosts' reading; the probe is their first cell.
+
+## 3. The survey on the rented hosts, pre-registered before it runs
+
+The same probe (`day39-fill-survey`, built on the box by `pro-single-day38/build.sh`) is the first item-3 cell on every
+rented host, beginning with DAY38 section 10's sitting (`fill-survey.sh`, under the collector's hold after the unit
+cells): the 27B's and the 9B's shapes at T = 1, 2, 4, 8, 12, bitwise, and the span copies on that card (`--gpu`), with the
+host's CPU model and core counts banked beside it (`host-shape.txt`). Section 1's rule is applied to each host's own
+reading and nothing else; the design it picks for that host class is pre-registered with its acceptance before its code.
+A 9950X-class host and a slower-CPU host (BOX4 class) are both owed readings; whichever class this sitting's box is, the
+other stays owed.
