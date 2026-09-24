@@ -162,10 +162,3 @@ pub use h2d_span::*;
 // while a view is out.
 mod h2d_deferred_checksum;
 pub use h2d_deferred_checksum::*;
-
-// Day-35 rule (WP-A, memra#536 Move 2, `DAY35.md` design M1): a D2H batch whose completion checksums are
-// supplied by the caller's hash helper, beside the frozen schedules, unversioned: one landing with the
-// supplied checksums; no view before the copy; destinations stay owned while a view is out; the supplied
-// digests are the receipts.
-mod d2h_deferred_checksum;
-pub use d2h_deferred_checksum::*;
