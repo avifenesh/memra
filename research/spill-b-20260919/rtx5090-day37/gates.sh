@@ -56,7 +56,10 @@ if [ -f "$(dirname "$BIN")/source.commit" ]; then
   # On disk under the lane's own (ignored) target dir, never /tmp: the worktree builds its own target/.
   SMOKE_DIR=$WT/target/smoke-wt-${SMOKE_SHA:0:12}
   [ -d "$SMOKE_DIR" ] || git worktree add --detach "$SMOKE_DIR" "$SMOKE_SHA" >> "$ROOT/battery.log" 2>&1
-  log "serve-smoke runs at $SMOKE_SHA in $SMOKE_DIR"
+  # The build runs under the rig's CPU quota before the smoke (whose own build then finds it current).
+  scope=(); systemd-run --user --scope -q true 2>/dev/null && scope=(systemd-run --user --scope -q -p CPUQuota=1200% -p MemoryMax=20G)
+  ( cd "$SMOKE_DIR" && "${scope[@]}" nice -n 10 cargo build --release -p memra-server -j 12 ) > "$ROOT/serve-smoke-build.log" 2>&1
+  log "serve-smoke runs at $SMOKE_SHA in $SMOKE_DIR (build rc=$? $(tail -1 "$ROOT/serve-smoke-build.log" | cut -c1-80))"
 fi
 ( cd "$SMOKE_DIR" && run serve-smoke "" bash tools/serve-smoke.sh "$MODEL" )
 if [ "$SMOKE_DIR" != "$WT" ]; then
