@@ -186,7 +186,8 @@ fn prefill_dense_tile_is_the_gemv_loop_bit_for_bit() {
     );
 }
 
-/// Device time of one 512-row prefill projection, tile against the GEMV loop, per shape.
+/// Device time of one 512-row prefill projection, tile against the GEMV loop, per shape. The output
+/// is allocated once and read back never; only back-to-back launches are timed.
 #[test]
 #[ignore = "needs a CUDA device; timing only"]
 fn prefill_dense_tile_timing() {
@@ -197,28 +198,50 @@ fn prefill_dense_tile_timing() {
         (32768, 1024),
         (4096, 8192),
         (512, 4096),
+        (2048, 4096),
     ] {
         let sc_cols = kk.div_ceil(128);
         let w_dev: CudaSlice<u8> = e.stream().clone_htod(&codes(n * kk, 1)).unwrap();
         let sc_dev: CudaSlice<f32> = e.htod(&scales(n, kk, 2)).unwrap();
         let x_dev: CudaSlice<u16> = e.stream().clone_htod(&bf16_rows(m * kk, 3)).unwrap();
+        let mut y: CudaSlice<f32> = e.htod(&vec![0f32; m * n]).unwrap();
+        let st = e.stream();
+        let launch = |y: &mut CudaSlice<f32>| {
+            let rc = unsafe {
+                k::memra_dsv4_gemv_fp8_m(
+                    w_dev.device_ptr(&st).0 as *const c_void,
+                    sc_dev.device_ptr(&st).0 as *const f32,
+                    sc_cols as i32,
+                    x_dev.device_ptr(&st).0 as *const c_void,
+                    y.device_ptr_mut(&st).0 as *mut f32,
+                    m as i32,
+                    n as i32,
+                    kk as i32,
+                    kk as i32,
+                    n as i32,
+                    st.cu_stream() as *mut c_void,
+                )
+            };
+            assert_eq!(rc, 0);
+        };
         for (rep, tile_shape) in [(0, 0), (1, 1), (2, 2), (3, 3), (4, 0)] {
             unsafe { k::memra_dsv4_gemm_fp8_tile_shape_set_for_gate(tile_shape) };
             let mut ms = [0f64; 2];
             for (arm, on) in [(0usize, 1i32), (1, 0)] {
                 let prev = unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(on) };
-                run(&e, &w_dev, &sc_dev, sc_cols, &x_dev, m, n, kk, kk, n);
-                e.stream().synchronize().unwrap();
+                launch(&mut y);
+                st.synchronize().unwrap();
                 let t0 = std::time::Instant::now();
                 for _ in 0..20 {
-                    run(&e, &w_dev, &sc_dev, sc_cols, &x_dev, m, n, kk, kk, n);
+                    launch(&mut y);
                 }
-                e.stream().synchronize().unwrap();
+                st.synchronize().unwrap();
                 ms[arm] = t0.elapsed().as_secs_f64() * 1e3 / 20.0;
                 unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(prev) };
             }
+            let tflops = 2.0 * (m * n * kk) as f64 / (ms[0] * 1e-3) / 1e12;
             println!(
-                "TIMING dense m={m} n={n} k={kk} rep={rep} tile_shape={tile_shape} tile_ms={:.3} gemv_ms={:.3} speedup={:.2}",
+                "TIMING dense m={m} n={n} k={kk} rep={rep} tile_shape={tile_shape} tile_ms={:.3} gemv_ms={:.3} speedup={:.2} tile_tflops={tflops:.1}",
                 ms[0],
                 ms[1],
                 ms[1] / ms[0]
