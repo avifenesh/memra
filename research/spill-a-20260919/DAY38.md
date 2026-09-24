@@ -584,3 +584,25 @@ the absence of a call, host work between calls) that grows, and the fix is pre-r
   stream's existence alone. `x3` flat: the planes' events on the receipt stream. `x4` flat: the lanes' events. `x6`
   flat: the timed events. More than one flat: each named. None flat (and `x8` flat): the kernel or the D2H on a separate
   stream themselves, and the next arm is pre-registered on that. The fix is pre-registered on the named cause.
+
+## 13f. The bisection as it ran, and the next arm pre-registered before it runs
+
+- diag3 (BOX7, one collector hold, builds `x3 rc=0 x4 rc=0 x6 rc=0 x8 rc=0`; twelve boots 19:26Z to 19:43:50Z, `diag3-cell
+  rc=0`), verbatim (`diag3/reading-hump.log`): `HUMP arm=x1 boots=2 median-hump=+0.577 humps=True`, `arm=x2 ..
+  +0.028 humps=False`, `arm=x3 .. +0.558 humps=True`, `arm=x4 .. +0.557 humps=True`, `arm=x6 .. +0.570 humps=True`, `arm=x8
+  .. +0.022 humps=False`. Every humping boot has the same triangle (`b03-x3 itl=[12.33, 12.33, 12.33, 12.43, .., 12.88,
+  12.81, .., 12.45]`).
+- **What it names, by section 13e's table**: none of x3, x4, x6 is flat and x8 is flat, so neither the planes' events,
+  the lanes' events, the timed events nor the third stream's existence; **the kernel or the D2H on a separate stream
+  themselves**. The trace adds one fact (`nsys-x1`, per receipt): on the receipt stream the lanes' 1024-byte D2H starts
+  0.43 to 0.61 ms after the kernel ends, while the copy stream's 158 MB of D2H copies are still running (receipts 2 to
+  10, 13 to 15), except on receipts 11 and 12, whose kernels ran longer (4.45, 4.50 ms) than the copies; on X2 it
+  starts 3.7 to 14.5 us after the kernel, the copies queued behind it. Two DMA streams contend for the copy engines only
+  under X1.
+- **The next arm, pre-registered** (`pro-single-day38/diag4-build.sh`, `diag4.sh`, `diag4-x11.patch`): `x11` = the
+  tip with the receipt kernel writing its digests straight into the pinned twin through the twin's host pointer
+  (unified addressing: every `cuMemHostAlloc` allocation is device-addressable at its host address, DAY40 section 2's
+  survey read it bitwise), so the receipt stream runs no D2H; its event follows the kernel. One collector hold, six
+  boots `x1 x11 x2 x2 x11 x1`, the same stall cell, the same reader and rule. `x11` flat: the receipt stream's D2H is the
+  cause, and `x11`'s form is the fix candidate, pre-registered as a design with section 3's acceptance before its code.
+  `x11` humps: the kernel on a separate stream is the cause, and the next arm is pre-registered on that.
