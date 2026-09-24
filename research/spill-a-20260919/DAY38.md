@@ -536,3 +536,34 @@ the absence of a call, host work between calls) that grows, and the fix is pre-r
   kernel-to-kernel gap of the owner stream (no owner copy between), bucketed by size, split by whether the owner thread
   enqueued a `cuStreamWaitEvent` between the two kernels' launch calls, and summed by the name of the kernel after the
   gap; the ten kernel names whose gaps grow most. A reading, not a clause; the fix is pre-registered on it.
+
+## 13e. The gap reading, and a bisection pre-registered before it runs
+
+- **The gap reading** (`nsys-x1/gap-reading.log`, verbatim): the owner stream's kernel-to-kernel gaps grow only in the
+  under-2 us class, `<2us:n=366591,ms=60.30` in interval 1 to `<2us:n=366615,ms=228.92` at interval 8 and back to
+  `ms=91.89` by interval 14, with `waits>0 n=0` in every interval (no `cuStreamWaitEvent` between any two owner kernels);
+  the growth is spread over every kernel name (`qmatvec_nvfp4_mmvq_mr2_rp .. delta_ms=+30.88`, `quantize_q8_1 ..
+  +21.05`, `rms_norm_f32_v2 .. +15.42`, ..). X2: `<2us .. ms=60.14` to `60.33`, flat.
+- **The timeline** (`day38-nsys-gapline-reading.py`, exploratory, written after the gap reading;
+  `nsys-x1/gapline-reading.log`): the mean gap per owner kernel is a step function of the receipts, 0.25 us before the
+  first demote, then 0.34, 0.42, 0.48, 0.54, 0.60, 0.67, 0.72 us after receipts 2 to 8, and 0.66, 0.60, 0.54, 0.48, 0.41,
+  0.34, 0.25 us after receipts 9 to 15: each of the first eight receipts adds about 0.07 us to every later owner kernel's
+  launch, each later one takes the same away. X2 stays at 0.25 us throughout. The owner thread's calls do not change
+  (13c), so the added time is on the device side of the owner stream's kernel boundaries, set by something each receipt
+  on the separate stream leaves behind.
+- **The bisection, pre-registered** (`pro-single-day38/diag3-build.sh`, `diag3.sh`, `day38-hump-reading.py`; each arm is
+  the sitting's tip plus one patch, built from the box's tree and the tree taken back to the tip):
+  - `x1` the tip; `x2` the receipt on the copy stream (section 12's arm, the control);
+  - `x3` (`diag3-x3.patch`): the receipt kernel's source pointers taken through the owner stream, so cudarc records the
+    KV planes' read events there and not on the receipt stream;
+  - `x4` (`diag3-x4.patch`): the lanes by raw pointer and a raw D2H, so no cudarc event of the lanes is recorded or
+    waited on the receipt stream;
+  - `x6` (`diag3-x6.patch`): the two bracket events without timing;
+  - `x8` (`diag3-x8.patch`): `x2` plus a third stream created and never used.
+  One collector hold, twelve door-ON boots `x1 x2 x3 x4 x6 x8 x8 x6 x4 x3 x2 x1`, each `stall_cell.py --mode demote --n 8`
+  (16 demote runs), the PRO demote environment. The reader: per boot BASE = the median pre-fire ITL of demote runs 1 to
+  3, HUMP = the largest of runs 4 to 16 minus BASE; an arm HUMPS if its two boots' median HUMP exceeds 0.15 ms.
+- **What each outcome names** (before it runs): `x1` humps and `x2` does not, as the controls. `x8` humps: the third
+  stream's existence alone. `x3` flat: the planes' events on the receipt stream. `x4` flat: the lanes' events. `x6`
+  flat: the timed events. More than one flat: each named. None flat (and `x8` flat): the kernel or the D2H on a separate
+  stream themselves, and the next arm is pre-registered on that. The fix is pre-registered on the named cause.
