@@ -52,3 +52,17 @@ and 8 KV layers (8 `set_i32_one`). GPU: 52.7 MB read plus 52.7 MB written at abo
 laptop card, about 0.12 ms. Host: 56 calls at a few microseconds each, about 0.2 to 0.4 ms.
 
 **Budget.** 0.25 agent-day. The card is taken by bounded waits behind the other lanes.
+
+## 2. The 5090 reading (`rtx5090-day36/`)
+
+- The instrument `d4f53945f` (census `day36_the_restore_recurrent_copy_is_timed_without_a_wait`; server lib 894 passed,
+  clippy and the `DOCS_RS=1` pass clean), binary `7d761ec1c7a00ac2..`; the cell and reader `0da5638f5`.
+- One hold 06:38:56Z to 06:43:14Z, no compute app at the start or the end; one door-ON boot, 100 timed restores,
+  `STALL REPLAY: PASS`. Card telemetry (`card-250ms.csv`): 1029 samples, 54 to 87 C, 9.1 to 174.1 W.
+- Verbatim (`reading-day36.log`): `DAY36 READING submitted=100 landed=100 pending=0 n/a=0 replay_pass=True`;
+  `recurrent-copy-host-ms N=100 median=0.130 min=0.110 max=0.200 first=0.120`; `recurrent-copy-owner-stream-ms N=100
+  median=0.170 min=0.160 max=0.200 first=0.160`; `DAY36 PRICE READING (5090, not the rule's card) host median=0.130
+  owner-stream median=0.170 (the rule's bound 0.5 each, read on the target card only)`.
+- As registered, this decides neither branch. The prediction held for the GPU time (0.12 predicted, 0.17 read: about
+  0.62 TB/s effective over 2 x 52.7 MB) and came in under it for the host (0.2 to 0.4 predicted, 0.13 read: about 2.3
+  us per call over 56 calls).
