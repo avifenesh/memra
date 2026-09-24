@@ -13526,10 +13526,6 @@ fn pinned_i32(buf: &crate::PinnedHostBuf, len: usize) -> Res<&[i32]> {
     Ok(unsafe { std::slice::from_raw_parts(buf.as_slice().as_ptr().cast::<i32>(), len) })
 }
 
-/// One compressor's verify-round checkpoint on device — the CPU oracle's `CompCkpt`,
-/// device-realized: full pending snapshot + the per-position RAW (kv, score) rows that
-/// were written, plus the store high-water mark. `dst` and `emitted` are pure functions
-/// of the position, so nothing has to come back to the host to replay.
 /// The overlap compressor's cur -> prev shift: copies `pend[half..2*half]` over
 /// `pend[0..half]`. The halves are disjoint, so one direct copy replaces the two copies
 /// through a scratch buffer that a borrow of both halves of one slice would otherwise need.
@@ -13558,6 +13554,10 @@ fn cmp_shift_halves(
     .map_err(e(label))
 }
 
+/// One compressor's verify-round checkpoint on device — the CPU oracle's `CompCkpt`,
+/// device-realized: full pending snapshot + the per-position RAW (kv, score) rows that
+/// were written, plus the store high-water mark. `dst` and `emitted` are pure functions
+/// of the position, so nothing has to come back to the host to replay.
 struct CmpCkptDev {
     kv_snap: CudaSlice<f32>,
     sc_snap: CudaSlice<f32>,
