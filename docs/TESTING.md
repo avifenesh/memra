@@ -1077,6 +1077,18 @@ first target-card run). `dsv4_hc_finish_timing` prints the device time per HC en
 unfused chain, main's diet and the fused pair at 1 and 6 rows. Receipts:
 `research/dsv4f-bringup-20260923/hc-finish/`.
 
+### DSv4 prefill tiles at the kernel boundary (#700)
+
+`cargo test -p memra-engine --release --test dsv4_gemm_tile_gpu -- --ignored --test-threads=1 _is_the_`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) runs the prefill dense tile against
+the per-32-row FP8 GEMV loop it replaces, and the compressor dots tile against the 32-row dots
+loop, and requires `to_bits`-equal outputs. Dense: 106 cases over nine (n, k) shapes (the DSv4
+projections plus ragged ones), widths 33 to 512, strided x and y. Dots: 40 cases over BF16 and
+f32 weight storage at the compressor latents 1024, 512 and 256 over hidden 4096, plus ragged
+shapes. The dense test's red arm moves one output row's weight codes and requires that row to
+move in every token row and its neighbour in none. Output buffers start as a NaN pattern, so an
+unwritten element fails, and the dense test also requires the stride gaps to stay unwritten. `_tile_timing` prints device time against the loop. Receipts:
+`research/dsv4f-bringup-20260923/prefill-tile/`.
 ### DSv4 compressor BF16 island storage (#695)
 
 `cargo test -p memra-engine --release --test dsv4_island_bf16_gpu -- --ignored --test-threads=1`
