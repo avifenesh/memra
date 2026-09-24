@@ -606,3 +606,20 @@ the absence of a call, host work between calls) that grows, and the fix is pre-r
   boots `x1 x11 x2 x2 x11 x1`, the same stall cell, the same reader and rule. `x11` flat: the receipt stream's D2H is the
   cause, and `x11`'s form is the fix candidate, pre-registered as a design with section 3's acceptance before its code.
   `x11` humps: the kernel on a separate stream is the cause, and the next arm is pre-registered on that.
+
+## 13g. x11 as it ran, and the next arm pre-registered before it runs
+
+- diag4 (BOX7, `diag4-build rc=0`, six boots to 19:55:11Z, `diag4-cell rc=0`), verbatim (`diag4/reading-hump.log`):
+  `HUMP arm=x1 boots=2 median-hump=+0.574 humps=True`, `HUMP arm=x11 boots=2 median-hump=+0.585 humps=True`, `HUMP
+  arm=x2 boots=2 median-hump=+0.035 humps=False`. **By section 13f's rule, the D2H is not the cause: the kernel on the
+  separate stream is.**
+- What separates X1 from X2 once the D2H is gone: under X2 the kernel runs while the copy stream is otherwise idle (its
+  copies queue behind the kernel); under X1 and x11 the kernel runs while the copy stream's 158 MB of copies run beside
+  it. Both run the kernel concurrently with the owner stream's decode.
+- **The next arm, pre-registered** (`diag5-build.sh`, `diag5.sh`, `diag5-x17.patch`): `x17` = the tip with an event
+  recorded on the receipt stream after the digests and the copy stream made to wait on it before the demote's copies
+  (the existing flip-fault wait, taken always): the receipt stays on its own stream, the kernel no longer overlaps the
+  copy stream's DMA. Six boots `x1 x17 x2 x2 x17 x1`, the same cell, reader and rule. `x17` flat: the kernel's overlap
+  with the copy stream's DMA is the trigger, and the fix is pre-registered as a design that keeps the two apart;
+  `x17` humps: the kernel's stream is the trigger (the kernel on a stream other than the copy stream), and the next arm
+  is pre-registered on that.
