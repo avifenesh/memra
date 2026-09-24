@@ -109,48 +109,52 @@ fn prefill_dense_tile_is_the_gemv_loop_bit_for_bit() {
     ];
     let widths = [33usize, 48, 64, 100, 256, 512];
     let mut cases = 0;
-    for (si, &(n, kk)) in shapes.iter().enumerate() {
-        let w = codes(n * kk, 0xF8 ^ si as u64);
-        let sc_cols = kk.div_ceil(128);
-        let sc = scales(n, kk, 0x5C ^ si as u64);
-        let w_dev: CudaSlice<u8> = e.stream().clone_htod(&w).unwrap();
-        let sc_dev: CudaSlice<f32> = e.htod(&sc).unwrap();
-        for &m in &widths {
-            if n * m > 32768 * 256 {
-                continue; // the head-sized shapes at the widest widths add time, not coverage
-            }
-            for (xs, ys) in [(kk, n), (kk + 8 * 3, n + 5)] {
-                let x = bf16_rows(m * xs, 0xA7 ^ ((m as u64) << 8) ^ si as u64);
-                let x_dev: CudaSlice<u16> = e.stream().clone_htod(&x).unwrap();
-                let prev = unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(1) };
-                let before = unsafe { k::memra_dsv4_gemm_fp8_tile_launches() };
-                let tile = run(&e, &w_dev, &sc_dev, sc_cols, &x_dev, m, n, kk, xs, ys);
-                assert!(
-                    unsafe { k::memra_dsv4_gemm_fp8_tile_launches() } > before,
-                    "tile did not engage at m={m}"
-                );
-                unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(0) };
-                let gemv = run(&e, &w_dev, &sc_dev, sc_cols, &x_dev, m, n, kk, xs, ys);
-                unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(prev) };
-                for t in 0..m {
-                    for r in 0..n {
-                        let i = t * ys + r;
-                        assert_eq!(
-                            tile[i], gemv[i],
-                            "m={m} n={n} k={kk} xstride={xs} ystride={ys}: y[{t}][{r}] tile {:#010x} gemv {:#010x}",
-                            tile[i], gemv[i]
-                        );
-                        assert_ne!(tile[i], 0x7fc0_4321, "unwritten y[{t}][{r}]");
-                    }
-                    // The strided gaps stay untouched.
-                    for r in n..ys {
-                        assert_eq!(tile[t * ys + r], 0x7fc0_4321, "gap y[{t}][{r}] written");
-                    }
+    for tile_shape in 0..4 {
+        unsafe { k::memra_dsv4_gemm_fp8_tile_shape_set_for_gate(tile_shape) };
+        for (si, &(n, kk)) in shapes.iter().enumerate() {
+            let w = codes(n * kk, 0xF8 ^ si as u64);
+            let sc_cols = kk.div_ceil(128);
+            let sc = scales(n, kk, 0x5C ^ si as u64);
+            let w_dev: CudaSlice<u8> = e.stream().clone_htod(&w).unwrap();
+            let sc_dev: CudaSlice<f32> = e.htod(&sc).unwrap();
+            for &m in &widths {
+                if n * m > 32768 * 256 {
+                    continue; // the head-sized shapes at the widest widths add time, not coverage
                 }
-                cases += 1;
+                for (xs, ys) in [(kk, n), (kk + 8 * 3, n + 5)] {
+                    let x = bf16_rows(m * xs, 0xA7 ^ ((m as u64) << 8) ^ si as u64);
+                    let x_dev: CudaSlice<u16> = e.stream().clone_htod(&x).unwrap();
+                    let prev = unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(1) };
+                    let before = unsafe { k::memra_dsv4_gemm_fp8_tile_launches() };
+                    let tile = run(&e, &w_dev, &sc_dev, sc_cols, &x_dev, m, n, kk, xs, ys);
+                    assert!(
+                        unsafe { k::memra_dsv4_gemm_fp8_tile_launches() } > before,
+                        "tile did not engage at m={m}"
+                    );
+                    unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(0) };
+                    let gemv = run(&e, &w_dev, &sc_dev, sc_cols, &x_dev, m, n, kk, xs, ys);
+                    unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(prev) };
+                    for t in 0..m {
+                        for r in 0..n {
+                            let i = t * ys + r;
+                            assert_eq!(
+                                tile[i], gemv[i],
+                                "m={m} n={n} k={kk} xstride={xs} ystride={ys}: y[{t}][{r}] tile {:#010x} gemv {:#010x}",
+                                tile[i], gemv[i]
+                            );
+                            assert_ne!(tile[i], 0x7fc0_4321, "unwritten y[{t}][{r}]");
+                        }
+                        // The strided gaps stay untouched.
+                        for r in n..ys {
+                            assert_eq!(tile[t * ys + r], 0x7fc0_4321, "gap y[{t}][{r}] written");
+                        }
+                    }
+                    cases += 1;
+                }
             }
         }
     }
+    unsafe { k::memra_dsv4_gemm_fp8_tile_shape_set_for_gate(0) };
     // Red arm: move output row 5's codes by one step; row 5 moves in every token row, row 4 in none.
     let (n, kk, m) = (1024usize, 4096usize, 64usize);
     let mut w = codes(n * kk, 0xF8);
@@ -177,7 +181,7 @@ fn prefill_dense_tile_is_the_gemv_loop_bit_for_bit() {
         );
     }
     println!(
-        "DSV4_DENSE_TILE EXACT cases={cases} shapes={} widths={widths:?} red_arm=1",
+        "DSV4_DENSE_TILE EXACT cases={cases} tile_shapes=4 shapes={} widths={widths:?} red_arm=1",
         shapes.len()
     );
 }
@@ -198,7 +202,8 @@ fn prefill_dense_tile_timing() {
         let w_dev: CudaSlice<u8> = e.stream().clone_htod(&codes(n * kk, 1)).unwrap();
         let sc_dev: CudaSlice<f32> = e.htod(&scales(n, kk, 2)).unwrap();
         let x_dev: CudaSlice<u16> = e.stream().clone_htod(&bf16_rows(m * kk, 3)).unwrap();
-        for rep in 0..3 {
+        for (rep, tile_shape) in [(0, 0), (1, 1), (2, 2), (3, 3), (4, 0)] {
+            unsafe { k::memra_dsv4_gemm_fp8_tile_shape_set_for_gate(tile_shape) };
             let mut ms = [0f64; 2];
             for (arm, on) in [(0usize, 1i32), (1, 0)] {
                 let prev = unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(on) };
@@ -213,7 +218,7 @@ fn prefill_dense_tile_timing() {
                 unsafe { k::memra_dsv4_gemm_fp8_tile_set_for_gate(prev) };
             }
             println!(
-                "TIMING dense m={m} n={n} k={kk} rep={rep} tile_ms={:.3} gemv_ms={:.3} speedup={:.2}",
+                "TIMING dense m={m} n={n} k={kk} rep={rep} tile_shape={tile_shape} tile_ms={:.3} gemv_ms={:.3} speedup={:.2}",
                 ms[0],
                 ms[1],
                 ms[1] / ms[0]

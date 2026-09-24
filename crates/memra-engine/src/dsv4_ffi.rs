@@ -1132,6 +1132,9 @@ unsafe extern "C" {
     /// Gate seam for the prefill dense tile (memra #472): `0` forces the per-32-row GEMV loop at
     /// m > 32 so one process can compare the two; returns the previous setting.
     pub fn memra_dsv4_gemm_fp8_tile_set_for_gate(on: i32) -> i32;
+    /// Gate-only tile shape for the timing sweep (0 = 8x8, 1 = 16x4, 2 = 16x8, 3 = 32x4);
+    /// returns the previous shape.
+    pub fn memra_dsv4_gemm_fp8_tile_shape_set_for_gate(shape: i32) -> i32;
     /// Launches of the prefill dense tile since process start (engagement receipt).
     pub fn memra_dsv4_gemm_fp8_tile_launches() -> u64;
     /// FP8 dense t=1 grouped output projection. The weight rows are grouped

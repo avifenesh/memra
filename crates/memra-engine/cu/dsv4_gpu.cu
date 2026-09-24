@@ -4074,7 +4074,7 @@ __global__ void __launch_bounds__(128) dsv4_gemm_fp8_tile_kernel(
         const uint16_t* __restrict__ x, float* __restrict__ y, int m, int n, int k, int xstride,
         int ystride) {
     __shared__ float e4m3_tab[256];
-    extern __shared__ float tile_red[];  // [TT * TN][128]
+    extern __shared__ float tile_red[];  // [TT * TN][64], reused for the 32-leaf stage
     const int v = threadIdx.x;
     for (int i = v; i < 256; i += 128) e4m3_tab[i] = dsv4_e4m3((uint8_t)i);
     __syncthreads();
@@ -4123,19 +4123,52 @@ __global__ void __launch_bounds__(128) dsv4_gemm_fp8_tile_kernel(
             }
         }
     }
+    // The GEMV's halving tree, red[v] += red[v + off] for off = 64, 32, ..., 1, per output. Levels
+    // 64 and 32 go through shared memory; the last 32 leaves of every output are spread over the
+    // four warps, where shfl_down(val, off) hands lane l the value of lane l + off, the same pair.
+    constexpr int NO = TT * TN;
+    if (v >= 64) {
 #pragma unroll
-    for (int t = 0; t < TT; t++)
+        for (int t = 0; t < TT; t++)
 #pragma unroll
-        for (int r = 0; r < TN; r++) tile_red[(t * TN + r) * 128 + v] = part[t][r];
-    __syncthreads();
-    for (int off = 64; off > 0; off >>= 1) {
-        if (v < off)
-            for (int i = 0; i < TT * TN; i++) tile_red[i * 128 + v] += tile_red[i * 128 + v + off];
-        __syncthreads();
+            for (int r = 0; r < TN; r++) tile_red[(t * TN + r) * 64 + (v - 64)] = part[t][r];
     }
-    for (int i = v; i < TT * TN; i += 128) {
+    __syncthreads();
+    if (v < 64) {
+#pragma unroll
+        for (int t = 0; t < TT; t++)
+#pragma unroll
+            for (int r = 0; r < TN; r++) part[t][r] += tile_red[(t * TN + r) * 64 + v];
+    }
+    __syncthreads();
+    if (v >= 32 && v < 64) {
+#pragma unroll
+        for (int t = 0; t < TT; t++)
+#pragma unroll
+            for (int r = 0; r < TN; r++) tile_red[(t * TN + r) * 32 + (v - 32)] = part[t][r];
+    }
+    __syncthreads();
+    if (v < 32) {
+#pragma unroll
+        for (int t = 0; t < TT; t++)
+#pragma unroll
+            for (int r = 0; r < TN; r++) part[t][r] += tile_red[(t * TN + r) * 32 + v];
+    }
+    __syncthreads();
+    if (v < 32) {
+#pragma unroll
+        for (int t = 0; t < TT; t++)
+#pragma unroll
+            for (int r = 0; r < TN; r++) tile_red[(t * TN + r) * 32 + v] = part[t][r];
+    }
+    __syncthreads();
+    const int lane = v & 31, warp = v >> 5;
+    for (int i = warp; i < NO; i += 4) {
+        float val = tile_red[i * 32 + lane];
+#pragma unroll
+        for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffffu, val, off);
         const int t = t0 + i / TN, row = n0 + i % TN;
-        if (t < m && row < n) y[(long)t * ystride + row] = tile_red[i * 128];
+        if (lane == 0 && t < m && row < n) y[(long)t * ystride + row] = val;
     }
 }
 
@@ -4150,23 +4183,39 @@ extern "C" unsigned long long memra_dsv4_gemm_fp8_tile_launches(void) {
     return g_dsv4_gemm_fp8_tile_launches.load(std::memory_order_relaxed);
 }
 
-static constexpr int DSV4_TILE_TT = 16, DSV4_TILE_TN = 8;
+// Gate-only tile-shape selector for the timing sweep: 0 = 8x8, 1 = 16x4, 2 = 16x8, 3 = 32x4
+// (token rows x output rows). Every shape is the same arithmetic.
+static std::atomic<int> g_dsv4_gemm_fp8_tile_shape{0};
+extern "C" int memra_dsv4_gemm_fp8_tile_shape_set_for_gate(int shape) {
+    return g_dsv4_gemm_fp8_tile_shape.exchange(shape);
+}
+
+template <int TT, int TN>
+static void dsv4_gemm_fp8_tile_launch(const void* w_codes, const float* sc_f32, int sc_cols,
+                                      const void* x_bf16, float* y, int m, int n, int k,
+                                      int xstride, int ystride, cudaStream_t stream) {
+    const size_t smem = (size_t)TT * TN * 64 * sizeof(float);
+    static bool attr = false;
+    if (!attr) {
+        cudaFuncSetAttribute(dsv4_gemm_fp8_tile_kernel<TT, TN>,
+                             cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+        attr = true;
+    }
+    dim3 grid((unsigned)((n + TN - 1) / TN), (unsigned)((m + TT - 1) / TT));
+    dsv4_gemm_fp8_tile_kernel<TT, TN><<<grid, 128, smem, stream>>>(
+        (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y, m, n, k, xstride,
+        ystride);
+}
 
 static int dsv4_gemm_fp8_tile(const void* w_codes, const float* sc_f32, int sc_cols,
                               const void* x_bf16, float* y, int m, int n, int k, int xstride,
                               int ystride, cudaStream_t stream) {
-    const size_t smem = (size_t)DSV4_TILE_TT * DSV4_TILE_TN * 128 * sizeof(float);
-    static bool attr = false;
-    if (!attr) {
-        cudaFuncSetAttribute(dsv4_gemm_fp8_tile_kernel<DSV4_TILE_TT, DSV4_TILE_TN>,
-                             cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
-        attr = true;
+    switch (g_dsv4_gemm_fp8_tile_shape.load(std::memory_order_relaxed)) {
+        case 1: dsv4_gemm_fp8_tile_launch<16, 4>(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride, stream); break;
+        case 2: dsv4_gemm_fp8_tile_launch<16, 8>(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride, stream); break;
+        case 3: dsv4_gemm_fp8_tile_launch<32, 4>(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride, stream); break;
+        default: dsv4_gemm_fp8_tile_launch<8, 8>(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride, stream); break;
     }
-    dim3 grid((unsigned)((n + DSV4_TILE_TN - 1) / DSV4_TILE_TN),
-              (unsigned)((m + DSV4_TILE_TT - 1) / DSV4_TILE_TT));
-    dsv4_gemm_fp8_tile_kernel<DSV4_TILE_TT, DSV4_TILE_TN><<<grid, 128, smem, stream>>>(
-        (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y, m, n, k, xstride,
-        ystride);
     g_dsv4_gemm_fp8_tile_launches.fetch_add(1, std::memory_order_relaxed);
     return 0;
 }
