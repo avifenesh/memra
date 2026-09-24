@@ -9,7 +9,7 @@ Steady demotes: the second and later `demote digests landed off the tick` ledger
 (d) Per order: the steady demotes' `wall .. t0 to publication` median on g <= base + 5.0 ms, and the demoting
     intruder's e2e (`wall_ms` of every demote-arm run) median on g <= base + 1.0 ms.
 Readings: take-back, owner-held and the helper's time on both arms; on g the D2H receipt kernel's copy-stream time
-(`receipts on the copy stream (source digests, X.XXms)`) and the count of D2H receipt lines that name the copy stream;
+(`receipts on the receipt stream (source digests, X.XXms)`, DAY38 section 5a) and the count of D2H receipt lines naming it;
 the tenant's `stall_ms` over the demote-arm runs. Usage: day38-reading.py ROOT
 """
 import glob
@@ -27,7 +27,7 @@ LEDGER = re.compile(
 RECEIPTS = re.compile(r"demote receipts on the hash helper: ticket seq=\d+, (\d+) KV receipts \(([\d.]+)MB in ([\d.]+)ms\)")
 LEASES = re.compile(r"demote KV leases on the hash helper: ticket seq=\d+, (\d+) lease views \(([\d.]+)MB\)")
 ARMS = ("base", "g")
-KERNEL = re.compile(r"receipts on the copy stream \(source digests(?:, ([\d.]+)ms)?\)")
+KERNEL = re.compile(r"receipts on the receipt stream \(source digests(?:, ([\d.]+)ms)?\)")
 
 
 def med(xs):

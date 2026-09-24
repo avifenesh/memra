@@ -10936,12 +10936,13 @@ enum HostContractFault {
     /// complete with its spans.
     PromoteSpanAttach,
     /// WP-A day 38 (`DAY38.md` design G, the device receipt's red arm): the off-tick demote's first
-    /// KV item's DEVICE source has one byte flipped on the copy stream after its receipt digest and
+    /// KV item's DEVICE source has one byte flipped on the receipt stream after its receipt digest and
     /// before its copy (`CudaTransfers::inject_d2h_source_flip`); the landed bytes then differ from
     /// the receipt and the bind must refuse the image (nothing published, the tier on).
     D2hSourceFlip,
     /// WP-A day 38 (P's red arm): the off-tick demote's copies wait `D2H_DELAY_FAULT_NS` behind a
-    /// copy-stream spin (`CudaTransfers::inject_d2h_delay`), so a request hitting the entry arrives
+    /// receipt-stream spin ahead of its digest (`CudaTransfers::inject_d2h_delay`, design G'), so a
+    /// request hitting the entry arrives
     /// in its copy phase and must park until the publication, then promote.
     D2hDelay,
 }
@@ -11299,7 +11300,8 @@ fn host_kv_planes_submit_contract(
                 t.inject_d2h_delay(memra_engine::tier_transfer::D2H_DELAY_FAULT_NS);
                 eprintln!(
                     "[prefix-host] demote fault armed (MEMRA_KV_HOST_FAULT=d2h-delay): the copies \
-                     wait {} ms behind a copy-stream spin; a hit arriving in the copy phase must \
+                     receipt waits {} ms behind a receipt-stream spin (the copies do not); a hit arriving \
+                     in the copy phase must \
                      park until the publication",
                     memra_engine::tier_transfer::D2H_DELAY_FAULT_NS / 1_000_000
                 );
@@ -11542,11 +11544,11 @@ fn host_kv_planes_settle_contract(
         ));
     }
     // WP-A day 38 (`DAY38.md` design G): where hash 1 ran, for the receipt line (log only; the
-    // kernels' copy-stream time is read without a wait, the batch has landed).
+    // kernels' receipt-stream time is read without a wait, the batch has landed).
     let receipt_place = if t.d2h_receipts_on_device() {
         match t.d2h_receipt_gpu_ms(&ticket) {
-            Some(ms) => format!("; receipts on the copy stream (source digests, {ms:.2}ms)"),
-            None => "; receipts on the copy stream (source digests)".to_string(),
+            Some(ms) => format!("; receipts on the receipt stream (source digests, {ms:.2}ms)"),
+            None => "; receipts on the receipt stream (source digests)".to_string(),
         }
     } else {
         String::new()
@@ -48437,7 +48439,7 @@ mod tests {
         assert!(route.find("let fault = tier.take_fault(true);").unwrap() < armed);
         let at = body.find("fn host_kv_planes_settle_contract(").unwrap();
         let settle = &body[at..at + body[at..].find("\n}\n").unwrap()];
-        assert!(settle.contains("; receipts on the copy stream (source digests"));
+        assert!(settle.contains("; receipts on the receipt stream (source digests"));
         assert!(settle.contains("retired acknowledged{}{receipt_place}"));
     }
 

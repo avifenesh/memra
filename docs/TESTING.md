@@ -2029,9 +2029,9 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused` (through the production sink: the
   clean arm's receipts are the checksums of the lease bytes; a byte changed after hash 1 is refused at the bind,
   nothing published). The failure gate's `digest` cell's bind line is the helper's re-hash seeing the flipped byte.
-- The demote's D2H receipt on the copy stream and the copy-phase park (WP-A day 38, `research/spill-a-20260919/DAY38.md`
-  designs G and P, `memra_tier::conformance::d2h_device_receipt_lands_with_the_source_digest`): under the door the copy
-  stream digests every D2H item's DEVICE source with the receipt program (`d2h_receipt_sha256`) before its copy, the
+- The demote's D2H receipt on the device and the copy-phase park (WP-A day 38, `research/spill-a-20260919/DAY38.md`
+  designs G' and P, `memra_tier::conformance::d2h_device_receipt_lands_with_the_source_digest`): under the door the
+  receipt stream digests every D2H item's DEVICE source with the receipt program (`d2h_receipt_sha256`) beside its copy, the
   item lands with that digest (hash 1 leaves the owner thread), and the bind's re-hash of the landed bytes witnesses
   landed equal to source; a hit on a `Demoting` entry parks in either phase. CPU binding `d2h_device_receipt_bindings`
   (with its red arm: an item that lands on its copy alone); engine census `d2h_device_receipt_rules_are_as_stated` and

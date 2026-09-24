@@ -97,7 +97,7 @@ __global__ void d2d_receipt_digest(const unsigned char* __restrict__ p,
 // frame "memra-tier\0v1\0" (14 bytes) || le64(11) || "valid-bytes" (11 bytes) || le64(len) || payload,
 // one thread per item (a sequential chain per item; the items of a batch run in SIMT lockstep), up to
 // RECEIPT_ITEMS items per launch passed BY VALUE (count, device pointers, lengths), 32 bytes out per item
-// (the digest in its byte order). The 41-byte prefix puts payload byte j at stream offset 41 + j; after
+// (the digest in its byte order). Issued on the receipt stream (design G', DAY38 section 5). The 41-byte prefix puts payload byte j at stream offset 41 + j; after
 // the first block every block that lies inside the payload is 64 bytes read as 16 aligned 32-bit words
 // plus one more when the window is not word aligned, funnelled into 16 big-endian words; the first and
 // the last blocks are assembled byte by byte. An item of length 0 or pointer 0 hashes the empty payload.
@@ -206,7 +206,7 @@ __global__ void d2h_receipt_sha256(ReceiptItems items, unsigned char* __restrict
 }
 
 // tier_flip_byte (WP-A day 38, the `d2h-source-flip` fault's red arm): XOR one byte at `p` with 0x40, one
-// thread, queued on the copy stream after the receipt digest and before the copy. Diagnostics only.
+// thread, queued on the receipt stream after the receipt digest; the copy stream waits on it for that batch. Diagnostics only.
 __global__ void tier_flip_byte(unsigned char* p) { p[0] ^= 0x40; }
 
 __global__ void tier_delay_spin(unsigned long long ns) {

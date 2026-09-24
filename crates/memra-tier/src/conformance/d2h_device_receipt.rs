@@ -1,5 +1,5 @@
 //! Day-38 rule (WP-A, memra#536 Move 1 owed item 2's hash 1, `DAY38.md` design G): a D2H batch whose
-//! receipt is taken on the DEVICE, over each item's source, by the copy stream (the receipt program
+//! receipt is taken on the DEVICE, over each item's source, beside the copy (the receipt program
 //! `checksum`, the framed SHA-256, byte for byte), instead of by the owner thread over the landed host
 //! bytes. Additive and unversioned beside the frozen schedules: every v1 to v1.3 schedule is
 //! byte-identical and `WIRE_VERSION` stays 1. Nothing here qualifies a backend by itself.

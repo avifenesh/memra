@@ -85,15 +85,16 @@
 #                  and r4 promote synchronously there); r1..r4 are byte-equal across the two boots.
 #
 # WP-A day 38 (memra#536 Move 1 owed item 2's hash 1, research/spill-a-20260919/DAY38.md designs G and P): the demote's
-# D2H receipt is taken on the copy stream over each KV item's DEVICE source, and a hit on a Demoting entry parks in
+# D2H receipt is taken on the receipt stream over each KV item's DEVICE source, and a hit on a Demoting entry parks in
 # either phase. Two cells, two boots each (door ON with the fault, then door OFF as the byte reference):
 #   source-flip     MEMRA_KV_HOST_FAULT=d2h-source-flip: r1 P_A seeds E_A; r2 P_B evicts E_A, whose demote's first KV
 #                   item's device source has one byte flipped after its receipt digest and before its copy; the bind's
 #                   re-hash of the landed bytes differs from the receipt: one typed `plane checksum differs from its D2H
 #                   contract receipt` refusal, nothing published, the tier on; r3 P_A primes cold (no host entry) and its
 #                   insert evicts E_B into a clean demote; r4 P_B hits E_B on the host and promotes. r1..r4 byte-equal.
-#   copy-phase-hit  MEMRA_KV_HOST_FAULT=d2h-delay: r1 P_A seeds E_A; r2 P_B evicts E_A, whose demote's copies wait 3 s
-#                   behind a copy-stream spin; r3 P_A hits the Demoting entry in its COPY phase and parks (one typed
+#   copy-phase-hit  MEMRA_KV_HOST_FAULT=d2h-delay: r1 P_A seeds E_A; r2 P_B evicts E_A, whose demote's receipt waits 3 s
+#                   behind a receipt-stream spin (design G': the copy stream is not delayed); r3 P_A hits the Demoting
+#                   entry in its COPY phase and parks (one typed
 #                   line), the copy lands, the digests land, the entry publishes (its ledger names the parked hit), and
 #                   r3 promotes to a device hit instead of priming cold; r4 P_B promotes. r1..r4 byte-equal.
 #
@@ -773,7 +774,7 @@ fcell() { # WP-A day 38 (design G): MEMRA_KV_HOST_FAULT=d2h-source-flip (door ON
     chk "$name: four completions served" four_served "$EV/$name"
     chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
     chk "$name: the fault was armed once" count_eq "demote fault armed (MEMRA_KV_HOST_FAULT=d2h-source-flip)" "$log" 1
-    chk "$name: the D2H receipts ran on the copy stream" grep -q "receipts on the copy stream (source digests" "$log"
+    chk "$name: the D2H receipts ran on the receipt stream" grep -q "receipts on the receipt stream (source digests" "$log"
     chk "$name: exactly one typed bind refusal of the flipped image" count_eq "$refusal" "$log" 1
     chk "$name: the next demote publishes" after "$refusal" "\\[prefix-host\\] demote: " "$log"
     chk "$name: r3 primed cold and only r4 promoted (the refused image was never published)" count_eq "\\[prefix-host\\] promote: " "$log" 1
