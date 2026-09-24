@@ -360,3 +360,33 @@ RELEASE-PLACEMENT unmap_or_release_blocks_behind_queue=no blocks_owner_from_help
 ```
 
 For the 5090 class the rules select helper grows and owner-tick reaps (addendum A, 1.10).
+
+### 2.2 Design v1's banked receipts and the notes of the day (no rule, arm, value or reader changed)
+
+- **A2 on design v1** (`rtx5090-day37/grow-32768/`, gate binary `00cbfe16...a53cfa6` from `7e4ac87e4`, collector
+  12:56:07 to 13:20:57Z, 5,885 samples at 250 ms, 56 to 87 C, 28.1 to 174.6 W), verbatim:
+  `GROW-G1 PASS (grows=28 unequal=0 planes=34 planes_crossed=34 min_crossings_per_plane=12 rule>=5 drift=0
+  tokens_equal=true logits_equal=true prefix_state_equal=true final_state_equal=true) committed=32768 generated=128`.
+  The on-demand cache backed 71,303,168 B at construction (34 planes, one granule each) against 1,105,199,104 B
+  reserved, grew in 28 steps of 17 extents (35,651,584 B each; every K crossing at the same row on all 17 layers,
+  every V crossing likewise), and driver free returned to 8,849,260,544 B after the reap, the byte it read before the
+  cache was built.
+- **The first gate set on design v1** (`gates-pooled/`, `gates-vmm/`, server `2ec0b24e...0139b747`): both arms ALL
+  GREEN on serve-smoke, identity default ON, fault default and plain (160 ok each), hit OFF and ON (61 and 68 ok),
+  the admit-mem burst and spec-ctx-edge; `door=ON` on every vmm cell's server logs and `door=OFF` on every pooled one.
+  The twin gate on the 9B refused on both pooled cells before any verdict, verbatim `REFUSED: cohort promotion did not
+  happen for 2800 tokens: second send cached=2800 of 2800, published 2784`: its pressure preconditions are sized for
+  the 27B, which days 17 to 29 ran as `twin27`. The vmm arm then ran it on the 27B (`twin27-off`, `twin27-on`, both
+  `-> PASS`). From the r3 set on, the twin gate runs on the 27B in both arms.
+- **serve-smoke's server log** lives in `/tmp/serve-smoke.log` (its own rule), so the first pooled cell's door count
+  read 0/0; the log was copied into the cell and recounted (`door_off=1`), and the script copies it from then on.
+- **Addendum C** (1.12) came from the vmm gate set's retire lines, addendum D (1.13) from the review patterns. Neither
+  changed a clause; each moved the deciding cell to a new binary before any serving boot ran. `chain-r2` was stopped
+  by the lane during its first lock wait (lane A held the card), before any cell ran; its two refused attempts are
+  `grow-32768-r2-lockwait/`.
+- **A review fix before any run:** the first park-trim implementation recorded its release event before taking the
+  plane lock, so a mapper fill enqueued in between could still be in flight at the reap. The fence is now recorded
+  by each plane under its own lock, after `want` is pulled back (commit `7e4ac87e4` carries the fixed form; the fix
+  is also the census test `vmm_owed_growth_joins_the_booked_reduction_and_both_parks_trim`).
+- **The reader** first read the door counts per line and so read every A1-GATE line FAIL; the fixed reader reads
+  CELL.txt's one-line form (`e76c9bdbd`). No verdict of the fixed reader has been seen before the r3 cells.

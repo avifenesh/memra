@@ -32,7 +32,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   `pos` crosses a boundary, never move a byte), pre-mapping the next granule off the boundary tick, the parked-session
   tail release (a parked cache keeps its VA and captured graphs; only unused granules go back), and admission and
   metrics that count mapped bytes (`effective_free_bytes`, `cuda_pool_cached_bytes` do not see VMM planes).
-- Status: `pre-registered` (DAY37.md section 1). Only `kv-tier-gate` constructs VMM planes today; no server path does.
+- Status: `running` (DAY37.md). The serving arm `MEMRA_KV_ALLOCATOR=vmm` is built (addenda A to D); A2 PASS on the
+  5090 on design v1; the deciding cell runs on the r3 binary on the 5090, then the target-card sitting.
 - Price: 3 to 4 agent-days (design note), plus a target-card sitting of about 8 h (the byte cells on both allocators,
   the stall cell both orders, the grow series, the accounting cell) and the matching 5090 holds.
 
