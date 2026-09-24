@@ -655,6 +655,13 @@ pub struct CudaTransfers {
     /// stream, so no other copy-stream consumer queues behind the kernel. `Some` exactly when `copy`
     /// is.
     receipt_stream: Option<Arc<CudaStream>>,
+    /// WP-A day 38 (`DAY38.md` design G'', section 8): the receipt twins (the pinned host side of a
+    /// batch's receipt lanes), reused by exact byte length. A twin returns here when its batch is
+    /// acknowledged (every write to it observed) instead of being freed: `cuMemFreeHost` waits for
+    /// every stream's queued work in the context (DAY37's probe), so a per-batch free on the owner
+    /// thread would hold it behind any long copy-stream or receipt-stream work. Freed only when the
+    /// engine drops (the latch or shutdown).
+    twin_pool: RefCell<Vec<PinnedBacking>>,
     governor: SharedBudget,
     /// The pinned destination arm `alloc_host` takes on this device (`PinnedKind::for_device` of
     /// the owner context's device name, resolved once at construction).
@@ -699,6 +706,7 @@ impl CudaTransfers {
             stream: owner,
             copy: None,
             receipt_stream: None,
+            twin_pool: RefCell::new(Vec::new()),
             governor,
             pinned_default,
             owner: DeviceOwner::new(device),
@@ -766,6 +774,11 @@ impl CudaTransfers {
     pub fn inject_d2h_delay(&mut self, delay_ns: u64) {
         self.d2h_delay = Some(delay_ns);
     }
+    /// Test only (DAY38 design G''): the receipt twins waiting in the pool.
+    #[cfg(test)]
+    fn twin_pool_len(&self) -> usize {
+        self.twin_pool.borrow().len()
+    }
     /// WP-A day 38 (log only): the device receipt's digest kernels' receipt-stream time for `ticket`,
     /// read only if the end event already completed (never a host wait); `None` for a batch
     /// without a device receipt or while the kernels have not finished.
@@ -805,10 +818,20 @@ impl CudaTransfers {
         // its first digest, and the fault's early reader (owner stream) follows it in order.
         let lanes = cuda(self.stream.alloc_zeros::<u8>(bytes))?;
         let zeroed = cuda(self.stream.record_event(None))?;
-        // SAFETY: every byte is zero-filled through `as_mut_slice` before the backing is used.
-        let mut pinned = cuda(unsafe {
-            PinnedBacking::alloc(self.stream.context(), bytes, PinnedKind::Cached)
-        })?;
+        // WP-A day 38 (design G''): a pooled twin of exactly this length first, else a fresh one.
+        let pooled = {
+            let mut pool = self.twin_pool.borrow_mut();
+            pool.iter()
+                .position(|b| b.len == bytes)
+                .map(|i| pool.swap_remove(i))
+        };
+        let mut pinned = match pooled {
+            Some(twin) => twin,
+            // SAFETY: every byte is zero-filled through `as_mut_slice` before the backing is used.
+            None => cuda(unsafe {
+                PinnedBacking::alloc(self.stream.context(), bytes, PinnedKind::Cached)
+            })?,
+        };
         cuda(pinned.as_mut_slice())?.fill(0);
         Ok(ReceiptScratch {
             lanes,
@@ -3244,7 +3267,18 @@ impl TransferEngine for CudaTransfers {
         if !self.retired(ticket)? {
             return Err(Error::Busy);
         }
-        self.entries.remove(ticket);
+        // WP-A day 38 (design G''): a retired batch's receipt twins go back to the pool (every write
+        // to them was observed before the batch landed); the device lanes drop, a stream-ordered
+        // free. Nothing pinned is freed here.
+        if let Some(mut e) = self.entries.remove(ticket) {
+            let mut pool = self.twin_pool.borrow_mut();
+            if let Some(r) = e.receipt.take() {
+                pool.push(r.pinned);
+            }
+            if let Some(r) = e.d2h_receipt.take() {
+                pool.push(r.scratch.pinned);
+            }
+        }
         Ok(())
     }
 }
@@ -3735,6 +3769,15 @@ mod tests {
             .unwrap();
         assert!(seal < flip_wait && flip_wait < items);
         assert_eq!(submit.matches("copy.wait(").count(), 1);
+        // G'': a retired batch's twins return to the pool at acknowledge; the scratch takes from it.
+        let ack = fn_body("    fn acknowledge(&mut self, ticket: &TransferTicket)");
+        assert!(
+            ack.contains("pool.push(r.pinned);") && ack.contains("pool.push(r.scratch.pinned);")
+        );
+        let take = fn_body("    fn receipt_scratch_bytes(");
+        let pooled = take.find(".position(|b| b.len == bytes)").unwrap();
+        let fresh = take.find("PinnedBacking::alloc(").unwrap();
+        assert!(pooled < fresh, "a pooled twin first");
         // G': an unretired entry's drop leaks the receipt scratch, as every other in-flight input.
         let drop_at = body.find("impl Drop for Entry {").unwrap();
         let drop_body = &body[drop_at..drop_at + body[drop_at..].find("\n}\n").unwrap()];
@@ -3921,6 +3964,65 @@ mod tests {
         t.retire(&ticket, Some(consumer)).unwrap();
         t.acknowledge(&ticket).unwrap();
         t.release_producer(producer).unwrap();
+        // Design G'': the batch's twin went back to the pool; a second batch of the same shape
+        // takes it (the pool does not grow) and its receipt is still the program over ITS sources.
+        assert_eq!(
+            t.twin_pool_len(),
+            1,
+            "the acknowledged batch's twin is pooled"
+        );
+        let producer = t.record_producer(1).unwrap();
+        let mut keeps = Vec::new();
+        let mut ops = Vec::new();
+        let second: Vec<Vec<u8>> = patterns
+            .iter()
+            .map(|p| p.iter().map(|b| b.wrapping_add(17)).collect())
+            .collect();
+        for p in &second {
+            let mut plane = stream.alloc_zeros::<u8>(p.len()).unwrap();
+            stream.memcpy_htod(p, &mut plane).unwrap();
+            let keep = t.register_device(plane, 1, request()).unwrap();
+            let device = t.retain_device(&keep).unwrap();
+            let host = t.alloc_host(p.len(), request()).unwrap();
+            keeps.push(keep);
+            ops.push(TransferOp::D2h(CopyOp {
+                host,
+                device,
+                bytes: p.len() as u64,
+                epochs,
+                producer_fence: None,
+            }));
+        }
+        stream.synchronize().unwrap();
+        let ticket = t.submit_batch(ops).map_err(|r| r.error).unwrap().ticket;
+        assert_eq!(
+            t.twin_pool_len(),
+            0,
+            "the second batch took the pooled twin"
+        );
+        t.synchronize(&ticket).unwrap();
+        let c = t.poll(&ticket).unwrap();
+        assert!(c.producer_done);
+        for (i, p) in second.iter().enumerate() {
+            assert_eq!(c.items[i].segments[0].checksum, Some(checksum(p)));
+        }
+        t.retire_source(&ticket).unwrap();
+        for keep in &keeps {
+            t.release_device(keep).unwrap();
+        }
+        for i in 0..second.len() {
+            let _ = t.take_destination(&ticket, i as u32, epochs).unwrap();
+        }
+        let consumer = t.record_consumer(&ticket).unwrap();
+        stream.synchronize().unwrap();
+        t.retire(&ticket, Some(consumer)).unwrap();
+        t.acknowledge(&ticket).unwrap();
+        t.release_producer(producer).unwrap();
+        assert_eq!(
+            t.twin_pool_len(),
+            1,
+            "the twin came back once more; the pool did not grow"
+        );
     }
     /// WP-A day 37 (`DAY37.md` section 8): every native cell of this module owns a context of the
     /// pool (`cell_context()`), the pool is the module's only context constructor, and its size is

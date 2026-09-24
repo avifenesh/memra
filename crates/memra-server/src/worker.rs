@@ -11299,8 +11299,8 @@ fn host_kv_planes_submit_contract(
             Some(HostContractFault::D2hDelay) => {
                 t.inject_d2h_delay(memra_engine::tier_transfer::D2H_DELAY_FAULT_NS);
                 eprintln!(
-                    "[prefix-host] demote fault armed (MEMRA_KV_HOST_FAULT=d2h-delay): the copies \
-                     receipt waits {} ms behind a receipt-stream spin (the copies do not); a hit arriving \
+                    "[prefix-host] demote fault armed (MEMRA_KV_HOST_FAULT=d2h-delay): the receipt \
+                     waits {} ms behind a receipt-stream spin (the copies do not); a hit arriving \
                      in the copy phase must \
                      park until the publication",
                     memra_engine::tier_transfer::D2H_DELAY_FAULT_NS / 1_000_000
