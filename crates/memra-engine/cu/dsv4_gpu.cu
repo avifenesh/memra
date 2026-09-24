@@ -7200,7 +7200,8 @@ extern "C" int memra_dsv4_replay_census(void* graph, unsigned long long* out) {
     std::vector<cudaGraphNode_t> nodes(n);
     rc=cudaGraphGetNodes((cudaGraph_t)graph,nodes.data(),&n);
     if(rc!=cudaSuccess) return 10000+(int)rc;
-    // nodes, kernels, AR, embedding, HC post, copy/memset, unsupported node types.
+    // nodes, kernels, joins (one-shot AR and exact attention TP row gathers), embedding, HC post,
+    // copy/memset, unsupported node types.
     for(int i=0;i<7;++i) out[i]=0;
     out[0]=n;
     for(auto node:nodes){
@@ -7213,7 +7214,8 @@ extern "C" int memra_dsv4_replay_census(void* graph, unsigned long long* out) {
             if(rc!=cudaSuccess) return 10000+(int)rc;
             rc=cudaFuncGetName(&name,params.func);
             if(rc!=cudaSuccess) return 10000+(int)rc;
-            if(strstr(name,"memra_tp_ar_1stage_kernel")) ++out[2];
+            if(strstr(name,"memra_tp_ar_1stage_kernel") ||
+               strstr(name,"memra_tp_ar_gather_rows_f32_kernel")) ++out[2];
             if(strstr(name,"dsv4_embed_rows_kernel")) ++out[3];
             if(strstr(name,"dsv4_hc_post_kernel")) ++out[4];
         }else if(type==cudaGraphNodeTypeMemcpy || type==cudaGraphNodeTypeMemset) ++out[5];

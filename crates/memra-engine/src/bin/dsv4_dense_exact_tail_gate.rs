@@ -112,7 +112,10 @@ fn captures_once(gpu: &Dsv4Gpu, state: &DecodeState) {
         [1, 1]
     );
     for rank in gpu.full_token_replay_census_for_gate(state).unwrap() {
-        assert_eq!(rank[0][2], 86, "43 layers, two ARs each");
+        assert_eq!(
+            rank[0][2], 129,
+            "43 layers: an expert reduction and two attention row gathers each"
+        );
         assert_eq!(rank[0][3], 1, "embedding");
         assert_eq!(rank[0][4], 86, "HC posts");
         assert_eq!(rank[0][6], 0, "unsupported forward nodes");
