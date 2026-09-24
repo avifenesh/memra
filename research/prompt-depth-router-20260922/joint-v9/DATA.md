@@ -33,7 +33,7 @@ Google Research `google-research` commit
 This is a custom continuing-conversation workload, not an official
 MBPP benchmark score. The partition is locked by `workloads.py` before
 opening validation or final output. Its generated manifest SHA-256 is
-`3067e98e6c1b2af0e7de1010e62239182b3264c5a1902e01712c50727bc83079`.
+`ebceeeffdf36128b98b303c124cf7459966877991d66afce15f7ecc6ffd4d6ee`.
 
 The first native qualifier used an earlier wording with no worked
 example. Its first turn reached 8,192 tokens of thinking and produced
@@ -45,14 +45,32 @@ hand-verified subset, removes inert reference padding, shows one
 example test and reserves at least two tests for grading. Tasks
 examined in the diagnostics are excluded from all v9 splits.
 
-The sanitized eight-turn qualifier on one nonproduction Nebius
+The first sanitized training collection was stopped after 48 arms:
+all first-32 user tokenizer ID prefixes were identical across eight
+distinct task groups because the common instruction preceded the task.
+Those cells are diagnostic only. The task text now leads each prompt,
+with the same disjoint task IDs and hidden tests. The revised qualifier
+must demonstrate differing bounded prefixes before the new collection
+can supply K training rows.
+
+The revised eight-turn qualifier on the same nonproduction Nebius
+RTX PRO 6000 completed with 4,686 returned tokens in 40.412 complete
+native request seconds. All turns ended in EOS, 8/8 answers were
+fenced and parseable, 8/8 passed every reserved test, zero exact
+loops occurred, and all seven later turns reused native KV. The
+full 248,320-row MTP was logged with fixed target top-k=20.
+All eight bounded user-token prefixes were distinct. This is
+engagement and workload qualification, not a performance result.
+
+The v3 sanitized eight-turn diagnostic on one nonproduction Nebius
 RTX PRO 6000 (uk-south2, on-demand) completed with 3,244 returned
 tokens in 27.384 complete-request seconds. All turns ended in EOS,
 8/8 answers were fenced and parseable, 8/8 passed every reserved
 test, zero exact loops occurred, and all seven later turns had
 positive native cached and new input tokens. The binary logged
 the full 248,320-row embedded MTP and fixed target top-k=20.
-This is an engagement and workload check, not an evaluation score.
+Its bounded K prefix failed the later task-visibility audit; this is
+a diagnostic receipt, not v4 qualification or an evaluation score.
 
 The GPU collector writes one result per fixed or randomized training
 arm. `supervise.py` waits for its process exit using a Linux pidfd,

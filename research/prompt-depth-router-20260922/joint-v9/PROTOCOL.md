@@ -37,7 +37,9 @@ pinned Google Research sanitized MBPP revision recorded by `workloads.py`. This 
 custom continuing-conversation workload and must not be called an official
 MBPP benchmark score:
 24 eight-turn training conversations, 8 validation conversations, and
-16 final conversations. Each turn shows one source test as an example;
+16 final conversations. Each turn starts with the task description so
+the bounded first-32-token K input contains task information, followed
+by one source test as an example;
 two or more remaining tests are retained for code evaluation outside the
 native request clock. Requests use `max_new=4096`, `ctx=65536`,
 temperature 1.0 and target top-k=20 throughout this v9 comparison.

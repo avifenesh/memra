@@ -23,12 +23,12 @@ def conversation(tasks, seed, index):
     prompts, turns = [], []
     for turn, task in enumerate(tasks, 1):
         prompt = (
-            "Write Python code for this task. Give only one fenced Python "
-            "code block, with no reasoning or prose. Earlier turns are "
-            "context, not requests to repeat earlier code.\n\n"
-            + task["prompt"].strip()
+            task["prompt"].strip()
             + "\n\nThe function must satisfy this example:\n"
             + task["test_list"][0].strip()
+            + "\n\nGive only one fenced Python code block, with no reasoning "
+            "or prose. Earlier turns are context, not requests to repeat "
+            "earlier code."
         )
         prompts.append(prompt)
         turns.append({

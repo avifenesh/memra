@@ -10,7 +10,7 @@ import tarfile
 
 MODEL_SHA = "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a"
 BINARY_SHA = "84b04b6ccccc3b64992377cef0677926cb932c7a98f063aff84d1f1f65224d7f"
-WORKLOAD_SHA = "3067e98e6c1b2af0e7de1010e62239182b3264c5a1902e01712c50727bc83079"
+WORKLOAD_SHA = "ebceeeffdf36128b98b303c124cf7459966877991d66afce15f7ecc6ffd4d6ee"
 
 
 def sha(path):
@@ -33,7 +33,7 @@ def inventory(base):
         "selection/arms": base / "arms",
         "selection/final": base / "selected",
         "native/results": base / "results",
-        "native/qualifier": base / "qualifier-v3-k20",
+        "native/qualifier": base / "qualifier-v4-k20",
     }
     named = {}
     for prefix, root in groups.items():
@@ -47,8 +47,8 @@ def inventory(base):
             relative = f"{prefix}/{path.relative_to(root).as_posix()}"
             named[relative] = path
     for name in (
-        "training.log", "qualifier-v3-k20.stdout.log",
-        "qualifier-v3-k20.stderr.log", "qualification-result.json",
+        "training.log", "qualifier-v4-k20.stdout.log",
+        "qualifier-v4-k20.stderr.log", "qualification-result.json",
         "qualification-quality.json", "validation-quality.json",
         "validation-score.json", "heldout-quality.json",
         "heldout-score.json",
