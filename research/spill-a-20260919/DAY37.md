@@ -226,3 +226,21 @@ arm checks that the fix holds on another host and driver; it cannot reproduce th
   `event-query`, `htod-pageable`). Victim primary and victim created, 3 runs each, one hold. Decision: an X that holds
   Y 200 ms or more in 3 of 3 runs, with `none` not holding, is a cross-context holding action. The next fix is
   pre-registered on that reading.
+
+## 7. The teardown probe, as it ran (`probe/teardown.log`), and its completion pre-registered
+
+- One hold 12:19:23Z to 12:20:09Z, N=3 per cell, victim primary and victim created read the same. Verbatim ranges:
+  `ctx-destroy` (an idle context destroyed while the victim's context spins) takes 337.80 to 349.08 ms and holds the
+  victim's `malloc-host` 260.11 to 260.33 ms in 6 of 6 runs; it does not hold `alloc-zeros` (0.01 to 0.07),
+  `event-query` (0.01 to 0.02) or `htod-pageable` (0.28 to 0.52). `ctx-create` takes 140.66 to 153.63 ms and holds
+  `malloc-host` 24.90 to 32.48 ms (under the 200 ms mark, 6 of 6 over the `none` row's 1.49 to 1.63). `free-host` in
+  another context holds nothing (0.44 to 2.79 ms), as in section 5.
+- **By section 6's rule, context destruction is a cross-context holding action**: it waits for the whole device and
+  holds every context's pinned allocation meanwhile. That is what the per-cell-context fix met: a cell that finished
+  destroyed its context while another cell's hold ran, and the other cell's next pinned allocation waited for its own
+  hold to end. Context creation holds pinned allocations too, about 30 ms each.
+- **The completion, pre-registered before it runs**: the same teardown shape with X = `module-load` (load the spin
+  module into the holder's context), `module-unload` (unload one loaded before), `stream-destroy` (destroy an idle
+  stream), `free-sync` (a synchronous `cuMemFree` of a device allocation made before), in another context, victim
+  primary, 3 runs each; and the same four X in the SAME context as the victim (the holder thread on the victim's
+  context), 3 runs each. Decision as section 6's. The fix is pre-registered on the complete table.

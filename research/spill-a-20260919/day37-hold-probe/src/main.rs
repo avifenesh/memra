@@ -116,6 +116,7 @@ struct RawCtx {
     ctx: sys::CUcontext,
     spin: sys::CUfunction,
     stream: sys::CUstream,
+    ystream: sys::CUstream,
 }
 unsafe impl Send for RawCtx {}
 unsafe impl Sync for RawCtx {}
@@ -131,7 +132,8 @@ fn raw_ctx(ptx_src: &str) -> RawCtx {
         let m = result::module::load_data(src.as_ptr() as *const _).unwrap();
         let f = result::module::get_function(m, std::ffi::CString::new("spin").unwrap()).unwrap();
         let s = result::stream::create(result::stream::StreamKind::NonBlocking).unwrap();
-        RawCtx { ctx, spin: f, stream: s }
+        let ys = result::stream::create(result::stream::StreamKind::NonBlocking).unwrap();
+        RawCtx { ctx, spin: f, stream: s, ystream: ys }
     }
 }
 
@@ -142,6 +144,11 @@ fn raw_spin(r: &RawCtx, ns: u64) {
 }
 
 fn raw_y(r: &RawCtx, y: &str, pageable: &[f32]) -> f64 {
+    raw_y_on(r.stream, y, pageable)
+}
+
+fn raw_y_on(stream: sys::CUstream, y: &str, pageable: &[f32]) -> f64 {
+    let r = RawStream { stream };
     let t = Instant::now();
     unsafe {
         match y {
@@ -164,6 +171,174 @@ fn raw_y(r: &RawCtx, y: &str, pageable: &[f32]) -> f64 {
         }
     }
     ms(t.elapsed())
+}
+
+struct RawStream {
+    stream: sys::CUstream,
+}
+
+/// DAY37 section 6's teardown extension: the victim's own context carries the 300 ms spin; a holder
+/// thread performs X in ANOTHER context 20 ms in; the victim times Y on a second stream of its own
+/// context 40 ms in.
+fn teardown(kit: &Arc<Kit>, ptx_src: &str, n: usize, pageable: &Arc<Vec<f32>>) {
+    let victim_raw = Arc::new(raw_ctx(ptx_src));
+    let ys = ["malloc-host", "alloc-zeros", "event-query", "htod-pageable"];
+    for victim in ["primary", "created"] {
+        for x in ["none", "free-host", "ctx-create", "ctx-destroy"] {
+            for y in ys {
+                for run in 1..=n {
+                    // The holder's idle context, prepared before the barrier on this thread.
+                    let holder_ctx = raw_ctx(ptx_src);
+                    let pinned = if x == "free-host" {
+                        unsafe { sys::cuCtxSetCurrent(holder_ctx.ctx) }.result().unwrap();
+                        Some(unsafe { result::malloc_host(4 << 20, 0) }.unwrap() as usize)
+                    } else {
+                        None
+                    };
+                    let holder_raw = holder_ctx.ctx as usize;
+                    let barrier = Arc::new(Barrier::new(2));
+                    let b1 = barrier.clone();
+                    let h = std::thread::spawn(move || {
+                        let hctx = holder_raw as sys::CUcontext;
+                        unsafe { sys::cuCtxSetCurrent(hctx) }.result().unwrap();
+                        b1.wait();
+                        std::thread::sleep(Duration::from_millis(20));
+                        let t = Instant::now();
+                        let mut created: sys::CUcontext = std::ptr::null_mut();
+                        match x {
+                            "none" => {}
+                            "free-host" => unsafe {
+                                result::free_host(pinned.unwrap() as *mut std::ffi::c_void)
+                            }
+                            .unwrap(),
+                            "ctx-create" => unsafe {
+                                let mut dev: sys::CUdevice = 0;
+                                sys::cuDeviceGet(&mut dev, 0).result().unwrap();
+                                sys::cuCtxCreate_v4(&mut created, std::ptr::null_mut(), 0, dev)
+                                    .result()
+                                    .unwrap();
+                            },
+                            "ctx-destroy" => unsafe { sys::cuCtxDestroy_v2(hctx) }.result().unwrap(),
+                            _ => unreachable!(),
+                        }
+                        let x_ms = ms(t.elapsed());
+                        if !created.is_null() {
+                            unsafe { sys::cuCtxDestroy_v2(created) }.result().unwrap();
+                        }
+                        x_ms
+                    });
+                    let (k2, vr, b2, pg) = (kit.clone(), victim_raw.clone(), barrier.clone(), pageable.clone());
+                    let v = std::thread::spawn(move || {
+                        if victim == "created" {
+                            unsafe { sys::cuCtxSetCurrent(vr.ctx) }.result().unwrap();
+                            unsafe { sys::cuCtxSynchronize() }.result().unwrap();
+                            b2.wait();
+                            raw_spin(&vr, 300_000_000);
+                            std::thread::sleep(Duration::from_millis(40));
+                            let out = raw_y_on(vr.ystream, y, &pg);
+                            unsafe { sys::cuCtxSynchronize() }.result().unwrap();
+                            out
+                        } else {
+                            k2.ctx.bind_to_thread().unwrap();
+                            let spin_s = k2.ctx.new_stream().unwrap();
+                            let ys = k2.ctx.new_stream().unwrap();
+                            k2.ctx.synchronize().unwrap();
+                            b2.wait();
+                            launch_spin(&k2, &spin_s, 300_000_000);
+                            std::thread::sleep(Duration::from_millis(40));
+                            let out = do_y(&k2, &ys, y, &pg);
+                            k2.ctx.synchronize().unwrap();
+                            std::mem::forget(spin_s);
+                            std::mem::forget(ys);
+                            out
+                        }
+                    });
+                    let x_ms = h.join().unwrap();
+                    let y_ms = v.join().unwrap();
+                    println!("TEARDOWN victim={victim} x={x} y={y} run={run} y_ms={y_ms:.2} x_ms={x_ms:.2}");
+                    if x != "ctx-destroy" {
+                        unsafe { sys::cuCtxDestroy_v2(holder_ctx.ctx) }.result().unwrap();
+                    }
+                    std::mem::forget(holder_ctx);
+                }
+            }
+        }
+    }
+}
+
+/// DAY37 section 7's completion: the remaining teardown calls, in another context and in the victim's.
+fn teardown2(kit: &Arc<Kit>, ptx_src: &str, n: usize, pageable: &Arc<Vec<f32>>) {
+    let ys = ["malloc-host", "alloc-zeros", "event-query", "htod-pageable"];
+    for place in ["other-context", "same-context"] {
+        for x in ["none", "module-load", "module-unload", "stream-destroy", "free-sync"] {
+            for y in ys {
+                for run in 1..=n {
+                    // The holder's objects, prepared before the barrier on this thread.
+                    let holder_ctx = if place == "other-context" {
+                        raw_ctx(ptx_src).ctx as usize
+                    } else {
+                        kit.ctx.bind_to_thread().unwrap();
+                        let mut c: sys::CUcontext = std::ptr::null_mut();
+                        unsafe { sys::cuCtxGetCurrent(&mut c) }.result().unwrap();
+                        c as usize
+                    };
+                    unsafe { sys::cuCtxSetCurrent(holder_ctx as sys::CUcontext) }.result().unwrap();
+                    let src = std::ffi::CString::new(ptx_src).unwrap();
+                    let prepared: usize = unsafe {
+                        match x {
+                            "module-unload" => result::module::load_data(src.as_ptr() as *const _).unwrap() as usize,
+                            "stream-destroy" => result::stream::create(result::stream::StreamKind::NonBlocking).unwrap() as usize,
+                            "free-sync" => result::malloc_sync(4 << 20).unwrap() as usize,
+                            _ => 0,
+                        }
+                    };
+                    let barrier = Arc::new(Barrier::new(2));
+                    let b1 = barrier.clone();
+                    let h = std::thread::spawn(move || {
+                        unsafe { sys::cuCtxSetCurrent(holder_ctx as sys::CUcontext) }.result().unwrap();
+                        let src = std::ffi::CString::new(src.into_bytes()).unwrap();
+                        b1.wait();
+                        std::thread::sleep(Duration::from_millis(20));
+                        let t = Instant::now();
+                        unsafe {
+                            match x {
+                                "none" => {}
+                                "module-load" => {
+                                    let _ = result::module::load_data(src.as_ptr() as *const _).unwrap();
+                                }
+                                "module-unload" => sys::cuModuleUnload(prepared as sys::CUmodule).result().unwrap(),
+                                "stream-destroy" => sys::cuStreamDestroy_v2(prepared as sys::CUstream).result().unwrap(),
+                                "free-sync" => sys::cuMemFree_v2(prepared as sys::CUdeviceptr).result().unwrap(),
+                                _ => unreachable!(),
+                            }
+                        }
+                        ms(t.elapsed())
+                    });
+                    let (k2, b2, pg) = (kit.clone(), barrier.clone(), pageable.clone());
+                    let v = std::thread::spawn(move || {
+                        k2.ctx.bind_to_thread().unwrap();
+                        let spin_s = k2.ctx.new_stream().unwrap();
+                        let ys = k2.ctx.new_stream().unwrap();
+                        k2.ctx.synchronize().unwrap();
+                        b2.wait();
+                        launch_spin(&k2, &spin_s, 300_000_000);
+                        std::thread::sleep(Duration::from_millis(40));
+                        let out = do_y(&k2, &ys, y, &pg);
+                        k2.ctx.synchronize().unwrap();
+                        std::mem::forget(spin_s);
+                        std::mem::forget(ys);
+                        out
+                    });
+                    let x_ms = h.join().unwrap();
+                    let y_ms = v.join().unwrap();
+                    println!("TEARDOWN2 place={place} x={x} y={y} run={run} y_ms={y_ms:.2} x_ms={x_ms:.2}");
+                    if place == "other-context" {
+                        unsafe { sys::cuCtxDestroy_v2(holder_ctx as sys::CUcontext) }.result().unwrap();
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn cross(kit: &Arc<Kit>, ptx_src: &str, n: usize, pageable: &Arc<Vec<f32>>) {
@@ -247,6 +422,14 @@ fn main() {
     let kit = Arc::new(Kit { ctx: ctx.clone(), spin: m.load_function("spin").unwrap(), touch: m.load_function("touch").unwrap() });
     let pageable: Arc<Vec<f32>> = Arc::new((0..(1usize << 20)).map(|i| i as f32).collect());
     println!("PROBE header n={n} event_tracking={}", ctx.is_event_tracking());
+    if std::env::args().nth(3).as_deref() == Some("teardown2") {
+        teardown2(&kit, &ptx_src, n, &pageable);
+        return;
+    }
+    if std::env::args().nth(3).as_deref() == Some("teardown") {
+        teardown(&kit, &ptx_src, n, &pageable);
+        return;
+    }
     if std::env::args().nth(3).as_deref() == Some("cross") {
         cross(&kit, &ptx_src, n, &pageable);
         return;
