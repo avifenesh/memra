@@ -869,8 +869,30 @@ impl CudaTransfers {
         &mut self,
         ops: &[TransferOp<CudaPinnedLease>],
         errors: &[Option<Error>],
-        mut scratch: ReceiptScratch,
+        scratch: ReceiptScratch,
     ) -> Result<(D2hDeviceReceipt, Option<CudaEvent>)> {
+        // Move-then-match: from the first enqueue on, the receipt stream may write the lanes and
+        // the twin, so on ANY error the scratch leaks (never a free under a pending write); only
+        // the success exit hands it out.
+        let mut scratch = std::mem::ManuallyDrop::new(scratch);
+        let sealed = self.seal_d2h_device_receipt_into(ops, errors, &mut scratch);
+        sealed.map(|(timing, flipped)| {
+            (
+                D2hDeviceReceipt {
+                    scratch: std::mem::ManuallyDrop::into_inner(scratch),
+                    timing: Some(timing),
+                },
+                flipped,
+            )
+        })
+    }
+    /// The enqueues of `seal_d2h_device_receipt`, into the caller's scratch.
+    fn seal_d2h_device_receipt_into(
+        &mut self,
+        ops: &[TransferOp<CudaPinnedLease>],
+        errors: &[Option<Error>],
+        scratch: &mut ReceiptScratch,
+    ) -> Result<((CudaEvent, CudaEvent), Option<CudaEvent>)> {
         let rs = self.receipt_stream.clone().ok_or(Error::Unsupported)?;
         let mut sources: Vec<(u64, u64)> = Vec::with_capacity(ops.len());
         let mut waited: Vec<u64> = Vec::new();
@@ -946,13 +968,7 @@ impl CudaTransfers {
         }
         cuda(rs.memcpy_dtoh(&scratch.lanes, &mut scratch.pinned))?;
         scratch.event = Some(cuda(rs.record_event(None))?);
-        Ok((
-            D2hDeviceReceipt {
-                scratch,
-                timing: Some((start, end)),
-            },
-            flipped,
-        ))
+        Ok(((start, end), flipped))
     }
     /// Seal a batch's receipt: one D2H of the lanes into the pinned twin on the copy stream, then
     /// the receipt event; `progress` reads the lanes only after that event. A failure quarantines
@@ -3680,7 +3696,17 @@ mod tests {
             seal < items,
             "the receipt is sealed before any copy is issued"
         );
-        let sealer = fn_body("    fn seal_d2h_device_receipt(");
+        // Move-then-match: the wrapper leaks the scratch on any error of the enqueues.
+        let wrapper = fn_body("    fn seal_d2h_device_receipt(");
+        assert!(wrapper.contains("let mut scratch = std::mem::ManuallyDrop::new(scratch);"));
+        let into_inner = wrapper
+            .find("std::mem::ManuallyDrop::into_inner(scratch)")
+            .unwrap();
+        assert!(
+            wrapper.find("sealed.map(").unwrap() < into_inner,
+            "handed out on success only"
+        );
+        let sealer = fn_body("    fn seal_d2h_device_receipt_into(");
         // Design G' (section 5): the whole receipt on the receipt stream, never the copy stream.
         assert!(
             sealer.contains("let rs = self.receipt_stream.clone().ok_or(Error::Unsupported)?;")
