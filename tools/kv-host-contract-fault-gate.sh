@@ -107,6 +107,15 @@
 #   sources-never-land     the helper hashes it and discards the reply (the 10 s deadline)
 #   sources-foreign-reply  the helper replies with seq + 1 (a reply that does not describe the ticket)
 #
+# WP-A day 40 (OWED item 4, research/spill-a-20260919/DAY40.md design S): the span receipts' red arms, two boots each:
+#   span-flip-landed    r2's demote's first f32 span has one landed byte flipped after its copy and before its landed
+#                       digest: one typed `span landed bytes differ from their device source` refusal, nothing
+#                       published, the tier on; r3 primes cold, r4 promotes. r1..r4 byte-equal.
+#   span-flip-resident  r3's promote fills its first span from a copy of the resident plane with one byte flipped: one
+#                       typed `span landed on the device differs from its demote's source` refusal, the host entry
+#                       dropped (the KV receipt mismatch's path), the tier on; the next promote publishes. r1..r4
+#                       byte-equal.
+#
 # usage: kv-host-contract-fault-gate.sh [--external-lock FD] <model.gguf> <server_bin> <evidence_dir>
 # env:   MEMRA_HOSTGATE_CACHE_MB (default 256)  device prefix budget; must hold ONE seed entry but not two
 #        MEMRA_HOSTGATE_HOST_MB  (default 8192) host tier budget
@@ -861,6 +870,72 @@ kcell() { # WP-A day 41: $1 fault value $2 the TIER DISABLED line's own words (a
     chk "$name: r1..r4 byte-equal to the door-OFF boot" texts_equal_arms "$EV/$name" "$EV/$name-off" 4
 }
 
+lcell() { # WP-A day 40 (design S): MEMRA_KV_HOST_FAULT=span-flip-landed (door ON), then the same four requests door OFF
+    local name=span-flip-landed fault=span-flip-landed log="$EV/span-flip-landed-server.log" offlog="$EV/span-flip-landed-off-server.log"
+    local refusal="span landed bytes differ from their device source); nothing published"
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, the D2H span receipt's red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_B" "$EV/$name-r2.json"
+    local awaited=0 settled=0
+    await_line "$refusal" "$log" || awaited=$?
+    req "$P_A" "$EV/$name-r3.json"
+    req "$P_B" "$EV/$name-r4.json"
+    await_settled_or_refused "$log" || settled=$?
+    stop
+    echo "== cell $name: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) =="
+    boot "MEMRA_KV_HOST_CONTRACTS=0" "$offlog"
+    req "$P_A" "$EV/$name-off-r1.json"
+    req "$P_B" "$EV/$name-off-r2.json"
+    req "$P_A" "$EV/$name-off-r3.json"
+    req "$P_B" "$EV/$name-off-r4.json"
+    stop
+    chk "$name: the refused demote settled before r3 (bounded 15 s wait)" test "$awaited" -eq 0
+    chk "$name: every submitted demote published or refused before stop (bounded 15 s wait)" test "$settled" -eq 0
+    chk "$name: four completions served" four_served "$EV/$name"
+    chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
+    chk "$name: the fault was armed once" count_eq "demote fault armed (MEMRA_KV_HOST_FAULT=span-flip-landed)" "$log" 1
+    chk "$name: exactly one typed refusal of the flipped span" count_eq "$refusal" "$log" 1
+    chk "$name: the next demote publishes" after "$refusal" "\\[prefix-host\\] demote: " "$log"
+    chk "$name: r3 primed cold and only r4 promoted (the refused image was never published)" count_eq "\\[prefix-host\\] promote: " "$log" 1
+    chk "$name: the tier never latched off" absent "TIER DISABLED" "$log"
+    chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+    chk "$name: OFF boot: four completions served" four_served "$EV/$name-off"
+    chk "$name: OFF boot: the contracts door is off" absent "contracts door ON" "$offlog"
+    chk "$name: r1..r4 byte-equal to the door-OFF boot" texts_equal_arms "$EV/$name" "$EV/$name-off" 4
+}
+rcell() { # WP-A day 40 (design S): MEMRA_KV_HOST_FAULT=span-flip-resident (door ON), then the same four requests door OFF
+    local name=span-flip-resident fault=span-flip-resident log="$EV/span-flip-resident-server.log" offlog="$EV/span-flip-resident-off-server.log"
+    local refusal="span landed on the device differs from its demote's source; host entry dropped, cold path serves"
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, the H2D span receipt's red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_B" "$EV/$name-r2.json"
+    req "$P_A" "$EV/$name-r3.json"
+    req "$P_B" "$EV/$name-r4.json"
+    stop
+    echo "== cell $name: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) =="
+    boot "MEMRA_KV_HOST_CONTRACTS=0" "$offlog"
+    req "$P_A" "$EV/$name-off-r1.json"
+    req "$P_B" "$EV/$name-off-r2.json"
+    req "$P_A" "$EV/$name-off-r3.json"
+    req "$P_B" "$EV/$name-off-r4.json"
+    stop
+    chk "$name: four completions served" four_served "$EV/$name"
+    chk "$name: door ON with the transfer engine on both sides" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine.*KV plane H2D through the same engine on promote" "$log"
+    chk "$name: the fault was armed once" count_eq "promote fault armed (MEMRA_KV_HOST_FAULT=span-flip-resident)" "$log" 1
+    chk "$name: exactly one typed refusal of the differing span" count_eq "$refusal" "$log" 1
+    chk "$name: the next promote publishes" after_any "$refusal" "\\[prefix-host\\] promote: " "$log"
+    chk "$name: exactly one host entry dropped, the refused one" count_eq "host entry dropped" "$log" 1
+    chk "$name: the tier never latched off" absent "TIER DISABLED" "$log"
+    chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+    chk "$name: OFF boot: four completions served" four_served "$EV/$name-off"
+    chk "$name: OFF boot: the contracts door is off" absent "contracts door ON" "$offlog"
+    chk "$name: r1..r4 byte-equal to the door-OFF boot" texts_equal_arms "$EV/$name" "$EV/$name-off" 4
+}
+
 # WP-A day 22: the D2D receipt's red arm, one cell per class.
 dcell_capture
 dcell_restore
@@ -878,6 +953,9 @@ ccell
 kcell sources-helper-gone "tier hash helper gone before the H2D checksums of ticket seq="
 kcell sources-never-land "tier H2D checksums never landed: ticket seq="
 kcell sources-foreign-reply "tier H2D checksum reply seq="
+# WP-A day 40: design S's span receipts, one red arm per direction, byte-compared with the door-OFF boot.
+lcell
+rcell
 
 if [ "$FAILS" -eq 0 ]; then
     echo "KV-HOST-CONTRACT-FAULT GATE: ALL GREEN"

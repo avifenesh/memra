@@ -132,3 +132,13 @@ read in its sitting.
 
 **Budget.** 1.5 agent-days: the engine and the tier rules 0.5, the server and the fault cells 0.5, the 5090 cells 0.3,
 the target sitting 0.2.
+
+## 3a. Amendment to section 3, before any S cell runs: the promote's refusal path
+
+Section 3 item 5 gave the promote's span mismatch the day-16 `promote-reject` shape (the host twins intact, the entry
+kept). The promote settle already has a path for exactly this failure class, the KV planes' receipt mismatch ("the host
+bytes the copy read differ from the plane's D2H receipt"): `HostPromoteFailure::ReceiptMismatch`, the entry leaves and the
+cold path serves (`promote refused (contracts door): ..; host entry dropped, cold path serves`), because a resident image
+whose bytes no longer match what the demote wrote would fail every later promote the same way. A span is the same class,
+so it takes the same path. The fault gate's `span-flip-resident` cell checks one such line and exactly one dropped entry.
+No other clause, bound or check moves.
