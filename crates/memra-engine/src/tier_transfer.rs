@@ -3971,9 +3971,8 @@ mod tests {
             1,
             "the acknowledged batch's twin is pooled"
         );
-        let producer = t.record_producer(1).unwrap();
         let mut keeps = Vec::new();
-        let mut ops = Vec::new();
+        let mut parts = Vec::new();
         let second: Vec<Vec<u8>> = patterns
             .iter()
             .map(|p| p.iter().map(|b| b.wrapping_add(17)).collect())
@@ -3985,15 +3984,23 @@ mod tests {
             let device = t.retain_device(&keep).unwrap();
             let host = t.alloc_host(p.len(), request()).unwrap();
             keeps.push(keep);
-            ops.push(TransferOp::D2h(CopyOp {
-                host,
-                device,
-                bytes: p.len() as u64,
-                epochs,
-                producer_fence: None,
-            }));
+            parts.push((host, device, p.len() as u64));
         }
-        stream.synchronize().unwrap();
+        // The producer fence after the uploads (a D2H without one is refused `NotReady` by the
+        // contract's own validation).
+        let producer = t.record_producer(1).unwrap();
+        let ops = parts
+            .into_iter()
+            .map(|(host, device, bytes)| {
+                TransferOp::D2h(CopyOp {
+                    host,
+                    device,
+                    bytes,
+                    epochs,
+                    producer_fence: Some(producer),
+                })
+            })
+            .collect();
         let ticket = t.submit_batch(ops).map_err(|r| r.error).unwrap().ticket;
         assert_eq!(
             t.twin_pool_len(),
