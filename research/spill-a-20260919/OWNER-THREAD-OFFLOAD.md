@@ -1109,7 +1109,21 @@ job over read views of the KV leases, which wait in a leak-on-drop guard on the 
 engine's poll. On the 5090 the owner's `take-back` 8.25 to 0.06 ms, its hold per demote 17.98 to 9.55 ms, the demote's
 wall 8 ms shorter, the demoting request's e2e 8 ms lower; every gate green.
 
-1. The recurrent f32 state off the tick: **hash 1**, the D2H receipt, stays on the owner (the refuted M1: no off-thread form found that keeps the copy phase at one poll), **the
-   fill's speed** on CPUs where it outlasts the tick (not pre-registered), **the D2D half** (the restore's price cell
-   decides; the capture refuted by construction, DAY33 section 6), and **the strong-form receipt**.
+## Move 2, day 36: the D2D half closed; M' on the target card (`DAY36.md`)
+
+**The D2D half closes as not worth a door** (DAY33 section 6's rule, pre-registered): on the target card the door
+restore's recurrent-state copy costs `owner-stream median=0.290` ms of GPU time and `host median=0.190` ms per restore
+(96 planes, 156.9 MB, 100 restores), under the 0.5 ms bound each: `DAY36 PRICE VERDICT (target card) .. -> CLOSES`. The
+capture half was refuted by construction on day 33. No code; the instrument (a log-only field on the restore lines)
+stays as the receipt's source. On the 5090 (a reading only) 0.170 and 0.130 ms.
+
+**M' on the target card**, with the guard fix from review on #711: `take-back` 0.54 to 0.11 ms, the wall -0.40 / -0.50
+ms, the e2e +0.09 / +0.01 ms, every gate green. On cached leases hash 2 is about 0.43 ms, so the card-level gain is small;
+the 5090's was 8 ms (write-combined reads).
+
+**What Move 2 still owes, in order.**
+
+1. The recurrent f32 state off the tick: **hash 1**, the D2H receipt, stays on the owner (the refuted M1: no
+   off-thread form found that keeps the copy phase at one poll), **the fill's speed** on CPUs where it outlasts the tick
+   (not pre-registered), and **the strong-form receipt**. The D2D half is closed (day 36).
 2. to 4. Unchanged.

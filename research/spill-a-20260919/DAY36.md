@@ -142,3 +142,75 @@ that carries it. So, before any boot:
   compile (`cargo check -p memra-server`) with no M' symbol left and the day-36 instrument kept, and checked to apply to
   the tip (`git apply --check`). The build's argument is the commit that carries this section (its code equals
   `e23383796`'s).
+
+## 4. The target-card sitting, as it ran (`pro-single-day36/box/`)
+
+- BOX5: one RTX PRO 6000 Blackwell Workstation Edition (600 W), the lead's acceptance; the 27B artifact
+  `1facf36c2db359dc..` (`model.sha256`). `build.sh 733075ed1` from 07:39Z, `rc=0`: the tip `dba61b98ee4290d9..` and the
+  base (the tip plus `base-revert.patch`, `base-applied.stat`: `2 files changed, 14 insertions(+), 486 deletions(-)`,
+  the tree back at the tip) `4e0277133e7d8052..`; iproute2 installed (`apt-iproute2.log`). `driver.sh`: price-and-ab
+  `rc=0` (one collector hold, 07:44:56Z to 08:09:10Z), gates `rc=0` (08:20:57Z), hit OFF and ON `rc=0`, unit cells
+  `rc=0` (08:22:21Z); every collector cell `executed-not-qualified False 0`; no lock retry; no compute app at the start
+  or the end. Card telemetry (`m2/card-250ms.csv`): 5813 samples, 29 to 69 C, 15.8 to 600.8 W. Mirrored and checked
+  file for file against the box's sha256 manifest (`box-manifest.sha256`, 506 of 506), binaries excluded (their hashes
+  in `bins/*/memra-server.sha256`); the box scratch then removed.
+
+**1. The price cell, DAY33 section 6's rule, verbatim** (`reading-day36-target.log`):
+
+- `DAY36 READING submitted=100 landed=100 pending=0 n/a=0 replay_pass=True`
+- `DAY36 READING recurrent-copy-host-ms N=100 median=0.190 min=0.180 max=0.200 first=0.180`
+- `DAY36 READING recurrent-copy-owner-stream-ms N=100 median=0.290 min=0.280 max=0.300 first=0.290`
+- `DAY36 PRICE VERDICT (target card) owner-stream median=0.290 host median=0.190 rule each < 0.5 ms per restore -> CLOSES`
+
+**The D2D half of Move 2 owed item 1 closes as not worth a door.** The restore's recurrent copy costs 0.29 ms of
+owner-stream GPU time and 0.19 ms of host time per restore on the target card (96 planes, 156.9 MB); the capture half
+was refuted by construction on day 33. No code. The prediction held for the GPU time (0.2 to 0.3; about 1.08 TB/s
+effective over 2 x 156.9 MB) and came in under it for the host (0.25 to 0.5 predicted: this box's CPU is a desktop part,
+about 1.7 us per call over 112 calls).
+
+**2. M' on the target card** (`reading-day35m2-target.log`, DAY35 section 7's (c) and (d) verbatim):
+
+- (c) `DAY35 M2 C take-back N=80 median=0.11 min=0.10 max=0.11 rule N>=20 median<=1.5 max<=3.0 (copy-settle reading:
+  copy-settle N=80 median=0.70 min=0.64 max=0.82) -> PASS` (base `take-back N=80 median=0.54`). **PASS.**
+- (d) `DAY35 M2 D order=o1 wall base=114.70 m=114.30 m-minus-base=-0.40 rule <=+17.0 | e2e base=176.48 m=176.57
+  m-minus-base=+0.09 rule <=+1.0 -> PASS`; `order=o2 wall base=114.70 m=114.20 m-minus-base=-0.50 .. e2e base=176.52
+  m=176.54 m-minus-base=+0.01 .. -> PASS`. **PASS.**
+- 20 boots, `STALL REPLAY: PASS` 20 of 20. Readings: the owner's hold per demote `owner-held` 2.67 to 2.27 ms; the
+  helper's job 97.00 to 97.60 ms; the tenant stall flat (64.34 / 64.33 to 64.38 / 64.36 ms). As predicted, M''s gain on
+  cached leases is small (hash 2 about 0.43 ms here) and the e2e sits at parity.
+
+**3. The gates on the tip** (M''s (a) and (b) on this card): identity x4 `KV-HOST-SPILL IDENTITY GATE: ALL GREEN
+(teeth=0)` (12 ok each); failure OFF and ON `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (15 ok each), the ON arm's
+`digest` cell with the bind's `contracts door D2H receipt` line `Key plane image checksum differs from its D2H receipt as
+injected (MEMRA_KV_HOST_FAULT=flip-demote)` (the helper's re-hash saw the flipped byte), `VERIFY FAILED: promoted digest
+.. != demote digest ..` and `ok: the promote caught it: VERIFY FAILED, loud and named`; the fault gate default and
+plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (160 ok each); twin OFF and ON `PREFIX-NEWEST-TURN-FITS: .. -> PASS`;
+hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 and 68 ok, the day-24 census `capture_submitted=12
+capture_published=12 restore_submitted=13 restore_landed=13`). Unit cells: `ok. 18 passed` (the door's GPU cells,
+`option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused ... ok`), `ok. 10 passed` (the engine's
+D2D, D2H span and H2D cells), `ok. 18 passed` (the CPU censuses, `day35_` and `day36_` among them), `ok. 6 passed`
+(the engine censuses), `ok. 13 passed` (the tier rules). **ALL GREEN.**
+
+**Verdict.** The D2D half closes (no door, no code). M' passes (a) to (d) on the 5090 (DAY35 section 8) and on the
+target card. **Integrable: yes.**
+
+**For the verdicts ledger** (`darklanes/agent-knowledge/gpu/verdicts-ledger.md`, a separate repository with its own
+merge gate, so handed to the lead), the line as drafted:
+`VERDICT:spill-restore-recurrent-d2d-not-a-door | scope: 27B NVFP4 MTP, one RTX PRO 6000 Blackwell WS, 100 restores,
+2026-09-24 | the door restore's recurrent-state copy costs 0.29 ms owner-stream GPU and 0.19 ms host per restore (96
+planes, 156.9 MB) against a pre-registered 0.5 ms bound each: the D2D half of the owner-thread offload closes with no
+door; the capture half was refuted by construction (a write-after-read fence keeps its GPU time on the owner stream) |
+keywords: tiered-kv, restore, recurrent, owner-thread, d2d | src: memra research/spill-a-20260919/DAY36.md section 4`
+
+## 5. What is owed, checks, budget, cleanup
+
+- Owed (Move 2 owed item 1 and beyond): **hash 1** (the D2H receipt) stays on the owner (the refuted M1; no off-thread
+  form known that keeps the copy phase at one poll); **the fill on slower CPUs** (design F's copy misses the probe's
+  tick where the fill outlasts it, BOX4 day 34); **the strong-form receipt**. The darklanes VERDICT line above. The D2D
+  half is closed.
+- Checks on the merged tree `e23383796`: `cargo fmt --all -- --check` clean; server lib 894 passed; clippy `-D warnings`
+  on tier, engine and server, all targets, clean; the `DOCS_RS=1` pass `docsrs_rc=0` (on `d4f53945f`); `check-flags` and
+  `check-conflict-markers: OK`; `git diff --check` clean; no em dashes in this lane's lines; no new `MEMRA_*` name.
+- Budget: about 0.2 agent-day of work, plus the box's about 45 minutes from access to release.
+- Cleanup: BOX5's `/root/wt-a` and `/root/spill-receipts/a-day36` removed after the checked mirror, no process of this
+  lane on the box, `BOX5 RELEASED` sent; the 5090 carries no process of this lane; `/tmp/wt-a-d36` removed at close.
