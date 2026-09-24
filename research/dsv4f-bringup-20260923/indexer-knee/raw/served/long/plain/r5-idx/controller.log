@@ -1,0 +1,7 @@
+START utc=2026-09-23T23:10:49Z bin=/root/lane/target-idx/release/memra-server env=MEMRA_TIMEOUT_MS_MAX=900000
+READY after=126s port=48043
+CELL warmup c=1 ok=1/1 agg=36.90 tok/s decode_p50=51.42 tok/s ttft_p50=264 ms tpot_p50=19.45 ms errs=[]
+CELL greedy-32k c=1 ok=2/2 agg=2.20 tok/s decode_p50=44.85 tok/s ttft_p50=110833 ms tpot_p50=22.30 ms errs=[]
+CELL greedy-64k c=1 ok=1/1 agg=1.08 tok/s decode_p50=43.56 tok/s ttft_p50=230615 ms tpot_p50=22.96 ms errs=[]
+CELLS_DONE utc=2026-09-23T23:20:46Z
+TERMINAL rc=0 utc=2026-09-23T23:20:53Z

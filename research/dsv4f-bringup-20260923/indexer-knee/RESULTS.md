@@ -138,5 +138,130 @@ rather than adding a third threshold.
 
 ## Served evidence
 
-Pending on a 2x PRO 6000 pair: long-context identity (32k and 128k prompts, greedy, lane vs
-main binary, same hashes) and TTFT/decode rows. Rows land here before the PR merges.
+2x RTX PRO 6000 WS (450 W), lane `798e12674` (`idx`) against main `6978f5fac` (`base`), one boot
+per row in the order `idx base base idx idx base base idx`, N=4 per arm per mode, plain then
+DSpark (`raw/served/q-pairL.sh`). Cells (`raw/served/cells-long.txt`): two greedy requests at
+about 32k prompt tokens (22,400 words) and one at about 64k (44,800 words), 256 output tokens
+each, text kept and hashed. `MEMRA_TIMEOUT_MS_MAX=900000` lifts the 90 s default ceiling, the
+documented measurement-cell override. The first run of this campaign is void and kept as
+`raw/served/long-void-408/`: every long request hit the default ceiling (HTTP 408) before its
+first token.
+
+### Plain
+
+
+#### greedy-32k
+
+| row | arm | decode p50 tok/s | TPOT p50 / p95 / p99 ms | TTFT p50 / p95 ms | E2E p50 ms | ok |
+|---|---|---|---|---|---|---|
+| r1 | idx | 44.90 | 22.27 / 22.31 / 22.31 | 110,278 / 110,362 | 115,956 | 2/2 |
+| r2 | base | 40.81 | 24.50 / 24.55 / 24.55 | 115,550 / 115,900 | 121,799 | 2/2 |
+| r3 | base | 40.80 | 24.51 / 24.55 / 24.55 | 115,713 / 115,983 | 121,962 | 2/2 |
+| r4 | idx | 44.89 | 22.28 / 22.32 / 22.32 | 110,774 / 110,983 | 116,455 | 2/2 |
+| r5 | idx | 44.85 | 22.30 / 22.36 / 22.36 | 110,833 / 111,023 | 116,519 | 2/2 |
+| r6 | base | 40.80 | 24.51 / 24.55 / 24.55 | 115,799 / 116,011 | 122,049 | 2/2 |
+| r7 | base | 40.81 | 24.51 / 24.54 / 24.55 | 115,697 / 116,020 | 121,946 | 2/2 |
+| r8 | idx | 44.89 | 22.28 / 22.32 / 22.32 | 110,825 / 111,058 | 116,506 | 2/2 |
+
+| arm | N | decode p50 median | TPOT p50 median ms | TTFT p50 median ms |
+|---|---|---|---|---|
+| idx | 4 | 44.89 | 22.28 | 110,800 |
+| base | 4 | 40.80 | 24.51 | 115,705 |
+
+Delta, lane vs base: decode +10.01%, TTFT -4.24%.
+
+Hashes: identical across every row of both arms; 2 requests, first 9a8aa4bc 17f9f998.
+
+#### greedy-64k
+
+| row | arm | decode p50 tok/s | TPOT p50 / p95 / p99 ms | TTFT p50 / p95 ms | E2E p50 ms | ok |
+|---|---|---|---|---|---|---|
+| r1 | idx | 43.56 | 22.96 / 22.96 / 22.96 | 230,334 / 230,334 | 236,188 | 1/1 |
+| r2 | base | 35.93 | 27.83 / 27.83 / 27.83 | 249,586 / 249,586 | 256,683 | 1/1 |
+| r3 | base | 35.93 | 27.83 / 27.83 / 27.83 | 249,268 / 249,268 | 256,366 | 1/1 |
+| r4 | idx | 43.55 | 22.96 / 22.96 / 22.96 | 230,644 / 230,644 | 236,499 | 1/1 |
+| r5 | idx | 43.56 | 22.96 / 22.96 / 22.96 | 230,615 / 230,615 | 236,469 | 1/1 |
+| r6 | base | 35.93 | 27.83 / 27.83 / 27.83 | 249,699 / 249,699 | 256,797 | 1/1 |
+| r7 | base | 35.92 | 27.84 / 27.84 / 27.84 | 250,021 / 250,021 | 257,120 | 1/1 |
+| r8 | idx | 43.56 | 22.96 / 22.96 / 22.96 | 230,622 / 230,622 | 236,476 | 1/1 |
+
+| arm | N | decode p50 median | TPOT p50 median ms | TTFT p50 median ms |
+|---|---|---|---|---|
+| idx | 4 | 43.56 | 22.96 | 230,618 |
+| base | 4 | 35.93 | 27.83 | 249,643 |
+
+Delta, lane vs base: decode +21.24%, TTFT -7.62%.
+
+Hashes: identical across every row of both arms; 1 requests, first e84068e3.
+
+Thermal idx: power median 324..330 W, peak 633 W, SM clock 2287..2865 MHz, max temp 64 C, 8234 samples.
+
+Thermal base: power median 335..342 W, peak 609 W, SM clock 2265..2865 MHz, max temp 64 C, 8833 samples.
+
+### DSpark (`MEMRA_DSV4_DRAFTER=dspark`)
+
+
+#### greedy-32k
+
+| row | arm | decode p50 tok/s | TPOT p50 / p95 / p99 ms | TTFT p50 / p95 ms | E2E p50 ms | ok |
+|---|---|---|---|---|---|---|
+| r1 | idx | 53.00 | 18.87 / 20.89 / 21.07 | 114,258 / 114,583 | 119,070 | 2/2 |
+| r2 | base | 43.23 | 23.13 / 25.60 / 25.82 | 119,221 / 119,451 | 125,120 | 2/2 |
+| r3 | base | 43.23 | 23.13 / 25.60 / 25.82 | 119,345 / 119,682 | 125,243 | 2/2 |
+| r4 | idx | 52.99 | 18.87 / 20.89 / 21.07 | 114,232 / 114,569 | 119,044 | 2/2 |
+| r5 | idx | 52.99 | 18.87 / 20.90 / 21.08 | 114,272 / 114,584 | 119,084 | 2/2 |
+| r6 | base | 43.22 | 23.14 / 25.60 / 25.82 | 117,464 / 118,577 | 123,364 | 2/2 |
+| r7 | base | 43.22 | 23.14 / 25.61 / 25.83 | 117,714 / 118,356 | 123,614 | 2/2 |
+| r8 | idx | 52.99 | 18.87 / 20.89 / 21.07 | 113,957 / 114,068 | 118,769 | 2/2 |
+
+| arm | N | decode p50 median | TPOT p50 median ms | TTFT p50 median ms |
+|---|---|---|---|---|
+| idx | 4 | 52.99 | 18.87 | 114,245 |
+| base | 4 | 43.22 | 23.14 | 118,467 |
+
+Delta, lane vs base: decode +22.60%, TTFT -3.56%.
+
+Hashes: identical across every row of both arms; 2 requests, first 9a8aa4bc 17f9f998.
+
+#### greedy-64k
+
+| row | arm | decode p50 tok/s | TPOT p50 / p95 / p99 ms | TTFT p50 / p95 ms | E2E p50 ms | ok |
+|---|---|---|---|---|---|---|
+| r1 | idx | 47.36 | 21.12 / 21.12 / 21.12 | 237,538 / 237,538 | 242,922 | 1/1 |
+| r2 | base | 32.39 | 30.87 / 30.87 / 30.87 | 256,947 / 256,947 | 264,820 | 1/1 |
+| r3 | base | 32.38 | 30.88 / 30.88 / 30.88 | 258,058 / 258,058 | 265,932 | 1/1 |
+| r4 | idx | 47.37 | 21.11 / 21.11 / 21.11 | 237,892 / 237,892 | 243,275 | 1/1 |
+| r5 | idx | 47.37 | 21.11 / 21.11 / 21.11 | 236,801 / 236,801 | 242,184 | 1/1 |
+| r6 | base | 32.37 | 30.89 / 30.89 / 30.89 | 258,011 / 258,011 | 265,888 | 1/1 |
+| r7 | base | 32.38 | 30.88 / 30.88 / 30.88 | 255,463 / 255,463 | 263,338 | 1/1 |
+| r8 | idx | 47.35 | 21.12 / 21.12 / 21.12 | 231,518 / 231,518 | 236,903 | 1/1 |
+
+| arm | N | decode p50 median | TPOT p50 median ms | TTFT p50 median ms |
+|---|---|---|---|---|
+| idx | 4 | 47.36 | 21.11 | 237,170 |
+| base | 4 | 32.38 | 30.88 | 257,479 |
+
+Delta, lane vs base: decode +46.27%, TTFT -7.89%.
+
+Hashes: identical across every row of both arms; 1 requests, first e84068e3.
+
+Thermal idx: power median 330..339 W, peak 680 W, SM clock 2295..2865 MHz, max temp 66 C, 8335 samples.
+
+Thermal base: power median 338..348 W, peak 571 W, SM clock 2235..2865 MHz, max temp 65 C, 9036 samples.
+
+## Verdict
+
+**The knee default wins at long context on both served modes, with the same text.** Plain decode
+is 10.0% faster at 32k (40.80 -> 44.89 tok/s) and 21.2% faster at 64k (35.93 -> 43.56). DSpark
+decode is 22.6% faster at 32k (43.22 -> 52.99) and 46.3% faster at 64k (32.38 -> 47.36): a
+DSpark round scores the block list of every verify row, so it runs the indexer several times per
+committed step where plain runs it once. TTFT falls 4% at 32k and 8% at 64k: the
+chunked prefill's indexer takes tiled from its first 64-row chunk. Every request of every row of
+both arms hashed the same, in both modes, and plain and DSpark agree with each other
+(`9a8aa4bc 17f9f998` at 32k, `e84068e3` at 64k).
+
+Short context is unchanged by construction: under about 4.6k tokens the knee keeps the scalar
+scorer. The lane's served DSpark identity gate passed on the same pair (tape 416,
+`../kernel-ab-short/summary.txt`, `idx dspark-served`); no short served rows were scored for this
+lane. The prefill itself stays slow at about
+290 tokens per second whatever the scorer (memra #700).
