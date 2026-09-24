@@ -1324,6 +1324,11 @@ fn sleep_without_turn(turn: &mut Turn, d: std::time::Duration) {
 /// payload so the coordination is testable without a GPU.
 struct Coalescer<S> {
     bmax: usize,
+    /// Batches that can be in flight at once (the B-row workspaces). A batch targets
+    /// `ceil(members / groups)` rows, so the lanes split into that many groups: with two
+    /// groups, two concurrent requests run as two pipelined one-row steps (the two cards
+    /// overlap) and four run as two pipelined groups of two.
+    groups: usize,
     inner: std::sync::Mutex<CoalesceState<S>>,
     cv: std::sync::Condvar,
 }
@@ -1365,9 +1370,10 @@ type BatchRun<'r, S> =
 const ROW_BATCH_WAIT: std::time::Duration = std::time::Duration::from_micros(500);
 
 impl<S> Coalescer<S> {
-    fn new(bmax: usize) -> Self {
+    fn new(bmax: usize, groups: usize) -> Self {
         Coalescer {
             bmax,
+            groups: groups.max(1),
             inner: std::sync::Mutex::new(CoalesceState {
                 members: 0,
                 in_flight: 0,
@@ -1415,13 +1421,14 @@ impl<S> Coalescer<S> {
             }
             let pos = g.waiting.iter().position(|d| d.0 == ticket);
             let free = g.members.saturating_sub(g.in_flight);
-            let full = g.waiting.len() >= free.clamp(1, self.bmax);
+            let target = g.members.div_ceil(self.groups).clamp(1, self.bmax);
+            let full = g.waiting.len() >= target.min(free).max(1);
             if let Some(mine) = pos
                 && (full || t0.elapsed() >= ROW_BATCH_WAIT)
             {
                 // Lead: the oldest deposits, with ours among them.
                 let mut take: Vec<usize> = (0..g.waiting.len()).collect();
-                take.truncate(self.bmax);
+                take.truncate(target);
                 if !take.contains(&mine) {
                     *take.last_mut().expect("bmax >= 1") = mine;
                 }
@@ -1501,7 +1508,7 @@ unsafe impl Send for RowsWorkspace {}
 impl RowBatcher {
     fn new(bmax: usize, ws: Vec<memra_engine::dsv4_gpu::VerifyState>) -> Self {
         RowBatcher {
-            core: Coalescer::new(bmax),
+            core: Coalescer::new(bmax, ws.len()),
             pool: std::sync::Mutex::new(ws.into_iter().map(RowsWorkspace).collect()),
             freed: std::sync::Condvar::new(),
         }
@@ -3032,7 +3039,7 @@ mod c4_host_budget_tests {
     ) -> CoalesceOutcome {
         use super::{Coalescer, RowOut};
         use std::sync::{Arc, Mutex};
-        let core = Arc::new(Coalescer::<u32>::new(bmax));
+        let core = Arc::new(Coalescer::<u32>::new(bmax, 1));
         let widths = Arc::new(Mutex::new(Vec::new()));
         let barrier = Arc::new(std::sync::Barrier::new(lanes));
         let handles: Vec<_> = (0..lanes)
@@ -3108,6 +3115,50 @@ mod c4_host_budget_tests {
     }
 
     #[test]
+    fn two_groups_split_the_lanes_in_half() {
+        use super::{Coalescer, RowOut};
+        use std::sync::{Arc, Mutex};
+        let core = Arc::new(Coalescer::<u32>::new(4, 2));
+        let widths = Arc::new(Mutex::new(Vec::new()));
+        for lanes in [2usize, 4] {
+            let barrier = Arc::new(std::sync::Barrier::new(lanes));
+            let handles: Vec<_> = (0..lanes)
+                .map(|lane| {
+                    let (core, widths, barrier) = (core.clone(), widths.clone(), barrier.clone());
+                    std::thread::spawn(move || {
+                        core.join();
+                        barrier.wait();
+                        let mut c = 0u32;
+                        for step in 0..8u32 {
+                            core.step(step, false, &mut c, &mut |toks, _, _| {
+                                widths.lock().unwrap().push((lanes, toks.len()));
+                                std::thread::sleep(std::time::Duration::from_millis(1));
+                                Ok(toks
+                                    .iter()
+                                    .map(|&tok| RowOut { tok, logits: None })
+                                    .collect())
+                            })
+                            .unwrap();
+                        }
+                        barrier.wait();
+                        core.leave();
+                        let _ = lane;
+                    })
+                })
+                .collect();
+            for h in handles {
+                h.join().unwrap();
+            }
+        }
+        let w = widths.lock().unwrap();
+        // Two lanes never batch together (two pipelined one-row steps); four lanes batch in
+        // pairs, never four at once.
+        assert!(w.iter().filter(|x| x.0 == 2).all(|x| x.1 == 1), "{w:?}");
+        assert!(w.iter().filter(|x| x.0 == 4).all(|x| x.1 <= 2), "{w:?}");
+        assert!(w.iter().filter(|x| x.0 == 4).any(|x| x.1 == 2), "{w:?}");
+    }
+
+    #[test]
     fn a_batch_never_exceeds_its_width() {
         let (widths, results, counters) = coalesce_run(2, 5, 12, None);
         assert!(widths.iter().all(|&w| w <= 2), "{widths:?}");
@@ -3130,7 +3181,7 @@ mod c4_host_budget_tests {
     fn a_leaving_lane_completes_the_waiting_batch() {
         use super::Coalescer;
         use std::sync::Arc;
-        let core = Arc::new(Coalescer::<u32>::new(4));
+        let core = Arc::new(Coalescer::<u32>::new(4, 1));
         core.join();
         core.join();
         let waiter = {
