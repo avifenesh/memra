@@ -67,6 +67,7 @@ fn activations(n: usize, seed: u64) -> Vec<f32> {
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run(
     e: &Engine,
     f: Dots,
