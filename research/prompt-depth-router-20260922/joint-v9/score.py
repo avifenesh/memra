@@ -44,6 +44,13 @@ def totals(rows, indices):
     }
 
 
+def action_counts(rows, key):
+    counts = Counter()
+    for row in rows.values():
+        counts.update({int(action): count for action, count in row[key].items()})
+    return dict(sorted(counts.items()))
+
+
 def paired(records, candidate, control, count):
     indices = [
         index for index in range(count)
@@ -121,11 +128,20 @@ def score(root, quality_path, arms_path, phase):
             ),
             "c_decisions": sum(row["c_decisions"] for row in group.values()),
             "c_stops": sum(row["c_stops"] for row in group.values()),
+            "drafted": sum(row["drafted"] for row in group.values()),
+            "accepted": sum(row["accepted"] for row in group.values()),
+            "k_model_seconds": sum(row["k_model_s"] for row in group.values()),
+            "cd_model_seconds": sum(row["cd_model_s"] for row in group.values()),
+            "k_actions": action_counts(group, "k_actions"),
+            "d_actions": action_counts(group, "d_actions"),
         }
     baseline = result[REFERENCE]
     margin = 0.05 * count * 8
     for arm, row in result.items():
         row["capped_turns"] = row["finish_reasons"].get("length", 0)
+        row["acceptance_diagnostic"] = (
+            row["accepted"] / row["drafted"] if row["drafted"] else None
+        )
         row["quality_eligible"] = (
             row["looped_turns"] <= baseline["looped_turns"]
             and row["syntax_pass"] + margin >= baseline["syntax_pass"]

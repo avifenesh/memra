@@ -76,6 +76,8 @@ def verify(root, entry, spec):
         "d_actions": dict(sorted(depths.items())),
         "c_decisions": sum(int(row["confidence_decisions"]) for row in turns),
         "c_stops": sum(int(row["confidence_stops"]) for row in turns),
+        "drafted": sum(int(row["drafted"]) for row in turns),
+        "accepted": sum(int(row["accepted"]) for row in turns),
         "k_model_s": sum(int(row["k_model_ns"]) for row in turns) / 1e9,
         "cd_model_s": sum(int(row["depth_policy_ns"]) for row in turns) / 1e9,
         "cached_later_turns": sum(
