@@ -202,3 +202,27 @@ arm checks that the fix holds on another host and driver; it cannot reproduce th
 - **A reading beside it (not a clause).** The server's native door cells (`option_b_*`, `option_c_*`, built on
   `Engine::new(0)`, the primary context) run in parallel once, 10 runs, to find whether the same class reaches them;
   any failure there is recorded with its reading and gets its own pre-registered fix.
+
+## 6. The per-cell-context fix, as it ran (`rtx5090-day37/finding5/fix/`): acceptance FAILED, the fix reverted
+
+- Test binary on `8c8f1fa1f`-era tree (the fix commit, binary hash in `fix/binary.sha256`), one hold 12:08Z to
+  12:16:44Z, no compute app at either end. Verbatim (`fix/run.log`): the pair arm `100 green of 100`; the serial arm
+  3 of 3 (`test result: ok. 11 passed`); the all arm **75 of 100** runs green. The 25 failing all runs carry 35 cell
+  failures: `h2d_span_batch` 24, `d2h_span_batch` 8, `h2d_span_filled_batch` 3 (`a batch with a running span has not
+  landed` 32, `the owner thread does not wait for the fill at the attach` 3).
+- The step clock places every one at a PINNED ALLOCATION now, held 164.89 to 306.61 ms across the cells' own
+  contexts (`all-12.log`: `HOLD STEPS cell=h2d_span_batch .. pinned-alloc@9.42+295.55 ..`; `all-24.log` the D2H cell
+  `pinned-alloc@6.27+295.81`, then `@334.66+192.94`). The cross-context probe of section 5 showed a pinned free in
+  another context does not hold a pinned allocation; so something else, reached only when eleven cells in eleven
+  contexts overlap, holds `cuMemHostAlloc` across contexts. Candidates by elimination: context creation or
+  destruction (every cell now creates and destroys a context; the pair arm's two cells create theirs together and end
+  together, and it read 100 of 100).
+- **As registered, the fix does not meet section 1's acceptance (all arm 100 of 100); it is refuted and reverted in one
+  commit.** Its receipts stay here (`fix/`). Nothing in section 1 moves.
+- **The probe's teardown extension, pre-registered before it runs.** The victim's own context carries the 300 ms spin
+  (the cells' shape: a cell's calls held until its own hold ends); 20 ms in, a holder thread performs X in ANOTHER
+  context: `none`, `free-host` (in its own idle context), `ctx-create` (create a new context), `ctx-destroy` (destroy an
+  idle created context); 40 ms in, the victim times Y in its own context (`malloc-host`, `alloc-zeros`,
+  `event-query`, `htod-pageable`). Victim primary and victim created, 3 runs each, one hold. Decision: an X that holds
+  Y 200 ms or more in 3 of 3 runs, with `none` not holding, is a cross-context holding action. The next fix is
+  pre-registered on that reading.

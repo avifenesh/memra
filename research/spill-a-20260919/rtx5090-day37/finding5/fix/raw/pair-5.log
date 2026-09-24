@@ -1,0 +1,11 @@
+
+running 2 tests
+HOLD READING cell=d2h_span_batch first_item_seen_ms=17.91 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=d2h_span_batch htod-pageable@-41.43+0.27 pinned-alloc@-41.15+1.95 htod-pageable@-39.20+0.44 pinned-alloc@-38.77+3.78 htod-pageable@-34.99+0.34 pinned-alloc@-34.65+2.86 delay@0.00+0.03 htod-pageable@0.03+0.23 pinned-alloc@0.27+1.83 htod-pageable@2.10+1.08 pinned-alloc@3.19+2.31 htod-pageable@5.50+0.33 pinned-alloc@5.83+3.01 submit@8.84+0.03 htod-pageable@8.87+0.24 pinned-alloc@9.11+2.21 htod-pageable@11.32+0.43 pinned-alloc@11.75+1.86 htod-pageable@13.61+0.32 pinned-alloc@13.92+3.97 submit-busy@17.89+0.00
+HOLD READING cell=h2d_span_batch first_item_seen_ms=9.39 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=h2d_span_batch pinned-alloc@-59.25+2.11 pinned-write@-57.15+0.40 device-alloc@-56.74+0.03 pinned-alloc@-56.72+3.77 pinned-write@-52.95+0.57 device-alloc@-52.37+0.86 pinned-alloc@-51.51+1.95 pinned-write@-49.57+0.35 device-alloc@-49.21+0.02 pinned-alloc@-14.80+2.36 pinned-write@-12.44+0.26 device-alloc@-12.18+0.02 pinned-alloc@-12.17+3.06 device-alloc@-9.11+0.03 pinned-alloc@-9.08+2.45 pinned-write@-6.63+0.45 device-alloc@-6.18+0.03 delay@0.00+0.02 pinned-alloc@0.02+0.80 pinned-write@0.82+0.21 device-alloc@1.04+0.01 pinned-alloc@1.05+1.52 pinned-write@2.57+0.45 device-alloc@3.02+0.01 pinned-alloc@3.03+1.24 pinned-write@4.27+0.38 device-alloc@4.65+0.01 submit@4.66+0.03 pinned-alloc@4.69+0.89 pinned-write@5.59+0.26 device-alloc@5.85+0.01 pinned-alloc@5.86+1.46 pinned-write@7.32+0.52 device-alloc@7.84+0.01 pinned-alloc@7.85+1.11 pinned-write@8.97+0.38 device-alloc@9.35+0.01 submit-busy@9.37+0.01
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.71s
+
