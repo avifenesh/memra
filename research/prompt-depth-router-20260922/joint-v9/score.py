@@ -51,6 +51,24 @@ def action_counts(rows, key):
     return dict(sorted(counts.items()))
 
 
+def assert_noop_identity(root, records, count):
+    noops = [
+        name for name in records
+        if name.startswith(("k-noop-", "cd-noop-", "joint-noop-"))
+    ]
+    for index in range(count):
+        baseline = root / records[REFERENCE][index]["name"]
+        for turn in range(1, 9):
+            expected = (baseline / f"turn-{turn}.output.ids").read_bytes()
+            for name in noops:
+                session = root / records[name][index]["name"]
+                if (session / f"turn-{turn}.output.ids").read_bytes() != expected:
+                    raise ValueError(
+                        f"final sampled no-op bytes differ: {name}/{index}/{turn}"
+                    )
+    return noops
+
+
 def paired(records, candidate, control, count):
     indices = [
         index for index in range(count)
@@ -100,6 +118,10 @@ def score(root, quality_path, arms_path, phase):
     expected = {spec["label"] for spec in arms["arms"]}
     if set(records) != expected or REFERENCE not in records:
         raise ValueError("scored arms differ from frozen candidates")
+    final_noops = (
+        assert_noop_identity(root, records, count)
+        if phase == "heldout" else []
+    )
     result = {}
     for arm, group in records.items():
         unlooped = [
@@ -211,7 +233,7 @@ def score(root, quality_path, arms_path, phase):
                     for pair in fixed_pairs.values()
                 )
             )
-    return {
+    report = {
         "schema": 1,
         "phase": phase,
         "arms_sha256": hashlib.sha256(arms_path.read_bytes()).hexdigest(),
@@ -219,6 +241,9 @@ def score(root, quality_path, arms_path, phase):
         "arms": result,
         "comparisons": comparisons,
     }
+    if phase == "heldout":
+        report["final_byte_identical_noops"] = final_noops
+    return report
 
 
 def select(report, arms_path, out):
