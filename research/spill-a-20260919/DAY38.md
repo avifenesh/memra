@@ -641,3 +641,17 @@ the absence of a call, host work between calls) that grows, and the fix is pre-r
   is the trigger, and the fix is pre-registered on the queue assignment; `x21` flat: the stream's priority; both hump:
   the receipt work goes back on the copy stream, and G's two defects on that stream (section 4: the red arm's spin and
   the kernel ahead of later copy-stream consumers) are designed out under a new pre-registration.
+
+## 13i. x1c and x21 (first boots), and the demote stream pre-registered before it runs
+
+- diag6's first three boots (the cell still running; its whole reading is recorded when it ends), verbatim: `HUMP
+  boot=b01-x1 .. hump=+0.578`, `HUMP boot=b02-x1c .. hump=+0.540`, `HUMP boot=b03-x21 .. hump=+0.568`. Neither the
+  driver's work-queue count nor the stream's priority moves the hump on its first boot.
+- **One arm before the copy-stream branch of section 13h is taken, pre-registered** (`diag7-build.sh`, `diag7.sh`,
+  `diag7-x25.patch`): `x25` = the demote stream: a device-receipt D2H batch's own item copies and spans follow its
+  receipt on the receipt stream (X2's order, the kernel ahead of the copies on one stream), while every other copy
+  (captures, restores, promotes' fills and spans) keeps the copy stream. It is the only placement that keeps the
+  receipt work off the copy stream (G's second defect: later copy-stream consumers queue behind the kernel) and gives
+  the kernel's stream the copies it had under X2. Six boots `x1 x25 x2 x2 x25 x1` after diag6 ends, the same cell, reader
+  and rule. `x25` flat: the demote stream is the fix candidate, pre-registered as a design with section 3's acceptance
+  and a hump clause before its code; `x25` humps: section 13h's copy-stream branch is taken.
