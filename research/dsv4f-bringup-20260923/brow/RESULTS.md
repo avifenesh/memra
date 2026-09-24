@@ -239,5 +239,75 @@ pipelined arm below. `MEMRA_DSV4_ROWS` stays off by default until it measures.
 
 ## Pipelined groups
 
-Pending (`raw/q-pairP.sh`): the gate's pipelined identity arm and a two-groups-of-two timing row,
-then served A (defaults) against D (`MEMRA_DSV4_SESSIONS=4 MEMRA_DSV4_ROWS=2`).
+### Engine (gate, WS pair, `e2c106ebe`, `raw/pipelined-ws/gate/`)
+
+`PASS: pipelined groups bit-identical to solo steps`: two groups of two rows in flight on two
+workspaces reproduce every row's solo logits bits.
+
+| step | ms per step | tok/s | vs one-row serial |
+|---|---|---|---|
+| one row, serial | 17.61 | 56.8 | 1.00 |
+| B=2, serial | 25.63 | 78.0 | 1.37 |
+| B=4, serial | 38.55 | 103.8 | 1.83 |
+| 2 groups of 2, pipelined | 18.59 per group step | **107.6** | 1.89 |
+
+Two reps agree within 0.05 ms. Profiled on the Server Edition pair (`raw/profile-se/`, the
+gate's `DSV4_ROWS_GATE_PROFILE` mode, 64 steps): 19.39, 29.18 and 43.51 ms per step at B = 1, 2
+and 4. Per token, B=4 costs 0.56 of a one-row step, not 0.25: the routed experts are the union
+of every row's top-6, so the MoE bytes grow almost linearly with B. Only the dense and attention
+weights amortize.
+
+### Served, WS pair, before the width policy (`e2c106ebe`, `raw/pipelined-ws/served/`)
+
+Order A D D A A D, N=3 per arm (A = defaults, 2 pipelined lanes; D =
+`MEMRA_DSV4_SESSIONS=4 MEMRA_DSV4_ROWS=2`). Greedy c4 aggregate: D 91.27..91.33 against A
+84.91..85.00 (+7.4%), TTFT p50 0.48 s against 6.3 s. Greedy c2 lost 12% (74.9 against 85.1):
+the coalescer put both requests in one two-row group, so they stopped pipelining. That is what
+`3d98c0aed` fixes. A batch now targets `ceil(members / groups)` rows, so two requests run as
+two pipelined one-row steps and four run as two groups of two.
+
+Row r5 (arm A, the defaults with no B-row) faulted in sampled c4: `HC finish ... rc=10719`, a
+sticky `CUDA_ERROR_LAUNCH_FAILED`, then 4 of 8 requests got HTTP 500. It is the open item on
+#699 and is tracked there, not here. Every D row is clean.
+
+### Served, Server Edition pair, with the width policy (`3d98c0aed`, `raw/policy-se/`)
+
+Order A D E E D A A D E. E (`MEMRA_DSV4_SESSIONS=8 MEMRA_DSV4_ROWS=4`) refused to boot:
+`MEMRA_DSV4_SESSIONS "8" must be 1..=4`. The lane cap is 4, so two groups of four cannot be
+configured, and those rows are void. A and D, N=3 each, cells `raw/policy-se/cells-rows8.txt`:
+
+| cell | A aggregate tok/s | D aggregate tok/s | delta | A TTFT p50 | D TTFT p50 |
+|---|---|---|---|---|---|
+| greedy c1 | 49.73 | 49.63 | -0.2% | 232 ms | 233 ms |
+| greedy c2 | 78.63 | 78.68 | +0.1% | 361 ms | 241 ms |
+| greedy c4 | 79.23 | 84.12 | **+6.2%** | 6,750 ms | 505 ms |
+| greedy c8 | 79.32 | 83.68 | **+5.5%** | 19,539 ms | 12,266 ms |
+| sampled c2 | 71.56 | 71.21 | -0.5% | 365 ms | 241 ms |
+| sampled c4 | 71.37 | 71.58 | +0.3% | 7,465 ms | 516 ms |
+| sampled c8 | 71.49 | 71.87 | +0.5% | 21,691 ms | 14,677 ms |
+
+(aggregate medians from `raw/policy-se/q-v3h.summary`, per-arm spread under 1.7%)
+
+- Text: every request's hash is identical across all six A and D rows in every cell, greedy
+  and sampled.
+- Thermal: power median 222..226 W, SM clock 2257..2430 MHz, max temperature 50 C, on both arms.
+
+## Decision
+
+**B-row steps are bit-identical to one-row steps. With the width policy they never lose.** They
+win +5.5 to +7.4% of aggregate greedy throughput at 4 or more concurrent requests on both pair
+variants.
+
+- The TTFT drop at c4 comes from D's four lanes admitting four requests instead of queueing two,
+  not from B-row itself.
+- Sampled cells are flat because the device sampler does not batch. Those rows run their own
+  steps.
+- The gain is bounded by the MoE: each row brings its own 6 experts, so a 4-row step reads
+  about 1.8x the bytes of a one-row step.
+
+`MEMRA_DSV4_ROWS` stays default OFF (decide-by 2026-10-08). The flip needs:
+
+1. #699 merged, with its default-arm fault found and fixed.
+2. A served A/B of D against four plain lanes (`MEMRA_DSV4_SESSIONS=4`, no B-row), to separate
+   the lane-count effect from the batching effect.
+3. The device-sampled rows batched, so the sampled cells take part.
