@@ -51,3 +51,19 @@ R4's list is printed for each run beside it, deciding nothing.
 
 **What it decides.** Whether the owner waits for its CPU (H1), shares its core with a busy sibling (H2), or neither, and
 who the co-runner is. It changes no code; a remedy is its own registration after this reads.
+
+## 1a. The sitting, prepared before any cell
+
+`day70-sampler.py`, `day70-cell.sh` and `day70-read.py` were written after section 1. The sampler was checked on the
+local host against a busy stand-in `run-gen` process for 3.2 s (312 CPU rows, 13 owner rows with its `schedstat`
+moving, 62 moving-thread rows; the stand-in's own thread moving 99 to 100 ticks a second). The cell's choice of the
+sampler's CPU on the local host (24 CPUs, no SMT siblings) is CPU 23; on a 9950X with the ONE pin `0-7,16-19` it is
+CPU 31, whose sibling 15 lies outside the pin too. The reader, one detail stated here: a door run counts only if the
+owner's samples bracket its gate-to-window span inside the run's marks, else the cell is void on integrity. It was
+dry-checked for mechanics on DAY68's receipts with a synthetic `sched.tsv` (its verdict there means nothing). The
+driver `day70-box.sh` (one build, `p68`, the binary of DAY68) is dry-checked for control flow
+(`day70-cpu/dry-check-driver.log`). Run as
+`D70_BUILDS="p68=48c098374" bash /root/wt-c/research/spill-c-20260919/day70-box.sh` on BOX15's Ryzen 9 9950X machine
+where it can be had (else another host of that class), one RTX PRO 6000 Blackwell Workstation Edition, the approved
+35B artifact, `/root/wt-c` at the lane tip and a detached `/root/wt-c-build`, CUDA 13, Rust and Python 3, at least 48 GB
+host `MemAvailable`. Expected: one build about 5 minutes, the cell about 10 (40 runs).

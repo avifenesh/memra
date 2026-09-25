@@ -102,9 +102,11 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   boot). `DAY67.md`'s cell `probe` ran on BOX19: `DAY67 PROBE VERDICT rig=pro-single integrity=ok -> none_tracks` by
   the strict rule, while 19 of 20 door boots split by mode on the compute, L1 and L2 chases (about 1.4x, DRAM
   unchanged: a lower effective core clock than the requested one DAY66 read), the slow state ending within the probe
-  in 9 of 10 slow boots. Next: `DAY68.md`, `run-gen --cpu-probe-phases` (`48c098374`) and the cell `eclock` (the
-  effective clock from `/proc/cpuinfo` and the CPU temperatures across the run), its sitting ready (`day68-box.sh`).
-  Open: the cell waits on a 9950X-class box.
+  in 9 of 10 slow boots. `DAY68.md`'s cell `eclock` ran on BOX21: `DAY68 ECLOCK VERDICT rig=pro-single integrity=ok ->
+  gate_tracks`: the slow state is in place before the decode and absent at the start, ends by itself about a second
+  after the window, with the reported clock and the temperature unchanged. Next: `DAY70.md`, the cell `sched` (the
+  owner's run-queue wait, its CPU's other busy time, its SMT sibling's, the host's busiest threads, from one pinned
+  sampler), its sitting ready (`day70-box.sh`). Open: the cell waits on a 9950X-class box.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 
