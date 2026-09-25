@@ -91,3 +91,37 @@ PIN about +0.2 ms. (e): flat, as G4.
 
 **Budget.** 1.5 agent-days: the kernel and the engine 0.4, the server and the tier rule 0.4, the 5090 cells 0.4, the
 target sitting 0.3.
+
+## 1a. Amendments to section 1's mechanics, before any S2 code (no bound, clause or rule changes)
+
+Reading the settle's exits before writing the code found that section 1's step 3 (the landed digests enqueued inside
+`take_d2h_spans`) would leave a device read of the staging pending across every refusal exit of the settle and of its
+`Done` arm. Those exits put the staging back into the set, and a latched set frees it (`staging_put` after the latch,
+`clear` at the latch). DAY37's probe says `cuMemFreeHost` waits for the context's queued work, but that is a driver
+behavior, not a construction, and the design does not rely on it. Three mechanics change. The acceptance of section 1
+((a) to (e), the bounds, the predictions, what each card decides) is unchanged.
+
+1. **The take and the seal are two calls.** `take_d2h_spans` returns the landed spans and a span receipt id. The id
+   holds the batch's lanes: the source digests are complete, because the batch landed after them in stream order.
+   Nothing more is enqueued at the take. The landed digests are enqueued by `seal_d2h_span_receipt(id, &staging)`,
+   called in the `Done` arm at the hand-off to the hash helper, after every exit of the settle and of the arm that
+   returns staging to the set. The seal enqueues one batched launch (per 64) over each span's pinned staging through its
+   device address (the count and every length checked against the take's), the lanes' D2H into a pooled twin, and the
+   receipt event. At most one span receipt is live per engine: a take discards any earlier one. An unsealed one drops at
+   once (its lanes are complete and nothing else was enqueued on them). A sealed one moves to a reap list, and its lanes
+   and twin free only once its event is observed. Any span receipt call and the release paths reap. The engine's drop
+   leaks a sealed receipt it has not observed, the `Entry` rule ("a leak, never a free").
+2. **`span-flip-landed` flips at the submit.** The flip is enqueued on the copy stream after span 0's copy and before
+   span 0's event, so the landing covers it. The landed bytes carry the flip for the helper's copy too, the landed
+   digest witnesses it, and no device write runs beside the helper's CPU read. Section 1 step 8 said "at the take".
+3. **The staging under a sealed receipt is guarded.** From the seal, each staging buffer travels (to the helper and
+   back) as a guard that shares a seen flag with the demote's `Hashing` state. The owner thread sets the flag when it
+   observes the span receipt. Before that, any drop of the guard, on the helper (the helper gone, a discarded reply) or
+   on the owner (a latch exit), LEAKS the buffer (the M' lease guard's rule). After it, a drop frees normally. The owner
+   returns a buffer to the set only through the guard after the observation. So no pinned free and no reuse of a
+   staging buffer can run under the landed digest's read, by construction. A buffer leaked this way stays allocated
+   with its charge released at the latch, the lease guard's shape.
+
+Step 10's census adds: no exit between the take and the seal meets a pending read (the seal is the hand-off's last step
+before `submit`); the guard's only unguarded exit is after the observation; the take's discard of an earlier receipt;
+the reap on observation only.
