@@ -1,0 +1,5 @@
+arm=pooled
+kind=stream
+bin_sha256=3dc05d17ac5e958d1c44ef3d3cde64b94ae40c00d74c6c45508d6984f50de4cd
+arm_env=
+kind_env=-u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm pooled --requests 32 --concurrency 16

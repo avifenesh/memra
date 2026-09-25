@@ -1,0 +1,37 @@
+DAY37 A2 card=pro6000 receipt=grow-32768-r4/receipt/GROW.txt GROW-G1 PASS (grows=28 unequal=0 planes=34 planes_crossed=34 min_crossings_per_plane=12 rule>=5 drift=0 tokens_equal=true logits_equal=true prefix_state_equal=true final_state_equal=true) committed=32768 generated=128
+DAY37 A1-GATE card=pro6000 cell=admit-mem-burst pooled=[rc=2 no-verdict] vmm=[rc=2 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=fault-default pooled=[rc=1 no-verdict] vmm=[rc=1 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=fault-plain pooled=[rc=1 no-verdict] vmm=[rc=1 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=hit-off pooled=[rc=1 no-verdict] vmm=[rc=1 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=hit-on pooled=[rc=1 no-verdict] vmm=[rc=1 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=identity-default-on pooled=[rc=1 no-verdict] vmm=[rc=1 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=serve-smoke pooled=[rc=1 no-verdict] vmm=[rc=1 no-verdict] ok_lines=0/0 door_on/off pooled=?/? vmm=?/? -> FAIL
+DAY37 A1-GATE card=pro6000 cell=spec-ctx-edge pooled=[rc=2 no-verdict] vmm=[rc=2 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=twin27-off pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=pro6000 cell=twin27-on pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-MIX card=pro6000 kind=spec order=O1 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=pro6000 kind=spec order=O2 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=pro6000 kind=plain order=O1 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=pro6000 kind=plain order=O2 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-STREAM card=pro6000 pairs=10 differing_rows=0 -> PASS
+DAY37 A3-ii card=pro6000 order=both ttft_p50 pooled=3603.56(N=10) vmm=3686.06(N=10) ratio=1.0229 rule<=1.05 ok; itl_p99 pooled=38.46(N=10) vmm=38.45(N=10) ratio=0.9999 rule<=1.05 ok; tpot_p50 pooled=35.47(N=10) vmm=35.03(N=10) ratio=0.9877 rule<=1.02 ok; out_tok_per_s pooled=364.94(N=10) vmm=364.88(N=10) ratio=0.9998 rule>=0.98 ok -> PASS
+DAY37 A3-ii card=pro6000 order=O1 ttft_p50 pooled=3526.49(N=5) vmm=3686.45(N=5) ratio=1.0454 rule<=1.05 ok; itl_p99 pooled=38.47(N=5) vmm=38.50(N=5) ratio=1.0008 rule<=1.05 ok; tpot_p50 pooled=35.70(N=5) vmm=35.02(N=5) ratio=0.9810 rule<=1.02 ok; out_tok_per_s pooled=365.00(N=5) vmm=364.92(N=5) ratio=0.9998 rule>=0.98 ok
+DAY37 A3-ii card=pro6000 order=O2 ttft_p50 pooled=3683.23(N=5) vmm=3685.67(N=5) ratio=1.0007 rule<=1.05 ok; itl_p99 pooled=38.45(N=5) vmm=38.45(N=5) ratio=1.0000 rule<=1.05 ok; tpot_p50 pooled=35.28(N=5) vmm=35.04(N=5) ratio=0.9932 rule<=1.02 ok; out_tok_per_s pooled=364.77(N=5) vmm=364.87(N=5) ratio=1.0003 rule>=0.98 ok
+DAY37 A3-i card=pro6000 placement=helper tick_ensure_walls N=33811 p50_us=7.0 p99_us=26.0 max_us=2602 owner_grows_waited N=0 p99_us=nan rule N>=20 p99<=500 -> PASS
+DAY37 A4 card=pro6000 retires=488 within_bound=488 worst_over_bound_bytes=0 boots_without_granularity=[] rule mapped-used<=planes*granule+slack -> PASS
+DAY37 A4-IDLE card=pro6000 boot=mix-plain-O1-pooled driver_free=45749698560 pool_cached=8767078360 pool_reserved=55633248256 vmm_mapped=0 vmm_reserved=0 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=pro6000 boot=mix-plain-O1-vmm driver_free=69797740544 pool_cached=512688632 pool_reserved=30836523008 vmm_mapped=499122176 vmm_reserved=16684941312 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=pro6000 boot=mix-plain-O2-pooled driver_free=45749698560 pool_cached=8767078360 pool_reserved=55633248256 vmm_mapped=0 vmm_reserved=0 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=pro6000 boot=mix-plain-O2-vmm driver_free=69797740544 pool_cached=512688632 pool_reserved=30836523008 vmm_mapped=499122176 vmm_reserved=16684941312 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=pro6000 boot=mix-spec-O1-pooled driver_free=43702878208 pool_cached=9867833272 pool_reserved=57646514176 vmm_mapped=0 vmm_reserved=0 spec_pool=2 continuation_pool=0
+DAY37 A4-IDLE card=pro6000 boot=mix-spec-O1-vmm driver_free=67818029056 pool_cached=1546334680 pool_reserved=32782680064 vmm_mapped=499122176 vmm_reserved=16684941312 spec_pool=2 continuation_pool=0
+DAY37 A4-IDLE card=pro6000 boot=mix-spec-O2-pooled driver_free=43702878208 pool_cached=9867833272 pool_reserved=57646514176 vmm_mapped=0 vmm_reserved=0 spec_pool=2 continuation_pool=0
+DAY37 A4-IDLE card=pro6000 boot=mix-spec-O2-vmm driver_free=67818029056 pool_cached=1546334680 pool_reserved=32782680064 vmm_mapped=499122176 vmm_reserved=16684941312 spec_pool=2 continuation_pool=0
+DAY37 A5-MAPPER card=pro6000 compared=45 equal=45 differ=0 owner_grows_waited=0 faults=0 -> FAIL
+DAY37 A5-ENSURE card=pro6000 reclaim_retry_lines=1 outcomes=['n'] errored_rows=['i-L0-r0'] peers_compared=79 equal=78 differ=1 faults=0 -> FAIL
+DAY37 A5-BUILD1 card=pro6000 retry_lines=11 cache_alloc_failed_lines=0 non200_rows=0 faults=0 -> PASS
+DAY37 A5-BUILD64 card=pro6000 retry_lines=9 cache_alloc_failed_lines=50 non200_rows=50 faults=0 -> PASS
+DAY37 A6 card=pro6000 lane_boot=mix-spec-O1-pooled compared=0 equal=0 differ=0 lane_kv_vmm_lines=1 main_kv_vmm_lines=0 -> FAIL
+DAY37 A7 card=pro6000 shape=g2 oom_lines=0 r503=0 grow_failures=0 admit_lines=80 est_over_booked_free=0 status={200: 80} faults=0 -> PASS
+DAY37 A7 card=pro6000 shape=l64 oom_lines=0 r503=0 grow_failures=0 admit_lines=66 est_over_booked_free=0 status={200: 66, 429: 14} faults=0 -> PASS
+DAY37 A7 card=pro6000 shape=boff oom_lines=0 r503=0 grow_failures=0 admit_lines=0 est_over_booked_free=0 status={200: 80} faults=0 -> PASS

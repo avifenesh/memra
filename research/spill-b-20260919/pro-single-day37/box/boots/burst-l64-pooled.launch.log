@@ -1,0 +1,43 @@
+2026-09-24T18:03:00Z waiting for /tmp/memra-gpu.lock (flock -w 3600)
+2026-09-24T18:03:00Z lock acquired
+research/spill-b-20260919/run-day26-cell.sh: line 45: ss: command not found
+== fatal lines
+[admit-mem] prefill OOM parked session back to queue (model q38, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[admit-mem] prefill OOM parked session back to queue (model q38, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[admit-mem] prefill OOM parked session back to queue (model q38, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[admit-mem] prefill OOM parked session back to queue (model q38, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[admit-mem] prefill OOM parked session back to queue (model q38, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[admit-mem] prefill OOM parked session back to queue (model q38, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[admit-mem] prefill OOM parked session back to queue (model q38, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[admit-mem] prefill OOM parked session back to queue (model q38, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[admit-mem] prefill OOM parked session back to queue (model q38, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[admit-mem] prefill OOM parked session back to queue (model q38, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+== sequential requests: tag | status | finish | P | G | cached | path | bpt | booked_ctx | alloc_bytes | used_bytes | cost_src | message_sha256[:16]
+warmup | 200 | length | 132 | 32 | 0 | spec | 31552 | 228 | 5174528 | 5174528 | own | e3ff570e174dc5a6
+i-L0-r0 | 200 | stop | 1481 | 591 | 0 | spec | 31552 | 34313 | 1080624448 | 65375744 | own | 5a728d372bae95f3
+i-L0-r1 | 200 | stop | 1481 | 369 | 0 | spec | 31552 | 34313 | 1080624448 | 58371200 | own | 6dfb04ab0e235e6d
+i-L0-r2 | 200 | stop | 1484 | 589 | 0 | spec | 31552 | 34316 | 1080719104 | 65407296 | own | f1868577f159e1ca
+i-L0-r3 | 200 | stop | 1484 | 457 | 0 | spec | 31552 | 34316 | 1080719104 | 61242432 | own | 7673747b6735d3d1
+i-L0-r4 | 200 | stop | 1483 | 545 | 0 | spec | 31552 | 34315 | 1080687552 | 63987456 | own | e1298a24fe803a16
+ii-L0-r0 | 200 | length | 1715 | 96 | 0 | spec | 31552 | 1875 | 57140672 | 57140672 | own | dfbfea7917371386
+ii-L0-r1 | 200 | length | 1714 | 96 | 0 | spec | 31552 | 1874 | 57109120 | 57109120 | own | 1b676d02e263d84a
+ii-L0-r2 | 200 | length | 1713 | 96 | 0 | spec | 31552 | 1873 | 57077568 | 57077568 | own | 91e055491e5a49e3
+ii-L0-r3 | 200 | length | 1713 | 96 | 0 | spec | 31552 | 1873 | 57077568 | 57077568 | inherited | 12d5f5a76850e4b2
+ii-L0-r4 | 200 | length | 1710 | 96 | 0 | spec | 31552 | 1870 | 56982912 | 56982912 | own | 4b9495b25db8661a
+iii-L0-r0 | 200 | stop | 1572 | 384 | 1440 | spec | 31552 | 34404 | 1083495680 | 61715712 | own | e6cae58d25ec5212
+iii-L0-r1 | 200 | stop | 1565 | 239 | 1440 | spec | 31552 | 34397 | 1083274816 | 56919808 | own | 0f597aa12cc2f470
+iii-L0-r2 | 200 | stop | 1595 | 227 | 1440 | spec | 31552 | 34427 | 1084221376 | 57487744 | own | 4f0cd8b7196f698e
+iii-L0-r3 | 200 | stop | 1563 | 484 | 1440 | spec | 31552 | 34395 | 1083211712 | 64586944 | own | 3762af9db4e1a58e
+iii-L0-r4 | 200 | stop | 1580 | 561 | 1440 | spec | 31552 | 34412 | 1083748096 | 67552832 | own | b0f54b1abf597164
+== burst
+window_ms=111090 B=64 status={429: 13, 200: 51} finish={'stop': 51} retry_after={'4': 13}
+active_sessions_max=51.0 admission_booked_bytes_max=104342822344.0 samples=444 shadow_budget_bytes=65879781072 burst_cost_lines=83 burst_cost_total_mb_median=2046 arith_sessions=32
+admit_mem_id_lines=88 by_verdict={'admit': 62, 'defer': 13, 'refuse': 13} reclaim_lines=0
+[admit-mem] id=chatcmpl-7675cd69b075c22dc1e69c7bc6224fa9 model="q38" verdict=admit prompt=1370 output_bound=- charged_ctx=34202 est_bytes=4347224840 est_context=1015662592 est_fixed=3331562248 device_free=77731225656 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=3090759680 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-17a6eccdee59424e9850fd6a91b2f473 model="q38" verdict=admit prompt=1368 output_bound=- charged_ctx=34200 est_bytes=4346206984 est_context=1015603200 est_fixed=3330603784 device_free=75992264804 pending_prime=0 pending_prime_v1=12460032 pending_seed=0 host_free=0 demotable=3287564288 short_by=0 inflight=1 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-abdd0f9752cbec6679971e398fbeab4a model="q38" verdict=admit prompt=1372 output_bound=- charged_ctx=34204 est_bytes=4348242696 est_context=1015721984 est_fixed=3332520712 device_free=74407765776 pending_prime=0 pending_prime_v1=668049408 pending_seed=199299072 host_free=0 demotable=3287564288 short_by=0 inflight=2 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-01320741609da80aa544294edacce46d model="q38" verdict=admit prompt=1374 output_bound=- charged_ctx=34206 est_bytes=4349260552 est_context=1015781376 est_fixed=3333479176 device_free=72823140540 pending_prime=0 pending_prime_v1=1325555712 pending_seed=398598144 host_free=0 demotable=3287564288 short_by=0 inflight=3 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-78640ffc5f6efd93c01de94068235530 model="q38" verdict=admit prompt=1379 output_bound=- charged_ctx=34211 est_bytes=4351805192 est_context=1015929856 est_fixed=3335875336 device_free=71238452200 pending_prime=0 pending_prime_v1=1984020480 pending_seed=597897216 host_free=0 demotable=3287564288 short_by=0 inflight=4 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-d751327e7437549530c02e8019d1505d model="q38" verdict=admit prompt=1373 output_bound=- charged_ctx=34205 est_bytes=4348751624 est_context=1015751680 est_fixed=3332999944 device_free=69653606100 pending_prime=0 pending_prime_v1=2644881408 pending_seed=797196288 host_free=0 demotable=3287564288 short_by=0 inflight=5 cap=64 waited_ms=0 retry_after_s=-
+... 82 more [admit-mem] id= lines in server.log
+== open-class G (this boot): n=10 min=227 p50=484 max=591 stop=10 length=0 other=0

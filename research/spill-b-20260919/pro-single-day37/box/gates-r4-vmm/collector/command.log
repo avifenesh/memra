@@ -1,0 +1,22 @@
+2026-09-24T17:11:03Z serve-smoke runs at c6f9282c26e71349c0263b88dc7beb59c4a57797 in /root/wt-b/target/smoke-wt-c6f9282c26e7 (build rc=0     Finished `release` profile [optimized] target(s) in 2m 31s)
+2026-09-24T17:11:03Z start serve-smoke env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T17:11:03Z done serve-smoke rc=1 door_on=0 door_off=0 serve-smoke: FAIL — cannot observe listening sockets (no ss, no lsof), so this run
+2026-09-24T17:11:05Z start identity-default-on env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_HOSTGATE_CACHE_MB=256 MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T17:11:05Z done identity-default-on rc=1 door_on=0 door_off=0 
+2026-09-24T17:11:05Z start fault-default env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_HOSTGATE_CACHE_MB=256]
+2026-09-24T17:11:05Z done fault-default rc=1 door_on=0 door_off=0 
+2026-09-24T17:11:05Z start fault-plain env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_HOSTGATE_CACHE_MB=256 MEMRA_SERVE_SPEC=0]
+2026-09-24T17:11:05Z done fault-plain rc=1 door_on=0 door_off=0 
+2026-09-24T17:11:05Z start hit-off env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T17:11:05Z done hit-off rc=1 door_on=0 door_off=0 
+2026-09-24T17:11:05Z start hit-on env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T17:11:06Z done hit-on rc=1 door_on=0 door_off=0 
+2026-09-24T17:11:06Z start admit-mem-burst env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T17:11:06Z done admit-mem-burst rc=2 door_on=0 door_off=0 
+2026-09-24T17:11:06Z start spec-ctx-edge env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T17:11:06Z done spec-ctx-edge rc=2 door_on=0 door_off=0 
+2026-09-24T17:11:06Z start twin27-off env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T17:12:12Z done twin27-off rc=0 door_on=2 door_off=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 i
+2026-09-24T17:12:12Z start twin27-on env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T17:13:19Z done twin27-on rc=0 door_on=2 door_off=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 i
+2026-09-24T17:13:19Z gates done arm=vmm

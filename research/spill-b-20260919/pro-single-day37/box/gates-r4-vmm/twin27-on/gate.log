@@ -1,0 +1,68 @@
+[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+calibration (cache off): footprint per turn [962571604, 610359380, 20160000, 20160000, 20160000, 20160000, 20160000, 28878336] B; measured completions identical to cold on 8/8 turns
+turn 1: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=9200 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+turn 1: [primeseg] call start=0 take=8192 grid_off=0 bound_rem=Some(9184) ckpt_at=None snapshot_at=None q=9200 budget=8192 seed_at=Some(9184)
+turn 1: [primeseg] call start=8192 take=992 grid_off=0 bound_rem=Some(992) ckpt_at=None snapshot_at=None q=1008 budget=1024 seed_at=Some(9184)
+turn 1: [prefix-cache] evict (snapshot preflight, LRU): 2784 tokens, 239.6MB (model gate, ns "cohort")
+turn 1: [prefix-cache] insert (seed): 9184 tokens, 429.6MB (resident 926.8MB / 1074MB, model gate, ns "grow")
+turn 1: [primeseg] call start=9184 take=16 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=16 budget=1024 seed_at=None
+turn 2: [prefix-cache] hit: 9184 of 9500 prompt tokens from cache (model gate)
+turn 2: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=9500 cached=9184 lcp=9184 active=1 wave=1 placement=single-or-non-pp2
+turn 2: [prefix-cache] source lease released after restore fence (entry 9184 tokens, model gate)
+turn 2: [primeseg] call start=9184 take=288 grid_off=0 bound_rem=Some(288) ckpt_at=None snapshot_at=None q=316 budget=1024 seed_at=Some(9472)
+turn 2: [prefix-cache] evict (snapshot preflight, LRU): 2976 tokens, 245.3MB (model gate, ns "cohort")
+turn 2: [prefix-cache] evict (snapshot preflight, LRU): 3200 tokens, 251.9MB (model gate, ns "cohort")
+turn 2: [prefix-cache] insert (seed): 9472 tokens, 438.2MB (resident 867.8MB / 1074MB, model gate, ns "grow")
+turn 2: [primeseg] call start=9472 take=28 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=28 budget=1024 seed_at=None
+turn 3: [prefix-cache] hit: 9472 of 9800 prompt tokens from cache (model gate)
+turn 3: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=9800 cached=9472 lcp=9472 active=1 wave=1 placement=single-or-non-pp2
+turn 3: [prefix-cache] source lease released after restore fence (entry 9472 tokens, model gate)
+turn 3: [primeseg] call start=9472 take=288 grid_off=0 bound_rem=Some(288) ckpt_at=None snapshot_at=None q=328 budget=1024 seed_at=Some(9760)
+turn 3: [prefix-cache] evict (snapshot preflight, LRU): 9184 tokens, 429.6MB (model gate, ns "grow")
+turn 3: [prefix-cache] insert (seed): 9760 tokens, 446.7MB (resident 884.9MB / 1074MB, model gate, ns "grow")
+turn 3: [primeseg] call start=9760 take=40 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=40 budget=1024 seed_at=None
+turn 4: [prefix-cache] hit: 9760 of 10100 prompt tokens from cache (model gate)
+turn 4: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=10100 cached=9760 lcp=9760 active=1 wave=1 placement=single-or-non-pp2
+turn 4: [prefix-cache] source lease released after restore fence (entry 9760 tokens, model gate)
+turn 4: [primeseg] call start=9760 take=320 grid_off=0 bound_rem=Some(320) ckpt_at=None snapshot_at=None q=340 budget=1024 seed_at=Some(10080)
+turn 4: [prefix-cache] evict (snapshot preflight, LRU): 9472 tokens, 438.2MB (model gate, ns "grow")
+turn 4: [prefix-cache] insert (seed): 10080 tokens, 456.2MB (resident 903.0MB / 1074MB, model gate, ns "grow")
+turn 4: [primeseg] call start=10080 take=20 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=20 budget=1024 seed_at=None
+turn 5: [prefix-cache] hit: 10080 of 10400 prompt tokens from cache (model gate)
+turn 5: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=10400 cached=10080 lcp=10080 active=1 wave=1 placement=single-or-non-pp2
+turn 5: [prefix-cache] source lease released after restore fence (entry 10080 tokens, model gate)
+turn 5: [primeseg] call start=10080 take=320 grid_off=0 bound_rem=Some(320) ckpt_at=None snapshot_at=None q=320 budget=1024 seed_at=Some(10400)
+turn 5: [prefix-cache] evict (snapshot preflight, LRU): 9760 tokens, 446.7MB (model gate, ns "grow")
+turn 5: [prefix-cache] insert (seed): 10400 tokens, 465.7MB (resident 922.0MB / 1074MB, model gate, ns "grow")
+turn 6: [prefix-cache] hit: 10400 of 10700 prompt tokens from cache (model gate)
+turn 6: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=10700 cached=10400 lcp=10400 active=1 wave=1 placement=single-or-non-pp2
+turn 6: [prefix-cache] source lease released after restore fence (entry 10400 tokens, model gate)
+turn 6: [primeseg] call start=10400 take=256 grid_off=0 bound_rem=Some(256) ckpt_at=None snapshot_at=None q=300 budget=1024 seed_at=Some(10656)
+turn 6: [prefix-cache] evict (snapshot preflight, LRU): 10080 tokens, 456.2MB (model gate, ns "grow")
+turn 6: [prefix-cache] insert (seed): 10656 tokens, 473.3MB (resident 939.1MB / 1074MB, model gate, ns "grow")
+turn 6: [primeseg] call start=10656 take=44 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=44 budget=1024 seed_at=None
+turn 7: [prefix-cache] hit: 10656 of 11000 prompt tokens from cache (model gate)
+turn 7: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11000 cached=10656 lcp=10656 active=1 wave=1 placement=single-or-non-pp2
+turn 7: [prefix-cache] source lease released after restore fence (entry 10656 tokens, model gate)
+turn 7: [primeseg] call start=10656 take=320 grid_off=0 bound_rem=Some(320) ckpt_at=None snapshot_at=None q=344 budget=1024 seed_at=Some(10976)
+turn 7: [prefix-cache] evict (snapshot preflight, LRU): 10400 tokens, 465.7MB (model gate, ns "grow")
+turn 7: [prefix-cache] insert (seed): 10976 tokens, 482.8MB (resident 956.2MB / 1074MB, model gate, ns "grow")
+turn 7: [primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+turn 8: [prefix-cache] hit: 10976 of 11300 prompt tokens from cache (model gate)
+turn 8: [spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11300 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2
+turn 8: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+turn 8: [primeseg] call start=10976 take=288 grid_off=0 bound_rem=Some(288) ckpt_at=None snapshot_at=None q=324 budget=1024 seed_at=Some(11264)
+turn 8: [prefix-cache] evict (snapshot preflight, LRU): 10656 tokens, 473.3MB (model gate, ns "grow")
+turn 8: [prefix-cache] insert (seed): 11264 tokens, 491.4MB (resident 974.2MB / 1074MB, model gate, ns "grow")
+turn 8: [primeseg] call start=11264 take=36 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=36 budget=1024 seed_at=None
+| turn | prompt_tokens | cached_tokens | prev published | published | expected capture | off-grid calls | server receipt | hit line | insert | evict (segment) | refused/skipped | effective free after | resident prefix bytes | cache-off effective free after | V3 error (state) | consumed | footprint (cache-off) | grew | delta error | elapsed s | text sha256[:16] | == cold |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | 9200 | 0 | - | 9184 | 9184 | 0 | cached=0 lcp=0 | none | 9184 tok 429.6MB (seed) | 2784 tok 239.6MB (unstated, ns cohort) | 0 | 81735245060 | 926810112 | 82662055172 | 0 | 1307684180 | 962571604 | 190054400 | 155058176 | 2.453 | 254a65a01730e58b | yes |
+| 2 | 9500 | 9184 | 9184 | 9472 | 9472 | 0 | cached=9184 lcp=9184 | 9184 of 9500 | 9472 tok 438.2MB (seed) | 2976 tok 245.3MB (unstated, ns cohort), 3200 tok 251.9MB (unstated, ns cohort) | 0 | 81183900848 | 867794944 | 82051695792 | 0 | 551344212 | 610359380 | -59015168 | 0 | 0.289 | 24a97a2867768b2d | yes |
+| 3 | 9800 | 9472 | 9472 | 9760 | 9760 | 0 | cached=9472 lcp=9472 | 9472 of 9800 | 9760 tok 446.7MB (seed) | 9184 tok 429.6MB (unstated, ns grow) | 0 | 81146635952 | 884899840 | 82031535792 | 0 | 37264896 | 20160000 | 17104896 | 0 | 0.29 | 65eeb1ef8f716af1 | yes |
+| 4 | 10100 | 9760 | 9760 | 10080 | 10080 | 0 | cached=9760 lcp=9760 | 9760 of 10100 | 10080 tok 456.2MB (seed) | 9472 tok 438.2MB (unstated, ns grow) | 0 | 81108420784 | 902955008 | 82011375792 | 0 | 38215168 | 20160000 | 18055168 | 0 | 0.291 | 64a99158cb668b0c | yes |
+| 5 | 10400 | 10080 | 10080 | 10400 | 10400 | 0 | cached=10080 lcp=10080 | 10080 of 10400 | 10400 tok 465.7MB (seed) | 9760 tok 446.7MB (unstated, ns grow) | 0 | 81069255344 | 921960448 | 81991215792 | 0 | 39165440 | 20160000 | 19005440 | 0 | 0.22 | c6b9d167a76a942e | yes |
+| 6 | 10700 | 10400 | 10400 | 10656 | 10656 | 0 | cached=10400 lcp=10400 | 10400 of 10700 | 10656 tok 473.3MB (seed) | 10080 tok 456.2MB (unstated, ns grow) | 0 | 81031990448 | 939065344 | 81971055792 | 0 | 37264896 | 20160000 | 17104896 | 0 | 0.273 | 8e4798b352770d9a | yes |
+| 7 | 11000 | 10656 | 10656 | 10976 | 10976 | 0 | cached=10656 lcp=10656 | 10656 of 11000 | 10976 tok 482.8MB (seed) | 10400 tok 465.7MB (unstated, ns grow) | 0 | 80994725552 | 956170240 | 81950895792 | 0 | 37264896 | 20160000 | 17104896 | 0 | 0.293 | f34ee12b3db5cb9c | yes |
+| 8 | 11300 | 10976 | 10976 | 11264 | 11264 | 0 | cached=10976 lcp=10976 | 10976 of 11300 | 11264 tok 491.4MB (seed) | 10656 tok 473.3MB (unstated, ns grow) | 0 | 80947792048 | 974225408 | 81922017456 | 0 | 46933504 | 28878336 | 18055168 | 0 | 0.294 | ee53848835a29d90 | yes |
+PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS

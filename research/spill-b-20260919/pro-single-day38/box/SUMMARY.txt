@@ -1,0 +1,13 @@
+DAY38 P1 card=pro6000 order=O1 rows=150 door_equal=149 door_differ=['X-30720-r3-t3'] cold_differ=['main-O1-on:X-30720-r3-t3'] non200=[] x_resumed_on=30 park_compact_grow=19 park_compact_on=150 failed=0 affinity_rewound={'main-O1-off': 20, 'main-O1-on': 16} a_resumed={'main-O1-off': 15, 'main-O1-on': 15} pool_hits={'main-O1-off': 20, 'main-O1-on': 35} faults=0 -> FAIL
+DAY38 P1 card=pro6000 order=O2 rows=150 door_equal=149 door_differ=['X-30720-r3-t3'] cold_differ=['main-O2-on:X-30720-r3-t3'] non200=[] x_resumed_on=30 park_compact_grow=19 park_compact_on=150 failed=0 affinity_rewound={'main-O2-off': 20, 'main-O2-on': 16} a_resumed={'main-O2-off': 15, 'main-O2-on': 15} pool_hits={'main-O2-off': 20, 'main-O2-on': 35} faults=0 -> FAIL
+DAY38 P2 card=pro6000 boot=fault-batch fired=1 errored_rows=['X-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'X-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0}] faults=0 -> PASS
+DAY38 P2 card=pro6000 boot=fault-nobatch fired=1 errored_rows=['X-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'X-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0}] faults=0 -> PASS
+DAY38 P2 card=pro6000 boot=fault-nobatch-red fired=1 errored_rows=['X-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'X-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0}] faults=0 -> PASS (red arm: the expected reading is FAIL with park_compact=ok200+1 and a resumed next turn)
+DAY38 P3 card=pro6000 fed~6144 N=100 p50_ms=1.20 p95_ms=1.30 max_ms=1.30
+DAY38 P3 card=pro6000 fed~30720 N=100 p50_ms=2.60 p95_ms=2.70 max_ms=2.70
+DAY38 P3 card=pro6000 fed~122880 N=100 p50_ms=8.20 p95_ms=8.30 max_ms=8.30
+DAY38 P4 card=pro6000 boot=main-O1-off idle driver_free=7564754944 pool_cached=6735256512 pool_reserved=93818191872 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=1936.0 p95=51646.8
+DAY38 P4 card=pro6000 boot=main-O1-on idle driver_free=4645519360 pool_cached=9678177920 pool_reserved=96737427456 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=685.0 p95=9343.8
+DAY38 P4 card=pro6000 boot=main-O2-off idle driver_free=7564754944 pool_cached=6735256512 pool_reserved=93818191872 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=1968.0 p95=51678.8
+DAY38 P4 card=pro6000 boot=main-O2-on idle driver_free=4645519360 pool_cached=9678177920 pool_reserved=96737427456 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=700.0 p95=9352.0
+DAY38 VMM-PAIR card=pro6000 rows=30 differ=[] vmm_off idle vmm_mapped=0 pool_cached=2567162688 trims=0; vmm_on idle vmm_mapped=0 pool_cached=2622667584 park_compact=30

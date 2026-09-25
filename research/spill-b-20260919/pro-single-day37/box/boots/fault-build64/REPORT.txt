@@ -1,0 +1,47 @@
+== shape
+order=AB n=5 model_key=q38 ctx=unset lock=/tmp/memra-gpu.lock warm=deferred park_compact=unset serve_spec=default client=day33-client.py args=--chars 5000 --skip-long --burst 64 admit_by_memory=1 open_output_tokens=8192 timeout_ms_max=3600000 max_sessions=unset kv_host_mb=unset
+== arm on8192
+== boot door line (verbatim)
+[admit-mem] door=ON open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+DAY31 V-BOOT boot=fault-build64 arm=on8192 door_line=present -> PASS
+== shadow budget line (verbatim)
+[admit-predict] shadow armed: budget_bytes=65879781072 budget_src=derived(effective_free_bytes=84066136768 - prefix_cache_budget_bytes=15883042816 - admission_reserve_bytes=2303312880) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+== fatal lines
+[worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+[engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+[engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+[engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+[engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[worker] spec session alloc failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); tokenwise path
+[engine-error] class=Overloaded cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+== sequential requests: tag | status | finish | P | G | cached | path | bpt | booked_ctx | alloc_bytes | used_bytes | cost_src | message_sha256[:16]
+warmup | 200 | length | 132 | 32 | 0 | spec | 31552 | 228 | 5174528 | 5174528 | own | e3ff570e174dc5a6
+i-L0-r0 | 503 | None | None | None | None | spec | 31552 | 9737 | None | None | own | -
+i-L0-r1 | 503 | None | None | None | None | spec | 31552 | 9737 | None | None | inherited | -
+i-L0-r2 | 503 | None | None | None | None | spec | 31552 | 9740 | None | None | own | -
+i-L0-r3 | 503 | None | None | None | None | spec | 31552 | 9740 | None | None | inherited | -
+i-L0-r4 | 503 | None | None | None | None | spec | 31552 | 9739 | None | None | own | -
+ii-L0-r0 | 200 | length | 1715 | 96 | 0 | spec | 31552 | 1875 | 57140672 | 57140672 | own | dfbfea7917371386
+ii-L0-r1 | 200 | length | 1714 | 96 | 0 | spec | 31552 | 1874 | 57109120 | 57109120 | own | 1b676d02e263d84a
+ii-L0-r2 | 200 | length | 1713 | 96 | 0 | spec | 31552 | 1873 | 57077568 | 57077568 | own | 91e055491e5a49e3
+ii-L0-r3 | 200 | length | 1713 | 96 | 0 | spec | 31552 | 1873 | 57077568 | 57077568 | inherited | 12d5f5a76850e4b2
+ii-L0-r4 | 200 | length | 1710 | 96 | 0 | spec | 31552 | 1870 | 56982912 | 56982912 | own | 4b9495b25db8661a
+iii-L0-r0 | 503 | None | None | None | None | spec | 31552 | 9759 | None | None | own | -
+iii-L0-r1 | 503 | None | None | None | None | spec | 31552 | 9759 | None | None | inherited | -
+iii-L0-r2 | 503 | None | None | None | None | spec | 31552 | 9762 | None | None | own | -
+iii-L0-r3 | 503 | None | None | None | None | spec | 31552 | 9762 | None | None | inherited | -
+iii-L0-r4 | 503 | None | None | None | None | spec | 31552 | 9761 | None | None | own | -
+== burst
+window_ms=49727 B=64 status={503: 40, 200: 24} finish={'stop': 24} retry_after={'5': 40}
+active_sessions_max=24.0 admission_booked_bytes_max=30125646400.0 samples=199 shadow_budget_bytes=65879781072 burst_cost_lines=56 burst_cost_total_mb_median=1256.0 arith_sessions=52
+admit_mem_id_lines=64 by_verdict={'admit': 64} reclaim_lines=0
+[admit-mem] id=chatcmpl-08a9da5345fce95b6d9f23472a8a337b model="q38" verdict=admit prompt=1376 output_bound=- charged_ctx=9632 est_bytes=3560032520 est_context=286031872 est_fixed=3274000648 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-7630a1a95f173cf890aaf63b62f3240f model="q38" verdict=admit prompt=1375 output_bound=- charged_ctx=9631 est_bytes=3559523592 est_context=286002176 est_fixed=3273521416 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-eef058c292b89ac02d3859bb219700f8 model="q38" verdict=admit prompt=1378 output_bound=- charged_ctx=9634 est_bytes=3561050376 est_context=286091264 est_fixed=3274959112 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-bd4ddfa4253aa3763b79a80a263d54fd model="q38" verdict=admit prompt=1375 output_bound=- charged_ctx=9631 est_bytes=3559523592 est_context=286002176 est_fixed=3273521416 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-c764e11b096439b4df349459addbea42 model="q38" verdict=admit prompt=1370 output_bound=- charged_ctx=9626 est_bytes=3556978952 est_context=285853696 est_fixed=3271125256 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-8c9fe8ef866e699f422bd0b9c2ee4937 model="q38" verdict=admit prompt=1374 output_bound=- charged_ctx=9630 est_bytes=3559014664 est_context=285972480 est_fixed=3273042184 device_free=84053257408 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+... 58 more [admit-mem] id= lines in server.log
