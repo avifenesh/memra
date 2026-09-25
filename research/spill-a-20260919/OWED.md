@@ -69,8 +69,13 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   "the helper's SHA-256 of the staged bytes required equal to the plane's share recorded at the demote, about +73 ms
   on the helper per promote on the target card"); rulings 42, 44, 47, 52, 53.
 - Acceptance: DAY40 section 3 (amended 3a), (a) to (e).
-- Status: **built** (`a40e5b334`, design S: device-side four-lane span receipts on the copy stream, both directions;
-  CPU green); the 5090 sitting (`rtx5090-day40/s-card-run.sh`) queued, the BOX7 sitting (`pro-single-s/`) after it.
+- Status: **open, design S reverted** (`8a044a1c0`). S (`a40e5b334`, DAY40 sections 3 to 4) passed its correctness
+  cells on the 5090 (every span digest bitwise, both red arms witnessed, identity, failure and hit gates green) and FAILED
+  its price clauses there (section 5: (c) wall +40.25 / +39.30 ms, e2e +1.47 / +1.16 ms; (d) e2e +1.53 ms on o1): the
+  trace (section 7) prices the span receipt at about 3.1 ms of copy-stream time (source digests 0.61, landed 2.49 ms),
+  enough to push the landing past the first tick-top poll. The revision owed (section 7): the span receipt off the
+  landing path, required at publication with the sources and staging held until its event, the digests in one launch
+  each; pre-registered with its acceptance before its code; its 5090 and target sittings then.
 
 ### 5. The helper's promote-side fail-closed arms have no serving-shape fault cell (found in this ledger's read)
 
