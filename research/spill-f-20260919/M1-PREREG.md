@@ -196,6 +196,16 @@ and every cycle failed as "prompts exhausted". Every B2 boot (reference, export 
 runs with `MEMRA_SERVE_SPEC=0`, the documented production posture for shared-prefix serving
 shapes (`docs/FLAGS.md`). Nothing else changes.
 
+#### B2 amendment 3 (2026-09-26, after the first 8 GiB attempt)
+
+The first 8 GiB attempt (`box27/b2-8g-attempt1-tenant-cap`) plateaued at 8,520,110,208 host
+bytes (67 entries of 127 MB) with all 128 prompts sent: the default per-tenant share cap
+(`MEMRA_KV_HOST_TENANT_PCT=50` of the 16 GiB budget) evicts a single tenant's oldest entries,
+which are the probe prompts. The export (8,520 MB, 5.2 s) and import (6.1 s) still ran and are
+kept as recorded. The cell is single-tenant by construction, so its rerun sets
+`MEMRA_KV_HOST_TENANT_PCT=100` (`--tenant-pct 100`); the 1 GiB cell, which never reached the cap,
+keeps the default. Nothing else changes.
+
 ### B3 expert-bank spill (the headline cells; `run-gen` and `run-spec`)
 
 Common env (frozen in `m1-prereg/b3-arms.lock.json`): `MEMRA_SPILL_DISK=1

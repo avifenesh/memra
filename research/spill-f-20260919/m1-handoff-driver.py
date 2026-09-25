@@ -148,6 +148,8 @@ def base_env(args, host_mb, handoff):
                 # is the documented production posture for prefix-cache shapes (FLAGS.md).
                 "MEMRA_SERVE_SPEC": "0"})
     env.pop("MEMRA_KV_HOST_HANDOFF", None)
+    if args.tenant_pct is not None:
+        env["MEMRA_KV_HOST_TENANT_PCT"] = str(args.tenant_pct)  # B2 amendment 3 (single-tenant cell)
     if handoff:
         env["MEMRA_KV_HOST_HANDOFF"] = str(handoff)
     return env
@@ -295,6 +297,7 @@ def main(argv=None):
     r.add_argument("--rig", choices=["pro-single", "rtx5090"], default="pro-single")
     r.add_argument("--lock-fd", type=int)
     r.add_argument("--port", type=int, default=18119)
+    r.add_argument("--tenant-pct", type=int, help="B2 amendment 3: MEMRA_KV_HOST_TENANT_PCT for a single-tenant cell")
     r.add_argument("--stub-no-lock", action="store_true")
     args = ap.parse_args(argv)
     B.require(args.stub_no_lock or args.lock_fd is not None, "--lock-fd (inherited canonical lock) required")
