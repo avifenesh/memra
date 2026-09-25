@@ -60,3 +60,28 @@ fill complete and `physical_reads=0`, an SQLite export with kernel rows inside e
 **Where.** The target card on the 285K class first (the admissible class of `i15b`); the RTX 5090's half joins its
 queue after the cells already queued there. Box needs as `DAY64.md` section 3a plus `nsys` from the CUDA 13 toolkit
 (checked and recorded by the cell).
+
+## 1a. The sitting, prepared before any cell
+
+`day72-cell.sh`, `day72-read.py` and `day72-box.sh` were written after section 1; two details are stated here.
+- **What is mirrored.** The profiler's `.nsys-rep` reports and SQLite exports are too large for the repository; after
+  the reader, the driver moves them into `profiles-hash-only/` with their SHA-256 in `profiles.sha256` (like the ELF
+  binaries, by hash). The raw rows the reading uses stay in the cell: `ev/<label>.window.tsv`, every kernel and copy
+  that overlaps each profiled window, written by the reader.
+- **Part B's window.** Located as section 1 says, through `TARGET_INFO_SESSION_START_TIME.utcEpochNs` (checked present
+  in a CPU-only `nsys` 2025.5.2 export on the local host); kernels from `CUPTI_ACTIVITY_KIND_KERNEL` (names through
+  `StringIds`), copies from `CUPTI_ACTIVITY_KIND_MEMCPY` with `copyKind` 1 as host to device. A schema that lacks them
+  reads `not_read`.
+
+Dry checks (`day72-cpu/`): the cell's control flow with a stub `run-gen-i15` and a stub `nsys` (40 timed runs, then
+the four profiled runs in the order REF, ON, ON, REF, each with its report and export; `dry-check-cell.log`); the
+reader on a synthetic cell whose Part A is DAY60's own `gap` receipts (it reprints DAY60's lines and its verdict) and
+whose Part B is invented (`make-synthetic.py`), and with one export removed or no `nsys`, where Part B reads
+`not_read` and Part A still reads (`dry-check-reader.log`); the driver's control flow, including the move of the
+profile files (`dry-check-driver.log`). The local 5090 was not used: lane B's queues hold it.
+
+Run as `D72_BUILDS="i15=2243b1fe2" bash /root/wt-c/research/spill-c-20260919/day72-box.sh` on a Core Ultra 9 285K
+host with one RTX PRO 6000 Blackwell Workstation Edition (the class of BOX12, BOX13 and BOX14; box needs as `DAY64.md`
+section 3a, plus `nsys` in the CUDA 13 toolkit, which the cell records or reads `nsys=none`). Receipts land in
+`/root/spill-receipts/c-day72/`. Expected: one build about 5 minutes, the cell about 20 (40 timed runs, 4 profiled
+runs and their exports).
