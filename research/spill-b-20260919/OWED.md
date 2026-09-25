@@ -64,7 +64,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - Acceptance: DAY34 1.6's terms unchanged (V-DOOR and its members) on the capped tree, both cards, both orders, plus
   a term that says whether the cap bound on each boot (from the `pending_seed=` field against the uncapped sum), so
   the rerun says what the cap moved rather than only repeating day 36.
-- Status: `pre-registered` (DAY40.md), on the final booking (the capped seed and day 39's revised prime term, GREEN on
+- Status: target card `read` (DAY40 2.1): every DAY34 1.6 term PASS on 8 boots, V-DOOR PASS; SELECT R1 and R2 select
+  none, R3's registry value 32,768; `on32768` admits 46 of 64 against day 36's 44; the seed cap bound on every ON boot.
+  The 5090 half runs from queue-e. Pre-registered (DAY40.md), on the final booking (the capped seed and day 39's revised prime term, GREEN on
   the target card). Was `open`, DAY40. It follows O5 (DAY39): O5 corrects the door's own prime booking (a burst books the
   shared slab once per session today), and the ON rows are only the owner's input on the booking that would ship.
   Running them first would bank a second known over-booking beside day 36's.
@@ -144,8 +146,16 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - What: `MEMRA_RESUME_GRID_REWIND` (default unset) makes a plain or spec pool exact-extension resume rewind to the
   entry's grid checkpoint and re-prime from there, so the resumed turn is cold-identical by the grid law; the cells
   price it against keeping the decoded rows (re-primed rows, TTFT, throughput, memory, fanout reach), both cards.
-- Status: `pre-registered` (DAY41.md). Price: about 0.5 agent-day plus about 3 h on the 5090 and 4.5 h on the target
-  card.
+- Status: `running`. Target card (DAY41 2.1): the engine check reads `rewind: EXACT`, `hist: NEAR-TIE-CLASS` at 6,144
+  and 30,720 tokens, K 32 and 256; R1 plain PASS, R3 PASS, R4 PASS; R2 FAIL (plain `rewind` 40 of 60: a resumed turn armed
+  no checkpoint when the boundary equals the resumed depth; spec both arms: the parked `committed` carries the final
+  burst's overshoot); R1 spec FAIL on the line half (10 affinity rewinds, none differs). Flips against cold: `keep` 24 of
+  60 (plain), 6 of 34 (spec); `rewind` 0. Price at 6,144 (checkpoint at the prompt end): plain TTFT p50 x2.0 (G=32) and
+  x2.6 (G=256), spec x1.04 and x1.29; at 30,720 and 122,880 the workload's literal `<|im_start|>` text put the
+  checkpoint at an interior control token. Addendum B (B1 the unnominatable prompt's guard boundary, B2 a resumed
+  session's own checkpoint, B3 the spec probe on the public stream) is pre-registered (DAY41 1.8); code, then 9 boots
+  per card. The 5090 half of the original arm runs from queue-e. Price: about 0.4 agent-day plus about 6 h on the
+  target card and 3 h on the 5090.
 
 ### O12. The admission reclaim flush off the tick (lead's ruling at integ62)
 
@@ -160,7 +170,21 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   source-flip FAIL as registered (the reader's count took the capacity sink's publications; the flipped flush demote
   published nothing). The price: tenants' largest gap 3.9 s against 8.6 s, burst TTFT p50 7.2 to 8.0 s against 11.8 to
   12.2 s, warmth kept 1 of 24 against 10 of 24 (a per-arrival plan). Addenda E and F: one worker-level demote queue
-  (`0cf59870a`). The sixth sitting (`pro-single-b-sitting6.sh`) and the 5090 (queue-f, `rtx5090-day42e`) run it.
+  (`0cf59870a`). The sixth sitting read it (DAY42 2.3): P0 EXERCISED, F1 to F4 PASS on all boots, warmth 10 of 24 on
+  both arms, the tenants' largest gap 4.0 and 3.96 s against 8.9 and 9.0 s, burst TTFT p50 7.9 and 6.9 s against 11.8
+  and 12.0 s; `offtick` admits 15 and 16 of 64 against 17 (arrivals deferred on the landing, refused at the defer
+  budget). Target card done; the 5090 half runs from queue-f (`rtx5090-day42e`).
+
+### O13. The spec pool's exact-extension miss after an overshooting final burst (DAY41 2.1)
+
+- Source: DAY41 2.1 (R2 on the spec route, both arms): the default spec route resumed 34 of 60 exact-extension turns on
+  the 27B, because `SpecSession::committed` keeps the final burst's accepted drafts past `max_tokens` and the exact
+  probe needs the whole `committed` in the next prompt. The DSpark engine already clamps its commits at the budget.
+- What: a default-OFF door that clamps the MTP session's final round at the request budget (accepted drafts past the
+  budget are treated as rejected at that column, the same rollback a rejection takes), so the parked `committed`
+  equals the public stream. The design, the one-numeric-program argument (the emitted tokens are the same accepted
+  drafts; K=1..8 self-consistency), the census and the cells are pre-registered before code (DAY43).
+- Status: `open`. Price: about 0.5 agent-day plus about 2 h on each card.
 
 ## Owner-only (listed, not worked)
 

@@ -273,3 +273,39 @@ DAY41 FX card=pro6000 boot=fx-spec-rewind ok=8 ttft_ms p50=9076.6 p95=9079.8 cac
   hits, one fanout line) against 9.07 s on `rewind` (no hits, no fanout); spec 7.3 against 9.08 s.
 
 The arm is revised by addendum B (1.8) before any code of the revision.
+
+### 1.8 Addendum B (2026-09-26, after 2.1, before any code of the revision)
+
+2.1 placed two defects of the arm and one property of today's spec pool. The revision, behind the same door
+(`MEMRA_RESUME_GRID_REWIND`, unset is today's program byte for byte):
+
+- **B1, the arming boundary of a prompt no affinity resume can nominate.** Armed, a request that is unnamed
+  (`affinity` unset) and not nominatable (`plain_ckpt_nominatable` false) arms at the guard-window boundary
+  (`grid_align_boundary_within(n - PLAIN_CKPT_RAW_GUARD, n)`, the markerless branch of `plain_checkpoint_boundary`),
+  ignoring interior control tokens: no affinity resume can nominate such a session, and an exact extension resends the
+  whole committed prompt, so the last grid point before the live tail is the rewind target. A named or nominatable
+  prompt keeps `plain_checkpoint_boundary` (the affinity program's point). Both arming sites: the plain `ckpt_at` and
+  the cold spec boundary.
+- **B2, a resumed session arms its own checkpoint.** Armed, when the whole-prompt boundary is not ahead of the resumed
+  depth (`b <= seed_fed.len()`, the case that armed nothing in 2.1), the plain session arms the same rule over its tail:
+  control tokens searched only at or past the resumed depth (none for a B1 prompt), else the guard window; absolute
+  prompt positions, on the grid. The boundary must also clear the fed-start floor (`b - seed_fed.len() >=
+  PRIME_MIN_T`), or none is armed, so no row between the resumed depth and the checkpoint primes tokenwise. The spec
+  tier's warm sessions already arm on their suffix and are unchanged.
+- **B3, the spec exact probe reads the public stream.** A parked spec entry records `public_len`: the request's prompt
+  plus its public generated tokens, when `committed` reproduces them there, else `committed.len()`. Armed, the exact
+  probe matches `prompt.starts_with(&committed[..public_len])` (the final burst's overshoot rows are not required in
+  the next prompt); the hit always rewinds to the turn checkpoint (at or below the request's prompt, so below
+  `public_len`) and primes from there, or declines cold, so no overshoot row is ever resumed. Unset, the probe is
+  today's.
+- **Census and unit tests before the cells:** the arm is still read only at the two pools' exact and text hits and at
+  the two arming sites; B1 and B2 are one pure function with tests over a markerless prompt, an interior control token
+  in an unnominatable prompt, a nominatable prompt, the resumed-depth case and the fed-start floor; B3's `public_len`
+  is pinned by a test on an overshooting park.
+
+The cells rerun as 1.3 and addendum A ran them, on the revised tip, one RX boot per (route, arm, order) and
+`off-prev` (the tip with `day41-nodoor.patch` extended to the revision): 9 boots per card. FX is not rerun: its
+prompts (a 4,096-token prefix plus 64, from the start of the stream) hold no control token, so B1 and B2 arm the
+same boundary there and B3 does not reach a fanout; 2.1's FX readings stand for the revision. R1 to R4 and the
+readings are unchanged; R2 still counts the spec route's `keep` misses, which stay today's program (a new owed item
+takes that miss). Price: about 0.4 agent-day of code; the target card about 6 h, the 5090 about 3 h.
