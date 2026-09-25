@@ -2133,6 +2133,10 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `sources-helper-gone`, `sources-never-land` and `sources-foreign-reply` cells (the hash helper's first `Sources` job
   takes the fault; one typed latch in the arm's own words, no promote publication, the helper joined, r1 to r4
   byte-equal to door OFF) and the CPU cell `day41_the_sources_faults_key_on_the_first_sources_job`.
+- The demote publication split (WP-A day 52, `research/spill-a-20260919/DAY52.md` step 1, log only): the CPU census
+  `day52_the_publication_split_is_log_only` (the drop helper names and releases every host entry field in declaration
+  order, the compiler's own drop order; the insert's replaced twin and LRU victims drop through it at their old points;
+  no decision reads a split figure).
 - The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
   hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
   Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity

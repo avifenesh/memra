@@ -8731,6 +8731,101 @@ impl std::fmt::Display for TenantShareRefusal {
 /// Pinned-host spill pool behind the device `PrefixCache`. Plain byte-budgeted LRU, the same
 /// order as the device tier (memra#523 item 2), so a demotion keeps its rank. Keyed exactly like the device
 /// cache: the PC-ISO `(model, cache namespace)` map key plus exact-token prefixes.
+/// WP-A day 52 (`DAY52.md` step 1, log only): one host entry's drop, timed by field group.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HostDropSplit {
+    meta_ms: f64,
+    kv_ms: f64,
+    kv_leases: usize,
+    f32_ms: f64,
+    f32_payloads: usize,
+    rest_ms: f64,
+}
+
+/// WP-A day 52 (log only): one `host_demote_publish`'s parts: the bind, the tenant reclaim, the
+/// insert (with its drops).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HostPublishSplit {
+    bind_ms: f64,
+    reclaim_ms: f64,
+    insert_ms: f64,
+    insert: HostInsertSplit,
+}
+
+/// WP-A day 52 (log only): one `insert`'s drops, the replaced twin's and the LRU victims'.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HostInsertSplit {
+    twin: Option<HostDropSplit>,
+    evicted: usize,
+    evict_ms: f64,
+}
+
+/// WP-A day 52 (`DAY52.md` step 1, log only): drop a host entry exactly as the compiler would,
+/// every field in its declaration order, timing four groups: `meta` (identity to tokens), `kv`
+/// (the KV planes: pinned leases), `f32` (the conv and ssm payloads), `rest` (every later field).
+/// The census `day52_the_publication_split_is_log_only` pins this list against the struct.
+fn host_entry_drop_split(e: HostPrefixEntry) -> HostDropSplit {
+    let HostPrefixEntry {
+        _tier_identity,
+        model_generation,
+        glm,
+        layout_version,
+        pool_key,
+        toks,
+        kv,
+        conv,
+        ssm,
+        pos,
+        last_logits,
+        draft,
+        dspark_draft,
+        last_h,
+        device_bytes,
+        bytes,
+        last_use,
+        id,
+        verify_digest,
+        span_digests,
+        _tier_metadata,
+        _tier_metadata_charge,
+        _tier_charge,
+    } = e;
+    let mut split = HostDropSplit {
+        kv_leases: kv.iter().flatten().count(),
+        f32_payloads: conv.iter().flatten().count() + ssm.iter().flatten().count(),
+        ..Default::default()
+    };
+    let t = Instant::now();
+    drop(_tier_identity);
+    drop(model_generation);
+    drop(glm);
+    let _ = layout_version;
+    drop(pool_key);
+    drop(toks);
+    split.meta_ms = t.elapsed().as_secs_f64() * 1e3;
+    let t = Instant::now();
+    drop(kv);
+    split.kv_ms = t.elapsed().as_secs_f64() * 1e3;
+    let t = Instant::now();
+    drop(conv);
+    drop(ssm);
+    split.f32_ms = t.elapsed().as_secs_f64() * 1e3;
+    let t = Instant::now();
+    let _ = pos;
+    drop(last_logits);
+    drop(draft);
+    drop(dspark_draft);
+    drop(last_h);
+    let _ = (device_bytes, bytes, last_use, id);
+    drop(verify_digest);
+    drop(span_digests);
+    drop(_tier_metadata);
+    drop(_tier_metadata_charge);
+    drop(_tier_charge);
+    split.rest_ms = t.elapsed().as_secs_f64() * 1e3;
+    split
+}
+
 #[derive(Default)]
 struct HostPrefixCache {
     /// WP-A day 17: the one `Demoting` entry, if a contract-routed demote is in flight on the copy
@@ -8849,6 +8944,11 @@ struct HostPrefixCache {
     handoff_imports: u64,
     handoff_import_bytes: u64,
     handoff_skips: u64,
+    /// WP-A day 52 (`DAY52.md` step 1, log only): the last `insert`'s drops, timed, and the last
+    /// `host_demote_publish`'s parts (the demote publication split line reads them; nothing
+    /// decides on them).
+    last_insert_split: HostInsertSplit,
+    last_publish_split: HostPublishSplit,
 }
 
 impl HostPrefixCache {
@@ -9335,8 +9435,13 @@ impl HostPrefixCache {
             );
             return false;
         }
-        if let Some(i) = self.key_index(key, &e.toks) {
-            let _ = self.remove_at(key, i);
+        // WP-A day 52 (log only): the twin and every LRU victim drop at the same point as before,
+        // through the timed helper (every field in declaration order).
+        let mut split = HostInsertSplit::default();
+        if let Some(i) = self.key_index(key, &e.toks)
+            && let Some(twin) = self.remove_at(key, i)
+        {
+            split.twin = Some(host_entry_drop_split(twin));
         }
         e.id = self.next_id;
         self.next_id += 1;
@@ -9370,9 +9475,13 @@ impl HostPrefixCache {
                 victim_key.0,
                 ns_suffix(&victim_key.1)
             );
-            drop(dead);
+            let t = Instant::now();
+            let _ = host_entry_drop_split(dead);
+            split.evict_ms += t.elapsed().as_secs_f64() * 1e3;
+            split.evicted += 1;
             self.log_arena("LRU eviction");
         }
+        self.last_insert_split = split;
         true
     }
 
@@ -14482,11 +14591,16 @@ fn host_demote_publish(
     t0: Instant,
     hashed: Option<&HostHashDigests>,
 ) -> HostDemoteOutcome {
+    // WP-A day 52 (`DAY52.md` step 1, log only): the parts timed apart.
+    let mut split = HostPublishSplit::default();
+    let t = Instant::now();
     if let Err(err) = host.bind_tier_image(&mut e, hashed) {
         host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "bind refused");
         eprintln!("[prefix-host] demote failed ({err}); nothing published");
         return HostDemoteOutcome::Failed;
     }
+    split.bind_ms = t.elapsed().as_secs_f64() * 1e3;
+    let t = Instant::now();
     // TENANT-SHARE RECLAIM (memra#384), the evictions: the image exists and is bound, so
     // the only refusal left after an eviction is `insert`'s own (booked as wasted below).
     // The plan passed before the copy and nothing since mutates the row on this
@@ -14506,9 +14620,14 @@ fn host_demote_publish(
         );
         return HostDemoteOutcome::Failed;
     }
+    split.reclaim_ms = t.elapsed().as_secs_f64() * 1e3;
     let toks = e.toks.len();
     let bytes = e.bytes;
+    let t = Instant::now();
     if host.insert(&dead.pool_key, e) {
+        split.insert_ms = t.elapsed().as_secs_f64() * 1e3;
+        split.insert = host.last_insert_split;
+        host.last_publish_split = split;
         let ms = t0.elapsed().as_secs_f64() * 1e3;
         host.log_arena("demotion");
         host.demotions += 1;
@@ -15453,9 +15572,12 @@ fn host_demote_settle_hashing(
         Some(&digests),
     );
     let mut dead = dead;
+    let mut pause_ms = 0.0;
     if outcome == HostDemoteOutcome::Demoted {
         dead.disarm();
+        let t = Instant::now();
         host_pause_published(host, pending.release.take(), pending.reinstate, &dead);
+        pause_ms = t.elapsed().as_secs_f64() * 1e3;
     }
     if outcome == HostDemoteOutcome::Demoted {
         let publish_ms = publish_t.elapsed().as_secs_f64() * 1e3;
@@ -15486,6 +15608,26 @@ fn host_demote_settle_hashing(
             sp.copy_minflt,
             sp.hash_ms,
             reply.helper_ms,
+        );
+        // WP-A day 52 (`DAY52.md` step 1, log only): the publication segment's parts.
+        let ps = host.last_publish_split;
+        let twin = ps.insert.twin.unwrap_or_default();
+        eprintln!(
+            "[prefix-host] demote publication split: ticket seq={seq} bind {:.2} ms, reclaim {:.2} \
+             ms, insert {:.2} ms (twin: meta {:.2} ms, kv {:.2} ms over {} leases, f32 {:.2} ms over \
+             {} payloads, rest {:.2} ms; {} evicted in {:.2} ms), pause release {:.2} ms",
+            ps.bind_ms,
+            ps.reclaim_ms,
+            ps.insert_ms,
+            twin.meta_ms,
+            twin.kv_ms,
+            twin.kv_leases,
+            twin.f32_ms,
+            twin.f32_payloads,
+            twin.rest_ms,
+            ps.insert.evicted,
+            ps.insert.evict_ms,
+            pause_ms,
         );
     }
     outcome
@@ -49454,6 +49596,109 @@ mod tests {
         assert!(!production.contains("if sp.") && !production.contains("split.leases_ms >"));
         assert!(production.contains("[prefix-host] demote pre-submit split: ticket seq={seq}"));
         assert!(production.contains("[prefix-host] demote helper split: ticket seq={seq}"));
+    }
+
+    /// WP-A day 52 (`DAY52.md` step 1; CPU census): the publication split is log only. The drop
+    /// helper destructures the host entry in its declaration order and drops every field in that
+    /// order (the compiler's own drop order); the insert's replaced twin and every LRU victim drop
+    /// through it at the point they dropped before; no decision reads a split figure.
+    #[test]
+    fn day52_the_publication_split_is_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let ident = |l: &str| {
+            l.trim()
+                .trim_end_matches(',')
+                .split(':')
+                .next()
+                .unwrap()
+                .trim()
+                .to_string()
+        };
+        // The declaration's field names, in order.
+        let decl = &production[at(production, "\nstruct HostPrefixEntry {")..];
+        let decl = &decl[..at(decl, "\n}\n")];
+        let fields: Vec<String> = decl
+            .lines()
+            .skip(1)
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with("//") && l.contains(':'))
+            .map(ident)
+            .collect();
+        assert!(fields.len() >= 20 && fields[0] == "_tier_identity");
+        // The helper's destructure, in order.
+        let helper = &production[at(production, "fn host_entry_drop_split(e: HostPrefixEntry)")..];
+        let helper = &helper[..at(helper, "\n}\n")];
+        let pat = &helper[at(helper, "let HostPrefixEntry {")..at(helper, "} = e;")];
+        let names: Vec<String> = pat
+            .lines()
+            .skip(1)
+            .map(ident)
+            .filter(|n| !n.is_empty())
+            .collect();
+        assert_eq!(
+            names, fields,
+            "the destructure names every field in declaration order"
+        );
+        // Every field released once, in declaration order.
+        let released: Vec<String> = helper
+            .lines()
+            .map(str::trim)
+            .filter_map(|l| {
+                if let Some(x) = l.strip_prefix("drop(").and_then(|x| x.strip_suffix(");")) {
+                    return Some(vec![x.to_string()]);
+                }
+                l.strip_prefix("let _ = ")
+                    .and_then(|x| x.strip_suffix(';'))
+                    .map(|x| {
+                        x.trim_matches(|c| c == '(' || c == ')')
+                            .split(',')
+                            .map(|n| n.trim().to_string())
+                            .collect()
+                    })
+            })
+            .flatten()
+            .collect();
+        assert_eq!(
+            released, fields,
+            "every field released in declaration order"
+        );
+        // The insert's drops go through the helper, at the old points.
+        let insert = &production[at(
+            production,
+            "    fn insert(&mut self, key: &PoolKey, mut e: HostPrefixEntry)",
+        )..];
+        let insert = &insert[..at(insert, "\n    }\n")];
+        assert!(insert.contains("split.twin = Some(host_entry_drop_split(twin));"));
+        assert!(insert.contains("let _ = host_entry_drop_split(dead);"));
+        assert!(!insert.contains("drop(dead)") && !insert.contains("let _ = self.remove_at("));
+        assert!(
+            at(insert, "self.remove_at(key, i)") < at(insert, "e.id = self.next_id;"),
+            "the twin drops before the new entry is indexed, as before"
+        );
+        // Log only.
+        for field in [
+            "split.",
+            "ps.",
+            "twin.",
+            "self.last_insert_split.",
+            "host.last_publish_split.",
+        ] {
+            assert!(
+                !production.contains(&format!("if {field}")),
+                "{field} decides nothing"
+            );
+        }
+        assert_eq!(
+            production.matches("last_publish_split").count(),
+            3,
+            "field, write, read"
+        );
+        assert!(
+            production.contains("[prefix-host] demote publication split: ticket seq={seq} bind")
+        );
     }
 
     /// WP-A day 47 (`DAY47.md` design V, sections 1 and 1a; CPU census): the pause sweep's two shapes
