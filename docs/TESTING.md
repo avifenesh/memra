@@ -2137,6 +2137,10 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `day52_the_publication_split_is_log_only` (the drop helper names and releases every host entry field in declaration
   order, the compiler's own drop order; the insert's replaced twin and LRU victims drop through it at their old points;
   no decision reads a split figure).
+- The on-tick publish lines (WP-A day 54, `research/spill-a-20260919/DAY54.md` step 1, OWED item 10, log only): the CPU
+  census `day54_the_on_tick_lines_are_log_only` (every `OnTick` answer of both capture routes and of the submit core
+  records its reason first; the routes refuse the same conditions as before, one `else if` chain each; no decision reads
+  the reason; the publish lines print only under the door; the fanout's snapshot, restores and insert keep their order).
 - The admission-counter test ordering (WP-A day 53, `research/spill-a-20260919/DAY53.md` section 6, OWED item 21): the
   test helper `admission_counters_guard()` takes `drain_lock()` before its own lock, so the tests that write the
   process-global admission counters (the queue-bound swaps) are ordered against the handler tests that read them

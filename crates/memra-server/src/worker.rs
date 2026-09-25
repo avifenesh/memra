@@ -8949,6 +8949,9 @@ struct HostPrefixCache {
     /// decides on them).
     last_insert_split: HostInsertSplit,
     last_publish_split: HostPublishSplit,
+    /// WP-A day 54 (`DAY54.md` step 1, log only): why the last capture route answered `OnTick`
+    /// (the caller's `on-tick publish` line prints it; nothing decides on it).
+    on_tick_reason: &'static str,
 }
 
 impl HostPrefixCache {
@@ -17142,31 +17145,51 @@ fn prefix_capture_off_tick(
     model: Option<&HybridModel>,
     why: &str,
 ) -> CaptureRoute {
+    // WP-A day 54 (log only): every `OnTick` answer records its reason first.
     if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
+        hpx.on_tick_reason = if hpx.capture_off_tick_disabled {
+            "the capture path is latched"
+        } else {
+            "no transfer engine"
+        };
         return CaptureRoute::OnTick;
     }
     let tp_cache = cache.glm5_tp_recur.iter().any(Option::is_some)
         || cache.glm5_tp_latent_peer.iter().any(Option::is_some);
-    if cache.has_swa_ring()
-        || tp_cache
-        || model.is_none()
-        || cache.latent.iter().any(Option::is_some)
-        || cache.pos != toks.len()
-        || last_logits.is_empty()
-        || cache
-            .kv
-            .iter()
-            .flatten()
-            .any(|l| l.len != cache.pos && !(l.len == 0 && cache.pos > 0))
+    let refused = if cache.has_swa_ring() {
+        Some("an SWA ring cache")
+    } else if tp_cache {
+        Some("tensor-parallel shards")
+    } else if model.is_none() {
+        Some("no model")
+    } else if cache.latent.iter().any(Option::is_some) {
+        Some("latent planes")
+    } else if cache.pos != toks.len() {
+        Some("the cache position is off the token boundary")
+    } else if last_logits.is_empty() {
+        Some("no boundary logits")
+    } else if cache
+        .kv
+        .iter()
+        .flatten()
+        .any(|l| l.len != cache.pos && !(l.len == 0 && cache.pos > 0))
     {
+        Some("a KV layer not at the boundary")
+    } else {
+        None
+    };
+    if let Some(reason) = refused {
+        hpx.on_tick_reason = reason;
         return CaptureRoute::OnTick;
     }
     // Never two captures in flight: the pending one settles (and publishes) first.
     host_capture_settle_pending(engine, px, hpx, ContractWait::Block, "a second capture");
     if hpx.capture_off_tick_disabled {
+        hpx.on_tick_reason = "the capture path latched while settling the pending capture";
         return CaptureRoute::OnTick;
     }
     if hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
+        hpx.on_tick_reason = "no transfer engine";
         return CaptureRoute::OnTick;
     }
     let n = cache.kv.len();
@@ -17281,10 +17304,15 @@ fn host_capture_submit(
         recurrent_note,
     } = sub;
     let Some(tier) = hpx.tier.as_ref() else {
+        hpx.on_tick_reason = "no host tier";
         return CaptureRoute::OnTick;
     };
-    let Some(transfers) = tier.transfers.as_ref() else {
+    if tier.transfers.is_none() {
+        hpx.on_tick_reason = "no transfer engine";
         return CaptureRoute::OnTick;
+    }
+    let Some(transfers) = tier.transfers.as_ref() else {
+        unreachable!("checked above");
     };
     let tenant = tier
         .program(pool_key, class)
@@ -17684,7 +17712,13 @@ fn prefix_spec_capture_off_tick(
     cap: memra_engine::spec::SpecBoundaryCapture,
     why: &str,
 ) -> SpecCaptureRoute {
+    // WP-A day 54 (log only): every `OnTick` answer records its reason first.
     if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
+        hpx.on_tick_reason = if hpx.capture_off_tick_disabled {
+            "the capture path is latched"
+        } else {
+            "no transfer engine"
+        };
         return SpecCaptureRoute::OnTick(Box::new(cap));
     }
     let pos = cap.pos;
@@ -17694,21 +17728,33 @@ fn prefix_spec_capture_off_tick(
     // item class in this route: a publisher carrying one keeps the OFF program whole, tail
     // included (revuto on integ40 #643: the route was installed ahead of the tail and would have
     // published trunk and draft and dropped the tail silently).
-    if tp_cache
-        || dspark_tail
-        || cache.latent.iter().any(Option::is_some)
-        || cap.latent_tails.iter().any(Option::is_some)
-        || cap.snap.pos != pos
-        || pos == 0
-        || pos > committed.len()
-        || cache.kv.iter().flatten().any(|l| l.len != 0 && l.len < pos)
-        || cache.kv.iter().flatten().all(|l| l.len == 0)
-    {
+    let refused = if tp_cache {
+        Some("tensor-parallel shards")
+    } else if dspark_tail {
+        Some("a DFlash drafter tail")
+    } else if cache.latent.iter().any(Option::is_some) {
+        Some("latent planes")
+    } else if cap.latent_tails.iter().any(Option::is_some) {
+        Some("latent boundary tails")
+    } else if cap.snap.pos != pos {
+        Some("the capture snapshot is off its boundary")
+    } else if pos == 0 || pos > committed.len() {
+        Some("the boundary is outside the committed tokens")
+    } else if cache.kv.iter().flatten().any(|l| l.len != 0 && l.len < pos) {
+        Some("a KV layer shorter than the boundary")
+    } else if cache.kv.iter().flatten().all(|l| l.len == 0) {
+        Some("no KV rows")
+    } else {
+        None
+    };
+    if let Some(reason) = refused {
+        hpx.on_tick_reason = reason;
         return SpecCaptureRoute::OnTick(Box::new(cap));
     }
     // Never two captures in flight: the pending one settles (and publishes) first.
     host_capture_settle_pending(engine, px, hpx, ContractWait::Block, "a second capture");
     if hpx.capture_off_tick_disabled {
+        hpx.on_tick_reason = "the capture path latched while settling the pending capture";
         return SpecCaptureRoute::OnTick(Box::new(cap));
     }
     if px.has_key(pool_key, &committed[..pos]) {
@@ -21675,6 +21721,8 @@ fn prefix_insert_from_spec_boundary(
         ),
         SpecCaptureRoute::OnTick(cap) => *cap,
     };
+    // WP-A day 54 (`DAY54.md` step 1, log only): under the door, the on-tick publish is timed.
+    let t_snap = Instant::now();
     // LATENT ARM (lane/glm5-prefix-latent2, 2026-09-01 — the case the old refusal named
     // "unreachable today ... IF A SPEC ARM EVER LANDS FIRST"; the glm5 spec arm landed):
     // a latent-bearing cache publishes ONLY when the capture carries the boundary tails
@@ -21858,8 +21906,19 @@ fn prefix_insert_from_spec_boundary(
         id: 0, // recency identity assigned by PrefixCache::insert
         pins: 0,
     };
+    let snapshot_ms = t_snap.elapsed().as_secs_f64() * 1e3;
+    let mb = e.bytes as f64 / 1e6;
     trace_prefix_entry_state(engine, &e, e.pos, "spec-snapshot", why);
+    let t_insert = Instant::now();
     px.insert_demoting(pool_key, e, why, engine, hpx);
+    if hpx.tier.is_some() {
+        eprintln!(
+            "[prefix-cache] on-tick publish: publisher={why} (the spec route answered on-tick: \
+             {}); snapshot {snapshot_ms:.2} ms, insert {:.2} ms, {mb:.1} MB",
+            hpx.on_tick_reason,
+            t_insert.elapsed().as_secs_f64() * 1e3,
+        );
+    }
 }
 
 /// Device bytes allocated by a plain snapshot, including both TP ranks. Use live lengths,
@@ -21958,10 +22017,23 @@ fn prefix_insert_from_session(
         CaptureRoute::Submitted | CaptureRoute::Refused => return,
         CaptureRoute::OnTick => {}
     }
+    // WP-A day 54 (`DAY54.md` step 1, log only): under the door, the on-tick publish is timed.
+    let t_snap = Instant::now();
     match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits, model) {
         Ok(e) => {
+            let snapshot_ms = t_snap.elapsed().as_secs_f64() * 1e3;
+            let mb = e.bytes as f64 / 1e6;
             trace_prefix_entry_state(engine, &e, e.pos, "snapshot", why);
+            let t_insert = Instant::now();
             px.insert_demoting(&pool_key, e, why, engine, hpx);
+            if hpx.tier.is_some() {
+                eprintln!(
+                    "[prefix-cache] on-tick publish: publisher={why} (the capture route answered \
+                     on-tick: {}); snapshot {snapshot_ms:.2} ms, insert {:.2} ms, {mb:.1} MB",
+                    hpx.on_tick_reason,
+                    t_insert.elapsed().as_secs_f64() * 1e3,
+                );
+            }
         }
         Err(err) => eprintln!("[prefix-cache] snapshot failed ({err}); prefix not cached"),
     }
@@ -29391,6 +29463,8 @@ pub fn run(
                             .get_mut(&cand.pool_key)
                             .expect("park index came from this pool");
                         let park = &pool[pi];
+                        // WP-A day 54 (`DAY54.md` step 1, log only): the park's snapshot is timed.
+                        let t_snap = Instant::now();
                         match prefix_snapshot(
                             &engine,
                             &park.cache,
@@ -29400,6 +29474,12 @@ pub fn run(
                             loaded.get(&cand.pool_key.0).map(|l| &l.model),
                         ) {
                             Ok(mut entry) => {
+                                eprintln!(
+                                    "[prefix-host] pause park snapshot on the tick: {:.2} ms \
+                                     ({:.1} MB)",
+                                    t_snap.elapsed().as_secs_f64() * 1e3,
+                                    entry.bytes as f64 / 1e6,
+                                );
                                 let fed_len = pool[pi].fed.len();
                                 match host_demote_prefix_ref(
                                     &engine,
@@ -34592,6 +34672,8 @@ fn dedup_interactive_prefixes(
             }
         };
         advanced.insert(leader_i);
+        // WP-A day 54 (`DAY54.md` step 1, log only): the fanout's on-tick parts, timed.
+        let t_snap = Instant::now();
         let snapshot = prefix_snapshot(
             engine,
             active[leader_i].cache.as_ref().unwrap(),
@@ -34600,6 +34682,7 @@ fn dedup_interactive_prefixes(
             &leader_logits,
             loaded.get(&key.0).map(|l| &l.model),
         );
+        let fanout_snapshot_ms = t_snap.elapsed().as_secs_f64() * 1e3;
         {
             let s = &mut active[leader_i];
             s.last_logits = leader_logits;
@@ -34622,6 +34705,8 @@ fn dedup_interactive_prefixes(
             }
         };
 
+        let fanout_mb = entry.bytes as f64 / 1e6;
+        let t_restores = Instant::now();
         let mut participants = vec![leader_i];
         for &i in group.members.iter().skip(1) {
             if finished.contains(&i) {
@@ -34686,6 +34771,8 @@ fn dedup_interactive_prefixes(
             advanced.insert(i);
         }
 
+        let fanout_restores_ms = t_restores.elapsed().as_secs_f64() * 1e3;
+        let t_insert = Instant::now();
         let pin = px.insert_pinned_demoting(
             &key,
             entry,
@@ -34694,6 +34781,15 @@ fn dedup_interactive_prefixes(
             engine,
             hpx,
         );
+        if hpx.tier.is_some() {
+            eprintln!(
+                "[prefix-dedup] on-tick publish: snapshot {fanout_snapshot_ms:.2} ms \
+                 ({fanout_mb:.1} MB), {} sibling restore(s) {fanout_restores_ms:.2} ms, insert \
+                 {:.2} ms",
+                participants.len().saturating_sub(1),
+                t_insert.elapsed().as_secs_f64() * 1e3,
+            );
+        }
         for &i in &participants {
             active[i].seed_prefix = false;
             active[i].seed_at = None;
@@ -47427,7 +47523,8 @@ mod tests {
         let route = body.find("fn prefix_spec_capture_off_tick(").unwrap();
         let route_body = &body[route..route + body[route..].find("\n}\n").unwrap()];
         for by_name in [
-            "|| dspark_tail",
+            // Day 54: the refusals are one `else if` chain (each records its on-tick reason).
+            "} else if dspark_tail {",
             "cache.latent.iter().any(Option::is_some)",
             "cap.latent_tails.iter().any(Option::is_some)",
             "cap.snap.pos != pos",
@@ -49596,6 +49693,96 @@ mod tests {
         assert!(!production.contains("if sp.") && !production.contains("split.leases_ms >"));
         assert!(production.contains("[prefix-host] demote pre-submit split: ticket seq={seq}"));
         assert!(production.contains("[prefix-host] demote helper split: ticket seq={seq}"));
+    }
+
+    /// WP-A day 54 (`DAY54.md` step 1; CPU census): the on-tick lines are log only. Every `OnTick`
+    /// answer of both capture routes (and of the shared submit core) records its reason first; the
+    /// routes refuse the same conditions as before, one `else if` chain each; the reason is never
+    /// read by a decision; the publish lines print only under the door; the fanout keeps its order
+    /// (snapshot, sibling restores, insert).
+    #[test]
+    fn day54_the_on_tick_lines_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let body = |start: &str| {
+            let a = at(production, start);
+            &production[a..a + production[a..].find("\n}\n").unwrap()]
+        };
+        for (f, ret) in [
+            (
+                "fn prefix_capture_off_tick(",
+                "return CaptureRoute::OnTick;",
+            ),
+            ("fn host_capture_submit(", "return CaptureRoute::OnTick;"),
+            (
+                "fn prefix_spec_capture_off_tick(",
+                "return SpecCaptureRoute::OnTick(Box::new(cap));",
+            ),
+        ] {
+            let b = body(f);
+            let mut from = 0;
+            let mut n = 0;
+            while let Some(i) = b[from..].find(ret) {
+                let r = from + i;
+                // Between the previous `return` (or the fn's start) and this one: a reason.
+                let before = &b[..r];
+                let since = before.rfind("return ").map_or(0, |p| p + "return ".len());
+                assert!(
+                    before[since..].contains("hpx.on_tick_reason ="),
+                    "{f}: an OnTick answer without its reason"
+                );
+                n += 1;
+                from = r + ret.len();
+            }
+            assert!(n >= 2, "{f}: {n} OnTick answers");
+        }
+        let route = body("fn prefix_capture_off_tick(");
+        for cond in [
+            "cache.has_swa_ring()",
+            "} else if tp_cache {",
+            "} else if model.is_none() {",
+            "} else if cache.latent.iter().any(Option::is_some) {",
+            "} else if cache.pos != toks.len() {",
+            "} else if last_logits.is_empty() {",
+            ".any(|l| l.len != cache.pos && !(l.len == 0 && cache.pos > 0))",
+        ] {
+            assert!(
+                route.contains(cond),
+                "the capture route refuses by name: {cond}"
+            );
+        }
+        assert!(
+            !production.contains("if hpx.on_tick_reason")
+                && !production.contains("match hpx.on_tick_reason")
+        );
+        assert_eq!(
+            production
+                .matches("on-tick publish: publisher={why}")
+                .count(),
+            2
+        );
+        for line in [
+            "[prefix-cache] on-tick publish: publisher={why} (the capture route",
+            "[prefix-cache] on-tick publish: publisher={why} (the spec route",
+            "[prefix-dedup] on-tick publish: snapshot",
+        ] {
+            let i = at(production, line);
+            let guard = production[..i]
+                .rfind("if hpx.tier.is_some() {")
+                .expect("the door guard");
+            assert!(i - guard < 200, "{line} prints only under the door");
+        }
+        let fanout = body("fn dedup_interactive_prefixes(");
+        let snap = at(fanout, "let snapshot = prefix_snapshot(");
+        let restore = at(fanout, "let restored = prefix_restore(");
+        let insert = at(fanout, "let pin = px.insert_pinned_demoting(");
+        assert!(
+            snap < restore && restore < insert,
+            "the fanout's order is unchanged"
+        );
+        assert!(production.contains("[prefix-host] pause park snapshot on the tick: {:.2} ms"));
     }
 
     /// WP-A day 52 (`DAY52.md` step 1; CPU census): the publication split is log only. The drop
