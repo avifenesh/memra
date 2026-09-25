@@ -17406,7 +17406,11 @@ default_reasoning_effort = "always"
         );
     }
 
-    #[tokio::test]
+    /// WP-A day 55 (`research/spill-a-20260919/DAY55.md`, OWED item 22, T-b): on tokio's paused
+    /// clock. Every timer on the bridge's path is `tokio::time`, so the 10 ms commit, the 60 ms bound,
+    /// the 80 ms deadline and the 150 ms wait are virtual and exact; on the wall clock a runner that
+    /// starves this task for 60 ms read the commit as late (2 of 100 beside eight burners).
+    #[tokio::test(start_paused = true)]
     async fn an_extended_stream_commits_prefill_then_injects_the_original_deadline() {
         let (tx, rx) = worker::event_channel();
         tx.send(Event::PromptUsage {

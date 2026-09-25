@@ -47,6 +47,8 @@ toml = "0.8"
 
 [dev-dependencies]
 h2 = "0.4"
+# WP-A day 55 (OWED item 22): tokio's paused clock for logic tests that assert virtual times.
+tokio = { version = "1", features = ["test-util"] }
 
 [[bin]]
 name = "memra-server"
