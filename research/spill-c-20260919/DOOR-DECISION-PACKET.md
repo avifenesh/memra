@@ -49,6 +49,13 @@ the tick; section 4's tables gain their cost rows (target card: A days 31 and 32
 BOX5; the RTX 5090: A days 33 to 36); item 7 and section 6 were re-read against them (`C/DAY42.md`). Every line added on
 day 42 is checked present verbatim in the receipt file named beside it (appendix A, day 42). BOX3, BOX4 and BOX5 are
 different machines of the target card class and their rows are never subtracted from one another.
+
+Day 62 update: lane A days 37 to 41 landed and were ruled (ruling 54; `lead/INTEGRATION-DAY12.md` integ59), on `main`
+since #723. Section 2 gains a bullet for what they moved off the owner thread; section 3 gains their gate row; section
+4's tables gain their cost rows (target card: A days 37 to 39 and 41 on BOX7; the RTX 5090: A days 38 to 40); item 7 and
+section 6 were re-read against them (`C/DAY62.md`). Every line added on day 62 is checked present in the file named
+beside it (appendix A, day 62). BOX7 is the BOX4-class slow host of the target card class; its rows are never
+subtracted from another box's, and the 5090's never from any target-card row.
 ## The one page
 
 ### 1. The question (section E of `C/HOSTPREFIX-DOOR.md`, stated there and not answered)
@@ -163,6 +170,19 @@ Under `MEMRA_KV_HOST_CONTRACTS=1` with a host tier armed (`MEMRA_KV_HOST_MB > 0`
   writes the planes the copy reads), and the restore half's recurrent copy is priced on the target card under its
   pre-registered 0.5 ms bound (A day 36, ruling 53; the row in section 4); its log-only timing field stays on the
   restore line.
+- **Since A days 37 to 41 (ruling 54; on `main` since #723).** Ruling 53's "no off-thread form known" for hash 1 is
+  superseded, its words kept above: hash 1 runs as the D2H device receipt, a framed SHA-256 kernel on the copy stream
+  ahead of the copies, with every side kernel on that one stream (design G4, `A/DAY38.md`), and ruling 54 reads: "G4 is
+  the door's form of hash 1 off the owner thread. It passes (a) to (f) on the target card. On the 5090, (f) FAILS as
+  registered, and that FAIL stands in the record." The promote's staging fill is threaded inside its copy-stream host
+  function (design T, `A/DAY39.md`; ruling 54: "T is the door's fill program. The 9950X-class reading is owed."). A hit
+  on a demoting entry in its copy phase parks (design P) instead of priming cold. The capture, restore and demote
+  receipt buffers are pooled (G''), since each small pinned free on the owner thread waited for every queued copy in
+  the context. Finding 5 (the native span cells failing in parallel in one process) was a test-harness defect: a
+  pinned or synchronous free or a module load on one owner thread of a context holds every other owner thread of that
+  context; the fix is one pool context per native cell (`A/DAY37.md`). The strong-form receipt, design S, was refuted
+  on its price clauses and reverted (`A/DAY40.md`; ruling 54: "S is refuted and reverted; item 4 stays open under DAY40
+  section 7's revision."). The rows are in sections 3 and 4.
 
 ### 3. Correctness evidence (both arms, both cards; verdict lines verbatim; N=1 per cell)
 
@@ -194,6 +214,7 @@ Under `MEMRA_KV_HOST_CONTRACTS=1` with a host tier armed (`MEMRA_KV_HOST_MB > 0`
 | The retire-seam settle's cost (#634's Block settle at a session retire) | PRO 6000 | `8c96ca6b5` (day 25) | (OFF and ON in one cell) | `DAY25 RETIRE VERDICT: admissible=True ... -> HOLDS (R1, R2, R3 within 3.0 ms in both arms and both passes; the seam exercised in both passes)` | `C/pro-single-day25/retire/` |
 | Review-round replays (PR #599, #605 findings) | PRO 6000 | `70038ed01`, `1b354be59` | `DAY15 REVIEW REPLAY: PASS` | `DAY16 REVIEW REPLAY: PASS` | `C/pro-single-day15-review/`, `C/pro-single-day16-review/` |
 | The door's gate set on lane A days 31, 32, 34 and 36 (day 42): identity x4 (default and plain, OFF and ON), failure OFF and ON, the contract fault gate (default, and plain on day 36), twin OFF and ON, hit OFF and ON | PRO 6000: BOX3 (A days 31 and 32), BOX4 (A day 34), BOX5 (A day 36) | `6d940a97c` (day 31); the day-32 H2D binary; d34; the day-36 tip | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` and `KV-HOST-SPILL FAILURE GATE: ALL GREEN` on the OFF arms, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` on the OFF hit arm | the same lines on the ON arms, and `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` (once per sitting, twice on day 36); per sitting 4 identity, 2 failure and 2 hit lines, each count checked (appendix A, day 42) | `A/pro-single-day3{1,2,4,6}/box/gates/` |
+| The door's gate set on lane A days 38 to 41 (day 62): identity x4, failure OFF and ON, the contract fault gate default and plain (the three `Sources` cells of A day 41 among them), hit OFF and ON; finding 5's native span cells | PRO 6000: BOX7 (the G4 sitting); RTX 5090 | G4 (`26676c037`); A day 41 on the 5090 | `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` and `KV-HOST-SPILL FAILURE GATE: ALL GREEN` on the OFF arms, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` on the OFF hit arm | the same lines on the ON arms, `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` on BOX7 and on the 5090 (229 `ok:` per arm, counted; BOX7's default arm carries 45 `sources-` lines); finding 5: `DAY37 FINDING5 TARGET all-arm green=20 of 20 rule 20 of 20 -> PASS` (BOX7) and `DAY37 FINDING5 cause=cuMemFreeHost/cuMemFree/module-load hold every other owner thread of one context (same context only; across contexts only context create/destroy) fix=one pool context per native cell, created before any cell body, never destroyed in-process pair=100/100 all=100/100 serial=3/3 red-arm=FAIL as required -> 5090 PASS; target card all-arm 20/20 owed` (the 5090, `A/DAY37.md` section 9); `DAY41 K-ARMS (5090) default ALL GREEN, plain ALL GREEN, the three arms each latch typed with no publication -> 5090 PASS; target card owed` | `A/pro-single-g4/box/gates/`, `A/pro-single-day38/box/unit/all-arm/run.log`, `A/rtx5090-day38/g4/`, `A/rtx5090-day41/` |
 
 Every hit-gate "door ON" receipt before day 27 (A days 17 to 21 on the target card, 5090 days 17 and 18; C 5090
 days 24 and 26) ran with the host tier UNARMED and covered the tick program in both arms; they are receipts of
@@ -237,6 +258,9 @@ Target card, one RTX PRO 6000 Blackwell at 600 W, the 27B, 64-token entries of 1
 | The same cell twice in ONE hold on the day-32 trees (A day 32: the pre-H2D binary and the H2D binary, design H; ruling 47) | e2e `115.3` / `115.5` (the H2D binary's OFF arm) | the promote's owner segment `DAY32 B2 before (pre-H2D binary) steady owner-segment N=90 median=4.58 min=4.46 max=5.11` against `DAY32 B2 after (H2D binary) steady owner-segment N=90 median=0.70 min=0.65 max=1.22 ... -> PASS`; `DAY32 B3 READING promote in-ms steady before in N=90 median=20.70 ...; after in N=90 median=31.00 ...; after-minus-before median +10.30`, helper fill `median=6.40`, landed at poll [1]; `DAY32 B4 receipts=109 bad=0 ... -> PASS`; on the H2D binary `DAY28 CLAUSE 1b e2e order=o1 ... on=137.8 off=115.3 on_minus_off=+22.5 rule <=+20.0 -> FAIL` (o2 `+22.2 -> FAIL`), `DAY28 VERDICT clauses_failed=2 -> FAIL` (ruling 47: recorded as it reads, no threshold moved) | BOX3, both binaries in one hold, twenty interleaved boots each (`A/DAY32.md` section 3); the pre-H2D and H2D rows are a same-hold pair | `A/pro-single-day32/box/reading-day32-b2.log`, `reading-day32-b4.log`, `reading-day28.log` |
 | The d32, d33 and d34 binaries in one hold on BOX4 (A day 34: design K, the H2D completion checksum on the hash helper; design F on d33 and d34; ruling 49) | `DAY28 CLAUSE 1a stall order=o1 ... off_cell_median=93.1` (BOX4's own OFF; BOX3's same cell read 85.4, a different machine, not compared) | `DAY34 PRO C run=d34 steady landing-poll-hold N=90 median=0.35 ... helper-ms N=100 median=1.40 ... -> PASS`; `DAY34 PRO D order=o1 ... d34-minus-d33 -1.07 rule <=+1.0 -> PASS` (o2 `-1.05`); on d34 `DAY28 CLAUSE 1b e2e order=o1 ... on=132.4 off=120.3 on_minus_off=+12.0 rule <=+20.0 -> PASS` | BOX4, one hold for the three binaries (`A/DAY34.md` sections 5 and 7); F's copy misses the probe's tick on this CPU (the 11.4 ms single-thread fill plus the spans outlast the 13.1 ms to the next tick top, `A/DAY34.md` finding 2) | `A/pro-single-day34/box/reading-day34-pro.log`, `reading-day28.log` |
 | M' (the bind re-hash on the hash helper) against its base, and the D2D restore's recurrent-copy price, on BOX5 (A day 36; the base is the same tip with M' reverted; ruling 53) | base: `take-back N=80 median=0.54`, `owner-held N=80 median=2.67`, wall `median=114.70` both orders, e2e `176.48` / `176.52` | M': `DAY35 M2 C take-back N=80 median=0.11 min=0.10 max=0.11 ... (copy-settle reading: copy-settle N=80 median=0.70 ...) -> PASS`, `owner-held N=80 median=2.27`, helper-hash `median=97.60` (base `97.00`); `DAY35 M2 D order=o1 wall base=114.70 m=114.30 m-minus-base=-0.40 rule <=+17.0 \| e2e base=176.48 m=176.57 m-minus-base=+0.09 rule <=+1.0 -> PASS` (o2 `-0.50` / `+0.01`); the restore's recurrent copy `DAY36 PRICE VERDICT (target card) owner-stream median=0.290 host median=0.190 rule each < 0.5 ms per restore -> CLOSES` | BOX5, one hold (`A/DAY36.md` section 4) | `A/pro-single-day36/box/reading-day35m2-target.log`, `reading-day36-target.log` |
+| G4 against its base on BOX7 (A day 38: hash 1 as the D2H device receipt on the copy stream; ruling 54) | base: `DAY38 READING arm=base steady copy-settle N=80 median=1.56 min=1.48 max=1.64 \| take-back N=80 median=0.21 ... \| owner-held N=80 median=4.05 ... \| helper-hash N=80 median=160.30 ...` | G4: `DAY38 READING arm=g steady copy-settle N=80 median=0.53 min=0.44 max=0.61 \| ... \| owner-held N=80 median=2.97 ... \| receipt-kernel-ms N=90 median=3.40 min=2.49 max=3.45`; `DAY38 G C copy-settle N=80 median=0.53 min=0.44 max=0.61 rule N>=20 median<=1.5 max<=3.0 -> PASS`; `DAY38 G D order=o1 wall base=182.65 g=181.40 g-minus-base=-1.25 rule <=+5.0 \| e2e base=207.55 g=206.37 g-minus-base=-1.17 rule <=+1.0 -> PASS` (o2 wall `-1.20`, e2e `-1.10`); `HUMP arm=xg4 boots=2 median-hump=+0.035 humps=False` against the G'' control `HUMP arm=xgpp boots=2 median-hump=+0.576 humps=True` | BOX7, the G4 sitting, one collector hold per cell (`A/DAY38.md` section 15 onward) | `A/pro-single-g4/box/g/reading-day38-target.log`, `box/hump/reading-hump.log` |
+| G'' on BOX7, the failed form (pooled receipt twins, side kernels on two non-owner streams) | (the same base arm) | `DAY38 G D order=o1 wall base=182.80 g=185.40 g-minus-base=+2.60 rule <=+5.0 \| e2e base=207.66 g=209.08 g-minus-base=+1.42 rule <=+1.0 -> FAIL` (o2 e2e `+1.36`); re-run o1 e2e `+1.43`, o2 `+1.48`, both `-> FAIL`; the bisection placed a device-side step at every owner-stream kernel boundary with kernels on two non-owner streams (`A/DAY38.md` section 13k), which G4 removes | BOX7, the day-38 sitting | `A/pro-single-day38/box/g/`, `box/g-rerun/` |
+| T on BOX7 (A day 39: the threaded staging fill; hk = the single-threaded fill, ft = T, f1 = T at one thread) | the single-threaded fill on this host: `FILL shape=27B bytes=156893184 threads=1 N=5 ms median=10.985 min=10.867 max=11.071 gbps=14.28 bitwise=true` (the probe's tick budget on this host, "the budget is 13.1 - 2.880 - 1.0 = 9.22 ms", `A/DAY39.md` section 4); OFF e2e `120.2` / `120.3` | `DAY39 T CLAUSE (a) ft steady promotes N=90 polls==1 90 rule N=90 and >=80 -> PASS`; `DAY39 T CLAUSE (b) order=o1 metric=e2e hk=131.24 ft=118.61 hk-minus-ft=+12.64 pair-noise=0.20 ... -> CLEARS` (pin `+12.70` against `0.10`; o2 e2e `+12.55` against `0.23`); `DAY39 1b READING order=o1 arm=ft on=118.6 off=120.2 on_minus_off=-1.6 rule <=+20.0 -> PASS` (o2 `-1.7`); `DAY39 T TARGET (a) and (b) -> PASS (clause (c) is the gates and the unit cells)` | BOX7, the G4 sitting's last cell | `A/pro-single-day38/box/fill/survey.log`, `A/pro-single-g4/box/item3/reading-day39-target.log` |
 
 RTX 5090 Laptop GPU, the 9B (this card's own figures):
 
@@ -267,6 +291,10 @@ RTX 5090 Laptop GPU, the 9B (this card's own figures):
 | The F decision cell (A day 35: K on both arms; hk = K without F, fk = K with F) | OFF e2e `median=64.69` (o1), `65.92` (o2) | `DAY35 F CLAUSE order=o1 metric=e2e hk=86.75 fk=78.95 hk-minus-fk=+7.81 pair-noise=5.57 ... -> CLEARS` (o2 `+7.44` against `5.03`); `DAY35 F DECISION -> KEEP` | 30 boots in one hold (`A/DAY35.md` section 4) | `A/rtx5090-day35/reading-day35.log` |
 | Design M (both demote KV hashes on the helper, refuted as registered) and design M' (the bind re-hash alone) (A day 35 sections 6 and 8) | M' base: `copy-settle N=80 median=8.31`, `take-back N=80 median=8.25`, `owner-held N=80 median=17.98` | M: `copy-settle N=80 median=0.15`, `take-back N=80 median=0.07`, with (d) failing in o2 and the gates (b) red (`A/DAY35.md` section 6; the red receipts committed, M reverted); M': `copy-settle N=80 median=8.33`, `take-back N=80 median=0.06`, `owner-held N=80 median=9.55`, `DAY35 M2 D order=o1 wall base=67.75 m=59.60 m-minus-base=-8.15 ... e2e ... m-minus-base=-7.68 rule <=+1.0 -> PASS` (o2 `-8.40` / `-8.04`) | M: one hold; M': 20 boots, one hold | `A/rtx5090-day35/m/reading-day35m.log`, `m2/reading-day35m2.log` |
 | The D2D restore's recurrent copy on this card (A day 36, log only; the rule reads the target card) | n/a | `DAY36 PRICE READING (5090, not the rule's card) host median=0.130 owner-stream median=0.170 (the rule's bound 0.5 each, read on the target card only)` | one hold, 100 restores | `A/rtx5090-day36/reading-day36.log` |
+| G4 against its base on this card (A day 38) | base: `DAY38 READING arm=base steady copy-settle N=80 median=8.34 min=8.11 max=9.51 \| ... \| owner-held N=80 median=9.59 ...` | G4: `DAY38 READING arm=g steady copy-settle N=80 median=0.15 min=0.12 max=0.24 \| ... \| owner-held N=80 median=1.11 min=0.60 max=5.04 \| ... \| receipt-kernel-ms N=90 median=3.52 min=2.14 max=3.98`; `DAY38 G C copy-settle N=80 median=0.15 min=0.12 max=0.24 rule N>=20 median<=1.5 max<=3.0 -> PASS`; `DAY38 G D order=o1 wall base=60.05 g=51.95 g-minus-base=-8.10 rule <=+5.0 \| e2e base=111.43 g=103.96 g-minus-base=-7.47 rule <=+1.0 -> PASS` (o2 e2e `-7.12`); (f) as registered: `HUMP arm=xg4 boots=2 median-hump=+0.299 humps=True` against `<=0.15`, FAILS (the control `HUMP arm=xgpp boots=2 median-hump=+0.601 humps=True`), in a hold where the hump cell ran "at 87 to 88 C with SM clocks 1995 falling to 1830 to 1970 MHz at 150 to 164 W" (`A/DAY38.md`) | one hold (`A/DAY38.md` section 16 onward) | `A/rtx5090-day38/g4/reading-day38.log`, `g4/hump/reading-hump.log` |
+| The base-controlled hump cell on this card (A day 38 section 20, pre-registered before it ran, a cooler hold) | `HUMP arm=xbase boots=2 median-hump=+0.072 humps=False` | `HUMP arm=xg3 boots=2 median-hump=+0.055 humps=False`, `HUMP arm=xg4 boots=2 median-hump=+0.032 humps=False`, `HUMP arm=xgpp boots=2 median-hump=+0.334 humps=True`; ruling 54 reads the (f) FAIL as not reproduced under control, its cause unplaced between the card's thermal regime and the design, and owes the cell replicated in the G4 hold's regime | one hold | `A/rtx5090-day38/g34/hump/reading-hump.log` |
+| T on this card (A day 39, clause (e): T no slower than one thread here) | n/a | `DAY39 T CLAUSE (e) order=o1 metric=e2e ft=70.47 f1=70.47 ft-minus-f1=+0.00 pair-noise=2.27 ... -> PASS` (three more (e) lines PASS); `DAY39 T 5090 (e) -> PASS (the gates and the unit cells are read from their logs)` | one hold | `A/rtx5090-day39/t/reading-day39-5090.log` |
+| S, the strong-form receipt, on this card (A day 40: device-side span receipts on G4's one side stream; refuted and reverted) | G4 (the same hold) | `DAY40 S C order=o1 wall g4=51.70 s=91.95 s-minus-g4=+40.25 rule <=+8.0 \| e2e g4=103.27 s=104.75 s-minus-g4=+1.47 rule <=+1.0 -> FAIL` (o2 wall `+39.30`, e2e `+1.16`, `-> FAIL`); the trace: "**the 48 source digests 0.61 ms** (0.47 busy)", "**the 48 landed digests 2.49 ms** (2.26 busy", "**S adds about 3.1 ms of copy-stream time on this card**", enough to miss the first poll (`A/DAY40.md` section 7); the target sitting: `cancelled 2026-09-25: S failed its 5090 price clauses (DAY40 section 5); the S sitting does not run` | one hold, and the trace hold | `A/rtx5090-day40/s/demote/reading-day40-demote.log`, `A/pro-single-s/box/CANCELLED.txt` |
 
 ### 5. Open findings the review must weigh (each with its receipt)
 
@@ -468,6 +496,18 @@ RTX 5090 Laptop GPU, the 9B (this card's own figures):
    slice; verify digest v3; the double-park slice; an always-admitted prime arm on the RTX 5090 class (`C/OWED.md` C4
    to C8).
 
+   Day 62 (A days 37 to 41, ruling 54): closed and no longer listed: finding 5 (A day 37) and A's item 5, the `Sources`
+   fault cells (A day 41); hash 1 on the owner thread, delivered off it as G4 (A day 38); the fill on slower CPUs as a
+   design (T, A day 39). Still owed, verbatim from ruling 54: "Owed: item 4, items 6 to 15, the 9950X-class fill
+   reading, and the 5090 hump replicate.", and "G''' against G4 at long entries: item 15's 4096-token cell carries
+   both arms on the next target card." (item 4 is the strong-form receipt under `A/DAY40.md` section 7's revision;
+   items 12 to 15 are new: CPU hashes over the 5090's write-combined memory, the capture retire seam behind queued
+   copy work, host-tier pinned frees on the owner thread, the receipt kernel's cost at long entries). Lane C's side
+   since day 42: the double-park slice answered (C day 54, item 3), verify digest v3 ALL GREEN on both cards (C day
+   53), the DFlash tail slice PASS on the target card (C day 56) with its RTX 5090 cell waiting on the card's reset,
+   an always-admitted prime arm (C day 55, `prime_always_admitted`); the arena lease handoff stays the review's
+   budget question (ruling 28).
+
 ### 6. The three outcomes the door hygiene rule allows, and what each would require (not recommended)
 
 - **A naked default per card class.** On the target card class: delete the env read, `host_tier_context`'s
@@ -509,6 +549,12 @@ RTX 5090 Laptop GPU, the 9B (this card's own figures):
   restore's recurrent copy 0.290 ms owner stream and 0.190 ms host per restore (A day 36, BOX5). The promoting
   request's e2e ON minus OFF reads `+12.0` on d34 (A day 34, BOX4, `DAY28 CLAUSE 1b ... -> PASS`), after `+22.5` and
   `+22.2` on the H2D binary before F and K (A day 32, BOX3).
+  Day 62: on BOX7 (one box, its own holds), with hash 1 off the owner thread as G4 the demote's `copy-settle` reads
+  `median=0.53` against the base's `1.56` and `owner-held` `2.97` against `4.05`, the copy stream carrying a receipt
+  kernel of `median=3.40`; the e2e G4 minus base `-1.17` / `-1.10`; with T the promote lands at the first poll (`polls==1
+  90`) and the promoting request's e2e ON minus OFF reads `-1.6` / `-1.7` (`DAY39 1b READING ... arm=ft`). On the RTX
+  5090, G4's (f) clause FAILS as registered (`+0.299` against `<=0.15`, hot hold) and its base-controlled cell reads flat
+  in a cooler hold; ruling 54 keeps the FAIL in the record.
 - **A longer door with a new date and the missing gate named.** Requires the `docs/FLAGS.md` row to carry the new
   `decide-by:` and the row's reason ("pending its X row" is a date, not a state): the candidates the receipts
   name are Move 2 owed item 1 (the recurrent f32 state; its D2H half landed on A day 30, on integ47 `160929a92`, on `main` since #656 (`5f1b0eda4`), `DAY30 A2 pre-submit steady N=80 median=0.62 min=0.58 max=1.10 boots_on=10 demotes_per_boot=[11] rule N>=80 median<=1.5 max<=3.0 -> PASS`, `DAY28 VERDICT clauses_failed=0 -> ALL PASS`; the H2D and D2D halves stay owed), the day-39 cell's three unattributed target-card readings (item 7: the
@@ -522,6 +568,10 @@ RTX 5090 Laptop GPU, the 9B (this card's own figures):
   Day 42: after rulings 44, 47, 49 and 53 the H2D and D2D halves are no longer candidates; the candidates the receipts
   name are the strong-form receipt, hash 1 on the owner thread and the fill on slower CPUs (Move 2 owed item 1's
   remainder), the day-39 cell's three readings, the double-park slice, and item 7's remaining lane C items.
+  Day 62: after ruling 54 hash 1 and the fill are no longer candidates as designs (G4 and T); the candidates the
+  receipts name are the strong-form receipt under its revision (item 4), items 6 to 15, the 9950X-class fill reading,
+  the RTX 5090 hump replicate in G4's thermal regime, G''' against G4 at long entries (item 15's cell), and the day-39
+  cell's three readings (lane A's).
 - **Deletion, with the verdict and the receipt pointer moved to the removed-doors ledger.** Requires removing in
   one PR the env read, the boot wiring, `host_tier_context` and its helpers, the copy-stream constructor's callers,
   the `Demoting`, `Promoting`, `Capturing` and `Restoring` states and their tick-top polls, the D2D receipt kernel
@@ -636,6 +686,11 @@ Day 42 (`C/DAY42.md`): `python3 research/spill-c-20260919/day42-packet-lines.py 
 `C/day42-cpu/packet-lines.log`: every line or line fragment the day-42 rows quote, present verbatim in the receipt file
 named beside it (`DAY42 PACKET LINES checked=52 missing=0 -> PASS`). The day-41 row's figures come from
 `C/day41-cpu/split.log` (`python3 research/spill-c-20260919/day41-9b-split.py research/spill-a-20260919/rtx5090-day3{1..6}`).
+
+Day 62 (`C/DAY62.md`): `python3 research/spill-c-20260919/day62-packet-lines.py research` into
+`C/day62-cpu/packet-lines.log`: every line the day-62 rows quote present in the file named beside it (a whole line of a
+receipt, or a substring of lane A's own record or ruling 54's text), and eight line counts (`DAY62 PACKET LINES
+checked=63 missing=0 -> PASS`).
 
 ### B. Numbers deliberately NOT carried into this packet
 

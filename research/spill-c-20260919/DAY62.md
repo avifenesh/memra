@@ -43,3 +43,16 @@ and the command goes into appendix A. A number that cannot be matched to a line 
 
 **Cross-box rule, restated.** BOX7 is the BOX4-class slow host of the target card class; its rows are never
 subtracted from BOX3's, BOX4's, BOX5's or BOX8's, and the 5090's rows never from any target-card row.
+
+## 2. The read-in, as done
+
+`python3 research/spill-c-20260919/day62-packet-lines.py research` into `day62-cpu/packet-lines.log`: `DAY62 PACKET
+LINES checked=63 missing=0 -> PASS` (one line added after the first run: A day 39's budget arithmetic, "the budget is
+13.1 - 2.880 - 1.0 = 9.22 ms", which the T row quotes). The packet changed where section 1 said: the status paragraph's
+day-62 line; section 2's bullet "Since A days 37 to 41" (ruling 53's hash-1 sentence kept, marked superseded by ruling
+54's); section 3's day-62 gate row (BOX7 and the RTX 5090, finding 5's cells, A day 41's verdict); section 4's target
+rows (G4 and G'' and T on BOX7) and RTX 5090 rows (G4 with its (f) FAIL, the base-controlled hump cell, T's clause (e),
+S refuted); item 7's day-62 paragraph (closed: finding 5, item 5, hash 1 as G4, the fill as T; owed verbatim from
+ruling 54; lane C's items since day 42); section 6's two day-62 lines; appendix A's day-62 command. It recommends
+nothing. `OWED.md` C3 is current through lane A day 41 and ruling 54; it stays open for any later receipt bearing on
+the door before 2026-10-05.

@@ -89,6 +89,7 @@ MD = [
     (f"{A}/DAY37.md",
      "DAY37 FINDING5 cause=cuMemFreeHost/cuMemFree/module-load hold every other owner thread of one context (same context only; across contexts only context create/destroy) fix=one pool context per native cell, created before any cell body, never destroyed in-process pair=100/100 all=100/100 serial=3/3 red-arm=FAIL as required -> 5090 PASS; target card all-arm 20/20 owed"),
     (f"{A}/DAY38.md", "the hump cell at 87 to 88 C with SM clocks 1995 falling to 1830 to 1970 MHz at 150 to 164 W"),
+    (f"{A}/DAY39.md", "the budget is 13.1 - 2.880 - 1.0 = 9.22 ms"),
     (f"{A}/DAY40.md", "**the 48 source digests 0.61 ms** (0.47 busy)"),
     (f"{A}/DAY40.md", "**the 48 landed digests 2.49 ms** (2.26 busy"),
     (f"{A}/DAY40.md", "**S adds about 3.1 ms of copy-stream time on this card**"),
