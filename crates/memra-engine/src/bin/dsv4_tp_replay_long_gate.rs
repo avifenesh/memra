@@ -212,6 +212,7 @@ fn main() {
     let mut first_bad = None;
     let mut armed = true;
     let mut after = before;
+    let mut captures = None;
     let mut handoff = None;
     for step in 0..steps {
         let pos = eager.pos;
@@ -223,6 +224,10 @@ fn main() {
             after = gpu
                 .full_token_replay_variant_counts_for_gate(&replay)
                 .expect("counts");
+            captures = Some(
+                gpu.full_token_replay_captures_for_gate(&replay)
+                    .expect("captures"),
+            );
             gpu.disarm_full_token_replay(&mut replay)
                 .expect("disarm replay");
             armed = false;
@@ -244,6 +249,10 @@ fn main() {
         after = gpu
             .full_token_replay_variant_counts_for_gate(&replay)
             .expect("counts");
+        captures = Some(
+            gpu.full_token_replay_captures_for_gate(&replay)
+                .expect("captures"),
+        );
     }
     println!("HANDOFF {handoff:?} (the position replay handed the request to the eager step)");
     let delta: Vec<[u64; 4]> = (0..2)
@@ -255,9 +264,7 @@ fn main() {
             d
         })
         .collect();
-    let captures = gpu
-        .full_token_replay_captures_for_gate(&replay)
-        .expect("captures");
+    let captures = captures.expect("captures read while armed");
     println!(
         "REPLAY_VARIANTS rank0={:?} rank1={:?} (ordinary, commit, c4, c4+c128) captures={captures:?}",
         delta[0], delta[1]
