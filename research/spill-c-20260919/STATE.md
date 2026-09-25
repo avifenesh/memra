@@ -1,4 +1,4 @@
-# Session C day 68 handoff (2026-09-25): the 285K rerun is the lead's (BOX14, after lane B); NEED TARGET CARD (a 9950X-class box for C12's cell eclock)
+# Session C day 69 handoff (2026-09-25): the lead runs C12's cell eclock on BOX15's machine and the 285K rerun on BOX14; waiting on both
 
 - Lane `lane/spill-c-20260919`, checkout `wt-spill-c`, tip pushed at every milestone (hooks on, the announced development mode on engine-source pushes); main `5228ff0cd` (#726) merged into the lane (`2e046ef8b`); no commit on main, no PR.
 - DAY64: the first card cell on BOX15 (a Ryzen 9 9950X host) recorded as it reads (`flat`, `flat`, `matches`) with its noise placed (the door's per-boot host-CPU bimodality); the admissibility clause and the rerun `i15b` registered (section 5); the rerun's first attempt on BOX16 void (nvcc segfaulted in a build, no cell ran; section 5a). The lead runs `day64b-box.sh` on BOX14 (the Idaho 285K class) after lane B's sitting, about 18:50Z.
@@ -6,6 +6,7 @@
 - DAY66: C12's cell `freq` ran on BOX18 (BOX15's machine, run by the lead as registered): `clock_does_not_track thp_does_not_track` (`DAY66.md` section 2, 191 receipts in `pro-single-day66/`).
 - DAY67: C12's cell `probe` ran on BOX19 (BOX15's machine, run by the lead as registered): `none_tracks` by the strict rule, the reader checked correct; the probe points to a lower effective core clock in the slow state, transient (`DAY67.md` section 2, 190 receipts in `pro-single-day67/`).
 - DAY68: `run-gen --cpu-probe-phases` (log only, `48c098374`, engine lib 572) and the cell `eclock` registered and prepared (sections 1, 1a). NEED TARGET CARD (the 9950X class, BOX15's machine preferred): `D68_BUILDS="p68=48c098374" bash /root/wt-c/research/spill-c-20260919/day68-box.sh`.
+- DAY69: OWED C3, the contracts-door packet read up to lane A day 48 and ruling 57 (`DAY69 PACKET LINES checked=32 missing=0 -> PASS`).
 - The local RTX 5090 still `GPU requires reset`; nothing acted on.
 - RUNNING (mine): queues v5 (pid 3557213), v6 (3961032), v7 (45460) and v8 (352275: DAY64's i15, read with `--admissibility` when recorded), each behind the one before, all polling for a healthy card, log `/tmp/c53-smoke/queue.log`. Binaries in `/tmp/c40-bins` and `/tmp/c53-bins`; build logs `/tmp/c61-build/`; ladder binaries `/tmp/c63-ladder/`, `/tmp/c64-ladder/`. Safe to stop by killing the four pids; scratch kept only for them.
 - Next: read `i15b` (BOX14) into `DAY64.md`; if admissible and the door still loses to REF, the next improvement from its split, registered before code. Read `eclock` into `DAY68.md` when a 9950X-class box runs it.

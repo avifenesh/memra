@@ -131,6 +131,7 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
 - **Status.** Current through lane A day 36 and ruling 53 (day 42, `DAY42.md`: `DAY42 PACKET LINES checked=68
   missing=0 -> PASS`). Stays open until the review: every later receipt bearing on the door is read in before
   2026-10-05. Day 62 (`DAY62.md`): current through lane A day 41 and ruling 54 (`DAY62 PACKET LINES checked=63
+  missing=0 -> PASS`). Day 69 (`DAY69.md`): current through lane A day 48 and ruling 57 (`DAY69 PACKET LINES checked=32
   missing=0 -> PASS`). At 2026-09-24 21:10Z lane A's days 37 to 41 were in flight on its branch (DAY38's G'' and G''' sittings,
   DAY39's design T, DAY40's span-receipt survey, DAY41's design K red arms); they are read in when they land. Item 3's
   open question (which slice moved the demote's landing) answered from this lane's day 54 and read in verbatim.

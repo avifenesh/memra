@@ -34,3 +34,17 @@ packet edit is committed only after that PASS, and the command goes into appendi
 
 **Cross-box rule, restated.** BOX10 (a Ryzen 9 9950X3D2 host) is another machine of the target card class; its rows are
 never subtracted from BOX3's, BOX4's, BOX5's, BOX7's or any other box's.
+
+## 2. The read-in, as done
+
+`python3 research/spill-c-20260919/day69-packet-lines.py research` into `day69-cpu/packet-lines.log`: `DAY69 PACKET
+LINES checked=32 missing=0 -> PASS`. One check form was added to section 1's three, stated here: the two item-15
+clause lines are long, so the packet quotes their leading part and the check requires that part inside one line of
+the receipt (a stricter test than the `.md` form, which reads line breaks as spaces). The packet changed where
+section 1 said: the status paragraph's day-69 line;
+section 2's bullet "Since A days 42 to 48" (ruling 57 quoted, S4's form and why S2 and S3 failed, V, items 15 and 3);
+section 3's day-69 gate row (BOX10; the fault gate's 255 `ok:` per arm, the pause gate's 40); section 4's target rows
+(S2 and S3 as the failed forms, S4, V, item 15 on A day 43, T on the 9950X3D2 host on A day 44); item 7's day-69
+paragraph (closed: items 4, 6, 15, and 3 for the 9950X class; owed verbatim from ruling 57; the reclaim flush moved to
+lane B); section 6's two day-69 lines; appendix A's day-69 command. It recommends nothing. `OWED.md` C3 is current
+through lane A day 48 and ruling 57; it stays open for any later receipt bearing on the door before 2026-10-05.
