@@ -190,6 +190,13 @@ arrival planned to demote. The revision makes the demote set the worker's:
 - Everything else of 1.2 to 1.11 stands: arms, orders, the addenda C and D shape, F1 to F4, the readings. The cells run
   again on both cards.
 
+### 1.13 Addendum F (2026-09-25, from the review patterns while coding E, before any cell)
+
+A queued demote is tick work: with nothing active and nothing queued for admission, the run loop's idle block would
+wait for the next request and strand the queue. The idle block's "block indefinitely" arm therefore also requires the
+reclaim queue to be empty, and its polling arm caps the wait at 2 ms while it is not (the host tier's
+`Demoting`/`Promoting` precedent). Nothing else changes.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged except by its dated addenda.
