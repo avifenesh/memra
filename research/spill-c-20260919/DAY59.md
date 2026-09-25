@@ -56,3 +56,12 @@ by the lane that measured it (the flags doctrine: losing or flat arms are delete
 
 **What each card can decide.** Each card its own default; the RTX 5090 (which needs its reset first) and the target
 card are read separately.
+
+## 1a. The binaries, named before any cell
+
+One build label, `c60`, serves this day and `DAY60.md`: `run-gen-c60`, `run-spec-c60` and `memra-server-c60`, all
+from one tree, the lane's tip at the sitting (engine of `fec3c582f`, which adds `DAY60.md`'s log-only
+`--moe-dispatch-clock`; no arm here sets it, and without it the slot cache keeps no clock). `day59-cell.sh` names
+those three binaries (it named `-final` before this section; the day-51 `-final` binaries in the local binary
+directory are a different tree and stay untouched for `DAY51.md`'s queued cells). The exact commit is recorded in
+each cell's `tree.sha` and `binary.sha256` and in the sitting's build log.

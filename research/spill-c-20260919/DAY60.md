@@ -63,3 +63,20 @@ ON, ONC) x 5, order 2 reversed x 5, 40 runs, one collector hold, 250 ms telemetr
 (each its own registration, starting `DAY61.md`) target. The hypothesis above is either the `top` term or refuted.
 
 **What each card can decide.** Each card its own attribution; the target card first (the RTX 5090 needs its reset).
+
+## 1a. The binary, named before any cell
+
+"The final tree's binary" in section 1 is `run-gen-c60`: the build label `c60` of `DAY59.md` section 1a, the lane's
+tip at the sitting, whose engine is `fec3c582f` (the instrument). `day60-cell.sh` runs it for all four arms. The reader
+`day60-gap.py` is written before any cell: integrity (40 runs, every exit 0 and `MATCH`, one tape, 32 generated and
+32 window tokens per run, the four clock lines in every clocked run and none in the others), then R1 to R4 and the
+verdict line as registered. `top=` is the largest ONC minus REFC term among `dispatch_ns`, `prefetch_ns` and the
+five `pf_*` terms, read literally (`prefetch_ns` contains the `pf_*` terms). The generate phase's clock delta spans
+`gate` to `generate`, which includes the three-token prime; its per-token terms divide by the 32 generated tokens,
+as registered, and the prime's share is stated when read.
+
+Existing evidence, read before this cell and moving no bound: the target card's `DAY58.md` tip arm (the tuned door,
+`--expert-bank-stages`, N=10, `pro-single-day52/smallfix/`) spends, per window token, `inner_demand_ns` 0.423 ms on
+92.3 host-hit demands (88.6 of them prefetches), of which the bank's `stage()` is 0.333 ms (3.6 us per demand), with
+`wait_ns` 0 (the in-flight bound never waited). That is the same size as the 0.44 ms window gap, which is the
+hypothesis of section 0; this cell measures both programs with one clock.
