@@ -344,7 +344,8 @@ the card is reset.
 - Acceptance: none registered (the writers isolated without serializing them, for example `reserve_pending_admit`'s
   test entry taking its lane counters as a parameter so a writer never touches the process-global ones; the same 400-run
   shape green for the target and its siblings, the suite's time back to A''s).
-- Status: open.
+- Status: **pre-registered** (DAY56 section 1: design F2, the lane counters a parameter of the reservation path;
+  the census, the 400 and 100 suites).
 
 ### 24. `darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown` times out under starvation (found by DAY55)
 
