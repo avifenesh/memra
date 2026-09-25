@@ -1779,3 +1779,44 @@ mod day50_census {
         );
     }
 }
+
+#[cfg(test)]
+mod day60_census {
+    //! DAY60: the dispatch clock is log only. Every use of the cache's clock field is a presence
+    //! check, a counter update through `as_mut`, the line through `as_ref`, or the timing helper;
+    //! no decision reads a counter, and the unclocked paths are the programs as they were.
+    const CACHE: &str = include_str!("../moe_cache.rs");
+
+    #[test]
+    fn the_dispatch_clock_only_times_and_counts() {
+        let code = &CACHE[..CACHE.find("#[cfg(test)]").unwrap_or(CACHE.len())];
+        let mut uses = std::collections::BTreeMap::new();
+        for (i, _) in code.match_indices("self.dispatch_clock") {
+            let rest = &code[i + "self.dispatch_clock".len()..];
+            let tail: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.')
+                .collect();
+            *uses.entry(tail).or_insert(0usize) += 1;
+        }
+        let allowed = [".is_none", ".is_some", ".as_mut", ".as_ref", "_mark"];
+        for (tail, n) in &uses {
+            assert!(
+                allowed.contains(&tail.as_str()),
+                "a dispatch clock use outside the log-only forms: {tail} ({n})"
+            );
+        }
+        // The two wrappers return the unclocked result unchanged.
+        assert_eq!(
+            code.matches("let result = self.dispatch_source_unclocked(id, source, e);")
+                .count(),
+            1
+        );
+        assert_eq!(
+            code.matches("let result = self.prefetch_source_unclocked(id, source, keep, e);")
+                .count(),
+            1
+        );
+        assert!(code.matches("        result\n    }").count() >= 2);
+    }
+}

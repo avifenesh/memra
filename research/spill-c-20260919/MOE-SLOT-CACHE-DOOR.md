@@ -20,7 +20,9 @@ shared slot tail pad, gate helpers off the crate root), `6defcd604` (day-eleven 
 `69905776f` (day twelve: lease token identity, `bank::dispatch_id`, `admit_banked` record assertion).
 
 decide-by: 2026-10-04 (covers the door, both budget flags and the stage clock; CLI doors
-carry their decide-by here, not in `docs/FLAGS.md`).
+carry their decide-by here, not in `docs/FLAGS.md`). Since day 60 it also covers `run-gen
+--moe-dispatch-clock` (log only, both the legacy slot cache and the door: the dispatch and prefetch
+entry points bracketed, `DAY60.md`).
 
 Day 40 (`DAY40.md` section 2): `--expert-bank-stages` (no value, requires the door) installs
 the door's log-only stage clock, an explanatory diagnostic: `Instant` brackets around every
