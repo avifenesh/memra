@@ -10051,6 +10051,13 @@ struct PendingDemote {
     hashing: Option<PendingHashing>,
     /// What the owner thread held for this demote, by segment (the ledger line at publication).
     owner: DemoteOwnerLedger,
+    /// WP-A day 38 (`DAY38.md` design P): the request ids the admission probe PARKED on this entry
+    /// while it was in its COPY phase (the day-29 `Hashing` park's shape, extended); they ride into
+    /// `PendingHashing.parked` when the copy settles, and a demote that ends unpublished names them
+    /// (they re-admit to whatever the tick top leaves: a cold prime). A count, not a state the
+    /// request owns.
+    parked: Vec<String>,
+    reparks: u32,
 }
 
 /// WP-A day 28 (memra#536 Move 1 owed item 2, lead ruling 39, `research/spill-a-20260919/DAY28.md`):
@@ -10351,12 +10358,21 @@ fn host_hash_restore_payload(e: &mut HostPrefixEntry, p: HostHashPayload) -> Res
 enum HostHashFault {
     HelperGone,
     NeverLands,
+    /// WP-A day 41 (`DAY41.md`, OWED item 5): design K's three promote-side arms, each keyed on
+    /// the helper's FIRST `Sources` job (a demote's `Hash` jobs before it run clean): the helper
+    /// exits on it, hashes it and discards the reply, or replies with the job's `seq + 1`.
+    SourcesGone,
+    SourcesNeverLand,
+    SourcesForeignReply,
 }
 impl HostHashFault {
     fn from_door(fault: &str) -> Option<Self> {
         match fault {
             "hash-helper-gone" => Some(Self::HelperGone),
             "hash-never-lands" => Some(Self::NeverLands),
+            "sources-helper-gone" => Some(Self::SourcesGone),
+            "sources-never-land" => Some(Self::SourcesNeverLand),
+            "sources-foreign-reply" => Some(Self::SourcesForeignReply),
             _ => None,
         }
     }
@@ -10403,6 +10419,41 @@ impl HostHashWorker {
                     let job = match job {
                         HostHelperJob::Hash(job) => job,
                         HostHelperJob::Sources(job) => {
+                            // WP-A day 41 (OWED item 5): the Sources-keyed red arms, one-shot.
+                            let sources_fault = match fault {
+                                Some(
+                                    f @ (HostHashFault::SourcesGone
+                                    | HostHashFault::SourcesNeverLand
+                                    | HostHashFault::SourcesForeignReply),
+                                ) => {
+                                    fault = None;
+                                    eprintln!(
+                                        "[prefix-host] hash helper fault (MEMRA_KV_HOST_FAULT={}): \
+                                         the Sources job of ticket seq={} ({} views) {}",
+                                        match f {
+                                            HostHashFault::SourcesGone => "sources-helper-gone",
+                                            HostHashFault::SourcesNeverLand => "sources-never-land",
+                                            _ => "sources-foreign-reply",
+                                        },
+                                        job.seq,
+                                        job.views.len(),
+                                        match f {
+                                            HostHashFault::SourcesGone => {
+                                                "is dropped and the helper exits"
+                                            }
+                                            HostHashFault::SourcesNeverLand => {
+                                                "is hashed and its reply discarded"
+                                            }
+                                            _ => "is answered as seq + 1",
+                                        }
+                                    );
+                                    Some(f)
+                                }
+                                _ => None,
+                            };
+                            if sources_fault == Some(HostHashFault::SourcesGone) {
+                                return;
+                            }
                             // WP-A day 34: the promote's H2D completion checksums, off the tick.
                             let t = Instant::now();
                             let bytes = job.views.iter().map(|v| v.len()).sum();
@@ -10415,11 +10466,21 @@ impl HostHashWorker {
                                 })
                                 .collect();
                             let reply = HostSourcesReply {
-                                seq: job.seq,
+                                seq: if sources_fault == Some(HostHashFault::SourcesForeignReply) {
+                                    job.seq.wrapping_add(1)
+                                } else {
+                                    job.seq
+                                },
                                 digests,
                                 bytes,
                                 helper_ms: t.elapsed().as_secs_f64() * 1e3,
                             };
+                            if sources_fault == Some(HostHashFault::SourcesNeverLand) {
+                                // The reply is discarded: its views drop here and never come back
+                                // to the engine, which keeps their sources (a leak, never a free).
+                                drop(reply);
+                                continue;
+                            }
                             if sources_tx.send(reply).is_err() {
                                 return;
                             }
@@ -10928,6 +10989,16 @@ enum HostContractFault {
     /// H2D spans refused: ...`), the host entry stay, the tier stay on, and the next promote
     /// complete with its spans.
     PromoteSpanAttach,
+    /// WP-A day 38 (`DAY38.md` design G, the device receipt's red arm): the off-tick demote's first
+    /// KV item's DEVICE source has one byte flipped on the copy stream after its receipt digest and
+    /// before its copy (`CudaTransfers::inject_d2h_source_flip`); the landed bytes then differ from
+    /// the receipt and the bind must refuse the image (nothing published, the tier on).
+    D2hSourceFlip,
+    /// WP-A day 38 (P's red arm): the off-tick demote is held unlanded for `D2H_DELAY_FAULT_NS` on
+    /// the host (`CudaTransfers::inject_d2h_delay`, a host-side hold since design G''', DAY38
+    /// section 14; no stream runs a spin), so a request hitting the entry arrives in its copy phase
+    /// and must park until the publication, then promote.
+    D2hDelay,
 }
 impl HostContractFault {
     fn from_door(fault: &str) -> Option<Self> {
@@ -10942,12 +11013,21 @@ impl HostContractFault {
             "d2d-delay-restore" => Some(Self::D2dDelayRestore),
             "contract-spans" => Some(Self::SpanAttach),
             "contract-promote-spans" => Some(Self::PromoteSpanAttach),
+            "d2h-source-flip" => Some(Self::D2hSourceFlip),
+            "d2h-delay" => Some(Self::D2hDelay),
             _ => None,
         }
     }
     /// The demote (D2H) side, as opposed to the promote (H2D) side.
     fn is_demote(self) -> bool {
-        matches!(self, Self::PreSubmit | Self::PostPublish | Self::SpanAttach)
+        matches!(
+            self,
+            Self::PreSubmit
+                | Self::PostPublish
+                | Self::SpanAttach
+                | Self::D2hSourceFlip
+                | Self::D2hDelay
+        )
     }
     /// A Move 1 fault (the D2H or H2D route), as opposed to a D2D fault (day 22).
     fn is_move1(self) -> bool {
@@ -11258,6 +11338,30 @@ fn host_kv_planes_submit_contract(
             })
         })
         .collect();
+    // WP-A day 38 (`DAY38.md` design G and P): the two one-shot red arms ride the device receipt,
+    // armed for exactly this batch.
+    if t.d2h_receipts_on_device() {
+        match fault {
+            Some(HostContractFault::D2hSourceFlip) => {
+                t.inject_d2h_source_flip();
+                eprintln!(
+                    "[prefix-host] demote fault armed (MEMRA_KV_HOST_FAULT=d2h-source-flip): one byte \
+                     of the first KV item's device source flips after its receipt digest and before \
+                     its copy; the bind must refuse the image"
+                );
+            }
+            Some(HostContractFault::D2hDelay) => {
+                t.inject_d2h_delay(memra_engine::tier_transfer::D2H_DELAY_FAULT_NS);
+                eprintln!(
+                    "[prefix-host] demote fault armed (MEMRA_KV_HOST_FAULT=d2h-delay): the demote \
+                     is held unlanded for {} ms on the host (no stream is held); a hit arriving in \
+                     the copy phase must park until the publication",
+                    memra_engine::tier_transfer::D2H_DELAY_FAULT_NS / 1_000_000
+                );
+            }
+            _ => {}
+        }
+    }
     let ticket = match t.submit_batch(ops) {
         Ok(batch)
             if batch
@@ -11492,6 +11596,16 @@ fn host_kv_planes_settle_contract(
                 .into(),
         ));
     }
+    // WP-A day 38 (`DAY38.md` design G): where hash 1 ran, for the receipt line (log only; the
+    // kernels' copy-stream time is read without a wait, the batch has landed).
+    let receipt_place = if t.d2h_receipts_on_device() {
+        match t.d2h_receipt_gpu_ms(&ticket) {
+            Some(ms) => format!("; receipts on the copy stream (source digests, {ms:.2}ms)"),
+            None => "; receipts on the copy stream (source digests)".to_string(),
+        }
+    } else {
+        String::new()
+    };
     // WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half): `producer_done` covers the f32
     // spans with the items. Take them back FIRST, so every source is in its slot of `dead`
     // before any refusal below unwinds the entry, and the landed staging travels to the helper.
@@ -11709,7 +11823,7 @@ fn host_kv_planes_settle_contract(
     eprintln!(
         "[prefix-host] contracts door D2H receipt: ticket issuer={} seq={} epochs={}/{}/{} \
          items={} ({kv_planes} KV planes{}) complete={complete} require=ok \
-         checksums_sha256={} retired acknowledged{}",
+         checksums_sha256={} retired acknowledged{}{receipt_place}",
         ticket.issuer,
         ticket.sequence,
         ticket.epochs.state,
@@ -13669,6 +13783,8 @@ fn host_demote_prefix_ref(
                     presubmit_ms: t0.elapsed().as_secs_f64() * 1e3,
                     ..DemoteOwnerLedger::default()
                 },
+                parked: Vec::new(),
+                reparks: 0,
             });
             // The line carries no "(contracts door): " marker: that form is the door's REFUSAL
             // shape and the fault gate counts it (`no_extra_refusal`); a submission is not one.
@@ -13798,7 +13914,24 @@ fn host_demote_settle_with(
         ContractWait,
     ) -> Result<ContractSettle, HostContractFailure>,
 ) -> Option<HostDemoteOutcome> {
-    host_demote_settle_with_deadline(host, wait, why, settle, HOST_HASH_DEADLINE)
+    // WP-A day 38 (P): the requests parked on the entry's COPY phase, named when the demote ends
+    // unpublished in this settle (the `Hashing` phase names its own at its latch).
+    let copy_parked = host
+        .demoting
+        .as_ref()
+        .filter(|d| d.hashing.is_none())
+        .map_or(0, |d| d.parked.len());
+    let outcome = host_demote_settle_with_deadline(host, wait, why, settle, HOST_HASH_DEADLINE);
+    if copy_parked > 0
+        && host.demoting.is_none()
+        && !matches!(outcome, Some(HostDemoteOutcome::Demoted))
+    {
+        eprintln!(
+            "[prefix-host] {copy_parked} request(s) parked on the Demoting entry's copy phase \
+             re-admit to a cold prime (the demote ended unpublished: {outcome:?})"
+        );
+    }
+    outcome
 }
 
 /// The driver with the hash deadline injected (the CPU `hash-never-lands` cells use a short one).
@@ -13970,8 +14103,11 @@ fn host_demote_settle_with_deadline(
             if payloads.is_empty() {
                 eprintln!(
                     "[prefix-host] demote published off the tick: ticket seq={seq} complete after {} \
-                     poll(s), {copy_ms:.1}ms from submission to completion ({mode})",
-                    pending.polls
+                     poll(s), {copy_ms:.1}ms from submission to completion ({mode}); {} hit(s) \
+                     parked on the Demoting entry ({} re-park(s))",
+                    pending.polls,
+                    pending.parked.len(),
+                    pending.reparks
                 );
                 return Some(host_demote_publish(
                     host,
@@ -14057,13 +14193,14 @@ fn host_demote_settle_with_deadline(
             );
             pending.dead = Some(dead);
             pending.owner.copy_settle_ms += held.elapsed().as_secs_f64() * 1e3;
+            // WP-A day 38 (P): the copy phase's parked ids ride into the `Hashing` phase.
             let hashing = PendingHashing {
                 seq,
                 payloads: n,
                 bytes,
                 handed: Instant::now(),
-                parked: Vec::new(),
-                reparks: 0,
+                parked: std::mem::take(&mut pending.parked),
+                reparks: std::mem::take(&mut pending.reparks),
                 leases: Some(leases),
             };
             match wait {
@@ -15223,20 +15360,29 @@ fn host_promote_probe_decision(
 }
 
 /// WP-A day 29 (memra#536 Move 1 owed item 2a, lead ruling 40, `research/spill-a-20260919/DAY29.md`
-/// section 1.1): does this request's prompt hit the one `Demoting` entry while it is in its
-/// `Hashing` phase? Pure over the host state: the entry's heap payloads are on the hash helper
-/// (`hashing` is `Some`; a copy-phase `Demoting` entry keeps the day-17 rule, a hit on it is a
-/// cold prime), its pool key is the request's, its token key exactly prefixes the prompt under the
-/// host `lookup` rules, and it is deeper than the request's device hit (the promote candidate's
-/// own rule). Returns the hit's depth and the ticket.
-fn host_hashing_hit(
+/// section 1.1), extended on day 38 (`DAY38.md` design P): does this request's prompt hit the one
+/// `Demoting` entry, in EITHER phase (its copy on the copy stream, or its heap payloads on the hash
+/// helper)? Pure over the host state: the entry's pool key is the request's, its token key exactly
+/// prefixes the prompt under the host `lookup` rules, and it is deeper than the request's device
+/// hit (the promote candidate's own rule). Returns the hit's depth, the ticket, and whether the
+/// entry is in its `Hashing` phase. Day 17's rule (a copy-phase hit is a cold prime) is retired:
+/// under design G a large entry's copy phase carries its receipt kernel, and a hit there waits for
+/// the publication instead of re-priming.
+fn host_demoting_hit(
     host: &HostPrefixCache,
     pool_key: &PoolKey,
     prompt: &[u32],
     device_best_len: usize,
-) -> Option<(usize, u64)> {
+) -> Option<(usize, u64, bool)> {
     let pending = host.demoting.as_ref()?;
-    let hashing = pending.hashing.as_ref()?;
+    let (seq, hashing) = match (&pending.hashing, &pending.contract) {
+        (Some(h), _) => (h.seq, true),
+        // A copy that has not landed within the helper's deadline parks nothing more: the request
+        // primes cold, so no park outlives a copy that never lands (the `Hashing` phase has the
+        // same bound through its own deadline latch).
+        (None, Some(c)) if c.submitted.elapsed() < HOST_HASH_DEADLINE => (c.ticket.sequence, false),
+        _ => return None,
+    };
     let toks = &pending.image.toks;
     let n = toks.len();
     (pending.image.pool_key == *pool_key
@@ -15244,25 +15390,49 @@ fn host_hashing_hit(
         && n <= prompt.len()
         && n > device_best_len
         && prompt[..n] == toks[..])
-        .then_some((n, hashing.seq))
+        .then_some((n, seq, hashing))
 }
 
-/// WP-A day 29 (ruling 40): PARK the request whose prompt hits the `Hashing` entry: record its id
-/// on the entry (the first park of an id prints the typed line naming the entry and the phase; a
-/// re-park counts silently, the `ParkAgain` shape) and answer `true` so the probe's caller requeues
-/// it. Nothing is hashed, waited on or submitted here: the tick-top poll lands the digests and
-/// publishes, and the re-admitted request takes the promote park to a device hit. Returns `false`
-/// when the prompt does not hit the `Hashing` entry.
-fn host_hashing_park(
+/// WP-A day 29 (ruling 40), extended on day 38 (P): PARK the request whose prompt hits the
+/// `Demoting` entry: record its id on the entry (the first park of an id prints the typed line
+/// naming the entry and the phase; a re-park counts silently, the `ParkAgain` shape) and answer
+/// `true` so the probe's caller requeues it. Nothing is hashed, waited on or submitted here: the
+/// tick-top polls land the copy and the digests and publish, and the re-admitted request takes the
+/// promote park to a device hit. Returns `false` when the prompt does not hit the entry.
+fn host_demoting_park(
     host: &mut HostPrefixCache,
     pool_key: &PoolKey,
     prompt: &[u32],
     device_best_len: usize,
     request_id: &str,
 ) -> bool {
-    let Some((n, seq)) = host_hashing_hit(host, pool_key, prompt, device_best_len) else {
+    let Some((n, seq, hashing_phase)) = host_demoting_hit(host, pool_key, prompt, device_best_len)
+    else {
         return false;
     };
+    if !hashing_phase {
+        let Some(pending) = host.demoting.as_mut() else {
+            return false;
+        };
+        if pending.parked.iter().any(|id| id == request_id) {
+            pending.reparks += 1;
+            return true;
+        }
+        pending.parked.push(request_id.to_string());
+        let submitted_ms = pending
+            .contract
+            .as_ref()
+            .map_or(0.0, |c| c.submitted.elapsed().as_secs_f64() * 1e3);
+        eprintln!(
+            "[prefix-host] hit parked on a Demoting entry in its copy phase: request {request_id} \
+             ({} tokens) hits the Demoting entry's {n} tokens (ticket seq={seq}, submitted \
+             {submitted_ms:.1}ms ago); the request waits for the publication (model {}{})",
+            prompt.len(),
+            pool_key.0,
+            ns_suffix(&pool_key.1)
+        );
+        return true;
+    }
     let Some(hashing) = host.demoting.as_mut().and_then(|p| p.hashing.as_mut()) else {
         return false;
     };
@@ -15333,7 +15503,7 @@ fn host_promote_park_probe(
     // decided BEFORE the promote decision so a published candidate's `Submit` cannot `Block`-settle
     // the entry for a request whose own prompt hits it; the re-admission finds the entry published
     // and takes the promote park to a device hit (`DAY29.md` section 1.2).
-    if host_hashing_park(host, &pool_key, prompt, device_best_len, &req.request_id) {
+    if host_demoting_park(host, &pool_key, prompt, device_best_len, &req.request_id) {
         return true;
     }
     let hi = match host_promote_probe_decision(host, &pool_key, prompt, device_best_len) {
@@ -25724,7 +25894,7 @@ pub fn run(
             && parked_on_promote == queue.len()
             && (hpx.promoting.as_ref().is_some_and(|p| !p.ready)
                 || hpx.restoring.as_ref().is_some_and(|r| !r.ready)
-                || hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some()))
+                || hpx.demoting.is_some())
         {
             match rx.recv_timeout(Duration::from_millis(2)) {
                 Ok(cmd) => handle_cmd(
@@ -44958,6 +45128,8 @@ mod tests {
             polls: 0,
             hashing: None,
             owner: super::DemoteOwnerLedger::default(),
+            parked: Vec::new(),
+            reparks: 0,
         });
     }
 
@@ -47167,6 +47339,8 @@ mod tests {
                 leases: None,
             }),
             owner: super::DemoteOwnerLedger::default(),
+            parked: Vec::new(),
+            reparks: 0,
         });
         bytes
     }
@@ -47208,34 +47382,40 @@ mod tests {
         let prompt: Vec<u32> = (100..170).collect();
         // The pure decision: depth and ticket of the hit; every miss shape answers None.
         assert_eq!(
-            super::host_hashing_hit(&host, &key, &prompt, 0),
-            Some((64, 5))
+            super::host_demoting_hit(&host, &key, &prompt, 0),
+            Some((64, 5, true))
         );
         assert_eq!(
-            super::host_hashing_hit(&host, &key, &prompt, 63),
-            Some((64, 5))
+            super::host_demoting_hit(&host, &key, &prompt, 63),
+            Some((64, 5, true))
         );
-        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 64), None);
+        assert_eq!(super::host_demoting_hit(&host, &key, &prompt, 64), None);
         let shorter: Vec<u32> = (100..150).collect();
-        assert_eq!(super::host_hashing_hit(&host, &key, &shorter, 0), None);
+        assert_eq!(super::host_demoting_hit(&host, &key, &shorter, 0), None);
         let other_prompt: Vec<u32> = (200..270).collect();
-        assert_eq!(super::host_hashing_hit(&host, &key, &other_prompt, 0), None);
+        assert_eq!(
+            super::host_demoting_hit(&host, &key, &other_prompt, 0),
+            None
+        );
         let other_key = ("m".to_string(), "ns2".to_string());
-        assert_eq!(super::host_hashing_hit(&host, &other_key, &prompt, 0), None);
+        assert_eq!(
+            super::host_demoting_hit(&host, &other_key, &prompt, 0),
+            None
+        );
         // The park: once per id with the typed line, re-parks counted, a miss unparked.
-        assert!(super::host_hashing_park(
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-1"
         ));
-        assert!(super::host_hashing_park(
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-1"
         ));
-        assert!(super::host_hashing_park(
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-2"
         ));
-        assert!(!super::host_hashing_park(
+        assert!(!super::host_demoting_park(
             &mut host, &key, &shorter, 0, "req-3"
         ));
-        assert!(!super::host_hashing_park(
+        assert!(!super::host_demoting_park(
             &mut host, &key, &prompt, 64, "req-4"
         ));
         {
@@ -47289,23 +47469,55 @@ mod tests {
         assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
         assert!(host.demoting.is_none());
         assert!(host.armed(), "a bind refusal is not a latch");
-        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 0), None);
-        assert!(!super::host_hashing_park(
+        assert_eq!(super::host_demoting_hit(&host, &key, &prompt, 0), None);
+        assert!(!super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-1"
         ));
-        // A copy-phase Demoting entry (the day-17 window) is a miss for the park too.
+        // WP-A day 38 (`DAY38.md` design P): a copy-phase Demoting entry parks the request too (the
+        // day-17 cold-prime rule is retired): the id on the pending demote, re-parks counted, the
+        // hashing phase untouched; past the copy's deadline the hit parks nothing more.
         let (mut host, key) = cpu_door_host();
         cpu_pending_demote(&mut host, &key);
         assert!(host.demoting.as_ref().unwrap().hashing.is_none());
-        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 0), None);
-        assert!(!super::host_hashing_park(
+        assert_eq!(
+            super::host_demoting_hit(&host, &key, &prompt, 0),
+            Some((64, 1, false))
+        );
+        assert_eq!(super::host_demoting_hit(&host, &key, &prompt, 64), None);
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-5"
+        ));
+        assert!(super::host_demoting_park(
+            &mut host, &key, &prompt, 0, "req-5"
+        ));
+        assert!(!super::host_demoting_park(
+            &mut host, &key, &shorter, 0, "req-7"
+        ));
+        {
+            let pending = host.demoting.as_ref().unwrap();
+            assert_eq!(pending.parked, vec!["req-5".to_string()]);
+            assert_eq!(pending.reparks, 1);
+            assert!(pending.hashing.is_none());
+        }
+        // A copy older than the helper's deadline parks nothing more (the request primes cold).
+        host.demoting
+            .as_mut()
+            .unwrap()
+            .contract
+            .as_mut()
+            .unwrap()
+            .submitted = std::time::Instant::now()
+            - super::HOST_HASH_DEADLINE
+            - std::time::Duration::from_millis(1);
+        assert_eq!(super::host_demoting_hit(&host, &key, &prompt, 0), None);
+        assert!(!super::host_demoting_park(
+            &mut host, &key, &prompt, 0, "req-8"
         ));
         // The latch with parked requests: the state is consumed, the tier off, the parked request
         // re-admits to the probe's first line (`armed()` false) and primes cold.
         let (mut host, key, _jobs, replies) = cpu_door_host_with_channels();
         cpu_pending_hashing(&mut host, &key, 6);
-        assert!(super::host_hashing_park(
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-6"
         ));
         drop(replies);
@@ -47318,7 +47530,7 @@ mod tests {
         assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
         assert!(host.demoting.is_none());
         assert!(!host.armed());
-        assert!(!super::host_hashing_park(
+        assert!(!super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-6"
         ));
     }
@@ -47715,25 +47927,23 @@ mod tests {
             let lo = i.saturating_sub(1500);
             assert!(!code[lo..i + 400].contains("host_demote_settle_pending("), "a trim meets no Demoting entry (day 17), so no Hashing entry either");
         }
-        // WP-A day 29 (ruling 40): the parked-only wait is guarded on a Hashing entry too (a
-        // request parked on it is the promote park's shape); the orphan grace still reads no
-        // demote state (a request parked on a Hashing entry owns nothing to expire).
+        // WP-A day 29 (ruling 40), day 38 (P): the parked-only wait is guarded on a Demoting
+        // entry of either phase (a request parked on it is the promote park's shape); the orphan
+        // grace still reads no demote state (a parked request owns nothing to expire).
         let park_wait = code.find("&& parked_on_promote == queue.len()").unwrap();
-        assert!(
-            code[park_wait..park_wait + 600]
-                .contains("|| hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some())")
-        );
+        assert!(code[park_wait..park_wait + 600].contains("|| hpx.demoting.is_some())"));
         let orphan = body("fn host_restore_expire_ready(");
         assert!(!orphan.contains("demoting"));
-        // WP-A day 29: the probe decides the Hashing park BEFORE the promote decision, with the
-        // request still in hand, and answers the caller's one park arm; the decision is pure over
-        // the host state and requires the Hashing phase (a copy-phase Demoting entry is a miss).
+        // WP-A day 29, day 38 (P): the probe decides the Demoting park BEFORE the promote
+        // decision, with the request still in hand, and answers the caller's one park arm; the
+        // decision is pure over the host state and covers both phases (a copy past the helper's
+        // deadline parks nothing).
         let probe = body("fn host_promote_park_probe(");
         let park = probe
             .find(
-                "if host_hashing_park(host, &pool_key, prompt, device_best_len, &req.request_id) {",
+                "if host_demoting_park(host, &pool_key, prompt, device_best_len, &req.request_id) {",
             )
-            .expect("the Hashing park in the probe");
+            .expect("the Demoting park in the probe");
         let decision = probe
             .find("let hi = match host_promote_probe_decision(")
             .unwrap();
@@ -47742,21 +47952,32 @@ mod tests {
             "the Hashing park precedes the promote decision"
         );
         assert!(probe[park..park + 200].contains("return true;"));
-        let hit = body("fn host_hashing_hit(");
-        assert!(hit.contains("let hashing = pending.hashing.as_ref()?;"));
+        let hit = body("fn host_demoting_hit(");
+        assert!(hit.contains("(Some(h), _) => (h.seq, true),"));
+        assert!(hit.contains("(None, Some(c)) if c.submitted.elapsed() < HOST_HASH_DEADLINE"));
         assert!(hit.contains("&& n > device_best_len"));
         assert!(hit.contains("&& prompt[..n] == toks[..]"));
-        let park_fn = body("fn host_hashing_park(");
+        let park_fn = body("fn host_demoting_park(");
         assert!(park_fn.contains("hit parked on a Hashing entry: request {request_id}"));
+        assert!(
+            park_fn
+                .contains("hit parked on a Demoting entry in its copy phase: request {request_id}")
+        );
         assert!(
             !park_fn.contains("hasher.") && !park_fn.contains("settle"),
             "the park never touches the helper and never settles"
         );
         assert_eq!(
-            code.matches("host_hashing_park(").count(),
+            code.matches("host_demoting_park(").count(),
             2,
             "the definition and one park site: the admission probe"
         );
+        // Day 38 (P): the copy phase's parked ids ride into the Hashing phase, and a demote that
+        // ends unpublished names them.
+        assert!(code.contains("parked: std::mem::take(&mut pending.parked),"));
+        assert!(code.contains("reparks: std::mem::take(&mut pending.reparks),"));
+        let with = body("fn host_demote_settle_with(");
+        assert!(with.contains("request(s) parked on the Demoting entry's copy phase"));
         // The ledger line carries the parked count; the latch tail names the parked requests.
         assert!(hashing_fn.contains("{parked_hits} hit(s) parked on \\\n             the Hashing entry ({reparks} re-park(s))"));
         assert!(hashing_fn.contains("request(s) parked on the Hashing entry re-admit to a"));
@@ -48250,6 +48471,93 @@ mod tests {
         }
     }
 
+    /// WP-A day 38 (`DAY38.md` designs G and P): the two new fault values are one-shot, demote side,
+    /// Move 1 faults; the demote route arms them for exactly its own batch, before the submission,
+    /// and only when the transfer engine takes device receipts; the receipt line names where hash 1
+    /// ran.
+    #[test]
+    fn day38_the_device_receipt_faults_are_armed_before_the_submission() {
+        use super::HostContractFault as F;
+        for (door, f) in [
+            ("d2h-source-flip", F::D2hSourceFlip),
+            ("d2h-delay", F::D2hDelay),
+        ] {
+            assert_eq!(F::from_door(door), Some(f));
+            assert!(f.is_demote() && f.is_move1(), "{door}");
+        }
+        let src = include_str!("worker.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let at = body.find("fn host_kv_planes_submit_contract(").unwrap();
+        let route = &body[at..at + body[at..].find("\n}\n").unwrap()];
+        let armed = route.find("if t.d2h_receipts_on_device() {").unwrap();
+        let flip = route.find("t.inject_d2h_source_flip();").unwrap();
+        let delay = route
+            .find("t.inject_d2h_delay(memra_engine::tier_transfer::D2H_DELAY_FAULT_NS);")
+            .unwrap();
+        let submit = route
+            .find("let ticket = match t.submit_batch(ops) {")
+            .unwrap();
+        assert!(armed < flip && flip < submit && delay < submit);
+        assert!(route.find("let fault = tier.take_fault(true);").unwrap() < armed);
+        let at = body.find("fn host_kv_planes_settle_contract(").unwrap();
+        let settle = &body[at..at + body[at..].find("\n}\n").unwrap()];
+        assert!(settle.contains("; receipts on the copy stream (source digests"));
+        assert!(settle.contains("retired acknowledged{}{receipt_place}"));
+    }
+
+    /// WP-A day 41 (`DAY41.md`, OWED item 5): the three Sources-keyed helper faults parse from the
+    /// existing door, are not contract faults, and each is keyed on the FIRST Sources job: a Hash job
+    /// before it runs clean (its reply lands), the Sources job takes the fault once, and a second
+    /// Sources job after a discarded or foreign reply runs clean.
+    #[test]
+    fn day41_the_sources_faults_key_on_the_first_sources_job() {
+        use super::HostHashFault as H;
+        for (door, want) in [
+            ("sources-helper-gone", H::SourcesGone),
+            ("sources-never-land", H::SourcesNeverLand),
+            ("sources-foreign-reply", H::SourcesForeignReply),
+        ] {
+            assert_eq!(H::from_door(door), Some(want));
+            assert_eq!(super::HostContractFault::from_door(door), None, "{door}");
+        }
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let at = production
+            .find("    fn spawn(fault: Option<HostHashFault>)")
+            .unwrap();
+        let spawn = &production[at..at + production[at..].find("\n    }\n").unwrap()];
+        let sources = spawn.find("HostHelperJob::Sources(job) => {").unwrap();
+        let gone = spawn
+            .find("if sources_fault == Some(HostHashFault::SourcesGone) {")
+            .unwrap();
+        let hashed = spawn[sources..].find("let d = v.digest();").unwrap() + sources;
+        let discard = spawn
+            .find("if sources_fault == Some(HostHashFault::SourcesNeverLand) {")
+            .unwrap();
+        let send = spawn.find("if sources_tx.send(reply).is_err() {").unwrap();
+        assert!(sources < gone && gone < hashed && hashed < discard && discard < send);
+        assert!(spawn.contains("job.seq.wrapping_add(1)"));
+        // One shot: the fault is cleared when a Sources job takes it.
+        let cleared = spawn[sources..].find("fault = None;").unwrap() + sources;
+        assert!(cleared < gone);
+        // Behaviour: under each Sources fault a Hash job runs clean (its reply lands).
+        for f in [H::SourcesGone, H::SourcesNeverLand, H::SourcesForeignReply] {
+            let helper = super::HostHashWorker::spawn(Some(f)).unwrap();
+            helper
+                .submit(super::HostHashJob {
+                    seq: 9,
+                    payloads: Vec::new(),
+                    leases: Vec::new(),
+                })
+                .unwrap();
+            let reply = helper
+                .reply_within(std::time::Duration::from_secs(5))
+                .unwrap()
+                .expect("a Hash job's reply lands under a Sources fault");
+            assert_eq!(reply.seq, 9, "{f:?}");
+            helper.close("test", std::time::Duration::from_secs(5));
+        }
+    }
     /// WP-A day 36 (`DAY36.md` section 1, log only): the restore's recurrent copy is timed around
     /// step 1 exactly (the two owner-stream events and the host timer bracket the copy loop, both
     /// before the producer fence), and the landing reads the owner-stream time only when the end
@@ -51318,9 +51626,9 @@ mod tests {
             "the wait is guarded on a not-ready Restoring request too (revuto round 2 on #638)"
         );
         assert!(
-            code[handoff + wait..handoff + wait + 400]
-                .contains("hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some())"),
-            "the wait is guarded on a Hashing entry too (WP-A day 29, ruling 40)"
+            code[handoff + wait..handoff + wait + 400].contains("|| hpx.demoting.is_some())"),
+            "the wait is guarded on a Demoting entry of either phase too (WP-A day 29, ruling 40; \
+             day 38, P)"
         );
         let recv = code[handoff + wait + guard..]
             .find("rx.recv_timeout(Duration::from_millis(2))")

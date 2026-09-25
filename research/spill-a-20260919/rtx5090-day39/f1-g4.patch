@@ -1,0 +1,13 @@
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -809,9 +809,7 @@
+             stream: owner,
+             copy: None,
+             twin_pool: RefCell::new(Vec::new()),
+-            fill_threads: fill_threads_for_host(
+-                std::thread::available_parallelism().map_or(1, |n| n.get()),
+-            ),
++            fill_threads: 1,
+             governor,
+             pinned_default,
+             owner: DeviceOwner::new(device),

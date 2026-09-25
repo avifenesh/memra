@@ -1,0 +1,26 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 088d1c89b..551975640 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -1615,7 +1615,9 @@ impl CudaTransfers {
+         // round 2 on integ38 #639): taken ahead of every fallible step, so a refused submit cannot
+         // leave the arm live for the next batch of either class.
+         let fault = self.early_reader.take();
+-        let Some(copy) = self.copy.clone() else {
++        // diag8 x27: the D2D classes (their digest kernels and copies) on the receipt stream, so
++        // the copy stream runs no kernel at all.
++        let Some(copy) = self.receipt_stream.clone() else {
+             return Err(Error::Unsupported);
+         };
+         if ops.is_empty() {
+@@ -1829,7 +1831,9 @@ impl CudaTransfers {
+         // round 2 on integ38 #639): taken ahead of every fallible step, so a refused submit cannot
+         // leave the arm live for the next batch of either class.
+         let fault = self.early_reader.take();
+-        let Some(copy) = self.copy.clone() else {
++        // diag8 x27: the D2D classes (their digest kernels and copies) on the receipt stream, so
++        // the copy stream runs no kernel at all.
++        let Some(copy) = self.receipt_stream.clone() else {
+             return Err(Error::Unsupported);
+         };
+         if ops.is_empty() {

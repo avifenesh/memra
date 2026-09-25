@@ -1,0 +1,80 @@
+[server] build: memra-0.138.0-7b372497096b (id: source-tree, git: 1c66345bfa0d)
+[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_HOSTGATE_CACHE_MB. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] starting; models config = [("gate", "/home/avifenesh/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /home/avifenesh/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "gate": 33 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-host] on: budget 8590MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, startup budget policy), plain byte-LRU, demote on device capacity eviction, promote on exact-prefix probe; verify=on (MEMRA_KV_HOST_VERIFY); tenant share cap 50% = 4295MB (MEMRA_KV_HOST_TENANT_PCT)
+[prefix-cache] on: budget 67MB (67108864 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":8327347072,"pool_reserved_bytes":8455716864,"pool_cached_bytes":128369792,"driver_free_bytes":16365453312,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=mtp transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9440MB rest-mapped 8064MB charged 109MB -> 1266MB]; 1.2s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18109
+[meter] admit id=cmpl-aba22f8ab89d63402adbb17542efd31d tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=201 path=spec = 16704 B/token x ctx + 32MB prefill-workspace + 0MB fixed = 35MB
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=89 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 103MB (observed 106MB at ctx 145 path=spec)
+[spec-acc] ctx=89 burst=16/45 cum=16/45=0.356
+[prefix-cache] insert (spec-boundary): 64 tokens, 53.8MB (resident 53.8MB / 67MB, model gate)
+[spec-acc] ctx=121 burst=11/15 cum=27/60=0.450
+[meter] admit id=cmpl-794231c3b9eabcb7e8828dd9f07f5948 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=198 path=spec = 16704 B/token x ctx + 31MB prefill-workspace + 103MB fixed = 138MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 89; 1 parked, 86 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=86 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=86 burst=20/36 cum=20/36=0.556
+[prefix-cache] insert (spec-boundary): 64 tokens, 53.8MB (resident 107.6MB / 67MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 53.8MB (model gate)
+[prefix-host] demote: 64 tokens, 54.8MB in 53.4ms (host resident 54.8MB / 8590MB, model gate)
+[spec-acc] ctx=119 burst=11/15 cum=31/51=0.608
+[meter] admit id=cmpl-a1aab96ec2258c41b48955cb4408db04 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=214 path=spec = 16704 B/token x ctx + 37MB prefill-workspace + 103MB fixed = 144MB
+[prefix-host] verify ok: promoted state digest matches demote digest (64 tokens)
+[prefix-cache] insert (host-promote): 64 tokens, 53.8MB (resident 107.6MB / 67MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 53.8MB (model gate)
+[prefix-host] demote: 64 tokens, 54.8MB in 70.3ms (host resident 109.5MB / 8590MB, model gate)
+[prefix-host] promote: 64 tokens, 53.8MB in 121.1ms (model gate)
+[prefix-cache] hit: 64 of 102 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 102 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=102 cached=64 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 103MB (observed 106MB at ctx 158 path=spec)
+[spec-acc] ctx=38 burst=17/42 cum=17/42=0.405
+[spec-acc] ctx=70 burst=11/15 cum=28/57=0.491
+[meter] admit id=cmpl-7372d10a9000d80fd8f32a06b3e127a4 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +44MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=214 path=spec = 16704 B/token x ctx + 37MB prefill-workspace + 103MB fixed = 144MB
+[prefix-cache] hit: 64 of 102 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 102 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=102 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=38 burst=17/42 cum=17/42=0.405
+[spec-acc] ctx=70 burst=11/15 cum=28/57=0.491
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

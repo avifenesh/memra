@@ -1,0 +1,13 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 088d1c89b..12e00d2ef 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -944,7 +944,7 @@ impl CudaTransfers {
+         let k = self.receipt.as_ref().ok_or(Error::Unsupported)?;
+         // The two bracket events carry timing (the log-only kernel reading); every other event of
+         // the engine keeps cudarc's timing-disabled default.
+-        let timed = Some(sys::CUevent_flags::CU_EVENT_DEFAULT);
++        let timed = None;
+         let start = cuda(rs.record_event(timed))?;
+         for (chunk, part) in sources.chunks(RECEIPT_ITEMS).enumerate() {
+             let mut items = ReceiptItems {

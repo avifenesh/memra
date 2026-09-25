@@ -1,0 +1,9 @@
+DAY38 READING arm=base steady copy-settle N=80 median=1.56 min=1.48 max=1.65 | take-back N=80 median=0.21 min=0.20 max=0.25 | owner-held N=80 median=4.07 min=3.81 max=4.28 | helper-hash N=80 median=161.55 min=159.50 max=167.90 | modes [('tick-top poll', 80)] | landed=90 copy-stream-receipt-lines=0 receipt-kernel-ms N=0
+DAY38 READING order=o1 arm=base wall N=40 median=182.70 min=182.00 max=183.00 | e2e N=50 median=207.61 min=206.03 max=301.12 | tenant-stall N=50 median=78.98 min=78.42 max=172.02
+DAY38 READING order=o2 arm=base wall N=40 median=182.70 min=182.00 max=195.60 | e2e N=50 median=207.59 min=205.89 max=301.39 | tenant-stall N=50 median=78.92 min=78.38 max=172.41
+DAY38 READING arm=g steady copy-settle N=80 median=0.53 min=0.44 max=0.62 | take-back N=80 median=0.21 min=0.19 max=0.23 | owner-held N=80 median=3.07 min=2.85 max=3.26 | helper-hash N=80 median=161.45 min=159.70 max=165.50 | modes [('tick-top poll', 80)] | landed=90 copy-stream-receipt-lines=90 receipt-kernel-ms N=90 median=3.34 min=2.43 max=3.40
+DAY38 READING order=o1 arm=g wall N=40 median=185.25 min=182.20 max=187.10 | e2e N=50 median=209.04 min=205.46 max=298.21 | tenant-stall N=50 median=79.42 min=78.34 max=170.25
+DAY38 READING order=o2 arm=g wall N=40 median=185.35 min=182.30 max=187.10 | e2e N=50 median=209.07 min=205.24 max=299.48 | tenant-stall N=50 median=79.41 min=78.36 max=171.26
+DAY38 G C copy-settle N=80 median=0.53 min=0.44 max=0.62 rule N>=20 median<=1.5 max<=3.0 -> PASS
+DAY38 G D order=o1 wall base=182.70 g=185.25 g-minus-base=+2.55 rule <=+5.0 | e2e base=207.61 g=209.04 g-minus-base=+1.43 rule <=+1.0 -> FAIL
+DAY38 G D order=o2 wall base=182.70 g=185.35 g-minus-base=+2.65 rule <=+5.0 | e2e base=207.59 g=209.07 g-minus-base=+1.48 rule <=+1.0 -> FAIL

@@ -1,0 +1,1 @@
+-rw-rw-r-- 1 root root 635893454 Sep 24 18:58 /root/spill-receipts/a-day38/diag2/nsys-x1/trace.nsys-rep

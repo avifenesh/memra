@@ -84,6 +84,29 @@
 #                  lands with N spans under the ticket and publishes. The OFF boot serves the same four requests (r3
 #                  and r4 promote synchronously there); r1..r4 are byte-equal across the two boots.
 #
+# WP-A day 38 (memra#536 Move 1 owed item 2's hash 1, research/spill-a-20260919/DAY38.md designs G and P): the demote's
+# D2H receipt is taken on the copy stream (design G4) over each KV item's DEVICE source, and a hit on a Demoting entry parks in
+# either phase. Two cells, two boots each (door ON with the fault, then door OFF as the byte reference):
+#   source-flip     MEMRA_KV_HOST_FAULT=d2h-source-flip: r1 P_A seeds E_A; r2 P_B evicts E_A, whose demote's first KV
+#                   item's device source has one byte flipped after its receipt digest and before its copy; the bind's
+#                   re-hash of the landed bytes differs from the receipt: one typed `plane checksum differs from its D2H
+#                   contract receipt` refusal, nothing published, the tier on; r3 P_A primes cold (no host entry) and its
+#                   insert evicts E_B into a clean demote; r4 P_B hits E_B on the host and promotes. r1..r4 byte-equal.
+#   copy-phase-hit  MEMRA_KV_HOST_FAULT=d2h-delay: r1 P_A seeds E_A; r2 P_B evicts E_A, whose demote is held unlanded
+#                   3 s on the host (designs G''' and G4: no stream runs a spin, later copies are not held); r3 P_A hits the Demoting
+#                   entry in its COPY phase and parks (one typed
+#                   line), the copy lands, the digests land, the entry publishes (its ledger names the parked hit), and
+#                   r3 promotes to a device hit instead of priming cold; r4 P_B promotes. r1..r4 byte-equal.
+#
+# WP-A day 41 (OWED item 5, research/spill-a-20260919/DAY41.md): design K's three promote-side fail-closed arms, one
+# cell each, two boots each (door ON with the fault, then door OFF as the byte reference), the promote cells' shape: r1
+# P_A seeds E_A; r2 P_B evicts E_A (a clean demote, its Hash job lands); r3 P_A's promote hands its Sources job to the
+# helper, which takes the fault; r4 P_B. One helper-fault line, one TIER DISABLED line in the arm's own words, no promote
+# publication, the helper joined at the latch, r1..r4 byte-equal to door OFF:
+#   sources-helper-gone    the helper exits on its first Sources job (the sources reply channel closed)
+#   sources-never-land     the helper hashes it and discards the reply (the 10 s deadline)
+#   sources-foreign-reply  the helper replies with seq + 1 (a reply that does not describe the ticket)
+#
 # usage: kv-host-contract-fault-gate.sh [--external-lock FD] <model.gguf> <server_bin> <evidence_dir>
 # env:   MEMRA_HOSTGATE_CACHE_MB (default 256)  device prefix budget; must hold ONE seed entry but not two
 #        MEMRA_HOSTGATE_HOST_MB  (default 8192) host tier budget
@@ -705,6 +728,139 @@ pscell() { # WP-A day 32: MEMRA_KV_HOST_FAULT=contract-promote-spans (door ON), 
     chk "$name: r1..r4 byte-equal to the door-OFF boot" texts_equal_arms "$EV/$name" "$EV/$name-off" 4
 }
 
+await_line() { # $1 literal $2 log: a line containing the literal has appeared (bounded 150 x 100 ms = 15 s, above the
+              # helper's 10 s deadline, so a hand-off that never lands is read as its typed refusal, never waited past)
+    for _ in $(seq 1 150); do
+        if grep -qF "$1" "$2"; then return 0; fi
+        sleep 0.1
+    done
+    return 1
+}
+copy_phase_lasted() { # $1 log $2 ms: the first `demote copy complete off the tick` line reports at least $2 ms from
+                     # submission to completion (the delayed copy phase really was long)
+    python3 - "$1" "$2" <<'PYEOF'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+ms = next((float(m.group(1)) for l in lines if (m := re.search(r"demote copy complete off the tick: .* ([0-9.]+)ms from submission to completion", l))), None)
+print(f"the first copy phase lasted {ms} ms (bound {sys.argv[2]})")
+sys.exit(0 if ms is not None and ms >= float(sys.argv[2]) else 1)
+PYEOF
+}
+await_settled_or_refused() { # $1 log: every `demote submitted off the tick` has ended in a publication or a bind refusal
+                             # (bounded 15 s); the source-flip cell's first demote ends in the refusal by design
+    for _ in $(seq 1 150); do
+        local sub pub ref
+        sub=$(grep -c 'demote submitted off the tick' "$1")
+        pub=$(grep -c '\[prefix-host\] demote: ' "$1")
+        ref=$(grep -c 'plane checksum differs from its D2H contract receipt); nothing published' "$1")
+        if [ "$sub" -eq $((pub + ref)) ]; then return 0; fi
+        sleep 0.1
+    done
+    return 1
+}
+fcell() { # WP-A day 38 (design G): MEMRA_KV_HOST_FAULT=d2h-source-flip (door ON), then the same four requests door OFF
+    local name=source-flip fault=d2h-source-flip log="$EV/source-flip-server.log" offlog="$EV/source-flip-off-server.log"
+    local refusal="plane checksum differs from its D2H contract receipt); nothing published"
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, the device receipt's red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_B" "$EV/$name-r2.json"
+    local awaited=0 settled=0
+    await_line "$refusal" "$log" || awaited=$?  # a timed-out wait is a failed check below, never an abort under set -e
+    req "$P_A" "$EV/$name-r3.json"
+    req "$P_B" "$EV/$name-r4.json"
+    await_settled_or_refused "$log" || settled=$?
+    stop
+    echo "== cell $name: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) =="
+    boot "MEMRA_KV_HOST_CONTRACTS=0" "$offlog"
+    req "$P_A" "$EV/$name-off-r1.json"
+    req "$P_B" "$EV/$name-off-r2.json"
+    req "$P_A" "$EV/$name-off-r3.json"
+    req "$P_B" "$EV/$name-off-r4.json"
+    stop
+    chk "$name: the refused demote settled before r3 (bounded 15 s wait)" test "$awaited" -eq 0
+    chk "$name: every submitted demote published or refused before stop (bounded 15 s wait)" test "$settled" -eq 0
+    chk "$name: four completions served" four_served "$EV/$name"
+    chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
+    chk "$name: the fault was armed once" count_eq "demote fault armed (MEMRA_KV_HOST_FAULT=d2h-source-flip)" "$log" 1
+    chk "$name: the D2H receipts ran on the copy stream (design G4)" grep -q "receipts on the copy stream (source digests" "$log"
+    chk "$name: exactly one typed bind refusal of the flipped image" count_eq "$refusal" "$log" 1
+    chk "$name: the next demote publishes" after "$refusal" "\\[prefix-host\\] demote: " "$log"
+    chk "$name: r3 primed cold and only r4 promoted (the refused image was never published)" count_eq "\\[prefix-host\\] promote: " "$log" 1
+    chk "$name: the tier never latched off" absent "TIER DISABLED" "$log"
+    chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+    chk "$name: OFF boot: four completions served" four_served "$EV/$name-off"
+    chk "$name: OFF boot: the contracts door is off" absent "contracts door ON" "$offlog"
+    chk "$name: r1..r4 byte-equal to the door-OFF boot" texts_equal_arms "$EV/$name" "$EV/$name-off" 4
+}
+ccell() { # WP-A day 38 (design P): MEMRA_KV_HOST_FAULT=d2h-delay (door ON), then the same four requests door OFF
+    local name=copy-phase-hit fault=d2h-delay log="$EV/copy-phase-hit-server.log" offlog="$EV/copy-phase-hit-off-server.log"
+    local park="hit parked on a Demoting entry in its copy phase: request"
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, the copy-phase park's red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_B" "$EV/$name-r2.json"
+    req "$P_A" "$EV/$name-r3.json"
+    req "$P_B" "$EV/$name-r4.json"
+    local settled=0
+    await_settled "$log" || settled=$?
+    stop
+    echo "== cell $name: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) =="
+    boot "MEMRA_KV_HOST_CONTRACTS=0" "$offlog"
+    req "$P_A" "$EV/$name-off-r1.json"
+    req "$P_B" "$EV/$name-off-r2.json"
+    req "$P_A" "$EV/$name-off-r3.json"
+    req "$P_B" "$EV/$name-off-r4.json"
+    stop
+    chk "$name: every submitted demote published before stop (bounded 15 s wait)" test "$settled" -eq 0
+    chk "$name: four completions served" four_served "$EV/$name"
+    chk "$name: the fault was armed once" count_eq "demote fault armed (MEMRA_KV_HOST_FAULT=d2h-delay)" "$log" 1
+    chk "$name: the delayed copy phase lasted at least 3000 ms" copy_phase_lasted "$log" 3000
+    chk "$name: exactly one copy-phase park line (r3)" count_eq "$park" "$log" 1
+    chk "$name: the entry published after the park" after "$park" "\\[prefix-host\\] demote: " "$log"
+    chk "$name: the published entry's ledger names the parked hit" grep -q "1 hit(s) parked on the Hashing entry" "$log"
+    chk "$name: r3 promoted after its park (not a cold prime)" after "$park" "\\[prefix-host\\] promote: " "$log"
+    chk "$name: r3 and r4 both promoted, as on the door-OFF boot" count_eq "\\[prefix-host\\] promote: " "$log" 2
+    chk "$name: no parked request re-admitted cold" absent "re-admit to a cold prime" "$log"
+    chk "$name: the tier never latched off" absent "TIER DISABLED" "$log"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+    chk "$name: OFF boot: four completions served" four_served "$EV/$name-off"
+    chk "$name: OFF boot: r3 and r4 promoted" count_eq "\\[prefix-host\\] promote: " "$offlog" 2
+    chk "$name: r1..r4 byte-equal to the door-OFF boot" texts_equal_arms "$EV/$name" "$EV/$name-off" 4
+}
+
+kcell() { # WP-A day 41: $1 fault value $2 the TIER DISABLED line's own words (a literal)
+    local name=$1 fault=$1 words=$2 log="$EV/$1-server.log" offlog="$EV/$1-off-server.log"
+    echo "== cell $name: MEMRA_KV_HOST_FAULT=$fault (one-shot, design K's promote-side red arm) =="
+    boot "MEMRA_KV_HOST_FAULT=$fault" "$log"
+    req "$P_A" "$EV/$name-r1.json"
+    req "$P_B" "$EV/$name-r2.json"
+    req "$P_A" "$EV/$name-r3.json"
+    req "$P_B" "$EV/$name-r4.json"
+    stop
+    echo "== cell $name: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) =="
+    boot "MEMRA_KV_HOST_CONTRACTS=0" "$offlog"
+    req "$P_A" "$EV/$name-off-r1.json"
+    req "$P_B" "$EV/$name-off-r2.json"
+    req "$P_A" "$EV/$name-off-r3.json"
+    req "$P_B" "$EV/$name-off-r4.json"
+    stop
+    chk "$name: four completions served" four_served "$EV/$name"
+    chk "$name: door ON with the transfer engine on both sides" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine.*KV plane H2D through the same engine on promote" "$log"
+    chk "$name: r2's demote landed its digests and published (its Hash job ran clean)" grep -q "\\[prefix-host\\] demote: " "$log"
+    chk "$name: exactly one helper-fault line, on the Sources job" count_eq "hash helper fault (MEMRA_KV_HOST_FAULT=$fault): the Sources job of ticket seq=" "$log" 1
+    chk "$name: exactly one TIER DISABLED line in the arm's own words" count_eq "TIER DISABLED: $words" "$log" 1
+    chk "$name: the tier latched off exactly once" count_eq "TIER DISABLED" "$log" 1
+    chk "$name: the promote never published" absent "\\[prefix-host\\] promote: " "$log"
+    chk "$name: the hash helper joined at the latch" count_eq "hash helper joined (the tier latched off)" "$log" 1
+    chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
+    chk "$name: no Capacity refusal" absent "Capacity" "$log"
+    chk "$name: OFF boot: four completions served" four_served "$EV/$name-off"
+    chk "$name: OFF boot: the contracts door is off" absent "contracts door ON" "$offlog"
+    chk "$name: r1..r4 byte-equal to the door-OFF boot" texts_equal_arms "$EV/$name" "$EV/$name-off" 4
+}
+
 # WP-A day 22: the D2D receipt's red arm, one cell per class.
 dcell_capture
 dcell_restore
@@ -715,6 +871,13 @@ hcell hash-never-lands hash-never-lands "digests never landed" 1
 scell
 # WP-A day 32: the off-tick promote span attach's red arm, byte-compared with the door-OFF boot.
 pscell
+# WP-A day 38: the device receipt's red arm and the copy-phase park's, byte-compared with the door-OFF boot.
+fcell
+ccell
+# WP-A day 41: design K's promote-side arms, byte-compared with the door-OFF boot.
+kcell sources-helper-gone "tier hash helper gone before the H2D checksums of ticket seq="
+kcell sources-never-land "tier H2D checksums never landed: ticket seq="
+kcell sources-foreign-reply "tier H2D checksum reply seq="
 
 if [ "$FAILS" -eq 0 ]; then
     echo "KV-HOST-CONTRACT-FAULT GATE: ALL GREEN"

@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-a/research/spill-a-20260919/day40-trace-reading.py"[0m, line [35m15[0m, in [35m<module>[0m
+    db = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+[1;35msqlite3.OperationalError[0m: [35munable to open database file[0m
