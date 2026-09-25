@@ -53,6 +53,15 @@ pub struct MtpPrimeState {
     call_local: bool,
 }
 
+impl MtpPrimeState {
+    /// WP-B day 39 addendum B: the walker has not yet run the chunk that ends on its turn
+    /// checkpoint row, so that checkpoint's `Cache::snapshot` is still owed.
+    pub fn owes_turn_checkpoint(&self) -> bool {
+        self.ckpt_rel
+            .is_some_and(|r| self.chunks.get(self.cursor).is_some_and(|c| c.start < r))
+    }
+}
+
 pub struct MtpPrimeWalker<'a> {
     model: &'a HybridModel,
     e: &'a Engine,
@@ -691,6 +700,38 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WP-B day 39 addendum B: the walker owes its turn checkpoint's snapshot until it has run
+    /// the chunk that ends on the checkpoint row.
+    #[test]
+    fn the_walker_owes_its_turn_checkpoint_until_the_row_is_primed() {
+        let state = |ckpt_rel: Option<usize>, cursor: usize| MtpPrimeState {
+            prompt: vec![0; 2061],
+            base: 0,
+            chunks: trunk_schedule(2061, None, Some(1024), false, false, |n| vec![(0, n)]),
+            cursor,
+            fill_cursor: 0,
+            fill_chunk: 4096,
+            short: false,
+            hiddens: None,
+            logits: Vec::new(),
+            capture_at: None,
+            ckpt_rel,
+            k: 1,
+            sampling: resolve_spec_sampling(None),
+            graph_draft: false,
+            prepared: None,
+            wall: std::time::Duration::ZERO,
+            call_local: false,
+        };
+        assert!(state(Some(1024), 0).owes_turn_checkpoint());
+        assert!(
+            !state(Some(1024), 1).owes_turn_checkpoint(),
+            "the chunk ending on 1024 ran"
+        );
+        assert!(!state(Some(1024), 2).owes_turn_checkpoint());
+        assert!(!state(None, 0).owes_turn_checkpoint());
+    }
 
     #[test]
     fn stable_captures_preserve_segment_local_ranges_and_tiny_tail_program() {
