@@ -85,3 +85,13 @@ every rung's verdict, I10's included; nothing else in section 1 moves.
 
 Named here once every improvement's 5090 verdict is in: the final tree's commit, the list of rungs kept or reverted,
 the `run-gen` and `run-spec` SHA-256.
+
+**Named 2026-09-25 01:36Z, before any of this day's three cells ran on either card.** The rungs' RTX 5090 verdicts:
+I6 failed its default-budget clause on day 43 and passes it on the tuned tree (`DAY43 RESIDFIX rig=rtx5090
+integrity=ok no_regression=PASS`); I9, the fill, I1, I2, I7, I4 and I10 pass (`DAY44` to `DAY50`, `DAY57`); I8 and I5
+failed their stage clauses on day 48 and pass as I8f and I5f (`DAY58 SMALLFIX rig=rtx5090 integrity=ok i8f=PASS
+i5f=PASS`). None is reverted. The final tree is the lane tip `62e848b1f`, whose `memra-engine` is `7ea765687`'s (the
+two later commits touch `memra-server` only). Binaries on the RTX 5090: `run-gen-final` =
+`0fbf63285c76b5ddead74f6a8c1b488bbe69d4e6cc9d8398f2bb6203da5a4f03`, `run-spec-final` =
+`67286cfa67825cb0a7216203b0f4de8016b7fce289672c0e1fda6ce9ab9fbcb4` (built from the lane tree at `4417bbd1b`, the same
+crates). The target card builds `final=62e848b1f` on the box.

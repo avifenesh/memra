@@ -62,3 +62,34 @@ clauses), the arm patches `day58-nomemo.patch` and `day58-unbuf.patch` (made fro
 (`day58-<label>.patch` applied to the commit, the tree restored after the build) and builds only the labels whose
 binary is missing, so the final phase adds `tip`, `nomemo`, `unbuf` and `final` without rebuilding the rest; the
 target card runs `smallfix` in its final phase after `residfix`.
+
+## 2. Results, cell `smallfix` (RTX 5090 Laptop GPU, `rtx5090-day58/smallfix/`)
+
+One collector hold, 01:16:34Z to 01:24:51Z, 40 runs, tree `97bed06d3`, binaries `run-gen-tip` `0fbf6328...` (the
+crates of `7ea765687`), `run-gen-nomemo` `d411bcf1...` and `run-gen-unbuf` `4f2d8275...` (the same commit with each
+patch), the approved artifact, the runner under the 1200% cap. Regime (`regime.log`, 250 ms, N=1948): SM 180 to 2610
+MHz, power 11.9 to 166.8 W, 62 to 79 C. Collector `--validate` rc=0.
+
+Verbatim (`smallfix/reading.log`):
+
+`DAY58 SMALLFIX CHECKS rig=rtx5090 runs=40 integrity=ok`
+
+`DAY58 ARM nomemo window_door_ms_per_token=-0.39 window_s median=0.320 iqr=0.004 | per window token: gpu_misses=92.3 host_hits=92.3 validate=0.430 trace=0.021 demand=0.032 enqueue=0.008 retire=0.055 finish=0.000 miss_total=0.058`
+
+`DAY58 ARM unbuf window_door_ms_per_token=-0.56 window_s median=0.314 iqr=0.003 | per window token: gpu_misses=92.3 host_hits=92.3 validate=0.039 trace=0.255 demand=0.038 enqueue=0.008 retire=0.055 finish=0.000 miss_total=0.061`
+
+`DAY58 ARM tip window_door_ms_per_token=-0.59 window_s median=0.313 iqr=0.003 | per window token: gpu_misses=92.3 host_hits=92.3 validate=0.038 trace=0.021 demand=0.032 enqueue=0.008 retire=0.055 finish=0.000 miss_total=0.056`
+
+`DAY58 CLAUSE (i) validate per window token nomemo=0.430 tip=0.038 rule tip < 0.1 x nomemo -> PASS`
+
+`DAY58 CLAUSE (ii) tip_minus_nomemo window pooled=-0.007 o1=-0.010 o2=-0.006 noise=0.004 rule <=noise -> PASS`
+
+`DAY58 CLAUSE (iii) trace per window token unbuf=0.255 tip=0.021 rule tip < 0.1 x unbuf -> PASS`
+
+`DAY58 CLAUSE (iv) tip_minus_unbuf window pooled=-0.001 o1=-0.003 o2=+0.000 noise=0.003 rule <=noise -> PASS`
+
+`DAY58 SMALLFIX rig=rtx5090 integrity=ok i8f=PASS i5f=PASS`
+
+Both rungs now hold day 48's clauses: the dense memo takes `validate` to 0.038 ms per token (a ninth of its bound,
+11.3 times below the no-memo arm), the direct writer takes `trace` to 0.021 ms (12.1 times below the unbuffered
+print). I8 and I5 stay, as I8f and I5f.
