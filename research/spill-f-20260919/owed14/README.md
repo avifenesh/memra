@@ -35,7 +35,7 @@ capture ever carried `nvme_proven: true` (searched 2026-09-25), so tightening br
 
 | Run | Result |
 |---|---|
-| `test_storage_proof.py` on the patched collector | 19 passed, 1 skipped (`owed14-patched-live.log` is the same suite with the live case on) |
+| `test_storage_proof.py` on the patched collector | **19 passed, 1 skipped** (`owed14-patched.log`) |
 | same, `M1_LIVE_PROOF=1` (real proof tool, 64 MiB binding, this bare-metal rig) | **20 passed** |
 | D's `crates/memra-tier/tests/battery` suite on the patched collector | **87 passed** (`battery-suite-patched.log`) |
 | `test_storage_proof.py` on the unpatched collector (red control) | every non-skipped case fails: 3 failures, 16 errors (`owed14-unpatched-red.log`) |
