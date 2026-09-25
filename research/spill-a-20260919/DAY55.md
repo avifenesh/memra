@@ -123,3 +123,23 @@ acceptance is reverted in one commit and its test re-read under a new pre-regist
   the compile is running), not one of the test's claims; the fix waits for the start signal with a 10 s safety bound,
   whose expiry still fails the test by the same message. The claims' bounds (the 100 ms deadline, `>= 10` steps, the 50
   ms stall threshold) are unchanged.
+
+## 5. T-b as built, and T-c's fix revised before its code
+
+- **T-b** (`77d03de33`): `#[tokio::test(start_paused = true)]` with tokio's `test-util` as a dev-only feature
+  (`Cargo.lock` unchanged); the test and its bounds unchanged. Its red arm (the bridge's commit time dropped, a scratch
+  patch never committed) fails 10 of 10: `the extended stream must commit before first token: ()`
+  (`an_extended_stream_commits_prefill_then_/red/`). A first red-arm run is void and kept as
+  `red-void-stale-binary/`: the dev-dependency moved the test executable to a new name, and those ten runs used the
+  stale one (they read 10 `rc=0` on a binary without the patch); the red arm is always grep-checked in its binary now.
+- **T-c, the revision (section 1's text did not foresee this).** Driving the expiry with a step clock alone takes the
+  test's teeth: a loop that blocks on the held compile would still reach step 50 and pass (only slower). The fix is
+  therefore:
+  1. the start wait bounded at 10 s (section 4);
+  2. the expiry at `start + 2 ms x steps` (the deadline at step 50, `normal_steps >= 10` judged against it);
+  3. a test-only virtual clock for `WorkerHealth` on the test's thread (`#[cfg(test)]`, a thread-local read by
+     `now_ms()`, reset on drop), advanced 2 ms per step, so the 50 ms stall threshold is judged on the loop's own time;
+  4. the teeth: every step's `resolve_constraint_compiles` call is timed on the wall clock and must return under 1 s
+     (a non-blocking call; beside eight burners a step's scheduling gaps read tens of milliseconds, R2); a resolve that
+     waits on the held compile fails at the first step.
+  Red arm: `resolve_constraint_compiles` made to wait on its result channel for 2 s (a scratch patch): fails 10 of 10.
