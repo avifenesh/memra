@@ -290,6 +290,16 @@ runs as a descriptive serving row.
   request window. A visit with any request error, invalid telemetry or a failed regime is
   unscored. Tool: `m1-b4-serving.py`.
 
+#### B4 arms (2026-09-26, registered after B3 and before any B4 visit)
+
+Under the registered gate only the bounded regime scored, and there `worker16` beat every
+challenger, so B4 has no registered winner: `worker16` runs as the registered descriptive
+serving row. The warm regime's read-gate rescoring (applied after its data) found `mmap-random`
+and `mmap-normal` 1.19x faster than `worker16`; they join as labelled post-hoc challengers, in the
+warm regime where they won, in one round-robin schedule (`m1-b4-serving.py --arms
+worker16,mmap-random,mmap-normal --regime warm`: every pair meets 5 times in each relative
+order per concurrency). Their B4 verdicts are reported as post-hoc, never as registered.
+
 ### B5 io_uring decision input
 
 From B0's scored screen: if `io_uring` beats `psync` threads by at least 5% at the worker's
