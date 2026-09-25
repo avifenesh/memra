@@ -10214,10 +10214,6 @@ struct ContractPlanned {
     capacity: usize,
 }
 
-/// A contract-routed D2H that was submitted and not yet settled (WP-A day 17): the ticket, its
-/// producer fence, the registered planes (their retained twins take them back), the plan and the
-/// per-item sizes, the one-shot fault the submission took, and when it was submitted. Owned by
-/// `PendingDemote` while the entry is `Demoting`; consumed by `host_kv_planes_settle_contract`.
 /// WP-A day 49 (`DAY49.md`, OWED items 7 and 8; log only): the demote's pre-submit segments, printed
 /// once per demote (`demote pre-submit split`). No behavior reads it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -10244,6 +10240,10 @@ fn thread_minflt() -> i64 {
     }
 }
 
+/// A contract-routed D2H that was submitted and not yet settled (WP-A day 17): the ticket, its
+/// producer fence, the registered planes (their retained twins take them back), the plan and the
+/// per-item sizes, the one-shot fault the submission took, and when it was submitted. Owned by
+/// `PendingDemote` while the entry is `Demoting`; consumed by `host_kv_planes_settle_contract`.
 struct PendingContractDemote {
     ticket: memra_engine::cache::tiered::TransferTicket,
     producer: memra_engine::cache::tiered::FenceId,
