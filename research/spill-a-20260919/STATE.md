@@ -1,10 +1,15 @@
-# WP-A resumable state (2026-09-25, day 54, stopped at NEED TARGET CARD for item 10)
+# WP-A resumable state (2026-09-26, day 55 closed; stopped at an integrable milestone)
 
-- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. The lead carries days 49 to 53 into integ63.
-- Item 17 blocked on item 14 (the lead's ruling). Item 21 closed (DAY53, F1 `22f1872d6`). Items 22 and 23 open.
-- Item 10 (DAY54): the on-tick publish lines, log only (`17d43a6ac`), CPU cells green; the sitting
-  `pro-single-day54/` prepared: `build.sh <tip>`, then `driver.sh`; about 1.5 hours on one RTX PRO 6000 Blackwell
-  with the 27B artifact, any host class. The reading: `reading-day54.log`, last line `DAY54 VERDICTS ..`.
-- Next after the reading: the design of any publisher priced above 1.0 ms, else item 11; then 12 to 14 (19 with 14,
-  17 re-read on top), then 18 and 20; items 22 and 23 when the lead places them; the three 5090 cells after the reset.
+- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`; remote tip `50fb33bc9`. The lead carries days 49 to 54 into
+  integ63; days 55 onward are new.
+- Resync after the rig reboot: the interrupted R2 cell (51 runs of T-a, its binary lost with `/tmp`) is void and banked
+  as `day55/no_progress_source_is_the_pre_fix_beat_a/r2-interrupted/`; R2 was re-run whole.
+- Item 22 closed (DAY55): T-a fixed in `health.rs` (one clock sample per snapshot and verdict); T-b, T-c and T-e fixed in
+  their tests (tokio's paused clock; the step clock with a test-only health clock and a non-blocking guard; the
+  coalescer's window a field with two mechanism cells). Accepted: R1 and R2 0 of 100 each, red arms 10 of 10, arm A 100
+  of 100 and arm B 98 of 100 full suites. T-d not reproduced, unchanged. New: items 24 and 25 (arm B's two other reds).
+- Item 10: priced (DAY54); the fanout design owed. Item 17 blocked on 14. Item 21 closed.
+- Next: item 23 (F1's +1.47 s: the admission counters injected so the writer tests need no lock), then 24 and 25, then
+  the fanout design, then items 11 to 14 (19 with 14, 17 on top), 18 and 20; the 5090 is back, so its three owed cells
+  (S4's half, V's half, item 16) run under `/tmp/memra-5090.lock` in their place in the order.
 - Local scratch: none.
