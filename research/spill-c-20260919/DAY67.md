@@ -70,3 +70,46 @@ dry-checked for control flow (`day67-cpu/dry-check-driver.log`). Run as
 where it can be had (else another host of that class), one RTX PRO 6000 Blackwell Workstation Edition, the approved
 35B artifact, `/root/wt-c` at the lane tip and a detached `/root/wt-c-build`, CUDA 13 and Rust, at least 48 GB host
 `MemAvailable`. Expected: one build about 5 minutes, the cell about 10 (40 runs, each with a 1 s probe after its timing).
+
+## 2. The cell, as it ran (BOX19, BOX15's machine, run by the lead as registered; `pro-single-day67/`)
+
+The lead ran `day67-box.sh` as section 1a names it on the tree `3e9bf6bda`, on BOX19 (BOX15's machine; it read 239.5 W
+and 2872 MHz with no app while settling after the previous tenant, then 27.6 W at 180 MHz, FMA spin 2630 to 2656 MHz,
+no brake), to `box done 2026-09-25T10:59:36Z`. The lead mirrored the receipts; read here: 190 of 190 files `OK`
+against `box-mirror-manifest.sha256` (`MIRROR-CHECK.txt`). Regime (`regime.txt`): 27 to 42 C, SM median 2610 MHz.
+Verbatim (`probe/reading.log`):
+
+- `DAY67 PROBE CHECKS rig=pro-single runs=40 integrity=ok`
+- `DAY67 R1 ref_median=0.245 slow=10 fast=10 of 20 door runs`
+- `DAY67 REF compute_ns: min=1.049 median=1.050 max=1.050 (N=20)`, `l1_ns: min=0.874 median=0.875 max=0.876`,
+  `l2_ns: min=2.470 median=2.782 max=2.938`, `dram_ns: min=87.817 median=89.453 max=92.576`
+- the door's per-run probe lines (all 20 in the reading), e.g. `o1-i15-r1: gen=0.314 slow compute_ns=1.449 l1_ns=1.207 l2_ns=3.910 dram_ns=150.435 compute2_ns=1.209`,
+  `o1-i15-r2: gen=0.248 fast compute_ns=1.050 l1_ns=0.874 l2_ns=2.780 dram_ns=93.059 compute2_ns=1.049`,
+  `o2-i15-r1: gen=0.248 fast compute_ns=1.461 l1_ns=1.204 l2_ns=4.004 dram_ns=150.266 compute2_ns=1.464`
+- `DAY67 PROBE VERDICT rig=pro-single integrity=ok -> none_tracks`
+
+**The reader checked against the rule, on these receipts.** The registered rule is strict: `<name>_tracks` iff every
+slow door run's value is larger than every fast door run's. The reader implements exactly that (`min` over the slow
+runs above `max` over the fast ones). One fast boot, `o2-i15-r1` (gen-only 0.248 s, a fast decode, fill 1113.5 ms),
+carries slow probe values (`compute_ns=1.461`, `l1_ns=1.204`, `l2_ns=4.004`), above the smallest slow run's
+(`compute_ns=1.449`, `l1_ns=1.202`, `l2_ns=3.910`), so no field separates by the rule. This is not a reader defect; the
+verdict stands as `none_tracks`, and no bound moves.
+
+**What the lines show beside the verdict, deciding nothing.**
+- In 19 of the 20 door boots the probe's first three fields split by mode: the 10 slow boots read `compute_ns` 1.449 to
+  1.487, `l1_ns` 1.202 to 1.273, `l2_ns` 3.910 to 4.092; nine fast boots read 1.049 to 1.050, 0.874 to 0.875, 2.472 to
+  2.785, as REF's 20 runs do. `dram_ns` does not split (88.9 to 150.4 across both modes). A same-factor slowdown of a
+  register chain, an L1 chase and an L2 chase (each counted in core cycles) with DRAM latency (counted in
+  nanoseconds) unchanged is what a lower effective core clock gives: about 1.4 times, near 4.1 GHz for a core the
+  cpufreq sysfs reported at about 5.72 GHz in DAY66's cell.
+- `compute2_ns`, the same chain about 0.4 s later (after the DRAM chase), reads 1.049 or 1.050 in 9 of the 10 slow
+  boots and 1.209 in the tenth (`o1-i15-r1`); in the fast boot `o2-i15-r1` it stays 1.464. The slow state ends during the probe in most slow
+  boots: it is a transient of the core, not a property fixed for the process. It also appeared after a fast decode
+  once (`o2-i15-r1`).
+- The host fill before decode splits exactly by the decode's mode here: 1113.5 to 1128.0 ms in the 10 fast boots, 1298.6
+  to 1344.9 ms in the 10 slow ones. The slow state is already present during the fill in the slow boots.
+- What this says about DAY66's clock sampler: it read `cpufreq/scaling_cur_freq`, which under `amd-pstate-epp` is the
+  frequency the driver requested, not the one the core ran at. DAY66's `clock_does_not_track` is a finding about the
+  requested clock; it does not exclude an effective clock below it, which this probe points to.
+
+The next registration (`DAY68.md`) reads the effective clock and the CPU's temperature across the run's phases.
