@@ -76,8 +76,10 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   `9bbab60ed` to `c9379c051`) takes the host-hit prefetch cycle from 3569 to 2940 ns on the local CPU in one window;
   on the target card (BOX13, `DAY63.md` section 4) `DAY63 VERDICT rig=pro-single integrity=ok i13=improves door=i13
   vs_ref=loses (window: i13=improves vs_ref=loses)`: the door at 0.264 s gen-only and 0.232 s window against REF's
-  0.255 and 0.226 (+0.28 and +0.19 ms per token); the RTX 5090's cell is queued (queue v7). Open: the structural
-  improvement registered from the card's split (`DAY64.md`).
+  0.255 and 0.226 (+0.28 and +0.19 ms per token); the RTX 5090's cell is queued (queue v7). Day 64 (`DAY64.md`): I14
+  (the catalog and the host cache hashed, `8e7faf4ec`, `83f03d9b7`) and I15 (one ticket per prefetched expert,
+  `2243b1fe2`), CPU gates green; the host-hit prefetch per block 2995 ns at I13 to 1997 grouped in one window; the card
+  cell `i15` prepared (`day64-box.sh`, NEED TARGET CARD) and queued on the RTX 5090 (queue v8). Open.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 

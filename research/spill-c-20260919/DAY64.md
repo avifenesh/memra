@@ -85,3 +85,56 @@ collector hold. Arms: REF, I13, I14, I15, and I15S (I15 with `--expert-bank-stag
 - **The door against REF:** the door arm is I15, or I14 if I15 `regresses`, or I13 if I14 also `regresses`: `beats`,
   `matches` or `loses`, recorded plainly.
 - **What follows.** A step that `regresses` on either card is reverted with its receipt; `flat` or `improves` stays.
+
+## 1a. I14 on the CPU
+
+Both changes' CPU gates passed at their commits (the memra-tier suite 303 and 304, engine lib 567, clippy `-D warnings`,
+fmt): `the_hashed_catalog_answers_as_the_ordered_one` (every answer and refusal against a `BTreeMap` of the same
+entries, both layout classes, a duplicate still refused), `ids_and_records_iterate_in_bank_id_order`, the door-shaped
+30720-record catalog's every `record` found through the index, `trim_evicts_the_ordered_maps_victim` (400 randomized
+demands with ties against a `BTreeMap` reference, the cached set compared after every ticket), and the SLRU and bank
+trace tests unchanged. Commits: change 1 `8e7faf4ec`, change 2 `83f03d9b7`.
+
+## 2a. I15 on the CPU
+
+I15's CPU gates passed at `2243b1fe2` (the memra-tier suite 305, engine lib 568, clippy `-D warnings`, fmt, and
+`cargo check --workspace --all-targets`): `a_grouped_demand_leases_its_records_in_order` (the token names every
+record in order, `with_bytes_at` lends each record the bytes a single demand lends, the pending bound counts the
+group as one ticket, `finish_group` once, single and group tokens refuse each other, an empty and a four-record group
+refused, a bank that publishes the records reversed refused with its group finished through it), the day-46, day-48,
+day-50 and day-61 censuses read against the grouped prefetch (the demand path still demands one record behind its
+retire; the prefetch retires before its bound and its one grouped demand; the memo's guard at both sites), and the new
+census `a_group_is_finished_once_on_its_proven_paths`. Section 2 said the grouped lease is "finished only from
+`retire_banked` and `retire_all_banked`"; that was incomplete: as the single prefetch always did, the grouped one also
+finishes its group in its two refusal paths (a group naming other records, and a staging refusal on a drained copy
+stream before any member was staged), and the cache's `Drop` finishes every group after both streams drain. The
+census pins exactly those sites and no other. The day-4 fixture was re-pinned to the new `moe_cache.rs`
+(no SLRU statement changed).
+
+**The CPU ladder** (`cpu-day64/`; each row as run in `ladder-<n>.log`, all four binaries re-read in one window in both
+orders in `window.log`; P2 is one host-hit prefetch per block through the proxy, P8 the grouped form per block):
+
+| row | commit | change | P2 as run | P2 same window | P8 same window |
+|---|---|---|---:|---:|---:|
+| 0 | `c9379c051` | I13 | 2975.1 (`cpu-day63/ladder-4.log`) | 2995.0 | |
+| 1 | `8e7faf4ec` | I14 change 1, the catalog hashed | 2606.8 | 2637.8 | |
+| 2 | `83f03d9b7` | I14 change 2, the host cache hashed | 2458.0 | 2535.9 | |
+| 3 | `2243b1fe2` | I15, one ticket per expert | 2606.4 | 2550.2 | 1997.0 |
+
+I14 takes the single host-hit prefetch from 2995 to 2536 ns in one window (`stage_lookup` 123 to 46 ns, `stage_cache`
+478 to 351, `ladder-2.log`); I15 does not touch the single form (2550) and the grouped form costs 1997 ns per block,
+a third less than I13's 2995. Day 61 began this program at 5370 ns.
+
+## 3a. The binaries and the sitting, named before any cell
+
+Labels: `c60=da649107c` (REF), `i13=c9379c051`, `i14=83f03d9b7` (I14's last change), `i15=2243b1fe2`. `day64-cell.sh`
+and `day64-read.py` written after section 3; the reader dry-checked for mechanics only on day 63's target receipts
+relabelled (one host demand sequence `4bdc2610...` across the door arms; its verdict there means nothing). The driver
+`day64-box.sh` (builds by `day63-box-build.sh`, `run-gen` only), dry-checked (`day64-cpu/dry-check-driver.log`). Run as
+`D64_BUILDS="c60=da649107c i13=c9379c051 i14=83f03d9b7 i15=2243b1fe2" bash /root/wt-c/research/spill-c-20260919/day64-box.sh`.
+Expected: four builds about 20 minutes, the cell about 10 (50 runs at about 11 s). Box needs as `DAY63.md` section 3a.
+The RTX 5090's cell is queued (queue v8, behind v7) with `run-gen-i14` (`dc406de3...`) and `run-gen-i15`
+(`a909193e...`) built locally (`/tmp/c61-build/build-i1{4,5}.log`).
+
+The integrity gate carries I15's main claim: one host demand sequence (the trace without slot numbers) across I13,
+I14 and I15, so the grouped demand must reproduce the per-block order of host hits, misses and victims exactly.
