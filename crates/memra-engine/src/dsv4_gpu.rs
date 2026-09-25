@@ -41,7 +41,7 @@ use crate::dsv4_ep_graph::{self, MatrixEpGraphSlot};
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
 pub use crate::dsv4_graph::Dsv4LayerCapture;
-use crate::dsv4_topology::{self, Dsv4TopologyPlan};
+use crate::dsv4_topology::{self, Dsv4Placement, Dsv4TopologyPlan};
 
 unsafe extern "C" {
     fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
@@ -1122,6 +1122,9 @@ struct PrefillHeadCounters {
 pub struct Dsv4Gpu {
     pub topology: Dsv4TopologyPlan,
     attention_tp: Option<AttentionTpGeometry>,
+    /// The plain sampler this load serves: `MEMRA_DSV4_SAMPLER` when set, else the device
+    /// sampler on TP/EP (whose full-token replay draws in graph) and the host sampler on PP.
+    plain_sampler: crate::dsv4_sampler::Dsv4Sampler,
     attention_tp_rank_calls: [AtomicU64; 2],
     attention_tp_ar_calls: AtomicU64,
     attention_tp_refusal_injection: std::sync::Mutex<Option<AttentionTpRefusalInjection>>,
@@ -2219,6 +2222,14 @@ pub enum ArPhaseDoor {
 /// REFUSES to load. Doors that fail open are how an instrument ends up on a serving box.
 static DSV4_AR_PHASE_ARMED: AtomicBool = AtomicBool::new(false);
 
+/// The positions a full-token replay covers at most: its indexer scores up to 4096 compressed
+/// blocks, 16384 positions at ratio 4 (memra #710).
+const REPLAY_LIMIT: usize = 16384;
+
+/// The smallest session capacity a full-token replay admits; the served TP/EP route rounds a
+/// shorter plain session up to it so the session can arm.
+pub const REPLAY_MIN_CAPACITY: usize = 512;
+
 /// Permit this process to read `MEMRA_DSV4_AR_PHASE`. Gate binaries call it before load; no
 /// serving path calls it, and there is no environment variable that sets it.
 pub fn arm_ar_phase_door_for_gate() {
@@ -2591,6 +2602,11 @@ impl Dsv4Gpu {
         self.topology
     }
 
+    /// The plain sampler this load serves, resolved once at load.
+    pub fn plain_sampler(&self) -> crate::dsv4_sampler::Dsv4Sampler {
+        self.plain_sampler
+    }
+
     /// Gate-only topology admission.  Must be set before `load`; an armed
     /// request currently refuses before allocating the PP loader.
     pub fn set_tp_ep_topology_for_gate(enabled: bool) -> bool {
@@ -2834,10 +2850,8 @@ impl Dsv4Gpu {
             drafter_resident: self.dspark.is_some() || self.mtp.is_some(),
             gate_armed_gu_fuse: crate::moe_f16g_gu_fuse_on(),
             hc_geometry_24x16384: (2 + hc) * hc == 24 && hc * hidden == 16384,
-            // TP/EP is engine-capable since memra #454 (chunked prefill and verify ride
-            // the TP/EP walk, DSpark sits on the head rank, park/restore write both rank
-            // planes), but it is not served: the server has no TP/EP selector until the
-            // memra #679 gates pass. `PROGRAM_FACTS` is the one answer for both.
+            // TP/EP is the served two-card default since memra #710 (2026-09-25).
+            // `PROGRAM_FACTS` is the one answer for both.
             can_serve: !self.topology.is_tp_ep()
                 || crate::dsv4_doors::PROGRAM_FACTS.tp_ep_can_serve,
         }
@@ -3430,18 +3444,40 @@ impl Dsv4Gpu {
         })
     }
 
-    /// Open the artifact and place the trunk across `devices`. `split_at` = first layer
-    /// of stage 1, derived from per-layer byte math unless overridden.
+    /// Open the artifact and place it across `devices` with the placement the gate switches
+    /// armed (`set_tp_ep_topology_for_gate`, `set_attention_tp_for_gate`), PP-2 when neither
+    /// is. Serving passes its placement to [`Self::load_placed`].
     pub fn load(
         dir: &Path,
         devices: &[usize],
         variant: ActQuantVariant,
         max_seq: usize,
     ) -> Res<Self> {
+        let attention_tp = dsv4_attention_tp::enabled_for_gate();
+        let placement = if dsv4_topology::tp_ep_for_gate() {
+            Dsv4Placement::TpEp { attention_tp }
+        } else if attention_tp {
+            return Err(
+                "attention TP2 requires the explicit all-layer expert-ID EP topology".into(),
+            );
+        } else {
+            Dsv4Placement::Pp
+        };
+        Self::load_placed(dir, devices, variant, max_seq, placement)
+    }
+
+    /// Open the artifact and place it across `devices`. Under PP, `split_at` = first layer
+    /// of stage 1, derived from per-layer byte math unless overridden.
+    pub fn load_placed(
+        dir: &Path,
+        devices: &[usize],
+        variant: ActQuantVariant,
+        max_seq: usize,
+        placement: Dsv4Placement,
+    ) -> Res<Self> {
         assert_eq!(devices.len(), 2, "lane 4 placement is a 2-card layer split");
         let sampler_order = dsv4_sampler_order()?;
-        let sampler = crate::dsv4_sampler::dsv4_sampler()?;
-        eprintln!("[load] plain sampler: {sampler:?}");
+        let sampler_env = crate::dsv4_sampler::dsv4_sampler_env()?;
         eprintln!("[load] sampled candidate order: {sampler_order:?}");
         let grouped_env = match std::env::var("MEMRA_DSV4_PREFILL_MOE") {
             Ok(value) => Some(value),
@@ -3511,8 +3547,11 @@ impl Dsv4Gpu {
             Err(std::env::VarError::NotPresent) => None,
             Err(err) => return Err(format!("MEMRA_DSV4_EP: {err}")),
         };
+        // TP/EP always splits the experts by id, so unset means the pair there; an explicit
+        // `off` still refuses below, naming the requirement.
         let ep_requested = match ep_env.as_deref() {
-            None | Some("") | Some("off") => false,
+            None | Some("") => placement.is_tp_ep(),
+            Some("off") => false,
             Some("pair") => true,
             Some(other) => return Err(format!("MEMRA_DSV4_EP '{other}' unknown (off | pair)")),
         };
@@ -3521,7 +3560,7 @@ impl Dsv4Gpu {
         let mc = model.mc.clone();
         let n_trunk = mc.n_layer - mc.nextn_predict_layers;
         let rd = d.qk_rope_head_dim as usize;
-        let topology = if dsv4_topology::tp_ep_for_gate() {
+        let topology = if placement.is_tp_ep() {
             Dsv4TopologyPlan::tp_ep_all_layers(
                 devices.len(),
                 n_trunk as usize,
@@ -3538,12 +3577,7 @@ impl Dsv4Gpu {
                 mc.moe.as_ref().expect("moe").expert_ff_length as usize,
             )?
         };
-        let attention_tp = if dsv4_attention_tp::enabled_for_gate() {
-            if !topology.is_tp_ep() {
-                return Err(
-                    "attention TP2 requires the explicit all-layer expert-ID EP topology".into(),
-                );
-            }
+        let attention_tp = if placement == (Dsv4Placement::TpEp { attention_tp: true }) {
             Some(AttentionTpGeometry::new(
                 mc.n_head as usize,
                 d.head_dim as usize,
@@ -3810,9 +3844,23 @@ impl Dsv4Gpu {
         if ar_phase != ArPhaseDoor::Off && !topology.is_tp_ep() {
             return Err("MEMRA_DSV4_AR_PHASE requires the all-layer TP/EP topology".into());
         }
+        let plain_sampler = sampler_env.unwrap_or(if topology.is_tp_ep() {
+            crate::dsv4_sampler::Dsv4Sampler::Device
+        } else {
+            crate::dsv4_sampler::Dsv4Sampler::Host
+        });
+        eprintln!(
+            "[load] plain sampler: {plain_sampler:?}{}",
+            if sampler_env.is_some() {
+                " (MEMRA_DSV4_SAMPLER)"
+            } else {
+                " (the topology's default)"
+            }
+        );
         let mut me = Dsv4Gpu {
             topology,
             attention_tp,
+            plain_sampler,
             attention_tp_rank_calls: std::array::from_fn(|_| AtomicU64::new(0)),
             attention_tp_ar_calls: AtomicU64::new(0),
             attention_tp_refusal_injection: std::sync::Mutex::new(None),
@@ -8974,38 +9022,97 @@ impl Dsv4Gpu {
         Ok(())
     }
 
-    /// Explicit request-local full-token replay arming. Cadence defaults ON
-    /// within this admitted path; MEMRA_DSV4_REPLAY_CADENCE=0 selects full replay.
-    /// This does not automatically arm ordinary eager/serving requests.
+    /// Arm one request's plain decode on the full-token replay graphs (memra #710): greedy, or
+    /// the device sampler at the vendor default. Cadence defaults ON within this admitted path;
+    /// MEMRA_DSV4_REPLAY_CADENCE=0 selects full replay. The replay covers positions below
+    /// `min(capacity, 16384)`; past that, [`Self::full_token_replay_covers`] turns false and the
+    /// caller disarms and continues on the bit-identical eager step. The served TP/EP route
+    /// arms every plain request it admits; a refused arm leaves the state unarmed.
     /// # Safety
     /// The model must outlive this state at a stable address. Its weight allocations
     /// and kernel configuration must not be replaced or reconfigured while armed.
-    /// Cache/control updates through these request APIs remain permitted. This is
-    /// an explicit gate-only lifetime lease, not a general serving API.
-    pub unsafe fn arm_full_token_replay_for_gate(
+    /// Cache/control updates through these request APIs remain permitted.
+    pub unsafe fn arm_full_token_replay(
         &self,
         state: &mut DecodeState,
         cfg: Dsv4SampleCfg,
     ) -> Res<()> {
-        self.arm_full_token_replay_inner(state, cfg, dsv4_replay_cadence_default())
+        self.arm_full_token_replay_inner(state, cfg, dsv4_replay_cadence_default(), REPLAY_LIMIT)
+    }
+
+    /// [`Self::arm_full_token_replay`] with a smaller replay limit, so a gate crosses the
+    /// replay-to-eager handoff without a 16384-step walk. The limit only bounds the positions
+    /// the graphs cover; every position below it runs the same program.
+    /// # Safety
+    /// The stable model/weight/config lease of `arm_full_token_replay` applies.
+    pub unsafe fn arm_full_token_replay_limit_for_gate(
+        &self,
+        state: &mut DecodeState,
+        cfg: Dsv4SampleCfg,
+        limit: usize,
+    ) -> Res<()> {
+        if limit == 0 || limit > REPLAY_LIMIT {
+            return Err(format!("replay limit {limit} outside 1..={REPLAY_LIMIT}"));
+        }
+        self.arm_full_token_replay_inner(state, cfg, dsv4_replay_cadence_default(), limit)
+    }
+
+    /// Whether the armed replay covers the next step. False past the replay limit (and on an
+    /// unarmed state): the caller calls [`Self::disarm_full_token_replay`] and continues on the
+    /// eager step, the same numeric program (`dsv4_tp_replay_long_gate`).
+    pub fn full_token_replay_covers(&self, state: &DecodeState) -> bool {
+        state.matrix_step.as_ref().is_some_and(|w| {
+            w.replay.is_some()
+                && !w.failed
+                && w.verify
+                    .ws
+                    .first()
+                    .is_some_and(|ws| state.pos < ws.replay_limit)
+        })
+    }
+
+    /// Drop a request's replay graphs and return its workspace to the eager step; a no-op on an
+    /// unarmed state. The caches are untouched: every replayed step committed exactly what the
+    /// eager step would have.
+    pub fn disarm_full_token_replay(&self, state: &mut DecodeState) -> Res<()> {
+        let _walk_guard = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned")?;
+        let work = state
+            .matrix_step
+            .as_mut()
+            .ok_or("replay matrix state missing")?;
+        if work.failed || work.verify.open.is_some() {
+            return Err("replay disarm requires a closed, healthy request".into());
+        }
+        // Dropping the pair aborts any capture and drains both rank streams first. An
+        // unarmed state has nothing to drop.
+        drop(work.replay.take());
+        for ws in &mut work.verify.ws {
+            ws.full_token_replay = false;
+            ws.replay_limit = 0;
+            ws.replay_cadence = None;
+        }
+        Ok(())
     }
 
     /// Explicit three-cadence selection, retaining the original commit graph.
     /// # Safety
     /// The same stable model/weight/config lifetime lease as
-    /// `arm_full_token_replay_for_gate` applies for the complete armed request.
+    /// `arm_full_token_replay` applies for the complete armed request.
     pub unsafe fn arm_full_token_replay_cadence_for_gate(
         &self,
         state: &mut DecodeState,
         cfg: Dsv4SampleCfg,
     ) -> Res<()> {
-        self.arm_full_token_replay_inner(state, cfg, true)
+        self.arm_full_token_replay_inner(state, cfg, true, REPLAY_LIMIT)
     }
 
     /// Explicit gate selection, independent of the environment default. This
     /// keeps the legacy full-replay oracle and composition A reproducible.
     /// # Safety
-    /// The stable model/weight/config lease of `arm_full_token_replay_for_gate`
+    /// The stable model/weight/config lease of `arm_full_token_replay`
     /// applies for the lifetime of this armed request.
     pub unsafe fn arm_full_token_replay_mode_for_gate(
         &self,
@@ -9013,7 +9120,7 @@ impl Dsv4Gpu {
         cfg: Dsv4SampleCfg,
         cadence: bool,
     ) -> Res<()> {
-        self.arm_full_token_replay_inner(state, cfg, cadence)
+        self.arm_full_token_replay_inner(state, cfg, cadence, REPLAY_LIMIT)
     }
 
     fn arm_full_token_replay_inner(
@@ -9021,13 +9128,15 @@ impl Dsv4Gpu {
         state: &mut DecodeState,
         cfg: Dsv4SampleCfg,
         cadence: bool,
+        max_limit: usize,
     ) -> Res<()> {
         self.validate_full_token_program()?;
         // The replay indexer scores at most 4096 compressed blocks, 16384 positions at ratio 4;
-        // the 1024 cap was the first probe's admission scope, not a kernel bound (#710).
-        if state.capacity < 512
-            || state.capacity > 16384
-            || state.pos >= state.capacity
+        // the 1024 cap was the first probe's admission scope, not a kernel bound (#710). A
+        // longer session replays up to that bound and continues eager past it.
+        let limit = state.capacity.min(max_limit);
+        if state.capacity < REPLAY_MIN_CAPACITY
+            || state.pos >= limit
             || !(cfg.temperature == 0.0
                 || (cfg.temperature == 1.0 && cfg.top_p == 1.0 && cfg.top_k == 0))
             || state.caches.iter().any(|c| c.c4_host.is_some())
@@ -9036,7 +9145,7 @@ impl Dsv4Gpu {
                 .as_ref()
                 .is_none_or(|cs| cs.iter().any(|c| c.c4_host.is_some()))
         {
-            return Err("full-token replay admits only device caches, a 512..=16384 capacity, and greedy or vendor-default plain sampling".into());
+            return Err("full-token replay admits only device caches, a capacity of at least 512, a position below the replay limit, and greedy or vendor-default plain sampling".into());
         }
         let _walk_guard = self
             .tp_ep_walk_lock
@@ -9066,12 +9175,10 @@ impl Dsv4Gpu {
             self as *const Self as usize,
             cadence,
         )?;
-        // The replay indexer scores up to 4096 compressed blocks (16384 positions at ratio 4)
-        // and reads the live count from the device position, so replay covers the session up
-        // to that bound. Every rank's score buffer must hold it; the attention kernels refuse
-        // an index stride shorter than the slots they read (#710). Checked on every rank before
-        // any is marked, so a refused arm leaves the state as it was.
-        let limit = state.capacity.min(16384);
+        // The replay indexer reads the live count from the device position, so replay covers
+        // the session up to `limit`. Every rank's score buffer must hold it; the attention
+        // kernels refuse an index stride shorter than the slots they read (#710). Checked on
+        // every rank before any is marked, so a refused arm leaves the state as it was.
         if let Some(ws) = work.verify.ws.iter().find(|ws| ws.score.len() < limit / 4) {
             return Err(format!(
                 "replay limit {limit} exceeds the workspace score buffer {}",
@@ -9088,7 +9195,7 @@ impl Dsv4Gpu {
 
     /// Consume one token, commit only after both refusal words are zero, and
     /// return the real sampled next token. Both rank streams drain before return.
-    pub fn decode_sample_full_token_for_gate(&self, tok: u32, state: &mut DecodeState) -> Res<u32> {
+    pub fn decode_sample_full_token(&self, tok: u32, state: &mut DecodeState) -> Res<u32> {
         self.validate_full_token_program()?;
         self.decode_step_tp_ep(tok, state, false, true, None, true)
             .map(|(_, token)| token)
