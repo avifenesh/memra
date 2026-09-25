@@ -204,7 +204,7 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Also read (DAY51 section 3 reading 5, BOX22, a 9950X host, the base arm): each publication that replaces a host
   entry of the same prompt holds the owner 9.36 to 9.39 ms in `take-back bind and publish` (the replaced entry's heap
   payloads and 32 pinned leases freed on the owner thread) in the chain cell's shape. DAY52 section 3 (the publication
-  split, log only, on main's tree of the lane): 8.6 ms of that is the 32 pinned lease frees (about 270 us per
+  split, log only, its base arm): 8.6 ms of that is the 32 pinned lease frees (about 270 us per
   `cuMemFreeHost`), the heap payloads 0.02 ms; and P's reserve made those frees about 1 ms slower (item 17).
 - Status: open.
 
