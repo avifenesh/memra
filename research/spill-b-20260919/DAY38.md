@@ -141,6 +141,35 @@ first boot is `c6f9282c2` (r4). Green is that commit's `memra-server` (the same 
 target-card chain pins the same source and reuses the day-37 lane file as green when its source matches. Nothing
 else changes.
 
+### 1.11 Addendum D (2026-09-25, after the target-card half read FAIL, before any code or boot of the revision)
+
+Section 2.1 placed P1's failure and 2.2 corrects its fact 3: the verbatim-extension resume over decode-computed rows
+is a named residual of the documented near-tie contract (`docs/SERVING.md`, "What the grid law still does NOT
+promise"), so 1.4's cold-twin clause asserted, for shape X, what the engine does not promise; for shape A (the
+affinity rewind to an on-grid checkpoint) the grid law does promise it. 1.2's workload also let `off` resume nowhere
+at 6,144 and 30,720. P1 and P2 are re-registered; P3, P4, the interaction pair and the rule of 1.6 are unchanged.
+
+- **Shape X' (replaces X).** Every turn sends `max_ctx = L + 512` (a request-supplied hard cap is the charged cap,
+  `request_ctx_cap`), so a plain-parked entry fits the next turn on both arms and the door comparison is resume against
+  resume. Turn 2 = turn 1's ids, then turn 1's completion text tokenized through `/v1/tokenize`, then stream ids to
+  64 new tokens in all, `max_tokens=1`; turn 3 = turn 2's ids, turn 2's completion tokenized, stream ids to 64 new,
+  `max_tokens=32`. Each turn's cold twin: the same ids and `max_ctx` in a fresh namespace.
+- **P1'.** (a) Door identity: every X' turn 2 and 3 that resumed on both arms (`cached_tokens > 0` on both) has equal
+  digests on `on` and `off`; every shape-A turn 2 has equal digests on `on`, `off` and its cold twin (the grid law).
+  (b) The resumes happened: at least 80% of the X' turns 2 and 3 resume on both arms (a tokenization miss misses on
+  both and is counted), every `on` resume prints `[kv-reuse] park-compact grow:`, and every shape-A turn 2 prints
+  `[worker] plain-affinity: rewound to` on both arms. (c) No row answers non-200. Reading, no bound: X' resumed rows
+  against their cold twins per arm (flips under the near-tie contract), with the resume row counts.
+- **P2'.** `MEMRA_STEP_OOM_FAULT`'s non-batching injection point fires only on a session that is `prefill_done`, so the
+  forged failure lands on a decode step after the prime (the batched point is already a decode chunk). Clauses as in
+  addendum A: the errored session writes no `park-compact` line (the boot's count equals its HTTP 200 rows) and its
+  conversation's next turn runs cold (equal to its cold twin, no pool hit). The red arm (non-batching, the fix tree
+  with `day38-red.patch`) is expected to read one extra `park-compact` line and a resumed next turn; if it does not,
+  the red arm has not exercised the defect and that is recorded.
+- **Binaries:** the lane tip at the first boot of the revision (green) and green plus `day38-red.patch` (red). Both
+  cards, the lengths of 1.2, both orders for the main boots.
+- **Reader:** `day38d-read.py`, a new file (the registered `day38-read.py` reads the registered 5090 half unchanged).
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
@@ -205,4 +234,16 @@ Causes, placed from the receipts:
 
 The rule of 1.6 reads **FAIL (no reading)**: P1 fails. The cause is the continuation pool's resume program (fact 3),
 which the door makes reachable, plus a workload that cannot compare resume against resume (facts 1 and 2). The door is
-revised under a new pre-registration after the pool's resume obeys the one-program rule (OWED O11).
+revised under a new pre-registration (addendum D, 1.11; 2.2 corrects fact 3).
+
+### 2.2 Correction to 2.1's fact 3 (2026-09-25, from the records, before addendum D)
+
+Fact 3 called the verbatim-extension resume "a second numeric program for the same request" as if it broke a promise.
+The repo documents it as a named residual: `docs/SERVING.md` ("What the grid law still does NOT promise:
+verbatim-extension continuation resumes keep decode-computed rows whose arithmetic a cold prefill never reproduces
+... That path carries the documented cached-hit-vs-fresh-prime near-tie contract"), measured by `primepath --hist`
+(darklanes `research/multiturn-cache-20260821/LONGCTX-EXACTNESS-20260821.md` P3: logits differ, maxdiff 0.45,
+flips only at near-ties). `X-30720-r3-t3` is one such flip: one in 19 exact-extension resumes here. So 1.4's
+cold-twin clause was a registration error of this lane for shape X, not a defect the door or the pool must fix. The
+tension between that documented contract and `CLAUDE.md`'s one-numeric-program rule is recorded for the owner (OWED,
+owner decisions) and not worked by this lane. Addendum D (1.11) re-registers P1 and P2.
