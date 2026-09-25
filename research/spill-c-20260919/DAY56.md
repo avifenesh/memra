@@ -134,7 +134,7 @@ prompt tokens + draft tail from cache (13 suffix tokens to prime)`).
 
 ## 2b. The corrected cell on the RTX 5090, and a defect it found (before any further run)
 
-The section-2a cell ran on the RTX 5090 at 01:13Z to 01:14Z (`rtx5090-day56/`, receipts kept as attempt 2). Both
+The section-2a cell ran on the RTX 5090 at 01:13Z to 01:14Z (receipts `rtx5090-day56-attempt2/`). Both
 arms stopped at r3: the gate's request got `HTTP Error 500: Internal Server Error`, and the server logged
 `[engine-error] class=Engine step error: dspark resume suffix 13 < PRIME_MIN_T 16 (prime_cache has no tokenwise
 tap-filling twin); serve this turn cold`. Two findings, neither the slice's:

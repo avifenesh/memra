@@ -381,7 +381,13 @@ RTX 5090 Laptop GPU, the 9B (this card's own figures):
    refusal, the tenant's stall 149.4 to 81.8 (3.4 below OFF's 85.3, `isolated`), the request's e2e 221.4 to 206.8,
    `demote_in-completion` 74.8 unchanged; day 25's "the second park cost the tenant nothing" is refuted by that cell
    (the park had decided which tick the prime landed on). Ruling 37: the code stays. Which slice between `0713c1a79`
-   and the integ38 tip moved the copy's landing is still not determined.
+   and the integ38 tip moved the copy's landing: answered by C day 54 on the target card (`C/DAY54.md`,
+   `C/pro-single-day52/slices/`, eight servers built from their commits, ten promote-class boots each interleaved in
+   both orders, 81 of 81 replays PASS), verbatim: `DAY54 MOVES midpoint_ms=57.7 s5=58b814abe: landing late->early
+   (89.1->26.2 ms), restore parks 0.0->1.0` and `DAY54 VERDICT -> moved_at s5=58b814abe`: #638 (integ37, the
+   parked-only wait) brings the restore's off-tick park and the demote's early landing together, and the tenant's
+   promote-class stall reads 75.7 before it and 98.9 from it on (`DAY54 SLICE` lines); no other slice moves either
+   reading.
 4. **A's day-24 retire-settle share, priced on A day 25 (Move 2 owed item 3, closed by ruling 36).** All 11
    spec-boundary captures of the hit gate's spec-on boot published `settled synchronously by a session retire`,
    `106.3` to `204.6` ms from submission to completion (`A/pro-single-day24/box/gates/hitgate-on/qwen-on-server.log`);
