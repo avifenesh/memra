@@ -71,3 +71,33 @@ reads `two_l3_domains=1`, the `not_applicable` case. The driver `day65-box.sh` (
 class host with one RTX PRO 6000 Blackwell Workstation Edition, the approved 35B artifact at `/root/artifacts/`,
 `/root/wt-c` at the lane tip and a detached `/root/wt-c-build`, CUDA 13 and Rust, at least 48 GB host `MemAvailable`.
 Expected: two builds about 10 minutes, the cell about 8 (40 runs).
+
+## 2. The cell, as it ran (BOX17, run by the lead as registered; `pro-single-day65/`)
+
+The lead ran `day65-box.sh` as section 1a names it on the tree `5c6e7c0cf`, on BOX17, BOX15's own machine (a Ryzen 9
+9950X host with two L3 domains, one RTX PRO 6000 Blackwell Workstation Edition, driver 595.84; the BOX15 regime:
+idle 27.2 W, FMA spin 2650 to 2673 MHz, no brake), 09:17Z to `box done 2026-09-25T09:28:25Z`; binaries built on the
+box (`box-binaries.sha256`). The lead mirrored the receipts; read here: 190 of 190 files `OK` against
+`box-mirror-manifest.sha256` (`MIRROR-CHECK.txt`). Regime (`regime.txt`): 25 to 40 C, SM median 2610 MHz. Verbatim
+(`pin/reading.log`):
+
+- `DAY65 PINS rig=pro-single two=0-11 one=0,1,2,3,4,5,6,7,16,17,18,19 home_l3=0-7,16-23 two_l3_domains=2`
+- `DAY65 PIN CHECKS rig=pro-single runs=40 integrity=ok`
+- `DAY65 R1 ref2: gen median=0.245 iqr=0.0000 | window median=0.218 iqr=0.0010 (N=10)`
+- `DAY65 R1 i15two: gen median=0.311 iqr=0.0200 | window median=0.273 iqr=0.0175 (N=10)`
+- `DAY65 R1 ref1: gen median=0.245 iqr=0.0000 | window median=0.218 iqr=0.0000 (N=10)`
+- `DAY65 R1 i15one: gen median=0.312 iqr=0.0192 | window median=0.273 iqr=0.0162 (N=10)`
+- `DAY65 R2 i15two: slow=8 of 10 (gen-only over ref2 median + 0.03) [...]`
+- `DAY65 R2 i15one: slow=8 of 10 (gen-only over ref1 median + 0.03) [...]`
+- R3, every door run: `home_share` 0.93 to 1.00 on TWO (the two fast runs 1.00 and 0.98), 1.00 on ONE, slow runs
+  among them in both (`o1-i15one-r1: samples=54 home_share=1.00 slow`, and the rest in the reading).
+- `DAY65 R4 i15one_vs_ref1 gen-only decode: pooled=+0.0670 o1=+0.0680 o2=+0.0660 noise=0.0192 -> void (inadmissible)`
+- `DAY65 PIN VERDICT rig=pro-single integrity=ok -> pin_does_not placement_does_not_track; one-domain door vs REF: gen void (inadmissible), window void (inadmissible)`
+
+**Read as registered.** The pin does not remove the bimodality: on one L3 domain the door is slow in 8 boots of 10,
+the same count as on two, and its owner thread sat on CPU 0's domain in every sample of every one-domain run, slow or
+fast. The hypothesis of `DAY64.md` section 4 (the other complex) is refuted. What stays true in every door boot on
+this machine, slow or fast: the slow boots' host fill before decode takes 1278 to 1342 ms and the fast boots' 1114 to
+1120 (read from the logs, in run order in `pin/ev/marks.tsv`); REF is 0.245 or 0.246 s in all 20 runs. The next
+registration (`DAY66.md`) reads what the receipts cannot yet separate: the owner core's clock and the process's page
+backing, per boot.
